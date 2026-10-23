@@ -13,8 +13,8 @@ func TestDefinitionsCoverKnownHarnesses(t *testing.T) {
 	}
 	byID := map[string]harness.Definition{}
 	for _, definition := range definitions {
-		if definition.ID == "" || definition.Name == "" || definition.Image == "" {
-			t.Fatalf("definition %#v must identify an image", definition)
+		if definition.ID == "" || definition.Name == "" || definition.Bundle == "" {
+			t.Fatalf("definition %#v must identify a bundle", definition)
 		}
 		byID[definition.ID] = definition
 	}

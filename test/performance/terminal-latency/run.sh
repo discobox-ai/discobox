@@ -26,7 +26,6 @@ run_id="$(date -u +%Y%m%dt%H%M%Sz)-$$"
 resource_id="$(date -u +%H%M%S)-$$"
 output_dir="${DISCOBOX_TERMINAL_LATENCY_OUTPUT_DIR:-$repo_root/.tmp/terminal-latency/$run_id}"
 bundle="discobox-terminal-latency:local"
-image="discobox-terminal-latency-image:local"
 harness_name="latency-$resource_id"
 sandbox_name=""
 container_id=""
@@ -84,9 +83,9 @@ done
 mkdir -p "$output_dir"
 output_dir="$(cd "$output_dir" && pwd)"
 
-echo "Building the current CLI and deterministic latency harness bundle and image..."
+echo "Building the current CLI and deterministic latency harness bundle..."
 go tool task build:cli
-go tool task build:terminal-latency-image
+go tool task build:terminal-latency-bundle
 
 cli=("$repo_root/build/discobox")
 if [ -n "$server" ]; then
@@ -235,8 +234,7 @@ echo "Registering disposable harness $harness_name..."
 harness_json="$("${cli[@]}" admin harness create \
 	--name "$harness_name" \
 	--slug "$harness_name" \
-	--bundle "$bundle" \
-	--image "$image")"
+	--bundle "$bundle")"
 harness_id="$(jq -er '.id' <<<"$harness_json")"
 
 timeout 3m "${cli[@]}" admin harness configure "$harness_id" </dev/null >"$output_dir/configure.json"

@@ -28,7 +28,7 @@ import (
 // sandbox that has actually run lives. When there is none -- a create that
 // failed before the agent reported, which is a sandbox worth exporting rather
 // than one to refuse -- the pool the caller names is used instead.
-func (p *Provider) ExportTree(ctx context.Context, ref sandbox.SandboxRef, poolID string, image sandbox.ImageRef, state []byte) (io.ReadCloser, error) {
+func (p *Provider) ExportTree(ctx context.Context, ref sandbox.SandboxRef, poolID string, bundles []sandbox.BundlePin, state []byte) (io.ReadCloser, error) {
 	client, err := p.agentClientFromState(ctx, ref, state)
 	if err != nil {
 		if !errors.Is(err, sandbox.ErrNotFound) || strings.TrimSpace(poolID) == "" {
@@ -48,7 +48,7 @@ func (p *Provider) ExportTree(ctx context.Context, ref sandbox.SandboxRef, poolI
 			return nil, err
 		}
 	}
-	return client.ExportTree(ctx, ref, image)
+	return client.ExportTree(ctx, ref, bundles)
 }
 
 // ImportTree restores a durable tree onto the pool the sandbox is destined for.
@@ -82,19 +82,17 @@ func (p *Provider) ImportTree(ctx context.Context, ref sandbox.SandboxRef, poolI
 	return pool.ID, nil
 }
 
-func (p *poolAgentClient) ExportTree(ctx context.Context, ref sandbox.SandboxRef, image sandbox.ImageRef) (io.ReadCloser, error) {
+func (p *poolAgentClient) ExportTree(ctx context.Context, ref sandbox.SandboxRef, bundles []sandbox.BundlePin) (io.ReadCloser, error) {
 	lease, err := p.treeLease(ref, poolagentauth.ScopeSandboxRead)
 	if err != nil {
 		return nil, err
 	}
-	// The image the pool reads the tree with (ADR 0129 §1). The parameter names
-	// mirror the pool agent's own (TreeImageParam, TreeImageDigestParam).
+	// The bundles whose platform's agent the pool reads the tree with (ADR
+	// 0129 §1), each <kind>:<name>@<digest>. The parameter mirrors the pool
+	// agent's own (TreeBundleParam).
 	query := url.Values{}
-	if image.Name != "" {
-		query.Set("image", image.Name)
-	}
-	if image.Digest != "" {
-		query.Set("imageDigest", image.Digest)
+	for _, pin := range bundles {
+		query.Add("bundle", string(pin.Kind)+":"+pin.Name+"@"+pin.Digest)
 	}
 	resp, err := p.treeRequest(ctx, http.MethodGet, ref, lease, query, nil)
 	if err != nil {

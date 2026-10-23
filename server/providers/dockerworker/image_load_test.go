@@ -264,7 +264,7 @@ func TestPreloadImagesLoadsFromTheImageCache(t *testing.T) {
 			sawBytes = sawBytes || (progress.Pull != nil && progress.Pull.Current > 0)
 		}
 	}
-	err := preloadTestImages(t, engine, []string{image.Reference})
+	err := preloadTestImage(t, engine, image.Reference)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestALoadIntoAClassicDaemonRecordsTheRegistryDigest(t *testing.T) {
 	daemon := newFakeLoadDaemon(false)
 	engine, _, _ := loadEngine(t, daemon, cache, testPoolImage)
 
-	if err := preloadTestImages(t, engine, []string{image.Reference}); err != nil {
+	if err := preloadTestImage(t, engine, image.Reference); err != nil {
 		t.Fatal(err)
 	}
 	loads, pulls, removed := daemon.snapshot()
@@ -306,7 +306,7 @@ func TestAClassicLoadReportsTheLayersItExtracts(t *testing.T) {
 	daemon := newFakeLoadDaemon(false)
 	engine, log, _ := loadEngine(t, daemon, cache, testPoolImage)
 
-	if err := preloadTestImages(t, engine, []string{image.Reference}); err != nil {
+	if err := preloadTestImage(t, engine, image.Reference); err != nil {
 		t.Fatal(err)
 	}
 	log.mu.Lock()
@@ -381,7 +381,7 @@ func TestAClassicLoadWhoseDigestCannotBeRecordedIsTakenBack(t *testing.T) {
 	daemon.digestPullFails = true
 	engine, _, _ := loadEngine(t, daemon, cache, testPoolImage)
 
-	if err := preloadTestImages(t, engine, []string{image.Reference}); err == nil {
+	if err := preloadTestImage(t, engine, image.Reference); err == nil {
 		t.Fatal("expected preload failure")
 	}
 	_, pulls, removed := daemon.snapshot()
@@ -398,7 +398,7 @@ func TestPreloadSkipsAnImageNotInTheCache(t *testing.T) {
 	daemon := newFakeLoadDaemon(true)
 	engine, _, _ := loadEngine(t, daemon, imagecache.Open(t.TempDir()), testPoolImage)
 
-	if err := preloadTestImages(t, engine, []string{"ghcr.io/x/harness-shell:v1"}); err != nil {
+	if err := preloadTestImage(t, engine, "ghcr.io/x/discobox-sandbox-base:v1"); err != nil {
 		t.Fatal(err)
 	}
 	loads, pulls, _ := daemon.snapshot()
@@ -439,7 +439,7 @@ func TestPreloadSkipsADaemonElsewhere(t *testing.T) {
 	daemon := newFakeLoadDaemon(true)
 	engine, _, _ := localityEngine(t, daemon, cache, testPoolImage, DaemonElsewhere)
 
-	if err := preloadTestImages(t, engine, []string{image.Reference}); err != nil {
+	if err := preloadTestImage(t, engine, image.Reference); err != nil {
 		t.Fatal(err)
 	}
 	loads, pulls, _ := daemon.snapshot()
@@ -466,14 +466,14 @@ func TestDaemonLocalityForHost(t *testing.T) {
 	}
 }
 
-func preloadTestImages(t *testing.T, engine *Engine, images []string) error {
+func preloadTestImage(t *testing.T, engine *Engine, image string) error {
 	t.Helper()
 	lease, err := engine.acquireDockerReady(context.Background(), "pool_1", engine.dockerReadyTimeout())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer lease.Release()
-	return engine.preloadImages(context.Background(), lease, "pool_1", images)
+	return engine.preloadImage(context.Background(), lease, "pool_1", image)
 }
 
 // Minting the bootstrap identity is the first step in creating an agent.
@@ -486,6 +486,9 @@ func TestPoolAgentStartsOnlyAfterPreload(t *testing.T) {
 			daemon.digestPullFails = fail
 			daemon.images[testPoolImage] = fakeImage{id: "pool-image"}
 			engine, log, url := loadEngine(t, daemon, cache, testPoolImage)
+			// The sandbox base image is what every sandbox container runs, so
+			// it is the one a pool preloads.
+			engine.cfg.SandboxBaseImage = image.Reference
 			cli, err := testDockerClient(url)
 			if err != nil {
 				t.Fatal(err)
@@ -506,7 +509,7 @@ func TestPoolAgentStartsOnlyAfterPreload(t *testing.T) {
 				return poolagent.Bootstrap{}, reachedCreate
 			}
 			_, _, err = engine.ensurePoolContainer(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil),
-				&model.SandboxProviderInstance{ID: "provider-1"}, &model.Pool{ID: "pool_1", ProjectID: "project-1"}, mint, false, []string{image.Reference}, func(context.Context) error { began = true; return nil })
+				&model.SandboxProviderInstance{ID: "provider-1"}, &model.Pool{ID: "pool_1", ProjectID: "project-1"}, mint, false, func(context.Context) error { began = true; return nil })
 			if fail {
 				if err == nil || minted {
 					t.Fatalf("failed preload started agent: minted=%v err=%v", minted, err)

@@ -4,7 +4,13 @@ This package contains concrete sandbox provider implementations and factory
 registration. It consumes `server/internal/sandbox` for the Go-level provider
 interface, provider manager, typed `PoolManager` control-plane surface, and
 shared provider types. It also consumes server-owned persistence models and
-the pool-agent package for pool host boot metadata.
+the pool-agent package for pool host boot metadata. In development alone, the
+Docker engine's image sync consumes `server/internal/devbundles`: in
+build-mode it builds the bundles on a pool's daemon, which is a runtime
+mechanic only it can perform, and hands each saved layout to that set
+([Development Image Convergence](#development-image-convergence)). What a save
+sets off — seeding the built-in harnesses onto it, resolving the platform
+again — is the services', which the set notifies (`OnBuilt`).
 
 Providers own runtime mechanics only; services own persistence, authorization,
 orchestration, and API shape.
@@ -224,30 +230,33 @@ The Docker driver owns its sandbox base image
 systemd, Docker socket-activated, a uid-1000 `discobox` login user and the
 tools exe.dev's and boxd's images share. Those two are Ubuntu; the base is
 Debian because Debian's mirrors are the faster to build from, and the
-platform's features provision onto either. The pool-agent and sandbox-agent
-images are built `FROM` it, so a sandbox container runs it with the platform's
-features provisioned on top, and a pool host pulls its layers once.
+platform's features provision onto either. Every sandbox container runs it,
+with the platform's and its harness's features provisioned on top, and the
+pool-agent image is built `FROM` it, so a pool host pulls its layers once. No
+harness is an image (ADR 26-10-16-423 §10).
 
 It is released and staged under its own role, and resolves as the pool image
 does — the release manifest's `Images.SandboxBase`, then a provider's
 `sandboxBaseImage` setting, the server's `dockerSandboxBaseImage`, and
 `dockerworker.DefaultSandboxBaseImage`, which a release overwrites at link
 time (`EffectiveSandboxBaseImage`). Every provider that runs the pool agent in
-Docker offers the setting. The resolved image is what the pool preloads
-beside the images its sandboxes name, and what every sandbox delivered its
-platform runs: the engine hands it to the pool agent as
+Docker offers the setting. The resolved image is the one image the pool
+preloads, and what every sandbox runs: the engine hands it to the pool agent as
 `DISCOBOX_SANDBOX_BASE_IMAGE` (`sandboxruntime.EnvSandboxBaseImage`), so it is
 part of the pool container's environment and its `configRevision`, and a
 moved base image recreates the pool container (`pool-agent/DESIGN.md`,
-ADR 26-10-16-423 §7). A sandbox delivered no platform still runs its own
-image, the harness image built `FROM` the base.
+ADR 26-10-16-423 §7).
 
 ## Development Image Convergence
 
 The development image watcher publishes a versioned manifest of
-content-addressed sandbox base, pool, sandbox-agent, and harness images. When its explicit
-environment flag is enabled, server composition gives one shared
-`dockerworker.DevelopmentImageSynchronizer` to every engine.
+content-addressed sandbox base and pool images, and the platform and harness
+bundles. When its explicit environment flag is enabled, server composition
+gives one shared `dockerworker.DevelopmentImageSynchronizer` to every engine.
+In build-mode it also builds each bundle no pool has built yet on the daemon
+it converges, saves it from that daemon into the server's development bundles
+(`server/internal/devbundles`) — the layout the asset API serves pools from —
+and removes it from the daemon, which never holds a bundle a box runs.
 
 After `EnsureVM` and Docker readiness, both `EnsurePool` and `RepairPool`
 converge that manifest before reconciling the pool-agent container. The development
@@ -316,8 +325,8 @@ activity required to notice.
 
 `Engine.imageKeepReferences` is what the container check cannot infer: the
 configured pool image, which has no container while every pool is stopped, and
-the development image set, whose sandbox base is run by nothing yet is the base
-every harness image is built `FROM`.
+the development image set, whose sandbox base is what every sandbox container
+is created from, though no container may run it yet.
 
 That keep set is a startup snapshot, so it cannot be the only protection: an
 image built after the server started is in no keep set at all. `imagereap` never

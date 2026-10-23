@@ -276,8 +276,8 @@ func (a answered) stamp(row *model.CredentialVerdict) {
 	row.Role = judge.Role
 	row.PromptVersion = judge.PromptVersion
 	row.JudgeSandboxID = a.sandbox.ID
-	row.Image = a.sandbox.Image
-	row.ImageDigest = a.sandbox.ImageDigest
+	row.Bundle = a.sandbox.Bundle
+	row.BundleDigest = a.sandbox.BundleDigest
 	if a.sandbox.HarnessConfigID != nil {
 		row.HarnessConfigID = *a.sandbox.HarnessConfigID
 	}
@@ -595,6 +595,8 @@ func (s *Service) standing(ctx context.Context, projectID string, ask services.J
 			LatencyMS:         time.Since(start).Milliseconds(),
 			JudgeSandboxID:    granted.JudgeSandboxID,
 			HarnessConfigID:   granted.HarnessConfigID,
+			Bundle:            granted.Bundle,
+			BundleDigest:      granted.BundleDigest,
 			Image:             granted.Image,
 			ImageDigest:       granted.ImageDigest,
 			Model:             granted.Model,

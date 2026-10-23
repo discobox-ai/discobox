@@ -77,10 +77,9 @@ func (s *Service) ExportSandbox(ctx context.Context, projectID, sandboxID string
 	// for exactly the discobox an export is most wanted for: broken here, and
 	// worth taking somewhere that works. PoolID is on the row and immutable
 	// after create.
-	// The pin, not the harness config's current image: the tree is read by the
-	// sandbox agent the sandbox runs (ADR 0129 §1).
-	image := sandbox.ImageRef{Name: sb.Image, Digest: sb.ImageDigest}
-	tree, err := provider.ExportTree(ctx, sandboxRefFromSandbox(sb), sb.PoolID, image, sb.ProviderState)
+	// The pins, not the harness config's current ones: the tree is read by
+	// the agent of the platform the sandbox is pinned to (ADR 0129 §1).
+	tree, err := provider.ExportTree(ctx, sandboxRefFromSandbox(sb), sb.PoolID, sandboxBundlePins(sb), sb.ProviderState)
 	if err != nil {
 		return nil, err
 	}
@@ -359,20 +358,24 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 			sb.MetaName = &name
 		}
 	}
-	// The image is the destination harness config's, exactly as a create takes
-	// it from there (ADR 0123 §1). It cannot come from the archive: the rest of
-	// what the harness contributes -- RunCommand, Files, Volumes, Env -- is read
-	// off this row when the container is built, so an image from one harness
-	// and a command from another produce a container that starts and a harness
-	// that does not. That is most obvious under `--harness`, and is the same
-	// shear in miniature whenever the destination's pin has moved.
-	// The bundles are this server's for the same reason: the archive's name
-	// what its own server pinned (ADR 26-10-16-423 §7).
-	sb.Bundle, sb.BundleDigest = "", ""
-	if image := strings.TrimSpace(harnessConfig.Image); image != "" {
-		sb.Image, sb.ImageDigest = image, strings.TrimSpace(harnessConfig.ImageDigest)
-		sb.Bundle, sb.BundleDigest = strings.TrimSpace(harnessConfig.Bundle), strings.TrimSpace(harnessConfig.BundleDigest)
+	// The harness pins are the destination harness config's, exactly as a
+	// create takes them from there (ADR 0123 §1). They cannot come from the
+	// archive: the rest of what the harness contributes -- RunCommand, Files,
+	// Volumes, Env -- is read off this row when the container is built, so a
+	// bundle from one harness and a command from another produce a container
+	// that starts and a harness that does not. That is most obvious under
+	// `--harness`, and is the same shear in miniature whenever the
+	// destination's pin has moved. The platform is this server's for the same
+	// reason: the archive's names what its own server pinned (ADR 26-10-16-423
+	// §7). A sandbox exported from before bundles carries the runnable image it
+	// ran, which this replaces.
+	harnessPins, err := createHarnessPins(harnessConfig)
+	if err != nil {
+		return nil, err
 	}
+	sb.Image, sb.ImageDigest = harnessPins.Image, harnessPins.ImageDigest
+	sb.Bundle, sb.BundleDigest = harnessPins.Bundle.Reference, harnessPins.Bundle.Digest
+	sb.HarnessManifestDigest = harnessPins.ManifestDigest
 	platformBundle, err := s.currentPlatform(ctx)
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadGateway, err.Error())

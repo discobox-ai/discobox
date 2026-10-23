@@ -23,6 +23,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/sandboxtree"
 	"github.com/discobox-ai/discobox/pkg/tarsums"
+	"github.com/discobox-ai/discobox/pool-agent/assetcache"
 )
 
 // exportDaemon is a Docker daemon holding no sandbox containers, whose one
@@ -182,8 +183,15 @@ func treeRuntime(t *testing.T, root layout.Root, projectID, poolID string) (*Doc
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &DockerSandboxRuntime{client: cli, root: root, projectID: projectID, poolID: poolID}, daemon
+	// The agent of a sandbox's platform pin is what an export reads with, over
+	// the sandbox base image (exportImage).
+	layers := &fakeAgentLayers{digest: testAgentLayer, layer: gzippedAgentLayer(t, "agent")}
+	return &DockerSandboxRuntime{client: cli, root: root, projectID: projectID, poolID: poolID,
+		sandboxBaseImage: "discobox-sandbox-base:test", agentLayers: layers}, daemon
 }
+
+// testAgentLayer is the agent layer every tree runtime's sandbox is pinned to.
+var testAgentLayer = "sha256:" + strings.Repeat("c", 64)
 
 // treeFixture writes a sandbox tree under a relocated state root and returns
 // the runtime addressing it.
@@ -204,8 +212,9 @@ func exportFixture(t *testing.T) (*DockerSandboxRuntime, *exportDaemon, string) 
 	return runtime, daemon, root
 }
 
-// testTreeImage is the pin an export is read with.
-var testTreeImage = TreeImage{Name: "registry.example/harness:v1"}
+// testTreePins are the pins an export is read with: the platform's, whose
+// agent reads the tree.
+var testTreePins = []assetcache.Pin{{Kind: assetcache.KindPlatform, Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}}
 
 func writeFile(t *testing.T, path, content string, mode os.FileMode) {
 	t.Helper()
@@ -264,7 +273,7 @@ func TestExportTreeCarriesTheDurableSubtreesOnly(t *testing.T) {
 	writeFile(t, filepath.Join(root, "config", "sandbox.json"), `{"pool":"pool-1"}`, 0o644)
 	writeFile(t, filepath.Join(root, "secrets", "secrets.json"), `{"TOKEN":"sentinel"}`, 0o600)
 
-	stream, err := runtime.ExportTree(t.Context(), "sbx-1", testTreeImage)
+	stream, err := runtime.ExportTree(t.Context(), "sbx-1", testTreePins)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +300,7 @@ func TestExportTreeSkipsAMissingSubtree(t *testing.T) {
 	runtime, root := treeFixture(t)
 	writeFile(t, filepath.Join(root, "data", "notes"), "hi\n", 0o644)
 
-	stream, err := runtime.ExportTree(t.Context(), "sbx-1", testTreeImage)
+	stream, err := runtime.ExportTree(t.Context(), "sbx-1", testTreePins)
 	if err != nil {
 		t.Fatalf("a sandbox with no push-delivered source has no origins tree, which is not an error: %v", err)
 	}
@@ -318,7 +327,7 @@ func TestTreeRoundTripPreservesModesSymlinksAndHardLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stream, err := source.ExportTree(t.Context(), "sbx-1", testTreeImage)
+	stream, err := source.ExportTree(t.Context(), "sbx-1", testTreePins)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,14 +480,14 @@ func TestImportTreeRemovesAPartialRestore(t *testing.T) {
 
 func TestExportTreeRefusesAMissingSandbox(t *testing.T) {
 	runtime, _ := treeFixture(t)
-	if _, err := runtime.ExportTree(t.Context(), "sbx-unknown", testTreeImage); !errors.Is(err, ErrNotFound) {
+	if _, err := runtime.ExportTree(t.Context(), "sbx-unknown", testTreePins); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
 
-// The export container reads with the sandbox's own image and sees only the
-// trees it is to read, read-only, with nowhere to send them but its stdout
-// (ADR 0129 §1). It is not labeled a sandbox, so nothing listing this pool's
+// The export container reads with the sandbox base image and the agent of the
+// sandbox's platform pin, and sees only that agent and the trees it is to
+// read, read-only, with nowhere to send them but its stdout (ADR 0129 §1). It is not labeled a sandbox, so nothing listing this pool's
 // sandboxes counts it, and it is gone when the export is.
 func TestExportTreeRunsTheExportModeConfinedToTheTree(t *testing.T) {
 	runtime, daemon, root := exportFixture(t)
@@ -486,7 +495,7 @@ func TestExportTreeRunsTheExportModeConfinedToTheTree(t *testing.T) {
 	writeFile(t, filepath.Join(root, "config", "sandbox.json"),
 		`{"user":{"name":"ada","uid":1500,"gid":1600,"homeDirectory":"/home/ada"}}`, 0o644)
 
-	stream, err := runtime.ExportTree(t.Context(), "sbx-1", testTreeImage)
+	stream, err := runtime.ExportTree(t.Context(), "sbx-1", testTreePins)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -508,7 +517,7 @@ func TestExportTreeRunsTheExportModeConfinedToTheTree(t *testing.T) {
 		t.Errorf("subtrees = %v, want only the ones on disk", req.Cmd)
 	}
 	if req.Image != "sha256:export-image" {
-		t.Errorf("image = %q, want the one the pin resolved to", req.Image)
+		t.Errorf("image = %q, want the sandbox base image's", req.Image)
 	}
 	if req.HostConfig.NetworkMode != "none" || !req.NetworkDisabled {
 		t.Errorf("network = %q (disabled %v), want none", req.HostConfig.NetworkMode, req.NetworkDisabled)
@@ -523,8 +532,8 @@ func TestExportTreeRunsTheExportModeConfinedToTheTree(t *testing.T) {
 		}
 		targets[m.Target] = true
 	}
-	if !targets[sandboxDataMount] || !targets[sandboxConfigMount] || len(targets) != 2 {
-		t.Errorf("mounts = %v, want data and config only", targets)
+	if !targets[sandboxDataMount] || !targets[sandboxConfigMount] || !targets[exportAgentPath] || len(targets) != 3 {
+		t.Errorf("mounts = %v, want the agent, data and config only", targets)
 	}
 	// The user the sandbox boots as, so %HOME% resolves where boot put it.
 	for _, want := range []string{"DISCOBOX_USER_UID=1500", "DISCOBOX_USER_GID=1600", "DISCOBOX_USER_NAME=ada", "DISCOBOX_USER_HOME=/home/ada"} {
@@ -548,7 +557,7 @@ func TestExportTreeReportsAModeThatFailedAtOnce(t *testing.T) {
 	writeFile(t, filepath.Join(root, "data", "notes"), "hi\n", 0o644)
 	daemon.fail = "resolve sandbox identity: no such user"
 
-	_, err := runtime.ExportTree(t.Context(), "sbx-1", testTreeImage)
+	_, err := runtime.ExportTree(t.Context(), "sbx-1", testTreePins)
 	if err == nil {
 		t.Fatal("a failed export mode was answered with a stream")
 	}
@@ -557,11 +566,30 @@ func TestExportTreeReportsAModeThatFailedAtOnce(t *testing.T) {
 	}
 }
 
-func TestExportTreeRefusesAnExportWithNoImage(t *testing.T) {
+// A sandbox from before bundles is pinned to no platform, and has no agent to
+// be read with until it is pinned to its bundles: no harness is an image to
+// read it with any more (ADR 26-10-16-423 §10).
+func TestExportTreeRefusesASandboxPinnedToNoPlatform(t *testing.T) {
 	runtime, _, root := exportFixture(t)
 	writeFile(t, filepath.Join(root, "data", "notes"), "hi\n", 0o644)
-	if _, err := runtime.ExportTree(t.Context(), "sbx-1", TreeImage{}); !errors.Is(err, ErrImageUnavailable) {
-		t.Fatalf("err = %v, want ErrImageUnavailable", err)
+	if _, err := runtime.ExportTree(t.Context(), "sbx-1", nil); !errors.Is(err, ErrUndelivered) || !errors.Is(err, ErrImageUnavailable) {
+		t.Fatalf("err = %v, want ErrUndelivered", err)
+	}
+}
+
+// The pins an export names are recorded as a create's are, so an archived
+// sandbox pinned since its last create is read with the agent it is pinned to.
+func TestExportTreeRecordsThePinsItIsGiven(t *testing.T) {
+	runtime, _, root := exportFixture(t)
+	writeFile(t, filepath.Join(root, "data", "notes"), "hi\n", 0o644)
+	stream, err := runtime.ExportTree(t.Context(), "sbx-1", testTreePins)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream.Close()
+	recorded, err := assetcache.ReadRecord(root)
+	if err != nil || !slices.Equal(recorded, testTreePins) {
+		t.Fatalf("record = %+v, %v, want the export's pins", recorded, err)
 	}
 }
 

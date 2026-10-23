@@ -138,7 +138,7 @@ func useFixture(t *testing.T) (*Service, *containerProvider, *gorm.DB) {
 	failure := createFailure
 	if err := appStore.CreateSandbox(ctx, &model.Sandbox{
 		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "sb-1",
-		SandboxManifest: model.SandboxManifest{HarnessMode: "run", Image: "harness:local", ImageDigest: "sha256:old"},
+		SandboxManifest: model.SandboxManifest{HarnessMode: "run", Bundle: codexBundle, BundleDigest: codexBundleV1},
 		ResourceLifecycle: model.ResourceLifecycle{
 			DesiredState: model.DesiredStatePresent, State: model.SandboxStateFailed,
 			Generation: 3, ObservedGeneration: 3, ErrorMessage: &failure,
@@ -396,18 +396,18 @@ func TestALostContainerIsRebuiltOnUseWithoutARepair(t *testing.T) {
 }
 
 // The repair re-pins the way a typed one does (ADR 0064), except where the
-// project holds its sandboxes on the image they have: nobody asked for this
+// project holds its sandboxes on the bundles they have: nobody asked for this
 // repair, so under a `manual` policy it rebuilds on the pin it found.
 func TestAutomaticRepairRepinsOnlyUnderAnAutomaticPolicy(t *testing.T) {
 	for policy, wantDigest := range map[string]string{
-		"":                                  "sha256:new",
-		model.SandboxUpgradePolicyAutomatic: "sha256:new",
-		model.SandboxUpgradePolicyManual:    "sha256:old",
+		"":                                  codexBundleV2,
+		model.SandboxUpgradePolicyAutomatic: codexBundleV2,
+		model.SandboxUpgradePolicyManual:    codexBundleV1,
 	} {
 		t.Run("policy="+policy, func(t *testing.T) {
 			service, _, db := useFixture(t)
 			ctx := useContext(t)
-			config := imagedConfig(t, service.store, "harness:local", "sha256:new")
+			config := bundledConfig(t, service.store, codexBundle, codexBundleV2)
 			if err := db.Model(&model.Sandbox{}).Where("id = ?", "sb-1").Update("harness_config_id", config.ID).Error; err != nil {
 				t.Fatalf("give the sandbox its harness config: %v", err)
 			}
@@ -420,8 +420,8 @@ func TestAutomaticRepairRepinsOnlyUnderAnAutomaticPolicy(t *testing.T) {
 				t.Fatalf("acquire: %v", err)
 			}
 			lease.Release()
-			if sb.AutomaticRepair == nil || sb.ImageDigest != wantDigest {
-				t.Fatalf("automatic repair = %+v, digest = %s; want a repair on %s", sb.AutomaticRepair, sb.ImageDigest, wantDigest)
+			if sb.AutomaticRepair == nil || sb.BundleDigest != wantDigest {
+				t.Fatalf("automatic repair = %+v, digest = %s; want a repair on %s", sb.AutomaticRepair, sb.BundleDigest, wantDigest)
 			}
 		})
 	}

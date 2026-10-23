@@ -8687,6 +8687,8 @@ func (s SandboxUpgradeReason) Validate() error {
 		return nil
 	case "bundleDigestChanged":
 		return nil
+	case "manifestDigestChanged":
+		return nil
 	case "platformBundleDigestChanged":
 		return nil
 	default:

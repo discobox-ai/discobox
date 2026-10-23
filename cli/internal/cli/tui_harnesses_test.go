@@ -70,7 +70,7 @@ func TestHarnessUncredentialed(t *testing.T) {
 func TestToTUIHarness(t *testing.T) {
 	cfg := apimodel.HarnessConfig{
 		ID: "hc_1", Name: "Claude", Slug: "claude", Configured: true, BuiltIn: true,
-		Image:          apiclientgen.NewOptString("ghcr.io/example/claude:latest"),
+		Bundle:         apiclientgen.NewOptString("ghcr.io/example/claude:latest"),
 		ConfigReminder: apiclientgen.NewOptString("Log in, then exit."),
 		RunCommand:     []string{"claude", "--dangerously-skip-permissions"},
 		Secrets: apiclientgen.NewOptNilHarnessConfigSecretArray([]apimodel.HarnessConfigSecret{

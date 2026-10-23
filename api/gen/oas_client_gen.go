@@ -908,11 +908,11 @@ type Invoker interface {
 	ReconcileSandbox(ctx context.Context, params ReconcileSandboxParams) (ReconcileSandboxRes, error)
 	// RefreshHarnessConfigImage invokes refresh-harness-config-image operation.
 	//
-	// Re-inspect the harness config's image and re-snapshot its label metadata and digest.
-	// Registration snapshots the label once and nothing re-reads it, so a config pointing at a
-	// rebuilt tag keeps describing an image that no longer exists under it — and its sandboxes
-	// can never report an available upgrade. Built-in configs get this automatically on server
-	// start; user-registered ones need this call. Never flips configured.
+	// Re-inspect the harness config's bundle, or its manifest file, and re-snapshot its label
+	// metadata and digest. Registration snapshots the labels once and nothing re-reads them, so a
+	// config pointing at a rebuilt tag keeps describing a bundle that no longer exists under it —
+	// and its sandboxes can never report an available upgrade. Built-in configs get this
+	// automatically on server start; user-registered ones need this call. Never flips configured.
 	//
 	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image
 	RefreshHarnessConfigImage(ctx context.Context, params RefreshHarnessConfigImageParams) (RefreshHarnessConfigImageRes, error)
@@ -16319,11 +16319,11 @@ func (c *Client) sendReconcileSandbox(ctx context.Context, params ReconcileSandb
 
 // RefreshHarnessConfigImage invokes refresh-harness-config-image operation.
 //
-// Re-inspect the harness config's image and re-snapshot its label metadata and digest.
-// Registration snapshots the label once and nothing re-reads it, so a config pointing at a
-// rebuilt tag keeps describing an image that no longer exists under it — and its sandboxes
-// can never report an available upgrade. Built-in configs get this automatically on server
-// start; user-registered ones need this call. Never flips configured.
+// Re-inspect the harness config's bundle, or its manifest file, and re-snapshot its label
+// metadata and digest. Registration snapshots the labels once and nothing re-reads them, so a
+// config pointing at a rebuilt tag keeps describing a bundle that no longer exists under it —
+// and its sandboxes can never report an available upgrade. Built-in configs get this
+// automatically on server start; user-registered ones need this call. Never flips configured.
 //
 // POST /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image
 func (c *Client) RefreshHarnessConfigImage(ctx context.Context, params RefreshHarnessConfigImageParams) (RefreshHarnessConfigImageRes, error) {

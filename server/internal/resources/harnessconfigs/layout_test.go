@@ -12,6 +12,7 @@ import (
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/devimage"
+	"github.com/discobox-ai/discobox/server/internal/devbundles"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -67,24 +68,24 @@ func tarDir(t *testing.T, dir, tarPath string) {
 }
 
 // layoutService resolves the built-ins against bundles exported as layouts,
-// with the runnable image answered by fallback and nothing else.
+// with every other lookup refused.
 func layoutService(t *testing.T, bundles ...devimage.Bundle) (*Service, *recordingInspector) {
 	t.Helper()
 	fallback := &recordingInspector{}
 	svc := &Service{store: newTestStore(t), harnesses: harnessdefs.References{PlatformBundle: platformReference}}
-	svc.inspector = newDevImageInspector(nil, bundles, onlyImages{fallback}, &verifiedBundles{})
+	svc.inspector = newDevImageInspector(devbundles.New(bundles, t.TempDir()), noBundles{fallback}, &verifiedBundles{})
 	return svc, fallback
 }
 
-// onlyImages answers a runnable image and refuses any bundle, which on a
+// noBundles answers a manifest file and refuses any bundle, which on a
 // development server is in no daemon or registry.
-type onlyImages struct{ images *recordingInspector }
+type noBundles struct{ files *recordingInspector }
 
-func (o onlyImages) Inspect(ctx context.Context, ref string) (imageMetadata, error) {
-	return o.images.Inspect(ctx, ref)
+func (n noBundles) InspectManifestFile(ctx context.Context, ref string) (imageMetadata, error) {
+	return n.files.InspectManifestFile(ctx, ref)
 }
 
-func (onlyImages) InspectBundle(context.Context, string, func(map[string]string) error) (bundleInspection, error) {
+func (noBundles) InspectBundle(context.Context, string, func(map[string]string) error) (bundleInspection, error) {
 	return bundleInspection{}, errors.New("a development bundle must not be looked for in a daemon or a registry")
 }
 
@@ -97,12 +98,12 @@ func TestResolveReadsBundlesFromTheirLayouts(t *testing.T) {
 	codex := exportBundle(t, codexBundle, map[string]string{harness.ImageLabel: harnessMetadataJSON}, []string{"features/codex/provision.yaml"})
 	svc, fallback := layoutService(t, platformBundle, codex)
 
-	metadata, err := svc.resolveHarness(context.Background(), svc.platformBundle(), codexBundle, codexImage)
+	metadata, err := svc.resolveHarness(context.Background(), svc.platformBundle(), codexBundle, "")
 	if err != nil {
 		t.Fatalf("resolveHarness() error = %v", err)
 	}
-	if fallback.calls != 1 {
-		t.Fatalf("fallback inspector was consulted %d times, want once, for the runnable image", fallback.calls)
+	if fallback.calls != 0 {
+		t.Fatalf("fallback inspector was consulted %d times, want 0", fallback.calls)
 	}
 	if metadata.Env["DISPLAY"] != ":0" || len(metadata.Volumes) != 1 || metadata.Harness == nil || metadata.Harness.ID != "codex" {
 		t.Fatalf("metadata = %#v, want codex's manifest composed on the platform layer", metadata.ImageMetadata)

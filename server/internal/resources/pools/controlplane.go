@@ -32,18 +32,6 @@ func NewControlPlane(appStore *store.Store, engine *reconcile.Engine) *ControlPl
 	return &ControlPlane{store: appStore, engine: engine}
 }
 
-// SetDefaultSandboxImage records the image a sandbox with no harness config
-// runs, as this server resolved it. Staging needs the resolved value, not the
-// compiled-in default it usually equals — those differ exactly when somebody
-// pointed this server at other images, which is when staging the compiled-in
-// one would be most wrong.
-//
-// Package-level because the reconciler that reads it is constructed before the
-// server has resolved it, and there is one answer per process.
-func (s *ControlPlane) SetDefaultSandboxImage(image string) {
-	setDefaultSandboxImage(image)
-}
-
 func (s *ControlPlane) SetAgentAuthManager(manager *poolagentauth.Manager) {
 	s.agentAuth = manager
 }

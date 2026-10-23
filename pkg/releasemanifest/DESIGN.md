@@ -1,15 +1,17 @@
 # Release manifests
 
-A manifest names runtime images by role: pool agent, sandbox base, sandbox
-agent, VM guest, libkrun kernel, and harness slug. The sandbox base is
-optional: a release cut before the Docker driver owned one names none. Beside
-them, `Bundles` names the platform bundle and each harness's bundle by slug
-(ADR 26-10-16-423 §2): the server composes every harness's manifest from them,
-while a pool runs the harness image built from each. `References` derives the
-host cache's staging list from the image roles. Bundles are not staged: the
-cache feeds pool daemons, for the pool's platform, and a pool runs no bundle,
-while a harness bundle is one manifest for every platform that staging for
-another would refuse. Never add a separately maintained preload list.
+A manifest names runtime images by role: pool agent, sandbox base, VM guest
+and libkrun kernel. The sandbox base is optional: a release cut before the
+Docker driver owned one names none. Beside them, `Bundles` names the platform
+bundle and each harness's bundle by slug (ADR 26-10-16-423 §2): the server
+composes every harness's manifest from them and every box applies them. No
+harness is an image (§10), so a release from bundles on names no sandbox-agent
+or harness image; `Images.SandboxAgent` and `Images.Harnesses` are what a
+release from before bundles ran its sandboxes on, kept so the CLI still reads
+and stages an older server's manifest. `References` derives the host cache's
+staging list from the image roles. Bundles are not staged: the cache feeds
+pool daemons, and a pool's daemon never holds a bundle — the server serves
+them to pools by blob (§13). Never add a separately maintained preload list.
 The VM/kernel retain their independent release pins; container image tags name
 the Discobox release. Windows supplies its own guest through WSL Containers.
 
@@ -30,7 +32,7 @@ or incomplete files fail visibly. Server configuration loads it once at startup,
 overrides individual image settings, and disables development image sync. VM
 providers also bypass local guest builds when this manifest is selected.
 Provider image overrides are superseded; custom user-created harness configs
-remain user-owned, and existing sandboxes retain their pinned images. A release
+remain user-owned, and existing sandboxes retain their pinned bundles. A release
 from before bundles names none and still parses — the CLI reads older
 servers' manifests — but a server refuses to load one: it has no bundle to
 read any harness's manifest from, so `dev:released-images` needs a release
@@ -40,8 +42,8 @@ The CLI can stage directly from the manifest without executing a development
 server to discover images. Direct server startup stages the same image set
 before initializing services, while its startup endpoint reports the download.
 Pool provisioning subsequently imports cached container images before making a
-pool available. Harness seeding reads metadata from the selected harness images and fails
-startup if inspection fails. The manifest supplies the seed set even when the
+pool available. Harness seeding reads metadata from the selected release's
+bundles and fails startup if inspection fails. The manifest supplies the seed set even when the
 development binary knows about additional harnesses.
 
 `discobox-server manifest` exports the compiled image inventory. The release

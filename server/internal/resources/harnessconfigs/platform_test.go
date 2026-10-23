@@ -15,8 +15,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	imagetypes "github.com/moby/moby/api/types/image"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/harness"
@@ -94,10 +92,9 @@ func labelArch(t *testing.T, image v1.Image) string {
 	return config.Config.Labels["arch"]
 }
 
-// A release image is published for several platforms, and its index says
-// which: the harness records every one, so a pool of any of them runs it
-// (ADR 0145 §1). The attestation manifests a build adds are not platforms.
-// Its labels are read from the platform a pool on this machine hosts.
+// The platform bundle is published for several platforms, and its index says
+// which; the attestation manifests a build adds are not platforms. Its labels
+// are read from the platform a pool on this machine hosts.
 func TestPublishedImageReadsAnIndexsPlatforms(t *testing.T) {
 	pool := platform.Pool()
 	other := "riscv64"
@@ -119,9 +116,8 @@ func TestPublishedImageReadsAnIndexsPlatforms(t *testing.T) {
 	}
 }
 
-// An image not published for this machine's platform still declares the same
-// harness: its labels are read from a platform it is published for, and it
-// records only that one.
+// A bundle not published for this machine's platform still declares the same
+// manifest: its labels are read from a platform it is published for.
 func TestPublishedImageReadsAnotherPlatformsLabels(t *testing.T) {
 	descriptor, _ := pushIndex(t, v1.Platform{OS: "linux", Architecture: "riscv64"})
 	image, platforms, err := publishedImage(descriptor)
@@ -136,42 +132,48 @@ func TestPublishedImageReadsAnotherPlatformsLabels(t *testing.T) {
 	}
 }
 
-// Registration records what the image is published for, as inspection read it.
-func TestCreateHarnessConfigRecordsWhatTheImagePublishes(t *testing.T) {
+// A manifest file's registration records the one platform its template runs
+// on and the kind it declares, as inspection read them, and pins the file's
+// digest; it has no bundle.
+func TestCreateHarnessConfigRecordsAManifestFilesPlatform(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
-	const image = "ghcr.io/example/harness:v1"
-	published := platform.NewSet(platform.Platform{OS: "linux", Arch: "amd64"}, platform.Platform{OS: "linux", Arch: "arm64"})
+	const file = "file:///overlays/darwin-arm64/manifest.json"
+	darwin := platform.NewSet(platform.Platform{OS: "darwin", Arch: "arm64"})
 	inspector := &stubInspector{byImage: map[string]imageMetadata{
-		image: {Digest: "sha256:one", Platforms: published, ImageMetadata: harness.ImageMetadata{Harness: &harness.Image{ID: "example", Name: "Example"}}},
+		file: {Digest: "sha256:file", Platforms: darwin, ImageMetadata: harness.ImageMetadata{
+			ImageKind: platform.DiscoVM("vz"), Harness: &harness.Image{ID: "example", Name: "Example"},
+		}},
 	}}
 	svc := &Service{store: st, inspector: inspector, harnesses: testReferences}
-	config, err := svc.CreateHarnessConfig(ctx, "project-1", services.CreateHarnessConfigBody{Image: image, Bundle: apigen.NewOptString(image)})
+	config, err := svc.CreateHarnessConfig(ctx, "project-1", services.CreateHarnessConfigBody{Image: apigen.NewOptString(file)})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if config.Platforms.String() != published.String() {
-		t.Fatalf("platforms = %q, want %q", config.Platforms, published)
+	if config.Platforms.String() != darwin.String() || config.ImageKind != platform.DiscoVM("vz") {
+		t.Fatalf("platforms = %q kind = %v, want %q and discovm/vz", config.Platforms, config.ImageKind, darwin)
+	}
+	if config.Image != file || config.ImageDigest != "sha256:file" || config.Bundle != "" || config.BundleDigest != "" {
+		t.Fatalf("config = %+v, want the manifest file pinned and no bundle", config)
 	}
 }
 
-// A built-in recorded before platforms were — or with a single-platform
-// development image — is rewritten with what its image now publishes, even
-// when its reference and digest have not moved.
+// A built-in recorded with the platforms its runnable image was published for
+// is rewritten with none, even when its reference and digest have not moved: a
+// bundle's steps select the platform they run on, which rules no pool out.
 func TestSeedBuiltInsRewritesABuiltInWhosePlatformsMoved(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
-	const image = "discobox-harness-codex:v1"
+	const bundle = "discobox-harness-codex:v1"
 	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "codex", Name: "Codex", BuiltIn: true,
-		Bundle: image, BundleDigest: "sha256:same",
-		Image: image, ImageDigest: "sha256:same", RunCommand: []string{"codex"},
+		Bundle: bundle, BundleDigest: "sha256:same", ImageKind: platform.OCI, RunCommand: []string{"codex"},
+		Platforms: platform.NewSet(platform.Platform{OS: "linux", Arch: "amd64"}, platform.Platform{OS: "linux", Arch: "arm64"}),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	published := platform.NewSet(platform.Platform{OS: "linux", Arch: "amd64"}, platform.Platform{OS: "linux", Arch: "arm64"})
-	inspector := &stubInspector{byImage: map[string]imageMetadata{image: {Digest: "sha256:same", Platforms: published}}}
-	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"codex": image})}
+	inspector := &stubInspector{byImage: map[string]imageMetadata{bundle: {Digest: "sha256:same"}}}
+	svc := &Service{store: st, inspector: inspector, harnesses: bundleReferences(map[string]string{"codex": bundle})}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -179,65 +181,7 @@ func TestSeedBuiltInsRewritesABuiltInWhosePlatformsMoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Platforms.String() != published.String() {
-		t.Fatalf("platforms = %q, want %q", got.Platforms, published)
-	}
-}
-
-// A multi-arch image pulled into this machine's daemon is reported there as
-// the daemon's one platform; its registry, asked by the digest the daemon
-// recorded, says what it is published for. A registry that cannot be asked
-// answers nothing — which rules nothing out — rather than narrowing it.
-func TestRegistryPlatformsOfAPulledImage(t *testing.T) {
-	descriptor, tag := pushIndex(t,
-		v1.Platform{OS: "linux", Architecture: "amd64"},
-		v1.Platform{OS: "linux", Architecture: "arm64"},
-	)
-	pulled := tag.Context().Digest(descriptor.Digest.String()).String()
-	if got := registryPlatforms(context.Background(), pulled); got.String() != "linux/amd64, linux/arm64" {
-		t.Fatalf("platforms = %q, want both the index publishes", got)
-	}
-	if got := registryPlatforms(context.Background(), "127.0.0.1:1/gone@"+descriptor.Digest.String()); got != nil {
-		t.Fatalf("platforms = %q from an unreachable registry, want none", got)
-	}
-}
-
-// manifestOf is one entry of the manifest list a daemon reports for an image.
-func manifestOf(kind imagetypes.ManifestKind, os, arch string, available bool) imagetypes.ManifestSummary {
-	manifest := imagetypes.ManifestSummary{Kind: kind, Available: available}
-	if kind == imagetypes.ManifestKindImage {
-		manifest.ImageData = &imagetypes.ImageProperties{Platform: ocispec.Platform{OS: os, Architecture: arch}}
-	}
-	return manifest
-}
-
-// The daemon's manifest list says what a local image is published for. A
-// pulled multi-platform image lists every platform its index has, held here or
-// not; an image built here lists the one it was built for — what a development
-// build makes — and attestations are not platforms. A daemon that reports no
-// list answers nil, for the fallback to decide.
-func TestLocalPlatformsReadTheDaemonsManifestList(t *testing.T) {
-	pulled := imagetypes.InspectResponse{Manifests: []imagetypes.ManifestSummary{
-		manifestOf(imagetypes.ManifestKindImage, "linux", "amd64", true),
-		manifestOf(imagetypes.ManifestKindImage, "linux", "arm64", false),
-		manifestOf(imagetypes.ManifestKindAttestation, "", "", true),
-	}}
-	if got := localPlatforms(pulled); got.String() != "linux/amd64, linux/arm64" {
-		t.Fatalf("pulled image platforms = %q, want both its index lists", got)
-	}
-	built := imagetypes.InspectResponse{Manifests: []imagetypes.ManifestSummary{
-		manifestOf(imagetypes.ManifestKindImage, "linux", "amd64", true),
-		manifestOf(imagetypes.ManifestKindAttestation, "", "", true),
-	}}
-	if got := localPlatforms(built); got.String() != "linux/amd64" {
-		t.Fatalf("built image platforms = %q, want the one it was built for", got)
-	}
-	if got := localPlatforms(imagetypes.InspectResponse{Os: "linux", Architecture: "amd64"}); got != nil {
-		t.Fatalf("platforms = %q with no manifest list, want nil for the fallback", got)
-	}
-	// Without a manifest list, an image built here — no registry digest — is
-	// the one platform the daemon reports.
-	if got := localPlatformsWithoutManifests(context.Background(), imagetypes.InspectResponse{Os: "linux", Architecture: "arm64"}); got.String() != "linux/arm64" {
-		t.Fatalf("platforms = %q, want the built image's own", got)
+	if len(got.Platforms) != 0 {
+		t.Fatalf("platforms = %q, want none", got.Platforms)
 	}
 }

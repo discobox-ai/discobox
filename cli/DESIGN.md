@@ -3232,7 +3232,7 @@ the round trip back. See
 interactive configure flow. The server owns applying the result; the CLI only
 sequences the calls and hands the user the terminal in between:
 
-0. The ports the harness image declares for its flow are bound on this machine
+0. The ports the harness bundle declares for its flow are bound on this machine
    and forwarded into the configure sandbox (`forwardConfigurePorts`,
    `harness_configure_ports.go`) — exactly, or reported as unavailable in the
    image's own words, because a sign-in callback is sent to that number and no

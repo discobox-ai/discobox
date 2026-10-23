@@ -492,7 +492,7 @@ discobox tools      run git, ssh, VS Code, or Zed against a box
 discobox secret     secrets, grants, and approval requests
 discobox configure  enable, disable, and set the default harness
 discobox id         print this machine's peer ID and the server's
-discobox admin      pools, projects, harness images, the server and its status
+discobox admin      pools, projects, harnesses, the server and its status
 ```
 
 Only `discobox new` makes a box: its prompt is the words after it, or `-p` for

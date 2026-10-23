@@ -88,10 +88,10 @@ type RuntimeProvider interface {
 	// container needs no credentials. Before replacing or creating an agent,
 	// begin must succeed: the reconciler closes scheduling before preload.
 	// images is the project image set to load from the local cache.
-	EnsurePool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, images []string, begin func(context.Context) error) error
+	EnsurePool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, begin func(context.Context) error) error
 	// RepairPool replaces an unhealthy pool runtime in place, preserving pool
 	// identity and pool-local state.
-	RepairPool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, reason string, images []string, begin func(context.Context) error) error
+	RepairPool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, reason string, begin func(context.Context) error) error
 	RemovePool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
 	// AcquirePoolAgentClient returns an HTTP client lease that reaches the pool
 	// agent API for the pool.
@@ -170,11 +170,11 @@ func (p *Provider) RemoveProject(context.Context, string) error {
 	return nil
 }
 
-func (p *Provider) ReconcilePool(ctx context.Context, manager sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, images []string, begin func(context.Context) error) error {
+func (p *Provider) ReconcilePool(ctx context.Context, manager sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, begin func(context.Context) error) error {
 	if manager == nil {
 		return fmt.Errorf("pool manager is required")
 	}
-	if err := p.runtimeProvider.EnsurePool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool), images, begin); err != nil {
+	if err := p.runtimeProvider.EnsurePool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool), begin); err != nil {
 		return err
 	}
 	// Best-effort: hand the now-ready pool-agent the authoritative pool set so it
@@ -260,11 +260,11 @@ func syncWithRetry(ctx context.Context, attempt func(context.Context) error) err
 	return err
 }
 
-func (p *Provider) RepairPool(ctx context.Context, manager sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string, images []string, begin func(context.Context) error) error {
+func (p *Provider) RepairPool(ctx context.Context, manager sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string, begin func(context.Context) error) error {
 	if manager == nil {
 		return fmt.Errorf("pool manager is required")
 	}
-	return p.runtimeProvider.RepairPool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool), reason, images, begin)
+	return p.runtimeProvider.RepairPool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool), reason, begin)
 }
 
 func (p *Provider) RemovePool(ctx context.Context, _ sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error {

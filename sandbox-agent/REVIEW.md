@@ -26,11 +26,13 @@
   a new group that guards a host device, has to check the GID the same way,
   not assume it.
 
-- **A feature that differs on Ubuntu is checked on Ubuntu.** The images are
-  Debian 13, so nothing in their build provisions a feature's `ubuntu:` list
-  or a step selected by `when: {distro: [ubuntu]}` — the paths exe.dev's and
-  boxd's Ubuntu 24.04 machines take. `task build:ubuntu-platform` builds the
-  platform on an Ubuntu 24.04 base; see those steps apply there.
+- **A feature that differs on Ubuntu is checked on Ubuntu.** The sandbox base
+  image is Debian 13, so no box of a Docker pool provisions a feature's
+  `ubuntu:` list or a step selected by `when: {distro: [ubuntu]}` — the paths
+  exe.dev's and boxd's Ubuntu 24.04 machines take. `task
+  build:ubuntu-sandbox-base` builds the base on Ubuntu 24.04; point a pool at
+  it (`DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE`) and see those steps apply in a box
+  of it.
 
 - **A file a running daemon reads only as it starts names it in `restart`.**
   A booted box may have started the daemon before its feature was provisioned

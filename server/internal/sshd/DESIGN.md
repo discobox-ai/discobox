@@ -98,7 +98,7 @@ pty's terminal type fills `TERM` if the client sent none) and dispatches
   login shell with `-lc <cmd>` (`CreateRequest.ShellCommandLine` in
   `sandbox-agent/execs`; see `sandbox-agent/DESIGN.md`).
 - `subsystem sftp` → an exec of `/usr/lib/openssh/sftp-server` (installed by
-  the sandbox-agent image), never with a pty. Any other subsystem is refused.
+  the platform's core feature), never with a pty. Any other subsystem is refused.
 
 `attach` calls `AcquireSandboxHTTPClient` with `exec:read`/`exec:write`, POSTs
 a `CreateSandboxExecRequest` to the pool-agent target

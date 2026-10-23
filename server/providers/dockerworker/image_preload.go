@@ -11,10 +11,12 @@ import (
 	"github.com/moby/moby/client"
 )
 
-// preloadImages loads only images already staged on this machine. Missing
-// images are left for the sandbox's on-demand pull; there is no prepull loop.
-func (e *Engine) preloadImages(ctx context.Context, lease *DockerClientLease, poolID string, images []string) error {
-	if len(images) == 0 || e.cfg.ImageCache == nil {
+// preloadImage loads the sandbox base image, every sandbox container's, when
+// it is already staged on this machine. One that is not is left for the
+// sandbox's on-demand pull; there is no prepull loop. No harness is an image
+// (ADR 26-10-16-423 §10), so it is the one image a sandbox runs.
+func (e *Engine) preloadImage(ctx context.Context, lease *DockerClientLease, poolID, image string) error {
+	if image == "" || e.cfg.ImageCache == nil {
 		return nil
 	}
 	if lease.Locality != DaemonOnThisMachine {
@@ -28,28 +30,23 @@ func (e *Engine) preloadImages(ctx context.Context, lease *DockerClientLease, po
 	if !ok {
 		return nil
 	}
-	for _, image := range images {
-		if image == "" {
-			continue
-		}
-		if _, err := lease.Client.ImageInspect(ctx, image); err == nil {
-			continue
-		} else if !cerrdefs.IsNotFound(err) {
-			return err
-		}
-		cached, err := e.cfg.ImageCache.Lookup(image, platform)
-		if errors.Is(err, imagecache.ErrNotStaged) {
-			continue
-		} else if err != nil {
-			return err
-		}
-		err = e.importCachedImage(ctx, lease.Client, poolID, image, cached, usesContainerdStore(info.Info), sandbox.PoolPhasePreloadingImages)
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err != nil {
-			return fmt.Errorf("preload image %q: %w", image, err)
-		}
+	if _, err := lease.Client.ImageInspect(ctx, image); err == nil {
+		return nil
+	} else if !cerrdefs.IsNotFound(err) {
+		return err
+	}
+	cached, err := e.cfg.ImageCache.Lookup(image, platform)
+	if errors.Is(err, imagecache.ErrNotStaged) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	err = e.importCachedImage(ctx, lease.Client, poolID, image, cached, usesContainerdStore(info.Info), sandbox.PoolPhasePreloadingImages)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("preload image %q: %w", image, err)
 	}
 	return nil
 }

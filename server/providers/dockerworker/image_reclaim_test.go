@@ -75,7 +75,7 @@ func TestConfiguredImageRetentionReachesThePoolAgent(t *testing.T) {
 func TestImageKeepReferencesCoverThePoolImageAndDevelopmentImages(t *testing.T) {
 	sync, err := newDevelopmentImageSynchronizer([]devimage.Image{
 		{Reference: "discobox-sandbox-agent:dev-abc", ID: "sha256:abc"},
-	}, func() (*client.Client, error) { return nil, errors.New("no source daemon in unit tests") })
+	}, nil, func() (*client.Client, error) { return nil, errors.New("no source daemon in unit tests") })
 	if err != nil {
 		t.Fatalf("new synchronizer: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestImageReclaimThrottleAllowsOnePassPerIntervalPerPool(t *testing.T) {
 func TestDevelopmentDaemonsUseTheDevelopmentRetentionAndCadence(t *testing.T) {
 	sync, err := newDevelopmentImageSynchronizer([]devimage.Image{
 		{Reference: "discobox-sandbox-agent:dev-abc", ID: "sha256:abc"},
-	}, func() (*client.Client, error) { return nil, errors.New("no source daemon in unit tests") })
+	}, nil, func() (*client.Client, error) { return nil, errors.New("no source daemon in unit tests") })
 	if err != nil {
 		t.Fatalf("new synchronizer: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestDevelopmentDaemonsUseTheDevelopmentRetentionAndCadence(t *testing.T) {
 func TestExplicitImageRetentionOverridesTheDevelopmentDefault(t *testing.T) {
 	sync, err := newDevelopmentImageSynchronizer([]devimage.Image{
 		{Reference: "discobox-sandbox-agent:dev-abc", ID: "sha256:abc"},
-	}, func() (*client.Client, error) { return nil, errors.New("no source daemon in unit tests") })
+	}, nil, func() (*client.Client, error) { return nil, errors.New("no source daemon in unit tests") })
 	if err != nil {
 		t.Fatalf("new synchronizer: %v", err)
 	}

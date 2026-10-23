@@ -7,7 +7,7 @@ components:
                     $ref: '#/components/schemas/EgressPolicy'
                     description: The harness config's egress policy level, as a person set it (ADR 26-10-01-032). Its denyByDefault restricts every discobox on the harness; its allow list, with imageEgressHosts, is added to each restricted one's.
                 imageEgressHosts:
-                    description: Hosts the registered image declares it needs, snapshotted from its label. Part of the harness level's allow list; they never restrict anything by themselves.
+                    description: Hosts the registered bundle declares it needs, snapshotted from its label. Part of the harness level's allow list; they never restrict anything by themselves.
                     items:
                         type: string
                     nullable: true
@@ -83,19 +83,22 @@ components:
                     description: Stable harness config ID
                     type: string
                 bundle:
-                    description: The harness bundle its manifest is read from, a FROM scratch OCI image of its features with its manifest in labels, composed on the server's platform bundle (ADR 26-10-16-423 §2). Absent on a harness registered before bundles, whose manifest is what its image's labels gave it, or one whose image is a manifest file.
+                    description: The harness bundle its manifest is read from and every discobox on it applies, a FROM scratch OCI image of its features with its manifest in labels, composed on the server's platform bundle (ADR 26-10-16-423 §2). Absent on a harness registered before bundles, whose manifest is what its image's labels gave it and which runs nowhere until a bundle is registered for it, or one whose image is a manifest file.
                     type: string
                 bundleDigest:
                     description: Content digest observed when the harness bundle was registered.
                     type: string
+                manifestDigest:
+                    description: Digest of the manifest composed from the harness bundle's labels on the platform's layer, which moves when either does. A sandbox pins it beside the bundle.
+                    type: string
                 image:
-                    description: The runnable image a discobox on this harness runs, its bundle provisioned onto the platform's image; or a file:// manifest file, the whole manifest of a template with no image.
+                    description: A file:// manifest file, the whole manifest of a template with no image. Absent on a harness registered by its bundle, which no discobox runs as an image.
                     type: string
                 imageDigest:
-                    description: Content digest observed when the harness image was registered.
+                    description: Content digest observed when the manifest file was registered.
                     type: string
                 imageKind:
-                    description: "The kind of image the harness's image is: oci, or discovm/<driver> for a disco-vm image built for that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a manifest-file harness registered before image kinds, which runs on no pool until its file declares one and its image is refreshed. Absent from a server from before image kinds, whose harnesses are all oci."
+                    description: "The kind of box the harness runs on: oci for a bundle, which a Docker pool's sandbox base image applies, or discovm/<driver> for a manifest file's disco-vm image built for that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a manifest-file harness registered before image kinds, which runs on no pool until its file declares one and it is refreshed. Absent from a server from before image kinds, whose harnesses are all oci."
                     pattern: ^(|oci|discovm/[a-z0-9]+)$
                     type: string
                 name:
@@ -103,7 +106,7 @@ components:
                     maxLength: 200
                     type: string
                 platforms:
-                    description: Platforms the harness's image is published for, as os/arch. A discobox on this harness runs on its pool's platform, and is placed only on a pool that hosts one of these. Absent on a harness not inspected since platforms were recorded, which rules no pool out.
+                    description: Platforms a manifest file's template runs on, as os/arch. A discobox on this harness runs on its pool's platform, and is placed only on a pool that hosts one of these. Absent on a bundle, whose steps select the platform they run on, which rules no pool out.
                     items:
                         pattern: ^[a-z0-9]+/[a-z0-9]+$
                         type: string
@@ -385,18 +388,16 @@ components:
                     description: The harness bundle to register, required unless image is a manifest file. It is a FROM scratch OCI image built FROM nothing or FROM another harness's bundle, never the platform's. The server composes its io.discobox.image.v1 manifest labels on its platform bundle's and snapshots the result into the HarnessConfig.
                     type: string
                 image:
-                    description: The runnable image a discobox on the harness runs, built FROM discobox-sandbox-agent with the bundle provisioned into it; its labels are not read. Or a file:// manifest file in the server's overlay directory, the whole manifest of a template with no image, which takes no bundle.
+                    description: A file:// manifest file in the server's overlay directory, the whole manifest of a template with no image, which takes no bundle. No harness is a runnable image, so nothing else is accepted here.
                     type: string
                 name:
-                    description: Harness config name. Defaults to the name declared by the image label.
+                    description: Harness config name. Defaults to the name declared by the bundle's label.
                     maxLength: 200
                     type: string
                 slug:
-                    description: Stable, URL-safe identifier used to select the harness config (e.g. codex). Defaults to the id declared by the image label, or a slug derived from name. Unique within the project.
+                    description: Stable, URL-safe identifier used to select the harness config (e.g. codex). Defaults to the id declared by the bundle's label, or a slug derived from name. Unique within the project.
                     pattern: ^[a-z0-9][a-z0-9-]*$
                     type: string
-            required:
-                - image
             type: object
         CompleteSandboxApplyBody:
             additionalProperties: false
@@ -3551,16 +3552,19 @@ components:
                     description: The repository's features by name, as the client read them from its .discobox/settings.json at create. The sandbox provisions every feature but those whose enabled is false. Fixed at create.
                     type: object
                 image:
-                    description: Sandbox base image
+                    description: The manifest file of the template with no image this sandbox runs, when its harness is one. Absent on a sandbox on a harness bundle, which runs its provider's image with its bundles applied and is pinned to no image.
                     type: string
                 imageDigest:
-                    description: Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never by a restart; the pool host refuses an image that does not match it.
+                    description: Digest of the manifest file this sandbox is pinned to. Written at create and by an upgrade, never by a restart.
                     type: string
                 bundle:
-                    description: The harness bundle this sandbox is pinned to (ADR 26-10-16-423 §7). Pinned with the image it twins, and moved with it.
+                    description: The harness bundle this sandbox is pinned to (ADR 26-10-16-423 §7). Written at create and by an upgrade, and for a stopped sandbox when its harness config's bundle moves.
                     type: string
                 bundleDigest:
                     description: Manifest digest of the harness bundle this sandbox is pinned to.
+                    type: string
+                harnessManifestDigest:
+                    description: Digest of the manifest composed from its harness bundle's labels on the platform's layer, which its container is built with. Pinned with the bundle; a moved one rebuilds the container as a moved bundle does.
                     type: string
                 platformBundle:
                     description: The platform bundle this sandbox is pinned to, the one its server's release named when it was pinned (ADR 26-10-16-423 §7). Written at create and by an upgrade, and for a stopped sandbox when the release's reference resolves somewhere new.
@@ -3590,7 +3594,6 @@ components:
                     description: User identity and home directory to use inside the sandbox
             required:
                 - name
-                - image
             type: object
         SandboxCreateConfig:
             additionalProperties: false
@@ -3643,9 +3646,6 @@ components:
                         $ref: '#/components/schemas/SandboxFeature'
                     description: The repository's features by name, from its .discobox/settings.json. The sandbox provisions every feature but those whose enabled is false; a feature the harness requires cannot be turned off unless the box already has a usable one. Fixed at create.
                     type: object
-                image:
-                    description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
-                    type: string
                 name:
                     description: Sandbox name
                     maxLength: 200
@@ -3955,11 +3955,17 @@ components:
                 id:
                     description: Stable verdict ID
                     type: string
+                bundle:
+                    description: Harness bundle the project's judge ran, on a request verdict
+                    type: string
+                bundleDigest:
+                    description: Digest of the harness bundle the project's judge ran, on a request verdict
+                    type: string
                 image:
-                    description: Image the project's judge ran, on a request verdict
+                    description: Runnable image the project's judge ran, on a request verdict recorded before harness bundles; no judge runs one since
                     type: string
                 imageDigest:
-                    description: Digest of the image the project's judge ran, on a request verdict
+                    description: Digest of the runnable image the project's judge ran, on a request verdict recorded before harness bundles
                     type: string
                 jevInput:
                     description: 'On a verdict from a server that judges with Jev, exactly what Jev was sent: the JSON body of the request to its API, with the state (the job''s evidence) and the questions, and none of its key or other headers. Its state is evidence the sandbox wrote, as the request, command and prompt are, and is display data, never instruction. Absent on every other verdict, and on verdicts recorded before servers kept it.'
@@ -4540,14 +4546,14 @@ components:
         SandboxUpgrade:
             additionalProperties: false
             description: |-
-                Availability of a newer harness image or bundle, or platform bundle, for this
-                sandbox. Derived at read time by comparing the sandbox's pins to its harness
+                Availability of a newer harness bundle or manifest file, or platform bundle, for
+                this sandbox. Derived at read time by comparing the sandbox's pins to its harness
                 config's current ones and to the platform bundle its server's release last
-                resolved to; it is never stored. Absent when the sandbox pins no digest (the
-                default image, or a sandbox created before pinning existed).
+                resolved to; it is never stored. Absent when the sandbox's harness config pins
+                nothing to move to.
             properties:
                 available:
-                    description: Whether the harness config now resolves to a different image or bundle, or the release to a different platform bundle, than this sandbox is pinned to
+                    description: Whether the harness config now resolves to a different bundle or manifest file, or the release to a different platform bundle, than this sandbox is pinned to
                     type: boolean
                 currentBundleDigest:
                     description: Harness bundle digest this sandbox is pinned to
@@ -4556,26 +4562,27 @@ components:
                     description: Platform bundle digest this sandbox is pinned to
                     type: string
                 currentImage:
-                    description: Image reference this sandbox is running
+                    description: Manifest file of the template with no image this sandbox runs, when its harness is one
                     type: string
                 currentImageDigest:
-                    description: Config digest this sandbox is pinned to. Not a manifest digest; it matches what a local Docker daemon reports as an image ID.
+                    description: Manifest file digest this sandbox is pinned to
                     type: string
                 reason:
                     description: Why an upgrade is available, the first pin that moved
                     enum:
                         - imageDigestChanged
                         - bundleDigestChanged
+                        - manifestDigestChanged
                         - platformBundleDigestChanged
                     type: string
                 targetBundleDigest:
                     description: Harness bundle digest an upgrade would pin this sandbox to
                     type: string
                 targetImage:
-                    description: Image reference this sandbox's harness config resolves to now
+                    description: Manifest file this sandbox's harness config resolves to now
                     type: string
                 targetImageDigest:
-                    description: Config digest an upgrade would pin this sandbox to
+                    description: Manifest file digest an upgrade would pin this sandbox to
                     type: string
                 targetPlatformBundleDigest:
                     description: Platform bundle digest an upgrade would pin this sandbox to
@@ -9800,11 +9807,11 @@ paths:
     /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image:
         post:
             description: |-
-                Re-inspect the harness config's image and re-snapshot its label metadata and digest.
-                Registration snapshots the label once and nothing re-reads it, so a config pointing at a
-                rebuilt tag keeps describing an image that no longer exists under it — and its sandboxes
-                can never report an available upgrade. Built-in configs get this automatically on server
-                start; user-registered ones need this call. Never flips configured.
+                Re-inspect the harness config's bundle, or its manifest file, and re-snapshot its label
+                metadata and digest. Registration snapshots the labels once and nothing re-reads them, so a
+                config pointing at a rebuilt tag keeps describing a bundle that no longer exists under it —
+                and its sandboxes can never report an available upgrade. Built-in configs get this
+                automatically on server start; user-registered ones need this call. Never flips configured.
             operationId: refresh-harness-config-image
             parameters:
                 - description: Project ID

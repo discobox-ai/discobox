@@ -53,8 +53,9 @@ func (f *fakeSandboxes) CreateSandbox(ctx context.Context, projectID string, inp
 	}
 	if sandbox.HarnessConfigID != nil {
 		if config, err := f.store.GetHarnessConfig(ctx, projectID, *sandbox.HarnessConfigID); err == nil {
-			sandbox.Image = config.Image
-			sandbox.ImageDigest = config.ImageDigest
+			sandbox.Bundle = config.Bundle
+			sandbox.BundleDigest = config.BundleDigest
+			sandbox.HarnessManifestDigest = config.ManifestDigest
 		}
 	}
 	if err := f.store.CreateSandbox(ctx, sandbox); err != nil {
@@ -154,7 +155,7 @@ func defaultHarness(t *testing.T, appStore *store.Store, slug, digest string) *m
 	ctx := context.Background()
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: slug, Name: slug, BuiltIn: true,
-		Image: "discobox-harness-" + slug + ":local", ImageDigest: digest,
+		Bundle: "discobox-harness-" + slug + ":local", BundleDigest: digest,
 		RunCommand: []string{slug}, Configured: true,
 	}
 	if err := appStore.CreateHarnessConfig(ctx, config); err != nil {
@@ -262,7 +263,7 @@ func TestAJudgeIsNotTheProjectsWork(t *testing.T) {
 }
 
 // Change what the project runs and the judge is replaced with it, because the
-// harness is its image, its settings and the credential it answers with.
+// harness is its bundle, its settings and the credential it answers with.
 func TestAJudgeFollowsTheDefaultHarness(t *testing.T) {
 	ctx := context.Background()
 	service, appStore, sandboxes := newJudgeTest(t)
@@ -284,16 +285,29 @@ func TestAJudgeFollowsTheDefaultHarness(t *testing.T) {
 		t.Fatalf("created = %+v, want a judge running the new default", sandboxes.created)
 	}
 
-	// The same harness, re-pinned to another image.
-	second.ImageDigest = "sha256:three"
+	// The same harness, re-pinned to another build of its bundle.
+	second.BundleDigest = "sha256:three"
 	if err := appStore.UpdateHarnessConfig(ctx, second); err != nil {
 		t.Fatalf("re-pin harness: %v", err)
 	}
 	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
-		t.Fatalf("Reconcile() after the image moved: %v", err)
+		t.Fatalf("Reconcile() after the bundle moved: %v", err)
 	}
-	if len(sandboxes.created) != 3 || sandboxes.created[2].ImageDigest != "sha256:three" {
-		t.Fatalf("created = %+v, want a judge on the image the harness is now pinned to", sandboxes.created)
+	if len(sandboxes.created) != 3 || sandboxes.created[2].BundleDigest != "sha256:three" {
+		t.Fatalf("created = %+v, want a judge on the bundle the harness is now pinned to", sandboxes.created)
+	}
+
+	// The same bundle, composed on a platform whose layer moved: the
+	// manifest a judge is built with moved, and no bundle digest did.
+	second.ManifestDigest = "sha256:recomposed"
+	if err := appStore.UpdateHarnessConfig(ctx, second); err != nil {
+		t.Fatalf("re-snapshot harness: %v", err)
+	}
+	if _, err := service.Reconcile(ctx, "project-1"); err != nil {
+		t.Fatalf("Reconcile() after the manifest moved: %v", err)
+	}
+	if len(sandboxes.created) != 4 || sandboxes.created[3].HarnessManifestDigest != "sha256:recomposed" {
+		t.Fatalf("created = %+v, want a judge on the manifest the harness now composes", sandboxes.created)
 	}
 }
 
@@ -991,9 +1005,9 @@ func TestEveryAnswerIsRecordedBeforeItGoesBack(t *testing.T) {
 			if v.Role != judge.Role || v.PromptVersion != judge.PromptVersion || !strings.Contains(v.Prompt, "open a pull request in org/repo") {
 				t.Fatalf("role, version, prompt = %q, %q, %q, want the question as it was put", v.Role, v.PromptVersion, v.Prompt)
 			}
-			if v.JudgeSandboxID != judgeSandbox.ID || v.HarnessConfigID != config.ID || v.Image != config.Image || v.ImageDigest != "sha256:one" {
+			if v.JudgeSandboxID != judgeSandbox.ID || v.HarnessConfigID != config.ID || v.Bundle != config.Bundle || v.BundleDigest != "sha256:one" || v.Image != "" {
 				t.Fatalf("judge = %q %q %q %q, want the discobox that answered and what it ran",
-					v.JudgeSandboxID, v.HarnessConfigID, v.Image, v.ImageDigest)
+					v.JudgeSandboxID, v.HarnessConfigID, v.Bundle, v.BundleDigest)
 			}
 			if v.LatencyMS < fake.delay.Milliseconds() {
 				t.Fatalf("latency = %dms, want the round trip, at least the %s the judge thought", v.LatencyMS, fake.delay)

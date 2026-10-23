@@ -914,7 +914,7 @@ func TestHarnessCreateSendsCreateOnlyFileFlag(t *testing.T) {
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{
 		"--server", server.URL, "--project", "project-1", "admin", "harnesses", "create",
-		"--name", "Custom", "--image", "example.com/custom:latest",
+		"--name", "Custom", "--bundle", "example.com/custom:latest",
 		"--file", `.claude/settings.json={"theme":"dark"}`,
 		"--create-only-file", ".claude/settings.json",
 		"--file", ".github/config=ok",
@@ -967,7 +967,7 @@ func TestHarnessCreateSendsFilesFlag(t *testing.T) {
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{
 		"--server", server.URL, "--project", "project-1", "admin", "harnesses", "create",
-		"--name", "Custom", "--image", "example.com/custom:latest",
+		"--name", "Custom", "--bundle", "example.com/custom:latest",
 		"--file", `.claude/settings.json={"theme":"dark"}`,
 	})
 
@@ -1008,7 +1008,7 @@ func TestHarnessCreateAndUpdateSendTheBundle(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	for _, args := range [][]string{
-		{"create", "--name", "Custom", "--bundle", "example.com/custom:v1", "--image", "example.com/custom-image:v1"},
+		{"create", "--name", "Custom", "--bundle", "example.com/custom:v1"},
 		{"update", harnessID, "--bundle", "example.com/custom:v2"},
 	} {
 		cmd := NewRootCommand()
@@ -1019,8 +1019,8 @@ func TestHarnessCreateAndUpdateSendTheBundle(t *testing.T) {
 			t.Fatalf("execute harnesses %s: %v", args[0], err)
 		}
 	}
-	if gotCreate["bundle"] != "example.com/custom:v1" || gotCreate["image"] != "example.com/custom-image:v1" {
-		t.Fatalf("create body = %v, want the bundle beside the image", gotCreate)
+	if _, image := gotCreate["image"]; gotCreate["bundle"] != "example.com/custom:v1" || image {
+		t.Fatalf("create body = %v, want the bundle and no image", gotCreate)
 	}
 	if gotUpdate["bundle"] != "example.com/custom:v2" {
 		t.Fatalf("update body = %v, want the bundle", gotUpdate)

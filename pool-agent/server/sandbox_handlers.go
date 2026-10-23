@@ -298,8 +298,7 @@ func sandboxInstanceFromRuntime(sb *sandboxruntime.Sandbox, config *workerapimod
 	normalizeSandboxResponse(sb)
 	if config == nil {
 		config = &workerapimodel.SandboxConfig{
-			Image: workerapi.NewOptString(sb.Image),
-			Env:   workerapi.NewOptSandboxConfigEnv(workerapi.SandboxConfigEnv(sb.Env)),
+			Env: workerapi.NewOptSandboxConfigEnv(workerapi.SandboxConfigEnv(sb.Env)),
 		}
 	}
 	return workerapimodel.PoolSandboxInstance{

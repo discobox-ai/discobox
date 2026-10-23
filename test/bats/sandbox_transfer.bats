@@ -11,8 +11,10 @@
 # ordering against a recording one -- and none of them can say whether a
 # workspace actually survives the trip.
 #
-# The pool binds the host Docker socket so locally built images are visible
-# without a registry.
+# No harness is a runnable image: every sandbox container is the Docker
+# driver's sandbox base image (discobox-sandbox-base:local, built here and
+# named to the server so boxes do not pull the remote default), with the
+# platform and harness bundles applied by the sandbox agent.
 
 setup_file() {
   REPO_ROOT="$(cd "${BATS_TEST_FILENAME%/*}/../.." && pwd)"
@@ -53,16 +55,18 @@ PY
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   rm -f build/discobox
   (cd cli && go build -o ../build/discobox ./cmd/discobox)
-  # Through the Taskfile rather than docker directly: both agent images are
-  # built FROM a shared base image, and these targets are what know to build it
-  # first. The sandbox agent image is what the stub's runnable image is built
-  # FROM when no `task dev` loop has named a dev build in .env, so a clean
-  # checkout needs it built here; the platform bundle is what the server
-  # composes every harness bundle on.
+  # Through the Taskfile rather than docker directly: the pool image is built
+  # FROM the sandbox base image, and this target is what knows to build that
+  # first; the base is also every sandbox container's image. The platform
+  # bundle is what the server composes every harness bundle on, and what the
+  # agent applies first in every box.
+  #
+  # The bundles must be servable to the pool, which fetches them through the
+  # server's asset API; that API reads OCI layouts or registries, not the
+  # daemon's :local tags.
   go tool task build:pool-agent-image
-  go tool task build:sandbox-agent-image
   go tool task build:platform-bundle
-  go tool task build:harness-stub-image
+  go tool task build:harness-stub-bundle
 
   PORT="$DISCOBOX_BATS_PORT" \
   DISCOBOX_SERVER_LISTEN="unix://$DISCOBOX_BATS_SOCKET,http://127.0.0.1:$DISCOBOX_BATS_PORT" \
@@ -72,6 +76,7 @@ PY
   DISCOBOX_CACHE_DIR="$DISCOBOX_BATS_CACHE_DIR" \
   DISCOBOX_STATE_DIR="$DISCOBOX_BATS_STATE_DIR" \
   DISCOBOX_DOCKER_POOL_IMAGE=discobox-pool-agent:local \
+  DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE=discobox-sandbox-base:local \
   DISPATCHER_ENABLED=true \
   DISPATCHER_POLL_INTERVAL=200ms \
   DISPATCHER_IMMEDIATE_EXECUTION=true \
@@ -139,7 +144,6 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
 }
 
 export TRANSFER_STUB_BUNDLE="discobox-harness-transfer-stub:local"
-export TRANSFER_STUB_IMAGE="discobox-harness-transfer-stub-image:local"
 
 cli() {
   "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default --output json "$@"
@@ -215,7 +219,7 @@ PY
 # project default is where the configure sandbox lands. That makes the seeded
 # default pool the one that has to be healthy, so this file uses it rather than
 # creating a second provider. Its provider already binds the host Docker socket
-# (so locally built harness images are visible) and reads PORT for its
+# (so the locally built sandbox base image is visible) and reads PORT for its
 # control-plane URL; DISCOBOX_DOCKER_POOL_IMAGE points it at the locally built
 # pool-agent instead of an unpublished ghcr tag.
 ensure_pool() {
@@ -238,7 +242,7 @@ ensure_pool() {
 
 # configure_stub runs one full configure of a harness. A harness is only
 # selectable for a sandbox once its configure flow has succeeded, so this is a
-# precondition for having a harness-backed (and therefore image-pinned) sandbox
+# precondition for having a harness-backed (and therefore bundle-pinned) sandbox
 # at all, not something this file is testing.
 configure_stub() {
   local harness="$1" raw status
@@ -249,36 +253,21 @@ configure_stub() {
   return "$status"
 }
 
-# build_transfer_stub builds the stub harness under this file's own tags, with a
-# marker baked into both halves so a second call produces different content
-# under the SAME references: an env in the manifest label each half carries,
-# the bundle's and the runnable image's own copy of it, whose digest is the one
-# a sandbox pins. Both are derived from the shared stub, which setup_file
-# builds, rather than rebuilt from its Dockerfile. Dedicated tags keep this
-# file from clobbering discobox-harness-stub:local and
-# discobox-harness-stub-image:local, which other suites share.
+# build_transfer_stub builds the stub's bundle under this file's own tag, with
+# a marker baked into its manifest label so a second call produces different
+# content under the SAME reference: an env in the label, which moves the
+# bundle's digest, the one a sandbox pins. It is derived from the shared stub
+# bundle, which setup_file builds, rather than rebuilt from its Dockerfile. A
+# dedicated tag keeps this file from clobbering discobox-harness-stub:local,
+# which other suites share.
 build_transfer_stub() {
-  local marker="$1" metadata pair log="${DISCOBOX_BATS_STUB_BUILD_LOG:-$DISCOBOX_BATS_TMP/stub-build.log}"
+  local marker="$1" metadata log="${DISCOBOX_BATS_STUB_BUILD_LOG:-$DISCOBOX_BATS_TMP/stub-build.log}"
   metadata="$(jq -c --arg marker "$marker" '.env.STUB_BUILD_MARKER = $marker' "$REPO_ROOT/test/harness-stub/image.json")"
-  for pair in "discobox-harness-stub:local $TRANSFER_STUB_BUNDLE" "discobox-harness-stub-image:local $TRANSFER_STUB_IMAGE"; do
-    docker build --build-arg BASE="${pair% *}" --build-arg HARNESS_METADATA="$metadata" -t "${pair#* }" - >>"$log" 2>&1 <<'DOCKERFILE' || return
-ARG BASE
-FROM ${BASE}
+  docker build --build-arg HARNESS_METADATA="$metadata" -t "$TRANSFER_STUB_BUNDLE" - >>"$log" 2>&1 <<'DOCKERFILE'
+FROM discobox-harness-stub:local
 ARG HARNESS_METADATA
 LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required}"
 DOCKERFILE
-  done
-}
-
-# sandbox_container_image prints the image ID a sandbox's container was actually
-# built from. This is the ground truth the whole feature is about: the control
-# plane can claim whatever it likes, but the container either runs the pinned
-# image or it does not.
-sandbox_container_image() {
-  local sandbox_id="$1" container
-  container="$(docker ps -aq --filter "label=discobox.sandbox_id=$sandbox_id" | head -1)"
-  [ -n "$container" ] || return 1
-  docker inspect "$container" --format '{{.Image}}'
 }
 
 sandbox_field() {
@@ -337,7 +326,7 @@ sandbox_home() {
   [ -n "$pool_id" ]
 
   build_transfer_stub v1
-  run cli admin harness create --bundle "$TRANSFER_STUB_BUNDLE" --image "$TRANSFER_STUB_IMAGE" --slug transfer-stub --name "Transfer Stub"
+  run cli admin harness create --bundle "$TRANSFER_STUB_BUNDLE" --slug transfer-stub --name "Transfer Stub"
   [ "$status" -eq 0 ]
   run configure_stub transfer-stub
   [ "$status" -eq 0 ]
@@ -355,7 +344,7 @@ sandbox_home() {
   [ -n "$home" ]
   docker exec "$(sandbox_container "$source_id")" sh -lc \
     "mkdir -p '$home/work/nested' && printf 'the-payload-42\n' > '$home/work/nested/keepsake.txt'"
-  # And state the image declares stays behind (ADR 0129 §2): the nested Docker
+  # And state the sandbox base image declares stays behind (ADR 0129 §2): the nested Docker
   # daemon's, written where the daemon keeps it, as root, the way it would be.
   docker exec "$(sandbox_container "$source_id")" sh -c \
     "printf 'rebuildable\n' > /var/lib/docker/transfer-marker"
@@ -378,7 +367,8 @@ sandbox_home() {
   tar tf "$archive" | grep -q "^tree/data/"
   # The export carries the discobox's work and not what was installed into it:
   # home and the agent's own state travel, the nested Docker store does not. The
-  # sandbox agent read the tree, in the sandbox's own image (ADR 0129 §1).
+  # sandbox agent read the tree, in the sandbox base image with its platform's
+  # agent (ADR 0129 §1).
   tar tf "$archive" | grep -q "/work/nested/keepsake.txt$"
   tar tf "$archive" | grep -q "^tree/data/var/lib/discobox/"
   # A test, not a negated command: bats does not fail on `! cmd`.

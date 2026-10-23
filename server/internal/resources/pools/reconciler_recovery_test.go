@@ -254,7 +254,7 @@ func TestStaleHeartbeatReadsOffline(t *testing.T) {
 // an unreachable daemon).
 type failingPoolProvider struct{ stubPoolProvider }
 
-func (failingPoolProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, []string, func(context.Context) error) error {
+func (failingPoolProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, func(context.Context) error) error {
 	return errors.New("runtime did not converge")
 }
 
@@ -367,22 +367,22 @@ type hostComingUpProvider struct {
 	repairs int
 }
 
-func (p *hostComingUpProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, []string, func(context.Context) error) error {
+func (p *hostComingUpProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, func(context.Context) error) error {
 	return fmt.Errorf("%w: container abc health check is starting", sandbox.ErrPoolNotReachable)
 }
 
-func (p *hostComingUpProvider) RepairPool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, string, []string, func(context.Context) error) error {
+func (p *hostComingUpProvider) RepairPool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, string, func(context.Context) error) error {
 	p.repairs++
 	return nil
 }
 
 type stubPoolProvider struct{}
 
-func (stubPoolProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, []string, func(context.Context) error) error {
+func (stubPoolProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, func(context.Context) error) error {
 	return nil
 }
 
-func (stubPoolProvider) RepairPool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, string, []string, func(context.Context) error) error {
+func (stubPoolProvider) RepairPool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, string, func(context.Context) error) error {
 	return nil
 }
 
@@ -482,7 +482,7 @@ func (stubPoolProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRef, [
 	return nil, nil
 }
 
-func (stubPoolProvider) ExportTree(context.Context, sandbox.SandboxRef, string, sandbox.ImageRef, []byte) (io.ReadCloser, error) {
+func (stubPoolProvider) ExportTree(context.Context, sandbox.SandboxRef, string, []sandbox.BundlePin, []byte) (io.ReadCloser, error) {
 	return nil, nil
 }
 
@@ -492,17 +492,14 @@ func (stubPoolProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, pool
 
 type startingPoolProvider struct {
 	stubPoolProvider
-	observe func(context.Context, sandbox.PoolManager, *model.Pool, []string, func(context.Context) error) error
+	observe func(context.Context, sandbox.PoolManager, *model.Pool, func(context.Context) error) error
 }
 
-func (p startingPoolProvider) ReconcilePool(ctx context.Context, manager sandbox.PoolManager, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, images []string, begin func(context.Context) error) error {
-	return p.observe(ctx, manager, pool, images, begin)
+func (p startingPoolProvider) ReconcilePool(ctx context.Context, manager sandbox.PoolManager, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, begin func(context.Context) error) error {
+	return p.observe(ctx, manager, pool, begin)
 }
 
 func TestReplacementClosesPlacementBeforePreload(t *testing.T) {
-	previous := defaultSandboxImage()
-	t.Cleanup(func() { setDefaultSandboxImage(previous) })
-	setDefaultSandboxImage("ghcr.io/discobox-ai/discobox-sandbox-agent:v1")
 	ctx := context.Background()
 	appStore, _ := newPoolReconcilerTestStore(t)
 	manager := sandbox.NewProviderManager()
@@ -522,10 +519,7 @@ func TestReplacementClosesPlacementBeforePreload(t *testing.T) {
 		t.Fatal(err)
 	}
 	sb := &model.Sandbox{ProjectID: pool.ProjectID, PoolID: pool.ID, Platform: platform.Pool()}
-	manager.RegisterProvider("startup", startingPoolProvider{observe: func(ctx context.Context, _ sandbox.PoolManager, _ *model.Pool, images []string, begin func(context.Context) error) error {
-		if len(images) == 0 {
-			t.Fatal("startup received no project images")
-		}
+	manager.RegisterProvider("startup", startingPoolProvider{observe: func(ctx context.Context, _ sandbox.PoolManager, _ *model.Pool, begin func(context.Context) error) error {
 		if _, err := appStore.SchedulablePoolForSandbox(ctx, sb); err != nil {
 			t.Fatalf("live pool initially unavailable: %v", err)
 		}
@@ -645,7 +639,7 @@ type supersedingPoolProvider struct {
 	superseded bool
 }
 
-func (p *supersedingPoolProvider) ReconcilePool(ctx context.Context, _ sandbox.PoolManager, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ []string, _ func(context.Context) error) error {
+func (p *supersedingPoolProvider) ReconcilePool(ctx context.Context, _ sandbox.PoolManager, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ func(context.Context) error) error {
 	if err := p.db.WithContext(ctx).Model(&model.Pool{}).Where("id = ?", pool.ID).
 		Update("generation", gorm.Expr("generation + 1")).Error; err != nil {
 		return err
@@ -715,7 +709,7 @@ type supersededAtBeginProvider struct {
 	repairs    int
 }
 
-func (p *supersededAtBeginProvider) ReconcilePool(ctx context.Context, _ sandbox.PoolManager, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ []string, begin func(context.Context) error) error {
+func (p *supersededAtBeginProvider) ReconcilePool(ctx context.Context, _ sandbox.PoolManager, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, begin func(context.Context) error) error {
 	if err := p.db.WithContext(ctx).Model(&model.Pool{}).Where("id = ?", pool.ID).
 		Update("generation", gorm.Expr("generation + 1")).Error; err != nil {
 		return err
@@ -725,7 +719,7 @@ func (p *supersededAtBeginProvider) ReconcilePool(ctx context.Context, _ sandbox
 	return err
 }
 
-func (p *supersededAtBeginProvider) RepairPool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, string, []string, func(context.Context) error) error {
+func (p *supersededAtBeginProvider) RepairPool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, string, func(context.Context) error) error {
 	p.repairs++
 	return nil
 }

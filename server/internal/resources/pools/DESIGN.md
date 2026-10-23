@@ -129,8 +129,7 @@ flowchart LR
   ADR 0060). There is deliberately no timer form of the pool mark: a
   reconciler's own re-check belongs in its `reconcile.Result`
   (`reconcile.ErrSelfMark`). It also registers the pool reconciler
-  (`RegisterJobs`), records the server-resolved default sandbox image for
-  staging (`SetDefaultSandboxImage`), and purges spent bootstrap tokens hourly
+  (`RegisterJobs`) and purges spent bootstrap tokens hourly
   (`StartBootstrapTokenCleanup`).
 - `reconciler.go` — `PoolReconciler` (resource type `pool`, dirty ID
   `projectID/poolID`): converges the pool's single runtime host
@@ -153,16 +152,14 @@ flowchart LR
   the row. Failure latching follows `EverCreated` (`RegisteredAt` set):
   never-registered pools fail terminally (`failed`); a created pool keeps its state and records the failure as
   `ErrorMessage` — its runtime keeps serving what it already hosts, so a
-  failed convergence is not a phase. The reconciler supplies the default sandbox
-  image and the project's harness
-  images to the provider. The engine loads local cache entries before starting
-  a pool agent, reporting `preloading_images` through provisioning progress.
+  failed convergence is not a phase. It names no sandbox image to the
+  provider: every sandbox container is the provider's sandbox base image with
+  its bundles applied, and no harness is an image (ADR 26-10-16-423 §10). The
+  engine loads that base image from the local cache before starting a pool
+  agent, reporting `preloading_images` through provisioning progress.
   The provider calls the reconciler's `begin` callback before replacing a runtime,
   which records `registering` and closes placement even if old heartbeats still
   report ready. There is no background image reconciler or staging condition.
-- `images.go` builds the deduplicated project image set and holds the
-  server-resolved default image. Development `:local` images are handled by the
-  development image sync.
 
 ## Health is independent of runtime reconciliation
 
@@ -223,10 +220,10 @@ and refuses one that has — only an import's tree brings a platform onto such a
 pool, and nothing could check it there (ADR 0145 §8). A
 sandbox with none yet — created while its pool's agent had declared nothing,
 or before platforms were recorded — takes the pool's, written to its row, but
-only if its harness's image is published for it. It refuses a harness whose
-image is not, with a `*platform.UnpublishedError` that names what the image is
-published for (what a single-platform development build meets on a pool of
-another architecture), and a sandbox of another platform than its pool's with a
+only if its harness runs on it: a bundle names no platform and runs on any, and
+a manifest file's template runs on the one it declares. It refuses a harness
+that does not, with a `*platform.UnpublishedError` that names what the
+template runs on, and a sandbox of another platform than its pool's with a
 `*platform.MismatchError`. Neither is `ErrNotFound`: a pool of the wrong
 platform is not one on its way up, and a caller that waited on it would wait
 for good. The check runs after the readiness gate, since only a reporting agent

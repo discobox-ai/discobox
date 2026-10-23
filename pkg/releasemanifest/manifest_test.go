@@ -3,6 +3,7 @@ package releasemanifest
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -83,14 +84,37 @@ func TestRejectIncompleteAndAmbiguousManifests(t *testing.T) {
 	}
 }
 
-// withBundles names a bundle for the platform and for each harness, and
-// each harness's runnable image beside it, as a release from harness bundles
-// on does.
+// withBundles names a bundle for the platform and for each harness in place
+// of the runnable images, as a release from harness bundles on does.
 func withBundles(m *Manifest) {
 	m.Bundles = Bundles{Platform: "ghcr.io/discobox-ai/discobox-platform:v0.8.0", Harnesses: map[string]string{}}
 	for slug := range m.Images.Harnesses {
 		m.Bundles.Harnesses[slug] = "ghcr.io/discobox-ai/discobox-harness-" + slug + ":v0.8.0"
-		m.Images.Harnesses[slug] = "ghcr.io/discobox-ai/discobox-harness-" + slug + "-image:v0.8.0"
+	}
+	m.Images.SandboxAgent, m.Images.Harnesses = "", nil
+}
+
+// A release from bundles on ships no runnable image of a harness, nor the
+// sandbox agent's, so nothing of either is staged (ADR 26-10-16-423 §10).
+func TestAReleaseOfBundlesStagesNoHarnessImage(t *testing.T) {
+	m, err := Read("examples/v0.8.0.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withBundles(&m)
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(data); err != nil {
+		t.Fatalf("a release of bundles alone refused: %v", err)
+	}
+	for _, host := range []string{"darwin", "linux", "windows"} {
+		for _, ref := range m.Images.References(host, "amd64") {
+			if strings.Contains(ref, "discobox-sandbox-agent") || strings.Contains(ref, "discobox-harness-") {
+				t.Fatalf("%s stages %s", host, ref)
+			}
+		}
 	}
 }
 
@@ -130,10 +154,9 @@ func TestRejectIncompleteBundles(t *testing.T) {
 	for name, mutate := range map[string]func(*Manifest){
 		"no platform":      func(m *Manifest) { m.Bundles.Platform = "" },
 		"a local platform": func(m *Manifest) { m.Bundles.Platform = "discobox-platform:local" },
-		"a harness short":  func(m *Manifest) { delete(m.Bundles.Harnesses, "shell") },
-		"a harness unmatched": func(m *Manifest) {
-			delete(m.Bundles.Harnesses, "shell")
-			m.Bundles.Harnesses["extra"] = m.Bundles.Platform
+		"no harnesses":     func(m *Manifest) { m.Bundles.Harnesses = nil },
+		"an unnamed harness": func(m *Manifest) {
+			m.Bundles.Harnesses[""] = m.Bundles.Harnesses["shell"]
 		},
 		"a latest harness": func(m *Manifest) { m.Bundles.Harnesses["shell"] = "shell:latest" },
 	} {

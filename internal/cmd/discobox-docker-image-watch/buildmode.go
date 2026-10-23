@@ -37,10 +37,12 @@ func buildModeEnabled() bool {
 }
 
 // stampBuildModeImages writes the development image manifest and .env entries
-// without building anything locally. Each image reference is content-addressed
-// over that image's watched inputs, so an unchanged tree keeps the same
-// reference and the server rebuilds nothing, while any input change produces a
-// new reference that the server converges by building it.
+// without building anything locally. Each image or bundle reference is
+// content-addressed over its watched inputs, so an unchanged tree keeps the
+// same reference and the server rebuilds nothing, while any input change
+// produces a new reference that the server converges by building it. A bundle
+// is recorded among the manifest's bundles: a pool's daemon builds it, and the
+// server saves it as the layout it serves pools from (ADR 26-10-16-423 §13).
 func stampBuildModeImages(repoRoot string, specs []imageSpec) error {
 	tags := make(map[string]string, len(specs))
 	for _, spec := range specs {
@@ -52,6 +54,7 @@ func stampBuildModeImages(repoRoot string, specs []imageSpec) error {
 	}
 
 	images := make([]devimage.Image, 0, len(specs))
+	var bundles []devimage.Bundle
 	values := map[string]string{}
 	for _, spec := range specs {
 		// Intermediates are described too, unlike in copy-mode: the destination
@@ -64,22 +67,24 @@ func stampBuildModeImages(repoRoot string, specs []imageSpec) error {
 		if err != nil {
 			return err
 		}
-		images = append(images, devimage.Image{
-			Reference: tags[spec.name],
-			Build: &devimage.BuildSpec{
-				Dockerfile: filepath.ToSlash(spec.dockerfile),
-				Context:    spec.contextDir,
-				Target:     spec.target,
-				Args:       args,
-			},
-		})
+		build := &devimage.BuildSpec{
+			Dockerfile: filepath.ToSlash(spec.dockerfile),
+			Context:    spec.contextDir,
+			Target:     spec.target,
+			Args:       args,
+		}
+		if spec.bundle {
+			bundles = append(bundles, devimage.Bundle{Reference: tags[spec.name], Build: build})
+		} else {
+			images = append(images, devimage.Image{Reference: tags[spec.name], Build: build})
+		}
 		if spec.envImageKey != "" {
 			values[spec.envImageKey] = tags[spec.name]
 		}
 		log.Printf("stamped %s as %s (built on demand by the server)", spec.name, tags[spec.name])
 	}
 
-	manifest, err := devimage.NewManifest(images, nil)
+	manifest, err := devimage.NewManifest(images, bundles)
 	if err != nil {
 		return err
 	}

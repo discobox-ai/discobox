@@ -268,7 +268,6 @@ func TestSandboxDocumentCarriesSkillsSourcesInOrder(t *testing.T) {
 		{Source: "/workspace/skill-sources/tools", Directory: "z-last-alphabetically"},
 		{Source: "/workspace/skill-sources/tools", Directory: "."},
 	}
-	req.Config.Image = workerclient.NewOptString("image")
 	req.ResolvedHarnessConfig = workerclient.NewOptResolvedHarnessConfig(workerclient.ResolvedHarnessConfig{})
 	if err := validateCreateRequest(deliveryTestSandboxID, req); err != nil {
 		t.Fatalf("validate create request: %v", err)
@@ -294,7 +293,6 @@ func TestSandboxDocumentCarriesSkillsSourcesInOrder(t *testing.T) {
 func TestSandboxDocumentCarriesFeatures(t *testing.T) {
 	req := originTestRequest("/home/user/src/app")
 	req.Config.Features = workerclient.NewOptSandboxConfigFeatures(workerclient.SandboxConfigFeatures{"brew": {Enabled: false}, "nix": {Enabled: true}})
-	req.Config.Image = workerclient.NewOptString("image")
 	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", req, nil, nil)
 	want := map[string]sandboxconfig.Feature{"brew": {Enabled: false}, "nix": {Enabled: true}}
 	if !reflect.DeepEqual(doc.Runtime.Features, want) {

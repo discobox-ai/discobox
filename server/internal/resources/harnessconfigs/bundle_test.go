@@ -12,6 +12,7 @@ import (
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
@@ -121,11 +122,10 @@ func TestInspectBundleRefusesAManifestFile(t *testing.T) {
 	}
 }
 
-// bundleService registers against a stub whose image, bundle and platform are
-// separate references, as a real registration's are.
+// bundleService registers against a stub whose harness bundle and platform
+// bundle are separate references, as a real registration's are.
 func bundleService(t *testing.T) (*Service, *stubInspector) {
 	inspector := &stubInspector{byImage: map[string]imageMetadata{
-		"example.com/acme-image:v1": {Digest: "sha256:image"},
 		"example.com/acme:v1": {Digest: "sha256:bundle", ImageMetadata: harness.ImageMetadata{
 			Env: map[string]string{"ACME": "1"}, Harness: &harness.Image{ID: "acme", Name: "Acme"},
 		}},
@@ -133,10 +133,12 @@ func bundleService(t *testing.T) (*Service, *stubInspector) {
 	return &Service{store: newTestStore(t), inspector: inspector, harnesses: testReferences}, inspector
 }
 
-func TestCreateRegistersTheBundleBesideTheImage(t *testing.T) {
+// A harness is its bundle (ADR 26-10-16-423 §2): it is registered with no
+// image, runs on whatever box a pool applies it to, and rules no platform out.
+func TestCreateRegistersTheBundle(t *testing.T) {
 	svc, _ := bundleService(t)
 	config, err := svc.CreateHarnessConfig(context.Background(), "project-1", services.CreateHarnessConfigBody{
-		Image: "example.com/acme-image:v1", Bundle: apigen.NewOptString("example.com/acme:v1"),
+		Bundle: apigen.NewOptString("example.com/acme:v1"),
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -147,24 +149,45 @@ func TestCreateRegistersTheBundleBesideTheImage(t *testing.T) {
 	if config.Bundle != "example.com/acme:v1" || config.BundleDigest != "sha256:bundle" {
 		t.Fatalf("bundle = %q@%q, want the registered bundle and its digest", config.Bundle, config.BundleDigest)
 	}
-	if config.Image != "example.com/acme-image:v1" || config.ImageDigest != "sha256:image" {
-		t.Fatalf("image = %q@%q, want the runnable image and its digest", config.Image, config.ImageDigest)
+	if config.Image != "" || config.ImageDigest != "" {
+		t.Fatalf("image = %q@%q, want none: no harness is an image", config.Image, config.ImageDigest)
+	}
+	if len(config.Platforms) != 0 || config.ImageKind != platform.OCI {
+		t.Fatalf("platforms = %q kind = %v, want none and the OCI box a Docker pool applies it to", config.Platforms, config.ImageKind)
 	}
 }
 
-func TestCreateRefusesAnImageWithNoBundle(t *testing.T) {
+func TestCreateRefusesAHarnessWithNoBundle(t *testing.T) {
 	svc, _ := bundleService(t)
-	_, err := svc.CreateHarnessConfig(context.Background(), "project-1", services.CreateHarnessConfigBody{Image: "example.com/acme-image:v1"})
+	_, err := svc.CreateHarnessConfig(context.Background(), "project-1", services.CreateHarnessConfigBody{})
 	var status apperrors.StatusError
 	if !errors.As(err, &status) || status.StatusCode() != http.StatusBadRequest || !strings.Contains(err.Error(), "bundle is required") {
 		t.Fatalf("err = %v, want a missing bundle refused as a bad request", err)
 	}
 }
 
+// An image is a harness only when it names a manifest file: a runnable image
+// is refused, with or without a bundle beside it, rather than recorded and
+// never run.
+func TestCreateRefusesAnImage(t *testing.T) {
+	svc, _ := bundleService(t)
+	for name, bundle := range map[string]apigen.OptString{"alone": {}, "beside a bundle": apigen.NewOptString("example.com/acme:v1")} {
+		t.Run(name, func(t *testing.T) {
+			_, err := svc.CreateHarnessConfig(context.Background(), "project-1", services.CreateHarnessConfigBody{
+				Image: apigen.NewOptString("example.com/acme-image:v1"), Bundle: bundle,
+			})
+			var status apperrors.StatusError
+			if !errors.As(err, &status) || status.StatusCode() != http.StatusBadRequest || !strings.Contains(err.Error(), "no harness is an image") {
+				t.Fatalf("err = %v, want an image refused as a bad request", err)
+			}
+		})
+	}
+}
+
 func TestCreateRefusesABundleBesideAManifestFile(t *testing.T) {
 	svc, _ := bundleService(t)
 	_, err := svc.CreateHarnessConfig(context.Background(), "project-1", services.CreateHarnessConfigBody{
-		Image: "file:///overlays/manifest.json", Bundle: apigen.NewOptString("example.com/acme:v1"),
+		Image: apigen.NewOptString("file:///overlays/manifest.json"), Bundle: apigen.NewOptString("example.com/acme:v1"),
 	})
 	if err == nil || !strings.Contains(err.Error(), "takes no bundle") {
 		t.Fatalf("err = %v, want a bundle beside a manifest file refused", err)
@@ -177,7 +200,7 @@ func TestCreateRefusesWhenThePlatformBundleIsUnavailable(t *testing.T) {
 	svc, _ := bundleService(t)
 	svc.inspector = platformUnavailable{svc.inspector}
 	_, err := svc.CreateHarnessConfig(context.Background(), "project-1", services.CreateHarnessConfigBody{
-		Image: "example.com/acme-image:v1", Bundle: apigen.NewOptString("example.com/acme:v1"),
+		Bundle: apigen.NewOptString("example.com/acme:v1"),
 	})
 	if err == nil || !strings.Contains(err.Error(), "platform bundle") {
 		t.Fatalf("err = %v, want the platform bundle named", err)
@@ -194,11 +217,11 @@ func (p platformUnavailable) InspectBundle(ctx context.Context, ref string, admi
 }
 
 // legacyConfig is a harness registered before bundles: its manifest came from
-// its image's labels, and it has no bundle.
+// its image's labels, and it has no bundle, nor the image, which an upgraded
+// database no longer records (internal/database).
 func legacyConfig(t *testing.T, svc *Service) *model.HarnessConfig {
 	config := &model.HarnessConfig{
-		ProjectID: "project-1", Slug: "acme", Name: "Acme",
-		Image: "example.com/acme-image:v1", ImageDigest: "sha256:old", RunCommand: []string{"acme"},
+		ProjectID: "project-1", Slug: "acme", Name: "Acme", RunCommand: []string{"acme"},
 	}
 	if err := svc.store.CreateHarnessConfig(context.Background(), config); err != nil {
 		t.Fatal(err)
@@ -219,13 +242,13 @@ func TestRefreshRefusesAHarnessRegisteredBeforeBundles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ImageDigest != "sha256:old" || len(got.RunCommand) != 1 || got.RunCommand[0] != "acme" {
+	if got.Bundle != "" || len(got.RunCommand) != 1 || got.RunCommand[0] != "acme" {
 		t.Fatalf("config = %+v, want it untouched", got)
 	}
 }
 
 // Registering a bundle for it is what moves it on: the manifest is read from
-// the bundle, and the image keeps running.
+// the bundle, which is what its sandboxes run.
 func TestUpdateRegistersABundleForAHarnessRegisteredBeforeBundles(t *testing.T) {
 	svc, _ := bundleService(t)
 	config := legacyConfig(t, svc)
@@ -238,8 +261,8 @@ func TestUpdateRegistersABundleForAHarnessRegisteredBeforeBundles(t *testing.T) 
 	if updated.Bundle != "example.com/acme:v1" || updated.BundleDigest != "sha256:bundle" || updated.Env["ACME"] != "1" {
 		t.Fatalf("config = %+v, want the bundle registered and its manifest snapshotted", updated)
 	}
-	if updated.Image != "example.com/acme-image:v1" || updated.ImageDigest != "sha256:image" {
-		t.Fatalf("image = %q@%q, want the image kept and re-pinned", updated.Image, updated.ImageDigest)
+	if updated.Image != "" || updated.ImageDigest != "" {
+		t.Fatalf("image = %q@%q, want none beside the bundle", updated.Image, updated.ImageDigest)
 	}
 }
 
@@ -257,7 +280,7 @@ func TestUpdateWithAnUnreadableBundleChangesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Bundle != "" || got.ImageDigest != "sha256:old" {
+	if got.Bundle != "" || got.BundleDigest != "" || len(got.RunCommand) != 1 {
 		t.Fatalf("config = %+v, want it untouched", got)
 	}
 }
@@ -318,8 +341,8 @@ func TestInspectBundleReadsALayerOncePerDigest(t *testing.T) {
 	}
 }
 
-// What a bundle's labels say is judged before any layer is read: a runnable
-// image named as a harness's bundle is several GB of layers, and carries the
+// What a bundle's labels say is judged before any layer is read: an image
+// built FROM discobox-sandbox-base named as a harness's bundle is several GB of layers, and carries the
 // platform layer that refuses it anyway.
 func TestInspectBundleJudgesTheLabelsBeforeAnyLayer(t *testing.T) {
 	ref := pushBundle(t, map[string]string{harness.ImageLayerLabelPrefix + harness.PlatformLayer: `{}`}, []string{"etc/.wh.apt"})
@@ -330,11 +353,11 @@ func TestInspectBundleJudgesTheLabelsBeforeAnyLayer(t *testing.T) {
 	}
 }
 
-// A runnable image is told from a bundle by the reclaim label it inherits from
-// discobox-sandbox-base, which no FROM scratch bundle carries: the sandbox agent image
-// carries the platform's layer label too, and would be admitted as the
-// platform bundle by that alone.
-func TestInspectBundleRefusesARunnableImageAsEitherBundle(t *testing.T) {
+// An image built FROM discobox-sandbox-base is told from a bundle by the
+// reclaim label it inherits from the base, which no FROM scratch bundle
+// carries: the sandbox agent image carries the platform's layer label too,
+// and would be admitted as the platform bundle by that alone.
+func TestInspectBundleRefusesAnImageBuiltOnTheBaseAsEitherBundle(t *testing.T) {
 	labels := map[string]string{
 		harness.ReclaimLabel: harness.ReclaimLabelValue,
 		harness.ImageLayerLabelPrefix + harness.PlatformLayer: `{"platformAPIVersion":"discobox.ai/platform/v1"}`,
@@ -343,8 +366,8 @@ func TestInspectBundleRefusesARunnableImageAsEitherBundle(t *testing.T) {
 	for name, admit := range map[string]func(map[string]string) error{"platform": admitPlatform, "harness": admitAny} {
 		t.Run(name, func(t *testing.T) {
 			_, err := defaultImageInspector{}.InspectBundle(context.Background(), ref, admit)
-			if err == nil || !strings.Contains(err.Error(), "runnable image") {
-				t.Fatalf("err = %v, want a runnable image refused as a bundle", err)
+			if err == nil || !strings.Contains(err.Error(), "built FROM discobox-sandbox-base") {
+				t.Fatalf("err = %v, want an image built FROM the base refused as a bundle", err)
 			}
 		})
 	}

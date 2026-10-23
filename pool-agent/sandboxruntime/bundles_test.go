@@ -2,9 +2,11 @@ package sandboxruntime
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/moby/moby/client"
@@ -18,7 +20,9 @@ import (
 // finds its container current and builds nothing: that record is all
 // assets.discobox.internal answers the sandbox (ADR 26-10-16-423 §13), and a
 // sandbox from before it is recorded gets one from the first create that
-// reaches it. A create that pins none removes it.
+// reaches it. A create that pins none removes it, and still finds the
+// container it has: a sandbox from before bundles keeps its container while
+// its spec holds, though none could be built for it (ADR 26-10-16-423 §10).
 func TestEveryCreateRecordsTheSandboxsBundles(t *testing.T) {
 	state := withTestRoot(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -57,7 +61,6 @@ func TestEveryCreateRecordsTheSandboxsBundles(t *testing.T) {
 		req := &workerapimodel.PoolSandboxCreateRequest{
 			SandboxId: "sbx_1",
 			Config: workerapimodel.SandboxConfig{
-				Image:           workerclient.NewOptString("discobox/harness:same"),
 				SpecFingerprint: workerclient.NewOptString("spec-1"),
 			},
 			ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerclient.ResolvedHarnessConfig{}),
@@ -83,22 +86,83 @@ func TestEveryCreateRecordsTheSandboxsBundles(t *testing.T) {
 	}
 }
 
-// A sandbox delivered its platform runs the provider's sandbox base image,
-// unpinned, whatever image it is pinned to; any other runs its pin (ADR
-// 26-10-16-423 §§7, 10).
-func TestADeliveredSandboxRunsTheSandboxBaseImage(t *testing.T) {
-	r := &DockerSandboxRuntime{sandboxBaseImage: "discobox-sandbox-base:test"}
-	req := &workerapimodel.PoolSandboxCreateRequest{
-		Config: workerapimodel.SandboxConfig{
-			Image:       workerclient.NewOptString("discobox/harness:v1"),
-			ImageDigest: workerclient.NewOptString("sha256:pinned"),
+// No harness is an image (ADR 26-10-16-423 §10): a sandbox pinned to no
+// platform has nothing to build a container from and is refused before the
+// daemon is asked for any image, while one delivered its platform is built
+// from the provider's sandbox base image, whatever else it names.
+func TestASandboxIsBuiltFromTheSandboxBaseImageOrNotAtAll(t *testing.T) {
+	for name, tc := range map[string]struct {
+		bundles []workerapimodel.BundlePin
+		wantErr error
+	}{
+		"pinned to no platform": {wantErr: ErrUndelivered},
+		"delivered its platform": {
+			bundles: []workerapimodel.BundlePin{{Kind: workerclient.BundlePinKindPlatform, Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}},
+			wantErr: ErrImageUnavailable,
 		},
-	}
-	if image, digest := r.sandboxImage(req); image != "discobox/harness:v1" || digest != "sha256:pinned" {
-		t.Fatalf("undelivered sandbox runs %q pinned to %q; want its own image and pin", image, digest)
-	}
-	req.Bundles = workerclient.NewOptNilBundlePinArray([]workerapimodel.BundlePin{{Kind: workerclient.BundlePinKindPlatform, Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}})
-	if image, digest := r.sandboxImage(req); image != "discobox-sandbox-base:test" || digest != "" {
-		t.Fatalf("delivered sandbox runs %q pinned to %q; want the base image, unpinned", image, digest)
+	} {
+		t.Run(name, func(t *testing.T) {
+			state := withTestRoot(t)
+			var mu sync.Mutex
+			var images []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Api-Version", "1.45")
+				path := r.URL.Path
+				switch {
+				case strings.HasSuffix(path, "/_ping"):
+					w.WriteHeader(http.StatusOK)
+				case r.Method == http.MethodGet && strings.HasSuffix(path, "/containers/json"):
+					_, _ = w.Write([]byte(`[]`))
+				case strings.Contains(path, "/images/"):
+					// Which image the build reaches for is all this needs;
+					// having none of it ends the create there.
+					mu.Lock()
+					images = append(images, r.URL.RequestURI())
+					mu.Unlock()
+					w.WriteHeader(http.StatusNotFound)
+					_, _ = w.Write([]byte(`{"message":"not found"}`))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			t.Cleanup(server.Close)
+			cli, err := client.New(client.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")), client.WithHTTPClient(server.Client()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := &DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"}
+			req := &workerapimodel.PoolSandboxCreateRequest{
+				SandboxId:             "sbx_1",
+				Config:                workerapimodel.SandboxConfig{SpecFingerprint: workerclient.NewOptString("spec-1")},
+				ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerclient.ResolvedHarnessConfig{}),
+			}
+			if tc.bundles != nil {
+				req.Bundles = workerclient.NewOptNilBundlePinArray(tc.bundles)
+			}
+			_, err = r.CreateSandbox(context.Background(), req)
+			mu.Lock()
+			defer mu.Unlock()
+			if !errors.Is(err, tc.wantErr) || !errors.Is(err, ErrImageUnavailable) {
+				t.Fatalf("CreateSandbox = %v, want %v", err, tc.wantErr)
+			}
+			if tc.bundles == nil {
+				if len(images) != 0 {
+					t.Fatalf("an undelivered create reached for images: %v", images)
+				}
+				return
+			}
+			if errors.Is(err, ErrUndelivered) {
+				t.Fatalf("CreateSandbox = %v; a delivered sandbox is not undelivered", err)
+			}
+			if len(images) == 0 {
+				t.Fatal("a delivered create reached for no image")
+			}
+			for _, image := range images {
+				if !strings.Contains(image, "discobox-sandbox-base") {
+					t.Fatalf("a delivered create reached for %s; want the sandbox base image alone (all: %v)", image, images)
+				}
+			}
+		})
 	}
 }

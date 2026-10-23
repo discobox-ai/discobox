@@ -118,11 +118,17 @@ var (
 	// that this slug names no source on it.
 	ErrRepositoryNotFound = errors.New("sandbox git repository not found")
 	ErrAlreadyExists      = errors.New("sandbox already exists")
-	// ErrImageUnavailable is the pool being unable to obtain the image a
-	// sandbox is pinned to. It is not transient: the pin names an image this
-	// pool does not have and cannot get, so the way forward is an upgrade that
-	// re-pins the sandbox, not another attempt.
+	// ErrImageUnavailable is the pool having nothing to build a sandbox's
+	// container from: a sandbox base image neither it nor its registry has,
+	// or a sandbox pinned to no platform (ErrUndelivered). It is not
+	// transient, so the way forward is a change — the pool's image setting, or
+	// an upgrade that re-pins the sandbox — not another attempt.
 	ErrImageUnavailable = errors.New("sandbox image is not available")
+	// ErrUndelivered is a sandbox from before bundles, pinned to the runnable
+	// harness image it ran and to no platform, needing a container: no
+	// harness is an image any more (ADR 26-10-16-423 §10), and the re-pin
+	// that moves it onto its bundles is the control plane's.
+	ErrUndelivered = fmt.Errorf("%w: it is pinned to no platform bundle, and no harness runs as an image any more; upgrade or repair it to move it onto its bundles", ErrImageUnavailable)
 	// ErrPowerDownRefused is a power-down the sandbox did not confirm, or one
 	// for a sandbox that was not running to confirm it. Nothing changed.
 	ErrPowerDownRefused = errors.New("the sandbox does not confirm the power-down")
@@ -251,7 +257,7 @@ type Runtime interface {
 	//
 	// An export reads `data` and `sources` with the sandbox's own image, which
 	// is why it is told the image (ADR 0129 §1).
-	ExportTree(ctx context.Context, sandboxID string, image TreeImage) (io.ReadCloser, error)
+	ExportTree(ctx context.Context, sandboxID string, pins []assetcache.Pin) (io.ReadCloser, error)
 	ImportTree(ctx context.Context, sandboxID string, tree io.Reader) error
 	// SyncKnownPools reaps the agent-created footprint (sandbox containers and
 	// host data/proxy subtrees) of any pool on this shared host daemon whose ID
@@ -664,7 +670,6 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		slog.InfoContext(ctx, "replacing sandbox container",
 			"sandboxId", sandboxID,
 			"reason", reason,
-			"imageDigest", strings.TrimSpace(optString(req.Config.ImageDigest)),
 			"specFingerprint", strings.TrimSpace(optString(req.Config.SpecFingerprint)),
 			"running", replacedRunning)
 	} else if !errors.Is(err, ErrNotFound) {
@@ -705,17 +710,22 @@ func createStarts(req *workerapimodel.PoolSandboxCreateRequest) bool {
 // the project layer its primary source declares is not the one it was built
 // with, and returns that container for the caller to replace.
 func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, replaced *Sandbox, replacedRunning bool) (*Sandbox, bool, error) {
+	// No harness is an image (ADR 26-10-16-423 §10): every container is the
+	// provider's sandbox base image with its bundles applied, so one pinned
+	// to no platform has nothing to be built from. A sandbox from before
+	// bundles keeps a container it has as long as its spec does not move
+	// (CreateSandbox), and is built again once it is pinned to its bundles.
+	if !delivered(bundlePins(req)) {
+		return nil, false, fmt.Errorf("sandbox %s: %w", sandboxID, ErrUndelivered)
+	}
 	normalizeSandboxConfig(r.paths, &req.Config)
 	config := req.Config
-	imageName, pinnedDigest := r.sandboxImage(req)
-	imageName, err := r.resolveSandboxImage(ctx, sandboxID, imageName, pinnedDigest)
+	imageName, err := r.resolveImage(ctx, sandboxID, r.sandboxBaseImage)
 	if err != nil {
 		return nil, false, err
 	}
-	if delivered(bundlePins(req)) {
-		// The snapshot of its plan when there is one (ADR 26-10-16-423 §8).
-		imageName = r.deliveredImage(ctx, imageName, req)
-	}
+	// The snapshot of its plan when there is one (ADR 26-10-16-423 §8).
+	imageName = r.deliveredImage(ctx, imageName, req)
 	if replaced != nil {
 		// Only now, with the new image on the host: obtaining it is the step a
 		// re-pin fails at, and a sandbox that cannot get its new image keeps the
@@ -816,13 +826,11 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 		AttachStderr: true,
 		Tty:          true,
 	}
-	if delivered(bundlePins(req)) {
-		// systemd is PID 1 on every sandbox (ADR 26-10-10-767 §1). A runnable
-		// image says so itself; the sandbox base image is the provider's, like
-		// any machine image, and is told (ADR 26-10-16-423 §§7, 10).
-		cfg.Entrypoint = []string{"/sbin/init"}
-		cfg.Cmd = []string{}
-	}
+	// systemd is PID 1 on every sandbox (ADR 26-10-10-767 §1). The sandbox
+	// base image is the provider's, like any machine image, and is told (ADR
+	// 26-10-16-423 §§7, 10).
+	cfg.Entrypoint = []string{"/sbin/init"}
+	cfg.Cmd = []string{}
 	hostCfg, netCfg := r.boxConfig(mounts)
 	r.publishSandboxPhase(ctx, sandboxID, PhaseCreatingContainer)
 	created, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{Config: cfg, HostConfig: hostCfg, NetworkingConfig: netCfg, Name: name})
@@ -910,18 +918,6 @@ func (r *DockerSandboxRuntime) boxConfig(mounts []mount.Mount) (*container.HostC
 	return hostCfg, netCfg
 }
 
-// sandboxImage is the image a create's container is built from, and the
-// digest it is pinned to. A sandbox delivered its platform runs the
-// provider's sandbox base image, unpinned: what it runs is its bundles,
-// applied at every start, and its image pin names an image no pool runs any
-// more (ADR 26-10-16-423 §§7, 10). Any other runs the image it is pinned to.
-func (r *DockerSandboxRuntime) sandboxImage(req *workerapimodel.PoolSandboxCreateRequest) (string, string) {
-	if delivered(bundlePins(req)) {
-		return r.sandboxBaseImage, ""
-	}
-	return strings.TrimSpace(optString(req.Config.Image)), strings.TrimSpace(optString(req.Config.ImageDigest))
-}
-
 // observedSandbox reads the sandbox back and reports what it sees before
 // returning it.
 //
@@ -946,25 +942,12 @@ func (r *DockerSandboxRuntime) observedSandbox(ctx context.Context, sandboxID st
 	return sb, nil
 }
 
-// resolveSandboxImage resolves what a sandbox must actually run and returns the
-// image ID to launch it from.
-//
-// The pinned digest is the identity; the reference is only a way to obtain it
-// (ADR 0016 §6). Launching the reference instead would let a rebuilt tag change
-// a sandbox underneath its user — and, because containerImageDrifted compares
-// against the pin, would make every such sandbox look drifted and be replaced
-// silently, performing an upgrade nobody asked for. An empty pin means unpinned:
-// resolve the reference and run whatever it names.
-func (r *DockerSandboxRuntime) resolveSandboxImage(ctx context.Context, sandboxID, imageName, pinnedDigest string) (string, error) {
-	if pinnedDigest != "" {
-		// A pinned image already on the host is authoritative, whatever the tag
-		// points at now.
-		if inspected, err := r.client.ImageInspect(ctx, pinnedDigest); err == nil {
-			return inspected.ID, nil
-		} else if !cerrdefs.IsNotFound(err) {
-			return "", err
-		}
-	}
+// resolveImage obtains the image a sandbox's container is built from — the
+// provider's sandbox base image — and returns its image ID. It is unpinned:
+// what a box runs is its bundles, pinned by digest and applied at every start
+// (ADR 26-10-16-423 §§7, 10), and a moved base image is followed by the next
+// container (deliveredMoved).
+func (r *DockerSandboxRuntime) resolveImage(ctx context.Context, sandboxID, imageName string) (string, error) {
 	if err := r.ensureImageAvailable(ctx, sandboxID, imageName); err != nil {
 		return "", err
 	}
@@ -972,53 +955,7 @@ func (r *DockerSandboxRuntime) resolveSandboxImage(ctx context.Context, sandboxI
 	if err != nil {
 		return "", fmt.Errorf("inspect image %q: %w", imageName, err)
 	}
-	if !imageMatchesPinDigests(inspected.ID, inspected.RepoDigests, pinnedDigest) {
-		return "", fmt.Errorf(
-			"%w: the sandbox is pinned to image %s but %q now resolves to %s, and the pinned image is not on this pool; upgrade the sandbox to move it to the current image",
-			ErrImageUnavailable, pinnedDigest, imageName, inspected.ID)
-	}
 	return inspected.ID, nil
-}
-
-// imageMatchesPin reports whether an image ID is the one a sandbox is pinned to.
-//
-// An empty pin matches anything: unpinned sandboxes (the default image, or
-// sandboxes created before pinning existed) run whatever their reference names.
-// This is the single comparison behind both enforcement points — refusing to
-// launch the wrong image, and replacing a container built from one — so the two
-// can never disagree about what "the pinned image" means.
-func imageMatchesPin(imageID, pinnedDigest string) bool {
-	return imageMatchesPinDigests(imageID, nil, pinnedDigest)
-}
-
-// imageMatchesPinDigests is imageMatchesPin given everything the daemon knows
-// an image by: its ID, and the registry digests it was pulled under.
-//
-// Both are needed because "the image ID" is not one thing. The classic image
-// store reports the config digest; the containerd store, which is the default
-// in current Docker, reports the index digest. A pin recorded as one and
-// compared against the other never matches, and every sandbox on a published
-// multi-arch image refused to launch with "the pinned image is not available on
-// this pool" — for an image sitting on the daemon, correctly pulled.
-//
-// RepoDigests is what settles it: both stores put the registry digest there, so
-// a pin recorded from the registry matches on either. The ID is still consulted
-// for locally built images, which were never pushed and so have no RepoDigests
-// at all.
-func imageMatchesPinDigests(imageID string, repoDigests []string, pinnedDigest string) bool {
-	pinned := strings.TrimSpace(pinnedDigest)
-	if pinned == "" {
-		return true
-	}
-	if strings.TrimSpace(imageID) == pinned {
-		return true
-	}
-	for _, repoDigest := range repoDigests {
-		if _, digest, ok := strings.Cut(repoDigest, "@"); ok && strings.TrimSpace(digest) == pinned {
-			return true
-		}
-	}
-	return false
 }
 
 // containerSpecDrifted reports whether the existing container was built from a
@@ -1031,8 +968,7 @@ func imageMatchesPinDigests(imageID string, repoDigests []string, pinnedDigest s
 // extend it.
 //
 // An empty fingerprint in the request means the caller does not pin a spec, so
-// nothing has drifted — the same "unpinned means run what you have" rule the
-// image digest already follows.
+// nothing has drifted: run what you have.
 func (r *DockerSandboxRuntime) containerSpecDrifted(ctx context.Context, existing *Sandbox, req *workerapimodel.PoolSandboxCreateRequest) (bool, error) {
 	if req == nil {
 		return false, nil
@@ -1055,40 +991,13 @@ func (r *DockerSandboxRuntime) containerSpecDrifted(ctx context.Context, existin
 	if fingerprint == "" {
 		return false, nil
 	}
-	return specDrifted(
-		inspect.Container.Config.Labels[sandboxLabelSpec],
-		inspect.Container.Image,
-		fingerprint,
-		strings.TrimSpace(optString(req.Config.ImageDigest)),
-	), nil
+	// A container with no fingerprint predates fingerprinting, and the runnable
+	// image it was built from with it, so it has drifted from any spec.
+	return strings.TrimSpace(inspect.Container.Config.Labels[sandboxLabelSpec]) != fingerprint, nil
 }
 
-// specDrifted decides drift from what the container can say about itself.
-//
-// A recorded fingerprint answers the question outright. Without one the
-// container predates fingerprinting, and the answer is not "nothing drifted" —
-// it is that the label cannot tell us, so we fall back to the comparison that
-// needs no label: the image the container was built from against the digest the
-// request pins. That is the check this one generalized (ADR 0016), and dropping
-// it for unlabeled containers left them permanently stranded — the control plane
-// records a re-pin, the runtime declines to act on it, `ObservedGeneration`
-// catches up, and upgrade then reports the sandbox as already current forever
-// because it compares the record against the harness config, never against the
-// container.
-//
-// Falling back narrows the rebuild to containers actually running the wrong
-// image rather than every container an upgraded control plane first talks to,
-// and a replacement keeps the pool-host volumes and the power state either way
-// (ADR 0021 §3).
-func specDrifted(recordedFingerprint, containerImageID, fingerprint, pinnedDigest string) bool {
-	if recorded := strings.TrimSpace(recordedFingerprint); recorded != "" {
-		return recorded != fingerprint
-	}
-	return !imageMatchesPin(containerImageID, pinnedDigest)
-}
-
-// ensureImageAvailable pulls the sandbox's image if the host does not have it,
-// reporting progress as it goes.
+// ensureImageAvailable pulls the sandbox base image if the host does not have
+// it, reporting progress as it goes.
 //
 // An image pull is the longest thing an attach can end up waiting behind, so it
 // is also the one that most needs to be visible: a multi-gigabyte pull and a
@@ -1112,8 +1021,7 @@ func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, sandbox
 		//
 		// Unauthorized and forbidden are not: they are this pool's credentials
 		// for an image that may well exist, and fixing the credentials is what
-		// helps. An upgrade would not, since the harness's current image sits
-		// behind the same ones.
+		// helps.
 		if cerrdefs.IsNotFound(err) {
 			return fmt.Errorf("%w: %q is not on this pool and its registry does not have it: %w", ErrImageUnavailable, imageName, err)
 		}
@@ -2764,7 +2672,7 @@ func (r *MemorySandboxRuntime) CreateSandbox(_ context.Context, req *workerapimo
 		return nil, fmt.Errorf("sandbox create request is required")
 	}
 	now := time.Now().UTC()
-	sb := &Sandbox{ID: req.SandboxId, SandboxID: req.SandboxId, Status: StatusRunning, Image: optString(req.Config.Image), CreatedAt: now, StartedAt: &now, Env: copyMap(map[string]string(optSandboxConfigEnv(req.Config.Env)))}
+	sb := &Sandbox{ID: req.SandboxId, SandboxID: req.SandboxId, Status: StatusRunning, CreatedAt: now, StartedAt: &now, Env: copyMap(map[string]string(optSandboxConfigEnv(req.Config.Env)))}
 	r.sandboxes[req.SandboxId] = sb
 	// Kept as the Docker runtime labels it, afresh on every create: a run
 	// sandbox names no mode.
@@ -2787,19 +2695,12 @@ func (r *MemorySandboxRuntime) GetSandbox(_ context.Context, sandboxID string) (
 	return cloneSandbox(sb), nil
 }
 
-func (r *MemorySandboxRuntime) UpdateSandbox(_ context.Context, sandboxID string, req *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error) {
+func (r *MemorySandboxRuntime) UpdateSandbox(_ context.Context, sandboxID string, _ *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sb := r.sandboxes[sandboxID]
 	if sb == nil {
 		return nil, ErrNotFound
-	}
-	if req != nil {
-		if config, ok := req.Config.Get(); ok {
-			if image := optString(config.Image); image != "" {
-				sb.Image = image
-			}
-		}
 	}
 	return cloneSandbox(sb), nil
 }
@@ -2826,7 +2727,7 @@ func (r *MemorySandboxRuntime) DeleteSandbox(_ context.Context, sandboxID string
 // ExportTree hands back whatever tree this sandbox was imported with, and an
 // empty archive for one that was created here: there is no disk to walk, so
 // what an export means for this runtime is exactly what an import put in.
-func (r *MemorySandboxRuntime) ExportTree(_ context.Context, sandboxID string, _ TreeImage) (io.ReadCloser, error) {
+func (r *MemorySandboxRuntime) ExportTree(_ context.Context, sandboxID string, _ []assetcache.Pin) (io.ReadCloser, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if sb, ok := r.sandboxes[sandboxID]; ok && sb.Status == StatusRunning {
@@ -3923,16 +3824,11 @@ func bundlePins(req *workerapimodel.PoolSandboxCreateRequest) []assetcache.Pin {
 }
 
 // validateCreateRequest refuses a create the control plane did not fully
-// resolve. The pool agent runs what it is told and invents nothing: it
-// substitutes no image for a missing one, because a stand-in image cannot host
-// a sandbox agent, and a container that can never answer says less than a
-// failure naming the request that was wrong. Every sandbox carries a harness
-// config (ADR 0032), so a request without one is a control plane that failed
-// to resolve it, not a sandbox asking for a bare shell.
+// resolve. The pool agent runs what it is told and invents nothing. Every
+// sandbox carries a harness config (ADR 0032), so a request without one is a
+// control plane that failed to resolve it, not a sandbox asking for a bare
+// shell.
 func validateCreateRequest(sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) error {
-	if strings.TrimSpace(optString(req.Config.Image)) == "" {
-		return fmt.Errorf("sandbox %s: create request has no image", sandboxID)
-	}
 	if _, ok := req.ResolvedHarnessConfig.Get(); !ok {
 		return fmt.Errorf("sandbox %s: create request has no resolved harness config", sandboxID)
 	}

@@ -51,13 +51,13 @@ flowchart LR
 Harness configuration is a local PTY-backed overlay pane running the same
 `discobox admin harnesses configure` command available from a shell. Its border
 names the flow as harness configuration, while the header outside the terminal
-shows the harness image's optional configuration reminder. This keeps prompts
+shows the harness bundle's optional configuration reminder. This keeps prompts
 drawn by the harness visually inside a setup flow rather than presenting them
 as an ordinary harness session.
 
 The same header carries a **warning about the ports the flow declared and this
 machine cannot give it** (`Harness.ConfigPorts`, `configurePortWarning`), in the
-harness image's own words — Codex's says to sign in by device code instead,
+harness bundle's own words — Codex's says to sign in by device code instead,
 since its browser sign-in redirects to a `localhost:1455` that was not there to
 forward. The command in the pane binds those ports and prints the same words,
 but a full-screen sign-in paints over its terminal within seconds; the header

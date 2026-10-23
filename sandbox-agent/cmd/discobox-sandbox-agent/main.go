@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -102,19 +101,9 @@ func run(name string, args []string) int {
 		}
 		return 0
 	}
-	// A machine's first-boot command (ADR 26-10-16-423 §7).
-	if len(args) > 0 && args[0] == "install" {
-		return runInstall(args[1:])
-	}
 	// discobox-snapshot.service: provisions a snapshot (ADR 26-10-16-423 §8).
 	if len(args) > 0 && args[0] == "snapshot" {
 		return runSnapshot(args[1:])
-	}
-	// Applies the features of bundle trees to this box (ADR 26-10-16-423 §3).
-	if len(args) > 0 && args[0] == "provision" {
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		return runProvision(ctx, args[1:])
 	}
 	if len(args) > 0 && args[0] == "export" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -405,33 +394,6 @@ func runRenderProxyEnv(args []string) int {
 	}
 	if err := proxyenv.WriteFile(sandboxJSON, out); err != nil {
 		slog.Error("render proxy env", "error", err)
-		return 1
-	}
-	return 0
-}
-
-// runProvision applies every feature of the bundle trees it is given, each
-// holding features/<name>/provision.yaml, skipping the steps already recorded
-// as applied. Every step blocks and none is turned off, as a harness image's
-// build provisions its tree onto the platform's; a box's boot provisions in
-// the agent instead. See the provision package.
-func runProvision(ctx context.Context, args []string) int {
-	flags := flag.NewFlagSet("discobox-sandbox-agent provision", flag.ContinueOnError)
-	records := flags.String("records", provision.RecordsDir, "directory of the box's step records")
-	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "usage: discobox-sandbox-agent provision [--records DIR] TREE...")
-		flags.PrintDefaults()
-	}
-	if err := flags.Parse(args); err != nil {
-		return 2
-	}
-	if flags.NArg() == 0 {
-		flags.Usage()
-		return 2
-	}
-	self, _ := os.Executable()
-	if err := provision.Trees(ctx, slog.Default(), *records, self, flags.Args()...); err != nil {
-		slog.Error("provision", "error", err)
 		return 1
 	}
 	return 0

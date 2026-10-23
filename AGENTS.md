@@ -26,11 +26,11 @@
 - `server/internal/auth`: API authentication and authorization; `auth/sandbox` issues sandbox access tokens, `auth/poolagent` signs control-plane requests to pool agents.
 - `server/providers`: Docker, VM, cloud, and pool-backed provider implementations.
   `server/providers/dockerworker/sandbox-image` is the Docker driver's Debian
-  sandbox base image the pool-agent and sandbox-agent images are built FROM
-  (and, through the sandbox-agent image, every harness image).
+  sandbox base image every sandbox container runs, with its platform and
+  harness bundles applied, and the pool-agent image is built FROM.
 - `pool-agent`: nested Go module for the pool agent implementation.
 - `pool-agent/cmd/discobox-pool-agent`: pool agent entrypoint.
-- `sandbox-agent`: nested Go module and image context for the sandbox agent runtime environment.
+- `sandbox-agent`: nested Go module for the sandbox agent runtime environment, and the platform bundle's build context.
 - `access`: nested Go module for `discobox-access`, the in-sandbox client of the agent credentials protocol.
 - `termpane`: nested Go module; a reusable Bubble Tea component that draws a live terminal from any stream. No dependency on the rest of the repository.
 - `pkg`: the root module's shared cross-module library packages (`pkg/execstream`,
@@ -38,12 +38,12 @@
   `pkg/endpoint`, and more); see the package map in `DESIGN.md`. New shared
   packages go here, not at the repository root.
 - `harness`, `proxy`: root-module components kept at the root because each is
-  a component in its own right (one Docker image context per harness; the pool
+  a component in its own right (one bundle build context per harness; the pool
   proxy) rather than a library package.
 - `internal/cmd`: development and build tools, under `internal` because they are
   this repository's own and nothing outside it should build them:
-  `discobox-docker-image-watch` (local base, pool-agent, sandbox-agent, and
-  harness image rebuild watcher), `discobox-dev-lock` (one `task dev` loop per checkout),
+  `discobox-docker-image-watch` (local sandbox base and pool-agent image, and
+  platform and harness bundle, rebuild watcher), `discobox-dev-lock` (one `task dev` loop per checkout),
   `discobox-gzip` (portable file compression for the build),
   `discobox-server-manifest` (the server manifest a release CLI is linked with),
   `discobox-installers` (stamps the install scripts a release uploads with that

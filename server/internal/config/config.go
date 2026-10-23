@@ -20,7 +20,6 @@ import (
 	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 	"github.com/discobox-ai/discobox/server/internal/auth/discobot"
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
-	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/x/gormdb"
 )
 
@@ -129,18 +128,17 @@ type Config struct {
 	SandboxReconcileJobConcurrency int           `yaml:"sandboxReconcileJobConcurrency" env:"SANDBOX_RECONCILE_JOB_CONCURRENCY" default:"4" doc:"How many sandbox reconcile jobs run at once."`
 
 	// Sandbox settings.
-	DefaultSandboxImage string `yaml:"defaultSandboxImage" env:"DISCOBOX_DEFAULT_SANDBOX_IMAGE" doc:"Retired in server.yaml, where it is read with a warning and refused from the next release: remove it rather than moving it to platformBundle, which names a platform bundle and not an image. Image for sandboxes that name no harness. Defaults to the built-in sandbox agent image." example:"ghcr.io/discobox-ai/discobox-sandbox-agent:v0.8.0"`
 	// PlatformBundle is the platform bundle every harness's manifest is
-	// composed on (ADR 26-10-16-423 §2): the one this build pins, unless
-	// configured or a release manifest names its own.
-	PlatformBundle string `yaml:"platformBundle" env:"DISCOBOX_PLATFORM_BUNDLE" doc:"The platform bundle every harness's manifest is composed on. Defaults to the one this build ships." example:"ghcr.io/discobox-ai/discobox-platform:v0.8.0"`
-	// DefaultSandboxImageDigest is the identity behind DefaultSandboxImage.
-	// Sandboxes with no harness config run the default image, and the tag alone
-	// cannot say which build that is — dev workflows rebuild tags in place — so
-	// the digest is what lets such a sandbox report and take an upgrade
-	// (ADR 0016 §1's "a digest and not just a tag"). Empty when unknown, which
-	// simply means those sandboxes report no upgrade.
-	DefaultSandboxImageDigest string `yaml:"defaultSandboxImageDigest" env:"DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST" doc:"Retired in server.yaml, where it is read with a warning and refused from the next release. Digest identifying the build behind defaultSandboxImage. Those sandboxes report no upgrade when it is unknown." example:"sha256:4f2a9c1e7b3d8a6f0e5c2b9d7a1f3e8c6b4d2a0f9e7c5b3a1d8f6e4c2b0a9d7e"`
+	// composed on and every box applies (ADR 26-10-16-423 §§2, 7): the one this
+	// build pins, unless configured or a release manifest names its own.
+	PlatformBundle string `yaml:"platformBundle" env:"DISCOBOX_PLATFORM_BUNDLE" doc:"The platform bundle every harness's manifest is composed on and every discobox applies. Defaults to the one this build ships." example:"ghcr.io/discobox-ai/discobox-platform:v0.8.0"`
+	// RetiredSandboxImage and RetiredSandboxImageDigest are server.yaml's
+	// defaultSandboxImage and its digest, which named the runnable image a
+	// sandbox with no harness ran. No harness is an image any more and no
+	// sandbox runs one (ADR 26-10-16-423 §10), so they are read only to warn
+	// (retiredKeys), and mean nothing.
+	RetiredSandboxImage       string `yaml:"defaultSandboxImage" doc:"Retired, and ignored: no discobox runs an image of its own any more. Read with a warning, and refused from the next release; remove it rather than moving it to platformBundle, which names a platform bundle and not an image." example:"ghcr.io/discobox-ai/discobox-sandbox-agent:v0.8.0"`
+	RetiredSandboxImageDigest string `yaml:"defaultSandboxImageDigest" doc:"Retired, and ignored with defaultSandboxImage. Read with a warning, and refused from the next release." example:"sha256:4f2a9c1e7b3d8a6f0e5c2b9d7a1f3e8c6b4d2a0f9e7c5b3a1d8f6e4c2b0a9d7e"`
 
 	// JudgeCommands has the judge decide whether the command
 	// `discobox-access run` declares carries out the use it names, before the
@@ -406,9 +404,6 @@ func Load() (*Config, error) {
 	if !configured("databaseDriver") {
 		cfg.DatabaseDriver = gormdb.DetectDriver(cfg.DatabaseDSN)
 	}
-	if !configured("defaultSandboxImage") {
-		cfg.DefaultSandboxImage = sandbox.DefaultSandboxImageName
-	}
 	if !configured("name") {
 		cfg.Name = defaultName()
 	}
@@ -421,31 +416,29 @@ func Load() (*Config, error) {
 	if !configured("platformBundle") {
 		cfg.PlatformBundle = harness.PlatformBundleRef()
 	}
-	bundles, images := harnessdefs.OverridesFromEnv(os.Getenv)
+	bundles := harnessdefs.OverridesFromEnv(os.Getenv)
 	if cfg.ReleaseManifest != "" {
 		manifest, err := releasemanifest.Read(cfg.ReleaseManifest)
 		if err != nil {
 			return nil, err
 		}
-		for slug := range manifest.Images.Harnesses {
+		if !manifest.HasBundles() {
+			return nil, fmt.Errorf("release manifest %s names no bundles: it is from a release before harness bundles, which this server cannot run", cfg.ReleaseManifest)
+		}
+		for slug := range manifest.Bundles.Harnesses {
 			if err := harnessdefs.ValidateSlug(slug); err != nil {
 				return nil, fmt.Errorf("release manifest harness: %w", err)
 			}
 		}
-		if !manifest.HasBundles() {
-			return nil, fmt.Errorf("release manifest %s names no bundles: it is from a release before harness bundles, which this server cannot run", cfg.ReleaseManifest)
-		}
 		cfg.Release = &manifest
 		cfg.DockerPoolImage = manifest.Images.PoolAgent
 		cfg.DockerSandboxBaseImage = manifest.Images.SandboxBase
-		cfg.DefaultSandboxImage = manifest.Images.SandboxAgent
-		cfg.DefaultSandboxImageDigest = ""
 		cfg.PlatformBundle = manifest.Bundles.Platform
-		bundles, images = manifest.Bundles.Harnesses, manifest.Images.Harnesses
+		bundles = manifest.Bundles.Harnesses
 		cfg.DevImageSync = false
 		cfg.DevImageManifest = ""
 	}
-	cfg.Harnesses = harnessdefs.References{PlatformBundle: strings.TrimSpace(cfg.PlatformBundle), Bundles: bundles, Images: images}
+	cfg.Harnesses = harnessdefs.References{PlatformBundle: strings.TrimSpace(cfg.PlatformBundle), Bundles: bundles}
 	if cfg.DevImageSync {
 		if cfg.DevImageManifest == "" {
 			return nil, fmt.Errorf("devImageManifest is required when devImageSync is set")
@@ -466,12 +459,11 @@ func Load() (*Config, error) {
 
 // retiredKeys are the server.yaml keys read for one release, with a warning,
 // before a release refuses them (ADR 26-10-16-423 §10), each with what to do
-// about it. They keep their meaning until then: the runnable images they name
-// still run, and platformBundle takes over their role with a bundle. The
-// warning is for the file alone, which is the operator's (ADR 0096); their
-// environment variables are how development points a server at its builds.
+// about it. They mean nothing: the runnable images they named are not built
+// any more, and every box applies the platform bundle instead. The file is
+// the operator's (ADR 0096), so it is warned rather than refused at once.
 var retiredKeys = []struct{ key, advice string }{
-	{"defaultSandboxImage", "a sandbox with no harness then runs this build's image; do not move its value to platformBundle, which names a platform bundle and not an image"},
+	{"defaultSandboxImage", "no discobox runs an image of its own any more, so it is ignored; do not move its value to platformBundle, which names a platform bundle and not an image"},
 	{"defaultSandboxImageDigest", "it goes with defaultSandboxImage"},
 }
 

@@ -471,30 +471,28 @@ func TestSnapshotImageMetadataCarriesRejectionScope(t *testing.T) {
 }
 
 // A built-in snapshotted by a server that did not read rejection scopes yet
-// carries its image's digest and no scope. It is rewritten at the next seed
+// carries its bundle's digest and no scope. It is rewritten at the next seed
 // rather than skipped as unchanged, which is how a stored login gains the
 // scope its harness declares (ADR 26-10-13-595 §1).
 func TestSeedBuiltInsRewritesABuiltInWhoseSecretDeclarationsMoved(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
-	const image = "discobox-harness-claude-code:v1"
+	const bundle = "discobox-harness-claude-code:v1"
 	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code", BuiltIn: true,
-		Bundle: image, BundleDigest: "sha256:same",
-		Image: image, ImageDigest: "sha256:same", ImageKind: platform.OCI,
+		Bundle: bundle, BundleDigest: "sha256:same", ImageKind: platform.OCI,
 		Secrets: []model.HarnessConfigSecret{{Name: "API_KEY", Required: true}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	declared := imageMetadata{Digest: "sha256:same", ImageMetadata: harness.ImageMetadata{
-		ImageKind: platform.OCI,
 		Harness: &harness.Image{ID: "claude-code", Name: "Claude Code", Secrets: []harness.Secret{{
 			Name: "API_KEY", Required: true,
 			RejectionScope: []harness.RejectionRule{{Host: "api.example.com", Paths: []string{"/v1/messages"}}},
 		}}},
 	}}
-	inspector := &stubInspector{byImage: map[string]imageMetadata{image: declared}}
-	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(map[string]string{"claude-code": image})}
+	inspector := &stubInspector{byImage: map[string]imageMetadata{bundle: declared}}
+	svc := &Service{store: st, inspector: inspector, harnesses: bundleReferences(map[string]string{"claude-code": bundle})}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}

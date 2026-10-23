@@ -49,6 +49,7 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 		ProjectID:             projectID,
 		PoolID:                poolID,
 		ControlPlanePublicKey: controlPlaneKey,
+		SandboxBaseImage:      image,
 	})
 	if err != nil {
 		t.Fatalf("new docker sandbox runtime: %v", err)
@@ -71,7 +72,6 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 
 	runtimeSandbox, state, err := provider.Create(ctx, sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}, nil, sandbox.CreateOptions{
 		PoolID: poolID,
-		Image:  sandbox.ImageRef{Name: image},
 		Env:    map[string]string{"DISCOBOX_E2E": "true"},
 		Source: &model.GitSource{
 			Kind: "git",

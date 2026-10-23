@@ -6,9 +6,7 @@
 // A pool's Docker runtime writes Archive into a sandbox container between
 // create and start, so systemd stays PID 1 and discobox-wire.service still
 // wires the volumes before sysinit.target, and the box then fetches the rest
-// of its bundles into the same store itself. The agent's `install` command
-// lays the same units with Install where nothing places them: the runnable
-// image's build.
+// of its bundles into the same store itself.
 package agentlayer
 
 import (

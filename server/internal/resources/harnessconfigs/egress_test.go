@@ -56,15 +56,15 @@ func TestUpdateHarnessConfigSetsTheEgressLevel(t *testing.T) {
 	}
 }
 
-// The hosts an image declares are snapshotted when it is registered, and a
+// The hosts a bundle declares are snapshotted when it is registered, and a
 // refresh that changes them converges the harness's discoboxes, leaving the
 // level a person set alone.
-func TestRefreshingAnImageWithNewHostsConvergesItsSandboxes(t *testing.T) {
+func TestRefreshingABundleWithNewHostsConvergesItsSandboxes(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "custom", Name: "Custom",
-		Bundle: "registry.example/custom:v1", Image: "registry.example/custom:v1", ImageDigest: "sha256:one",
+		Bundle: "registry.example/custom:v1", BundleDigest: "sha256:one",
 	}
 	config.Egress.Allow = []string{"github.com"}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
@@ -85,7 +85,7 @@ func TestRefreshingAnImageWithNewHostsConvergesItsSandboxes(t *testing.T) {
 		t.Fatalf("image hosts = %v, person's level = %+v", refreshed.ImageEgressHosts, refreshed.Egress)
 	}
 	if !slices.Equal(runtime.egressChanged, []string{config.ID}) {
-		t.Fatalf("converged %v after the image's hosts changed", runtime.egressChanged)
+		t.Fatalf("converged %v after the bundle's hosts changed", runtime.egressChanged)
 	}
 
 	inspector.byImage["registry.example/custom:v1"] = declaring("sha256:three", "api.example")
@@ -93,7 +93,7 @@ func TestRefreshingAnImageWithNewHostsConvergesItsSandboxes(t *testing.T) {
 		t.Fatalf("refresh again: %v", err)
 	}
 	if len(runtime.egressChanged) != 1 {
-		t.Fatalf("converged %v though the image's hosts did not change", runtime.egressChanged)
+		t.Fatalf("converged %v though the bundle's hosts did not change", runtime.egressChanged)
 	}
 }
 

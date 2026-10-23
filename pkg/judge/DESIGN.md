@@ -70,12 +70,12 @@ the judge they are the discobox's claims and an input it reads is part of the
 operation; `jev/` puts them in the state.
 
 The job reaches a judge discobox as the sandbox API's `JudgeJob`, which refuses
-fields it does not know, so a judge whose image carries a sandbox agent older
-than a field refuses every job that sends it — fail closed, with a decode error
-as the reason. A built-in harness is re-pinned to the release's image when the
-server is upgraded, and a judge is replaced when its image changes, so that is
-a window; a custom harness built FROM an older sandbox-agent image is judged
-by nothing until it is rebuilt.
+fields it does not know, so a judge whose sandbox agent is older than a field
+refuses every job that sends it — fail closed, with a decode error as the
+reason. A judge's agent is the platform it is pinned to, delivered at every
+start (ADR 26-10-16-423 §7): a stopped judge follows the release's platform,
+and a judge is replaced when its harness bundle, or the manifest composed
+from it, changes, so that is a window that closes at its next start.
 
 **A grant's policy is judged whole, as a list.** A grant's authorization is
 its policy (ADR 26-10-20-782 §1), and commands and requests are judged against
@@ -175,7 +175,7 @@ question that reads facts and puts them in its instructions, and the judge
 discobox's job (the sandbox API's `JudgeJob`) carries them.
 
 **A wrapper prints the verdict and nothing else.** `Decode` takes one JSON
-object and no prose around it, which is a requirement on every harness image's
+object and no prose around it, which is a requirement on every harness bundle's
 `discobox-prompt`: a wrapper that frames its answer in a transcript cannot
 judge. See [`harness/DESIGN.md`](../../harness/DESIGN.md) for the wrapper
 contract.

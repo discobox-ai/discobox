@@ -127,27 +127,22 @@
 # Environment: SANDBOX_RECONCILE_JOB_CONCURRENCY
 #sandboxReconcileJobConcurrency: 4
 
-# Retired in server.yaml, where it is read with a warning and refused
-# from the next release: remove it rather than moving it to
-# platformBundle, which names a platform bundle and not an image. Image
-# for sandboxes that name no harness. Defaults to the built-in sandbox
-# agent image.
-# Example: defaultSandboxImage: ghcr.io/discobox-ai/discobox-sandbox-agent:v0.8.0
-# Environment: DISCOBOX_DEFAULT_SANDBOX_IMAGE
-#defaultSandboxImage:
-
-# The platform bundle every harness's manifest is composed on. Defaults
-# to the one this build ships.
+# The platform bundle every harness's manifest is composed on and every
+# discobox applies. Defaults to the one this build ships.
 # Example: platformBundle: ghcr.io/discobox-ai/discobox-platform:v0.8.0
 # Environment: DISCOBOX_PLATFORM_BUNDLE
 #platformBundle:
 
-# Retired in server.yaml, where it is read with a warning and refused
-# from the next release. Digest identifying the build behind
-# defaultSandboxImage. Those sandboxes report no upgrade when it is
-# unknown.
+# Retired, and ignored: no discobox runs an image of its own any more.
+# Read with a warning, and refused from the next release; remove it
+# rather than moving it to platformBundle, which names a platform bundle
+# and not an image.
+# Example: defaultSandboxImage: ghcr.io/discobox-ai/discobox-sandbox-agent:v0.8.0
+#defaultSandboxImage:
+
+# Retired, and ignored with defaultSandboxImage. Read with a warning, and
+# refused from the next release.
 # Example: defaultSandboxImageDigest: sha256:4f2a9c1e7b3d8a6f0e5c2b9d7a1f3e8c6b4d2a0f9e7c5b3a1d8f6e4c2b0a9d7e
-# Environment: DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST
 #defaultSandboxImageDigest:
 
 # Have each project's judge decide whether a command discobox-access runs

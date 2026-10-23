@@ -1,8 +1,8 @@
 # Harness Design
 
-This package owns the shared harness image contract (the manifest labels and
+This package owns the shared harness bundle contract (the manifest labels and
 their layering, volume and env resolution, the configure-flow paths) and the
-built-in harness images: their manifests, image-owned hook definitions,
+built-in harness bundles: their manifests, harness-owned hook definitions,
 launchers, and configure scripts.
 
 ## Image Contract
@@ -12,11 +12,9 @@ launchers, and configure scripts.
   and never run, whose labels carry its manifest. The platform is a bundle
   too, and a harness bundle never inherits it: the server composes the
   platform bundle's `10-platform` layer (`PlatformLayer`) under the harness
-  bundle's own (`ComposeBundleLabels`). Each harness also still has a
-  runnable image built from the platform's with its bundle provisioned into
-  it, which a sandbox pins and a pool runs only for a sandbox delivered no
-  platform (a pin that is no content digest, build mode's): a box delivered its platform
-  runs the provider's sandbox base image and applies its bundles itself at
+  bundle's own (`ComposeBundleLabels`). No harness is an image (§10): every
+  box runs its provider's image — on the Docker driver, the sandbox base
+  image — and the sandbox agent applies its platform and harness bundles at
   every start (§7, `agentlayer`).
 - One bundle contains at most one harness. Its identity, seed files,
   secret declarations, optional config command, env defaults, declarative
@@ -42,9 +40,9 @@ launchers, and configure scripts.
 - **What a platform has is declared, and what it lacks is the declaration's
   absence** — never a probe at runtime or an optional interface (ADR 0145 §3).
   A manifest file declares its `platform` (`os/arch`) and its `imageKind`
-  (`discovm/<driver>`, ADR 26-10-09-106 §4); an image declares neither,
-  because its platforms are what its registry publishes and it is an OCI image
-  by being one. A non-Linux manifest
+  (`discovm/<driver>`, ADR 26-10-09-106 §4); a bundle declares neither,
+  because its steps select the platform they run on and its kind is the
+  provider's (ADR 26-10-16-423 §2). A non-Linux manifest
   names its one `account` by name alone (ADR 0145 §5) and the `shell` its
   terminals type into, as an absolute path of its platform; a Linux one names
   neither, because both come from the account the sandbox resolves from its
@@ -83,8 +81,9 @@ launchers, and configure scripts.
   `config` go to the last layer that sets them — and none of them may unset.
   A layer is a fragment: only the merged result is validated, at registration.
   `00`–`49` is reserved for layers Discobox ships (`LayerNumberReserved`).
-  The same inheritance carries `ReclaimLabel` onto every runnable image built
-  from the sandbox agent's, as one Discobox may reclaim (ADR 0040).
+  The same inheritance carries `ReclaimLabel` onto every image built `FROM`
+  the sandbox base image, as one Discobox may reclaim (ADR 0040); no bundle
+  carries it, and registration refuses a "bundle" that does.
 - A declared volume says which primary volume backs it (`data` or `cache`),
   and `path` may use `%HOME%` and `uid`/`gid` `%UID%`/`%GID%`; `ResolveVolumes`
   expands them against the sandbox user and judges the path by the sandbox's
@@ -122,7 +121,8 @@ launchers, and configure scripts.
   ([ADR 0107](../docs/adr/0107-homebrew-is-image-content-on-an-overlay-handed-to-a-group.md) §2).
 - **A harness extends a harness, never the platform** (§2). A bundle
   carrying a `10-platform` or `10-sandbox-base` layer of its own was built
-  `FROM` the platform or the sandbox agent image, which would pin the agent
+  `FROM` the platform, or a release from before bundles' sandbox agent
+  image, which would pin the agent
   it was built with, and is refused. It names instead the
   `platformAPIVersion` it needs (`PlatformAPIVersion`), which must be the one
   the platform's layer provides. A bundle carrying a whiteout is refused: its
@@ -137,9 +137,10 @@ launchers, and configure scripts.
   (`harnessconfigs.conventionCommands`), which is where the reserved `shell`
   slug is known — the sandbox knows its harness by the config's generated id
   and cannot tell a login shell from an image that declared nothing.
-  The base image ships `discobox-harness-run` as a shim that execs nothing, so
-  an image installing no agent lands the user at a prompt rather than at a
-  `command not found`; a harness image overwrites it. See ADR 0086 §3.
+  The platform's core feature ships `discobox-harness-run` as a shim that
+  execs nothing, so a harness installing no agent lands the user at a prompt
+  rather than at a `command not found`; a harness bundle's feature overwrites
+  it. See ADR 0086 §3 and ADR 26-10-16-423 §4.
 - **A wrapper joins its prompt words back into one prompt.** The command is
   *typed* (ADR 0027), so the login shell splits it before the wrapper runs:
   `discobox new fix the failing tests` reaches `discobox-harness-run` as four
@@ -149,7 +150,7 @@ launchers, and configure scripts.
   single spaces and hands its agent that single string — an agent CLI takes its
   prompt as one positional, so a wrapper that forwards `"$@"` unchanged asks it
   to "fix". This is the wrapper's half of the convention and part of what a
-  third-party harness image signs up for; the runtime types the words as the
+  third-party harness bundle signs up for; the runtime types the words as the
   user's shell split them and does not rejoin them, because what is on screen
   is an editable command line the user may extend. Each included `launch.sh` is
   tested by running it under a POSIX shell with a stubbed agent
@@ -160,44 +161,35 @@ launchers, and configure scripts.
   a sandbox whose first launch failed still shows what it was asked to do, as
   an editable command line.
 - The resolved manifest is snapshotted onto the harness config at registration
-  and re-snapshotted later — by `SeedBuiltIns` whenever a built-in's image
-  reference or digest has moved, and by `RefreshHarnessConfigImage` when an
-  owner re-inspects a user-registered image. A snapshot is a cache of a mutable
-  tag's current contents, not a permanent record (ADR 0016).
-- Harness CLIs are installed at image build time. Runtime commands are never
-  supplied by the server or pool-agent.
+  and re-snapshotted later — by `SeedBuiltIns` whenever a built-in's bundle
+  reference, its digest or the manifest composed from it on the platform's
+  layer (`ManifestDigest`) has moved, and by `RefreshHarnessConfigImage` when
+  an owner re-inspects a user-registered bundle. A snapshot is a cache of a
+  mutable tag's current contents, not a permanent record (ADR 0016).
+- Runtime commands are never supplied by the server or pool-agent: the
+  harness's feature installs its CLI when a box provisions it, as the next
+  point says.
 - Each harness folder owns its `Dockerfile`, `image.json`, configure script,
   and other image-specific assets. The folder is the harness's feature
   ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §4): its `provision.yaml` installs the CLI (`install-cli.sh`) and places
   each file where the harness reads it, requiring the platform features it
   runs on (`node`, and `bun` for omp).
-- **A harness Dockerfile builds two artifacts** (§2). Its default target,
-  `bundle`, is `FROM scratch`: the feature's files under
+- **A harness Dockerfile builds one artifact, its bundle** (§2): one `FROM
+  scratch` stage, `bundle`, holding the feature's files under
   `/features/<feature>/` and the manifest in labels, published as
-  `discobox-harness-<name>`, the name a third party builds `FROM`. Its `image`
-  target is the runnable twin, which a pool runs only for a sandbox delivered
-  no platform,
-  `discobox-harness-<name>-image`: `FROM` the sandbox agent image, the
-  bundle's `/features/` copied into the harness tree,
-  `/opt/discobox/bundles/harness`, and `discobox-sandbox-agent provision` run
-  over the platform's tree and it. The twin also carries the bundle's
-  `io.discobox.image.v1` label, which nothing reads: it is there so the digest
-  a sandbox pins moves with every manifest edit
-  ([`harnessconfigs`](../server/internal/resources/harnessconfigs/DESIGN.md)).
-  `harness/shell`'s bundle carries no feature, only its label, and its twin is
-  the sandbox agent image and that label. A published harness bundle is one
-  `linux/amd64` manifest with no attestations — its content is the same on
-  every architecture, and its steps select theirs when they run — where the
-  platform bundle and the twins are multi-architecture indexes.
+  `discobox-harness-<name>`, the name a box applies and a third party builds
+  `FROM`. `harness/shell`'s bundle carries no feature, only its label. A
+  published harness bundle is one `linux/amd64` manifest with no attestations
+  — its content is the same on every architecture, and its steps select
+  theirs when they run — where the platform bundle is a multi-architecture
+  index.
 - **A manifest argument is required, not optional.** `LABEL key=${ARG}` with no
   argument passed labels the image with the empty string, which is a build
   mistake that produces a working image nothing can register — so the platform
   stage of `sandbox-agent/Dockerfile` and every harness bundle stage refuse the
   build through `${ARG:?}` when their argument is missing, rather than leaving
-  it for a server to report at seed time. A harness's twin labels the same
-  argument; the twins that build no bundle stage (`shell`, the test stub and
-  the latency harness) refuse an empty one themselves. Any build path publishing these
+  it for a server to report at seed time. Any build path publishing these
   (`build:*`, `release:images`, the development watcher) passes it.
 - **The platform layer** (`10-platform`) is `sandbox-agent/image.json`, beside the Dockerfile that
   labels it. It carries what is true of every box the platform provisions rather than of
@@ -255,9 +247,9 @@ launchers, and configure scripts.
     `NPM_CONFIG_PREFIX` env, and the pnpm `storeDir` seed file.
 - **The agent version a sandbox runs comes from that store, not from the
   image** ([ADR 0114](../docs/adr/0114-a-sandbox-pins-its-agent-version-from-a-pool-cached-store.md)).
-  A harness image declares what it installed in
+  A harness bundle's feature declares what it installed in
   `/usr/local/libexec/discobox/agent.conf` (`AGENT_PACKAGE`, `AGENT_BIN`, and
-  optionally `AGENT_IMAGE_DIRS`), and the base image does the rest from
+  optionally `AGENT_IMAGE_DIRS`), and the platform does the rest from
   `/etc/profile.d/sandbox-agent-store.sh`: `discobox-agent-store pin` points
   `~/.local/bin/<bin>` at the newest version in the store, once per sandbox and
   never again (a pin for another package of the same command, left by an
@@ -281,7 +273,7 @@ launchers, and configure scripts.
   the variable too, ahead of asking whether it writes to a terminal, and may
   put OSC 8 into a pipe. That cost is kept to the one image whose agent needs
   the hint, rather than made every exec's default.
-- Every harness image that runs a model provides
+- Every harness bundle that runs a model provides
   **`/usr/local/bin/discobox-prompt`**, a one-shot prompting interface a
   process in the discobox asks for a model through
   ([ADR 0079](../docs/adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)):
@@ -314,8 +306,8 @@ launchers, and configure scripts.
   answer is decoded strictly ([`judge`](../pkg/judge/DESIGN.md)): prose around it,
   a code fence, or a transcript with the answer somewhere inside is an answer
   that cannot be read, and a wrapper that cannot be told to say only the answer
-  normalizes its own output — `discobox-prompt-answer`, which the
-  sandbox-agent image installs and every harness image inherits, prints the one
+  normalizes its own output — `discobox-prompt-answer`, which the platform's
+  core feature installs on every box, prints the one
   JSON document in what it is given — the last one that starts a line, so that
   prose mentioning a brace cannot swallow the answer. `codex-cli`
   prints the agent's last message alone (`--output-last-message`) and puts it
@@ -386,30 +378,26 @@ launchers, and configure scripts.
 
 ## Driver Model
 
-- `harness.Driver` identifies one built-in harness's included bundle and
-  image through `ID()` and `Definition()`, and nothing else. The definition
-  catalog is a registration shortcut — seeding reads only a definition's `ID`
-  (the slug), `Name`, `Bundle` and `Image` (`harnessdefs.Seeds`); runtime
-  metadata comes from the bundle's labels, composed on the platform layer, and
-  nothing reads the runnable image's. A driver holds no behavior a harness
-  bundle cannot declare for itself — that is what keeps a third-party harness
-  a pure registration story.
-- A `Definition` names its two references, the bundle
-  `discobox-harness-<id>` and the runnable image `discobox-harness-<id>-image`,
-  through `harness.ImageRef`, never as literals, as `PlatformBundleRef` names
-  the platform bundle. One `ImageRegistry`/`ImageTag` pair backs every one,
+- `harness.Driver` identifies one built-in harness's included bundle through
+  `ID()` and `Definition()`, and nothing else. The definition catalog is a
+  registration shortcut — seeding reads only a definition's `ID` (the slug),
+  `Name` and `Bundle` (`harnessdefs.Seeds`); runtime metadata comes from the
+  bundle's labels, composed on the platform layer. A driver holds no behavior
+  a harness bundle cannot declare for itself — that is what keeps a
+  third-party harness a pure registration story.
+- A `Definition` names its bundle, `discobox-harness-<id>`, through
+  `harness.BundleRef`, never as a literal, as `PlatformBundleRef` names the
+  platform bundle. One `BundleRegistry`/`BundleTag` pair backs every one,
   unset and `local` by default and overwritten at link time by a release
   (`Taskfile.yml`'s `release:binary`), so the built-in harnesses a binary seeds
-  are the bundles and images that shipped with it. One pair rather than a
-  reference per artifact: a release publishes them together, and independent
-  references could disagree about which release a sandbox is running.
-- A harness's **platform** is not a definition's to declare (ADR 0145 §1). The
-  image is the template, and what declares where it runs is its index: the
-  control plane records every platform the image is published for when it
-  inspects it, and a sandbox runs on its pool's platform, which that set must
-  name. A release publishes every included harness for each architecture a
-  pool runs, so any pool runs it; a development build is one architecture, and
-  a pool of another is refused with that as the reason. See
+  are the bundles that shipped with it. One pair rather than a reference per
+  bundle: a release publishes them together, and independent references could
+  disagree about which release a sandbox is running.
+- A harness's **platform** is not a definition's to declare (ADR 0145 §1). A
+  bundle names none: one artifact for every architecture, whose steps select
+  the platform they run on, so a pool of any platform runs it. Only a
+  manifest file's template declares the one platform it runs on, which the
+  control plane records and a sandbox's pool must host. See
   [`resources/harnessconfigs/DESIGN.md`](../server/internal/resources/harnessconfigs/DESIGN.md).
 - Whether a harness has an interactive configure flow is the image's
   declaration (`config.command`), snapshotted as the config's config command.
@@ -455,7 +443,7 @@ subject to repo trust prompts or user/project override:
   The image bakes this file beside the Claude Code binary, making the hook
   definition an image-owned compatibility unit; the Go driver does not
   construct or merge Claude Code's hook format.
-- Codex CLI: `/etc/codex/hooks.json`, baked into the harness image beside its
+- Codex CLI: `/etc/codex/hooks.json`, laid by the harness's feature beside its
   `/etc/codex/config.toml` system layer. The hook definition and Codex binary
   are one image-versioned compatibility unit; the Go driver does not construct
   or merge Codex's hook format. Every configured lifecycle event invokes the
@@ -579,7 +567,7 @@ or an audit filter then matches either.
 The runtime exposes opaque durable data for the primary source at
 `/.discobox/data-per-source/primary` in every sandbox — shared by source key,
 or private to the sandbox when there is no key to share it under (see
-[`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md)); only harness images
+[`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md)); only harnesses
 interpret anything beneath it. Claude Code and Codex keep their memory there in
 separate namespaces; opencode has no memory feature to point at it,
 Copilot's has no setting or variable that names where it keeps memories,
@@ -628,8 +616,8 @@ has no memory feature:
 Pool-agent and sandbox-agent know only the generic source-data mount and never
 a harness memory format.
 
-The same preference decides where a harness image's *policy* baseline goes when
-the CLI has a system layer for it. The codex image bakes
+The same preference decides where a harness's *policy* baseline goes when
+the CLI has a system layer for it. The codex feature lays
 `/etc/codex/config.toml` (`codex-cli/system-config.toml`) with
 `approval_policy = "never"` and `sandbox_mode = "danger-full-access"` — the
 sandbox is the isolation boundary, so Codex's own approval prompts and inner

@@ -19,7 +19,6 @@ import (
 type sandboxCreateOptions struct {
 	name                 string
 	description          string
-	image                string
 	poolID               string
 	harnessConfigID      string
 	harnessName          string
@@ -612,7 +611,6 @@ func (a *App) sandboxRequest(ctx context.Context, sandboxArg string) (projectID 
 func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Discobox name")
 	cmd.Flags().StringVar(&opts.description, "description", "", "Discobox description")
-	cmd.Flags().StringVar(&opts.image, "image", "", "Discobox base image")
 	cmd.Flags().StringVar(&opts.poolID, "pool", "", "Pool to schedule the discobox into")
 	cmd.Flags().StringVar(&opts.harnessConfigID, "harness-config", "", "Harness config ID")
 	cmd.Flags().StringVar(&opts.harnessName, "harness", "", "Harness config name to resolve at create time")
@@ -672,7 +670,6 @@ func createSandboxBody(ctx context.Context, opts sandboxCreateOptions) (*apimode
 	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: opts.name}}
 	config := &body.Config
 	config.SetDescription(optString(opts.description))
-	config.SetImage(optString(opts.image))
 	body.SetPoolId(optString(opts.poolID))
 	config.SetHarnessConfigId(optString(opts.harnessConfigID))
 	body.SetHarnessName(optString(opts.harnessName))

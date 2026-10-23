@@ -14,7 +14,6 @@ type Use = contract.Use
 type Sandbox = contract.Sandbox
 type Status = contract.Status
 type AssignedPort = contract.AssignedPort
-type ImageRef = contract.ImageRef
 type BundlePin = contract.BundlePin
 type BundleKind = contract.BundleKind
 type ResolvedHarnessConfig = contract.ResolvedHarnessConfig

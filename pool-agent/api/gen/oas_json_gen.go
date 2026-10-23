@@ -8263,18 +8263,6 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Image.Set {
-			e.FieldStart("image")
-			s.Image.Encode(e)
-		}
-	}
-	{
-		if s.ImageDigest.Set {
-			e.FieldStart("imageDigest")
-			s.ImageDigest.Encode(e)
-		}
-	}
-	{
 		if s.Start.Set {
 			e.FieldStart("start")
 			s.Start.Encode(e)
@@ -8322,7 +8310,7 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxConfig = [20]string{
+var jsonFieldsNameOfSandboxConfig = [18]string{
 	0:  "harnessConfigId",
 	1:  "harnessMode",
 	2:  "model",
@@ -8334,15 +8322,13 @@ var jsonFieldsNameOfSandboxConfig = [20]string{
 	8:  "skills",
 	9:  "skillsSources",
 	10: "features",
-	11: "image",
-	12: "imageDigest",
-	13: "start",
-	14: "specFingerprint",
-	15: "name",
-	16: "prompt",
-	17: "source",
-	18: "sourceCodeReferences",
-	19: "user",
+	11: "start",
+	12: "specFingerprint",
+	13: "name",
+	14: "prompt",
+	15: "source",
+	16: "sourceCodeReferences",
+	17: "user",
 }
 
 // Decode decodes SandboxConfig from json.
@@ -8469,26 +8455,6 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"features\"")
-			}
-		case "image":
-			if err := func() error {
-				s.Image.Reset()
-				if err := s.Image.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"image\"")
-			}
-		case "imageDigest":
-			if err := func() error {
-				s.ImageDigest.Reset()
-				if err := s.ImageDigest.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"imageDigest\"")
 			}
 		case "start":
 			if err := func() error {
@@ -9412,12 +9378,6 @@ func (s *SandboxUpdateConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Image.Set {
-			e.FieldStart("image")
-			s.Image.Encode(e)
-		}
-	}
-	{
 		if s.WorkingDirectory.Set {
 			e.FieldStart("workingDirectory")
 			s.WorkingDirectory.Encode(e)
@@ -9425,10 +9385,9 @@ func (s *SandboxUpdateConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxUpdateConfig = [3]string{
+var jsonFieldsNameOfSandboxUpdateConfig = [2]string{
 	0: "env",
-	1: "image",
-	2: "workingDirectory",
+	1: "workingDirectory",
 }
 
 // Decode decodes SandboxUpdateConfig from json.
@@ -9448,16 +9407,6 @@ func (s *SandboxUpdateConfig) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"env\"")
-			}
-		case "image":
-			if err := func() error {
-				s.Image.Reset()
-				if err := s.Image.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"image\"")
 			}
 		case "workingDirectory":
 			if err := func() error {

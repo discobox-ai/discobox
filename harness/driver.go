@@ -16,11 +16,11 @@ const (
 	ImageLabel = "io.discobox.image.v1"
 
 	// ReclaimLabel marks an image as one Discobox built and may therefore
-	// delete once nothing uses it (ADR 0040). It is set by the pool-agent and
-	// sandbox-agent Dockerfiles; harness images and anything else built FROM the
-	// sandbox base inherit it through the image config, which is also what
-	// carries it across a pull — a label cannot be added to an image after it
-	// arrives.
+	// delete once nothing uses it (ADR 0040). It is set by the Docker
+	// driver's sandbox base image; the pool-agent image, built FROM it,
+	// inherits it through the image config, which is also what carries it
+	// across a pull — a label cannot be added to an image after it arrives —
+	// and a pool sets it on the snapshots it commits. No bundle carries it.
 	ReclaimLabel      = "io.discobox.reclaimable.v1"
 	ReclaimLabelValue = "true"
 
@@ -177,16 +177,13 @@ type ConfigPort struct {
 
 // Definition is a built-in shortcut for registering an included harness.
 //
-// Bundle is the harness bundle its manifest is read from (ADR 26-10-16-423
-// §2). Image is the runnable image built from the platform's image with that
-// bundle provisioned into it, which a pool runs until the agent applies
-// bundles itself.
+// Bundle is the harness bundle its manifest is read from and every box on it
+// applies (ADR 26-10-16-423 §2).
 type Definition struct {
 	ID          string
 	Name        string
 	Description string
 	Bundle      string
-	Image       string
 }
 
 // File is a file to write into the harness's home directory when the harness is

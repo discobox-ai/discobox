@@ -349,11 +349,6 @@ components:
                     additionalProperties:
                         "$ref": "#/components/schemas/SandboxFeature"
                     type: object
-                image:
-                    type: string
-                imageDigest:
-                    description: Config digest the image must resolve to. The runtime runs this image and replaces a container built from any other, so a moved tag never silently changes a running sandbox.
-                    type: string
                 start:
                     description: |-
                         Whether creating the container should also bring it up. True for a sandbox being
@@ -365,7 +360,7 @@ components:
                     description: |-
                         Digest of the whole sandbox spec this container must be built from.
                         The runtime records it as a container label and rebuilds any container whose label
-                        no longer matches, so image upgrades and every other spec change are one mechanism
+                        no longer matches, so bundle upgrades and every other spec change are one mechanism
                         rather than a growing list of per-field comparisons.
                     type: string
                 name:
@@ -390,8 +385,6 @@ components:
                     additionalProperties:
                         type: string
                     type: object
-                image:
-                    type: string
                 workingDirectory:
                     type: string
             type: object

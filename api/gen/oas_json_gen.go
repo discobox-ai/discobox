@@ -3089,8 +3089,10 @@ func (s *CreateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("image")
-		e.Str(s.Image)
+		if s.Image.Set {
+			e.FieldStart("image")
+			s.Image.Encode(e)
+		}
 	}
 	{
 		if s.Name.Set {
@@ -3120,7 +3122,6 @@ func (s *CreateHarnessConfigBody) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode CreateHarnessConfigBody to nil")
 	}
-	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -3155,11 +3156,9 @@ func (s *CreateHarnessConfigBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"bundle\"")
 			}
 		case "image":
-			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
-				v, err := d.Str()
-				s.Image = string(v)
-				if err != nil {
+				s.Image.Reset()
+				if err := s.Image.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -3192,38 +3191,6 @@ func (s *CreateHarnessConfigBody) Decode(d *jx.Decoder) error {
 		return nil
 	}); err != nil {
 		return errors.Wrap(err, "decode CreateHarnessConfigBody")
-	}
-	// Validate required fields.
-	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00001000,
-	} {
-		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
-			// Mask only required fields and check equality to mask using XOR.
-			//
-			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
-			// Bits of fields which would be set are actually bits of missed fields.
-			missed := bits.OnesCount8(result)
-			for bitN := 0; bitN < missed; bitN++ {
-				bitIdx := bits.TrailingZeros8(result)
-				fieldIdx := i*8 + bitIdx
-				var name string
-				if fieldIdx < len(jsonFieldsNameOfCreateHarnessConfigBody) {
-					name = jsonFieldsNameOfCreateHarnessConfigBody[fieldIdx]
-				} else {
-					name = strconv.Itoa(fieldIdx)
-				}
-				failures = append(failures, validate.FieldError{
-					Name:  name,
-					Error: validate.ErrFieldRequired,
-				})
-				// Reset bit.
-				result &^= 1 << bitIdx
-			}
-		}
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
 	}
 
 	return nil
@@ -6312,6 +6279,18 @@ func (s *CredentialVerdict) encodeFields(e *jx.Encoder) {
 		e.Str(s.ID)
 	}
 	{
+		if s.Bundle.Set {
+			e.FieldStart("bundle")
+			s.Bundle.Encode(e)
+		}
+	}
+	{
+		if s.BundleDigest.Set {
+			e.FieldStart("bundleDigest")
+			s.BundleDigest.Encode(e)
+		}
+	}
+	{
 		if s.Image.Set {
 			e.FieldStart("image")
 			s.Image.Encode(e)
@@ -6461,7 +6440,7 @@ func (s *CredentialVerdict) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCredentialVerdict = [34]string{
+var jsonFieldsNameOfCredentialVerdict = [36]string{
 	0:  "$schema",
 	1:  "allow",
 	2:  "command",
@@ -6470,32 +6449,34 @@ var jsonFieldsNameOfCredentialVerdict = [34]string{
 	5:  "grantId",
 	6:  "harnessConfigId",
 	7:  "id",
-	8:  "image",
-	9:  "imageDigest",
-	10: "jevInput",
-	11: "judgeSandboxId",
-	12: "kind",
-	13: "ruleId",
-	14: "questionDigest",
-	15: "latencyMs",
-	16: "model",
-	17: "need",
-	18: "origin",
-	19: "probabilities",
-	20: "projectId",
-	21: "prompt",
-	22: "promptVersion",
-	23: "reason",
-	24: "request",
-	25: "role",
-	26: "round",
-	27: "sandboxId",
-	28: "secretRequestId",
-	29: "standingRoute",
-	30: "standingUntil",
-	31: "standingVerdictId",
-	32: "useId",
-	33: "volunteered",
+	8:  "bundle",
+	9:  "bundleDigest",
+	10: "image",
+	11: "imageDigest",
+	12: "jevInput",
+	13: "judgeSandboxId",
+	14: "kind",
+	15: "ruleId",
+	16: "questionDigest",
+	17: "latencyMs",
+	18: "model",
+	19: "need",
+	20: "origin",
+	21: "probabilities",
+	22: "projectId",
+	23: "prompt",
+	24: "promptVersion",
+	25: "reason",
+	26: "request",
+	27: "role",
+	28: "round",
+	29: "sandboxId",
+	30: "secretRequestId",
+	31: "standingRoute",
+	32: "standingUntil",
+	33: "standingVerdictId",
+	34: "useId",
+	35: "volunteered",
 }
 
 // Decode decodes CredentialVerdict from json.
@@ -6601,6 +6582,26 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"id\"")
+			}
+		case "bundle":
+			if err := func() error {
+				s.Bundle.Reset()
+				if err := s.Bundle.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"bundle\"")
+			}
+		case "bundleDigest":
+			if err := func() error {
+				s.BundleDigest.Reset()
+				if err := s.BundleDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"bundleDigest\"")
 			}
 		case "image":
 			if err := func() error {
@@ -6724,7 +6725,7 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"probabilities\"")
 			}
 		case "projectId":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -6796,7 +6797,7 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"round\"")
 			}
 		case "sandboxId":
-			requiredBitSet[3] |= 1 << 3
+			requiredBitSet[3] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -6848,7 +6849,7 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"standingVerdictId\"")
 			}
 		case "useId":
-			requiredBitSet[4] |= 1 << 0
+			requiredBitSet[4] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.UseId = string(v)
@@ -6860,7 +6861,7 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"useId\"")
 			}
 		case "volunteered":
-			requiredBitSet[4] |= 1 << 1
+			requiredBitSet[4] |= 1 << 3
 			if err := func() error {
 				v, err := d.Bool()
 				s.Volunteered = bool(v)
@@ -6883,9 +6884,9 @@ func (s *CredentialVerdict) Decode(d *jx.Decoder) error {
 	for i, mask := range [5]uint8{
 		0b10001010,
 		0b00000000,
-		0b00010000,
-		0b00001000,
-		0b00000011,
+		0b01000000,
+		0b00100000,
+		0b00001100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -10767,6 +10768,12 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ManifestDigest.Set {
+			e.FieldStart("manifestDigest")
+			s.ManifestDigest.Encode(e)
+		}
+	}
+	{
 		if s.Image.Set {
 			e.FieldStart("image")
 			s.Image.Encode(e)
@@ -10840,7 +10847,7 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessConfig = [31]string{
+var jsonFieldsNameOfHarnessConfig = [32]string{
 	0:  "egress",
 	1:  "imageEgressHosts",
 	2:  "$schema",
@@ -10860,18 +10867,19 @@ var jsonFieldsNameOfHarnessConfig = [31]string{
 	16: "id",
 	17: "bundle",
 	18: "bundleDigest",
-	19: "image",
-	20: "imageDigest",
-	21: "imageKind",
-	22: "name",
-	23: "platforms",
-	24: "projectId",
-	25: "relaunchCommand",
-	26: "runCommand",
-	27: "secrets",
-	28: "slug",
-	29: "updatedAt",
-	30: "volumes",
+	19: "manifestDigest",
+	20: "image",
+	21: "imageDigest",
+	22: "imageKind",
+	23: "name",
+	24: "platforms",
+	25: "projectId",
+	26: "relaunchCommand",
+	27: "runCommand",
+	28: "secrets",
+	29: "slug",
+	30: "updatedAt",
+	31: "volumes",
 }
 
 // Decode decodes HarnessConfig from json.
@@ -11081,6 +11089,16 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"bundleDigest\"")
 			}
+		case "manifestDigest":
+			if err := func() error {
+				s.ManifestDigest.Reset()
+				if err := s.ManifestDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"manifestDigest\"")
+			}
 		case "image":
 			if err := func() error {
 				s.Image.Reset()
@@ -11112,7 +11130,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"imageKind\"")
 			}
 		case "name":
-			requiredBitSet[2] |= 1 << 6
+			requiredBitSet[2] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -11143,7 +11161,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"platforms\"")
 			}
 		case "projectId":
-			requiredBitSet[3] |= 1 << 0
+			requiredBitSet[3] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -11194,7 +11212,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"secrets\"")
 			}
 		case "slug":
-			requiredBitSet[3] |= 1 << 4
+			requiredBitSet[3] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.Slug = string(v)
@@ -11206,7 +11224,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"slug\"")
 			}
 		case "updatedAt":
-			requiredBitSet[3] |= 1 << 5
+			requiredBitSet[3] |= 1 << 6
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -11239,8 +11257,8 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 	for i, mask := range [4]uint8{
 		0b00100000,
 		0b00101000,
-		0b01000001,
-		0b00110001,
+		0b10000001,
+		0b01100010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -41262,8 +41280,10 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("image")
-		e.Str(s.Image)
+		if s.Image.Set {
+			e.FieldStart("image")
+			s.Image.Encode(e)
+		}
 	}
 	{
 		if s.ImageDigest.Set {
@@ -41281,6 +41301,12 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		if s.BundleDigest.Set {
 			e.FieldStart("bundleDigest")
 			s.BundleDigest.Encode(e)
+		}
+	}
+	{
+		if s.HarnessManifestDigest.Set {
+			e.FieldStart("harnessManifestDigest")
+			s.HarnessManifestDigest.Encode(e)
 		}
 	}
 	{
@@ -41329,7 +41355,7 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxConfig = [21]string{
+var jsonFieldsNameOfSandboxConfig = [22]string{
 	0:  "harnessConfigId",
 	1:  "harnessMode",
 	2:  "model",
@@ -41344,13 +41370,14 @@ var jsonFieldsNameOfSandboxConfig = [21]string{
 	11: "imageDigest",
 	12: "bundle",
 	13: "bundleDigest",
-	14: "platformBundle",
-	15: "platformBundleDigest",
-	16: "name",
-	17: "prompt",
-	18: "source",
-	19: "sourceCodeReferences",
-	20: "user",
+	14: "harnessManifestDigest",
+	15: "platformBundle",
+	16: "platformBundleDigest",
+	17: "name",
+	18: "prompt",
+	19: "source",
+	20: "sourceCodeReferences",
+	21: "user",
 }
 
 // Decode decodes SandboxConfig from json.
@@ -41479,11 +41506,9 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"features\"")
 			}
 		case "image":
-			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
-				v, err := d.Str()
-				s.Image = string(v)
-				if err != nil {
+				s.Image.Reset()
+				if err := s.Image.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -41520,6 +41545,16 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"bundleDigest\"")
 			}
+		case "harnessManifestDigest":
+			if err := func() error {
+				s.HarnessManifestDigest.Reset()
+				if err := s.HarnessManifestDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"harnessManifestDigest\"")
+			}
 		case "platformBundle":
 			if err := func() error {
 				s.PlatformBundle.Reset()
@@ -41541,7 +41576,7 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"platformBundleDigest\"")
 			}
 		case "name":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -41612,8 +41647,8 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b00000000,
-		0b00000100,
-		0b00000001,
+		0b00000000,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -41951,12 +41986,6 @@ func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Image.Set {
-			e.FieldStart("image")
-			s.Image.Encode(e)
-		}
-	}
-	{
 		e.FieldStart("name")
 		e.Str(s.Name)
 	}
@@ -42000,7 +42029,7 @@ func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxCreateConfig = [19]string{
+var jsonFieldsNameOfSandboxCreateConfig = [18]string{
 	0:  "egress",
 	1:  "harnessConfigId",
 	2:  "harnessMode",
@@ -42013,13 +42042,12 @@ var jsonFieldsNameOfSandboxCreateConfig = [19]string{
 	9:  "skills",
 	10: "skillsSources",
 	11: "features",
-	12: "image",
-	13: "name",
-	14: "prompt",
-	15: "secrets",
-	16: "source",
-	17: "sourceCodeReferences",
-	18: "user",
+	12: "name",
+	13: "prompt",
+	14: "secrets",
+	15: "source",
+	16: "sourceCodeReferences",
+	17: "user",
 }
 
 // Decode decodes SandboxCreateConfig from json.
@@ -42158,18 +42186,8 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"features\"")
 			}
-		case "image":
-			if err := func() error {
-				s.Image.Reset()
-				if err := s.Image.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"image\"")
-			}
 		case "name":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -42257,7 +42275,7 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b00000000,
-		0b00100000,
+		0b00010000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
@@ -52959,6 +52977,8 @@ func (s *SandboxUpgradeReason) Decode(d *jx.Decoder) error {
 		*s = SandboxUpgradeReasonImageDigestChanged
 	case SandboxUpgradeReasonBundleDigestChanged:
 		*s = SandboxUpgradeReasonBundleDigestChanged
+	case SandboxUpgradeReasonManifestDigestChanged:
+		*s = SandboxUpgradeReasonManifestDigestChanged
 	case SandboxUpgradeReasonPlatformBundleDigestChanged:
 		*s = SandboxUpgradeReasonPlatformBundleDigestChanged
 	default:

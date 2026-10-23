@@ -9,13 +9,13 @@ import (
 )
 
 // A custom harness has no trigger but this one (ADR 0016 §7), so re-pulling its
-// image is the whole of how its sandboxes ever move (ADR 0082 §1).
-func TestRefreshingACustomHarnessImageUpgradesItsSandboxes(t *testing.T) {
+// bundle is the whole of how its sandboxes ever move (ADR 0082 §1).
+func TestRefreshingACustomHarnessBundleUpgradesItsSandboxes(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "custom", Name: "Custom",
-		Bundle: "registry.example/custom:v1", Image: "registry.example/custom:v1", ImageDigest: "sha256:one",
+		Bundle: "registry.example/custom:v1", BundleDigest: "sha256:one",
 	}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)
@@ -47,21 +47,21 @@ func TestRefreshingACustomHarnessImageUpgradesItsSandboxes(t *testing.T) {
 // The dev loop: a stable tag rebuilt in place, reseeded on the next project
 // ensure. Creating a config upgrades nothing — nothing references it yet — and
 // the rebuild that follows is what carries its stopped sandboxes forward.
-func TestReseedingABuiltInImageUpgradesItsSandboxes(t *testing.T) {
+func TestReseedingABuiltInBundleUpgradesItsSandboxes(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
-	const image = "discobox-harness-stub:local"
+	const bundle = "discobox-harness-stub:local"
 
 	overrides := map[string]string{}
 	for _, seed := range harnessdefs.Seeds(harnessdefs.References{}, false) {
-		overrides[seed.Slug] = image
+		overrides[seed.Slug] = bundle
 	}
 	if len(overrides) == 0 {
 		t.Fatal("no built-in harnesses to seed")
 	}
 	runtime := &stubSandboxRuntime{}
-	inspector := &stubInspector{byImage: map[string]imageMetadata{image: {Digest: "sha256:one"}}}
-	svc := &Service{store: st, inspector: inspector, harnesses: sameReferences(overrides), sandboxes: runtime}
+	inspector := &stubInspector{byImage: map[string]imageMetadata{bundle: {Digest: "sha256:one"}}}
+	svc := &Service{store: st, inspector: inspector, harnesses: bundleReferences(overrides), sandboxes: runtime}
 
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed built-ins: %v", err)
@@ -72,7 +72,7 @@ func TestReseedingABuiltInImageUpgradesItsSandboxes(t *testing.T) {
 
 	// Same reference, rebuilt: the case tag comparison misses and digest
 	// comparison catches (ADR 0016 §7).
-	inspector.byImage[image] = imageMetadata{Digest: "sha256:two"}
+	inspector.byImage[bundle] = imageMetadata{Digest: "sha256:two"}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("reseed built-ins: %v", err)
 	}

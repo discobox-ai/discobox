@@ -3,12 +3,10 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
-	"os/exec"
 	"runtime"
 	"time"
 
@@ -50,7 +48,9 @@ var bundleRetryWait = 2 * time.Second
 // box whose pins its pool placed with the agent first brings its bundles into
 // its content store — once its first runtime-config document is applied,
 // since that brings up the bridge every fetch goes through — and provisions
-// the trees they make; one without provisions the trees it has.
+// the trees they make. One with no pins, whose agent is not delivered to it —
+// a template with no image, on its own platform — provisions the trees it
+// has, if any.
 func provisionBox(ctx context.Context, tracker *provision.Tracker, runtimeConfig *intake.Intake, configPath string, features map[string]sandboxconfig.Feature) error {
 	if runtime.GOOS == "linux" {
 		fetched, err := fetchBundles(ctx, runtimeConfig)
@@ -103,42 +103,4 @@ func fetchBundles(ctx context.Context, runtimeConfig *intake.Intake) (bool, erro
 		}
 		wait *= 2
 	}
-}
-
-// runInstall lays the agent's units (agentlayer.Install), which run it from
-// agentlayer.CurrentLink, and, on a box systemd is running, reloads systemd
-// and starts the agent's bootstrap path unit, after which the agent
-// provisions the box from its pins (ADR 26-10-16-423 §7). A delivered
-// container never runs it: its pool lays the same units before it starts.
-// The runnable image runs it at its build, where no systemd runs, so it lays
-// the units alone; a machine's provider runs it once at the machine's first
-// boot, having placed the agent layer and CurrentLink.
-func runInstall(args []string) int {
-	flags := flag.NewFlagSet("discobox-sandbox-agent install", flag.ContinueOnError)
-	if err := flags.Parse(args); err != nil {
-		return 2
-	}
-	if err := agentlayer.Install("/"); err != nil {
-		slog.Error("install the agent's units", "error", err)
-		return 1
-	}
-	if _, err := os.Stat("/run/systemd/system"); err != nil {
-		return 0
-	}
-	for _, command := range [][]string{
-		{"systemctl", "daemon-reload"},
-		{"systemctl", "start", "discobox-sandbox-agent.path"},
-	} {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		//nolint:gosec // G204: the commands are the fixed list above.
-		cmd := exec.CommandContext(ctx, command[0], command[1:]...)
-		cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
-		err := cmd.Run()
-		cancel()
-		if err != nil {
-			slog.Error("start the agent", "command", command, "error", err)
-			return 1
-		}
-	}
-	return 0
 }

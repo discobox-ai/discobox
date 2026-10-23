@@ -15,7 +15,6 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
-	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxtoken"
@@ -50,7 +49,6 @@ func newOriginRoute(t *testing.T) *originRoute {
 	for _, id := range []string{"sandbox-1", "sandbox-2"} {
 		if _, err := runtime.CreateSandbox(t.Context(), &workerapimodel.PoolSandboxCreateRequest{
 			SandboxId: id,
-			Config:    workerapimodel.SandboxConfig{Image: workerclient.NewOptString("alpine")},
 		}); err != nil {
 			t.Fatalf("create %s: %v", id, err)
 		}

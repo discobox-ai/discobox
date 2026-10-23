@@ -17,8 +17,12 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/discobox-ai/discobox/pkg/devimage"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
+	"github.com/discobox-ai/discobox/server/internal/devbundles"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -28,8 +32,15 @@ type dockerClientSource func() (*client.Client, error)
 // developer's Docker daemon onto every Docker daemon used by a pool provider.
 // It is intentionally a dockerworker concern: drivers provide connectivity,
 // while the engine owns the Docker daemon's contents.
+//
+// In build-mode it also builds the development bundles no pool has built yet
+// on the first daemon it converges, and saves each into bundles as the OCI
+// image layout the server serves pools from (ADR 26-10-16-423 §13): the host
+// has no daemon to build them on, and no pool daemon holds a bundle once it
+// is saved.
 type DevelopmentImageSynchronizer struct {
 	images      []devimage.Image
+	bundles     *devbundles.Set
 	fingerprint string
 	source      dockerClientSource
 	group       singleflight.Group
@@ -37,13 +48,13 @@ type DevelopmentImageSynchronizer struct {
 
 // NewDevelopmentImageSynchronizer creates an image synchronizer whose source
 // daemon follows the standard DOCKER_HOST/TLS environment.
-func NewDevelopmentImageSynchronizer(images []devimage.Image) (*DevelopmentImageSynchronizer, error) {
-	return newDevelopmentImageSynchronizer(images, func() (*client.Client, error) {
+func NewDevelopmentImageSynchronizer(images []devimage.Image, bundles *devbundles.Set) (*DevelopmentImageSynchronizer, error) {
+	return newDevelopmentImageSynchronizer(images, bundles, func() (*client.Client, error) {
 		return client.New(client.FromEnv)
 	})
 }
 
-func newDevelopmentImageSynchronizer(images []devimage.Image, source dockerClientSource) (*DevelopmentImageSynchronizer, error) {
+func newDevelopmentImageSynchronizer(images []devimage.Image, bundles *devbundles.Set, source dockerClientSource) (*DevelopmentImageSynchronizer, error) {
 	if len(images) == 0 {
 		return nil, nil
 	}
@@ -61,6 +72,7 @@ func newDevelopmentImageSynchronizer(images []devimage.Image, source dockerClien
 	sum := sha256.Sum256(data)
 	return &DevelopmentImageSynchronizer{
 		images:      manifest.Images,
+		bundles:     bundles,
 		fingerprint: hex.EncodeToString(sum[:]),
 		source:      source,
 	}, nil
@@ -70,10 +82,10 @@ func newDevelopmentImageSynchronizer(images []devimage.Image, source dockerClien
 // image reaper's keep set.
 //
 // These have to survive on age alone, because the container check cannot see
-// that they are needed: nothing ever runs the sandbox-agent base image directly,
-// yet every harness image is built FROM it, so reclaiming it would break the
-// next harness build. Both spellings are returned because an image may be named
-// either way and the reaper matches whichever it finds.
+// that they are needed: the sandbox base image is what every sandbox container
+// is created from, and a pool host with none running yet still needs it for
+// the next. Both spellings are returned because an image may be named either
+// way and the reaper matches whichever it finds.
 func (s *DevelopmentImageSynchronizer) KeepReferences() []string {
 	if s == nil {
 		return nil
@@ -111,9 +123,61 @@ func (s *DevelopmentImageSynchronizer) Ensure(ctx context.Context, destination *
 	_, err, _ = s.group.Do(daemonID+":"+s.fingerprint, func() (any, error) {
 		source := &imageSource{open: s.source}
 		defer source.close()
-		return nil, s.ensure(ctx, daemonID, destination, usesContainerdStore(info.Info), source, reporter, poolID)
+		if err := s.ensure(ctx, daemonID, destination, usesContainerdStore(info.Info), source, reporter, poolID); err != nil {
+			return nil, err
+		}
+		return nil, s.buildBundles(ctx, daemonID, destination, info.Info, reporter, poolID)
 	})
 	return err
+}
+
+// buildBundles builds each development bundle no pool has built yet on
+// destination, saves it into the bundle set, and removes it from the daemon,
+// which never holds a bundle for a box: a pool fetches it from the server by
+// blob (ADR 26-10-16-423 §13). A bundle saved once is not built again, by this
+// daemon or any other, until its inputs change its reference.
+func (s *DevelopmentImageSynchronizer) buildBundles(ctx context.Context, daemonID string, destination *client.Client, info system.Info, reporter sandbox.PoolProgressReporter, poolID string) error {
+	builds := s.bundles.Builds()
+	if len(builds) == 0 {
+		return nil
+	}
+	own, ok := daemonPlatform(info)
+	if !ok {
+		return fmt.Errorf("save development bundles: Docker daemon %s reports no platform", daemonID)
+	}
+	release := reporter.Hold(ctx, poolID, sandbox.PoolPhaseSyncingDevelopmentImages)
+	defer release()
+	images := make([]devimage.Image, 0, len(builds))
+	for _, bundle := range builds {
+		images = append(images, devimage.Image{Reference: bundle.Reference, Build: bundle.Build})
+	}
+	if err := buildImages(ctx, destination, daemonID, images); err != nil {
+		return err
+	}
+	for _, bundle := range builds {
+		if err := saveBundle(ctx, destination, bundle.Reference, own, s.bundles); err != nil {
+			return fmt.Errorf("save development bundle %s from Docker daemon %s: %w", bundle.Reference, daemonID, err)
+		}
+		if _, err := destination.ImageRemove(ctx, bundle.Reference, client.ImageRemoveOptions{}); err != nil && !cerrdefs.IsNotFound(err) {
+			slog.WarnContext(ctx, "remove a saved development bundle from the pool's daemon", "daemon_id", daemonID, "bundle", bundle.Reference, "error", err)
+		}
+	}
+	return nil
+}
+
+// saveBundle saves ref, for the daemon's own platform, into bundles. A daemon
+// older than API 1.48 cannot be asked for a platform, and is asked for the
+// image as it holds it: the one it built.
+func saveBundle(ctx context.Context, destination *client.Client, ref string, own imagecache.Platform, bundles *devbundles.Set) error {
+	saved, err := destination.ImageSave(ctx, []string{ref}, client.ImageSaveWithPlatforms(ocispec.Platform{OS: own.OS, Architecture: own.Architecture}))
+	if err != nil {
+		saved, err = destination.ImageSave(ctx, []string{ref})
+	}
+	if err != nil {
+		return err
+	}
+	defer saved.Close()
+	return bundles.Save(ref, saved)
 }
 
 // imageSource is the developer's Docker daemon, opened on first use: only

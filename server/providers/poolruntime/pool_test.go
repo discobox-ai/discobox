@@ -188,7 +188,7 @@ type testRuntimeProvider struct {
 
 func (p *testRuntimeProvider) Close() error { return nil }
 
-func (p *testRuntimeProvider) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, _ *model.Pool, mint poolagent.MintBootstrap, _ []string, begin func(context.Context) error) error {
+func (p *testRuntimeProvider) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, _ *model.Pool, mint poolagent.MintBootstrap, begin func(context.Context) error) error {
 	if !p.createsRuntime {
 		return nil
 	}
@@ -199,7 +199,7 @@ func (p *testRuntimeProvider) EnsurePool(ctx context.Context, _ *model.Project, 
 	return err
 }
 
-func (p *testRuntimeProvider) RepairPool(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Pool, poolagent.MintBootstrap, string, []string, func(context.Context) error) error {
+func (p *testRuntimeProvider) RepairPool(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Pool, poolagent.MintBootstrap, string, func(context.Context) error) error {
 	return nil
 }
 
@@ -248,7 +248,6 @@ func TestPoolProviderCreateCallsPoolAgentRuntime(t *testing.T) {
 
 	runtimeSandbox, state, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
 		PoolID: "pool-1",
-		Image:  sandbox.ImageRef{Name: "alpine:3.20"},
 		Env:    map[string]string{"HELLO": "world"},
 	})
 	if err != nil {
@@ -264,7 +263,7 @@ func TestPoolProviderCreateCallsPoolAgentRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pool runtime get sandbox: %v", err)
 	}
-	if created.Image != "alpine:3.20" || created.Env["HELLO"] != "world" {
+	if created.Env["HELLO"] != "world" {
 		t.Fatalf("created sandbox = %#v", created)
 	}
 }
@@ -369,7 +368,7 @@ func TestPoolProviderMintsBootstrapOnlyWhenRuntimeIsCreated(t *testing.T) {
 	t.Run("drift check over a healthy runtime", func(t *testing.T) {
 		manager := &fakePoolManager{pool: pool}
 		provider := New(&testRuntimeProvider{}, sandbox.ProviderDefinition{Name: "test"}, manager)
-		if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, pool, nil, func(context.Context) error { return nil }); err != nil {
+		if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, pool, func(context.Context) error { return nil }); err != nil {
 			t.Fatalf("reconcile pool: %v", err)
 		}
 		if manager.mintedBootstrapTokens != 0 {
@@ -380,7 +379,7 @@ func TestPoolProviderMintsBootstrapOnlyWhenRuntimeIsCreated(t *testing.T) {
 	t.Run("runtime creation", func(t *testing.T) {
 		manager := &fakePoolManager{pool: pool}
 		provider := New(&testRuntimeProvider{createsRuntime: true}, sandbox.ProviderDefinition{Name: "test"}, manager)
-		if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, pool, nil, func(context.Context) error { return nil }); err != nil {
+		if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, pool, func(context.Context) error { return nil }); err != nil {
 			t.Fatalf("reconcile pool: %v", err)
 		}
 		if manager.mintedBootstrapTokens != 1 {
@@ -479,7 +478,6 @@ func TestPoolProviderCreateWaitsForAPoolHostThatIsComingBack(t *testing.T) {
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
 		PoolID: "pool-1",
-		Image:  sandbox.ImageRef{Name: "discobox/sandbox:latest"},
 	})
 	if err != nil {
 		t.Fatalf("create on a pool host that came back: %v", err)

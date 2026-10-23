@@ -1,6 +1,6 @@
 // Package registryauth resolves credentials for the reads this server makes
 // directly against an OCI registry: the guest image a VM pool boots
-// (server/providers/guestimage) and the harness images a project seeds
+// (server/providers/guestimage) and the harness bundles a project seeds
 // (server/internal/resources/harnessconfigs).
 //
 // It is Docker's keychain with one difference: a credential source that fails
@@ -25,7 +25,7 @@
 // is about the session, not about the lock.
 //
 // Reading anonymously is not free for an image that genuinely needs
-// credentials, which a harness image named by a project may well be. That read
+// credentials, which a harness bundle named by a project may well be. That read
 // fails at the registry instead, as an unauthorized — and it goes on failing
 // every time the reconciler tries again, long after the one warning about the
 // credential store scrolled out of the log. So the credential failure is

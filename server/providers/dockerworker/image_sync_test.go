@@ -117,7 +117,7 @@ func TestDevelopmentImageSynchronizerTransfersMissingImagesOnce(t *testing.T) {
 	destinationServer := httptest.NewServer(http.HandlerFunc(destinationDaemon.serveHTTP))
 	defer destinationServer.Close()
 
-	synchronizer, err := newDevelopmentImageSynchronizer(images, func() (*client.Client, error) {
+	synchronizer, err := newDevelopmentImageSynchronizer(images, nil, func() (*client.Client, error) {
 		return testDockerClient(sourceServer.URL)
 	})
 	if err != nil {
@@ -177,7 +177,7 @@ func TestDevelopmentImageSynchronizerRejectsSourceDrift(t *testing.T) {
 	destinationServer := httptest.NewServer(http.HandlerFunc(destinationDaemon.serveHTTP))
 	defer destinationServer.Close()
 
-	synchronizer, err := newDevelopmentImageSynchronizer(images, func() (*client.Client, error) {
+	synchronizer, err := newDevelopmentImageSynchronizer(images, nil, func() (*client.Client, error) {
 		return testDockerClient(sourceServer.URL)
 	})
 	if err != nil {
@@ -215,7 +215,7 @@ func TestDevelopmentImageSynchronizerIntegration(t *testing.T) {
 	synchronizer, err := newDevelopmentImageSynchronizer([]devimage.Image{{
 		Reference: reference,
 		ID:        inspect.ID,
-	}}, func() (*client.Client, error) {
+	}}, nil, func() (*client.Client, error) {
 		return client.New(client.FromEnv)
 	})
 	if err != nil {
@@ -319,7 +319,7 @@ func TestDevelopmentImageSynchronizerComparesImagesAcrossImageStores(t *testing.
 			defer sourceServer.Close()
 			destinationServer := httptest.NewServer(http.HandlerFunc(destinationDaemon.serveHTTP))
 			defer destinationServer.Close()
-			synchronizer, err := newDevelopmentImageSynchronizer(images, func() (*client.Client, error) {
+			synchronizer, err := newDevelopmentImageSynchronizer(images, nil, func() (*client.Client, error) {
 				return testDockerClient(sourceServer.URL)
 			})
 			if err != nil {

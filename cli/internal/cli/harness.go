@@ -18,7 +18,7 @@ type harnessCreateOptions struct {
 	name           string
 	slug           string
 	bundle         string
-	image          string
+	manifestFile   string
 	files          []string
 	createOnlyFile []string
 }
@@ -233,7 +233,7 @@ func (a *App) newHarnessCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Harness config name")
 	cmd.Flags().StringVar(&opts.slug, "slug", "", "Stable, URL-safe identifier used to select this harness (e.g. codex); defaults to the definition ID or a slug derived from the name")
 	cmd.Flags().StringVar(&opts.bundle, "bundle", "", "Harness bundle to register: a FROM scratch image of its features, built FROM nothing or another harness's bundle, whose labels are its manifest")
-	cmd.Flags().StringVar(&opts.image, "image", "", "The image its discoboxes run: built FROM discobox-sandbox-agent with the bundle provisioned into it")
+	cmd.Flags().StringVar(&opts.manifestFile, "manifest-file", "", "Instead of a bundle, a file:// manifest file in the server's overlay directory: the whole manifest of a template with no image")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the harness's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
 	return cmd
@@ -286,7 +286,7 @@ func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Clie
 	stdin io.Reader, stdout, stderr io.Writer,
 ) (*apimodel.HarnessConfig, error) {
 	// Read before the sandbox exists: the ports the flow forwards are the
-	// image's declaration, and they are bound the moment there is a sandbox to
+	// bundle's declaration, and they are bound the moment there is a sandbox to
 	// forward them into — see forwardConfigurePorts.
 	configRes, err := client.GetHarnessConfig(ctx, apiclientgen.GetHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessID})
 	if err != nil {
@@ -315,9 +315,9 @@ func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Clie
 	}
 
 	// The same narration an attach gets (ADR 0060). It is the same wait, behind
-	// the same image pull, and on a first run that pull is the longest thing
-	// the user will sit through — "waiting for it to start" says nothing for
-	// the minutes it can take.
+	// the same image pull and provisioning, and on a first run that is the
+	// longest thing the user will sit through — "waiting for it to start"
+	// says nothing for the minutes it can take.
 	name := "configure discobox " + id.RandomPart(sandbox.ID)
 	status := newStatusLine(stderr)
 	status.set(name + ": starting")
@@ -396,9 +396,10 @@ func (a *App) newHarnessDeconfigureCommand() *cobra.Command {
 
 func (a *App) newHarnessRefreshImageCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "refresh-image HARNESS",
-		Short: "Re-snapshot a harness from its bundle and image",
-		Long: "Re-inspect the harness's bundle and image and re-snapshot its run command, files,\n" +
+		Use:     "refresh HARNESS",
+		Aliases: []string{"refresh-image"},
+		Short:   "Re-snapshot a harness from its bundle",
+		Long: "Re-inspect the harness's bundle and re-snapshot its run command, files,\n" +
 			"secrets, environment, volumes, and digests.\n\n" +
 			"Registration reads the bundle's labels once, so a harness pointing at a rebuilt\n" +
 			"tag keeps describing a bundle that no longer exists under it — and its discoboxes\n" +
@@ -435,7 +436,7 @@ func (a *App) newHarnessUpdateCommand() *cobra.Command {
 
 --egress-allow and --egress-deny-by-default set the harness's egress level, which
 every discobox on the harness converges onto, running ones included. The hosts
-the harness image declares (imageEgressHosts) are part of this level already
+the harness bundle declares (imageEgressHosts) are part of this level already
 and need not be listed.
 
 ` + egressHelp, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
@@ -620,7 +621,7 @@ func createHarnessBody(opts harnessCreateOptions) (*apimodel.CreateHarnessConfig
 	body.SetName(optString(opts.name))
 	body.SetSlug(optString(opts.slug))
 	body.SetBundle(optString(opts.bundle))
-	body.Image = strings.TrimSpace(opts.image)
+	body.SetImage(optString(opts.manifestFile))
 	if len(opts.files) > 0 {
 		files, err := parseHarnessFileFlags(opts.files, opts.createOnlyFile)
 		if err != nil {

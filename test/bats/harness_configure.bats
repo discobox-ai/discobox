@@ -8,11 +8,11 @@
 # metadata but never a secret value, and that the value arrives instead as a
 # PREV_-prefixed sentinel the command can see.
 #
-# The pool binds the host Docker socket so locally built images
-# (discobox-harness-stub-image:local, the stub's runnable twin) are visible
-# without a registry, and the server reads the stub's bundle
-# (discobox-harness-stub:local) and the platform bundle it is composed on from
-# the same daemon.
+# No harness is a runnable image: every sandbox container is the Docker
+# driver's sandbox base image (discobox-sandbox-base:local, built here and
+# named to the server so boxes do not pull the remote default), with the
+# platform bundle and the stub's bundle (discobox-harness-stub:local) applied
+# by the sandbox agent. The server reads both bundles from the host daemon.
 
 setup_file() {
   REPO_ROOT="$(cd "${BATS_TEST_FILENAME%/*}/../.." && pwd)"
@@ -53,16 +53,18 @@ PY
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   rm -f build/discobox
   (cd cli && go build -o ../build/discobox ./cmd/discobox)
-  # Through the Taskfile rather than docker directly: both agent images are
-  # built FROM a shared base image, and these targets are what know to build it
-  # first. The sandbox agent image is what the stub's runnable image is built
-  # FROM when no `task dev` loop has named a dev build in .env, so a clean
-  # checkout needs it built here; the platform bundle is what the server
-  # composes every harness bundle on.
+  # Through the Taskfile rather than docker directly: the pool image is built
+  # FROM the sandbox base image, and this target is what knows to build that
+  # first; the base is also every sandbox container's image. The platform
+  # bundle is what the server composes every harness bundle on, and what the
+  # agent applies first in every box.
+  #
+  # Both bundles must be servable to the pool, which fetches them through the
+  # server's asset API; that API reads OCI layouts or registries, not the
+  # daemon's :local tags.
   go tool task build:pool-agent-image
-  go tool task build:sandbox-agent-image
   go tool task build:platform-bundle
-  go tool task build:harness-stub-image
+  go tool task build:harness-stub-bundle
   build_keep_stub_bundle
 
   PORT="$DISCOBOX_BATS_PORT" \
@@ -73,6 +75,7 @@ PY
   DISCOBOX_CACHE_DIR="$DISCOBOX_BATS_CACHE_DIR" \
   DISCOBOX_STATE_DIR="$DISCOBOX_BATS_STATE_DIR" \
   DISCOBOX_DOCKER_POOL_IMAGE=discobox-pool-agent:local \
+  DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE=discobox-sandbox-base:local \
   DISPATCHER_ENABLED=true \
   DISPATCHER_POLL_INTERVAL=200ms \
   DISPATCHER_IMMEDIATE_EXECUTION=true \
@@ -153,12 +156,10 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
 #
 # Only the label changes: it is rebuilt from the stub's image.json plus the
 # toggle and replaces the one inherited from the stub's bundle, which is what
-# this one is built FROM, as a third party extends a harness. Nothing about the
-# runnable image changes, so it registers over the stub's own
-# (discobox-harness-stub-image:local), whose copy of the label nothing reads:
-# it is there only so the image's digest moves with the manifest. The two
-# harnesses register side by side because `harness create` takes an explicit
-# --slug and --name, both unique per project.
+# this one is built FROM, as a third party extends a harness. The new label
+# also moves the bundle's digest, so the two are distinct harnesses to the
+# server. The two register side by side because `harness create` takes an
+# explicit --slug and --name, both unique per project.
 build_keep_stub_bundle() {
   local metadata
   metadata="$(jq -c '.env.STUB_CONFIGURE_KEEP = "1"' "$REPO_ROOT/test/harness-stub/image.json")"
@@ -243,7 +244,7 @@ PY
 # project default is where the configure sandbox lands. That makes the seeded
 # default pool the one that has to be healthy, so this file uses it rather than
 # creating a second provider. Its provider already binds the host Docker socket
-# (so locally built harness images are visible) and reads PORT for its
+# (so the locally built sandbox base image is visible) and reads PORT for its
 # control-plane URL; DISCOBOX_DOCKER_POOL_IMAGE points it at the locally built
 # pool-agent instead of an unpublished ghcr tag.
 ensure_pool() {
@@ -286,7 +287,7 @@ configure_stub() {
   pool_id="$(ensure_pool)"
   [ -n "$pool_id" ]
 
-  run cli admin harness create --bundle discobox-harness-stub:local --image discobox-harness-stub-image:local
+  run cli admin harness create --bundle discobox-harness-stub:local
   [ "$status" -eq 0 ]
   harness_json="$output"
   harness_id="$(printf '%s' "$harness_json" | json_get id)"
@@ -346,7 +347,7 @@ configure_stub() {
   local pool_id harness_id before_id after_id before_grant after_grant
   pool_id="$(ensure_pool)"
 
-  run cli admin harness create --bundle discobox-harness-stub-keep:local --image discobox-harness-stub-image:local \
+  run cli admin harness create --bundle discobox-harness-stub-keep:local \
     --slug stub-keep --name "Stub (keep)"
   [ "$status" -eq 0 ]
   harness_id="$(printf '%s' "$output" | json_get id)"

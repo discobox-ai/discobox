@@ -19,7 +19,7 @@ import (
 // RuntimeState is set at create because that is the only place a test can put
 // it: UpdateSandbox omits the column so no path but a state report can write it
 // (ADR 0034 §2).
-func eligibleSandbox(t *testing.T, st *store.Store, configID, image, digest string, mutate ...func(*model.Sandbox)) *model.Sandbox {
+func eligibleSandbox(t *testing.T, st *store.Store, configID, bundle, digest string, mutate ...func(*model.Sandbox)) *model.Sandbox {
 	t.Helper()
 	ensurePool(t, st)
 	sb := &model.Sandbox{
@@ -27,7 +27,7 @@ func eligibleSandbox(t *testing.T, st *store.Store, configID, image, digest stri
 		CreatedByUserID: "user-1",
 		PoolID:          "pool-1",
 		Name:            fmt.Sprintf("sandbox-%d", pinnedSandboxSeq.Add(1)),
-		SandboxManifest: model.SandboxManifest{HarnessMode: "run", Image: image, ImageDigest: digest},
+		SandboxManifest: model.SandboxManifest{HarnessMode: "run", Bundle: bundle, BundleDigest: digest},
 		RuntimeState:    model.SandboxRuntimeStateStopped,
 	}
 	sb.DesiredState = model.DesiredStatePresent
@@ -44,41 +44,41 @@ func eligibleSandbox(t *testing.T, st *store.Store, configID, image, digest stri
 	return sb
 }
 
-func storedPin(t *testing.T, st *store.Store, sandboxID string) (image, digest string, generation int64) {
+func storedPin(t *testing.T, st *store.Store, sandboxID string) (bundle, digest string, generation int64) {
 	t.Helper()
 	stored, err := st.GetSandbox(context.Background(), "project-1", sandboxID)
 	if err != nil {
 		t.Fatalf("get sandbox: %v", err)
 	}
-	return stored.Image, stored.ImageDigest, stored.Generation
+	return stored.Bundle, stored.BundleDigest, stored.Generation
 }
 
-// The whole point: a harness image that moved carries the sandboxes stopped on
+// The whole point: a harness bundle that moved carries the sandboxes stopped on
 // it forward, with nobody typing anything (ADR 0082 §1).
 func TestAutomaticUpgradeMovesAStoppedSandbox(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
-	sb := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old")
+	config := bundledConfig(t, st, codexBundle, codexBundleV2)
+	sb := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1)
 	before := sb.Generation
 
 	if err := svc.UpgradeHarnessConfigSandboxes(ctx, "project-1", config.ID); err != nil {
 		t.Fatalf("upgrade harness config sandboxes: %v", err)
 	}
 
-	image, digest, generation := storedPin(t, st, sb.ID)
-	if image != "discobox-harness-codex:local" || digest != "sha256:new" {
-		t.Fatalf("pin = %q/%q, want the config's current image", image, digest)
+	bundle, digest, generation := storedPin(t, st, sb.ID)
+	if bundle != codexBundle || digest != codexBundleV2 {
+		t.Fatalf("pin = %q/%q, want the config's current bundle", bundle, digest)
 	}
 	if generation <= before {
 		t.Fatalf("generation = %d, want a bump past %d: the re-pin is intent like any other", generation, before)
 	}
 }
 
-// A failed sandbox is the one most likely to be failing because of its image,
+// A failed sandbox is the one most likely to be failing because of its bundle,
 // so it moves with the rest (ADR 0121). The re-pin is intent like any other:
 // it clears the latched error, which is what lets the reconciler retry the
-// create on the new image rather than treat the failure as settled.
+// create on the new bundle rather than treat the failure as settled.
 //
 // Never observed is admitted for a failed sandbox, unlike a ready one: it is
 // the first create that failed before any container was seen, so there is
@@ -95,9 +95,9 @@ func TestAutomaticUpgradeMovesAFailedSandbox(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			svc, st := newUpgradeEngineFixture(t)
-			config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
-			failed := "image not found"
-			sb := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old", func(sb *model.Sandbox) {
+			config := bundledConfig(t, st, codexBundle, codexBundleV2)
+			failed := "bundle not found"
+			sb := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1, func(sb *model.Sandbox) {
 				sb.State = model.SandboxStateFailed
 				sb.ErrorMessage = &failed
 				sb.RuntimeState = tc.runtimeState
@@ -112,8 +112,8 @@ func TestAutomaticUpgradeMovesAFailedSandbox(t *testing.T) {
 			if err != nil {
 				t.Fatalf("get sandbox: %v", err)
 			}
-			if stored.ImageDigest != "sha256:new" {
-				t.Fatalf("pin = %q, want the config's current image", stored.ImageDigest)
+			if stored.BundleDigest != codexBundleV2 {
+				t.Fatalf("pin = %q, want the config's current bundle", stored.BundleDigest)
 			}
 			if stored.Generation <= before || stored.Converged() {
 				t.Fatalf("generation = %d observed %d, want an unsettled bump past %d", stored.Generation, stored.ObservedGeneration, before)
@@ -133,7 +133,7 @@ func TestAutomaticUpgradeMovesAFailedSandbox(t *testing.T) {
 func TestAutomaticUpgradeSkipsAnythingButAStoppedSettledSandbox(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
+	config := bundledConfig(t, st, codexBundle, codexBundleV2)
 
 	failed := "boom"
 	cases := []struct {
@@ -165,19 +165,19 @@ func TestAutomaticUpgradeSkipsAnythingButAStoppedSettledSandbox(t *testing.T) {
 		{"unsettled", func(sb *model.Sandbox) { sb.Generation = 4; sb.ObservedGeneration = 3 }},
 		{"being archived", func(sb *model.Sandbox) { sb.DesiredState = model.DesiredStateArchived }},
 		{"being deleted", func(sb *model.Sandbox) { sb.DesiredState = model.DesiredStateDeleted }},
-		// A config-mode sandbox runs the configure command against a
-		// deliberately fixed image, and the shared rule is what says so.
+		// A config-mode sandbox runs the configure flow and is thrown
+		// away, and the shared rule is what says so.
 		{"in config mode", func(sb *model.Sandbox) { sb.HarnessMode = "config" }},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			sb := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old", tc.mutate)
+			sb := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1, tc.mutate)
 			if err := svc.UpgradeHarnessConfigSandboxes(ctx, "project-1", config.ID); err != nil {
 				t.Fatalf("upgrade harness config sandboxes: %v", err)
 			}
-			if image, digest, _ := storedPin(t, st, sb.ID); digest != "sha256:old" {
-				t.Fatalf("pin moved to %q/%q; a sandbox that is %s must be left alone", image, digest, tc.name)
+			if bundle, digest, _ := storedPin(t, st, sb.ID); digest != codexBundleV1 {
+				t.Fatalf("pin moved to %q/%q; a sandbox that is %s must be left alone", bundle, digest, tc.name)
 			}
 		})
 	}
@@ -188,8 +188,8 @@ func TestAutomaticUpgradeSkipsAnythingButAStoppedSettledSandbox(t *testing.T) {
 func TestAutomaticUpgradeRespectsAManualProject(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
-	sb := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old")
+	config := bundledConfig(t, st, codexBundle, codexBundleV2)
+	sb := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1)
 
 	project, err := st.GetProject(ctx, "project-1")
 	if err != nil {
@@ -203,7 +203,7 @@ func TestAutomaticUpgradeRespectsAManualProject(t *testing.T) {
 	if err := svc.UpgradeHarnessConfigSandboxes(ctx, "project-1", config.ID); err != nil {
 		t.Fatalf("upgrade harness config sandboxes: %v", err)
 	}
-	if _, digest, _ := storedPin(t, st, sb.ID); digest != "sha256:old" {
+	if _, digest, _ := storedPin(t, st, sb.ID); digest != codexBundleV1 {
 		t.Fatalf("pin moved to %q under a manual project", digest)
 	}
 	// Still reported, so a manual project can see what it is holding back from.
@@ -222,9 +222,9 @@ func TestAutomaticUpgradeRespectsAManualProject(t *testing.T) {
 func TestAutomaticUpgradeWritesWhatAnExplicitUpgradeWrites(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
-	typed := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old")
-	automatic := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old")
+	config := bundledConfig(t, st, codexBundle, codexBundleV2)
+	typed := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1)
+	automatic := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1)
 
 	if _, err := svc.UpgradeSandbox(ctx, "project-1", typed.ID, services.UpgradeSandboxBody{}); err != nil {
 		t.Fatalf("upgrade sandbox: %v", err)
@@ -233,22 +233,22 @@ func TestAutomaticUpgradeWritesWhatAnExplicitUpgradeWrites(t *testing.T) {
 		t.Fatalf("upgrade harness config sandboxes: %v", err)
 	}
 
-	typedImage, typedDigest, typedGeneration := storedPin(t, st, typed.ID)
-	autoImage, autoDigest, autoGeneration := storedPin(t, st, automatic.ID)
-	if typedImage != autoImage || typedDigest != autoDigest || typedGeneration != autoGeneration {
+	typedBundle, typedDigest, typedGeneration := storedPin(t, st, typed.ID)
+	autoBundle, autoDigest, autoGeneration := storedPin(t, st, automatic.ID)
+	if typedBundle != autoBundle || typedDigest != autoDigest || typedGeneration != autoGeneration {
 		t.Fatalf("automatic wrote %q/%q gen %d, typed wrote %q/%q gen %d; they must be the same operation",
-			autoImage, autoDigest, autoGeneration, typedImage, typedDigest, typedGeneration)
+			autoBundle, autoDigest, autoGeneration, typedBundle, typedDigest, typedGeneration)
 	}
 }
 
 // The typed upgrade had already moved this one, so the fan-out has nothing to
 // do: it must not bump a generation for a re-pin that changes nothing, which
-// would cost a container rebuild for no image change.
-func TestAutomaticUpgradeSkipsASandboxAlreadyOnTheImage(t *testing.T) {
+// would cost a container rebuild for no bundle change.
+func TestAutomaticUpgradeSkipsASandboxAlreadyOnTheBundle(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:same")
-	sb := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:same")
+	config := bundledConfig(t, st, codexBundle, codexBundleV1)
+	sb := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1)
 	before := sb.Generation
 
 	if err := svc.UpgradeHarnessConfigSandboxes(ctx, "project-1", config.ID); err != nil {
@@ -281,7 +281,7 @@ func (p *retryRecordingProvider) Archive(context.Context, sandbox.SandboxRef, []
 }
 
 // What ADR 0121 claims happens after the re-pin, driven through the reconciler
-// rather than read off the row: the failed create is retried on the new image,
+// rather than read off the row: the failed create is retried on the new bundle,
 // is not a repair, starts nothing, and settles `ready`.
 func TestAutomaticUpgradeRetriesAFailedSandboxWithoutStartingIt(t *testing.T) {
 	for _, runtimeState := range []string{model.SandboxRuntimeStateStopped, ""} {
@@ -292,9 +292,9 @@ func TestAutomaticUpgradeRetriesAFailedSandboxWithoutStartingIt(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 			svc, st := newUpgradeEngineFixture(t)
-			config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
+			config := bundledConfig(t, st, codexBundle, codexBundleV2)
 			failed := "pull image: not found"
-			sb := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old", func(sb *model.Sandbox) {
+			sb := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1, func(sb *model.Sandbox) {
 				sb.State = model.SandboxStateFailed
 				sb.ErrorMessage = &failed
 				sb.RuntimeState = runtimeState
@@ -339,9 +339,9 @@ func TestAutomaticUpgradeRetriesAFailedSandboxWithoutStartingIt(t *testing.T) {
 func TestAutomaticUpgradeSkipsAFailedSandboxAwaitingItsPush(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
+	config := bundledConfig(t, st, codexBundle, codexBundleV2)
 	failed := "pull image: not found"
-	sb := eligibleSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old", func(sb *model.Sandbox) {
+	sb := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1, func(sb *model.Sandbox) {
 		sb.State = model.SandboxStateFailed
 		sb.ErrorMessage = &failed
 		sb.Source = &model.GitSource{Kind: "git", Delivery: model.GitSourceDeliveryPush}
@@ -354,8 +354,8 @@ func TestAutomaticUpgradeSkipsAFailedSandboxAwaitingItsPush(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get sandbox: %v", err)
 	}
-	if stored.ImageDigest != "sha256:old" || stored.Generation != sb.Generation || stored.ErrorMessage == nil {
+	if stored.BundleDigest != codexBundleV1 || stored.Generation != sb.Generation || stored.ErrorMessage == nil {
 		t.Fatalf("pin = %q, generation %d (was %d), error = %v; want it untouched",
-			stored.ImageDigest, stored.Generation, sb.Generation, stored.ErrorMessage)
+			stored.BundleDigest, stored.Generation, sb.Generation, stored.ErrorMessage)
 	}
 }

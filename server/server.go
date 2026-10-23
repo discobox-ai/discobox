@@ -11,7 +11,6 @@ import (
 	"github.com/discobox-ai/discobox/harness/registry"
 	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 	"github.com/discobox-ai/discobox/pkg/version"
-	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
 
@@ -66,11 +65,10 @@ func RunVMLauncherIfInvoked() {
 // artifacts even on a machine configured for a different release.
 func PrintReleaseManifest(w io.Writer) error {
 	m := releasemanifest.Manifest{Format: 1, Version: version.String(), Images: releasemanifest.Images{
-		PoolAgent: dockerworker.DefaultPoolImage, SandboxBase: dockerworker.DefaultSandboxBaseImage, SandboxAgent: sandbox.DefaultSandboxImageName,
-		VM: guestimage.DefaultVMImage, Kernel: libkrun.DefaultKernelImage, Harnesses: map[string]string{},
+		PoolAgent: dockerworker.DefaultPoolImage, SandboxBase: dockerworker.DefaultSandboxBaseImage,
+		VM: guestimage.DefaultVMImage, Kernel: libkrun.DefaultKernelImage,
 	}, Bundles: releasemanifest.Bundles{Platform: harness.PlatformBundleRef(), Harnesses: map[string]string{}}}
 	for _, definition := range registry.Definitions() {
-		m.Images.Harnesses[definition.ID] = definition.Image
 		m.Bundles.Harnesses[definition.ID] = definition.Bundle
 	}
 	if err := m.Validate(); err != nil {

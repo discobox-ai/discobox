@@ -10,9 +10,9 @@ import (
 
 // presentSandbox stores a pinned sandbox with the present intent repair acts
 // on, so a repair is not refused before it starts.
-func presentSandbox(t *testing.T, st *store.Store, configID, image, digest string) *model.Sandbox {
+func presentSandbox(t *testing.T, st *store.Store, configID, bundle, digest string) *model.Sandbox {
 	t.Helper()
-	sb := pinnedSandbox(t, st, configID, image, digest)
+	sb := pinnedSandbox(t, st, configID, bundle, digest)
 	sb.DesiredState = model.DesiredStatePresent
 	sb.State = model.SandboxStateFailed
 	message := "create failed: no such file or directory"
@@ -23,22 +23,22 @@ func presentSandbox(t *testing.T, st *store.Store, configID, image, digest strin
 	return sb
 }
 
-// The rebuild lands on the current image (ADR 0062 §1). A stale image is itself
+// The rebuild lands on the current bundle (ADR 0062 §1). A stale bundle is itself
 // a way for a sandbox to be wedged, and the teardown has already paid what a
 // re-pin costs, so repairing onto the old pin would rebuild the container that
 // could not work and report it fixed.
-func TestRepairRebuildsOnTheCurrentImage(t *testing.T) {
+func TestRepairRebuildsOnTheCurrentBundle(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
-	sb := presentSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old")
+	config := bundledConfig(t, st, codexBundle, codexBundleV2)
+	sb := presentSandbox(t, st, config.ID, codexBundle, codexBundleV1)
 
 	repaired, err := svc.RepairSandbox(ctx, "project-1", sb.ID)
 	if err != nil {
 		t.Fatalf("repair sandbox: %v", err)
 	}
-	if repaired.ImageDigest != "sha256:new" {
-		t.Fatalf("digest = %q, want the config's current one: repair is an upgrade too", repaired.ImageDigest)
+	if repaired.BundleDigest != codexBundleV2 {
+		t.Fatalf("digest = %q, want the config's current one: repair is an upgrade too", repaired.BundleDigest)
 	}
 	// Still one intent: the re-pin rides the generation that names the repair.
 	if repaired.RepairGeneration != repaired.Generation {
@@ -56,46 +56,46 @@ func TestRepairRebuildsOnTheCurrentImage(t *testing.T) {
 func TestRepairProceedsWithNothingNewerToPinTo(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:same")
-	sb := presentSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:same")
+	config := bundledConfig(t, st, codexBundle, codexBundleV1)
+	sb := presentSandbox(t, st, config.ID, codexBundle, codexBundleV1)
 
 	repaired, err := svc.RepairSandbox(ctx, "project-1", sb.ID)
 	if err != nil {
 		t.Fatalf("repair sandbox: %v", err)
 	}
-	if repaired.Image != "discobox-harness-codex:local" || repaired.ImageDigest != "sha256:same" {
-		t.Fatalf("pin = %s@%s, want the one it already had", repaired.Image, repaired.ImageDigest)
+	if repaired.Bundle != codexBundle || repaired.BundleDigest != codexBundleV1 {
+		t.Fatalf("pin = %s@%s, want the one it already had", repaired.Bundle, repaired.BundleDigest)
 	}
 	if repaired.RepairGeneration != repaired.Generation {
 		t.Fatalf("repair generation = %d, generation = %d", repaired.RepairGeneration, repaired.Generation)
 	}
 }
 
-// A sandbox with no image to move to — no harness config, nothing seeded — is
+// A sandbox with no bundle to move to — no harness config, nothing seeded — is
 // repaired all the same. Upgrade 409s there; the recovery path cannot.
-func TestRepairProceedsWithNoImageToPinTo(t *testing.T) {
+func TestRepairProceedsWithNoBundleToPinTo(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	sb := presentSandbox(t, st, "", "discobox-sandbox-agent:local", "sha256:old")
+	sb := presentSandbox(t, st, "", shellBundle, shellBundleV1)
 
 	repaired, err := svc.RepairSandbox(ctx, "project-1", sb.ID)
 	if err != nil {
 		t.Fatalf("repair sandbox: %v", err)
 	}
-	if repaired.ImageDigest != "sha256:old" {
-		t.Fatalf("digest = %q, want the pin it had", repaired.ImageDigest)
+	if repaired.BundleDigest != shellBundleV1 {
+		t.Fatalf("digest = %q, want the pin it had", repaired.BundleDigest)
 	}
 }
 
 // The re-pin's legacy rider: a sandbox created before every sandbox carried a
 // harness config resolves its target through the fallback, and pinning that
-// config's image without adopting the config would leave the row describing an
-// image no config of its own names (ADR 0062 §3).
+// config's bundle without adopting the config would leave the row describing a
+// bundle no config of its own names (ADR 0062 §3).
 func TestRepairAdoptsTheFallbackConfigWithTheRepin(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	shell := shellConfig(t, st, "discobox-sandbox-agent:dev-new", "sha256:default-new")
-	sb := presentSandbox(t, st, "", "discobox-sandbox-agent:dev-old", "sha256:default-old")
+	shell := shellConfig(t, st, shellBundle, shellBundleV2)
+	sb := presentSandbox(t, st, "", shellBundle, shellBundleV1)
 
 	repaired, err := svc.RepairSandbox(ctx, "project-1", sb.ID)
 	if err != nil {
@@ -104,8 +104,8 @@ func TestRepairAdoptsTheFallbackConfigWithTheRepin(t *testing.T) {
 	if repaired.HarnessConfigID == nil || *repaired.HarnessConfigID != shell.ID {
 		t.Fatalf("harness config = %v, want the adopted shell config %s", repaired.HarnessConfigID, shell.ID)
 	}
-	if repaired.Image != shell.Image || repaired.ImageDigest != shell.ImageDigest {
-		t.Fatalf("pin = %s@%s, want the shell config's", repaired.Image, repaired.ImageDigest)
+	if repaired.Bundle != shell.Bundle || repaired.BundleDigest != shell.BundleDigest {
+		t.Fatalf("pin = %s@%s, want the shell config's", repaired.Bundle, repaired.BundleDigest)
 	}
 }
 
@@ -114,8 +114,8 @@ func TestRepairAdoptsTheFallbackConfigWithTheRepin(t *testing.T) {
 func TestRepairRefusedOnAnArchivedSandbox(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
-	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
-	sb := presentSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old")
+	config := bundledConfig(t, st, codexBundle, codexBundleV2)
+	sb := presentSandbox(t, st, config.ID, codexBundle, codexBundleV1)
 	sb.DesiredState = model.DesiredStateArchived
 	if err := st.UpdateSandbox(ctx, sb); err != nil {
 		t.Fatalf("archive sandbox: %v", err)
@@ -128,7 +128,7 @@ func TestRepairRefusedOnAnArchivedSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get sandbox: %v", err)
 	}
-	if stored.ImageDigest != "sha256:old" {
-		t.Fatalf("digest = %q: a refused repair must not re-pin", stored.ImageDigest)
+	if stored.BundleDigest != codexBundleV1 {
+		t.Fatalf("digest = %q: a refused repair must not re-pin", stored.BundleDigest)
 	}
 }

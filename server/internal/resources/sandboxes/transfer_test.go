@@ -4,11 +4,14 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -41,13 +44,14 @@ type treeProvider struct {
 	// rather than out of runtime state, which is what lets a discobox whose
 	// create never reached an agent still be exported.
 	exportedPool string
-	// exportedImage is the image ExportSandbox asked the tree to be read with.
-	exportedImage sandbox.ImageRef
+	// exportedBundles are the bundles ExportSandbox asked the tree to be read
+	// with.
+	exportedBundles []sandbox.BundlePin
 }
 
-func (p *treeProvider) ExportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, image sandbox.ImageRef, _ []byte) (io.ReadCloser, error) {
+func (p *treeProvider) ExportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, bundles []sandbox.BundlePin, _ []byte) (io.ReadCloser, error) {
 	p.exportedPool = poolID
-	p.exportedImage = image
+	p.exportedBundles = bundles
 	return io.NopCloser(bytes.NewReader(p.exportTree)), nil
 }
 
@@ -107,16 +111,25 @@ func transferFixture(t *testing.T) (context.Context, *Service, *store.Store, *tr
 	manager.RegisterProvider("test", provider)
 	manager.SetDefault("test")
 	svc := NewService(appStore, manager, "user-1", engine)
+	// A box on a harness bundle applies it onto the release's platform, which
+	// a create pins beside it.
+	svc.SetPlatformBundles(&fakePlatform{pin: services.BundlePin{Reference: platformRef, Digest: platformOld}})
 	return ctx, svc, appStore, provider
 }
 
-// configuredHarness stores a harness a sandbox may be created against.
+// configuredHarness stores a configured harness config on its bundle, the
+// codex one pinned to codexBundleV1.
 func configuredHarness(t *testing.T, st *store.Store, slug, name string) *model.HarnessConfig {
 	t.Helper()
+	digest := codexBundleV1
+	if slug != "codex" {
+		sum := sha256.Sum256([]byte(slug))
+		digest = "sha256:" + hex.EncodeToString(sum[:])
+	}
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: slug, Name: name, Configured: true,
-		Image: "ghcr.io/example/" + slug + ":v1", ImageDigest: "sha256:aaa",
-		RunCommand: []string{slug}, Platforms: platform.NewSet(platform.Pool()),
+		Bundle: "ghcr.io/discobox-ai/discobox-harness-" + slug + ":v1", BundleDigest: digest,
+		ImageKind: platform.OCI, RunCommand: []string{slug},
 	}
 	if err := st.CreateHarnessConfig(context.Background(), config); err != nil {
 		t.Fatalf("create harness config: %v", err)
@@ -147,7 +160,7 @@ func exportArchive(t *testing.T, mutate func(*sandboxexport.Manifest), files map
 			Harness: sandboxexport.Harness{Slug: "codex", Name: "Codex"},
 			Origin:  &model.Origin{HostID: "host-abc", Hostname: "laptop", User: "dev"},
 			Manifest: model.SandboxManifest{
-				Image: "ghcr.io/example/codex:v1", ImageDigest: "sha256:pinned", HarnessMode: "run",
+				Bundle: codexBundle, BundleDigest: codexBundleV2, HarnessMode: "run",
 			},
 		},
 	}
@@ -163,8 +176,12 @@ func exportArchive(t *testing.T, mutate func(*sandboxexport.Manifest), files map
 
 func TestImportRestoresTheTreeBeforeTheRowExists(t *testing.T) {
 	ctx, svc, st, provider := transferFixture(t)
-	configuredHarness(t, st, "codex", "Codex")
-	archive := exportArchive(t, nil, map[string]string{"data/.bashrc": "x\n"})
+	config := configuredHarness(t, st, "codex", "Codex")
+	// An archive from before bundles, of a discobox on a runnable image.
+	archive := exportArchive(t, func(m *sandboxexport.Manifest) {
+		m.Sandbox.Manifest.Bundle, m.Sandbox.Manifest.BundleDigest = "", ""
+		m.Sandbox.Manifest.Image, m.Sandbox.Manifest.ImageDigest = legacyImage, legacyImageDigest
+	}, map[string]string{"data/.bashrc": "x\n"})
 
 	result, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{})
 	if err != nil {
@@ -185,11 +202,15 @@ func TestImportRestoresTheTreeBeforeTheRowExists(t *testing.T) {
 	if sb.Name != "my-box" || sb.PoolID != "pool-1" {
 		t.Fatalf("sandbox = %+v", sb)
 	}
-	// The image comes from the destination's harness config, as a create's
-	// does. It cannot come from the archive: everything else the harness
-	// contributes to the container is read off this row.
-	if sb.Image != "ghcr.io/example/codex:v1" || sb.ImageDigest != "sha256:aaa" {
-		t.Errorf("image = %q@%q, want the destination harness config's pin", sb.Image, sb.ImageDigest)
+	// The bundles come from the destination's harness config and release,
+	// as a create's do. They cannot come from the archive: everything else
+	// the harness contributes to the container is read off this row, and the
+	// archive's runnable image is one no harness is any more.
+	if sb.Bundle != config.Bundle || sb.BundleDigest != codexBundleV1 || sb.PlatformBundleDigest != platformOld {
+		t.Errorf("pins = %q@%q, platform %q, want the destination harness config's and release's", sb.Bundle, sb.BundleDigest, sb.PlatformBundleDigest)
+	}
+	if sb.Image != "" || sb.ImageDigest != "" {
+		t.Errorf("image = %q@%q, want the archive's image left behind", sb.Image, sb.ImageDigest)
 	}
 	if sb.Origin == nil || sb.Origin.HostID != "host-abc" {
 		t.Fatalf("origin = %+v; without it the discobox has no source data mount and no origin key", sb.Origin)
@@ -199,19 +220,17 @@ func TestImportRestoresTheTreeBeforeTheRowExists(t *testing.T) {
 	}
 }
 
-// The image and the rest of what a harness contributes have to come from the
+// The bundle and the rest of what a harness contributes have to come from the
 // same place. RunCommand, Files and Volumes are read off the destination
-// harness config row when the container is built, so an image from the archive
-// and a command from the destination is a container that starts and a harness
-// that does not.
-func TestImportPinsTheImageToTheHarnessItWillRun(t *testing.T) {
+// harness config row when the container is built, so a bundle from the
+// archive and a command from the destination is a container that starts and
+// a harness that does not.
+func TestImportPinsTheBundleToTheHarnessItWillRun(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
 	configuredHarness(t, st, "codex", "Codex")
 	claude := configuredHarness(t, st, "claude", "Claude Code")
 	archive := exportArchive(t, func(m *sandboxexport.Manifest) {
 		m.Sandbox.Harness = sandboxexport.Harness{Slug: "codex", Name: "Codex"}
-		m.Sandbox.Manifest.Image = "ghcr.io/example/codex:v1"
-		m.Sandbox.Manifest.ImageDigest = "sha256:exported"
 	}, nil)
 
 	result, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive),
@@ -223,9 +242,9 @@ func TestImportPinsTheImageToTheHarnessItWillRun(t *testing.T) {
 	if sb.HarnessConfigID == nil || *sb.HarnessConfigID != claude.ID {
 		t.Fatalf("harness config = %v, want the one --harness named", sb.HarnessConfigID)
 	}
-	if sb.Image != claude.Image || sb.ImageDigest != claude.ImageDigest {
-		t.Errorf("image = %q@%q, want %q@%q: --harness moved the harness but not the image it runs in",
-			sb.Image, sb.ImageDigest, claude.Image, claude.ImageDigest)
+	if sb.Bundle != claude.Bundle || sb.BundleDigest != claude.BundleDigest {
+		t.Errorf("bundle = %q@%q, want %q@%q: --harness moved the harness but not the bundle it applies",
+			sb.Bundle, sb.BundleDigest, claude.Bundle, claude.BundleDigest)
 	}
 }
 
@@ -436,7 +455,7 @@ func TestExportCarriesNoSecretValuesAndNamesItsHarness(t *testing.T) {
 	sb := &model.Sandbox{
 		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "my-box",
 		SandboxManifest: model.SandboxManifest{
-			HarnessConfigID: &config.ID, Image: config.Image, ImageDigest: "sha256:pinned", HarnessMode: "run",
+			HarnessConfigID: &config.ID, Bundle: config.Bundle, BundleDigest: codexBundleV2, HarnessMode: "run",
 		},
 	}
 	if err := st.CreateSandbox(ctx, sb); err != nil {
@@ -502,7 +521,10 @@ func TestExportManifestIsValidJSON(t *testing.T) {
 	config := configuredHarness(t, st, "codex", "Codex")
 	if err := st.CreateSandbox(ctx, &model.Sandbox{
 		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "my-box",
-		SandboxManifest: model.SandboxManifest{HarnessConfigID: &config.ID, Image: config.Image, ImageDigest: "sha256:pinned"},
+		SandboxManifest: model.SandboxManifest{
+			HarnessConfigID: &config.ID, Bundle: config.Bundle, BundleDigest: codexBundleV2,
+			PlatformBundle: platformRef, PlatformBundleDigest: platformOld,
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -538,10 +560,14 @@ func TestExportManifestIsValidJSON(t *testing.T) {
 	if provider.exportedPool != "pool-1" {
 		t.Errorf("export addressed pool %q, want the one on the row", provider.exportedPool)
 	}
-	// The tree is read with the sandbox's own pinned image, the one its agent
-	// runs, not whatever its harness config names now (ADR 0129 §1).
-	if want := (sandbox.ImageRef{Name: config.Image, Digest: "sha256:pinned"}); provider.exportedImage != want {
-		t.Errorf("export read with image %+v, want the sandbox's pin %+v", provider.exportedImage, want)
+	// The tree is read with the sandbox's own pinned bundles, the ones its
+	// box applies, not whatever its harness config names now (ADR 0129 §1).
+	want := []sandbox.BundlePin{
+		{Kind: sandbox.BundlePlatform, Name: "discobox-platform", Digest: platformOld},
+		{Kind: sandbox.BundleHarness, Name: "discobox-harness-codex", Digest: codexBundleV2},
+	}
+	if !slices.Equal(provider.exportedBundles, want) {
+		t.Errorf("export read with bundles %+v, want the sandbox's pins %+v", provider.exportedBundles, want)
 	}
 }
 
@@ -584,7 +610,7 @@ func TestExportAndImportCarryTheMetaCopy(t *testing.T) {
 	config := configuredHarness(t, st, "codex", "Codex")
 	if err := st.CreateSandbox(ctx, &model.Sandbox{
 		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "my-box",
-		SandboxManifest: model.SandboxManifest{HarnessConfigID: &config.ID, Image: config.Image, HarnessMode: "run"},
+		SandboxManifest: model.SandboxManifest{HarnessConfigID: &config.ID, Bundle: config.Bundle, HarnessMode: "run"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -666,10 +692,11 @@ func TestImportDropsInvalidTags(t *testing.T) {
 // A discobox moves between machines, not between platforms (ADR 0145 §8):
 // an archive of another platform than the harness or the pool it is imported
 // onto is refused, before the tree is uploaded, and one of the same platform
-// is recorded as that platform.
+// is recorded as that platform. A harness says what platforms it runs on only
+// when it is a manifest file, a template with no image.
 func TestImportRefusesAnotherPlatform(t *testing.T) {
 	ctx, svc, st, provider := transferFixture(t)
-	configuredHarness(t, st, "codex", "Codex")
+	asManifestFile(t, st, configuredHarness(t, st, "codex", "Codex"), platform.Pool())
 	darwin := platform.Platform{OS: "darwin", Arch: "arm64"}
 	archive := exportArchive(t, func(m *sandboxexport.Manifest) { m.Sandbox.Platform = darwin }, map[string]string{"data/x": "x"})
 	_, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{})
@@ -714,7 +741,7 @@ func TestExportRecordsThePlatform(t *testing.T) {
 		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "my-box",
 		Platform: platform.Pool(),
 		SandboxManifest: model.SandboxManifest{
-			HarnessConfigID: &config.ID, Image: config.Image, ImageDigest: "sha256:pinned", HarnessMode: "run",
+			HarnessConfigID: &config.ID, Bundle: config.Bundle, BundleDigest: codexBundleV2, HarnessMode: "run",
 		},
 	}
 	if err := st.CreateSandbox(ctx, sb); err != nil {
@@ -747,7 +774,7 @@ func TestExportTakesThePoolsPlatformForASandboxWithNone(t *testing.T) {
 	}
 	sb := &model.Sandbox{
 		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "my-box",
-		SandboxManifest: model.SandboxManifest{HarnessConfigID: &config.ID, Image: config.Image, ImageDigest: "sha256:pinned", HarnessMode: "run"},
+		SandboxManifest: model.SandboxManifest{HarnessConfigID: &config.ID, Bundle: config.Bundle, BundleDigest: codexBundleV2, HarnessMode: "run"},
 	}
 	if err := st.CreateSandbox(ctx, sb); err != nil {
 		t.Fatal(err)

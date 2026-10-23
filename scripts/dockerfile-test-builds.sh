@@ -33,10 +33,8 @@ cd "$workspace"
 # server, so the same targets are parameterized onto an isolated test namespace.
 export BASE_IMAGE="discobot-dockerfile-test:base"
 export POOL_AGENT_IMAGE="discobot-dockerfile-test:pool-agent"
-export SANDBOX_AGENT_IMAGE="discobot-dockerfile-test:sandbox-agent"
 export PLATFORM_BUNDLE="discobot-dockerfile-test:platform"
 export HARNESS_BUNDLE="discobot-dockerfile-test:harness"
-export HARNESS_IMAGE="discobot-dockerfile-test:harness-image"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required to test-build Dockerfiles" >&2
@@ -85,35 +83,25 @@ build_dockerfile() {
       run_task "$dockerfile" build:pool-agent-image
       ;;
     sandbox-agent/Dockerfile)
-      # Two artifacts, two stages: the runnable image and the platform bundle.
-      run_task "$dockerfile" build:sandbox-agent-image
+      # Its one artifact is the platform bundle; the stages before it build
+      # what it carries.
       run_task "$dockerfile" build:platform-bundle
       ;;
     harness/*/Dockerfile)
-      # Every harness at once, rather than build:harness-image for the one that
-      # changed: that target takes a sandbox agent image as an argument and does
-      # not build one, so a harness alone fails on a daemon that has never built
-      # the agent. build:harness-images is where that ordering already lives.
-      # The harnesses that did not change are cache hits.
-      run_task "$dockerfile" build:harness-images
+      # The harness that changed: a bundle is FROM scratch and builds alone.
+      harness_dir="${dockerfile#harness/}"
+      harness_dir="${harness_dir%/Dockerfile}"
+      harness="$harness_dir"
+      [ "$harness_dir" = codex-cli ] && harness=codex
+      run_task "$dockerfile" build:harness-bundle HARNESS="$harness"
       ;;
     test/harness-stub/Dockerfile|test/performance/terminal-latency/image/Dockerfile)
-      # Not their build targets. Those resolve a sandbox agent image from .env,
-      # because their job is to produce an image a running server can use — and
-      # in a tree where the development image watcher is stamping .env, that
-      # names a tag whose image is not built yet, which a test build then tries
-      # to pull. A test build only has to answer whether the Dockerfile still
-      # builds, so it takes the Dockerfile's own default base and never pulls.
-      # Both stages, as for every harness: the bundle and the runnable twin,
-      # each of which refuses to build without its manifest.
+      # Bundles like every harness's, each of which refuses to build without
+      # its manifest, under a test tag so a running server's is not moved.
       echo "[dockerfile-test-builds] building $dockerfile with context $(dirname "$dockerfile")"
-      DOCKER_BUILDKIT=1 docker build --pull=false --target bundle \
+      DOCKER_BUILDKIT=1 docker build --pull=false \
         --build-arg "HARNESS_METADATA=$(jq -c . "$(dirname "$dockerfile")/image.json")" \
         --tag "discobot-dockerfile-test:$(tag_part "$dockerfile")" \
-        --file "$dockerfile" "$(dirname "$dockerfile")"
-      DOCKER_BUILDKIT=1 docker build --pull=false --target image \
-        --build-arg "HARNESS_METADATA=$(jq -c . "$(dirname "$dockerfile")/image.json")" \
-        --tag "discobot-dockerfile-test:$(tag_part "$dockerfile")-image" \
         --file "$dockerfile" "$(dirname "$dockerfile")"
       ;;
     vm-image/Dockerfile)

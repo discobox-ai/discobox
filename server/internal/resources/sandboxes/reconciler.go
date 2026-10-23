@@ -569,7 +569,6 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			"discobox.sandbox_id": sb.ID,
 		},
 	}
-	opts.Image = ImageRef{Name: sb.Image, Digest: sb.ImageDigest}
 	opts.Bundles = sandboxBundlePins(sb)
 	opts.PoolID = sb.PoolID
 	opts.Platform = sb.Platform
@@ -736,11 +735,11 @@ func sandboxHasNeverRun(state string) bool {
 }
 
 // sandboxBundlePins is what the sandbox is pinned to as its pool addresses
-// it. A pin with no content digest — a build-mode development image, its own
-// reference until a pool builds it — has nothing to fetch, and a box can be
+// it. A pin with no content digest has nothing to fetch, and a box can be
 // delivered only what it can fetch: a sandbox with such a pin is sent none,
-// and runs its image as a sandbox from before bundles does, rather than a
-// platform with no harness (ADR 26-10-16-423 §7).
+// as a sandbox from before bundles is, rather than a platform with no
+// harness, and its pool keeps the container it has but builds it no other
+// until it is re-pinned (ADR 26-10-16-423 §§7, 10).
 func sandboxBundlePins(sb *model.Sandbox) []BundlePin {
 	var pins []BundlePin
 	for _, pin := range []struct {

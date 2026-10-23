@@ -1,5 +1,3 @@
-ARG SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local
-
 # Nearly empty. Every other harness bundle carries its CLI's feature and
 # declares what it needs; this one's harness *is* the shell the platform
 # already ships, and its env, volumes and groups are the platform's own layer,
@@ -22,19 +20,3 @@ ARG HARNESS_METADATA
 # server would ever say so. A FROM scratch stage has no shell to check it in,
 # so the expansion does.
 LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
-
-# The runnable twin a pool runs until the agent applies bundles itself. The
-# bundle has no feature to copy in or provision, so the twin is the sandbox
-# agent image and its label.
-FROM ${SANDBOX_AGENT_IMAGE} AS image
-ARG HARNESS_METADATA
-# The bundle's label again, which nothing reads off this image: it is here so
-# this image's digest, which a sandbox pins and whose move is what re-pins and
-# upgrades it, moves with every edit to the manifest the server composes from
-# the bundle. This stage does not build the bundle's, so it refuses an empty
-# argument itself.
-LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
-
-# The bundle is the default target: it is what a harness is published as, and
-# what a third party builds FROM.
-FROM bundle

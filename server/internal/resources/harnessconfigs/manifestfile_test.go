@@ -42,9 +42,9 @@ func fileReference(path string) string {
 	return (&url.URL{Scheme: "file", Path: path}).String()
 }
 
-// The resolver reads a manifest file through the same entry point as an
-// image: the layers merge as labels do, the digest is the file's own, and the
-// platform the file declares is the one platform the harness is published for.
+// A manifest file's layers merge as a bundle's labels do, its digest is the
+// file's own, and the platform it declares is the one platform its template
+// runs on.
 func TestInspectReadsAManifestFile(t *testing.T) {
 	overlayDir := t.TempDir()
 	path := filepath.Join(overlayDir, "darwin-arm64", "manifest.json")
@@ -54,7 +54,7 @@ func TestInspectReadsAManifestFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(overlayManifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	inspected, err := defaultImageInspector{overlayDir: overlayDir}.Inspect(context.Background(), fileReference(path))
+	inspected, err := defaultImageInspector{overlayDir: overlayDir}.InspectManifestFile(context.Background(), fileReference(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestInspectReadsAManifestFileUnderARelativeOverlayDir(t *testing.T) {
 	if err := os.WriteFile(path, []byte(overlayManifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (defaultImageInspector{overlayDir: "overlays"}).Inspect(context.Background(), fileReference(path)); err != nil {
+	if _, err := (defaultImageInspector{overlayDir: "overlays"}).InspectManifestFile(context.Background(), fileReference(path)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -138,7 +138,7 @@ func TestInspectRefusesAManifestFileReferenceItCannotRead(t *testing.T) {
 		"a directory":          {fileReference(filepath.Join(overlayDir, "darwin-arm64")), overlayDir, "not a regular file"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := defaultImageInspector{overlayDir: tc.overlayDir}.Inspect(context.Background(), tc.ref)
+			_, err := defaultImageInspector{overlayDir: tc.overlayDir}.InspectManifestFile(context.Background(), tc.ref)
 			if err == nil || !strings.Contains(err.Error(), tc.says) {
 				t.Errorf("err = %v, want one saying %q", err, tc.says)
 			}
@@ -148,7 +148,7 @@ func TestInspectRefusesAManifestFileReferenceItCannotRead(t *testing.T) {
 		})
 	}
 	if symlinked {
-		_, err := defaultImageInspector{overlayDir: overlayDir}.Inspect(context.Background(), fileReference(link))
+		_, err := defaultImageInspector{overlayDir: overlayDir}.InspectManifestFile(context.Background(), fileReference(link))
 		if err == nil || strings.Contains(err.Error(), "auths") {
 			t.Errorf("a symlink out of the overlay directory: err = %v, want a refusal that reads nothing", err)
 		}
@@ -233,6 +233,6 @@ func TestComposeBundleMetadataRefusesWhatOnlyAManifestFileSays(t *testing.T) {
 		t.Errorf("a Linux bundle declaring the desktop: %v", err)
 	}
 	if inspected.ImageKind != platform.OCI {
-		t.Errorf("a bundle's kind = %v, want oci, its runnable image's", inspected.ImageKind)
+		t.Errorf("a bundle's kind = %v, want oci, the box a Docker pool applies it to", inspected.ImageKind)
 	}
 }

@@ -420,12 +420,12 @@ file. That is the capability the environment cannot offer, and the reason the
 file exists at all.
 
 A retired key is read for one release and refused from the next (ADR
-26-10-16-423 §10, as amended). It keeps its field, its environment variable
-and its meaning, so a file that sets it runs as it did; `Load` adds one entry
-per retired key the file sets to `Config.Warnings`, which startup logs beside
-the file it read. The variable warns of nothing: it is how development points
-a server at its builds. `defaultSandboxImage` and `defaultSandboxImageDigest`
-are retired, for `platformBundle`.
+26-10-16-423 §10, as amended). It keeps a field, so a file that sets it still
+loads; `Load` adds one entry per retired key the file sets to
+`Config.Warnings`, which startup logs beside the file it read.
+`defaultSandboxImage` and `defaultSandboxImageDigest` are retired and mean
+nothing: no harness is an image and no sandbox runs one of its own, so they
+have no environment variable either.
 
 Presence is read from the YAML node rather than from the resulting values,
 because a field set to its zero value and a field left out mean different
@@ -821,56 +821,67 @@ set, lease-based claiming, failure backoff, and the periodic scan backstop (see
 `internal/resources/jobs` serves the jobs API as a read and force view over that
 dirty set; there is no job queue.
 
-## Sandbox Image Pinning
+## Sandbox Pinning
 
-A sandbox pins the image it was built from as `Image` (what to pull) plus
-`ImageDigest` (which image that must turn out to be — a config digest, matching
-what a local Docker daemon reports as an image ID). The pin is written at create
-from the harness config's snapshot and changed only by an upgrade, so a rebuilt
-tag never moves a running sandbox.
+A sandbox pins what it applies (ADR 26-10-16-423 §7): its harness config's
+bundle, `Bundle`/`BundleDigest`, and the platform the release's reference
+resolves to, `PlatformBundle`/`PlatformBundleDigest`, each by digest — or, on a
+manifest file's template with no image, that file as `Image`/`ImageDigest` —
+and the manifest its container is built with, `HarnessManifestDigest`: the
+config's `ManifestDigest`, of the bundle's labels composed on the platform's
+layer, which a platform-layer edit moves and no bundle digest does. No
+sandbox pins an image of its own: every container is its provider's sandbox
+base image with its bundles applied (§10). The pins are written at create from
+the harness config's snapshot and changed only by a re-pin, so a rebuilt tag
+never moves a running sandbox, and they are what the pool lets the box fetch
+(`resources/assets`, `pool-agent`).
 
 - **Desired side moves on its own.** `harnessconfigs.SeedBuiltIns` re-inspects
-  every built-in image on each server start and refreshes `ImageDigest` whenever
-  the reference *or* the digest changed. `RefreshHarnessConfigImage` is the same
-  operation for user-registered images, which have no automatic trigger. Both
-  reach sandboxes through `applyResolvedPins` (below).
-- **The bundles are pinned with the image** (ADR 26-10-16-423 §7). A sandbox
-  pins its harness config's `Bundle`/`BundleDigest` beside the image it twins,
-  and `PlatformBundle`/`PlatformBundleDigest`, the platform the release's
-  reference resolves to. Every re-pin below moves all three, and the pins are
-  what the pool lets the box fetch (`resources/assets`, `pool-agent`).
+  every built-in bundle on each server start and refreshes `BundleDigest` and
+  `ManifestDigest` whenever the reference, the digest or the composed manifest
+  changed. `RefreshHarnessConfigImage`
+  is the same operation for user-registered bundles, which have no automatic
+  trigger. Both reach sandboxes through `applyResolvedPins` (below).
 - **Availability is derived, never stored.** `services.SandboxUpgrade` compares
-  the sandbox's pin to its preloaded harness config on every read and projects
+  the sandbox's pins to its preloaded harness config on every read and projects
   `runtime.upgrade`, against the platform last resolved. Nothing caches it,
   so no write path can forget to invalidate it.
 - **Upgrading is a re-pin and nothing else.** `UpgradeSandbox` writes the
-  harness config's current image and bundle, and the current platform, as
-  intent. That changes the
-  spec fingerprint, so the ordinary reconcile carries it to the pool agent,
-  which replaces the container that no longer matches — restarting it into the
-  new image if it was running and leaving it stopped if it was not (ADR 0021).
-  There is no upgrade operation and no upgrade counter.
-- **A stopped sandbox follows its harness image; a live one never moves.** When
-  a harness config's resolved image or bundle changes, `applyResolvedPins` runs
+  harness config's current pins and the current platform as intent. That
+  changes the spec fingerprint, so the ordinary reconcile carries it to the
+  pool agent, which replaces the container that no longer matches —
+  restarting it if it was running and leaving it stopped if it was not (ADR
+  0021) — or, for a moved platform alone, restarts it into the new one. There
+  is no upgrade operation and no upgrade counter.
+- **A stopped sandbox follows its harness bundle; a live one never moves.**
+  When a harness config's resolved bundle changes, `applyResolvedPins` runs
   `UpgradeHarnessConfigSandboxes`, and when the release's platform reference
   resolves somewhere new — first on every start — `UpgradePlatformSandboxes`
-  does the same for every project's sandboxes: the same re-pin as the action, through the
-  same `recordSandboxIntent`, for that config's sandboxes observed stopped,
-  and its failed sandboxes that are stopped or were never observed
-  (ADR 0082, ADR 0121). A project opts out with `sandboxUpgradePolicy: manual`. No
-  reconcile moves the pin; every other sandbox runs the image it is pinned to
+  does the same for every project's sandboxes: the same re-pin as the action,
+  through the same `recordSandboxIntent`, for that config's sandboxes observed
+  stopped, and its failed sandboxes that are stopped or were never observed
+  (ADR 0082, ADR 0121). A project opts out with `sandboxUpgradePolicy: manual`.
+  No reconcile moves the pin; every other sandbox runs what it is pinned to
   until somebody upgrades it.
-- **An unpinned sandbox is upgrade eligible, not excluded.** Sandboxes created
-  before pinning, or while the harness config's digest was unknown, carry an
-  empty `ImageDigest`. They report an upgrade like any other; only a missing
-  harness config, a config declaring no image or no known digest, or harness
-  mode `config` opts a sandbox out.
+- **A sandbox from before bundles is pinned to them regardless.** It carries
+  the runnable harness image it ran and no platform pin, and no release
+  builds that image any more, so `PinUndeliveredSandboxes` — on every start,
+  each time the platform moves, and every ten minutes — pins every such
+  sandbox that is settled
+  with no container running onto its config's bundle and the current platform
+  whatever the project's policy: a stopped or failed one as intent, an
+  archived one in place. A running one keeps its container, which its pool
+  keeps while its spec does not move, and reports its upgrade until it stops,
+  is upgraded or repaired.
+- **Nothing to move to opts a sandbox out.** A missing harness config, one
+  with no bundle — registered before bundles — or a development bundle no pool
+  has built yet, and harness mode `config`.
 - **Enforcement is on the pool host, not here.** The control plane sends the
-  pin; `pool-agent/sandboxruntime` resolves images and refuses to launch one
-  that does not match it. The server owns policy, the runtime owns identity —
-  and whether an image can be obtained at all is knowable only there, so the
-  server never gates on it and surfaces the agent's failure instead
-  (ADR 0021 §5).
+  pins; `pool-agent/sandboxruntime` builds the container from the sandbox base
+  image and places the platform's agent, and the box fetches only what its
+  pins name. Whether the base image can be obtained at all is knowable only
+  there, so the server never gates on it and surfaces the agent's failure
+  instead (ADR 0021 §5).
 
 ## Observation vs Intent
 
@@ -963,7 +974,8 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/resources/skillssources` | A project's skills repositories, which the creating client copies into every create; the server validates and keeps the list and never adds it to a create itself (ADR 26-10-14-894). |
 | `internal/resources/sshkeys` | Project-scoped SSH keys authorizing SSH to a project's sandboxes (ADR 0024 §5). |
 | `internal/resources/gateways` | A project's gateways, which every discobox of the project is routed through by its pool's proxy, and the server environment values their headers take (ADR 26-10-16-470). |
-| `internal/harnessdefs` | Seed data for the built-in harness images and the dev image env overrides. |
+| `internal/harnessdefs` | Seed data for the built-in harness bundles and the dev bundle env overrides. |
+| `internal/devbundles` | A development server's bundles (ADR 26-10-16-423 §13): the watcher's exported OCI layouts, and in build-mode the bundles a pool's daemon builds, saved as layouts here. Harness seeding reads their labels and the asset API serves their blobs from them; a saved one re-seeds the built-ins and resolves the platform again. |
 | `internal/database` | Database config, connection setup, and migrations. |
 | `internal/store` | Persistence methods and resource transactions. |
 | `internal/secrets` | Encryption/sealing interfaces and implementations used by server persistence. |

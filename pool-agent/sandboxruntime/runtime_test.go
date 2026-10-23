@@ -830,27 +830,6 @@ func TestPushedSourcesLandHeadingTheOriginAtWhatTheClientPushed(t *testing.T) {
 	}
 }
 
-// The pin is the identity a sandbox runs, and the same comparison decides both
-// whether to launch an image and whether an existing container must be replaced
-// (ADR 0016 §6).
-func TestImageMatchesPin(t *testing.T) {
-	const pinned = "sha256:aaa"
-	if !imageMatchesPin(pinned, pinned) {
-		t.Fatal("the pinned image must match its own pin")
-	}
-	if imageMatchesPin("sha256:bbb", pinned) {
-		t.Fatal("a rebuilt image under the same tag must not match the pin")
-	}
-	// An unpinned sandbox runs whatever its reference names; treating that as a
-	// mismatch would replace containers no one asked to upgrade.
-	if !imageMatchesPin("sha256:bbb", "") {
-		t.Fatal("an empty pin must match any image")
-	}
-	if !imageMatchesPin("  sha256:aaa  ", "  sha256:aaa  ") {
-		t.Fatal("surrounding whitespace must not defeat the comparison")
-	}
-}
-
 // The image a sandbox actually ran is the first thing a version-skew
 // investigation needs, and it is recorded as the resolved identity rather than
 // the mutable reference it was asked for (ADR 0016).
@@ -909,41 +888,10 @@ func TestResolveSandboxUserExplicitRootIsHonoured(t *testing.T) {
 	}
 }
 
-// A recorded fingerprint is the whole answer when it is present.
-func TestSpecDriftedComparesTheRecordedFingerprint(t *testing.T) {
-	if specDrifted("fp-1", "sha256:old", "fp-1", "sha256:new") {
-		t.Fatal("matching fingerprints reported as drift")
-	}
-	if !specDrifted("fp-1", "sha256:same", "fp-2", "sha256:same") {
-		t.Fatal("changed fingerprint not reported as drift")
-	}
-}
-
-// A container with no fingerprint label predates fingerprinting. It falls back
-// to the image comparison rather than being declared clean, which is what left
-// such sandboxes stranded on an old image with no way to upgrade off it.
-func TestSpecDriftedFallsBackToTheImagePinWithoutALabel(t *testing.T) {
-	if !specDrifted("", "sha256:old", "fp-1", "sha256:new") {
-		t.Fatal("unlabeled container running an unpinned image not reported as drift")
-	}
-	if specDrifted("", "sha256:pinned", "fp-1", "sha256:pinned") {
-		t.Fatal("unlabeled container already on the pinned image reported as drift")
-	}
-}
-
-// An unpinned sandbox runs whatever its reference names, so an unlabeled
-// container cannot drift: there is nothing to compare it against.
-func TestSpecDriftedUnlabeledAndUnpinnedIsNotDrift(t *testing.T) {
-	if specDrifted("", "sha256:whatever", "fp-1", "") {
-		t.Fatal("unpinned sandbox reported as drift")
-	}
-}
-
 // TestValidateCreateRequestRefusesAnUnresolvedRequest: the pool agent runs what
-// the control plane tells it and invents nothing. It used to substitute a plain
-// alpine image for a missing one — a container that can never host a sandbox
-// agent, so the sandbox simply never answered instead of the request being
-// reported as wrong (ADR 0025).
+// the control plane tells it and invents nothing. Every sandbox carries a
+// harness config (ADR 0032), so a request without one is a control plane that
+// failed to resolve it, reported as wrong rather than run as a bare shell.
 func TestValidateCreateRequestRefusesAnUnresolvedRequest(t *testing.T) {
 	resolved := workerclient.NewOptResolvedHarnessConfig(workerapimodel.ResolvedHarnessConfig{ID: "harness-1", Name: "Shell"})
 
@@ -951,22 +899,12 @@ func TestValidateCreateRequestRefusesAnUnresolvedRequest(t *testing.T) {
 		req     *workerapimodel.PoolSandboxCreateRequest
 		wantErr string
 	}{
-		"no image": {
-			req: &workerapimodel.PoolSandboxCreateRequest{
-				Config:                workerapimodel.SandboxConfig{},
-				ResolvedHarnessConfig: resolved,
-			},
-			wantErr: "no image",
-		},
 		"no harness config": {
-			req: &workerapimodel.PoolSandboxCreateRequest{
-				Config: workerapimodel.SandboxConfig{Image: workerclient.NewOptString("discobox-sandbox-agent:local")},
-			},
+			req:     &workerapimodel.PoolSandboxCreateRequest{},
 			wantErr: "no resolved harness config",
 		},
 		"fully resolved": {
 			req: &workerapimodel.PoolSandboxCreateRequest{
-				Config:                workerapimodel.SandboxConfig{Image: workerclient.NewOptString("discobox-sandbox-agent:local")},
 				ResolvedHarnessConfig: resolved,
 			},
 		},

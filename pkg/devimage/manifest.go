@@ -49,8 +49,8 @@ type BuildSpec struct {
 	// Context is the absolute build-context root on the host.
 	Context string `json:"context"`
 	// Args are --build-arg values. Cross-image dependencies are expressed by
-	// setting an arg value to another manifest image's Reference (for example a
-	// harness image's SANDBOX_AGENT_IMAGE), which orders the builds.
+	// setting an arg value to another manifest image's Reference (for example
+	// the pool agent's BASE_IMAGE), which orders the builds.
 	Args map[string]string `json:"args,omitempty"`
 	// Target optionally selects a build stage.
 	Target string `json:"target,omitempty"`
@@ -59,18 +59,25 @@ type BuildSpec struct {
 }
 
 // Bundle is one watcher-built bundle (ADR 26-10-16-423 §13): a FROM scratch
-// stage exported as an OCI image layout tar, which the server serves pools from
-// and reads the bundle's labels out of. No Docker daemon ever holds it.
+// stage as an OCI image layout tar, which the server serves pools from and
+// reads the bundle's labels out of.
 //
-// Reference is what the server is configured with — a dev tag derived from
-// Digest, so a rebuild moves it — and Digest the manifest the layout's index
-// lists, which is what the bundle is pinned by. Layout is the tar's absolute
-// path, named by Digest, so a rebuild writes another and never this one; one
-// whose index lists another manifest answers for Digest no more (Check).
+// In copy-mode the watcher exports the layout itself. Reference is what the
+// server is configured with — a dev tag derived from Digest, so a rebuild
+// moves it — and Digest the manifest the layout's index lists, which is what
+// the bundle is pinned by. Layout is the tar's absolute path, named by Digest,
+// so a rebuild writes another and never this one; one whose index lists
+// another manifest answers for Digest no more (Check).
+//
+// In build-mode Build is set instead, and Digest and Layout are empty: the
+// host has no Docker daemon to build on, so a pool's daemon builds the bundle
+// and the server saves the layout (server/internal/devbundles). Reference is
+// then content-addressed over the build's inputs, as a build-mode image's is.
 type Bundle struct {
-	Reference string `json:"reference"`
-	Digest    string `json:"digest"`
-	Layout    string `json:"layout"`
+	Reference string     `json:"reference"`
+	Digest    string     `json:"digest,omitempty"`
+	Layout    string     `json:"layout,omitempty"`
+	Build     *BuildSpec `json:"build,omitempty"`
 }
 
 // Manifest is the complete watcher-built set: the images to converge onto a
@@ -150,16 +157,25 @@ func (m Manifest) Validate() error {
 		if strings.TrimSpace(bundle.Reference) == "" {
 			return fmt.Errorf("development image manifest bundle %d has no reference", i)
 		}
+		if _, ok := seen[bundle.Reference]; ok {
+			return fmt.Errorf("development image manifest repeats reference %q", bundle.Reference)
+		}
+		seen[bundle.Reference] = struct{}{}
+		if bundle.Build != nil {
+			if strings.TrimSpace(bundle.Build.Context) == "" || strings.TrimSpace(bundle.Build.Dockerfile) == "" {
+				return fmt.Errorf("development image manifest bundle %q build needs a context and a dockerfile", bundle.Reference)
+			}
+			if bundle.Digest != "" || bundle.Layout != "" {
+				return fmt.Errorf("development image manifest bundle %q is built by a pool and names a layout too", bundle.Reference)
+			}
+			continue
+		}
 		if !imagecache.IsDigest(bundle.Digest) {
 			return fmt.Errorf("development image manifest bundle %q has invalid digest %q", bundle.Reference, bundle.Digest)
 		}
 		if !filepath.IsAbs(bundle.Layout) {
 			return fmt.Errorf("development image manifest bundle %q layout %q is not an absolute path", bundle.Reference, bundle.Layout)
 		}
-		if _, ok := seen[bundle.Reference]; ok {
-			return fmt.Errorf("development image manifest repeats reference %q", bundle.Reference)
-		}
-		seen[bundle.Reference] = struct{}{}
 	}
 	return nil
 }
