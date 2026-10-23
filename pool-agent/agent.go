@@ -38,17 +38,29 @@ func RunProxy(ctx context.Context, logger *slog.Logger) error {
 	return proxyagent.RunProxy(ctx, layout.Container(), logger)
 }
 
-// RunAgent registers the pool, marks it ready, and serves the pool-agent HTTP endpoints.
+// RunAgent registers the pool, marks it ready, and serves the pool-agent HTTP
+// endpoints over the sandbox runtime its bootstrap names.
 func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	bootstrap := FromEnv()
-	// This agent runs in the pool container, so its state is the container's
-	// (ADR 0144 §1).
+	bootstrap, err := Load()
+	if err != nil {
+		return err
+	}
+	// Refused before anything is written: a bootstrap naming a runtime this
+	// agent cannot compose must not leave a proxy configured for a pool that
+	// never comes up.
+	if err := bootstrap.Validate(); err != nil {
+		return err
+	}
+	runtimeKind := bootstrap.EffectiveRuntime()
+	// This agent runs in the pool container, or as root on a pool machine on
+	// the same paths, so its state is the container's (ADR 0144 §1, ADR
+	// 26-10-23-551 §1).
 	root := layout.Container()
 	// Publish the host-mount prefix for the proxy systemd unit, then prepare the
-	// proxy certificate bundle before booting systemd so the proxy unit and
+	// proxy certificate bundle before the proxy unit starts so it and the
 	// per-sandbox client certificates share a consistent CA without racing on
 	// first-time generation.
 	tunnelURL, err := proxyagent.ConfiguredTunnelURL()
@@ -68,12 +80,17 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if _, err := proxyagent.PrepareControlKey(root, bootstrap.ProjectID, bootstrap.PoolID); err != nil {
 		return fmt.Errorf("prepare proxy control key: %w", err)
 	}
-	// Render the shared builder's and its registry's configuration for the same
-	// reason and at the same point: both run as systemd units with a clean
-	// environment, and every path they own is pool-scoped (ADR 0044).
-	if err := buildkitagent.Prepare(root, bootstrap.ProjectID, bootstrap.PoolID, bundle.MITMCAPath); err != nil {
-		return err
+	if runtimeKind == RuntimeDocker {
+		// Render the shared builder's and its registry's configuration for the
+		// same reason and at the same point: both run as systemd units with a
+		// clean environment, and every path they own is pool-scoped (ADR 0044).
+		// A pool machine runs no builder (ADR 26-10-23-551 §1).
+		if err := buildkitagent.Prepare(root, bootstrap.ProjectID, bootstrap.PoolID, bundle.MITMCAPath); err != nil {
+			return err
+		}
 	}
+	// Only PID 1 in a pool container boots systemd itself; on a pool machine
+	// systemd is already the init and this starts nothing.
 	systemd, err := agentsystemd.StartNamespace(ctx, logger)
 	if err != nil {
 		return err
@@ -81,6 +98,13 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	stopReaper := childproc.StartReaper(ctx, logger, agentsystemd.ManagedChildProcesses(systemd))
 	defer stopReaper()
 	defer agentsystemd.Stop(systemd)
+	// On a pool machine the agent is a unit the proxy's is ordered after, and
+	// this is the start systemd waits for: the proxy's environment, CA and
+	// control key are all written (ADR 26-10-23-551 §1). Anywhere else nothing
+	// is listening, and it does nothing.
+	if err := agentsystemd.NotifyReady(); err != nil {
+		return fmt.Errorf("tell systemd the agent has started: %w", err)
+	}
 
 	// The control plane URL's scheme selects the transport; nothing here knows
 	// whether that is IP, VSOCK, or a Unix socket served by a guest helper.
@@ -103,9 +127,10 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	logger.Info("pool identity ready", "poolID", bootstrap.PoolID, "storedKey", registration.FromStoredKey)
+	logger.Info("pool identity ready", "poolID", bootstrap.PoolID, "storedKey", registration.FromStoredKey, "runtime", runtimeKind)
 
-	if err := startStatusReporter(ctx, logger, root, bootstrap, registration, client, statusReportInterval); err != nil {
+	status := poolStatusFor(bootstrap)
+	if err := startStatusReporter(ctx, logger, root, bootstrap, registration, client, status, statusReportInterval); err != nil {
 		if !registration.FromStoredKey {
 			return err
 		}
@@ -119,12 +144,21 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		if err := startStatusReporter(ctx, logger, root, bootstrap, registration, client, statusReportInterval); err != nil {
+		if err := startStatusReporter(ctx, logger, root, bootstrap, registration, client, status, statusReportInterval); err != nil {
 			return err
 		}
 	}
 
 	startResolveTokenRefresher(ctx, logger, root, bootstrap, registration)
+
+	if runtimeKind == RuntimeMachine {
+		// The machine runtime is not composed yet (ADR 26-10-23-551 §3): the
+		// pool is registered and reports itself, unschedulable and saying why,
+		// and serves nothing until it is.
+		logger.Warn("this agent has no machine runtime yet; the pool is registered and schedules nothing", "poolID", bootstrap.PoolID, "driver", bootstrap.Driver)
+		<-ctx.Done()
+		return ctx.Err()
+	}
 
 	// The bundles its sandboxes are pinned to, fetched from the control plane
 	// as this pool and over the transport its URL names (ADR 26-10-16-423 §13).
@@ -197,6 +231,29 @@ const (
 	statusReportTimeout = 15 * time.Second
 )
 
+// poolStatus is what a pool's composition says of itself on every status
+// report: whether it can be scheduled, and when it cannot, the runtime
+// condition saying why.
+type poolStatus struct {
+	schedulable bool
+	runtime     map[string]any
+}
+
+// poolStatusFor is the status of a pool composed from bootstrap. A machine
+// pool has no runtime to schedule onto until the machine runtime is composed
+// (ADR 26-10-23-551 §3), and says so rather than reporting itself absent.
+func poolStatusFor(bootstrap Bootstrap) poolStatus {
+	if bootstrap.EffectiveRuntime() == RuntimeMachine {
+		return poolStatus{runtime: map[string]any{
+			"kind":    string(RuntimeMachine),
+			"driver":  bootstrap.Driver,
+			"status":  "unavailable",
+			"message": "this pool agent cannot run machine sandboxes yet",
+		}}
+	}
+	return poolStatus{schedulable: true}
+}
+
 // startStatusReporter reports this pool's scheduling status and capacity to the
 // control plane: once synchronously, so a pool that cannot mark itself ready
 // fails its boot loudly, then on statusReportInterval for as long as the agent
@@ -214,12 +271,15 @@ const (
 // Capacity is measured per report rather than captured at boot, so the
 // control plane schedules against current free space rather than whatever was
 // free when the pool started.
-func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, registration *Registration, client StatusClient, interval time.Duration) error {
+func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, registration *Registration, client StatusClient, status poolStatus, interval time.Duration) error {
 	conditions := map[string]any{
 		"agent": map[string]any{
 			"version": "dev",
 			"status":  "ready",
 		},
+	}
+	if status.runtime != nil {
+		conditions["runtime"] = status.runtime
 	}
 	report := func(ctx context.Context) error {
 		ctx, cancel := context.WithTimeout(ctx, statusReportTimeout)
@@ -232,7 +292,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 			Platform:             hostedPlatform(),
 			ImageKind:            hostedImageKind(),
 			Ready:                true,
-			Schedulable:          true,
+			Schedulable:          status.schedulable,
 			Degraded:             false,
 			AvailableCPUVCPUs:    availableCPUVCPUs(),
 			AvailableMemoryBytes: availableMemoryBytes(),
