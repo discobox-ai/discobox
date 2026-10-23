@@ -10,10 +10,8 @@ package discovm
 // server's.
 import (
 	// boxd's hypervisor is in the cloud, so every build can drive it.
+	//
+	// disco-vm's docker driver is not linked: it is deferred (ADR
+	// 26-10-09-106 Deferred, ADR 26-10-23-551 §5).
 	_ "github.com/discobox-ai/vm/pkg/machine/boxd"
-	// docker runs Linux guests as containers that boot systemd. Its daemon
-	// may be on another host, or in Docker Desktop's VM, so every build can
-	// drive it too. It stands beside the docker provider (dockerworker), not
-	// in its place.
-	_ "github.com/discobox-ai/vm/pkg/machine/docker"
 )

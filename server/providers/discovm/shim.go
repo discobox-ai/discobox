@@ -18,8 +18,8 @@ import (
 // appends the shim's own arguments to the ones shimCommand gives it.
 const shimSubcommand = "__vm-shim"
 
-func shimCommand(exe, root, driver string) []string {
-	return []string{exe, shimSubcommand, "--root", root, "--driver", driver}
+func shimCommand(exe, root, driver, project string) []string {
+	return []string{exe, shimSubcommand, "--root", root, "--driver", driver, "--project", project}
 }
 
 // RunShimIfInvoked runs this process as a disco-vm shim and exits, or returns
@@ -39,16 +39,21 @@ func RunShimIfInvoked() {
 	os.Exit(0)
 }
 
-// runShim opens the engine the server opened, on the same root and driver, and
-// runs the shim the engine asked for. Canceling ctx shuts its guest down in
-// order.
+// runShim opens the engine the server opened, on the same root, driver and
+// project, and runs the shim the engine asked for. Canceling ctx shuts its
+// guest down in order.
 func runShim(ctx context.Context, args []string) error {
-	if len(args) < 4 || args[0] != "--root" || args[2] != "--driver" {
-		return errors.New("usage: --root <state dir> --driver <driver> <shim arguments>")
+	if len(args) < 6 || args[0] != "--root" || args[2] != "--driver" || args[4] != "--project" {
+		return errors.New("usage: --root <state dir> --driver <driver> --project <project> <shim arguments>")
 	}
-	e, err := openEngine(args[1], args[3])
+	driver, err := newDriver(args[3])
 	if err != nil {
 		return err
 	}
-	return e.ShimMain(ctx, args[4:])
+	e, err := openEngine(args[1], driver, args[5])
+	if err != nil {
+		return err
+	}
+	defer e.Close()
+	return e.ShimMain(ctx, args[6:])
 }

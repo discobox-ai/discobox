@@ -13,18 +13,17 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
-// fakeImage is the pool agent's twin for the fake driver, in a test checkout.
-const fakeImage = "pool-agent/fake.yaml"
-
-// fakePoolMachine hosts a pool in a machine of disco-vm's fake driver, the way
-// a remote driver's pool is hosted, so the engine, its shim, and the guest
-// protocol run here as they do against a real machine. The fake driver is
-// local, so newPoolHost would give it a host agent; tests that drive a pool
-// machine build this one. Its guests are host processes with no journal, so
-// its log is a command that honors the tail it is asked for.
-func fakePoolMachine(e *engine.Engine) *poolMachine {
+// fakePoolMachine hosts a pool in a machine of disco-vm's fake driver, booted
+// from one of its bases, the way a remote driver's pool is hosted, so the
+// engine, its shim, and the guest operations run here as they do against a
+// real machine. The fake driver is local, so newPoolHost would give it a host
+// agent; tests that drive a pool machine build this one. Its guests are host
+// processes with no journal, so its log is a command that honors the tail it
+// is asked for.
+func fakePoolMachine(e *engine.Engine, base string) *poolMachine {
 	return &poolMachine{
 		engine: e,
+		base:   base,
 		shell:  []string{"/bin/sh"},
 		logs: func(opts sandbox.PoolLogOptions) []string {
 			return []string{"sh", "-c", fmt.Sprintf("seq 1 5 | tail -n %d", opts.Tail)}
