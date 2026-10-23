@@ -57,7 +57,17 @@ type Spec struct {
 	// system PATH while it provisions in the background: run early, one says
 	// it is waiting, waits, and runs the real command (§5).
 	Commands []string `yaml:"commands,omitempty"`
-	Steps    []Step   `yaml:"steps"`
+	// Snapshot, set false, leaves the whole feature out of a snapshot (§8):
+	// none of its steps is applied while one is taken, so each is applied on
+	// the box itself, at every boot it is not already recorded. Unset is in.
+	Snapshot *bool  `yaml:"snapshot,omitempty"`
+	Steps    []Step `yaml:"steps"`
+}
+
+// InSnapshot reports whether a snapshot applies step of this feature: unless
+// the feature or the step says snapshot: false, it does.
+func (s Spec) InSnapshot(step Step) bool {
+	return (s.Snapshot == nil || *s.Snapshot) && (step.Snapshot == nil || *step.Snapshot)
 }
 
 // Adopt is a feature's usability check. A box's own copy is usable when
@@ -111,6 +121,11 @@ type Step struct {
 	// Apt says a run step uses apt or dpkg, so it takes the lock every
 	// packages step takes, and no two of them run at once.
 	Apt bool `yaml:"apt,omitempty"`
+	// Snapshot, set false, leaves the step out of a snapshot (§8): what it
+	// does is provisioned on each box, never baked into one shared by every
+	// box of the same plan. Unset is in. It is not part of the step's
+	// digest: it says when the step runs, not what it does.
+	Snapshot *bool `yaml:"snapshot,omitempty" json:"-"`
 
 	File     *FileStep     `yaml:"file,omitempty"`
 	Systemd  *SystemdStep  `yaml:"systemd,omitempty"`
