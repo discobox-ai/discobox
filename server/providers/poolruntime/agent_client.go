@@ -780,6 +780,7 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 		out.SentinelRoutes = poolclient.NewOptNilPoolSandboxCreateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelRoutes))
 	}
 	out.Egress = poolclient.NewOptEgressPolicy(poolEgressPolicy(opts.Egress))
+	out.ProvisionEgress = poolclient.NewOptEgressPolicy(poolEgressPolicy(opts.ProvisionEgress))
 	if len(opts.Gateways) > 0 {
 		out.Gateways = poolclient.NewOptNilGatewayArray(poolGateways(opts.Gateways))
 	}

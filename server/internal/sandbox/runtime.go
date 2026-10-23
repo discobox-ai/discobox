@@ -212,6 +212,11 @@ type CreateOptions struct {
 	// merged from its levels. The provider records it with the pool proxy
 	// before the container is built; a later change arrives by Update.
 	Egress egress.Policy
+	// ProvisionEgress is the egress policy of everything but the sandbox's
+	// own level: what provisioning its machine-scoped layers on no sandbox's
+	// behalf runs under (store.ProvisionEgress). A pool's Docker runtime
+	// builds a snapshot under it (ADR 26-10-16-423 §8).
+	ProvisionEgress egress.Policy
 	// Gateways are the sandbox's project's gateways (ADR 26-10-16-470),
 	// recorded with the pool proxy beside Egress; a later change arrives by
 	// Update.

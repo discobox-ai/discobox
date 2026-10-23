@@ -4204,6 +4204,11 @@ type PoolSandboxCreateRequest struct {
 	// The sandbox's effective egress policy, recorded with the pool proxy before the container is built
 	// so it is in force from the sandbox's first request. Absent means unrestricted.
 	Egress OptEgressPolicy `json:"egress"`
+	// The egress policy of every level but the sandbox's own -- its project's, its pool's and its
+	// harness config's (ADR 26-10-01-032) -- which provisioning the sandbox's platform and harness on no
+	// sandbox's behalf runs under, as a snapshot is built (ADR 26-10-16-423 §8). Absent means
+	// unrestricted.
+	ProvisionEgress OptEgressPolicy `json:"provisionEgress"`
 	// The sandbox's project's gateways (ADR 26-10-16-470), recorded with the pool proxy beside the
 	// egress policy. Absent or empty is none.
 	Gateways              OptNilGatewayArray       `json:"gateways"`
@@ -4240,6 +4245,11 @@ func (s *PoolSandboxCreateRequest) GetConfig() SandboxConfig {
 // GetEgress returns the value of Egress.
 func (s *PoolSandboxCreateRequest) GetEgress() OptEgressPolicy {
 	return s.Egress
+}
+
+// GetProvisionEgress returns the value of ProvisionEgress.
+func (s *PoolSandboxCreateRequest) GetProvisionEgress() OptEgressPolicy {
+	return s.ProvisionEgress
 }
 
 // GetGateways returns the value of Gateways.
@@ -4290,6 +4300,11 @@ func (s *PoolSandboxCreateRequest) SetConfig(val SandboxConfig) {
 // SetEgress sets the value of Egress.
 func (s *PoolSandboxCreateRequest) SetEgress(val OptEgressPolicy) {
 	s.Egress = val
+}
+
+// SetProvisionEgress sets the value of ProvisionEgress.
+func (s *PoolSandboxCreateRequest) SetProvisionEgress(val OptEgressPolicy) {
+	s.ProvisionEgress = val
 }
 
 // SetGateways sets the value of Gateways.

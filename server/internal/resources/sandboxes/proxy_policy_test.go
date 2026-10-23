@@ -119,6 +119,37 @@ func TestCreateOptionsCarryTheEffectiveEgress(t *testing.T) {
 	}
 }
 
+// Provisioning on no sandbox's behalf — a snapshot of the platform and
+// harness (ADR 26-10-16-423 §8) — runs under every level but the sandbox's
+// own, and the create carries it beside the sandbox's effective policy.
+func TestCreateOptionsCarryTheProvisionEgressWithoutTheSandboxsLevel(t *testing.T) {
+	_, st := newUpgradeEngineFixture(t)
+	sb := egressFixture(t, st,
+		egress.Policy{Allow: []string{"github.com"}},
+		egress.Policy{DenyByDefault: true},
+		egress.Policy{Allow: []string{"registry.npmjs.org"}},
+		egress.Policy{Allow: []string{"10.0.0.0/8"}},
+		"api.anthropic.com")
+	reconciler := &SandboxReconciler{store: st}
+	opts, err := reconciler.createOptionsFromSandbox(context.Background(), sb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"api.anthropic.com", "github.com", "registry.npmjs.org"}
+	if !opts.ProvisionEgress.DenyByDefault || !slices.Equal(opts.ProvisionEgress.Allow, want) {
+		t.Fatalf("provision egress = %+v, want restricted to %v", opts.ProvisionEgress, want)
+	}
+	if !slices.Contains(opts.Egress.Allow, "10.0.0.0/8") {
+		t.Fatalf("effective egress = %+v, want the sandbox's own level in it", opts.Egress)
+	}
+	// A sandbox restricting itself restricts no provisioning of its plan.
+	_, fresh := newUpgradeEngineFixture(t)
+	own := egressFixture(t, fresh, egress.Policy{}, egress.Policy{}, egress.Policy{}, egress.Policy{DenyByDefault: true})
+	if got, err := fresh.ProvisionEgress(context.Background(), own); err != nil || got.DenyByDefault {
+		t.Fatalf("provision egress = %+v, %v; want unrestricted", got, err)
+	}
+}
+
 func TestADiscoboxMayNotCreateOneWiderThanItself(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
