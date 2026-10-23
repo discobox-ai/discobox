@@ -46,9 +46,8 @@ flowchart LR
   enabled, because they are asked for when the pool is broken
   (`server/providers/DESIGN.md`). A backend with no pool runtime, no host
   console (`ErrPoolConsoleUnsupported`), no host log
-  (`ErrPoolLogsUnsupported`), no guest image
-  (`ErrGuestImageBuildUnsupported`), or no restart onto a built one
-  (`ErrGuestImageRestartUnsupported`) answers 501.
+  (`ErrPoolLogsUnsupported`), or no guest image
+  (`ErrGuestImageBuildUnsupported`) answers 501.
   `ClearPoolCache` resolves the pool's runtime the same way and calls
   `PoolRuntime.ClearCache`, which reaches the pool agent and waits for it to
   stop the pool's running sandboxes and empty the pool's caches. The agent owns
