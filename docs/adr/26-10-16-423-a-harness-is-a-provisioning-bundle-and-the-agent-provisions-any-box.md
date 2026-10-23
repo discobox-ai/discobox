@@ -587,6 +587,18 @@ wrote them as `/api/assets/…`, a path no pool route can be.
   does for images today (0082). A rebuilt agent or harness bundle reaches a
   box when its re-pin does (§7, as amended).
 
+*Amended 2026-10-23, before anything shipped against it:* build-mode — the
+development flow of a host with no Docker daemon, macOS and Windows by
+default — has no host builder to export a layout with, so its bundles are
+built where its images are, on a pool's daemon, through that daemon's
+BuildKit, and the server saves each from that daemon as the layout it serves
+from, removing it from the daemon once saved. That is the one place a bundle
+enters a Docker image store, for as long as its save takes; no box runs it,
+and the alternative — requiring a Docker CLI on every such host for bundles
+alone — would undo what build-mode exists for. Until a pool has built a
+bundle, no box is pinned to it: a create on it is refused, and the save
+seeds the built-in harnesses onto it.
+
 ### 14. An account in the sandbox account's way is deleted
 
 The client still sends the account it wants (ADR 0141), and the sandbox phase
