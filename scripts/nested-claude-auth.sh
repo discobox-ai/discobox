@@ -178,6 +178,19 @@ until discobox admin exec --discobox-id "$SANDBOX_ID" create --user root -- true
 	sleep 2
 done
 
+# A box delivered its harness as a bundle has no configure command until the
+# harness feature is provisioned, and provisioning it would then overwrite the
+# replacement below. Wait for it: a box whose image came with the harness does
+# not provision it, and passes at once. discobox-provision is itself platform
+# content, so the exec fails until the platform's core is in place.
+echo "Waiting for $SANDBOX_ID to provision $HARNESS…"
+tries=0
+until discobox admin exec --discobox-id "$SANDBOX_ID" create --user root -- discobox-provision wait "$HARNESS" </dev/null >/dev/null 2>&1; do
+	tries=$((tries + 1))
+	[ "$tries" -lt 300 ] || die "$SANDBOX_ID never provisioned $HARNESS"
+	sleep 2
+done
+
 # Before the primary terminal is attached nothing has run, so the command it
 # will launch can still be replaced. With --test the replacement first proves
 # the sentinel works from a nested sandbox, as the interactive flow's own check
