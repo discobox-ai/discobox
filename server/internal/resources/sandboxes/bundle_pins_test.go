@@ -83,6 +83,51 @@ func TestCreatePinsTheBundles(t *testing.T) {
 	}
 }
 
+// A configure box runs the harness's configure command, which the harness
+// bundle delivers: running its harness config's image, it is pinned to that
+// image and bundle as a run is, not to the platform alone. One naming another
+// image has no bundle that is that image's twin, and is pinned to none.
+func TestConfigModeCreatePinsTheHarnessBundle(t *testing.T) {
+	ctx, svc, st, _ := transferFixture(t)
+	config := configuredHarness(t, st, "codex", "Codex")
+	config.Configured = false
+	config.Bundle, config.BundleDigest = codexBundle, codexBundleV1
+	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
+		t.Fatal(err)
+	}
+	svc.SetPlatformBundles(&fakePlatform{pin: services.BundlePin{Reference: platformRef, Digest: platformOld}})
+	create := func(name, image string) *model.Sandbox {
+		t.Helper()
+		body := services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: name}}
+		body.Config.SetHarnessConfigId(serverapi.NewOptString(config.ID))
+		body.Config.SetHarnessMode(serverapi.NewOptSandboxCreateConfigHarnessMode(serverapi.SandboxCreateConfigHarnessModeConfig))
+		body.Config.SetImage(serverapi.NewOptString(image))
+		created, err := svc.CreateSandbox(ctx, "project-1", body)
+		if err != nil {
+			t.Fatalf("create %s: %v", name, err)
+		}
+		sb, err := st.GetSandbox(ctx, "project-1", created.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sb
+	}
+
+	sb := create("configure", config.Image)
+	if sb.Image != config.Image || sb.ImageDigest != config.ImageDigest || sb.Bundle != codexBundle || sb.BundleDigest != codexBundleV1 {
+		t.Fatalf("configure box pins = %q@%q, %q@%q, want the harness config's", sb.Image, sb.ImageDigest, sb.Bundle, sb.BundleDigest)
+	}
+	want := []BundlePin{{Kind: BundlePlatform, Name: "discobox-platform", Digest: platformOld}, {Kind: BundleHarness, Name: "discobox-harness-codex", Digest: codexBundleV1}}
+	if got := sandboxBundlePins(sb); !slices.Equal(got, want) {
+		t.Fatalf("pins sent to the pool = %+v, want %+v", got, want)
+	}
+
+	other := create("other-image", "ghcr.io/example/other:v1")
+	if other.Image != "ghcr.io/example/other:v1" || other.ImageDigest != "" || other.Bundle != "" || other.BundleDigest != "" {
+		t.Fatalf("other-image box pins = %q@%q, %q@%q, want the request's image and no harness pins", other.Image, other.ImageDigest, other.Bundle, other.BundleDigest)
+	}
+}
+
 // A pin with no content digest, a build-mode development image's, has nothing
 // to fetch, and a box is delivered nothing it cannot fetch: no pin is sent,
 // rather than a platform with no harness.

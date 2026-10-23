@@ -297,23 +297,27 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err := refuseOtherImageKind(harnessConfig, pool); err != nil {
 		return nil, err
 	}
-	if harnessMode != sandboxconfig.HarnessModeConfig {
-		// A harness is only selectable once its configure flow has succeeded.
-		// harnessMode "config" is exempt: that is the configure flow itself.
-		if !harnessConfig.Configured {
-			return nil, apperrors.NewStatusError(http.StatusConflict,
-				fmt.Sprintf("harness %q is not configured; run `discobox admin harness configure %s` first", harnessConfig.Slug, harnessConfig.Slug))
-		}
-		if strings.TrimSpace(harnessConfig.Image) != "" {
-			image = strings.TrimSpace(harnessConfig.Image)
-			// Pin the identity, not just the reference. The tag is rebuilt in
-			// place by dev workflows, so it alone does not say which image this
-			// sandbox runs; the digest does, and the pool host enforces it
-			// (ADR 0016 §1).
-			imageDigest = strings.TrimSpace(harnessConfig.ImageDigest)
-			// The bundle is pinned with the image it twins (ADR 26-10-16-423 §7).
-			bundle = services.BundlePin{Reference: strings.TrimSpace(harnessConfig.Bundle), Digest: strings.TrimSpace(harnessConfig.BundleDigest)}
-		}
+	// A harness is only selectable once its configure flow has succeeded.
+	// harnessMode "config" is exempt: that is the configure flow itself.
+	if harnessMode != sandboxconfig.HarnessModeConfig && !harnessConfig.Configured {
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("harness %q is not configured; run `discobox admin harness configure %s` first", harnessConfig.Slug, harnessConfig.Slug))
+	}
+	// A run takes its harness config's image. Config mode takes the request's,
+	// which the configure flow sets to the harness config's own; running that
+	// image, it is pinned as a run is, since the configure command it runs
+	// is delivered in the harness bundle — a box pinned to the platform alone
+	// has no harness to configure.
+	if harnessImage := strings.TrimSpace(harnessConfig.Image); harnessImage != "" &&
+		(harnessMode != sandboxconfig.HarnessModeConfig || image == harnessImage) {
+		image = harnessImage
+		// Pin the identity, not just the reference. The tag is rebuilt in
+		// place by dev workflows, so it alone does not say which image this
+		// sandbox runs; the digest does, and the pool host enforces it
+		// (ADR 0016 §1).
+		imageDigest = strings.TrimSpace(harnessConfig.ImageDigest)
+		// The bundle is pinned with the image it twins (ADR 26-10-16-423 §7).
+		bundle = services.BundlePin{Reference: strings.TrimSpace(harnessConfig.Bundle), Digest: strings.TrimSpace(harnessConfig.BundleDigest)}
 	}
 	// Every box applies the platform, whatever its harness: it is pinned
 	// here and moved only by a re-pin (ADR 26-10-16-423 §7). A platform the
@@ -325,10 +329,8 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	}
 	if image == "" {
 		// Only reachable when the harness config declares no image, or when a
-		// config-mode request names none: config mode skips the branch above
-		// and takes the request's image, which the configure flow sets to the
-		// harness config's own. Everything else took its image from a harness
-		// config.
+		// config-mode request names none. Everything else took its image from
+		// the request or a harness config.
 		image, imageDigest = s.defaultImage, s.defaultImageDigest
 	}
 	sandbox := &model.Sandbox{

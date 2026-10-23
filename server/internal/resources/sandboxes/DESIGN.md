@@ -25,10 +25,12 @@ flowchart LR
   `resolveHarnessConfigID` resolves it at create: an explicit
   `harnessConfigId`, or a `--harness` name (slug first, then display name) →
   the project default → 409. A deleted default counts as no default. A
-  sandbox's image is its harness config's pinned `Image`/`ImageDigest`; the
-  server default image (`SetDefaultSandboxImage`) applies only when no harness
-  image does, which means config mode without a caller image, or a config that
-  declares none.
+  sandbox's image is its harness config's pinned `Image`/`ImageDigest`, with
+  the harness `Bundle` it twins — in config mode too, whenever the caller's
+  image is the config's, since the configure command is harness-bundle
+  content. The server default image (`SetDefaultSandboxImage`) applies only
+  when no harness image does, which means config mode without a caller image,
+  or a config that declares none.
 - A sandbox's platform (`os/arch`, the root `platform` package) is its pool's,
   which its harness's image must be published for (ADR 0145 §1). A release
   harness image is published for every architecture a release builds, so a
