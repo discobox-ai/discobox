@@ -408,6 +408,25 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   `$S/server.log` as started above. Sandbox containers
   are siblings on the host's Docker, so one already booted survives the restart.
 
+## Against a release's published images and bundles
+
+The dev loop's bundles carry no content digest, so its boxes run their whole
+harness image and never take the bundle path (`sandboxBundlePins`). To drive
+that path, build the checkout's server with the release's pins — the `-X` flags
+of `SERVER_LDFLAGS` in `Taskfile.yml`, `REGISTRY=ghcr.io/discobox-ai`,
+`PIN_TAG=<a published tag>` — and start it as above, adding `HTTPS_PROXY`,
+`HTTP_PROXY` and `NO_PROXY` from your own env to the `env -i`: the server
+resolves bundles itself and otherwise cannot reach ghcr.
+
+- A box from a bundle has its harness only once provisioned: wait with
+  `admin exec --discobox-id <id> create -- discobox-provision wait <harness>`
+  (it fails until the platform's core lands; retry).
+- If a nested box's `apt-get` hangs on `Connection failed [IP: 127.0.0.1
+  17008]`, its pool has no upstream proxy: the runc wrapper is injecting
+  nothing. `docker run --rm <any image> env | grep HTTPS_PROXY` prints nothing
+  then; `sudo systemctl restart containerd` brought it back (10-23), then
+  `docker restart` the pool container.
+
 ## The CLI's autolaunch, as a systemd user unit
 
 A box has no user manager, so the autolaunch falls back to executing the
