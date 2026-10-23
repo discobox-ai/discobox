@@ -66,3 +66,18 @@ Global review expectations:
   the use's words limit nothing (`judge.Job.UnderPolicy` drops them), so a
   limit left only in the use is gone. `internal/skillpolicies` checks the
   sentences parse, not that they say enough.
+- A machine a hosted provider creates for discobox is created with what the
+  provider gives a machine by default switched off: a hosted VM may come with
+  the provider's CLI and a token that acts on the account or org, credential
+  helpers, and network peers it can exec or copy into, and some of it can be
+  set only at create. On boxd a machine that is not `isolated` has all of
+  these. A sandbox machine — created by the pool agent — is always isolated,
+  on a network shared only with its pool's machine, and its forks and
+  restores keep that; the pool's machine is the one exception, because boxd
+  peers isolated machines only with non-isolated ones, and it is on that
+  network alone. A sandbox machine that kept them could reach its pool's
+  machine and the provisioning key there (ADR 26-10-23-551 §4).
+- An index row in `docs/adr/README.md` that gains a later ADR's note gets it
+  inside its Status parenthesis, before the `)` that closes `Accepted (`:
+  appending after that `)` leaves the note outside it and a stray `)` at the
+  end, and one change made that mistake on three rows (ADR 26-10-23-551).
