@@ -707,7 +707,7 @@ func (s *Service) BuildPoolGuestImage(ctx context.Context, projectID, poolID str
 	}
 	build, err := runtime.BuildGuestImage(ctx, provider, pool, opts)
 	if err != nil {
-		if errors.Is(err, sandbox.ErrGuestImageBuildUnsupported) || errors.Is(err, sandbox.ErrGuestImageRestartUnsupported) {
+		if errors.Is(err, sandbox.ErrGuestImageBuildUnsupported) {
 			return nil, apperrors.NewStatusError(http.StatusNotImplemented, err.Error())
 		}
 		return nil, err
