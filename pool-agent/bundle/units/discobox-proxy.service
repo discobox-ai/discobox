@@ -1,0 +1,20 @@
+[Unit]
+Description=Discobox Pool Proxy
+Documentation=https://github.com/discobox-ai/discobox
+# The agent's start is the proxy's environment, CA and control key written
+# (Type=notify there); a proxy started before them has nothing to run with.
+Requires=discobox-pool-agent.service
+After=network-online.target discobox-pool-agent.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/discobox/proxy.env
+ExecStartPre=/usr/bin/install -d -m 0700 /var/lib/discobox/proxy
+ExecStart=/opt/discobox/pool-agent/current/features/pool-agent/discobox-pool-agent proxy
+Restart=on-failure
+RestartSec=2s
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

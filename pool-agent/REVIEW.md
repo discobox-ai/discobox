@@ -269,3 +269,18 @@ durable state asks the same question.
 - **A build's box is described by `boxConfig`, as a sandbox's is.** A host or
   network setting added to one and not the other makes a snapshot a box of
   another kind than the ones started from it.
+
+## The pool-agent bundle's units
+
+`bundle/units/discobox-proxy.service` is a second copy of
+`image/systemd/discobox-proxy.service`: the bundle runs the proxy from
+`bundle.AgentPath` and orders it after the agent's Type=notify start, where
+the image runs it from `/usr/local/bin` with systemd booted after the agent's
+files exist. Change one, change the other in the same change.
+`TestBundleProxyUnitMatchesTheImages` fails on any other difference in their
+`[Service]` sections, because a drifted twin is why ADR 26-10-16-423 retired
+the twin images (ADR 26-10-23-551 cites it).
+
+`install` decides whether a restart is owed from `bundle.InstalledFile`, never
+from what its own run changed: a run cut short after the link moved must be
+finished by the next, not taken for done.

@@ -1,0 +1,21 @@
+[Unit]
+Description=Discobox Pool Agent
+Documentation=https://github.com/discobox-ai/discobox
+After=network-online.target
+Wants=network-online.target
+# Restarted for as long as the machine is a pool's: a control plane that is
+# down is waited out, never given up on.
+StartLimitIntervalSec=0
+
+[Service]
+# Ready once it has written the proxy's environment, CA and control key, which
+# is what discobox-proxy.service is ordered after.
+Type=notify
+Environment=DISCOBOX_POOL_BOOTSTRAP_FILE=/etc/discobox/pool-agent/bootstrap.json
+ExecStart=/opt/discobox/pool-agent/current/features/pool-agent/discobox-pool-agent
+Restart=always
+RestartSec=2s
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target
