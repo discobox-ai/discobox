@@ -142,14 +142,14 @@ func (r *Runtime) Close() error { return r.engine.Close() }
 // It mints no bootstrap, because nothing here starts a pool agent: a pool
 // machine is a driver base with nothing placed on it, and a local driver's
 // host agent is not staged.
-func (r *Runtime) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ poolagent.MintBootstrap, _ []string, begin func(context.Context) error) error {
+func (r *Runtime) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ poolagent.MintBootstrap, begin func(context.Context) error) error {
 	if err := requirePool(pool); err != nil {
 		return err
 	}
 	return r.host.ensurePoolHost(ctx, pool, begin)
 }
 
-func (r *Runtime) RepairPool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ poolagent.MintBootstrap, _ string, _ []string, begin func(context.Context) error) error {
+func (r *Runtime) RepairPool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ poolagent.MintBootstrap, _ string, begin func(context.Context) error) error {
 	if err := requirePool(pool); err != nil {
 		return err
 	}

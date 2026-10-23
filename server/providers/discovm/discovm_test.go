@@ -115,7 +115,7 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 
 	begun := 0
 	begin := func(context.Context) error { begun++; return nil }
-	if err := r.EnsurePool(ctx, nil, nil, pool, nil, nil, begin); err != nil {
+	if err := r.EnsurePool(ctx, nil, nil, pool, nil, begin); err != nil {
 		t.Fatalf("EnsurePool() error = %v", err)
 	}
 	inst, err := r.engine.Get(poolMachineName(pool.ID))
@@ -138,7 +138,7 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 
 	// A drift check of a running machine starts nothing and closes nothing.
 	pool.SetState(model.PoolStateActive)
-	if err := r.EnsurePool(ctx, nil, nil, pool, nil, nil, begin); err != nil {
+	if err := r.EnsurePool(ctx, nil, nil, pool, nil, begin); err != nil {
 		t.Fatalf("second EnsurePool() error = %v", err)
 	}
 	if begun != 1 || pool.State != model.PoolStateActive {
@@ -191,7 +191,7 @@ func TestFakePoolMachineRepairKeepsTheMachine(t *testing.T) {
 	ctx := context.Background()
 	pool := &model.Pool{ID: "pool-2", ProjectID: "project-1"}
 	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
-	if err := r.EnsurePool(ctx, nil, nil, pool, nil, nil, nil); err != nil {
+	if err := r.EnsurePool(ctx, nil, nil, pool, nil, nil); err != nil {
 		t.Fatalf("EnsurePool() error = %v", err)
 	}
 	before, err := r.engine.Get(poolMachineName(pool.ID))
@@ -199,7 +199,7 @@ func TestFakePoolMachineRepairKeepsTheMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 	pool.SetState(model.PoolStateActive)
-	if err := r.RepairPool(ctx, nil, nil, pool, nil, "test", nil, nil); err != nil {
+	if err := r.RepairPool(ctx, nil, nil, pool, nil, "test", nil); err != nil {
 		t.Fatalf("RepairPool() error = %v", err)
 	}
 	after, err := r.engine.Get(poolMachineName(pool.ID))
@@ -220,7 +220,7 @@ func TestFakePoolMachineRepairKeepsTheMachine(t *testing.T) {
 // to configure.
 func TestFakePoolMachineBootsTheConfiguredBase(t *testing.T) {
 	byName := newFakeRuntime(t, fakeBases[1].Name)
-	err := byName.EnsurePool(context.Background(), nil, nil, &model.Pool{ID: "pool-13"}, nil, nil, nil)
+	err := byName.EnsurePool(context.Background(), nil, nil, &model.Pool{ID: "pool-13"}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no base with ID") {
 		t.Fatalf("EnsurePool() with a base named, not identified = %v, want a refusal", err)
 	}
@@ -232,7 +232,7 @@ func TestFakePoolMachineBootsTheConfiguredBase(t *testing.T) {
 	ctx := context.Background()
 	pool := &model.Pool{ID: "pool-10", ProjectID: "project-1"}
 	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
-	if err := r.EnsurePool(ctx, nil, nil, pool, nil, nil, nil); err != nil {
+	if err := r.EnsurePool(ctx, nil, nil, pool, nil, nil); err != nil {
 		t.Fatalf("EnsurePool() error = %v", err)
 	}
 	inst, err := r.engine.Get(poolMachineName(pool.ID))
@@ -247,7 +247,7 @@ func TestFakePoolMachineBootsTheConfiguredBase(t *testing.T) {
 	withFakeBases(t, nil)
 	bare := openRuntime(t, fakeConfig(t))
 	bare.host = fakePoolMachine(bare.engine, "")
-	err = bare.EnsurePool(ctx, nil, nil, &model.Pool{ID: "pool-11"}, nil, nil, nil)
+	err = bare.EnsurePool(ctx, nil, nil, &model.Pool{ID: "pool-11"}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no base") || !strings.Contains(err.Error(), "provider's base") {
 		t.Fatalf("EnsurePool() on a driver with no base = %v, want a refusal naming the provider's base", err)
 	}
