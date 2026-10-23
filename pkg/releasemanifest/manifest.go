@@ -50,14 +50,20 @@ type Images struct {
 
 // Bundles names each bundle a release publishes (ADR 26-10-16-423 §§2, 7): the
 // platform bundle the server composes under every harness's manifest and
-// delivers to every box, and each built-in harness's bundle by slug.
+// delivers to every box, each built-in harness's bundle by slug, and the
+// pool-agent bundle a VM provider places on a pool machine (ADR 26-10-23-551
+// §2).
 //
 // A release from before bundles names none, and is still a valid manifest:
 // the CLI reads the manifests of older servers. A server reading its own
 // release's requires them (HasBundles).
+//
+// A release cut before the pool-agent bundle names no PoolAgent, and is still
+// valid; a server on it has no bundle to boot a pool machine with.
 type Bundles struct {
 	Platform  string            `json:"platform"`
 	Harnesses map[string]string `json:"harnesses"`
+	PoolAgent string            `json:"poolAgent,omitempty"`
 }
 
 func Read(path string) (Manifest, error) {
@@ -143,6 +149,11 @@ func (m Manifest) validateBundles() error {
 	}
 	if err := validateImage(m.Bundles.Platform); err != nil {
 		return fmt.Errorf("release manifest platform bundle: %w", err)
+	}
+	if m.Bundles.PoolAgent != "" {
+		if err := validateImage(m.Bundles.PoolAgent); err != nil {
+			return fmt.Errorf("release manifest pool-agent bundle: %w", err)
+		}
 	}
 	if len(m.Bundles.Harnesses) == 0 {
 		return fmt.Errorf("release manifest names no harness bundles")

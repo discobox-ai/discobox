@@ -31,6 +31,15 @@ var DefaultPoolImage = "ghcr.io/discobox-ai/discobox-pool-agent:latest"
 // `dockerSandboxBaseImage` override it — and is a var for the same reason.
 var DefaultSandboxBaseImage = "ghcr.io/discobox-ai/discobox-sandbox-base:latest"
 
+// DefaultPoolAgentBundle is the pool-agent bundle a VM provider places on a
+// pool machine it boots from a driver base (ADR 26-10-23-551 §2): the same
+// agent as DefaultPoolImage, published beside it, and resolved as it is — a
+// release overwrites it at link time and names it in its manifest
+// (Bundles.PoolAgent), and the server's `poolAgentBundle` overrides it. A var
+// for the same reason. A development server is handed the watcher's build
+// through that setting.
+var DefaultPoolAgentBundle = "ghcr.io/discobox-ai/discobox-pool-agent-bundle:latest"
+
 // ServerDefaults are the provider settings that belong to the server rather
 // than to any one provider instance (ADR 0096 §5, configuration file). They arrive as a value
 // because they are configuration, and configuration is the server's to hold —
@@ -45,6 +54,9 @@ type ServerDefaults struct {
 	// SandboxBaseImage overrides the sandbox base image, for a provider whose
 	// own configuration names none.
 	SandboxBaseImage string
+	// PoolAgentBundle overrides the pool-agent bundle; no provider has a
+	// setting of its own for it.
+	PoolAgentBundle string
 	// ImageRetention is how long an unused Discobox image is kept. Zero means
 	// unconfigured, which is not the same as zero: see Config.ImageRetention.
 	ImageRetention time.Duration
@@ -89,6 +101,20 @@ func EffectiveSandboxBaseImage(image string, defaults ServerDefaults) string {
 		return override
 	}
 	return DefaultSandboxBaseImage
+}
+
+// EffectivePoolAgentBundle resolves the pool-agent bundle as
+// EffectivePoolImage resolves the pool-agent image, but for a provider's own
+// setting, which no provider has: the release manifest when one is selected,
+// then the server-wide override, and the compiled-in default.
+func EffectivePoolAgentBundle(defaults ServerDefaults) string {
+	if defaults.Release != nil {
+		return defaults.Release.Bundles.PoolAgent
+	}
+	if override := strings.TrimSpace(defaults.PoolAgentBundle); override != "" {
+		return override
+	}
+	return DefaultPoolAgentBundle
 }
 
 // PoolImageSource reports where the effective pool image came from.

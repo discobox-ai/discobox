@@ -377,6 +377,15 @@ tasks:
     cmds:
       - docker build -f pool-agent/Dockerfile --build-arg BASE_IMAGE={{.BASE_IMAGE}} -t {{.POOL_AGENT_IMAGE}} .
 
+  build:pool-agent-bundle:
+    desc: Build the pool-agent bundle, the agent and its units under /features/pool-agent/ FROM scratch
+    vars:
+      POOL_AGENT_BUNDLE: '{{.POOL_AGENT_BUNDLE | default "discobox-pool-agent-bundle:local"}}'
+    cmds:
+      # The bundle a VM provider places on a pool machine (ADR 26-10-23-551
+      # §2), by name: the Dockerfile's default target is the image.
+      - docker build -f pool-agent/Dockerfile --target bundle -t {{.POOL_AGENT_BUNDLE}} .
+
   build:platform-bundle:
     desc: Build the platform bundle, every platform feature under /features/ FROM scratch
     vars:
@@ -392,9 +401,10 @@ tasks:
         -t {{.PLATFORM_BUNDLE}} .
 
   build:images:
-    desc: Build the pool and sandbox base images, the platform bundle, and every included harness's bundle
+    desc: Build the pool and sandbox base images, the pool-agent and platform bundles, and every included harness's bundle
     cmds:
       - task: build:pool-agent-image
+      - task: build:pool-agent-bundle
       - task: build:platform-bundle
       - task: build:harness-bundles
 
@@ -727,6 +737,11 @@ tasks:
       # recorded here rather than only in the test file, so the suite stays
       # runnable by name instead of being forgotten.
       - cd server && DISCOBOX_WSLC_E2E=1 go test ./providers/wslc -count=1 -v
+
+  test:e2e:pool-agent-bundle:
+    desc: "Run the pool-agent bundle's install on a systemd Debian container, against a fake control plane. Requires: dockerd, buildx"
+    cmds:
+      - cd pool-agent && DISCOBOX_DOCKER_INTEGRATION=1 go test ./bundle -run E2E -count=1 -v
 
   test:e2e:docker:
     desc: "Run the pool runtime e2e tests against a local Docker daemon. Requires: dockerd"
@@ -1193,6 +1208,7 @@ tasks:
       SERVER_LDFLAGS: >-
         {{if and .PIN_TAG .REGISTRY}}-X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolImage={{.REGISTRY}}/discobox-pool-agent:{{.PIN_TAG}}
         -X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultSandboxBaseImage={{.REGISTRY}}/discobox-sandbox-base:{{.PIN_TAG}}
+        -X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolAgentBundle={{.REGISTRY}}/discobox-pool-agent-bundle:{{.PIN_TAG}}
         -X github.com/discobox-ai/discobox/harness.BundleRegistry={{.REGISTRY}}
         -X github.com/discobox-ai/discobox/harness.BundleTag={{.PIN_TAG}}{{end}}
       # The ELF interpreter, named rather than inherited.
@@ -1857,7 +1873,7 @@ tasks:
       - scripts/brew-formula.sh {{if .BREW_DEV}}--dev {{end}}"{{.TAG}}" "{{.RELEASE_REPO}}" "{{.BREW_OUT}}"
 
   release:images:
-    desc: Build and push the multi-arch pool and sandbox base images, the platform bundle, and the harness bundles for RELEASE_TAG
+    desc: Build and push the multi-arch pool and sandbox base images, the pool-agent and platform bundles, and the harness bundles for RELEASE_TAG
     cmds:
       # Strictly first, and not alongside them: the pool image is built FROM
       # this one, and the build cannot pull a tag that is not in the registry
@@ -1873,6 +1889,16 @@ tasks:
         vars:
           IMAGE: pool-agent
           BUILD_ARGS: --build-arg BASE_IMAGE={{.REGISTRY}}/discobox-sandbox-base:{{.TAG}}
+      # The pool-agent bundle a VM provider places on a pool machine (ADR
+      # 26-10-23-551 §2), beside the image and from the same build stage, so
+      # both hold the same agent: a multi-architecture index, since it
+      # carries the binary. FROM scratch, so it needs no base image.
+      - task: release:image
+        vars:
+          IMAGE: pool-agent-bundle
+          DOCKERFILE: pool-agent/Dockerfile
+          TARGET: bundle
+          BUNDLE: "yes"
       # The platform bundle the server's release pins (ADR 26-10-16-423 §7): a
       # multi-architecture index like the images, since it carries the agent
       # binaries. IMAGE_LAYER_METADATA is not optional: without it the build

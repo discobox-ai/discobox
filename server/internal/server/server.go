@@ -246,6 +246,7 @@ func Run(ctx context.Context) error {
 		ServerDefaults: dockerworker.ServerDefaults{
 			PoolImage:        cfg.DockerPoolImage,
 			SandboxBaseImage: cfg.DockerSandboxBaseImage,
+			PoolAgentBundle:  cfg.PoolAgentBundle,
 			Release:          cfg.Release,
 			ImageRetention:   cfg.ImageRetention,
 			ImageCache:       imageCache,

@@ -19,7 +19,10 @@ func releaseWithBundles(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.Bundles = releasemanifest.Bundles{Platform: "ghcr.io/discobox-ai/discobox-platform:v0.8.0", Harnesses: map[string]string{}}
+	m.Bundles = releasemanifest.Bundles{
+		Platform: "ghcr.io/discobox-ai/discobox-platform:v0.8.0", Harnesses: map[string]string{},
+		PoolAgent: "ghcr.io/discobox-ai/discobox-pool-agent-bundle:v0.8.0",
+	}
 	for slug := range m.Images.Harnesses {
 		m.Bundles.Harnesses[slug] = "ghcr.io/discobox-ai/discobox-harness-" + slug + ":v0.8.0"
 	}
@@ -41,6 +44,7 @@ func TestReleaseManifestOverridesDevelopmentImageSettings(t *testing.T) {
 	t.Setenv("DISCOBOX_DOCKER_POOL_IMAGE", "pool:local")
 	t.Setenv("DISCOBOX_HARNESS_CODEX_BUNDLE", "codex-bundle:local")
 	t.Setenv("DISCOBOX_PLATFORM_BUNDLE", "platform:local")
+	t.Setenv("DISCOBOX_POOL_AGENT_BUNDLE", "pool-agent-bundle:local")
 	t.Setenv("DISCOBOX_DEV_DOCKER_IMAGE_SYNC", "true")
 	t.Setenv("DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST", "does-not-exist")
 	cfg, err := Load()
@@ -53,6 +57,9 @@ func TestReleaseManifestOverridesDevelopmentImageSettings(t *testing.T) {
 	}
 	if cfg.Harnesses.PlatformBundle != m.Bundles.Platform || cfg.Harnesses.Bundles["codex"] != m.Bundles.Harnesses["codex"] {
 		t.Fatalf("release bundles were not applied: %+v", cfg.Harnesses)
+	}
+	if cfg.PoolAgentBundle != m.Bundles.PoolAgent {
+		t.Fatalf("pool-agent bundle = %q, want the release's %q", cfg.PoolAgentBundle, m.Bundles.PoolAgent)
 	}
 	if cfg.DevImageSync || cfg.DevImageManifest != "" {
 		t.Fatal("stale development configuration survived")

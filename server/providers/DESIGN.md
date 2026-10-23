@@ -256,6 +256,20 @@ part of the pool container's environment and its `configRevision`, and a
 moved base image recreates the pool container (`pool-agent/DESIGN.md`,
 ADR 26-10-16-423 §7).
 
+## Pool-Agent Bundle
+
+The pool-agent bundle is the pool agent for a pool machine booted from a
+driver base rather than an image
+([ADR 26-10-23-551](../../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
+§2; what it holds and how it is installed is in
+[pool-agent](../../pool-agent/DESIGN.md#the-pool-agent-bundle)). It resolves
+as the pool image does, but for a provider's own setting, since no provider
+places it — the release manifest's `Bundles.PoolAgent`, then the server's
+`poolAgentBundle`, and `dockerworker.DefaultPoolAgentBundle`, which a release
+overwrites at link time (`EffectivePoolAgentBundle`). The server counts the
+resolved reference among the release's bundles in its asset store, so it is
+pulled with the server's registry credentials and served from the blob store.
+
 ## Development Image Convergence
 
 The development image watcher publishes a versioned manifest of
