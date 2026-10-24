@@ -14,8 +14,8 @@
   superseded by [26-10-15-629](26-10-15-629-the-vm-provider-and-its-image-kind-are-spelled-vm.md),
   which spells both `vm`)
 - **§5 superseded for Linux sandboxes, §4 narrowed, and its deferred account ids settled, by**: [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) — a provisioned bundle replaces the build spec, the image kind is the provider's, and §14 decides the account
-- **Proposed to be superseded, for a remote driver, by**: [26-10-23-551](26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
-  (Proposed) — §1's boxd pool machine, §2 whole, §3's seam on the pool's
+- **Superseded, for a remote driver, by**: [26-10-23-551](26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
+  — §1's boxd pool machine, §2 whole, §3's seam on the pool's
   connection, §5's credential lines, §6's provider as backend, the rejection
   of "The pool agent embeds the engine" and the matching Consequences, and
   its Deferred `docker` driver narrowed: the pool machine is a driver base

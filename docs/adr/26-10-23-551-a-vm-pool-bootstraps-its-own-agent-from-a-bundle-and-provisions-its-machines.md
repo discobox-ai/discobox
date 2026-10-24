@@ -1,8 +1,8 @@
 # 26-10-23-551 — A VM pool bootstraps its own pool agent from a bundle, and the pool agent provisions its machines
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-23
-- **Supersedes**, once accepted, for a remote driver (boxd now, disco-vm's
+- **Supersedes**, for a remote driver (boxd now, disco-vm's
   `docker` driver and others later), and nothing of a local one (vz, hcs):
   [26-10-09-106](26-10-09-106-disco-vm-is-a-pool-runtime-and-the-server-runs-its-machines.md)
   §1's "The boxd pool machine" (its image twin, its bootstrap file "the pool
@@ -17,11 +17,11 @@
   26-10-09-143 §2; its rejection of "The pool agent embeds the engine"; and its
   Consequences' machine seam served to a pool, machine runtime of seam
   instances, and the pool-agent image's boxd twin.
-- **Restores**, once accepted and for a remote driver,
+- **Restores**, for a remote driver,
   [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)'s
   Consequence that a provider-hosted backend's credentials stay in the pool,
   which 106 superseded (§4).
-- **Narrows**, once accepted:
+- **Narrows**:
   [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §7's "a machine gets it copied through the provider, and the provider runs
   one command on its first boot" — for a remote driver it is the pool agent,
