@@ -468,7 +468,7 @@ components:
                     readOnly: true
                     type: string
                 harnessName:
-                    description: Harness config name to resolve at create time
+                    description: Harness config to resolve at create time, by slug, name or ID
                     type: string
                 config:
                     $ref: '#/components/schemas/SandboxCreateConfig'

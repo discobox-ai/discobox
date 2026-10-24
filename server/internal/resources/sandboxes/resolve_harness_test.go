@@ -26,9 +26,14 @@ func TestResolveHarnessConfigIDDefaultsToProjectDefault(t *testing.T) {
 		t.Fatalf("resolved = %q, want %q", got, cfg.ID)
 	}
 
-	// An explicit selector still wins over the default.
-	if got, err := svc.resolveHarnessConfigID(ctx, project, unset, serverapi.NewOptString("codex")); err != nil || got != cfg.ID {
-		t.Fatalf("slug resolve = %q, %v; want %q", got, err, cfg.ID)
+	// An explicit selector still wins over the default, by slug, name or ID.
+	for _, selector := range []string{"codex", cfg.Name, cfg.ID} {
+		if got, err := svc.resolveHarnessConfigID(ctx, project, unset, serverapi.NewOptString(selector)); err != nil || got != cfg.ID {
+			t.Fatalf("resolve %q = %q, %v; want %q", selector, got, err, cfg.ID)
+		}
+	}
+	if _, err := svc.resolveHarnessConfigID(ctx, project, unset, serverapi.NewOptString("nothing-by-that-name")); err == nil {
+		t.Fatal("a selector nothing answers to should be refused")
 	}
 }
 

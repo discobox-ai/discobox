@@ -109,7 +109,7 @@ func (s *Service) delegationsFor(ctx context.Context, projectID, approverID stri
 		}
 		sort.Strings(names)
 		return nil, nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-			"this discobox was delegated more than one secret that fits; name which with --secret-id: %s", strings.Join(names, ", ")))
+			"this discobox was delegated more than one secret that fits; name which with --secret: %s", strings.Join(names, ", ")))
 	}
 	var secret *model.Secret
 	for _, only := range fits {

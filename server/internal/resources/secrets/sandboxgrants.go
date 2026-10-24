@@ -241,7 +241,7 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 // delegated. A secret it was not delegated — or one that does not exist —
 // answers with the same refusal, so naming secrets cannot tell it which the
 // project holds, how they are bound, or what they are called (as for an
-// approval's --secret-id).
+// approval's --secret).
 func (s *Service) delegatedGrant(ctx context.Context, projectID, grantorID string, in apimodel.SandboxGrant) (apimodel.SandboxGrant, error) {
 	notDelegated := apperrors.NewStatusError(http.StatusForbidden,
 		"this discobox holds no delegation grant of that credential, so it cannot give it to the discobox it creates; create it without the grant and let it ask")

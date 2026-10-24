@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"reflect"
@@ -234,7 +235,7 @@ func TestImportPinsTheBundleToTheHarnessItWillRun(t *testing.T) {
 	}, nil)
 
 	result, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive),
-		services.SandboxImportOptions{HarnessSlug: "claude"})
+		services.SandboxImportOptions{Harness: "claude"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
@@ -293,17 +294,24 @@ func TestImportResolvesTheHarnessByNameAndRefusesAMissingOne(t *testing.T) {
 		t.Errorf("err = %q; it should name the harness that is missing", err)
 	}
 
-	// --harness names another, which is the way through.
-	result, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{HarnessSlug: "codex"})
-	if err != nil {
-		t.Fatalf("import with --harness: %v", err)
-	}
+	// --harness names another, which is the way through, by its slug, its
+	// name or its ID.
 	config, err := st.GetHarnessConfigBySlug(ctx, "project-1", "codex")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Sandbox.HarnessConfigID == nil || *result.Sandbox.HarnessConfigID != config.ID {
-		t.Errorf("harness config = %v, want %q", result.Sandbox.HarnessConfigID, config.ID)
+	for i, harness := range []string{"codex", "Codex", config.ID} {
+		archive := exportArchive(t, func(m *sandboxexport.Manifest) {
+			m.Sandbox.Name = fmt.Sprintf("imported-%d", i)
+			m.Sandbox.Harness = sandboxexport.Harness{Slug: "claude", Name: "Claude Code"}
+		}, nil)
+		result, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{Harness: harness})
+		if err != nil {
+			t.Fatalf("import with --harness %s: %v", harness, err)
+		}
+		if result.Sandbox.HarnessConfigID == nil || *result.Sandbox.HarnessConfigID != config.ID {
+			t.Errorf("--harness %s: harness config = %v, want %q", harness, result.Sandbox.HarnessConfigID, config.ID)
+		}
 	}
 }
 
@@ -866,7 +874,7 @@ func TestImportRefusesADiscoVMHarness(t *testing.T) {
 		t.Fatal(err)
 	}
 	archive := exportArchive(t, func(m *sandboxexport.Manifest) { m.Sandbox.Platform = platform.Pool() }, map[string]string{"data/x": "x"})
-	_, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{HarnessSlug: "machine"})
+	_, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{Harness: "machine"})
 	var status interface{ StatusCode() int }
 	if !errors.As(err, &status) || status.StatusCode() != http.StatusConflict || !strings.Contains(err.Error(), "is not an OCI image") {
 		t.Fatalf("err = %v, want a 409 saying the harness is not an OCI image", err)

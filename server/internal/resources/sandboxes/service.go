@@ -494,6 +494,22 @@ func refuseOtherImageKind(harness *model.HarnessConfig, pool *model.Pool) error 
 // project with a harness configured and no default set with a shell, which is
 // indistinguishable from a working setup until you are inside the sandbox
 // wondering where the harness went.
+// harnessConfigBySelector is the harness config a `--harness` selector names,
+// wherever one is taken — create's harnessName, an import's --harness: its
+// stable slug (e.g. "codex"), then its display name, then its ID. None
+// answering is store.ErrNotFound.
+func (s *Service) harnessConfigBySelector(ctx context.Context, projectID, selector string) (*model.HarnessConfig, error) {
+	config, err := s.store.GetHarnessConfigBySlug(ctx, projectID, selector)
+	if !errors.Is(err, store.ErrNotFound) {
+		return config, err
+	}
+	config, err = s.store.GetHarnessConfigByName(ctx, projectID, selector)
+	if !errors.Is(err, store.ErrNotFound) {
+		return config, err
+	}
+	return s.store.GetHarnessConfig(ctx, projectID, selector)
+}
+
 func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Project, harnessConfigID, harnessName services.OptString) (string, error) {
 	if project == nil {
 		return "", fmt.Errorf("project is required")
@@ -507,14 +523,7 @@ func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Pro
 	}
 	name, ok := harnessName.Get()
 	if ok && strings.TrimSpace(name) != "" {
-		selector := strings.TrimSpace(name)
-		// Prefer the stable slug (e.g. "codex"), then fall back to the display name.
-		if config, err := s.store.GetHarnessConfigBySlug(ctx, project.ID, selector); err == nil {
-			return config.ID, nil
-		} else if !errors.Is(err, store.ErrNotFound) {
-			return "", apperrors.NotFound(err, "harness config not found")
-		}
-		config, err := s.store.GetHarnessConfigByName(ctx, project.ID, selector)
+		config, err := s.harnessConfigBySelector(ctx, project.ID, strings.TrimSpace(name))
 		if err != nil {
 			return "", apperrors.NotFound(err, "harness config not found")
 		}
