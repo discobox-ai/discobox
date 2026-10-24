@@ -51,8 +51,8 @@ type Images struct {
 // Bundles names each bundle a release publishes (ADR 26-10-16-423 §§2, 7): the
 // platform bundle the server composes under every harness's manifest and
 // delivers to every box, each built-in harness's bundle by slug, and the
-// pool-agent bundle a VM provider places on a pool machine (ADR 26-10-23-551
-// §2).
+// pool-agent bundle, the pool agent for a pool machine booted from a driver
+// base (ADR 26-10-23-551 §2).
 //
 // A release from before bundles names none, and is still a valid manifest:
 // the CLI reads the manifests of older servers. A server reading its own

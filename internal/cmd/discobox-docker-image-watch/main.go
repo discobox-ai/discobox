@@ -544,8 +544,8 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 			files:      sortedFiles(workerSeen),
 		},
 		{
-			// The bundle a VM provider places on a pool machine (ADR
-			// 26-10-23-551 §2), the image's agent by name of its stage.
+			// The pool agent for a pool machine booted from a driver base
+			// (ADR 26-10-23-551 §2), the image's agent by name of its stage.
 			name:        poolAgentBundleSpecName,
 			devPrefix:   "discobox-pool-agent-bundle:dev-",
 			envImageKey: poolAgentBundleEnvKey,

@@ -269,6 +269,10 @@ places it — the release manifest's `Bundles.PoolAgent`, then the server's
 overwrites at link time (`EffectivePoolAgentBundle`). The server counts the
 resolved reference among the release's bundles in its asset store, so it is
 pulled with the server's registry credentials and served from the blob store.
+Nothing places it yet: the `vm` provider boots its remote pool machine with
+nothing on it until that machine is fenced (see
+[discovm](discovm/DESIGN.md) and its `REVIEW.md`), so the bundle has no
+consumer until then.
 
 ## Development Image Convergence
 
