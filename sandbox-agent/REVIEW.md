@@ -209,6 +209,19 @@ missing — so it survives review easily. Rules, and why each exists:
 Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md),
 [ADR 0033](../docs/adr/0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md).
 
+## What travels with a discobox
+
+- **Never resolve a harness, secret or config by an ID the agent stored in
+  its own state; resolve the sandbox's own.** `/var/lib/discobox` — the
+  agent's database, its exec records with their `harnessId` among them —
+  travels with an export (ADR 0129), and a config ID is local to the server
+  that minted it (ADR 0123). The control plane resolves what its manifest
+  names by name on import, but nothing rewrites what the box wrote down, so
+  an ID read back from a record names the source server's config. Revive did
+  exactly that, and a transferred discobox could not be attached (#356). A stored ID is
+  what something was created for, which is history; what runs now is the
+  bootstrap's.
+
 ## Testing identity
 
 - Use `runuser.FixedDatabase()` with `t.Cleanup`. Never resolve against the

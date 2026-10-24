@@ -65,6 +65,7 @@ func (f *shimUnits) Close() {
 }
 
 type reviveFixture struct {
+	dir       string
 	svc       *Service
 	execs     *execs.Manager
 	units     *shimUnits
@@ -100,7 +101,7 @@ func newReviveService(t *testing.T, harness config.Harness, harnessMode string) 
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
-	return reviveFixture{svc: svc, execs: execManager, units: units, installer: installer}
+	return reviveFixture{dir: dir, svc: svc, execs: execManager, units: units, installer: installer}
 }
 
 // markExited rewrites a terminal's runtime file as an ended run, the state a
@@ -251,6 +252,79 @@ func TestEnsurePrimaryRevivesDeadPrimaryRecord(t *testing.T) {
 	}
 	if list := svc.List(); len(list) != 1 {
 		t.Fatalf("list = %d execs, want exactly one primary identity", len(list))
+	}
+}
+
+// A harness config ID is local to a server, and a discobox transferred to
+// another brings its terminal records with the source server's ID in them
+// (issue #356). Reviving them runs the sandbox's harness — the primary, which
+// an attach reaches through ResolvePrimary, and any other terminal — and the
+// records keep the ID they were created with.
+func TestReviveRunsTheSandboxsHarnessNotTheRecords(t *testing.T) {
+	fx := newReviveService(t, config.Harness{
+		ID:              "harness_source",
+		Command:         []string{"claude"},
+		RelaunchCommand: []string{"claude", "--continue"},
+	}, "")
+	ctx := context.Background()
+	if err := fx.svc.EnsurePrimary(ctx, []string{"build the thing"}); err != nil {
+		t.Fatalf("ensure primary: %v", err)
+	}
+	primary, ok := fx.svc.CurrentPrimary()
+	if !ok {
+		t.Fatal("no primary after ensure")
+	}
+	other, err := fx.svc.Create(ctx, CreateRequest{})
+	if err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+	markExited(t, fx.svc, primary.ID)
+	markExited(t, fx.svc, other.ID)
+
+	// The destination's agent: the same records, its own harness config ID.
+	dest, err := NewService(ServiceConfig{
+		Execs:       fx.execs,
+		WorkingRoot: fx.dir,
+		RuntimeDir:  filepath.Join(fx.dir, "rt"),
+		Env:         map[string]string{"PATH": "/usr/bin"},
+		Harness: config.Harness{
+			ID:              "harness_destination",
+			Command:         []string{"claude"},
+			RelaunchCommand: []string{"claude", "--continue"},
+		},
+		Units:     fx.units,
+		Installer: fx.installer,
+	})
+	if err != nil {
+		t.Fatalf("new destination service: %v", err)
+	}
+
+	revived, err := dest.ResolvePrimary(ctx)
+	if err != nil {
+		t.Fatalf("resolve primary: %v", err)
+	}
+	if revived.ID != primary.ID || revived.Status != execs.StatusRunning {
+		t.Fatalf("resolved %s (%s), want %s revived", revived.ID, revived.Status, primary.ID)
+	}
+	if _, err := dest.Revive(ctx, other.ID); err != nil {
+		t.Fatalf("revive terminal: %v", err)
+	}
+	if len(fx.units.starts) != 4 {
+		t.Fatalf("unit starts = %d, want two launches and two revivals", len(fx.units.starts))
+	}
+	for _, start := range fx.units.starts[2:] {
+		if got := start.StartupCommand; len(got) < 2 || got[0] != "claude" || got[1] != "--continue" {
+			t.Fatalf("%s startupCommand = %v, want the harness relaunch command", start.ID, got)
+		}
+	}
+	for _, id := range []string{primary.ID, other.ID} {
+		exec, ok := dest.Get(id)
+		if !ok {
+			t.Fatalf("terminal %s not found after revive", id)
+		}
+		if got := HarnessID(exec); got != "harness_source" {
+			t.Fatalf("%s harnessId = %q, want the record's own harness_source", id, got)
+		}
 	}
 }
 
