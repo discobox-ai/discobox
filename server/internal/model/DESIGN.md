@@ -18,7 +18,6 @@ Public REST API schema types live under the root `api/model` package.
 | `HarnessConfigSecretBinding` | Binds a harness config env var to a project secret; materialized into `SandboxSecret` rows per sandbox. |
 | `SandboxProviderInstance` | Project-scoped backend identity: provider type, credentials, and connection config. Capacity and sharing policy live on `Pool`. |
 | `Pool` | User-visible sharing boundary sandboxes are scheduled into, and its own runtime host (ADR-0006). Embeds its spec as `PoolManifest` (name, immutable provider instance, and the pool's size: CPU, memory, storage); carries the runtime lifecycle, the one platform its agent declares it hosts, agent identity and public key, `ready`/`schedulable`/`degraded` flags, reported capacity, image staging, resources, heartbeat, and its egress level (ADR 26-10-01-032). Sandboxes in one pool share a cache, the pool's CPU and memory, and a kernel/host. |
-| `PoolBootstrapToken` | Short-lived, one-time token used by a starting pool agent to register its public key. |
 | `SandboxAccessIssuerKey` | Per-project, per-user issuer key used by the control plane to sign sandbox access tokens. `ProjectUserKey` is a type alias for it. |
 | `Secret` | Project-scoped encrypted credential (`token`, `oauth`, or `exchange`). `WellKnownID` marks the secret that answers a well-known credential; `ExchangeRecipe` is how an exchange credential's stored fields are traded for its token (ADR 26-10-08-452). |
 | `SecretRequest` | Approval-inbox item for a secret use with no covering grant (reactive or agent-protocol originated). `WellKnownID` is the well-known credential an agent asked for by ID. |
@@ -291,10 +290,7 @@ and keeps the state. It never converts the pool to deleted.
 Pool delete is intent-based: `desiredState=deleted` is recorded while `state`
 stays put until runtime cleanup succeeds. Only successful cleanup may set
 `state=deleted`, revoke the pool, clear runtime
-state, and delete the row. `Pool.BootstrapTokens` declares `OnDelete:CASCADE`
-in the GORM relationship because registration credentials have no identity
-without their pool; deleting the pool must remove live and spent
-bootstrap-token rows in the same database operation.
+state, and delete the row.
 
 Pool repair is not delete. Repair is an in-place recovery operation that
 replaces the runtime under the same pool identity and must preserve the pool

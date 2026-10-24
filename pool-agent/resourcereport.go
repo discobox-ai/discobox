@@ -199,26 +199,26 @@ func startPoolResourceReporter(
 	logger *slog.Logger,
 	root layout.Root,
 	bootstrap Bootstrap,
-	registration *Registration,
+	identity *Identity,
 	runtime sandboxruntime.Runtime,
 	samples sandboxResourceSource,
 	client PoolResourceClient,
 ) {
-	if runtime == nil || client == nil || registration == nil || samples == nil {
+	if runtime == nil || client == nil || identity == nil || samples == nil {
 		return
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 	reporter := &poolResourceReporter{
-		logger:       logger,
-		root:         root,
-		bootstrap:    bootstrap,
-		registration: registration,
-		runtime:      runtime,
-		samples:      samples,
-		client:       client,
-		previous:     map[string]sandboxResourceSample{},
+		logger:    logger,
+		root:      root,
+		bootstrap: bootstrap,
+		identity:  identity,
+		runtime:   runtime,
+		samples:   samples,
+		client:    client,
+		previous:  map[string]sandboxResourceSample{},
 	}
 	// The disk walk runs on its own adaptive schedule rather than this tick.
 	// Reading CPU and memory is a handful of small files; walking disk is one
@@ -263,14 +263,14 @@ type sandboxResourceSample struct {
 }
 
 type poolResourceReporter struct {
-	logger       *slog.Logger
-	root         layout.Root
-	bootstrap    Bootstrap
-	registration *Registration
-	runtime      sandboxruntime.Runtime
-	samples      sandboxResourceSource
-	client       PoolResourceClient
-	storage      *storageScanner
+	logger    *slog.Logger
+	root      layout.Root
+	bootstrap Bootstrap
+	identity  *Identity
+	runtime   sandboxruntime.Runtime
+	samples   sandboxResourceSource
+	client    PoolResourceClient
+	storage   *storageScanner
 
 	// previous is the last sample this loop differenced against, per sandbox,
 	// plus the pool's own under poolCgroupKey. It is this loop's own memory and
@@ -301,7 +301,7 @@ func (r *poolResourceReporter) report(ctx context.Context) {
 		ControlPlaneURL: r.bootstrap.ControlPlaneURL,
 		ProjectID:       r.bootstrap.ProjectID,
 		PoolID:          r.bootstrap.PoolID,
-		PrivateKey:      r.registration.PrivateKey,
+		PrivateKey:      r.identity.PrivateKey,
 		Report:          PoolReport{ReportedAt: now, Storage: storage},
 	}
 	request.Report.CPU, request.Report.Memory = r.poolUsage(now)

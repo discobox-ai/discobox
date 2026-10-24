@@ -2,71 +2,69 @@ package poolruntime
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
-	"time"
 
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
-const defaultPoolBootstrapTTL = 30 * time.Minute
-
-// mintPoolBootstrap returns the deferred minter handed to a runtime provider.
-// The provider calls it only when it actually creates a runtime, so a drift
-// check over a healthy pool persists no bootstrap token. The runtime provider
-// fills runtime-specific fields such as the control plane URL and agent port.
-func mintPoolBootstrap(manager PoolManager, project *model.Project, pool *model.Pool) poolagent.MintBootstrap {
-	return func(ctx context.Context) (poolagent.Bootstrap, error) {
-		token, err := createPoolBootstrap(ctx, manager, project, pool)
-		if err != nil {
-			return poolagent.Bootstrap{}, err
-		}
-		controlPlanePublicKey, err := manager.EnsureAgentTrustKey(ctx)
-		if err != nil {
-			return poolagent.Bootstrap{}, err
-		}
-		return poolagent.Bootstrap{
-			ProjectID:       project.ID,
-			PoolID:          pool.ID,
-			Token:           token,
-			ControlPlaneKey: controlPlanePublicKey,
-		}, nil
-	}
+// PoolMaker is what a runtime provider makes a pool's box with (ADR
+// 26-10-24-953 §§2, 4), as a pool makes a sandbox's: the pool's bootstrap, what
+// the box is placed with, and the enrollment of the key the box makes. The
+// provider supplies the box and the channel into it; nothing here is minted,
+// so a drift check that finds a healthy pool may hold one and spend nothing.
+type PoolMaker interface {
+	// Bootstrap is the pool's bootstrap: which pool it is and which control
+	// plane it trusts. It holds no credential. The provider fills in what is
+	// its own: the control plane URL as the box reaches it, the agent's
+	// listener.
+	Bootstrap(ctx context.Context) (poolagent.Bootstrap, error)
+	// Box is the agent and the pool's bundles to place, the agent's layer for
+	// the box's platform among them.
+	Box(ctx context.Context, platform imagecache.Platform) (sandbox.PoolBox, error)
+	// Enroll records publicKey, which the box made (`discobox-provision
+	// identity`), as the pool's identity: what the box fetches its bundles
+	// with, and its agent signs with, from then on.
+	Enroll(ctx context.Context, publicKey string) error
 }
 
-func createPoolBootstrap(ctx context.Context, manager PoolManager, project *model.Project, pool *model.Pool) (string, error) {
-	if manager == nil {
-		return "", fmt.Errorf("pool manager is required")
+// poolMaker is the PoolMaker of one pool, over the control plane.
+type poolMaker struct {
+	manager PoolManager
+	project *model.Project
+	pool    *model.Pool
+}
+
+func newPoolMaker(manager PoolManager, project *model.Project, pool *model.Pool) (*poolMaker, error) {
+	switch {
+	case manager == nil:
+		return nil, fmt.Errorf("pool manager is required")
+	case project == nil:
+		return nil, fmt.Errorf("project is required")
+	case pool == nil:
+		return nil, fmt.Errorf("pool is required")
 	}
-	if project == nil {
-		return "", fmt.Errorf("project is required")
-	}
-	if pool == nil {
-		return "", fmt.Errorf("pool is required")
-	}
-	token, err := randomPoolToken()
+	return &poolMaker{manager: manager, project: project, pool: pool}, nil
+}
+
+func (m *poolMaker) Bootstrap(ctx context.Context) (poolagent.Bootstrap, error) {
+	controlPlanePublicKey, err := m.manager.EnsureAgentTrustKey(ctx)
 	if err != nil {
-		return "", err
+		return poolagent.Bootstrap{}, err
 	}
-	hash := sha256.Sum256([]byte(token))
-	bootstrapToken := &model.PoolBootstrapToken{
-		PoolID:    pool.ID,
-		TokenHash: hash[:],
-		ExpiresAt: time.Now().UTC().Add(defaultPoolBootstrapTTL),
-	}
-	if err := manager.CreatePoolBootstrapToken(ctx, bootstrapToken); err != nil {
-		return "", err
-	}
-	return token, nil
+	return poolagent.Bootstrap{
+		ProjectID:       m.project.ID,
+		PoolID:          m.pool.ID,
+		ControlPlaneKey: controlPlanePublicKey,
+	}, nil
 }
 
-func randomPoolToken() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(buf), nil
+func (m *poolMaker) Box(ctx context.Context, platform imagecache.Platform) (sandbox.PoolBox, error) {
+	return m.manager.PoolBox(ctx, platform)
+}
+
+func (m *poolMaker) Enroll(ctx context.Context, publicKey string) error {
+	return m.manager.EnrollPool(ctx, m.pool.ID, publicKey)
 }

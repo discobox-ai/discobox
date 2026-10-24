@@ -161,8 +161,8 @@ func Serve(w http.ResponseWriter, r *http.Request, b Backend, suffix string) {
 // The repository comes second. Its own .git/config names programs git runs —
 // core.hooksPath, uploadpack.packObjectsHook — and repo-local configuration is
 // read whatever the switches below say, so the repository's writer picks what
-// this environment is handed to. Nothing the agent was started with — a
-// bootstrap token among it — belongs there. PATH is kept, because git
+// this environment is handed to. Nothing the agent was started with — its
+// identity key's path among it — belongs there. PATH is kept, because git
 // resolves what it execs through it, and nothing else is.
 //
 // So the only GIT_* variables the backend sees are the ones set here. An

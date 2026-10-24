@@ -95,7 +95,7 @@ func (e *Engine) ensureConsoleContainer(ctx context.Context, lease *DockerClient
 	if existingErr != nil && !cerrdefs.IsNotFound(existingErr) {
 		return "", existingErr
 	}
-	image, err := e.resolvePoolAgentImage(ctx, lease, pool.ID, existing.Container)
+	image, err := e.resolvePoolImage(ctx, lease, pool.ID, existing.Container)
 	if err != nil {
 		return "", err
 	}

@@ -64,14 +64,14 @@ func newInventoryPoller(t *testing.T, agent http.Handler) (*sandboxAgentStatusPo
 	}
 	client := &fakeSandboxAgentStatusClient{}
 	return &sandboxAgentStatusPoller{
-		logger:       slog.New(slog.DiscardHandler),
-		bootstrap:    Bootstrap{ControlPlaneURL: "http://control-plane.invalid", ProjectID: "project-1", PoolID: "pool-1"},
-		registration: statusPollTestRegistration(t),
-		runtime:      runtime,
-		client:       client,
-		tokens:       map[string]cachedSandboxAgentToken{},
-		samples:      map[string]sandboxResourceSample{},
-		inventories:  map[string]string{},
+		logger:      slog.New(slog.DiscardHandler),
+		bootstrap:   Bootstrap{ControlPlaneURL: "http://control-plane.invalid", ProjectID: "project-1", PoolID: "pool-1"},
+		identity:    statusPollTestIdentity(t),
+		runtime:     runtime,
+		client:      client,
+		tokens:      map[string]cachedSandboxAgentToken{},
+		samples:     map[string]sandboxResourceSample{},
+		inventories: map[string]string{},
 	}, client
 }
 

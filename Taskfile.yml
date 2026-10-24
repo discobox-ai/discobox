@@ -669,14 +669,6 @@ tasks:
         DISCOBOX_VZ_STRESS_ARTIFACTS="$PWD/{{.ARTIFACTS}}"
         ./{{.TEST_BINARY}} -test.run TestVSOCKChurnKeepsUnixListenerServing -test.count=1 -test.v -test.timeout 45m
 
-  test:docker:pool-flow:
-    desc: "Run the Docker pool create-flow e2e test. Requires: dockerd"
-    # Not test:docker, which is the provider's own integration suite. This is
-    # the flow above it — create a pool, run a discobox on it — and it is what
-    # the review hook of the same name runs.
-    cmds:
-      - cd server && DISCOBOX_DOCKER_INTEGRATION=1 go test ./internal/service -run TestDockerProviderPoolCreateFlowE2E -count=1 -v
-
   test:docker:bats:
     desc: Run Docker-backed CLI Bats integration tests (BATS_SUITE=<path> for one file)
     vars:
@@ -765,7 +757,7 @@ tasks:
       # platform, so nothing downstream can catch an arm64 root filesystem.
       - |
         missing=""
-        for v in DISCOBOX_LIBKRUN_E2E_GUEST_DIR DISCOBOX_LIBKRUN_E2E_KERNEL_DIR DISCOBOX_LIBKRUN_E2E_POOL_IMAGE DISCOBOX_LIBKRUN_E2E_DOCKER; do
+        for v in DISCOBOX_LIBKRUN_E2E_GUEST_DIR DISCOBOX_LIBKRUN_E2E_KERNEL_DIR DISCOBOX_LIBKRUN_E2E_DOCKER; do
           eval "value=\${$v:-}"
           if [ -z "$value" ]; then missing="$missing $v"; fi
         done

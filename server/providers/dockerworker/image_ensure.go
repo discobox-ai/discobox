@@ -35,16 +35,16 @@ import (
 // that image can be had and a superseded one already on the daemon when it
 // cannot — see fallbackPoolImage.
 func (e *Engine) ensureImage(ctx context.Context, lease *DockerClientLease, poolID string) (string, error) {
-	err := e.ensureImageRef(ctx, lease, poolID, e.cfg.Image)
+	err := e.ensureImageRef(ctx, lease, poolID, e.cfg.SandboxBaseImage)
 	if err == nil {
-		return e.cfg.Image, nil
+		return e.cfg.SandboxBaseImage, nil
 	}
 	fallback, ok := e.fallbackPoolImage(ctx, lease.Client)
 	if !ok {
 		return "", err
 	}
 	slog.WarnContext(ctx, "launching a superseded pool agent: the configured image could not be pulled",
-		"pool", poolID, "configured_image", e.cfg.Image, "image", fallback, "error", err)
+		"pool", poolID, "configured_image", e.cfg.SandboxBaseImage, "image", fallback, "error", err)
 	return fallback, nil
 }
 
@@ -68,7 +68,7 @@ func (e *Engine) ensureImage(ctx context.Context, lease *DockerClientLease, pool
 // container against a freshly resolved reference on every reconcile, so the
 // pool upgrades itself as soon as the configured image can be pulled.
 func (e *Engine) fallbackPoolImage(ctx context.Context, cli *client.Client) (string, bool) {
-	repository, err := imageRepository(e.cfg.Image)
+	repository, err := imageRepository(e.cfg.SandboxBaseImage)
 	if err != nil {
 		return "", false
 	}
@@ -90,7 +90,7 @@ func (e *Engine) fallbackPoolImage(ctx context.Context, cli *client.Client) (str
 			}
 			// The configured image is what could not be had. If it is somehow
 			// listed, it is not the answer to its own absence.
-			if tag == e.cfg.Image {
+			if tag == e.cfg.SandboxBaseImage {
 				continue
 			}
 			// Tag order breaks a tie between two tags of one image, so the

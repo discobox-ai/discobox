@@ -25,7 +25,7 @@ type Plan struct {
 	// Dir is the guest directory Tree is unpacked into. An entry's path is
 	// relative to it, so a tree of absolute guest paths is placed at "/".
 	Dir string
-	// Tree is a tar stream. It may hold secrets (a key, a bootstrap token):
+	// Tree is a tar stream. It may hold secrets (a key, a credential):
 	// nothing of its contents is put in an error.
 	Tree io.Reader
 	// Command runs once the tree is placed. It must not ask for a TTY, which

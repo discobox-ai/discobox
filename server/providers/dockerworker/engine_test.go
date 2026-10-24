@@ -15,7 +15,6 @@ import (
 	"github.com/moby/moby/api/types/mount"
 
 	"github.com/discobox-ai/discobox/pkg/layout"
-	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
@@ -76,8 +75,8 @@ func (d *lifecycleDriver) EnsureVM(context.Context, string, VMSpec) (*VMInfo, er
 
 func newTestEngine(t *testing.T, cfg Config) *Engine {
 	t.Helper()
-	if cfg.Image == "" {
-		cfg.Image = "worker-image"
+	if cfg.SandboxBaseImage == "" {
+		cfg.SandboxBaseImage = "worker-image"
 	}
 	engine, err := New(cfg, nopDriver{})
 	if err != nil {
@@ -88,7 +87,7 @@ func newTestEngine(t *testing.T, cfg Config) *Engine {
 
 func TestRepairStopsUnhealthyVMWithoutDeletingPersistentState(t *testing.T) {
 	driver := &lifecycleDriver{status: sandbox.StatusStopped}
-	engine, err := New(Config{Image: "worker-image"}, driver)
+	engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +122,7 @@ func TestRepairStopsUnhealthyVMWithoutDeletingPersistentState(t *testing.T) {
 func TestRepairRestartsARunningVMWhoseDockerDoesNotAnswer(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		driver := &lifecycleDriver{status: sandbox.StatusRunning, hostedHere: true}
-		engine, err := New(Config{Image: "worker-image"}, driver)
+		engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -155,7 +154,7 @@ func TestRepairRestartsARunningVMWhoseDockerDoesNotAnswer(t *testing.T) {
 func TestRepairKeepsARunningVMReachedOverANetwork(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		driver := &lifecycleDriver{status: sandbox.StatusRunning}
-		engine, err := New(Config{Image: "worker-image"}, driver)
+		engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -209,7 +208,7 @@ func TestRepairKeepsARunningVMWhoseDockerAnswers(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	driver := &answeringDriver{lifecycleDriver: lifecycleDriver{status: sandbox.StatusRunning, hostedHere: true}, url: server.URL}
-	engine, err := New(Config{Image: "worker-image"}, driver)
+	engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +236,7 @@ func TestRepairKeepsARunningVMWhoseDockerAnswers(t *testing.T) {
 // guest, and must not reboot it on the way out.
 func TestRepairCanceledWhileCheckingDockerKeepsTheVM(t *testing.T) {
 	driver := &lifecycleDriver{status: sandbox.StatusRunning, hostedHere: true}
-	engine, err := New(Config{Image: "worker-image"}, driver)
+	engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,13 +266,10 @@ func TestNewDefaults(t *testing.T) {
 	if engine.cfg.DockerSocket != dockerSocketPath {
 		t.Fatalf("dockerSocket = %q", engine.cfg.DockerSocket)
 	}
-	// The pool-agent container always runs systemd as PID 1, so it is privileged and runs the
-	// pool agent unless the caller overrides either.
+	// The pool-agent container always runs systemd as PID 1, so it is
+	// privileged unless the caller overrides it.
 	if !engine.privileged() {
 		t.Fatalf("privileged default = false, want true")
-	}
-	if len(engine.cfg.Command) != 1 || engine.cfg.Command[0] != "/usr/local/bin/discobox-pool-agent" {
-		t.Fatalf("command = %#v", engine.cfg.Command)
 	}
 }
 
@@ -289,9 +285,9 @@ func TestNewHonorsPrivilegedOverride(t *testing.T) {
 // misconfigured backend fails at construction rather than at pool boot.
 func TestNewRejectsUnusableTransportURLs(t *testing.T) {
 	for _, cfg := range []Config{
-		{Image: "worker-image", AgentListenURL: "ftp://nope"},
-		{Image: "worker-image", AgentListenURL: "vsock://2"},
-		{Image: "worker-image", ControlPlaneURL: "ftp://nope"},
+		{SandboxBaseImage: "worker-image", AgentListenURL: "ftp://nope"},
+		{SandboxBaseImage: "worker-image", AgentListenURL: "vsock://2"},
+		{SandboxBaseImage: "worker-image", ControlPlaneURL: "ftp://nope"},
 	} {
 		if _, err := New(cfg, nopDriver{}); err == nil {
 			t.Fatalf("New(%#v) succeeded with an unusable transport URL", cfg)
@@ -302,9 +298,9 @@ func TestNewRejectsUnusableTransportURLs(t *testing.T) {
 // A VSOCK-only pool is now expressed purely as URLs.
 func TestNewAcceptsVSOCKTransportURLs(t *testing.T) {
 	if _, err := New(Config{
-		Image:           "worker-image",
-		AgentListenURL:  "vsock://:3002",
-		ControlPlaneURL: "vsock://2:3001",
+		SandboxBaseImage: "worker-image",
+		AgentListenURL:   "vsock://:3002",
+		ControlPlaneURL:  "vsock://2:3001",
 	}, nopDriver{}); err != nil {
 		t.Fatalf("New with VSOCK transport URLs: %v", err)
 	}
@@ -313,67 +309,12 @@ func TestNewAcceptsVSOCKTransportURLs(t *testing.T) {
 // With no listen URL configured the engine defaults to TCP on the agent port,
 // so existing Docker pools keep their published port unchanged.
 func TestNewDefaultsAgentListenToTCP(t *testing.T) {
-	engine, err := New(Config{Image: "worker-image", AgentPort: 3002}, nopDriver{})
+	engine, err := New(Config{SandboxBaseImage: "worker-image", AgentPort: 3002}, nopDriver{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	if got, want := engine.cfg.AgentListenURL, "http://0.0.0.0:3002"; got != want {
 		t.Fatalf("default agent listen URL = %q, want %q", got, want)
-	}
-}
-
-func TestBootEnvRendersBootstrapContract(t *testing.T) {
-	env := BootEnv(poolagent.Bootstrap{
-		ControlPlaneURL: "http://control.example",
-		ProjectID:       "project-1",
-		PoolID:          "pool-1",
-		Token:           "token-1",
-		ControlPlaneKey: "key-1",
-		AgentListenURL:  "http://0.0.0.0:3002",
-		HostMountPrefix: "/host",
-	})
-	want := map[string]string{
-		poolagent.EnvControlPlaneURL: "http://control.example",
-		poolagent.EnvProjectID:       "project-1",
-		poolagent.EnvPoolID:          "pool-1",
-		poolagent.EnvBootstrapToken:  "token-1",
-		poolagent.EnvControlPlaneKey: "key-1",
-		poolagent.EnvAgentListenURL:  "http://0.0.0.0:3002",
-		poolagent.EnvHostMountPrefix: "/host",
-	}
-	for key, value := range want {
-		if env[key] != value {
-			t.Fatalf("env[%q] = %q, want %q", key, env[key], value)
-		}
-	}
-	if len(env) != len(want) {
-		t.Fatalf("env = %#v, want no empty values", env)
-	}
-}
-
-// A VSOCK pool renders the same two variables as any other backend; the scheme
-// is the only difference.
-func TestBootEnvRendersVSOCKTransportAsURLs(t *testing.T) {
-	env := BootEnv(poolagent.Bootstrap{
-		PoolID:          "pool-1",
-		ControlPlaneURL: "vsock://2:3001",
-		AgentListenURL:  "vsock://:3002",
-	})
-	if env[poolagent.EnvAgentListenURL] != "vsock://:3002" {
-		t.Fatalf("agent listen env = %q", env[poolagent.EnvAgentListenURL])
-	}
-	if env[poolagent.EnvControlPlaneURL] != "vsock://2:3001" {
-		t.Fatalf("control plane env = %q", env[poolagent.EnvControlPlaneURL])
-	}
-}
-
-func TestBootEnvOmitsEmptyValues(t *testing.T) {
-	env := BootEnv(poolagent.Bootstrap{PoolID: "pool-1"})
-	if _, ok := env[poolagent.EnvControlPlaneURL]; ok {
-		t.Fatalf("env = %#v, want no empty control plane URL", env)
-	}
-	if _, ok := env[poolagent.EnvAgentListenURL]; ok {
-		t.Fatalf("env = %#v, want no empty agent listen URL", env)
 	}
 }
 
@@ -559,7 +500,7 @@ func TestConfigRevisionChangesWithContainerConfig(t *testing.T) {
 	if base.ConfigRevision() == withMount.ConfigRevision() {
 		t.Fatalf("config revision did not change after host mount change")
 	}
-	withImage := newTestEngine(t, Config{Image: "other-image"})
+	withImage := newTestEngine(t, Config{SandboxBaseImage: "other-image"})
 	if base.ConfigRevision() == withImage.ConfigRevision() {
 		t.Fatalf("config revision did not change after image change")
 	}
@@ -747,7 +688,7 @@ func (d *refusingDaemonDriver) DeleteVM(context.Context, string) error {
 // container that no longer has a pool row.
 func TestRemovePoolDeletesTheVMWhenItsDaemonIsUnreachable(t *testing.T) {
 	driver := &deadDaemonDriver{}
-	engine, err := New(Config{Image: "worker-image"}, driver)
+	engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -790,7 +731,7 @@ func (d *stoppedVMDriver) DeleteVM(context.Context, string) error {
 // DeleteVM destroys, and no retry starts the VM to reach them first.
 func TestRemovePoolDeletesAStoppedVM(t *testing.T) {
 	driver := &stoppedVMDriver{}
-	engine, err := New(Config{Image: "worker-image"}, driver)
+	engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -813,7 +754,7 @@ func TestRemovePoolSurfacesAReachableDaemonsFailure(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	driver := &refusingDaemonDriver{host: server.URL}
-	engine, err := New(Config{Image: "worker-image"}, driver)
+	engine, err := New(Config{SandboxBaseImage: "worker-image"}, driver)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

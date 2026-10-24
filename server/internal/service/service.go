@@ -179,10 +179,8 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	// a rule changes (ADR 26-10-12-330 §4); the engine is what runs the tests.
 	secretService.SetDirtier(engine)
 	// The bundles a release names are the ones the server's own registry
-	// credentials pull; a project's are pulled without them. The pool-agent
-	// bundle is one: the pool agent for a pool machine booted from a driver
-	// base, served from the blob store (ADR 26-10-23-551 §2).
-	releaseBundles := []string{dockerworker.EffectivePoolAgentBundle(options.ServerDefaults)}
+	// credentials pull; a project's are pulled without them.
+	var releaseBundles []string
 	for _, seed := range harnessdefs.Seeds(options.Harnesses, options.ServerDefaults.Release != nil) {
 		releaseBundles = append(releaseBundles, seed.Bundle)
 	}
@@ -190,6 +188,9 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		Dir:            options.AssetDir,
 		PlatformBundle: options.Harnesses.PlatformBundle,
 		AgentBundle:    dockerworker.EffectiveAgentBundle(options.ServerDefaults),
+		// The pool bundle: what makes a pool's box a pool's, served from the
+		// blob store to the box that fetches it (ADR 26-10-24-953 §2).
+		PoolBundle:     dockerworker.EffectivePoolAgentBundle(options.ServerDefaults),
 		ReleaseBundles: releaseBundles,
 		Development:    options.DevelopmentBundles,
 	})
@@ -211,9 +212,13 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	})
 	// Every sandbox is pinned to the platform and the agent the release
 	// names, and a stopped one follows them when a reference resolves
-	// somewhere new (ADR 26-10-16-423 §7, ADR 26-10-24-953 §2).
+	// somewhere new (ADR 26-10-16-423 §7, ADR 26-10-24-953 §2). A pool's box
+	// is placed with the agent and its bundles, and applies a moved one in
+	// place at its next reconcile, which a move asks for.
 	sandboxService.SetReleaseBundles(assetService)
+	poolControlPlane.SetPoolBoxes(assetService)
 	assetService.OnReleaseMoved(func(ctx context.Context) {
+		reconcileEveryPool(ctx, store, poolControlPlane)
 		if err := sandboxService.UpgradeReleaseSandboxes(ctx); err != nil {
 			slog.WarnContext(ctx, "a release bundle moved but stopped sandboxes were not upgraded", "error", err)
 		}
@@ -281,7 +286,6 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.engine.Start(ctx); err != nil {
 		return err
 	}
-	s.poolControlPlane.StartBootstrapTokenCleanup(ctx)
 	s.assets.StartPruning(ctx)
 	go s.assets.ResolveRelease(ctx)
 	s.StartPinningUndelivered(ctx)
@@ -351,3 +355,25 @@ func (s *Service) Judges() *judges.Service { return s.judges }
 
 // Assets is the asset API's service, which only a pool reaches.
 func (s *Service) Assets() *assets.Service { return s.assets }
+
+// reconcileEveryPool marks every pool for a reconcile, which provisions a
+// pool's box again in place when its bundles moved (ADR 26-10-24-953 §5).
+func reconcileEveryPool(ctx context.Context, store *store.Store, pools *pools.ControlPlane) {
+	projects, err := store.ListProjects(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "a release bundle moved but pools were not reconciled", "error", err)
+		return
+	}
+	for _, project := range projects {
+		listed, err := store.ListPools(ctx, project.ID)
+		if err != nil {
+			slog.WarnContext(ctx, "a release bundle moved but a project's pools were not reconciled", "projectId", project.ID, "error", err)
+			continue
+		}
+		for _, pool := range listed {
+			if err := pools.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); err != nil {
+				slog.WarnContext(ctx, "a release bundle moved but a pool was not reconciled", "poolId", pool.ID, "error", err)
+			}
+		}
+	}
+}

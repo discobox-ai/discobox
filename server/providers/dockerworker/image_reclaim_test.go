@@ -10,7 +10,6 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/discobox-ai/discobox/pkg/devimage"
-	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/imagereap"
 )
 
@@ -19,7 +18,7 @@ import (
 // would change configRevision and recreate every pool on the daemon at upgrade,
 // for a policy nobody asked for.
 func TestUnsetImageRetentionLeavesPoolConfigurationUnchanged(t *testing.T) {
-	engine, err := New(Config{Image: "pool:test"}, nopDriver{})
+	engine, err := New(Config{SandboxBaseImage: "pool:test"}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
@@ -27,7 +26,7 @@ func TestUnsetImageRetentionLeavesPoolConfigurationUnchanged(t *testing.T) {
 		t.Fatalf("ImageRetention = %s, want zero when unset", engine.cfg.ImageRetention)
 	}
 
-	env := engine.poolContainerEnv(poolagent.Bootstrap{ControlPlaneURL: "http://cp", PoolID: "pool-1", Token: "t"})
+	env := engine.poolPolicyEnv()
 	if value, ok := env[imagereap.RetentionEnv]; ok {
 		t.Fatalf("%s = %q, want absent when unset", imagereap.RetentionEnv, value)
 	}
@@ -47,7 +46,7 @@ func TestUnsetImageRetentionLeavesPoolConfigurationUnchanged(t *testing.T) {
 func TestConfiguredImageRetentionReachesThePoolAgent(t *testing.T) {
 	// The window is server configuration now, so it arrives in Config rather
 	// than being read from the environment here (ADR 0096 §5, configuration file).
-	engine, err := New(Config{Image: "pool:test", ImageRetention: 72 * time.Hour}, nopDriver{})
+	engine, err := New(Config{SandboxBaseImage: "pool:test", ImageRetention: 72 * time.Hour}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
@@ -57,12 +56,12 @@ func TestConfiguredImageRetentionReachesThePoolAgent(t *testing.T) {
 
 	// The pool agent reaps its own daemon, so the setting has to travel into the
 	// container to govern it.
-	env := engine.poolContainerEnv(poolagent.Bootstrap{ControlPlaneURL: "http://cp", PoolID: "pool-1", Token: "t"})
+	env := engine.poolPolicyEnv()
 	if env[imagereap.RetentionEnv] != "72h0m0s" {
 		t.Fatalf("%s = %q, want 72h0m0s", imagereap.RetentionEnv, env[imagereap.RetentionEnv])
 	}
 	// A policy change is a container configuration change, so pools must recreate.
-	unset, err := New(Config{Image: "pool:test"}, nopDriver{})
+	unset, err := New(Config{SandboxBaseImage: "pool:test"}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
@@ -79,7 +78,7 @@ func TestImageKeepReferencesCoverThePoolImageAndDevelopmentImages(t *testing.T) 
 	if err != nil {
 		t.Fatalf("new synchronizer: %v", err)
 	}
-	engine, err := New(Config{Image: "pool:test", DevelopmentImageSync: sync}, nopDriver{})
+	engine, err := New(Config{SandboxBaseImage: "pool:test", DevelopmentImageSync: sync}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
@@ -129,7 +128,7 @@ func TestDevelopmentDaemonsUseTheDevelopmentRetentionAndCadence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new synchronizer: %v", err)
 	}
-	development, err := New(Config{Image: "pool:test", DevelopmentImageSync: sync}, nopDriver{})
+	development, err := New(Config{SandboxBaseImage: "pool:test", DevelopmentImageSync: sync}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
@@ -141,7 +140,7 @@ func TestDevelopmentDaemonsUseTheDevelopmentRetentionAndCadence(t *testing.T) {
 	}
 
 	// A production engine has no synchronizer and must be untouched by this.
-	production, err := New(Config{Image: "pool:test"}, nopDriver{})
+	production, err := New(Config{SandboxBaseImage: "pool:test"}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
@@ -162,7 +161,7 @@ func TestExplicitImageRetentionOverridesTheDevelopmentDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new synchronizer: %v", err)
 	}
-	engine, err := New(Config{Image: "pool:test", DevelopmentImageSync: sync, ImageRetention: 6 * time.Hour}, nopDriver{})
+	engine, err := New(Config{SandboxBaseImage: "pool:test", DevelopmentImageSync: sync, ImageRetention: 6 * time.Hour}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}

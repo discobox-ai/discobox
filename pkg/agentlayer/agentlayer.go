@@ -206,13 +206,15 @@ type Agent struct {
 	Size int64
 }
 
-// Archive writes what a pool places in a container before it starts: the
-// agent layer into the store under its digest, unless placed is set because
-// the box already holds it; CurrentLink pointing at it; the units and their
-// enablement; and pins. It is extracted at the container's root. Everything
-// but the layer is written on every placement, so a box always boots with the
-// units of the pool that starts it and the pins it last recorded.
-func Archive(w io.Writer, agent Agent, placed bool, pins Pins) error {
+// Archive writes what a box's maker places in it before it starts or
+// provisions: the agent layer into the store under its digest, unless placed
+// is set because the box already holds it; CurrentLink pointing at it; units
+// and their enablement; and pins. It is extracted at the box's root.
+// Everything but the layer is written on every placement, so a box always
+// boots with the units of the maker that starts it and the pins it last
+// recorded. A sandbox is placed Units, the agent's own; a pool, whose agent
+// only provisions it, none (ADR 26-10-24-953 §2).
+func Archive(w io.Writer, agent Agent, placed bool, pins Pins, units []Unit) error {
 	if err := pins.Validate(); err != nil {
 		return err
 	}
@@ -241,7 +243,7 @@ func Archive(w io.Writer, agent Agent, placed bool, pins Pins) error {
 		return err
 	}
 	a.file(PinsFile, 0o644, data)
-	for _, unit := range Units {
+	for _, unit := range units {
 		content, err := unitFiles.ReadFile("units/" + unit.Name)
 		if err != nil {
 			return err

@@ -40,7 +40,7 @@ func TestBackendEnvOmitsContentEncodingWhenAbsent(t *testing.T) {
 
 // TestBackendEnvIsNotInheritedFromTheAgent pins that the backend's environment
 // is built rather than inherited. The agent runs as root and holds the pool's
-// bootstrap token; the backend runs as the repository's owner over a worktree
+// identity key; the backend runs as the repository's owner over a worktree
 // someone else can write, whose .git/config can name the program git runs
 // there. So everything the agent was started with stays with the agent, PATH
 // aside.

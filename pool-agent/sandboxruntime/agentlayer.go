@@ -161,7 +161,7 @@ func (r *DockerSandboxRuntime) placeAgent(ctx context.Context, sandboxID, contai
 	}
 	reader, writer := io.Pipe()
 	go func() {
-		writer.CloseWithError(agentlayer.Archive(writer, agent, placed, pins))
+		writer.CloseWithError(agentlayer.Archive(writer, agent, placed, pins, agentlayer.Units))
 	}()
 	defer reader.Close()
 	if _, err := r.client.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{DestinationPath: "/", Content: reader}); err != nil {

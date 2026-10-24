@@ -67,7 +67,8 @@ for pool-backed provider instances. It owns sandbox placement gating (the
 sandbox's pool must have fresh health and be schedulable — there is no candidate search
 and no capacity check; sandboxes share their pool's CPU, memory, and storage
 with no per-sandbox reservation, docs/adr/0029), capacity waits,
-bootstrap credential minting, pool runtime convergence
+the pool's maker (`PoolMaker`: its bootstrap, what its box is placed with,
+and its enrollment), pool runtime convergence
 (`sandbox.PoolRuntime`), and user-sandbox operations through the
 pool-agent API. Docker never appears at this layer or above: the boundary
 contract downward is the `poolruntime.RuntimeProvider` interface, and the
@@ -165,7 +166,7 @@ pending sandbox asks its pool what it is doing instead.
 
 The engine reports the phases every backend shares — starting the VM, waiting
 for Docker, preparing the development images, pulling or loading the pool image,
-starting and waiting for the agent, and preloading sandbox images — around the
+and starting and waiting for the agent — around the
 calls that perform them. A driver refines that from inside: `vz` and `libkrun` report
 fetching the VM image, which the engine can only see as part of starting a VM.
 
@@ -240,39 +241,53 @@ systemd, Docker socket-activated, a uid-1000 `discobox` login user and the
 tools exe.dev's and boxd's images share. Those two are Ubuntu; the base is
 Debian because Debian's mirrors are the faster to build from, and the
 platform's features provision onto either. Every sandbox container runs it,
-with the platform's and its harness's features provisioned on top, and the
-pool-agent image is built `FROM` it, so a pool host pulls its layers once. No
-harness is an image (ADR 26-10-16-423 §10).
+with the platform's and its harness's features provisioned on top, and a
+Docker pool's own container runs it too, provisioned as a pool
+([ADR 26-10-24-953](../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
+§2), so a pool host pulls one image. No harness is an image (ADR 26-10-16-423
+§10).
 
-It is released and staged under its own role, and resolves as the pool image
-does — the release manifest's `Images.SandboxBase`, then a provider's
+It is released and staged under its own role, and resolves from the release
+manifest's `Images.SandboxBase`, then a provider's
 `sandboxBaseImage` setting, the server's `dockerSandboxBaseImage`, and
 `dockerworker.DefaultSandboxBaseImage`, which a release overwrites at link
 time (`EffectiveSandboxBaseImage`). Every provider that runs the pool agent in
-Docker offers the setting. The resolved image is the one image the pool
-preloads, and what every sandbox runs: the engine hands it to the pool agent as
+Docker offers the setting. The resolved image is the pool container's
+image and what every sandbox runs: the engine hands it to the pool agent as
 `DISCOBOX_SANDBOX_BASE_IMAGE` (`sandboxruntime.EnvSandboxBaseImage`), so it is
-part of the pool container's environment and its `configRevision`, and a
+part of the pool agent's environment and the pool's `configRevision`, and a
 moved base image recreates the pool container (`pool-agent/DESIGN.md`,
 ADR 26-10-16-423 §7).
 
-## Pool-Agent Bundle
+## Pool Bundle
 
-The pool-agent bundle is the pool agent for a pool machine booted from a
-driver base rather than an image
-([ADR 26-10-23-551](../../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
-§2; what it holds and how it is installed is in
-[pool-agent](../../pool-agent/DESIGN.md#the-pool-agent-bundle)). It resolves
-as the pool image does, but for a provider's own setting, since no provider
-places it — the release manifest's `Bundles.PoolAgent`, then the server's
-`poolAgentBundle`, and `dockerworker.DefaultPoolAgentBundle`, which a release
-overwrites at link time (`EffectivePoolAgentBundle`). The server counts the
-resolved reference among the release's bundles in its asset store, so it is
-pulled with the server's registry credentials and served from the blob store.
-Nothing places it yet: the `vm` provider boots its remote pool machine with
-nothing on it until that machine is fenced (see
-[discovm](discovm/DESIGN.md) and its `REVIEW.md`), so the bundle has no
-consumer until then.
+A pool is a box
+([ADR 26-10-24-953](../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
+§2): its list of bundles is the pool bundle alone (what it holds is in
+[pool-agent](../../pool-agent/DESIGN.md#the-pool-bundle)), placed with the
+agent bundle, as a sandbox is. Each resolves from the release manifest
+(`Bundles.PoolAgent`, `Bundles.Agent`), then the server's setting
+(`poolAgentBundle`, `agentBundle`), and the pool bundle from
+`dockerworker.DefaultPoolAgentBundle`, which a release overwrites at link time
+(`EffectivePoolAgentBundle`, `EffectiveAgentBundle`). The server counts both
+among the release's bundles in its asset store, so they are pulled with the
+server's registry credentials and served from the blob store; the assets
+service answers what a pool's box is placed with (`PoolBox`: the agent's layer
+for the box's platform and the pool's pins), and a release that moves either
+reconciles every pool.
+
+The Docker engine makes the box (`dockerworker/poolbox.go`) through
+`pool-agent/provisioner`, over the container as a `machine.Guest`: it places
+the agent, runs `discobox-provision identity` and enrolls the public key it
+prints (`PoolMaker.Enroll`), places the bootstrap and the agent's environment
+(`bundle.BootstrapFile`, `bundle.EnvironmentFile`), and runs
+`discobox-provision apply` as the pool, which fetches the pins from the asset
+API with the box's key and applies them. It records what it placed with the
+pool's runtime state (`RuntimeState.Box`); a pool whose pins moved since is
+provisioned again in its running box, and the agent alone moving provisions
+nothing (§5). The `vm` provider boots its remote pool machine with nothing on
+it until that machine is fenced (see [discovm](discovm/DESIGN.md) and its
+`REVIEW.md`).
 
 ## Development Image Convergence
 
@@ -362,12 +377,10 @@ reclaims the newest image of a repository for exactly this reason — see ADR 00
 
 ## Image Staging
 
-The pool reconciler passes its project's image set into `EnsurePool` and
-`RepairPool`. Before creating a pool-agent container, the engine loads cached
-images onto a local daemon and reports `preloading_images`. Existing healthy
-agents skip this work. Failed loads fail startup; absent cache entries and
-remote daemons are skipped, leaving sandbox images to their on-demand pull.
-There is no separate image staging operation or periodic prepull.
+A Docker pool's container runs the sandbox base image, so ensuring the pool's
+image stages the one image its sandboxes run: loaded from the image cache when
+it is staged there, pulled otherwise. A pool container already on it touches no
+image. There is no separate image staging operation or periodic prepull.
 
 ### The Image Cache
 
@@ -393,8 +406,7 @@ reports that digest; any failure removes what the load left and falls through
 to the pull, so the cache never makes an image harder to get.
 
 Both routes run through `ensureImageRef`, and each is reported as what it is:
-the pool-agent image as `loading_pool_image` rather than `pulling_pool_image`,
-a staged image with the `preloading_images` provisioning phase.
+`loading_pool_image` rather than `pulling_pool_image`.
 
 A load reports two stretches under that phase. The first is the archive written
 into the daemon; the second is the extraction, which the classic store only
@@ -440,10 +452,10 @@ A VM reached over a network can go silent because of the network, and a restart
 would kill a healthy pool on every retry without fixing it; the local Docker
 driver has no VM to restart at all.
 
-The control plane launches the pool-agent container over the VM's Docker
-daemon on every backend. Cloud VM images therefore stay generic: DigitalOcean
-cloud-init only installs and enables Docker; bootstrap identity travels as
-container environment rendered by `dockerworker.BootEnv`.
+The control plane launches and provisions the pool's container over the VM's
+Docker daemon on every backend. Cloud VM images therefore stay generic:
+DigitalOcean cloud-init only installs and enables Docker; the bootstrap is
+placed in the pool's box by the engine.
 
 ## Pool Host Console
 
@@ -670,12 +682,13 @@ starts and never registers.
 
 ## Pool Boot Metadata
 
-Bootstrap identity — control plane URL, project/pool identity, bootstrap
-token, control-plane trust key, agent port — is rendered as container
-environment by `dockerworker.BootEnv` and injected into the pool-agent
-container by the engine, uniformly on every backend. VM drivers only need
-their platform's Docker bring-up; they never carry bootstrap secrets in VM
-user data.
+The bootstrap — control plane URL, project/pool identity, control-plane trust
+key, agent listener — is the pool maker's (`PoolMaker.Bootstrap`), completed
+with the engine's transport URLs, and placed in the pool's box as
+`bundle.BootstrapFile` by the engine, uniformly on every backend. It holds no
+credential: the box makes its own key, which its maker enrolls (ADR
+26-10-24-953 §4). VM drivers only need their platform's Docker bring-up; they
+carry nothing of a pool in VM user data.
 
 ## Pool Policy
 
@@ -689,8 +702,8 @@ The split is what the setting describes. Anything about how a pool treats what
 it holds — its own disk, the sandboxes it hosts — belongs here; anything about the machine a pool happens to run on
 — image, region, socket, disk sizes — stays in the provider's own `Config`.
 
-Values reach the pool the way bootstrap identity does, as pool-container
-environment rendered by the engine (`poolContainerEnv`). An unset policy field
+Values reach the pool beside its bootstrap, as the agent's environment file
+(`bundle.EnvironmentFile`) the engine renders (`poolPolicyEnv`). An unset policy field
 must serialize away entirely: `Config` is hashed into `configRevision`, so
 materializing a default would recreate every pool already running at upgrade
 for a policy nobody asked for. `ProxyAuditRetention` follows that rule, and so

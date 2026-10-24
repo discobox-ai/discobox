@@ -24,7 +24,7 @@ func TestDefinitionIncludesWorkerConfig(t *testing.T) {
 			controlPlaneAdvanced = field.Advanced
 		}
 	}
-	for _, key := range []string{"controlPlaneUrl", "image", "privileged"} {
+	for _, key := range []string{"controlPlaneUrl", "sandboxBaseImage", "privileged"} {
 		if !keys[key] {
 			t.Fatalf("definition missing config key %q", key)
 		}
@@ -133,23 +133,21 @@ func TestEngineConfigDoesNotPublishAgentPortPublicly(t *testing.T) {
 // pool-agent containers get recreated) or is explicitly excluded.
 func TestProviderConfigFieldsAffectWorkerConfigRevision(t *testing.T) {
 	falseValue := false
-	base := Config{ControlPlaneURL: "http://control.example", Image: "worker-image"}
+	base := Config{ControlPlaneURL: "http://control.example", SandboxBaseImage: "worker-image"}
 	excludedFields := map[string]string{
 		"host":              "Docker daemon connection does not change worker container config",
 		"poolSize":          "worker pool sizing does not change worker container config",
 		"minWorkers":        "worker pool sizing does not change worker container config",
 		"maxWorkers":        "worker pool sizing does not change worker container config",
 		"minHealthyWorkers": "worker pool sizing does not change worker container config",
-		"sandboxBaseImage":  "the image sandboxes start from is preloaded, not part of the worker container",
 	}
 	mutators := map[string]func(*Config){
 		"controlPlaneUrl":  func(cfg *Config) { cfg.ControlPlaneURL = "http://other-control.example" },
-		"image":            func(cfg *Config) { cfg.Image = "other-worker-image" },
+		"sandboxBaseImage": func(cfg *Config) { cfg.SandboxBaseImage = "other-worker-image" },
 		"network":          func(cfg *Config) { cfg.Network = "discobox-net" },
 		"agentPort":        func(cfg *Config) { cfg.AgentPort = 3902 },
 		"privileged":       func(cfg *Config) { cfg.Privileged = &falseValue },
 		"cgroupNsMode":     func(cfg *Config) { cfg.CgroupNSMode = "host" },
-		"command":          func(cfg *Config) { cfg.Command = []string{"/bin/discobox-pool-agent", "--debug"} },
 		"bindDockerSocket": func(cfg *Config) { cfg.DockerSocket = "/run/user/1000/docker.sock" },
 		"hostMounts":       func(cfg *Config) { cfg.HostMounts = []HostMount{{Source: "/home", ReadOnly: true}} },
 		// Changing the retention window has to recreate the pool container: the

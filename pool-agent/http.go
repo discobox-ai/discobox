@@ -15,7 +15,6 @@ import (
 )
 
 const (
-	defaultRegisterPath                 = "/api/pools/register"
 	defaultStatusPath                   = "/api/pools/{poolId}/status"
 	defaultStatesPath                   = "/api/pools/{poolId}/sandbox-states"
 	defaultSandboxAgentStatusTokensPath = "/api/pools/{poolId}/sandbox-agent-status-tokens" //nolint:gosec // Route path, not a credential value.
@@ -25,11 +24,10 @@ const (
 	defaultHeldSandboxesPath            = "/api/pools/{poolId}/sandboxes"
 )
 
-// HTTPClient registers pools through the control plane HTTP API.
+// HTTPClient is a pool agent's client of the control plane HTTP API.
 type HTTPClient struct {
 	baseURL                      string
 	client                       *http.Client
-	registerPath                 string
 	statusPath                   string
 	statesPath                   string
 	sandboxAgentStatusTokensPath string
@@ -40,7 +38,7 @@ type HTTPClient struct {
 
 type HTTPClientOption func(*HTTPClient)
 
-// NewHTTPClient creates a pool registration HTTP client.
+// NewHTTPClient creates a pool agent's control plane HTTP client.
 func NewHTTPClient(baseURL string, opts ...HTTPClientOption) *HTTPClient {
 	c := &HTTPClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
@@ -48,7 +46,6 @@ func NewHTTPClient(baseURL string, opts ...HTTPClientOption) *HTTPClient {
 		// sandbox, and the control plane is reached directly, never through
 		// that sandbox's egress proxy.
 		client:                       internalhttp.Client,
-		registerPath:                 defaultRegisterPath,
 		statusPath:                   defaultStatusPath,
 		statesPath:                   defaultStatesPath,
 		sandboxAgentStatusTokensPath: defaultSandboxAgentStatusTokensPath,
@@ -113,36 +110,6 @@ func WithHTTPClient(client *http.Client) HTTPClientOption {
 			c.client = client
 		}
 	}
-}
-
-func (c *HTTPClient) RegisterPool(ctx context.Context, req RegisterRequest) (*RegisterResponse, error) {
-	baseURL := strings.TrimRight(firstNonEmpty(req.ControlPlaneURL, c.baseURL), "/")
-	if baseURL == "" {
-		return nil, fmt.Errorf("control plane URL is required")
-	}
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+c.registerPath, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("pool registration failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
-	}
-	var out RegisterResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, err
-	}
-	return &out, nil
 }
 
 func (c *HTTPClient) UpdatePoolStatus(ctx context.Context, req StatusRequest) error {

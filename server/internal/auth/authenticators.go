@@ -165,25 +165,6 @@ func (a DiscobotAuthenticator) Authenticate(r *http.Request) (Principal, bool, e
 	}, true, nil
 }
 
-// PoolRegisterPath is where a starting pool agent redeems its bootstrap token.
-const PoolRegisterPath = "/api/pools/register"
-
-// PoolBootstrapAuthenticator authenticates a request to PoolRegisterPath that
-// no earlier authenticator claimed, as PrincipalTypePoolBootstrap. The
-// bootstrap token in its body is the credential, and the pools service
-// redeems it: short-lived, one-time, stored hashed. This only lets the
-// request reach that check, whether or not the default user is served
-// (authRequired); a sandbox's forwarded call is still the sandbox's, and is
-// refused by its role.
-type PoolBootstrapAuthenticator struct{}
-
-func (PoolBootstrapAuthenticator) Authenticate(r *http.Request) (Principal, bool, error) {
-	if r.URL.Path != PoolRegisterPath {
-		return Principal{}, false, nil
-	}
-	return Principal{Type: PrincipalTypePoolBootstrap}, true, nil
-}
-
 // IrohAdmission is the enrolled-peer gate an iroh connection was admitted by
 // (irohd.Admission): authorized_ids and the managed enrollments.
 type IrohAdmission interface {

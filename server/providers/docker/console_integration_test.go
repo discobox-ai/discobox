@@ -16,6 +16,8 @@ import (
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
+const dockerIntegrationEnv = "DISCOBOX_DOCKER_INTEGRATION"
+
 // TestDockerIntegrationPoolConsole covers the console end to end on a real
 // daemon: it is created in the host's namespaces, it runs a shell an operator
 // can type into, it survives a detach, and pool teardown removes it.
@@ -38,7 +40,7 @@ func TestDockerIntegrationPoolConsole(t *testing.T) {
 		t.Fatalf("new local driver: %v", err)
 	}
 	t.Cleanup(func() { _ = driver.Close() })
-	engine, err := dockerworker.New(dockerworker.Config{ControlPlaneURL: "http://control.example", Image: image}, driver)
+	engine, err := dockerworker.New(dockerworker.Config{ControlPlaneURL: "http://control.example", SandboxBaseImage: image}, driver)
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}

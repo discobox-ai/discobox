@@ -98,7 +98,7 @@ func (p *sandboxAgentStatusPoller) reportInventories(ctx context.Context, runnin
 			ControlPlaneURL: p.bootstrap.ControlPlaneURL,
 			ProjectID:       p.bootstrap.ProjectID,
 			PoolID:          p.bootstrap.PoolID,
-			PrivateKey:      p.registration.PrivateKey,
+			PrivateKey:      p.identity.PrivateKey,
 			Sandboxes:       batch,
 		})
 		if err != nil {

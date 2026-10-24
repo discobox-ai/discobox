@@ -35,7 +35,7 @@ func splitPoolDirtyID(id string) (projectID, poolID string, err error) {
 // poolRegistrationTimeout is how long a freshly created runtime may sit in
 // the `registering` state before the reconciler repairs it in place: the
 // container/VM came up but its agent never called home, so it is replaced
-// under the same pool identity with a fresh bootstrap token.
+// under the same pool identity, and its new box enrolled anew.
 var poolRegistrationTimeout = 2 * time.Minute
 
 // poolHeartbeatTimeout is how long a registered pool may go without a status
@@ -173,8 +173,8 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	}
 
 	// A runtime that came up but whose agent never registered is repaired in
-	// place: the container/VM is replaced under the same pool identity with a
-	// fresh bootstrap token. Only a pool that never registered can be in this
+	// place: the container/VM is replaced under the same pool identity, and
+	// its new box enrolled anew. Only a pool that never registered can be in this
 	// state, and repair (not delete) preserves the user-owned pool row.
 	if r.registrationExpired(pool) {
 		err = runtimeProvider.RepairPool(ctx, r.pools, project, provider, pool, "pool agent did not register before timeout", begin)
@@ -218,7 +218,7 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		return reconcile.Result{}, err
 	}
 	// Ready/Schedulable/Degraded and RegisteredAt are agent-reported fields,
-	// written by RegisterPool/UpdatePoolStatus over their own HTTP calls, which
+	// written by the agent's UpdatePoolStatus over its own HTTP calls, which
 	// can land concurrently with EnsurePool/RepairPool waiting on container
 	// health. Only RuntimeState is safe to copy from the pre-call local object;
 	// copying the others would stomp a registration that already landed in the

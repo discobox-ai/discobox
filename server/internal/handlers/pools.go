@@ -202,18 +202,6 @@ func (h *Handler) ClearPoolCache(ctx context.Context, params serverapi.ClearPool
 	return &apimodel.ClearPoolCacheBody{StoppedSandboxIds: stopped}, nil
 }
 
-func (h *Handler) RegisterPool(ctx context.Context, req *apimodel.RegisterPoolBody) (serverapi.RegisterPoolRes, error) {
-	resp, err := h.services.Pools.RegisterPool(ctx, *req)
-	if err != nil {
-		return apiError(err), nil
-	}
-	body, err := services.Convert[apimodel.RegisterPoolResponseBody](resp)
-	if err != nil {
-		return nil, err
-	}
-	return &body, nil
-}
-
 func (h *Handler) UpdatePoolStatus(ctx context.Context, req *apimodel.UpdatePoolStatusBody, params serverapi.UpdatePoolStatusParams) (serverapi.UpdatePoolStatusRes, error) {
 	pool, err := h.services.Pools.UpdatePoolStatus(ctx, params.PoolId, *req)
 	if err != nil {

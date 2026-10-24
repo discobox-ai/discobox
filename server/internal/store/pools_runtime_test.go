@@ -2,7 +2,6 @@ package store_test
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"strings"
 	"testing"
@@ -18,30 +17,29 @@ func TestPoolRegisterStatusAndSchedulableGate(t *testing.T) {
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
 
-	bootstrap := "bootstrap-token"
-	h := sha256.Sum256([]byte(bootstrap))
-	if err := s.CreatePoolBootstrapToken(ctx, &model.PoolBootstrapToken{PoolID: "pool-1", TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
-		t.Fatalf("create pool bootstrap: %v", err)
-	}
-	registered, err := s.RegisterPool(ctx, "pool-1", platform.Pool(), platform.OCI, h[:], "public", "ed25519")
+	enrolled, err := s.EnrollPool(ctx, "pool-1", "public")
 	if err != nil {
-		t.Fatalf("register pool: %v", err)
+		t.Fatalf("enroll pool: %v", err)
 	}
-	// Registration establishes identity and liveness only: health arrives on
-	// the agent's own heartbeat, and State/ObservedGeneration are the
+	// Enrollment records the key its maker read from the box, and nothing
+	// else: the pool is registered by its own first heartbeat, health
+	// arrives on that heartbeat, and State/ObservedGeneration are the
 	// reconciler's to write.
-	if registered.PublicKey != "public" || registered.RegisteredAt == nil || registered.LastSeenAt == nil {
-		t.Fatalf("registered pool = %#v", registered)
+	if enrolled.PublicKey != "public" || enrolled.RegisteredAt != nil || enrolled.LastSeenAt != nil {
+		t.Fatalf("enrolled pool = %#v", enrolled)
 	}
-	if registered.Ready || registered.Schedulable {
-		t.Fatalf("registration reported health: %#v", registered)
+	if enrolled.Ready || enrolled.Schedulable {
+		t.Fatalf("enrollment reported health: %#v", enrolled)
 	}
-	if registered.State == model.PoolStateActive {
-		t.Fatal("registration wrote the reconciler's state")
+	if enrolled.State == model.PoolStateActive {
+		t.Fatal("enrollment wrote the reconciler's state")
 	}
 	updated, err := s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, true, true, true, 2, 4<<30, 10<<30, []byte(`{"pressure":"high"}`))
 	if err != nil {
 		t.Fatalf("update status: %v", err)
+	}
+	if updated.PublicKey != "public" || updated.RegisteredAt == nil || updated.LastSeenAt == nil {
+		t.Fatalf("first heartbeat did not register the pool: %#v", updated)
 	}
 	if !updated.Degraded || updated.AvailableCPUVCPUs != 2 || updated.AvailableMemoryBytes != 4<<30 || updated.AvailableStorageBytes != 10<<30 || string(updated.Conditions) == "" {
 		t.Fatalf("updated pool = %#v", updated)
@@ -164,11 +162,7 @@ func TestPoolStartupInvalidatesHealthAndPreservesIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token := sha256.Sum256([]byte("startup-health-token"))
-	if err := s.CreatePoolBootstrapToken(ctx, &model.PoolBootstrapToken{PoolID: pool.ID, TokenHash: token[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
-		t.Fatal(err)
-	}
-	pool, err = s.RegisterPool(ctx, pool.ID, platform.Pool(), platform.OCI, token[:], "durable-key", "ed25519")
+	pool, err = s.EnrollPool(ctx, pool.ID, "durable-key")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,37 +241,6 @@ func sandboxForClaim(projectID, poolID string) *model.Sandbox {
 	}
 }
 
-// TestPurgeSpentPoolBootstrapTokens pins the bound on the bootstrap token
-// table: spent tokens (expired, used, or revoked) are collected, and a token
-// that can still be redeemed is left alone.
-func TestPurgeSpentPoolBootstrapTokens(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-	createTestPool(t, s, "project-1", "pool-1")
-
-	live := sha256.Sum256([]byte("live-token"))
-	if err := s.CreatePoolBootstrapToken(ctx, &model.PoolBootstrapToken{PoolID: "pool-1", TokenHash: live[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
-		t.Fatalf("create live bootstrap token: %v", err)
-	}
-	expired := sha256.Sum256([]byte("expired-token"))
-	if err := s.CreatePoolBootstrapToken(ctx, &model.PoolBootstrapToken{PoolID: "pool-1", TokenHash: expired[:], ExpiresAt: time.Now().Add(-time.Hour)}); err != nil {
-		t.Fatalf("create expired bootstrap token: %v", err)
-	}
-
-	purged, err := s.PurgeSpentPoolBootstrapTokens(ctx, time.Now())
-	if err != nil {
-		t.Fatalf("purge spent bootstrap tokens: %v", err)
-	}
-	if purged != 1 {
-		t.Fatalf("purged = %d, want 1 spent token", purged)
-	}
-
-	// The live token still redeems: purging must not touch it.
-	if _, err := s.RegisterPool(ctx, "pool-1", platform.Pool(), platform.OCI, live[:], "public", "ed25519"); err != nil {
-		t.Fatalf("register pool with surviving live token: %v", err)
-	}
-}
-
 func TestSchedulablePoolKeepsPreloadGateDespiteFreshHeartbeat(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
@@ -306,12 +269,8 @@ func TestSchedulablePoolForSandboxRefusesAnotherPlatform(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
-	h := sha256.Sum256([]byte("bootstrap-token"))
-	if err := s.CreatePoolBootstrapToken(ctx, &model.PoolBootstrapToken{PoolID: "pool-1", TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
-		t.Fatal(err)
-	}
 	arm := platform.Platform{OS: "linux", Arch: "arm64"}
-	registered, err := s.RegisterPool(ctx, "pool-1", arm, platform.OCI, h[:], "public", "ed25519")
+	registered, err := s.UpdatePoolStatus(ctx, "pool-1", arm, platform.OCI, true, true, false, 1, 1<<30, 1<<30, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,23 +550,19 @@ func TestAnAgentThatDeclaresNoImageKindRunsOCI(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
-	token := sha256.Sum256([]byte("token"))
-	if err := s.CreatePoolBootstrapToken(ctx, &model.PoolBootstrapToken{PoolID: "pool-1", TokenHash: token[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
-		t.Fatal(err)
-	}
 	pool, err := s.GetPool(ctx, "project-1", "pool-1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !pool.ImageKind.IsZero() {
-		t.Fatalf("image kind = %q before the agent registered, want none", pool.ImageKind)
+		t.Fatalf("image kind = %q before the agent reported, want none", pool.ImageKind)
 	}
-	pool, err = s.RegisterPool(ctx, "pool-1", platform.Pool(), platform.ImageKind{}, token[:], "public", "ed25519")
+	pool, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.ImageKind{}, true, true, false, 1, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if pool.ImageKind != platform.OCI {
-		t.Fatalf("registered with no kind: image kind = %q, want oci", pool.ImageKind)
+		t.Fatalf("first report with no kind: image kind = %q, want oci", pool.ImageKind)
 	}
 	pool, err = s.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.VM("boxd"), true, true, false, 1, 1, 1, nil)
 	if err != nil {

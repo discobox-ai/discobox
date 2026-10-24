@@ -86,9 +86,8 @@ flowchart LR
   under the same no-recovery rule; with a single pool there is no partial
   answer, so a pool that cannot be read is a 503 and a recording that is not
   there is a 404.
-- `agent_service.go` — the pool agent surface: bootstrap-token registration
-  (`RegisterPool`, authenticated by the token itself), heartbeats
-  (`UpdatePoolStatus`), sandbox-state and sandbox provisioning-progress
+- `agent_service.go` — the pool agent surface: heartbeats
+  (`UpdatePoolStatus`; the first registers the pool), sandbox-state and sandbox provisioning-progress
   reports (`ReportPoolSandboxStates`, ADR 0017 §10, relayed to the sandbox
   control plane through `SandboxStateReporter`, which owns sandbox rows),
   resource accounting (`ReportPoolResources`, ADR 0071), and (ADR 0030)
@@ -96,7 +95,7 @@ flowchart LR
   standing sandbox-agent status poller, and `ListPoolHeldSandboxes`, the set
   the pool agent's volume reaper may not collect the trees of (ADR
   26-10-01-876): every sandbox row on the pool in any state, one pool wide.
-  Every call after registration
+  Every call
   verifies the authenticated **pool principal** for that pool, and any
   sandbox ID named is acted on only if that pool hosts it (skipped here, or
   by the store for state/progress batches).
@@ -121,7 +120,10 @@ flowchart LR
   sandbox's half on that sandbox's row. `ReconcilePool` (a manual reconcile
   request from the API) also lives here.
 - `controlplane.go` — trusted operations implementing `sandbox.PoolManager`:
-  reads for drivers, bootstrap/agent token minting, the schedulable-pool
+  reads for drivers, enrollment (`EnrollPool`: the key a pool's maker read
+  from its box, ADR 26-10-24-953 §4), what a pool's box is placed with
+  (`PoolBox`, through `PoolBoxes`, the assets service), agent token minting,
+  the schedulable-pool
   placement gate, drift marks (`SchedulePoolReconciliation`, via
   `MarkDirtyDrift`, so it never shortens a failure backoff), intent
   (`SubmitPoolDelete`, and `SchedulePoolRepair`: generation bump + mark, so
@@ -130,8 +132,7 @@ flowchart LR
   ADR 0060). There is deliberately no timer form of the pool mark: a
   reconciler's own re-check belongs in its `reconcile.Result`
   (`reconcile.ErrSelfMark`). It also registers the pool reconciler
-  (`RegisterJobs`) and purges spent bootstrap tokens hourly
-  (`StartBootstrapTokenCleanup`).
+  (`RegisterJobs`).
 - `reconciler.go` — `PoolReconciler` (resource type `pool`, dirty ID
   `projectID/poolID`): converges the pool's single runtime host
   (container/VM/pod) toward its desired state through the provider's
@@ -148,16 +149,17 @@ flowchart LR
   pool with assigned sandboxes is repaired in place (`RepairPool`); a runtime
   whose
   agent never registers within `poolRegistrationTimeout` (2m, armed with
-  `RequeueAt` only while waiting) is repaired with a fresh bootstrap token;
+  `RequeueAt` only while waiting) is repaired, its new box enrolled anew;
   delete refuses while sandboxes are assigned, removes the runtime, and then
   the row. Failure latching follows `EverCreated` (`RegisteredAt` set):
   never-registered pools fail terminally (`failed`); a created pool keeps its state and records the failure as
   `ErrorMessage` — its runtime keeps serving what it already hosts, so a
   failed convergence is not a phase. It names no sandbox image to the
   provider: every sandbox container is the provider's sandbox base image with
-  its bundles applied, and no harness is an image (ADR 26-10-16-423 §10). The
-  engine loads that base image from the local cache before starting a pool
-  agent, reporting `preloading_images` through provisioning progress.
+  its bundles applied, and no harness is an image (ADR 26-10-16-423 §10). A
+  Docker pool's own container runs that image too (ADR 26-10-24-953 §2), so
+  the engine loads it from the local cache as the pool's image
+  (`loading_pool_image`), and a sandbox finds it there.
   The provider calls the reconciler's `begin` callback before replacing a runtime,
   which records `registering` and closes placement even if old heartbeats still
   report ready. There is no background image reconciler or staging condition.
@@ -172,9 +174,9 @@ registration, identity, lifecycle, and the previous observations. The startup
 stamp gives a pool 90s to report before unknown becomes offline. New pools use
 their creation time for that deadline.
 
-Only `UpdatePoolStatus` stamps `StatusReportedAt`; registration, image builds,
+Only `UpdatePoolStatus` stamps `StatusReportedAt`; enrollment, image builds,
 and other telemetry cannot establish or renew health. `LastSeenAt` retains its
-existing registration/heartbeat diagnostic meaning. The nullable timestamp
+existing heartbeat diagnostic meaning. The nullable timestamp
 columns migrate additively; an old row without a status timestamp is unknown
 until its agent reports. No backfill should certify an old report as fresh.
 
@@ -183,7 +185,7 @@ including pools nested in sandbox responses. Clients accept an omitted health
 field from older servers as `unknown`. Placement and sandbox traffic use the same `Pool.IsReady` gate. Fresh health permits placement
 even if a blocked runtime reconcile still carries an older `offline` state.
 API health does not wait for runtime reconciliation. Placement additionally
-keeps pending/registering runtimes gated through image preload. The reconciler's existing `State`/`ErrorMessage` remains its lifecycle
+keeps pending/registering runtimes gated until the pool's box is made. The reconciler's existing `State`/`ErrorMessage` remains its lifecycle
 verdict; it may record offline on its own later pass. Startup grants the first
 heartbeat the same 90s grace before that pass may derive another offline error.
 `ReconciledAt` records when a runtime attempt settles. Waiters ignore saved
@@ -198,9 +200,7 @@ every pool as the drift and lost-mark backstop.
 ## A pool hosts one platform
 
 A pool hosts exactly one platform (`os/arch`, the root `platform` package; ADR
-0145 §1), and its agent declares it on registration and on every status
-heartbeat — every one, because an agent whose key survives a restart does not
-register again. A declaration that is not an os/arch pair is refused with 400
+0145 §1), and its agent declares it on every status heartbeat. A declaration that is not an os/arch pair is refused with 400
 (`declaredPlatform`). None at all is an agent from before platforms, which must
 still report — a provider may fall back to the previous release's agent image,
 and a pool's agent is replaced only after the server upgrades — so its pool
@@ -236,7 +236,7 @@ Beside its platform, a pool runs one kind of image (`platform.ImageKind`, ADR
 26-10-09-106 §4): `oci` for a Docker pool, `vm/<driver>` for a vm pool
 on that driver. The platform alone cannot tell them apart — a boxd pool
 and an amd64 Docker pool both host linux/amd64. Its agent declares the kind on
-registration and every heartbeat, beside the platform; one that is neither is
+every heartbeat, beside the platform; one that is neither is
 refused with 400 (`declaredImageKind`). Unlike the platform, an agent that
 declares none is not a guess to avoid: every agent from before kinds runs OCI
 images in containers, so OCI is recorded for it (`store.recordPoolImageKind`),
@@ -259,8 +259,9 @@ Every pool status field has exactly one writer, and writers must not overlap:
 | Fields | Owner | Written by |
 | --- | --- | --- |
 | `HealthCheckStartedAt` | server startup | `Store.BeginPoolHealthChecks`, before workers/listeners |
-| `PublicKey`, `KeyType`, `RegisteredAt` | pool agent | `RegisterPool` (bootstrap-token redemption; also stamps `LastSeenAt`) |
-| `Platform`, `ImageKind` | pool agent | `RegisterPool` and every `UpdatePoolStatus` heartbeat |
+| `PublicKey`, `KeyType` | pool's maker | `ControlPlane.EnrollPool`, once per box it makes (ADR 26-10-24-953 §4) |
+| `RegisteredAt` | pool agent | its first `UpdatePoolStatus` heartbeat |
+| `Platform`, `ImageKind` | pool agent | every `UpdatePoolStatus` heartbeat |
 | `Ready`, `Schedulable`, `Degraded`, capacity, `Conditions`, `LastSeenAt`, `StatusReportedAt` | pool agent | `UpdatePoolStatus` heartbeats |
 | `Resources`, `ResourcesReportedAt` | pool agent | `ReportPoolResources` |
 | `ProvisionProgress`, `ProvisionProgressAt` | provider driver | `ControlPlane.ReportPoolProvisionProgress` |
@@ -270,7 +271,7 @@ Health answers "can this host take work right now"; `State`/`ErrorMessage` are
 the reconciler's verdict on whether the runtime converged, and
 `ObservedGeneration` says the reconciler finished acting on a generation.
 Scheduling gates on current health and the schedulable flag, with
-pending/registering runtimes gated until image preload finishes
+pending/registering runtimes gated until the pool's box is made
 (`SchedulablePoolForSandbox`), so no agent call has any reason to write the
 reconciler's fields. The telemetry writers (resources and provisioning progress) use narrow column updates, never a whole-row save, so they cannot
 clobber a concurrent reconcile.
@@ -278,7 +279,8 @@ clobber a concurrent reconcile.
 The rule that keeps the split honest: **agent calls write facts and mark the
 pool dirty; the reconciler alone writes `State`, `ErrorMessage`, and
 `ObservedGeneration`** (ADR 0017 §10 — a report is an observation, never
-intent). Registration marks the pool dirty for exactly this reason.
+intent). A heartbeat from a pool the reconciler holds `registering` or
+`offline` marks it dirty for exactly this reason.
 
 Two rules follow from it:
 

@@ -33,6 +33,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
+	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
 const (
@@ -65,16 +66,15 @@ const (
 // Config configures the pool runtime engine. It describes the pool-agent
 // container, not the VM: VM settings belong to the Driver.
 type Config struct {
-	// ControlPlaneURL is the URL the in-container pool agent registers with.
+	// ControlPlaneURL is the URL the pool agent reaches the control plane at,
+	// from inside its container.
 	ControlPlaneURL string
-	// Image is the pool-agent container image.
-	Image string
 	// SandboxBaseImage is the sandbox base image (ADR 26-10-16-423 §10): what
 	// every sandbox delivered its platform runs, which the pool agent is told
-	// in its environment (sandboxruntime.EnvSandboxBaseImage). The pool host
-	// loads it with the images its sandboxes name when this machine has it
-	// staged. It shapes the pool-agent container, so it is in configRevision:
-	// a pool runs the base image its server names.
+	// in its environment (sandboxruntime.EnvSandboxBaseImage), and what the
+	// pool's own container runs, provisioned as a pool's box (ADR 26-10-24-953
+	// §2). It shapes the pool's container, so it is in configRevision: a pool
+	// runs the base image its server names.
 	SandboxBaseImage string `json:"sandboxBaseImage,omitempty"`
 	// Network is an optional additional Docker network for pool-agent containers.
 	Network string
@@ -95,12 +95,10 @@ type Config struct {
 	// carries its transport in the scheme.
 	AgentListenURL string
 	// Privileged overrides the privileged flag, which defaults to true because
-	// the pool-agent container runs systemd as PID 1.
+	// the pool's container runs systemd as PID 1.
 	Privileged *bool
 	// CgroupNSMode overrides the container cgroup namespace mode.
 	CgroupNSMode string
-	// Command overrides the container command.
-	Command []string
 	// DockerSocket is the Docker socket path bound into the pool-agent
 	// container so the pool agent can manage sandbox containers.
 	DockerSocket string
@@ -191,8 +189,8 @@ func New(cfg Config, driver Driver) (*Engine, error) {
 	if driver == nil {
 		return nil, errors.New("dockerworker driver is required")
 	}
-	if strings.TrimSpace(cfg.Image) == "" {
-		return nil, errors.New("dockerworker image is required")
+	if strings.TrimSpace(cfg.SandboxBaseImage) == "" {
+		return nil, errors.New("dockerworker sandbox base image is required: a pool's container runs it")
 	}
 	// The listen URL is the single description of where the agent binds. When a
 	// backend does not supply one, the agent listens on TCP so the container's
@@ -213,9 +211,6 @@ func New(cfg Config, driver Driver) (*Engine, error) {
 	}
 	if cfg.DockerSocket = cleanAbsPath(cfg.DockerSocket); cfg.DockerSocket == "" {
 		cfg.DockerSocket = dockerSocketPath
-	}
-	if len(cfg.Command) == 0 {
-		cfg.Command = []string{"/usr/local/bin/discobox-pool-agent"}
 	}
 	cfg.CgroupNSMode = strings.TrimSpace(cfg.CgroupNSMode)
 	cfg.HostMounts = NormalizeHostMounts(cfg.HostMounts)
@@ -239,8 +234,9 @@ func (e *Engine) Close() error {
 	return e.driver.Close()
 }
 
-// Image returns the pool-agent container image the engine launches.
-func (e *Engine) Image() string { return e.cfg.Image }
+// Image returns the image the engine launches a pool's container from: the
+// sandbox base image, which the pool is provisioned onto.
+func (e *Engine) Image() string { return e.cfg.SandboxBaseImage }
 
 // ConfigRevision identifies the desired pool-agent container configuration. It is
 // stamped as a label and compared to detect drift.
@@ -268,7 +264,7 @@ func configRevision(cfg Config) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, begin func(context.Context) error) error {
+func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, begin func(context.Context) error) error {
 	// The phases of bringing a host up, in the order they happen, for a client
 	// whose sandbox is waiting for a pool to take it. On a VM backend starting
 	// the machine includes fetching the disk image the first time, which on a
@@ -291,15 +287,15 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
-	inst, recreated, err := e.ensurePoolContainer(ctx, lease, provider, pool, mint, false, begin)
+	inst, box, recreated, err := e.ensurePoolContainer(ctx, lease, provider, pool, maker, false, begin)
 	if err != nil {
 		return err
 	}
 	e.reclaimImagesForPool(ctx, lease.Client, pool.ID)
-	return e.recordPoolRuntime(pool, vmInfo, inst, recreated)
+	return e.recordPoolRuntime(pool, vmInfo, inst, box, recreated)
 }
 
-func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, _ string, begin func(context.Context) error) error {
+func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, _ string, begin func(context.Context) error) error {
 	// Replace the VM only when it is missing or unhealthy, which includes a VM
 	// hosted here whose Docker daemon does not answer; pool-local state such as
 	// named volumes survives container replacement on a healthy VM.
@@ -358,11 +354,11 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
-	inst, _, err := e.ensurePoolContainer(ctx, lease, provider, pool, mint, true, begin)
+	inst, box, _, err := e.ensurePoolContainer(ctx, lease, provider, pool, maker, true, begin)
 	if err != nil {
 		return err
 	}
-	return e.recordPoolRuntime(pool, vmInfo, inst, true)
+	return e.recordPoolRuntime(pool, vmInfo, inst, box, true)
 }
 
 func (e *Engine) RemovePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool) error {
@@ -418,12 +414,12 @@ func (e *Engine) AcquirePoolAgentClient(ctx context.Context, pool *model.Pool) (
 	return e.driver.AcquirePoolAgentClient(ctx, pool.ID)
 }
 
-func (e *Engine) recordPoolRuntime(pool *model.Pool, vmInfo *VMInfo, inst *container.InspectResponse, recreated bool) error {
+func (e *Engine) recordPoolRuntime(pool *model.Pool, vmInfo *VMInfo, inst *container.InspectResponse, box poolBoxRecord, recreated bool) error {
 	instanceID := ""
 	if vmInfo != nil {
 		instanceID = vmInfo.ID
 	}
-	state, err := encodeRuntimeState(RuntimeState{InstanceID: instanceID, ContainerID: inst.ID})
+	state, err := encodeRuntimeState(RuntimeState{InstanceID: instanceID, ContainerID: inst.ID, Box: box})
 	if err != nil {
 		return err
 	}
@@ -491,30 +487,33 @@ func (e *Engine) acquireDockerReady(ctx context.Context, poolID string, timeout 
 	}
 }
 
-// ensureWorkerContainer creates or drift-corrects the pool-agent container
-// on the given Docker daemon and waits for it to be ready. It reports whether
-// the container was (re)created.
+// ensurePoolContainer creates or drift-corrects the pool's container on the
+// given Docker daemon, provisions it as a pool's box when it is new or its
+// bundles have moved since (ADR 26-10-24-953 §§2, 5), and waits for it to be
+// ready. It reports what it placed, and whether the container was
+// (re)created.
 //
-// The bootstrap is minted lazily: the healthy-container path below returns
-// without calling mint, so a steady-state drift check persists no single-use
-// token. Only the create path needs credentials.
-func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLease, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, forceRecreate bool, begin func(context.Context) error) (*container.InspectResponse, bool, error) {
+// A box is enrolled each time it is provisioned: its key is made in it on
+// first ask, and the same one answered after, so enrolling again changes
+// nothing and mends a server that lost the key.
+func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLease, provider *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, forceRecreate bool, begin func(context.Context) error) (*container.InspectResponse, poolBoxRecord, bool, error) {
 	cli := lease.Client
 	name := ContainerName(pool.ID)
 	labels := e.containerLabels(provider, pool)
+	recorded := recordedBox(pool)
 
 	existing, existingErr := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if existingErr != nil && !cerrdefs.IsNotFound(existingErr) {
-		return nil, false, existingErr
+		return nil, recorded, false, existingErr
 	}
 	if existingErr != nil {
 		if err := begin(ctx); err != nil {
-			return nil, false, err
+			return nil, recorded, false, err
 		}
 	}
-	image, err := e.resolvePoolAgentImage(ctx, lease, pool.ID, existing.Container)
+	image, err := e.resolvePoolImage(ctx, lease, pool.ID, existing.Container)
 	if err != nil {
-		return nil, false, err
+		return nil, recorded, false, err
 	}
 
 	if existingErr == nil {
@@ -525,12 +524,26 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 		// as long as the registry stayed unreachable.
 		if forceRecreate || shouldRemoveExistingContainer(existing.Container, image, labels) {
 			if err := begin(ctx); err != nil {
-				return nil, false, err
+				return nil, recorded, false, err
 			}
 			if _, err := cli.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
-				return nil, false, err
+				return nil, recorded, false, err
 			}
 		} else {
+			// A pool's bundles that moved are applied in its running box, as a
+			// moved pin restarts a sandbox rather than rebuilding it: the box
+			// keeps its disk, its key and what it provisioned.
+			bootstrap, box, err := e.poolBox(ctx, cli, pool, maker)
+			if err != nil {
+				return nil, recorded, false, err
+			}
+			if !recorded.sameBundles(box) {
+				record, err := e.provisionPoolBox(ctx, cli, existing.Container.ID, maker, bootstrap, box)
+				if err != nil {
+					return nil, recorded, false, err
+				}
+				recorded = record
+			}
 			inst, err := e.waitContainerReady(ctx, cli, existing.Container.ID, false)
 			if err != nil && inst != nil && containerHealthStarting(*inst) {
 				// A container whose healthcheck has not passed yet is a host
@@ -541,52 +554,54 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 				// container restarts for ordinary reasons — a Docker restart,
 				// a development image rebuild — and something is usually
 				// waiting on it when it does.
-				return inst, false, fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, err)
+				return inst, recorded, false, fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, err)
 			}
-			return inst, false, err
+			return inst, recorded, false, err
 		}
 	}
 
-	if err := e.preloadImage(ctx, lease, pool.ID, e.cfg.SandboxBaseImage); err != nil {
-		return nil, false, err
-	}
-
-	inst, err := e.createPoolContainer(ctx, cli, pool, name, labels, mint, image)
+	inst, record, err := e.createPoolContainer(ctx, cli, pool, name, labels, maker, image)
 	if err != nil {
-		return nil, false, err
+		return nil, recorded, false, err
 	}
-	return inst, true, nil
+	return inst, record, true, nil
 }
 
-// resolvePoolAgentImage resolves the pool-agent image to run, given whatever
-// container is already there. Both the pool container and the console run this
-// image, and both resolve it the same way.
+// recordedBox is what the pool's runtime state says the engine last placed
+// in its box; none for a pool from before, or with no state.
+func recordedBox(pool *model.Pool) poolBoxRecord {
+	state, err := DecodeRuntimeState(pool.RuntimeState)
+	if err != nil {
+		return poolBoxRecord{}
+	}
+	return state.Box
+}
+
+// resolvePoolImage resolves the image to run a pool's container from, given
+// whatever container is already there: the sandbox base image. Both the pool's
+// container and the console run it, and both resolve it the same way.
 //
 // A container already on the configured image settles it without touching the
 // daemon's images at all, which keeps the steady-state reconcile as free as it
 // was before a fallback was possible. Every other case asks ensureImage, whose
 // pull attempt is both how a cold daemon gets the image and how a pool running
 // a fallback discovers that the configured one is reachable again.
-func (e *Engine) resolvePoolAgentImage(ctx context.Context, lease *DockerClientLease, poolID string, existing container.InspectResponse) (string, error) {
-	if existing.Config != nil && strings.TrimSpace(existing.Config.Image) == strings.TrimSpace(e.cfg.Image) {
-		return e.cfg.Image, nil
+func (e *Engine) resolvePoolImage(ctx context.Context, lease *DockerClientLease, poolID string, existing container.InspectResponse) (string, error) {
+	if existing.Config != nil && strings.TrimSpace(existing.Config.Image) == strings.TrimSpace(e.cfg.SandboxBaseImage) {
+		return e.cfg.SandboxBaseImage, nil
 	}
 	return e.ensureImage(ctx, lease, poolID)
 }
 
-// createPoolContainer creates the pool-agent container from image, which the
-// caller has already resolved and made present — that pull is the longest step
-// in bringing a pool up, and it happens before the bootstrap token is minted so
-// the token does not spend its lifetime waiting on a registry.
-func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, mint poolagent.MintBootstrap, image string) (*container.InspectResponse, error) {
-	if mint == nil {
-		return nil, fmt.Errorf("worker bootstrap minter is required")
+// poolBootstrap is the pool's bootstrap as this engine's pools reach their
+// control plane and listen.
+func (e *Engine) poolBootstrap(ctx context.Context, pool *model.Pool, maker poolruntime.PoolMaker) (poolagent.Bootstrap, error) {
+	if maker == nil {
+		return poolagent.Bootstrap{}, fmt.Errorf("a pool maker is required")
 	}
-	releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
-	defer releaseStart()
-	bootstrap, err := mint(ctx)
+	bootstrap, err := maker.Bootstrap(ctx)
 	if err != nil {
-		return nil, err
+		return poolagent.Bootstrap{}, err
 	}
 	bootstrap.ControlPlaneURL = firstNonEmpty(bootstrap.ControlPlaneURL, e.cfg.ControlPlaneURL)
 	bootstrap.ProjectID = firstNonEmpty(bootstrap.ProjectID, pool.ProjectID)
@@ -600,12 +615,46 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	// filesystem, which is why this prefix survives for those.
 	bootstrap.HostMountPrefix = hostMountTargetRoot
 	bootstrap.HostStateRoot = e.cfg.HostStateRoot
+	return bootstrap, nil
+}
 
+// poolBox is the pool's bootstrap and what its box is placed with, the
+// agent's layer for the platform of the daemon it runs on.
+func (e *Engine) poolBox(ctx context.Context, cli *client.Client, pool *model.Pool, maker poolruntime.PoolMaker) (poolagent.Bootstrap, sandbox.PoolBox, error) {
+	bootstrap, err := e.poolBootstrap(ctx, pool, maker)
+	if err != nil {
+		return poolagent.Bootstrap{}, sandbox.PoolBox{}, err
+	}
+	platform, err := boxPlatform(ctx, cli)
+	if err != nil {
+		return poolagent.Bootstrap{}, sandbox.PoolBox{}, err
+	}
+	box, err := maker.Box(ctx, platform)
+	if err != nil {
+		return poolagent.Bootstrap{}, sandbox.PoolBox{}, err
+	}
+	return bootstrap, box, nil
+}
+
+// createPoolContainer creates the pool's container from image, which the
+// caller has already resolved and made present — that pull is the longest step
+// in bringing a pool up — starts it, systemd as PID 1, and provisions it as
+// the pool's box (provisionPoolBox) before it waits for the agent the box's
+// bundles start.
+func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, maker poolruntime.PoolMaker, image string) (*container.InspectResponse, poolBoxRecord, error) {
+	releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
+	defer releaseStart()
+	bootstrap, box, err := e.poolBox(ctx, cli, pool, maker)
+	if err != nil {
+		return nil, poolBoxRecord{}, err
+	}
 	config := &container.Config{
 		Image:  image,
 		Labels: labels,
-		Env:    envList(e.poolContainerEnv(bootstrap)),
-		Cmd:    e.cfg.Command,
+		// The box boots its own init, as a sandbox's does: the pool agent is a
+		// unit its bundle lays, and nothing runs before systemd.
+		Entrypoint: []string{"/sbin/init"},
+		Cmd:        []string{},
 	}
 	hostConfig := &container.HostConfig{
 		Privileged: e.privileged(),
@@ -614,20 +663,30 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	// Only an IP listener has a port Docker can publish or curl can probe.
 	listen, err := wire.Parse(e.cfg.AgentListenURL)
 	if err != nil {
-		return nil, fmt.Errorf("agent listen URL: %w", err)
+		return nil, poolBoxRecord{}, fmt.Errorf("agent listen URL: %w", err)
 	}
 	waitForHealth := true
 	if listen.IsIP() {
 		exposedPort, ok := agentNetworkPort(e.cfg.AgentPort)
 		if !ok {
-			return nil, fmt.Errorf("invalid harness port %d", e.cfg.AgentPort)
+			return nil, poolBoxRecord{}, fmt.Errorf("invalid harness port %d", e.cfg.AgentPort)
 		}
 		config.ExposedPorts = network.PortSet{exposedPort: struct{}{}}
 		hostConfig.PortBindings = network.PortMap{exposedPort: []network.PortBinding{e.agentPortBinding()}}
+		// The base image declares no healthcheck: the agent's is this one. Its
+		// start period covers the box's provisioning, which runs before the
+		// agent it starts can answer.
+		config.Healthcheck = &container.HealthConfig{
+			Test:        []string{"CMD-SHELL", fmt.Sprintf("curl -fsS http://127.0.0.1:%d/healthz >/dev/null || exit 1", e.cfg.AgentPort)},
+			Interval:    5 * time.Second,
+			Timeout:     2 * time.Second,
+			StartPeriod: provisionTimeout,
+			Retries:     6,
+		}
 	} else {
-		// The image's TCP curl healthcheck cannot probe a listener that is not
-		// on TCP. Container state plus the control plane's normal agent
-		// registration is the readiness signal for those transports.
+		// No TCP listener to probe. Container state plus the control plane's
+		// first heartbeat from the agent is the readiness signal for those
+		// transports.
 		config.Healthcheck = &container.HealthConfig{Test: []string{"NONE"}}
 		waitForHealth = false
 	}
@@ -640,11 +699,11 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	if e.cfg.CgroupNSMode != "" {
 		hostConfig.CgroupnsMode = container.CgroupnsMode(e.cfg.CgroupNSMode)
 	} else {
-		// systemd (PID 1 in the pool-agent container) must create its own cgroup subtree. A
-		// private cgroup namespace makes Docker mount a writable cgroup2 hierarchy
-		// delegated to the container; bind-mounting the host /sys/fs/cgroup instead
-		// drops the container onto the read-only host cgroup root and systemd exits
-		// 255 before it can even log.
+		// systemd (PID 1 in the pool's container) must create its own cgroup
+		// subtree. A private cgroup namespace makes Docker mount a writable
+		// cgroup2 hierarchy delegated to the container; bind-mounting the host
+		// /sys/fs/cgroup instead drops the container onto the read-only host
+		// cgroup root and systemd exits 255 before it can even log.
 		hostConfig.CgroupnsMode = container.CgroupnsMode("private")
 	}
 	hostConfig.Mounts = e.containerMounts(pool.ID)
@@ -654,29 +713,34 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 		networkConfig.EndpointsConfig = map[string]*network.EndpointSettings{e.cfg.Network: {}}
 	}
 	// Pool agents run the shared proxy that their sandboxes route through.
-	// Create the per-pool internal network so the pool-agent container can be
+	// Create the per-pool internal network so the pool's container can be
 	// aliased as the proxy server name on it and sandboxes can reach only the
 	// proxy.
 	if err := e.ensureSandboxNetwork(ctx, cli, pool.ID); err != nil {
-		return nil, err
+		return nil, poolBoxRecord{}, err
 	}
 	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{Config: config, HostConfig: hostConfig, NetworkingConfig: networkConfig, Name: name})
 	if err != nil {
-		return nil, err
+		return nil, poolBoxRecord{}, err
 	}
 	if _, err := cli.NetworkConnect(ctx, proxyagent.SandboxNetworkName(pool.ID), client.NetworkConnectOptions{
 		Container:      created.ID,
 		EndpointConfig: &network.EndpointSettings{Aliases: []string{proxyagent.ServerName}},
 	}); err != nil {
-		return nil, fmt.Errorf("connect worker to sandbox network: %w", err)
+		return nil, poolBoxRecord{}, fmt.Errorf("connect worker to sandbox network: %w", err)
 	}
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
-		return nil, err
+		return nil, poolBoxRecord{}, err
+	}
+	record, err := e.provisionPoolBox(ctx, cli, created.ID, maker, bootstrap, box)
+	if err != nil {
+		return nil, poolBoxRecord{}, err
 	}
 	releaseStart()
 	releaseAgent := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForPoolAgent)
 	defer releaseAgent()
-	return e.waitContainerReady(ctx, cli, created.ID, waitForHealth)
+	inst, err := e.waitContainerReady(ctx, cli, created.ID, waitForHealth)
+	return inst, record, err
 }
 
 func (e *Engine) agentPortBinding() network.PortBinding {
@@ -760,7 +824,7 @@ func (e *Engine) containerLabels(provider *model.SandboxProviderInstance, pool *
 // from the engine's desired image or labels. It is shared with runtime drift
 // watchers.
 func (e *Engine) ShouldReconcileWorkerContainer(image string, labels map[string]string) bool {
-	if image != e.cfg.Image {
+	if image != e.cfg.SandboxBaseImage {
 		return true
 	}
 	return labels[LabelPoolConfig] != e.configRevision

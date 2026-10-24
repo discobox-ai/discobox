@@ -119,43 +119,32 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// by the proxy unit's environment written before this point.
 	bootstrap.ControlPlaneURL = baseURL
 	client := NewHTTPClient(baseURL, WithHTTPClient(controlPlaneHTTPClient))
-	// The identity key lives on the pool's durable storage, so an agent that
-	// restarts without its container is still this pool and spends no bootstrap
-	// token to prove it (ADR 0063).
-	keySource := FileKeySource{Path: root.PoolIdentityKey(bootstrap.ProjectID, bootstrap.PoolID)}
-	registration, err := Run(ctx, Config{Bootstrap: bootstrap, Client: client, KeySource: keySource})
+	// The identity key lives on the pool's durable storage, where its maker
+	// had it made and recorded its public half before this agent started (ADR
+	// 26-10-24-953 §4, ADR 0063): nothing registers it, and an agent with none
+	// cannot be this pool.
+	identity, err := LoadIdentity(root.PoolIdentityKey(bootstrap.ProjectID, bootstrap.PoolID))
 	if err != nil {
 		return err
 	}
-	logger.Info("pool identity ready", "poolID", bootstrap.PoolID, "storedKey", registration.FromStoredKey, "runtime", runtimeKind)
+	logger.Info("pool identity ready", "poolID", bootstrap.PoolID, "runtime", runtimeKind)
 
+	// A first report the control plane refuses is a pool whose key it does
+	// not hold — a restored database, a recreated pool row — which the
+	// pool's maker mends by enrolling the box again, as a repair does; this
+	// agent fails its start and systemd tries it again.
 	status := poolStatusFor(bootstrap)
-	if err := startStatusReporter(ctx, logger, root, bootstrap, registration, client, status, statusReportInterval); err != nil {
-		if !registration.FromStoredKey {
-			return err
-		}
-		// The first authenticated request is the only proof that the control
-		// plane still knows this key. When it does not — a restored database, a
-		// recreated pool row — registering publishes the same key again rather
-		// than minting a new identity, so nothing else about the pool changes.
-		logger.Warn("pool status rejected with a stored identity key; registering it again",
-			"poolID", bootstrap.PoolID, "error", err)
-		registration, err = Run(ctx, Config{Bootstrap: bootstrap, Client: client, KeySource: keySource, ForceRegister: true})
-		if err != nil {
-			return err
-		}
-		if err := startStatusReporter(ctx, logger, root, bootstrap, registration, client, status, statusReportInterval); err != nil {
-			return err
-		}
+	if err := startStatusReporter(ctx, logger, root, bootstrap, identity, client, status, statusReportInterval); err != nil {
+		return err
 	}
 
-	startResolveTokenRefresher(ctx, logger, root, bootstrap, registration)
+	startResolveTokenRefresher(ctx, logger, root, bootstrap, identity)
 
 	if runtimeKind == RuntimeMachine {
 		// The machine runtime is not composed yet (ADR 26-10-23-551 §3): the
-		// pool is registered and reports itself, unschedulable and saying why,
-		// and serves nothing until it is.
-		logger.Warn("this agent has no machine runtime yet; the pool is registered and schedules nothing", "poolID", bootstrap.PoolID, "driver", bootstrap.Driver)
+		// pool reports itself, unschedulable and saying why, and serves nothing
+		// until it is.
+		logger.Warn("this agent has no machine runtime yet; the pool reports itself and schedules nothing", "poolID", bootstrap.PoolID, "driver", bootstrap.Driver)
 		<-ctx.Done()
 		return ctx.Err()
 	}
@@ -167,7 +156,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		HTTP:      controlPlaneHTTPClient,
 		ProjectID: bootstrap.ProjectID,
 		PoolID:    bootstrap.PoolID,
-		Key:       registration.PrivateKey,
+		Key:       identity.PrivateKey,
 	}
 	assets := assetcache.New(assetcache.Config{
 		Dir:       filepath.Join(root.PoolBuild(bootstrap.ProjectID, bootstrap.PoolID), "assets"),
@@ -175,14 +164,14 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		Snapshots: root.PoolSnapshots(bootstrap.ProjectID, bootstrap.PoolID),
 		Fetch:     assetClient.Fetch,
 	})
-	runtime, err := newDockerSandboxRuntime(root, bootstrap, registration.PrivateKey, assets)
+	runtime, err := newDockerSandboxRuntime(root, bootstrap, identity.PrivateKey, assets)
 	if err != nil {
 		return err
 	}
 	// Image reclamation is the Docker pool's alone: the images are its daemon's,
 	// and a runtime that boots no OCI image has none to reclaim (ADR 0040).
 	go runtime.WatchImages(ctx, logger)
-	return Serve(ctx, logger, root, bootstrap, registration, runtime, client, assets)
+	return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets)
 }
 
 // newDockerSandboxRuntime is this pool's runtime: sandboxes as containers on
@@ -271,7 +260,7 @@ func poolStatusFor(bootstrap Bootstrap) poolStatus {
 // Capacity is measured per report rather than captured at boot, so the
 // control plane schedules against current free space rather than whatever was
 // free when the pool started.
-func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, registration *Registration, client StatusClient, status poolStatus, interval time.Duration) error {
+func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, identity *Identity, client StatusClient, status poolStatus, interval time.Duration) error {
 	conditions := map[string]any{
 		"agent": map[string]any{
 			"version": "dev",
@@ -288,7 +277,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 			ControlPlaneURL:      bootstrap.ControlPlaneURL,
 			ProjectID:            bootstrap.ProjectID,
 			PoolID:               bootstrap.PoolID,
-			PrivateKey:           registration.PrivateKey,
+			PrivateKey:           identity.PrivateKey,
 			Platform:             hostedPlatform(),
 			ImageKind:            hostedImageKind(),
 			Ready:                true,
@@ -338,9 +327,9 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 // discobox API (ADR 0140). They stay separate scopes so a future split of those
 // roles across processes is a change of who holds which token, not a change of
 // what a token means.
-func startResolveTokenRefresher(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, registration *Registration) {
+func startResolveTokenRefresher(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, identity *Identity) {
 	write := func() error {
-		token, err := poolauth.CreateTokenWithTTL(registration.PrivateKey, poolauth.Claims{
+		token, err := poolauth.CreateTokenWithTTL(identity.PrivateKey, poolauth.Claims{
 			ProjectID: bootstrap.ProjectID,
 			PoolID:    bootstrap.PoolID,
 			Scopes:    []string{poolauth.ScopeSecretResolve, poolauth.ScopeCredentialBroker, poolauth.ScopeSandboxForward},
@@ -382,10 +371,10 @@ func ExecSystemdChildIfRequested() error {
 // A nil reporter runs no loop that reports to the control plane: no state
 // channel, tree reaper, status poll or resource report. A nil assets serves
 // no assets.discobox.internal.
-func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime, reporter SandboxStateClient, assets *assetcache.Cache) error {
+func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, identity *Identity, runtime sandboxruntime.Runtime, reporter SandboxStateClient, assets *assetcache.Cache) error {
 	if reporter != nil {
-		if registration == nil {
-			return errors.New("pool registration is required for sandbox state reporting")
+		if identity == nil {
+			return errors.New("the pool's identity is required for sandbox state reporting")
 		}
 		// One boot ID per agent process, and a sequence within it. The control
 		// plane uses the pair to drop a delayed delta that would otherwise
@@ -405,7 +394,7 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 				ControlPlaneURL: bootstrap.ControlPlaneURL,
 				ProjectID:       bootstrap.ProjectID,
 				PoolID:          bootstrap.PoolID,
-				PrivateKey:      registration.PrivateKey,
+				PrivateKey:      identity.PrivateKey,
 				BootID:          bootID,
 				Sequence:        sequence.Add(1),
 				ReportedAt:      batch.ReportedAt,
@@ -443,7 +432,7 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 				ControlPlaneURL: bootstrap.ControlPlaneURL,
 				ProjectID:       bootstrap.ProjectID,
 				PoolID:          bootstrap.PoolID,
-				PrivateKey:      registration.PrivateKey,
+				PrivateKey:      identity.PrivateKey,
 				BootID:          bootID,
 				Sequence:        sequence.Add(1),
 				ReportedAt:      time.Now().UTC(),
@@ -463,19 +452,19 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 				ControlPlaneURL: bootstrap.ControlPlaneURL,
 				ProjectID:       bootstrap.ProjectID,
 				PoolID:          bootstrap.PoolID,
-				PrivateKey:      registration.PrivateKey,
+				PrivateKey:      identity.PrivateKey,
 			})
 		})
 		// reporter's concrete client (HTTPClient in production) also implements
 		// SandboxAgentStatusClient; test doubles that only implement
 		// SandboxStateClient simply skip starting the poller.
 		if statusClient, ok := reporter.(SandboxAgentStatusClient); ok {
-			poller := startSandboxAgentStatusPoller(ctx, logger, bootstrap, registration, runtime, statusClient)
+			poller := startSandboxAgentStatusPoller(ctx, logger, bootstrap, identity, runtime, statusClient)
 			// The resource reporter reads the counters that poll already
 			// collected rather than polling every sandbox a second time, so it
 			// only runs where the poller does (ADR 0071 resource accounting §2).
 			if resourceClient, ok := reporter.(PoolResourceClient); ok && poller != nil {
-				startPoolResourceReporter(ctx, logger, root, bootstrap, registration, runtime, poller, resourceClient)
+				startPoolResourceReporter(ctx, logger, root, bootstrap, identity, runtime, poller, resourceClient)
 			}
 		}
 	}
@@ -498,9 +487,9 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 	// The git-origins route verifies the tokens this pool issues its sandboxes
 	// against its own identity key (ADR 0126 §4).
 	var sandboxTokenKey ed25519.PublicKey
-	if registration != nil {
+	if identity != nil {
 		// An ed25519.PrivateKey's public half is always an ed25519.PublicKey.
-		sandboxTokenKey, _ = registration.PrivateKey.Public().(ed25519.PublicKey)
+		sandboxTokenKey, _ = identity.PrivateKey.Public().(ed25519.PublicKey)
 	}
 	// The sandboxes' own fetches of their origins arrive through the pool
 	// proxy, on loopback (ADR 26-10-08-561). Without the pool's key there is
@@ -533,7 +522,7 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 			ProjectID: bootstrap.ProjectID,
 			PoolID:    bootstrap.PoolID,
 		},
-		Registration:          serverRegistration(registration),
+		Registration:          serverRegistration(identity),
 		Runtime:               runtime,
 		Audit:                 audit,
 		ControlPlanePublicKey: bootstrap.ControlPlaneKey,
@@ -545,11 +534,11 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 	})
 }
 
-func serverRegistration(registration *Registration) *poolserver.Registration {
-	if registration == nil {
+func serverRegistration(identity *Identity) *poolserver.Registration {
+	if identity == nil {
 		return nil
 	}
-	return &poolserver.Registration{PublicKey: registration.PublicKey}
+	return &poolserver.Registration{PublicKey: identity.PublicKey}
 }
 
 func availableCPUVCPUs() float64 {

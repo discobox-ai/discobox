@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"log/slog"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
@@ -26,6 +26,13 @@ type ControlPlane struct {
 	store     *store.Store
 	engine    *reconcile.Engine
 	agentAuth *poolagentauth.Manager
+	boxes     PoolBoxes
+}
+
+// PoolBoxes is what a pool's box is placed with: the release's agent and the
+// pool's bundles (ADR 26-10-24-953 §2), which the asset service resolves.
+type PoolBoxes interface {
+	PoolBox(ctx context.Context, platform imagecache.Platform) (sandbox.PoolBox, error)
 }
 
 func NewControlPlane(appStore *store.Store, engine *reconcile.Engine) *ControlPlane {
@@ -34,6 +41,11 @@ func NewControlPlane(appStore *store.Store, engine *reconcile.Engine) *ControlPl
 
 func (s *ControlPlane) SetAgentAuthManager(manager *poolagentauth.Manager) {
 	s.agentAuth = manager
+}
+
+// SetPoolBoxes gives the control plane what a pool's box is placed with.
+func (s *ControlPlane) SetPoolBoxes(boxes PoolBoxes) {
+	s.boxes = boxes
 }
 
 // RegisterJobs installs the pool reconciler on the level-triggered reconcile
@@ -74,8 +86,16 @@ func (s *ControlPlane) CountSandboxesForPool(ctx context.Context, projectID, poo
 	return s.store.CountSandboxesForPool(ctx, projectID, poolID)
 }
 
-func (s *ControlPlane) CreatePoolBootstrapToken(ctx context.Context, token *model.PoolBootstrapToken) error {
-	return s.store.CreatePoolBootstrapToken(ctx, token)
+func (s *ControlPlane) EnrollPool(ctx context.Context, poolID, publicKey string) error {
+	_, err := s.store.EnrollPool(ctx, poolID, publicKey)
+	return err
+}
+
+func (s *ControlPlane) PoolBox(ctx context.Context, platform imagecache.Platform) (sandbox.PoolBox, error) {
+	if s.boxes == nil {
+		return sandbox.PoolBox{}, errors.New("this server has nothing to place a pool's box with")
+	}
+	return s.boxes.PoolBox(ctx, platform)
 }
 
 func (s *ControlPlane) EnsureAgentTrustKey(ctx context.Context) (string, error) {
@@ -199,29 +219,4 @@ func (s *ControlPlane) SubmitPoolDelete(ctx context.Context, projectID, poolID s
 		}
 		return s.engine.MarkDirtyTx(ctx, txDB, PoolResourceType, PoolDirtyID(pool.ProjectID, pool.ID))
 	})
-}
-
-const bootstrapTokenPurgeInterval = time.Hour
-
-// StartBootstrapTokenCleanup bounds the bootstrap token table: tokens are
-// single-use and minted per runtime creation; once expired, used, or revoked,
-// nothing reads them again, and nothing else deletes them.
-func (s *ControlPlane) StartBootstrapTokenCleanup(ctx context.Context) {
-	go func() {
-		ticker := time.NewTicker(bootstrapTokenPurgeInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				n, err := s.store.PurgeSpentPoolBootstrapTokens(ctx, time.Now())
-				if err != nil {
-					log.Printf("pool bootstrap token cleanup: %v", err)
-				} else if n > 0 {
-					log.Printf("pool bootstrap token cleanup: purged %d spent token(s)", n)
-				}
-			}
-		}
-	}()
 }

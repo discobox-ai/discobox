@@ -73,7 +73,6 @@ func TestASandboxHoldsOnlyTheSandboxRole(t *testing.T) {
 		{http.MethodGet, "/projects/another-project/sandboxes", http.StatusForbidden},
 		{http.MethodGet, "/projects", http.StatusForbidden},
 		{http.MethodGet, "/peers", http.StatusForbidden},
-		{http.MethodPost, "/api/pools/register", http.StatusForbidden},
 	} {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			resp := forwardRoute(t, router, tc.method, tc.path, "", token, routeTestPoolID, routeTestSandboxID)

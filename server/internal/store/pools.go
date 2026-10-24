@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
@@ -211,54 +212,24 @@ func (s *Store) ListPoolsNeedingReconcile(ctx context.Context) ([]model.Pool, er
 	return pools, err
 }
 
-func (s *Store) CreatePoolBootstrapToken(ctx context.Context, token *model.PoolBootstrapToken) error {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
-	return write.Create(token).Error
-}
-
-// RegisterPool redeems a bootstrap token: it records the agent's public key
-// and stamps the pool registered.
-//
-// Registration establishes identity and liveness, and nothing else. It does
-// not write State, ErrorMessage, or ObservedGeneration — redeeming a token is
-// not evidence that the reconciler finished converging the runtime, which is
-// the only thing ObservedGeneration means; the reconciler derives `active`
-// from RegisteredAt on the reconcile the registration marks dirty. It does not
-// write the health flags either: the agent reports those over its own
-// heartbeat, synchronously, immediately after this call returns. The platform
-// the agent declares it hosts, and the kind of image it runs, are recorded with
-// its key (recordPoolPlatform, recordPoolImageKind).
-func (s *Store) RegisterPool(ctx context.Context, poolID string, hosts platform.Platform, runs platform.ImageKind, tokenHash []byte, publicKey, keyType string) (*model.Pool, error) {
+// EnrollPool records publicKey as the pool's identity key, which its box
+// made and its maker read from it (ADR 26-10-24-953 §4): every assertion the
+// pool signs is verified against it from then on. Enrolling is identity and
+// nothing else: it writes no State, health flag or RegisteredAt, which the
+// agent's first heartbeat stamps, since a key recorded is no agent heard
+// from. A pool enrolled again with the same key changes nothing.
+func (s *Store) EnrollPool(ctx context.Context, poolID, publicKey string) (*model.Pool, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now().UTC()
 	var pool model.Pool
 	err = write.Transaction(func(tx *gorm.DB) error {
-		var token model.PoolBootstrapToken
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("pool_id = ? AND token_hash = ?", poolID, tokenHash).First(&token).Error; err != nil {
-			return mapNotFound(err)
-		}
-		if token.UsedAt != nil || token.RevokedAt != nil || !token.ExpiresAt.After(now) {
-			return ErrNotFound
-		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&pool, "id = ?", poolID).Error; err != nil {
 			return mapNotFound(err)
 		}
-		token.UsedAt = &now
-		if err := tx.Save(&token).Error; err != nil {
-			return err
-		}
-		recordPoolPlatform(&pool, hosts)
-		recordPoolImageKind(&pool, runs)
 		pool.PublicKey = publicKey
-		pool.KeyType = keyType
-		pool.RegisteredAt = &now
-		pool.LastSeenAt = &now
+		pool.KeyType = poolauth.KeyType
 		return tx.Save(&pool).Error
 	})
 	if err != nil {
@@ -310,6 +281,12 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platf
 		pool.Conditions = conditions
 		pool.LastSeenAt = &now
 		pool.StatusReportedAt = &now
+		// The first heartbeat is the agent first heard from: its key was
+		// enrolled before it started (EnrollPool), and this is what says it
+		// runs on it.
+		if pool.RegisteredAt == nil {
+			pool.RegisteredAt = &now
+		}
 		return tx.Save(&pool).Error
 	})
 	if err != nil {
@@ -586,18 +563,6 @@ func (s *Store) settleSandboxPlatform(ctx context.Context, sandbox *model.Sandbo
 		}
 	}
 	return settled, nil
-}
-
-// PurgeSpentPoolBootstrapTokens deletes bootstrap tokens that can no longer be
-// redeemed: expired, already used, or revoked.
-func (s *Store) PurgeSpentPoolBootstrapTokens(ctx context.Context, expiredBefore time.Time) (int64, error) {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return 0, err
-	}
-	result := write.Where("expires_at < ? OR used_at IS NOT NULL OR revoked_at IS NOT NULL", expiredBefore).
-		Delete(&model.PoolBootstrapToken{})
-	return result.RowsAffected, result.Error
 }
 
 // BeginPoolHealthChecks invalidates reports from the previous server process.

@@ -297,15 +297,12 @@ parameters, headers, and resource ownership loaded by those attributes. Do not
 require request-body fields to decide whether the caller may access the target
 resource; put authorization identity in the URL or other request metadata instead.
 
-Narrow exception: `POST /api/pools/register` is a bootstrap credential
-redemption flow, not normal resource access. Its body carries the project ID,
-pool ID, one-time bootstrap token, public key, and key type because a pool agent
-does not yet have a runtime principal or token. The service may use those body
-fields only to redeem the one-time bootstrap token against the bootstrapped
-pool and record its public key. Subsequent pool-agent authorization must use
-request metadata and the authenticated pool principal, such as
-`/api/pools/{poolId}/status`; the actions a pool principal may reach under
-`/api/pools/{poolId}/` are an allowlist in `internal/auth`.
+There is no exception for a pool. Its maker records the key its box made
+before its agent starts
+([ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
+§4), so every pool-agent request carries the authenticated pool principal,
+such as `/api/pools/{poolId}/status`; the actions a pool principal may reach
+under `/api/pools/{poolId}/` are an allowlist in `internal/auth`.
 
 Redemption happens once per pool, not once per agent start. The agent keeps its
 identity keypair on the pool's durable storage and reuses it, so a restart
@@ -743,13 +740,13 @@ in another module. `Status.Starting()` is what a client waits out.
 
 ## Staging a Pool's Images
 
-The pool reconciler supplies the project image set to the runtime provider.
-Before starting a new pool agent, the engine loads images already staged in the
-local image cache. A cached-image load failure fails pool startup; an uncached
-image is left for the sandbox's on-demand pull. There is no background prepull
-resource or staging condition. Provisioning reports `preloading_images`, and
-placement requires an active pool, so registration alone cannot admit work
-before startup finishes. See [pools](internal/resources/pools/DESIGN.md).
+A Docker pool's container runs the sandbox base image, the one image every
+sandbox runs (ADR 26-10-24-953 §2), so bringing the pool up stages it: the
+engine loads it from the local image cache when it is staged there
+(`loading_pool_image`), and pulls it otherwise. There is no background prepull
+resource or staging condition, and placement requires an active pool, so a
+pool admits no work before its box is made. See
+[pools](internal/resources/pools/DESIGN.md).
 
 ## Single Server Per Data Directory
 
@@ -974,7 +971,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/resources/harnessconfigs` | Harness config definition, project-scoped harness config API behavior, built-in seeding, and the configure-sandbox reaper reconciler. |
 | `internal/resources/projects` | Project create, update, delete, set-default, and copying configuration into a new project. |
 | `internal/resources/sandboxes` | Sandbox API service behavior, intent writes, the sandbox reconciler, agent observation ingest, and sandbox provider catalog helpers. |
-| `internal/resources/pools` | Pool resource API, the pool-agent surface (registration, status, observation and resource reports), the pool and pool-image reconcilers, and the trusted control plane provider drivers call. |
+| `internal/resources/pools` | Pool resource API, the pool-agent surface (status, observation and resource reports), the pool and pool-image reconcilers, and the trusted control plane provider drivers call. |
 | `internal/resources/providers` | Provider-instance API service behavior (backend identity only) and startup reconciliation. |
 | `internal/resources/secrets` | Secret CRUD, the request/grant approval lifecycle, approval rules and the reconciler that tests them against pending requests (ADR 26-10-12-330), sentinel resolution for the proxy, and the agent credentials broker (ADR 0031). |
 | `internal/resources/peers` | Enrolled iroh peers (ADR 0095): the managed half of peer admission. |

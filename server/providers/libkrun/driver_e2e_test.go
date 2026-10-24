@@ -5,12 +5,7 @@ package libkrun
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -18,16 +13,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/moby/moby/client"
 
-	guestvsock "github.com/discobox-ai/discobox/pkg/vsock"
-	"github.com/discobox-ai/discobox/pkg/wire"
-	poolagent "github.com/discobox-ai/discobox/pool-agent"
-	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/guestimage"
@@ -36,7 +26,6 @@ import (
 const (
 	libkrunE2EGuestDirEnv  = "DISCOBOX_LIBKRUN_E2E_GUEST_DIR"
 	libkrunE2EKernelDirEnv = "DISCOBOX_LIBKRUN_E2E_KERNEL_DIR"
-	libkrunE2EPoolImageEnv = "DISCOBOX_LIBKRUN_E2E_POOL_IMAGE"
 	libkrunE2EDockerEnv    = "DISCOBOX_LIBKRUN_E2E_DOCKER"
 )
 
@@ -51,13 +40,13 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// TestLibkrunEndToEnd exercises the real KVM, libkrun, passt, VSOCK, storage,
-// Docker, and pool-agent path. It is opt-in because it requires /dev/kvm and
-// host-built VM and pool-agent images.
+// TestLibkrunEndToEnd exercises the real KVM, libkrun, passt, VSOCK, storage
+// and Docker path of the machine a pool's box runs on. It is opt-in because it
+// requires /dev/kvm and a host-built VM image. The box itself is provisioned
+// against a control plane, which the Bats suites drive end to end.
 func TestLibkrunEndToEnd(t *testing.T) {
 	guestDir := requireE2EEnv(t, libkrunE2EGuestDirEnv)
 	kernelDir := requireE2EEnv(t, libkrunE2EKernelDirEnv)
-	poolImage := requireE2EValue(t, libkrunE2EPoolImageEnv)
 	dockerCLI := strings.TrimSpace(os.Getenv(libkrunE2EDockerEnv))
 	if dockerCLI == "" {
 		var err error
@@ -83,24 +72,8 @@ func TestLibkrunEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var registrations atomic.Int32
-	var statusUpdates atomic.Int32
 	controlPlaneServer := &http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch {
-			case r.Method == http.MethodPost && r.URL.Path == "/api/pools/register":
-				registrations.Add(1)
-				w.Header().Set("Content-Type", "application/json")
-				if err := json.NewEncoder(w).Encode(poolagent.RegisterResponse{}); err != nil {
-					t.Errorf("encode pool registration response: %v", err)
-				}
-			case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/status"):
-				statusUpdates.Add(1)
-				w.WriteHeader(http.StatusNoContent)
-			default:
-				http.Error(w, "unexpected E2E control-plane request", http.StatusNotFound)
-			}
-		}),
+		Handler:           http.NotFoundHandler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
@@ -167,7 +140,6 @@ func TestLibkrunEndToEnd(t *testing.T) {
 	}
 
 	dockerSocket := filepath.Join(driver.poolRuntimeDir(poolID), dockerSocketName)
-	loadImageIntoGuest(ctx, t, dockerCLI, dockerSocket, poolImage)
 	loadImageIntoGuest(ctx, t, dockerCLI, dockerSocket, "public.ecr.aws/docker/library/busybox:1.37.0")
 	guestDocker(ctx, t, dockerCLI, dockerSocket, "image", "rm", "public.ecr.aws/docker/library/busybox:1.37.0")
 	guestDocker(ctx, t, dockerCLI, dockerSocket, "pull", "public.ecr.aws/docker/library/busybox:1.37.0")
@@ -193,41 +165,6 @@ func TestLibkrunEndToEnd(t *testing.T) {
 			`if touch /host/libkrun-e2e-root-write 2>/dev/null; then exit 42; fi`,
 		}, "\n"))
 
-	controlPlanePublic, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bootstrapTokenBytes := make([]byte, 32)
-	if _, err := rand.Read(bootstrapTokenBytes); err != nil {
-		t.Fatal(err)
-	}
-	bootstrapToken := base64.RawURLEncoding.EncodeToString(bootstrapTokenBytes)
-	engine, err := dockerworker.New(dockerworker.Config{
-		ControlPlaneURL:    wire.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
-		AgentListenURL:     wire.VSOCKListenURL(agentVSOCKPort),
-		Image:              poolImage,
-		DockerReadyTimeout: 90 * time.Second,
-	}, driver)
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider := &model.SandboxProviderInstance{ID: "provider-e2e", ProjectID: "project-e2e", Type: ProviderType}
-	pool := &model.Pool{ID: poolID, ProjectID: "project-e2e", PoolManifest: model.PoolManifest{ProviderInstanceID: provider.ID}}
-	mint := func(context.Context) (poolagent.Bootstrap, error) {
-		return poolagent.Bootstrap{
-			Token:           bootstrapToken,
-			ControlPlaneKey: base64.StdEncoding.EncodeToString(controlPlanePublic),
-		}, nil
-	}
-	if err := engine.EnsurePool(ctx, nil, provider, pool, mint, func(context.Context) error { return nil }); err != nil {
-		t.Fatalf("start pool agent: %v%s", err, launcherDiagnostics(driver, poolID))
-	}
-	waitForPoolAgent(ctx, t, driver, poolID, &registrations, &statusUpdates)
-	if output := guestDocker(ctx, t, dockerCLI, dockerSocket,
-		"inspect", "--format", "{{json .HostConfig.PortBindings}}", dockerworker.ContainerName(poolID)); strings.TrimSpace(output) != "null" && strings.TrimSpace(output) != "{}" {
-		t.Fatalf("pool-agent published ports = %s, want null or empty", strings.TrimSpace(output))
-	}
-
 	if err := driver.StopVM(ctx, poolID); err != nil {
 		t.Fatalf("gracefully stop VM: %v%s", err, launcherDiagnostics(driver, poolID))
 	}
@@ -244,11 +181,6 @@ func TestLibkrunEndToEnd(t *testing.T) {
 		"--mount", "type=bind,src=/var/lib/discobox/cache,dst=/cache",
 		"public.ecr.aws/docker/library/busybox:1.37.0", "sh", "-ec",
 		`test "$(cat /data/libkrun-e2e-data)" = data-persisted && test "$(cat /cache/libkrun-e2e-cache)" = cache-persisted`)
-
-	if err := engine.EnsurePool(ctx, nil, provider, pool, mint, func(context.Context) error { return nil }); err != nil {
-		t.Fatalf("restore pool agent after VM restart: %v%s", err, launcherDiagnostics(driver, poolID))
-	}
-	waitForPoolAgent(ctx, t, driver, poolID, &registrations, &statusUpdates)
 }
 
 func requireE2EEnv(t *testing.T, name string) string {
@@ -320,43 +252,6 @@ func waitForGuestDocker(ctx context.Context, t *testing.T, driver *Driver, poolI
 		}
 	}
 	t.Fatalf("guest Docker did not become ready: %v%s", lastErr, launcherDiagnostics(driver, poolID))
-}
-
-func waitForPoolAgent(ctx context.Context, t *testing.T, driver *Driver, poolID string, registrations, statusUpdates *atomic.Int32) {
-	t.Helper()
-	deadline := time.Now().Add(90 * time.Second)
-	var lastErr error
-	for time.Now().Before(deadline) {
-		lease, err := driver.AcquirePoolAgentClient(ctx, poolID)
-		if err == nil {
-			request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, lease.BaseURL+"/healthz", nil)
-			if requestErr != nil {
-				lease.Release()
-				t.Fatal(requestErr)
-			}
-			response, requestErr := lease.Client.Do(request)
-			if requestErr == nil {
-				_, _ = io.Copy(io.Discard, response.Body)
-				_ = response.Body.Close()
-				if response.StatusCode == http.StatusOK && registrations.Load() > 0 && statusUpdates.Load() > 0 {
-					lease.Release()
-					return
-				}
-				lastErr = fmt.Errorf("health status %s, registrations=%d, status updates=%d", response.Status, registrations.Load(), statusUpdates.Load())
-			} else {
-				lastErr = requestErr
-			}
-			lease.Release()
-		} else {
-			lastErr = err
-		}
-		select {
-		case <-ctx.Done():
-			t.Fatal(ctx.Err())
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
-	t.Fatalf("pool agent did not become ready over VSOCK: %v%s", lastErr, launcherDiagnostics(driver, poolID))
 }
 
 func loadImageIntoGuest(ctx context.Context, t *testing.T, dockerCLI, guestSocket, image string) {

@@ -52,10 +52,6 @@ const (
 	// PrincipalTypeSandbox is a sandbox's own call, forwarded by the pool that
 	// hosts it. It holds the sandbox role and nothing else.
 	PrincipalTypeSandbox = "sandbox"
-	// PrincipalTypePoolBootstrap is a starting pool agent redeeming its
-	// bootstrap token at PoolRegisterPath, before it holds any other
-	// credential. It exists on that one route and nowhere else.
-	PrincipalTypePoolBootstrap = "pool-bootstrap"
 
 	ScopeAll = "*"
 )

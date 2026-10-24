@@ -64,6 +64,12 @@ func run(name string, args []string) int {
 	if personality, ok := personalities[name]; ok {
 		return personality(args)
 	}
+	// discobox-provision by subcommand, for a maker that execs the agent by
+	// its own path: a container's or machine's exec names no argv[0] apart
+	// from the program it runs (ADR 26-10-24-953 §2).
+	if len(args) > 0 && args[0] == "provision" {
+		return runProvisionCommand(args[1:])
+	}
 	if len(args) > 0 && args[0] == "hook-publish" {
 		return runHookPublish(args[1:])
 	}

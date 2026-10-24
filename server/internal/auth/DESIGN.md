@@ -20,7 +20,7 @@ flowchart LR
 `internal/server`'s `NewApp` installs both as chi middleware on the one router
 that serves every listener, in this order:
 
-- `Authentication(SandboxForwardAuthenticator, PoolAuthenticator, DiscobotAuthenticator, PoolBootstrapAuthenticator, IrohPeerAuthenticator, DefaultUserAuthenticator)`,
+- `Authentication(SandboxForwardAuthenticator, PoolAuthenticator, DiscobotAuthenticator, IrohPeerAuthenticator, DefaultUserAuthenticator)`,
   with `DefaultUserAuthenticator` left out when `authRequired` is set
 - `Authorization(SandboxRoleAuthorizer, ProjectAuthorizer, PoolRouteAuthorizer, SSHConnectAuthorizer, AuthenticatedAuthorizer)`
 
@@ -89,13 +89,6 @@ Current authenticators:
   and `ScopeAll` within that project. Like the sandbox authenticator it
   **fails rather than stepping aside** once a request carries an assertion,
   and a server not configured with the key refuses every assertion.
-- `PoolBootstrapAuthenticator` applies to `/api/pools/register` alone, when
-  nothing before it claimed the request: a starting pool agent redeeming its
-  bootstrap token, before it has any other credential. The principal
-  (`PrincipalTypePoolBootstrap`) carries nothing; the token in the body is
-  the credential, redeemed by the pools service (short-lived, one-time,
-  stored hashed). It is before the default user so registration never
-  depended on it, which is what keeps it working under `authRequired`.
 - `IrohPeerAuthenticator` applies to a request on an iroh stream, when
   nothing before it claimed the request. The iroh listener tags each stream
   with the enrolled identity its peer proved at admission
@@ -207,7 +200,7 @@ Current authorizers:
   do not have a resource-specific authorizer. A person discobot asserted holds
   a project, not the server: of these routes they reach only
   `assertedAllowedPaths` (listing and creating projects and the read-only
-  catalogs), never `/shutdown`, `/peers`, or pool registration.
+  catalogs), never `/shutdown` or `/peers`.
 
 The authenticated allow-list is hard-coded in `authenticatedAllowedPaths`.
 Entries ending in `/` are prefixes; entries without a trailing `/` require exact
@@ -215,7 +208,6 @@ path equality:
 
 - `/harness-definitions`
 - `/harness-definitions/`
-- `/api/pools/register`
 - `/peers`
 - `/peers/`
 - `/peer`
@@ -241,12 +233,6 @@ authorize on.
 server-scoped like `/peers`, and the value is one any authenticated caller is
 entitled to know.
 
-`/api/pools/register` is allowed here only as a bootstrap credential
-redemption route. It has no authenticated pool principal yet; the service
-redeems a short-lived, one-time bootstrap token for a preassigned pool and
-binds that pool to its self-generated public key. Do not model ordinary
-resource authorization on this route.
-
 Do not authorize by broad exclusion, such as "any route that is not project or
 pool scoped." Add an exact path or prefix to the allow-list only when the
 route intentionally has no narrower resource authorizer.
@@ -255,9 +241,11 @@ Authorization must be decidable from request attributes available before body
 interpretation: authenticated principal, method, route/path parameters, query
 parameters, headers, and resource ownership loaded from those attributes. If a
 body field is needed to identify the resource being authorized, move that
-identity into the URL or another request attribute. The only exception is
-pool bootstrap registration described above; after bootstrap, pool
-authorization must use the authenticated pool principal and request metadata.
+identity into the URL or another request attribute. There is no exception: a
+pool has no unauthenticated route, because its maker records its key before
+its agent starts
+([ADR 26-10-24-953](../../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
+§4).
 
 ## Principal Context
 

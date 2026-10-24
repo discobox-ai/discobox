@@ -32,33 +32,6 @@ import (
 	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
 )
 
-func TestRunRegistersPoolWithGeneratedPublicKey(t *testing.T) {
-	ctx := context.Background()
-	client := &recordingClient{resp: &poolagent.RegisterResponse{}}
-	registration, err := poolagent.Run(ctx, poolagent.Config{
-		Bootstrap: poolagent.Bootstrap{
-			ControlPlaneURL: "https://control.example",
-			ProjectID:       "project-1",
-			PoolID:          "pool-1",
-			Token:           "bootstrap-token",
-		},
-		Client: client,
-	})
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if len(registration.PrivateKey) != ed25519.PrivateKeySize {
-		t.Fatalf("private key length = %d", len(registration.PrivateKey))
-	}
-	publicKey, err := base64.StdEncoding.DecodeString(client.req.PublicKey)
-	if err != nil {
-		t.Fatalf("decode public key: %v", err)
-	}
-	if len(publicKey) != ed25519.PublicKeySize {
-		t.Fatalf("public key length = %d", len(publicKey))
-	}
-}
-
 func TestLoadDefaultsControlPlaneURL(t *testing.T) {
 	t.Setenv(poolagent.EnvControlPlaneURL, "")
 
@@ -100,15 +73,14 @@ func TestLoadReadsTransportURLs(t *testing.T) {
 	}
 }
 
-// A pool machine's provider places the bootstrap as a file the bundle's unit
-// names (ADR 26-10-23-551 §1); the environment still sets any field over it.
+// A pool's maker places the bootstrap as a file the pool bundle's unit names
+// (ADR 26-10-24-953 §2); the environment still sets any field over it.
 func TestLoadReadsTheBootstrapFileUnderTheEnvironment(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bootstrap.json")
 	writeBootstrapFile(t, path, 0o600, poolagent.Bootstrap{
 		ControlPlaneURL: "https://control.example",
 		ProjectID:       "project-1",
 		PoolID:          "pool-1",
-		Token:           "token-1",
 		Runtime:         poolagent.RuntimeMachine,
 		Driver:          "boxd",
 	})
@@ -120,8 +92,8 @@ func TestLoadReadsTheBootstrapFileUnderTheEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load bootstrap: %v", err)
 	}
-	if bootstrap.ControlPlaneURL != "https://control.example" || bootstrap.PoolID != "pool-1" || bootstrap.Token != "token-1" {
-		t.Fatalf("bootstrap = %+v, want the file's control plane, pool and token", bootstrap)
+	if bootstrap.ControlPlaneURL != "https://control.example" || bootstrap.PoolID != "pool-1" {
+		t.Fatalf("bootstrap = %+v, want the file's control plane and pool", bootstrap)
 	}
 	if bootstrap.Runtime != poolagent.RuntimeMachine || bootstrap.Driver != "boxd" {
 		t.Fatalf("runtime = %q driver = %q, want the file's machine runtime on boxd", bootstrap.Runtime, bootstrap.Driver)
@@ -134,14 +106,14 @@ func TestLoadReadsTheBootstrapFileUnderTheEnvironment(t *testing.T) {
 	}
 }
 
-// The file holds the bootstrap token, so one another user may read is
-// refused rather than trusted.
+// The file names the control plane the agent trusts, so one another user may
+// read or write is refused rather than trusted.
 func TestLoadRefusesABootstrapFileOthersCanRead(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a Windows file's mode bits say nothing of who may read it, and no pool machine runs Windows")
 	}
 	path := filepath.Join(t.TempDir(), "bootstrap.json")
-	writeBootstrapFile(t, path, 0o644, poolagent.Bootstrap{PoolID: "pool-1", Token: "token-1"})
+	writeBootstrapFile(t, path, 0o644, poolagent.Bootstrap{PoolID: "pool-1"})
 	t.Setenv(poolagent.EnvBootstrapFile, path)
 
 	if _, err := poolagent.Load(); err == nil || !strings.Contains(err.Error(), "0644") {
@@ -162,7 +134,7 @@ func TestLoadRefusesAnUnknownBootstrapField(t *testing.T) {
 }
 
 func TestBootstrapValidatesItsRuntime(t *testing.T) {
-	base := poolagent.Bootstrap{ControlPlaneURL: "http://control.example", PoolID: "pool-1", Token: "token-1"}
+	base := poolagent.Bootstrap{ControlPlaneURL: "http://control.example", PoolID: "pool-1"}
 	for _, tc := range []struct {
 		name    string
 		runtime poolagent.Runtime
@@ -215,7 +187,6 @@ func TestBootstrapRejectsUnusableTransportURLs(t *testing.T) {
 		ControlPlaneURL: "http://control.example",
 		ProjectID:       "project-1",
 		PoolID:          "pool-1",
-		Token:           "token-1",
 	}
 	for name, mutate := range map[string]func(*poolagent.Bootstrap){
 		"unknown control plane scheme": func(b *poolagent.Bootstrap) { b.ControlPlaneURL = "ftp://nope" },
@@ -241,46 +212,9 @@ func TestBootstrapAcceptsVSOCKTransportURLs(t *testing.T) {
 		AgentListenURL:  "vsock://:3002",
 		ProjectID:       "project-1",
 		PoolID:          "pool-1",
-		Token:           "token-1",
 	}
 	if err := bootstrap.Validate(); err != nil {
 		t.Fatalf("Validate rejected VSOCK transport URLs: %v", err)
-	}
-}
-
-func TestHTTPClientRegistersPool(t *testing.T) {
-	var got poolagent.RegisterRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/pools/register" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
-		if err := json.NewEncoder(w).Encode(poolagent.RegisterResponse{}); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	resp, err := poolagent.NewHTTPClient(server.URL, poolagent.WithHTTPClient(server.Client())).RegisterPool(context.Background(), poolagent.RegisterRequest{
-		ProjectID:      "project-1",
-		PoolID:         "pool-1",
-		BootstrapToken: "bootstrap-token",
-		PublicKey:      "public-key",
-		KeyType:        "ed25519",
-	})
-	if err != nil {
-		t.Fatalf("register pool: %v", err)
-	}
-	if resp == nil {
-		t.Fatal("register response is nil")
-	}
-	if got.ProjectID != "project-1" {
-		t.Fatalf("project ID = %q", got.ProjectID)
-	}
-	if got.PoolID != "pool-1" {
-		t.Fatalf("pool ID = %q", got.PoolID)
 	}
 }
 
@@ -578,16 +512,6 @@ func TestPoolSandboxGitOriginRouteServesTheOriginRepository(t *testing.T) {
 	}
 }
 
-type recordingClient struct {
-	req  poolagent.RegisterRequest
-	resp *poolagent.RegisterResponse
-}
-
-func (c *recordingClient) RegisterPool(_ context.Context, req poolagent.RegisterRequest) (*poolagent.RegisterResponse, error) {
-	c.req = req
-	return c.resp, nil
-}
-
 type testPoolSecuritySource struct {
 	token string
 }
@@ -717,7 +641,7 @@ func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
 			PoolID:          "pool-1",
 			ControlPlaneKey: controlPlaneKey,
 			AgentListenURL:  listenURL,
-		}, &poolagent.Registration{PrivateKey: privateKey}, runtime, client, nil)
+		}, &poolagent.Identity{PrivateKey: privateKey}, runtime, client, nil)
 	}()
 
 	baseURL, httpClient, err := wire.HTTPClient(listenURL, 0)

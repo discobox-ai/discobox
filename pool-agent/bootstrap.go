@@ -1,13 +1,13 @@
-// Package poolagent implements the in-guest pool startup registration flow.
+// Package poolagent implements the pool agent: its boot contract, its identity, and its channel to the control plane.
 package poolagent
 
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -23,7 +23,6 @@ const (
 	EnvControlPlaneURL = "DISCOBOX_CONTROL_PLANE_URL"
 	EnvProjectID       = "DISCOBOX_PROJECT_ID"
 	EnvPoolID          = "DISCOBOX_POOL_ID"
-	EnvBootstrapToken  = "DISCOBOX_POOL_BOOTSTRAP_TOKEN" //nolint:gosec // Environment variable name, not a credential value.
 	EnvControlPlaneKey = "DISCOBOX_CONTROL_PLANE_PUBLIC_KEY"
 	// EnvAgentListenURL is the transport URL the pool-agent HTTP server binds.
 	// The scheme selects the transport, so a backend that terminates the agent
@@ -41,9 +40,9 @@ const (
 	EnvRuntime = "DISCOBOX_POOL_RUNTIME"
 	EnvDriver  = "DISCOBOX_POOL_DRIVER"
 	// EnvBootstrapFile names a file holding the bootstrap as JSON, which a
-	// pool machine's provider places beside the pool-agent bundle rather than
-	// rendering it into an environment (ADR 26-10-23-551 §1). It is root's
-	// alone: it holds the bootstrap token.
+	// pool's maker places beside the pool bundle rather than rendering it into
+	// an environment (ADR 26-10-24-953 §2). It is root's alone: it says which
+	// control plane the agent trusts.
 	EnvBootstrapFile = "DISCOBOX_POOL_BOOTSTRAP_FILE"
 )
 
@@ -73,7 +72,6 @@ type Bootstrap struct {
 	ControlPlaneURL string `json:"controlPlaneUrl,omitempty"`
 	ProjectID       string `json:"projectId,omitempty"`
 	PoolID          string `json:"poolId,omitempty"`
-	Token           string `json:"token,omitempty"`
 	ControlPlaneKey string `json:"controlPlanePublicKey,omitempty"`
 	// AgentListenURL is where the agent's own HTTP server binds.
 	AgentListenURL  string `json:"agentListenUrl,omitempty"`
@@ -98,15 +96,6 @@ func (b Bootstrap) EffectiveRuntime() Runtime {
 	return b.Runtime
 }
 
-// MintBootstrap produces the registration credentials for a pool runtime.
-//
-// Minting is a WRITE: it persists a single-use bootstrap token. Pool providers
-// therefore take a mint function rather than a Bootstrap, and call it only when
-// they actually create a runtime — a drift check that finds a healthy container
-// needs no credentials and must not mint any. Minting eagerly on every reconcile
-// leaks a token row per reconcile.
-type MintBootstrap func(context.Context) (Bootstrap, error)
-
 // Validate checks the required pool bootstrap fields.
 func (b Bootstrap) Validate() error {
 	if strings.TrimSpace(b.ControlPlaneURL) == "" {
@@ -114,9 +103,6 @@ func (b Bootstrap) Validate() error {
 	}
 	if strings.TrimSpace(b.PoolID) == "" {
 		return errors.New("pool ID is required")
-	}
-	if strings.TrimSpace(b.Token) == "" {
-		return errors.New("pool bootstrap token is required")
 	}
 	// Validating here means an unreachable transport is rejected at boot with a
 	// clear message, rather than at the first request.
@@ -143,23 +129,6 @@ func (b Bootstrap) Validate() error {
 	return nil
 }
 
-// Config controls pool registration.
-type Config struct {
-	Bootstrap Bootstrap
-	Client    Client
-	KeySource KeySource
-	// ForceRegister registers even when the key was loaded from disk. It is for
-	// the one case a stored key cannot resolve on its own: a control plane that
-	// no longer recognizes this key, which must be told about it again before
-	// any request will authenticate.
-	ForceRegister bool
-}
-
-// Client registers a booted pool with the control plane.
-type Client interface {
-	RegisterPool(ctx context.Context, req RegisterRequest) (*RegisterResponse, error)
-}
-
 type StatusClient interface {
 	UpdatePoolStatus(ctx context.Context, req StatusRequest) error
 }
@@ -183,20 +152,6 @@ type SandboxAgentStatusClient interface {
 	MintSandboxAgentStatusTokens(ctx context.Context, req MintSandboxAgentStatusTokensRequest) (*MintSandboxAgentStatusTokensResponse, error)
 	ReportSandboxAgentStatus(ctx context.Context, req SandboxAgentStatusReportRequest) error
 	ReportSandboxInventories(ctx context.Context, req SandboxInventoryReportRequest) (*SandboxInventoryReportResponse, error)
-}
-
-// RegisterRequest is sent by the pool after generating its keypair.
-type RegisterRequest struct {
-	ControlPlaneURL string `json:"-"`
-	ProjectID       string `json:"projectId"`
-	PoolID          string `json:"poolId,omitempty"`
-	BootstrapToken  string `json:"bootstrapToken"`
-	PublicKey       string `json:"publicKey"`
-	KeyType         string `json:"keyType"`
-	// Platform is the one platform this pool hosts (ADR 0145 §1).
-	Platform platform.Platform `json:"platform"`
-	// ImageKind is the kind of image this pool runs (ADR 26-10-09-106 §4).
-	ImageKind platform.ImageKind `json:"imageKind"`
 }
 
 // hostedPlatform is the one platform this pool hosts, which its agent declares
@@ -397,97 +352,39 @@ type SandboxInventoryReportResponse struct {
 	Wanted []string `json:"wanted"`
 }
 
-// RegisterResponse is returned by the control plane after pool registration.
-type RegisterResponse struct{}
-
-// Registration is the completed pool startup identity state.
-type Registration struct {
-	Bootstrap  Bootstrap
+// Identity is the pool's identity: its key, made on the pool by
+// `discobox-provision identity` and recorded on the pool by its maker before
+// this agent starts (ADR 26-10-24-953 §4). The private key signs every
+// request to the control plane; nothing registers it.
+type Identity struct {
 	PublicKey  string
 	PrivateKey ed25519.PrivateKey
-	// FromStoredKey reports that this pool was already registered under a key
-	// loaded from disk, so no bootstrap token was spent. A caller whose first
-	// authenticated request is then rejected knows the control plane has
-	// forgotten this key and that registering again is worth trying.
-	FromStoredKey bool
 }
 
-// KeyMaterial is a pool's identity keypair and where it came from.
-type KeyMaterial struct {
-	PublicKey  string
-	PrivateKey ed25519.PrivateKey
-	// Loaded reports that the key already existed, which means the control
-	// plane was told about it during an earlier registration.
-	Loaded bool
-}
-
-// KeySource generates or loads the pool identity keypair.
-type KeySource interface {
-	KeyPair(ctx context.Context) (KeyMaterial, error)
-}
-
-// Run performs the startup registration flow once.
-func Run(ctx context.Context, cfg Config) (*Registration, error) {
-	bootstrap := cfg.Bootstrap
-	if err := bootstrap.Validate(); err != nil {
-		return nil, err
+// LoadIdentity reads the pool's identity key at path, on the pool's durable
+// storage (layout.Root.PoolIdentityKey, ADR 0063). None is a pool its maker
+// has not enrolled, which this agent cannot be, and never makes one: a key
+// made here would be one the control plane has never heard of.
+func LoadIdentity(path string) (*Identity, error) {
+	key, err := poolauth.LoadKey(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("pool identity key %s is not there: this pool's maker enrolls it before the agent starts", path)
 	}
-	client := cfg.Client
-	if client == nil {
-		client = NewHTTPClient(bootstrap.ControlPlaneURL)
-	}
-	keySource := cfg.KeySource
-	if keySource == nil {
-		keySource = GenerateKeySource{}
-	}
-	material, err := keySource.KeyPair(ctx)
 	if err != nil {
 		return nil, err
 	}
-	publicKey, privateKey := material.PublicKey, material.PrivateKey
-	// A key that was already on disk was published to the control plane by the
-	// registration that created it, and the assertion it signs authenticates
-	// every request from here on. Registering again would spend a single-use
-	// bootstrap token to tell the control plane something it already knows —
-	// and the token baked into this container was spent the first time
-	// (ADR 0063).
-	if material.Loaded && !cfg.ForceRegister {
-		return &Registration{
-			Bootstrap:     bootstrap,
-			PublicKey:     publicKey,
-			PrivateKey:    privateKey,
-			FromStoredKey: true,
-		}, nil
-	}
-	resp, err := client.RegisterPool(ctx, RegisterRequest{
-		ControlPlaneURL: bootstrap.ControlPlaneURL,
-		ProjectID:       bootstrap.ProjectID,
-		PoolID:          bootstrap.PoolID,
-		BootstrapToken:  bootstrap.Token,
-		PublicKey:       publicKey,
-		KeyType:         "ed25519",
-		Platform:        hostedPlatform(),
-		ImageKind:       hostedImageKind(),
-	})
+	public, err := poolauth.PublicKeyOf(key)
 	if err != nil {
 		return nil, err
 	}
-	if resp == nil {
-		return nil, errors.New("pool registration did not return a response")
-	}
-	return &Registration{
-		Bootstrap:  bootstrap,
-		PublicKey:  publicKey,
-		PrivateKey: privateKey,
-	}, nil
+	return &Identity{PublicKey: public, PrivateKey: key}, nil
 }
 
 // Load reads this agent's bootstrap: the file EnvBootstrapFile names, when
 // the environment names one, with each field the environment sets taking the
-// environment's value. A pool container's provider renders it into the
-// environment alone (dockerworker.BootEnv); a pool machine's places the file
-// and the bundle's unit names it (ADR 26-10-23-551 §1). A control plane URL
-// neither gives is the local default.
+// environment's value. A pool's maker places the file in its box
+// (bundle.BootstrapFile) and the agent's unit names it (ADR 26-10-24-953 §2).
+// A control plane URL neither gives is the local default.
 func Load() (Bootstrap, error) {
 	var bootstrap Bootstrap
 	if path := strings.TrimSpace(os.Getenv(EnvBootstrapFile)); path != "" {
@@ -504,7 +401,6 @@ func Load() (Bootstrap, error) {
 		{EnvControlPlaneURL, &bootstrap.ControlPlaneURL},
 		{EnvProjectID, &bootstrap.ProjectID},
 		{EnvPoolID, &bootstrap.PoolID},
-		{EnvBootstrapToken, &bootstrap.Token},
 		{EnvControlPlaneKey, &bootstrap.ControlPlaneKey},
 		{EnvAgentListenURL, &bootstrap.AgentListenURL},
 		{EnvHostMountPrefix, &bootstrap.HostMountPrefix},
@@ -525,9 +421,8 @@ func Load() (Bootstrap, error) {
 }
 
 // readBootstrapFile reads the bootstrap file at path, refusing one another
-// user owns or may read or write: it holds the pool's bootstrap token, and a
-// file another user could rewrite would choose the control plane this agent
-// registers with.
+// user owns or may read or write: a file another user could rewrite would
+// choose the control plane, and the key, this agent trusts.
 func readBootstrapFile(path string) (Bootstrap, error) {
 	file, err := os.Open(path) //nolint:gosec // G304: the path is the bootstrap file the agent's unit names.
 	if err != nil {
@@ -551,54 +446,4 @@ func readBootstrapFile(path string) (Bootstrap, error) {
 		return Bootstrap{}, fmt.Errorf("decode pool bootstrap %s: %w", path, err)
 	}
 	return bootstrap, nil
-}
-
-// GenerateKeySource creates a fresh Ed25519 keypair.
-type GenerateKeySource struct{}
-
-func (GenerateKeySource) KeyPair(context.Context) (KeyMaterial, error) {
-	return generateKeyMaterial()
-}
-
-func generateKeyMaterial() (KeyMaterial, error) {
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return KeyMaterial{}, fmt.Errorf("generate pool keypair: %w", err)
-	}
-	publicKey, err := poolauth.EncodePublicKey(pub)
-	if err != nil {
-		return KeyMaterial{}, err
-	}
-	return KeyMaterial{PublicKey: publicKey, PrivateKey: priv}, nil
-}
-
-// FileKeySource keeps the pool's identity keypair on durable pool storage and
-// reuses it across restarts, so an agent that comes back is still the same pool
-// and needs no bootstrap token to say so (ADR 0063).
-//
-// The key is the pool's identity: whoever holds it can authenticate as this
-// pool. It is written 0600 in a directory no sandbox tree is derived from and
-// no reaper enumerates.
-type FileKeySource struct {
-	// Path is the key file. Its directory is created if absent.
-	Path string
-}
-
-func (f FileKeySource) KeyPair(context.Context) (KeyMaterial, error) {
-	path := strings.TrimSpace(f.Path)
-	if path == "" {
-		return KeyMaterial{}, errors.New("pool identity key path is required")
-	}
-	// A key that exists but cannot be read is not the same as no key:
-	// generating a new one here would silently change the pool's identity and
-	// require a bootstrap token that has already been spent.
-	key, created, err := poolauth.LoadOrCreateKey(path)
-	if err != nil {
-		return KeyMaterial{}, err
-	}
-	publicKey, err := poolauth.PublicKeyOf(key)
-	if err != nil {
-		return KeyMaterial{}, err
-	}
-	return KeyMaterial{PublicKey: publicKey, PrivateKey: key, Loaded: !created}, nil
 }

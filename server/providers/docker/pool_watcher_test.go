@@ -9,6 +9,7 @@ import (
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
 
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -28,7 +29,7 @@ func TestStartWorkerWatcherNeverFailsInitOnScanError(t *testing.T) {
 	}
 	driver := &LocalDriver{client: cli, agentPort: defaultAgentPort}
 	t.Cleanup(func() { _ = driver.Close() })
-	engine, err := dockerworker.New(dockerworker.Config{Image: "worker:test"}, driver)
+	engine, err := dockerworker.New(dockerworker.Config{SandboxBaseImage: "worker:test"}, driver)
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
@@ -208,7 +209,7 @@ func TestDockerWorkerWatcherSchedulesDeletedPoolWhenContainerRemains(t *testing.
 }
 
 func TestDockerWorkerWatcherSchedulesRunningPoolWithStaleConfig(t *testing.T) {
-	engine, err := dockerworker.New(dockerworker.Config{Image: "worker:new"}, &LocalDriver{})
+	engine, err := dockerworker.New(dockerworker.Config{SandboxBaseImage: "worker:new"}, &LocalDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
@@ -254,8 +255,12 @@ func (m *recordingPoolManager) CountSandboxesForPool(context.Context, string, st
 	return 0, nil
 }
 
-func (m *recordingPoolManager) CreatePoolBootstrapToken(context.Context, *model.PoolBootstrapToken) error {
+func (m *recordingPoolManager) EnrollPool(context.Context, string, string) error {
 	return nil
+}
+
+func (m *recordingPoolManager) PoolBox(context.Context, imagecache.Platform) (sandbox.PoolBox, error) {
+	return sandbox.PoolBox{}, nil
 }
 
 func (m *recordingPoolManager) EnsureAgentTrustKey(context.Context) (string, error) {

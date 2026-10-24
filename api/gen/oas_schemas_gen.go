@@ -4224,7 +4224,6 @@ func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
 func (*ErrorModelStatusCode) refreshHarnessConfigImageRes()        {}
 func (*ErrorModelStatusCode) refreshSecretRes()                    {}
-func (*ErrorModelStatusCode) registerPoolRes()                     {}
 func (*ErrorModelStatusCode) repairSandboxRes()                    {}
 func (*ErrorModelStatusCode) reportPoolResourcesRes()              {}
 func (*ErrorModelStatusCode) reportPoolSandboxStatesRes()          {}
@@ -21300,121 +21299,6 @@ func (s *RefreshSecretBodyVia) UnmarshalText(data []byte) error {
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
-
-// Ref: #/components/schemas/RegisterPoolBody
-type RegisterPoolBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema         OptURI `json:"$schema"`
-	BootstrapToken string `json:"bootstrapToken"`
-	// The kind of image the pool runs, oci or vm/<driver>. An agent from before image kinds sends none,
-	// and runs OCI images, which is what is recorded for it.
-	ImageKind OptString `json:"imageKind"`
-	KeyType   OptString `json:"keyType"`
-	// The one platform the pool hosts, as os/arch. An agent from before platforms sends none, and its
-	// pool keeps the platform recorded for it.
-	Platform  OptString `json:"platform"`
-	PoolId    string    `json:"poolId"`
-	ProjectId string    `json:"projectId"`
-	PublicKey string    `json:"publicKey"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *RegisterPoolBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetBootstrapToken returns the value of BootstrapToken.
-func (s *RegisterPoolBody) GetBootstrapToken() string {
-	return s.BootstrapToken
-}
-
-// GetImageKind returns the value of ImageKind.
-func (s *RegisterPoolBody) GetImageKind() OptString {
-	return s.ImageKind
-}
-
-// GetKeyType returns the value of KeyType.
-func (s *RegisterPoolBody) GetKeyType() OptString {
-	return s.KeyType
-}
-
-// GetPlatform returns the value of Platform.
-func (s *RegisterPoolBody) GetPlatform() OptString {
-	return s.Platform
-}
-
-// GetPoolId returns the value of PoolId.
-func (s *RegisterPoolBody) GetPoolId() string {
-	return s.PoolId
-}
-
-// GetProjectId returns the value of ProjectId.
-func (s *RegisterPoolBody) GetProjectId() string {
-	return s.ProjectId
-}
-
-// GetPublicKey returns the value of PublicKey.
-func (s *RegisterPoolBody) GetPublicKey() string {
-	return s.PublicKey
-}
-
-// SetSchema sets the value of Schema.
-func (s *RegisterPoolBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetBootstrapToken sets the value of BootstrapToken.
-func (s *RegisterPoolBody) SetBootstrapToken(val string) {
-	s.BootstrapToken = val
-}
-
-// SetImageKind sets the value of ImageKind.
-func (s *RegisterPoolBody) SetImageKind(val OptString) {
-	s.ImageKind = val
-}
-
-// SetKeyType sets the value of KeyType.
-func (s *RegisterPoolBody) SetKeyType(val OptString) {
-	s.KeyType = val
-}
-
-// SetPlatform sets the value of Platform.
-func (s *RegisterPoolBody) SetPlatform(val OptString) {
-	s.Platform = val
-}
-
-// SetPoolId sets the value of PoolId.
-func (s *RegisterPoolBody) SetPoolId(val string) {
-	s.PoolId = val
-}
-
-// SetProjectId sets the value of ProjectId.
-func (s *RegisterPoolBody) SetProjectId(val string) {
-	s.ProjectId = val
-}
-
-// SetPublicKey sets the value of PublicKey.
-func (s *RegisterPoolBody) SetPublicKey(val string) {
-	s.PublicKey = val
-}
-
-// Ref: #/components/schemas/RegisterPoolResponseBody
-type RegisterPoolResponseBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *RegisterPoolResponseBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// SetSchema sets the value of Schema.
-func (s *RegisterPoolResponseBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-func (*RegisterPoolResponseBody) registerPoolRes() {}
 
 // RemoveSandboxFileNoContent is response for RemoveSandboxFile operation.
 type RemoveSandboxFileNoContent struct{}
