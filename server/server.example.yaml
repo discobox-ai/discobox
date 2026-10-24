@@ -206,10 +206,11 @@
 # Environment: DISCOBOX_IMAGE_RETENTION
 #imageRetention:
 
-# Pool agent image the Docker provider runs. Defaults to the released
-# image for this build.
+# Retired, and ignored: a pool's container runs the sandbox base image
+# (dockerSandboxBaseImage), provisioned from the pool bundle
+# (poolAgentBundle). Read with a warning, and refused from the next
+# release.
 # Example: dockerPoolImage: ghcr.io/discobox-ai/discobox-pool-agent:v0.8.0
-# Environment: DISCOBOX_DOCKER_POOL_IMAGE
 #dockerPoolImage:
 
 # The Docker driver's Debian sandbox base image, which every sandbox

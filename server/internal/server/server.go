@@ -244,7 +244,6 @@ func Run(ctx context.Context) error {
 		JudgeJevFallback:               cfg.JevUnsure == config.JevUnsureHarness,
 		ConfiguredGateways:             gateways.Configured{Default: defaultGateways, ByProject: projectGateways},
 		ServerDefaults: dockerworker.ServerDefaults{
-			PoolImage:        cfg.DockerPoolImage,
 			SandboxBaseImage: cfg.DockerSandboxBaseImage,
 			PoolAgentBundle:  cfg.PoolAgentBundle,
 			AgentBundle:      cfg.AgentBundle,

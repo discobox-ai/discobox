@@ -6,9 +6,9 @@ import (
 	"github.com/discobox-ai/discobox/pkg/releasemanifest"
 )
 
-// The pool-agent bundle is resolved as the pool-agent image is (ADR
-// 26-10-23-551 §2): a selected release decides, then the server's setting,
-// and the compiled-in default.
+// The pool bundle is resolved as the sandbox base image is (ADR 26-10-24-953
+// §2), but for a provider's setting: a selected release decides, then the
+// server's setting, and the compiled-in default.
 func TestEffectivePoolAgentBundle(t *testing.T) {
 	release := &releasemanifest.Manifest{Bundles: releasemanifest.Bundles{PoolAgent: "registry.example/discobox-pool-agent-bundle:v1.0.0"}}
 	for _, tc := range []struct {

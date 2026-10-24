@@ -162,7 +162,7 @@ func TestFileCarriesTheSettingsPackagesUsedToReadThemselves(t *testing.T) {
 	writeConfigFile(t, `
 archiveRetention: 15m
 imageRetention: 2h
-dockerPoolImage: pool:test
+dockerSandboxBaseImage: base:test
 wslcCommand: C:\wslc.exe
 devImageSync: false
 `)
@@ -176,8 +176,8 @@ devImageSync: false
 	if cfg.ImageRetention != 2*time.Hour {
 		t.Fatalf("ImageRetention = %s, want 2h", cfg.ImageRetention)
 	}
-	if cfg.DockerPoolImage != "pool:test" {
-		t.Fatalf("DockerPoolImage = %q, want pool:test", cfg.DockerPoolImage)
+	if cfg.DockerSandboxBaseImage != "base:test" {
+		t.Fatalf("DockerSandboxBaseImage = %q, want base:test", cfg.DockerSandboxBaseImage)
 	}
 	if cfg.WSLCCommand != `C:\wslc.exe` {
 		t.Fatalf("WSLCCommand = %q", cfg.WSLCCommand)
@@ -382,5 +382,23 @@ func TestRetiredSandboxImageKeysAreIgnoredWithAWarning(t *testing.T) {
 	}
 	if len(cfg.Warnings) != 2 || !strings.Contains(cfg.Warnings[0], "defaultSandboxImage is retired") || !strings.Contains(cfg.Warnings[0], "ignored") || !strings.Contains(cfg.Warnings[0], "platformBundle") || !strings.Contains(cfg.Warnings[1], "defaultSandboxImageDigest is retired") {
 		t.Fatalf("Warnings = %q, want one for each retired key", cfg.Warnings)
+	}
+}
+
+// server.yaml's dockerPoolImage is retired (ADR 26-10-24-953 §2): a pool's
+// container runs the sandbox base image, so for one release a file that sets
+// it still loads, with a warning, and what it names is never used.
+func TestRetiredDockerPoolImageIsIgnoredWithAWarning(t *testing.T) {
+	clearConfigEnv(t)
+	writeConfigFile(t, "dockerPoolImage: ghcr.io/discobox-ai/discobox-pool-agent:v0.8.0\n")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DockerSandboxBaseImage != "" {
+		t.Fatalf("DockerSandboxBaseImage = %q, want unset: the retired key names a pool-agent image, never the base", cfg.DockerSandboxBaseImage)
+	}
+	if len(cfg.Warnings) != 1 || !strings.Contains(cfg.Warnings[0], "dockerPoolImage is retired") || !strings.Contains(cfg.Warnings[0], "dockerSandboxBaseImage") {
+		t.Fatalf("Warnings = %q, want one for the retired key", cfg.Warnings)
 	}
 }

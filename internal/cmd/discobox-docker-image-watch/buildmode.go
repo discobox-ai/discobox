@@ -44,26 +44,20 @@ func buildModeEnabled() bool {
 // is recorded among the manifest's bundles: a pool's daemon builds it, and the
 // server saves it as the layout it serves pools from (ADR 26-10-16-423 §13).
 func stampBuildModeImages(repoRoot string, specs []imageSpec) error {
-	tags := make(map[string]string, len(specs))
-	for _, spec := range specs {
-		tag, err := contentImageTag(spec)
-		if err != nil {
-			return err
-		}
-		tags[spec.name] = tag
-	}
-
 	images := make([]devimage.Image, 0, len(specs))
 	var bundles []devimage.Bundle
 	values := map[string]string{}
 	for _, spec := range specs {
-		// Intermediates are described too, unlike in copy-mode: the destination
-		// daemon builds every image itself, so it needs the base before it can
-		// build anything layered on it. It just has no .env key to publish.
+		// Every spec is described, including one with no .env key to publish:
+		// the destination daemon builds every image and bundle itself.
 		if spec.contextDir == "" || spec.dockerfile == "" {
 			return fmt.Errorf("development image %s has no build context configured", spec.name)
 		}
-		args, err := buildModeArgs(spec, tags)
+		tag, err := contentImageTag(spec)
+		if err != nil {
+			return err
+		}
+		args, err := buildModeArgs(spec)
 		if err != nil {
 			return err
 		}
@@ -74,14 +68,14 @@ func stampBuildModeImages(repoRoot string, specs []imageSpec) error {
 			Args:       args,
 		}
 		if spec.bundle {
-			bundles = append(bundles, devimage.Bundle{Reference: tags[spec.name], Build: build})
+			bundles = append(bundles, devimage.Bundle{Reference: tag, Build: build})
 		} else {
-			images = append(images, devimage.Image{Reference: tags[spec.name], Build: build})
+			images = append(images, devimage.Image{Reference: tag, Build: build})
 		}
 		if spec.envImageKey != "" {
-			values[spec.envImageKey] = tags[spec.name]
+			values[spec.envImageKey] = tag
 		}
-		log.Printf("stamped %s as %s (built on demand by the server)", spec.name, tags[spec.name])
+		log.Printf("stamped %s as %s (built on demand by the server)", spec.name, tag)
 	}
 
 	manifest, err := devimage.NewManifest(images, bundles)
@@ -97,10 +91,9 @@ func stampBuildModeImages(repoRoot string, specs []imageSpec) error {
 	return updateEnv(filepath.Join(repoRoot, envFile), values)
 }
 
-// buildModeArgs renders a spec's build arguments, resolving a dependency on the
-// image it builds FROM to that image's stamped reference so the server can order
-// the builds.
-func buildModeArgs(spec imageSpec, tags map[string]string) (map[string]string, error) {
+// buildModeArgs renders a spec's build arguments: the manifest metadata read
+// from image.json, or none for an image whose build labels no manifest.
+func buildModeArgs(spec imageSpec) (map[string]string, error) {
 	args := map[string]string{}
 	if spec.metadataFile != "" {
 		metadata, err := harnessMetadata(spec.metadataFile)
@@ -108,13 +101,6 @@ func buildModeArgs(spec imageSpec, tags map[string]string) (map[string]string, e
 			return nil, err
 		}
 		args[spec.metadataArg] = metadata
-	}
-	if spec.parentArg != "" {
-		parentTag, ok := tags[spec.parent]
-		if !ok {
-			return nil, fmt.Errorf("no %s image stamped for %s", spec.parent, spec.name)
-		}
-		args[spec.parentArg] = parentTag
 	}
 	if len(args) == 0 {
 		return nil, nil
@@ -149,8 +135,5 @@ func contentImageTag(spec imageSpec) (string, error) {
 			return "", closeErr
 		}
 	}
-	// A child embeds its parent's reference, but that is resolved after tagging;
-	// the parent's own inputs are already part of every child spec's file set, so
-	// a parent change still changes the child's tag.
 	return spec.devPrefix + hex.EncodeToString(digest.Sum(nil))[:12], nil
 }

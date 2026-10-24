@@ -20,8 +20,8 @@ import (
 const (
 	// consoleHostRoot is where the console sees the pool host's own filesystem.
 	// The host is mounted rather than entered so the console keeps its own image
-	// — the pool-agent image, which already carries the tools an operator wants
-	// and is already on every daemon that hosts a pool.
+	// — the sandbox base image, which already carries the tools an operator
+	// wants and is already on every daemon that hosts a pool.
 	consoleHostRoot = "/host"
 	// consoleConfigLayoutVersion changes whenever the console container's shape
 	// changes, so an existing console is replaced instead of being reused with
@@ -160,8 +160,8 @@ func (e *Engine) consoleConfig(provider *model.SandboxProviderInstance, pool *mo
 	return &container.Config{
 		Image:  image,
 		Labels: e.consoleLabels(provider, pool),
-		// The pool-agent image's entrypoint is the agent binary and its
-		// healthcheck probes the agent's port; a console runs neither.
+		// The image's entrypoint is systemd, and a pool's container
+		// healthchecks its agent's port; a console runs neither.
 		Entrypoint:  []string{},
 		Cmd:         []string{consoleShell, "-l"},
 		Healthcheck: &container.HealthConfig{Test: []string{"NONE"}},

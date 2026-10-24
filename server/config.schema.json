@@ -155,7 +155,7 @@
       "type": "string"
     },
     "dockerPoolImage": {
-      "description": "Pool agent image the Docker provider runs. Defaults to the released image for this build. Environment: DISCOBOX_DOCKER_POOL_IMAGE (takes precedence over this file).",
+      "description": "Retired, and ignored: a pool's container runs the sandbox base image (dockerSandboxBaseImage), provisioned from the pool bundle (poolAgentBundle). Read with a warning, and refused from the next release.",
       "examples": [
         "ghcr.io/discobox-ai/discobox-pool-agent:v0.8.0"
       ],

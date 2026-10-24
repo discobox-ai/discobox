@@ -18,8 +18,8 @@
 #                                     workflow, because it compiles Linux and
 #                                     must not run on a guest change.
 #
-# "Pool image" is deliberately not used for either — that already means the
-# pool-agent container (dockerworker.DefaultPoolImage).
+# "Pool image" is deliberately not used for either — that means the image a
+# pool's container runs (dockerworker.DefaultSandboxBaseImage).
 #
 # The server pins digests, so every line moves independently in both directions.
 name: VM image

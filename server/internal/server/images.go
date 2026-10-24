@@ -12,8 +12,9 @@ import (
 
 // Images is every image a first run on this machine will want, for the CLI that
 // stages them before starting this server (ADR 0113 §1): what the default
-// provider on this OS boots, then the pool agent and the sandbox base image —
-// in the order a first run needs them. No harness is an image, and bundles
+// provider on this OS boots, then the sandbox base image, which a Docker
+// pool's container and every sandbox run — in the order a first run needs
+// them. No harness is an image, and bundles
 // are not among them, for the reason releasemanifest.Images.References gives.
 //
 // Configuration is read as Run reads it, so an overridden image is the one
@@ -29,8 +30,8 @@ func Images() ([]string, error) {
 		return cfg.Release.Images.References(runtime.GOOS, runtime.GOARCH), nil
 	}
 	images := append([]string{}, providers.DefaultBootImages()...)
-	defaults := dockerworker.ServerDefaults{PoolImage: cfg.DockerPoolImage, SandboxBaseImage: cfg.DockerSandboxBaseImage}
-	images = append(images, dockerworker.EffectivePoolImage("", defaults), dockerworker.EffectiveSandboxBaseImage("", defaults))
+	defaults := dockerworker.ServerDefaults{SandboxBaseImage: cfg.DockerSandboxBaseImage}
+	images = append(images, dockerworker.EffectiveSandboxBaseImage("", defaults))
 	seen := map[string]bool{}
 	out := make([]string, 0, len(images))
 	for _, image := range images {

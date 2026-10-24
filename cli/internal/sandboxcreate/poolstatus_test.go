@@ -28,7 +28,7 @@ func TestPoolProvisionStatusNamesTheDriversWork(t *testing.T) {
 		{apiclientgen.PoolProvisionPhaseStartingVM, "starting the VM"},
 		{apiclientgen.PoolProvisionPhaseWaitingForDocker, "waiting for Docker in the VM"},
 		{apiclientgen.PoolProvisionPhaseSyncingDevelopmentImages, "preparing the development images"},
-		{apiclientgen.PoolProvisionPhasePullingPoolImage, "pulling the pool agent image"},
+		{apiclientgen.PoolProvisionPhasePullingPoolImage, "pulling the pool's image"},
 		{apiclientgen.PoolProvisionPhaseStartingPoolAgent, "starting the pool agent"},
 		{apiclientgen.PoolProvisionPhaseWaitingForPoolAgent, "waiting for the pool agent to come up"},
 	} {

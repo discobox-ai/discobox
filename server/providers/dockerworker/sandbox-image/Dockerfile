@@ -8,10 +8,9 @@
 # mirrors are the faster ones to build from, and the features provision onto
 # either.
 #
-# The pool-agent image (pool-agent/Dockerfile) is built FROM it too, so a pool
-# host that pulls both pulls these layers once. Two `docker build` runs never
-# produce byte-identical apt layers, so a common parent image is the only thing
-# that makes the layers shared blobs at pull time.
+# A Docker pool's container runs it too, provisioned from the pool bundle (ADR
+# 26-10-24-953 §2), so a pool host pulls one image for itself and its
+# sandboxes.
 
 # Another Debian-family distribution can stand in, to provision the platform
 # onto it as onto a provider's own image: `task build:ubuntu-platform`.

@@ -161,8 +161,8 @@ flowchart TD
   disco-vm (`github.com/discobox-ai/vm`) by commit, so that the root module
   does not.
 - Root module: the repository's own dev and build tools under `internal/cmd`,
-  including the local Docker development image watcher for the sandbox base and
-  pool-agent images and the platform and harness bundles, plus the versioned
+  including the local Docker development image watcher for the sandbox base
+  image and the agent, pool, platform and harness bundles, plus the versioned
   development-image manifest contract (`devimage`) shared with the server.
 - Sandbox-agent module: in-sandbox agent REST API runtime environment and harness
   implementation; depends on root contracts and generated API types.
@@ -308,7 +308,7 @@ flowchart LR
 
 - **`DOT_RELEASE`** — exactly `vMAJOR.MINOR.PATCH` — is the *latest* channel's
   rule, and the only thing the tag itself decides. A dot release moves ghcr's
-  `:latest` (`dockerworker.DefaultPoolImage`, what a pool boots when nothing
+  `:latest` (`dockerworker.DefaultSandboxBaseImage`, what a pool boots when nothing
   named a version) and the `discobox-dev` formula the moment it is cut. An
   explicit prerelease tag (`-alpha`, `-beta`, `-rc`) moves neither, deliberately:
   it is the lowest confidence level — a real release build, signed and pushed,
@@ -391,40 +391,41 @@ winget resolves a portable package's command from the file name whenever it
 cannot create a symlink, so `release:windows-zip` repackages the same binary as
 `discobox.exe` and uploads it alongside the rest.
 
-Container images form one chain from the Docker driver's sandbox base image,
-so that a pool host pulling both pulls the shared surface once (ADR
-26-10-16-423 §10). No harness is an image: the platform and harness bundles
-are on no chain, each `FROM scratch`, and every sandbox container is the
-sandbox base image with them applied ([`harness/DESIGN.md`](harness/DESIGN.md),
-ADR 26-10-16-423 §§2, 7). The pool-agent bundle, also `FROM scratch`, holds
-the same agent build as the pool-agent image, for a pool machine booted from a
-driver base (ADR 26-10-23-551 §2):
+There is one container image, the Docker driver's sandbox base image, and
+everything else is a bundle, `FROM scratch`, applied to a box
+([ADR 26-10-24-953](docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
+§2). Every sandbox container and every Docker pool's runs the base; whoever
+makes the box places the agent bundle in it, and the agent applies the box's
+ordered list of bundles: the platform's and a harness's for a sandbox
+([`harness/DESIGN.md`](harness/DESIGN.md), ADR 26-10-16-423 §§2, 7), the pool
+bundle alone for a pool:
 
 ```mermaid
 flowchart TD
     base["server/providers/dockerworker/sandbox-image/<br/>discobox-sandbox-base<br/>Debian 13, Docker, systemd unit mask"]
-    pool["pool-agent/<br/>discobox-pool-agent"]
-    poolbundle["pool-agent/<br/>discobox-pool-agent-bundle<br/>bundle, FROM scratch"]
+    agent["sandbox-agent/<br/>discobox-agent<br/>bundle, FROM scratch"]
     platform["sandbox-agent/<br/>discobox-platform<br/>bundle, FROM scratch"]
     bundle["harness/&lt;type&gt;/<br/>discobox-harness-*<br/>bundle, FROM scratch"]
+    poolbundle["pool-agent/<br/>discobox-pool-agent-bundle<br/>bundle, FROM scratch"]
     box["sandbox container"]
+    poolbox["pool container"]
 
-    base -->|BASE_IMAGE| pool
     base -->|runs| box
+    base -->|runs| poolbox
+    agent -.->|placed by its maker| box
+    agent -.->|placed by its maker| poolbox
     platform -.->|applied by the agent| box
     bundle -.->|applied by the agent| box
-    poolbundle -.-|same agent build| pool
+    poolbundle -.->|applied by the agent| poolbox
 ```
 
-`discobox-sandbox-base` is the box a Docker sandbox is before the platform is
-provisioned onto it, and its child must resolve one already-built reference
-for their layers to be the same blobs (see
-[providers](server/providers/DESIGN.md#sandbox-base-image)).
-`release:images` builds them in that order, and the development image watcher
-orders its own builds from the same parent link. After any partial rebuild, the
+`discobox-sandbox-base` is the box a Docker sandbox or pool is before its
+bundles are applied (see
+[providers](server/providers/DESIGN.md#sandbox-base-image)), so a pool host
+pulls one image. After any partial rebuild, the
 watcher derives both the complete development manifest and every image and
 bundle setting in `.env` from one inspection of the full local set; the two
-publications must never name different pool images, base images or bundles. Failed
+publications must never name different base images or bundles. Failed
 build or publication work stays pending and retries without requiring another
 file change, including the initial build. The inputs themselves are discovered
 again every few seconds, not only at startup, so a file added to a package an

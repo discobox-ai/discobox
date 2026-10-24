@@ -51,8 +51,7 @@ type Runtime string
 
 const (
 	// RuntimeDocker is sandboxes as containers on the Docker daemon beside the
-	// agent: the pool-agent image's runtime, and a bootstrap's that names
-	// none.
+	// agent: a Docker pool's runtime, and a bootstrap's that names none.
 	RuntimeDocker Runtime = "docker"
 	// RuntimeMachine is sandboxes as disco-vm machines on the pool's own
 	// engine (ADR 26-10-23-551 §3): the runtime of a pool machine booted from

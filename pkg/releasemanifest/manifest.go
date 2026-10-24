@@ -33,9 +33,15 @@ type Manifest struct {
 // Images names each image by its runtime role. The staging list is derived
 // from these roles, never maintained separately from them.
 type Images struct {
-	PoolAgent string `json:"poolAgent"`
+	// PoolAgent is the pool-agent image a release from before a pool was a box
+	// ran a Docker pool's container from. A release from then on names none:
+	// the container runs SandboxBase, provisioned from the pool bundle (ADR
+	// 26-10-24-953 §2). It stays so the CLI still reads, and stages the images
+	// of, an older server's manifest.
+	PoolAgent string `json:"poolAgent,omitempty"`
 	// SandboxBase is the Docker driver's sandbox base image, every sandbox
-	// container's (ADR 26-10-16-423 §10). A release cut before it names none.
+	// container's (ADR 26-10-16-423 §10) and a Docker pool's (ADR
+	// 26-10-24-953 §2). A release cut before it names none.
 	SandboxBase string `json:"sandboxBase,omitempty"`
 	VM          string `json:"vm"`
 	Kernel      string `json:"kernel"`
@@ -50,16 +56,16 @@ type Images struct {
 
 // Bundles names each bundle a release publishes (ADR 26-10-16-423 §§2, 7): the
 // platform bundle the server composes under every harness's manifest and
-// delivers to every box, each built-in harness's bundle by slug, and the
-// pool-agent bundle, the pool agent for a pool machine booted from a driver
-// base (ADR 26-10-23-551 §2).
+// delivers to every box, each built-in harness's bundle by slug, the agent
+// bundle placed in every box, and the pool bundle, a pool's box's one bundle
+// (ADR 26-10-24-953 §2).
 //
 // A release from before bundles names none, and is still a valid manifest:
 // the CLI reads the manifests of older servers. A server reading its own
 // release's requires them (HasBundles).
 //
-// A release cut before the pool-agent bundle names no PoolAgent, and is still
-// valid; a server on it has no bundle to boot a pool machine with.
+// A release cut before the agent bundle or the pool bundle names none, and is
+// still a valid manifest; a server refuses to run on it (HasPoolBox).
 type Bundles struct {
 	Platform string `json:"platform"`
 	// Agent is the agent bundle, the sandbox agent alone, which whoever makes
@@ -98,12 +104,17 @@ func (m Manifest) Validate() error {
 	if strings.TrimSpace(m.Version) == "" {
 		return fmt.Errorf("release manifest has no version")
 	}
-	for role, ref := range map[string]string{"poolAgent": m.Images.PoolAgent, "vm": m.Images.VM, "kernel": m.Images.Kernel} {
+	for role, ref := range map[string]string{"vm": m.Images.VM, "kernel": m.Images.Kernel} {
 		if err := validateImage(ref); err != nil {
 			return fmt.Errorf("release manifest %s: %w", role, err)
 		}
 	}
-	for role, ref := range map[string]string{"sandboxBase": m.Images.SandboxBase, "sandboxAgent": m.Images.SandboxAgent} {
+	// A release runs a Docker pool's container from the one or, before a pool
+	// was a box, the other.
+	if m.Images.PoolAgent == "" && m.Images.SandboxBase == "" {
+		return fmt.Errorf("release manifest names neither a sandbox base image nor a pool-agent image")
+	}
+	for role, ref := range map[string]string{"poolAgent": m.Images.PoolAgent, "sandboxBase": m.Images.SandboxBase, "sandboxAgent": m.Images.SandboxAgent} {
 		if ref == "" {
 			continue
 		}
@@ -145,6 +156,14 @@ func (m Manifest) Validate() error {
 // every release from harness bundles on does.
 func (m Manifest) HasBundles() bool {
 	return m.Bundles.Platform != "" || len(m.Bundles.Harnesses) > 0
+}
+
+// HasPoolBox reports whether m names what a pool's box is made of (ADR
+// 26-10-24-953 §2): the sandbox base image its container runs, the agent
+// bundle placed in it, and the pool bundle applied there. A server runs only
+// on a release that does; a release from before names a pool-agent image.
+func (m Manifest) HasPoolBox() bool {
+	return m.Images.SandboxBase != "" && m.Bundles.Agent != "" && m.Bundles.PoolAgent != ""
 }
 
 func (m Manifest) validateBundles() error {
@@ -207,7 +226,9 @@ func (i Images) References(hostOS, hostArch string) []string {
 			refs = append(refs, i.Kernel)
 		}
 	}
-	refs = append(refs, i.PoolAgent)
+	if i.PoolAgent != "" {
+		refs = append(refs, i.PoolAgent)
+	}
 	if i.SandboxBase != "" {
 		refs = append(refs, i.SandboxBase)
 	}

@@ -755,7 +755,7 @@ images, the platform bundle, and each included harness's bundle. No harness
 and no sandbox is an image of its own (ADR 26-10-16-423 §10).
 
 `task dev` starts `internal/cmd/discobox-docker-image-watch`, which initially
-builds the sandbox base and pool images, the platform bundle, and for Codex,
+builds the sandbox base image, the agent, pool and platform bundles, and for Codex,
 Claude Code, OpenCode, Copilot, omp, pi, and Shell the bundle
 (`discobox-harness-<name>`, `DISCOBOX_HARNESS_<NAME>_BUNDLE`). The bundles are
 `FROM scratch`. The watcher tracks shared Docker/runtime inputs plus this
@@ -763,7 +763,7 @@ folder's own `image.json` (the platform's manifest layer) and each harness
 folder, which is its feature. A harness-specific change rebuilds only that
 harness's bundle. Every successful build writes its content-addressed
 development reference to `.env` (`DISCOBOX_PLATFORM_BUNDLE` for the platform
-bundle); the pool image also writes its digest. On Linux (copy-mode) a bundle
+bundle). On Linux (copy-mode) a bundle
 never enters a Docker daemon, since nothing runs it: the watcher exports it
 with `docker buildx build --output type=oci` to
 `build/assets/<name>/<hex>.tar`, an OCI image layout named by the manifest

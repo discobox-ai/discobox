@@ -94,16 +94,6 @@ func TestDefinitionOffersTheSharedPoolPolicyFields(t *testing.T) {
 	}
 }
 
-func TestReleaseManifestSupersedesProviderPoolImage(t *testing.T) {
-	defaults := dockerworker.ServerDefaults{PoolImage: "server:local", Release: &releasemanifest.Manifest{Images: releasemanifest.Images{PoolAgent: "example.com/pool:v8"}}}
-	if got := dockerworker.EffectivePoolImage("provider:local", defaults); got != "example.com/pool:v8" {
-		t.Fatalf("pool image = %s", got)
-	}
-	if got := dockerworker.PoolImageSource("provider:local", defaults); got != "release manifest" {
-		t.Fatalf("image source = %s", got)
-	}
-}
-
 // The pool agent dials the control-plane socket by parsing this URL with wire,
 // so a socket path holding a character a URL gives meaning to must reach it
 // escaped: unescaped, "#" and "?" end the path early and "%" fails to parse.

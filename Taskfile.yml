@@ -349,7 +349,7 @@ tasks:
         echo "staged {{.STAGE_WHAT}} artifacts in $dest; recreate a pool to boot them"
 
   build:sandbox-base-image:
-    desc: Build the Docker driver's Debian sandbox base image, every sandbox container's and the one the pool image builds FROM
+    desc: Build the Docker driver's Debian sandbox base image, every sandbox container's and every Docker pool's
     vars:
       BASE_IMAGE: '{{.BASE_IMAGE | default "discobox-sandbox-base:local"}}'
     cmds:
@@ -368,23 +368,14 @@ tasks:
         DISTRO_IMAGE=public.ecr.aws/docker/library/ubuntu:24.04
         BASE_IMAGE=discobox-sandbox-base:ubuntu
 
-  build:pool-agent-image:
-    desc: Build the systemd Docker pool image
-    deps: [build:sandbox-base-image]
-    vars:
-      BASE_IMAGE: '{{.BASE_IMAGE | default "discobox-sandbox-base:local"}}'
-      POOL_AGENT_IMAGE: '{{.POOL_AGENT_IMAGE | default "discobox-pool-agent:local"}}'
-    cmds:
-      - docker build -f pool-agent/Dockerfile --build-arg BASE_IMAGE={{.BASE_IMAGE}} -t {{.POOL_AGENT_IMAGE}} .
-
   build:pool-agent-bundle:
-    desc: Build the pool-agent bundle, the agent and its units under /features/pool-agent/ FROM scratch
+    desc: Build the pool bundle, the pool-agent and pool-builder features FROM scratch
     vars:
       POOL_AGENT_BUNDLE: '{{.POOL_AGENT_BUNDLE | default "discobox-pool-agent-bundle:local"}}'
     cmds:
       # The pool bundle, the features that make a box a pool's (ADR
-      # 26-10-24-953 §2), by name: the Dockerfile's default target is the image.
-      - docker build -f pool-agent/Dockerfile --target bundle -t {{.POOL_AGENT_BUNDLE}} .
+      # 26-10-24-953 §2), and the Dockerfile's one product.
+      - docker build -f pool-agent/Dockerfile -t {{.POOL_AGENT_BUNDLE}} .
 
   build:agent-bundle:
     desc: Build the agent bundle, the sandbox agent alone FROM scratch
@@ -410,9 +401,9 @@ tasks:
         -t {{.PLATFORM_BUNDLE}} .
 
   build:images:
-    desc: Build the pool and sandbox base images, the pool-agent, agent and platform bundles, and every included harness's bundle
+    desc: Build the sandbox base image, the pool, agent and platform bundles, and every included harness's bundle
     cmds:
-      - task: build:pool-agent-image
+      - task: build:sandbox-base-image
       - task: build:pool-agent-bundle
       - task: build:agent-bundle
       - task: build:platform-bundle
@@ -1200,11 +1191,10 @@ tasks:
       #
       # Only when there is a tag to pin to. ci.yml builds the release artifacts
       # on every push to prove they still build, with no tag in sight, and an
-      # empty PIN_TAG would bake "discobox-pool-agent:" — a reference no daemon
+      # empty PIN_TAG would bake "discobox-sandbox-base:" — a reference no daemon
       # can pull — into a binary that otherwise looks fine.
       SERVER_LDFLAGS: >-
-        {{if and .PIN_TAG .REGISTRY}}-X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolImage={{.REGISTRY}}/discobox-pool-agent:{{.PIN_TAG}}
-        -X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultSandboxBaseImage={{.REGISTRY}}/discobox-sandbox-base:{{.PIN_TAG}}
+        {{if and .PIN_TAG .REGISTRY}}-X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultSandboxBaseImage={{.REGISTRY}}/discobox-sandbox-base:{{.PIN_TAG}}
         -X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolAgentBundle={{.REGISTRY}}/discobox-pool-agent-bundle:{{.PIN_TAG}}
         -X github.com/discobox-ai/discobox/harness.BundleRegistry={{.REGISTRY}}
         -X github.com/discobox-ai/discobox/harness.BundleTag={{.PIN_TAG}}{{end}}
@@ -1870,26 +1860,19 @@ tasks:
       - scripts/brew-formula.sh {{if .BREW_DEV}}--dev {{end}}"{{.TAG}}" "{{.RELEASE_REPO}}" "{{.BREW_OUT}}"
 
   release:images:
-    desc: Build and push the multi-arch pool and sandbox base images, the pool-agent and platform bundles, and the harness bundles for RELEASE_TAG
+    desc: Build and push the multi-arch sandbox base image, the pool, agent and platform bundles, and the harness bundles for RELEASE_TAG
     cmds:
-      # Strictly first, and not alongside them: the pool image is built FROM
-      # this one, and the build cannot pull a tag that is not in the registry
-      # yet. Its child resolves the same reference at build time, so their
-      # layers are the same blobs at pull time; the server names it as
-      # dockerworker.DefaultSandboxBaseImage (ADR 26-10-16-423 §10).
+      # Every sandbox container and every Docker pool's runs it; the server
+      # names it as dockerworker.DefaultSandboxBaseImage (ADR 26-10-16-423 §10,
+      # ADR 26-10-24-953 §2).
       - task: release:image
         vars:
           IMAGE: sandbox-base
           DOCKERFILE: server/providers/dockerworker/sandbox-image/Dockerfile
           CONTEXT: server/providers/dockerworker/sandbox-image
-      - task: release:image
-        vars:
-          IMAGE: pool-agent
-          BUILD_ARGS: --build-arg BASE_IMAGE={{.REGISTRY}}/discobox-sandbox-base:{{.TAG}}
-      # The pool-agent bundle, the pool agent for a pool machine booted from a
-      # driver base (ADR 26-10-23-551 §2), beside the image and from the same build stage, so
-      # both hold the same agent: a multi-architecture index, since it
-      # carries the binary. FROM scratch, so it needs no base image.
+      # The pool bundle, a pool's box's one bundle (ADR 26-10-24-953 §2): a
+      # multi-architecture index, since it carries the pool agent's binaries.
+      # FROM scratch, so it needs no base image.
       - task: release:image
         vars:
           IMAGE: pool-agent-bundle
@@ -2004,7 +1987,7 @@ tasks:
         fi
         ref="{{.REGISTRY}}/discobox-{{.IMAGE}}:$tag"
 
-        # dockerworker.DefaultPoolImage names :latest, so a release that pushes
+        # dockerworker.DefaultSandboxBaseImage names :latest, so a release that pushes
         # only the version tag leaves that default unresolvable. Every dot
         # release moves it, whether or not anyone later marks it stable: :latest
         # means the newest release, and the CLI pins its own tag anyway, so the
@@ -2025,8 +2008,8 @@ tasks:
         else
           echo "depot not found; falling back to emulated docker buildx." >&2
           echo "Both Dockerfiles run their Go stage FROM --platform=\$BUILDPLATFORM, so no Go" >&2
-          echo "compilation is emulated. Only the Debian runtime stages are: near-free for" >&2
-          echo "pool-agent, slow for sandbox-agent's apt, Nix, and language runtime installs." >&2
+          echo "compilation is emulated. Only the Debian runtime stages are: slow for" >&2
+          echo "the sandbox base image's and sandbox-agent's apt, Nix, and language runtime installs." >&2
           # buildx needs both of these for a foreign architecture and says
           # nothing useful when they are missing.
           docker run --privileged --rm mirror.gcr.io/tonistiigi/binfmt --install arm64,amd64 >/dev/null

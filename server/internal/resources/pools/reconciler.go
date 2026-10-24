@@ -47,8 +47,8 @@ var poolHeartbeatTimeout = model.PoolHeartbeatTimeout
 
 // poolHostComingUpRequeue is how long to wait before re-checking a pool whose
 // host is up but not yet taking traffic — a container whose healthcheck has not
-// passed yet. The pool-agent image probes every 5s after a 5s start period, so
-// this is one probe interval: the soonest the answer can have changed.
+// passed yet. A pool's container probes its agent every 5s, so this is one
+// probe interval: the soonest the answer can have changed.
 var poolHostComingUpRequeue = 5 * time.Second
 
 // heartbeatStale reports a pool whose agent has stopped answering: it has

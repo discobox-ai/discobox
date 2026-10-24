@@ -406,7 +406,7 @@ func PoolProvisionStatus(pool *apimodel.Pool) Step {
 		// same phase covers copying them from a developer's daemon.
 		return "preparing the development images"
 	case apiclientgen.PoolProvisionPhasePullingPoolImage:
-		return "pulling the pool agent image"
+		return "pulling the pool's image"
 	case apiclientgen.PoolProvisionPhaseStartingPoolAgent:
 		return "starting the pool agent"
 	case apiclientgen.PoolProvisionPhaseWaitingForPoolAgent:

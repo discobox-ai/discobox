@@ -74,12 +74,12 @@ content, `dev-<digest>`; the watcher writes the new tags into
 server onto them. Never `docker build` an image by hand to get ahead of the
 watcher — the server would not use it.
 
-When the change lives in an image, check whether its inputs changed — its own
-and every image it is built `FROM`. There are two chains, both from the
-sandbox base image (`server/providers/dockerworker/sandbox-image`):
-sandbox-base → sandbox-agent → harness, and sandbox-base → pool-agent;
-each agent image also bakes in binaries from its own module and the root
-packages. `git diff --stat <from> <to> --` over the chain the image is on. If
+When the change lives in an image or a bundle, check whether its inputs
+changed. The one image is the sandbox base image
+(`server/providers/dockerworker/sandbox-image`), which every sandbox and pool
+container runs; everything else — the agent, pool, platform and harness
+bundles — is `FROM scratch` and bakes in binaries from its own module and the
+root packages. `git diff --stat <from> <to> --` over its inputs. If
 none changed, the image is identical and there is nothing to wait for. If any
 did — between a release tag and `main`, nearly always — save
 `.tmp/discobox-dev-images.json` before the change or switch and wait until

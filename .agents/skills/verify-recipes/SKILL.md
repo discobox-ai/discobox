@@ -329,12 +329,12 @@ server, but its in-image `discobox-access` can lag the checkout: `grep -c
 
 ## A request carrying a policy, and its approval forms
 
-- The dev loop's pool may run the released
-  `ghcr.io/discobox-ai/discobox-pool-agent:latest` (`docker ps`), which drops
-  any protocol field newer than the release — a request's `policy` arrives as
-  `null`. Use the isolated server below with
-  `DISCOBOX_DOCKER_POOL_IMAGE=discobox-pool-agent:local` and
-  `DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE=discobox-sandbox-base:local`.
+- A pool provisioned from the released pool bundle
+  (`ghcr.io/discobox-ai/discobox-pool-agent-bundle:latest`, an isolated
+  server's default) drops any protocol field newer than the release — a
+  request's `policy` arrives as `null`. Use the isolated server below with the
+  dev loop's `DISCOBOX_POOL_AGENT_BUNDLE`, `DISCOBOX_AGENT_BUNDLE` and
+  `DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE` from `.env`.
 - With no `shell` harness bundle, `go tool task build:harness-stub-bundle`,
   then `admin harness create --bundle discobox-harness-stub:local` and
   `admin harness configure stub`; `new -d -H stub`. A bundle only the host's
@@ -392,12 +392,11 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   your own with `DISCOBOX_CONFIG_FILE=<file>` in its env; a file that fails
   to load exits 1 before anything is created.
 - With `DISCOBOX_ENCRYPTION_KEY` unset, secret values are stored unsealed.
-- Its pool runs the released `ghcr.io/discobox-ai/discobox-pool-agent:latest`,
-  not your checkout's, so anything the pool agent gained since the last
-  release is absent — e.g. it declares no platform, and placement then lets
-  any harness through as a pre-platform pool. Add
-  `DISCOBOX_DOCKER_POOL_IMAGE=<the dev loop's image>` (`docker ps` shows the
-  `discobox-pool-agent:dev-*` its pool runs) to the env above.
+- Its pool is provisioned from the released pool bundle
+  (`ghcr.io/discobox-ai/discobox-pool-agent-bundle:latest`), not your
+  checkout's, so anything the pool agent gained since the last release is
+  absent. Add the dev loop's `DISCOBOX_POOL_AGENT_BUNDLE` and
+  `DISCOBOX_AGENT_BUNDLE` from `.env` to the env above.
   For every dev image and bundle at once — sandbox base, pool, platform and
   harnesses, the in-box `discobox` CLI included — make `DISCOBOX_ENV_FILE` a
   copy of the `DISCOBOX_DOCKER_*`, `DISCOBOX_PLATFORM_BUNDLE`,
@@ -603,7 +602,7 @@ jq --arg pm "$PM" --arg hm "$HM" --arg root "$PWD" '{version:1, images:.images, 
  {reference:"discobox-harness-shell:verify-bm1", build:{dockerfile:"Dockerfile", context:($root+"/harness/shell"), target:"bundle", args:{HARNESS_METADATA:$hm}}}]}' \
   .tmp/discobox-dev-images.json > $S/bm.json
 # server env: DISCOBOX_DEV_DOCKER_IMAGE_SYNC=true DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST=$S/bm.json
-# DISCOBOX_DOCKER_POOL_IMAGE / _SANDBOX_BASE_IMAGE from .env,
+# DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE, DISCOBOX_AGENT_BUNDLE and DISCOBOX_POOL_AGENT_BUNDLE from .env,
 # DISCOBOX_PLATFORM_BUNDLE=discobox-platform:verify-bm1
 # DISCOBOX_HARNESS_SHELL_BUNDLE=discobox-harness-shell:verify-bm1 DISCOBOX_JUDGE_COMMANDS=false
 ```
@@ -620,9 +619,9 @@ jq --arg pm "$PM" --arg hm "$HM" --arg root "$PWD" '{version:1, images:.images, 
 # Verifying `assets.discobox.internal` (the pool's bundle cache)
 
 A pool-agent change reaches the dev pool only once the watcher records the new
-`discobox-pool-agent:dev-*` tag in `.tmp/discobox-dev-images.json` and the pool
-container is recreated on it (minutes after the build); check the running
-image before driving anything.
+`discobox-pool-agent-bundle:dev-*` in `.env` and the server applies it in the
+pool's running box (`readlink /opt/discobox/bundles/by-name/*` in it moves to
+the new digest); check that before driving anything.
 
 ```bash
 d run -d -H shell --no-source -p true        # a box pinned to platform + shell bundle
@@ -730,8 +729,9 @@ Drive it from `-H shell` boxes of the dev pool (see the console section for
   `openssl x509 -serial` of `/etc/discobox/proxy/client.crt` before and after.
 - `docker cp` into a box's `/tmp` lands under its tmpfs and is invisible
   inside; pipe a file in instead (`docker exec -i <c> sh -c 'cat > /tmp/f' < f`).
-- The image watcher recreates the dev pool's container whenever the
-  pool-agent image rebuilds, which resets every bridge connection; a long
+- The image watcher recreates the dev pool's container whenever the sandbox
+  base image rebuilds, and a pool bundle rebuild restarts the agent in place;
+  either resets every bridge connection, and a long
   transfer that breaks then is the rebuild (`docker inspect -f
   '{{.State.StartedAt}}'` on the pool container), not the change.
 - **Every source is delivered by the client, into the pool's Git cache** (ADR

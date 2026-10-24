@@ -17,10 +17,9 @@ const (
 
 	// ReclaimLabel marks an image as one Discobox built and may therefore
 	// delete once nothing uses it (ADR 0040). It is set by the Docker
-	// driver's sandbox base image; the pool-agent image, built FROM it,
-	// inherits it through the image config, which is also what carries it
-	// across a pull — a label cannot be added to an image after it arrives —
-	// and a pool sets it on the snapshots it commits. No bundle carries it.
+	// driver's sandbox base image, whose image config is also what carries
+	// it across a pull — a label cannot be added to an image after it arrives
+	// — and a pool sets it on the snapshots it commits. No bundle carries it.
 	ReclaimLabel      = "io.discobox.reclaimable.v1"
 	ReclaimLabelValue = "true"
 

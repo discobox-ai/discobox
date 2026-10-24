@@ -93,23 +93,6 @@ func TestStampBuildModeImagesProducesBuildableManifest(t *testing.T) {
 		}
 	}
 
-	// The pool agent builds FROM the sandbox base, so its build argument must
-	// name another image in the manifest; that is what orders the builds.
-	sawBaseDependency := false
-	for _, image := range manifest.Images {
-		base, ok := image.Build.Args["BASE_IMAGE"]
-		if !ok {
-			continue
-		}
-		if _, ok := references[base]; !ok {
-			t.Fatalf("image %s depends on %q, which is not in the manifest", image.Reference, base)
-		}
-		sawBaseDependency = true
-	}
-	if !sawBaseDependency {
-		t.Fatal("expected the pool agent image to depend on the sandbox base image")
-	}
-
 	// The server builds each bundle's stage and reconstructs its labels from
 	// its arguments, so both must say which artifact it is.
 	wantTargets := map[string]string{
@@ -152,7 +135,7 @@ func TestStampBuildModeImagesProducesBuildableManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read stamped env file: %v", err)
 	}
-	for _, key := range []string{devimage.SyncEnv, devimage.ManifestEnv, "DISCOBOX_DOCKER_POOL_IMAGE",
+	for _, key := range []string{devimage.SyncEnv, devimage.ManifestEnv,
 		"DISCOBOX_PLATFORM_BUNDLE", "DISCOBOX_HARNESS_CLAUDE_CODE_BUNDLE"} {
 		if !strings.Contains(string(env), key+"=") {
 			t.Fatalf("stamped env file is missing %s", key)

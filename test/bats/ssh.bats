@@ -51,11 +51,13 @@ setup_file() {
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   rm -f build/discobox
   (cd cli && go build -o ../build/discobox ./cmd/discobox)
-  # Through the Taskfile rather than docker directly: the pool image is built
-  # FROM the sandbox base image, and this target is what knows to build that
-  # first. No harness is a runnable image: every sandbox container is that base
-  # image, named to the server below so boxes do not pull the remote default.
-  go tool task build:pool-agent-image
+  # No harness is a runnable image: every sandbox container is the sandbox base
+  # image, and so is the pool's, which is provisioned from the pool bundle and
+  # the agent bundle (ADR 26-10-24-953 §2). All three are named to the server
+  # below so nothing pulls the remote default.
+  go tool task build:sandbox-base-image
+  go tool task build:pool-agent-bundle
+  go tool task build:agent-bundle
   # A discobox cannot be created without a harness, and a harness is not
   # selectable until its configure flow has run, so this suite needs the shared
   # stub bundle the other end-to-end files use. Nothing here tests harnesses; it
@@ -63,7 +65,7 @@ setup_file() {
   # is what the server composes the stub's bundle on, and what the sandbox agent
   # applies first in every box.
   #
-  # Both bundles must be servable to the pool, which fetches them through the
+  # Every bundle must be servable to the pool, which fetches them through the
   # server's asset API; that API reads OCI layouts or registries, not the
   # daemon's :local tags.
   go tool task build:platform-bundle
@@ -76,7 +78,7 @@ setup_file() {
   DISCOBOX_CONFIG_DIR="$DISCOBOX_BATS_CONFIG_DIR" \
   DISCOBOX_CACHE_DIR="$DISCOBOX_BATS_CACHE_DIR" \
   DISCOBOX_STATE_DIR="$DISCOBOX_BATS_STATE_DIR" \
-  DISCOBOX_DOCKER_POOL_IMAGE=discobox-pool-agent:local \
+  DISCOBOX_POOL_AGENT_BUNDLE=discobox-pool-agent-bundle:local \
   DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE=discobox-sandbox-base:local \
   DISPATCHER_ENABLED=true \
   DISPATCHER_POLL_INTERVAL=200ms \

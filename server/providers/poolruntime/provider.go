@@ -39,7 +39,7 @@ const (
 	// said it was worth its deadline "while the runtime is still on its way up",
 	// but it had no way to tell that from a pool that was stuck, so it spent one
 	// fixed 30s budget on both — and a cold vz pool, which fetches a VM image,
-	// boots a machine, waits for Docker and pulls the pool-agent image, failed
+	// boots a machine, waits for Docker and pulls the pool's image, failed
 	// with "no sandbox capacity" every time while all of that was working.
 	//
 	// The driver now stamps what it is doing as it does it, so being on the way
@@ -53,7 +53,7 @@ const (
 	// every reconcile of the pool stamps progress, including the periodic
 	// drift scan, so a host that reconciles cleanly and still cannot be reached
 	// would renew it forever. Long enough for a container recreate that pulls a
-	// new pool-agent image.
+	// new sandbox base image and provisions the pool's box again.
 	defaultPoolAgentWaitCeiling = 5 * time.Minute
 	// poolAgentResendMaxInterval is the longest a create waits between two
 	// attempts on an agent that keeps leaving it unanswered. Each attempt is a
