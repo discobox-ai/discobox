@@ -155,8 +155,11 @@ flowchart TD
   it.
 - Pool-agent module: in-guest pool host process, the pool boot contract
   (root `poolagent` package) that providers consume, pool-local runtime DTOs,
-  and the generated pool-local sandbox operations API server adapter; depends
-  on root contracts and OpenAPI types.
+  the generated pool-local sandbox operations API server adapter, and the
+  machine provisioner (`provisioner`: place a tree in a disco-vm machine and
+  run one command there); depends on root contracts and OpenAPI types, and on
+  disco-vm (`github.com/discobox-ai/vm`) by commit, so that the root module
+  does not.
 - Root module: the repository's own dev and build tools under `internal/cmd`,
   including the local Docker development image watcher for the sandbox base and
   pool-agent images and the platform and harness bundles, plus the versioned
