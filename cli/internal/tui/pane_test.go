@@ -1444,6 +1444,23 @@ func TestSuccessfulApplyAsksToArchiveOrDetach(t *testing.T) {
 		}
 	})
 
+	// A window that is one command's own has no list for the archive to land
+	// on, so it goes once the archive is answered, as its detach does.
+	t.Run("archive closes a window that is one command's own", func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m := openAttached(t, ds, testSandboxes()[0])
+		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+		finish(t, ds, d, m)
+		d.key("enter")
+		d.wait("the window to close", func() bool { return m.quit })
+		if got := ds.verbs(); len(got) != 1 || got[0] != "archive sbx_one" {
+			t.Fatalf("verbs = %q, want archive sbx_one", got)
+		}
+		if m.exitErr != nil {
+			t.Fatalf("exitErr = %v, want an ordinary exit", m.exitErr)
+		}
+	})
+
 	// A second Enter pressed on the heels of the answer is already queued when
 	// the answer is given, and Enter is also the finished report's own "done"
 	// key. The answer is carried out before that key is read, so it cannot

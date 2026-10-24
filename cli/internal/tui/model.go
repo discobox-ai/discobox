@@ -652,6 +652,11 @@ func (m *Model) Init() tea.Cmd {
 // that opened it. Nothing is reported on screen: the window is going, and the
 // command it belongs to is what reports.
 func (m *Model) exit(err error) tea.Cmd {
+	// The first way out is the one the command reports: an answer that lands
+	// after the window has already gone must not write over it.
+	if m.quit {
+		return nil
+	}
 	m.exitErr = err
 	return m.closeWindow()
 }
@@ -874,6 +879,10 @@ type verbDoneMsg struct {
 	verb Verb
 	ids  []string
 	errs []error
+	// leave is whether the window goes with this answer: an archive that left
+	// the workspace of a window that is one command's own. See
+	// archiveWorkspace.
+	leave bool
 }
 
 // runActionMsg carries a choice out of the action menu. The menu cannot run the
@@ -1230,7 +1239,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return nil
 
 	case runVerbMsg:
-		return m.runVerb(msg.verb, msg.ids)
+		return m.runVerb(msg.verb, msg.ids, false)
 
 	case imageReadMsg:
 		return m.imagesRead(msg)
@@ -2444,7 +2453,11 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 		m.dialog = d
 		return nil
 	}
-	return m.runVerb(verb, ids)
+	if verb == VerbArchive && m.inPanes() {
+		// From the workspace the one target is the discobox it shows.
+		return m.archiveWorkspace(targets[0])
+	}
+	return m.runVerb(verb, ids, false)
 }
 
 // runVerbMsg is a confirmed verb on its way back to the live model, for the
@@ -2477,15 +2490,45 @@ var interactions = map[string]Interaction{
 
 // runVerb applies a lifecycle verb to every target, in one command: the window
 // reports once, on the whole batch, rather than flickering a line per sandbox.
-func (m *Model) runVerb(verb Verb, ids []string) tea.Cmd {
+//
+// leave is whether the window closes on the answer rather than reporting it;
+// only archiveWorkspace asks for that.
+func (m *Model) runVerb(verb Verb, ids []string, leave bool) tea.Cmd {
 	m.busy = string(verb) + "…"
 	return func() tea.Msg {
 		errs := make([]error, len(ids))
 		for i, id := range ids {
 			errs[i] = m.ds.Do(m.ctx, verb, id)
 		}
-		return verbDoneMsg{verb: verb, ids: ids, errs: errs}
+		return verbDoneMsg{verb: verb, ids: ids, errs: errs, leave: leave}
 	}
+}
+
+// archiveWorkspace archives the discobox whose workspace is open, leaving the
+// workspace as the request starts: putting the discobox away takes away what
+// the workspace was a view onto. The launcher lands on its list, where the
+// answer is reported.
+//
+// A window that is one command's own has no list behind it, so it waits for
+// the answer on a screen of its own and then goes, as its detach does. Esc
+// does not take that wait down: the window going takes the process with it,
+// and an archive cut off on its way to the server is one nobody can say
+// happened.
+func (m *Model) archiveWorkspace(box Sandbox) tea.Cmd {
+	m.closeWorkspace()
+	m.layout()
+	leave := m.attach != nil
+	if leave {
+		d := statusDialog("Archiving "+sandboxLabel(box), "archiving the discobox")
+		// Nothing here is pressed: the line says what happens, and names no
+		// key, rather than the status card's "Esc stops watching".
+		d.keys = []hint{says("this window closes when the archive is answered")}
+		// Closing a card puts up the one it came from, so a card that is its
+		// own back is one Esc leaves where it is.
+		d.back = d
+		m.dialog = d
+	}
+	return m.runVerb(VerbArchive, []string{box.ID}, leave)
 }
 
 func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
@@ -2506,6 +2549,15 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 	done := len(msg.ids) - failed
 	if done > 0 {
 		m.list.clearSelection()
+	}
+	// The archive that left a one-command window's workspace was waiting for
+	// this answer to close the window, with the failure if there was one —
+	// the way an attach that fails ends. See archiveWorkspace.
+	if msg.leave {
+		if firstErr != nil {
+			return m.exit(fmt.Errorf("%s: %w", msg.verb, firstErr))
+		}
+		return m.exit(nil)
 	}
 	switch {
 	case failed == 0:

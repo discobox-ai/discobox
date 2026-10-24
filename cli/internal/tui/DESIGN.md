@@ -1795,6 +1795,14 @@ streaming a terminal of its own.
   stops — and the header drops the `leader q quit` half beside it, since quit
   and detach are the same act in such a window and offering both reads as a
   choice between them.
+- An archive from the workspace — the leader's `x`, or a successful apply's
+  archive — closes the workspace as it starts, like the launcher's, but waits
+  for the answer on a screen of its own rather than the list, then exits,
+  carrying the failure if there was one (`archiveWorkspace`, `verbDone`'s
+  `leave`). Esc does not take that wait down, and its key line names no key:
+  the window going takes the process with it, and an archive cut off on its
+  way to the server is one nobody can say happened. Ctrl-C still quits, as it
+  does on every screen of the window.
 - The composer is unreachable in such a window, so the console's draft is
   neither restored into it nor written over (`restoreDraft`, `draftToSave`), and
   the introduction is not shown (`New`): there is no prompt for it to interrupt

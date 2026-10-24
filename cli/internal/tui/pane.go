@@ -843,16 +843,8 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		}
 		// The list's dispatcher, on the one discobox this screen is showing:
 		// the same enabled checks, the same confirmations, the same reports.
-		cmd := m.actOn(msg.key, []Sandbox{m.currentBox()})
-		if msg.key == "x" && cmd != nil {
-			// Archiving takes away the discobox whose workspace this is, so the
-			// local view goes with it. Close it as the request starts, just as
-			// the successful-apply archive choice does, and let the verb's result
-			// report on the list behind it.
-			m.closeWorkspace()
-			m.layout()
-		}
-		return cmd
+		// Archive leaves the workspace as it starts (archiveWorkspace).
+		return m.actOn(msg.key, []Sandbox{m.currentBox()})
 
 	case movePaneMsg:
 		if m.hasScreen(p) {
