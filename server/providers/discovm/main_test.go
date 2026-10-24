@@ -1,15 +1,14 @@
 package discovm
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"testing"
 
 	"github.com/discobox-ai/vm/pkg/engine"
-	"github.com/discobox-ai/vm/pkg/guest"
 	_ "github.com/discobox-ai/vm/pkg/machine/fake" // linked by tests alone: its guest agent is the running binary
 
+	"github.com/discobox-ai/discobox/pool-agent/vmtest"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
@@ -35,40 +34,7 @@ func fakePoolMachine(e *engine.Engine, base string) *poolMachine {
 // TestMain lets this binary be the two processes the engine starts: a shim, as
 // the server is, and a fake guest's agent, as `disco-vm guest` is.
 func TestMain(m *testing.M) {
-	if len(os.Args) > 1 && os.Args[1] == "guest" {
-		if err := runFakeGuest(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, "fake guest:", err)
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}
+	vmtest.RunFakeGuestIfInvoked()
 	RunShimIfInvoked()
 	os.Exit(m.Run())
-}
-
-// runFakeGuest is `disco-vm guest` with the flags the fake driver passes.
-func runFakeGuest(args []string) error {
-	flags := flag.NewFlagSet("guest", flag.ContinueOnError)
-	listen := flags.String("listen", "", "")
-	addrFile := flags.String("addr-file", "", "")
-	root := flags.String("root", "", "")
-	isFake := flags.Bool("fake", false, "")
-	if err := flags.Parse(args); err != nil {
-		return err
-	}
-	listener, err := guest.Listen(*listen)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(*root, 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(*addrFile+".tmp", []byte(listener.Addr().String()), 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(*addrFile+".tmp", *addrFile); err != nil {
-		return err
-	}
-	// A fake guest's shutdown exits the process; Serve never returns from it.
-	return (&guest.Server{Version: "test", Root: *root, Fake: *isFake}).Serve(listener)
 }

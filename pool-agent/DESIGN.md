@@ -36,6 +36,7 @@ from the in-sandbox `sandbox-agent` API.
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
 | `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs. |
 | `childproc` | This process's children: every subprocess start in the agent, and the reaper for the ones nothing is waiting for. See [Child Processes](#child-processes). |
+| `vmtest` | Test support for code that drives disco-vm machines: `RunFakeGuestIfInvoked` lets a test binary be the guest agent of disco-vm's fake driver, so a test boots fake machines through the engine. Only tests import it, here and in the server's `vm` provider. |
 | `imagereap` | Rules for reclaiming unused Discobox images from a Docker daemon (ADR 0040). Shared with the server, which applies them to the daemon pool containers run on; see [Image Reclamation](#image-reclamation). |
 
 ## Startup Flow
