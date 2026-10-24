@@ -1,0 +1,27 @@
+# The pool agent and its proxy (ADR 26-10-24-953 §2): what makes a box a
+# pool's. A pool's maker places the agent bundle, the pool's pins and its
+# bootstrap, and runs `discobox-provision apply`, which applies this feature,
+# every step blocking; nothing else runs on a pool but what its bundles lay.
+#
+# The build puts the agent binary beside this directory's files
+# (pool-agent/Dockerfile's bundle stage).
+apiVersion: discobox.ai/provision/v1
+steps:
+  # The agent runs git for the pool's cache of Git and its sources' origins.
+  - name: packages
+    packages:
+      debian: [git]
+  - name: link
+    run: link.sh
+
+  - name: unit-agent
+    file: {path: /etc/systemd/system/discobox-pool-agent.service, source: systemd/discobox-pool-agent.service, restart: [discobox-pool-agent.service]}
+  - name: unit-proxy
+    file: {path: /etc/systemd/system/discobox-proxy.service, source: systemd/discobox-proxy.service, restart: [discobox-proxy.service]}
+
+  - name: restart
+    run: restart.sh
+    inputs: [discobox-pool-agent]
+  - name: units
+    systemd:
+      enable: [discobox-pool-agent.service, discobox-proxy.service]

@@ -382,8 +382,8 @@ tasks:
     vars:
       POOL_AGENT_BUNDLE: '{{.POOL_AGENT_BUNDLE | default "discobox-pool-agent-bundle:local"}}'
     cmds:
-      # The pool agent for a pool machine booted from a driver base (ADR
-      # 26-10-23-551 §2), by name: the Dockerfile's default target is the image.
+      # The pool bundle, the features that make a box a pool's (ADR
+      # 26-10-24-953 §2), by name: the Dockerfile's default target is the image.
       - docker build -f pool-agent/Dockerfile --target bundle -t {{.POOL_AGENT_BUNDLE}} .
 
   build:agent-bundle:
@@ -747,11 +747,6 @@ tasks:
       # recorded here rather than only in the test file, so the suite stays
       # runnable by name instead of being forgotten.
       - cd server && DISCOBOX_WSLC_E2E=1 go test ./providers/wslc -count=1 -v
-
-  test:e2e:pool-agent-bundle:
-    desc: "Run the pool-agent bundle's install on a systemd Debian container, against a fake control plane. Requires: dockerd, buildx"
-    cmds:
-      - cd pool-agent && DISCOBOX_DOCKER_INTEGRATION=1 go test ./bundle -run E2E -count=1 -v
 
   test:e2e:docker:
     desc: "Run the pool runtime e2e tests against a local Docker daemon. Requires: dockerd"

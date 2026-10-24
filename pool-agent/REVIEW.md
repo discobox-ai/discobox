@@ -270,17 +270,16 @@ durable state asks the same question.
   network setting added to one and not the other makes a snapshot a box of
   another kind than the ones started from it.
 
-## The pool-agent bundle's units
+## The pool bundle's features
 
-`bundle/units/discobox-proxy.service` is a second copy of
-`image/systemd/discobox-proxy.service`: the bundle runs the proxy from
-`bundle.AgentPath` and orders it after the agent's Type=notify start, where
-the image runs it from `/usr/local/bin` with systemd booted after the agent's
-files exist. Change one, change the other in the same change.
-`TestBundleProxyUnitMatchesTheImages` fails on any other difference in their
-`[Service]` sections, because a drifted twin is why ADR 26-10-16-423 retired
-the twin images (ADR 26-10-23-551 cites it).
+The pool bundle's units (`bundle/features/*/systemd`) run what its features
+link from the bundle's stable tree, and the image's (`image/systemd`) what it
+baked in, until the image goes; change one, change the other in the same
+change. A unit that reads a file the agent renders `Requires=` and is
+`After=` the agent's Type=notify unit: systemd starts it no sooner than the
+agent has written it.
 
-`install` decides whether a restart is owed from `bundle.InstalledFile`, never
-from what its own run changed: a run cut short after the link moved must be
-finished by the next, not taken for done.
+A feature's binary moves under its stable link without any step's definition
+moving, so nothing would restart what runs it: each feature's `restart` step
+names its binaries as `inputs`, and a new bundle restarts exactly what it
+changed. A step added that lays a binary needs it there too.
