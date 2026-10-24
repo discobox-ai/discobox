@@ -1,6 +1,6 @@
 # 26-10-15-664 — A source is named one way everywhere
 
-- **Status**: Accepted
+- **Status**: Accepted (`new.skills` spelled `run.skills` by [26-10-24-254](26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md))
 - **Date**: 2026-10-15
 - **Amends**: [26-10-14-294](26-10-14-294-a-skills-repository-is-a-source-its-skills-are-linked-from.md)
   §1, whose `URL[@REF][//PATH]` becomes this ADR's general notation and whose

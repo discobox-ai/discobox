@@ -1,6 +1,6 @@
 # 26-10-14-894 — A project names skills repositories every discobox is created with
 
-- **Status**: Accepted
+- **Status**: Accepted (`new.skills` spelled `run.skills` by [26-10-24-254](26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md))
 - **Date**: 2026-10-14
 - **Relates to**: [26-10-14-294](26-10-14-294-a-skills-repository-is-a-source-its-skills-are-linked-from.md),
   [26-10-09-395](26-10-09-395-a-sandbox-may-be-created-with-skills.md),

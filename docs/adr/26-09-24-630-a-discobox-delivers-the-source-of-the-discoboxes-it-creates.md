@@ -1,6 +1,6 @@
 # 26-09-24-630 — A discobox delivers the source of the discoboxes it creates
 
-- **Status**: Accepted (§2's authority by creator superseded by [26-10-14-320](26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md): delivery reaches any discobox in the project)
+- **Status**: Accepted (§2's authority by creator superseded by [26-10-14-320](26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md): delivery reaches any discobox in the project; §4's `--json` spelled `--from-json` by [26-10-24-254](26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md))
 - **§3 superseded by**: [26-10-10-545](26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)
 - **Date**: 2026-09-24
 - **Supersedes**: [0140](0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)'s
