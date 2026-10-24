@@ -1268,15 +1268,20 @@ func (s *Service) PinUndeliveredSandboxes(ctx context.Context) error {
 }
 
 // pinAgentlessSandboxes pins every sandbox pinned to a platform and to no
-// agent to the release's agent, in place (PinUndeliveredSandboxes).
+// agent to the release's agent, in place (PinUndeliveredSandboxes), and to the
+// release's platform with it: the platform an agent ships with is the one it
+// provisions. An older platform's features predate the mark that keeps an
+// optional one from blocking a box's readiness (ADR 26-10-24-953 §1), so the
+// new agent applying it would hold every box's start on all of them, and
+// refuse any the repository turns off.
 func (s *Service) pinAgentlessSandboxes(ctx context.Context) error {
 	candidates, err := s.store.ListAgentlessSandboxes(ctx)
 	if err != nil || len(candidates) == 0 {
 		return err
 	}
 	release, err := s.currentRelease(ctx)
-	if err != nil || release.Agent.Digest == "" {
-		slog.InfoContext(ctx, "sandboxes pinned to no agent wait for the release's agent to resolve", "count", len(candidates), "error", err)
+	if err != nil || release.Agent.Digest == "" || release.Platform.Digest == "" {
+		slog.InfoContext(ctx, "sandboxes pinned to no agent wait for the release's agent and platform to resolve", "count", len(candidates), "error", err)
 		return nil
 	}
 	for i := range candidates {
@@ -1284,6 +1289,7 @@ func (s *Service) pinAgentlessSandboxes(ctx context.Context) error {
 		_, err := s.updateSandboxMetadata(ctx, sb.ProjectID, sb.ID, func(sb *model.Sandbox) {
 			if sb.AgentBundleDigest == "" && sb.PlatformPin().Digest != "" {
 				sb.SetAgentPin(release.Agent)
+				sb.SetPins(release.Platform, sb.HarnessPin())
 			}
 		})
 		if err != nil {
@@ -1291,8 +1297,9 @@ func (s *Service) pinAgentlessSandboxes(ctx context.Context) error {
 				"projectId", sb.ProjectID, "sandboxId", sb.ID, "error", err)
 			continue
 		}
-		slog.InfoContext(ctx, "pinned a sandbox to the release's agent",
-			"projectId", sb.ProjectID, "sandboxId", sb.ID, "agentBundleDigest", release.Agent.Digest)
+		slog.InfoContext(ctx, "pinned a sandbox to the release's agent and platform",
+			"projectId", sb.ProjectID, "sandboxId", sb.ID, "agentBundleDigest", release.Agent.Digest,
+			"platformBundleDigest", release.Platform.Digest)
 	}
 	return nil
 }

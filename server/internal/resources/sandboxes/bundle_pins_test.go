@@ -296,8 +296,12 @@ func TestABundleMovingCarriesAStoppedSandboxOffItsImage(t *testing.T) {
 // release's platform, under a manual upgrade policy too: the image it ran is
 // gone either way (ADR 26-10-16-423 §10). A stopped one is recorded intent, so
 // its pool rebuilds it; an archived one is pinned in place, for the unarchive
-// that builds one. A running one, one whose config has no bundle to pin, and
-// one already delivered its platform are left alone.
+// that builds one. A running one, and one whose config has no bundle to pin,
+// are left alone. One already delivered its platform, from before the agent
+// was a bundle of its own, is pinned in place to the release's agent and the
+// platform it ships with, in the columns it was pinned in: an older platform
+// lacks the marks that keep its optional features from blocking the new
+// agent's start (ADR 26-10-24-953 §1).
 func TestUndeliveredSandboxesArePinned(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
@@ -346,7 +350,7 @@ func TestUndeliveredSandboxesArePinned(t *testing.T) {
 		{"stopped", stopped, codexBundleV1, platformNew, "", true},
 		{"archived", archived, codexBundleV1, platformNew, "", false},
 		{"running", running, "", "", legacyImageDigest, false},
-		{"delivered", delivered, codexBundleV1, platformOld, "", false},
+		{"delivered", delivered, codexBundleV1, platformNew, "", false},
 		{"on a config with no bundle", noBundle, "", "", legacyImageDigest, false},
 	} {
 		stored, err := st.GetSandbox(ctx, "project-1", tc.sb.ID)
@@ -364,6 +368,9 @@ func TestUndeliveredSandboxesArePinned(t *testing.T) {
 		if wantAgent := tc.platform != ""; (stored.AgentBundleDigest == agentV1) != wantAgent {
 			t.Fatalf("%s: agent %q, want it pinned %v", tc.name, stored.AgentBundleDigest, wantAgent)
 		}
+	}
+	if stored, err := st.GetSandbox(ctx, "project-1", delivered.ID); err != nil || stored.PlatformBundleDigest != platformNew || len(stored.Bundles) != 0 {
+		t.Fatalf("delivered: %+v (%v), want its platform moved in the columns it was pinned in", stored, err)
 	}
 
 	// Nothing is pinned while the platform cannot be resolved: a box on a
