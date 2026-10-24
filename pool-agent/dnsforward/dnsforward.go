@@ -68,6 +68,9 @@ type Server struct {
 	logger   *slog.Logger
 	upstream string
 	audit    func(proxy.DNSAuditEvent)
+	// uncapped is a source whose connections do not count toward
+	// maxConnsPerSource (ExemptSource); the zero Addr is none.
+	uncapped netip.Addr
 
 	mu      sync.Mutex
 	total   int
@@ -82,6 +85,21 @@ func New(logger *slog.Logger, upstream string, audit func(proxy.DNSAuditEvent)) 
 		logger = slog.Default()
 	}
 	return &Server{logger: logger, upstream: upstream, audit: audit, sources: map[netip.Addr]int{}, clients: map[string]int{}}
+}
+
+// ExemptSource stops counting connections from source toward
+// maxConnsPerSource. It is for the pool's tunnel listener, which splices every
+// sandbox behind the pool's edge from one address of its own and bounds what
+// it splices itself (ADR 26-10-23-719 §4); capping them as one source would
+// cap them all together. They are still bounded by maxConns, and by
+// maxConnsPerClient once a certificate names the sandbox. Call it before
+// Serve.
+func (s *Server) ExemptSource(source netip.Addr) {
+	s.uncapped = source
+}
+
+func (s *Server) capped(source netip.Addr) bool {
+	return !s.uncapped.IsValid() || source != s.uncapped
 }
 
 // Serve answers connections on listener, which must be a TLS listener that
@@ -177,11 +195,14 @@ func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 func (s *Server) admitSource(source netip.Addr) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.total >= maxConns || s.sources[source] >= maxConnsPerSource {
+	capped := s.capped(source)
+	if s.total >= maxConns || (capped && s.sources[source] >= maxConnsPerSource) {
 		return false
 	}
 	s.total++
-	s.sources[source]++
+	if capped {
+		s.sources[source]++
+	}
 	return true
 }
 
@@ -189,6 +210,9 @@ func (s *Server) releaseSource(source netip.Addr) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.total--
+	if !s.capped(source) {
+		return
+	}
 	if s.sources[source]--; s.sources[source] <= 0 {
 		delete(s.sources, source)
 	}

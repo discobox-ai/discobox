@@ -228,6 +228,13 @@ durable state asks the same question.
   sandbox. The asset cache is on `layout.ProxyAssetsSocket` for this reason
   (#265's review). The origins listener may stay on loopback only because it
   also requires the pool's sandbox token for the sandbox it names.
+- **Nothing keyed on a loopback source trusts it, or caps it as no caller.**
+  For the same reason, 127.0.0.1 is any sandbox's own egress: a limit or a
+  trust keyed by source address must treat it as one untrusted caller. The
+  tunnel listener splices from an address of its own (`TunnelSource`), the one
+  source `dnsforward` exempts from its per-source cap, and bounds the tunnels
+  it holds itself. Exempting all of loopback was proposed in ADR 26-10-23-719's
+  first draft and would have let one box exhaust the pool's DNS.
 - **The pool cache and the server's asset store read a bundle the same way.**
   Manifest parsing, a pin's reach and the damaged-blob rule live in
   `imagecache`; a change to one store's reading belongs there, not in a copy.

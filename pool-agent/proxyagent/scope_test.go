@@ -18,7 +18,7 @@ const (
 // Leaving these out fails at proxy startup with an error far from the cause —
 // which is exactly what happened while this scoping was being introduced.
 func TestUnitEnvironmentNamesThePool(t *testing.T) {
-	content := unitEnvironment("/host", "unix:///run/discobox/cp.sock", testProjectID, testPoolID)
+	content := unitEnvironment("/host", "unix:///run/discobox/cp.sock", testProjectID, testPoolID, "")
 	for _, want := range []string{
 		envProjectID + "=" + testProjectID,
 		envPoolID + "=" + testPoolID,
@@ -32,7 +32,7 @@ func TestUnitEnvironmentNamesThePool(t *testing.T) {
 // The host-mount prefix and control-plane URL must survive alongside the new
 // scope entries.
 func TestUnitEnvironmentKeepsTransportSettings(t *testing.T) {
-	content := unitEnvironment("/host", "unix:///run/discobox/cp.sock", testProjectID, testPoolID)
+	content := unitEnvironment("/host", "unix:///run/discobox/cp.sock", testProjectID, testPoolID, "")
 	for _, want := range []string{
 		envHostMountPrefix + "=/host",
 		envControlPlaneURL + "=unix:///run/discobox/cp.sock",

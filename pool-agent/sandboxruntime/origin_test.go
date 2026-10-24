@@ -185,7 +185,7 @@ func TestSandboxDocumentCarriesEachSourcesCheckout(t *testing.T) {
 	primary.UpstreamUrl = workerclient.NewOptString("https://github.com/example/app.git")
 	req.Config.Source = workerclient.NewOptGitSource(primary)
 
-	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", proxyagent.PoolEndpoints(""), req, nil, nil)
 	bySlug := map[string]sandboxconfig.Source{}
 	for _, source := range doc.Runtime.Sources {
 		bySlug[source.Slug] = source
@@ -273,7 +273,7 @@ func TestSandboxDocumentCarriesSkillsSourcesInOrder(t *testing.T) {
 		t.Fatalf("validate create request: %v", err)
 	}
 
-	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", proxyagent.PoolEndpoints(""), req, nil, nil)
 	want := []sandboxconfig.SkillsSource{
 		{Target: "/workspace/skill-sources/tools", Directory: "z-last-alphabetically"},
 		{Target: "/workspace/skill-sources/tools", Directory: "."},
@@ -293,7 +293,7 @@ func TestSandboxDocumentCarriesSkillsSourcesInOrder(t *testing.T) {
 func TestSandboxDocumentCarriesFeatures(t *testing.T) {
 	req := originTestRequest("/home/user/src/app")
 	req.Config.Features = workerclient.NewOptSandboxConfigFeatures(workerclient.SandboxConfigFeatures{"brew": {Enabled: false}, "nix": {Enabled: true}})
-	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", proxyagent.PoolEndpoints(""), req, nil, nil)
 	want := map[string]sandboxconfig.Feature{"brew": {Enabled: false}, "nix": {Enabled: true}}
 	if !reflect.DeepEqual(doc.Runtime.Features, want) {
 		t.Fatalf("features = %+v, want %+v", doc.Runtime.Features, want)

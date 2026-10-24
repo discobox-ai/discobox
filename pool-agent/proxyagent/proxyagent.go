@@ -132,17 +132,17 @@ func SandboxNetworkName(poolID string) string {
 // WriteUnitEnvironment writes the environment file consumed by the proxy
 // systemd unit. It is written to the pool container's own /etc, which is
 // shared with the child systemd namespace.
-func WriteUnitEnvironment(root layout.Root, prefix, controlPlaneURL, projectID, poolID string) error {
+func WriteUnitEnvironment(root layout.Root, prefix, controlPlaneURL, projectID, poolID, tunnelURL string) error {
 	if err := os.MkdirAll(root.System(filepath.Dir(UnitEnvironmentFile)), 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(root.System(UnitEnvironmentFile),
-		[]byte(unitEnvironment(prefix, controlPlaneURL, projectID, poolID)), 0o600)
+		[]byte(unitEnvironment(prefix, controlPlaneURL, projectID, poolID, tunnelURL)), 0o600)
 }
 
 // unitEnvironment renders the proxy unit's environment. It is separate from the
 // write so its contents can be asserted without touching the container's /etc.
-func unitEnvironment(prefix, controlPlaneURL, projectID, poolID string) string {
+func unitEnvironment(prefix, controlPlaneURL, projectID, poolID, tunnelURL string) string {
 	content := envHostMountPrefix + "=" + strings.TrimSpace(prefix) + "\n"
 	// The proxy unit resolves the same control-plane URL the agent uses, so both
 	// reach the control plane over whatever transport its scheme names.
@@ -153,6 +153,10 @@ func unitEnvironment(prefix, controlPlaneURL, projectID, poolID string) string {
 	// is scoped to this pool, so without these it cannot address its own state.
 	content += envProjectID + "=" + strings.TrimSpace(projectID) + "\n"
 	content += envPoolID + "=" + strings.TrimSpace(poolID) + "\n"
+	// The unit serves the edge's tunnels only for a pool behind one.
+	if url := strings.TrimSpace(tunnelURL); url != "" {
+		content += EnvTunnelURL + "=" + url + "\n"
+	}
 	// Propagate this process's own proxy-trust environment. It matters when the
 	// pool itself runs inside a Discobox sandbox: the sandbox injects these
 	// into the pool container, but systemd resets the environment for units, so
@@ -329,7 +333,7 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 		logger.Warn("host trusts", "error", err)
 	})
 	go trusts.run(ctx)
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	go func() {
 		logger.Info("pool proxy serving", "addr", ListenAddress)
 		errCh <- server.ListenAndServe()
@@ -356,6 +360,18 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 			logger.Warn("pool sandbox dns stopped", "error", err)
 		}
 	}()
+	// A pool behind an edge is reached only through the tunnels, so their
+	// listener stops the unit with it, as the proxy's does.
+	tunnelURL, err := ConfiguredTunnelURL()
+	if err != nil {
+		_ = server.Close()
+		return err
+	}
+	if tunnelURL != "" {
+		go func() {
+			errCh <- serveTunnels(ctx, logger)
+		}()
+	}
 	select {
 	case <-ctx.Done():
 		_ = server.Close()
@@ -386,11 +402,25 @@ type SandboxMaterial struct {
 // carries mTLS on top (ADR 0144 §4). A Docker pool's sandboxes reach them over
 // TCP by ServerName, which is also the name its one server certificate is
 // issued for.
-func PoolEndpoints() sandboxconfig.PoolEndpoints {
+//
+// A pool behind an HTTPS edge (tunnelURL, from ConfiguredTunnelURL) names a
+// tunnel through the edge for each instead, and nothing else: its sandboxes
+// do not choose between the two (ADR 26-10-23-719 §6). The mTLS inside is
+// verified for ServerName all the same.
+func PoolEndpoints(tunnelURL string) sandboxconfig.PoolEndpoints {
+	if tunnelURL != "" {
+		// No BuildKit: see tunnelServices.
+		return sandboxconfig.PoolEndpoints{
+			Proxy:       tunnelURL + tunnelProxyPath,
+			Credentials: tunnelURL + tunnelCredentialsPath,
+			DNS:         tunnelURL + tunnelDNSPath,
+			ServerName:  ServerName,
+		}
+	}
 	return sandboxconfig.PoolEndpoints{
 		Proxy:       PoolProxyURL,
 		Credentials: CredentialsURL,
-		DNS:         DNSServerAddress,
+		DNS:         DNSServerURL,
 		BuildKit:    BuildkitMediatorURL,
 		ServerName:  ServerName,
 	}

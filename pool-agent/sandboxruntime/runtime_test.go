@@ -21,6 +21,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 )
 
 // What the request gave is forwarded verbatim. What it did not give stays
@@ -288,7 +289,7 @@ func TestSandboxPathsAreThePoolPlatforms(t *testing.T) {
 			if sources[0].target != tc.wantPrimary || sources[1].target != tc.wantTools {
 				t.Fatalf("targets = %q, %q; want %q, %q", sources[0].target, sources[1].target, tc.wantPrimary, tc.wantTools)
 			}
-			doc := buildSandboxDocument(tc.paths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", req, nil, nil)
+			doc := buildSandboxDocument(tc.paths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", proxyagent.PoolEndpoints(""), req, nil, nil)
 			if doc.Runtime.AgentRuntime.WorkingRoot != tc.wantRoot {
 				t.Fatalf("manifest working root = %q, want %q", doc.Runtime.AgentRuntime.WorkingRoot, tc.wantRoot)
 			}
@@ -312,7 +313,7 @@ func TestNormalizeSandboxConfigPublishesPrimaryBindRoot(t *testing.T) {
 	if !ok || destination.Directory.Or("") != "/workspace" {
 		t.Fatalf("destination = %#v, want default primary bind root /workspace", destination)
 	}
-	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", &workerapimodel.PoolSandboxCreateRequest{Config: config}, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", proxyagent.PoolEndpoints(""), &workerapimodel.PoolSandboxCreateRequest{Config: config}, nil, nil)
 	cfg, _ := sandboxconfig.Effective(doc)
 	if len(cfg.Sources) != 1 || cfg.Sources[0].Target != "/workspace" {
 		t.Fatalf("effective sources = %#v, want runtime bind root /workspace", cfg.Sources)
@@ -470,7 +471,7 @@ func TestBuildSandboxDocumentIncludesSelectedHarnessIdentityAndFiles(t *testing.
 		}),
 	}
 
-	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", proxyagent.PoolEndpoints(""), req, nil, nil)
 	cfg, _ := sandboxconfig.Effective(doc)
 	if cfg.APIVersion != sandboxconfig.APIVersion || cfg.SandboxID != "sandbox-1" {
 		t.Fatalf("effective identity = %#v, want v1 sandbox-1", cfg)
@@ -507,7 +508,7 @@ func TestBuildSandboxDocumentForwardsSkills(t *testing.T) {
 			}),
 		},
 	}
-	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", proxyagent.PoolEndpoints(""), req, nil, nil)
 	cfg, _ := sandboxconfig.Effective(doc)
 	want := sandboxconfig.Skills{"foo": {Skill: "# foo", Files: []sandboxconfig.SkillFile{
 		{Path: "run.sh", Content: []byte("#!/bin/sh\n"), Executable: true},
@@ -534,7 +535,7 @@ func TestBuildSandboxDocumentOverlaysConfiguredFilesOntoRuntimeLayer(t *testing.
 		}),
 	}
 
-	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:image", proxyagent.PoolEndpoints(""), req, nil, nil)
 	if len(doc.Image.Files) != 2 {
 		t.Fatalf("image files = %+v, want the unmodified image baseline", doc.Image.Files)
 	}
@@ -835,7 +836,7 @@ func TestPushedSourcesLandHeadingTheOriginAtWhatTheClientPushed(t *testing.T) {
 // the mutable reference it was asked for (ADR 0016).
 func TestSandboxDocumentRecordsResolvedImageIdentity(t *testing.T) {
 	req := &workerapimodel.PoolSandboxCreateRequest{SandboxId: "sandbox-1"}
-	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:resolved", req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "project-1", "sandbox-1", "pool-1", "public-key", "", "sha256:resolved", proxyagent.PoolEndpoints(""), req, nil, nil)
 	if doc.Runtime.Image != "sha256:resolved" {
 		t.Fatalf("runtime image = %q, want the resolved image identity", doc.Runtime.Image)
 	}

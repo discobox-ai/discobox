@@ -187,7 +187,7 @@ func TestDeliveredMovedReadsTheBaseOfASnapshot(t *testing.T) {
 		"built on the current base": {"sha256:base-v2", movedPins},
 		"built on an older base":    {"sha256:base-v1", movedBase},
 	} {
-		r := &DockerSandboxRuntime{root: withTestRoot(t), client: snapshotDaemon(t, "", tc.snapshotBase), projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"}
+		r := &DockerSandboxRuntime{root: withTestRoot(t), client: snapshotDaemon(t, "", tc.snapshotBase), projectID: "proj_1", poolID: "pool_1", poolEndpoints: proxyagent.PoolEndpoints(""), sandboxBaseImage: "discobox-sandbox-base:test"}
 		existing := &Sandbox{ID: "ctr_snap", SandboxID: "sbx_1", Status: StatusRunning}
 		got, err := r.deliveredMoved(context.Background(), existing, snapshotCreate("sbx_1", "a"))
 		if err != nil || got != tc.want {
@@ -263,7 +263,7 @@ func buildFixture(t *testing.T, result string) (*DockerSandboxRuntime, *buildDae
 		t.Fatal(err)
 	}
 	digest := "sha256:" + strings.Repeat("c", 64)
-	r := &DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1",
+	r := &DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1", poolEndpoints: proxyagent.PoolEndpoints(""),
 		agentLayers: &fakeAgentLayers{digest: digest, layer: gzippedAgentLayer(t, "agent")}}
 	req := snapshotCreate("sbx_1", "a")
 	req.Config.Features = workerclient.NewOptSandboxConfigFeatures(workerclient.SandboxConfigFeatures{"brew": {Enabled: false}})
@@ -382,7 +382,7 @@ func TestTheSweepRemovesWhatABuildLeft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1"}
+	r := &DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1", poolEndpoints: proxyagent.PoolEndpoints("")}
 	for _, id := range []string{left, live, stuck} {
 		if err := os.MkdirAll(filepath.Join(r.snapshotsDir(), id, "etc"), 0o755); err != nil {
 			t.Fatal(err)

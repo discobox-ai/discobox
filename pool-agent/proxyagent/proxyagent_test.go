@@ -75,17 +75,34 @@ func TestEnsureSandboxMaterialDeliversClientOnly(t *testing.T) {
 // A Docker pool's sandboxes reach its services over TCP by the pool's DNS
 // name, which is also the name its one server certificate is issued for.
 func TestPoolEndpointsNameThePoolsServices(t *testing.T) {
-	got := PoolEndpoints()
+	got := PoolEndpoints("")
 	//nolint:gosec // G101: service URLs, not credentials.
 	want := sandboxconfig.PoolEndpoints{
 		Proxy:       "https://discobox-pool-proxy:17080",
 		Credentials: "https://discobox-pool-proxy:17083",
-		DNS:         "discobox-pool-proxy:17085",
+		DNS:         "https://discobox-pool-proxy:17085",
 		BuildKit:    "https://discobox-pool-proxy:17081",
 		ServerName:  "discobox-pool-proxy",
 	}
 	if got != want {
 		t.Fatalf("PoolEndpoints() = %+v, want %+v", got, want)
+	}
+}
+
+// A pool behind an edge names a tunnel through it for every service, and only
+// that; the mTLS inside is still verified for the pool's own name. It names no
+// builder, whose results come back through a registry no tunnel carries.
+func TestPoolEndpointsBehindAnEdgeAreTunnels(t *testing.T) {
+	got := PoolEndpoints("wss://pool.example.com")
+	//nolint:gosec // G101: service URLs, not credentials.
+	want := sandboxconfig.PoolEndpoints{
+		Proxy:       "wss://pool.example.com/tunnel/proxy",
+		Credentials: "wss://pool.example.com/tunnel/credentials",
+		DNS:         "wss://pool.example.com/tunnel/dns",
+		ServerName:  "discobox-pool-proxy",
+	}
+	if got != want {
+		t.Fatalf("PoolEndpoints(tunnel) = %+v, want %+v", got, want)
 	}
 }
 

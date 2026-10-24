@@ -21,10 +21,11 @@ const (
 	// guards the port.
 	DNSListenAddress = "0.0.0.0:17085"
 
-	// DNSServerAddress is where a sandbox's DNS stub dials. It verifies the
-	// pool's certificate for ServerName, so an answer can only come from the
-	// pool, whoever else is on the network.
-	DNSServerAddress = ServerName + ":17085"
+	// DNSServerURL is where a sandbox's DNS stub dials, a wire URL like every
+	// other pool endpoint (ADR 26-10-23-719 §5). It verifies the pool's
+	// certificate for ServerName, so an answer can only come from the pool,
+	// whoever else is on the network.
+	DNSServerURL = "https://" + ServerName + ":17085"
 )
 
 // SandboxDNSAddress is the DNS server every sandbox container is created with.
@@ -49,7 +50,9 @@ func serveDNS(ctx context.Context, logger *slog.Logger, bundle *proxy.Certificat
 		return err
 	}
 	logger.Info("pool sandbox dns serving", "addr", tcp.Addr(), "upstream", upstream)
-	dnsforward.New(logger, upstream, server.RecordDNS).Serve(ctx, tls.NewListener(tcp, sandboxTLSConfig(bundle)))
+	dns := dnsforward.New(logger, upstream, server.RecordDNS)
+	dns.ExemptSource(TunnelSource)
+	dns.Serve(ctx, tls.NewListener(tcp, sandboxTLSConfig(bundle)))
 	return nil
 }
 

@@ -287,6 +287,51 @@ func TestServerCapsUnauthenticatedConnectionsPerSource(t *testing.T) {
 	}
 }
 
+// The pool's tunnel listener splices every sandbox behind the edge from an
+// address of its own, which is not capped as one source; any other loopback
+// source, which a sandbox can reach through its proxy, still is.
+func TestServerExemptsOnlyTheSourceItIsTold(t *testing.T) {
+	c := newCerts(t, "sbx_a")
+	server := New(nil, startUpstream(t), (&audited{}).record)
+	exempt := netip.MustParseAddr("127.0.0.2")
+	server.ExemptSource(exempt)
+	if !server.capped(netip.MustParseAddr("127.0.0.1")) {
+		t.Fatal("127.0.0.1 is uncapped")
+	}
+	if server.capped(exempt) {
+		t.Fatal("the exempt source is capped")
+	}
+	if !New(nil, "", nil).capped(netip.Addr{}) {
+		t.Fatal("a server exempting nothing does not cap the zero address")
+	}
+
+	var config net.ListenConfig
+	tcp, err := config.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { server.Serve(ctx, tls.NewListener(tcp, c.server)); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+	dialer := net.Dialer{LocalAddr: net.TCPAddrFromAddrPort(netip.AddrPortFrom(exempt, 0))}
+	for range maxConnsPerSource {
+		conn, err := dialer.DialContext(t.Context(), "tcp", tcp.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+	}
+	tlsDialer := tls.Dialer{NetDialer: &dialer, Config: c.clients["sbx_a"]}
+	conn, err := tlsDialer.DialContext(t.Context(), "tcp", tcp.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ask(t, conn, "q"); got != udpAnswer("q") {
+		t.Fatalf("answer past the per-source count from the exempt source = %q", got)
+	}
+}
+
 func TestServeReturnsOnCancel(t *testing.T) {
 	c := newCerts(t)
 	var config net.ListenConfig

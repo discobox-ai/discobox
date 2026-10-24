@@ -276,10 +276,9 @@ func (r *DockerSandboxRuntime) buildSnapshot(ctx context.Context, plan snapshotP
 	if !ok {
 		return errors.New("this pool has no asset cache to place the agent from")
 	}
-	pool := proxyagent.PoolEndpoints()
 	// The proxy and DNS alone: a build asks for no credentials and builds
 	// nothing through the pool's builder.
-	endpoints := sandboxconfig.PoolEndpoints{Proxy: pool.Proxy, DNS: pool.DNS}
+	endpoints := sandboxconfig.PoolEndpoints{Proxy: r.poolEndpoints.Proxy, DNS: r.poolEndpoints.DNS, ServerName: r.poolEndpoints.ServerName}
 	proxy := material.Proxy
 	doc := agentlayer.SnapshotPlan{
 		ID:            id,
