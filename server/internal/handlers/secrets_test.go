@@ -14,7 +14,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/judge"
 	"github.com/discobox-ai/discobox/pkg/policy"
-	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	svcapi "github.com/discobox-ai/discobox/server/internal/services"

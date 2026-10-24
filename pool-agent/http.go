@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/pool-agent/internalhttp"
-	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/pkg/poolauth"
 )
 
 const (

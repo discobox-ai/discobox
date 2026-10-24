@@ -7,7 +7,7 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
-	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/pkg/poolauth"
 )
 
 func testKey(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {

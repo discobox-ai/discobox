@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/resources/judges"
 	"github.com/go-chi/chi/v5"

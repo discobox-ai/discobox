@@ -18,7 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/controlplane"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/wire"
-	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/pkg/poolauth"
 )
 
 const (

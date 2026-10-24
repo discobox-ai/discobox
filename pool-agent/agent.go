@@ -25,7 +25,7 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/assetcache"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
 	"github.com/discobox-ai/discobox/pool-agent/childproc"
-	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	poolserver "github.com/discobox-ai/discobox/pool-agent/server"

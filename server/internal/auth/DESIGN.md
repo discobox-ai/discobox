@@ -297,5 +297,5 @@ Rules:
   control plane's short-lived PASETO v4.public tokens to pool agents
   (audience `pool-agent`) and sandbox agents (audience `sandbox-agent`), and
   the operation scope names those tokens carry. Pool-to-control-plane
-  assertions are the pool agent's `poolauth` package, verified by
+  assertions are the root module's `pkg/poolauth`, verified by
   `PoolAuthenticator`.
