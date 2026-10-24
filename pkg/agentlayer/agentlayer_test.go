@@ -3,8 +3,11 @@ package agentlayer
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -156,20 +159,40 @@ func layerTar(t *testing.T, entries ...*tar.Header) []byte {
 }
 
 // The agent layer is the agent's alone: a layer holding anything else beside
-// it, or not holding it, is not one.
-func TestAgentLayerIsTheAgentAlone(t *testing.T) {
+// it, or not holding it, is not one, and nothing is extracted from it; the
+// agent's layer is, gzipped or not.
+func TestExtractAgentTakesTheAgentAlone(t *testing.T) {
 	dirs := []*tar.Header{{Typeflag: tar.TypeDir, Name: "features/"}, {Typeflag: tar.TypeDir, Name: "features/core/"}}
 	agent := &tar.Header{Typeflag: tar.TypeReg, Name: AgentFile, Size: 3, Mode: 0o755}
-	if err := AgentLayer(bytes.NewReader(layerTar(t, append(dirs, agent)...))); err != nil {
-		t.Fatalf("the agent's layer: %v", err)
+	layer := layerTar(t, append(dirs, agent)...)
+	var gzipped bytes.Buffer
+	zw := gzip.NewWriter(&gzipped)
+	if _, err := zw.Write(layer); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{"plain": layer, "gzipped": gzipped.Bytes()} {
+		path := filepath.Join(t.TempDir(), "agents", "discobox-sandbox-agent")
+		if err := ExtractAgent(bytes.NewReader(data), path); err != nil {
+			t.Fatalf("%s: the agent's layer: %v", name, err)
+		}
+		if info, err := os.Stat(path); err != nil || info.Size() != 3 || info.Mode().Perm()&0o100 == 0 {
+			t.Fatalf("%s: extracted agent = %v, %v", name, info, err)
+		}
 	}
 	for name, layer := range map[string][]byte{
 		"another file beside it": layerTar(t, append(dirs, agent, &tar.Header{Typeflag: tar.TypeReg, Name: "features/core/discobox-access", Size: 1})...),
 		"no agent":               layerTar(t, append(dirs, &tar.Header{Typeflag: tar.TypeReg, Name: "features/review/discobox-review", Size: 1})...),
 		"the agent as a link":    layerTar(t, append(dirs, &tar.Header{Typeflag: tar.TypeSymlink, Name: AgentFile, Linkname: "/bin/sh"})...),
 	} {
-		if err := AgentLayer(bytes.NewReader(layer)); !errors.Is(err, ErrNotAgentLayer) {
+		path := filepath.Join(t.TempDir(), "discobox-sandbox-agent")
+		if err := ExtractAgent(bytes.NewReader(layer), path); !errors.Is(err, ErrNotAgentLayer) {
 			t.Errorf("%s: %v, want ErrNotAgentLayer", name, err)
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("%s: an agent was left at %s", name, path)
 		}
 	}
 }
