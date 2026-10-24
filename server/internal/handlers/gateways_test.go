@@ -7,7 +7,7 @@ import (
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"

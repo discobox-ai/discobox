@@ -4,7 +4,7 @@
 // key, and records and propagates that person as it does any principal.
 //
 // An assertion is a PASETO v4.public token, the format the server already
-// verifies for pool agents (pool-agent/poolauth), carried in AssertionHeader.
+// verifies for pool agents (pkg/poolauth), carried in AssertionHeader.
 // Sign is the reference for producing one; discobot's own signer is outside
 // this repository.
 package discobot

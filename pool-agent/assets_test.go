@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/pkg/poolauth"
 )
 
 // A read of the control plane's asset routes goes to the pool's own asset

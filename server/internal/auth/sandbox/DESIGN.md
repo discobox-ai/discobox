@@ -8,7 +8,7 @@ credentials that other server layers scope to projects, sandboxes, and users.
 This doc also records the sibling credential flows that share its shape but
 are owned elsewhere:
 
-- Pool identity: [`pool-agent/poolauth`](../../../../pool-agent/poolauth/assertion.go)
+- Pool identity: [`pkg/poolauth`](../../../../pkg/poolauth/assertion.go)
   (assertions), `PoolAuthenticator` in [`internal/auth`](../DESIGN.md)
   (verification), and [`internal/resources/pools`](../../resources/pools/DESIGN.md)
   (registration).

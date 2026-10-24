@@ -22,7 +22,6 @@ from the in-sandbox `sandbox-agent` API.
 | `server` | Pool-local HTTP server, health/metadata endpoints, generated sandbox API route/auth adapter, the sandbox HTTP/sandbox-agent/Git proxy routes, the Git cache routes the control plane forwards clients' deliveries to (`sandbox_git_cache.go`), on-demand start (`autostart.go`), the loopback origin listener the pool proxy forwards sandboxes' origin fetches to (`NewOriginRouter`; see [Git origins](#git-origins)), and the socket it forwards their bundle fetches to (`Config.AssetListener`; see [Bundle Assets](#bundle-assets)). |
 | `assetcache` | The pool's pull-through cache of bundles (ADR 26-10-16-423 §13): each sandbox's record of the bundles it is pinned to (`bundles.json`), and each snapshot build's, kept apart from them by its `layout.SnapshotIDPrefix` ID ([Snapshots](#snapshots)), the blob store under `layout.PoolBuild`, filled through the agent's control-plane client (`HTTPClient.FetchAsset`), the `assets.discobox.internal` handler scoped to one sandbox's record, the sweep, and the agent layer of a sandbox's platform pin (`AgentLayer`). See [Bundle Assets](#bundle-assets). |
 | `cpmux` | Symmetric yamux session over one duplex byte stream, for guests that can only be dialed inward (wslc). |
-| `poolauth` | Pool-to-control-plane assertions: PASETO v4.public signed with the pool's Ed25519 key. |
 | `sandboxtoken` | Tokens the pool issues its own sandboxes, signed with the same key under their own audience (`discobox-pool-sandbox`); `origin:fetch` is accepted on the `git-origins` route alone. |
 | `internalhttp` | The transport for the pool's own HTTP, which never honors `HTTP_PROXY`: the control-plane client's, and the base of every transport a sandbox `Dialer` builds. |
 | `githttp` | Serves a source's origin through the shared [`gitbackend`](../pkg/gitbackend) CGI bridge, run as the repository's owner: a bare repository made for one sandbox, or a Git namespace of a cache. A sandbox's own fetch is served fetch-only, on protocol v0, confined to what its namespace advertises; see [Git origins](#git-origins). The `git-repositories` route is not served here; see [The worktree route](#the-worktree-route). |
@@ -66,7 +65,7 @@ from the in-sandbox `sandbox-agent` API.
    from disk skips registration and spends no token
    ([ADR 0063](../docs/adr/0063-a-pool-agent-keeps-its-identity-key-and-registers-once.md)).
 5. Every later control-plane call carries a pool assertion the agent signs
-   itself (`poolauth`: PASETO v4.public, audience `discobox-control-plane`,
+   itself ([`poolauth`](../pkg/poolauth): PASETO v4.public, audience `discobox-control-plane`,
    5-minute TTL). The control plane issues no runtime token.
 6. The first status report is synchronous, so a pool that cannot mark itself
    ready fails its boot. When it is rejected under a stored key, the agent
