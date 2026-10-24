@@ -59,13 +59,25 @@ sandbox reaches a pool service — the bridge, and the credentials relay in
   dials TCP (a Docker pool's `https://discobox-pool-proxy:17080`),
   `vsock://cid:port` an AF_VSOCK context, and `unix:///path` a socket, so a
   sandbox with no network interface at all can still reach its pool (ADR 0144
-  §4). `http` is refused: nothing speaks plaintext to the pool.
+  §4). `wss://edge/tunnel/<service>` opens a [`wstunnel`](../pkg/wstunnel)
+  stream through an HTTPS edge that terminates TLS, for a pool reachable only
+  behind one ([ADR 26-10-23-719](../docs/adr/26-10-23-719-a-sandbox-may-reach-its-pool-through-a-websocket-tunnel-with-its-mtls-inside.md)).
+  `http` is refused: nothing speaks plaintext to the pool.
 - **mTLS**, identical on every transport. The client certificate's common name
   stays the tenant identity, so the proxy is unchanged and learns nothing about
-  hypervisors. The pool's certificate is verified against `serverName` from
-  `bridge.json`, or the URL's host when that is empty; a `vsock` or `unix` URL
-  has no host, so it needs `serverName`, and the pool states it in every bridge
-  config it stages.
+  hypervisors or edges. The pool's certificate is verified against
+  `serverName` from `bridge.json`, or the URL's host when that is empty; a
+  `vsock` or `unix` URL has no host, and a `wss` URL's host is the edge's, so
+  each needs `serverName`, and the pool states it in every bridge config it
+  stages.
+
+A `wss` Dialer keeps the tunnels whose streams ended cleanly and starts the
+next stream on one. A tunnel carries one stream at a time — concurrent
+connections take concurrent tunnels, each its own TCP connection and
+congestion window — and is retired idle after 30s and reused for at most 50
+minutes, inside what edges allow. A reused tunnel the edge cut while idle fails
+the inner handshake, before the caller's bytes are sent, and that dial is
+retried once on a new tunnel.
 
 A connection whose first request is an HTTP proxy request (`CONNECT`, or an
 absolute-form `http://` request) for an IP address in one of the sandbox's own

@@ -39,6 +39,7 @@ COPY pkg/tarsums ./pkg/tarsums
 COPY pkg/tools ./pkg/tools
 COPY pkg/vsock ./pkg/vsock
 COPY pkg/wire ./pkg/wire
+COPY pkg/wstunnel ./pkg/wstunnel
 COPY sandbox-agent ./sandbox-agent
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \

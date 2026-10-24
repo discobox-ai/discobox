@@ -27,8 +27,14 @@
   `bridge.Dialer`, never a `tls.Dial` over `"tcp"` of its own: the URL's scheme
   picks the transport (`wire`), and a sandbox in a host-VM pool has no network
   to dial TCP over (ADR 0144 §4). The transport changes; the mTLS on top never
-  does. The sandbox DNS stub is the one exception: it exists to answer Docker's
-  embedded resolver, which only a networked sandbox has.
+  does.
+- Behind an edge, identity still comes only from the client certificate inside
+  the tunnel. Never authenticate a sandbox by a header on the upgrade request,
+  signed or set by the edge (ADR 26-10-23-719): the edge reads and can replay
+  anything outside the inner TLS.
+- A `wstunnel` tunnel carries one stream at a time. Do not multiplex streams
+  onto one; concurrent streams take concurrent tunnels, so no stream shares
+  another's congestion window.
 - Policy and audit behavior must remain client-scoped. Destination rules,
   gateways, upgraded-stream metadata, and audit query surfaces
   must preserve the authenticated client ID.
