@@ -352,7 +352,8 @@ cmd_idle() {
 # github: one line per issue and PR the lead cares about, "issue <n> open|closed" and
 # "pr <n> issue-<n> open|merged|closed", and "ci main <sha> <result>" (latest finished run): every worker's issue and PR, and any issue listed in
 # watch-issues.txt (ones the lead filed or was told about). A worker PR GitHub lists that
-# workers.tsv does not know yet is recorded there. Closed issues are cached in
+# workers.tsv does not know yet is recorded there, if it is open: a relaunched worker must
+# not take the closed PR an earlier worker left on its branch. Closed issues are cached in
 # closed-issues.txt, so a pass costs one PR list call and one call per open issue; "github prs"
 # makes only the PR list call, since every call is judged and takes seconds.
 cmd_github() {
@@ -364,7 +365,7 @@ cmd_github() {
 			"\(.number) \(.head.ref|sub("discobox/";"")) \(if .merged_at then "merged" else .state end)"' 2>/dev/null) || return 1
 	workers | while IFS=$'\t' read -r n id pr; do
 		[ "$pr" = - ] || continue
-		pr=$(echo "$prs" | awk -v b="issue-$n" '$2==b{print $1; exit}')
+		pr=$(echo "$prs" | awk -v b="issue-$n" '$2==b && $3=="open"{print $1; exit}')
 		[ -n "$pr" ] && sed -i "s/^$n\t$id\t-\$/$n\t$id\t$pr/" "$W"
 	done
 	echo "$prs" | grep -Fwf <(workers | awk -F'\t' '{print "issue-"$1}') | sed 's/^/pr /'
