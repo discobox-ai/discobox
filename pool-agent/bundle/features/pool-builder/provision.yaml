@@ -1,0 +1,32 @@
+# A Docker pool's builder (ADR 0044) beside its agent: the pool-shared
+# BuildKit, the registry its builds push to, the mediator that binds a build to
+# the sandbox that asked for it, and discobox-pool-runc; and dockerd run
+# outright, as the pool image ran it, where the base only socket-activates it.
+# A pool whose sandboxes are machines runs none of it, and turns it off (ADR
+# 26-10-24-953 §2).
+#
+# The build puts the binaries under bin/ (pool-agent/Dockerfile's bundle
+# stage): BuildKit's and the registry's from their upstream images, so the set
+# stays what those projects ship and test together.
+apiVersion: discobox.ai/provision/v1
+requires: [pool-agent]
+steps:
+  - name: link
+    run: link.sh
+  - name: registry-config
+    file: {path: /etc/discobox/registry.yml, source: registry.yml, restart: [discobox-registry.service]}
+
+  - name: unit-buildkitd
+    file: {path: /etc/systemd/system/discobox-buildkitd.service, source: systemd/discobox-buildkitd.service, restart: [discobox-buildkitd.service]}
+  - name: unit-registry
+    file: {path: /etc/systemd/system/discobox-registry.service, source: systemd/discobox-registry.service, restart: [discobox-registry.service]}
+  - name: unit-mediator
+    file: {path: /etc/systemd/system/discobox-buildkit-mediator.service, source: systemd/discobox-buildkit-mediator.service, restart: [discobox-buildkit-mediator.service]}
+
+  - name: restart
+    run: restart.sh
+    inputs: [bin]
+  # The base socket-activates dockerd for a sandbox; a pool runs it outright.
+  - name: units
+    systemd:
+      enable: [docker.service, discobox-buildkitd.service, discobox-registry.service, discobox-buildkit-mediator.service]

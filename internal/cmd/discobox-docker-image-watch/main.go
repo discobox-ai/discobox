@@ -471,10 +471,10 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 	} {
 		addFile(workerRoot, rel, workerSeen)
 	}
-	// The pool-agent bundle is FROM scratch: the agent's build and the units
-	// it carries, and not the shared base.
+	// The pool bundle is FROM scratch: the agent's build and the features it
+	// carries, and not the shared base.
 	poolAgentBundleSeen := maps.Clone(workerSeen)
-	if err := addTree(filepath.Join(workerRoot, "bundle", "units"), poolAgentBundleSeen); err != nil {
+	if err := addTree(filepath.Join(workerRoot, "bundle", "features"), poolAgentBundleSeen); err != nil {
 		return nil, err
 	}
 	for file := range baseSeen {
