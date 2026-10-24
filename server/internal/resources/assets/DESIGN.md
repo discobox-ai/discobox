@@ -34,7 +34,7 @@ allow-list's `assets` action takes up to three trailing segments
 A pool is answered the pins of the project it serves (`scope`), and nothing
 else — never a tag's answer that no pin records:
 
-- **the platform and agent bundles the release pins**, each as every digest
+- **the platform, agent and pool bundles the release pins**, each as every digest
   its reference has resolved to while this server runs (`releasePins`). The release pins it by
   reference and nothing records the digest a box was handed, so an answered
   digest is never dropped when the tag moves: a pool part way through a fetch
@@ -70,6 +70,14 @@ service when either reference resolves to a digest other than the one before
 sandboxes follow the release. Both are in every pool's scope, as the
 release's, and a sandbox's pins in either form, its agent's included, are in
 its project's pools' scope and keep their blobs.
+
+It also answers what a pool's box is made of (`PoolBox`, which the pools
+control plane asks through `PoolBoxes`): the release's agent, that agent
+bundle's one layer for the box's platform (and a reader of it), and the
+pool bundle as the box's list, resolved by a third `releasePins`. A move of
+either reconciles every pool (`OnReleaseMoved`), which applies a moved pool
+bundle in its running box (ADR 26-10-24-953 §5). The pool bundle is in every
+pool's scope too, since the box fetches it signed as the pool.
 
 ## Blob store
 
@@ -110,8 +118,7 @@ flowchart LR
   nothing else: its dev tag is no release reference, and no registry has it.
 - **Credentials**: the server's keychain pulls only the references the release
   names — the platform and agent bundles, the built-in harnesses' bundles, and
-  the pool-agent bundle, the pool agent for a pool machine booted from a driver
-  base (ADR 26-10-23-551 §2). A
+  the pool bundle (ADR 26-10-24-953 §2). A
   project-supplied reference is pulled anonymously: a project configures no
   registry credentials, and the server's are not the project's to use.
 - **The store is shared across projects**, and a digest fetched for one pin is

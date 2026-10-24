@@ -984,12 +984,14 @@ type Invoker interface {
 	ResolveGatewayHeaders(ctx context.Context, request *ResolveGatewayHeadersBody, params ResolveGatewayHeadersParams) (ResolveGatewayHeadersRes, error)
 	// ResolvePoolAsset invokes resolve-pool-asset operation.
 	//
-	// The manifest a bundle name in the pool's scope is pinned to now (ADR 26-10-16-423 §13): for the
-	// platform bundle, what the release's reference resolves to, asked afresh; for a harness's bundle,
-	// the digest a harness config of the pool's project records, which a moved tag changes only once the
-	// config is re-pinned. Read for registration and re-pinning; the digest it is served under is the
-	// Docker-Content-Digest header. A name no pin in the pool's scope carries is a 404, one two pins of
-	// different digests share is a 409, and a platform that cannot be resolved is a 502.
+	// The manifest a bundle name in the pool's scope is pinned to now (ADR 26-10-16-423 §13, ADR
+	// 26-10-24-953 §§2, 4): for a bundle the release names (the platform, agent and pool bundles),
+	// what the release's reference resolves to, asked afresh; for a harness's bundle, the digest a
+	// harness config of the pool's project records, which a moved tag changes only once the config is
+	// re-pinned. Read by the pool when it re-pins, and by a pool's box as it provisions itself; the
+	// digest it is served under is the Docker-Content-Digest header. A name no pin in the pool's scope
+	// carries is a 404, one two pins of different digests share is a 409, and a platform that cannot be
+	// resolved is a 502.
 	//
 	// GET /api/pools/{poolId}/assets/{name}
 	ResolvePoolAsset(ctx context.Context, params ResolvePoolAssetParams) (ResolvePoolAssetRes, error)
@@ -17359,12 +17361,14 @@ func (c *Client) sendResolveGatewayHeaders(ctx context.Context, request *Resolve
 
 // ResolvePoolAsset invokes resolve-pool-asset operation.
 //
-// The manifest a bundle name in the pool's scope is pinned to now (ADR 26-10-16-423 §13): for the
-// platform bundle, what the release's reference resolves to, asked afresh; for a harness's bundle,
-// the digest a harness config of the pool's project records, which a moved tag changes only once the
-// config is re-pinned. Read for registration and re-pinning; the digest it is served under is the
-// Docker-Content-Digest header. A name no pin in the pool's scope carries is a 404, one two pins of
-// different digests share is a 409, and a platform that cannot be resolved is a 502.
+// The manifest a bundle name in the pool's scope is pinned to now (ADR 26-10-16-423 §13, ADR
+// 26-10-24-953 §§2, 4): for a bundle the release names (the platform, agent and pool bundles),
+// what the release's reference resolves to, asked afresh; for a harness's bundle, the digest a
+// harness config of the pool's project records, which a moved tag changes only once the config is
+// re-pinned. Read by the pool when it re-pins, and by a pool's box as it provisions itself; the
+// digest it is served under is the Docker-Content-Digest header. A name no pin in the pool's scope
+// carries is a 404, one two pins of different digests share is a 409, and a platform that cannot be
+// resolved is a 502.
 //
 // GET /api/pools/{poolId}/assets/{name}
 func (c *Client) ResolvePoolAsset(ctx context.Context, params ResolvePoolAssetParams) (ResolvePoolAssetRes, error) {

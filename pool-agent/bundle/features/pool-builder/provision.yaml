@@ -1,9 +1,9 @@
 # A Docker pool's builder (ADR 0044) beside its agent: the pool-shared
 # BuildKit, the registry its builds push to, the mediator that binds a build to
-# the sandbox that asked for it, and discobox-pool-runc; and dockerd run
-# outright, as the pool image ran it, where the base only socket-activates it.
-# A pool whose sandboxes are machines runs none of it, and turns it off (ADR
-# 26-10-24-953 §2).
+# the sandbox that asked for it, and discobox-pool-runc. It runs no dockerd:
+# the pool's container has its daemon's socket bound in at
+# /var/run/docker.sock, which its sandboxes run on, so the base's
+# socket-activated one cannot listen.
 #
 # The build puts the binaries under bin/ (pool-agent/Dockerfile's bundle
 # stage): BuildKit's and the registry's from their upstream images, so the set

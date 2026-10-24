@@ -121,7 +121,7 @@
   the box may fetch is the pool's record, and a pin the box chose would
   only be refused there.
 - **The agent bundle is one layer, the agent alone.** Whoever makes a box
-  places it from the `agent` stage's one layer (`agentlayer.AgentLayer`,
+  places it from the `agent` stage's one layer (`agentlayer.ExtractAgent`,
   ADR 26-10-24-953 §2); a second `COPY` there stops every box booting. The
   platform carries no agent: core links the placed one
   (`/opt/discobox/current`), never a copy in a tree.

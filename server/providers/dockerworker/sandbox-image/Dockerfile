@@ -59,7 +59,7 @@ RUN set -eux \
 # Docker from Docker's own repository, with buildx and Compose v2,
 # socket-activated: the daemon starts when something first connects to it.
 # Kept apart from the layer above so a Docker update does not invalidate it.
-# The pool agent enables docker.service outright (pool-agent/Dockerfile).
+# A pool's container runs none of it: its daemon's socket is bound in.
 RUN set -eux \
     && install -m 0755 -d /etc/apt/keyrings \
     && . /etc/os-release \

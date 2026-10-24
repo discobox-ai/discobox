@@ -14,6 +14,11 @@ Global review expectations:
   rewriting it. The move to `pkg/` missed `api/model/DESIGN.md`'s backticked
   `../../sandboxconfig/DESIGN.md`, and rewrote the GitHub labels
   `platform/windows` and `platform/macos` because they looked like paths.
+- Renaming an identifier a doc cites (a function, a type, a field): grep for
+  the old name across docs, `REVIEW.md` notes, Dockerfile comments and code
+  comments, not only the Go callers the compiler finds. Renaming
+  `agentlayer.AgentLayer` to `ExtractAgent` left five citations of the old
+  name, a review note among them, pointing at code that was gone.
 - Retiring a concept: grep every `DESIGN.md`, `REVIEW.md`, `AGENTS.md` and
   skill under `.agents/skills` for it, not only the docs on the change's path.
   A doc off that path goes on describing what no longer exists, and an agent

@@ -625,7 +625,7 @@ the new digest); check that before driving anything.
 
 ```bash
 d run -d -H shell --no-source -p true        # a box pinned to platform + shell bundle
-docker exec <pool> cat /var/lib/discobox/projects/*/pools/*/sandboxes/<sbx>/bundles.json
+docker exec <pool> cat /var/lib/discobox/projects/*/pools/*/sandboxes/<sbx>/delivery.json
 d shell <sbx> -- curl -sS -D- https://assets.discobox.internal/discobox-platform
 ```
 

@@ -78,6 +78,13 @@ zz_version_windows_*.syso
 /discobox.exe
 /discobox-*
 **/cmd/*/discobox*
+# The same from a nested module's root, where `go build ./cmd/<name>` writes
+# its binary: the build of `discobox-provision` in sandbox-agent committed one.
+/access/discobox-access
+/cli/discobox
+/pool-agent/discobox-pool-agent
+/sandbox-agent/discobox-sandbox-agent
+/server/discobox-server
 
 # The dev loop writes its build and test failure reports here. They are a
 # moment of local state, and git add -A has swept them into commits twice.

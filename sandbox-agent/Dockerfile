@@ -136,7 +136,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # whoever makes a box places in it before the box applies its bundles — a pool
 # in a sandbox, a provider in a pool — and is not in any box's list. FROM
 # scratch, and one COPY, so the bundle is that one layer
-# (agentlayer.AgentLayer). Built by name (`--target agent`).
+# (agentlayer.ExtractAgent). Built by name (`--target agent`).
 FROM scratch AS agent
 COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-sandbox-agent /features/core/discobox-sandbox-agent
 

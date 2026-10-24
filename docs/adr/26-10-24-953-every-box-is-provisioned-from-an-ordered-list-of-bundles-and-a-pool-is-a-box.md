@@ -130,6 +130,17 @@ platform first, is what tells the list's pins apart; nothing past the server
 does. The agent pin is new for every sandbox, and in neither fingerprint, so
 a sandbox pinned before is pinned to the release's agent in place.
 
+*Amended 2026-10-24, before anything shipped against it:* a sandbox pinned to
+the release's agent in place is pinned to the release's platform with it, in
+the form it was pinned in. An agent provisions the platform it ships with:
+an older platform's features carry no `async` mark (whether a feature blocks
+a box's readiness is now its own), so the new agent applying one would hold
+every start of the box on all of them, and refuse any the repository turns
+off. The person-facing upgrade view keeps naming what moved by role — the
+platform, the harness, and now the agent — since it reads a sandbox against
+its release rather than carrying a list to a pool; nothing past the server
+does.
+
 ### 2. The agent is a bundle of its own, placed by whoever makes the box
 
 The **agent bundle** is `discobox-sandbox-agent` alone: one layer, one file,
@@ -183,6 +194,14 @@ one package in the root module, used by:
 
 `assetcache` keeps what only a pool has: its record of each sandbox's pins,
 the handler scoped to them, and the sweep.
+
+*Amended 2026-10-24, before anything shipped against it:* only the signed
+fetch from the server's asset routes moves to the root module
+(`pkg/poolassets`), which `discobox-provision apply` and the pool agent share.
+The client half stays where it is: `bundlestore` in the agent's module,
+`assetcache`'s fetch in the pool agent's. Moving it is a refactor of two
+working clients whose stores differ (a box's trees, a pool's blobs), and
+nothing this ADR decides needs it; it is deferred.
 
 ### 4. A box's maker enrolls it over the channel it made it with
 
@@ -305,6 +324,14 @@ reconciled, as `EnsurePool` converges the development manifest first now.
   today, since only providers mint bootstrap tokens; revisit if one is
   wanted.
 
+- **One bundle client in the root module (§3 as first written).** Revisit
+  when a third client is wanted, or either store's fetch-and-verify changes:
+  then they are moved together rather than changed twice.
+- **A pool that turns its features off.** A pool whose sandboxes are
+  machines runs none of `pool-builder`, but no such pool runs an agent yet
+  (#127, #124), and `apply` takes no list of features to turn off. Revisit
+  with the first one.
+
 ## Consequences
 
 - The API's `BundlePin` loses `kind`; a create's `bundles` is ordered. The
@@ -327,6 +354,11 @@ reconciled, as `EnsurePool` converges the development manifest first now.
 - `dockerworker` makes a pool the way a pool makes a sandbox: boots the base,
   places, runs `apply`, records what it placed. The pool-agent image, its
   build and its release go.
+- A step's record is keyed by its feature's directory too, and every
+  feature's directory moves (`/opt/discobox/bundles/by-name/<bundle>`), so
+  the first start of every existing box on the new agent runs every step
+  again, once, and a snapshot built before is no help to it. Steps are
+  idempotent; the cost is that one slow start per box.
 - The VM provider (#127) and the pool's machine runtime (#124) use the same
   contract and provisioner, so a machine pool and a machine sandbox are the
   Docker ones on another `machine.Guest`.
