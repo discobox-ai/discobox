@@ -304,13 +304,11 @@ before its agent starts
 such as `/api/pools/{poolId}/status`; the actions a pool principal may reach
 under `/api/pools/{poolId}/` are an allowlist in `internal/auth`.
 
-Redemption happens once per pool, not once per agent start. The agent keeps its
-identity keypair on the pool's durable storage and reuses it, so a restart
-authenticates with the assertion that key signs rather than spending another
-one-time token — which the pool no longer has, since nothing re-mints one for a
-container that survives. Registering again is reserved for the case where the
-control plane no longer recognises the key, and republishes the same key rather
-than minting a new identity (ADR 0063).
+Enrollment happens each time a pool's maker makes its box, at create and at
+repair (`provisionPoolBox`), not at an agent start. The box keeps its identity
+key on the pool's durable storage, so a remade box prints the same key and
+enrolls it again, and a restarted agent signs with it as before; the agent
+never makes one.
 Agent-observed sandbox state is reported at
 `/api/pools/{poolId}/sandbox-states` under the same pool-principal rule; the
 sandbox IDs are runtime evidence, not user authorization input.
@@ -873,8 +871,13 @@ never moves a running sandbox, and they are what the pool lets the box fetch
   intent, an archived one in place. A sandbox pinned to a platform and to no
   agent — one pinned before the agent was a bundle of its own (ADR
   26-10-24-953 §2) — is pinned to the release's agent in place, running or
-  not: neither fingerprint includes it, and its pool places it at the next
-  start. A running one keeps its container, which its pool
+  not, and to the release's platform with it, in the columns it was pinned
+  in: an agent provisions the platform it ships with, and an older
+  platform's optional features would block the new agent's start (ADR
+  26-10-24-953 §1, as amended). It is the one pin that moves with no
+  upgrade asked for, and it rebuilds nothing: such a sandbox's fingerprint is
+  the delivered one, which leaves out the platform and the agent, and its
+  pool places both at the next start. A running one keeps its container, which its pool
   keeps while its spec does not move, and reports its upgrade until it stops,
   is upgraded or repaired.
 - **Nothing to move to opts a sandbox out.** A missing harness config, one

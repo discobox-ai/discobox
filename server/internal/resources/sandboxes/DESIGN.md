@@ -103,11 +103,16 @@ flowchart LR
   `HarnessManifestDigest` stays in: the harness's manifest is what its
   container is built with, so a moved one rebuilds it. A sandbox pinned before
   the list keeps its harness `Bundle` in too, as it was. The agent is in
-  neither fingerprint. A sandbox with a bundle pin that is not a content
-  digest, or no agent (`sandboxDelivery`) — one from before bundles, until
-  `PinUndeliveredSandboxes` reaches it — is sent nothing and keeps
-  `SandboxManifest.Fingerprint`: its pool keeps the container it has while
-  that does not move, and builds it no other.
+  neither fingerprint, and which one applies turns on the bundles alone
+  (`specFingerprint`), so pinning an agent changes neither. A sandbox with a
+  bundle pin that is not a content digest — one from before bundles, until
+  `PinUndeliveredSandboxes` reaches it — keeps `SandboxManifest.Fingerprint`.
+  One with no agent is sent nothing (`sandboxDelivery`): its pool keeps the
+  container it has while its fingerprint does not move, and builds it no
+  other. `PinUndeliveredSandboxes` pins such a sandbox to the release's agent
+  and, with it, the release's platform, in place: the one pin moved with no
+  upgrade asked for, since an agent provisions the platform it ships with
+  (ADR 26-10-24-953 §1, as amended).
 - A sandbox name is unique within its project (`idx_sandbox_project_name`),
   like a pool's or a harness config's. It is an addressable handle, not a
   label: `discobox admin ssh-config` emits it as an `ssh_config` `Host` alias, and
