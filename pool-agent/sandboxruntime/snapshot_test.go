@@ -30,7 +30,7 @@ import (
 func snapshotCreate(sandboxID string, platform string) *workerapimodel.PoolSandboxCreateRequest {
 	return &workerapimodel.PoolSandboxCreateRequest{
 		SandboxId: sandboxID,
-		Agent: workerclient.NewOptBundlePin(testAgentPin),
+		Agent:     workerclient.NewOptBundlePin(testAgentPin),
 		Bundles: workerclient.NewOptNilBundlePinArray([]workerapimodel.BundlePin{
 			{Name: "discobox-platform", Digest: "sha256:" + strings.Repeat(platform, 64)},
 			{Name: "discobox-harness-shell", Digest: "sha256:" + strings.Repeat("b", 64)},

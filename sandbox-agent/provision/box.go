@@ -105,6 +105,36 @@ func Snapshot(ctx context.Context, logger *slog.Logger, tracker *Tracker, trees 
 	return err
 }
 
+// Pool provisions a pool's box from its bundle trees, in order (ADR
+// 26-10-24-953 §2): every feature, every step blocking, nothing turned off
+// and no placeholders, since nothing runs on a pool but what its bundles lay.
+// It reports to tracker, and returns once nothing is left to provision.
+func Pool(ctx context.Context, logger *slog.Logger, tracker *Tracker, trees []string) error {
+	loaded, err := provisionspec.Load(trees...)
+	if err != nil {
+		err = fmt.Errorf("load bundle trees: %w", err)
+		tracker.Fail(err)
+		return err
+	}
+	runner := &Runner{
+		Root:    "/",
+		Records: Records{Dir: RecordsDir},
+		LogDir:  LogDir,
+		Tracker: tracker,
+		Logger:  logger,
+		Booted:  booted(),
+	}
+	if self, err := os.Executable(); err == nil {
+		runner.Self = self
+	}
+	if runner.Platform, err = DetectPlatform("/"); err != nil {
+		tracker.Fail(err)
+		return err
+	}
+	_, err = runner.Provision(ctx, loaded, Options{})
+	return err
+}
+
 // booted reports whether systemd is running this box: a box's boot, never
 // an image's build.
 func booted() bool { return dirExists("/run/systemd/system") }

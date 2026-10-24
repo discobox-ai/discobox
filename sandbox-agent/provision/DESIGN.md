@@ -49,6 +49,7 @@ runs, unless it has no features to provision.
 | The agent, every boot | `Boot(…, wireOnly=false)` → `Runner.Provision` | Everything, with `Background`: the server answers meanwhile |
 | `boot.Wire` / `boot.Provision` | `Boot(…, wireOnly=true)` → `Runner.Wire` | Wiring alone, before the account exists |
 | `discobox-sandbox-agent snapshot` | `Snapshot` → `Runner.Provision` with `Snapshot` | Every step blocking, the plan's features off, and what a feature keeps out of a snapshot `Deferred`: a box provisioned as a snapshot is taken ([Snapshots](#snapshots)) |
+| `discobox-provision apply`, on a pool | `Pool` → `Runner.Provision` | Every feature of the pool's bundles, every step blocking, nothing off and no placeholders: nothing runs on a pool but what its bundles lay ([ADR 26-10-24-953](../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §2) |
 
 At boot the trees are the box's pins' bundles, in the pins' order
 (`bundlestore.Trees`, handed to `BootPlan`): a sandbox's sandbox bundle and

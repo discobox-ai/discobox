@@ -20,7 +20,7 @@ from the in-sandbox `sandbox-agent` API.
 | `cmd/discobox-cp-relay` | wslc guest half of the control-plane channel: multiplexes the guest's stdio with `cpmux` and serves the Unix socket the agent reaches the control plane through. |
 | `.` | Root `poolagent` Go package: boot contract, registration flow, control-plane HTTP client (`http.go`), status reporting, the standing sandbox-agent status poller (`statuspoll.go`, ADR 0030), resource accounting (`resourcereport.go`, `storagescan.go`, `cgroup.go`), and high-level command orchestration. |
 | `server` | Pool-local HTTP server, health/metadata endpoints, generated sandbox API route/auth adapter, the sandbox HTTP/sandbox-agent/Git proxy routes, the Git cache routes the control plane forwards clients' deliveries to (`sandbox_git_cache.go`), on-demand start (`autostart.go`), the loopback origin listener the pool proxy forwards sandboxes' origin fetches to (`NewOriginRouter`; see [Git origins](#git-origins)), and the socket it forwards their bundle fetches to (`Config.AssetListener`; see [Bundle Assets](#bundle-assets)). |
-| `assetcache` | The pool's pull-through cache of bundles (ADR 26-10-16-423 §13): each sandbox's record of what it is delivered (`delivery.json`: its agent and its ordered bundles), and each snapshot build's, kept apart from them by its `layout.SnapshotIDPrefix` ID ([Snapshots](#snapshots)), the blob store under `layout.PoolBuild`, filled through the agent's control-plane client (`HTTPClient.FetchAsset`), the `assets.discobox.internal` handler scoped to one sandbox's bundles, the sweep, and the one layer of a sandbox's agent bundle (`AgentLayer`, `OpenAgentLayer`), which only the pool reads. See [Bundle Assets](#bundle-assets). |
+| `assetcache` | The pool's pull-through cache of bundles (ADR 26-10-16-423 §13): each sandbox's record of what it is delivered (`delivery.json`: its agent and its ordered bundles), and each snapshot build's, kept apart from them by its `layout.SnapshotIDPrefix` ID ([Snapshots](#snapshots)), the blob store under `layout.PoolBuild`, filled through the pool's asset client ([`poolassets`](../pkg/poolassets)), the `assets.discobox.internal` handler scoped to one sandbox's bundles, the sweep, and the one layer of a sandbox's agent bundle (`AgentLayer`, `OpenAgentLayer`), which only the pool reads. See [Bundle Assets](#bundle-assets). |
 | `cpmux` | Symmetric yamux session over one duplex byte stream, for guests that can only be dialed inward (wslc). |
 | `sandboxtoken` | Tokens the pool issues its own sandboxes, signed with the same key under their own audience (`discobox-pool-sandbox`); `origin:fetch` is accepted on the `git-origins` route alone. |
 | `internalhttp` | The transport for the pool's own HTTP, which never honors `HTTP_PROXY`: the control-plane client's, and the base of every transport a sandbox `Dialer` builds. |
@@ -1126,7 +1126,7 @@ proxy forwards it, read-only, to the agent's asset socket
 (`layout.ProxyAssetsSocket`) as the sandbox the client certificate names
 (`proxy.PoolClientHeader`), and `assetcache` answers from its own store,
 fetching what it lacks from the server's pool asset routes once
-(`HTTPClient.FetchAsset`, as the pool).
+([`poolassets`](../pkg/poolassets), as the pool).
 
 - **A socket, not a loopback port.** The listener's only word on who is asking
   is that header. The proxy sends a sandbox's ordinary egress from this

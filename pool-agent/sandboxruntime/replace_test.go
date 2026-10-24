@@ -62,7 +62,7 @@ func TestASpecChangeThatCannotGetItsImageKeepsTheContainer(t *testing.T) {
 		Config: workerapimodel.SandboxConfig{
 			SpecFingerprint: workerclient.NewOptString("spec-new"),
 		},
-		Agent:               workerclient.NewOptBundlePin(testAgentPin),
+		Agent:                 workerclient.NewOptBundlePin(testAgentPin),
 		Bundles:               workerclient.NewOptNilBundlePinArray(replacePlatformPins()),
 		ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerclient.ResolvedHarnessConfig{}),
 	})
@@ -141,7 +141,7 @@ func TestACreateAskedToStartFinishesOneThatNeverStartedItsContainer(t *testing.T
 					SpecFingerprint: workerclient.NewOptString("spec-1"),
 					Start:           tc.start,
 				},
-				Agent:               workerclient.NewOptBundlePin(testAgentPin),
+				Agent:                 workerclient.NewOptBundlePin(testAgentPin),
 				Bundles:               workerclient.NewOptNilBundlePinArray(replacePlatformPins()),
 				ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerclient.ResolvedHarnessConfig{}),
 			})

@@ -5,7 +5,6 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -21,11 +20,12 @@ import (
 	"github.com/discobox-ai/x/id"
 
 	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pkg/poolassets"
+	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/pool-agent/assetcache"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
 	"github.com/discobox-ai/discobox/pool-agent/childproc"
-	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	poolserver "github.com/discobox-ai/discobox/pool-agent/server"
@@ -162,18 +162,18 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 
 	// The bundles its sandboxes are pinned to, fetched from the control plane
 	// as this pool and over the transport its URL names (ADR 26-10-16-423 §13).
+	assetClient := &poolassets.Client{
+		BaseURL:   baseURL,
+		HTTP:      controlPlaneHTTPClient,
+		ProjectID: bootstrap.ProjectID,
+		PoolID:    bootstrap.PoolID,
+		Key:       registration.PrivateKey,
+	}
 	assets := assetcache.New(assetcache.Config{
 		Dir:       filepath.Join(root.PoolBuild(bootstrap.ProjectID, bootstrap.PoolID), "assets"),
 		Sandboxes: root.PoolSandboxes(bootstrap.ProjectID, bootstrap.PoolID),
 		Snapshots: root.PoolSnapshots(bootstrap.ProjectID, bootstrap.PoolID),
-		Fetch: func(ctx context.Context, path string) (io.ReadCloser, error) {
-			return client.FetchAsset(ctx, AssetRequest{
-				ProjectID:  bootstrap.ProjectID,
-				PoolID:     bootstrap.PoolID,
-				PrivateKey: registration.PrivateKey,
-				Path:       path,
-			})
-		},
+		Fetch:     assetClient.Fetch,
 	})
 	runtime, err := newDockerSandboxRuntime(root, bootstrap, registration.PrivateKey, assets)
 	if err != nil {

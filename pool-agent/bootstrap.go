@@ -5,20 +5,18 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/controlplane"
 	"github.com/discobox-ai/discobox/pkg/platform"
-	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/pkg/poolauth"
+	"github.com/discobox-ai/discobox/pkg/wire"
 )
 
 const (
@@ -591,75 +589,16 @@ func (f FileKeySource) KeyPair(context.Context) (KeyMaterial, error) {
 	if path == "" {
 		return KeyMaterial{}, errors.New("pool identity key path is required")
 	}
-	switch material, err := loadKeyMaterial(path); {
-	case err == nil:
-		return material, nil
-	case !errors.Is(err, os.ErrNotExist):
-		// A key that exists but cannot be read is not the same as no key:
-		// generating a new one here would silently change the pool's identity
-		// and require a bootstrap token that has already been spent.
-		return KeyMaterial{}, err
-	}
-
-	material, err := generateKeyMaterial()
+	// A key that exists but cannot be read is not the same as no key:
+	// generating a new one here would silently change the pool's identity and
+	// require a bootstrap token that has already been spent.
+	key, created, err := poolauth.LoadOrCreateKey(path)
 	if err != nil {
 		return KeyMaterial{}, err
 	}
-	if err := storeKeyMaterial(path, material.PrivateKey); err != nil {
-		return KeyMaterial{}, err
-	}
-	return material, nil
-}
-
-func loadKeyMaterial(path string) (KeyMaterial, error) {
-	encoded, err := os.ReadFile(path)
+	publicKey, err := poolauth.PublicKeyOf(key)
 	if err != nil {
 		return KeyMaterial{}, err
 	}
-	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(encoded)))
-	if err != nil {
-		return KeyMaterial{}, fmt.Errorf("decode pool identity key %s: %w", path, err)
-	}
-	if len(decoded) != ed25519.PrivateKeySize {
-		return KeyMaterial{}, fmt.Errorf("pool identity key %s has length %d, want %d", path, len(decoded), ed25519.PrivateKeySize)
-	}
-	privateKey := ed25519.PrivateKey(decoded)
-	public, ok := privateKey.Public().(ed25519.PublicKey)
-	if !ok {
-		return KeyMaterial{}, fmt.Errorf("pool identity key %s is not ed25519", path)
-	}
-	publicKey, err := poolauth.EncodePublicKey(public)
-	if err != nil {
-		return KeyMaterial{}, err
-	}
-	return KeyMaterial{PublicKey: publicKey, PrivateKey: privateKey, Loaded: true}, nil
-}
-
-// storeKeyMaterial writes the key through a temporary file in the same
-// directory, so an interrupted write can never leave a truncated key that the
-// next start would refuse to load.
-func storeKeyMaterial(path string, privateKey ed25519.PrivateKey) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create pool identity directory: %w", err)
-	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".agent.key-")
-	if err != nil {
-		return fmt.Errorf("create pool identity key: %w", err)
-	}
-	defer func() { _ = os.Remove(file.Name()) }()
-	if err := file.Chmod(0o600); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("secure pool identity key: %w", err)
-	}
-	if _, err := file.WriteString(base64.StdEncoding.EncodeToString(privateKey)); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("write pool identity key: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("write pool identity key: %w", err)
-	}
-	if err := os.Rename(file.Name(), path); err != nil {
-		return fmt.Errorf("publish pool identity key: %w", err)
-	}
-	return nil
+	return KeyMaterial{PublicKey: publicKey, PrivateKey: key, Loaded: !created}, nil
 }
