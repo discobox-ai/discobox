@@ -51,7 +51,11 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// proxy certificate bundle before booting systemd so the proxy unit and
 	// per-sandbox client certificates share a consistent CA without racing on
 	// first-time generation.
-	if err := proxyagent.WriteUnitEnvironment(root, bootstrap.HostMountPrefix, bootstrap.ControlPlaneURL, bootstrap.ProjectID, bootstrap.PoolID); err != nil {
+	tunnelURL, err := proxyagent.ConfiguredTunnelURL()
+	if err != nil {
+		return err
+	}
+	if err := proxyagent.WriteUnitEnvironment(root, bootstrap.HostMountPrefix, bootstrap.ControlPlaneURL, bootstrap.ProjectID, bootstrap.PoolID, tunnelURL); err != nil {
 		return err
 	}
 	bundle, err := proxyagent.PrepareBundle(root, bootstrap.ProjectID, bootstrap.PoolID)
@@ -159,7 +163,12 @@ func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap, identityKey 
 	if err != nil {
 		return nil, err
 	}
+	tunnelURL, err := proxyagent.ConfiguredTunnelURL()
+	if err != nil {
+		return nil, err
+	}
 	return sandboxruntime.NewDockerSandboxRuntime(sandboxruntime.DockerSandboxRuntimeConfig{
+		PoolEndpoints:         proxyagent.PoolEndpoints(tunnelURL),
 		ProjectID:             bootstrap.ProjectID,
 		PoolID:                bootstrap.PoolID,
 		ControlPlanePublicKey: bootstrap.ControlPlaneKey,

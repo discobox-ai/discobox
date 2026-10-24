@@ -276,6 +276,9 @@ func (s *Server) startRetentionSweeper() {
 	}()
 }
 
+// handshakeTimeout bounds a client's mTLS handshake with the proxy.
+const handshakeTimeout = 10 * time.Second
+
 // budgetPassSpacing is the least time between budget passes woken by spool
 // writes. It bounds how far past the budget a burst of writes can take the
 // trees before a pass reclaims them.
@@ -400,10 +403,15 @@ func (s *Server) serveConn(conn net.Conn) {
 		}
 	}()
 	if tlsConn, ok := conn.(*tls.Conn); ok {
+		// Bounded, since a connection holds descriptors here before any
+		// certificate names it: through a pool's tunnel listener that is
+		// anyone who reaches the edge (ADR 26-10-23-719).
+		_ = tlsConn.SetDeadline(time.Now().Add(handshakeTimeout))
 		if err := tlsConn.HandshakeContext(s.ctx); err != nil {
 			recordSpanError(span, err)
 			return
 		}
+		_ = tlsConn.SetDeadline(time.Time{})
 	}
 	client := clientIdentityFromConn(conn)
 	span.SetAttributes(clientAttrs(client)...)

@@ -401,6 +401,9 @@ type DockerSandboxRuntime struct {
 	// sandbox's runtime-config document; zero leaves the sandbox-agent's
 	// default (ADR 0108).
 	sandboxIdleTimeout time.Duration
+	// poolEndpoints is where the pool serves its sandboxes, named in each
+	// one's bootstrap: directly, or through the edge it sits behind.
+	poolEndpoints sandboxconfig.PoolEndpoints
 	// identityKey is the pool's identity key. It signs runtime-config
 	// deliveries, and its public half is in every sandbox's bootstrap
 	// (ADR 26-10-08-127 §3).
@@ -432,6 +435,9 @@ type DockerSandboxRuntimeConfig struct {
 	// SandboxIdleTimeout is how long a sandbox runs idle before it powers
 	// itself off (ADR 0108). Zero leaves the sandbox-agent's default.
 	SandboxIdleTimeout time.Duration
+	// PoolEndpoints is where the pool serves its sandboxes, as their
+	// bootstraps name it (proxyagent.PoolEndpoints).
+	PoolEndpoints sandboxconfig.PoolEndpoints
 	// IdentityKey is the pool's identity key, which signs the runtime-config
 	// documents the pool delivers its sandboxes (ADR 26-10-08-127 §3).
 	IdentityKey ed25519.PrivateKey
@@ -462,6 +468,7 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 		poolID:                cfg.PoolID,
 		controlPlanePublicKey: cfg.ControlPlanePublicKey,
 		sandboxIdleTimeout:    cfg.SandboxIdleTimeout,
+		poolEndpoints:         cfg.PoolEndpoints,
 		identityKey:           cfg.IdentityKey,
 		sharedMemoryBytes:     cfg.SharedMemoryBytes,
 		root:                  cfg.Root,
@@ -1220,7 +1227,7 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
 	}
-	doc := buildSandboxDocument(r.paths, r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, r.poolPublicKey(), resolvedImage, req, proxyEnv, project)
+	doc := buildSandboxDocument(r.paths, r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, r.poolPublicKey(), resolvedImage, r.poolEndpoints, req, proxyEnv, project)
 	data, err := marshalSandboxDocument(doc)
 	if err != nil {
 		return err
@@ -1333,12 +1340,11 @@ func documentVolumes(volumes []workerapimodel.HarnessVolume) []harness.Volume {
 // trust — the control plane's, and the pool's for runtime-config deliveries —
 // where the pool serves it, and the create-time config, and no private key or
 // secret.
-func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID, controlPlanePublicKey, poolPublicKey, resolvedImage string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) sandboxconfig.Document {
+func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID, controlPlanePublicKey, poolPublicKey, resolvedImage string, pool sandboxconfig.PoolEndpoints, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) sandboxconfig.Document {
 	publicKeys := map[string]string{sandboxconfig.ControlPlanePublicKeyName: controlPlanePublicKey}
 	if poolPublicKey != "" {
 		publicKeys[sandboxconfig.PoolPublicKeyName] = poolPublicKey
 	}
-	pool := proxyagent.PoolEndpoints()
 	doc := sandboxconfig.Document{
 		Runtime: sandboxconfig.RuntimeLayer{
 			SandboxID: sandboxID,

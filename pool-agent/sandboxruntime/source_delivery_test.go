@@ -10,6 +10,7 @@ import (
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/gitcache"
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 )
 
 const deliveryTestSandboxID = "sandbox-1"
@@ -64,7 +65,7 @@ func TestSandboxDocumentMarksSourcesAwaitingDelivery(t *testing.T) {
 		},
 	})
 
-	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", proxyagent.PoolEndpoints(""), req, nil, nil)
 	byslug := map[string]sandboxconfig.Source{}
 	for _, source := range doc.Runtime.Sources {
 		byslug[source.Slug] = source

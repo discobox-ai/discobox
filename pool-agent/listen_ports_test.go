@@ -24,6 +24,7 @@ func TestPoolListenAddressesAreDistinct(t *testing.T) {
 		{"proxy control API", proxyagent.ControlListenAddress},
 		{"BuildKit mediator", buildkitagent.MediatorListen},
 		{"build registry", buildkitagent.RegistryListen},
+		{"pool tunnels", proxyagent.TunnelListenAddress},
 	}
 	// Keyed by port, not by address: the proxy control API binds loopback while
 	// the rest bind every interface, and 127.0.0.1:N and 0.0.0.0:N collide in

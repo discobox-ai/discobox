@@ -80,7 +80,7 @@ func TestDecideRuntimeConfigRefusesASandboxThatIsGone(t *testing.T) {
 func TestSandboxBootstrapNamesThePoolAndHoldsNoSecret(t *testing.T) {
 	r := runtimeConfigTestRuntime(t)
 	req := &workerapimodel.PoolSandboxCreateRequest{SandboxId: "sandbox-1"}
-	doc := buildSandboxDocument(linuxPaths, "proj_a", "sandbox-1", "pool_a", "cp-key", r.poolPublicKey(), "sha256:image", req, nil, nil)
+	doc := buildSandboxDocument(linuxPaths, "proj_a", "sandbox-1", "pool_a", "cp-key", r.poolPublicKey(), "sha256:image", proxyagent.PoolEndpoints(""), req, nil, nil)
 	cfg, _ := sandboxconfig.Effective(doc)
 	if cfg.Provider.PublicKeys[sandboxconfig.ControlPlanePublicKeyName] != "cp-key" || cfg.Provider.PublicKeys[sandboxconfig.PoolPublicKeyName] != r.poolPublicKey() {
 		t.Fatalf("public keys = %v", cfg.Provider.PublicKeys)

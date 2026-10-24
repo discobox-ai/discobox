@@ -525,7 +525,7 @@ paused container, which Docker itself calls running.
 The sandbox-agent proxy names every path it forwards
 (`server/sandbox_proxy.go`), rather than forwarding a prefix, so that the scope
 each one needs is decided here and an unknown path is refused rather than
-tunnelled. The cost is that a route reaching the sandbox is three registrations,
+tunneled. The cost is that a route reaching the sandbox is three registrations,
 not one — control plane, here, and the sandbox-agent's own generated router —
 and a route added at the ends but not the middle 404s with nothing to say why.
 Adding one means adding it in all three. The files API
@@ -1303,8 +1303,9 @@ flowchart LR
 - The stub's two settings are in `bridge.json` beside the credentials endpoint,
   since all three reach the pool with the same keypair: `dnsListenAddress` (that
   address, port 53 — the sandbox's own, `sandboxconfig.SandboxDNSListenAddress`)
-  and `dnsServer` (`discobox-pool-proxy:17085`, from the bootstrap's pool
-  endpoints). The sandbox's intake renders the file.
+  and `dnsServer` (`https://discobox-pool-proxy:17085`, a wire URL like every
+  other pool endpoint, from the bootstrap's pool endpoints; a bare `host:port`
+  from an older bootstrap is TCP). The sandbox's intake renders the file.
 - The proxy unit serves `dnsforward` on `0.0.0.0:17085` with the server
   configuration it shares with the credentials endpoint (`sandboxTLSConfig`),
   and answers from the first `nameserver` in the pool container's
@@ -1312,7 +1313,9 @@ flowchart LR
   is also on a network with a route out. Its failing is logged and does not
   stop the proxy. Connections are capped in total and per source address at
   accept, before any handshake, since the process also carries every
-  sandbox's egress; and per sandbox after it, by certificate name.
+  sandbox's egress; and per sandbox after it, by certificate name. The tunnel
+  listener's own source is not capped as one: it splices every sandbox
+  behind an edge ([Pools Behind An Edge](#pools-behind-an-edge)).
 - The upstream is the pool's own resolver, so a sandbox can resolve the names
   of containers on the pool's egress network too. It cannot reach them.
 - The server relays messages and decides nothing: DNS is not subject to the
@@ -1321,6 +1324,56 @@ flowchart LR
   and records it through the proxy's `RecordDNS` under the sandbox its
   certificate names, into the same trail, queue and retention as its HTTP.
   `audit/dns` relays it like `audit/http`, narrowed the same way.
+
+## Pools Behind An Edge
+
+A pool whose sandboxes reach it only through an HTTPS edge that terminates TLS
+— a load balancer or a platform's ingress — gets no client certificate from
+the edge, and no `CONNECT`, SOCKS or DNS-over-TLS through it. Such a pool is
+reached through WebSocket tunnels, with the sandbox's mTLS inside them
+([ADR 26-10-23-719](../docs/adr/26-10-23-719-a-sandbox-may-reach-its-pool-through-a-websocket-tunnel-with-its-mtls-inside.md)).
+
+```mermaid
+flowchart LR
+    subgraph sandbox["sandbox"]
+        dialer["bridge.Dialer (wss)"]
+    end
+    dialer -->|"TLS to the edge's public certificate"| edge["edge"]
+    edge -->|"HTTP/1.1 Upgrade: websocket"| tun["proxy unit :17090 (tunnels)"]
+    subgraph pool["pool container"]
+        tun -->|"/tunnel/proxy, from 127.0.0.2"| p["pool proxy :17080"]
+        tun -->|"/tunnel/credentials"| c["credentials :17083"]
+        tun -->|"/tunnel/dns"| d["dnsforward :17085"]
+    end
+    dialer -. "mTLS, client cert = sandbox, end to end" .-> p
+```
+
+- `DISCOBOX_POOL_TUNNEL_URL` on the pool container (a `wss` URL with no path)
+  turns it on. No provider sets it yet: the one that places a pool's
+  sandboxes off its network sets it, per pool, and exposes the listener to
+  the edge. The agent reads it once: `proxyagent.PoolEndpoints` then names
+  `<url>/tunnel/<service>` for every endpoint in each bootstrap, and nothing
+  else, and the unit environment file hands it to the proxy unit.
+- It names no BuildKit endpoint. A build's results come back through the pool
+  registry, which is unauthenticated and protected only by the pool's private
+  network (ADR 0126 §7), so no tunnel carries it, and a pool behind an edge is
+  a pool with no builder.
+- The proxy unit serves the tunnels in plain HTTP on `0.0.0.0:17090`
+  (`serveTunnels`): the edge holds the public certificate. Each stream is
+  spliced onto that service's own mTLS listener on loopback, from
+  `TunnelSource` (`127.0.0.2`), so the mTLS ends exactly where it does over
+  TCP and no service learns a tunnel carried it. The tunnel listener stops the
+  unit when it fails, as the proxy does.
+- Nothing names a caller until the mTLS inside a stream completes, and every
+  tunnel arrives from the edge, so the listener bounds what it holds itself
+  (`maxTunnels`, sized from descriptors with the reasoning beside it), a new
+  tunnel must begin a stream within 10s, and limiting each client is the
+  edge's. `dnsforward` exempts `TunnelSource`, and only it, from its
+  per-source cap; the proxy's handshake is bounded.
+- `pkg/wstunnel` is the protocol: one stream at a time per WebSocket, ended by
+  `end`/`end-ack` so the sandbox reuses the tunnel for its next stream.
+- The edge's host must resolve without the pool: the sandbox's own DNS goes
+  through the tunnel, and the stub refuses the edge's name rather than loop.
 
 ## Worker Proxy Integration
 
