@@ -612,11 +612,18 @@ flowchart LR
 - A terminal's exec id is its durable identity (ADR 0038). Attaching to or
   starting an ended terminal — its own id or the virtual `primary` alias —
   revives it in place: `terminal.Service.Revive` re-resolves env/secrets and
-  the harness relaunch command (never the initial prompt), re-ensures hooks and
+  the sandbox's harness and its relaunch command (never the initial prompt).
+  It runs the sandbox's harness, not the `harnessId` the record names: a
+  config ID is local to a server (ADR 0123), so a transferred discobox's
+  records carry the source server's. It re-ensures hooks and
   files, and calls the generic `execs.Manager.Relaunch`, which fences the old
   run and starts a fresh transient unit generation (`discobox-exec-<id>-g<N>`)
   under the same exec id, socket, and runtime paths. Exec fields describe the
-  current run; per-run history stays in the append-only event log and
+  current run, except the metadata (`harnessId`, `primary`), which is the
+  terminal's identity: written once at create (`SaveExecRecord` never
+  overwrites) and never by a relaunch, so `harnessId` is the harness the
+  terminal was created for, which a transferred discobox's revived terminal
+  no longer runs. Per-run history stays in the append-only event log and
   transcript store. Plain execs are never revived. `EnsurePrimary` revives the
   newest dead primary record on later boots instead of creating a sibling, so
   the session list holds one entry per terminal identity.

@@ -391,8 +391,8 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 // starting an ended terminal resumes it rather than addressing a dead record,
 // unless it is a configure flow's finished run (see Relaunches), which is
 // returned as it ended. The harness's relaunch command runs as a fresh login shell's typed-in job
-// (ADR 0027) in a new unit generation, with env and secrets re-resolved
-// exactly as Create resolves them. A live terminal is returned untouched;
+// (ADR 0027) in a new unit generation, with the harness, env and secrets
+// re-resolved exactly as Create resolves them. A live terminal is returned untouched;
 // non-terminal execs are never revived.
 //
 // Concurrent callers collapse onto one revive keyed by the terminal's id.
@@ -490,7 +490,13 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 	if !s.Relaunches(exec) {
 		return exec, nil
 	}
-	harness, harnessID, err := s.resolveHarness(HarnessID(exec))
+	// The sandbox's harness, not the one the record names. A sandbox runs one
+	// harness, so the record's can only be that one or one it no longer runs:
+	// a config ID is local to a server (ADR 0123), and a discobox transferred
+	// to another carries its terminal records here with the source server's ID
+	// in them. The record's metadata is written once, so it keeps the harness
+	// the terminal was created for; this run is the sandbox's.
+	harness, harnessID, err := s.resolveHarness("")
 	if err != nil {
 		return execs.Exec{}, err
 	}
