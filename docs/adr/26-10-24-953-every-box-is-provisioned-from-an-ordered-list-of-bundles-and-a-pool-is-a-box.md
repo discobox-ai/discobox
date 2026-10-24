@@ -1,8 +1,8 @@
 # 26-10-24-953 — Every box is provisioned from an ordered list of bundles, and a pool is a box
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-24
-- **Would supersede**:
+- **Supersedes**:
   [26-10-23-551](26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
   §1's step 3 (the pool-agent bundle's own `install`) and §2's "`install` is
   the bundle's one command. It applies no `provision.yaml`", with its
@@ -15,7 +15,7 @@
   bootstrap token and its fallback to registering again, and its keeping of
   the bootstrap token; and the pool-agent image a Docker pool's container
   runs.
-- **Would narrow**:
+- **Narrows**:
   [26-10-16-423](26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §2's two kinds of bundle, platform and harness, to an ordered list; §7's
   agent layer as the platform bundle's last layer, and its amendment's rule
