@@ -1,3 +1,7 @@
+// install is for a pool machine: Linux, booted with systemd.
+
+//go:build linux
+
 package bundle
 
 import (

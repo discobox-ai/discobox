@@ -543,11 +543,8 @@ func readBootstrapFile(path string) (Bootstrap, error) {
 	if !info.Mode().IsRegular() {
 		return Bootstrap{}, fmt.Errorf("pool bootstrap %s is not a regular file", path)
 	}
-	if err := checkBootstrapOwner(path, info); err != nil {
+	if err := checkBootstrapAccess(path, info); err != nil {
 		return Bootstrap{}, err
-	}
-	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		return Bootstrap{}, fmt.Errorf("pool bootstrap %s has mode %04o; it holds the bootstrap token, so it must be its owner's alone (0600)", path, perm)
 	}
 	var bootstrap Bootstrap
 	decoder := json.NewDecoder(file)
