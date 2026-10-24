@@ -46,18 +46,6 @@ func TestEngineConfigUsesVSOCKInBothDirections(t *testing.T) {
 	}
 }
 
-// A pool image is required on every backend; leaving it unset would start a
-// container from whatever the daemon happened to have.
-func TestEngineConfigResolvesAPoolImage(t *testing.T) {
-	if image := engineConfig(Config{}, nil, nil, dockerworker.ServerDefaults{}).Image; strings.TrimSpace(image) == "" {
-		t.Fatal("engine config resolved no pool image")
-	}
-	const configured = "example.com/pool:custom"
-	if image := engineConfig(Config{WorkerImage: configured}, nil, nil, dockerworker.ServerDefaults{}).Image; image != configured {
-		t.Fatalf("pool image = %q, want the configured value", image)
-	}
-}
-
 // Defaults have to be absolute and Discobox-scoped: they name directories that
 // hold multi-gigabyte disk images, and a relative one would land wherever the
 // server happened to be started from.

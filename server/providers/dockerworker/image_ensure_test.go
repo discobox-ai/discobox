@@ -103,7 +103,7 @@ func TestEnsureImagePullsWhenAbsent(t *testing.T) {
 	}
 	defer cli.Close()
 
-	engine := &Engine{cfg: Config{Image: testPoolImage}}
+	engine := &Engine{cfg: Config{SandboxBaseImage: testPoolImage}}
 	image, err := engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestEnsureImageDoesNotPullWhenPresent(t *testing.T) {
 	}
 	defer cli.Close()
 
-	engine := &Engine{cfg: Config{Image: image}}
+	engine := &Engine{cfg: Config{SandboxBaseImage: image}}
 	got, err := engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +155,7 @@ func TestEnsureImageReportsPullFailure(t *testing.T) {
 	}
 	defer cli.Close()
 
-	engine := &Engine{cfg: Config{Image: testPoolImage}}
+	engine := &Engine{cfg: Config{SandboxBaseImage: testPoolImage}}
 	_, err = engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err == nil {
 		t.Fatal("expected an error")
@@ -180,7 +180,7 @@ func TestEnsureImageReportsPullProgress(t *testing.T) {
 
 	var reports []sandbox.PoolProvisionProgress
 	engine := &Engine{cfg: Config{
-		Image: testPoolImage,
+		SandboxBaseImage: testPoolImage,
 		ProgressReporter: func(_ context.Context, poolID string, progress sandbox.PoolProvisionProgress) {
 			if poolID != "pool_test" {
 				t.Errorf("reported against pool %q", poolID)
@@ -232,7 +232,7 @@ func TestEnsureImageReportsNothingWhenTheImageIsPresent(t *testing.T) {
 
 	reported := false
 	engine := &Engine{cfg: Config{
-		Image:            image,
+		SandboxBaseImage: image,
 		ProgressReporter: func(context.Context, string, sandbox.PoolProvisionProgress) { reported = true },
 	}}
 	if _, err := engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test"); err != nil {
@@ -261,7 +261,7 @@ func TestEnsureImageFallsBackToACachedPoolImage(t *testing.T) {
 	}
 	defer cli.Close()
 
-	engine := &Engine{cfg: Config{Image: testPoolImage}}
+	engine := &Engine{cfg: Config{SandboxBaseImage: testPoolImage}}
 	image, err := engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err != nil {
 		t.Fatalf("a cached pool image was available, so the pull failure should not have: %v", err)
@@ -292,7 +292,7 @@ func TestEnsureImageFallsBackToTheNewestCachedPoolImage(t *testing.T) {
 	}
 	defer cli.Close()
 
-	engine := &Engine{cfg: Config{Image: testPoolImage}}
+	engine := &Engine{cfg: Config{SandboxBaseImage: testPoolImage}}
 	image, err := engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err != nil {
 		t.Fatal(err)
@@ -323,7 +323,7 @@ func TestEnsureImageWillNotFallBackToAnotherRepository(t *testing.T) {
 	}
 	defer cli.Close()
 
-	engine := &Engine{cfg: Config{Image: testPoolImage}}
+	engine := &Engine{cfg: Config{SandboxBaseImage: testPoolImage}}
 	image, err := engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err == nil {
 		t.Fatalf("fell back to %q, which is not a pool agent", image)
@@ -342,7 +342,7 @@ func TestEnsureImageReportsPullFailureWithNoCachedPoolImage(t *testing.T) {
 	}
 	defer cli.Close()
 
-	engine := &Engine{cfg: Config{Image: testPoolImage}}
+	engine := &Engine{cfg: Config{SandboxBaseImage: testPoolImage}}
 	_, err = engine.ensureImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test")
 	if err == nil {
 		t.Fatal("expected an error")
@@ -376,7 +376,7 @@ func TestFallbackPoolImageMatchesRepositoriesAcrossReferenceForms(t *testing.T) 
 			server.Close()
 			t.Fatal(err)
 		}
-		engine := &Engine{cfg: Config{Image: testCase.configured}}
+		engine := &Engine{cfg: Config{SandboxBaseImage: testCase.configured}}
 		image, ok := engine.fallbackPoolImage(context.Background(), cli)
 		if ok != testCase.want {
 			t.Fatalf("%s: fallbackPoolImage = (%q, %v), want ok=%v", name, image, ok, testCase.want)
@@ -392,7 +392,7 @@ func TestFallbackPoolImageMatchesRepositoriesAcrossReferenceForms(t *testing.T) 
 // image can be pulled, and must return the running fallback unchanged while it
 // still cannot — otherwise every reconcile would remove and recreate a working
 // pool agent for as long as the registry stayed unreachable.
-func TestResolvePoolAgentImage(t *testing.T) {
+func TestResolvePoolImage(t *testing.T) {
 	const fallback = "ghcr.io/discobox-ai/discobox-pool-agent:v1.2.2"
 	for name, testCase := range map[string]struct {
 		running   string
@@ -423,8 +423,8 @@ func TestResolvePoolAgentImage(t *testing.T) {
 			if testCase.running != "" {
 				existing.Config = &container.Config{Image: testCase.running}
 			}
-			engine := &Engine{cfg: Config{Image: testPoolImage}}
-			image, err := engine.resolvePoolAgentImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test", existing)
+			engine := &Engine{cfg: Config{SandboxBaseImage: testPoolImage}}
+			image, err := engine.resolvePoolImage(context.Background(), NewDockerClientLease(cli, DaemonOnThisMachine, nil), "pool_test", existing)
 			if err != nil {
 				t.Fatal(err)
 			}

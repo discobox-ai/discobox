@@ -924,12 +924,6 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/secrets/{secretId}/refresh
 	RefreshSecret(ctx context.Context, request *RefreshSecretBody, params RefreshSecretParams) (RefreshSecretRes, error)
-	// RegisterPool invokes register-pool operation.
-	//
-	// Register a bootstrapped pool agent.
-	//
-	// POST /api/pools/register
-	RegisterPool(ctx context.Context, request *RegisterPoolBody) (RegisterPoolRes, error)
 	// RemoveSandboxFile invokes remove-sandbox-file operation.
 	//
 	// Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory
@@ -16543,83 +16537,6 @@ func (c *Client) sendRefreshSecret(ctx context.Context, request *RefreshSecretBo
 
 	stage = "DecodeResponse"
 	result, err := decodeRefreshSecretResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// RegisterPool invokes register-pool operation.
-//
-// Register a bootstrapped pool agent.
-//
-// POST /api/pools/register
-func (c *Client) RegisterPool(ctx context.Context, request *RegisterPoolBody) (RegisterPoolRes, error) {
-	res, err := c.sendRegisterPool(ctx, request)
-	return res, err
-}
-
-func (c *Client) sendRegisterPool(ctx context.Context, request *RegisterPoolBody) (res RegisterPoolRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("register-pool"),
-		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/register"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, RegisterPoolOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [1]string
-	pathParts[0] = "/api/pools/register"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "POST", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-	if err := encodeRegisterPoolRequest(request, r); err != nil {
-		return res, errors.Wrap(err, "encode request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	body := resp.Body
-	defer body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeRegisterPoolResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

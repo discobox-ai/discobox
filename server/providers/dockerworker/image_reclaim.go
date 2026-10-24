@@ -108,7 +108,7 @@ func (t *imageReclaimThrottle) claim(poolID string, now time.Time, interval time
 // container while every pool is stopped, and the development image set.
 func (e *Engine) imageKeepReferences() []string {
 	keep := make([]string, 0, 8)
-	if image := e.cfg.Image; image != "" {
+	if image := e.cfg.SandboxBaseImage; image != "" {
 		keep = append(keep, image)
 	}
 	return append(keep, e.cfg.DevelopmentImageSync.KeepReferences()...)

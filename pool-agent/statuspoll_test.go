@@ -88,13 +88,13 @@ func (c *fakeSandboxAgentStatusClient) ReportSandboxAgentStatus(_ context.Contex
 	return nil
 }
 
-func statusPollTestRegistration(t *testing.T) *Registration {
+func statusPollTestIdentity(t *testing.T) *Identity {
 	t.Helper()
 	_, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
-	return &Registration{PrivateKey: priv}
+	return &Identity{PrivateKey: priv}
 }
 
 func statusOKHandler(observedAt string) http.HandlerFunc {
@@ -130,12 +130,12 @@ func TestSandboxAgentStatusPollerIsolatesPerSandboxErrors(t *testing.T) {
 
 	client := &fakeSandboxAgentStatusClient{}
 	poller := &sandboxAgentStatusPoller{
-		logger:       slog.New(slog.DiscardHandler),
-		bootstrap:    Bootstrap{ControlPlaneURL: "http://control-plane.invalid", ProjectID: "project-1", PoolID: "pool-1"},
-		registration: statusPollTestRegistration(t),
-		runtime:      runtime,
-		client:       client,
-		tokens:       map[string]cachedSandboxAgentToken{},
+		logger:    slog.New(slog.DiscardHandler),
+		bootstrap: Bootstrap{ControlPlaneURL: "http://control-plane.invalid", ProjectID: "project-1", PoolID: "pool-1"},
+		identity:  statusPollTestIdentity(t),
+		runtime:   runtime,
+		client:    client,
+		tokens:    map[string]cachedSandboxAgentToken{},
 	}
 
 	poller.tick(ctx)
@@ -248,12 +248,12 @@ func TestSandboxAgentStatusPollerCachesTokensAcrossTicks(t *testing.T) {
 
 	client := &fakeSandboxAgentStatusClient{}
 	poller := &sandboxAgentStatusPoller{
-		logger:       slog.New(slog.DiscardHandler),
-		bootstrap:    Bootstrap{ControlPlaneURL: "http://control-plane.invalid", ProjectID: "project-1", PoolID: "pool-1"},
-		registration: statusPollTestRegistration(t),
-		runtime:      runtime,
-		client:       client,
-		tokens:       map[string]cachedSandboxAgentToken{},
+		logger:    slog.New(slog.DiscardHandler),
+		bootstrap: Bootstrap{ControlPlaneURL: "http://control-plane.invalid", ProjectID: "project-1", PoolID: "pool-1"},
+		identity:  statusPollTestIdentity(t),
+		runtime:   runtime,
+		client:    client,
+		tokens:    map[string]cachedSandboxAgentToken{},
 	}
 
 	poller.tick(ctx)
@@ -290,11 +290,11 @@ func TestSandboxAgentStatusPollerRefreshesExpiringToken(t *testing.T) {
 
 	client := &fakeSandboxAgentStatusClient{}
 	poller := &sandboxAgentStatusPoller{
-		logger:       slog.New(slog.DiscardHandler),
-		bootstrap:    Bootstrap{ControlPlaneURL: "http://control-plane.invalid", ProjectID: "project-1", PoolID: "pool-1"},
-		registration: statusPollTestRegistration(t),
-		runtime:      runtime,
-		client:       client,
+		logger:    slog.New(slog.DiscardHandler),
+		bootstrap: Bootstrap{ControlPlaneURL: "http://control-plane.invalid", ProjectID: "project-1", PoolID: "pool-1"},
+		identity:  statusPollTestIdentity(t),
+		runtime:   runtime,
+		client:    client,
 		tokens: map[string]cachedSandboxAgentToken{
 			// Already within the refresh margin of expiry.
 			"sandbox-1": {token: "stale-token", expiresAt: time.Now().Add(1 * time.Minute)},
@@ -418,12 +418,12 @@ func TestSandboxAgentStatusPollerConfigureTickPollsOnlyConfigureSandboxes(t *tes
 
 	client := &fakeSandboxAgentStatusClient{}
 	poller := &sandboxAgentStatusPoller{
-		logger:       slog.New(slog.DiscardHandler),
-		bootstrap:    Bootstrap{ControlPlaneURL: "http://control-plane.invalid", ProjectID: "project-1", PoolID: "pool-1"},
-		registration: statusPollTestRegistration(t),
-		runtime:      runtime,
-		client:       client,
-		tokens:       map[string]cachedSandboxAgentToken{},
+		logger:    slog.New(slog.DiscardHandler),
+		bootstrap: Bootstrap{ControlPlaneURL: "http://control-plane.invalid", ProjectID: "project-1", PoolID: "pool-1"},
+		identity:  statusPollTestIdentity(t),
+		runtime:   runtime,
+		client:    client,
+		tokens:    map[string]cachedSandboxAgentToken{},
 	}
 
 	poller.tickConfigure(ctx)

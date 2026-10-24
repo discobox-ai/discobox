@@ -3442,49 +3442,6 @@ components:
                 - available
                 - state
             type: object
-        RegisterPoolBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/RegisterPoolBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                bootstrapToken:
-                    type: string
-                imageKind:
-                    description: The kind of image the pool runs, oci or vm/<driver>. An agent from before image kinds sends none, and runs OCI images, which is what is recorded for it.
-                    pattern: ^(oci|vm/[a-z0-9]+)$
-                    type: string
-                keyType:
-                    type: string
-                platform:
-                    description: The one platform the pool hosts, as os/arch. An agent from before platforms sends none, and its pool keeps the platform recorded for it.
-                    pattern: ^[a-z0-9]+/[a-z0-9]+$
-                    type: string
-                poolId:
-                    type: string
-                projectId:
-                    type: string
-                publicKey:
-                    type: string
-            required:
-                - projectId
-                - poolId
-                - bootstrapToken
-                - publicKey
-            type: object
-        RegisterPoolResponseBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/RegisterPoolResponseBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-            type: object
         UpgradeSandboxBody:
             additionalProperties: false
             description: |-
@@ -8517,31 +8474,6 @@ paths:
             summary: Force a pending, scheduled, or backoff job to run immediately
             tags:
                 - jobs
-    /api/pools/register:
-        post:
-            operationId: register-pool
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/RegisterPoolBody'
-                required: true
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/RegisterPoolResponseBody'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Register a bootstrapped pool agent
-            tags:
-                - Pools
     /api/pools/{poolId}/assets/{name}:
         get:
             description: |-

@@ -41,7 +41,6 @@ type Config struct {
 	Region           string                 `json:"region,omitempty"`
 	Size             string                 `json:"size,omitempty"`
 	Image            string                 `json:"image,omitempty"`
-	WorkerImage      string                 `json:"workerImage,omitempty"`
 	SandboxBaseImage string                 `json:"sandboxBaseImage,omitempty"`
 	SSHKeys          poolruntime.StringList `json:"sshKeys,omitempty"`
 	SSHUser          string                 `json:"sshUser,omitempty"`
@@ -124,7 +123,6 @@ func driverConfigFrom(cfg Config) DriverConfig {
 func engineConfig(cfg Config, serverDefaults dockerworker.ServerDefaults) dockerworker.Config {
 	return dockerworker.Config{
 		ControlPlaneURL:     cfg.ControlPlaneURL,
-		Image:               dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults),
 		SandboxBaseImage:    dockerworker.EffectiveSandboxBaseImage(cfg.SandboxBaseImage, serverDefaults),
 		ImageRetention:      serverDefaults.ImageRetention,
 		ImageCache:          serverDefaults.ImageCache,
@@ -177,8 +175,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "region", Label: "Region", Type: "string", Placeholder: defaultRegion},
 			{Key: "size", Label: "Droplet Size", Type: "string", Placeholder: defaultSize},
 			{Key: "image", Label: "Droplet Image", Type: "string", Placeholder: defaultImage},
-			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Worker-agent container image launched in the Droplet's Docker daemon.", Advanced: true},
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, which the pool preloads (ADR 26-10-16-423 §§7, 10).", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, and the pool's own container runs, provisioned as a pool (ADR 26-10-16-423 §§7, 10, ADR 26-10-24-953 §2).", Advanced: true},
 			{Key: "vpcUuid", Label: "VPC UUID", Type: "string", Advanced: true},
 			{Key: "tags", Label: "Tags", Type: "string", Advanced: true},
 			{Key: "backups", Label: "Backups", Type: "boolean", Advanced: true},

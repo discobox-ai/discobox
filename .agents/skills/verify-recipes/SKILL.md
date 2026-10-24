@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, the pool-agent bundle's `install` on a systemd Debian container and the server's release manifest export, the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, the pool-agent bundle, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, a Docker pool's box (provisioning, enrollment, an in-place re-apply) and the server's release manifest export, the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, a pool's box or its bundle, or a skill.
 ---
 
 # Verifying the console
@@ -428,7 +428,7 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   (`sqlite3 .tmp/discobox/discobox.db ".backup $S/data/discobox.db"`, then
   `DATABASE_DSN=sqlite3://$S/data/discobox.db`), whose harnesses are already
   seeded. Delete from `pools`, `sandbox_provider_instances`,
-  `reconcile_dirty` and `pool_bootstrap_tokens`, clear the projects'
+  and `reconcile_dirty`, clear the projects'
   `default_pool_id`/`judge_pool_id`/`judge_sandbox_id`, and set
   `DISCOBOX_JUDGE_COMMANDS=false`: the copy then never touches Docker, and
   never collides with the loop's pools, which share its IDs.
@@ -1069,35 +1069,35 @@ d shell <sbx_id> -- sh -c 'ls -ln ~/notes/a.md' </dev/null   # owned by the user
   harness after purging its archived `configure-*` boxes, which hold it.
 
 
-# Verifying the pool-agent bundle (`pool-agent/bundle`, `install`)
+# Verifying a Docker pool's box (`dockerworker/poolbox.go`, the pool bundle)
 
-No provider places it yet, so play the provider by hand on a systemd Debian
-container, against a fake control plane that logs register and status bodies.
+The dev pool is the box (ADR 26-10-24-953): its container
+`discobox-vm-<poolId>` runs the sandbox base image, and the engine places the
+agent, runs `provision identity`, enrolls the key, and runs `provision apply`.
 
-- Tree: `docker buildx build -f pool-agent/Dockerfile --target bundle --output
-  type=local,dest=$S/tree .`. Multi-arch as `release:images` publishes it:
-  the same with `--platform linux/amd64,linux/arm64 --output
-  type=oci,dest=$S/i.tar,rewrite-timestamp=true` on the default builder (this
-  box has no `discobox` buildx builder).
-- Machine: `pool-agent/bundle/testdata/machine` (`go tool task
-  test:e2e:pool-agent-bundle` builds it as
-  `discobox-pool-agent-bundle-machine:e2e`); `docker run -d --privileged
-  --cgroupns=private --tmpfs /run --tmpfs /run/lock --add-host
-  host.docker.internal:host-gateway -e HTTP_PROXY -e HTTPS_PROXY -e NO_PROXY
-  -e http_proxy -e https_proxy -e no_proxy <image>`.
-- Fake control plane: any HTTP server on `0.0.0.0` answering
-  `POST /api/pools/register` with `{}` and `POST /api/pools/{id}/status` with
-  204; the bootstrap's `controlPlaneUrl` is `http://host.docker.internal:<port>`.
-- Place `docker cp` the tree to `/opt/discobox/pool-agent/trees/<hex>` and the
-  bootstrap JSON to `/etc/discobox/pool-agent/bootstrap.json` (chown root,
-  chmod 0600), then `docker exec` the tree's `discobox-pool-agent install`.
-  Its `apt-get` needs the proxy env from the machine's `/proc/1/environ`
-  (the runc wrapper's rewrite), passed as separate `-e` arguments: in zsh an
-  unquoted `$VAR` holding several flags is one argument, so script it in bash.
-- Worth driving: a 0644 bootstrap (agent refuses, install exits 1, proxy not
-  started, no record), install twice (MainPIDs unchanged), a second tree (both
-  restart, the old tree pruned), `systemctl kill -s KILL` the agent, and
-  `docker restart` (no second register).
+- A change to the image watcher itself (`internal/cmd/discobox-docker-image-watch`,
+  a new bundle in it) is not picked up by the running loop: it is a `go run`
+  from the box's boot. Kill the `discobox-docker-image-watch` process (not the
+  dev-lock or `go` above it, and not the server's half), then run `go tool task
+  dev:docker-image-watch` in the background; the server keeps running and
+  restarts onto the `.env` it writes.
+- A fresh pool: `d admin pool create <name> --provider <the Default pool's
+  provider>`, then poll `d admin pool ls` to `active` (about 50s). The box's
+  key is `/var/lib/discobox/identity/<project>/<pool>/agent.key` in the
+  container; `docker exec <c> /opt/discobox/current/features/core/discobox-sandbox-agent
+  provision identity --key <it>` prints its public half, which must equal
+  `sqlite3 .tmp/discobox/discobox.db "select public_key from pools where id='<pool>'"`.
+- A failed apply lands whole in the pool's `errorMessage`
+  (`d admin pool ls` cuts it); `d admin pool get <id> -o json | jq -r
+  .errorMessage` reads it, though jq has rejected that output while the
+  message held multi-line provision logs.
+- An in-place re-apply: edit a pool bundle feature, wait for the watcher's
+  `built pool-agent-bundle` and the new `DISCOBOX_POOL_AGENT_BUNDLE` in `.env`;
+  the container's ID and `StartedAt` stay, and `readlink
+  /opt/discobox/bundles/by-name/*` moves to the new digest.
+- Identity survives `docker restart` and `docker rm -f` of the container (the
+  identity directory is a host bind mount): the recreated box re-enrolls the
+  same key. Delete a test pool with `d admin pool rm <id>`.
 - The release manifest: `./build/discobox-server manifest` refuses in a dev
   build (its `:latest` defaults); render the release link with `RELEASE_TAG=v9.9.9
   go tool task release:binary TARGET_OS=linux TARGET_ARCH=amd64

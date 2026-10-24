@@ -327,7 +327,7 @@ func (r *DockerSandboxRuntime) buildSnapshot(ctx context.Context, plan snapshotP
 		return fmt.Errorf("create the build container: %w", err)
 	}
 	reader, writer := io.Pipe()
-	go func() { writer.CloseWithError(agentlayer.Archive(writer, agent, false, plan.Pins)) }()
+	go func() { writer.CloseWithError(agentlayer.Archive(writer, agent, false, plan.Pins, agentlayer.Units)) }()
 	_, err = r.client.CopyToContainer(ctx, created.ID, client.CopyToContainerOptions{DestinationPath: "/", Content: reader})
 	reader.Close()
 	if err != nil {

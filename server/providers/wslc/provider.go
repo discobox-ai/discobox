@@ -45,8 +45,6 @@ type Config struct {
 	// defaults to the Unix socket the guest relay serves, so the Windows server
 	// never listens on TCP. Left configurable for tests.
 	ControlPlaneURL string `json:"controlPlaneUrl,omitempty"`
-	// WorkerImage is the pool-agent container image launched inside each VM.
-	WorkerImage string `json:"workerImage,omitempty"`
 	// SandboxBaseImage is the sandbox base image the pool preloads.
 	SandboxBaseImage string `json:"sandboxBaseImage,omitempty"`
 	// StorageDir is the root under which each pool gets a private VHD-backed
@@ -126,7 +124,6 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		// The container still sees layout.ContainerRoot; only the daemon-side
 		// location moves, which is exactly what HostStateRoot expresses.
 		HostStateRoot:    GuestStateRoot,
-		Image:            dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults),
 		SandboxBaseImage: dockerworker.EffectiveSandboxBaseImage(cfg.SandboxBaseImage, serverDefaults),
 		ImageRetention:   serverDefaults.ImageRetention,
 		ImageCache:       serverDefaults.ImageCache,
@@ -205,8 +202,7 @@ func Definition() sandbox.ProviderDefinition {
 		// Each pool VM is sized from the pool's own size first (see vmsize).
 		PoolSizeFields: vmsize.PoolSizeFields(),
 		ConfigFields: append([]sandbox.ProviderConfigField{
-			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, which the pool preloads (ADR 26-10-16-423 §§7, 10).", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, and the pool's own container runs, provisioned as a pool (ADR 26-10-16-423 §§7, 10, ADR 26-10-24-953 §2).", Advanced: true},
 			{Key: "cpuCount", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(vmsize.Host().VCPUs), Description: "Defaults to every host CPU. A pool's own cpuVcpus overrides it for that pool."},
 			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(vmsize.Host().MemoryMiB), Description: "Defaults to half of host memory. A pool's own memoryBytes overrides it for that pool."},
 			{Key: "maxStorageMiB", Label: "Max /var/lib/docker (MiB)", Type: "number", Placeholder: strconv.FormatInt(defaultMaxStgMiB, 10)},

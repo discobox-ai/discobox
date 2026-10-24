@@ -3,7 +3,6 @@ package pools
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +14,6 @@ import (
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/platform"
-	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
@@ -45,43 +43,6 @@ type SandboxStateReporter interface {
 // agent-reported sandbox states.
 func (s *Service) SetSandboxStateReporter(reporter SandboxStateReporter) {
 	s.sandboxReporter = reporter
-}
-
-// RegisterPool redeems a bootstrap token from a starting pool agent and
-// records its public key.
-//
-// Registration is an observation, so it reaches the reconciler as a dirty mark
-// rather than by writing the reconciler's fields itself (ADR 0017 §10). The
-// mark is what promotes the pool out of `registering` promptly; without it the
-// row would carry a stale state until the 60s drift scan.
-func (s *Service) RegisterPool(ctx context.Context, input services.RegisterPoolBody) (*services.RegisterPoolResponseBody, error) {
-	projectID := strings.TrimSpace(input.ProjectId)
-	poolID := strings.TrimSpace(input.PoolId)
-	if projectID == "" || poolID == "" || strings.TrimSpace(input.BootstrapToken) == "" || strings.TrimSpace(input.PublicKey) == "" {
-		return nil, fmt.Errorf("projectId, poolId, bootstrapToken, and publicKey are required")
-	}
-	hosts, err := declaredPlatform(input.Platform)
-	if err != nil {
-		return nil, err
-	}
-	runs, err := declaredImageKind(input.ImageKind)
-	if err != nil {
-		return nil, err
-	}
-	pool, err := s.store.GetPool(ctx, projectID, poolID)
-	if err != nil {
-		return nil, apperrors.NotFound(err, "pool not found")
-	}
-	h := sha256.Sum256([]byte(input.BootstrapToken))
-	if _, err := s.store.RegisterPool(ctx, pool.ID, hosts, runs, h[:], input.PublicKey, defaultString(input.KeyType.Or(""), poolauth.KeyType)); err != nil {
-		return nil, apperrors.NotFound(err, "pool bootstrap token not found")
-	}
-	if s.pools != nil {
-		if err := s.pools.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); err != nil {
-			return nil, err
-		}
-	}
-	return &services.RegisterPoolResponseBody{}, nil
 }
 
 // declaredPlatform reads the platform a pool agent says its pool hosts (ADR
@@ -132,11 +93,12 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	// A heartbeat from a pool recorded `offline` is the observation that the
-	// host is back. Like registration (ADR 0017 §10), it reaches the
-	// reconciler as a dirty mark rather than by writing State here; the mark
-	// is what promotes the pool back to `active` promptly instead of waiting
-	// for the drift scan.
-	if pool.State == model.PoolStateOffline && s.pools != nil {
+	// host is back, and one from a pool still `registering` that its agent
+	// runs on the key its maker enrolled. Either reaches the reconciler as a
+	// dirty mark rather than by writing State here (ADR 0017 §10); the mark is
+	// what promotes the pool to `active` promptly instead of waiting for the
+	// drift scan.
+	if (pool.State == model.PoolStateOffline || pool.State == model.PoolStateRegistering) && s.pools != nil {
 		if err := s.pools.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); err != nil {
 			return nil, err
 		}
@@ -591,11 +553,4 @@ func (s *Service) ReconcilePool(ctx context.Context, projectID, poolID string) (
 		return nil, err
 	}
 	return s.store.GetPool(ctx, pool.ProjectID, pool.ID)
-}
-
-func defaultString(value, fallback string) string {
-	if strings.TrimSpace(value) == "" {
-		return fallback
-	}
-	return value
 }

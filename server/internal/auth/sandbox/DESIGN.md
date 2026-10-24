@@ -11,7 +11,7 @@ are owned elsewhere:
 - Pool identity: [`pkg/poolauth`](../../../../pkg/poolauth/assertion.go)
   (assertions), `PoolAuthenticator` in [`internal/auth`](../DESIGN.md)
   (verification), and [`internal/resources/pools`](../../resources/pools/DESIGN.md)
-  (registration).
+  (enrollment).
 - Pool-agent request tokens: [`internal/auth/poolagent`](../poolagent/auth.go)
   (package `poolagentauth`).
 
@@ -27,7 +27,7 @@ Authentication must establish the caller identity before resource access:
 
 - User auth maps a user/session to a user ID.
 - Sandbox auth maps a sandbox token to project, sandbox, and user identity.
-- Pool auth maps bootstrap/runtime credentials to a pool ID.
+- Pool auth maps a pool's signed assertion to a pool ID.
 
 Authorization should be possible from request attributes without inspecting the
 request body. Use the authenticated principal plus method, route/path
@@ -35,14 +35,10 @@ parameters, query parameters, headers, and resource ownership loaded from those
 attributes. If a body field is needed to identify the resource being authorized,
 move that identity into the URL or another request attribute.
 
-The only intentional exception is pool bootstrap registration. A booting
-pool has no runtime principal yet, so `POST /api/pools/register` redeems a
-body-provided project ID, pool ID, one-time bootstrap token, and public key
-(plus optional key type). This is safe only because the control plane created
-the bootstrap token for that pool, stores only its hash with a short expiry,
-and validates it before recording the key. After registration, pool
-authorization must use the authenticated pool principal and request
-attributes, not body fields.
+There is no exception. A pool has no unauthenticated registration route: its
+maker records its key before its agent makes a request
+([ADR 26-10-24-953](../../../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
+§4).
 
 ## Sandbox Auth: Access Delegation
 
@@ -90,33 +86,32 @@ Current details:
 ## Pool Auth: Workload Identity
 
 Pools have their own identity. The pool private key stays on the pool host.
+It is enrolled by the pool's maker, over the channel it made the box with
+([ADR 26-10-24-953](../../../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
+§4); no token is minted for it.
 
 ```text
-1. When a runtime provider creates a pool runtime, poolruntime mints a one-time
-   PoolBootstrapToken for that pool and the bootstrap metadata.
-2. The pool agent boots with the control plane URL, project ID, pool ID,
-   bootstrap token, and control-plane public key (DISCOBOX_CONTROL_PLANE_URL,
-   DISCOBOX_PROJECT_ID, DISCOBOX_POOL_ID, DISCOBOX_POOL_BOOTSTRAP_TOKEN,
-   DISCOBOX_CONTROL_PLANE_PUBLIC_KEY).
-3. The pool agent generates an Ed25519 keypair locally, or loads the one it
-   kept on durable pool storage.
-4. With a new key, the agent calls POST /api/pools/register with project ID,
-   pool ID, bootstrap token, and public key. With a key loaded from disk it
-   skips registration and authenticates directly.
-5. The control plane checks that the token hash belongs to that pool and is
-   unexpired, unused, and unrevoked, then records the public key and key type,
-   stamps the pool registered, and marks the token used.
-6. The pool agent signs each pool-to-control-plane runtime request with a
-   poolauth assertion (audience discobox-control-plane).
-7. PoolAuthenticator verifies the assertion against the stored public key and
+1. When a runtime provider creates a pool's box, it places the agent bundle
+   there and runs `discobox-provision identity`, which generates an Ed25519
+   key on the box's durable storage (or keeps the one there) and prints its
+   public half.
+2. The provider records that public key as the pool's (EnrollPool, through
+   poolruntime's PoolMaker): the key and key type on the pool row.
+3. It places the bootstrap — control plane URL, project ID, pool ID and the
+   control plane's public key, no credential — and runs `discobox-provision
+   apply`, which fetches the pool's bundles with that key and starts the agent.
+4. The pool agent signs each pool-to-control-plane request with a poolauth
+   assertion (audience discobox-control-plane). Its first heartbeat stamps
+   the pool registered.
+5. PoolAuthenticator verifies the assertion against the stored public key and
    key type, and requires the pool to be unrevoked and the claimed project ID
    and pool ID to match the pool row and the route pool ID.
 ```
 
 Rules:
 
-- Bootstrap tokens expire after 30 minutes, are one-time use, and are stored
-  only as SHA-256 hashes. Spent tokens are purged periodically.
+- Only a pool's maker records its key, and only for a box it just made: a
+  reconcile over a running box does not enroll again.
 - Runtime assertions use PASETO v4.public with Ed25519, a 5-minute TTL, and
   `iat`/`nbf` backdated 5 minutes for local VM clocks.
 - Pool authorization should be scoped to assigned work and provider/sandbox

@@ -50,7 +50,7 @@ func TestIrohPeerAuthenticatorChecksTheEnrollmentEachRequest(t *testing.T) {
 
 	// With authentication required, the enrolled peer is how the CLI gets in,
 	// SSH included, and a request with no peer has nobody to be.
-	chain := Authentication(DiscobotAuthenticator{}, PoolBootstrapAuthenticator{}, authn)(Authorization(SSHConnectAuthorizer{}, AuthenticatedAuthorizer{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	chain := Authentication(DiscobotAuthenticator{}, authn)(Authorization(SSHConnectAuthorizer{}, AuthenticatedAuthorizer{})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})))
 	for _, tc := range []struct {

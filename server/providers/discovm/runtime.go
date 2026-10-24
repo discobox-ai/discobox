@@ -10,7 +10,6 @@ import (
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
 
-	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
@@ -139,17 +138,17 @@ func (r *Runtime) Close() error { return r.engine.Close() }
 
 // EnsurePool brings up the pool's host.
 //
-// It mints no bootstrap, because nothing here starts a pool agent: a pool
-// machine is a driver base with nothing placed on it, and a local driver's
-// host agent is not staged.
-func (r *Runtime) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ poolagent.MintBootstrap, begin func(context.Context) error) error {
+// It makes no pool's box, because nothing here starts a pool agent yet: a
+// pool machine is a driver base with nothing placed on it (#127), and a local
+// driver's host agent is not staged.
+func (r *Runtime) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ poolruntime.PoolMaker, begin func(context.Context) error) error {
 	if err := requirePool(pool); err != nil {
 		return err
 	}
 	return r.host.ensurePoolHost(ctx, pool, begin)
 }
 
-func (r *Runtime) RepairPool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ poolagent.MintBootstrap, _ string, begin func(context.Context) error) error {
+func (r *Runtime) RepairPool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ poolruntime.PoolMaker, _ string, begin func(context.Context) error) error {
 	if err := requirePool(pool); err != nil {
 		return err
 	}

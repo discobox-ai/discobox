@@ -59,13 +59,13 @@ func (c *recordingStatusClient) waitForCalls(t *testing.T, want int) {
 	}
 }
 
-func testReporterArgs() (Bootstrap, *Registration, *slog.Logger) {
+func testReporterArgs() (Bootstrap, *Identity, *slog.Logger) {
 	bootstrap := Bootstrap{
 		ProjectID:       "project-1",
 		PoolID:          "pool-1",
 		ControlPlaneURL: "http://control-plane.invalid",
 	}
-	return bootstrap, &Registration{Bootstrap: bootstrap}, slog.New(slog.DiscardHandler)
+	return bootstrap, &Identity{}, slog.New(slog.DiscardHandler)
 }
 
 // The control plane clears the agent-reported ready flag on its own whenever a
@@ -74,11 +74,11 @@ func testReporterArgs() (Bootstrap, *Registration, *slog.Logger) {
 // repeat for as long as the agent runs.
 func TestStatusReporterKeepsReporting(t *testing.T) {
 	client := newRecordingStatusClient()
-	bootstrap, registration, logger := testReporterArgs()
+	bootstrap, identity, logger := testReporterArgs()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, poolStatusFor(bootstrap), time.Millisecond); err != nil {
+	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, identity, client, poolStatusFor(bootstrap), time.Millisecond); err != nil {
 		t.Fatalf("start status reporter: %v", err)
 	}
 
@@ -103,9 +103,9 @@ func TestStatusReporterKeepsReporting(t *testing.T) {
 func TestStatusReporterFailsBootOnFirstReportError(t *testing.T) {
 	client := newRecordingStatusClient()
 	client.setErr(errors.New("control plane rejected status"))
-	bootstrap, registration, logger := testReporterArgs()
+	bootstrap, identity, logger := testReporterArgs()
 
-	err := startStatusReporter(t.Context(), logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, poolStatusFor(bootstrap), time.Millisecond)
+	err := startStatusReporter(t.Context(), logger, layout.ContainerAt(t.TempDir()), bootstrap, identity, client, poolStatusFor(bootstrap), time.Millisecond)
 	if err == nil {
 		t.Fatal("start status reporter succeeded, want the boot report's error")
 	}
@@ -118,11 +118,11 @@ func TestStatusReporterFailsBootOnFirstReportError(t *testing.T) {
 // recovers a pool whose readiness was cleared while the control plane was down.
 func TestStatusReporterRetriesAfterFailedReport(t *testing.T) {
 	client := newRecordingStatusClient()
-	bootstrap, registration, logger := testReporterArgs()
+	bootstrap, identity, logger := testReporterArgs()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, poolStatusFor(bootstrap), time.Millisecond); err != nil {
+	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, identity, client, poolStatusFor(bootstrap), time.Millisecond); err != nil {
 		t.Fatalf("start status reporter: %v", err)
 	}
 
@@ -138,10 +138,10 @@ func TestStatusReporterRetriesAfterFailedReport(t *testing.T) {
 // goroutine that reports for a pool that is shutting down.
 func TestStatusReporterStopsOnContextCancel(t *testing.T) {
 	client := newRecordingStatusClient()
-	bootstrap, registration, logger := testReporterArgs()
+	bootstrap, identity, logger := testReporterArgs()
 
 	ctx, cancel := context.WithCancel(t.Context())
-	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, poolStatusFor(bootstrap), time.Millisecond); err != nil {
+	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, identity, client, poolStatusFor(bootstrap), time.Millisecond); err != nil {
 		t.Fatalf("start status reporter: %v", err)
 	}
 	client.waitForCalls(t, 2)
@@ -161,12 +161,12 @@ func TestStatusReporterStopsOnContextCancel(t *testing.T) {
 // but not schedulable, with the runtime condition saying why.
 func TestStatusReporterReportsAMachinePoolUnschedulable(t *testing.T) {
 	client := newRecordingStatusClient()
-	bootstrap, registration, logger := testReporterArgs()
+	bootstrap, identity, logger := testReporterArgs()
 	bootstrap.Runtime, bootstrap.Driver = RuntimeMachine, "boxd"
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, registration, client, poolStatusFor(bootstrap), time.Millisecond); err != nil {
+	if err := startStatusReporter(ctx, logger, layout.ContainerAt(t.TempDir()), bootstrap, identity, client, poolStatusFor(bootstrap), time.Millisecond); err != nil {
 		t.Fatalf("start status reporter: %v", err)
 	}
 	client.waitForCalls(t, 1)

@@ -11,37 +11,9 @@ import (
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
-func TestEffectivePoolImagePrefersTheProviderThenTheServer(t *testing.T) {
-	const serverWide = "worker:server"
-
-	// A provider that names its own image wins over the server-wide override.
-	if got := dockerworker.EffectivePoolImage("worker:provider", dockerworker.ServerDefaults{PoolImage: serverWide}); got != "worker:provider" {
-		t.Fatalf("effective worker image = %q, want the provider image", got)
-	}
-	if got := dockerworker.PoolImageSource("worker:provider", dockerworker.ServerDefaults{PoolImage: serverWide}); got != "provider" {
-		t.Fatalf("worker image source = %q, want provider", got)
-	}
-
-	// A provider that names none takes the server's.
-	if got := dockerworker.EffectivePoolImage("", dockerworker.ServerDefaults{PoolImage: serverWide}); got != serverWide {
-		t.Fatalf("effective worker image = %q, want the server override", got)
-	}
-	if got := dockerworker.PoolImageSource("", dockerworker.ServerDefaults{PoolImage: serverWide}); got != "server" {
-		t.Fatalf("worker image source = %q, want server", got)
-	}
-
-	// With neither, the image this build shipped with.
-	if got := dockerworker.EffectivePoolImage("", dockerworker.ServerDefaults{}); got != DefaultImage() {
-		t.Fatalf("effective worker image = %q, want the static default", got)
-	}
-	if got := dockerworker.PoolImageSource("", dockerworker.ServerDefaults{}); got != "default" {
-		t.Fatalf("worker image source = %q, want default", got)
-	}
-}
-
-// The sandbox base image resolves as the pool image does (ADR 26-10-16-423
-// §10): a release manifest supersedes everything, then the provider's setting,
-// the server's override, and the image this build shipped with.
+// The sandbox base image (ADR 26-10-16-423 §10) resolves from the release
+// manifest first, then the provider's setting, the server's override, and the
+// image this build shipped with.
 func TestEffectiveSandboxBaseImagePrefersTheReleaseThenTheProviderThenTheServer(t *testing.T) {
 	const serverWide = "base:server"
 	if got := dockerworker.EffectiveSandboxBaseImage("base:provider", dockerworker.ServerDefaults{SandboxBaseImage: serverWide}); got != "base:provider" {

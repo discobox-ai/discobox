@@ -3,7 +3,6 @@ package dockerworker
 import (
 	"testing"
 
-	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
@@ -12,15 +11,15 @@ import (
 // environment, and a moved one recreates the pool container that would
 // otherwise run the old one.
 func TestTheSandboxBaseImageReachesThePoolAgent(t *testing.T) {
-	engine, err := New(Config{Image: "pool:test", SandboxBaseImage: "base:v1"}, nopDriver{})
+	engine, err := New(Config{SandboxBaseImage: "base:v1"}, nopDriver{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := engine.poolContainerEnv(poolagent.Bootstrap{ControlPlaneURL: "http://cp", PoolID: "pool-1", Token: "t"})
+	env := engine.poolPolicyEnv()
 	if got := env[sandboxruntime.EnvSandboxBaseImage]; got != "base:v1" {
 		t.Fatalf("%s = %q, want base:v1", sandboxruntime.EnvSandboxBaseImage, got)
 	}
-	moved, err := New(Config{Image: "pool:test", SandboxBaseImage: "base:v2"}, nopDriver{})
+	moved, err := New(Config{SandboxBaseImage: "base:v2"}, nopDriver{})
 	if err != nil {
 		t.Fatal(err)
 	}

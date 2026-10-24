@@ -1300,15 +1300,6 @@ func (UnimplementedHandler) RefreshSecret(ctx context.Context, req *RefreshSecre
 	return r, ht.ErrNotImplemented
 }
 
-// RegisterPool implements register-pool operation.
-//
-// Register a bootstrapped pool agent.
-//
-// POST /api/pools/register
-func (UnimplementedHandler) RegisterPool(ctx context.Context, req *RegisterPoolBody) (r RegisterPoolRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // RemoveSandboxFile implements remove-sandbox-file operation.
 //
 // Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory

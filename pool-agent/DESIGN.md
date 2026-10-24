@@ -18,7 +18,7 @@ from the in-sandbox `sandbox-agent` API.
 | `cmd/discobox-pool-agent` | Pool agent binary entrypoint. The same binary runs the `proxy` and `buildkit-mediator` systemd units as subcommands. |
 | `cmd/discobox-vsock-guest` | Local-VM guest services, built into the VM image: VSOCK-to-Docker byte splice and orderly shutdown endpoint. |
 | `cmd/discobox-cp-relay` | wslc guest half of the control-plane channel: multiplexes the guest's stdio with `cpmux` and serves the Unix socket the agent reaches the control plane through. |
-| `.` | Root `poolagent` Go package: boot contract, registration flow, control-plane HTTP client (`http.go`), status reporting, the standing sandbox-agent status poller (`statuspoll.go`, ADR 0030), resource accounting (`resourcereport.go`, `storagescan.go`, `cgroup.go`), and high-level command orchestration. |
+| `.` | Root `poolagent` Go package: boot contract, identity, control-plane HTTP client (`http.go`), status reporting, the standing sandbox-agent status poller (`statuspoll.go`, ADR 0030), resource accounting (`resourcereport.go`, `storagescan.go`, `cgroup.go`), and high-level command orchestration. |
 | `server` | Pool-local HTTP server, health/metadata endpoints, generated sandbox API route/auth adapter, the sandbox HTTP/sandbox-agent/Git proxy routes, the Git cache routes the control plane forwards clients' deliveries to (`sandbox_git_cache.go`), on-demand start (`autostart.go`), the loopback origin listener the pool proxy forwards sandboxes' origin fetches to (`NewOriginRouter`; see [Git origins](#git-origins)), and the socket it forwards their bundle fetches to (`Config.AssetListener`; see [Bundle Assets](#bundle-assets)). |
 | `assetcache` | The pool's pull-through cache of bundles (ADR 26-10-16-423 §13): each sandbox's record of what it is delivered (`delivery.json`: its agent and its ordered bundles), and each snapshot build's, kept apart from them by its `layout.SnapshotIDPrefix` ID ([Snapshots](#snapshots)), the blob store under `layout.PoolBuild`, filled through the pool's asset client ([`poolassets`](../pkg/poolassets)), the `assets.discobox.internal` handler scoped to one sandbox's bundles, the sweep, and the one layer of a sandbox's agent bundle (`AgentLayer`, `OpenAgentLayer`), which only the pool reads. See [Bundle Assets](#bundle-assets). |
 | `cpmux` | Symmetric yamux session over one duplex byte stream, for guests that can only be dialed inward (wslc). |
@@ -36,18 +36,23 @@ from the in-sandbox `sandbox-agent` API.
 | `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs, and `NotifyReady` (`sd_notify` for a Type=notify unit). |
 | `bundle` | The pool bundle (ADR 26-10-24-953 §2): its features (`bundle/features`: `pool-agent` and `pool-builder`), and where a pool's maker places what the agent reads beside them (`BootstrapFile`, `EnvironmentFile`). See [The Pool Bundle](#the-pool-bundle). |
 | `childproc` | This process's children: every subprocess start in the agent, and the reaper for the ones nothing is waiting for. See [Child Processes](#child-processes). |
-| `provisioner` | The machine provisioner ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md) §3): given a disco-vm machine's guest operations (`machine.Guest`), a tar tree and a command, it places the tree with disco-vm's copy and runs the command with its exec, returning its exit code and the tail of its output. No per-driver code, and no state: it is as idempotent as its command. A tree may hold secrets (a key, a bootstrap token), so no error carries its contents; a command's argv is named in errors, so secrets go in the tree. It is in this module rather than the root's so that the server can import it and the root module takes no dependency on disco-vm, which this module imports by commit, as the server does. |
+| `provisioner` | The box provisioner ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md) §3, [ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §3): given a box's guest operations (`machine.Guest`: a disco-vm machine's, or a Docker pool container's), a tar tree and a command, it places the tree with disco-vm's copy and runs the command with its exec, returning its exit code and the tail of its output. No per-driver code, and no state: it is as idempotent as its command. A tree may hold secrets (a key, a credential), so no error carries its contents; a command's argv is named in errors, so secrets go in the tree. It is in this module rather than the root's so that the server can import it and the root module takes no dependency on disco-vm, which this module imports by commit, as the server does. |
 | `vmtest` | Test support for code that drives disco-vm machines: `RunFakeGuestIfInvoked` lets a test binary be the guest agent of disco-vm's fake driver, so a test boots fake machines through the engine. Only tests import it, here and in the server's `vm` provider. |
 | `imagereap` | Rules for reclaiming unused Discobox images from a Docker daemon (ADR 0040). Shared with the server, which applies them to the daemon pool containers run on; see [Image Reclamation](#image-reclamation). |
 
 ## Startup Flow
 
-1. The agent reads its `poolagent.Bootstrap` (`Load`): a pool container's
-   provider renders it as `DISCOBOX_*` environment variables
-   (`dockerworker.BootEnv`); a pool machine's provider places it as a root-only
-   JSON file the bundle's unit names (`DISCOBOX_POOL_BOOTSTRAP_FILE`; see
-   [The Pool-Agent Bundle](#the-pool-bundle)), and any variable set wins
-   over the file's field. The control plane and the agent's listener are one
+Before the agent starts, the pool's maker has made its box
+([ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
+§§3–4): placed the agent, run `discobox-provision identity` there, recorded the
+public key it printed as the pool's (enrollment), placed the bootstrap, and run
+`discobox-provision apply`, which fetches the pool bundle with that key and
+applies it, laying and starting the agent's unit.
+
+1. The agent reads its `poolagent.Bootstrap` (`Load`): a root-only JSON file
+   its maker placed and the bundle's unit names (`DISCOBOX_POOL_BOOTSTRAP_FILE`;
+   see [The Pool Bundle](#the-pool-bundle)), and any variable set wins over
+   the file's field. It holds no credential. The control plane and the agent's listener are one
    URL each, and the scheme alone picks the transport ([`wire`](../pkg/wire),
    in the root module). The bootstrap also names the sandbox runtime: `docker`
    (the default) or `machine`, with its disco-vm driver.
@@ -58,25 +63,22 @@ from the in-sandbox `sandbox-agent` API.
    which only a pool machine's Type=notify unit listens for: the proxy unit is
    ordered after it.
 3. The agent loads its Ed25519 identity key from durable pool storage
-   (`layout.PoolIdentityKey`), generating and storing one on first boot.
-4. A newly generated key is registered at `/api/pools/register` with project
-   ID, pool ID, the single-use bootstrap token, and the public key; the control
-   plane redeems the token against that pool and stores the key. A key loaded
-   from disk skips registration and spends no token
-   ([ADR 0063](../docs/adr/0063-a-pool-agent-keeps-its-identity-key-and-registers-once.md)).
-5. Every later control-plane call carries a pool assertion the agent signs
-   itself ([`poolauth`](../pkg/poolauth): PASETO v4.public, audience `discobox-control-plane`,
+   (`layout.PoolIdentityKey`, `LoadIdentity`). It never makes one: the key is
+   the one its maker enrolled, and none is a box nobody enrolled, which fails
+   the boot. Nothing registers it.
+4. Every control-plane call carries a pool assertion the agent signs itself
+   ([`poolauth`](../pkg/poolauth): PASETO v4.public, audience `discobox-control-plane`,
    5-minute TTL). The control plane issues no runtime token.
-6. The first status report is synchronous, so a pool that cannot mark itself
-   ready fails its boot. When it is rejected under a stored key, the agent
-   registers that same key again (`ForceRegister`) and retries.
-7. The agent starts the proxy unit's resolve-token refresher. A Docker pool
+5. The first status report is synchronous, so a pool that cannot mark itself
+   ready fails its boot. It is also what registers the pool: the control
+   plane stamps `RegisteredAt` on a pool's first heartbeat.
+6. The agent starts the proxy unit's resolve-token refresher. A Docker pool
    builds its Docker sandbox runtime and starts that runtime's image reclaim
    loop. A machine pool has no runtime composed yet
    ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
    §3): it reports itself ready but not schedulable, with a `runtime`
    condition saying why, and serves nothing.
-8. `Serve`, handed the runtime as `sandboxruntime.Runtime`, starts the state,
+7. `Serve`, handed the runtime as `sandboxruntime.Runtime`, starts the state,
    progress, tree-reaper, status-poll and resource loops and the proxy-material
    reclaim loop, and finally the pool-local HTTP server.
 
@@ -99,15 +101,14 @@ daemon the paths the agent itself uses, so a fake daemon sharing the test's
 filesystem finds the files where the test wrote them; with one, only paths
 under the root are translated.
 
-After registration, the pool host reports scheduling status every 30s
+From then on, the pool host reports scheduling status every 30s
 (`/api/pools/{poolId}/status`). It sets `ready`, `schedulable`, and `degraded`
 booleans for control-plane scheduling, with available CPU, memory, and storage
-measured per report. Registration and every report also declare the one
+measured per report. Every report also declares the one
 platform the pool hosts (`hostedPlatform`, ADR 0145 §1): a pool's sandboxes are
 containers on the agent's own kernel and architecture, so it is the agent's
 own. Repeating it on every report is how the control plane learns what a
-pool from before platforms hosts, since an agent whose key survives a restart
-does not register again. Beside it they declare the kind of image the pool
+pool from before platforms hosts. Beside it, it declares the kind of image the pool
 runs (`hostedImageKind`, ADR 26-10-09-106 §4): `oci`, since this agent's
 sandboxes are containers. The same platform is the runtime's
 (`DockerSandboxRuntimeConfig.Platform`), and every path the runtime names inside
@@ -942,7 +943,7 @@ proxy's loopback control API, with a token it signs itself.
 
 ## Worker-Local HTTP Server
 
-After registration, the pool agent runs an HTTP server for provider runtime
+Once started, the pool agent runs an HTTP server for provider runtime
 operations against sandboxes hosted on that pool. The logical route shape is:
 
 ```text
@@ -954,7 +955,7 @@ Providers reach this server through a driver-provided HTTP client lease
 callers never dial the agent themselves. The agent serves plain HTTP on the
 listener `wire.Listen` opens from `DISCOBOX_AGENT_LISTEN_URL`: a TCP port by
 default, AF_VSOCK for the libkrun and vz microVMs, which therefore open no TCP
-listener. Outbound calls — registration, status, state and resource reports,
+listener. Outbound calls — status, state and resource reports,
 proxy secret resolution — use `wire.HTTPClient` on the control-plane URL, which
 dials TCP, host CID 2 over VSOCK, or the Unix socket `discobox-cp-relay` serves
 in a wslc guest. HTTP routes and authentication are identical across
@@ -1238,8 +1239,9 @@ bundle. `bundle` names the files its maker places beside it.
   - `pool-builder`, which requires it: the pool-shared builder of ADR 0044 —
     BuildKit's binaries and the registry's from their upstream images,
     `discobox-pool-runc` as `/opt/discobox/bin/runc`, `registry.yml`, the
-    builder's, registry's and mediator's units — and `dockerd` run outright.
-    A pool whose sandboxes are machines turns it off.
+    builder's, registry's and mediator's units. It runs no `dockerd`: the
+    pool's container has its daemon's socket bound in, which its sandboxes
+    run on. A pool whose sandboxes are machines turns it off.
 
   Each runs its binaries from its feature's directory under the bundle's
   stable link (`agentlayer.BundleTree`), and restarts its units from a step
@@ -1258,7 +1260,7 @@ bundle. `bundle` names the files its maker places beside it.
 - **Across a reboot** systemd starts the enabled units; the agent loads its
   identity key from `/var/lib/discobox`.
 - **How a server names it**: see
-  [providers](../server/providers/DESIGN.md#pool-agent-bundle).
+  [providers](../server/providers/DESIGN.md#pool-bundle).
 - **Tested** by `bundle`'s test, that the tree the Dockerfile assembles loads.
 
 ## Snapshots

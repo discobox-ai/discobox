@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -21,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/devbundles"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
@@ -29,10 +31,13 @@ import (
 type Options struct {
 	// Dir is the blob store: an OCI layout holding blobs no entry names.
 	Dir string
-	// PlatformBundle and AgentBundle are the platform and agent bundles the
-	// release pins, which every pool is answered.
+	// PlatformBundle, AgentBundle and PoolBundle are the platform, agent and
+	// pool bundles the release pins, which every pool is answered: what a
+	// sandbox applies, what every box is placed with, and what a pool's box
+	// applies (ADR 26-10-24-953 §§1–2).
 	PlatformBundle string
 	AgentBundle    string
+	PoolBundle     string
 	// ReleaseBundles are the other bundle references the release names: the
 	// built-in harnesses' and the pool's. Only these, the platform and the
 	// agent are pulled with the server's registry credentials.
@@ -48,6 +53,7 @@ type Service struct {
 	blobs    *imagecache.Layout
 	platform *releasePins
 	agent    *releasePins
+	pool     *releasePins
 	release  map[string]bool
 	// sources are where a blob the store lacks is looked for, in order;
 	// resolvers, what a reference names now.
@@ -78,7 +84,7 @@ func New(store *store.Store, opts Options) *Service {
 
 func newService(store *store.Store, opts Options, sources, resolvers []source) *Service {
 	release := map[string]bool{}
-	for _, ref := range append([]string{opts.PlatformBundle, opts.AgentBundle}, opts.ReleaseBundles...) {
+	for _, ref := range append([]string{opts.PlatformBundle, opts.AgentBundle, opts.PoolBundle}, opts.ReleaseBundles...) {
 		if ref = strings.TrimSpace(ref); ref != "" {
 			release[ref] = true
 		}
@@ -93,16 +99,19 @@ func newService(store *store.Store, opts Options, sources, resolvers []source) *
 	}
 	s.platform = &releasePins{what: "platform bundle", ref: strings.TrimSpace(opts.PlatformBundle), resolve: s.resolve, now: func() time.Time { return s.now() }}
 	s.agent = &releasePins{what: "agent bundle", ref: strings.TrimSpace(opts.AgentBundle), resolve: s.resolve, now: func() time.Time { return s.now() }}
+	s.pool = &releasePins{what: "pool bundle", ref: strings.TrimSpace(opts.PoolBundle), resolve: s.resolve, now: func() time.Time { return s.now() }}
 	return s
 }
 
 // releaseBundles is each bundle the release pins every pool is answered.
-func (s *Service) releaseBundles() []*releasePins { return []*releasePins{s.platform, s.agent} }
+func (s *Service) releaseBundles() []*releasePins {
+	return []*releasePins{s.platform, s.agent, s.pool}
+}
 
 // OnReleaseMoved has moved run, detached from any read, each time one of
-// the release's bundle references — the platform's, the agent's — resolves to
-// a digest other than the one before, the first resolution included. Set it
-// before the service is used.
+// the release's bundle references — the platform's, the agent's, the pool's —
+// resolves to a digest other than the one before, the first resolution
+// included. Set it before the service is used.
 func (s *Service) OnReleaseMoved(moved func(ctx context.Context)) {
 	for _, bundle := range s.releaseBundles() {
 		bundle.moved = func(string) { moved(context.Background()) }
@@ -130,11 +139,11 @@ func (s *Service) ResolveRelease(ctx context.Context) {
 	}
 }
 
-// CurrentRelease is the bundles the release's references resolve to, each
-// asked again once its last answer is a minute old; each zero when the
-// server names none.
+// CurrentRelease is the bundles the release's references resolve to that a
+// sandbox is pinned to, each asked again once its last answer is a minute
+// old; each zero when the server names none.
 func (s *Service) CurrentRelease(ctx context.Context) (services.ReleasePins, error) {
-	for _, bundle := range s.releaseBundles() {
+	for _, bundle := range []*releasePins{s.platform, s.agent} {
 		if bundle.ref == "" {
 			continue
 		}
@@ -157,6 +166,53 @@ func latest(bundle *releasePins) model.BundlePin {
 		return model.BundlePin{}
 	}
 	return model.BundlePin{Reference: bundle.ref, Digest: digest}
+}
+
+// PoolBox is what a pool's box is placed with (ADR 26-10-24-953 §2): the
+// release's agent bundle, its one layer for platform, and the release's pool
+// bundle as the pool's one pin. It fetches what the store lacks of the agent
+// bundle's manifests, and reads its layer only when OpenAgentLayer is called.
+func (s *Service) PoolBox(ctx context.Context, platform imagecache.Platform) (sandbox.PoolBox, error) {
+	var pins []model.BundlePin
+	for _, bundle := range []*releasePins{s.agent, s.pool} {
+		if bundle.ref == "" {
+			return sandbox.PoolBox{}, fmt.Errorf("this server names no %s, which every pool's box is placed with", bundle.what)
+		}
+		if _, err := bundle.pins(ctx, false); err != nil {
+			return sandbox.PoolBox{}, err
+		}
+		pin := latest(bundle)
+		if pin.Digest == "" {
+			return sandbox.PoolBox{}, fmt.Errorf("the %s %s has not resolved", bundle.what, bundle.ref)
+		}
+		pins = append(pins, pin)
+	}
+	agent := pin{ref: pins[0].Reference, digest: pins[0].Digest, release: true}
+	read, _, err := imagecache.ImageManifest(agent.digest, platform, func(digest string) (imagecache.Manifest, error) {
+		return s.manifest(ctx, agent, digest)
+	})
+	if err != nil {
+		return sandbox.PoolBox{}, fmt.Errorf("the agent bundle %s for %s: %w", agent.ref, platform, err)
+	}
+	if len(read.Layers) != 1 {
+		return sandbox.PoolBox{}, fmt.Errorf("the agent bundle %s for %s is %d layers, not the agent's one", agent.ref, platform, len(read.Layers))
+	}
+	layer := read.Layers[0].Digest
+	return sandbox.PoolBox{
+		Agent:      sandbox.BundlePin{Name: agent.name(), Digest: agent.digest},
+		AgentLayer: layer,
+		OpenAgentLayer: func(ctx context.Context) (io.ReadCloser, error) {
+			if err := s.ensure(ctx, agent, layer, false); err != nil {
+				return nil, fmt.Errorf("fetch the agent layer %s: %w", layer, err)
+			}
+			content, err := s.open(layer, "")
+			if err != nil {
+				return nil, err
+			}
+			return content.Body, nil
+		},
+		Bundles: []sandbox.BundlePin{{Name: pins[1].Name(), Digest: pins[1].Digest}},
+	}, nil
 }
 
 // ResolveAssetName answers the manifest a bundle name in the pool's scope is

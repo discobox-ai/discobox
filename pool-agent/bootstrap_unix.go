@@ -20,7 +20,7 @@ func checkBootstrapAccess(path string, info os.FileInfo) error {
 		return fmt.Errorf("pool bootstrap %s is owned by uid %d, not this agent's %d", path, stat.Uid, uid)
 	}
 	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		return fmt.Errorf("pool bootstrap %s has mode %04o; it holds the bootstrap token, so it must be its owner's alone (0600)", path, perm)
+		return fmt.Errorf("pool bootstrap %s has mode %04o; it names the control plane this agent trusts, so it must be its owner's alone (0600)", path, perm)
 	}
 	return nil
 }

@@ -905,12 +905,6 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/secrets/{secretId}/refresh
 	RefreshSecret(ctx context.Context, req *RefreshSecretBody, params RefreshSecretParams) (RefreshSecretRes, error)
-	// RegisterPool implements register-pool operation.
-	//
-	// Register a bootstrapped pool agent.
-	//
-	// POST /api/pools/register
-	RegisterPool(ctx context.Context, req *RegisterPoolBody) (RegisterPoolRes, error)
 	// RemoveSandboxFile implements remove-sandbox-file operation.
 	//
 	// Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory

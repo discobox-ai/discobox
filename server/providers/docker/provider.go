@@ -31,9 +31,6 @@ const (
 	labelProviderType = "discobox.provider_type"
 )
 
-// DefaultImage returns the default pool-agent image for Docker pools.
-func DefaultImage() string { return dockerworker.DefaultPoolImage }
-
 // DefaultAgentPort returns the default pool-agent port exposed by Docker pools.
 func DefaultAgentPort() int { return defaultAgentPort }
 
@@ -43,13 +40,11 @@ type Config struct {
 
 	ControlPlaneURL  string                   `json:"controlPlaneUrl,omitempty"`
 	Host             string                   `json:"host,omitempty"`
-	Image            string                   `json:"image,omitempty"`
 	SandboxBaseImage string                   `json:"sandboxBaseImage,omitempty"`
 	Network          string                   `json:"network,omitempty"`
 	AgentPort        int                      `json:"agentPort,omitempty"`
 	Privileged       *bool                    `json:"privileged,omitempty"`
 	CgroupNSMode     string                   `json:"cgroupNsMode,omitempty"`
-	Command          poolruntime.StringList   `json:"command,omitempty"`
 	DockerSocket     string                   `json:"bindDockerSocket,omitempty"`
 	HostMounts       []dockerworker.HostMount `json:"hostMounts,omitempty"`
 }
@@ -123,7 +118,6 @@ func daemonIsLocal(daemonHost string) bool {
 func engineConfig(cfg Config, listenEndpoints []string, daemonHost string, serverDefaults dockerworker.ServerDefaults) (dockerworker.Config, error) {
 	engineCfg := dockerworker.Config{
 		ControlPlaneURL:     strings.TrimSpace(cfg.ControlPlaneURL),
-		Image:               dockerworker.EffectivePoolImage(cfg.Image, serverDefaults),
 		SandboxBaseImage:    dockerworker.EffectiveSandboxBaseImage(cfg.SandboxBaseImage, serverDefaults),
 		ImageRetention:      serverDefaults.ImageRetention,
 		ImageCache:          serverDefaults.ImageCache,
@@ -131,7 +125,6 @@ func engineConfig(cfg Config, listenEndpoints []string, daemonHost string, serve
 		AgentPort:           effectiveAgentPort(cfg.AgentPort),
 		Privileged:          cfg.Privileged,
 		CgroupNSMode:        cfg.CgroupNSMode,
-		Command:             cfg.Command.Values(),
 		DockerSocket:        cfg.DockerSocket,
 		HostMounts:          cfg.HostMounts,
 		Labels:              map[string]string{labelProviderType: ProviderType},
@@ -243,12 +236,10 @@ func Definition() sandbox.ProviderDefinition {
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: controlplane.DefaultURL(dockerHostGateway, controlplane.DefaultPort), Advanced: true},
 			{Key: "host", Label: "Docker Host", Type: "string", Advanced: true},
-			{Key: "image", Label: "Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage},
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, which the pool preloads (ADR 26-10-16-423 §§7, 10).", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, and the pool's own container runs, provisioned as a pool (ADR 26-10-16-423 §§7, 10, ADR 26-10-24-953 §2).", Advanced: true},
 			{Key: "network", Label: "Docker Network", Type: "string", Advanced: true},
 			{Key: "privileged", Label: "Privileged", Type: "boolean", Advanced: true},
 			{Key: "cgroupNsMode", Label: "Cgroup Namespace", Type: "string", Advanced: true},
-			{Key: "command", Label: "Command", Type: "string", Advanced: true},
 			{Key: "bindDockerSocket", Label: "Bind Docker Socket", Type: "string", Placeholder: dockerSocketPath, Advanced: true},
 			{Key: "agentPort", Label: "Harness Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
 		}, poolruntime.PoolPolicyConfigFields()...),

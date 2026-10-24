@@ -339,7 +339,10 @@ func TestMigrateDropsJobQueueArtifactsWithForeignKeys(t *testing.T) {
 	}
 }
 
-func TestMigrateReplacesLegacyPoolBootstrapTokenConstraint(t *testing.T) {
+// A database from before pools were enrolled by their maker has the pool
+// bootstrap token table, and its tokens; the migration drops it whole, and
+// leaves the pools (ADR 26-10-24-953 §4).
+func TestMigrateDropsThePoolBootstrapTokenTable(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{
 		Driver: gormdb.DriverSQLite,
@@ -356,65 +359,20 @@ func TestMigrateReplacesLegacyPoolBootstrapTokenConstraint(t *testing.T) {
 	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("initial migrate: %v", err)
 	}
-
-	migrator := db.Write.Migrator()
-	if err := migrator.DropConstraint("pool_bootstrap_tokens", "fk_pool_bootstrap_tokens_pool"); err != nil {
-		t.Fatalf("remove current cascade constraint: %v", err)
+	if err := db.Write.Exec("CREATE TABLE `pool_bootstrap_tokens` (`id` text PRIMARY KEY, `pool_id` text NOT NULL, `token_hash` blob NOT NULL)").Error; err != nil {
+		t.Fatalf("re-create the legacy table: %v", err)
 	}
-	if err := migrator.CreateConstraint(&legacyPoolConstraint{}, "BootstrapTokens"); err != nil {
-		t.Fatalf("install legacy restrictive constraint: %v", err)
+	if err := db.Write.Exec("INSERT INTO `pool_bootstrap_tokens` (`id`, `pool_id`, `token_hash`) VALUES ('pbt-1', 'pool-1', x'00')").Error; err != nil {
+		t.Fatalf("insert a legacy token: %v", err)
 	}
-	if !migrator.HasConstraint("pool_bootstrap_tokens", "fk_pools_bootstrap_tokens") {
-		t.Fatal("legacy restrictive constraint was not installed")
-	}
-
-	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}
-	if err := db.Write.Create(project).Error; err != nil {
-		t.Fatalf("create project: %v", err)
-	}
-	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: project.ID, Type: "docker", Name: "Docker"}
-	if err := db.Write.Create(provider).Error; err != nil {
-		t.Fatalf("create provider: %v", err)
-	}
-	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID}}
-	if err := db.Write.Create(pool).Error; err != nil {
-		t.Fatalf("create pool: %v", err)
-	}
-	token := &model.PoolBootstrapToken{
-		ID:        "token-1",
-		PoolID:    pool.ID,
-		TokenHash: []byte("token-hash"),
-		ExpiresAt: time.Now().Add(time.Hour),
-	}
-	if err := db.Write.Create(token).Error; err != nil {
-		t.Fatalf("create bootstrap token: %v", err)
-	}
-
 	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("upgrade migrate: %v", err)
 	}
-	if migrator.HasConstraint("pool_bootstrap_tokens", "fk_pools_bootstrap_tokens") {
-		t.Fatal("legacy restrictive constraint remains after migration")
+	if db.Write.Migrator().HasTable("pool_bootstrap_tokens") {
+		t.Fatal("pool_bootstrap_tokens survived the migration")
 	}
-	if !migrator.HasConstraint("pool_bootstrap_tokens", "fk_pool_bootstrap_tokens_pool") {
-		t.Fatal("cascade constraint is missing after migration")
-	}
-
-	var tokenCount int64
-	if err := db.Write.Model(&model.PoolBootstrapToken{}).Where("pool_id = ?", pool.ID).Count(&tokenCount).Error; err != nil {
-		t.Fatalf("count preserved bootstrap tokens: %v", err)
-	}
-	if tokenCount != 1 {
-		t.Fatalf("bootstrap token count after migration = %d, want 1", tokenCount)
-	}
-	if err := db.Write.Delete(pool).Error; err != nil {
-		t.Fatalf("delete pool with bootstrap token: %v", err)
-	}
-	if err := db.Write.Model(&model.PoolBootstrapToken{}).Where("pool_id = ?", pool.ID).Count(&tokenCount).Error; err != nil {
-		t.Fatalf("count cascaded bootstrap tokens: %v", err)
-	}
-	if tokenCount != 0 {
-		t.Fatalf("bootstrap token count after pool delete = %d, want 0", tokenCount)
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate again: %v", err)
 	}
 }
 
@@ -470,13 +428,6 @@ func TestMigrateDropsLegacyProjectSlugColumn(t *testing.T) {
 		t.Fatalf("update project after migration: %v", err)
 	}
 }
-
-type legacyPoolConstraint struct {
-	ID              string                     `gorm:"column:id;primaryKey"`
-	BootstrapTokens []model.PoolBootstrapToken `gorm:"foreignKey:PoolID;constraint:fk_pools_bootstrap_tokens"`
-}
-
-func (legacyPoolConstraint) TableName() string { return "pools" }
 
 func fileExists(path string) bool {
 	matches, err := filepath.Glob(path)

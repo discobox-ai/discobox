@@ -8,12 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	poolagent "github.com/discobox-ai/discobox/pool-agent"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 	sandboxruntime "github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -27,7 +28,7 @@ import (
 type fakePoolManager struct {
 	pool                    *model.Pool
 	schedulable             bool
-	mintedBootstrapTokens   int
+	enrolledKeys            []string
 	agentTokenClaims        []poolagentauth.TokenClaims
 	sandboxAgentTokenClaims []poolagentauth.TokenClaims
 	scheduledReconciles     int
@@ -87,9 +88,13 @@ func (m *fakePoolManager) CountSandboxesForPool(context.Context, string, string)
 	return 0, nil
 }
 
-func (m *fakePoolManager) CreatePoolBootstrapToken(context.Context, *model.PoolBootstrapToken) error {
-	m.mintedBootstrapTokens++
+func (m *fakePoolManager) EnrollPool(_ context.Context, _ string, publicKey string) error {
+	m.enrolledKeys = append(m.enrolledKeys, publicKey)
 	return nil
+}
+
+func (m *fakePoolManager) PoolBox(context.Context, imagecache.Platform) (sandbox.PoolBox, error) {
+	return sandbox.PoolBox{}, nil
 }
 
 func (m *fakePoolManager) EnsureAgentTrustKey(context.Context) (string, error) {
@@ -188,18 +193,20 @@ type testRuntimeProvider struct {
 
 func (p *testRuntimeProvider) Close() error { return nil }
 
-func (p *testRuntimeProvider) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, _ *model.Pool, mint poolagent.MintBootstrap, begin func(context.Context) error) error {
+func (p *testRuntimeProvider) EnsurePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, _ *model.Pool, maker PoolMaker, begin func(context.Context) error) error {
 	if !p.createsRuntime {
 		return nil
 	}
 	if err := begin(ctx); err != nil {
 		return err
 	}
-	_, err := mint(ctx)
-	return err
+	if _, err := maker.Bootstrap(ctx); err != nil {
+		return err
+	}
+	return maker.Enroll(ctx, "box-key")
 }
 
-func (p *testRuntimeProvider) RepairPool(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Pool, poolagent.MintBootstrap, string, func(context.Context) error) error {
+func (p *testRuntimeProvider) RepairPool(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Pool, PoolMaker, string, func(context.Context) error) error {
 	return nil
 }
 
@@ -354,11 +361,10 @@ func TestPoolProviderCreateRejectsStateFromOtherPool(t *testing.T) {
 	}
 }
 
-// TestPoolProviderMintsBootstrapOnlyWhenRuntimeIsCreated pins the fix for an
-// unbounded token leak: minting persists a single-use bootstrap token, and the
-// reconcile drift-checks every healthy pool, so minting eagerly wrote one
-// token row per reconcile.
-func TestPoolProviderMintsBootstrapOnlyWhenRuntimeIsCreated(t *testing.T) {
+// A pool is enrolled by the box its runtime makes, and only then: the
+// reconcile drift-checks every healthy pool, and enrolling on each would
+// replace the identity of a box that is still running with it.
+func TestPoolProviderEnrollsOnlyWhenRuntimeIsCreated(t *testing.T) {
 	project := &model.Project{ID: "project-1"}
 	providerInstance := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
 	pool := activePool("pool-1")
@@ -371,8 +377,8 @@ func TestPoolProviderMintsBootstrapOnlyWhenRuntimeIsCreated(t *testing.T) {
 		if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, pool, func(context.Context) error { return nil }); err != nil {
 			t.Fatalf("reconcile pool: %v", err)
 		}
-		if manager.mintedBootstrapTokens != 0 {
-			t.Fatalf("minted %d bootstrap tokens, want none when no runtime is created", manager.mintedBootstrapTokens)
+		if len(manager.enrolledKeys) != 0 {
+			t.Fatalf("enrolled %v, want nothing when no runtime is created", manager.enrolledKeys)
 		}
 	})
 
@@ -382,8 +388,8 @@ func TestPoolProviderMintsBootstrapOnlyWhenRuntimeIsCreated(t *testing.T) {
 		if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, pool, func(context.Context) error { return nil }); err != nil {
 			t.Fatalf("reconcile pool: %v", err)
 		}
-		if manager.mintedBootstrapTokens != 1 {
-			t.Fatalf("minted %d bootstrap tokens, want exactly 1 for a created runtime", manager.mintedBootstrapTokens)
+		if !slices.Equal(manager.enrolledKeys, []string{"box-key"}) {
+			t.Fatalf("enrolled %v, want the created box's key once", manager.enrolledKeys)
 		}
 	})
 }

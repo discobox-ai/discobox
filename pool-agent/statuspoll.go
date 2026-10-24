@@ -43,22 +43,22 @@ const (
 //
 // It returns the poller so the resource reporter can read the counters it
 // collects, or nil when there is nothing to poll.
-func startSandboxAgentStatusPoller(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime, client SandboxAgentStatusClient) *sandboxAgentStatusPoller {
-	if runtime == nil || client == nil || registration == nil {
+func startSandboxAgentStatusPoller(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, identity *Identity, runtime sandboxruntime.Runtime, client SandboxAgentStatusClient) *sandboxAgentStatusPoller {
+	if runtime == nil || client == nil || identity == nil {
 		return nil
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 	poller := &sandboxAgentStatusPoller{
-		logger:       logger,
-		bootstrap:    bootstrap,
-		registration: registration,
-		runtime:      runtime,
-		client:       client,
-		tokens:       map[string]cachedSandboxAgentToken{},
-		samples:      map[string]sandboxResourceSample{},
-		inventories:  map[string]string{},
+		logger:      logger,
+		bootstrap:   bootstrap,
+		identity:    identity,
+		runtime:     runtime,
+		client:      client,
+		tokens:      map[string]cachedSandboxAgentToken{},
+		samples:     map[string]sandboxResourceSample{},
+		inventories: map[string]string{},
 	}
 	// The two cadences poll disjoint sets — tick leaves the configure
 	// sandboxes to tickConfigure — so each sandbox's reports still come from one
@@ -98,11 +98,11 @@ type cachedSandboxAgentToken struct {
 }
 
 type sandboxAgentStatusPoller struct {
-	logger       *slog.Logger
-	bootstrap    Bootstrap
-	registration *Registration
-	runtime      sandboxruntime.Runtime
-	client       SandboxAgentStatusClient
+	logger    *slog.Logger
+	bootstrap Bootstrap
+	identity  *Identity
+	runtime   sandboxruntime.Runtime
+	client    SandboxAgentStatusClient
 
 	mu     sync.Mutex
 	tokens map[string]cachedSandboxAgentToken
@@ -213,7 +213,7 @@ func (p *sandboxAgentStatusPoller) pollAndReport(ctx context.Context, running []
 		ControlPlaneURL: p.bootstrap.ControlPlaneURL,
 		ProjectID:       p.bootstrap.ProjectID,
 		PoolID:          p.bootstrap.PoolID,
-		PrivateKey:      p.registration.PrivateKey,
+		PrivateKey:      p.identity.PrivateKey,
 		Sandboxes:       entries,
 	}); err != nil {
 		p.logger.Warn("push sandbox-agent status batch", "error", err)
@@ -327,7 +327,7 @@ func (p *sandboxAgentStatusPoller) ensureTokens(ctx context.Context, sandboxIDs 
 			ControlPlaneURL: p.bootstrap.ControlPlaneURL,
 			ProjectID:       p.bootstrap.ProjectID,
 			PoolID:          p.bootstrap.PoolID,
-			PrivateKey:      p.registration.PrivateKey,
+			PrivateKey:      p.identity.PrivateKey,
 			SandboxIDs:      need,
 		})
 		if err != nil {

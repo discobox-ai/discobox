@@ -61,7 +61,7 @@ func readArchive(t *testing.T, data []byte) ([]string, map[string]entry) {
 // through, the units and their enablement, and the pins.
 func TestArchivePlacesTheAgentItsUnitsAndPins(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Archive(&buf, testAgent("agent-binary"), false, testPins()); err != nil {
+	if err := Archive(&buf, testAgent("agent-binary"), false, testPins(), Units); err != nil {
 		t.Fatal(err)
 	}
 	order, entries := readArchive(t, buf.Bytes())
@@ -110,7 +110,7 @@ func TestArchiveLeavesOutALayerTheBoxHolds(t *testing.T) {
 	var buf bytes.Buffer
 	agent := testAgent("agent-binary")
 	agent.Open = func() (io.ReadCloser, error) { t.Fatal("opened a layer the box holds"); return nil, nil }
-	if err := Archive(&buf, agent, true, testPins()); err != nil {
+	if err := Archive(&buf, agent, true, testPins(), Units); err != nil {
 		t.Fatal(err)
 	}
 	_, entries := readArchive(t, buf.Bytes())
@@ -132,7 +132,7 @@ func TestArchiveRefusesPinsNamingNothing(t *testing.T) {
 		"an empty pin":    {{Name: "discobox-platform", Digest: platformDigest}, {}},
 		"a bundle twice":  {{Name: "discobox-platform", Digest: platformDigest}, {Name: "discobox-platform", Digest: harnessDigest}},
 	} {
-		if err := Archive(io.Discard, testAgent("x"), false, pins); err == nil {
+		if err := Archive(io.Discard, testAgent("x"), false, pins, Units); err == nil {
 			t.Errorf("%s: placed", name)
 		}
 	}
@@ -194,5 +194,26 @@ func TestExtractAgentTakesTheAgentAlone(t *testing.T) {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Errorf("%s: an agent was left at %s", name, path)
 		}
+	}
+}
+
+// A pool's box is placed the agent and its pins and none of the sandbox
+// agent's units: its agent only provisions it (ADR 26-10-24-953 §2).
+func TestArchiveLaysOnlyTheUnitsItIsGiven(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Archive(&buf, testAgent("agent-binary"), false, testPins(), nil); err != nil {
+		t.Fatal(err)
+	}
+	_, entries := readArchive(t, buf.Bytes())
+	for name := range entries {
+		if strings.HasPrefix(name, "etc/systemd/") {
+			t.Errorf("placed %s, a unit the box was not given", name)
+		}
+	}
+	if _, ok := entries["opt/discobox/current"]; !ok {
+		t.Error("no current link")
+	}
+	if _, ok := entries["opt/discobox/bundles/pins.json"]; !ok {
+		t.Error("no pins")
 	}
 }

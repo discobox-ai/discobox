@@ -843,7 +843,6 @@ type Pool struct {
 	Project          *Project                 `gorm:"foreignKey:ProjectID" json:"-"`
 	ProviderInstance *SandboxProviderInstance `gorm:"foreignKey:ProviderInstanceID" json:"providerInstance,omitempty" doc:"Backing sandbox provider instance"`
 	Sandboxes        []Sandbox                `gorm:"foreignKey:PoolID" json:"-"`
-	BootstrapTokens  []PoolBootstrapToken     `gorm:"foreignKey:PoolID;constraint:fk_pool_bootstrap_tokens_pool,OnDelete:CASCADE" json:"-" doc:"Pool bootstrap tokens"`
 }
 
 func (Pool) TableName() string { return "pools" }
@@ -1386,34 +1385,6 @@ func (p *SandboxProviderInstance) BeforeCreate(_ *gorm.DB) error {
 	if p.ID == "" {
 		var err error
 		p.ID, err = id.New(id.PrefixSandboxProvider)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// PoolBootstrapToken stores a short-lived, one-time pool agent registration
-// token. Only the token hash is persisted.
-type PoolBootstrapToken struct {
-	ID        string     `gorm:"primaryKey;type:text" json:"id" doc:"Stable bootstrap token ID"`
-	PoolID    string     `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool ID"`
-	TokenHash []byte     `gorm:"column:token_hash;not null;uniqueIndex" json:"-"`
-	ExpiresAt time.Time  `gorm:"column:expires_at;not null;index" json:"expiresAt" doc:"Expiration timestamp" format:"date-time"`
-	UsedAt    *time.Time `gorm:"column:used_at;index" json:"usedAt,omitempty" doc:"Use timestamp" format:"date-time"`
-	RevokedAt *time.Time `gorm:"column:revoked_at;index" json:"revokedAt,omitempty" doc:"Revocation timestamp" format:"date-time"`
-	CreatedAt time.Time  `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time  `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-
-	Pool *Pool `gorm:"foreignKey:PoolID" json:"-"`
-}
-
-func (PoolBootstrapToken) TableName() string { return "pool_bootstrap_tokens" }
-
-func (t *PoolBootstrapToken) BeforeCreate(_ *gorm.DB) error {
-	if t.ID == "" {
-		var err error
-		t.ID, err = id.New(id.PrefixPoolBootstrapToken)
 		if err != nil {
 			return err
 		}
@@ -2350,7 +2321,6 @@ func AllModels() []any {
 		&Sandbox{},
 		&SandboxProviderInstance{},
 		&Pool{},
-		&PoolBootstrapToken{},
 		&Secret{},
 		&SecretRequest{},
 		&SecretGrant{},

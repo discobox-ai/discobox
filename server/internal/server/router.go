@@ -268,8 +268,6 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		auth.PoolAuthenticator{Store: appStore},
 		// Before the default user, so an assertion is never answered as it.
 		auth.DiscobotAuthenticator{PublicKey: opts.DiscobotPublicKey},
-		// Before the default user, so registration never depends on it.
-		auth.PoolBootstrapAuthenticator{},
 		// Last before the default user: a request over iroh that nothing else
 		// claimed is its enrolled peer's.
 		auth.IrohPeerAuthenticator{Admission: opts.IrohAdmission, UserID: opts.UserID},

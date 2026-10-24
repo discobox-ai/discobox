@@ -58,7 +58,7 @@ func TestConsoleHostConfigSharesTheHost(t *testing.T) {
 // entrypoint and healthcheck belong to the agent, and a console that inherited
 // them would run an agent instead of a shell.
 func TestConsoleConfigRunsAShellNotTheAgent(t *testing.T) {
-	engine := newTestEngine(t, Config{Image: "pool-image"})
+	engine := newTestEngine(t, Config{SandboxBaseImage: "pool-image"})
 	config := engine.consoleConfig(&model.SandboxProviderInstance{ID: "provider-1"}, testConsolePool(), "pool-image")
 
 	if config.Image != "pool-image" {
@@ -104,7 +104,7 @@ func TestConsoleLabelsAreNotPoolAgentLabels(t *testing.T) {
 // an older console layout: reattaching to a console with the previous
 // namespaces or mounts would silently give an operator the wrong host view.
 func TestShouldReplaceConsoleContainer(t *testing.T) {
-	engine := newTestEngine(t, Config{Image: "pool-image"})
+	engine := newTestEngine(t, Config{SandboxBaseImage: "pool-image"})
 	current := strconv.Itoa(consoleConfigLayoutVersion)
 
 	for name, testCase := range map[string]struct {

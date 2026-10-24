@@ -26,7 +26,6 @@ type Config struct {
 
 	Command          poolruntime.StringList `json:"command,omitempty"`
 	ControlPlaneURL  string                 `json:"controlPlaneUrl,omitempty"`
-	WorkerImage      string                 `json:"workerImage,omitempty"`
 	SandboxBaseImage string                 `json:"sandboxBaseImage,omitempty"`
 	AgentPort        int                    `json:"agentPort,omitempty"`
 	PublicAgentPort  *bool                  `json:"publicAgentPort,omitempty"`
@@ -90,7 +89,6 @@ func engineConfig(cfg Config, serverDefaults dockerworker.ServerDefaults) docker
 	}
 	return dockerworker.Config{
 		ControlPlaneURL:     cfg.ControlPlaneURL,
-		Image:               dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults),
 		SandboxBaseImage:    dockerworker.EffectiveSandboxBaseImage(cfg.SandboxBaseImage, serverDefaults),
 		ImageRetention:      serverDefaults.ImageRetention,
 		ImageCache:          serverDefaults.ImageCache,
@@ -129,8 +127,7 @@ func Definition() sandbox.ProviderDefinition {
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "command", Label: "Command", Type: "string", Required: true, Description: "Executable (plus fixed arguments) invoked as `<command> <op> <worker-id>`."},
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Required: true, Placeholder: "https://discobot.example.com"},
-			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Worker-agent container image launched in the VM's Docker daemon.", Advanced: true},
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, which the pool preloads (ADR 26-10-16-423 §§7, 10).", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, and the pool's own container runs, provisioned as a pool (ADR 26-10-16-423 §§7, 10, ADR 26-10-24-953 §2).", Advanced: true},
 			{Key: "publicAgentPort", Label: "Publish Harness Port Publicly", Type: "boolean", Description: "Publish the worker-agent port on all VM interfaces at the fixed harness port.", Advanced: true},
 			{Key: "sshUser", Label: "SSH User", Type: "string", Placeholder: "root", Advanced: true},
 			{Key: "sshPrivateKey", Label: "SSH Private Key", Type: "password", Description: "PEM private key used when docker-endpoint returns ssh:// URLs.", Advanced: true},

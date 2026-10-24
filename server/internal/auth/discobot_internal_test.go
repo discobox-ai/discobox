@@ -95,7 +95,6 @@ func TestADiscobotAssertionReachesOnlySomeServerRoutes(t *testing.T) {
 		"/harness-definitions": http.StatusNoContent,
 		"/shutdown":            http.StatusForbidden,
 		"/peers":               http.StatusForbidden,
-		"/api/pools/register":  http.StatusForbidden,
 	} {
 		if status, _, _ := asserted(t, public, http.MethodGet, path, token); status != want {
 			t.Errorf("%s: status = %d, want %d", path, status, want)

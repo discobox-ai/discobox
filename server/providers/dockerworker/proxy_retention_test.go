@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 )
 
@@ -14,11 +13,11 @@ import (
 // entirely, or configRevision changes and every pool already running is
 // recreated at upgrade for a policy nobody asked for.
 func TestUnsetProxyAuditRetentionLeavesPoolConfigurationUnchanged(t *testing.T) {
-	engine, err := New(Config{Image: "pool:test"}, nopDriver{})
+	engine, err := New(Config{SandboxBaseImage: "pool:test"}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
-	env := engine.poolContainerEnv(poolagent.Bootstrap{ControlPlaneURL: "http://cp", PoolID: "pool-1", Token: "t"})
+	env := engine.poolPolicyEnv()
 	if value, ok := env[proxyagent.EnvAuditRetention]; ok {
 		t.Fatalf("%s = %q, want absent when unset", proxyagent.EnvAuditRetention, value)
 	}
@@ -34,11 +33,11 @@ func TestUnsetProxyAuditRetentionLeavesPoolConfigurationUnchanged(t *testing.T) 
 // The proxy that keeps the audit trail runs inside the pool container, so the
 // window has to travel there to govern anything.
 func TestConfiguredProxyAuditRetentionReachesThePoolProxy(t *testing.T) {
-	engine, err := New(Config{Image: "pool:test", ProxyAuditRetention: 72 * time.Hour}, nopDriver{})
+	engine, err := New(Config{SandboxBaseImage: "pool:test", ProxyAuditRetention: 72 * time.Hour}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
-	env := engine.poolContainerEnv(poolagent.Bootstrap{ControlPlaneURL: "http://cp", PoolID: "pool-1", Token: "t"})
+	env := engine.poolPolicyEnv()
 	if got := env[proxyagent.EnvAuditRetention]; got != "72h0m0s" {
 		t.Fatalf("%s = %q, want 72h0m0s", proxyagent.EnvAuditRetention, got)
 	}
@@ -47,12 +46,11 @@ func TestConfiguredProxyAuditRetentionReachesThePoolProxy(t *testing.T) {
 // The spool budget follows the same rule: unset serializes away, and what is
 // set reaches the pool proxy as written.
 func TestProxyAuditSpoolBudgetReachesThePoolProxyOnlyWhenSet(t *testing.T) {
-	bootstrap := poolagent.Bootstrap{ControlPlaneURL: "http://cp", PoolID: "pool-1", Token: "t"}
-	engine, err := New(Config{Image: "pool:test"}, nopDriver{})
+	engine, err := New(Config{SandboxBaseImage: "pool:test"}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
-	env := engine.poolContainerEnv(bootstrap)
+	env := engine.poolPolicyEnv()
 	for _, name := range []string{proxyagent.EnvAuditMaxSize, proxyagent.EnvAuditMaxPercent, proxyagent.EnvAuditBodyHead} {
 		if value, ok := env[name]; ok {
 			t.Fatalf("%s = %q, want absent when unset", name, value)
@@ -66,11 +64,11 @@ func TestProxyAuditSpoolBudgetReachesThePoolProxyOnlyWhenSet(t *testing.T) {
 		t.Fatalf("unset proxy audit spool budget serialized into the pool configuration: %s", data)
 	}
 
-	engine, err = New(Config{Image: "pool:test", AuditSpoolBudget: proxyagent.AuditSpoolBudget{MaxSize: "0", MaxPercent: "10%"}}, nopDriver{})
+	engine, err = New(Config{SandboxBaseImage: "pool:test", AuditSpoolBudget: proxyagent.AuditSpoolBudget{MaxSize: "0", MaxPercent: "10%"}}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
-	env = engine.poolContainerEnv(bootstrap)
+	env = engine.poolPolicyEnv()
 	if env[proxyagent.EnvAuditMaxSize] != "0" || env[proxyagent.EnvAuditMaxPercent] != "10%" {
 		t.Fatalf("env = %v, want the budget passed through as written", env)
 	}

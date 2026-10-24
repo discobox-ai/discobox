@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/auditid"
-	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -83,15 +82,13 @@ type RuntimeProvider interface {
 	// idempotent and updates the pool row's runtime state and scheduling flags
 	// in place; the caller persists the row.
 	//
-	// mint is called ONLY when a runtime is actually created: minting persists a
-	// single-use bootstrap token, and a drift check that finds a healthy
-	// container needs no credentials. Before replacing or creating an agent,
-	// begin must succeed: the reconciler closes scheduling before preload.
-	// images is the project image set to load from the local cache.
-	EnsurePool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, begin func(context.Context) error) error
+	// maker is what a box is made with, enrolled and provisioned (ADR
+	// 26-10-24-953 §§2, 4). Before replacing or creating an agent, begin must
+	// succeed: the reconciler closes scheduling before preload.
+	EnsurePool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, maker PoolMaker, begin func(context.Context) error) error
 	// RepairPool replaces an unhealthy pool runtime in place, preserving pool
-	// identity and pool-local state.
-	RepairPool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, reason string, begin func(context.Context) error) error
+	// identity and pool-local state, and enrolls its box again.
+	RepairPool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, maker PoolMaker, reason string, begin func(context.Context) error) error
 	RemovePool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
 	// AcquirePoolAgentClient returns an HTTP client lease that reaches the pool
 	// agent API for the pool.
@@ -174,7 +171,11 @@ func (p *Provider) ReconcilePool(ctx context.Context, manager sandbox.PoolManage
 	if manager == nil {
 		return fmt.Errorf("pool manager is required")
 	}
-	if err := p.runtimeProvider.EnsurePool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool), begin); err != nil {
+	maker, err := newPoolMaker(manager, project, pool)
+	if err != nil {
+		return err
+	}
+	if err := p.runtimeProvider.EnsurePool(ctx, project, provider, pool, maker, begin); err != nil {
 		return err
 	}
 	// Best-effort: hand the now-ready pool-agent the authoritative pool set so it
@@ -264,7 +265,11 @@ func (p *Provider) RepairPool(ctx context.Context, manager sandbox.PoolManager, 
 	if manager == nil {
 		return fmt.Errorf("pool manager is required")
 	}
-	return p.runtimeProvider.RepairPool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool), reason, begin)
+	maker, err := newPoolMaker(manager, project, pool)
+	if err != nil {
+		return err
+	}
+	return p.runtimeProvider.RepairPool(ctx, project, provider, pool, maker, reason, begin)
 }
 
 func (p *Provider) RemovePool(ctx context.Context, _ sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error {

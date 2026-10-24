@@ -517,10 +517,6 @@ type RefreshSecretRes interface {
 	refreshSecretRes()
 }
 
-type RegisterPoolRes interface {
-	registerPoolRes()
-}
-
 type RemoveSandboxFileRes interface {
 	removeSandboxFileRes()
 }

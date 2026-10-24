@@ -114,8 +114,6 @@ type Config struct {
 	GuestImageCacheDir string `json:"guestImageCacheDir,omitempty"`
 	// StateDir roots each pool's data and cache disks.
 	StateDir string `json:"stateDir,omitempty"`
-	// WorkerImage is the pool-agent container image launched inside each VM.
-	WorkerImage string `json:"workerImage,omitempty"`
 	// SandboxBaseImage is the sandbox base image the pool preloads.
 	SandboxBaseImage string `json:"sandboxBaseImage,omitempty"`
 	VCPUs            int    `json:"vcpus,omitempty"`
@@ -241,7 +239,6 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		// requests. macOS opens no TCP listener and raises no firewall prompt.
 		ControlPlaneURL:      wire.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
 		AgentListenURL:       wire.VSOCKListenURL(agentVSOCKPort),
-		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults),
 		SandboxBaseImage:     dockerworker.EffectiveSandboxBaseImage(cfg.SandboxBaseImage, serverDefaults),
 		ImageRetention:       serverDefaults.ImageRetention,
 		ImageCache:           serverDefaults.ImageCache,
@@ -356,8 +353,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "guestImage", Label: "Guest Image", Type: "string", Placeholder: DefaultGuestImage, Description: "Published guest image carrying the kernel, initrd, and root filesystem.", Advanced: true},
 			{Key: "guestImageDir", Label: "Guest Artifact Directory", Type: "string", Description: "Boot these artifacts instead of the published image, and fail if they are missing.", Advanced: true},
 			{Key: "guestImageLocalDir", Label: "Local Guest Build", Type: "string", Placeholder: effectiveGuestLocalDir(""), Description: "Where a local guest image build lands; used automatically when complete.", Advanced: true},
-			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
-			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, which the pool preloads (ADR 26-10-16-423 §§7, 10).", Advanced: true},
+			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, and the pool's own container runs, provisioned as a pool (ADR 26-10-16-423 §§7, 10, ADR 26-10-24-953 §2).", Advanced: true},
 			{Key: "vcpus", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(defaultVCPUs()), Description: "Defaults to every host vCPU. A pool's own cpuVcpus overrides it for that pool."},
 			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(defaultMemoryMiB()), Description: "Defaults to half of host memory. A pool's own memoryBytes overrides it for that pool."},
 			{Key: "dataDiskGiB", Label: "Data Disk (GiB)", Type: "number", Placeholder: strconv.FormatInt(defaultDataDiskGiB, 10)},

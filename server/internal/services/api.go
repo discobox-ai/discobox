@@ -57,8 +57,6 @@ type CreateProjectBody = apimodel.CreateProjectBody
 type UpdateProjectBody = apimodel.UpdateProjectBody
 type CreatePoolBody = apimodel.CreatePoolBody
 type UpdatePoolBody = apimodel.UpdatePoolBody
-type RegisterPoolBody = apimodel.RegisterPoolBody
-type RegisterPoolResponseBody = apimodel.RegisterPoolResponseBody
 type UpdatePoolStatusBody = apimodel.UpdatePoolStatusBody
 type ReportPoolSandboxStatesBody = apimodel.ReportPoolSandboxStatesBody
 type MintSandboxAgentStatusTokensBody = apimodel.MintSandboxAgentStatusTokensBody
@@ -404,7 +402,6 @@ type PoolService interface {
 	// for a local build (ADR 0062 §7).
 	BuildPoolGuestImage(ctx context.Context, projectID, poolID string, opts sandbox.GuestImageBuildOptions) (*sandbox.GuestImageBuild, error)
 
-	RegisterPool(ctx context.Context, input RegisterPoolBody) (*RegisterPoolResponseBody, error)
 	UpdatePoolStatus(ctx context.Context, poolID string, input UpdatePoolStatusBody) (*model.Pool, error)
 	ReportPoolSandboxStates(ctx context.Context, poolID string, input ReportPoolSandboxStatesBody) error
 	MintSandboxAgentStatusTokens(ctx context.Context, poolID string, input MintSandboxAgentStatusTokensBody) (*MintSandboxAgentStatusTokensResponseBody, error)

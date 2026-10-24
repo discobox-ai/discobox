@@ -2,10 +2,12 @@ package sandbox
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -28,7 +30,14 @@ type PoolManager interface {
 	GetProject(ctx context.Context, projectID string) (*model.Project, error)
 	GetSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error)
 	CountSandboxesForPool(ctx context.Context, projectID, poolID string) (int64, error)
-	CreatePoolBootstrapToken(ctx context.Context, token *model.PoolBootstrapToken) error
+	// EnrollPool records publicKey, which the pool's box made and its maker
+	// read from it, as the pool's identity (ADR 26-10-24-953 §4): what every
+	// request the pool signs is verified against from then on. It is the
+	// pool's registration, made by the server itself.
+	EnrollPool(ctx context.Context, poolID, publicKey string) error
+	// PoolBox is what a pool's maker places in its box (ADR 26-10-24-953 §2):
+	// the release's agent, its layer for platform, and the pool's bundles.
+	PoolBox(ctx context.Context, platform imagecache.Platform) (PoolBox, error)
 	EnsureAgentTrustKey(ctx context.Context) (string, error)
 	CreateAgentToken(ctx context.Context, claims poolagentauth.TokenClaims) (string, error)
 	CreateSandboxAgentToken(ctx context.Context, claims poolagentauth.TokenClaims) (string, error)
@@ -73,9 +82,6 @@ const (
 	PoolPhaseLoadingPoolImage    PoolProvisionPhase = "loading_pool_image"
 	PoolPhaseStartingPoolAgent   PoolProvisionPhase = "starting_pool_agent"
 	PoolPhaseWaitingForPoolAgent PoolProvisionPhase = "waiting_for_pool_agent"
-	// PoolPhasePreloadingImages is the startup load of cached images a sandbox
-	// will want, done before anybody asks for one.
-	PoolPhasePreloadingImages PoolProvisionPhase = "preloading_images"
 )
 
 // PoolProvisionProgress is one report about a pool host being brought up.
@@ -192,4 +198,17 @@ func (r PoolProgressReporter) ReportProgress(ctx context.Context, poolID string,
 		return
 	}
 	r(ctx, poolID, progress)
+}
+
+// PoolBox is what a pool's maker places in its box before it runs
+// `discobox-provision apply` there (ADR 26-10-24-953 §2): the agent bundle the
+// release names, and the pool's bundles in order, as a pool's are its pins.
+type PoolBox struct {
+	Agent BundlePin
+	// AgentLayer is the digest of the agent bundle's one layer for the box's
+	// platform, which OpenAgentLayer reads: a tar, gzipped or not, holding the
+	// agent alone (agentlayer.ExtractAgent).
+	AgentLayer     string
+	OpenAgentLayer func(ctx context.Context) (io.ReadCloser, error)
+	Bundles        []BundlePin
 }

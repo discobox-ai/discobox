@@ -127,7 +127,7 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := migrateMacOSProviderType(write); err != nil {
 		return err
 	}
-	if err := dropLegacyPoolBootstrapTokenConstraint(write); err != nil {
+	if err := dropPoolBootstrapTokens(write); err != nil {
 		return err
 	}
 	if err := dropJobQueueArtifacts(write); err != nil {
@@ -620,9 +620,6 @@ const (
 	placeholderMacOSProviderType = "macos"
 	vzProviderType               = "vz"
 
-	legacyPoolBootForeignKey  = "fk_pools_bootstrap_tokens"
-	poolBootCascadeForeignKey = "fk_pool_bootstrap_tokens_pool"
-
 	//nolint:gosec // An index name, not a credential.
 	sandboxSecretEnvIndex = "idx_sandbox_secret_env"
 	//nolint:gosec // An index name, not a credential.
@@ -953,20 +950,15 @@ func migrateMacOSProviderType(db *gorm.DB) error {
 		Updates(map[string]any{"type": vzProviderType, "disabled": false}).Error
 }
 
-// dropLegacyPoolBootstrapTokenConstraint completes the upgrade from the
-// original restrictive pool-token foreign key. AutoMigrate creates the newly
-// named cascading constraint first; only then is it safe to remove the old
-// constraint. Using GORM's migrator keeps the same migration valid for SQLite
-// and PostgreSQL.
-func dropLegacyPoolBootstrapTokenConstraint(db *gorm.DB) error {
-	migrator := db.Migrator()
-	if !migrator.HasConstraint("pool_bootstrap_tokens", legacyPoolBootForeignKey) {
+// dropPoolBootstrapTokens removes the retired pool bootstrap token table: a
+// pool is enrolled by its maker, which records the key its box made, and no
+// token registers it (ADR 26-10-24-953 §4). A token left in it was single-use
+// and short-lived, and nothing reads it again.
+func dropPoolBootstrapTokens(db *gorm.DB) error {
+	if !db.Migrator().HasTable("pool_bootstrap_tokens") {
 		return nil
 	}
-	if !migrator.HasConstraint("pool_bootstrap_tokens", poolBootCascadeForeignKey) {
-		return fmt.Errorf("pool bootstrap token cascade constraint %q is missing", poolBootCascadeForeignKey)
-	}
-	return migrator.DropConstraint("pool_bootstrap_tokens", legacyPoolBootForeignKey)
+	return db.Migrator().DropTable("pool_bootstrap_tokens")
 }
 
 // dropJobQueueArtifacts removes the retired job-queue schema: the job and

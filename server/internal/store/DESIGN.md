@@ -106,8 +106,8 @@ save silently replays a stale value.
 - Agent telemetry is written as narrow column updates, never a row `Save`:
   `UpdateSandboxAgentStatus`, `UpdateSandboxResources`,
   `RecordPoolProvisionProgress`, `RecordPoolResources`.
-- Pool status ownership is split between agent calls (`RegisterPool`,
-  `UpdatePoolStatus`) and the reconciler; see
+- Pool status ownership is split between the pool's maker (`EnrollPool`, its
+  key alone), the agent (`UpdatePoolStatus`) and the reconciler; see
   [`resources/pools/DESIGN.md`](../resources/pools/DESIGN.md).
 
 When a new field gains a second writer, narrow the write rather than relying on
@@ -123,7 +123,7 @@ credentials as having none.
 
 Every resource query must use the store-owned GORM handles rather than opening or
 resolving databases itself. Project-owned resources should filter by `project_id`;
-pool bootstrap tokens should filter by `pool_id`; user-owned resources should
+user-owned resources should
 filter by `user_id`. Peers and `server_state` rows are server-wide and carry no
 project scope. `*ByID` lookups (`GetPoolByID`, `GetSandboxByID`,
 `GetHarnessConfigByID`) skip project scope and are for trusted control-plane
@@ -179,7 +179,7 @@ Keep files split by resource area:
 | `sandboxes.go` | Sandbox desired-state persistence, reconcile scans, archive expiry, agent-status/resource telemetry. |
 | `sandbox_state_reports.go` | Pool-agent state and provisioning-progress reports (the observed columns' only writer). |
 | `providers.go` | Provider instance persistence. |
-| `pools.go` | Pool persistence: CRUD, agent registration and heartbeats, bootstrap tokens, telemetry, the schedulable-pool placement gate, and pool-scoped sandbox counts. |
+| `pools.go` | Pool persistence: CRUD, enrollment (the key a pool's maker read from its box) and heartbeats (the first registers it), telemetry, the schedulable-pool placement gate, and pool-scoped sandbox counts. |
 | `secrets.go`, `secret_grants.go` | Secrets (sealed values), secret requests, and host-scoped grants. |
 | `approval_rules.go` | Approval rules (ADR 26-10-12-330), a project's pending requests a rule could answer (`ListRuleTestableRequests`), and `AnsweredQuestion`: the verdict on record for a rule's question about one request, from the primary for whoever would otherwise ask the judge. A rule is deleted with its project and the secret it names; it names repositories, never a discobox, so it outlives the discoboxes it answered, and its grants outlive it. |
 | `sandbox_secrets.go` | Sandbox secret assignments and agent credentials. |

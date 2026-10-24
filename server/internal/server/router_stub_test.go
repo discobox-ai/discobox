@@ -889,10 +889,6 @@ func (s *routerTestServices) UnsetDefaultPool(ctx context.Context, projectID, po
 	return s.GetProject(ctx, projectID)
 }
 
-func (s *routerTestServices) RegisterPool(context.Context, services.RegisterPoolBody) (*services.RegisterPoolResponseBody, error) {
-	return &services.RegisterPoolResponseBody{}, nil
-}
-
 func (s *routerTestServices) UpdatePoolStatus(context.Context, string, services.UpdatePoolStatusBody) (*model.Pool, error) {
 	return &model.Pool{}, nil
 }

@@ -447,7 +447,6 @@ func (e authorizationError) StatusCode() int {
 var authenticatedAllowedPaths = []string{
 	"/harness-definitions",
 	"/harness-definitions/",
-	PoolRegisterPath,
 	// Enrolling and revoking peers (ADR 0095 §1, enrolled iroh IDs). There is no
 	// resource-specific authorizer for it: the resource is server-scoped, so
 	// there is no project membership to check, and an enrolled peer

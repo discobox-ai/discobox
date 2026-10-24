@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -69,14 +68,5 @@ func TestAuthRequiredServesNoDefaultUser(t *testing.T) {
 	}
 	if status := call("/ssh/connect", token); status != http.StatusForbidden {
 		t.Fatalf("GET /ssh/connect with an assertion = %d, want 403", status)
-	}
-	// A starting pool agent still reaches registration, where its bootstrap
-	// token is what is checked: a bad one is refused there, not as a 401.
-	register := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/pools/register", strings.NewReader(`{"projectId":"p","poolId":"q","bootstrapToken":"wrong","publicKey":"k"}`))
-	register.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, register)
-	if recorder.Code == http.StatusUnauthorized || recorder.Code == http.StatusForbidden || recorder.Code < 400 {
-		t.Fatalf("POST /api/pools/register with a wrong token = %d (%s), want it refused by the pools service", recorder.Code, recorder.Body.String())
 	}
 }

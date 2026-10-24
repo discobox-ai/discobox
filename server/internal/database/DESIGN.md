@@ -61,8 +61,9 @@ by what it is looking for and is idempotent:
    every start (`retireAgentGrantsWithoutPolicy`, #312: a grant an agent takes
    now carries one; standing grants with no uses, which harnesses resolve
    their secrets through, are never touched),
-   dropping a superseded constraint, dropping retired tables and columns (including the pool prepull condition and
-   its `poolImages` dirty rows), moving pending `sandboxEgress` reconcile
+   dropping retired tables and columns (including the pool prepull condition and
+   its `poolImages` dirty rows, and the pool bootstrap token table,
+   `dropPoolBootstrapTokens`, ADR 26-10-24-953 §4), moving pending `sandboxEgress` reconcile
    marks to `sandboxProxyPolicy`, the reconcile that now pushes egress and
    gateways together (`renameSandboxEgressReconcile`, ADR 26-10-16-470 §5), the
    sandbox state split (ADR 0034), deleting the secret grants scoped to a
