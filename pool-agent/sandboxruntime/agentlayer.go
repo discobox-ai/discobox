@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -68,21 +69,18 @@ func (r *DockerSandboxRuntime) agentsDir() string {
 func (r *DockerSandboxRuntime) deliveredPins(sandboxID string) (agentlayer.Pins, bool, error) {
 	pins, err := assetcache.ReadRecord(r.sandboxRoot(sandboxID))
 	if err != nil {
-		return agentlayer.Pins{}, false, err
+		return nil, false, err
 	}
 	return applied(pins)
 }
 
 func applied(pins []assetcache.Pin) (agentlayer.Pins, bool, error) {
-	platform, ok := assetcache.Platform(pins)
-	if !ok {
-		return agentlayer.Pins{}, false, nil
+	if _, ok := assetcache.Platform(pins); !ok {
+		return nil, false, nil
 	}
-	out := agentlayer.Pins{Platform: agentlayer.Pin{Name: platform.Name, Digest: platform.Digest}}
+	out := make(agentlayer.Pins, 0, len(pins))
 	for _, pin := range pins {
-		if pin.Kind == assetcache.KindHarness {
-			out.Harness = &agentlayer.Pin{Name: pin.Name, Digest: pin.Digest}
-		}
+		out = append(out, agentlayer.Pin{Name: pin.Name, Digest: pin.Digest})
 	}
 	return out, true, out.Validate()
 }
@@ -207,10 +205,10 @@ func (r *DockerSandboxRuntime) placeAgent(ctx context.Context, sandboxID, contai
 	}
 	agent, ok, err := r.sandboxAgent(ctx, sandboxID)
 	if err != nil {
-		return fmt.Errorf("the agent of sandbox %s's platform %s: %w", sandboxID, pins.Platform.Digest, err)
+		return fmt.Errorf("the agent of sandbox %s's pins %v: %w", sandboxID, pins, err)
 	}
 	if !ok {
-		return fmt.Errorf("sandbox %s is pinned to platform %s, and this pool has no asset cache to place its agent from", sandboxID, pins.Platform.Digest)
+		return fmt.Errorf("sandbox %s is pinned to %v, and this pool has no asset cache to place its agent from", sandboxID, pins)
 	}
 	// The layer goes in unless the pool's own record says it placed this
 	// one in this container already; nothing in the box is asked.
@@ -388,9 +386,4 @@ func (r *DockerSandboxRuntime) deliveredMoved(ctx context.Context, existing *San
 	return movedBase, nil
 }
 
-func samePins(a, b agentlayer.Pins) bool {
-	if a.Platform != b.Platform || (a.Harness == nil) != (b.Harness == nil) {
-		return false
-	}
-	return a.Harness == nil || *a.Harness == *b.Harness
-}
+func samePins(a, b agentlayer.Pins) bool { return slices.Equal(a, b) }

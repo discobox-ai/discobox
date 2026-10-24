@@ -44,10 +44,11 @@ type Spec struct {
 	// required by one that is on is on too (ADR 26-10-16-423 §4).
 	Requires []string `yaml:"requires,omitempty"`
 	// Async provisions the feature in the background, after the box is
-	// ready (§5). Every feature is async unless core or the harness
-	// requires it, so this matters to core alone: core marked async takes
-	// what it requires to the background with it. A feature core or the
-	// harness requires blocks whole, whatever it says.
+	// ready (ADR 26-10-16-423 §5). A feature that is not async blocks
+	// readiness, whichever bundle it came in (ADR 26-10-24-953 §1), and is
+	// never turned off; so does, whole, every feature it requires, whatever
+	// that one says. The platform's optional features are async; a harness's
+	// are not.
 	Async bool `yaml:"async,omitempty"`
 	// Adopt is what makes a copy the box already has usable, so the feature
 	// adopts it instead of installing its own (§4). Unset, the feature is
@@ -112,10 +113,10 @@ type Step struct {
 	// when the feature adopts the box's. Every other step is wiring, applied
 	// either way. Only a feature with adopt has one.
 	Install bool `yaml:"install,omitempty"`
-	// Async, in core, runs the step and every step after it in the
-	// background, so the steps still run in the order written. It is
-	// overridden in a feature core or the harness requires, which blocks
-	// whole, and means nothing in one already in the background. A group or
+	// Async, in a feature that blocks readiness, runs the step and every
+	// step after it in the background, so the steps still run in the order
+	// written. It is overridden in a feature a blocking one requires, which
+	// blocks whole, and means nothing in one already in the background. A group or
 	// env step is never async: it is the cheap wiring that goes first.
 	Async bool `yaml:"async,omitempty"`
 	// Apt says a run step uses apt or dpkg, so it takes the lock every

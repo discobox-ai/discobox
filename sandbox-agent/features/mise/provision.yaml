@@ -1,5 +1,6 @@
 # mise, from its apt repository, which extrepo knows.
 apiVersion: discobox.ai/provision/v1
+async: true
 commands: [mise]
 steps:
   - name: extrepo

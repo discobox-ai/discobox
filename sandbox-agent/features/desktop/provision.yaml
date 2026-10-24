@@ -8,6 +8,7 @@
 # (sandbox-agent/Dockerfile): the viewer's page is drawn with it, and the
 # backdrop and the panel's mark are rendered from it.
 apiVersion: discobox.ai/provision/v1
+async: true
 requires: [browser]
 steps:
   - name: packages

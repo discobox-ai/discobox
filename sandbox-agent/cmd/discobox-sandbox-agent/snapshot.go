@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/pkg/runcca"
+	"github.com/discobox-ai/discobox/sandbox-agent/bundlestore"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandbox-agent/proxyenv"
@@ -103,8 +104,12 @@ func takeSnapshot(ctx context.Context) error {
 	if !fetched {
 		return fmt.Errorf("the box has no pins (%s) to provision a snapshot of", agentlayer.PinsFile)
 	}
+	trees, err := bundlestore.Trees("/")
+	if err != nil {
+		return err
+	}
 	tracker := provision.NewTracker(provisionspec.StatusPath)
-	if err := provision.Snapshot(ctx, slog.Default(), tracker, plan.Features); err != nil {
+	if err := provision.Snapshot(ctx, slog.Default(), tracker, trees, plan.Features); err != nil {
 		return err
 	}
 	return cleanMachine(ctx, filepath.Join(layout.ProxyDir, "mitm-ca.crt"))

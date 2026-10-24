@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -16,7 +17,7 @@ const (
 )
 
 func testPins() Pins {
-	return Pins{Platform: Pin{Name: "discobox-platform", Digest: platformDigest}, Harness: &Pin{Name: "discobox-harness-shell", Digest: harnessDigest}}
+	return Pins{{Name: "discobox-platform", Digest: platformDigest}, {Name: "discobox-harness-shell", Digest: harnessDigest}}
 }
 
 func testAgent(body string) Agent {
@@ -83,7 +84,7 @@ func TestArchivePlacesTheAgentItsUnitsAndPins(t *testing.T) {
 		t.Fatalf("current = %+v, want a link to the layer", link)
 	}
 	pins, err := ParsePins([]byte(entries["opt/discobox/bundles/pins.json"].body))
-	if err != nil || pins.Platform != testPins().Platform || *pins.Harness != *testPins().Harness {
+	if err != nil || !slices.Equal(pins, testPins()) {
 		t.Fatalf("pins = %+v, %v", pins, err)
 	}
 	wire := entries["etc/systemd/system/discobox-wire.service"]
@@ -122,10 +123,11 @@ func TestArchiveLeavesOutALayerTheBoxHolds(t *testing.T) {
 
 func TestArchiveRefusesPinsNamingNothing(t *testing.T) {
 	for name, pins := range map[string]Pins{
-		"no platform":      {},
-		"a bad digest":     {Platform: Pin{Name: "discobox-platform", Digest: "sha256:nope"}},
-		"a path for name":  {Platform: Pin{Name: "../x", Digest: platformDigest}},
-		"a harness, empty": {Platform: Pin{Name: "discobox-platform", Digest: platformDigest}, Harness: &Pin{}},
+		"no bundle":       {},
+		"a bad digest":    {{Name: "discobox-platform", Digest: "sha256:nope"}},
+		"a path for name": {{Name: "../x", Digest: platformDigest}},
+		"an empty pin":    {{Name: "discobox-platform", Digest: platformDigest}, {}},
+		"a bundle twice":  {{Name: "discobox-platform", Digest: platformDigest}, {Name: "discobox-platform", Digest: harnessDigest}},
 	} {
 		if err := Archive(io.Discard, testAgent("x"), false, pins); err == nil {
 			t.Errorf("%s: placed", name)

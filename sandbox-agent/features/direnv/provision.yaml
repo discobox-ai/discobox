@@ -1,6 +1,7 @@
 # direnv on every `cd`, in each shell the box ships: bash's login and
 # interactive shells, zsh's, and nushell's (ADR 0138).
 apiVersion: discobox.ai/provision/v1
+async: true
 # zsh's system-wide rc is its package's file, which the hook is added to.
 requires: [shells-editors]
 commands: [direnv]

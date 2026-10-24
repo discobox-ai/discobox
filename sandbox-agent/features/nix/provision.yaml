@@ -4,6 +4,7 @@
 # use (ADR 0075). The shims on /usr/local/bin start the seed unit, then exec the
 # real binary.
 apiVersion: discobox.ai/provision/v1
+async: true
 steps:
   - name: install
     run: install-nix.sh

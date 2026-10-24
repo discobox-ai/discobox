@@ -1,5 +1,6 @@
 # Bun, by its own installer, under /usr/local.
 apiVersion: discobox.ai/provision/v1
+async: true
 # Its installer unpacks a zip.
 requires: [cli]
 commands: [bun, bunx]

@@ -13,6 +13,10 @@ import (
 
 const head = "apiVersion: discobox.ai/provision/v1\n"
 
+// asyncHead is a feature readiness does not wait for, as every platform
+// feature but core is.
+const asyncHead = head + "async: true\n"
+
 // tracked gives the box's runner a tracker writing provision.json under its
 // root, placeholders and logs, and background provisioning.
 func (b *box) tracked() *Tracker {
@@ -45,11 +49,11 @@ func TestAFeatureTurnedOffIsNeitherProvisionedNorWired(t *testing.T) {
 	b := newBox(t)
 	ran := filepath.Join(t.TempDir(), "ran")
 	b.feature("brew", map[string]string{
-		provisionspec.FileName: head + "steps:\n  - name: env\n    env: {path: [/home/linuxbrew/.linuxbrew/bin]}\n  - name: install\n    run: install.sh\n",
+		provisionspec.FileName: asyncHead + "steps:\n  - name: env\n    env: {path: [/home/linuxbrew/.linuxbrew/bin]}\n  - name: install\n    run: install.sh\n",
 		"install.sh":           "#!/bin/sh\necho brew >> " + ran + "\n",
 	})
-	b.feature("brew-bundle", map[string]string{provisionspec.FileName: head + "requires: [brew]\nsteps: []\n"})
-	b.feature("go", map[string]string{provisionspec.FileName: head + "steps:\n  - name: install\n    run: install.sh\n", "install.sh": "#!/bin/sh\necho go >> " + ran + "\n"})
+	b.feature("brew-bundle", map[string]string{provisionspec.FileName: asyncHead + "requires: [brew]\nsteps: []\n"})
+	b.feature("go", map[string]string{provisionspec.FileName: asyncHead + "steps:\n  - name: install\n    run: install.sh\n", "install.sh": "#!/bin/sh\necho go >> " + ran + "\n"})
 	b.mustApply()
 	if !b.exists(EnvProfilePath("brew", "env")) {
 		t.Fatal("brew's env was not written while it was on")
@@ -81,7 +85,7 @@ func TestAFeatureTurnedOffIsNeitherProvisionedNorWired(t *testing.T) {
 }
 
 // node, as a feature that installs its own copy unless the box's is usable.
-const nodeSpec = head + `adopt:
+const nodeSpec = asyncHead + `adopt:
   commands: [node]
   version: {command: node, minimum: "22"}
 steps:
@@ -189,17 +193,16 @@ func TestWhatWasInstalledIsNotAdoptedLater(t *testing.T) {
 	}
 }
 
-// A feature the harness requires cannot be turned off, naming both, unless
-// the box's own copy is usable.
-func TestAHarnessRequirementOutranksAnOptOut(t *testing.T) {
+// A feature one that blocks readiness requires cannot be turned off, naming
+// both, unless the box's own copy is usable.
+func TestABlockingRequirementOutranksAnOptOut(t *testing.T) {
 	b := newBox(t)
 	b.node(filepath.Join(t.TempDir(), "ran"))
 	b.feature("claude-code", map[string]string{provisionspec.FileName: head + "requires: [node]\nsteps: []\n"})
 	tracker := b.tracked()
-	b.opts.Harness = []string{"claude-code"}
 	b.opts.Off = map[string]string{"node": "turned off in .discobox/settings.json"}
 	_, err := b.apply()
-	if err == nil || !strings.Contains(err.Error(), `the harness's feature "claude-code" requires "node", which is turned off`) {
+	if err == nil || !strings.Contains(err.Error(), `the feature "claude-code", which readiness waits for, requires "node", which is turned off`) {
 		t.Fatalf("error = %v", err)
 	}
 	if err := tracker.AwaitReady(context.Background()); err == nil {
@@ -227,6 +230,17 @@ func TestCoreCannotBeTurnedOff(t *testing.T) {
 	}
 }
 
+// A feature that is not async blocks readiness, whichever bundle it came in,
+// and so cannot be turned off.
+func TestAFeatureReadinessWaitsForCannotBeTurnedOff(t *testing.T) {
+	b := newBox(t)
+	b.feature("claude-code", map[string]string{provisionspec.FileName: head + "steps: []\n"})
+	b.opts.Off = map[string]string{"claude-code": "turned off"}
+	if _, err := b.apply(); err == nil || !strings.Contains(err.Error(), `readiness requires "claude-code", which is turned off`) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 // gate is a script that waits for its release file before it exits.
 func gate(release string) string {
 	return "#!/bin/sh\nwhile [ ! -e " + release + " ]; do sleep 0.02; done\n"
@@ -240,7 +254,7 @@ func TestReadinessDoesNotWaitForTheBackground(t *testing.T) {
 	release := filepath.Join(t.TempDir(), "release")
 	b.feature(provisionspec.Core, map[string]string{provisionspec.FileName: head + "steps:\n  - name: s\n    file: {path: /etc/core, source: core}\n", "core": "core\n"})
 	b.feature("docker", map[string]string{
-		provisionspec.FileName: head + "commands: [docker, dockerd]\nsteps:\n  - name: group\n    group: {name: dockremote}\n  - name: install\n    run: install.sh\n",
+		provisionspec.FileName: asyncHead + "commands: [docker, dockerd]\nsteps:\n  - name: group\n    group: {name: dockremote}\n  - name: install\n    run: install.sh\n",
 		"install.sh":           gate(release),
 	})
 	tracker := b.tracked()
@@ -290,15 +304,14 @@ func TestReadinessDoesNotWaitForTheBackground(t *testing.T) {
 	}
 }
 
-// A feature the harness requires blocks readiness, its async mark
+// A feature a blocking feature requires blocks readiness, its async mark
 // notwithstanding, and so does what it requires.
-func TestTheHarnessesRequirementsBlockReadiness(t *testing.T) {
+func TestABlockingFeaturesRequirementsBlockReadiness(t *testing.T) {
 	b := newBox(t)
 	release := filepath.Join(t.TempDir(), "release")
 	b.feature("node", map[string]string{provisionspec.FileName: head + "async: true\nsteps:\n  - name: install\n    async: true\n    run: install.sh\n", "install.sh": gate(release)})
 	b.feature("claude-code", map[string]string{provisionspec.FileName: head + "requires: [node]\nsteps: []\n"})
 	tracker := b.tracked()
-	b.opts.Harness = []string{"claude-code"}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -328,8 +341,8 @@ func TestTheHarnessesRequirementsBlockReadiness(t *testing.T) {
 func TestFailures(t *testing.T) {
 	b := newBox(t)
 	b.feature(provisionspec.Core, map[string]string{provisionspec.FileName: head + "steps: []\n"})
-	b.feature("browser", map[string]string{provisionspec.FileName: head + "steps:\n  - name: install\n    run: install.sh\n", "install.sh": "#!/bin/sh\necho no network >&2\nexit 1\n"})
-	b.feature("desktop", map[string]string{provisionspec.FileName: head + "requires: [browser]\nsteps: []\n"})
+	b.feature("browser", map[string]string{provisionspec.FileName: asyncHead + "steps:\n  - name: install\n    run: install.sh\n", "install.sh": "#!/bin/sh\necho no network >&2\nexit 1\n"})
+	b.feature("desktop", map[string]string{provisionspec.FileName: asyncHead + "requires: [browser]\nsteps: []\n"})
 	tracker := b.tracked()
 	if _, err := b.apply(); err == nil {
 		t.Fatal("no error")
@@ -467,5 +480,24 @@ func TestParallelMergesIntoOneFileKeepEveryKey(t *testing.T) {
 		if !strings.Contains(got, `"`+name+`": true`) {
 			t.Fatalf("%q lost from %s", name, got)
 		}
+	}
+}
+
+// A later bundle's features come after an earlier one's, whatever their
+// names, and after what they require.
+func TestOrderKeepsTheBundlesOrder(t *testing.T) {
+	feature := func(name string, requires ...string) provisionspec.Feature {
+		return provisionspec.Feature{Name: name, Spec: provisionspec.Spec{Requires: requires}}
+	}
+	ordered, err := order([]provisionspec.Feature{feature("zeta"), feature("core"), feature("alpha", "mid"), feature("mid")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range ordered {
+		names = append(names, f.Name)
+	}
+	if got := strings.Join(names, " "); got != "zeta core mid alpha" {
+		t.Fatalf("order = %s", got)
 	}
 }

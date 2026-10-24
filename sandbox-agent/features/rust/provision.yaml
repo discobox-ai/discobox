@@ -1,5 +1,6 @@
 # rustup, with no toolchain: a project's rust-toolchain file chooses one.
 apiVersion: discobox.ai/provision/v1
+async: true
 steps:
   - name: rustup
     run: install-rustup.sh

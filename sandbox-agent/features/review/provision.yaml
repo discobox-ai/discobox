@@ -2,6 +2,7 @@
 # the skill that drives it. The binary is built from discobox-ai/review at the
 # version sandbox-agent/Dockerfile pins, and the build puts it beside this file.
 apiVersion: discobox.ai/provision/v1
+async: true
 commands: [discobox-review]
 steps:
   - name: binary
