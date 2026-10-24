@@ -1215,10 +1215,12 @@ flowchart LR
 
 ## The Pool-Agent Bundle
 
-A pool machine is a driver base made a pool agent's host by this bundle,
-rather than booted from an image
+This bundle is what makes a driver base a pool agent's host, rather than an
+image
 ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
-§§1–2). `bundle` is its contract with whoever places it:
+§§1–2). Nothing places it yet — the `vm` provider's pool machine boots with
+nothing on it ([discovm](../server/providers/discovm/DESIGN.md)) — and
+`bundle` is its contract with whoever will:
 
 - **What it is**: `pool-agent/Dockerfile`'s `bundle` target, `FROM scratch`,
   holding `/features/pool-agent/` with `discobox-pool-agent` (from the same

@@ -31,13 +31,13 @@ var DefaultPoolImage = "ghcr.io/discobox-ai/discobox-pool-agent:latest"
 // `dockerSandboxBaseImage` override it — and is a var for the same reason.
 var DefaultSandboxBaseImage = "ghcr.io/discobox-ai/discobox-sandbox-base:latest"
 
-// DefaultPoolAgentBundle is the pool-agent bundle a VM provider places on a
-// pool machine it boots from a driver base (ADR 26-10-23-551 §2): the same
-// agent as DefaultPoolImage, published beside it, and resolved as it is — a
-// release overwrites it at link time and names it in its manifest
+// DefaultPoolAgentBundle is the pool-agent bundle, the pool agent for a pool
+// machine booted from a driver base (ADR 26-10-23-551 §2): the same agent as
+// DefaultPoolImage, published beside it, and resolved as it is — a release
+// overwrites it at link time and names it in its manifest
 // (Bundles.PoolAgent), and the server's `poolAgentBundle` overrides it. A var
 // for the same reason. A development server is handed the watcher's build
-// through that setting.
+// through that setting. No provider places it yet.
 var DefaultPoolAgentBundle = "ghcr.io/discobox-ai/discobox-pool-agent-bundle:latest"
 
 // ServerDefaults are the provider settings that belong to the server rather

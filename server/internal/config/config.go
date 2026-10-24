@@ -203,9 +203,9 @@ type Config struct {
 	// (ADR 26-10-16-423 §10).
 	DockerSandboxBaseImage string `yaml:"dockerSandboxBaseImage" env:"DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE" doc:"The Docker driver's Debian sandbox base image, which every sandbox delivered its platform runs and the sandbox images are built FROM, preloaded by a pool, for a provider whose own sandboxBaseImage setting names none. Defaults to the released image for this build." example:"ghcr.io/discobox-ai/discobox-sandbox-base:v0.8.0"`
 
-	// PoolAgentBundle overrides the pool-agent bundle a VM provider places on
-	// a pool machine (ADR 26-10-23-551 §2).
-	PoolAgentBundle string `yaml:"poolAgentBundle" env:"DISCOBOX_POOL_AGENT_BUNDLE" doc:"The pool-agent bundle a VM provider places on a pool machine it boots from a driver base. Defaults to the released bundle for this build." example:"ghcr.io/discobox-ai/discobox-pool-agent-bundle:v0.8.0"`
+	// PoolAgentBundle overrides the pool-agent bundle, the pool agent for a
+	// pool machine booted from a driver base (ADR 26-10-23-551 §2).
+	PoolAgentBundle string `yaml:"poolAgentBundle" env:"DISCOBOX_POOL_AGENT_BUNDLE" doc:"The pool-agent bundle a pool machine booted from a driver base is made a pool agent's host with. No provider places it yet, so it has no effect. Defaults to the released bundle for this build." example:"ghcr.io/discobox-ai/discobox-pool-agent-bundle:v0.8.0"`
 
 	// ImageCacheDir is the image store (ADR 0113): an OCI layout a CLI stages a
 	// release's images into before it starts this server, which a provider

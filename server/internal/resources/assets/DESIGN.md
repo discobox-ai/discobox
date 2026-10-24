@@ -106,8 +106,8 @@ flowchart LR
   nothing else: its dev tag is no release reference, and no registry has it.
 - **Credentials**: the server's keychain pulls only the references the release
   names — the platform bundle, the built-in harnesses' bundles, and the
-  pool-agent bundle a VM provider places on a pool machine (ADR 26-10-23-551
-  §2). A
+  pool-agent bundle, the pool agent for a pool machine booted from a driver
+  base (ADR 26-10-23-551 §2). A
   project-supplied reference is pulled anonymously: a project configures no
   registry credentials, and the server's are not the project's to use.
 - **The store is shared across projects**, and a digest fetched for one pin is

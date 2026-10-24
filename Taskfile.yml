@@ -382,8 +382,8 @@ tasks:
     vars:
       POOL_AGENT_BUNDLE: '{{.POOL_AGENT_BUNDLE | default "discobox-pool-agent-bundle:local"}}'
     cmds:
-      # The bundle a VM provider places on a pool machine (ADR 26-10-23-551
-      # §2), by name: the Dockerfile's default target is the image.
+      # The pool agent for a pool machine booted from a driver base (ADR
+      # 26-10-23-551 §2), by name: the Dockerfile's default target is the image.
       - docker build -f pool-agent/Dockerfile --target bundle -t {{.POOL_AGENT_BUNDLE}} .
 
   build:platform-bundle:
@@ -1889,8 +1889,8 @@ tasks:
         vars:
           IMAGE: pool-agent
           BUILD_ARGS: --build-arg BASE_IMAGE={{.REGISTRY}}/discobox-sandbox-base:{{.TAG}}
-      # The pool-agent bundle a VM provider places on a pool machine (ADR
-      # 26-10-23-551 §2), beside the image and from the same build stage, so
+      # The pool-agent bundle, the pool agent for a pool machine booted from a
+      # driver base (ADR 26-10-23-551 §2), beside the image and from the same build stage, so
       # both hold the same agent: a multi-architecture index, since it
       # carries the binary. FROM scratch, so it needs no base image.
       - task: release:image

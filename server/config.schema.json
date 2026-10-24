@@ -325,7 +325,7 @@
       ]
     },
     "poolAgentBundle": {
-      "description": "The pool-agent bundle a VM provider places on a pool machine it boots from a driver base. Defaults to the released bundle for this build. Environment: DISCOBOX_POOL_AGENT_BUNDLE (takes precedence over this file).",
+      "description": "The pool-agent bundle a pool machine booted from a driver base is made a pool agent's host with. No provider places it yet, so it has no effect. Defaults to the released bundle for this build. Environment: DISCOBOX_POOL_AGENT_BUNDLE (takes precedence over this file).",
       "examples": [
         "ghcr.io/discobox-ai/discobox-pool-agent-bundle:v0.8.0"
       ],
