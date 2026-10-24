@@ -244,9 +244,9 @@ type SandboxImportOptions struct {
 	// PoolID places it. Empty takes the project's default pool, as a create
 	// does.
 	PoolID string
-	// HarnessSlug overrides the harness the archive names, for a destination
-	// that calls the same harness something else.
-	HarnessSlug string
+	// Harness overrides the harness the archive names, for a destination
+	// that calls the same harness something else: its slug, name or ID.
+	Harness string
 }
 
 // SandboxImportResult is one completed import: the discobox, and what could not

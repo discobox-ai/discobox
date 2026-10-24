@@ -1943,7 +1943,7 @@ func (s *CreateSSHKeyBody) SetPublicKey(val string) {
 type CreateSandboxBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Harness config name to resolve at create time.
+	// Harness config to resolve at create time, by slug, name or ID.
 	HarnessName OptString `json:"harnessName"`
 	// Desired sandbox configuration.
 	Config SandboxCreateConfig `json:"config"`

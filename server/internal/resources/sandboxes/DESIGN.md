@@ -23,7 +23,8 @@ flowchart LR
   reads or non-orchestrated updates.
 - Every sandbox carries a harness config (ADR 0032, as amended by ADR 0048).
   `resolveHarnessConfigID` resolves it at create: an explicit
-  `harnessConfigId`, or a `--harness` name (slug first, then display name) →
+  `harnessConfigId`, or a `--harness` selector (slug first, then display name,
+  then ID) →
   the project default → 409. A deleted default counts as no default. A
   sandbox is pinned to its harness config's `Bundle`/`BundleDigest`, or a
   manifest file's template to its `Image`/`ImageDigest`
@@ -546,8 +547,8 @@ and is answered as a 400 about the archive rather than an error about the pool
   That struct is already the complete answer to "does this describe the
   container?", so a spec field added there travels from the day it is added.
   Two of its fields are not taken as they arrive: `HarnessConfigID` is cleared
-  on export and resolved by slug on import, because an ID names a row on one
-  server and nothing on another; and its harness pins — `Bundle`/`BundleDigest`,
+  on export and resolved by slug on import — an import's `--harness` by slug,
+  name or ID — because an ID names a row on one server and nothing on another; and its harness pins — `Bundle`/`BundleDigest`,
   or `Image`/`ImageDigest` for a manifest file — and its platform are re-pinned
   to the destination's, exactly as a create takes them from there. The pins
   cannot come from the archive — `buildCreateOptions` reads `RunCommand`,

@@ -262,7 +262,7 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	if err != nil {
 		return nil, apperrors.NotFound(err, "pool not found")
 	}
-	harnessConfig, err := s.importHarnessConfig(ctx, projectID, spec.Harness, opts.HarnessSlug)
+	harnessConfig, err := s.importHarnessConfig(ctx, projectID, spec.Harness, opts.Harness)
 	if err != nil {
 		return nil, err
 	}
@@ -449,26 +449,33 @@ func importedAt(manifest *sandboxexport.Manifest) *time.Time {
 
 // importHarnessConfig resolves the harness the imported sandbox runs.
 //
-// A slug is the only handle that means the same thing on two servers, and a
-// destination that does not have it is told so by name rather than given a
-// substitute: the harness is what the sandbox runs, and a different one is a
-// different sandbox.
+// The archive names it by slug, the only handle that means the same thing on
+// two servers. --harness names another, as a `--harness` selector does
+// everywhere (harnessConfigBySelector). A destination that has neither is told
+// so by name rather than given a substitute: the harness is what the sandbox
+// runs, and a different one is a different sandbox.
 func (s *Service) importHarnessConfig(ctx context.Context, projectID string, harness sandboxexport.Harness, override string) (*model.HarnessConfig, error) {
-	slug := strings.TrimSpace(override)
-	if slug == "" {
-		slug = strings.TrimSpace(harness.Slug)
-	}
-	if slug == "" {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "the archive names no harness; pass one")
-	}
-	config, err := s.store.GetHarnessConfigBySlug(ctx, projectID, slug)
-	if err != nil {
-		wanted := slug
-		if harness.Name != "" && slug == harness.Slug {
+	var config *model.HarnessConfig
+	var err error
+	wanted := strings.TrimSpace(override)
+	switch slug := strings.TrimSpace(harness.Slug); {
+	case wanted != "":
+		config, err = s.harnessConfigBySelector(ctx, projectID, wanted)
+	case slug != "":
+		config, err = s.store.GetHarnessConfigBySlug(ctx, projectID, slug)
+		wanted = slug
+		if harness.Name != "" {
 			wanted = fmt.Sprintf("%s (%s)", slug, harness.Name)
 		}
+	default:
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "the archive names no harness; pass one")
+	}
+	if errors.Is(err, store.ErrNotFound) {
 		return nil, apperrors.NewStatusError(http.StatusConflict,
 			fmt.Sprintf("this project has no harness %s; configure it here first, or name another with --harness", wanted))
+	}
+	if err != nil {
+		return nil, err
 	}
 	if !config.Configured {
 		return nil, apperrors.NewStatusError(http.StatusConflict,

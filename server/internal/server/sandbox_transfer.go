@@ -90,9 +90,9 @@ func sandboxImportHandler(service services.SandboxService) http.Handler {
 		projectID := chi.URLParam(r, "projectId")
 		query := r.URL.Query()
 		result, err := service.ImportSandbox(r.Context(), projectID, r.Body, services.SandboxImportOptions{
-			Name:        strings.TrimSpace(query.Get("name")),
-			PoolID:      strings.TrimSpace(query.Get("pool")),
-			HarnessSlug: strings.TrimSpace(query.Get("harness")),
+			Name:    strings.TrimSpace(query.Get("name")),
+			PoolID:  strings.TrimSpace(query.Get("pool")),
+			Harness: strings.TrimSpace(query.Get("harness")),
 		})
 		if err != nil {
 			writeSandboxAgentProxyError(w, statusCodeForProxyError(err), err.Error())

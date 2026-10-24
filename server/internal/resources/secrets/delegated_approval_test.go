@@ -380,7 +380,7 @@ func TestADiscoboxListsOnlyTheSecretsItWasDelegated(t *testing.T) {
 	}
 }
 
-// A secret a discobox was not delegated answers its --secret-id the same as one
+// A secret a discobox was not delegated answers its --secret the same as one
 // that does not exist, so naming IDs cannot tell it which the project holds.
 func TestASecretNotDelegatedAnswersAsIfItDidNotExist(t *testing.T) {
 	ctx := testPrincipalContext()
