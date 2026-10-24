@@ -11,7 +11,10 @@
 // hands it every name it cannot answer, and the query never crosses the network
 // as plain DNS. The stub carries each one to the pool as DNS over TLS
 // (RFC 7858), presenting the sandbox's client certificate and verifying the
-// pool's: another sandbox on the network can neither read nor answer it.
+// pool's: another sandbox on the network can neither read nor answer it. It
+// dials through bridge.Dialer like everything else in the sandbox that reaches
+// the pool, so a pool behind an edge is reached through a tunnel
+// (ADR 26-10-23-719 §5).
 //
 // The sandbox's nested Docker names the same address as its containers' name
 // server (the image's daemon.json), so they reach the stub across its bridges.
@@ -30,6 +33,7 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -67,9 +71,13 @@ type Config struct {
 	// ListenAddress is where the stub listens: the DNS server the sandbox
 	// container was created with.
 	ListenAddress netip.AddrPort `json:"dnsListenAddress"`
-	// Server is the pool's DNS-over-TLS endpoint, host:port. Its host is also
-	// the name the pool's certificate is verified for.
-	Server         string `json:"dnsServer"`
+	// Server is the pool's DNS-over-TLS endpoint, a wire URL as every other
+	// pool endpoint is. A bare host:port, which a bootstrap from before that
+	// names, is TCP: https://host:port.
+	Server string `json:"dnsServer"`
+	// ServerName is the name the pool's certificate is verified as. Empty
+	// takes Server's host, which only a TCP endpoint has.
+	ServerName     string `json:"serverName"`
 	MTLSCAPath     string `json:"mtlsCaPath"`
 	ClientCertPath string `json:"clientCertPath"`
 	ClientKeyPath  string `json:"clientKeyPath"`
@@ -97,11 +105,21 @@ func LoadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
-// Material is the client side of the pool's mTLS: the sandbox's keypair, and
-// the pool CA verifying the pool's certificate, read again whenever the intake
-// replaces them, so a renewed certificate reaches the stub's next connection.
-func (c Config) Material() (*bridge.Material, error) {
-	return bridge.LoadMaterial(c.MTLSCAPath, c.ClientCertPath, c.ClientKeyPath)
+// Dialer reaches the pool's DNS server with the sandbox's keypair, read again
+// whenever the intake replaces it, so a renewed certificate reaches the stub's
+// next connection.
+func (c Config) Dialer() (*bridge.Dialer, error) {
+	server := c.Server
+	if !strings.Contains(server, "://") {
+		server = "https://" + server
+	}
+	return bridge.NewDialer(bridge.DialConfig{
+		URL:            server,
+		ServerName:     c.ServerName,
+		MTLSCAPath:     c.MTLSCAPath,
+		ClientCertPath: c.ClientCertPath,
+		ClientKeyPath:  c.ClientKeyPath,
+	})
 }
 
 // ClaimAddress puts addr on the sandbox's loopback, so the stub can listen on
@@ -166,14 +184,11 @@ func run(ctx context.Context, name string, args ...string) error {
 // credentials, claims the address, and answers there. It returns early only
 // when one of those fails.
 func Run(ctx context.Context, logger *slog.Logger, cfg Config) error {
-	material, err := cfg.Material()
+	dialer, err := cfg.Dialer()
 	if err != nil {
 		return err
 	}
-	stub, err := New(logger, cfg.Server, material)
-	if err != nil {
-		return err
-	}
+	stub := New(logger, dialer)
 	if err := ClaimAddress(ctx, cfg.ListenAddress.Addr()); err != nil {
 		return err
 	}
@@ -187,7 +202,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		_ = udp.Close()
 		return err
 	}
-	stub.logger.Info("sandbox dns stub serving", "addr", cfg.ListenAddress, "pool", cfg.Server)
+	stub.logger.Info("sandbox dns stub serving", "addr", cfg.ListenAddress, "pool", dialer.URL())
 	stub.Serve(ctx, udp, tcp)
 	return nil
 }
@@ -195,15 +210,16 @@ func Run(ctx context.Context, logger *slog.Logger, cfg Config) error {
 // Stub answers DNS on the sandbox side and asks the pool.
 type Stub struct {
 	logger *slog.Logger
-	server string
-	// material is the sandbox's mTLS material, which each dial takes as it is
-	// then. A connection already open keeps the certificate it was opened
-	// with; it was valid when the pool verified it.
-	material *bridge.Material
-	// poolHost is the pool's name. A query for it reaching the stub means
-	// Docker's resolver could not answer it — the pool is not on the network —
-	// and asking the pool would mean resolving that same name to dial it.
-	poolHost string
+	// dialer reaches the pool, presenting the sandbox's certificate as it is
+	// at each dial. A connection already open keeps the certificate it was
+	// opened with; it was valid when the pool verified it.
+	dialer *bridge.Dialer
+	// ownNames are the pool's name and the name its transport dials (an
+	// edge's, for a tunnel). A query for either reaching the stub cannot be
+	// asked of the pool, since dialing it would mean resolving that same name
+	// through the stub again: for the pool's name it means Docker's resolver
+	// could not answer it, because the pool is not on the network.
+	ownNames []string
 
 	// idle holds open connections between queries, and open one token per
 	// connection, busy or idle: a query takes an idle connection, or a token
@@ -214,25 +230,25 @@ type Stub struct {
 	slots chan struct{}
 }
 
-// New returns a stub that asks server, a host:port, over mTLS with material,
-// verifying the pool's certificate for server's host.
-func New(logger *slog.Logger, server string, material *bridge.Material) (*Stub, error) {
-	host, _, err := net.SplitHostPort(server)
-	if err != nil {
-		return nil, fmt.Errorf("dns server %q: %w", server, err)
-	}
+// New returns a stub that asks the pool dialer reaches.
+func New(logger *slog.Logger, dialer *bridge.Dialer) *Stub {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	var names []string
+	for _, name := range []string{dialer.ServerName(), dialer.TransportHost()} {
+		if name = strings.ToLower(strings.TrimSuffix(name, ".")); name != "" && !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
 	return &Stub{
 		logger:   logger,
-		server:   server,
-		material: material,
-		poolHost: strings.ToLower(strings.TrimSuffix(host, ".")),
+		dialer:   dialer,
+		ownNames: names,
 		idle:     make(chan *tls.Conn, maxConns),
 		open:     make(chan struct{}, maxConns),
 		slots:    make(chan struct{}, maxInFlight),
-	}, nil
+	}
 }
 
 // Serve answers on udp and tcp until ctx ends, then closes them and every
@@ -327,7 +343,7 @@ func (s *Stub) answer(ctx context.Context, query []byte) []byte {
 	if err != nil {
 		return nil
 	}
-	if strings.ToLower(strings.TrimSuffix(question.Name.String(), ".")) == s.poolHost {
+	if slices.Contains(s.ownNames, strings.ToLower(strings.TrimSuffix(question.Name.String(), "."))) {
 		return failure(header, question)
 	}
 	answer, err := s.exchange(ctx, query)
@@ -377,22 +393,10 @@ func (s *Stub) take(ctx context.Context) (conn *tls.Conn, reused bool, err error
 	case <-ctx.Done():
 		return nil, false, ctx.Err()
 	}
-	tlsConfig, err := s.material.TLSConfig(s.poolHost)
+	conn, err = s.dialer.Dial(ctx)
 	if err != nil {
 		<-s.open
 		return nil, false, err
-	}
-	dialer := tls.Dialer{Config: tlsConfig}
-	raw, err := dialer.DialContext(ctx, "tcp", s.server)
-	if err != nil {
-		<-s.open
-		return nil, false, err
-	}
-	conn, ok := raw.(*tls.Conn)
-	if !ok {
-		_ = raw.Close()
-		<-s.open
-		return nil, false, fmt.Errorf("dial %s: not a TLS connection", s.server)
 	}
 	return conn, false, nil
 }

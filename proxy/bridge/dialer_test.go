@@ -225,7 +225,7 @@ func TestNewDialerURLs(t *testing.T) {
 		{name: "unix with server name", url: "unix:///run/discobox/pool.sock", serverName: poolServerName, wantServer: "https://" + poolServerName},
 		{name: "vsock names no host", url: "vsock://2:17080", wantErr: "server name is required"},
 		{name: "unix names no host", url: "unix:///run/discobox/pool.sock", wantErr: "server name is required"},
-		{name: "plaintext refused", url: "http://discobox-pool-proxy:17080", wantErr: "must be https, vsock, or unix"},
+		{name: "plaintext refused", url: "http://discobox-pool-proxy:17080", wantErr: "must be https, vsock, unix, or wss"},
 		{name: "https needs a port", url: "https://discobox-pool-proxy", wantErr: "host and port"},
 		{name: "https with an empty port", url: "https://discobox-pool-proxy:", wantErr: "host and port"},
 		{name: "https with an empty host", url: "https://:17080", wantErr: "host and port"},

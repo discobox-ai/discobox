@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -176,19 +177,15 @@ func poolAnswer(t *testing.T, query []byte) []byte {
 // does on the sandbox's DNS address.
 func startStub(t *testing.T, p pki, poolAddr, poolHost string) (udp, tcp string) {
 	t.Helper()
-	p.config.Server = poolAddr
-	material, err := p.config.Material()
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, port, _ := net.SplitHostPort(poolAddr)
-	stub, err := New(nil, net.JoinHostPort(poolHost, port), material)
-	if err != nil {
-		t.Fatal(err)
-	}
 	// The stub dials the pool by name; in a sandbox Docker's resolver answers
-	// it, here the test does.
-	stub.server = poolAddr
+	// it, here the test dials the address and verifies the name.
+	p.config.Server = poolAddr
+	p.config.ServerName = poolHost
+	dialer, err := p.config.Dialer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stub := New(nil, dialer)
 	var config net.ListenConfig
 	udpConn, err := config.ListenPacket(t.Context(), "udp", "127.0.0.1:0")
 	if err != nil {
@@ -387,11 +384,12 @@ func TestLoadConfig(t *testing.T) {
 		{
 			name: "staged",
 			content: `{"listenAddress":"127.0.0.1:17008","workerProxyUrl":"https://discobox-pool-proxy:17080",
-				"dnsServer":"discobox-pool-proxy:17085","dnsListenAddress":"169.254.53.53:53",
+				"dnsServer":"https://discobox-pool-proxy:17085","dnsListenAddress":"169.254.53.53:53","serverName":"discobox-pool-proxy",
 				"mtlsCaPath":"/etc/discobox/proxy/mtls-ca.crt","clientCertPath":"/etc/discobox/proxy/client.crt","clientKeyPath":"/etc/discobox/proxy/client.key"}`,
 			want: Config{
 				ListenAddress:  netip.MustParseAddrPort("169.254.53.53:53"),
-				Server:         "discobox-pool-proxy:17085",
+				Server:         "https://discobox-pool-proxy:17085",
+				ServerName:     "discobox-pool-proxy",
 				MTLSCAPath:     "/etc/discobox/proxy/mtls-ca.crt",
 				ClientCertPath: "/etc/discobox/proxy/client.crt",
 				ClientKeyPath:  "/etc/discobox/proxy/client.key",
@@ -446,24 +444,36 @@ func TestStubPresentsARenewedCertificateOnItsNextConnection(t *testing.T) {
 	}
 }
 
-// Material verifies the pool for the dnsServer host, the name the pool's
-// certificate is issued for.
-func TestMaterialVerifiesTheServerHost(t *testing.T) {
+// A bare host:port, as a bootstrap from before the DNS server became a wire
+// URL names it, is TCP, verified for its host; a tunnel needs the pool's name,
+// and the stub refuses both the pool's name and the edge's rather than asking
+// the pool to resolve the names it is reached by.
+func TestConfigDialer(t *testing.T) {
 	p := newPKI(t)
-	p.config.Server = "discobox-pool-proxy:17085"
-	material, err := p.config.Material()
-	if err != nil {
-		t.Fatal(err)
-	}
-	stub, err := New(nil, p.config.Server, material)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := stub.material.TLSConfig(stub.poolHost)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ServerName != "discobox-pool-proxy" || len(cfg.Certificates) != 1 || cfg.RootCAs == nil {
-		t.Fatalf("TLSConfig = ServerName %q, %d certificates, roots %v", cfg.ServerName, len(cfg.Certificates), cfg.RootCAs != nil)
+	for _, tc := range []struct {
+		name, server, serverName, wantURL string
+		wantOwn                           []string
+	}{
+		{name: "bare", server: "discobox-pool-proxy:17085", wantURL: "https://discobox-pool-proxy:17085", wantOwn: []string{"discobox-pool-proxy"}},
+		{name: "url", server: "https://discobox-pool-proxy:17085", wantURL: "https://discobox-pool-proxy:17085", wantOwn: []string{"discobox-pool-proxy"}},
+		{
+			name: "tunnel", server: "wss://Edge.Example.com/tunnel/dns", serverName: "discobox-pool-proxy",
+			wantURL: "wss://Edge.Example.com/tunnel/dns", wantOwn: []string{"discobox-pool-proxy", "edge.example.com"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := p.config
+			cfg.Server, cfg.ServerName = tc.server, tc.serverName
+			dialer, err := cfg.Dialer()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if dialer.URL() != tc.wantURL || dialer.ServerName() != "discobox-pool-proxy" {
+				t.Fatalf("dialer for %q = %s verified as %q", tc.server, dialer.URL(), dialer.ServerName())
+			}
+			if got := New(nil, dialer).ownNames; !slices.Equal(got, tc.wantOwn) {
+				t.Fatalf("own names = %v, want %v", got, tc.wantOwn)
+			}
+		})
 	}
 }

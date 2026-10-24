@@ -26,8 +26,10 @@ func TestParseSchemes(t *testing.T) {
 		{raw: "vsock://2:3001", scheme: "vsock", host: "2", port: 3001},
 		{raw: "vsock://:3002", scheme: "vsock", port: 3002},
 		{raw: "unix:///run/discobox/cp.sock", scheme: "unix", path: "/run/discobox/cp.sock"},
+		{raw: "wss://edge.example.com/tunnel/proxy", scheme: "wss", host: "edge.example.com"},
 
 		{raw: "", wantErr: true},
+		{raw: "wss:///tunnel/proxy", wantErr: true}, // no host
 		{raw: "ftp://nope", wantErr: true},
 		{raw: "http://", wantErr: true},
 		{raw: "vsock://2", wantErr: true},          // no port
@@ -52,6 +54,24 @@ func TestParseSchemes(t *testing.T) {
 			t.Errorf("Parse(%q) = %+v, want scheme=%q host=%q port=%d path=%q",
 				tc.raw, got, tc.scheme, tc.host, tc.port, tc.path)
 		}
+	}
+}
+
+// A tunnel is opened only by the sandbox's pool dialer, which knows where each
+// stream on it ends, so nothing else may dial or listen on one.
+func TestWSSIsNeitherDialedNorListenedOnHere(t *testing.T) {
+	endpoint, err := Parse("wss://edge.example.com/tunnel/proxy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := endpoint.DialContext(); err == nil {
+		t.Error("DialContext accepted a wss endpoint")
+	}
+	if _, err := Listen("wss://edge.example.com/tunnel/proxy"); err == nil {
+		t.Error("Listen accepted a wss endpoint")
+	}
+	if endpoint.IsIP() {
+		t.Error("a wss endpoint reports a TCP port to publish")
 	}
 }
 

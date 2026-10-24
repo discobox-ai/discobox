@@ -29,6 +29,10 @@ Global review expectations:
   not public control-plane API DTOs and may be used where pool-agent HTTP API
   calls or pool-local runtime contracts are the package responsibility.
 - Prefer short-lived tokens and explicit key ownership for auth flows.
+- A constructor that starts a goroutine reading into an object takes its own
+  claim on that object first. `wstunnel.Client.DialNew` started a tunnel's
+  reader before claiming its stream, so a server closing at once left nothing
+  to claim, and it returned a nil stream with no error.
 - An ADR names, in its `Status` and its index row, every section of an
   accepted ADR whose decision it reverses or narrows, and its "what stays"
   claims are checked against those sections. Read the ADRs that the touched

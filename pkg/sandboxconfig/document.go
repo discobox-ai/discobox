@@ -123,7 +123,8 @@ type PoolEndpoints struct {
 	Proxy string `json:"proxy"`
 	// Credentials is the pool's agent-credentials endpoint (ADR 0031).
 	Credentials string `json:"credentials,omitempty"`
-	// DNS is the pool's DNS-over-TLS server, as host:port.
+	// DNS is the pool's DNS-over-TLS server, a wire URL like the others. A
+	// bare host:port, which a bootstrap from before names, is TCP.
 	DNS string `json:"dns,omitempty"`
 	// BuildKit is the pool's BuildKit mediator (ADR 0044); empty for a pool
 	// with no builder.

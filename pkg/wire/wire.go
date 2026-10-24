@@ -20,6 +20,13 @@
 // why the package lives in the root module rather than in pool-agent: the
 // in-sandbox side has to import it too (ADR 26-10-02-411).
 //
+// One scheme is the sandbox's alone: wss://host[:port]/path names a pool
+// reached through an HTTPS edge that terminates TLS, over a WebSocket tunnel
+// (ADR 26-10-23-719). Parse accepts it, but neither DialContext nor Listen
+// does: a tunnel is reused stream after stream, so only the side that knows
+// where its stream ends can open one, and that is bridge.Dialer, through
+// pkg/wstunnel.
+//
 // The endpoint package resolves the other hop — client to control plane — by
 // the same method. The two stay separate because each hop's listen and dial
 // contracts answer to their own callers: endpoint carries iroh and DNS
@@ -49,10 +56,10 @@ const LogicalHTTPBaseURL = "http://pool-agent.local"
 type Endpoint struct {
 	// Raw is the URL as configured.
 	Raw string
-	// Scheme selects the transport: http, https, vsock, or unix.
+	// Scheme selects the transport: http, https, vsock, unix, or wss.
 	Scheme string
-	// Host is the IP host for http/https and the context ID for vsock. It is
-	// empty for unix and for a vsock listen address.
+	// Host is the IP host for http/https/wss and the context ID for vsock. It
+	// is empty for unix and for a vsock listen address.
 	Host string
 	// Port is the TCP port for http/https and the port number for vsock.
 	Port uint32
@@ -72,7 +79,7 @@ func Parse(raw string) (Endpoint, error) {
 	}
 	scheme := strings.ToLower(parsed.Scheme)
 	switch scheme {
-	case "http", "https":
+	case "http", "https", "wss":
 		if parsed.Host == "" {
 			return Endpoint{}, fmt.Errorf("%s endpoint %q must include a host", scheme, raw)
 		}
@@ -159,9 +166,17 @@ func (e Endpoint) DialContext() (func(context.Context, string, string) (net.Conn
 		return func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return dialer.DialContext(ctx, "unix", path)
 		}, nil
+	case "wss":
+		return nil, errTunnel(e)
 	default:
 		return nil, fmt.Errorf("unsupported endpoint scheme %q", e.Scheme)
 	}
+}
+
+// errTunnel refuses a wss endpoint to a caller that would open it as a plain
+// connection.
+func errTunnel(e Endpoint) error {
+	return fmt.Errorf("endpoint %q is a WebSocket tunnel, which only a sandbox's pool dialer opens", e.Raw)
 }
 
 // IsIP reports whether the endpoint is reached over IP, and therefore has a TCP
@@ -215,6 +230,8 @@ func Listen(raw string) (net.Listener, error) {
 	case "unix":
 		var config net.ListenConfig
 		return config.Listen(context.Background(), "unix", parsed.Path)
+	case "wss":
+		return nil, errTunnel(parsed)
 	default:
 		return nil, fmt.Errorf("unsupported endpoint scheme %q", parsed.Scheme)
 	}
