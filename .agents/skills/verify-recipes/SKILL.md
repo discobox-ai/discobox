@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, or a skill.
 ---
 
 # Verifying the console
@@ -231,6 +231,32 @@ and that the process started after the build (no `ps` in the image: walk
   For a cacheable blob, the origin must send `Docker-Content-Digest` or an OCI
   media type, or the content-aware arm refuses it. Either route leaves the
   pool-agent, server, and CLI relays unexercised.
+
+# Verifying a pool behind an edge (`pkg/wstunnel`, `wss` pool URLs)
+
+No provider sets `DISCOBOX_POOL_TUNNEL_URL` (ADR 26-10-23-719), so switch the
+dev pool's proxy unit by hand and run a stand-in edge inside a `-H shell` box:
+
+- Pool: append `DISCOBOX_POOL_TUNNEL_URL=wss://edge.test` to
+  `/etc/discobox/proxy.env` (keep a copy), then `docker exec <pool> sh -c
+  'kill -9 <pid>'` (no `kill` binary; find the pid by walking `/proc/*/cmdline`
+  for `discobox-pool-agent proxy `). The unit restarts (`Restart=on-failure`)
+  and logs `pool tunnels serving addr=[::]:17090`. Restore the copy and kill
+  again. Listening ports: read `/proc/<proxy pid>/net/tcp{,6}`, not the
+  container's own `/proc/net`.
+- Edge: a ~30-line Go `httputil.ReverseProxy` with a self-signed `localhost`
+  cert, run in the box with the proxy env unset, to
+  `http://discobox-pool-proxy:17090`; log each request's path and `Upgrade` to
+  count tunnels. The box's `/tmp` is a tmpfs `docker cp` cannot write: pipe
+  files into `/var/tmp` (`docker exec -i <c> sh -c 'cat > /var/tmp/f' < f`).
+- Bridge: a copy of `/etc/discobox/proxy/bridge.json` with `wss://localhost:8443/tunnel/{proxy,credentials,dns}`,
+  its own `listenAddress` and a loopback `dnsListenAddress`, run as
+  `SSL_CERT_FILE=<system bundle + edge cert> /opt/discobox/current/features/core/discobox-sandbox-agent proxy-bridge --config <copy> --dns`.
+  `curl --proxy` it; the pool's `admin audit http|dns` shows the box's ID.
+- Credentials: the agent's relay reads the real `bridge.json`, and its intake
+  rewrites that file when the agent restarts, while its system roots load only
+  at start: append the edge cert to the bundle, restart
+  `discobox-sandbox-agent.service`, then edit `credentialsUrl`.
 
 # Verifying a skill change (`.agents/skills`)
 
