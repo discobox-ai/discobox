@@ -1,6 +1,6 @@
 # 0097 — A Discobox address is `discobox://<peer-id>`, and nothing user-facing says iroh
 
-- **Status**: Accepted
+- **Status**: Accepted (§7's hidden `admin iroh` and `admin iroh-id` superseded by [26-10-24-254](26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md): removed)
 - **§1's exact-concatenation address superseded by**: [0116](0116-a-discobox-address-names-a-server-and-a-discobox.md) — an address may also name a server by host, and a discobox on it; resolution moves from `Parse` to a `Resolve` step before the dial. The peer-ID format, and §§3-7, stand.
 - **Date**: 2026-09-08
 

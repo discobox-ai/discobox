@@ -1,7 +1,7 @@
 # 26-10-09-389 — The CLI reads one schema-checked configuration file, and a flag still wins
 
 - **Status**: Accepted (supersedes [0096](0096-the-server-reads-one-schema-checked-configuration-file.md)
-  §6's deferral of a CLI configuration file)
+  §6's deferral of a CLI configuration file; §2's `new.skills` and `new.userSkills` spelled `run.skills` and `run.userSkills` by [26-10-24-254](26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md))
 - **Date**: 2026-10-09
 - **Relates to**: [0096](0096-the-server-reads-one-schema-checked-configuration-file.md),
   [26-10-09-395](26-10-09-395-a-sandbox-may-be-created-with-skills.md).

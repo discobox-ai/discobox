@@ -1,6 +1,8 @@
 # 26-10-23-600 — The CLI is spelled one way, `run` takes its source first, and only commits go in by default
 
-- **Status**: Accepted. Supersedes in part:
+- **Status**: Accepted (§1's `admin audit ls` without `-q` and its alias rule for
+  flags, and the consequence that `client.yaml` keeps `new:`, superseded by
+  [26-10-24-254](26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md)). Supersedes in part:
   - [0133](0133-the-command-that-makes-a-discobox-is-new.md) §§1–2: the
     command is `run` again, and its other spellings are aliases.
   - [26-09-25-027](26-09-25-027-only-new-makes-a-discobox.md)'s spelling: read

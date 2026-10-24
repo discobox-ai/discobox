@@ -1,6 +1,6 @@
 # 0100 — The prompt is a flag, and the bare command takes no words
 
-- **Status**: Accepted (§1's mechanism superseded by [0103](0103-a-global-flag-belongs-to-the-command-it-is-written-in-front-of.md))
+- **Status**: Accepted (§1's mechanism superseded by [0103](0103-a-global-flag-belongs-to-the-command-it-is-written-in-front-of.md); §5's "hidden" superseded by [26-10-24-254](26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md): `version` is listed)
 - **§§3–4's command spelling superseded by**: [0133](0133-the-command-that-makes-a-discobox-is-new.md) — the command that keeps a trailing prompt is `discobox new`, with `run` kept as an alias, and §4's preview fallback names `new` too. What §3 and §4 decide stands.
 - **§2 and §4's lead spelling superseded by**: [26-09-25-027](26-09-25-027-only-new-makes-a-discobox.md) — the bare command takes no `-p`; documents and the preview spell `discobox new`.
 - **Date**: 2026-09-07
