@@ -116,8 +116,8 @@ func (a *App) resolveSandboxID(ctx context.Context, client *apiclientgen.Client,
 }
 
 // resolveSandboxReference turns a reference somebody typed into a sandbox ID,
-// where the reference is one they read off `discobox ls` rather than an
-// explicit --discobox-id: a name, a full ID or a short ID from the candidate
+// where the reference is one they read off `discobox ls` rather than a raw
+// `admin box` ID: a name, a full ID or a short ID from the candidate
 // listing in sandboxes (matchSandboxArg), and failing that a short ID resolved
 // against the whole project. match is which names the caller's argument may be
 // written as; a name that more than one candidate answers to is refused rather
@@ -157,7 +157,7 @@ func (a *App) resolveListedSandbox(ctx context.Context, client *apiclientgen.Cli
 	var sandboxes []apimodel.Sandbox
 	if !allFullSandboxIDs([]string{reference}) {
 		var err error
-		sandboxes, err = a.listProjectSandboxes(ctx, client, projectID, sandboxFilter{})
+		sandboxes, err = a.listProjectSandboxes(ctx, client, projectID, sandboxFilter{judges: true})
 		if err != nil {
 			return "", err
 		}

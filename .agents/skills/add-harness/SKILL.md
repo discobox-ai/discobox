@@ -257,7 +257,7 @@ passed, is the template:
    script's own verification, its fixed status lines only), then `discobox
    new --no-source -d -H <id> -p <one-line question with a checkable answer>`
    and wait on its screen for the answer.
-3. Check the audit: `discobox admin audit hooks --discobox-id <box>` shows the
+3. Check the audit: `discobox admin audit hooks <box>` shows the
    image's hooks under its provider, and `--event Stop` (a canonical name)
    finds them.
 

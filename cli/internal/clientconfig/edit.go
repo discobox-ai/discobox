@@ -9,18 +9,16 @@ import (
 	"slices"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/discobox-ai/discobox/pkg/configfile"
 )
 
 // ErrNoFile is an edit with nowhere to write: FileVar set empty, which reads
 // no file (ADR 26-10-14-894 §3).
 var ErrNoFile = fmt.Errorf("%s is set empty, so no client.yaml is read or written", FileVar)
 
-// AddSkill appends entry to new.skills in the file Path names, and returns the
+// AddSkill appends entry to run.skills in the file Path names, and returns the
 // file. The file is edited in place, so whatever else it holds, its comments
 // among it, stays as it was. A file that is not there is created, and so are
-// new and its skills. An entry already there, as a create reads it, is
+// run and its skills; a file that still says new has it renamed run. An entry already there, as a create reads it, is
 // refused.
 //
 // entry is written as given, so a directory should already be absolute: a
@@ -29,38 +27,38 @@ func AddSkill(entry string) (string, error) {
 	return editSkills(func(path string, skills []string) ([]string, error) {
 		key, err := SkillKey(filepath.Dir(path), entry)
 		if err != nil {
-			return nil, fmt.Errorf("new.skills entry %q %w", entry, err)
+			return nil, fmt.Errorf("run.skills entry %q %w", entry, err)
 		}
 		for _, existing := range skills {
 			if same, err := SkillKey(filepath.Dir(path), existing); err == nil && same == key {
-				return nil, fmt.Errorf("%s already names %s in new.skills", path, entry)
+				return nil, fmt.Errorf("%s already names %s in run.skills", path, entry)
 			}
 		}
 		return append(skills, entry), nil
 	})
 }
 
-// RemoveSkill takes every new.skills entry that names entry, as a create reads
+// RemoveSkill takes every run.skills entry that names entry, as a create reads
 // both, out of the file Path names, and returns the file. One that names
 // nothing there is refused.
 func RemoveSkill(entry string) (string, error) {
 	return editSkills(func(path string, skills []string) ([]string, error) {
 		key, err := SkillKey(filepath.Dir(path), entry)
 		if err != nil {
-			return nil, fmt.Errorf("new.skills entry %q %w", entry, err)
+			return nil, fmt.Errorf("run.skills entry %q %w", entry, err)
 		}
 		kept := slices.DeleteFunc(slices.Clone(skills), func(existing string) bool {
 			same, err := SkillKey(filepath.Dir(path), existing)
 			return err == nil && same == key
 		})
 		if len(kept) == len(skills) {
-			return nil, fmt.Errorf("%s names no %s in new.skills", path, entry)
+			return nil, fmt.Errorf("%s names no %s in run.skills", path, entry)
 		}
 		return kept, nil
 	})
 }
 
-// editSkills rewrites new.skills in the file Path names with what edit makes of
+// editSkills rewrites run.skills in the file Path names with what edit makes of
 // it, through the file's YAML node tree so nothing else in it moves. What it
 // writes is decoded the way Load decodes it before it replaces the file, so an
 // edit never leaves a file the next create refuses.
@@ -80,7 +78,7 @@ func editSkills(edit func(path string, skills []string) ([]string, error)) (stri
 	// The file is checked as Load checks it first: an edit of a file that does
 	// not parse would write over whatever the person was in the middle of.
 	if len(bytes.TrimSpace(data)) > 0 {
-		if _, err := configfile.Decode(&Config{}, data, path); err != nil {
+		if err := decode(&Config{}, data, path); err != nil {
 			return "", err
 		}
 	}
@@ -102,13 +100,14 @@ func editSkills(edit func(path string, skills []string) ([]string, error)) (stri
 	if root.Kind == yaml.ScalarNode && root.Tag == "!!null" {
 		*root = yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", HeadComment: root.HeadComment, FootComment: root.FootComment}
 	}
-	newSection, err := mappingValue(root, "new", yaml.MappingNode)
+	renameLegacySection(root)
+	runSection, err := mappingValue(root, "run", yaml.MappingNode)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", path, err)
 	}
-	skillsNode, err := mappingValue(newSection, "skills", yaml.SequenceNode)
+	skillsNode, err := mappingValue(runSection, "skills", yaml.SequenceNode)
 	if err != nil {
-		return "", fmt.Errorf("%s: new: %w", path, err)
+		return "", fmt.Errorf("%s: run: %w", path, err)
 	}
 	var skills []string
 	for _, item := range skillsNode.Content {
@@ -148,13 +147,34 @@ func editSkills(edit func(path string, skills []string) ([]string, error)) (stri
 	if err := encoder.Close(); err != nil {
 		return "", fmt.Errorf("write %s: %w", path, err)
 	}
-	if _, err := configfile.Decode(&Config{}, out.Bytes(), path); err != nil {
+	if err := decode(&Config{}, out.Bytes(), path); err != nil {
 		return "", fmt.Errorf("the edited %s would not be read back: %w", path, err)
 	}
 	if err := writeFileReplacing(path, out.Bytes(), mode); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+// renameLegacySection renames a top-level new to run, the key alone, so the
+// section keeps its place and its comments. A file naming both is left as it
+// is, for the decode beside the edit to refuse.
+func renameLegacySection(root *yaml.Node) {
+	if root.Kind != yaml.MappingNode {
+		return
+	}
+	var legacy *yaml.Node
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		switch root.Content[i].Value {
+		case "run":
+			return
+		case legacySection:
+			legacy = root.Content[i]
+		}
+	}
+	if legacy != nil {
+		legacy.Value = "run"
+	}
 }
 
 // mappingValue is the value of key in mapping, added at the end as an empty

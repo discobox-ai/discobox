@@ -2,7 +2,7 @@
 # declaring a vscode.yaml of your own in your tools directory.
 id: vscode
 name: vscode
-description: open the box in VS Code, in a window of its own
+description: open the discobox in VS Code, in a window of its own
 key: v
 runs: host
 # The builds looked for on PATH, in order. They are all the same program with

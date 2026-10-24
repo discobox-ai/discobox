@@ -22,7 +22,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local TCP listeners and UDP sockets kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/localpty` | Running one of this CLI's own commands on a pty of its own for a console pane: `creack/pty` on Unix, ConPTY on Windows (ADR 0065). Sets `DISCOBOX_PARENT_PID` on the child. |
 | `internal/apipolicy` | A credential policy between the API's shape (`apimodel.AccessPolicy`) and the `policy` package's, through the generated type's own JSON. One home, because the CLI's request and rule commands, the console's data source, and `sandboxcreate`'s `--grant` parse all send or read one. |
-| `internal/lifetime` | How long a grant lives, said the way people say it: the presets an approval offers, the words `--grant-ttl` and `--max-grant-ttl` parse, and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
+| `internal/lifetime` | How long a grant lives, said the way people say it: the presets an approval offers, the words every length-of-time flag parses (`Flag`: `--ttl`, `--grant-ttl`, `--max-grant-ttl`, `--expires-in`, and `--since` counting back), and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
 | `internal/refreshcmd` | Running the command a token suggests for its renewal (ADR 26-09-25-122): an argument vector split as a person types it, run with no shell, no stdin, a deadline, and a bound on output, printed value trimmed. Shared by `discobox secret refresh`/`create` and the console's data source, so the command a person was shown is run one way everywhere. |
 | `internal/policyview` | A credential policy as the person approving it reads it (ADR 26-10-20-782 §3): statements grouped by scope, the `anywhere` denies once under `global`, conditions under their statement, each variable followed by its resolved value (or "does not resolve, so it matches nothing"), and each non-default word followed by its definition where it is first used. Each line carries the sentence's `policy.Tokens`, noted, so the console highlights it as syntax; the CLI prints its plain text. Display only: what an approval sends is the policy as read, never these lines. Shared by the console's request and grant cards and the CLI's `secret request get`, `approve` and `grant ls`; `Unbound` draws a rule's policy, its variables bare since a rule binds them to whichever discobox asks. |
 | `internal/uselines` | A credential use broken into the lines a person reads it in — a line per sentence, and the writes after "Read …;" and the items of "Never …" set in under theirs — in the shape the discobox-access skill teaches, where it is there. Display only and optimistic: every word kept in order, and a use outside the shape is broken less, never reworded. The server takes a use on one line and stores and judges it as written. Shared by the console's cards and the CLI's `get` tables. |
@@ -31,7 +31,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/wsl` | The questions only Windows can answer when the CLI runs in a WSL distribution: whether it does, `wslpath` either way, where a Windows program is (PATH, or its fixed Windows path when the distribution does not inherit PATH), and a Windows environment variable through `cmd.exe`. Every package that crosses into Windows from WSL asks through it. |
 | `internal/termguard` | Putting the terminal back when the console dies holding it, and saying why: a second process (`discobox admin console-guard`) on a lifeline pipe, plus the runtime's crash output sent to a temporary file it names. See below. |
 | `internal/github` | Reading a GitHub issue or pull request as its page shows it — the issue, its sub-issues, its whole timeline, and for a pull request (an issue to this API, so the same read) its branches, reviewers, review threads and checks (`pull.go`) — commenting on one, closing or reopening it, and merging a pull request (by one of the ways its repository allows, naming the head commit that was read), over the REST API as the person at this machine (`GH_TOKEN`, `GITHUB_TOKEN`, then `gh auth token`; anonymous with none). A re-read of an issue nothing has happened to is one request — its `updated_at`, trusted for ten minutes with a token, since a reaction does not move it — and with no token an issue is read at most every five minutes (`AnonymousRefresh`): GitHub allows 60 anonymous requests an hour. An open pull request's checks are the exception: a check finishing moves no `updated_at`, so with a token they are read again on every re-read that is otherwise answered from the last one, and so is whether it can merge (`mergeable_state`), which moves with the base branch. With no token neither is: the re-read stays one request, and GitHub answers "unknown" to a reader it does not know, so a full read does not wait for that answer either. The checks are also not the pull request — a token that may not read them leaves the page without them, a failed read of them leaves the ones known, and a list that is not whole says so (`ChecksPartial`). A read the person asked for (`full`) is always a full one. The console's issue tab is its one user; the data source (`tui_issue.go`) turns its answers into the console's own types, making every string safe to draw on the way, since anyone who can comment on an issue writes them: names, paths, branches and diffs with `terminalSafe`, and what is written to be read (titles, bodies, commit messages) with `pageSafe`, which drops a page's invisible break hints and keeps the joiners an emoji sequence is made with. A pull request's files changed are not read from GitHub at all: they are discobox-review run in the discobox (`PullReview`, in `tui_terminal.go`), between the two commits the tab read. |
-| `internal/clientconfig` | `client.yaml`, this client's own configuration file: its settings, loading, the in-place edit of `new.skills` that `discobox skills` and the console's skills screen make (ADR 26-10-14-894 §3), and the generated reference and schema (ADR 26-10-09-389). See [Client Configuration](#client-configuration-adr-26-10-09-389). |
+| `internal/clientconfig` | `client.yaml`, this client's own configuration file: its settings, loading, the in-place edit of `run.skills` that `discobox skills` and the console's skills screen make (ADR 26-10-14-894 §3), and the generated reference and schema (ADR 26-10-09-389). See [Client Configuration](#client-configuration-adr-26-10-09-389). |
 | `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the console's panes and a plain attach must reserve the same key. |
 
 ## UI Dependency Direction
@@ -173,7 +173,7 @@ transport helpers where OpenAPI does not model the stream.
   (`runSourceArgument`). The window opens on the create card, holding every
   flag given; turning it down ends the command with an error, since nothing
   was made. With nobody to ask, SOURCE is required (`errRunNeedsSource`), and
-  a `--json` request names it as `"source"`.
+  a `--from-json` request names it as `"source"`.
 - **`run` asks wherever a person is, and nowhere else** (`canAskInline`, which
   is `canOpenWindow` plus a terminal stderr for the picker to draw on). One
   test decides it for both questions — the source, and copying a directory in
@@ -409,21 +409,21 @@ path the variable names: that location is the user's own.
   it — and again on every create, so a console left open sees the file as it
   is now, a fixed typo included.
 - **A setting is a flag's default.** `newSkills` resolves `--skills` and
-  `--user-skills` against `new.skills` and `new.userSkills`: a flag given (or a
-  `--json` field present) replaces its setting whole, and one not given — nil
+  `--user-skills` against `run.skills` and `run.userSkills`: a flag given (or a
+  `--from-json` field present) replaces its setting whole, and one not given — nil
   — takes it. `discobox run` resolves before a window opens, so a file that
   does not parse is reported on the terminal; `RunRequest` carries the flags
   as given and the console's create resolves again, which is how the create
   card's skill rows, left alone, get the configured ones (its User skills row
   says "as configured" until it is set either way).
 - **Paths in the file are the file's.** A relative directory is relative to the
-  file's directory and `~` is home, resolved at load. A `new.skills` entry that
+  file's directory and `~` is home, resolved at load. A `run.skills` entry that
   names a repository (`sandboxcreate.ParseSkills`, the same reading `--skills`
   gets, with a shorthand judged against the file's directory) names a skills
   source, not a path, and is kept as the URL it stands for; one whose
   `//PATH` or `@REF` is refused is kept as written, so the create refuses it
   naming it and `skills rm` can still read the file (ADR 26-10-15-664).
-- **`new.skills` is written by `discobox skills add` and `rm`, and the
+- **`run.skills` is written by `discobox skills add` and `rm`, and the
   console's skills screen** (`clientconfig.AddSkill`, `RemoveSkill`). The edit
   goes through the file's YAML node tree, so its comments and other settings
   stay; a missing file is created; a file that does not parse is refused rather
@@ -432,6 +432,11 @@ path the variable names: that location is the user's own.
   since one relative in the file is relative to the file. An entry is matched
   as a create reads it, so `./team` in the file is the absolute directory it
   names.
+- **`new:` is read as `run:`.** The section was named after the command when
+  it was `discobox new`, and a file written then still says so: it is decoded
+  through a shape that takes `new:` into the same section (`decode`), an edit
+  renames the key in place (`renameLegacySection`), and a file naming both is
+  refused. The schema and the example teach `run:` alone (ADR 26-10-24-254 §4).
 - `admin box create` does not read it: that command infers nothing locally.
 
 ## Project Skills (ADR 26-10-14-894)
@@ -442,8 +447,8 @@ create: the client pins and delivers every source, so the client copies them
 in. `projectSkills` reads the list on every create — `discobox run`, the
 console's, `admin box create`, and a discobox creating discoboxes, whose
 sandbox role reads it — and `sandboxcreate.PromptOptions.ProjectSkills` puts
-them ahead of the `--skills` (or `new.skills`) repositories, so a person's own
-win on a skill's name. `--no-project-skills`, the `--json` field
+them ahead of the `--skills` (or `run.skills`) repositories, so a person's own
+win on a skill's name. `--no-project-skills`, the `--from-json` field
 `noProjectSkills`, and the create card's Project skills row leave them out, and
 the list is then not read. A server that predates the route is a project with
 none: it answers a person with net/http's plain 404 and a discobox with its
@@ -460,12 +465,12 @@ entry, rather than reaching `git ls-remote`.
 lists the project's and client.yaml's, each in the short spelling it is typed
 back in (`sourceref.Display`), and `add`/`rm` file a value by what it is, read
 as `--skills` reads it — a repository, a Git URL or GitHub `owner/repo`, with
-the project, sent as its URL; a directory in `new.skills` (ADR 26-10-15-664).
+the project, sent as its URL; a directory in `run.skills` (ADR 26-10-15-664).
 `rm` asks client.yaml first, for the value as a create reads it, so an entry
 there of any form or name comes out of the file; anything else is the
 project's, by its ID, a unique prefix of one, or its `LOCATION[@REF][//PATH]`.
 Both compare entries by key (`clientconfig.SkillKey`, `SkillsRepository.Key`),
-so any spelling of a repository names it. `new.skills` is read the same way:
+so any spelling of a repository names it. `run.skills` is read the same way:
 a shorthand entry is resolved against the file's directory and kept as the URL
 it stands for, so a create reads it alike from anywhere.
 The console's skills screen (`F5`) does the same through `apiDataSource.Skills`,
@@ -638,17 +643,18 @@ is an error rather than a lost convenience.
   server at once, so an ID copied from `ls` works whichever server listed it.
   The picker lists every server; a registered server's rows say `on <name>`
   and are keyed `<name>/<id>`, which is how the pick says where to go.
-- **A reference typed beside a command follows the same rule.** `shell` (and
-  `tools ssh`, `tools run`, which share `resolveShellTarget`) and `cp` match a
-  name or short ID by `matchSandboxArg`'s rules, and with one server that is
-  unchanged. With more than one, a full generated ID goes to
-  `findOnEveryServer` rather than being trusted onto the primary, a name or
-  short ID is matched against the cross-server `ls` candidates and routed to
-  the row's server (`matchServerSandboxArg`), and the picker is
-  `pickServerSandbox` — `selectSandbox`'s own, over candidates the caller has
-  already listed, in the caller's words. `findOnEveryServer` and the picker
-  answer with the `*server`, so a caller comparing where two discoboxes are
-  can name both.
+- **A name follows the same rule.** `selectSandbox`, every DISCOBOX's resolver,
+  matches a name against what `ls` lists across every server and routes it to
+  the row's server (`matchServerSandboxName`, the same `matchSandboxName` one
+  server uses), and asks every server for an ID, full or short, which says
+  which server answered an ambiguous short ID (`selectSandboxOnEveryServer`).
+  A full ID no server lists is taken on the primary as it stands, as with one
+  server, so a deleted discobox's audit trail stays readable. `cp`
+  matches what stands before its colon against the cross-server candidates
+  (`matchServerSandboxArg`). The picker is `pickServerSandbox`, over
+  candidates the caller has already listed, in the caller's words.
+  `findOnEveryServer` and the picker answer with the `*server`, so a caller
+  comparing where two discoboxes are can name both.
 - **The console routes two ways.** A call about one discobox finds its server
   from the ID the listing located it under (`apiDataSource.at`). A call about
   a server's configuration — harnesses, secrets, grants, answering a
@@ -668,10 +674,8 @@ is an error rather than a lost convenience.
   *name* both offer that alias, and ssh takes the first `Include` that matches;
   the ID alias is unambiguous either way.
 - **An address is taken everywhere a discobox is named; a name is not.**
-  `shell` resolves one through `selectSandbox` like every other command that
-  takes a discobox (ADR 0116 §6) — it has to, since `matchSandboxArg` finds
-  nothing in an address and the word would otherwise become the command a
-  picked discobox runs. `cp` takes one too: the `discobox://` prefix is what
+  Every DISCOBOX resolves one through `selectSandbox` (ADR 0116 §6).
+  `cp` takes one too: the `discobox://` prefix is what
   makes the operand safe to recognize, and `splitCPAddress` cuts it where the
   discobox segment ends — the authority runs to the first `/` and may carry a
   port, the segment after it carries no `:`, `?` or `/`, so whichever of `:` or
@@ -984,14 +988,19 @@ has set one, and the configured name only until then — and the configured name
 generated (`randomname.Generate`; `run` has no `--name`), so it is a string the
 listing has usually stopped printing.
 
-- `configuredName` matches `Config.Name` alone. It is for an argument that
-  shares its place with a command word — `shell`, and `tools ssh` through it —
-  where a generated name cannot collide with a command by accident but a
-  free-form window title ("vim", "make") plainly could. `cp` keeps it too:
-  widening what stands before its colon is a change to `cp`, and its help says
-  which name it means rather than pointing at the listing.
-- `listedName` also matches `DisplayName`, for `rm`, where every argument is a
-  discobox and the name the user can see is the only one they can type. It
+- `configuredName` matches `Config.Name` alone. `cp` alone takes it: what
+  stands before its colon may be a local path's, where a generated name cannot
+  collide by accident but a free-form window title plainly could, and its help
+  says which name it means rather than pointing at the listing.
+- `listedName` also matches `DisplayName`, for every DISCOBOX
+  (`selectSandbox`) and `rm`, where an argument is a discobox and the name the
+  user can see is the only one they can type. Because the box writes that
+  name, one that is also a short ID of another discobox is refused
+  (`matchSandboxName`) rather than taken over the ID, and so is an ID-shaped
+  name while a server is silent. The resolving listing keeps judges
+  (`sandboxFilter.judges`) for the IDs alone: a name is matched against the
+  rows `discobox ls` prints, which a judge is not (`sandboxesNamed` skips it),
+  and its short ID is checked against every ID, a judge's included. It
   matches the title as the table prints it as well as raw (`sandboxListedAs`):
   `writeSandboxes` collapses whitespace and cuts past `sandboxNameColumnWidth`,
   and the cut form is the spelling on the user's screen.
@@ -1032,33 +1041,25 @@ session writes stdout frames to stdout and stderr frames to stderr, with no
 special case for the PTY: a TTY exec merges at the PTY and simply never sends a
 stderr frame, which the client neither detects nor needs to.
 
-`discobox shell [DISCOBOX] [CMD...]` (`internal/cli/shell.go`) takes the sandbox
-and the command as one positional list rather than a `--discobox-id` flag, since
-which sandbox to run in is picked as often by ID as left to the picker. Cobra
-sees one flat `[]string` and cannot tell DISCOBOX from CMD apart, so
-`resolveShellTarget` decides: `args[0]` is tried against the sandboxes
-`discobox ls` shows (`matchSandboxArg`) —
+`discobox shell [DISCOBOX] [-- CMD...]` (`internal/cli/shell.go`) is one of the
+commands written `[DISCOBOX] [-- ARG...]`: `shell`, `tools git`, `tools ssh`,
+every declared tool, and `admin exec create`. `splitDiscoboxCommand` reads
+the line by the `--` alone — before it at most one argument, the discobox;
+after it the command, with any later `--` its own — and never by what an
+argument looks like ([ADR 26-10-24-254](../docs/adr/26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md) §1). pflag consumes a `--` while it still parses
+flags and reports where it stood (`ArgsLenAtDash`); a command that parses
+none of its own (`tools ssh`) sees it as an argument, and the split finds it
+there. More than one argument before it is refused with the line that works
+(`discobox shell box -- ls`), and `selectDiscoboxCommand` adds, to a DISCOBOX
+that names nothing on a line with no `--`, where a command goes — that is
+what `discobox shell ls` most likely meant. Flags are parsed wherever they
+stand before the `--`, so `tools git mybox --source docs -- log` works.
 
-- A full generated ID (`id.IsGenerated`) is trusted outright: a resource prefix
-  plus 16 random characters cannot collide with a real command word by
-  accident.
-- An exact sandbox name matches next, in full and never partially: a name is
-  what the listing shows and what people type, and a partial one would compete
-  with short-ID matching for the same argument.
-- A short ID is matched against that candidate list exactly like an explicit
-  DISCOBOX argument elsewhere. Zero matches is not an error — it just means
-  `args[0]` was never a sandbox reference — but more than one is reported as
-  ambiguous, since its shape said it was meant as an ID.
-
-A full or short ID may also be spelled `sbx-…`, the way the discobox's
-hostname spells it; `id.Canonical` reads it back as `sbx_…` (a short one only
-after the name match), here and wherever else a discobox ID is resolved
-(`resolveSandboxID`).
-
-A match consumes `args[0]` as DISCOBOX and leaves the rest as CMD. No
-match — including no arguments at all — means every argument is CMD, and the
-sandbox falls back to the same picker `discobox apply` uses when DISCOBOX is
-omitted.
+The discobox is `selectSandbox`'s, the same as every DISCOBOX
+([Choosing a Sandbox Interactively](#choosing-a-sandbox-interactively)). A
+full or short ID may also be spelled `sbx-…`, the way the discobox's hostname
+spells it; `id.Canonical` reads it back as `sbx_…` (a short one only after the
+name match), here and wherever else a discobox ID is resolved.
 
 `discobox shell` with no command runs a shell. The CLI never names the run
 user's shell: it sets `shell: true` on the exec create request and the sandbox
@@ -1073,21 +1074,19 @@ the console's shell pane does the same. It is read per request and stored nowher
 preference.
 
 `discobox tools` groups the everyday development tools run *against* a sandbox —
-`git`, `ssh`, `vscode`, and `zed`. Which sandbox is the one thing every
-tool has in common, so `--discobox-id` is a persistent flag on `tools` itself and every
-subcommand inherits it. Everything else belongs to the subcommand that means it,
+`git`, `ssh`, `vscode`, and `zed`. Each takes `[DISCOBOX] [-- ARG...]` like
+`shell`, and everything else belongs to the subcommand that means it,
 including where the tool runs: `git` runs inside the sandbox and takes
-`--source`/`-s`, while `ssh`, `vscode` and `zed` run on this machine and connect
-to the sandbox. Each then drives the same exec create/attach/status sequence as
-`discobox shell`. Flag parsing stops at the first positional argument
-(`SetInterspersed(false)`), so everything from there on reaches the tool verbatim.
+`--source` (with no shorthand: `-s` is `--secret` on `run`), while `ssh`,
+`vscode` and `zed` run on this machine and connect to the sandbox. Each then
+drives the same exec create/attach/status sequence as `discobox shell`.
 
 The default path sends no workdir and fetches no sandbox record: an exec with no
 workdir already lands in the sandbox-agent's default exec directory, which is the
 primary source's. Only `git --source` has to `GetSandbox` to turn a slug into a
-directory. With a full `--discobox-id` the whole command is create + attach +
-start + status, so a one-shot `discobox t git status` costs no round trip it does
-not need.
+directory. With a full ID as DISCOBOX the whole command is create + attach +
+start + status, so a one-shot `discobox t git sbx_… -- status` costs no round
+trip it does not need.
 
 `discobox tools ssh` needs no SSH port on the server. ssh reaches the server's
 in-process sshd the one way anything does — a `GET /ssh/connect` websocket,
@@ -1117,11 +1116,11 @@ resolved. The enrolled key is the single persisted thing, and
 `resolveSSHIdentity` reuses an already-enrolled one rather than adding
 another.
 
-Flag parsing is **off** for `tools ssh` (`DisableFlagParsing`), not merely
-non-interspersed: `discobox tools ssh -L 8080:localhost:3000` puts ssh's own flags
-first, and cobra would reject them as unknown before the command ever ran. The
-leading argument is taken as a sandbox only when it does not start with `-` and
-`matchSandboxArg` recognizes it; everything else reaches ssh.
+Flag parsing is **off** for `tools ssh` (`DisableFlagParsing`): everything
+after its `--` is ssh's, `discobox tools ssh -- -L 8080:localhost:3000`
+included, and cobra would reject ssh's flags as unknown before the command ever
+ran. An ssh option written where DISCOBOX goes is refused with the line that
+puts it after the `--`, rather than looked for as a discobox.
 
 Reaching ssh is not the same as being appended. `ssh [options] host [command]`
 is positional and this command supplies the host, so `splitSSHArgs` separates
@@ -1137,7 +1136,7 @@ was for.
 
 `discobox cp` is `scp`, pointed at the same ProxyCommand (`internal/cli/cp.go`). It is
 a root command rather than a `tools` subcommand because it is an everyday verb
-with no `--discobox-id` to inherit: which sandbox is named inside each path.
+whose discobox is named inside each path rather than as DISCOBOX.
 
 `cp` copies no bytes itself, and stays on sftp now that a discobox has a files
 API (ADR 26-10-22-499 §4), which carries what the CLI writes for its own
@@ -1151,11 +1150,10 @@ a sandbox image that may or may not have `tar`, to reach the same place.
 
 What the command owns is the two things scp cannot work out: the proxy, key
 and pinned host key, and what a `DISCOBOX:PATH` operand means. The reference
-before the colon is resolved by `shell`'s rule (`matchSandboxArg`), not
-`--discobox-id`'s: it is typed alongside a path, so a name has to work there.
-`selectSandbox` is deliberately not used for it — given a non-empty argument it
-resolves IDs only and hands a name straight back, which here would become an SSH
-username no sandbox answers to.
+before the colon is matched against the candidates under `configuredName`
+(`resolveCPSandbox`), not `selectSandbox`'s listed names: what stands before a
+colon may be a local path's, so a free-form window title is not matched
+against it, while the name a discobox was created with and its IDs are.
 
 `splitSCPArgs` finds the operands — scp's option table is needed for that, so
 `-o ProxyJump=x` is not read as a path — and `resolveCPOperands` rewrites each
@@ -1262,13 +1260,12 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
 - **Listing is `ls`**, with `list` as an alias, and every `ls` takes `-q`. That
   prints one line per entry, and the line is what the group's other verbs take:
   an ID, a remote's name, a harness secret's env name, a skills entry as `rm`
-  takes it. `admin audit ls` is a timeline rather than resources, and has no
-  `-q`.
+  takes it, a record ID `admin audit get` takes.
 - **Aliases are shown.** Help lists every spelling a command answers to, as
   `run`'s does (`new`, `create`, `r`, `n`). A spelling kept working but not
   taught is a hidden second registration instead (`tui`).
 - **A group is named in the singular** (`harness`, `service`, `pool`), and the
-  plural is an alias. `tools` is still plural.
+  plural is an alias. `tools` is still plural, the in-box skills teaching it.
 - **A placeholder says what resolves.** It is `DISCOBOX`, `POOL`, `PROJECT`,
   `HARNESS`, `SECRET` or `PROVIDER` where a name resolves as well as an ID
   (`resolvePoolID`, `resolveListedSandbox`, …). It is `X_ID` where only an ID
@@ -1278,6 +1275,22 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
 - **Short help is a sentence** starting with a capital letter. A declared
   tool's description is a lowercase fragment, written for the console's menu,
   so `newToolRunCommand` capitalizes it for help.
+- **A discobox is a `DISCOBOX` argument**, resolved by `selectSandbox`, never
+  `--discobox-id`; a filter over many keeps a flag, `--discobox`. A command
+  that runs a command takes it after `--` ([Choosing a Sandbox
+  Interactively](#choosing-a-sandbox-interactively), `discobox shell` above;
+  [ADR 26-10-24-254](../docs/adr/26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md)).
+- **One kind of value, one type** (ADR 26-10-24-254 §2). A length of time is
+  `lifetime.Flag` (`forever` only where it is allowed, `NewLapsingFlag`
+  otherwise) and `--since` its words back from now; a size is
+  `byteSizeFlag` (`8g`); switching off is `--disabled[=false]`; `--harness` is
+  a slug, a name or an ID; a `--secret` is a name or an ID. Timeouts and poll
+  intervals stay Go durations.
+- **An update's list flag is emptied by `--clear-<flag>`** (`addClearFlag`),
+  refused beside the flag it clears, never by an empty value.
+- **A shorthand means one thing.** `-s` is `--secret`; `-o` is `--output`,
+  which is why `admin box export` takes its FILE as an argument; `-q` is the
+  quiet bool, which is why `terminal wait` waits `--idle`.
 
 ## Where a Global Flag Is Parsed
 
@@ -1325,13 +1338,12 @@ passed through to the catalog.
 first argument and the console stopped taking one; ADRs before that (0077,
 0096, 0100, 0111) still spell it.
 
-`-c` is left unclaimed on purpose. `shell` (`shell.go:83`) and the `tools`
-commands (`tools.go:70`, `122`, `216`) set `SetInterspersed(false)` rather than
-disabling flag parsing, so a shorthand written before their positionals is this
-CLI's, and `discobox shell -c 'go test ./...'` is a plausible thing to type. A
-`-c` that meant `--clone` would take that command as a source path and run a
-login shell with the command dropped. Unclaimed, it says `unknown shorthand flag: 'c'`
-instead. The commands that turn flag parsing off outright (`cp`, `tools ssh`,
+`-c` is left unclaimed on purpose. `shell` and the `tools` commands parse
+their own flags up to the `--` that starts the command, so a shorthand written
+before it is this CLI's, and `discobox shell -c 'go test ./...'` is a plausible
+thing to type. A `-c` that meant `--clone` would take that command as a source
+path and run a login shell with the command dropped. Unclaimed, it says
+`unknown shorthand flag: 'c'` instead. The commands that turn flag parsing off outright (`cp`, `tools ssh`,
 `admin provider create|update`) are unaffected either way: a `-c` after those
 belongs to scp, to ssh, or to the provider catalog, and never reaches this flag
 table.
@@ -1389,12 +1401,16 @@ one, which cannot be started to take the write.
 
 ## Choosing a Sandbox Interactively
 
-Commands that act on "the sandbox I am working in" take a sandbox identifier —
-as `--discobox-id` (`admin exec`, `admin terminal`), an optional positional
-`DISCOBOX` (`apply`, `attach`, `push`, `proxy`), or a leading
-positional argument shared with the command itself (`shell`, resolved by
-`resolveShellTarget` rather than `selectSandbox`) — and fall back to
-`selectSandbox` (`internal/cli/picker.go`) when it's omitted, never to a guess:
+Every command that acts on one discobox takes it as a positional `DISCOBOX`
+and resolves it with `selectSandbox` (`internal/cli/picker.go`): an address,
+or the NAME `discobox ls` prints, an ID or a short ID, on every server
+([Many Servers](#many-servers-adr-0116)). One that names nothing is an error.
+Only zero arguments fall back to a pick, so a `[DISCOBOX]` is optional only
+where nothing follows it but a `--` (`shell`, `tools`, `admin exec create`) or
+nothing at all (`attach`, `apply`, `push`, `proxy`, the `ls` of `admin exec`,
+`terminal` and `service`, `audit ls|hooks|execs`); a command with another
+positional requires it first (`admin terminal screen DISCOBOX TERMINAL_ID`)
+([ADR 26-10-24-254](../docs/adr/26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md) §1). The pick:
 
 - Candidates are what `discobox ls` shows, less the archived discoboxes, which
   have no runtime to act on (`listProjectSandboxCandidates`,
@@ -1778,7 +1794,7 @@ tool rather than only as a screenful:
 The terminal routes of [ADR 0137](../docs/adr/0137-a-terminal-can-be-read-typed-into-and-waited-on-without-attaching.md),
 raw, one API call each (`internal/cli/sandbox_terminal_io.go`), under
 `admin terminal` beside `attach` and `logs` and taking the same
-`--discobox-id` and `TERMINAL_ID` (`primary` for the harness terminal):
+`DISCOBOX TERMINAL_ID` (`primary` for the harness terminal):
 
 - `screen` prints the rendered screen as text, optionally with scrollback.
 - `input` reads its arguments as tmux `send-keys` does — a named key is that
@@ -1828,15 +1844,17 @@ the judge discobox decided after Jev was unsure names both
 rather than a record that changed behind it; its key is the request ID and the
 event. An answer's record is attested `client`, the answering client's account
 of how the value was made; the ask and a dismissal are `control-plane`'s.
-`--discobox-id` matches the discobox that most recently needed the value.
+`--discobox` matches the discobox that most recently needed the value.
 `http`'s `USES` column is the join to `creds`, by `--use-id` on either; a
 discobox's calls to the discobox API carry the use they were made under too.
 Its `REFUSED BY` column says what refused a request the proxy never sent — the
 host policy, the credential judge, the discobox API's gate, or a credential the
 control plane could not resolve (`httpAuditRefuser`, read from the start of `blockedReason`) — and `list`'s
 line for one says why. `hooks`,
-`execs` and `list` require `--discobox-id`, and a stopped discobox answers 409
-rather than being started to read (ADR 0130 §5). Something that could not be
+`execs` and `ls` take the discobox as `[DISCOBOX]`, picked when it is left out,
+and the filters on the project-wide trails as `--discobox`; a stopped discobox
+answers 409 rather than being started to read (ADR 0130 §5). `ls -q` prints
+the record IDs `get` takes. Something that could not be
 read — a pool, or a whole trail in `list` — is named on stderr, never folded
 into the table, since the answer is short by it; `-o json` carries it beside the
 records.
@@ -1882,7 +1900,7 @@ records.
   the discobox's account of itself, a `creds` record says `use` or `report`, and
   a `refresh` record reads `answered` with how the client says it made the value.
   The attestor stays a field in `-o json`.
-- **`get <discobox-id> <record-id>` routes on the ID.** `http_…` is read from
+- **`get DISCOBOX RECORD_ID` routes on the ID.** `http_…` is read from
   the pool the discobox runs on — resolved from the discobox, since a record ID
   is only unique on one pool, with `--pool` for a discobox that is gone — and
   shows the fields no listing carries. `cvd_…` is a verdict, printed like
@@ -1944,8 +1962,9 @@ records.
   recording's bytes unchanged when stdout is not a terminal, so a redirect keeps
   it, and escaped (`copyTerminalSafe`) when it is.
 
-A `--discobox-id` that is a full generated ID is sent without a lookup, so a
-purged discobox's trail stays readable; a short ID resolves against the live
+A DISCOBOX or `--discobox` that is a full generated ID is taken as it stands
+when nothing lists it — with one server without a lookup, with several on the
+primary once none lists it — so a purged discobox's trail stays readable; a short ID resolves against the live
 list, which a purged discobox is no longer in.
 
 ## SSH Keys and Config (ADR 0024)
@@ -2587,7 +2606,7 @@ changes on that same commit. Whether that happens is `sandboxcreate.IncludeDirty
   bool, off by default, and the request goes in as `true` or `false`, so
   nothing in a run asks about it — inline or in the window. Off, the work left
   behind is said (`warnLeftOut`, through `Warn`): a forgotten flag is a warning
-  naming how many changes stayed behind, not a silent loss. A `--json`
+  naming how many changes stayed behind, not a silent loss. A `--from-json`
   request's `includeDirty` left out is off too.
 - **The console still asks.** Its create card's row is `auto` (the default),
   `include` or `exclude`; `auto` is the window's own dialog
@@ -2875,7 +2894,7 @@ with a `sentences` list beside its structure (`requestJSON`), as
 discobox-access prints one, so a lead compares a worker's ask with its
 skill's word for word.
 
-`--json` (`runJSONRequest`, `run_json.go`) reads the whole request from stdin
+`--from-json` (`runJSONRequest`, `run_json.go`) reads the whole request from stdin
 as one object whose fields are the run flags', with grants spelled the way
 `discobox-access request --json` asks for a credential — `uses`,
 `statements` and `definitions`. It fills the same
@@ -2906,8 +2925,8 @@ non-default word each (`--rule-statement`/`--rule-define` on
 - **Directly**: `secret rule create|ls|get|update|delete`, as
   `secret grant create` makes a pre-approval. `create` takes `--repo`
   (repeatable, or comma-separated) or `--every-discobox`, and refuses a rule
-  that says neither. `update` sends only the flags given; `--enable`/
-  `--disable` are edits, `--repo` replaces the repositories,
+  that says neither. `update` sends only the flags given;
+  `--disabled[=false]` is an edit, `--repo` replaces the repositories,
   `--every-discobox` sends `everyDiscobox`, which removes them, and
   `--statement` replaces the whole policy, so definitions without statements
   are refused. A rule's credential and purpose are not edited.
@@ -3297,7 +3316,7 @@ runs this command in a pane (`apiDataSource.OpenHarnessConfigure` →
 `openLocalHarnessConfigure`, see *UI Dependency Direction*), so the flow the
 window draws is the one a shell gets.
 
-`discobox configure` (aliases `config`, `conf`, `c`, `init`) is the console opened
+`discobox configure` (alias `config`) is the console opened
 on that screen — `tui.WithHarnesses()`, reachable in the window itself on `F3` —
 and nothing else. It is not a second menu over the same harnesses: managing them
 and running something on one are the same job from two ends, and one list with

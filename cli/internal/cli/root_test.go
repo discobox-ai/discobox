@@ -358,7 +358,7 @@ func TestTerminalListUsesAdminCommand(t *testing.T) {
 	var requested bool
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		requested = true
-		if got := r.URL.Path; got != "/api/projects/project-1/sandboxes/sandbox-1/execs" {
+		if got := r.URL.Path; got != "/api/projects/project-1/sandboxes/sbx_h1ssjzhp60emtc2n/execs" {
 			t.Fatalf("path = %q, want sandbox exec path", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -369,7 +369,7 @@ func TestTerminalListUsesAdminCommand(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "--discobox-id", "sandbox-1", "ls"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "ls", "sbx_h1ssjzhp60emtc2n"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute terminal list: %v", err)
@@ -388,14 +388,14 @@ func TestTerminalCreateFallsBackWhenStartResponseIsTruncated(t *testing.T) {
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/execs":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sbx_h1ssjzhp60emtc2n/execs":
 			created = true
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"exec":{"id":"` + terminalID + `","status":"starting","command":["/bin/bash"],"workdir":"/workspace","tty":true,"createdAt":"2026-01-01T00:00:00Z"}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/execs/"+terminalID+"/start":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sbx_h1ssjzhp60emtc2n/execs/"+terminalID+"/start":
 			started = true
 			_, _ = w.Write([]byte(`{`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/execs/"+terminalID:
+		case r.Method == http.MethodGet && r.URL.Path == "/api/projects/project-1/sandboxes/sbx_h1ssjzhp60emtc2n/execs/"+terminalID:
 			listed = true
 			_, _ = w.Write([]byte(`{"id":"` + terminalID + `","status":"running","command":["/bin/bash"],"workdir":"/workspace","tty":true,"createdAt":"2026-01-01T00:00:00Z"}`))
 		default:
@@ -407,7 +407,7 @@ func TestTerminalCreateFallsBackWhenStartResponseIsTruncated(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "--discobox-id", "sandbox-1", "create"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "create", "sbx_h1ssjzhp60emtc2n"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute terminal create: %v", err)
@@ -430,9 +430,9 @@ func TestTerminalAttachPrimaryUsesVirtualExecID(t *testing.T) {
 		// Every terminal attach asks what the discobox's sources are, to push
 		// the commits made here into its origin (ADR 26-09-05-008 on automatic push).
 		// This one has none.
-		if strings.HasSuffix(r.URL.Path, "/projects/project-1/sandboxes/sandbox-1") {
+		if strings.HasSuffix(r.URL.Path, "/projects/project-1/sandboxes/sbx_h1ssjzhp60emtc2n") {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"sandbox-1","projectId":"project-1","createdByUserId":"user-1","displayName":"box","config":{"name":"box","image":""},"runtime":{"state":"ready","desiredState":"present","generation":1,"observedGeneration":1},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"sbx_h1ssjzhp60emtc2n","projectId":"project-1","createdByUserId":"user-1","displayName":"box","config":{"name":"box","image":""},"runtime":{"state":"ready","desiredState":"present","generation":1,"observedGeneration":1},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 			return
 		}
 		if !strings.HasSuffix(r.URL.Path, "/attach") {
@@ -448,13 +448,13 @@ func TestTerminalAttachPrimaryUsesVirtualExecID(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "--discobox-id", "sandbox-1", "attach", "primary"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "attach", "sbx_h1ssjzhp60emtc2n", "primary"})
 
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("execute terminal attach primary error = nil")
 	}
-	if want := "/api/projects/project-1/sandboxes/sandbox-1/execs/primary/attach"; attachPath != want {
+	if want := "/api/projects/project-1/sandboxes/sbx_h1ssjzhp60emtc2n/execs/primary/attach"; attachPath != want {
 		t.Fatalf("attach path = %q, want %q", attachPath, want)
 	}
 	if got := err.Error(); !strings.Contains(got, "has ended with exit code 0") {
@@ -463,7 +463,7 @@ func TestTerminalAttachPrimaryUsesVirtualExecID(t *testing.T) {
 }
 
 // `discobox attach` is the root-command shortcut for `admin terminal attach
-// primary --sandbox-id`: it must reach the same virtual primary exec, and
+// DISCOBOX primary`: it must reach the same virtual primary exec, and
 // nothing between the two may change which exec that is.
 func TestAttachUsesVirtualPrimaryExecID(t *testing.T) {
 	var attachPath string
@@ -471,9 +471,9 @@ func TestAttachUsesVirtualPrimaryExecID(t *testing.T) {
 		// Every terminal attach asks what the discobox's sources are, to push
 		// the commits made here into its origin (ADR 26-09-05-008 on automatic push).
 		// This one has none.
-		if strings.HasSuffix(r.URL.Path, "/projects/project-1/sandboxes/sandbox-1") {
+		if strings.HasSuffix(r.URL.Path, "/projects/project-1/sandboxes/sbx_h1ssjzhp60emtc2n") {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"sandbox-1","projectId":"project-1","createdByUserId":"user-1","displayName":"box","config":{"name":"box","image":""},"runtime":{"state":"ready","desiredState":"present","generation":1,"observedGeneration":1},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"sbx_h1ssjzhp60emtc2n","projectId":"project-1","createdByUserId":"user-1","displayName":"box","config":{"name":"box","image":""},"runtime":{"state":"ready","desiredState":"present","generation":1,"observedGeneration":1},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 			return
 		}
 		if !strings.HasSuffix(r.URL.Path, "/attach") {
@@ -489,13 +489,13 @@ func TestAttachUsesVirtualPrimaryExecID(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "attach", "sandbox-1"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "attach", "sbx_h1ssjzhp60emtc2n"})
 
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("execute attach error = nil")
 	}
-	if want := "/api/projects/project-1/sandboxes/sandbox-1/execs/primary/attach"; attachPath != want {
+	if want := "/api/projects/project-1/sandboxes/sbx_h1ssjzhp60emtc2n/execs/primary/attach"; attachPath != want {
 		t.Fatalf("attach path = %q, want %q", attachPath, want)
 	}
 	if got := err.Error(); !strings.Contains(got, "has ended with exit code 0") {
@@ -505,7 +505,7 @@ func TestAttachUsesVirtualPrimaryExecID(t *testing.T) {
 
 func TestTerminalCreateTextPlainErrorIncludesBody(t *testing.T) {
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/execs" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/projects/project-1/sandboxes/sbx_h1ssjzhp60emtc2n/execs" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -518,7 +518,7 @@ func TestTerminalCreateTextPlainErrorIncludesBody(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "--discobox-id", "sandbox-1", "create"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "create", "sbx_h1ssjzhp60emtc2n"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -536,7 +536,7 @@ func TestTerminalCreateEnvSupportsShortFlagAndShellLookup(t *testing.T) {
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/execs":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sbx_h1ssjzhp60emtc2n/execs":
 			var body struct {
 				Env map[string]string `json:"env"`
 			}
@@ -546,7 +546,7 @@ func TestTerminalCreateEnvSupportsShortFlagAndShellLookup(t *testing.T) {
 			env = body.Env
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"exec":{"id":"` + terminalID + `","status":"starting","command":["/bin/bash"],"workdir":"/workspace","tty":true,"createdAt":"2026-01-01T00:00:00Z"}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/execs/"+terminalID+"/start":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sbx_h1ssjzhp60emtc2n/execs/"+terminalID+"/start":
 			_, _ = w.Write([]byte(`{"id":"` + terminalID + `","status":"running","command":["/bin/bash"],"workdir":"/workspace","createdAt":"2026-01-01T00:00:00Z"}`))
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -557,7 +557,7 @@ func TestTerminalCreateEnvSupportsShortFlagAndShellLookup(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "--discobox-id", "sandbox-1", "create", "-e", "EXPLICIT=value", "-e", "SHELL_ENV_VALUE"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "create", "sbx_h1ssjzhp60emtc2n", "-e", "EXPLICIT=value", "-e", "SHELL_ENV_VALUE"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute terminal create: %v", err)
@@ -673,7 +673,7 @@ func TestSecretRequestApproveCommandSendsSelectedSecretID(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret-id", secretID, "--grant-ttl", "600"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret", secretID, "--grant-ttl", "600"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret request approve: %v", err)
@@ -715,7 +715,7 @@ func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
 
 	cmd := NewRootCommand()
 	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret-id", secretID, "--grant-ttl", "1w"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret", secretID, "--grant-ttl", "1w"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret request approve: %v", err)
 	}
@@ -728,7 +728,7 @@ func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
 	cmd = NewRootCommand()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret-id", secretID, "--grant-ttl", "a while"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret", secretID, "--grant-ttl", "a while"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("a lifetime nobody can read was accepted")
@@ -2193,10 +2193,10 @@ func TestBareVersionWordPrintsTheVersion(t *testing.T) {
 			t.Fatalf("with an unparseable leader %v printed %q, want %q", args, broken, want)
 		}
 	}
-	// And the word stays out of the help, which documents --version instead.
+	// And the help lists both: a spelling that works is one it shows.
 	help := run(nil, "--help")
-	if strings.Contains(help, "\n  version") {
-		t.Fatalf("the version word should not be listed as a command:\n%s", help)
+	if !strings.Contains(help, "\n  version") {
+		t.Fatalf("the version word should be listed as a command:\n%s", help)
 	}
 	if !strings.Contains(help, "--version") {
 		t.Fatalf("the help should document --version:\n%s", help)
@@ -2424,7 +2424,7 @@ func TestASecretIsNamedByItsName(t *testing.T) {
 		cmd := NewRootCommand()
 		cmd.SetOut(new(bytes.Buffer))
 		cmd.SetErr(new(bytes.Buffer))
-		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret-id", secret, "--grant-ttl", "600"})
+		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret", secret, "--grant-ttl", "600"})
 		return cmd.Execute()
 	}
 

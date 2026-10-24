@@ -19,20 +19,25 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/pkg/endpoint"
+	idpkg "github.com/discobox-ai/x/id"
 )
 
 // errPickCanceled reports that the user dismissed a picker without choosing.
 var errPickCanceled = errors.New("canceled")
 
 // selectSandbox resolves the discobox a command acts on, and the server it is
-// on.
+// on: the one way a command names a discobox (cli/DESIGN.md, "Choosing a
+// Sandbox Interactively").
 //
 // A discobox's address — discobox://<server>/<discobox> — names both, and a
-// server first reached through one is registered (ADR 0116 §6). A bare ID or
-// prefix is looked for on the primary and then on the registered servers, so
-// an ID copied from `discobox ls` works whichever server listed it. With
-// neither, the candidates are what `discobox ls` shows, across every server,
-// and the user picks one when there is more than one.
+// server first reached through one is registered (ADR 0116 §6). Any other
+// argument is the NAME `discobox ls` prints, an ID or a short ID, by the root
+// commands' rule (resolveListedSandbox), looked for on the primary and then on
+// the registered servers, so a name or an ID copied from `discobox ls` works
+// whichever server listed it. One that names nothing is an error, never a
+// guess at something else. With no argument at all, the candidates are what
+// `discobox ls` shows, across every server, and the user picks one when there
+// is more than one.
 //
 // app is this invocation aimed at the discobox's server. The caller carries on
 // with it in place of the App it called this on: everything after — the
@@ -51,11 +56,7 @@ func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (app *App, pr
 	}
 	if strings.TrimSpace(sandboxArg) != "" {
 		if len(set) > 1 {
-			target, projectID, sandboxID, client, err := a.findOnEveryServer(cmd.Context(), set, sandboxArg)
-			if err != nil {
-				return nil, "", "", nil, err
-			}
-			return target.app, projectID, sandboxID, client, nil
+			return a.selectSandboxOnEveryServer(cmd.Context(), set, sandboxArg)
 		}
 		projectID, err = a.projectIDValue()
 		if err != nil {
@@ -65,7 +66,7 @@ func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (app *App, pr
 		if err != nil {
 			return nil, "", "", nil, err
 		}
-		sandboxID, err = a.resolveSandboxID(cmd.Context(), client, projectID, sandboxArg)
+		sandboxID, err = a.resolveListedSandbox(cmd.Context(), client, projectID, sandboxArg)
 		return a, projectID, sandboxID, client, err
 	}
 
@@ -75,11 +76,69 @@ func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (app *App, pr
 	}
 	target, sandboxID, err := a.pickServerSandbox(cmd, set, candidates, unreachable,
 		"there are no discoboxes; start one with `discobox run`",
-		"there is more than one discobox; pass --discobox-id")
+		"there is more than one discobox; name one as DISCOBOX")
 	if err != nil {
 		return nil, "", "", nil, err
 	}
 	projectID, client, err = target.projectClient(cmd.Context())
+	if err != nil {
+		return nil, "", "", nil, err
+	}
+	return target.app, projectID, sandboxID, client, nil
+}
+
+// discoboxArg is a `[DISCOBOX]` positional for selectSandbox: the argument
+// when one was given, and empty, which picks, when none was.
+func discoboxArg(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	return args[0]
+}
+
+// selectSandboxOnEveryServer is selectSandbox's argument once more than one
+// server is known (ADR 0116 §4): a name is matched among what `discobox ls`
+// lists across every server and routed to the server its row came from
+// (matchServerSandboxName), and an ID, full or short, is asked of every
+// server, which says which one answered an ambiguous short ID. A full ID no
+// server lists is taken on the primary as it stands, as with one server: a
+// deleted discobox's audit trail outlives it.
+func (a *App) selectSandboxOnEveryServer(ctx context.Context, set []*server, reference string) (*App, string, string, *apiclientgen.Client, error) {
+	full := allFullSandboxIDs([]string{reference})
+	if !full {
+		listed, unreachable, err := a.listEveryServer(ctx, sandboxFilter{judges: true})
+		if err != nil {
+			return nil, "", "", nil, err
+		}
+		target, sandboxID, ok, err := matchServerSandboxName(reference, listed, listedName)
+		if err != nil {
+			return nil, "", "", nil, err
+		}
+		// A name that could also be a short ID is checked against every
+		// server's IDs (matchSandboxName); with one silent, that check is
+		// short, and a box's name is not taken on what it did not see.
+		if ok && len(unreachable) > 0 && isResolvableShortID(idpkg.Canonical(idpkg.PrefixSandbox, reference)) {
+			return nil, "", "", nil, fmt.Errorf("%q names discobox %s, but %s did not answer, so whether it is a short ID of a discobox there is not known; use the discobox ID", reference, sandboxID, unansweredNames(unreachable))
+		}
+		if ok {
+			projectID, client, err := target.projectClient(ctx)
+			if err != nil {
+				return nil, "", "", nil, err
+			}
+			return target.app, projectID, sandboxID, client, nil
+		}
+		if !isResolvableShortID(idpkg.Canonical(idpkg.PrefixSandbox, reference)) {
+			return nil, "", "", nil, unmatchedSandboxName(reference)
+		}
+	}
+	target, projectID, sandboxID, client, err := a.findOnEveryServer(ctx, set, reference)
+	if unlisted := (listedOnNoServer{}); full && errors.As(err, &unlisted) {
+		projectID, client, err := set[0].projectClient(ctx)
+		if err != nil {
+			return nil, "", "", nil, err
+		}
+		return set[0].app, projectID, idpkg.Canonical(idpkg.PrefixSandbox, reference), client, nil
+	}
 	if err != nil {
 		return nil, "", "", nil, err
 	}
@@ -140,20 +199,42 @@ func (a *App) pickServerSandbox(cmd *cobra.Command, set []*server, candidates []
 // which asks every server rather than the candidates, so an archived one is
 // found too; callers send it there first.
 func matchServerSandboxArg(arg string, candidates []serverSandbox, match nameMatch) (*server, string, bool, error) {
-	sandboxes := make([]apimodel.Sandbox, 0, len(candidates))
-	for _, row := range candidates {
-		sandboxes = append(sandboxes, row.sandbox)
-	}
-	id, ok, err := matchSandboxArg(arg, sandboxes, match)
+	id, ok, err := matchSandboxArg(arg, serverSandboxes(candidates), match)
 	if err != nil || !ok {
 		return nil, "", false, err
 	}
-	for _, row := range candidates {
+	target := serverOfSandbox(candidates, id)
+	return target, id, target != nil, nil
+}
+
+// matchServerSandboxName is matchSandboxName over candidates listed across
+// servers, answering with the server the named discobox is on.
+func matchServerSandboxName(arg string, candidates []serverSandbox, match nameMatch) (*server, string, bool, error) {
+	id, ok, err := matchSandboxName(arg, serverSandboxes(candidates), match)
+	if err != nil || !ok {
+		return nil, "", false, err
+	}
+	target := serverOfSandbox(candidates, id)
+	return target, id, target != nil, nil
+}
+
+// serverSandboxes is the discoboxes of rows listed across servers.
+func serverSandboxes(rows []serverSandbox) []apimodel.Sandbox {
+	sandboxes := make([]apimodel.Sandbox, 0, len(rows))
+	for _, row := range rows {
+		sandboxes = append(sandboxes, row.sandbox)
+	}
+	return sandboxes
+}
+
+// serverOfSandbox is the server the row holding sandbox id came from.
+func serverOfSandbox(rows []serverSandbox, id string) *server {
+	for _, row := range rows {
 		if row.sandbox.ID == id {
-			return row.server, id, true, nil
+			return row.server
 		}
 	}
-	return nil, "", false, nil
+	return nil
 }
 
 // sandboxCandidates is the picker's list across every server: what `discobox

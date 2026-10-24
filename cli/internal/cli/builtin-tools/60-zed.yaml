@@ -6,7 +6,7 @@
 # "upload_binary_over_ssh": true for the host in Zed's own settings.
 id: zed
 name: zed
-description: open the box in Zed, in a window of its own
+description: open the discobox in Zed, in a window of its own
 key: z
 runs: host
 # `zed` is the name upstream's installer links on every channel, and it is

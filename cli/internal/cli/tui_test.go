@@ -173,7 +173,7 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 	configFile := filepath.Join(t.TempDir(), "client.yaml")
-	if err := os.WriteFile(configFile, []byte("new:\n  skills: ["+strconv.Quote(skillsDir)+"]\n"), 0o644); err != nil {
+	if err := os.WriteFile(configFile, []byte("run:\n  skills: ["+strconv.Quote(skillsDir)+"]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("DISCOBOX_CLIENT_CONFIG_FILE", configFile)

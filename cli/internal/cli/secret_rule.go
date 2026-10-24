@@ -105,7 +105,8 @@ func (a *App) newSecretRuleGetCommand() *cobra.Command {
 }
 
 func (a *App) newSecretRuleCreateCommand() *cobra.Command {
-	var wellKnown, secretRef, maxTTL, expiresIn string
+	var wellKnown, secretRef string
+	maxTTL, expiresIn := lifetime.NewFlag(), lifetime.NewLapsingFlag()
 	var statements, hosts, repositories []string
 	definitions := policy.Definitions{}
 	var disabled, everyDiscobox bool
@@ -175,19 +176,11 @@ policy is parsed and checked before it is sent.`,
 				}
 				body.SetSecretId(apiclientgen.NewOptString(secretID))
 			}
-			seconds, given, err := grantLifetime(cmd.Flags(), "max-grant-ttl", maxTTL)
-			if err != nil {
-				return err
-			}
-			if given {
+			if seconds, given := maxTTL.Seconds(); given {
 				body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(seconds))
 			}
-			expires, lapses, err := ruleExpiry(cmd, expiresIn)
-			if err != nil {
-				return err
-			}
-			if lapses {
-				body.SetExpiresAt(apiclientgen.NewOptDateTime(expires))
+			if d, lapses := expiresIn.Duration(); lapses {
+				body.SetExpiresAt(apiclientgen.NewOptDateTime(time.Now().Add(d).UTC()))
 			}
 			if disabled {
 				body.SetEnabled(apiclientgen.NewOptBool(false))
@@ -210,23 +203,24 @@ policy is parsed and checked before it is sent.`,
 	cmd.Flags().StringArrayVar(&statements, "statement", nil, "A statement of the policy the rule approves, as a sentence (repeatable): a request is covered when its policy falls within this one")
 	cmd.Flags().Var(definitions, "define", "WORD=DEFINITION for a word a statement uses that is not a default (repeatable)")
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Hosts a grant minted under the rule may name, comma-separated or repeated; defaults to the well-known credential's host, or the host the secret is bound to")
-	cmd.Flags().StringVar(&maxTTL, "max-grant-ttl", "", "Longest a grant minted under the rule may live: 1h, 3d, 2w, 1mo, or forever to leave it to the secret's limit (default 1h)")
-	cmd.Flags().StringVar(&expiresIn, "expires-in", "", "How long the rule itself approves for: 1h, 3d, 2w, 1mo (default: it does not lapse)")
+	cmd.Flags().Var(maxTTL, "max-grant-ttl", "Longest a grant minted under the rule may live: 1h, 3d, 2w, 1mo, or forever to leave it to the secret's limit (default 1h)")
+	cmd.Flags().Var(expiresIn, "expires-in", "How long the rule itself approves for: 1h, 3d, 2w, 1mo (default: it does not lapse)")
 	cmd.Flags().BoolVar(&disabled, "disabled", false, "Create the rule switched off")
 	return cmd
 }
 
 func (a *App) newSecretRuleUpdateCommand() *cobra.Command {
-	var maxTTL, expiresIn string
+	maxTTL, expiresIn := lifetime.NewFlag(), lifetime.NewLapsingFlag()
 	var statements, hosts, repositories []string
 	definitions := policy.Definitions{}
-	var enable, disable, neverExpires, everyDiscobox bool
+	var disabled, neverExpires, everyDiscobox bool
 	cmd := &cobra.Command{
 		Use:   "update RULE_ID",
 		Short: "Edit, enable or disable an approval rule",
 		Long: `Edits an approval rule. Only what is given changes. A rule whose
 repositories or policy changed is tested afresh against what is pending; the
-grants it already minted are untouched, and disabling it revokes nothing.
+grants it already minted are untouched, and disabling it (--disabled)
+revokes nothing; --disabled=false switches it back on.
 
 --statement replaces the rule's whole policy, so every statement it keeps is
 given again, with a --define for each word that is not a default:
@@ -240,9 +234,6 @@ A rule's credential and purpose are what it is, and are not edited: make
 another rule.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if enable && disable {
-				return errors.New("--enable and --disable cannot be used together")
-			}
 			client, err := a.apiClient()
 			if err != nil {
 				return err
@@ -282,26 +273,20 @@ another rule.`,
 					return errors.New("a rule names at least one host: give --hosts a value")
 				}
 			}
-			seconds, given, err := grantLifetime(flags, "max-grant-ttl", maxTTL)
-			if err != nil {
-				return err
-			}
-			if given {
+			if seconds, given := maxTTL.Seconds(); given {
 				body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(seconds))
 			}
-			expires, lapses, err := ruleExpiry(cmd, expiresIn)
+			expiresAfter, lapses := expiresIn.Duration()
 			switch {
-			case err != nil:
-				return err
 			case lapses && neverExpires:
 				return errors.New("--expires-in and --never-expires cannot be used together")
 			case lapses:
-				body.SetExpiresAt(apiclientgen.NewOptDateTime(expires))
+				body.SetExpiresAt(apiclientgen.NewOptDateTime(time.Now().Add(expiresAfter).UTC()))
 			case neverExpires:
 				body.SetNeverExpires(apiclientgen.NewOptBool(true))
 			}
-			if enable || disable {
-				body.SetEnabled(apiclientgen.NewOptBool(enable))
+			if flags.Changed("disabled") {
+				body.SetEnabled(apiclientgen.NewOptBool(!disabled))
 			}
 			res, err := client.UpdateApprovalRule(cmd.Context(), body, apiclientgen.UpdateApprovalRuleParams{ProjectId: projectID, RuleId: ruleID})
 			if err != nil {
@@ -319,11 +304,10 @@ another rule.`,
 	cmd.Flags().StringArrayVar(&statements, "statement", nil, "Replace the rule's policy with these statements, each a sentence (repeatable)")
 	cmd.Flags().Var(definitions, "define", "WORD=DEFINITION for a word the new statements use that is not a default (repeatable)")
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Replace the hosts a grant minted under the rule may name")
-	cmd.Flags().StringVar(&maxTTL, "max-grant-ttl", "", "Longest a grant minted under the rule may live: 1h, 3d, 2w, 1mo, or forever to leave it to the secret's limit")
-	cmd.Flags().StringVar(&expiresIn, "expires-in", "", "How long from now the rule approves for: 1h, 3d, 2w, 1mo")
+	cmd.Flags().Var(maxTTL, "max-grant-ttl", "Longest a grant minted under the rule may live: 1h, 3d, 2w, 1mo, or forever to leave it to the secret's limit")
+	cmd.Flags().Var(expiresIn, "expires-in", "How long from now the rule approves for: 1h, 3d, 2w, 1mo")
 	cmd.Flags().BoolVar(&neverExpires, "never-expires", false, "Clear the rule's expiry")
-	cmd.Flags().BoolVar(&enable, "enable", false, "Switch the rule on")
-	cmd.Flags().BoolVar(&disable, "disable", false, "Switch the rule off: it mints nothing more, and revokes nothing")
+	cmd.Flags().BoolVar(&disabled, "disabled", false, "Switch the rule off: it mints nothing more, and revokes nothing; --disabled=false switches it on")
 	return cmd
 }
 
@@ -475,23 +459,6 @@ func ruleRepositories(values []string, everyDiscobox bool, repoFlag, everyFlag s
 		return nil, fmt.Errorf("%s and %s cannot be used together: a rule is for the repositories it names, or for every discobox", repoFlag, everyFlag)
 	}
 	return repositories, nil
-}
-
-// ruleExpiry reads --expires-in as the instant a rule stops approving. A rule
-// that never lapses is said by leaving the flag out, not by "forever": zero
-// would otherwise be an expiry already past.
-func ruleExpiry(cmd *cobra.Command, value string) (time.Time, bool, error) {
-	if !cmd.Flags().Changed("expires-in") {
-		return time.Time{}, false, nil
-	}
-	d, err := lifetime.Parse(value)
-	if err != nil {
-		return time.Time{}, false, fmt.Errorf("--expires-in: %w", err)
-	}
-	if d <= 0 {
-		return time.Time{}, false, errors.New("--expires-in is how long the rule approves for; leave it out (or --never-expires) for a rule that does not lapse")
-	}
-	return time.Now().Add(d).UTC(), true, nil
 }
 
 func listApprovalRules(ctx context.Context, client *apiclientgen.Client, projectID string) ([]apimodel.ApprovalRule, error) {

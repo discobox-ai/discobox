@@ -20,7 +20,6 @@ import (
 // than by an exec id, because the declaration is what outlives any one run.
 
 func (a *App) newSandboxServiceCommand() *cobra.Command {
-	var sandboxID string
 	cmd := &cobra.Command{
 		Use:     "service",
 		Aliases: []string{"services"},
@@ -32,24 +31,23 @@ func (a *App) newSandboxServiceCommand() *cobra.Command {
 			"it cannot discover on its own: one published by a nested container, or bound by a\n" +
 			"socket-activated unit, is root's socket rather than your user's.",
 	}
-	cmd.PersistentFlags().StringVar(&sandboxID, "discobox-id", "", "Discobox ID")
-	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
-	cmd.AddCommand(a.newSandboxServiceListCommand(&sandboxID))
-	cmd.AddCommand(a.newSandboxServiceLifecycleCommand(&sandboxID, "start", "Start declared services"))
-	cmd.AddCommand(a.newSandboxServiceLifecycleCommand(&sandboxID, "stop", "Stop running services"))
-	cmd.AddCommand(a.newSandboxServiceLifecycleCommand(&sandboxID, "restart", "Restart declared services"))
-	cmd.AddCommand(a.newSandboxServiceLogsCommand(&sandboxID))
+	cmd.AddCommand(a.newSandboxServiceListCommand())
+	cmd.AddCommand(a.newSandboxServiceLifecycleCommand("start", "Start declared services"))
+	cmd.AddCommand(a.newSandboxServiceLifecycleCommand("stop", "Stop running services"))
+	cmd.AddCommand(a.newSandboxServiceLifecycleCommand("restart", "Restart declared services"))
+	cmd.AddCommand(a.newSandboxServiceLogsCommand())
 	return cmd
 }
 
-func (a *App) newSandboxServiceListCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxServiceListCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "ls",
-		Aliases: []string{"list"},
-		Short:   "List declared services",
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			projectID, resolvedSandboxID, client, err := a.sandboxServiceRequest(cmd.Context(), *sandboxID)
+		Use:               "ls [DISCOBOX]",
+		Aliases:           []string{"list"},
+		Short:             "List declared services",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, projectID, resolvedSandboxID, client, err := a.selectSandbox(cmd, discoboxArg(args))
 			if err != nil {
 				return err
 			}
@@ -67,19 +65,19 @@ func (a *App) newSandboxServiceListCommand(sandboxID *string) *cobra.Command {
 // newSandboxServiceLifecycleCommand builds start, stop and restart. They differ
 // only in which route they post to and what they are called, so the argument
 // handling, the multi-service loop and the reporting are written once.
-func (a *App) newSandboxServiceLifecycleCommand(sandboxID *string, verb, short string) *cobra.Command {
+func (a *App) newSandboxServiceLifecycleCommand(verb, short string) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:               verb + " SERVICE [SERVICE...]",
+		Use:               verb + " DISCOBOX SERVICE [SERVICE...]",
 		Short:             short,
-		Args:              cobra.MinimumNArgs(1),
-		ValidArgsFunction: a.completeServices(sandboxID),
+		Args:              cobra.MinimumNArgs(2),
+		ValidArgsFunction: a.completeServices,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, resolvedSandboxID, client, err := a.sandboxServiceRequest(cmd.Context(), *sandboxID)
+			a, projectID, resolvedSandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
-			changed := make([]apimodel.SandboxService, 0, len(args))
-			for _, id := range args {
+			changed := make([]apimodel.SandboxService, 0, len(args)-1)
+			for _, id := range args[1:] {
 				service, err := actOnSandboxService(cmd.Context(), client, verb, projectID, resolvedSandboxID, id)
 				if err != nil {
 					return fmt.Errorf("%s %s: %w", verb, id, err)
@@ -92,21 +90,21 @@ func (a *App) newSandboxServiceLifecycleCommand(sandboxID *string, verb, short s
 	return cmd
 }
 
-func (a *App) newSandboxServiceLogsCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxServiceLogsCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:               "logs SERVICE",
+		Use:               "logs DISCOBOX SERVICE",
 		Short:             "Print a service's output",
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: a.completeServices(sandboxID),
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: a.completeServices,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, resolvedSandboxID, client, err := a.sandboxServiceRequest(cmd.Context(), *sandboxID)
+			a, projectID, resolvedSandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
 			res, err := client.ListSandboxServiceLogs(cmd.Context(), apiclientgen.ListSandboxServiceLogsParams{
 				ProjectId: projectID,
 				SandboxId: resolvedSandboxID,
-				ServiceId: args[0],
+				ServiceId: args[1],
 			})
 			if err != nil {
 				return err
@@ -126,13 +124,6 @@ func (a *App) newSandboxServiceLogsCommand(sandboxID *string) *cobra.Command {
 		},
 	}
 	return cmd
-}
-
-func (a *App) sandboxServiceRequest(ctx context.Context, sandboxArg string) (string, string, *apiclientgen.Client, error) {
-	if strings.TrimSpace(sandboxArg) == "" {
-		return "", "", nil, fmt.Errorf("--discobox-id is required")
-	}
-	return a.sandboxRequest(ctx, sandboxArg)
 }
 
 // listSandboxServices lists a discobox's declared services. Like the exec

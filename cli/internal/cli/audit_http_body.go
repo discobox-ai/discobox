@@ -155,7 +155,7 @@ func (a *App) auditRecordPool(ctx context.Context, client *apiclientgen.Client, 
 		return poolID, nil
 	}
 	if sandboxID == "" {
-		return "", errors.New("--pool or --discobox-id is required: a record's ID is only unique on the pool that recorded it")
+		return "", errors.New("--pool or --discobox is required: a record's ID is only unique on the pool that recorded it")
 	}
 	res, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 	if err != nil {

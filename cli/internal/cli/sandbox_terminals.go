@@ -37,33 +37,30 @@ type sandboxTerminalCreateOptions struct {
 // A terminal is an exec created in harness mode: the CLI terminal commands are a
 // thin preset over the sandbox exec API (create with harnessId, always TTY).
 func (a *App) newSandboxTerminalsCommand() *cobra.Command {
-	var sandboxID string
 	cmd := &cobra.Command{
 		Use:     "terminal",
 		Aliases: []string{"terminals"},
 		Short:   "Manage discobox terminals",
 	}
-	cmd.PersistentFlags().StringVar(&sandboxID, "discobox-id", "", "Discobox ID")
-	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
-	cmd.AddCommand(a.newSandboxTerminalListCommand(&sandboxID))
-	cmd.AddCommand(a.newSandboxTerminalCreateCommand(&sandboxID))
-	cmd.AddCommand(a.newSandboxTerminalAttachCommand(&sandboxID))
-	cmd.AddCommand(a.newSandboxTerminalLogsCommand(&sandboxID))
-	cmd.AddCommand(a.newSandboxTerminalScreenCommand(&sandboxID))
-	cmd.AddCommand(a.newSandboxTerminalInputCommand(&sandboxID))
-	cmd.AddCommand(a.newSandboxTerminalWaitCommand(&sandboxID))
-	cmd.AddCommand(a.newSandboxTerminalDeleteCommand(&sandboxID))
+	cmd.AddCommand(a.newSandboxTerminalListCommand())
+	cmd.AddCommand(a.newSandboxTerminalCreateCommand())
+	cmd.AddCommand(a.newSandboxTerminalAttachCommand())
+	cmd.AddCommand(a.newSandboxTerminalLogsCommand())
+	cmd.AddCommand(a.newSandboxTerminalScreenCommand())
+	cmd.AddCommand(a.newSandboxTerminalInputCommand())
+	cmd.AddCommand(a.newSandboxTerminalWaitCommand())
+	cmd.AddCommand(a.newSandboxTerminalDeleteCommand())
 	return cmd
 }
 
-func (a *App) newSandboxTerminalListCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxTerminalListCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "ls",
+		Use:     "ls [DISCOBOX]",
 		Aliases: []string{"list"},
 		Short:   "List discobox terminals",
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			projectID, resolvedSandboxID, _, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
+		Args:    cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, projectID, resolvedSandboxID, _, err := a.selectSandbox(cmd, discoboxArg(args))
 			if err != nil {
 				return err
 			}
@@ -78,14 +75,14 @@ func (a *App) newSandboxTerminalListCommand(sandboxID *string) *cobra.Command {
 	return cmd
 }
 
-func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxTerminalCreateCommand() *cobra.Command {
 	var opts sandboxTerminalCreateOptions
 	cmd := &cobra.Command{
-		Use:   "create",
+		Use:   "create [DISCOBOX]",
 		Short: "Create a discobox terminal",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			projectID, resolvedSandboxID, client, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, projectID, resolvedSandboxID, client, err := a.selectSandbox(cmd, discoboxArg(args))
 			if err != nil {
 				return err
 			}
@@ -123,7 +120,7 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 			return a.writeSandboxTerminal(cmd, &started)
 		},
 	}
-	cmd.Flags().StringVar(&opts.harnessID, "harness", "", "Harness ID to start; defaults to the discobox configured harness")
+	cmd.Flags().StringVar(&opts.harnessID, "harness", "", "Harness to start, by slug (e.g. codex), name, or ID; defaults to the discobox's configured harness")
 	cmd.Flags().StringArrayVar(&opts.args, "arg", nil, "Additional command argument; repeat for multiple arguments")
 	cmd.Flags().StringVar(&opts.workdir, "workdir", "", "Working directory inside the discobox")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
@@ -131,9 +128,9 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 	return cmd
 }
 
-func (a *App) newSandboxTerminalAttachCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxTerminalAttachCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "attach TERMINAL_ID",
+		Use:   "attach DISCOBOX TERMINAL_ID",
 		Short: "Attach to a discobox terminal",
 		Long: `Attach to a discobox terminal.
 
@@ -144,14 +141,14 @@ session, and once that session has ended there is nothing to attach to.
 
 The leader key then d — Ctrl-A d by default, and Ctrl-A Ctrl-D works too —
 detaches without ending the session. Set DISCOBOX_LEADER to change the Ctrl-A.`,
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: a.completeTerminals(sandboxID),
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: a.completeTerminals,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, resolvedSandboxID, _, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
+			a, projectID, resolvedSandboxID, _, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
-			terminalID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[0])
+			terminalID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[1])
 			if err != nil {
 				return err
 			}
@@ -160,19 +157,19 @@ detaches without ending the session. Set DISCOBOX_LEADER to change the Ctrl-A.`,
 	}
 }
 
-func (a *App) newSandboxTerminalLogsCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxTerminalLogsCommand() *cobra.Command {
 	var includeInput bool
 	cmd := &cobra.Command{
-		Use:               "logs TERMINAL_ID",
+		Use:               "logs DISCOBOX TERMINAL_ID",
 		Short:             "Print discobox terminal output logs",
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: a.completeTerminals(sandboxID),
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: a.completeTerminals,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, resolvedSandboxID, client, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
+			a, projectID, resolvedSandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
-			terminalID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[0])
+			terminalID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[1])
 			if err != nil {
 				return err
 			}
@@ -198,19 +195,19 @@ func (a *App) newSandboxTerminalLogsCommand(sandboxID *string) *cobra.Command {
 	return cmd
 }
 
-func (a *App) newSandboxTerminalDeleteCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxTerminalDeleteCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:               "rm TERMINAL_ID",
+		Use:               "rm DISCOBOX TERMINAL_ID",
 		Aliases:           []string{"delete", "remove"},
 		Short:             "Delete a discobox terminal",
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: a.completeTerminals(sandboxID),
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: a.completeTerminals,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, resolvedSandboxID, _, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
+			a, projectID, resolvedSandboxID, _, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
-			terminalID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[0])
+			terminalID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[1])
 			if err != nil {
 				return err
 			}
@@ -224,13 +221,6 @@ func (a *App) newSandboxTerminalDeleteCommand(sandboxID *string) *cobra.Command 
 			return err
 		},
 	}
-}
-
-func (a *App) sandboxTerminalRequest(ctx context.Context, sandboxArg string) (string, string, *apiclientgen.Client, error) {
-	if strings.TrimSpace(sandboxArg) == "" {
-		return "", "", nil, fmt.Errorf("--discobox-id is required")
-	}
-	return a.sandboxRequest(ctx, sandboxArg)
 }
 
 // assignSandboxHarnessSecrets asks the control plane to materialize the harness

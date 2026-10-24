@@ -31,7 +31,7 @@ func TestAuditDNSSendsItsFiltersAndShowsWhatIsMissing(t *testing.T) {
 			{"poolId":"pool-a","id":"dns_2","createdAt":"2026-09-24T10:01:00Z","sandboxId":"sbx_1","name":"evil\u001b[2J.example","type":"A","rcode":"NXDOMAIN","answers":[]},
 			{"poolId":"pool-a","id":"dns_1","createdAt":"2026-09-24T10:00:00Z","sandboxId":"sbx_1","name":"api.github.com","type":"AAAA","rcode":"","answers":[],"error":"upstream timed out"}
 		],"unavailablePools":[{"poolId":"pool-c","reason":"it did not answer within 20s"}]}`))
-	}, "dns", "--discobox-id", sandboxID, "--pool", poolID, "--name", "API.GitHub.com.", "--since", "30m", "--limit", "7")
+	}, "dns", "--discobox", sandboxID, "--pool", poolID, "--name", "API.GitHub.com.", "--since", "30m", "--limit", "7")
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}

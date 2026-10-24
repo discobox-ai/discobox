@@ -71,7 +71,7 @@ func TestTerminalScreenPrintsTheRenderedScreen(t *testing.T) {
 	sandboxID := testSandboxID(t)
 	call, out, err := runTerminalCommand(t,
 		`{"rows":3,"cols":20,"cursorRow":0,"cursorCol":0,"cursorVisible":true,"altScreen":false,"lines":["$ make test","ok",""],"scrollback":["earlier"],"exited":false}`,
-		"screen", "primary", "--discobox-id", sandboxID, "--scrollback", "5")
+		"screen", sandboxID, "primary", "--scrollback", "5")
 	if err != nil {
 		t.Fatalf("screen: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestTerminalScreenPrintsTheRenderedScreen(t *testing.T) {
 // key, anything else is text, and --literal makes everything text.
 func TestTerminalInputSendsKeysAndText(t *testing.T) {
 	sandboxID := testSandboxID(t)
-	call, out, err := runTerminalCommand(t, `{"resumeAfter":"2026-09-18T00:00:01.5Z"}`, "input", "primary", "--discobox-id", sandboxID, "run the tests", "Enter", "^C")
+	call, out, err := runTerminalCommand(t, `{"resumeAfter":"2026-09-18T00:00:01.5Z"}`, "input", sandboxID, "primary", "run the tests", "Enter", "^C")
 	if err != nil {
 		t.Fatalf("input: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestTerminalInputSendsKeysAndText(t *testing.T) {
 		t.Fatalf("input = %s", parts)
 	}
 
-	call, _, err = runTerminalCommand(t, `{"resumeAfter":"2026-09-18T00:00:01Z"}`, "input", "primary", "--discobox-id", sandboxID, "--literal", "Enter")
+	call, _, err = runTerminalCommand(t, `{"resumeAfter":"2026-09-18T00:00:01Z"}`, "input", sandboxID, "primary", "--literal", "Enter")
 	if err != nil {
 		t.Fatalf("input --literal: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestTerminalWaitIsOneCall(t *testing.T) {
 	sandboxID := testSandboxID(t)
 	call, out, err := runTerminalCommand(t,
 		`{"reason":"hook","hook":{"id":"evt_2","terminalId":"exec_1","provider":"claude","event":"Stop","payload":{},"createdAt":"2026-09-18T00:00:02Z"},"resumeAfter":"2026-09-18T00:00:02Z"}`,
-		"wait", "primary", "--discobox-id", sandboxID, "--hook", "Stop", "--after", "2026-09-18T00:00:01.5Z", "--quiet", "10s", "--timeout", "30s")
+		"wait", sandboxID, "primary", "--hook", "Stop", "--after", "2026-09-18T00:00:01.5Z", "--idle", "10s", "--timeout", "30s")
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestTerminalWaitIsOneCall(t *testing.T) {
 	}
 
 	// A wait that times out says so, and exits 124 as timeout(1) does.
-	_, out, err = runTerminalCommand(t, `{"reason":"timeout","resumeAfter":"2026-09-18T00:00:01Z"}`, "wait", "primary", "--discobox-id", sandboxID, "--exit")
+	_, out, err = runTerminalCommand(t, `{"reason":"timeout","resumeAfter":"2026-09-18T00:00:01Z"}`, "wait", sandboxID, "primary", "--exit")
 	var exit client.ExitError
 	if !errors.As(err, &exit) || exit.Code != 124 || out != "timeout 2026-09-18T00:00:01Z\n" {
 		t.Fatalf("err = %v, output = %q; want exit 124 and timeout", err, out)
@@ -141,7 +141,7 @@ func TestTerminalWaitIsOneCall(t *testing.T) {
 		"quiet in fractions":                {"--quiet", "1500ms"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, _, err := runTerminalCommand(t, `{"reason":"exit"}`, append([]string{"wait", "primary", "--discobox-id", sandboxID}, args...)...); err == nil {
+			if _, _, err := runTerminalCommand(t, `{"reason":"exit"}`, append([]string{"wait", sandboxID, "primary"}, args...)...); err == nil {
 				t.Fatal("accepted")
 			}
 		})

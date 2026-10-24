@@ -74,7 +74,7 @@ func TestAuditBodyCutsALongRecording(t *testing.T) {
 		t.Fatalf("response body: %v", err)
 	}
 	shown, rest, _ := strings.Cut(got, "\n\n")
-	if shown != long[:auditBodyShown] || !strings.Contains(rest, "discobox admin audit http --discobox-id sbx_1 --body http_42 --part response") {
+	if shown != long[:auditBodyShown] || !strings.Contains(rest, "discobox admin audit http --discobox sbx_1 --body http_42 --part response") {
 		t.Fatalf("shown %d bytes, then %q", len(shown), rest)
 	}
 }

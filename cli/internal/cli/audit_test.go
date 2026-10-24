@@ -50,7 +50,7 @@ func TestAuditCredsSendsItsFilters(t *testing.T) {
 	}
 	before := time.Now()
 	query, _, err := runAuditCreds(t, `{"credentialVerdicts":[]}`,
-		"--discobox-id", fullID,
+		"--discobox", fullID,
 		"--use-id", "use_1", "--grant-id", "grant_1", "--denied", "--since", "1h", "--limit", "5")
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -373,7 +373,7 @@ func TestAuditCredsSendsItsKind(t *testing.T) {
 	}
 }
 
-func TestParseSince(t *testing.T) {
+func TestSinceFlag(t *testing.T) {
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
 		in   string
@@ -381,20 +381,27 @@ func TestParseSince(t *testing.T) {
 		err  bool
 	}{
 		{in: "90m", want: now.Add(-90 * time.Minute)},
+		{in: "3d", want: now.Add(-72 * time.Hour)},
+		{in: "2w", want: now.Add(-14 * 24 * time.Hour)},
 		{in: "2026-09-01T00:00:00Z", want: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)},
 		{in: "-1h", err: true},
+		{in: "forever", err: true},
 		{in: "yesterday", err: true},
 	} {
-		got, err := parseSince(tc.in, now)
+		since := newSinceFlag()
+		err := since.Set(tc.in)
 		if tc.err {
 			if err == nil {
-				t.Fatalf("parseSince(%q) = %s, want an error", tc.in, got)
+				t.Fatalf("--since %q = %s, want an error", tc.in, since.from(now))
 			}
 			continue
 		}
-		if err != nil || !got.Equal(tc.want) {
-			t.Fatalf("parseSince(%q) = %s, %v; want %s", tc.in, got, err, tc.want)
+		if got := since.from(now); err != nil || !got.Equal(tc.want) {
+			t.Fatalf("--since %q = %s, %v; want %s", tc.in, got, err, tc.want)
 		}
+	}
+	if got := newSinceFlag().from(now); !got.IsZero() {
+		t.Fatalf("--since left out = %s, want the zero time", got)
 	}
 }
 
@@ -434,7 +441,7 @@ func TestAuditHTTPSendsItsFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	query, _, _, err := runAuditHTTP(t, `{"exchanges":[],"unavailablePools":[]}`,
-		"--discobox-id", sandboxID, "--pool", poolID, "--host", "api.github.com", "--use-id", "use_1", "--since", "30m", "--limit", "7")
+		"--discobox", sandboxID, "--pool", poolID, "--host", "api.github.com", "--use-id", "use_1", "--since", "30m", "--limit", "7")
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}

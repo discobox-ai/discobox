@@ -42,7 +42,7 @@ const SchemaID = "https://raw.githubusercontent.com/discobox-ai/discobox/main/cl
 // `doc` the description, `default` the literal default and `example` a sample
 // value. A command-line flag always wins over the setting it defaults.
 type Config struct {
-	New New `yaml:"new" doc:"What discobox run, and the console's New Discobox panel, take when the command line does not say."`
+	Run Run `yaml:"run" doc:"What discobox run, and the console's New Discobox panel, take when the command line does not say."`
 
 	// Path is the file read, or empty when FileVar says read none. Read is
 	// whether one was there to read.
@@ -50,8 +50,8 @@ type Config struct {
 	Read bool   `yaml:"-"`
 }
 
-// New is what a create takes by default.
-type New struct {
+// Run is what a create takes by default.
+type Run struct {
 	Skills     []string `yaml:"skills" doc:"Skills to install in every new discobox, as --skills reads them: a directory whose subdirectories holding a SKILL.md are each a skill, or a Git URL[@REF][//PATH] whose skills are linked from a checkout of it. A relative path is relative to this file's directory, and ~ is your home directory. --skills on the command line replaces this list rather than adding to it. The project's skills repositories (discobox skills) are added ahead of these either way. discobox skills add DIR and rm DIR edit this list in place." example:"[\"~/team-skills\"]"`
 	UserSkills bool     `yaml:"userSkills" doc:"Install your own skills from ~/.claude/skills and ~/.agents/skills in every new discobox, as --user-skills does. --user-skills=false on the command line turns it off for one discobox."`
 }
@@ -84,7 +84,7 @@ func Load() (*Config, error) {
 	data, err := os.ReadFile(path)
 	switch {
 	case err == nil:
-		if _, err := configfile.Decode(cfg, data, path); err != nil {
+		if err := decode(cfg, data, path); err != nil {
 			return nil, err
 		}
 		cfg.Read = true
@@ -107,18 +107,51 @@ func Load() (*Config, error) {
 // where whoever wrote it was looking — not wherever the command later runs.
 func (cfg *Config) resolvePaths() error {
 	base := filepath.Dir(cfg.Path)
-	for i, entry := range cfg.New.Skills {
+	for i, entry := range cfg.Run.Skills {
 		resolved, err := ResolveSkill(base, entry)
 		if err != nil {
-			return fmt.Errorf("%s: new.skills[%d]: %w", cfg.Path, i, err)
+			return fmt.Errorf("%s: run.skills[%d]: %w", cfg.Path, i, err)
 		}
-		cfg.New.Skills[i] = resolved
+		cfg.Run.Skills[i] = resolved
 	}
 	return nil
 }
 
+// legacySection is run's name from when the command was `discobox new`
+// (ADR 0133). A file written then still says it, and is read as if it said
+// run: the setting is persisted configuration, and renaming a command is no
+// reason to stop reading it. The schema and the example teach run alone, and
+// an edit of the file (AddSkill, RemoveSkill) renames the section as it
+// writes.
+const legacySection = "new"
+
+// file is the shape a client.yaml is decoded through: Config, and new as a
+// second name for its run section, decoded into the same place.
+type file struct {
+	Config `yaml:",inline"`
+	New    *Run `yaml:"new"`
+}
+
+// decode overlays the file read from path onto cfg, with new read as run. A
+// file that names both is refused: they are one section, and which of the two
+// was meant is not this reader's to guess.
+func decode(cfg *Config, data []byte, path string) error {
+	shape := file{Config: *cfg}
+	shape.New = &shape.Run
+	present, err := configfile.Decode(&shape, data, path)
+	if err != nil {
+		return err
+	}
+	if present["run"] && present[legacySection] {
+		return fmt.Errorf("%s: run and new are one section, new being its old name; keep run", path)
+	}
+	shape.New = nil
+	*cfg = shape.Config
+	return nil
+}
+
 // ResolveSkill is one skills entry as a create reads it, judged against base
-// — the file's directory for an entry of new.skills, the working directory
+// — the file's directory for an entry of run.skills, the working directory
 // for one typed on a command line (ADR 26-10-15-664): a skills source with
 // GitHub shorthand expanded, so a create reads it the same from any
 // directory, and a directory made absolute, with ~ for the home directory.

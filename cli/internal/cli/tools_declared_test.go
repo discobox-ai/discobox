@@ -42,7 +42,7 @@ func TestToolsListShowsWhereEachToolCameFromAndWhatCannotRun(t *testing.T) {
 	var out strings.Builder
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "tools", "--discobox-id", "sbx_devbox00000001", "ls"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "tools", "ls", "sbx_devbox00000001"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("tools ls: %v\n%s", err, out.String())
 	}
@@ -67,7 +67,7 @@ func TestADiscoboxCannotReplaceAHostTool(t *testing.T) {
 	record := fakeVSCode(t)
 	fake := vscodeFakeServer()
 	fake.tools = sourceDeclaresTools
-	if _, _, _, err := runToolsVSCodeCmd(t, fake, "--discobox-id", "sbx_devbox00000001"); err != nil {
+	if _, _, _, err := runToolsVSCodeCmd(t, fake, "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
 	if args := editorArgs(t, record); !contains(args, "--folder-uri") {
@@ -80,11 +80,11 @@ func TestADiscoboxCannotReplaceAHostTool(t *testing.T) {
 func TestAToolTheDiscoboxDeclaresForThisMachineIsRefused(t *testing.T) {
 	fake := vscodeFakeServer()
 	fake.tools = sourceDeclaresTools
-	_, _, _, err := runToolsCmd(t, fake, t.TempDir(), "open", "--discobox-id", "sbx_devbox00000001")
+	_, _, _, err := runToolsCmd(t, fake, t.TempDir(), "open", "sbx_devbox00000001")
 	if err == nil || !strings.Contains(err.Error(), "runs on your machine") {
 		t.Fatalf("err = %v, want the refusal", err)
 	}
-	_, _, _, err = runToolsCmd(t, fake, t.TempDir(), "nope", "--discobox-id", "sbx_devbox00000001")
+	_, _, _, err = runToolsCmd(t, fake, t.TempDir(), "nope", "sbx_devbox00000001")
 	if err == nil || !strings.Contains(err.Error(), "tools ls") {
 		t.Fatalf("err = %v, want a pointer to the listing", err)
 	}
@@ -130,7 +130,7 @@ func TestAServerWithoutTheToolsRouteStillRunsTheCLIsTools(t *testing.T) {
 	var out strings.Builder
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "tools", "vscode", "--discobox-id", "sbx_devbox00000001"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "tools", "vscode", "sbx_devbox00000001"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("tools vscode: %v\n%s", err, out.String())
 	}
@@ -152,7 +152,7 @@ func TestAHostScriptIsHandedTheDiscoboxInItsEnvironment(t *testing.T) {
 	if err := os.Chmod(filepath.Join(home, ".config", "discobox", "tools", "gitk.sh"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, stderr, err := runToolsCmd(t, vscodeFakeServer(), home, "gitk", "--discobox-id", "sbx_devbox00000001", "--", "--all"); err != nil {
+	if _, _, stderr, err := runToolsCmd(t, vscodeFakeServer(), home, "gitk", "sbx_devbox00000001", "--", "--all"); err != nil {
 		t.Fatalf("tools gitk: %v\n%s", err, stderr)
 	}
 	want := "devbox\nssh://devbox/home/agent/repo\n/home/agent/repo\n--all\n"
@@ -296,7 +296,7 @@ func TestAPlainTextRefusalIsNotAMissingRoute(t *testing.T) {
 		var out strings.Builder
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
-		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "tools", "--discobox-id", "sbx_devbox00000001", "ls"})
+		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "tools", "ls", "sbx_devbox00000001"})
 		err := cmd.Execute()
 		if err == nil || !strings.Contains(err.Error(), tc.body) {
 			t.Fatalf("%d %q: err = %v, output:\n%s", tc.code, tc.body, err, out.String())
@@ -340,5 +340,27 @@ func TestADiscoboxsToolsAreCheckedAgainHere(t *testing.T) {
 	}
 	if _, err := toolFilePath("x", `..\..\evil`); err == nil {
 		t.Fatal("a backslashed file name was joined to a path")
+	}
+}
+
+// git's arguments go after the --: a git word where DISCOBOX goes is refused,
+// saying so, rather than taken for git's.
+func TestToolsGitTakesItsArgumentsAfterTheSeparator(t *testing.T) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"sandboxes":[]}`))
+	}))
+	t.Cleanup(server.Close)
+	for args, want := range map[string]string{
+		"status":               "a command goes after --: discobox tools git -- status",
+		"sbx_h1ssjzhp60emtc2n": "git's arguments go after --",
+	} {
+		cmd := NewRootCommand()
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "tools", "git", args})
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("tools git %s error = %v, want %q", args, err, want)
+		}
 	}
 }

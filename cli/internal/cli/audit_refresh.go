@@ -19,7 +19,8 @@ import (
 // sees the answer arrive rather than a record that changed behind it.
 
 func (a *App) newAuditRefreshCommand() *cobra.Command {
-	var sandboxID, secret, since string
+	var sandboxID, secret string
+	since := newSinceFlag()
 	var limit int
 	var follow bool
 	cmd := &cobra.Command{
@@ -34,7 +35,7 @@ How the answer's value was made -- the command a client says it ran, or that a
 person entered it -- is that client's own account, and nothing on the server
 can check it. The value itself is never recorded.
 
-The trail outlives the discoboxes it names. --discobox-id matches the discobox
+The trail outlives the discoboxes it names. --discobox matches the discobox
 that most recently needed the value.`,
 		Example: `  discobox admin audit refresh --since 24h
   discobox admin audit refresh --secret github --follow`,
@@ -50,7 +51,7 @@ that most recently needed the value.`,
 			}
 			params := apiclientgen.ListSecretRefreshesParams{ProjectId: projectID}
 			if strings.TrimSpace(sandboxID) != "" {
-				resolved, err := a.resolveSandboxID(cmd.Context(), client, projectID, sandboxID)
+				resolved, err := a.resolveListedSandbox(cmd.Context(), client, projectID, sandboxID)
 				if err != nil {
 					return err
 				}
@@ -63,10 +64,7 @@ that most recently needed the value.`,
 				}
 				params.SecretId = apiclientgen.NewOptString(resolved)
 			}
-			sinceAt, err := parseOptionalSince(since)
-			if err != nil {
-				return err
-			}
+			sinceAt := since.from(time.Now())
 			source := secretRefreshSource(client, params)
 			if a.output == "json" && !follow {
 				events, err := readAuditAll(cmd.Context(), source, a.auditReadOptions(cmd, sinceAt, limit, false))
@@ -87,12 +85,12 @@ that most recently needed the value.`,
 			})
 		},
 	}
-	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Only asks this discobox most recently needed; a deleted one needs its full ID")
+	cmd.Flags().StringVar(&sandboxID, "discobox", "", "Only asks this discobox most recently needed; a deleted one needs its full ID")
 	cmd.Flags().StringVar(&secret, "secret", "", "Only asks for a new value of this secret, by name or ID")
-	cmd.Flags().StringVar(&since, "since", "", "Only events from this long ago (e.g. 1h) or since this RFC 3339 time")
+	cmd.Flags().Var(since, "since", "Only events from this long ago (e.g. 1h) or since this RFC 3339 time")
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of events to return")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing events as they happen")
-	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
+	_ = cmd.RegisterFlagCompletionFunc("discobox", a.completeSandboxes)
 	return cmd
 }
 

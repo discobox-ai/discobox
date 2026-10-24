@@ -23,6 +23,10 @@ type sandboxFilter struct {
 	source string
 	// tags are selectors a discobox's recorded tags must all match (ADR 0136).
 	tags []string
+	// judges keeps the project's judge discoboxes in, which a listing leaves
+	// out: resolving a DISCOBOX has to see every discobox an ID can name
+	// (ADR 26-09-22-838 §1), or a name could shadow a judge's short ID.
+	judges bool
 }
 
 // newListCommand lists every discobox in the project, on every server, from
@@ -118,6 +122,9 @@ func (a *App) listProjectSandboxes(ctx context.Context, client *apiclientgen.Cli
 		return nil, err
 	}
 	params := apiclientgen.ListSandboxesParams{ProjectId: projectID, Tag: filter.tags}
+	if filter.judges {
+		params.IncludeJudge = apiclientgen.NewOptBool(true)
+	}
 	bodyRes, err := client.ListSandboxes(ctx, params)
 	if err != nil {
 		return nil, err

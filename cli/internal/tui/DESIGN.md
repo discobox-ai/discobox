@@ -74,7 +74,7 @@ not.
 
 `skills.go`, on `F5`: the skills every new discobox gets, wherever each is kept
 (ADR 26-10-14-894). The project's skills sources on the header's server come
-first, in the order a create adds them, then client.yaml's `new.skills`, which
+first, in the order a create adds them, then client.yaml's `run.skills`, which
 are this machine's whichever server the header is on. Each row says where it
 is kept. It is `discobox skills` folded into the window, and the secrets
 screen's shape: `n` asks for one value and `DataSource.AddSkills` files it by
@@ -3475,7 +3475,7 @@ the newest one where the busy line goes.
 | `narration.go` | what a slow operation is doing, on the busy line |
 | `tui.go` | `Run`: the program the CLI starts against a `DataSource` |
 | `secrets.go` | the secrets screen (`F4`): the three tables' focus and frame, the secrets table, a secret's card and grants, the secret and grant forms |
-| `skills.go` | the skills screen (`F5`): the project's skills sources and client.yaml's `new.skills`, added to and removed from by what a value is |
+| `skills.go` | the skills screen (`F5`): the project's skills sources and client.yaml's `run.skills`, added to and removed from by what a value is |
 | `requests.go` | the secrets screen's lower table: the credential requests waiting on a person |
 | `welcome.go` | the once-per-project introduction |
 | `draft.go` | the unsent prompt, saved per machine and restored |

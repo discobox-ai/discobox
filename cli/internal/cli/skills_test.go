@@ -30,7 +30,7 @@ func TestRunCopiesInTheProjectsSkillsSources(t *testing.T) {
 	}{
 		{name: "by default", args: []string{"run", "-d", "--no-source", "-p", "go"}, wantAsked: 1, wantErr: "the project's skills source " + tools},
 		{name: "--no-project-skills", args: []string{"run", "-d", "--no-source", "--no-project-skills", "-p", "go"}},
-		{name: "json noProjectSkills", args: []string{"run", "--json"}, json: map[string]any{"noSource": true, "noProjectSkills": true}},
+		{name: "json noProjectSkills", args: []string{"run", "--from-json"}, json: map[string]any{"noSource": true, "noProjectSkills": true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setHome(t, t.TempDir())
@@ -78,7 +78,7 @@ func TestSkillsRemoveTakesClientEntriesFromTheFile(t *testing.T) {
 	configFile := filepath.Join(t.TempDir(), "client.yaml")
 	t.Setenv(clientconfig.FileVar, configFile)
 	dir := filepath.Join(home, "skills_shared")
-	if err := os.WriteFile(configFile, []byte("new:\n  skills:\n    - https://github.com/acme/tools//skills\n    - "+dir+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(configFile, []byte("run:\n  skills:\n    - https://github.com/acme/tools//skills\n    - "+dir+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
@@ -97,8 +97,8 @@ func TestSkillsRemoveTakesClientEntriesFromTheFile(t *testing.T) {
 		t.Fatalf("rm: %v\n%s", err, errOut.String())
 	}
 	cfg, err := clientconfig.Load()
-	if err != nil || len(cfg.New.Skills) != 0 {
-		t.Fatalf("client.yaml skills = %q (%v), want none", cfg.New.Skills, err)
+	if err != nil || len(cfg.Run.Skills) != 0 {
+		t.Fatalf("client.yaml skills = %q (%v), want none", cfg.Run.Skills, err)
 	}
 }
 
@@ -158,8 +158,8 @@ func TestSkillsCommandFilesEachValueByWhatItIs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.New.Skills) != 1 || cfg.New.Skills[0] != dir {
-		t.Fatalf("client.yaml skills = %q, want %s", cfg.New.Skills, dir)
+	if len(cfg.Run.Skills) != 1 || cfg.Run.Skills[0] != dir {
+		t.Fatalf("client.yaml skills = %q, want %s", cfg.Run.Skills, dir)
 	}
 
 	listed := run("ls")
@@ -182,7 +182,7 @@ func TestSkillsCommandFilesEachValueByWhatItIs(t *testing.T) {
 	if len(sources) != 0 {
 		t.Fatalf("project sources = %v, want none", sources)
 	}
-	if cfg, err = clientconfig.Load(); err != nil || len(cfg.New.Skills) != 0 {
-		t.Fatalf("client.yaml skills = %v (%v), want none", cfg.New.Skills, err)
+	if cfg, err = clientconfig.Load(); err != nil || len(cfg.Run.Skills) != 0 {
+		t.Fatalf("client.yaml skills = %v (%v), want none", cfg.Run.Skills, err)
 	}
 }

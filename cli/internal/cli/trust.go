@@ -149,7 +149,8 @@ func (a *App) newTrustRequestGetCommand() *cobra.Command {
 }
 
 func (a *App) newTrustRequestApproveCommand() *cobra.Command {
-	var pin, ttl string
+	var pin string
+	ttl := lifetime.NewLapsingFlag()
 	var uses []string
 	cmd := &cobra.Command{Use: "approve REQUEST_ID", Short: "Trust the host for the asking discobox", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
@@ -174,15 +175,8 @@ func (a *App) newTrustRequestApproveCommand() *cobra.Command {
 		}
 		// Sent only when given: the server then takes what the agent asked
 		// for, or an hour, which is what the window opens on too.
-		if strings.TrimSpace(ttl) != "" {
-			d, err := lifetime.Parse(ttl)
-			if err != nil {
-				return err
-			}
-			if d <= 0 {
-				return fmt.Errorf("a trust always lapses; give --ttl as a lifetime such as 4h or 7d")
-			}
-			body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(lifetime.Seconds(d)))
+		if seconds, given := ttl.Seconds(); given {
+			body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(seconds))
 		}
 		if len(uses) > 0 {
 			approved := make([]apimodel.SecretUse, 0, len(uses))
@@ -202,7 +196,7 @@ func (a *App) newTrustRequestApproveCommand() *cobra.Command {
 		return a.writeTrustRequest(cmd, request)
 	}}
 	cmd.Flags().StringVar(&pin, "pin", "", "Certificate to pin, as ca:SHA256 or leaf-spki:SHA256 from `discobox trust request get`; omit for the server's default (a supplied CA, else the chain's CA, else the host's key)")
-	cmd.Flags().StringVar(&ttl, "ttl", "", "How long the trust lasts, up to 30d (defaults to what the agent asked for, or 1h)")
+	cmd.Flags().Var(ttl, "ttl", "How long the trust lasts, up to 30d (defaults to what the agent asked for, or 1h)")
 	cmd.Flags().StringArrayVar(&uses, "use", nil, "Replace the agent's declared uses with these (repeatable); omit to approve them as asked")
 	return cmd
 }

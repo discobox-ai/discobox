@@ -20,7 +20,6 @@ type sandboxCreateOptions struct {
 	name                 string
 	description          string
 	poolID               string
-	harnessConfigID      string
 	harnessName          string
 	model                string
 	modelServiceTier     string
@@ -129,7 +128,7 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 func (a *App) newSandboxGetCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:               "get DISCOBOX_ID",
-		Short:             "Get a discobox",
+		Short:             "Show a discobox",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -176,12 +175,6 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 					return err
 				}
 			}
-			if opts.harnessConfigID != "" {
-				opts.harnessConfigID, err = a.resolveHarnessConfigID(cmd.Context(), client, projectID, opts.harnessConfigID)
-				if err != nil {
-					return err
-				}
-			}
 			opts.userUIDSet = cmd.Flags().Changed("user-uid")
 			if !opts.noProjectSkills {
 				if opts.projectSkills, err = projectSkills(cmd.Context(), client, projectID); err != nil {
@@ -192,7 +185,9 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if level, ok := egressOpts.create(cmd); ok {
+			if level, ok, err := egressOpts.create(cmd); err != nil {
+				return err
+			} else if ok {
 				body.Config.SetEgress(apiclientgen.NewOptEgressPolicy(level))
 			}
 			if err := a.resolveGrantSecrets(cmd.Context(), client, projectID, body.Grants); err != nil {
@@ -218,7 +213,6 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 	addCreateFlags(cmd, &opts)
 	addEgressFlags(cmd, &egressOpts, "the discobox")
 	_ = cmd.RegisterFlagCompletionFunc("pool", a.completePools)
-	_ = cmd.RegisterFlagCompletionFunc("harness-config", a.completeHarnessConfigs)
 	_ = cmd.RegisterFlagCompletionFunc("harness", a.completeHarnessConfigNames)
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
@@ -613,8 +607,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Discobox name")
 	cmd.Flags().StringVar(&opts.description, "description", "", "Discobox description")
 	cmd.Flags().StringVar(&opts.poolID, "pool", "", "Pool to schedule the discobox into")
-	cmd.Flags().StringVar(&opts.harnessConfigID, "harness-config", "", "Harness config ID")
-	cmd.Flags().StringVar(&opts.harnessName, "harness", "", "Harness config name to resolve at create time")
+	cmd.Flags().StringVar(&opts.harnessName, "harness", "", "Harness to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	cmd.Flags().StringVar(&opts.model, "model", "", "Model the harness should use")
 	cmd.Flags().StringVar(&opts.modelServiceTier, "model-service-tier", "", "Model service tier the harness should use")
 	cmd.Flags().StringVar(&opts.modelReasoningLevel, "model-reasoning-level", "", "Model reasoning level the harness should use")
@@ -664,7 +657,7 @@ func (a *App) resolveGrantSecrets(ctx context.Context, client *apiclientgen.Clie
 
 func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Discobox name")
-	addEgressFlags(cmd, &opts.egress, "the discobox")
+	addEgressUpdateFlags(cmd, &opts.egress, "the discobox")
 }
 
 func createSandboxBody(ctx context.Context, opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, error) {
@@ -672,7 +665,6 @@ func createSandboxBody(ctx context.Context, opts sandboxCreateOptions) (*apimode
 	config := &body.Config
 	config.SetDescription(optString(opts.description))
 	body.SetPoolId(optString(opts.poolID))
-	config.SetHarnessConfigId(optString(opts.harnessConfigID))
 	body.SetHarnessName(optString(opts.harnessName))
 	config.SetModel(optString(opts.model))
 	config.SetModelServiceTier(optString(opts.modelServiceTier))

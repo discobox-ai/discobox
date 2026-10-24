@@ -4,7 +4,7 @@
   "additionalProperties": false,
   "description": "Configuration for the discobox CLI: what its commands take when the command line does not say. A flag given on the command line wins over the setting it defaults.",
   "properties": {
-    "new": {
+    "run": {
       "additionalProperties": false,
       "description": "What discobox run, and the console's New Discobox panel, take when the command line does not say.",
       "properties": {

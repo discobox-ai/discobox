@@ -16,7 +16,7 @@ import (
 
 // Showing the judge what a command reads on stdin (ADR 26-09-27-905).
 //
-// `discobox run --json`, `gh api --input -` and the rest take their request on
+// `discobox run --from-json`, `gh api --input -` and the rest take their request on
 // stdin so that free text never passes through a shell, and for them the argv
 // says nothing about what the command does. So `run` reads a bounded prefix of
 // its stdin before it asks for a value, sends it to be judged with the argv,

@@ -90,12 +90,12 @@ type auditListResult struct {
 }
 
 func (a *App) newAuditListCommand() *cobra.Command {
-	var sandboxID, since string
+	since := newSinceFlag()
 	var sources []string
 	var follow bool
 	var limit int
 	cmd := &cobra.Command{
-		Use:     "ls",
+		Use:     "ls [DISCOBOX]",
 		Aliases: []string{"list"},
 		Short:   "List one discobox's audit trails as a single timeline",
 		Long: `List everything recorded about one discobox as one timeline, newest first.
@@ -125,10 +125,11 @@ The hooks and execs trails are kept inside the discobox, where anything running
 in it can rewrite them, and can be read only while it runs. A trail that could
 not be read is named on stderr (and under unavailable with -o json); its records
 are missing from the timeline.`,
-		Example: `  discobox admin audit ls --discobox-id sbx_1 --since 1h
-  discobox admin audit ls --discobox-id sbx_1 --source http,creds --follow`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Example: `  discobox admin audit ls sbx_1 --since 1h
+  discobox admin audit ls sbx_1 --source http,creds --follow`,
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(sources) == 0 {
 				sources = auditDefaultSources
 			}
@@ -136,14 +137,11 @@ are missing from the timeline.`,
 			if err != nil {
 				return err
 			}
-			projectID, resolvedSandboxID, client, err := a.auditSandboxScope(cmd.Context(), sandboxID)
+			a, projectID, resolvedSandboxID, client, err := a.selectSandbox(cmd, discoboxArg(args))
 			if err != nil {
 				return err
 			}
-			sinceAt, err := parseOptionalSince(since)
-			if err != nil {
-				return err
-			}
+			sinceAt := since.from(time.Now())
 
 			var unavailable []auditUnavailable
 			// A read back pages, and every page of a trail says again what it
@@ -163,7 +161,7 @@ are missing from the timeline.`,
 			options.unavailable = func(trail string, err error) {
 				missing(auditUnavailable{Source: trail, Reason: err.Error()})
 			}
-			if a.output == "json" && !follow {
+			if a.output == "json" && !follow && !a.quiet {
 				var records []auditRecord
 				options.unavailable = func(trail string, err error) {
 					missing(auditUnavailable{Source: trail, Reason: err.Error()})
@@ -202,6 +200,16 @@ are missing from the timeline.`,
 			table := auditRecordTable(follow)
 			header := true
 			return readAudit(cmd.Context(), trails, options, func(records []auditRecord) error {
+				// -q is the IDs "audit get" takes, one a line, newest first
+				// as the table is, and as they arrive under --follow.
+				if a.quiet {
+					for _, record := range records {
+						if _, err := fmt.Fprintln(cmd.OutOrStdout(), terminalSafe(record.ID)); err != nil {
+							return err
+						}
+					}
+					return nil
+				}
 				if a.output == "json" {
 					return writeTerminalSafeJSONLines(cmd, records)
 				}
@@ -211,13 +219,12 @@ are missing from the timeline.`,
 			})
 		},
 	}
-	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Discobox whose trails to read (required); a deleted one needs its full ID")
 	cmd.Flags().StringSliceVar(&sources, "source", nil, "Only these trails: http, dns, creds, refresh, hooks, execs (default all but dns)")
-	cmd.Flags().StringVar(&since, "since", "", "Only records from this long ago (e.g. 1h) or since this RFC 3339 time")
+	cmd.Flags().Var(since, "since", "Only records from this long ago (e.g. 1h) or since this RFC 3339 time")
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of records to read")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing records as they are recorded")
-	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
 	_ = cmd.RegisterFlagCompletionFunc("source", cobra.FixedCompletions(auditSources, cobra.ShellCompDirectiveNoFileComp))
+	a.addQuietFlag(cmd)
 	return cmd
 }
 

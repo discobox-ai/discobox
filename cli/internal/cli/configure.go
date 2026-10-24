@@ -15,7 +15,7 @@ import (
 func (a *App) newConfigureCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:     "configure",
-		Aliases: []string{"config", "conf", "c", "init"},
+		Aliases: []string{"config"},
 		Short:   "Enable, disable, and set the default harness",
 		Long: `Open the console on its harnesses screen.
 

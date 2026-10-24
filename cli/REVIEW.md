@@ -57,6 +57,12 @@
   (`--body ID`), so a command quoted that way makes a boolean flag look as if
   it took one: `--policy-as-asked discobox secret request get`. Quote a
   command in usage text with plain quotes.
+- **A typed value is a `pflag.Value`, parsed as it is set.** A length of time
+  is `lifetime.Flag`, a size `byteSizeFlag`: a `StringVar` parsed in `RunE`
+  is the pattern they replaced, five ways for five flags. Its `String` is
+  empty until set, so help prints no default; what leaving it out means goes
+  in the usage. `Changed` alone is not "given" for a bool a `=false` can
+  clear: `listCleared` reads the value.
 
 ## Command names and arguments
 
@@ -67,21 +73,49 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   `DISCOBOX` promises a name works. `trust ls DISCOBOX` called
   `resolveSandboxID`, which takes IDs only, and nothing caught it. Read which
   `resolve*` the command calls before accepting its `Use`.
-- **A root command takes a discobox through `resolveListedSandbox`** (or
-  `resolveSandboxReference` over a listing): the NAME `discobox ls` prints, an
-  ID or a short ID, with a full ID skipping the listing. `resolveSandboxID` is
-  the raw `admin box` forms' rule.
+- **A DISCOBOX goes through `selectSandbox`** (or `resolveListedSandbox`
+  where one server is all there is): the NAME `discobox ls` prints, an ID or a
+  short ID, on every server; a full ID nothing lists is taken on the primary
+  as it stands, which is what keeps a deleted discobox's audit readable.
+  `resolveSandboxID` is the raw `admin box` forms' rule. `selectSandbox` once
+  resolved IDs only, so `attach mybox` sent a name to the server as an ID.
+- **A listed name never beats an ID-shaped reference.** The box writes its
+  listed name (its meta name, its terminal's title), so a box named `01hq`
+  would take what was meant for the discobox whose ID begins that way: `apply`
+  its commits, `push` the user's source, `shell` their keystrokes.
+  `matchSandboxName` refuses a name that is a short ID of another discobox;
+  anything that matches a name keeps going through it. The check is only as
+  good as the IDs it is given: the listing it reads includes judges
+  (`sandboxFilter.judges`), which an ordinary listing leaves out, and with a
+  server silent an ID-shaped name is refused rather than matched.
+- **One-server and many-server resolution are two paths that must agree.**
+  `selectSandbox` resolves with `resolveListedSandbox` on one server and
+  `selectSandboxOnEveryServer` on several; a rule added to one (the ID-shadow
+  refusal, the unlisted full ID) is added to both, through the shared
+  `matchSandboxName` where it can be.
+- **Use the App `selectSandbox` returns.** It is aimed at the server the
+  discobox is on; a call made on the App it was called on goes to the primary.
 - **Which positional is which is decided by position and flags, never by
   what an argument looks like.** `run`'s first argument is SOURCE unless
   `--no-source` is given; a SOURCE that does not resolve is an error naming
   the form that works, not a guess that it was a prompt. Only zero arguments
-  open a picker. `shell` and `tools ssh` still guess; a change that touches
-  their argument handling should not copy them.
+  open a picker. A command that runs a command reads `[DISCOBOX] [-- ARG...]`
+  through `splitDiscoboxCommand`; one that parses no flags (`tools ssh`) has
+  to say what a leading `-` means itself, since nothing stops it reaching
+  DISCOBOX.
 - **`-q` prints what the group's other verbs take back,** not necessarily an
   ID: a remote's name, a harness secret's env name, a skills entry the way
   `skills rm` takes it.
-- **A rename keeps the old spelling as an alias, and teaches only the new
-  one.** Skills (`.agents/skills`, `sandbox-agent/features/*/skills`,
+- **A flag removed is removed from what teaches it.** `--discobox-id` was in
+  the in-box skills (`access/skills/discobox-access`, `orchestrate.sh`), the
+  verify recipes, scripts and the latency harness; a skill a box carries that
+  names a gone flag is an agent's first failed command.
+- **A flag that "does nothing" is checked before it goes.** `admin exec
+  create -i` was called a docker-compatibility no-op; it is what sends stdin
+  to the command.
+- **A command rename keeps the old spelling as an alias, and teaches only the
+  new one.** A flag rename does not: the old flag goes (ADR 26-10-24-254), so
+  everything that teaches it moves in the same change. Skills (`.agents/skills`, `sandbox-agent/features/*/skills`,
   `access/skills`), bats tests, harness hints (`harness/*/image.json`,
   `configure.sh`), design docs and the argv the console builds
   (`tui_local.go`, `tui/options.go`) move with it. The `run` rename also
@@ -93,11 +127,14 @@ enforces the ones a tree walk can see. These are the ones it cannot:
     worded in the old one.
 
   Leave what records history: ADRs, the recorded judge-eval cases
-  (`test/judge-evals`), and audit argv in tests. Leave persisted
-  configuration keys (`client.yaml`'s `new:`) too. Tests drive the canonical
+  (`test/judge-evals`), and audit argv in tests. A persisted configuration
+  key is renamed only with a read path for the old one, as `client.yaml`'s
+  `new:` is read as `run:`. Tests drive the canonical
   name. A blind replace of a word hits more than the command, so read every
   replaced line:
   - quoted words, such as dialog actions and fixtures;
+  - another CLI's flag of the same name: renaming `run --json` hit a comment
+    about `discobox-access request --json`, which kept its name;
   - format strings, as `%d new keys` became `%d run keys` in a test's failure
     message.
 

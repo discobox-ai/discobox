@@ -12,7 +12,7 @@ import (
 // The skills screen: the skills every new discobox gets, wherever each is
 // kept (ADR 26-10-14-894 §3). A Git repository is the project's, on its
 // server, and every discobox of the project is created with it, whoever
-// creates it. A directory is this machine's, in client.yaml's new.skills, and
+// creates it. A directory is this machine's, in client.yaml's run.skills, and
 // goes into every discobox created from here.
 //
 // It is the secrets screen's shape: a list on a function key, one letter per

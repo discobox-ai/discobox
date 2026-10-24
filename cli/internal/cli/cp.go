@@ -383,12 +383,11 @@ func (a *App) resolveCPOperands(cmd *cobra.Command, client *apiclientgen.Client,
 
 // resolveCPSandbox turns what stood before the colon into a sandbox ID.
 //
-// It is `shell`'s rule rather than `--discobox-id`'s, so it resolves through
-// resolveSandboxReference: the reference is something the user typed alongside
-// a path, so a name has to work there the way it works in
-// `discobox shell mybox ls`. `selectSandbox` cannot serve — with a non-empty
-// argument it resolves IDs only, and hands a name straight back, which here
-// would become an SSH username no sandbox answers to.
+// It resolves through resolveSandboxReference over the candidates it lists,
+// under configuredName rather than selectSandbox's listed names: what stands
+// before a colon may be a local path's, so it is a discobox only when it names
+// one by the name it was created with or an ID, and a free-form window title
+// is not matched against it.
 func (a *App) resolveCPSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID, reference string) (string, error) {
 	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID)
 	if err != nil {
@@ -405,8 +404,8 @@ func (a *App) resolveCPSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 			recentKey: "sandbox:" + projectID,
 		})
 	}
-	// configuredName: what cp accepts before a colon is `shell`'s rule, and
-	// widening it to the window title is a change to cp, not to this command.
+	// configuredName: widening what cp accepts before a colon to the window
+	// title is a change to cp, decided on its own.
 	return a.resolveSandboxReference(cmd.Context(), client, projectID, reference, sandboxes, configuredName)
 }
 

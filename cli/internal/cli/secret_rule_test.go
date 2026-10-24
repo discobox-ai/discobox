@@ -222,7 +222,7 @@ func TestSecretRuleCreateSaysWhatIsWrongWithThePolicy(t *testing.T) {
 func TestSecretRuleUpdateSendsOnlyWhatWasGiven(t *testing.T) {
 	sent := map[string]map[string]any{}
 	server := ruleServer(t, sent)
-	runCLI(t, server.URL, "secret", "rule", "update", "rule_1", "--disable")
+	runCLI(t, server.URL, "secret", "rule", "update", "rule_1", "--disabled")
 	if body := sent["PATCH /projects/project-1/approval-rules/rule_1"]; len(body) != 1 || body["enabled"] != false {
 		t.Fatalf("update body = %#v, want only enabled: false", body)
 	}
@@ -452,7 +452,7 @@ func TestSecretRuleUpdateCoversTheWholeBody(t *testing.T) {
 	sent := map[string]map[string]any{}
 	server := ruleServer(t, sent)
 	runCLI(t, server.URL, append([]string{"secret", "rule", "update", "rule_1",
-		"--repo", "github.com/org/repo", "--hosts", "github.com,api.github.com", "--max-grant-ttl", "2h", "--expires-in", "3d", "--enable"}, ruleFlags...)...)
+		"--repo", "github.com/org/repo", "--hosts", "github.com,api.github.com", "--max-grant-ttl", "2h", "--expires-in", "3d", "--disabled=false"}, ruleFlags...)...)
 	body := sent["PATCH /projects/project-1/approval-rules/rule_1"]
 	repositories, _ := body["repositories"].([]any)
 	hosts, _ := body["hosts"].([]any)

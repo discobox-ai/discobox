@@ -66,7 +66,8 @@ func dnsAuditSource(client *apiclientgen.Client, query dnsAuditQuery, unavailabl
 }
 
 func (a *App) newAuditDNSCommand() *cobra.Command {
-	var sandboxID, poolID, name, since string
+	var sandboxID, poolID, name string
+	since := newSinceFlag()
 	var limit int
 	var follow bool
 	cmd := &cobra.Command{
@@ -98,7 +99,7 @@ list.
 
 The name is what the discobox asked, and is shown as data, with non-printing
 characters escaped.`,
-		Example: `  discobox admin audit dns --discobox-id sbx_1 --since 1h
+		Example: `  discobox admin audit dns --discobox sbx_1 --since 1h
   discobox admin audit dns --name api.github.com --follow`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -112,7 +113,7 @@ characters escaped.`,
 			}
 			query := dnsAuditQuery{projectID: projectID}
 			if strings.TrimSpace(sandboxID) != "" {
-				resolved, err := a.resolveSandboxID(cmd.Context(), client, projectID, sandboxID)
+				resolved, err := a.resolveListedSandbox(cmd.Context(), client, projectID, sandboxID)
 				if err != nil {
 					return err
 				}
@@ -128,10 +129,7 @@ characters escaped.`,
 			if name = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), ".")); name != "" {
 				query.params.Name = apiclientgen.NewOptString(name)
 			}
-			sinceAt, err := parseOptionalSince(since)
-			if err != nil {
-				return err
-			}
+			sinceAt := since.from(time.Now())
 			if a.output == "json" && !follow {
 				// One read, written whole, so -o json keeps the list and the
 				// pools missing from it together.
@@ -165,13 +163,13 @@ characters escaped.`,
 			})
 		},
 	}
-	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Only this discobox's lookups; a deleted one needs its full ID")
+	cmd.Flags().StringVar(&sandboxID, "discobox", "", "Only this discobox's lookups; a deleted one needs its full ID")
 	cmd.Flags().StringVar(&poolID, "pool", "", "Only lookups answered by this pool")
 	cmd.Flags().StringVar(&name, "name", "", "Only lookups of this name")
-	cmd.Flags().StringVar(&since, "since", "", "Only lookups from this long ago (e.g. 1h) or since this RFC 3339 time")
+	cmd.Flags().Var(since, "since", "Only lookups from this long ago (e.g. 1h) or since this RFC 3339 time")
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of lookups to return")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing lookups as they are recorded")
-	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
+	_ = cmd.RegisterFlagCompletionFunc("discobox", a.completeSandboxes)
 	_ = cmd.RegisterFlagCompletionFunc("pool", a.completePools)
 	return cmd
 }

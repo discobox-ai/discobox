@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// runJSONRequest is `discobox run --json`: the command's request as one JSON
+// runJSONRequest is `discobox run --from-json`: the command's request as one JSON
 // object on stdin, for a caller — an agent, above all — that would otherwise
 // have to quote a prompt and each use's sentence through a shell (ADR 26-09-24-630 §4).
 // Its fields are the run flags', and mean what they mean; -d and --raw have
@@ -63,30 +63,30 @@ type runJSONUse struct {
 }
 
 // readJSONRequest settles opts from the request on stdin. The command line may
-// say nothing else a run takes: a flag beside --json would be a second answer to
+// say nothing else a run takes: a flag beside --from-json would be a second answer to
 // a question the request already answers, or an answer the request left out on
 // purpose.
 func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string) error {
 	var given []string
 	opts.flags.VisitAll(func(flag *pflag.Flag) {
-		if flag.Changed && flag.Name != "json" {
+		if flag.Changed && flag.Name != "from-json" {
 			given = append(given, "--"+flag.Name)
 		}
 	})
 	if len(given) > 0 {
-		return fmt.Errorf("--json reads the whole request from stdin; put %s in it instead", strings.Join(given, ", "))
+		return fmt.Errorf("--from-json reads the whole request from stdin; put %s in it instead", strings.Join(given, ", "))
 	}
 	if len(args) > 0 {
-		return errors.New("--json reads the request from stdin; put SOURCE in its \"source\" and the prompt in its \"prompt\"")
+		return errors.New("--from-json reads the request from stdin; put SOURCE in its \"source\" and the prompt in its \"prompt\"")
 	}
 	var req runJSONRequest
 	decoder := json.NewDecoder(cmd.InOrStdin())
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
-		return fmt.Errorf("--json: read the request from stdin: %w", err)
+		return fmt.Errorf("--from-json: read the request from stdin: %w", err)
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return errors.New("--json: stdin holds more than one request")
+		return errors.New("--from-json: stdin holds more than one request")
 	}
 	grants, err := req.grants()
 	if err != nil {
@@ -109,7 +109,7 @@ func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string
 	opts.noSource = req.NoSource
 	if req.Source != "" {
 		if req.NoSource {
-			return errors.New("--json: \"source\" and \"noSource\" say opposite things; give one")
+			return errors.New("--from-json: \"source\" and \"noSource\" say opposite things; give one")
 		}
 		source, err := runSourceArgument(req.Source)
 		if err != nil {
@@ -142,7 +142,7 @@ func (req runJSONRequest) grants() ([]apimodel.SandboxGrant, error) {
 			grant.SetSecretId(apiclientgen.NewOptString(secret))
 			grant.SetEnvVar(apiclientgen.NewOptString(envVar))
 		default:
-			return nil, fmt.Errorf(`--json: grants[%d]: want {"id": ID} for a well-known credential, such as com.github.api, or {"secret": SECRET, "envVar": ENV_VAR}, not both`, i)
+			return nil, fmt.Errorf(`--from-json: grants[%d]: want {"id": ID} for a well-known credential, such as com.github.api, or {"secret": SECRET, "envVar": ENV_VAR}, not both`, i)
 		}
 		grant.SetHosts(in.Hosts)
 		for _, use := range in.Uses {
@@ -151,16 +151,16 @@ func (req runJSONRequest) grants() ([]apimodel.SandboxGrant, error) {
 			}
 		}
 		if len(grant.Uses) == 0 {
-			return nil, fmt.Errorf(`--json: grants[%d]: want at least one use, as "uses": [{"description": "what it is for"}]`, i)
+			return nil, fmt.Errorf(`--from-json: grants[%d]: want at least one use, as "uses": [{"description": "what it is for"}]`, i)
 		}
 		// Every grant carries the policy it is held to (#312), checked here
 		// as discobox-access checks a request's.
 		asked, err := writtenPolicy(in.Statements, in.Definitions, `"statements"`, `"definitions"`)
 		if err != nil {
-			return nil, fmt.Errorf("--json: grants[%d]: %w", i, err)
+			return nil, fmt.Errorf("--from-json: grants[%d]: %w", i, err)
 		}
 		if asked == nil {
-			return nil, fmt.Errorf(`--json: grants[%d]: want the policy it carries, as "statements": ["allow read on anything in repository \"org/repo\""], with "definitions" for every word that is not a default`, i)
+			return nil, fmt.Errorf(`--from-json: grants[%d]: want the policy it carries, as "statements": ["allow read on anything in repository \"org/repo\""], with "definitions" for every word that is not a default`, i)
 		}
 		grant.SetPolicy(apiclientgen.NewOptAccessPolicy(*asked))
 		grants = append(grants, grant)

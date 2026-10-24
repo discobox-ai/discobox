@@ -11,7 +11,7 @@ import (
 )
 
 // Skills is the skills screen's listing: the project's skills sources on the
-// server named, then client.yaml's new.skills, which are this machine's
+// server named, then client.yaml's run.skills, which are this machine's
 // whichever server the window is on (ADR 26-10-14-894 §3).
 func (d *apiDataSource) Skills(ctx context.Context, server string) (tui.SkillsListing, error) {
 	d, err := d.on(ctx, server)
@@ -38,7 +38,7 @@ func (d *apiDataSource) Skills(ctx context.Context, server string) (tui.SkillsLi
 			Added:   source.CreatedAt,
 		})
 	}
-	for _, skill := range cfg.New.Skills {
+	for _, skill := range cfg.Run.Skills {
 		listing.Entries = append(listing.Entries, tui.SkillsEntry{Value: skill, Label: sourceref.Display(skill, home)})
 	}
 	return listing, nil

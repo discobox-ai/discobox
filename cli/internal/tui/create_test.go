@@ -257,7 +257,7 @@ func TestTheCreateCardFoldsItsOptionsUntilTab(t *testing.T) {
 	}
 }
 
-// The User skills row left alone is client.yaml's new.userSkills, so the
+// The User skills row left alone is client.yaml's run.userSkills, so the
 // request names neither way; a command that said either way keeps saying it.
 func TestUserSkillsLeftAloneAreTheConfigurations(t *testing.T) {
 	t.Parallel()

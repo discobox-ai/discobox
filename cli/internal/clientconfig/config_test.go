@@ -26,13 +26,13 @@ func TestLoadReadsTheFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	path := writeConfig(t, "new:\n  skills: [team, ~/mine, "+strings.ReplaceAll(filepath.Join(home, "abs"), `\`, `\\`)+"]\n  userSkills: true\n")
+	path := writeConfig(t, "run:\n  skills: [team, ~/mine, "+strings.ReplaceAll(filepath.Join(home, "abs"), `\`, `\\`)+"]\n  userSkills: true\n")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 	want := []string{filepath.Join(filepath.Dir(path), "team"), filepath.Join(home, "mine"), filepath.Join(home, "abs")}
-	if !cfg.Read || cfg.Path != path || !cfg.New.UserSkills || !slices.Equal(cfg.New.Skills, want) {
+	if !cfg.Read || cfg.Path != path || !cfg.Run.UserSkills || !slices.Equal(cfg.Run.Skills, want) {
 		t.Fatalf("Load() = %+v, want %s read with skills %v and userSkills", cfg, path, want)
 	}
 }
@@ -40,18 +40,18 @@ func TestLoadReadsTheFile(t *testing.T) {
 // A misspelling is an error naming the key, not a setting silently left at its
 // default (ADR 0096 §3, configuration file).
 func TestLoadRefusesAKeyNothingDefines(t *testing.T) {
-	path := writeConfig(t, "new:\n  userSkils: true\n")
+	path := writeConfig(t, "run:\n  userSkils: true\n")
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "userSkils") || !strings.Contains(err.Error(), path) {
 		t.Fatalf("Load() error = %v, want one naming userSkils and %s", err, path)
 	}
 }
 
-// A Git URL in new.skills names a skills source, not a path, and is kept as
+// A Git URL in run.skills names a skills source, not a path, and is kept as
 // written; GitHub shorthand is the URL it stands for, unless the file's
 // directory holds that path (ADR 26-10-15-664).
 func TestLoadReadsSkillsRepositoriesAsSources(t *testing.T) {
-	path := writeConfig(t, "new:\n  skills: [\"https://github.com/acme/tools@main//agents/skills\", \"acme/tools//skills\", \"local/skills\"]\n")
+	path := writeConfig(t, "run:\n  skills: [\"https://github.com/acme/tools@main//agents/skills\", \"acme/tools//skills\", \"local/skills\"]\n")
 	if err := os.MkdirAll(filepath.Join(filepath.Dir(path), "local", "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -64,8 +64,8 @@ func TestLoadReadsSkillsRepositoriesAsSources(t *testing.T) {
 		"https://github.com/acme/tools.git//skills",
 		filepath.Join(filepath.Dir(path), "local", "skills"),
 	}
-	if !slices.Equal(cfg.New.Skills, want) {
-		t.Fatalf("skills = %v, want %v", cfg.New.Skills, want)
+	if !slices.Equal(cfg.Run.Skills, want) {
+		t.Fatalf("skills = %v, want %v", cfg.Run.Skills, want)
 	}
 }
 
@@ -73,17 +73,17 @@ func TestLoadReadsSkillsRepositoriesAsSources(t *testing.T) {
 // naming it, and the file still loads for the command that removes it.
 func TestLoadKeepsASkillsEntryItCannotRead(t *testing.T) {
 	const entry = "git@github.com:acme/tools//../up"
-	writeConfig(t, "new:\n  skills: [\""+entry+"\"]\n")
+	writeConfig(t, "run:\n  skills: [\""+entry+"\"]\n")
 	cfg, err := Load()
-	if err != nil || !slices.Equal(cfg.New.Skills, []string{entry}) {
-		t.Fatalf("Load() = %v, %v; want %s kept as written", cfg.New.Skills, err, entry)
+	if err != nil || !slices.Equal(cfg.Run.Skills, []string{entry}) {
+		t.Fatalf("Load() = %v, %v; want %s kept as written", cfg.Run.Skills, err, entry)
 	}
 }
 
 func TestLoadRefusesAnEmptySkillsDirectory(t *testing.T) {
-	writeConfig(t, "new:\n  skills: [\"\"]\n")
-	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "new.skills[0]") {
-		t.Fatalf("Load() error = %v, want one naming new.skills[0]", err)
+	writeConfig(t, "run:\n  skills: [\"\"]\n")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "run.skills[0]") {
+		t.Fatalf("Load() error = %v, want one naming run.skills[0]", err)
 	}
 }
 
@@ -97,7 +97,7 @@ func TestLoadWithoutAFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg, err := Load()
-	if err != nil || cfg.Read || !reflect.DeepEqual(cfg.New, New{}) {
+	if err != nil || cfg.Read || !reflect.DeepEqual(cfg.Run, Run{}) {
 		t.Fatalf("Load() = %+v, %v; want nothing read and nothing set", cfg, err)
 	}
 
@@ -131,8 +131,8 @@ func TestUncommentedExampleConfiguresNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() of the uncommented reference error = %v", err)
 	}
-	if !reflect.DeepEqual(cfg.New, New{}) {
-		t.Fatalf("the uncommented reference configures %+v, want nothing", cfg.New)
+	if !reflect.DeepEqual(cfg.Run, Run{}) {
+		t.Fatalf("the uncommented reference configures %+v, want nothing", cfg.Run)
 	}
 }
 
@@ -180,9 +180,30 @@ func TestRefreshExampleWritesBesideTheFile(t *testing.T) {
 
 // The error is one line naming the key, because a console shows one line.
 func TestLoadNamesTheKeyOnOneLine(t *testing.T) {
-	path := writeConfig(t, "new:\n  userSkils: true\n  skils: []\n")
+	path := writeConfig(t, "run:\n  userSkils: true\n  skils: []\n")
 	_, err := Load()
 	if err == nil || strings.Contains(err.Error(), "\n") || !strings.HasPrefix(err.Error(), path+": line 2: field userSkils") || !strings.Contains(err.Error(), "skils not found") {
 		t.Fatalf("Load() error = %q, want one line naming both keys", err)
+	}
+}
+
+// new is run's name from when the command was `discobox new`: a file that
+// still says it is read as if it said run, and one that says both is refused.
+func TestLoadReadsNewAsRun(t *testing.T) {
+	writeConfig(t, "new:\n  skills: [\"acme/tools//skills\"]\n  userSkills: true\n")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() = %v", err)
+	}
+	if !cfg.Run.UserSkills || !slices.Equal(cfg.Run.Skills, []string{"https://github.com/acme/tools.git//skills"}) {
+		t.Fatalf("run = %+v, want new's settings", cfg.Run)
+	}
+	writeConfig(t, "new:\n  userSkils: true\n")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "userSkils") {
+		t.Fatalf("Load() error = %v, want new's unknown key named", err)
+	}
+	writeConfig(t, "run:\n  userSkills: true\nnew:\n  userSkills: false\n")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "keep run") {
+		t.Fatalf("Load() error = %v, want both sections refused", err)
 	}
 }

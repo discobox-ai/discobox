@@ -15,13 +15,13 @@ func TestNewSkillsReadsTheFileAsItIsNow(t *testing.T) {
 	dir := t.TempDir()
 	configFile := filepath.Join(dir, "client.yaml")
 	t.Setenv("DISCOBOX_CLIENT_CONFIG_FILE", configFile)
-	if err := os.WriteFile(configFile, []byte("new:\n  skils: [team]\n"), 0o644); err != nil {
+	if err := os.WriteFile(configFile, []byte("run:\n  skils: [team]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := newSkills(nil, nil); err == nil {
 		t.Fatal("newSkills() with a misspelled key = nil error, want one")
 	}
-	if err := os.WriteFile(configFile, []byte("new:\n  skills: [team]\n  userSkills: true\n"), 0o644); err != nil {
+	if err := os.WriteFile(configFile, []byte("run:\n  skills: [team]\n  userSkills: true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	dirs, user, err := newSkills(nil, nil)
@@ -35,7 +35,7 @@ func TestNewSkillsReadsTheFileAsItIsNow(t *testing.T) {
 	}
 	// And a file that does not parse stops a create they would not have
 	// needed it for.
-	if err := os.WriteFile(configFile, []byte("new:\n  skils: [team]\n"), 0o644); err != nil {
+	if err := os.WriteFile(configFile, []byte("run:\n  skils: [team]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := newSkills([]string{"x"}, &no); err == nil {

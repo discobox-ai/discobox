@@ -23,12 +23,13 @@ import (
 // the command that prints a new one (ADR 26-09-25-122 §1).
 type secretRenewalOptions struct {
 	refreshCommand string
-	ttl            string
+	ttl            *lifetime.Flag
 }
 
 func addSecretRenewalFlags(flags *pflag.FlagSet, opts *secretRenewalOptions) {
 	flags.StringVar(&opts.refreshCommand, "refresh-command", "", "Command that prints a new value on this machine, such as 'gh auth token'; run without a shell, and offered to whoever renews the token (\"\" removes it)")
-	flags.StringVar(&opts.ttl, "ttl", "", "How long a value is good for before a new one is asked for: 5m, 1h, or forever (default 5m with --refresh-command)")
+	opts.ttl = lifetime.NewFlag()
+	flags.Var(opts.ttl, "ttl", "How long a value is good for before a new one is asked for: 5m, 1h, or forever (default 5m with --refresh-command)")
 }
 
 // apply sets what the flags say on a body's setters. The command is split as
@@ -41,11 +42,7 @@ func (o secretRenewalOptions) apply(flags *pflag.FlagSet, setCommand func([]stri
 		}
 		setCommand(command)
 	}
-	seconds, given, err := grantLifetime(flags, "ttl", o.ttl)
-	if err != nil {
-		return err
-	}
-	if given {
+	if seconds, given := o.ttl.Seconds(); given {
 		setTTL(seconds)
 	}
 	return nil
@@ -135,7 +132,8 @@ func (a *App) newSecretGrantListCommand() *cobra.Command {
 }
 
 func (a *App) newSecretGrantCreateCommand() *cobra.Command {
-	var secretRef, scope, scopeKey, envVar, ttl string
+	var secretRef, scope, scopeKey, envVar string
+	ttl := lifetime.NewFlag()
 	var uses, hosts, statements []string
 	definitions := policy.Definitions{}
 	var delegate bool
@@ -179,11 +177,7 @@ variable. The policy is parsed and checked before it is sent.`, RunE: func(cmd *
 			body.SetScopeKey(apiclientgen.NewOptString(strings.TrimSpace(scopeKey)))
 		}
 		body.Hosts = grantHosts(hosts)
-		seconds, given, err := grantLifetime(cmd.Flags(), "grant-ttl", ttl)
-		if err != nil {
-			return err
-		}
-		if given {
+		if seconds, given := ttl.Seconds(); given {
 			body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(seconds))
 		}
 		// Uses make it the agent credentials shape: nothing in the sandbox can
@@ -230,7 +224,7 @@ variable. The policy is parsed and checked before it is sent.`, RunE: func(cmd *
 	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, harnessConfig, or project")
 	cmd.Flags().StringVar(&scopeKey, "scope-key", "", "Discobox ID or harness config ID the scope resolves against (defaults to project ID for project scope)")
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Limit the grant to these hosts, comma-separated or repeated; defaults to the secret's host")
-	cmd.Flags().StringVar(&ttl, "grant-ttl", "", grantTTLCreateFlagUsage)
+	cmd.Flags().Var(ttl, "grant-ttl", grantTTLCreateFlagUsage)
 	cmd.Flags().StringArrayVar(&uses, "use", nil, "The job the credential is taken for (repeatable). With uses the credential is never injected into the discobox: only `discobox-access` can take it, one use at a time, under the policy --statement gives. A host is required")
 	cmd.Flags().StringVar(&envVar, "env-var", "", "Environment variable an agent receives the credential in; required with --use")
 	cmd.Flags().StringArrayVar(&statements, "statement", nil, "A statement of the policy the grant carries, as a sentence (repeatable); required with --use")
@@ -300,7 +294,7 @@ func (a *App) newSecretListCommand() *cobra.Command {
 }
 
 func (a *App) newSecretGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get SECRET", Short: "Get a secret", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get SECRET", Short: "Show a secret", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -330,7 +324,8 @@ func (a *App) newSecretGetCommand() *cobra.Command {
 const secretFormatFlagUsage = `Shape of the sentinels that stand in for this secret: literal text with {charset:length} tokens, such as 'sk-ant-oat01-{base64url:95}'. Charsets: digits, hex, HEX, lower, upper, alnum, base62, base32, base64url, base64. Default: read from the value` //nolint:gosec // A template for sentinels, not a credential.
 
 func (a *App) newSecretCreateCommand() *cobra.Command {
-	var name, secretType, host, ttl, wellKnownID, format string
+	var name, secretType, host, wellKnownID, format string
+	ttl := lifetime.NewFlag()
 	var value secretValueOptions
 	var renewal secretRenewalOptions
 	cmd := &cobra.Command{Use: "create --name NAME --type TYPE", Short: "Create a secret", Long: `Create a secret.
@@ -412,7 +407,7 @@ reading it from the value gets it wrong, and is kept when the value changes.`, R
 	cmd.Flags().StringVar(&name, "name", "", "Secret name")
 	cmd.Flags().StringVar(&secretType, "type", "", "Secret type: token, oauth, or exchange (default token)")
 	cmd.Flags().StringVar(&host, "host", "", "Optional host hint, such as github.com")
-	cmd.Flags().StringVar(&ttl, "max-grant-ttl", "", maxGrantTTLCreateFlagUsage)
+	cmd.Flags().Var(ttl, "max-grant-ttl", maxGrantTTLCreateFlagUsage)
 	cmd.Flags().StringVar(&format, "format", "", secretFormatFlagUsage)
 	cmd.Flags().StringVar(&wellKnownID, "well-known", "", "Well-known credential the secret answers, such as com.github.api; fills in the name, host, and refresh command it suggests")
 	cmd.Flags().StringArray("route", nil, secretRouteFlagUsage)
@@ -452,7 +447,8 @@ func applyWellKnownDefaults(flags *pflag.FlagSet, id string, name, host *string,
 }
 
 func (a *App) newSecretUpdateCommand() *cobra.Command {
-	var name, host, ttl, format string
+	var name, host, format string
+	ttl := lifetime.NewFlag()
 	var value secretValueOptions
 	var renewal secretRenewalOptions
 	cmd := &cobra.Command{Use: "update SECRET", Short: "Update a secret", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -495,10 +491,10 @@ func (a *App) newSecretUpdateCommand() *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&name, "name", "", "Secret name")
 	cmd.Flags().StringVar(&host, "host", "", "Optional host hint, such as github.com")
-	cmd.Flags().StringVar(&ttl, "max-grant-ttl", "", maxGrantTTLUpdateFlagUsage)
+	cmd.Flags().Var(ttl, "max-grant-ttl", maxGrantTTLUpdateFlagUsage)
 	cmd.Flags().StringVar(&format, "format", "", secretFormatFlagUsage+`; "" goes back to that. A running discobox keeps the sentinel already in its environment`)
 	cmd.Flags().StringArray("route", nil, secretRouteFlagUsage+"; replaces the secret's routes")
-	cmd.Flags().Bool("no-routes", false, "Remove the secret's routes, leaving where it may be sent to its grants")
+	addClearFlag(cmd, "route", "Remove the secret's routes, leaving where it may be sent to its grants")
 	addSecretValueFlags(cmd.Flags(), &value)
 	addSecretRenewalFlags(cmd.Flags(), &renewal)
 	return cmd
@@ -573,7 +569,7 @@ func (a *App) newSecretRequestListCommand() *cobra.Command {
 }
 
 func (a *App) newSecretRequestGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get REQUEST_ID", Short: "Get a secret request", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get REQUEST_ID", Short: "Show a secret request", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -629,11 +625,12 @@ func (a *App) newSecretRequestCreateCommand() *cobra.Command {
 }
 
 func (a *App) newSecretRequestApproveCommand() *cobra.Command {
-	var secretID, scope, ttl string
+	var secretRef, scope string
+	ttl := lifetime.NewFlag()
 	var uses, hosts []string
 	var policyAsAsked bool
 	var auto autoApproval
-	cmd := &cobra.Command{Use: "approve REQUEST_ID [--secret-id SECRET] [--auto]", Short: "Approve a secret request, optionally making an approval rule of it", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "approve REQUEST_ID [--secret SECRET] [--auto]", Short: "Approve a secret request, optionally making an approval rule of it", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -650,8 +647,8 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 		// A request for a well-known credential whose secret is marked knows
 		// which secret answers it, so the secret is named only when there is a
 		// choice to make.
-		if strings.TrimSpace(secretID) != "" {
-			selectedSecretID, err := a.resolveSecretID(cmd.Context(), client, projectID, secretID)
+		if strings.TrimSpace(secretRef) != "" {
+			selectedSecretID, err := a.resolveSecretID(cmd.Context(), client, projectID, secretRef)
 			if err != nil {
 				return err
 			}
@@ -661,11 +658,7 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 		// grants what the agent asked for, else an hour, within the secret's
 		// limit — what the window opens on — so approving reads nothing first
 		// (ADR 26-09-30-782 §4).
-		seconds, given, err := grantLifetime(cmd.Flags(), "grant-ttl", ttl)
-		if err != nil {
-			return err
-		}
-		if given {
+		if seconds, given := ttl.Seconds(); given {
 			body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(seconds))
 		}
 		if strings.TrimSpace(scope) != "" {
@@ -731,11 +724,11 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 		// The rule's text is what was approved, so it is read back whole.
 		return a.writeRuleMadeBy(cmd, client, projectID, request)
 	}}
-	cmd.Flags().StringVar(&secretID, "secret-id", "", "Secret to grant, by name or ID")
+	cmd.Flags().StringVar(&secretRef, "secret", "", "Secret to grant, by name or ID")
 	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, harnessConfig, or project (defaults to sandbox for sandbox requests, else project)")
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Hosts the grant is limited to, comma-separated or repeated; defaults to the hosts the request named")
 	cmd.Flags().StringArrayVar(&uses, "use", nil, "Replace an agent's declared uses with these (repeatable); omit to approve them as asked")
-	cmd.Flags().StringVar(&ttl, "grant-ttl", "", grantTTLApproveFlagUsage)
+	cmd.Flags().Var(ttl, "grant-ttl", grantTTLApproveFlagUsage)
 	cmd.Flags().BoolVar(&policyAsAsked, "policy-as-asked", false, "Approve the policy the request asks for, as 'discobox secret request get' shows it; required for a request that asks for one, and implied by --auto")
 	auto.addFlags(cmd)
 	return cmd
@@ -854,25 +847,7 @@ const (
 	maxGrantTTLUpdateFlagUsage = "Longest a grant on this secret may live: 1h, 3d, 2w, 1mo, or forever (omit to leave it as it is)"
 )
 
-// grantLifetime reads one of those flags, reporting whether it was given at all
-// — absence and "forever" are different answers, and only one of them is zero.
-//
-// It is a duration rather than a count of seconds because a week is 604800 and
-// nobody types that on purpose. A bare number is still read as seconds, so a
-// script that passed one, and the server's own remedies ("--max-grant-ttl 0"),
-// keep meaning what they meant.
-func grantLifetime(flags *pflag.FlagSet, name, value string) (int64, bool, error) {
-	if !flags.Changed(name) {
-		return 0, false, nil
-	}
-	d, err := lifetime.Parse(value)
-	if err != nil {
-		return 0, false, fmt.Errorf("--%s: %w", name, err)
-	}
-	return lifetime.Seconds(d), true, nil
-}
-
-func createSecretBody(flags *pflag.FlagSet, name, secretType, host, ttl string, valueOpts secretValueOptions) (*apimodel.CreateSecretBody, error) {
+func createSecretBody(flags *pflag.FlagSet, name, secretType, host string, ttl *lifetime.Flag, valueOpts secretValueOptions) (*apimodel.CreateSecretBody, error) {
 	secretType = strings.TrimSpace(secretType)
 	if strings.TrimSpace(name) == "" {
 		return nil, fmt.Errorf("secret name is required")
@@ -898,11 +873,7 @@ func createSecretBody(flags *pflag.FlagSet, name, secretType, host, ttl string, 
 	if strings.TrimSpace(host) != "" {
 		body.SetHost(apiclientgen.NewOptString(strings.TrimSpace(host)))
 	}
-	seconds, given, err := grantLifetime(flags, "max-grant-ttl", ttl)
-	if err != nil {
-		return nil, err
-	}
-	if given {
+	if seconds, given := ttl.Seconds(); given {
 		body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(seconds))
 	}
 	if routes, ok, err := secretRoutesFlags(flags); err != nil {
@@ -915,14 +886,11 @@ func createSecretBody(flags *pflag.FlagSet, name, secretType, host, ttl string, 
 
 const secretRouteFlagUsage = "Where the secret may be sent, whoever holds it, as HOST[/PATH][=USE]: a host covers itself and every host beneath it, a path is a prefix on whole segments, and a use judges every request on the route against it, while a route without one sends them unjudged. Every request it is sent in must fall on one; the most specific decides (repeatable)"
 
-// secretRoutesFlags reads --route, and --no-routes where the command has it.
-// ok reports whether either was given; --no-routes is an empty list, which
-// clears.
+// secretRoutesFlags reads --route, and --clear-route where the command has
+// it. ok reports whether either was given; --clear-route is an empty list,
+// which clears.
 func secretRoutesFlags(flags *pflag.FlagSet) (routes []apimodel.SecretRouteInput, ok bool, err error) {
-	if flags.Changed("no-routes") {
-		if flags.Changed("route") {
-			return nil, false, fmt.Errorf("--no-routes cannot be combined with --route")
-		}
+	if listCleared(flags, "route") {
 		return []apimodel.SecretRouteInput{}, true, nil
 	}
 	if !flags.Changed("route") {
@@ -949,7 +917,7 @@ func secretRoutesFlags(flags *pflag.FlagSet) (routes []apimodel.SecretRouteInput
 	return routes, true, nil
 }
 
-func updateSecretBody(flags *pflag.FlagSet, name, host, ttl string, valueOpts secretValueOptions) (*apimodel.UpdateSecretBody, error) {
+func updateSecretBody(flags *pflag.FlagSet, name, host string, ttl *lifetime.Flag, valueOpts secretValueOptions) (*apimodel.UpdateSecretBody, error) {
 	body := &apimodel.UpdateSecretBody{}
 	if flags.Changed("name") {
 		body.SetName(apiclientgen.NewOptString(strings.TrimSpace(name)))
@@ -957,11 +925,7 @@ func updateSecretBody(flags *pflag.FlagSet, name, host, ttl string, valueOpts se
 	if flags.Changed("host") {
 		body.SetHost(apiclientgen.NewOptString(strings.TrimSpace(host)))
 	}
-	seconds, given, err := grantLifetime(flags, "max-grant-ttl", ttl)
-	if err != nil {
-		return nil, err
-	}
-	if given {
+	if seconds, given := ttl.Seconds(); given {
 		body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(seconds))
 	}
 	if secretValueFlagsChanged(flags) {

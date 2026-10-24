@@ -24,15 +24,13 @@ const versionServerTimeout = 5 * time.Second
 //
 // Anything driving a CLI without reading its help reaches for both spellings,
 // and one of them answering "unknown command" is a worse trade than a command
-// nobody has to be told about. It is hidden rather than listed: --version is
-// the spelling the help documents, and a command list is for the things you
-// cannot guess.
+// nobody has to be told about. It is listed, as -v/--version is: a spelling
+// that works is one the help shows (cli/DESIGN.md, "Command Naming").
 func (a *App) newVersionCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:    "version",
-		Short:  "Print the client and server versions",
-		Hidden: true,
-		Args:   cobra.NoArgs,
+		Use:   "version",
+		Short: "Print the client and server versions",
+		Args:  cobra.NoArgs,
 		// The root's hook resolves the leader key and starts the parent watch,
 		// and a version needs neither. What somebody diagnosing a broken
 		// environment asks first is what they are running, so an environment
