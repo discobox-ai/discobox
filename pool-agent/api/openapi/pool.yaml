@@ -494,14 +494,8 @@ components:
             type: object
         BundlePin:
             additionalProperties: false
-            description: A bundle a sandbox is pinned to (ADR 26-10-16-423 §§7, 13), as the asset API addresses it.
+            description: A bundle a sandbox is pinned to (ADR 26-10-16-423 §§7, 13), as the asset API addresses it. Nothing says which bundle of the sandbox it is (ADR 26-10-24-953 §1).
             properties:
-                kind:
-                    description: Which bundle of the sandbox this is. The platform's is the one whose agent layer the pool places in the sandbox before each start.
-                    enum:
-                    - platform
-                    - harness
-                    type: string
                 name:
                     description: The bundle's name, the last component of its reference's repository, which the server's asset routes and assets.discobox.internal address it by.
                     type: string
@@ -510,7 +504,6 @@ components:
                     pattern: ^sha256:[a-f0-9]{64}$
                     type: string
             required:
-            - kind
             - name
             - digest
             type: object
@@ -523,8 +516,11 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                agent:
+                    "$ref": "#/components/schemas/BundlePin"
+                    description: The agent bundle the pool places in the sandbox before each start (ADR 26-10-24-953 §2), the agent alone. A sandbox sent bundles is sent its agent; absent is none, and then no bundles either.
                 bundles:
-                    description: The bundles the sandbox is pinned to, each by kind. The pool records them, replacing what an earlier create recorded, and assets.discobox.internal answers the sandbox only manifests and blobs they reach. Absent or empty is none.
+                    description: The bundles the sandbox applies, in order (ADR 26-10-24-953 §1). The pool records them, replacing what an earlier create recorded, and places them as the box's pins; assets.discobox.internal answers the sandbox only manifests and blobs they reach. Absent or empty is none.
                     items:
                         $ref: '#/components/schemas/BundlePin'
                     nullable: true

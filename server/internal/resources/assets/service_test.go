@@ -459,7 +459,7 @@ func TestAnUnresolvablePlatformIsABadGatewayNotANotFound(t *testing.T) {
 	read(t, mustBlob(t, f, f.acme.layer))
 	// And once it resolves, after the wait a failure is held for, it is too.
 	f.registry.down = false
-	f.service.now = func() time.Time { return time.Now().Add(platformRetryFailed) }
+	f.service.now = func() time.Time { return time.Now().Add(releaseRetryFailed) }
 	read(t, mustBlob(t, f, f.platform.layer))
 }
 
@@ -518,7 +518,7 @@ func TestPruneRemovesWhatNoPinReaches(t *testing.T) {
 	if removed, err := f.service.Prune(context.Background()); err != nil || removed != 0 {
 		t.Fatalf("a sweep inside the grace removed %d, %v", removed, err)
 	}
-	f.service.now = func() time.Time { return time.Now().Add(pruneGrace + platformRetry) }
+	f.service.now = func() time.Time { return time.Now().Add(pruneGrace + releaseRetry) }
 	removed, err := f.service.Prune(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -539,8 +539,8 @@ func TestPruneRemovesWhatNoPinReaches(t *testing.T) {
 	}
 	// Nothing goes while the platform cannot be resolved.
 	f.registry.down = true
-	f.service.now = func() time.Time { return time.Now().Add(2 * (pruneGrace + platformRetry)) }
-	f.service.platform = &platformPins{ref: platformRef, resolve: f.service.resolve, now: f.service.now}
+	f.service.now = func() time.Time { return time.Now().Add(2 * (pruneGrace + releaseRetry)) }
+	f.service.platform = &releasePins{what: "platform bundle", ref: platformRef, resolve: f.service.resolve, now: f.service.now}
 	if _, err := f.service.Prune(context.Background()); err == nil {
 		t.Fatal("pruned with the platform unresolved")
 	}

@@ -99,10 +99,10 @@ type Provider interface {
 	// they read, so a failure part way through arrives as a read error rather
 	// than as this call's.
 	//
-	// bundles are the sandbox's pins. The tree's `data` and `sources` are read
-	// by the sandbox agent's export mode, the agent of its platform pin, and
+	// delivered is the sandbox's pins. The tree's `data` and `sources` are
+	// read by the sandbox agent's export mode, the agent it is pinned to, and
 	// an archived sandbox has no container left to name it (ADR 0129 §1).
-	ExportTree(ctx context.Context, ref SandboxRef, poolID string, bundles []BundlePin, state []byte) (io.ReadCloser, error)
+	ExportTree(ctx context.Context, ref SandboxRef, poolID string, delivered Delivery, state []byte) (io.ReadCloser, error)
 	// ImportTree restores a durable tree onto a pool for a sandbox that has no
 	// runtime and, at this point, no row either (ADR 0123 §3). The pool is named
 	// rather than read from runtime state for exactly that reason: there is no
@@ -263,25 +263,25 @@ type CreateOptions struct {
 	// Platform is the sandbox's, which a pool-backed provider places by: a
 	// pool that hosts another platform refuses the sandbox (ADR 0145 §1).
 	Platform platform.Platform
-	// Bundles are the bundles the sandbox is pinned to (ADR 26-10-16-423
-	// §§7, 13). A pool records them as what the box may fetch from
-	// assets.discobox.internal, and places the platform's agent layer in the
-	// box before each start.
+	// Delivery is what the sandbox's pool places in it and has it apply (ADR
+	// 26-10-16-423 §§7, 13, ADR 26-10-24-953 §§1–2). A pool records it as what
+	// the box may fetch from assets.discobox.internal, and places the agent
+	// in the box before each start.
+	Delivery Delivery
+}
+
+// Delivery is what a box is delivered: the agent bundle its pool places in
+// it, and the bundles it applies, in order. Nothing says which bundle is
+// which. The zero Delivery is none: a sandbox from before bundles, or one
+// pinned to something no box can fetch.
+type Delivery struct {
+	Agent   BundlePin
 	Bundles []BundlePin
 }
 
-// BundleKind is which of a sandbox's bundles a pin is.
-type BundleKind string
-
-const (
-	BundlePlatform BundleKind = "platform"
-	BundleHarness  BundleKind = "harness"
-)
-
 // BundlePin is a bundle as the asset API addresses it: its name and the
-// manifest digest a sandbox is pinned to, and which of its bundles it is.
+// manifest digest a sandbox is pinned to.
 type BundlePin struct {
-	Kind   BundleKind
 	Name   string
 	Digest string
 }

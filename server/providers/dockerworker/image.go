@@ -57,6 +57,9 @@ type ServerDefaults struct {
 	// PoolAgentBundle overrides the pool-agent bundle; no provider has a
 	// setting of its own for it.
 	PoolAgentBundle string
+	// AgentBundle overrides the agent bundle, which every box is placed with
+	// (ADR 26-10-24-953 §2); no provider has a setting of its own for it.
+	AgentBundle string
 	// ImageRetention is how long an unused Discobox image is kept. Zero means
 	// unconfigured, which is not the same as zero: see Config.ImageRetention.
 	ImageRetention time.Duration
@@ -115,6 +118,17 @@ func EffectivePoolAgentBundle(defaults ServerDefaults) string {
 		return override
 	}
 	return DefaultPoolAgentBundle
+}
+
+// EffectiveAgentBundle resolves the agent bundle: the release manifest when
+// one is selected, else the server's setting, which the server's
+// configuration defaults to the one this build ships, as it does the
+// platform bundle's. None is a server that names no agent.
+func EffectiveAgentBundle(defaults ServerDefaults) string {
+	if defaults.Release != nil {
+		return defaults.Release.Bundles.Agent
+	}
+	return strings.TrimSpace(defaults.AgentBundle)
 }
 
 // PoolImageSource reports where the effective pool image came from.

@@ -869,11 +869,15 @@ never moves a running sandbox, and they are what the pool lets the box fetch
 - **A sandbox from before bundles is pinned to them regardless.** It carries
   the runnable harness image it ran and no platform pin, and no release
   builds that image any more, so `PinUndeliveredSandboxes` — on every start,
-  each time the platform moves, and every ten minutes — pins every such
+  each time a release bundle moves, and every ten minutes — pins every such
   sandbox that is settled
-  with no container running onto its config's bundle and the current platform
-  whatever the project's policy: a stopped or failed one as intent, an
-  archived one in place. A running one keeps its container, which its pool
+  with no container running onto the current platform and agent and its
+  config's bundle whatever the project's policy: a stopped or failed one as
+  intent, an archived one in place. A sandbox pinned to a platform and to no
+  agent — one pinned before the agent was a bundle of its own (ADR
+  26-10-24-953 §2) — is pinned to the release's agent in place, running or
+  not: neither fingerprint includes it, and its pool places it at the next
+  start. A running one keeps its container, which its pool
   keeps while its spec does not move, and reports its upgrade until it stops,
   is upgraded or repaired.
 - **Nothing to move to opts a sandbox out.** A missing harness config, one
@@ -881,8 +885,8 @@ never moves a running sandbox, and they are what the pool lets the box fetch
   has built yet, and harness mode `config`.
 - **Enforcement is on the pool host, not here.** The control plane sends the
   pins; `pool-agent/sandboxruntime` builds the container from the sandbox base
-  image and places the platform's agent, and the box fetches only what its
-  pins name. Whether the base image can be obtained at all is knowable only
+  image and places the agent it is pinned to, and the box fetches only what
+  its pins name. Whether the base image can be obtained at all is knowable only
   there, so the server never gates on it and surfaces the agent's failure
   instead (ADR 0021 §5).
 

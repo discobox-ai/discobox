@@ -45,14 +45,13 @@ type treeProvider struct {
 	// rather than out of runtime state, which is what lets a discobox whose
 	// create never reached an agent still be exported.
 	exportedPool string
-	// exportedBundles are the bundles ExportSandbox asked the tree to be read
-	// with.
-	exportedBundles []sandbox.BundlePin
+	// exported is what ExportSandbox asked the tree to be read with.
+	exported sandbox.Delivery
 }
 
-func (p *treeProvider) ExportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, bundles []sandbox.BundlePin, _ []byte) (io.ReadCloser, error) {
+func (p *treeProvider) ExportTree(_ context.Context, _ sandbox.SandboxRef, poolID string, delivered sandbox.Delivery, _ []byte) (io.ReadCloser, error) {
 	p.exportedPool = poolID
-	p.exportedBundles = bundles
+	p.exported = delivered
 	return io.NopCloser(bytes.NewReader(p.exportTree)), nil
 }
 
@@ -114,7 +113,7 @@ func transferFixture(t *testing.T) (context.Context, *Service, *store.Store, *tr
 	svc := NewService(appStore, manager, "user-1", engine)
 	// A box on a harness bundle applies it onto the release's platform, which
 	// a create pins beside it.
-	svc.SetPlatformBundles(&fakePlatform{pin: services.BundlePin{Reference: platformRef, Digest: platformOld}})
+	svc.SetReleaseBundles(release(platformOld))
 	return ctx, svc, appStore, provider
 }
 
@@ -207,8 +206,8 @@ func TestImportRestoresTheTreeBeforeTheRowExists(t *testing.T) {
 	// as a create's do. They cannot come from the archive: everything else
 	// the harness contributes to the container is read off this row, and the
 	// archive's runnable image is one no harness is any more.
-	if sb.Bundle != config.Bundle || sb.BundleDigest != codexBundleV1 || sb.PlatformBundleDigest != platformOld {
-		t.Errorf("pins = %q@%q, platform %q, want the destination harness config's and release's", sb.Bundle, sb.BundleDigest, sb.PlatformBundleDigest)
+	if harness := sb.HarnessPin(); harness.Reference != config.Bundle || harness.Digest != codexBundleV1 || sb.PlatformPin().Digest != platformOld || sb.AgentBundleDigest != agentV1 {
+		t.Errorf("pins = %+v, platform %q, agent %q, want the destination harness config's and release's", harness, sb.PlatformPin().Digest, sb.AgentBundleDigest)
 	}
 	if sb.Image != "" || sb.ImageDigest != "" {
 		t.Errorf("image = %q@%q, want the archive's image left behind", sb.Image, sb.ImageDigest)
@@ -243,9 +242,9 @@ func TestImportPinsTheBundleToTheHarnessItWillRun(t *testing.T) {
 	if sb.HarnessConfigID == nil || *sb.HarnessConfigID != claude.ID {
 		t.Fatalf("harness config = %v, want the one --harness named", sb.HarnessConfigID)
 	}
-	if sb.Bundle != claude.Bundle || sb.BundleDigest != claude.BundleDigest {
+	if harness := sb.HarnessPin(); harness.Reference != claude.Bundle || harness.Digest != claude.BundleDigest {
 		t.Errorf("bundle = %q@%q, want %q@%q: --harness moved the harness but not the bundle it applies",
-			sb.Bundle, sb.BundleDigest, claude.Bundle, claude.BundleDigest)
+			sb.HarnessPin().Reference, sb.HarnessPin().Digest, claude.Bundle, claude.BundleDigest)
 	}
 }
 
@@ -532,6 +531,7 @@ func TestExportManifestIsValidJSON(t *testing.T) {
 		SandboxManifest: model.SandboxManifest{
 			HarnessConfigID: &config.ID, Bundle: config.Bundle, BundleDigest: codexBundleV2,
 			PlatformBundle: platformRef, PlatformBundleDigest: platformOld,
+			AgentBundle: agentRef, AgentBundleDigest: agentV1,
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -571,11 +571,11 @@ func TestExportManifestIsValidJSON(t *testing.T) {
 	// The tree is read with the sandbox's own pinned bundles, the ones its
 	// box applies, not whatever its harness config names now (ADR 0129 §1).
 	want := []sandbox.BundlePin{
-		{Kind: sandbox.BundlePlatform, Name: "discobox-platform", Digest: platformOld},
-		{Kind: sandbox.BundleHarness, Name: "discobox-harness-codex", Digest: codexBundleV2},
+		{Name: "discobox-platform", Digest: platformOld},
+		{Name: "discobox-harness-codex", Digest: codexBundleV2},
 	}
-	if !slices.Equal(provider.exportedBundles, want) {
-		t.Errorf("export read with bundles %+v, want the sandbox's pins %+v", provider.exportedBundles, want)
+	if !slices.Equal(provider.exported.Bundles, want) || provider.exported.Agent != (sandbox.BundlePin{Name: "discobox-agent", Digest: agentV1}) {
+		t.Errorf("export read with %+v, want the sandbox's pins %+v and its agent", provider.exported, want)
 	}
 }
 

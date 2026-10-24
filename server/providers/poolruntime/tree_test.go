@@ -45,7 +45,7 @@ func TestExportTreeFallsBackToTheNamedPoolWhenThereIsNoRuntimeState(t *testing.T
 	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
 
 	stream, err := provider.ExportTree(context.Background(),
-		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "pool-1", nil, nil)
+		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "pool-1", sandbox.Delivery{}, nil)
 	if err != nil {
 		t.Fatalf("export with no runtime state: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestExportTreeWithoutAPoolStillReportsNotFound(t *testing.T) {
 	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
 
 	if _, err := provider.ExportTree(context.Background(),
-		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "", nil, nil); err == nil {
+		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "", sandbox.Delivery{}, nil); err == nil {
 		t.Fatal("an export with neither runtime state nor a pool was accepted")
 	}
 }
@@ -102,27 +102,27 @@ func TestPoolAgentTransportErrorDropsTheAgentsAddress(t *testing.T) {
 	}
 }
 
-// pinRecordingRuntime notes the bundles the pool agent was asked to read a
-// tree with.
+// pinRecordingRuntime notes what the pool agent was asked to read a tree
+// with.
 type pinRecordingRuntime struct {
 	*sandboxruntime.MemorySandboxRuntime
-	got *[]assetcache.Pin
+	got *assetcache.Delivery
 }
 
-func (r pinRecordingRuntime) ExportTree(ctx context.Context, sandboxID string, pins []assetcache.Pin) (io.ReadCloser, error) {
-	*r.got = pins
-	return r.MemorySandboxRuntime.ExportTree(ctx, sandboxID, pins)
+func (r pinRecordingRuntime) ExportTree(ctx context.Context, sandboxID string, delivered assetcache.Delivery) (io.ReadCloser, error) {
+	*r.got = delivered
+	return r.MemorySandboxRuntime.ExportTree(ctx, sandboxID, delivered)
 }
 
-// The pins cross the hop to the pool agent intact: the agent of the platform
-// one reads the tree (ADR 0129 §1). The query names here are mirrored rather
+// The pins cross the hop to the pool agent intact, in order: the agent they
+// name reads the tree (ADR 0129 §1). The query names here are mirrored rather
 // than imported, and this is what holds the two ends together.
 func TestExportTreeSendsThePinsToThePool(t *testing.T) {
 	memory := sandboxruntime.NewMemorySandboxRuntime()
 	if err := memory.ImportTree(context.Background(), "sandbox-1", strings.NewReader("")); err != nil {
 		t.Fatal(err)
 	}
-	var got []assetcache.Pin
+	var got assetcache.Delivery
 	controlPlaneKey, poolToken := newPoolAgentTestAuth(t, "project-1", "pool-1", poolagentserver.ScopeSandboxRead)
 	router, err := poolagentserver.NewRouter(poolagentserver.Config{
 		Identity:              poolagentserver.Identity{ProjectID: "project-1", PoolID: "pool-1"},
@@ -137,22 +137,25 @@ func TestExportTreeSendsThePinsToThePool(t *testing.T) {
 	runtimeProvider := &testRuntimeProvider{baseURL: agent.URL, client: agent.Client(), token: poolToken, runtime: memory}
 	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, &fakePoolManager{pool: activePool("pool-1"), schedulable: true})
 
-	platformDigest, harnessDigest := "sha256:"+strings.Repeat("a", 64), "sha256:"+strings.Repeat("b", 64)
-	pins := []sandbox.BundlePin{
-		{Kind: sandbox.BundlePlatform, Name: "discobox-platform", Digest: platformDigest},
-		{Kind: sandbox.BundleHarness, Name: "discobox-harness-codex", Digest: harnessDigest},
+	agentDigest, platformDigest, harnessDigest := "sha256:"+strings.Repeat("c", 64), "sha256:"+strings.Repeat("a", 64), "sha256:"+strings.Repeat("b", 64)
+	delivered := sandbox.Delivery{
+		Agent: sandbox.BundlePin{Name: "discobox-agent", Digest: agentDigest},
+		Bundles: []sandbox.BundlePin{
+			{Name: "discobox-platform", Digest: platformDigest},
+			{Name: "discobox-harness-codex", Digest: harnessDigest},
+		},
 	}
 	stream, err := provider.ExportTree(context.Background(),
-		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "pool-1", pins, nil)
+		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "pool-1", delivered, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer stream.Close()
 	want := []assetcache.Pin{
-		{Kind: assetcache.KindPlatform, Name: "discobox-platform", Digest: platformDigest},
-		{Kind: assetcache.KindHarness, Name: "discobox-harness-codex", Digest: harnessDigest},
+		{Name: "discobox-platform", Digest: platformDigest},
+		{Name: "discobox-harness-codex", Digest: harnessDigest},
 	}
-	if !slices.Equal(got, want) {
-		t.Fatalf("pool agent read with %+v, want %+v", got, want)
+	if !slices.Equal(got.Bundles, want) || got.Agent != (assetcache.Pin{Name: "discobox-agent", Digest: agentDigest}) {
+		t.Fatalf("pool agent read with %+v, want %+v and its agent", got, want)
 	}
 }

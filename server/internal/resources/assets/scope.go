@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
-	services "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 // pin is a bundle in a pool's scope: the reference it is named by, the
@@ -20,24 +20,30 @@ type pin struct {
 	release bool
 }
 
-func (p pin) name() string { return services.BundleName(p.ref) }
+func (p pin) name() string { return model.BundleName(p.ref) }
 
-// scope is every bundle a pool is answered: the platform bundle the release
-// pins, each bundle a harness config of the pool's project is pinned to, and
-// each a sandbox of it is (ADR 26-10-16-423 §§7, 13) — a sandbox keeps its
-// pins after its config and the release have moved on.
+// scope is every bundle a pool is answered: the platform and agent bundles
+// the release pins, each bundle a harness config of the pool's project is
+// pinned to, and each a sandbox of it is (ADR 26-10-16-423 §§7, 13, ADR
+// 26-10-24-953 §2) — a sandbox keeps its pins after its config and the
+// release have moved on.
 //
-// platformErr says why the platform is missing from it, when it is, so that a
-// read nothing else in scope answers fails as the server's fault rather than
-// as one out of scope.
-func (s *Service) scope(ctx context.Context, poolID string) (pins []pin, platformErr error, err error) {
+// releaseErr says why a release bundle is missing from it, when one is, so
+// that a read nothing else in scope answers fails as the server's fault
+// rather than as one out of scope.
+func (s *Service) scope(ctx context.Context, poolID string) (pins []pin, releaseErr error, err error) {
 	projectID, err := s.authorize(ctx, poolID)
 	if err != nil {
 		return nil, nil, err
 	}
-	digests, platformErr := s.platform.pins(ctx, false)
-	for _, digest := range digests {
-		pins = append(pins, pin{ref: s.platform.ref, digest: digest, release: true})
+	for _, bundle := range s.releaseBundles() {
+		digests, err := bundle.pins(ctx, false)
+		if err != nil {
+			releaseErr = errors.Join(releaseErr, err)
+		}
+		for _, digest := range digests {
+			pins = append(pins, pin{ref: bundle.ref, digest: digest, release: true})
+		}
 	}
 	harnesses, err := s.harnessPins(ctx, projectID)
 	if err != nil {
@@ -49,7 +55,8 @@ func (s *Service) scope(ctx context.Context, poolID string) (pins []pin, platfor
 		return nil, nil, fmt.Errorf("list sandbox bundles: %w", err)
 	}
 	for _, sb := range sandboxes {
-		for _, p := range []pin{{ref: sb.PlatformBundle, digest: sb.PlatformBundleDigest}, {ref: sb.Bundle, digest: sb.BundleDigest}} {
+		for _, bundle := range append(sb.BundlePins(), sb.AgentPin()) {
+			p := pin{ref: bundle.Reference, digest: bundle.Digest}
 			p.ref = strings.TrimSpace(p.ref)
 			if p.ref == "" || !imagecache.IsDigest(p.digest) || slices.ContainsFunc(pins, func(other pin) bool { return other.ref == p.ref && other.digest == p.digest }) {
 				continue
@@ -58,7 +65,7 @@ func (s *Service) scope(ctx context.Context, poolID string) (pins []pin, platfor
 			pins = append(pins, p)
 		}
 	}
-	return pins, platformErr, nil
+	return pins, releaseErr, nil
 }
 
 // harnessPins is the bundle each harness config of a project is pinned to. A

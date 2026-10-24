@@ -155,13 +155,21 @@ func newFixture(t *testing.T) *fixture {
 	return &fixture{cache: cache, server: fake, sandboxes: sandboxes, snapshots: snapshots, handler: cache.Handler()}
 }
 
+// testAgent is the agent every fixture delivery names: one the server does
+// not hold, which no read in these tests reaches.
+var testAgent = Pin{Name: "discobox-agent", Digest: digestOf([]byte("agent"))}
+
 func (f *fixture) pin(t *testing.T, sandboxID string, pins ...Pin) {
 	t.Helper()
 	parent := f.sandboxes
 	if layout.IsSnapshotID(sandboxID) {
 		parent = f.snapshots
 	}
-	if err := WriteRecord(filepath.Join(parent, sandboxID), pins); err != nil {
+	var d Delivery
+	if len(pins) > 0 {
+		d = Delivery{Agent: testAgent, Bundles: pins}
+	}
+	if err := WriteRecord(filepath.Join(parent, sandboxID), d); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -184,7 +192,7 @@ func TestConcurrentSandboxesShareOneFetch(t *testing.T) {
 	f := newFixture(t)
 	harness := newBundle(t, "harness")
 	f.server.add(harness.config, harness.layer, harness.manifest)
-	pin := Pin{Kind: KindHarness, Name: "discobox-harness-claude-code", Digest: digestOf(harness.manifest)}
+	pin := Pin{Name: "discobox-harness-claude-code", Digest: digestOf(harness.manifest)}
 	f.pin(t, "sbx_a", pin)
 	f.pin(t, "sbx_b", pin)
 	f.server.hold = make(chan struct{})
@@ -230,8 +238,8 @@ func TestASandboxIsRefusedAnotherSandboxsBundle(t *testing.T) {
 	platform, harness := newBundle(t, "platform"), newBundle(t, "harness")
 	index := indexOf(t, platform.manifest)
 	f.server.add(platform.config, platform.layer, platform.manifest, index, harness.config, harness.layer, harness.manifest)
-	f.pin(t, "sbx_a", Pin{Kind: KindPlatform, Name: "discobox-platform", Digest: digestOf(index)})
-	f.pin(t, "sbx_b", Pin{Kind: KindHarness, Name: "discobox-harness-shell", Digest: digestOf(harness.manifest)})
+	f.pin(t, "sbx_a", Pin{Name: "discobox-platform", Digest: digestOf(index)})
+	f.pin(t, "sbx_b", Pin{Name: "discobox-harness-shell", Digest: digestOf(harness.manifest)})
 
 	// sbx_a reads its platform: the name, the index's manifest, its layer.
 	rec := f.get("sbx_a", http.MethodGet, "/discobox-platform")
@@ -286,7 +294,7 @@ func TestServerBytesThatAreNotTheDigestAreRefused(t *testing.T) {
 	harness := newBundle(t, "harness")
 	f.server.add(harness.config, harness.layer, harness.manifest)
 	f.server.corrupt[digestOf(harness.layer)] = true
-	f.pin(t, "sbx_a", Pin{Kind: KindHarness, Name: "h", Digest: digestOf(harness.manifest)})
+	f.pin(t, "sbx_a", Pin{Name: "h", Digest: digestOf(harness.manifest)})
 
 	if rec := f.get("sbx_a", http.MethodGet, "/blobs/"+digestOf(harness.layer)); rec.Code != http.StatusBadGateway {
 		t.Fatalf("corrupt blob = %d, want 502", rec.Code)
@@ -306,8 +314,8 @@ func TestSweepRemovesWhatNoRecordReaches(t *testing.T) {
 	f := newFixture(t)
 	kept, dropped := newBundle(t, "kept"), newBundle(t, "dropped")
 	f.server.add(kept.config, kept.layer, kept.manifest, dropped.config, dropped.layer, dropped.manifest)
-	f.pin(t, "sbx_a", Pin{Kind: KindHarness, Name: "kept", Digest: digestOf(kept.manifest)})
-	f.pin(t, "sbx_b", Pin{Kind: KindHarness, Name: "dropped", Digest: digestOf(dropped.manifest)})
+	f.pin(t, "sbx_a", Pin{Name: "kept", Digest: digestOf(kept.manifest)})
+	f.pin(t, "sbx_b", Pin{Name: "dropped", Digest: digestOf(dropped.manifest)})
 	for _, read := range []struct{ sandbox, path string }{
 		{"sbx_a", "/blobs/" + digestOf(kept.layer)},
 		{"sbx_a", "/blobs/" + digestOf(kept.config)},
@@ -342,26 +350,33 @@ func TestSweepRemovesWhatNoRecordReaches(t *testing.T) {
 
 func TestRecordRoundTripsAndRefusesBadPins(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "sbx_a")
-	pins := []Pin{{Kind: KindPlatform, Name: "discobox-platform", Digest: digestOf([]byte("p"))}, {Kind: KindHarness, Name: "discobox-harness-shell", Digest: digestOf([]byte("h"))}}
-	if err := WriteRecord(root, pins); err != nil {
+	pins := []Pin{{Name: "discobox-platform", Digest: digestOf([]byte("p"))}, {Name: "discobox-harness-shell", Digest: digestOf([]byte("h"))}}
+	if err := WriteRecord(root, Delivery{Agent: testAgent, Bundles: pins}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := ReadRecord(root)
-	if err != nil || len(got) != 2 || got[0] != pins[0] || got[1] != pins[1] {
+	if err != nil || got.Agent != testAgent || len(got.Bundles) != 2 || got.Bundles[0] != pins[0] || got.Bundles[1] != pins[1] {
 		t.Fatalf("ReadRecord() = %v, %v", got, err)
 	}
-	for _, bad := range []Pin{{Kind: KindHarness, Name: "../x", Digest: pins[0].Digest}, {Kind: KindHarness, Name: "x", Digest: "sha256:nope"}, {Kind: KindHarness, Digest: pins[0].Digest}, {Name: "x", Digest: pins[0].Digest}} {
-		if err := WriteRecord(root, []Pin{bad}); err == nil {
+	for _, bad := range []Delivery{
+		{Agent: testAgent, Bundles: []Pin{{Name: "../x", Digest: pins[0].Digest}}},
+		{Agent: testAgent, Bundles: []Pin{{Name: "x", Digest: "sha256:nope"}}},
+		{Agent: testAgent, Bundles: []Pin{{Digest: pins[0].Digest}}},
+		{Agent: Pin{Name: "x"}, Bundles: pins},
+		{Bundles: pins},
+		{Agent: testAgent},
+	} {
+		if err := WriteRecord(root, bad); err == nil {
 			t.Errorf("WriteRecord(%v) accepted", bad)
 		}
 	}
-	if got, _ := ReadRecord(root); len(got) != 2 {
+	if got, _ := ReadRecord(root); len(got.Bundles) != 2 {
 		t.Fatalf("a refused write changed the record: %v", got)
 	}
-	if err := WriteRecord(root, nil); err != nil {
+	if err := WriteRecord(root, Delivery{}); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := ReadRecord(root); err != nil || got != nil {
+	if got, err := ReadRecord(root); err != nil || got.Delivered() {
 		t.Fatalf("an emptied record = %v, %v", got, err)
 	}
 }
@@ -374,9 +389,9 @@ func TestASnapshotBuildIsAnsweredFromItsOwnRecord(t *testing.T) {
 	f := newFixture(t)
 	bundle := newBundle(t, "platform")
 	f.server.add(bundle.config, bundle.layer, bundle.manifest)
-	pin := Pin{Kind: KindPlatform, Name: "platform", Digest: digestOf(bundle.manifest)}
+	pin := Pin{Name: "platform", Digest: digestOf(bundle.manifest)}
 	build := layout.SnapshotIDPrefix + "abc"
-	if err := WriteRecord(filepath.Join(f.sandboxes, build), []Pin{pin}); err != nil {
+	if err := WriteRecord(filepath.Join(f.sandboxes, build), Delivery{Agent: testAgent, Bundles: []Pin{pin}}); err != nil {
 		t.Fatal(err)
 	}
 	if rec := f.get(build, http.MethodGet, "/blobs/"+digestOf(bundle.layer)); rec.Code != http.StatusNotFound {
@@ -386,11 +401,52 @@ func TestASnapshotBuildIsAnsweredFromItsOwnRecord(t *testing.T) {
 	if rec := f.get(build, http.MethodGet, "/blobs/"+digestOf(bundle.layer)); rec.Code != http.StatusOK {
 		t.Fatalf("a build's own pin = %d", rec.Code)
 	}
-	if err := WriteRecord(filepath.Join(f.sandboxes, build), nil); err != nil {
+	if err := WriteRecord(filepath.Join(f.sandboxes, build), Delivery{}); err != nil {
 		t.Fatal(err)
 	}
 	f.cache.now = func() time.Time { return time.Now().Add(2 * sweepGrace) }
 	if removed, err := f.cache.Sweep(); err != nil || removed != 0 {
 		t.Fatalf("Sweep() = %d, %v; want what the build reaches kept", removed, err)
+	}
+}
+
+// The pool reads the one layer of a sandbox's agent bundle to place it
+// (ADR 26-10-24-953 §2), and only it; the box is never answered its agent,
+// which is placed in it, not fetched by it.
+func TestThePoolReadsTheAgentLayerAndTheBoxDoesNot(t *testing.T) {
+	f := newFixture(t)
+	agent, platform := newBundle(t, "agent"), newBundle(t, "platform")
+	f.server.add(agent.config, agent.layer, agent.manifest, platform.config, platform.layer, platform.manifest)
+	if err := WriteRecord(filepath.Join(f.sandboxes, "sbx_a"), Delivery{
+		Agent:   Pin{Name: "discobox-agent", Digest: digestOf(agent.manifest)},
+		Bundles: []Pin{{Name: "discobox-platform", Digest: digestOf(platform.manifest)}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	layer, ok, err := f.cache.AgentLayer(ctx, "sbx_a")
+	if err != nil || !ok || layer != digestOf(agent.layer) {
+		t.Fatalf("AgentLayer = %q, %v, %v; want the agent bundle's one layer", layer, ok, err)
+	}
+	body, err := f.cache.OpenAgentLayer(ctx, "sbx_a", layer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := io.ReadAll(body)
+	body.Close()
+	if string(data) != string(agent.layer) {
+		t.Fatalf("agent layer = %q", data)
+	}
+	if _, err := f.cache.OpenAgentLayer(ctx, "sbx_a", digestOf(platform.layer)); err == nil {
+		t.Fatal("the pool read a layer that is not the agent's as its agent")
+	}
+	if rec := f.get("sbx_a", http.MethodGet, "/blobs/"+digestOf(agent.layer)); rec.Code != http.StatusNotFound {
+		t.Fatalf("the box was answered its agent's layer: %d", rec.Code)
+	}
+	if rec := f.get("sbx_a", http.MethodGet, "/blobs/"+digestOf(platform.layer)); rec.Code != http.StatusOK {
+		t.Fatalf("the box's own bundle's layer = %d", rec.Code)
+	}
+	if _, ok, err := f.cache.AgentLayer(ctx, "sbx_none"); err != nil || ok {
+		t.Fatalf("AgentLayer of a sandbox delivered nothing = %v, %v", ok, err)
 	}
 }

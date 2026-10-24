@@ -130,6 +130,14 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C cli build -trimpath -ldflags="-s -w" -o /out/discobox ./cmd/discobox
 
+# The agent bundle (ADR 26-10-24-953 §2): the agent alone, one layer, which
+# whoever makes a box places in it before the box applies its bundles — a pool
+# in a sandbox, a provider in a pool — and is not in any box's list. FROM
+# scratch, and one COPY, so the bundle is that one layer
+# (agentlayer.AgentLayer). Built by name (`--target agent`).
+FROM scratch AS agent
+COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-sandbox-agent /features/core/discobox-sandbox-agent
+
 # The platform bundle (ADR 26-10-16-423 §7), each COPY --link: a box fetches
 # only the layers its store lacks, and without --link every layer carries the
 # /features/ directory as the stage last left it, so an edit to one feature
@@ -175,10 +183,6 @@ COPY --link access/skills/discobox-access /features/core/skills/discobox-access
 COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-access /features/core/discobox-access
 COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-review /features/review/discobox-review
 COPY --link --from=discobox-cli-builder --chmod=0755 /out/discobox /features/discobox-cli/discobox
-# The agent layer: the agent alone, and the bundle's last layer, which is how
-# a pool finds it to place in a box before the box boots (agentlayer.AgentLayer,
-# ADR 26-10-16-423 §7). Keep it last and keep it one COPY.
-COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-sandbox-agent /features/core/discobox-sandbox-agent
 
 # The platform's manifest layer: the env, volumes, groups, and seed files true
 # of every box the platform provisions, rather than of any harness. A harness

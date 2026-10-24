@@ -14,43 +14,61 @@ import (
 	"github.com/discobox-ai/discobox/pkg/layout"
 )
 
-// RecordFileName is, per sandbox, the bundles it is pinned to (ADR
-// 26-10-16-423 §§7, 13). It sits at the root of the sandbox's tree, beside
-// the volumes rather than in one, as source-caches.json does: it is this
-// pool's own record of what the sandbox may fetch, the sandbox never sees it,
-// and every create rewrites it from the request, so nothing the box reports
-// ever reaches it.
-const RecordFileName = "bundles.json"
+// RecordFileName is, per sandbox, what it is delivered (ADR 26-10-16-423
+// §§7, 13, ADR 26-10-24-953 §§1–2): the agent its pool places in it and the
+// bundles it applies, in order. It sits at the root of the sandbox's tree,
+// beside the volumes rather than in one, as source-caches.json does: it is
+// this pool's own record of what the sandbox may fetch, the sandbox never
+// sees it, and every create rewrites it from the request, so nothing the box
+// reports ever reaches it. bundles.json, which named each bundle's kind, is
+// not read: a sandbox recorded only there is delivered nothing until its next
+// create, and keeps the agent its container holds.
+const RecordFileName = "delivery.json"
 
-// Pin is a bundle a sandbox is pinned to: which of its bundles it is, the
-// name the asset API addresses it by, and the manifest or index digest it is
-// pinned to.
+// Pin is a bundle a sandbox is pinned to: the name the asset API addresses
+// it by, and the manifest or index digest it is pinned to. Nothing says which
+// of the sandbox's bundles it is.
 type Pin struct {
-	Kind   Kind   `json:"kind,omitempty"`
 	Name   string `json:"name"`
 	Digest string `json:"digest"`
 }
 
-// Kind is which of a sandbox's bundles a pin is.
-type Kind string
+// Delivery is what a sandbox is delivered: the agent bundle its pool places
+// in it, and the bundles it applies, in order. The zero Delivery is none: a
+// sandbox from before bundles.
+type Delivery struct {
+	Agent   Pin   `json:"agent"`
+	Bundles []Pin `json:"bundles"`
+}
 
-const (
-	// KindPlatform is the platform bundle, whose agent layer the pool places
-	// in the box (ADR 26-10-16-423 §7).
-	KindPlatform Kind = "platform"
-	// KindHarness is the harness bundle.
-	KindHarness Kind = "harness"
-)
+// Delivered reports whether d delivers anything.
+func (d Delivery) Delivered() bool { return d.Agent != (Pin{}) || len(d.Bundles) > 0 }
 
-// Platform is the platform pin among pins, and false when there is none: a
-// sandbox its pool delivers no platform to.
-func Platform(pins []Pin) (Pin, bool) {
-	for _, pin := range pins {
-		if pin.Kind == KindPlatform {
-			return pin, true
+// pins is every bundle d reaches, its agent's included: what the pool keeps
+// blobs for. What the sandbox may fetch is its bundles alone; its agent is
+// placed in it (Cache.OpenAgentLayer).
+func (d Delivery) pins() []Pin {
+	if d.Agent == (Pin{}) {
+		return d.Bundles
+	}
+	return append([]Pin{d.Agent}, d.Bundles...)
+}
+
+// Validate refuses a delivery with no agent or no bundles, or a pin that
+// names no bundle or no digest. The zero Delivery is valid.
+func (d Delivery) Validate() error {
+	if !d.Delivered() {
+		return nil
+	}
+	if d.Agent == (Pin{}) || len(d.Bundles) == 0 {
+		return errors.New("a delivery names both the agent and the bundles, or neither")
+	}
+	for _, pin := range d.pins() {
+		if err := pin.validate(); err != nil {
+			return err
 		}
 	}
-	return Pin{}, false
+	return nil
 }
 
 // validName is a bundle name as one path segment: the last component of a
@@ -58,11 +76,6 @@ func Platform(pins []Pin) (Pin, bool) {
 var validName = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`)
 
 func (p Pin) validate() error {
-	switch p.Kind {
-	case KindPlatform, KindHarness:
-	default:
-		return fmt.Errorf("bundle %s: kind %q is neither %s nor %s", p.Name, p.Kind, KindPlatform, KindHarness)
-	}
 	if !validName.MatchString(p.Name) {
 		return fmt.Errorf("bundle name %q is not a repository name component", p.Name)
 	}
@@ -72,23 +85,21 @@ func (p Pin) validate() error {
 	return nil
 }
 
-// WriteRecord records pins as the bundles of the sandbox whose tree is
-// sandboxRoot, replacing what was recorded before. No pins is no file. A pin
-// that names no bundle or no digest is refused, and nothing is written.
-func WriteRecord(sandboxRoot string, pins []Pin) error {
+// WriteRecord records d as what the sandbox whose tree is sandboxRoot is
+// delivered, replacing what was recorded before. Nothing delivered is no
+// file. A delivery Validate refuses is refused, and nothing is written.
+func WriteRecord(sandboxRoot string, d Delivery) error {
 	path := filepath.Join(sandboxRoot, RecordFileName)
-	if len(pins) == 0 {
+	if !d.Delivered() {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 		return nil
 	}
-	for _, pin := range pins {
-		if err := pin.validate(); err != nil {
-			return err
-		}
+	if err := d.Validate(); err != nil {
+		return err
 	}
-	data, err := json.MarshalIndent(pins, "", "  ")
+	data, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -102,29 +113,36 @@ func WriteRecord(sandboxRoot string, pins []Pin) error {
 	return os.Rename(tmp, path)
 }
 
-// ReadRecord is the bundles recorded for the sandbox whose tree is
-// sandboxRoot. None is not an error.
-func ReadRecord(sandboxRoot string) ([]Pin, error) {
+// ReadRecord is what the sandbox whose tree is sandboxRoot is delivered.
+// None is the zero Delivery, not an error.
+func ReadRecord(sandboxRoot string) (Delivery, error) {
 	data, err := os.ReadFile(filepath.Join(sandboxRoot, RecordFileName))
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return Delivery{}, nil
 	}
 	if err != nil {
-		return nil, err
+		return Delivery{}, err
 	}
-	var pins []Pin
-	if err := json.Unmarshal(data, &pins); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", RecordFileName, err)
+	var d Delivery
+	if err := json.Unmarshal(data, &d); err != nil {
+		return Delivery{}, fmt.Errorf("decode %s: %w", RecordFileName, err)
 	}
-	return pins, nil
+	return d, d.Validate()
 }
 
-// pins is the record of the sandbox or snapshot build named sandboxID.
-func (c *Cache) pins(sandboxID string) ([]Pin, error) {
+// delivery is the record of the sandbox or snapshot build named sandboxID.
+func (c *Cache) delivery(sandboxID string) (Delivery, error) {
 	if layout.IsSnapshotID(sandboxID) {
-		return sandboxPins(c.snapshots, sandboxID)
+		return sandboxDelivery(c.snapshots, sandboxID)
 	}
-	return sandboxPins(c.sandboxes, sandboxID)
+	return sandboxDelivery(c.sandboxes, sandboxID)
+}
+
+// pins is the bundles the sandbox or snapshot build named sandboxID applies,
+// which is all it may fetch.
+func (c *Cache) pins(sandboxID string) ([]Pin, error) {
+	d, err := c.delivery(sandboxID)
+	return d.Bundles, err
 }
 
 // allPins is every pin recorded, by any sandbox or snapshot build.
@@ -134,12 +152,12 @@ func (c *Cache) allPins() ([]Pin, error) {
 	return append(sandboxes, snapshots...), errors.Join(err, snapshotErr)
 }
 
-// sandboxPins is the record of the sandbox named sandboxID under sandboxes,
-// the pool's parent of every sandbox's tree. An ID that is not one path
-// segment names no sandbox.
-func sandboxPins(sandboxes, sandboxID string) ([]Pin, error) {
+// sandboxDelivery is the record of the sandbox named sandboxID under
+// sandboxes, the pool's parent of every sandbox's tree. An ID that is not one
+// path segment names no sandbox.
+func sandboxDelivery(sandboxes, sandboxID string) (Delivery, error) {
 	if sandboxes == "" || sandboxID == "" || sandboxID == "." || sandboxID == ".." || strings.ContainsAny(sandboxID, `/\`) {
-		return nil, nil
+		return Delivery{}, nil
 	}
 	return ReadRecord(filepath.Join(sandboxes, sandboxID))
 }
@@ -167,7 +185,7 @@ func allPins(sandboxes string) ([]Pin, error) {
 			failures = append(failures, fmt.Errorf("sandbox %s: %w", entry.Name(), err))
 			continue
 		}
-		pins = append(pins, recorded...)
+		pins = append(pins, recorded.pins()...)
 	}
 	return pins, errors.Join(failures...)
 }

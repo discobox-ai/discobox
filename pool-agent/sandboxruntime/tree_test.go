@@ -212,9 +212,12 @@ func exportFixture(t *testing.T) (*DockerSandboxRuntime, *exportDaemon, string) 
 	return runtime, daemon, root
 }
 
-// testTreePins are the pins an export is read with: the platform's, whose
-// agent reads the tree.
-var testTreePins = []assetcache.Pin{{Kind: assetcache.KindPlatform, Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}}
+// testTreePins are what an export is read with: the agent that reads the
+// tree, and the bundles.
+var testTreePins = assetcache.Delivery{
+	Agent:   assetcache.Pin{Name: "discobox-agent", Digest: "sha256:" + strings.Repeat("c", 64)},
+	Bundles: []assetcache.Pin{{Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}},
+}
 
 func writeFile(t *testing.T, path, content string, mode os.FileMode) {
 	t.Helper()
@@ -572,7 +575,7 @@ func TestExportTreeReportsAModeThatFailedAtOnce(t *testing.T) {
 func TestExportTreeRefusesASandboxPinnedToNoPlatform(t *testing.T) {
 	runtime, _, root := exportFixture(t)
 	writeFile(t, filepath.Join(root, "data", "notes"), "hi\n", 0o644)
-	if _, err := runtime.ExportTree(t.Context(), "sbx-1", nil); !errors.Is(err, ErrUndelivered) || !errors.Is(err, ErrImageUnavailable) {
+	if _, err := runtime.ExportTree(t.Context(), "sbx-1", assetcache.Delivery{}); !errors.Is(err, ErrUndelivered) || !errors.Is(err, ErrImageUnavailable) {
 		t.Fatalf("err = %v, want ErrUndelivered", err)
 	}
 }
@@ -588,7 +591,7 @@ func TestExportTreeRecordsThePinsItIsGiven(t *testing.T) {
 	}
 	stream.Close()
 	recorded, err := assetcache.ReadRecord(root)
-	if err != nil || !slices.Equal(recorded, testTreePins) {
+	if err != nil || recorded.Agent != testTreePins.Agent || !slices.Equal(recorded.Bundles, testTreePins.Bundles) {
 		t.Fatalf("record = %+v, %v, want the export's pins", recorded, err)
 	}
 }

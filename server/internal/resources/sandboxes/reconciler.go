@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"slices"
 	"strings"
 	"time"
 
@@ -18,7 +17,6 @@ import (
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
-	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"gorm.io/gorm"
 )
@@ -572,7 +570,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			"discobox.sandbox_id": sb.ID,
 		},
 	}
-	opts.Bundles = sandboxBundlePins(sb)
+	opts.Delivery = sandboxDelivery(sb)
 	opts.PoolID = sb.PoolID
 	opts.Platform = sb.Platform
 	opts.Name = sb.Name
@@ -681,15 +679,18 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			}
 		}
 	}
-	opts.SpecFingerprint = sourceDataFingerprint(specFingerprint(sb, opts.Bundles), opts.SourceDataKey, opts.SourceCodeReferenceDataKeys)
+	opts.SpecFingerprint = sourceDataFingerprint(specFingerprint(sb), opts.SourceDataKey, opts.SourceCodeReferenceDataKeys)
 	return opts, nil
 }
 
 // specFingerprint is what the pool compares a sandbox's container against
-// (ADR 0017 §5): the delivered fingerprint of a sandbox its pool delivers the
-// platform to, and its manifest's otherwise (SandboxManifest).
-func specFingerprint(sb *model.Sandbox, bundles []BundlePin) string {
-	if slices.ContainsFunc(bundles, func(pin BundlePin) bool { return pin.Kind == BundlePlatform }) {
+// (ADR 0017 §5): the delivered fingerprint of a sandbox its pool delivers its
+// bundles to, and its manifest's otherwise (SandboxManifest). It turns on the
+// bundles alone, never on the agent: a sandbox whose agent is not pinned yet
+// is sent nothing and keeps its container, rather than being rebuilt for a
+// fingerprint that changed form.
+func specFingerprint(sb *model.Sandbox) string {
+	if len(sandboxBundles(sb)) > 0 {
 		return sb.DeliveredFingerprint()
 	}
 	return sb.Fingerprint()
@@ -738,29 +739,35 @@ func sandboxHasNeverRun(state string) bool {
 	return state == model.SandboxStatePending || state == model.SandboxStateAwaitingSource
 }
 
-// sandboxBundlePins is what the sandbox is pinned to as its pool addresses
-// it. A pin with no content digest has nothing to fetch, and a box can be
-// delivered only what it can fetch: a sandbox with such a pin is sent none,
-// as a sandbox from before bundles is, rather than a platform with no
-// harness, and its pool keeps the container it has but builds it no other
-// until it is re-pinned (ADR 26-10-16-423 §§7, 10).
-func sandboxBundlePins(sb *model.Sandbox) []BundlePin {
+// sandboxDelivery is what the sandbox is pinned to as its pool addresses
+// it: its agent and its bundles in order. A pin with no content digest has
+// nothing to fetch, and a box can be delivered only what it can fetch: a
+// sandbox with such a pin, or with no agent, is sent nothing, as a sandbox
+// from before bundles is, and its pool keeps the container it has but builds
+// it no other until it is pinned (ADR 26-10-16-423 §§7, 10, ADR 26-10-24-953
+// §2).
+func sandboxDelivery(sb *model.Sandbox) Delivery {
+	bundles := sandboxBundles(sb)
+	agent := sb.AgentPin()
+	if len(bundles) == 0 || agent.Name() == "" || !imagecache.IsDigest(agent.Digest) {
+		return Delivery{}
+	}
+	return Delivery{Agent: BundlePin{Name: agent.Name(), Digest: agent.Digest}, Bundles: bundles}
+}
+
+// sandboxBundles is the bundles the sandbox applies, in order, as its pool
+// addresses them; none when any of them has no content digest.
+func sandboxBundles(sb *model.Sandbox) []BundlePin {
 	var pins []BundlePin
-	for _, pin := range []struct {
-		kind BundleKind
-		pin  services.BundlePin
-	}{
-		{BundlePlatform, services.BundlePin{Reference: sb.PlatformBundle, Digest: sb.PlatformBundleDigest}},
-		{BundleHarness, services.BundlePin{Reference: sb.Bundle, Digest: sb.BundleDigest}},
-	} {
-		name := pin.pin.Name()
+	for _, pin := range sb.BundlePins() {
+		name := pin.Name()
 		if name == "" {
 			continue
 		}
-		if !imagecache.IsDigest(pin.pin.Digest) {
+		if !imagecache.IsDigest(pin.Digest) {
 			return nil
 		}
-		pins = append(pins, BundlePin{Kind: pin.kind, Name: name, Digest: pin.pin.Digest})
+		pins = append(pins, BundlePin{Name: name, Digest: pin.Digest})
 	}
 	return pins
 }

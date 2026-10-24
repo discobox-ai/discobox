@@ -23,6 +23,10 @@ import (
 // reaches it. A create that pins none removes it, and still finds the
 // container it has: a sandbox from before bundles keeps its container while
 // its spec holds, though none could be built for it (ADR 26-10-16-423 §10).
+// testAgentPin is the agent bundle every delivered create in these tests
+// names.
+var testAgentPin = workerapimodel.BundlePin{Name: "discobox-agent", Digest: "sha256:" + strings.Repeat("c", 64)}
+
 func TestEveryCreateRecordsTheSandboxsBundles(t *testing.T) {
 	state := withTestRoot(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,22 +70,22 @@ func TestEveryCreateRecordsTheSandboxsBundles(t *testing.T) {
 			ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerclient.ResolvedHarnessConfig{}),
 		}
 		if bundles != nil {
-			req.Bundles = workerclient.NewOptNilBundlePinArray(bundles)
+			req.Agent, req.Bundles = workerclient.NewOptBundlePin(testAgentPin), workerclient.NewOptNilBundlePinArray(bundles)
 		}
 		if sb, err := r.CreateSandbox(context.Background(), req); err != nil || sb == nil || sb.ID != "ctr_built" {
 			t.Fatalf("CreateSandbox = %#v, %v; want the container it found", sb, err)
 		}
 	}
 
-	create([]workerapimodel.BundlePin{{Kind: workerclient.BundlePinKindPlatform, Name: "discobox-platform", Digest: platform}, {Kind: workerclient.BundlePinKindHarness, Name: "discobox-harness-shell", Digest: harness}})
+	create([]workerapimodel.BundlePin{{Name: "discobox-platform", Digest: platform}, {Name: "discobox-harness-shell", Digest: harness}})
 	got, err := assetcache.ReadRecord(r.sandboxRoot("sbx_1"))
-	want := []assetcache.Pin{{Kind: assetcache.KindPlatform, Name: "discobox-platform", Digest: platform}, {Kind: assetcache.KindHarness, Name: "discobox-harness-shell", Digest: harness}}
-	if err != nil || len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("record = %v, %v; want %v", got, err, want)
+	want := []assetcache.Pin{{Name: "discobox-platform", Digest: platform}, {Name: "discobox-harness-shell", Digest: harness}}
+	if err != nil || len(got.Bundles) != 2 || got.Bundles[0] != want[0] || got.Bundles[1] != want[1] || got.Agent != (assetcache.Pin{Name: testAgentPin.Name, Digest: testAgentPin.Digest}) {
+		t.Fatalf("record = %v, %v; want %v and the agent", got, err, want)
 	}
 
 	create(nil)
-	if got, err := assetcache.ReadRecord(r.sandboxRoot("sbx_1")); err != nil || got != nil {
+	if got, err := assetcache.ReadRecord(r.sandboxRoot("sbx_1")); err != nil || got.Delivered() {
 		t.Fatalf("record after a create pinning nothing = %v, %v; want none", got, err)
 	}
 }
@@ -97,7 +101,7 @@ func TestASandboxIsBuiltFromTheSandboxBaseImageOrNotAtAll(t *testing.T) {
 	}{
 		"pinned to no platform": {wantErr: ErrUndelivered},
 		"delivered its platform": {
-			bundles: []workerapimodel.BundlePin{{Kind: workerclient.BundlePinKindPlatform, Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}},
+			bundles: []workerapimodel.BundlePin{{Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}},
 			wantErr: ErrImageUnavailable,
 		},
 	} {
@@ -138,7 +142,7 @@ func TestASandboxIsBuiltFromTheSandboxBaseImageOrNotAtAll(t *testing.T) {
 				ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerclient.ResolvedHarnessConfig{}),
 			}
 			if tc.bundles != nil {
-				req.Bundles = workerclient.NewOptNilBundlePinArray(tc.bundles)
+				req.Agent, req.Bundles = workerclient.NewOptBundlePin(testAgentPin), workerclient.NewOptNilBundlePinArray(tc.bundles)
 			}
 			_, err = r.CreateSandbox(context.Background(), req)
 			mu.Lock()

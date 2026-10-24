@@ -1,16 +1,17 @@
 # Core (ADR 26-10-16-423 §4): not a feature, never off, and blocking. What
-# makes a box a discobox: the agent and the personalities it ships at its own
-# version, discobox-access, the trust store the egress CA joins, the shell
-# and prompt helpers every harness relies on, and the skills that teach an agent the box.
+# makes a box a discobox: the links to the agent and the personalities it
+# ships at its own version, discobox-access, the trust store the egress CA
+# joins, the shell and prompt helpers every harness relies on, and the skills
+# that teach an agent the box.
 #
-# Not the agent's own units, which boot a box before any feature is
-# provisioned: those are agentlayer's (pkg/agentlayer/units), laid by the pool
-# with the agent before a container starts, or by `discobox-sandbox-agent
-# install` on a machine.
+# Not the agent, nor its own units, which boot a box before any feature is
+# provisioned: the agent is a bundle of its own, and its units agentlayer's
+# (pkg/agentlayer/units), placed with it by whoever makes the box before the
+# box applies its bundles (ADR 26-10-24-953 §2).
 #
-# The build puts what is not this directory's beside it: the agent and
-# discobox-access binaries, discobox-prompt-answer from harness/, and the
-# discobox-access skill from access/ (sandbox-agent/Dockerfile).
+# The build puts what is not this directory's beside it: the discobox-access
+# binary, discobox-prompt-answer from harness/, and the discobox-access skill
+# from access/ (sandbox-agent/Dockerfile).
 apiVersion: discobox.ai/provision/v1
 steps:
   # sudo and passwd for the sandbox's account (ADR 0025); procps for the

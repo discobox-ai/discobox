@@ -34,8 +34,8 @@ allow-list's `assets` action takes up to three trailing segments
 A pool is answered the pins of the project it serves (`scope`), and nothing
 else — never a tag's answer that no pin records:
 
-- **the platform bundle the release pins**, as every digest its reference has
-  resolved to while this server runs (`platformPins`). The release pins it by
+- **the platform and agent bundles the release pins**, each as every digest
+  its reference has resolved to while this server runs (`releasePins`). The release pins it by
   reference and nothing records the digest a box was handed, so an answered
   digest is never dropped when the tag moves: a pool part way through a fetch
   is not cut off. The reference is asked again after a minute, after ten
@@ -45,8 +45,9 @@ else — never a tag's answer that no pin records:
   recorded digest: a moved tag is followed only once the config is re-pinned
   (ADR 0016).
 
-- **each sandbox's** `Bundle`/`BundleDigest` and
-  `PlatformBundle`/`PlatformBundleDigest` (ADR 26-10-16-423 §7). A sandbox
+- **each sandbox's** bundle pins, in whichever form it is pinned
+  (`SandboxManifest.BundlePins`), and its agent's (ADR 26-10-16-423 §7, ADR
+  26-10-24-953 §§1–2). A sandbox
   keeps its pins after its config is re-pinned and after the release moves
   on, until it is re-pinned itself, so a pool is answered what its boxes were
   handed. Sandbox pins are digest scope only: a name resolves through the
@@ -58,14 +59,17 @@ is in scope when a pin's manifest — or, under an index, any manifest it lists
 that can be read — names it as config or layer; what the store holds is
 looked at before a listed manifest is fetched.
 
-## The platform pin
+## The release's pins
 
-The service is also where the platform a sandbox is pinned to comes from
-(`CurrentPlatform`, and `LatestPlatform` for a read that must not wait), and
-it tells the sandbox service when the release's reference resolves to a
-digest other than the one before (`OnPlatformMoved`), first on every start
-(`ResolvePlatform`), so stopped sandboxes follow the release (ADR 26-10-16-423
-§7).
+The service is also where the bundles the release pins every delivered
+sandbox to come from: the platform and the agent (ADR 26-10-16-423 §7, ADR
+26-10-24-953 §2), each resolved by its own `releasePins` (`CurrentRelease`,
+and `LatestRelease` for a read that must not wait). It tells the sandbox
+service when either reference resolves to a digest other than the one before
+(`OnReleaseMoved`), first on every start (`ResolveRelease`), so stopped
+sandboxes follow the release. Both are in every pool's scope, as the
+release's, and a sandbox's pins in either form, its agent's included, are in
+its project's pools' scope and keep their blobs.
 
 ## Blob store
 
@@ -78,7 +82,7 @@ names none (`releasemanifest.Images.References`).
 ```mermaid
 flowchart LR
     pool[Pool agent] -->|manifest or blob by digest| svc[assets.Service]
-    svc -->|in scope?| db[(harness configs, platform pins)]
+    svc -->|in scope?| db[(harness configs, release and sandbox pins)]
     svc -->|present?| store[(asset store)]
     svc -.->|missing, release's own| layouts[Watcher's OCI layouts]
     svc -.->|missing| registry[Registry]
@@ -105,8 +109,8 @@ flowchart LR
   earlier development bundle is answered from what the store holds of it and
   nothing else: its dev tag is no release reference, and no registry has it.
 - **Credentials**: the server's keychain pulls only the references the release
-  names — the platform bundle, the built-in harnesses' bundles, and the
-  pool-agent bundle, the pool agent for a pool machine booted from a driver
+  names — the platform and agent bundles, the built-in harnesses' bundles, and
+  the pool-agent bundle, the pool agent for a pool machine booted from a driver
   base (ADR 26-10-23-551 §2). A
   project-supplied reference is pulled anonymously: a project configures no
   registry credentials, and the server's are not the project's to use.
@@ -118,10 +122,11 @@ flowchart LR
   detached from the first reader's cancellation and bounded by
   `fetchTimeout`.
 - **Removal is by reference** (`Prune`, hourly): a blob goes once no pin
-  reaches it — any project's harness config or sandbox, or a platform digest
-  this server answered — and it is older than an hour, so one fetched for a pin made
-  since the sweep read the pins stays. Reach is read from the store alone.
-  While the platform cannot be resolved nothing goes.
+  reaches it — any project's harness config or sandbox, or a release
+  bundle's digest this server answered — and it is older than an hour, so one
+  fetched for a pin made since the sweep read the pins stays. Reach is read
+  from the store alone. While a release bundle cannot be resolved nothing
+  goes.
 
 ## Digests
 

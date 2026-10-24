@@ -29,26 +29,43 @@ const (
 	legacyImageDigest = "sha256:5555555555555555555555555555555555555555555555555555555555555555"
 )
 
-// fakePlatform is the release's platform as the asset service resolves it.
-type fakePlatform struct {
-	pin services.BundlePin
-	err error
+const (
+	agentRef = "ghcr.io/discobox-ai/discobox-agent:v1"
+	agentV1  = "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+)
+
+// fakeRelease is the release's bundles as the asset service resolves them.
+type fakeRelease struct {
+	pins services.ReleasePins
+	err  error
 }
 
-func (f *fakePlatform) CurrentPlatform(context.Context) (services.BundlePin, error) {
-	return f.pin, f.err
+func (f *fakeRelease) CurrentRelease(context.Context) (services.ReleasePins, error) {
+	return f.pins, f.err
 }
-func (f *fakePlatform) LatestPlatform() services.BundlePin { return f.pin }
+func (f *fakeRelease) LatestRelease() services.ReleasePins { return f.pins }
 
-// A create pins the harness config's bundle and the platform
-// the release resolves to (ADR 26-10-16-423 §7), and the pins reach the pool
-// as what the box may fetch, each by kind. A platform the server names and
-// cannot resolve fails the create rather than leave the box pinned to none.
+// release is the release naming the platform at platformDigest and the agent
+// at agentV1.
+func release(platformDigest string) *fakeRelease {
+	return &fakeRelease{pins: services.ReleasePins{
+		Platform: model.BundlePin{Reference: platformRef, Digest: platformDigest},
+		Agent:    model.BundlePin{Reference: agentRef, Digest: agentV1},
+	}}
+}
+
+// A create pins the platform the release resolves to and then the harness
+// config's bundle, as one ordered list, and the agent the release names (ADR
+// 26-10-16-423 §7, ADR 26-10-24-953 §§1–2), and the pins reach the pool as
+// what the box is delivered, with nothing saying which bundle is which. It
+// leaves the columns a sandbox pinned before that ADR keeps empty. A release
+// bundle the server names and cannot resolve fails the create rather than
+// leave the box pinned to none.
 func TestCreatePinsTheBundles(t *testing.T) {
 	ctx, svc, st, _ := transferFixture(t)
 	configuredHarness(t, st, "codex", "Codex")
-	platform := &fakePlatform{pin: services.BundlePin{Reference: platformRef, Digest: platformOld}}
-	svc.SetPlatformBundles(platform)
+	platform := release(platformOld)
+	svc.SetReleaseBundles(platform)
 	create := func(name string) (*model.Sandbox, error) {
 		return svc.CreateSandbox(ctx, "project-1", services.CreateSandboxBody{
 			HarnessName: serverapi.NewOptString("codex"),
@@ -63,15 +80,22 @@ func TestCreatePinsTheBundles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sb.Bundle != codexBundle || sb.BundleDigest != codexBundleV1 || sb.PlatformBundle != platformRef || sb.PlatformBundleDigest != platformOld {
-		t.Fatalf("pins = %q@%q, %q@%q", sb.Bundle, sb.BundleDigest, sb.PlatformBundle, sb.PlatformBundleDigest)
+	wantPins := []model.BundlePin{{Reference: platformRef, Digest: platformOld}, {Reference: codexBundle, Digest: codexBundleV1}}
+	if !slices.Equal(sb.Bundles, wantPins) || sb.AgentBundle != agentRef || sb.AgentBundleDigest != agentV1 {
+		t.Fatalf("pins = %+v, agent %q@%q; want %+v and %s@%s", sb.Bundles, sb.AgentBundle, sb.AgentBundleDigest, wantPins, agentRef, agentV1)
+	}
+	if sb.Bundle != "" || sb.BundleDigest != "" || sb.PlatformBundle != "" || sb.PlatformBundleDigest != "" {
+		t.Fatalf("columns from before the list = %q@%q, %q@%q; want none", sb.Bundle, sb.BundleDigest, sb.PlatformBundle, sb.PlatformBundleDigest)
 	}
 	if sb.Image != "" || sb.ImageDigest != "" {
 		t.Fatalf("image = %q@%q, want none: no harness is an image", sb.Image, sb.ImageDigest)
 	}
-	want := []BundlePin{{Kind: BundlePlatform, Name: "discobox-platform", Digest: platformOld}, {Kind: BundleHarness, Name: "discobox-harness-codex", Digest: codexBundleV1}}
-	if got := sandboxBundlePins(sb); !slices.Equal(got, want) {
-		t.Fatalf("pins sent to the pool = %+v, want %+v", got, want)
+	want := Delivery{
+		Agent:   BundlePin{Name: "discobox-agent", Digest: agentV1},
+		Bundles: []BundlePin{{Name: "discobox-platform", Digest: platformOld}, {Name: "discobox-harness-codex", Digest: codexBundleV1}},
+	}
+	if got := sandboxDelivery(sb); got.Agent != want.Agent || !slices.Equal(got.Bundles, want.Bundles) {
+		t.Fatalf("delivery sent to the pool = %+v, want %+v", got, want)
 	}
 	read, err := services.SandboxToAPI(sb, services.SandboxUpgradeBasis{})
 	if err != nil {
@@ -88,9 +112,15 @@ func TestCreatePinsTheBundles(t *testing.T) {
 		t.Fatalf("err = %v, want a 502", err)
 	}
 
-	// A server that names no platform has nothing a box on a bundle could
-	// apply its harness onto.
-	platform.pin, platform.err = services.BundlePin{}, nil
+	// A server that names no agent has nothing to place a box on a bundle
+	// with, and one that names no platform nothing to apply its harness onto.
+	platform.err = nil
+	platform.pins.Agent = model.BundlePin{}
+	_, err = create("no-agent")
+	if !errors.As(err, &status) || status.StatusCode() != http.StatusServiceUnavailable {
+		t.Fatalf("err = %v, want a 503", err)
+	}
+	platform.pins = services.ReleasePins{}
 	_, err = create("no-platform")
 	if !errors.As(err, &status) || status.StatusCode() != http.StatusServiceUnavailable {
 		t.Fatalf("err = %v, want a 503", err)
@@ -155,7 +185,7 @@ func TestConfigModeCreatePinsTheHarnessBundle(t *testing.T) {
 	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
 		t.Fatal(err)
 	}
-	svc.SetPlatformBundles(&fakePlatform{pin: services.BundlePin{Reference: platformRef, Digest: platformOld}})
+	svc.SetReleaseBundles(release(platformOld))
 	body := services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "configure"}}
 	body.Config.SetHarnessConfigId(serverapi.NewOptString(config.ID))
 	body.Config.SetHarnessMode(serverapi.NewOptSandboxCreateConfigHarnessMode(serverapi.SandboxCreateConfigHarnessModeConfig))
@@ -167,22 +197,32 @@ func TestConfigModeCreatePinsTheHarnessBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sb.Image != "" || sb.Bundle != codexBundle || sb.BundleDigest != codexBundleV1 {
-		t.Fatalf("configure box pins = %q, %q@%q, want the harness config's bundle alone", sb.Image, sb.Bundle, sb.BundleDigest)
+	if harness := sb.HarnessPin(); sb.Image != "" || harness.Reference != codexBundle || harness.Digest != codexBundleV1 {
+		t.Fatalf("configure box pins = %q, %+v, want the harness config's bundle alone", sb.Image, harness)
 	}
-	want := []BundlePin{{Kind: BundlePlatform, Name: "discobox-platform", Digest: platformOld}, {Kind: BundleHarness, Name: "discobox-harness-codex", Digest: codexBundleV1}}
-	if got := sandboxBundlePins(sb); !slices.Equal(got, want) {
+	want := []BundlePin{{Name: "discobox-platform", Digest: platformOld}, {Name: "discobox-harness-codex", Digest: codexBundleV1}}
+	if got := sandboxDelivery(sb).Bundles; !slices.Equal(got, want) {
 		t.Fatalf("pins sent to the pool = %+v, want %+v", got, want)
 	}
 }
 
 // A pin with no content digest, a build-mode development image's, has nothing
-// to fetch, and a box is delivered nothing it cannot fetch: no pin is sent,
-// rather than a platform with no harness.
+// to fetch, and a box is delivered nothing it cannot fetch: nothing is sent,
+// rather than a platform with no harness. Nor is anything sent to a sandbox
+// pinned to no agent, which its pool could not place.
 func TestOnlyContentDigestsAreSentToThePool(t *testing.T) {
-	sb := &model.Sandbox{SandboxManifest: model.SandboxManifest{Bundle: codexBundle, BundleDigest: "discobox-harness-codex:local", PlatformBundle: platformRef, PlatformBundleDigest: platformOld}}
-	if got := sandboxBundlePins(sb); got != nil {
-		t.Fatalf("pins = %+v, want none", got)
+	agent := func(sb *model.Sandbox) *model.Sandbox {
+		sb.SetAgentPin(model.BundlePin{Reference: agentRef, Digest: agentV1})
+		return sb
+	}
+	for name, sb := range map[string]*model.Sandbox{
+		"a pin from before the list with no content digest": agent(&model.Sandbox{SandboxManifest: model.SandboxManifest{Bundle: codexBundle, BundleDigest: "discobox-harness-codex:local", PlatformBundle: platformRef, PlatformBundleDigest: platformOld}}),
+		"a listed pin with no content digest":               agent(&model.Sandbox{SandboxManifest: model.SandboxManifest{Bundles: []model.BundlePin{{Reference: platformRef, Digest: platformOld}, {Reference: codexBundle, Digest: "discobox-harness-codex:local"}}}}),
+		"no agent":                                          {SandboxManifest: model.SandboxManifest{Bundles: []model.BundlePin{{Reference: platformRef, Digest: platformOld}}}},
+	} {
+		if got := sandboxDelivery(sb); got.Agent != (BundlePin{}) || got.Bundles != nil {
+			t.Errorf("%s: delivery = %+v, want none", name, got)
+		}
 	}
 }
 
@@ -199,9 +239,9 @@ func TestThePlatformMovingCarriesStoppedSandboxes(t *testing.T) {
 	running := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1, onOld, func(sb *model.Sandbox) {
 		sb.RuntimeState = model.SandboxRuntimeStateRunning
 	})
-	svc.SetPlatformBundles(&fakePlatform{pin: services.BundlePin{Reference: platformRef, Digest: platformNew}})
+	svc.SetReleaseBundles(release(platformNew))
 
-	if err := svc.UpgradePlatformSandboxes(ctx); err != nil {
+	if err := svc.UpgradeReleaseSandboxes(ctx); err != nil {
 		t.Fatalf("upgrade platform sandboxes: %v", err)
 	}
 	moved, err := st.GetSandbox(ctx, "project-1", stopped.ID)
@@ -245,9 +285,9 @@ func TestABundleMovingCarriesAStoppedSandboxOffItsImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Bundle != codexBundle || stored.BundleDigest != codexBundleV2 || stored.Image != "" || stored.ImageDigest != "" {
-		t.Fatalf("pins = %q@%q, image %q@%q, want the config's bundle and no image",
-			stored.Bundle, stored.BundleDigest, stored.Image, stored.ImageDigest)
+	if harness := stored.HarnessPin(); harness.Reference != codexBundle || harness.Digest != codexBundleV2 || stored.Image != "" || stored.ImageDigest != "" {
+		t.Fatalf("pins = %+v, image %q@%q, want the config's bundle and no image",
+			harness, stored.Image, stored.ImageDigest)
 	}
 }
 
@@ -290,7 +330,7 @@ func TestUndeliveredSandboxesArePinned(t *testing.T) {
 		t.Fatal(err)
 	}
 	noBundle := eligibleSandbox(t, st, unregistered.ID, "", "", legacy)
-	svc.SetPlatformBundles(&fakePlatform{pin: services.BundlePin{Reference: platformRef, Digest: platformNew}})
+	svc.SetReleaseBundles(release(platformNew))
 
 	if err := svc.PinUndeliveredSandboxes(ctx); err != nil {
 		t.Fatal(err)
@@ -313,22 +353,27 @@ func TestUndeliveredSandboxesArePinned(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if stored.BundleDigest != tc.bundle || stored.PlatformBundleDigest != tc.platform || stored.ImageDigest != tc.image ||
+		if stored.HarnessPin().Digest != tc.bundle || stored.PlatformPin().Digest != tc.platform || stored.ImageDigest != tc.image ||
 			(stored.Generation > tc.sb.Generation) != tc.wantGeneration {
 			t.Fatalf("%s: bundle %q platform %q image %q at generation %d (was %d), want %q, %q, %q and a bump %v",
-				tc.name, stored.BundleDigest, stored.PlatformBundleDigest, stored.ImageDigest, stored.Generation, tc.sb.Generation,
+				tc.name, stored.HarnessPin().Digest, stored.PlatformPin().Digest, stored.ImageDigest, stored.Generation, tc.sb.Generation,
 				tc.bundle, tc.platform, tc.image, tc.wantGeneration)
+		}
+		// Whatever is pinned to a platform is pinned to the agent, the one
+		// pinned before the list too, in place.
+		if wantAgent := tc.platform != ""; (stored.AgentBundleDigest == agentV1) != wantAgent {
+			t.Fatalf("%s: agent %q, want it pinned %v", tc.name, stored.AgentBundleDigest, wantAgent)
 		}
 	}
 
 	// Nothing is pinned while the platform cannot be resolved: a box on a
 	// bundle with no platform has nothing to apply it onto.
 	again := eligibleSandbox(t, st, config.ID, "", "", legacy)
-	svc.SetPlatformBundles(&fakePlatform{err: errors.New("registry unreachable")})
+	svc.SetReleaseBundles(&fakeRelease{err: errors.New("registry unreachable")})
 	if err := svc.PinUndeliveredSandboxes(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if stored, err := st.GetSandbox(ctx, "project-1", again.ID); err != nil || stored.BundleDigest != "" || stored.Generation != again.Generation {
+	if stored, err := st.GetSandbox(ctx, "project-1", again.ID); err != nil || stored.HarnessPin().Digest != "" || stored.Generation != again.Generation {
 		t.Fatalf("pinned %+v (%v) with no platform resolved, want it left for a later pass", stored, err)
 	}
 }
@@ -343,9 +388,9 @@ func TestAPlatformOnlyRepinAdoptsNoConfig(t *testing.T) {
 	sb := eligibleSandbox(t, st, "", shellBundle, shellBundleV1, func(sb *model.Sandbox) {
 		sb.PlatformBundle, sb.PlatformBundleDigest = platformRef, platformOld
 	})
-	svc.SetPlatformBundles(&fakePlatform{pin: services.BundlePin{Reference: platformRef, Digest: platformNew}})
+	svc.SetReleaseBundles(release(platformNew))
 
-	if err := svc.UpgradePlatformSandboxes(ctx); err != nil {
+	if err := svc.UpgradeReleaseSandboxes(ctx); err != nil {
 		t.Fatal(err)
 	}
 	stored, err := st.GetSandbox(ctx, "project-1", sb.ID)
@@ -358,18 +403,19 @@ func TestAPlatformOnlyRepinAdoptsNoConfig(t *testing.T) {
 	}
 }
 
-// A sandbox delivered its platform is not rebuilt by a moved image or
-// platform pin: its box applies its platform at every start, and runs the
-// sandbox base image. A moved harness bundle pin still rebuilds it, since the
-// harness's manifest is what its container is built with. A sandbox with no
-// platform pin keeps the fingerprint it had (ADR 26-10-16-423 §7).
-func TestADeliveredSandboxIsNotRebuiltByAMovedPlatform(t *testing.T) {
+// A sandbox pinned before the bundles were a list (ADR 26-10-24-953 §1) is
+// not rebuilt by a moved image, platform or agent pin: its box applies its
+// platform at every start, and runs the sandbox base image. A moved harness
+// bundle pin still rebuilds it, as it did, and nothing about the list changed
+// its fingerprint. A sandbox with no platform pin keeps the fingerprint it
+// had (ADR 26-10-16-423 §7).
+func TestASandboxPinnedBeforeTheListKeepsItsFingerprint(t *testing.T) {
 	sb := &model.Sandbox{SandboxManifest: model.SandboxManifest{
 		Image: "discobox-harness-codex-image:v1", ImageDigest: "sha256:image-v1",
 		Bundle: codexBundle, BundleDigest: codexBundleV1,
 		PlatformBundle: platformRef, PlatformBundleDigest: platformOld,
 	}}
-	before := specFingerprint(sb, sandboxBundlePins(sb))
+	before := specFingerprint(sb)
 	if before == sb.Fingerprint() {
 		t.Fatal("a delivered sandbox has its manifest's fingerprint")
 	}
@@ -377,16 +423,42 @@ func TestADeliveredSandboxIsNotRebuiltByAMovedPlatform(t *testing.T) {
 	moved := *sb
 	moved.Image, moved.ImageDigest = "discobox-harness-codex-image:v2", "sha256:image-v2"
 	moved.PlatformBundleDigest = "sha256:" + strings.Repeat("5", 64)
-	if got := specFingerprint(&moved, sandboxBundlePins(&moved)); got != before {
-		t.Fatal("a moved platform or image pin changed a delivered sandbox's fingerprint")
+	moved.SetAgentPin(model.BundlePin{Reference: agentRef, Digest: agentV1})
+	if got := specFingerprint(&moved); got != before {
+		t.Fatal("a moved platform, image or agent pin changed a delivered sandbox's fingerprint")
 	}
 	moved.BundleDigest = "sha256:" + strings.Repeat("4", 64)
-	if got := specFingerprint(&moved, sandboxBundlePins(&moved)); got == before {
+	if got := specFingerprint(&moved); got == before {
 		t.Fatal("a moved harness bundle left a delivered sandbox's fingerprint as it was")
 	}
 
 	legacy := &model.Sandbox{SandboxManifest: model.SandboxManifest{Image: "discobox-harness-codex-image:v1", ImageDigest: "sha256:image-v1"}}
-	if got := specFingerprint(legacy, sandboxBundlePins(legacy)); got != legacy.Fingerprint() {
+	if got := specFingerprint(legacy); got != legacy.Fingerprint() {
 		t.Fatal("a sandbox delivered no platform lost the fingerprint it had")
+	}
+}
+
+// A sandbox pinned to the list is restarted by any moved pin, never rebuilt
+// (ADR 26-10-24-953 §1): no bundle digest, and not the agent's, is in its
+// fingerprint. What its container is built with is the composed harness
+// manifest, whose digest moving rebuilds it.
+func TestAListedSandboxIsRebuiltOnlyByItsManifest(t *testing.T) {
+	sb := &model.Sandbox{}
+	sb.SetPins(model.BundlePin{Reference: platformRef, Digest: platformOld}, model.BundlePin{Reference: codexBundle, Digest: codexBundleV1})
+	sb.SetAgentPin(model.BundlePin{Reference: agentRef, Digest: agentV1})
+	sb.HarnessManifestDigest = "sha256:" + strings.Repeat("6", 64)
+	before := specFingerprint(sb)
+	if before == sb.Fingerprint() {
+		t.Fatal("a delivered sandbox has its manifest's fingerprint")
+	}
+	moved := *sb
+	moved.SetPins(model.BundlePin{Reference: platformRef, Digest: platformNew}, model.BundlePin{Reference: codexBundle, Digest: codexBundleV2})
+	moved.SetAgentPin(model.BundlePin{Reference: agentRef, Digest: "sha256:" + strings.Repeat("9", 64)})
+	if got := specFingerprint(&moved); got != before {
+		t.Fatal("a moved bundle or agent pin changed a listed sandbox's fingerprint")
+	}
+	moved.HarnessManifestDigest = "sha256:" + strings.Repeat("7", 64)
+	if got := specFingerprint(&moved); got == before {
+		t.Fatal("a moved harness manifest left a listed sandbox's fingerprint as it was")
 	}
 }

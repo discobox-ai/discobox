@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -18,10 +19,13 @@ import (
 // no compression and no framing of its own.
 const TreeMediaType = "application/x-tar"
 
-// TreeBundleParam carries, once for each, the bundles an export's sandbox is
-// pinned to, as <kind>:<name>@<digest>: the pins a create would carry, whose
-// platform's agent the tree is read with.
-const TreeBundleParam = "bundle"
+// TreeAgentParam and TreeBundleParam carry what an export's sandbox is
+// delivered, each pin <name>@<digest>, as a create would carry it: the agent
+// the tree is read with, once, and each bundle in order, once for each.
+const (
+	TreeAgentParam  = "agent"
+	TreeBundleParam = "bundle"
+)
 
 // registerSandboxTreeRoutes exposes a sandbox's durable tree for export and
 // restore (ADR 0123).
@@ -48,12 +52,12 @@ func (s *sandboxService) exportSandboxTreeHandler() http.Handler {
 		}
 		// The pins come from the control plane, which owns them; an archived
 		// sandbox has no container here to read them from (ADR 0129 §1).
-		pins, err := treeBundlePins(r.URL.Query()[TreeBundleParam])
+		delivered, err := treeDelivery(r.URL.Query())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		stream, err := s.runtime.ExportTree(r.Context(), chi.URLParam(r, "sandboxId"), pins)
+		stream, err := s.runtime.ExportTree(r.Context(), chi.URLParam(r, "sandboxId"), delivered)
 		if err != nil {
 			// Before any of the body: once bytes are flowing, "it is running"
 			// can no longer be a status.
@@ -79,19 +83,32 @@ func (s *sandboxService) exportSandboxTreeHandler() http.Handler {
 	})
 }
 
-// treeBundlePins parses each <kind>:<name>@<digest> an export names.
-func treeBundlePins(values []string) ([]assetcache.Pin, error) {
-	pins := make([]assetcache.Pin, 0, len(values))
-	for _, value := range values {
-		kind, rest, ok := strings.Cut(value, ":")
-		name, digest, ok2 := strings.Cut(rest, "@")
-		pin := assetcache.Pin{Kind: assetcache.Kind(kind), Name: name, Digest: digest}
-		if !ok || !ok2 || (pin.Kind != assetcache.KindPlatform && pin.Kind != assetcache.KindHarness) || name == "" || !imagecache.IsDigest(digest) {
-			return nil, fmt.Errorf("bundle %q is not <platform|harness>:<name>@sha256:<digest>", value)
+// treeDelivery parses what an export names: the agent, and each bundle in
+// order, each <name>@<digest>.
+func treeDelivery(query url.Values) (assetcache.Delivery, error) {
+	parse := func(value string) (assetcache.Pin, error) {
+		name, digest, ok := strings.Cut(value, "@")
+		if !ok || name == "" || !imagecache.IsDigest(digest) {
+			return assetcache.Pin{}, fmt.Errorf("bundle %q is not <name>@sha256:<digest>", value)
 		}
-		pins = append(pins, pin)
+		return assetcache.Pin{Name: name, Digest: digest}, nil
 	}
-	return pins, nil
+	var d assetcache.Delivery
+	if agent := query.Get(TreeAgentParam); agent != "" {
+		pin, err := parse(agent)
+		if err != nil {
+			return assetcache.Delivery{}, err
+		}
+		d.Agent = pin
+	}
+	for _, value := range query[TreeBundleParam] {
+		pin, err := parse(value)
+		if err != nil {
+			return assetcache.Delivery{}, err
+		}
+		d.Bundles = append(d.Bundles, pin)
+	}
+	return d, d.Validate()
 }
 
 func (s *sandboxService) importSandboxTreeHandler() http.Handler {

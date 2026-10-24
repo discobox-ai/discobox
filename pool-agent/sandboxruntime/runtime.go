@@ -257,7 +257,7 @@ type Runtime interface {
 	//
 	// An export reads `data` and `sources` with the sandbox's own image, which
 	// is why it is told the image (ADR 0129 §1).
-	ExportTree(ctx context.Context, sandboxID string, pins []assetcache.Pin) (io.ReadCloser, error)
+	ExportTree(ctx context.Context, sandboxID string, delivered assetcache.Delivery) (io.ReadCloser, error)
 	ImportTree(ctx context.Context, sandboxID string, tree io.Reader) error
 	// SyncKnownPools reaps the agent-created footprint (sandbox containers and
 	// host data/proxy subtrees) of any pool on this shared host daemon whose ID
@@ -564,7 +564,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if err := validateCreateRequest(sandboxID, req); err != nil {
 		return nil, err
 	}
-	if delivered(bundlePins(req)) && r.sandboxBaseImage == "" {
+	if delivery(req).Delivered() && r.sandboxBaseImage == "" {
 		return nil, fmt.Errorf("sandbox %s is pinned to a platform, and this pool names no sandbox base image to run it on (%s)", sandboxID, EnvSandboxBaseImage)
 	}
 	// A create can start a container, so it waits out a cache clear and holds
@@ -595,7 +595,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	// answers it (ADR 26-10-16-423 §13). Recorded on every create, not only
 	// one that builds, so a sandbox from before the record gets one from the
 	// first create that reaches it.
-	if err := assetcache.WriteRecord(r.sandboxRoot(sandboxID), bundlePins(req)); err != nil {
+	if err := assetcache.WriteRecord(r.sandboxRoot(sandboxID), delivery(req)); err != nil {
 		return nil, fmt.Errorf("record sandbox %s's bundles: %w", sandboxID, err)
 	}
 	// Before anything reads a source path: a sandbox from before the slug was
@@ -731,7 +731,7 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	// to no platform has nothing to be built from. A sandbox from before
 	// bundles keeps a container it has as long as its spec does not move
 	// (CreateSandbox), and is built again once it is pinned to its bundles.
-	if !delivered(bundlePins(req)) {
+	if !delivery(req).Delivered() {
 		return nil, false, fmt.Errorf("sandbox %s: %w", sandboxID, ErrUndelivered)
 	}
 	normalizeSandboxConfig(r.paths, &req.Config)
@@ -2777,7 +2777,7 @@ func (r *MemorySandboxRuntime) DeleteSandbox(_ context.Context, sandboxID string
 // ExportTree hands back whatever tree this sandbox was imported with, and an
 // empty archive for one that was created here: there is no disk to walk, so
 // what an export means for this runtime is exactly what an import put in.
-func (r *MemorySandboxRuntime) ExportTree(_ context.Context, sandboxID string, _ []assetcache.Pin) (io.ReadCloser, error) {
+func (r *MemorySandboxRuntime) ExportTree(_ context.Context, sandboxID string, _ assetcache.Delivery) (io.ReadCloser, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if sb, ok := r.sandboxes[sandboxID]; ok && sb.Status == StatusRunning {
@@ -3866,14 +3866,18 @@ func cloneSandbox(sb *Sandbox) *Sandbox {
 	return &clone
 }
 
-// bundlePins is the bundles a create pins the sandbox to.
-func bundlePins(req *workerapimodel.PoolSandboxCreateRequest) []assetcache.Pin {
-	bundles, _ := req.Bundles.Get()
-	pins := make([]assetcache.Pin, 0, len(bundles))
-	for _, bundle := range bundles {
-		pins = append(pins, assetcache.Pin{Kind: assetcache.Kind(bundle.Kind), Name: bundle.Name, Digest: bundle.Digest})
+// delivery is what a create delivers the sandbox: the agent its pool places
+// in it and the bundles it applies, in order (ADR 26-10-24-953 §§1–2).
+func delivery(req *workerapimodel.PoolSandboxCreateRequest) assetcache.Delivery {
+	var d assetcache.Delivery
+	if agent, ok := req.Agent.Get(); ok {
+		d.Agent = assetcache.Pin{Name: agent.Name, Digest: agent.Digest}
 	}
-	return pins
+	bundles, _ := req.Bundles.Get()
+	for _, bundle := range bundles {
+		d.Bundles = append(d.Bundles, assetcache.Pin{Name: bundle.Name, Digest: bundle.Digest})
+	}
+	return d
 }
 
 // validateCreateRequest refuses a create the control plane did not fully

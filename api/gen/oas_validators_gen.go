@@ -8691,6 +8691,8 @@ func (s SandboxUpgradeReason) Validate() error {
 		return nil
 	case "platformBundleDigestChanged":
 		return nil
+	case "agentBundleDigestChanged":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

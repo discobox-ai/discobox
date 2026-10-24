@@ -200,40 +200,45 @@ func (c *Cache) fetchInto(ctx context.Context, path, digest string) error {
 
 func (c *Cache) has(digest string) bool { return c.blobs.HasBlob(digest) }
 
-// ErrNoAgentLayer is a platform pin whose manifest for the pool's platform
-// has no layers.
-var ErrNoAgentLayer = errors.New("the platform bundle has no agent layer for this pool")
+// ErrNoAgentLayer is an agent bundle whose manifest for the pool's platform
+// is not one layer.
+var ErrNoAgentLayer = errors.New("the agent bundle is not one layer for this pool")
 
-// AgentLayer is the digest of the agent layer of the sandbox's platform pin,
-// for the pool's platform: the last layer of the platform's manifest
-// (agentlayer.AgentLayer says why it is the last). False is a sandbox pinned
-// to no platform.
+// AgentLayer is the digest of the layer of the sandbox's agent bundle, for
+// the pool's platform: the bundle's one layer, the agent alone (ADR
+// 26-10-24-953 §2; agentlayer.AgentLayer checks what it holds). False is a
+// sandbox delivered nothing.
 func (c *Cache) AgentLayer(ctx context.Context, sandboxID string) (string, bool, error) {
-	pins, err := c.pins(sandboxID)
+	d, err := c.delivery(sandboxID)
 	if err != nil {
 		return "", false, err
 	}
-	pin, ok := Platform(pins)
-	if !ok {
+	if !d.Delivered() {
 		return "", false, nil
 	}
-	read, _, err := imagecache.ImageManifest(pin.Digest, imagecache.PoolPlatform(), func(digest string) (imagecache.Manifest, error) {
-		return c.manifest(ctx, pin.Name, digest)
+	read, _, err := imagecache.ImageManifest(d.Agent.Digest, imagecache.PoolPlatform(), func(digest string) (imagecache.Manifest, error) {
+		return c.manifest(ctx, d.Agent.Name, digest)
 	})
 	if err != nil {
 		return "", true, err
 	}
-	if len(read.Layers) == 0 {
-		return "", true, fmt.Errorf("%w: the platform's manifest has no layers", ErrNoAgentLayer)
+	if len(read.Layers) != 1 {
+		return "", true, fmt.Errorf("%w: its manifest has %d layers", ErrNoAgentLayer, len(read.Layers))
 	}
-	return read.Layers[len(read.Layers)-1].Digest, true, nil
+	return read.Layers[0].Digest, true, nil
 }
 
-// OpenBlob opens a blob the sandbox's pins reach, fetching it once when the
-// store lacks it. Its bytes are checked against the digest as they are read.
-func (c *Cache) OpenBlob(ctx context.Context, sandboxID, digest string) (io.ReadCloser, error) {
-	if err := c.pinnedBlob(ctx, sandboxID, digest); err != nil {
+// OpenAgentLayer opens digest, the layer of the sandbox's agent bundle
+// (AgentLayer), fetching it once when the store lacks it, for the pool to
+// place. Its bytes are checked against the digest as they are read. Any
+// other digest is not the agent's, and is refused.
+func (c *Cache) OpenAgentLayer(ctx context.Context, sandboxID, digest string) (io.ReadCloser, error) {
+	layer, ok, err := c.AgentLayer(ctx, sandboxID)
+	if err != nil {
 		return nil, err
+	}
+	if !ok || layer != digest {
+		return nil, errNotFound
 	}
 	if err := c.ensure(ctx, blobPath(digest), digest); err != nil {
 		return nil, err

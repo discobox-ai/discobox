@@ -40,10 +40,10 @@ import (
 // read-only into a container that is not the box (runExportMode).
 
 // AgentLayers is what the runtime reads an agent layer through: the pool's
-// asset cache, answering only what a sandbox's own pins reach.
+// asset cache, answering only the layer of a sandbox's own agent pin.
 type AgentLayers interface {
 	AgentLayer(ctx context.Context, sandboxID string) (string, bool, error)
-	OpenBlob(ctx context.Context, sandboxID, digest string) (io.ReadCloser, error)
+	OpenAgentLayer(ctx context.Context, sandboxID, digest string) (io.ReadCloser, error)
 }
 
 // agentBinaryName is the agent, extracted from its layer, in agentsDir.
@@ -64,31 +64,27 @@ func (r *DockerSandboxRuntime) agentsDir() string {
 	return filepath.Join(r.root.PoolBuild(r.projectID, r.poolID), "agents")
 }
 
-// deliveredPins is the sandbox's recorded pins as the box applies them, and
-// false when the sandbox is delivered no platform.
+// deliveredPins is the sandbox's recorded bundles as the box applies them,
+// and false when the sandbox is delivered nothing.
 func (r *DockerSandboxRuntime) deliveredPins(sandboxID string) (agentlayer.Pins, bool, error) {
-	pins, err := assetcache.ReadRecord(r.sandboxRoot(sandboxID))
+	d, err := assetcache.ReadRecord(r.sandboxRoot(sandboxID))
 	if err != nil {
 		return nil, false, err
 	}
-	return applied(pins)
+	return applied(d)
 }
 
-func applied(pins []assetcache.Pin) (agentlayer.Pins, bool, error) {
-	if _, ok := assetcache.Platform(pins); !ok {
+// applied is the bundles d delivers as the box applies them, in order, and
+// false when it delivers nothing.
+func applied(d assetcache.Delivery) (agentlayer.Pins, bool, error) {
+	if !d.Delivered() {
 		return nil, false, nil
 	}
-	out := make(agentlayer.Pins, 0, len(pins))
-	for _, pin := range pins {
+	out := make(agentlayer.Pins, 0, len(d.Bundles))
+	for _, pin := range d.Bundles {
 		out = append(out, agentlayer.Pin{Name: pin.Name, Digest: pin.Digest})
 	}
 	return out, true, out.Validate()
-}
-
-// delivered reports whether a create delivers the sandbox its platform.
-func delivered(pins []assetcache.Pin) bool {
-	_, ok := assetcache.Platform(pins)
-	return ok
 }
 
 // sandboxAgent is the sandbox's agent layer, extracted on this side, and
@@ -173,7 +169,7 @@ func (r *DockerSandboxRuntime) extractAgent(ctx context.Context, sandboxID, dige
 
 // openLayer is the layer's tar, ungzipped when it is compressed.
 func (r *DockerSandboxRuntime) openLayer(ctx context.Context, sandboxID, digest string) (io.ReadCloser, error) {
-	body, err := r.agentLayers.OpenBlob(ctx, sandboxID, digest)
+	body, err := r.agentLayers.OpenAgentLayer(ctx, sandboxID, digest)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +346,7 @@ const (
 // pool has no record of placing has moved, so it is started on what the
 // create says. A create that delivers nothing has moved nothing.
 func (r *DockerSandboxRuntime) deliveredMoved(ctx context.Context, existing *Sandbox, req *workerapimodel.PoolSandboxCreateRequest) (deliveredMove, error) {
-	pins, ok, err := applied(bundlePins(req))
+	pins, ok, err := applied(delivery(req))
 	if err != nil || !ok {
 		return movedNothing, err
 	}

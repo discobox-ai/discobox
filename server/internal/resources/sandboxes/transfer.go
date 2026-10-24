@@ -78,8 +78,8 @@ func (s *Service) ExportSandbox(ctx context.Context, projectID, sandboxID string
 	// worth taking somewhere that works. PoolID is on the row and immutable
 	// after create.
 	// The pins, not the harness config's current ones: the tree is read by
-	// the agent of the platform the sandbox is pinned to (ADR 0129 §1).
-	tree, err := provider.ExportTree(ctx, sandboxRefFromSandbox(sb), sb.PoolID, sandboxBundlePins(sb), sb.ProviderState)
+	// the agent the sandbox is pinned to (ADR 0129 §1).
+	tree, err := provider.ExportTree(ctx, sandboxRefFromSandbox(sb), sb.PoolID, sandboxDelivery(sb), sb.ProviderState)
 	if err != nil {
 		return nil, err
 	}
@@ -374,13 +374,20 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 		return nil, err
 	}
 	sb.Image, sb.ImageDigest = harnessPins.Image, harnessPins.ImageDigest
-	sb.Bundle, sb.BundleDigest = harnessPins.Bundle.Reference, harnessPins.Bundle.Digest
 	sb.HarnessManifestDigest = harnessPins.ManifestDigest
-	platformBundle, err := s.currentPlatform(ctx)
+	release, err := s.currentRelease(ctx)
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadGateway, err.Error())
 	}
-	sb.PlatformBundle, sb.PlatformBundleDigest = platformBundle.Reference, platformBundle.Digest
+	// An imported sandbox is pinned anew, as a created one is, whatever form
+	// the archive's own pins were in.
+	sb.Bundles, sb.Bundle, sb.BundleDigest, sb.PlatformBundle, sb.PlatformBundleDigest = nil, "", "", "", ""
+	sb.SetPins(release.Platform, harnessPins.Bundle)
+	agent := model.BundlePin{}
+	if release.Platform.Digest != "" {
+		agent = release.Agent
+	}
+	sb.SetAgentPin(agent)
 	if root := sb.Source.Root(); root != "" {
 		sb.SourceRoot = &root
 	}

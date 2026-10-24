@@ -11,23 +11,25 @@ import (
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 )
 
-// platformPins is the platform bundle the release pins, as the digests its
-// reference has resolved to while this server runs.
+// releasePins is a bundle the release pins every pool is answered — the
+// platform, the agent (ADR 26-10-16-423 §7, ADR 26-10-24-953 §2) — as the
+// digests its reference has resolved to while this server runs.
 //
-// The release names the platform by reference — a release tag, or a
-// development build's :local — and a digest is never dropped once answered:
-// a pool part way through fetching the platform it was handed keeps being
-// answered it after the tag moves. What a box was given lasts longer than
-// this process, as its sandbox's pin (ADR 26-10-16-423 §7), which the scope
-// reads beside these.
-type platformPins struct {
+// The release names it by reference — a release tag, or a development
+// build's :local — and a digest is never dropped once answered: a pool part
+// way through fetching the bundle it was handed keeps being answered it after
+// the tag moves. What a box was given lasts longer than this process, as its
+// sandbox's pin, which the scope reads beside these.
+type releasePins struct {
+	// what names the bundle in errors: "platform bundle", "agent bundle".
+	what    string
 	ref     string
 	resolve func(ctx context.Context, ref string) (string, error)
 	now     func() time.Time
 	// moved is told, off the resolving read's path, each digest the
 	// reference resolves to that differs from the one before, the first
-	// included: sandboxes are pinned to the platform, and a stopped one
-	// follows it (ADR 26-10-16-423 §7).
+	// included: sandboxes are pinned to it, and a stopped one follows it (ADR
+	// 26-10-16-423 §7).
 	moved func(digest string)
 
 	mu       sync.Mutex
@@ -38,20 +40,20 @@ type platformPins struct {
 	inFlight chan struct{}
 }
 
-// platformRetry is how long a resolution is taken as current before the
+// releaseRetry is how long a resolution is taken as current before the
 // reference is asked again — long enough that a pool's reads do not each ask
-// a registry, short enough that a rebuilt development platform is answered
-// soon after it is built — and platformRetryFailed how long a failure is.
+// a registry, short enough that a rebuilt development bundle is answered soon
+// after it is built — and releaseRetryFailed how long a failure is.
 const (
-	platformRetry       = time.Minute
-	platformRetryFailed = 10 * time.Second
+	releaseRetry       = time.Minute
+	releaseRetryFailed = 10 * time.Second
 )
 
 // pins answers every digest resolved so far, resolving afresh when the last
 // attempt is old, or when fresh is set. A resolution that fails leaves the
 // digests already resolved in place, and is the error only while there are
 // none.
-func (p *platformPins) pins(ctx context.Context, fresh bool) ([]string, error) {
+func (p *releasePins) pins(ctx context.Context, fresh bool) ([]string, error) {
 	if p == nil || p.ref == "" {
 		return nil, nil
 	}
@@ -59,9 +61,9 @@ func (p *platformPins) pins(ctx context.Context, fresh bool) ([]string, error) {
 		return []string{digest}, nil
 	}
 	p.mu.Lock()
-	retry := platformRetry
+	retry := releaseRetry
 	if p.lastErr != nil {
-		retry = platformRetryFailed
+		retry = releaseRetryFailed
 	}
 	stale := fresh || p.tried.IsZero() || p.now().Sub(p.tried) >= retry
 	if stale && p.inFlight == nil {
@@ -97,14 +99,14 @@ func (p *platformPins) pins(ctx context.Context, fresh bool) ([]string, error) {
 	}
 	defer p.mu.Unlock()
 	if len(p.digests) == 0 && p.lastErr != nil {
-		return nil, fmt.Errorf("resolve the platform bundle %s: %w", p.ref, p.lastErr)
+		return nil, fmt.Errorf("resolve the %s %s: %w", p.what, p.ref, p.lastErr)
 	}
 	return slices.Clone(p.digests), nil
 }
 
 // fixed is the digest a reference pinned by digest names, empty for one
 // that names a tag.
-func (p *platformPins) fixed() string {
+func (p *releasePins) fixed() string {
 	if _, digest, ok := strings.Cut(p.ref, "@"); ok && imagecache.IsDigest(digest) {
 		return digest
 	}
@@ -112,7 +114,7 @@ func (p *platformPins) fixed() string {
 }
 
 // current is what the reference last resolved to, without asking again.
-func (p *platformPins) current() string {
+func (p *releasePins) current() string {
 	if p == nil || p.ref == "" {
 		return ""
 	}
@@ -126,7 +128,7 @@ func (p *platformPins) current() string {
 
 // newest is what the reference resolves to now, which a name resolution
 // answers: resolved afresh, and an error when that fails.
-func (p *platformPins) newest(ctx context.Context) (string, error) {
+func (p *releasePins) newest(ctx context.Context) (string, error) {
 	if _, err := p.pins(ctx, true); err != nil {
 		return "", err
 	}
@@ -136,7 +138,7 @@ func (p *platformPins) newest(ctx context.Context) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.lastErr != nil {
-		return "", fmt.Errorf("resolve the platform bundle %s: %w", p.ref, p.lastErr)
+		return "", fmt.Errorf("resolve the %s %s: %w", p.what, p.ref, p.lastErr)
 	}
 	return p.latest, nil
 }

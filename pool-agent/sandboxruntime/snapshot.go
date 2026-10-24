@@ -91,14 +91,17 @@ type snapshotBuilds struct {
 // sandbox.
 type snapshotPlan struct {
 	// Base is the sandbox base image's ID.
-	Base     string          `json:"base"`
-	Project  string          `json:"project"`
-	Pool     string          `json:"pool"`
-	Pins     agentlayer.Pins `json:"pins"`
-	Off      []string        `json:"off,omitempty"`
-	Egress   egress.Policy   `json:"egress"`
-	features map[string]sandboxconfig.Feature
-	bundles  []assetcache.Pin
+	Base    string          `json:"base"`
+	Project string          `json:"project"`
+	Pool    string          `json:"pool"`
+	Pins    agentlayer.Pins `json:"pins"`
+	// Agent is the agent bundle placed in the build, which the snapshot
+	// holds (ADR 26-10-24-953 §2).
+	Agent     string        `json:"agent"`
+	Off       []string      `json:"off,omitempty"`
+	Egress    egress.Policy `json:"egress"`
+	features  map[string]sandboxconfig.Feature
+	delivered assetcache.Delivery
 }
 
 // Key is the plan's digest's hex: the snapshot's tag.
@@ -126,19 +129,20 @@ func (r *DockerSandboxRuntime) snapshotContainerName(id string) string {
 
 // newSnapshotPlan is the plan of a delivered create on the base image baseID.
 func (r *DockerSandboxRuntime) newSnapshotPlan(baseID string, req *workerapimodel.PoolSandboxCreateRequest) (snapshotPlan, error) {
-	bundles := bundlePins(req)
-	pins, _, err := applied(bundles)
+	delivered := delivery(req)
+	pins, _, err := applied(delivered)
 	if err != nil {
 		return snapshotPlan{}, err
 	}
 	plan := snapshotPlan{
-		Base:     baseID,
-		Project:  r.projectID,
-		Pool:     r.poolID,
-		Pins:     pins,
-		Egress:   egress.Merge(egressPolicy(req.ProvisionEgress)),
-		features: map[string]sandboxconfig.Feature{},
-		bundles:  bundles,
+		Base:      baseID,
+		Project:   r.projectID,
+		Pool:      r.poolID,
+		Pins:      pins,
+		Agent:     delivered.Agent.Digest,
+		Egress:    egress.Merge(egressPolicy(req.ProvisionEgress)),
+		features:  map[string]sandboxconfig.Feature{},
+		delivered: delivered,
 	}
 	if features, ok := req.Config.Features.Get(); ok {
 		for _, name := range slices.Sorted(maps.Keys(features)) {
@@ -259,7 +263,7 @@ func (r *DockerSandboxRuntime) buildSnapshot(ctx context.Context, plan snapshotP
 	}
 	// What assets.discobox.internal answers the build, as a sandbox's record
 	// is what it answers the sandbox.
-	if err := assetcache.WriteRecord(dir, plan.bundles); err != nil {
+	if err := assetcache.WriteRecord(dir, plan.delivered); err != nil {
 		return err
 	}
 	material, err := proxyagent.EnsureSandboxMaterial(r.root, r.projectID, r.poolID, id)

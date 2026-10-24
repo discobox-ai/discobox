@@ -4560,8 +4560,11 @@ components:
                 nothing to move to.
             properties:
                 available:
-                    description: Whether the harness config now resolves to a different bundle or manifest file, or the release to a different platform bundle, than this sandbox is pinned to
+                    description: Whether the harness config now resolves to a different bundle or manifest file, or the release to a different platform or agent bundle, than this sandbox is pinned to
                     type: boolean
+                currentAgentBundleDigest:
+                    description: Agent bundle digest this sandbox's pool places it with
+                    type: string
                 currentBundleDigest:
                     description: Harness bundle digest this sandbox is pinned to
                     type: string
@@ -4581,6 +4584,10 @@ components:
                         - bundleDigestChanged
                         - manifestDigestChanged
                         - platformBundleDigestChanged
+                        - agentBundleDigestChanged
+                    type: string
+                targetAgentBundleDigest:
+                    description: Agent bundle digest an upgrade would pin this sandbox to
                     type: string
                 targetBundleDigest:
                     description: Harness bundle digest an upgrade would pin this sandbox to

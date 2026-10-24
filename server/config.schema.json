@@ -4,6 +4,16 @@
   "additionalProperties": false,
   "description": "Configuration for discobox-server. Every setting may also be set by the environment variable named in its description, which takes precedence over this file.",
   "properties": {
+    "agentBundle": {
+      "description": "The agent bundle, the sandbox agent alone, which a pool places in every discobox before it starts. Defaults to the one this build ships. Environment: DISCOBOX_AGENT_BUNDLE (takes precedence over this file).",
+      "examples": [
+        "ghcr.io/discobox-ai/discobox-agent:v0.8.0"
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "archiveRetention": {
       "description": "How long an archived sandbox is kept before purging, for projects with no retention of their own, as a Go duration. Defaults to 24h. Environment: DISCOBOX_ARCHIVE_RETENTION (takes precedence over this file).",
       "examples": [

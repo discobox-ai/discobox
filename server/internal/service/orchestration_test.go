@@ -881,7 +881,7 @@ func waitForSandboxConverged(ctx context.Context, t *testing.T, svc *service.Ser
 	}
 }
 
-func (noopSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRef, string, []sandboxes.BundlePin, []byte) (io.ReadCloser, error) {
+func (noopSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRef, string, sandboxes.Delivery, []byte) (io.ReadCloser, error) {
 	return nil, nil
 }
 

@@ -16,21 +16,14 @@ func (s *ErrorModelStatusCode) Error() string {
 }
 
 // A bundle a sandbox is pinned to (ADR 26-10-16-423 §§7, 13), as the asset API addresses it.
+// Nothing says which bundle of the sandbox it is (ADR 26-10-24-953 §1).
 // Ref: #/components/schemas/BundlePin
 type BundlePin struct {
-	// Which bundle of the sandbox this is. The platform's is the one whose agent layer the pool places
-	// in the sandbox before each start.
-	Kind BundlePinKind `json:"kind"`
 	// The bundle's name, the last component of its reference's repository, which the server's asset
 	// routes and assets.discobox.internal address it by.
 	Name string `json:"name"`
 	// The manifest or index digest the sandbox is pinned to.
 	Digest string `json:"digest"`
-}
-
-// GetKind returns the value of Kind.
-func (s *BundlePin) GetKind() BundlePinKind {
-	return s.Kind
 }
 
 // GetName returns the value of Name.
@@ -43,11 +36,6 @@ func (s *BundlePin) GetDigest() string {
 	return s.Digest
 }
 
-// SetKind sets the value of Kind.
-func (s *BundlePin) SetKind(val BundlePinKind) {
-	s.Kind = val
-}
-
 // SetName sets the value of Name.
 func (s *BundlePin) SetName(val string) {
 	s.Name = val
@@ -56,49 +44,6 @@ func (s *BundlePin) SetName(val string) {
 // SetDigest sets the value of Digest.
 func (s *BundlePin) SetDigest(val string) {
 	s.Digest = val
-}
-
-// Which bundle of the sandbox this is. The platform's is the one whose agent layer the pool places
-// in the sandbox before each start.
-type BundlePinKind string
-
-const (
-	BundlePinKindPlatform BundlePinKind = "platform"
-	BundlePinKindHarness  BundlePinKind = "harness"
-)
-
-// AllValues returns all BundlePinKind values.
-func (BundlePinKind) AllValues() []BundlePinKind {
-	return []BundlePinKind{
-		BundlePinKindPlatform,
-		BundlePinKindHarness,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s BundlePinKind) MarshalText() ([]byte, error) {
-	switch s {
-	case BundlePinKindPlatform:
-		return []byte(s), nil
-	case BundlePinKindHarness:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *BundlePinKind) UnmarshalText(data []byte) error {
-	switch BundlePinKind(data) {
-	case BundlePinKindPlatform:
-		*s = BundlePinKindPlatform
-		return nil
-	case BundlePinKindHarness:
-		*s = BundlePinKindHarness
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }
 
 // A sandbox's effective egress policy (ADR 26-10-01-032), merged by the
@@ -1131,6 +1076,52 @@ func (o OptBool) Get() (v bool, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptBool) Or(d bool) bool {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptBundlePin returns new OptBundlePin with value set to v.
+func NewOptBundlePin(v BundlePin) OptBundlePin {
+	return OptBundlePin{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptBundlePin is optional BundlePin.
+type OptBundlePin struct {
+	Value BundlePin
+	Set   bool
+}
+
+// IsSet returns true if OptBundlePin was set.
+func (o OptBundlePin) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptBundlePin) Reset() {
+	var v BundlePin
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptBundlePin) SetTo(v BundlePin) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptBundlePin) Get() (v BundlePin, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptBundlePin) Or(d BundlePin) BundlePin {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -4196,9 +4187,12 @@ func (s *PoolListHTTPAuditOrder) UnmarshalText(data []byte) error {
 type PoolSandboxCreateRequest struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// The bundles the sandbox is pinned to, each by kind. The pool records them, replacing what an
-	// earlier create recorded, and assets.discobox.internal answers the sandbox only manifests and blobs
-	// they reach. Absent or empty is none.
+	// The agent bundle the pool places in the sandbox before each start (ADR 26-10-24-953 §2), the
+	// agent alone. A sandbox sent bundles is sent its agent; absent is none, and then no bundles either.
+	Agent OptBundlePin `json:"agent"`
+	// The bundles the sandbox applies, in order (ADR 26-10-24-953 §1). The pool records them, replacing
+	// what an earlier create recorded, and places them as the box's pins; assets.discobox.internal
+	// answers the sandbox only manifests and blobs they reach. Absent or empty is none.
 	Bundles OptNilBundlePinArray `json:"bundles"`
 	// Durable stopped-only harness change fence to apply. Must match the pool reservation when one
 	// exists.
@@ -4233,6 +4227,11 @@ type PoolSandboxCreateRequest struct {
 // GetSchema returns the value of Schema.
 func (s *PoolSandboxCreateRequest) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetAgent returns the value of Agent.
+func (s *PoolSandboxCreateRequest) GetAgent() OptBundlePin {
+	return s.Agent
 }
 
 // GetBundles returns the value of Bundles.
@@ -4293,6 +4292,11 @@ func (s *PoolSandboxCreateRequest) GetSecretEnv() OptNilPoolSandboxCreateRequest
 // SetSchema sets the value of Schema.
 func (s *PoolSandboxCreateRequest) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetAgent sets the value of Agent.
+func (s *PoolSandboxCreateRequest) SetAgent(val OptBundlePin) {
+	s.Agent = val
 }
 
 // SetBundles sets the value of Bundles.

@@ -1,8 +1,10 @@
 #!/bin/sh
-# The agent and discobox-access run from the platform tree, where the build put
-# them (ADR 26-10-16-423 §7), so a new agent needs no step applied again: the
-# links follow the tree. discobox-access is its own binary, never a
-# personality: the credential CLI is meant to run outside a discobox (ADR 0031).
+# The agent runs from where its maker placed it, /opt/discobox/current (ADR
+# 26-10-24-953 §2), and discobox-access from the platform tree, where the build
+# put it (ADR 26-10-16-423 §7): a new agent or tree needs no step applied
+# again, since the links follow them. discobox-access is its own binary, never
+# a personality: the credential CLI is meant to run outside a discobox (ADR
+# 0031).
 #
 # Then core's personalities of the agent, each a link it dispatches on by
 # argv[0] (see cmd/discobox-sandbox-agent): `discobox-power` (keepalive, sleep
@@ -14,7 +16,7 @@ set -eu
 
 dir="${DISCOBOX_PROVISION_FEATURE_DIR:?}"
 install -d -m 0755 /usr/local/bin
-ln -sfn "$dir/discobox-sandbox-agent" /usr/local/bin/discobox-sandbox-agent
+ln -sfn /opt/discobox/current/features/core/discobox-sandbox-agent /usr/local/bin/discobox-sandbox-agent
 ln -sfn "$dir/discobox-access" /usr/local/bin/discobox-access
 for c in discobox-power discobox-ca-anchor discobox-hook-publish discobox-provision; do
   ln -sf /usr/local/bin/discobox-sandbox-agent "/usr/local/bin/$c"

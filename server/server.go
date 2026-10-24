@@ -70,7 +70,7 @@ func PrintReleaseManifest(w io.Writer) error {
 		PoolAgent: dockerworker.DefaultPoolImage, SandboxBase: dockerworker.DefaultSandboxBaseImage,
 		VM: guestimage.DefaultVMImage, Kernel: libkrun.DefaultKernelImage,
 	}, Bundles: releasemanifest.Bundles{
-		Platform: harness.PlatformBundleRef(), Harnesses: map[string]string{}, PoolAgent: dockerworker.DefaultPoolAgentBundle,
+		Platform: harness.PlatformBundleRef(), Agent: harness.AgentBundleRef(), Harnesses: map[string]string{}, PoolAgent: dockerworker.DefaultPoolAgentBundle,
 	}}
 	for _, definition := range registry.Definitions() {
 		m.Bundles.Harnesses[definition.ID] = definition.Bundle

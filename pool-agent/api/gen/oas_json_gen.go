@@ -23,10 +23,6 @@ func (s *BundlePin) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *BundlePin) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("kind")
-		s.Kind.Encode(e)
-	}
-	{
 		e.FieldStart("name")
 		e.Str(s.Name)
 	}
@@ -36,10 +32,9 @@ func (s *BundlePin) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfBundlePin = [3]string{
-	0: "kind",
-	1: "name",
-	2: "digest",
+var jsonFieldsNameOfBundlePin = [2]string{
+	0: "name",
+	1: "digest",
 }
 
 // Decode decodes BundlePin from json.
@@ -51,18 +46,8 @@ func (s *BundlePin) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "kind":
-			requiredBitSet[0] |= 1 << 0
-			if err := func() error {
-				if err := s.Kind.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"kind\"")
-			}
 		case "name":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -74,7 +59,7 @@ func (s *BundlePin) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "digest":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Digest = string(v)
@@ -95,7 +80,7 @@ func (s *BundlePin) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000111,
+		0b00000011,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -137,46 +122,6 @@ func (s *BundlePin) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *BundlePin) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes BundlePinKind as json.
-func (s BundlePinKind) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes BundlePinKind from json.
-func (s *BundlePinKind) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode BundlePinKind to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch BundlePinKind(v) {
-	case BundlePinKindPlatform:
-		*s = BundlePinKindPlatform
-	case BundlePinKindHarness:
-		*s = BundlePinKindHarness
-	default:
-		*s = BundlePinKind(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s BundlePinKind) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *BundlePinKind) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -2241,6 +2186,39 @@ func (s OptBool) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptBool) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes BundlePin as json.
+func (o OptBundlePin) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes BundlePin from json.
+func (o *OptBundlePin) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptBundlePin to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptBundlePin) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptBundlePin) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -5724,6 +5702,12 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Agent.Set {
+			e.FieldStart("agent")
+			s.Agent.Encode(e)
+		}
+	}
+	{
 		if s.Bundles.Set {
 			e.FieldStart("bundles")
 			s.Bundles.Encode(e)
@@ -5787,19 +5771,20 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxCreateRequest = [12]string{
+var jsonFieldsNameOfPoolSandboxCreateRequest = [13]string{
 	0:  "$schema",
-	1:  "bundles",
-	2:  "harnessChangeId",
-	3:  "config",
-	4:  "egress",
-	5:  "provisionEgress",
-	6:  "gateways",
-	7:  "resolvedHarnessConfig",
-	8:  "sandboxId",
-	9:  "sentinels",
-	10: "sentinelRoutes",
-	11: "secretEnv",
+	1:  "agent",
+	2:  "bundles",
+	3:  "harnessChangeId",
+	4:  "config",
+	5:  "egress",
+	6:  "provisionEgress",
+	7:  "gateways",
+	8:  "resolvedHarnessConfig",
+	9:  "sandboxId",
+	10: "sentinels",
+	11: "sentinelRoutes",
+	12: "secretEnv",
 }
 
 // Decode decodes PoolSandboxCreateRequest from json.
@@ -5820,6 +5805,16 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
+			}
+		case "agent":
+			if err := func() error {
+				s.Agent.Reset()
+				if err := s.Agent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"agent\"")
 			}
 		case "bundles":
 			if err := func() error {
@@ -5842,7 +5837,7 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"harnessChangeId\"")
 			}
 		case "config":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				if err := s.Config.Decode(d); err != nil {
 					return err
@@ -5892,7 +5887,7 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resolvedHarnessConfig\"")
 			}
 		case "sandboxId":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -5943,8 +5938,8 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b00001000,
-		0b00000001,
+		0b00010000,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

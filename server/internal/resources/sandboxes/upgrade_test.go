@@ -118,13 +118,13 @@ func TestUpgradeTargetOffersConfigBundleToUnpinnedSandboxes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("currentRepin: %v", err)
 	}
-	want := services.BundlePin{Reference: codexBundle, Digest: codexBundleV2}
+	want := model.BundlePin{Reference: codexBundle, Digest: codexBundleV2}
 	if !target.Available || target.Harness.Bundle != want || target.Harness.Image != "" {
 		t.Fatalf("unpinned target = %+v, want available with the config's bundle alone", target)
 	}
 	target.apply(unpinned)
-	if unpinned.Image != "" || unpinned.ImageDigest != "" || unpinned.BundleDigest != codexBundleV2 {
-		t.Fatalf("applied image %q@%q bundle %q, want the image left behind for the bundle", unpinned.Image, unpinned.ImageDigest, unpinned.BundleDigest)
+	if unpinned.Image != "" || unpinned.ImageDigest != "" || unpinned.HarnessPin().Digest != codexBundleV2 {
+		t.Fatalf("applied image %q@%q bundle %q, want the image left behind for the bundle", unpinned.Image, unpinned.ImageDigest, unpinned.HarnessPin().Digest)
 	}
 }
 
@@ -190,7 +190,7 @@ func TestUpgradeTargetForHarnesslessSandboxIsTheFallback(t *testing.T) {
 	if !target.Available {
 		t.Fatalf("target = %+v, want an available upgrade to the fallback", target)
 	}
-	if target.Harness.Bundle != (services.BundlePin{Reference: shell.Bundle, Digest: shell.BundleDigest}) {
+	if target.Harness.Bundle != (model.BundlePin{Reference: shell.Bundle, Digest: shell.BundleDigest}) {
 		t.Fatalf("target = %+v, want the shell config's bundle", target)
 	}
 
@@ -248,7 +248,7 @@ type pinCapturingProvider struct {
 }
 
 func (p *pinCapturingProvider) Create(_ context.Context, _ sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
-	p.created = append(p.created, opts.Bundles)
+	p.created = append(p.created, opts.Delivery.Bundles)
 	return &sandbox.Sandbox{ID: "runtime-1"}, state, nil
 }
 
@@ -262,6 +262,7 @@ func TestReconcileNeverRepinsToTheConfigBundle(t *testing.T) {
 
 	for _, state := range []string{model.SandboxStateReady, model.SandboxStateFailed, model.SandboxStatePending} {
 		sb := pinnedSandbox(t, st, config.ID, codexBundle, codexBundleV1)
+		sb.SetAgentPin(model.BundlePin{Reference: agentRef, Digest: agentV1})
 		sb.State = state
 		sb.DesiredState = model.DesiredStatePresent
 		sb.IncrementGeneration()
@@ -277,7 +278,7 @@ func TestReconcileNeverRepinsToTheConfigBundle(t *testing.T) {
 		if len(provider.created) != 1 {
 			t.Fatalf("state %q: creates = %d, want 1", state, len(provider.created))
 		}
-		want := []BundlePin{{Kind: BundleHarness, Name: "discobox-harness-codex", Digest: codexBundleV1}}
+		want := []BundlePin{{Name: "discobox-harness-codex", Digest: codexBundleV1}}
 		if got := provider.created[0]; !slices.Equal(got, want) {
 			t.Fatalf("state %q: created with %+v, want the sandbox's own pin %+v", state, got, want)
 		}

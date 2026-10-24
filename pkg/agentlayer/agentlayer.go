@@ -41,8 +41,8 @@ const (
 	// CurrentLink is the stable path the agent runs from: a link to the
 	// directory of the agent layer placed last.
 	CurrentLink = "/opt/discobox/current"
-	// AgentFile is the agent's path within its layer, and within the
-	// platform bundle's tree: core's directory.
+	// AgentFile is the agent's path within its layer, the agent bundle's one
+	// (ADR 26-10-24-953 §2).
 	AgentFile = "features/core/discobox-sandbox-agent"
 	// AgentPath is the agent the units run.
 	AgentPath = CurrentLink + "/" + AgentFile
@@ -137,10 +137,10 @@ var ErrNotAgentLayer = errors.New("not the agent layer")
 
 // AgentLayer reads a layer's tar and fails with ErrNotAgentLayer unless it
 // holds the agent and nothing else: AgentFile, a regular file, and the
-// directories above it. The platform bundle's last layer is its agent layer
-// (sandbox-agent/Dockerfile), which is how a pool finds it in a manifest it
-// knows only by digest; this is what makes a mislaid one fail by name rather
-// than boot a box from whatever file it holds.
+// directories above it. The agent bundle is that one layer
+// (sandbox-agent/Dockerfile's agent stage, ADR 26-10-24-953 §2), which
+// whoever makes a box knows only by digest; this is what makes a wrong one
+// fail by name rather than boot a box from whatever file it holds.
 func AgentLayer(layer io.Reader) error {
 	tr := tar.NewReader(layer)
 	found := false

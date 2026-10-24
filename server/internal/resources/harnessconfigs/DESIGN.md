@@ -86,7 +86,7 @@ true of it, and true *by rule* rather than by slug:
 - **The composed manifest has a digest of its own**, `ManifestDigest`: of
   what the config snapshots from the composition, so it moves when the
   harness bundle's labels or the platform's layer do and with nothing else —
-  not with a platform binary, which a box takes from its platform pin at its
+  not with the agent, which a box's pool places from its agent pin at its
   next start. It is what a sandbox's container is built with — its env,
   files and volumes reach a container only when it is created — so a sandbox
   pins it beside the bundle and its rebuild keys on it (`sandboxes/DESIGN.md`):

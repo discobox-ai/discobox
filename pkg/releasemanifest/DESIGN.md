@@ -5,6 +5,10 @@ and libkrun kernel. The sandbox base is optional: a release cut before the
 Docker driver owned one names none. Beside them, `Bundles` names the platform
 bundle and each harness's bundle by slug (ADR 26-10-16-423 §2): the server
 composes every harness's manifest from them and every box applies them.
+`Bundles.Agent` is the agent bundle, the sandbox agent alone, which whoever
+makes a box places in it (ADR 26-10-24-953 §2); a release cut before it names
+none, and still parses. These name bundles by role for the server to compose
+a box's ordered list from; nothing past the server sees the roles.
 `Bundles.PoolAgent` is the pool-agent bundle, the pool agent for a pool
 machine booted from a driver base (ADR 26-10-23-551 §2); a release cut before it names none, and still
 parses. No

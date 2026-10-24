@@ -171,21 +171,25 @@ func TestPoolCreateRequestCarriesFeatures(t *testing.T) {
 	}
 }
 
-// The pool is sent the bundles a sandbox is pinned to, each by kind, as what
-// its box may fetch from assets.discobox.internal and, for the platform, the
-// agent it places in the box (ADR 26-10-16-423 §§7, 13); none is no field at
-// all.
+// The pool is sent what a sandbox is delivered, the agent and the bundles in
+// order, with nothing saying which bundle is which (ADR 26-10-24-953 §§1–2);
+// none is no field at all.
 func TestPoolCreateRequestForwardsBundlePins(t *testing.T) {
+	agent := "sha256:" + strings.Repeat("3", 64)
 	platform := "sha256:" + strings.Repeat("1", 64)
 	harness := "sha256:" + strings.Repeat("2", 64)
-	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
-		Bundles: []sandbox.BundlePin{{Kind: sandbox.BundlePlatform, Name: "discobox-platform", Digest: platform}, {Kind: sandbox.BundleHarness, Name: "discobox-harness-codex", Digest: harness}},
-	})
+	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{Delivery: sandbox.Delivery{
+		Agent:   sandbox.BundlePin{Name: "discobox-agent", Digest: agent},
+		Bundles: []sandbox.BundlePin{{Name: "discobox-platform", Digest: platform}, {Name: "discobox-harness-codex", Digest: harness}},
+	}})
 	pins, ok := request.Bundles.Get()
-	if !ok || len(pins) != 2 || pins[0].Kind != "platform" || pins[1].Kind != "harness" || pins[0].Name != "discobox-platform" || pins[0].Digest != platform || pins[1].Name != "discobox-harness-codex" || pins[1].Digest != harness {
+	if !ok || len(pins) != 2 || pins[0].Name != "discobox-platform" || pins[0].Digest != platform || pins[1].Name != "discobox-harness-codex" || pins[1].Digest != harness {
 		t.Fatalf("bundles = %+v", pins)
 	}
-	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}); request.Bundles.IsSet() {
-		t.Fatalf("bundles = %+v for a sandbox pinned to none", request.Bundles)
+	if got, ok := request.Agent.Get(); !ok || got.Name != "discobox-agent" || got.Digest != agent {
+		t.Fatalf("agent = %+v", request.Agent)
+	}
+	if request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{}); request.Bundles.IsSet() || request.Agent.IsSet() {
+		t.Fatalf("bundles = %+v, agent %+v for a sandbox pinned to none", request.Bundles, request.Agent)
 	}
 }
