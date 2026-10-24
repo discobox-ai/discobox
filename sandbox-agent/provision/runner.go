@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,10 +101,6 @@ type Runner struct {
 type Options struct {
 	// Off is the features the project turned off, each with why.
 	Off map[string]string
-	// Harness is the harness's own features. They, core, and every feature
-	// they require block readiness, and none of them is turned off unless
-	// the box's own copy is usable (ADR 26-10-16-423 §4).
-	Harness []string
 	// Background provisions what readiness does not wait for after it is
 	// reached, in parallel. Unset, every step blocks, as an image build or a
 	// snapshot provisions (§8).
@@ -125,8 +120,8 @@ type featurePlan struct {
 	// blocking is a feature readiness waits for.
 	blocking bool
 	// whole is a blocking feature readiness waits for every step of, its
-	// async marks overridden: one the harness requires, or that a blocking
-	// feature requires, which needs all of it in place before it runs.
+	// async marks overridden: one a blocking feature requires, which needs
+	// all of it in place before it runs.
 	whole bool
 	// firstAsync is the index of the feature's first step marked async: in
 	// a blocking feature that is not whole, it and every step after it run
@@ -495,38 +490,25 @@ func (r *Runner) plan(ctx context.Context, features []provisionspec.Feature, opt
 	for _, feature := range ordered {
 		byName[feature.Name] = feature
 	}
-	for _, name := range opts.Harness {
-		if _, ok := byName[name]; !ok {
-			return nil, fmt.Errorf("the harness's feature %q is not there", name)
-		}
-	}
-	// requiredBy is, for each feature core or the harness needs, what needs
-	// it, to name in a refusal.
+	// A feature that is not async blocks readiness (ADR 26-10-24-953 §1):
+	// what blocks is each feature's own say, never which bundle it came in.
+	// It runs its steps in order up to the first one marked async, and what
+	// it requires blocks whole, every step, since it needs all of that in
+	// place before it runs. requiredBy is, for each feature something
+	// blocking needs, what needs it, to name in a refusal: none of them is
+	// turned off. Core is never off, async or not.
 	requiredBy := map[string]string{}
-	harness := map[string]bool{}
-	var require func(name, by string, fromHarness bool)
-	require = func(name, by string, fromHarness bool) {
-		if _, ok := requiredBy[name]; ok && (harness[name] || !fromHarness) {
+	var require func(name, by string)
+	require = func(name, by string) {
+		if _, ok := requiredBy[name]; ok {
 			return
 		}
 		requiredBy[name] = by
-		if fromHarness {
-			harness[name] = true
-		}
 		for _, next := range byName[name].Spec.Requires {
-			require(next, by, fromHarness)
+			require(next, by)
 		}
 	}
-	for _, name := range opts.Harness {
-		require(name, fmt.Sprintf("the harness's feature %q", name), true)
-	}
-	core, hasCore := byName[provisionspec.Core]
-	if hasCore {
-		require(provisionspec.Core, "core", false)
-	}
-	// whole is every feature a blocking feature requires: the harness's
-	// closure, and core's requirements unless core itself is async.
-	whole := maps.Clone(harness)
+	whole := map[string]bool{}
 	var wholly func(name string)
 	wholly = func(name string) {
 		if whole[name] {
@@ -537,10 +519,22 @@ func (r *Runner) plan(ctx context.Context, features []provisionspec.Feature, opt
 			wholly(next)
 		}
 	}
-	if hasCore && (harness[provisionspec.Core] || !core.Spec.Async) {
-		for _, name := range core.Spec.Requires {
-			wholly(name)
+	blocking := map[string]bool{}
+	for _, feature := range ordered {
+		if feature.Spec.Async {
+			continue
 		}
+		blocking[feature.Name] = true
+		if _, ok := requiredBy[feature.Name]; !ok {
+			requiredBy[feature.Name] = "readiness"
+		}
+		for _, next := range feature.Spec.Requires {
+			require(next, fmt.Sprintf("the feature %q, which readiness waits for,", feature.Name))
+			wholly(next)
+		}
+	}
+	if _, hasCore := byName[provisionspec.Core]; hasCore {
+		require(provisionspec.Core, "core")
 	}
 
 	var plans []*featurePlan
@@ -552,7 +546,7 @@ func (r *Runner) plan(ctx context.Context, features []provisionspec.Feature, opt
 		byPlan[feature.Name] = plan
 		_, required := requiredBy[feature.Name]
 		plan.whole = whole[feature.Name]
-		plan.blocking = plan.whole || (feature.Name == provisionspec.Core && !feature.Spec.Async)
+		plan.blocking = plan.whole || blocking[feature.Name]
 		plan.firstAsync = len(feature.Spec.Steps)
 		if i := slices.IndexFunc(feature.Spec.Steps, func(step provisionspec.Step) bool { return step.Async }); i >= 0 {
 			plan.firstAsync = i
@@ -625,18 +619,16 @@ func (r *Runner) installedHere(feature provisionspec.Feature) bool {
 }
 
 // order sorts features so each comes after those it requires, and otherwise
-// by name. A requirement on a feature that is not there, or a cycle, is
-// refused.
+// in the order they are given: provisionspec.Load gives them bundle by
+// bundle, in the box's pins' order, so a later bundle's blocking features run
+// after an earlier one's (ADR 26-10-24-953 §1). Background features run side
+// by side, each after what it requires. A requirement on a feature that is
+// not there, or a cycle, is refused.
 func order(features []provisionspec.Feature) ([]provisionspec.Feature, error) {
 	byName := map[string]provisionspec.Feature{}
 	for _, feature := range features {
 		byName[feature.Name] = feature
 	}
-	names := make([]string, 0, len(byName))
-	for name := range byName {
-		names = append(names, name)
-	}
-	slices.Sort(names)
 	const (
 		visiting = 1
 		done     = 2
@@ -665,8 +657,8 @@ func order(features []provisionspec.Feature) ([]provisionspec.Feature, error) {
 		ordered = append(ordered, feature)
 		return nil
 	}
-	for _, name := range names {
-		if err := visit(name, nil); err != nil {
+	for _, feature := range features {
+		if err := visit(feature.Name, nil); err != nil {
 			return nil, err
 		}
 	}

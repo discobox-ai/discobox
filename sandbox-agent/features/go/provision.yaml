@@ -1,5 +1,6 @@
 # Go, at upstream's latest release, under /usr/local/go.
 apiVersion: discobox.ai/provision/v1
+async: true
 commands: [go, gofmt]
 adopt:
   commands: [go]

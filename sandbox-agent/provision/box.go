@@ -2,24 +2,12 @@ package provision
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
-)
-
-// The bundle trees a box provisions at boot: the platform's, and the
-// harness's, whose features and every feature they require block readiness.
-// Each is provisioned when it is there; a box with neither has no features,
-// and its tools are what its image came with.
-const (
-	PlatformTree = "/opt/discobox/bundles/platform"
-	HarnessTree  = "/opt/discobox/bundles/harness"
 )
 
 // LogDir holds each feature's log at boot.
@@ -28,33 +16,15 @@ const LogDir = "/var/log/discobox/provision"
 // optedOutReason is why a feature the project turned off is off.
 const optedOutReason = "turned off in " + sandboxconfig.SettingsFile
 
-// BootPlan is what a box provisions at boot: the features of the bundle
-// trees under root, and the options the bootstrap's features and the harness
-// tree make of them.
-func BootPlan(root string, features map[string]sandboxconfig.Feature) ([]provisionspec.Feature, Options, error) {
+// BootPlan is what a box provisions at boot: the features of its bundle
+// trees, in the order its pins name them, and the options the bootstrap's
+// features make of them. A box with no trees has no features, and its tools
+// are what its image came with.
+func BootPlan(trees []string, features map[string]sandboxconfig.Feature) ([]provisionspec.Feature, Options, error) {
 	opts := Options{Off: map[string]string{}, Background: true}
 	for name, feature := range features {
 		if !feature.Enabled {
 			opts.Off[name] = optedOutReason
-		}
-	}
-	var trees []string
-	for _, tree := range []string{PlatformTree, HarnessTree} {
-		dir := filepath.Join(root, tree)
-		if _, err := os.Stat(filepath.Join(dir, provisionspec.FeaturesDir)); errors.Is(err, fs.ErrNotExist) {
-			continue
-		} else if err != nil {
-			return nil, opts, err
-		}
-		trees = append(trees, dir)
-		if tree == HarnessTree {
-			harness, err := provisionspec.Load(dir)
-			if err != nil {
-				return nil, opts, err
-			}
-			for _, feature := range harness {
-				opts.Harness = append(opts.Harness, feature.Name)
-			}
 		}
 	}
 	if len(trees) == 0 {
@@ -67,13 +37,13 @@ func BootPlan(root string, features map[string]sandboxconfig.Feature) ([]provisi
 	return loaded, opts, nil
 }
 
-// Boot provisions this box at boot from its bundle trees, turning off the
-// features the bootstrap does, and reports to tracker, which writes
+// Boot provisions this box at boot from its bundle trees, in order, turning
+// off the features the bootstrap does, and reports to tracker, which writes
 // provision.json. wireOnly runs the wiring alone (Runner.Wire), as boot does
 // before the account exists; otherwise it is the whole run (Runner.Provision),
 // the agent's, which returns once nothing is left to provision.
-func Boot(ctx context.Context, logger *slog.Logger, tracker *Tracker, features map[string]sandboxconfig.Feature, wireOnly bool) error {
-	loaded, opts, err := BootPlan("/", features)
+func Boot(ctx context.Context, logger *slog.Logger, tracker *Tracker, trees []string, features map[string]sandboxconfig.Feature, wireOnly bool) error {
+	loaded, opts, err := BootPlan(trees, features)
 	if err != nil {
 		tracker.Fail(err)
 		return err
@@ -103,13 +73,14 @@ func Boot(ctx context.Context, logger *slog.Logger, tracker *Tracker, features m
 	return err
 }
 
-// Snapshot provisions this box from its bundle trees as a snapshot is taken
+// Snapshot provisions this box from its bundle trees, in order, as a
+// snapshot is taken
 // (ADR 26-10-16-423 §8): the features turned off as a sandbox's bootstrap
 // turns them off, every step blocking, and the steps a feature keeps out of a
 // snapshot left for the boot of each box made from it (Options.Snapshot). It
 // reports to tracker, and returns once nothing is left to provision.
-func Snapshot(ctx context.Context, logger *slog.Logger, tracker *Tracker, features map[string]sandboxconfig.Feature) error {
-	loaded, opts, err := BootPlan("/", features)
+func Snapshot(ctx context.Context, logger *slog.Logger, tracker *Tracker, trees []string, features map[string]sandboxconfig.Feature) error {
+	loaded, opts, err := BootPlan(trees, features)
 	if err != nil {
 		tracker.Fail(err)
 		return err

@@ -12,6 +12,7 @@
 # A sandbox running as root gets a working brew too: Homebrew's root guard
 # stands down in a container, and root can write the tree whoever owns it.
 apiVersion: discobox.ai/provision/v1
+async: true
 commands: [brew]
 steps:
   - name: group

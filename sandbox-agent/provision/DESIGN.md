@@ -50,17 +50,23 @@ runs, unless it has no features to provision.
 | `boot.Wire` / `boot.Provision` | `Boot(…, wireOnly=true)` → `Runner.Wire` | Wiring alone, before the account exists |
 | `discobox-sandbox-agent snapshot` | `Snapshot` → `Runner.Provision` with `Snapshot` | Every step blocking, the plan's features off, and what a feature keeps out of a snapshot `Deferred`: a box provisioned as a snapshot is taken ([Snapshots](#snapshots)) |
 
-At boot the trees are `/opt/discobox/bundles/platform` and
-`/opt/discobox/bundles/harness`, each when present (`BootPlan`); the harness
-tree's features are the harness's. On a box its pool placed pins in, they are
-links into the content store (`bundlestore`), pointed at its pins' trees
-before the run starts, so the paths a step or a link names stay the same
-across upgrades and follow the trees. A step that lays a binary the build
-made links it from the tree rather than copying it, so a new agent is a new
-file and no step applied again. A box with neither tree has no features:
-`provision.json` lists none, and its tools are its image's. Opt-outs are the
-bootstrap's `features` (`sandbox.json`), which the client read from the
-repository's `.discobox/settings.json`.
+At boot the trees are the box's pins' bundles, in the pins' order
+(`bundlestore.Trees`, handed to `BootPlan`): a sandbox's sandbox bundle and
+then its harness's, or a pool's pool bundle. Each is read at its stable link
+in the content store, `agentlayer.BundleTree(name)`, pointed at the pin's
+tree before the run starts, so the paths a step or a link names stay the
+same across upgrades and follow the trees; a step's record keys its
+feature's directory too, so one applied from another path is applied
+again. Nothing says which
+tree is which ([ADR 26-10-24-953](../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
+§1): order is the tie-break of what runs first, a later bundle's blocking
+features after an earlier one's, and what blocks is each feature's own
+`async`. A step that lays a binary the build made links it from the tree
+rather than copying it, so a new agent is a new file and no step applied
+again. A box with no trees has no features: `provision.json` lists none, and
+its tools are its image's. Opt-outs are the bootstrap's `features`
+(`sandbox.json`), which the client read from the repository's
+`.discobox/settings.json`.
 
 Core's steps never lay the agent's own units: they boot a box before any
 feature is provisioned, so they are root `agentlayer`'s, placed by the pool
@@ -73,7 +79,7 @@ flowchart TD
     plan["plan: order by requires,<br/>probe adopt, decide off"] -->|refused| fail["readiness failed"]
     plan --> wire["wiring of every feature on:<br/>group and env steps"]
     wire --> ph["placeholders for features<br/>left to the background"]
-    ph --> block["blocking steps in requires order:<br/>core, the harness's, what they require"]
+    ph --> block["blocking steps in requires order:<br/>every feature not async, what they require"]
     block --> ready["readiness decided<br/>(Tracker.AwaitReady)"]
     ready --> bg["the rest, in parallel,<br/>each after what it requires"]
     bg --> done["provision.json: ready or failed"]
@@ -81,8 +87,9 @@ flowchart TD
 
 - **Outcome.** A feature turned off, and required by nothing, is `off`: no
   step runs and its env scripts go, but nothing is uninstalled. One requiring
-  an `off` feature is off too. A feature core or the harness requires is
-  refused when turned off, naming both — unless its `adopt` check passes.
+  an `off` feature is off too. A feature that is not `async`, or that one
+  requires, is refused when turned off, naming both — unless its `adopt`
+  check passes.
   Core (`provisionspec.Core`) is never off: the server refuses it in a
   create's `features`, and a run refuses it outright.
 - **Adopted.** `adopt` is checked by the agent, not a script: each command on
@@ -92,10 +99,11 @@ flowchart TD
   feature with a record of an install step is ours and is never adopted.
 - **How.** Ready is `adopted`, `installed` when this run applied a step, else
   `snapshot`.
-- **Blocking.** Core, unless it is `async`, and *whole*: everything core or
-  the harness requires, and the harness's own features, every step, their
-  `async` marks overridden — a blocking feature needs all of what it
-  requires. In core a step marked `async` defers itself and every step after
+- **Blocking.** Every feature that is not `async` — core, a harness's
+  features; the platform's optional features are `async` — and *whole*:
+  everything a blocking feature requires, every step, its `async` marks
+  overridden, since a blocking feature needs all of what it requires. In a
+  blocking feature a step marked `async` defers itself and every step after
   it, so steps still run in the order written. Without `Background` every
   step blocks.
 - **Failure.** A failed step is not recorded, fails its feature and those

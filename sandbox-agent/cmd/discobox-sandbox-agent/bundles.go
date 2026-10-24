@@ -65,7 +65,12 @@ func provisionBox(ctx context.Context, tracker *provision.Tracker, runtimeConfig
 			return err
 		}
 	}
-	return provision.Boot(ctx, slog.Default(), tracker, features, false)
+	trees, err := bundlestore.Trees("/")
+	if err != nil {
+		tracker.Fail(err)
+		return err
+	}
+	return provision.Boot(ctx, slog.Default(), tracker, trees, features, false)
 }
 
 // fetchBundles applies the pins in agentlayer.PinsFile, when the pool placed

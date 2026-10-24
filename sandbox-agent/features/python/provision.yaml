@@ -1,6 +1,7 @@
 # Python 3 with pip and venv as Debian packages it, and uv, adopted where the
 # box already has one (the Docker driver's sandbox base image does).
 apiVersion: discobox.ai/provision/v1
+async: true
 commands: [uv, uvx]
 adopt:
   commands: [uv, uvx]

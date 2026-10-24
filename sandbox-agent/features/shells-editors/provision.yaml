@@ -3,6 +3,7 @@
 # fresh, the editor the launcher's tools picker opens. The upstream builds
 # are pinned, their version and checksums moving together.
 apiVersion: discobox.ai/provision/v1
+async: true
 commands: [nvim, nu, fresh]
 steps:
   - name: packages

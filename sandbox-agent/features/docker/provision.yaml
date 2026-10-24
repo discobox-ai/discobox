@@ -6,6 +6,7 @@
 #
 # It installs no Docker: the image the box starts from has one.
 apiVersion: discobox.ai/provision/v1
+async: true
 steps:
   - name: socket-activation
     run: socket-activation.sh

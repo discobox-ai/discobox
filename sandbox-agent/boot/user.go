@@ -16,6 +16,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxuser"
+	"github.com/discobox-ai/discobox/sandbox-agent/bundlestore"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
 )
@@ -632,7 +633,11 @@ func newBooter() *booter {
 		// Not fatal: what failed is in provision.json, and the agent's run
 		// tries again and fails readiness if it still fails.
 		tracker := provision.NewTracker(provisionspec.StatusPath)
-		if err := provision.Boot(ctx, logger, tracker, features, true); err != nil {
+		trees, err := bundlestore.Trees("/")
+		if err == nil {
+			err = provision.Boot(ctx, logger, tracker, trees, features, true)
+		}
+		if err != nil {
 			logger.Warn("provision the box's wiring", "error", err)
 		}
 	}

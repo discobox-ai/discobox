@@ -23,7 +23,6 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
-	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 )
 
 // assets is an asset host in memory, counting what it is asked for.
@@ -152,29 +151,34 @@ var (
 	nodeLayer  = map[string]string{"features/": "", "features/node/": "", "features/node/provision.yaml": "node"}
 )
 
-func TestApplyComposesEachPinsTreeAndPointsProvisioningAtIt(t *testing.T) {
+func TestApplyComposesEachPinsTreeInOrder(t *testing.T) {
 	a := newAssets()
 	platform, _ := a.bundle(t, "discobox-platform", true, layer(t, coreLayer), layer(t, nodeLayer), layer(t, agentLayer))
 	harness, _ := a.bundle(t, "discobox-harness-claude-code", false, layer(t, map[string]string{"features/claude-code/provision.yaml": "claude"}))
 	s := newStore(t, a)
 	err := s.Apply(context.Background(), agentlayer.Pins{
-		Platform: agentlayer.Pin{Name: "discobox-platform", Digest: platform},
-		Harness:  &agentlayer.Pin{Name: "discobox-harness-claude-code", Digest: harness},
+		{Name: "discobox-platform", Digest: platform},
+		{Name: "discobox-harness-claude-code", Digest: harness},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := read(t, s, provision.PlatformTree+"/features/core/discobox-sandbox-agent"); got != "agent v1" {
+	if got := read(t, s, tree(t, s, 0)+"/features/core/discobox-sandbox-agent"); got != "agent v1" {
 		t.Fatalf("agent = %q", got)
 	}
-	if got := read(t, s, provision.PlatformTree+"/features/core/provision.yaml"); got != "core v1" {
+	if got := read(t, s, tree(t, s, 0)+"/features/core/provision.yaml"); got != "core v1" {
 		t.Fatalf("core = %q", got)
 	}
-	if got := read(t, s, provision.HarnessTree+"/features/claude-code/provision.yaml"); got != "claude" {
+	if got := read(t, s, tree(t, s, 1)+"/features/claude-code/provision.yaml"); got != "claude" {
 		t.Fatalf("harness = %q", got)
 	}
-	if link, err := os.Readlink(s.path(provision.PlatformTree)); err != nil || !strings.HasPrefix(link, "trees/") {
-		t.Fatalf("platform tree is %q, %v; want a link into trees/", link, err)
+	trees, err := Trees(s.Root)
+	want := []string{s.path(agentlayer.BundleTree("discobox-platform")), s.path(agentlayer.BundleTree("discobox-harness-claude-code"))}
+	if err != nil || !slices.Equal(trees, want) {
+		t.Fatalf("trees = %q, %v; want %q, the pins' links in their order", trees, err, want)
+	}
+	if link, err := os.Readlink(trees[0]); err != nil || !strings.HasPrefix(link, "../trees/") {
+		t.Fatalf("the platform's link is %q, %v; want one into trees/", link, err)
 	}
 }
 
@@ -183,12 +187,12 @@ func TestApplyFetchesOnlyTheLayersTheStoreLacks(t *testing.T) {
 	core, agent := layer(t, coreLayer), layer(t, agentLayer)
 	first, _ := a.bundle(t, "discobox-platform", true, core, agent)
 	s := newStore(t, a)
-	if err := s.Apply(context.Background(), agentlayer.Pins{Platform: agentlayer.Pin{Name: "discobox-platform", Digest: first}}); err != nil {
+	if err := s.Apply(context.Background(), agentlayer.Pins{{Name: "discobox-platform", Digest: first}}); err != nil {
 		t.Fatal(err)
 	}
 	agent2 := layer(t, map[string]string{"features/": "", "features/core/": "", "features/core/discobox-sandbox-agent": "agent v2"})
 	second, _ := a.bundle(t, "discobox-platform", true, core, agent2)
-	if err := s.Apply(context.Background(), agentlayer.Pins{Platform: agentlayer.Pin{Name: "discobox-platform", Digest: second}}); err != nil {
+	if err := s.Apply(context.Background(), agentlayer.Pins{{Name: "discobox-platform", Digest: second}}); err != nil {
 		t.Fatal(err)
 	}
 	if n := a.asked["/blobs/"+digestOf(core)]; n != 1 {
@@ -197,7 +201,7 @@ func TestApplyFetchesOnlyTheLayersTheStoreLacks(t *testing.T) {
 	if n := a.asked["/blobs/"+digestOf(agent2)]; n != 1 {
 		t.Fatalf("the changed layer was fetched %d times, want once", n)
 	}
-	if got := read(t, s, provision.PlatformTree+"/features/core/discobox-sandbox-agent"); got != "agent v2" {
+	if got := read(t, s, tree(t, s, 0)+"/features/core/discobox-sandbox-agent"); got != "agent v2" {
 		t.Fatalf("agent = %q", got)
 	}
 }
@@ -208,7 +212,7 @@ func TestApplyKeepsThePreviousTreeAndCollectsTheRest(t *testing.T) {
 	var trees []string
 	for _, version := range []string{"v1", "v2", "v3"} {
 		pinned, tree := a.bundle(t, "discobox-platform", false, layer(t, map[string]string{"features/core/discobox-sandbox-agent": version}))
-		if err := s.Apply(context.Background(), agentlayer.Pins{Platform: agentlayer.Pin{Name: "discobox-platform", Digest: pinned}}); err != nil {
+		if err := s.Apply(context.Background(), agentlayer.Pins{{Name: "discobox-platform", Digest: pinned}}); err != nil {
 			t.Fatal(err)
 		}
 		trees = append(trees, tree)
@@ -256,13 +260,13 @@ func TestApplyUsesTheAgentLayerThePoolPlaced(t *testing.T) {
 	if err := os.Symlink("bundles/layers/"+agentlayer.Hex(digest), s.path(agentlayer.CurrentLink)); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Apply(context.Background(), agentlayer.Pins{Platform: agentlayer.Pin{Name: "discobox-platform", Digest: pinned}}); err != nil {
+	if err := s.Apply(context.Background(), agentlayer.Pins{{Name: "discobox-platform", Digest: pinned}}); err != nil {
 		t.Fatal(err)
 	}
 	if n := a.asked["/blobs/"+digest]; n != 0 {
 		t.Fatalf("the placed agent layer was fetched %d times", n)
 	}
-	if got := read(t, s, provision.PlatformTree+"/features/core/discobox-sandbox-agent"); got != "placed" {
+	if got := read(t, s, tree(t, s, 0)+"/features/core/discobox-sandbox-agent"); got != "placed" {
 		t.Fatalf("agent = %q", got)
 	}
 }
@@ -276,29 +280,31 @@ func TestApplyFetchesAgainALayerWhosePlacementWasCutShort(t *testing.T) {
 	if err := os.MkdirAll(partial, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Apply(context.Background(), agentlayer.Pins{Platform: agentlayer.Pin{Name: "discobox-platform", Digest: pinned}}); err != nil {
+	if err := s.Apply(context.Background(), agentlayer.Pins{{Name: "discobox-platform", Digest: pinned}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := read(t, s, provision.PlatformTree+"/features/core/discobox-sandbox-agent"); got != "agent v1" {
+	if got := read(t, s, tree(t, s, 0)+"/features/core/discobox-sandbox-agent"); got != "agent v1" {
 		t.Fatalf("agent = %q", got)
 	}
 }
 
-func TestApplyRemovesTheHarnessTreeWhenNoHarnessIsPinned(t *testing.T) {
+func TestApplyRecordsOnlyTheTreesOfThePinsItApplied(t *testing.T) {
 	a := newAssets()
 	platform, _ := a.bundle(t, "discobox-platform", false, layer(t, agentLayer))
 	harness, _ := a.bundle(t, "discobox-harness-x", false, layer(t, map[string]string{"features/x/provision.yaml": "x"}))
 	s := newStore(t, a)
-	pins := agentlayer.Pins{Platform: agentlayer.Pin{Name: "discobox-platform", Digest: platform}, Harness: &agentlayer.Pin{Name: "discobox-harness-x", Digest: harness}}
+	pins := agentlayer.Pins{{Name: "discobox-platform", Digest: platform}, {Name: "discobox-harness-x", Digest: harness}}
 	if err := s.Apply(context.Background(), pins); err != nil {
 		t.Fatal(err)
 	}
-	pins.Harness = nil
-	if err := s.Apply(context.Background(), pins); err != nil {
+	if err := s.Apply(context.Background(), pins[:1]); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Lstat(s.path(provision.HarnessTree)); !os.IsNotExist(err) {
-		t.Fatalf("the harness tree is still there: %v", err)
+	if trees, err := Trees(s.Root); err != nil || len(trees) != 1 {
+		t.Fatalf("trees = %q, %v; want the one pin's", trees, err)
+	}
+	if _, err := os.Lstat(s.path(agentlayer.BundleTree("discobox-harness-x"))); !os.IsNotExist(err) {
+		t.Fatalf("the unpinned bundle's link is still there: %v", err)
 	}
 }
 
@@ -360,12 +366,12 @@ func TestApplyRefuses(t *testing.T) {
 			if name == "an index with no manifest for the platform" {
 				s.Platform = imagecache.Platform{OS: "linux", Architecture: "arm64"}
 			}
-			err := s.Apply(context.Background(), agentlayer.Pins{Platform: agentlayer.Pin{Name: "discobox-platform", Digest: pinned}})
+			err := s.Apply(context.Background(), agentlayer.Pins{{Name: "discobox-platform", Digest: pinned}})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Apply = %v, want an error saying %q", err, tc.want)
 			}
-			if _, err := os.Lstat(s.path(provision.PlatformTree)); !os.IsNotExist(err) {
-				t.Fatalf("a refused bundle was pointed at: %v", err)
+			if trees, err := Trees(s.Root); err != nil || len(trees) != 0 {
+				t.Fatalf("a refused bundle was recorded: %q, %v", trees, err)
 			}
 		})
 	}
@@ -381,17 +387,17 @@ func TestApplyFetchesNothingForPinsTheStoreHolds(t *testing.T) {
 	second, _ := a.bundle(t, "discobox-platform", true, layer(t, coreLayer), layer(t, map[string]string{"features/": "", "features/core/": "", "features/core/discobox-sandbox-agent": "agent v2"}))
 	s := newStore(t, a)
 	for _, digest := range []string{first, second} {
-		if err := s.Apply(context.Background(), agentlayer.Pins{Platform: agentlayer.Pin{Name: "discobox-platform", Digest: digest}}); err != nil {
+		if err := s.Apply(context.Background(), agentlayer.Pins{{Name: "discobox-platform", Digest: digest}}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	s.Fetcher = failingFetcher{t}
 	for _, digest := range []string{second, first} {
-		if err := s.Apply(context.Background(), agentlayer.Pins{Platform: agentlayer.Pin{Name: "discobox-platform", Digest: digest}}); err != nil {
+		if err := s.Apply(context.Background(), agentlayer.Pins{{Name: "discobox-platform", Digest: digest}}); err != nil {
 			t.Fatalf("apply %s from the store: %v", digest, err)
 		}
 	}
-	if got := read(t, s, provision.PlatformTree+"/features/core/discobox-sandbox-agent"); got != "agent v1" {
+	if got := read(t, s, tree(t, s, 0)+"/features/core/discobox-sandbox-agent"); got != "agent v1" {
 		t.Fatalf("agent = %q after going back to the first pins, want agent v1", got)
 	}
 }
@@ -401,4 +407,14 @@ type failingFetcher struct{ t *testing.T }
 func (f failingFetcher) Fetch(_ context.Context, path string) (io.ReadCloser, error) {
 	f.t.Errorf("fetched %s for pins the store holds", path)
 	return nil, errors.New("no asset route")
+}
+
+// tree is where the box reads the tree of the i'th pin it last applied.
+func tree(t *testing.T, s *Store, i int) string {
+	t.Helper()
+	st, err := s.readState()
+	if err != nil || i >= len(st.Bundles) {
+		t.Fatalf("state = %+v, %v; want a bundle at %d", st, err, i)
+	}
+	return agentlayer.BundleTree(st.Bundles[i])
 }

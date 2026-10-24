@@ -178,7 +178,7 @@ func TestPlaceAgentCopiesTheLayerOnlyWhenTheBoxLacksIt(t *testing.T) {
 		t.Fatalf("placed agent = %q, want the layer's", got)
 	}
 	pinned, err := agentlayer.ParsePins([]byte(names["opt/discobox/bundles/pins.json"]))
-	if err != nil || pinned.Platform.Digest != pins[0].Digest || pinned.Harness == nil || pinned.Harness.Digest != pins[1].Digest {
+	if err != nil || len(pinned) != 2 || pinned[0].Digest != pins[0].Digest || pinned[1].Digest != pins[1].Digest {
 		t.Fatalf("placed pins = %+v, %v", pinned, err)
 	}
 

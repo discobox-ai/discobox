@@ -271,7 +271,7 @@ func (r *DockerSandboxRuntime) buildSnapshot(ctx context.Context, plan snapshotP
 	}
 	agent, ok, err := r.sandboxAgent(ctx, id)
 	if err != nil {
-		return fmt.Errorf("the agent of platform %s: %w", plan.Pins.Platform.Digest, err)
+		return fmt.Errorf("the agent of pins %v: %w", plan.Pins, err)
 	}
 	if !ok {
 		return errors.New("this pool has no asset cache to place the agent from")

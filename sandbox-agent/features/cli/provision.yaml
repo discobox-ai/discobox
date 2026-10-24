@@ -1,5 +1,6 @@
 # The command-line tools a working box is expected to have, and gh.
 apiVersion: discobox.ai/provision/v1
+async: true
 commands: [gh]
 steps:
   - name: packages

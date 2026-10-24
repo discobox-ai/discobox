@@ -106,11 +106,12 @@
   unless it holds a lock across both (`Runner.merge`, as `Runner.apt` for apt
   and dpkg). Both steps are then recorded as applied, and the loss is never
   repaired.
-- **A blocking feature needs all of what it requires.** Everything the
-  harness requires, and everything core requires unless core itself is
-  `async`, blocks readiness whole, its `async` marks overridden
-  (`featurePlan.whole`); an `async` step in core defers itself and every step
-  after it. Readiness reported while a requirement is in the background runs
+- **A blocking feature needs all of what it requires.** Everything a
+  feature that is not `async` requires blocks readiness whole, its `async`
+  marks overridden (`featurePlan.whole`); an `async` step in a blocking
+  feature defers itself and every step after it. Whether a feature blocks is
+  its own `async`, never which bundle it came in: a platform feature that
+  must not hold up readiness says `async: true`. Readiness reported while a requirement is in the background runs
   core's steps without it.
 - **The content store trusts a digest, never a response.** `bundlestore`
   checks a manifest's bytes and a blob's against the digest that named them

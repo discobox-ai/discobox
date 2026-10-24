@@ -98,15 +98,19 @@ func (r Records) RecordSandbox(sandboxID string) error {
 	return writeFileAtomic(r.sandboxPath(), []byte(sandboxID+"\n"), 0o600)
 }
 
-// StepDigest keys a step: a digest of the feature it belongs to, its
-// definition, and the content of every file it names, so editing a script
-// re-applies the step that runs it and no other.
+// StepDigest keys a step: a digest of the feature it belongs to and where
+// its tree is, its definition, and the content of every file it names, so
+// editing a script re-applies the step that runs it and no other. The
+// feature's directory is in it because a step may link what it lays from
+// there: a step applied from another path is applied again, rather than
+// leaving a link into a tree the store will collect.
 func StepDigest(feature provisionspec.Feature, step provisionspec.Step) (string, error) {
 	definition, err := json.Marshal(struct {
 		APIVersion string             `json:"apiVersion"`
 		Feature    string             `json:"feature"`
+		Dir        string             `json:"dir"`
 		Step       provisionspec.Step `json:"step"`
-	}{provisionspec.APIVersion, feature.Name, step})
+	}{provisionspec.APIVersion, feature.Name, feature.Dir, step})
 	if err != nil {
 		return "", err
 	}

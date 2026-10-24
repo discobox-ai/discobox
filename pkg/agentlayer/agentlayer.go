@@ -35,6 +35,9 @@ const (
 	// PinsFile is the pins the box applies, placed with the agent before
 	// every start (Pins).
 	PinsFile = StoreDir + "/pins.json"
+	// BundlesDir holds a link for each bundle the box applies, by its name,
+	// to the tree its pin resolved to (BundleTree).
+	BundlesDir = StoreDir + "/by-name"
 	// CurrentLink is the stable path the agent runs from: a link to the
 	// directory of the agent layer placed last.
 	CurrentLink = "/opt/discobox/current"
@@ -62,6 +65,12 @@ func LayerComplete(digest string) string { return LayerDir(digest) + completeSuf
 // TreeDir is where the store keeps the tree of the manifest digest.
 func TreeDir(digest string) string { return TreesDir + "/" + Hex(digest) }
 
+// BundleTree is the path the box reads the bundle name's tree at: a link,
+// pointed at the tree of whatever digest the bundle is pinned to now, so the
+// path a step links from stays the same across upgrades and follows the
+// tree.
+func BundleTree(name string) string { return BundlesDir + "/" + name }
+
 // Hex is a digest's hex, which names its directories.
 func Hex(digest string) string { return strings.TrimPrefix(digest, "sha256:") }
 
@@ -83,23 +92,30 @@ func (p Pin) validate(what string) error {
 	return nil
 }
 
-// Pins are the bundles a box applies at its start: the platform's always, and
-// its harness's when it has one. The pool writes them with every placement,
-// from its own record of the sandbox's pins, which is also all the box may
-// fetch (ADR 26-10-16-423 §13); a pin moved while the box runs reaches it at
-// its next start.
-type Pins struct {
-	Platform Pin  `json:"platform"`
-	Harness  *Pin `json:"harness,omitempty"`
-}
+// Pins are the bundles a box applies, in order (ADR 26-10-24-953 §1): a
+// sandbox's are its sandbox bundle and then its harness's, a pool's its pool
+// bundle. Nothing in them says which is which; order is the composition and
+// tie-break order of what the box provisions. The box's maker writes them
+// with every placement, from its own record of the box's pins, which is also
+// all the box may fetch (ADR 26-10-16-423 §13); a pin moved while the box
+// runs reaches it at its next start.
+type Pins []Pin
 
-// Validate refuses pins naming no bundle the store could fetch.
+// Validate refuses pins naming no bundle, a bundle the store could not
+// fetch, or one bundle twice.
 func (p Pins) Validate() error {
-	if err := p.Platform.validate("platform"); err != nil {
-		return err
+	if len(p) == 0 {
+		return errors.New("the pins name no bundle")
 	}
-	if p.Harness != nil {
-		return p.Harness.validate("harness")
+	seen := map[string]bool{}
+	for i, pin := range p {
+		if err := pin.validate(fmt.Sprintf("pin %d's", i)); err != nil {
+			return err
+		}
+		if seen[pin.Name] {
+			return fmt.Errorf("bundle %q is pinned twice", pin.Name)
+		}
+		seen[pin.Name] = true
 	}
 	return nil
 }
@@ -108,10 +124,10 @@ func (p Pins) Validate() error {
 func ParsePins(data []byte) (Pins, error) {
 	var pins Pins
 	if err := json.Unmarshal(data, &pins); err != nil {
-		return Pins{}, fmt.Errorf("decode %s: %w", PinsFile, err)
+		return nil, fmt.Errorf("decode %s: %w", PinsFile, err)
 	}
 	if err := pins.Validate(); err != nil {
-		return Pins{}, fmt.Errorf("%s: %w", PinsFile, err)
+		return nil, fmt.Errorf("%s: %w", PinsFile, err)
 	}
 	return pins, nil
 }

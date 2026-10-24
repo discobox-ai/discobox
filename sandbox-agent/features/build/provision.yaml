@@ -1,5 +1,6 @@
 # A C toolchain and make, for whatever builds from source.
 apiVersion: discobox.ai/provision/v1
+async: true
 steps:
   - name: packages
     packages:

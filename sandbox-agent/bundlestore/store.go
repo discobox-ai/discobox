@@ -54,6 +54,9 @@ type Store struct {
 // store holds is applied with nothing fetched (ADR 26-10-16-423 §7: a box
 // booted with its plan in its store fetches nothing).
 type state struct {
+	// Bundles is the names of the pins applied last, in their order, each
+	// with a link at agentlayer.BundleTree.
+	Bundles  []string          `json:"bundles,omitempty"`
 	Current  []string          `json:"current"`
 	Previous []string          `json:"previous,omitempty"`
 	Resolved map[string]string `json:"resolved,omitempty"`
@@ -74,16 +77,17 @@ func (s *Store) logger() *slog.Logger {
 	return slog.Default()
 }
 
-// Apply makes pins the box's bundles: each pin's tree in the store, the
-// platform's at provision.PlatformTree and the harness's at
-// provision.HarnessTree, where provisioning reads them. The trees the
-// current and previous pins name are kept, for rollback, and every other
-// tree and every layer no kept tree uses is removed.
+// Apply makes pins the box's bundles: each pin's tree in the store, linked
+// at agentlayer.BundleTree by its name, and the bundles recorded in the
+// pins' order (Trees), which is the order provisioning reads them in. A
+// bundle no longer pinned loses its link. The trees the current and previous pins name are kept, for
+// rollback, and every other tree and every layer no kept tree uses is
+// removed.
 func (s *Store) Apply(ctx context.Context, pins agentlayer.Pins) error {
 	if err := pins.Validate(); err != nil {
 		return err
 	}
-	for _, dir := range []string{agentlayer.LayersDir, agentlayer.TreesDir} {
+	for _, dir := range []string{agentlayer.LayersDir, agentlayer.TreesDir, agentlayer.BundlesDir} {
 		if err := os.MkdirAll(s.path(dir), 0o755); err != nil {
 			return err
 		}
@@ -93,31 +97,24 @@ func (s *Store) Apply(ctx context.Context, pins agentlayer.Pins) error {
 		s.logger().Warn("read the content store's state; keeping only the current trees", "error", err)
 	}
 	resolved := map[string]string{}
-	platformTree, err := s.tree(ctx, pins.Platform, recorded.Resolved)
-	if err != nil {
-		return fmt.Errorf("platform bundle %s@%s: %w", pins.Platform.Name, pins.Platform.Digest, err)
-	}
-	resolved[pins.Platform.Digest] = platformTree
-	current := []string{platformTree}
-	harnessTree := ""
-	if pins.Harness != nil {
-		if harnessTree, err = s.tree(ctx, *pins.Harness, recorded.Resolved); err != nil {
-			return fmt.Errorf("harness bundle %s@%s: %w", pins.Harness.Name, pins.Harness.Digest, err)
+	var names, current []string
+	for _, pin := range pins {
+		tree, err := s.tree(ctx, pin, recorded.Resolved)
+		if err != nil {
+			return fmt.Errorf("bundle %s@%s: %w", pin.Name, pin.Digest, err)
 		}
-		resolved[pins.Harness.Digest] = harnessTree
-		current = append(current, harnessTree)
+		resolved[pin.Digest] = tree
+		names, current = append(names, pin.Name), append(current, tree)
 	}
-	if err := s.point(provision.PlatformTree, platformTree); err != nil {
-		return err
-	}
-	if harnessTree == "" {
-		if err := s.removeTreeLink(provision.HarnessTree); err != nil {
+	for i, name := range names {
+		if err := s.point(name, current[i]); err != nil {
 			return err
 		}
-	} else if err := s.point(provision.HarnessTree, harnessTree); err != nil {
+	}
+	if err := sweep(s.path(agentlayer.BundlesDir), keep(names), ".tmp"); err != nil {
 		return err
 	}
-	next := state{Current: current, Previous: recorded.Previous}
+	next := state{Bundles: names, Current: current, Previous: recorded.Previous}
 	if !slices.Equal(recorded.Current, current) && len(recorded.Current) > 0 {
 		next.Previous = recorded.Current
 	}
@@ -132,6 +129,47 @@ func (s *Store) Apply(ctx context.Context, pins agentlayer.Pins) error {
 		return err
 	}
 	return s.collect(next)
+}
+
+// Trees is where the bundles the store last applied are read under root, in
+// the pins' order: what provisioning loads. A store that has applied nothing
+// has none.
+func Trees(root string) ([]string, error) {
+	st, err := (&Store{Root: root}).readState()
+	if err != nil {
+		return nil, err
+	}
+	trees := make([]string, 0, len(st.Bundles))
+	for _, name := range st.Bundles {
+		trees = append(trees, filepath.Join(root, filepath.FromSlash(agentlayer.BundleTree(name))))
+	}
+	return trees, nil
+}
+
+// point makes the link of the bundle name a link to the tree of digest,
+// replaced whole.
+func (s *Store) point(name, digest string) error {
+	link := s.path(agentlayer.BundleTree(name))
+	target := "../trees/" + agentlayer.Hex(digest)
+	if current, err := os.Readlink(link); err == nil && current == target {
+		return nil
+	}
+	tmp := link + ".tmp"
+	if err := os.Remove(tmp); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := os.Symlink(target, tmp); err != nil {
+		return err
+	}
+	return os.Rename(tmp, link)
+}
+
+func keep(names []string) map[string]bool {
+	out := make(map[string]bool, len(names))
+	for _, name := range names {
+		out[name] = true
+	}
+	return out
 }
 
 // tree is the tree of pin's image manifest for the store's platform,
@@ -338,33 +376,6 @@ func copyFile(src, dst string, mode fs.FileMode) error {
 		err = closeErr
 	}
 	return err
-}
-
-// point makes the tree path at, provision.PlatformTree or HarnessTree, a
-// link to the tree of digest, replaced whole.
-func (s *Store) point(at, digest string) error {
-	link := s.path(at)
-	target := "trees/" + agentlayer.Hex(digest)
-	if current, err := os.Readlink(link); err == nil && current == target {
-		return nil
-	}
-	tmp := link + ".tmp"
-	if err := os.Remove(tmp); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	if err := os.Symlink(target, tmp); err != nil {
-		return err
-	}
-	return os.Rename(tmp, link)
-}
-
-// removeTreeLink removes whatever is at the tree path at: a box whose pins
-// name no harness bundle has no harness tree.
-func (s *Store) removeTreeLink(at string) error {
-	if err := os.RemoveAll(s.path(at)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	return nil
 }
 
 func (s *Store) readState() (state, error) {

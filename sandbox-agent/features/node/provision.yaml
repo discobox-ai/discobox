@@ -4,6 +4,7 @@
 # and `discobox-harness-upgrade` is the by-hand "now". The store is inert
 # without a harness's agent.conf.
 apiVersion: discobox.ai/provision/v1
+async: true
 commands: [node, npm, npx, pnpm]
 adopt:
   commands: [node, npm]

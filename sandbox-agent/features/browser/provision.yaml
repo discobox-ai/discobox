@@ -6,6 +6,7 @@
 # is the Chrome for Testing build Playwright publishes, pinned, with a launcher
 # of its own that behaves as Debian's does.
 apiVersion: discobox.ai/provision/v1
+async: true
 commands: [chromium]
 steps:
   # dbus-x11 is the session bus Chromium asks for: with nothing to satisfy
