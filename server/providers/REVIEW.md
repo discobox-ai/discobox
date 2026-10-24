@@ -57,15 +57,22 @@
   `sandbox.Provider`, `poolruntime.RuntimeProvider`, and `dockerworker.Driver`
   state required behavior directly. Optional feature interfaces need a runtime
   product reason, not a smaller diff.
-- Drivers must not implement Docker readiness polling or carry bootstrap
-  secrets in VM user data; the engine owns readiness waits and injects
-  bootstrap identity as container environment.
+- Drivers must not implement Docker readiness polling or carry anything of a
+  pool in VM user data; the engine owns readiness waits and places the
+  bootstrap in the pool's box (ADR 26-10-24-953 §§2, 4).
 - Compare a pool container against the image the engine would launch *now*
-  (`Engine.resolvePoolAgentImage`), never against `cfg.Image` directly. When the
-  configured image cannot be pulled the engine may launch a superseded local
-  tag; a drift check written against `cfg.Image` reads that as drift and
-  removes and recreates a working pool agent on every reconcile until the
-  registry answers. The same rule covers the console.
+  (`Engine.resolvePoolImage`), never against `cfg.SandboxBaseImage` directly.
+  When the configured image cannot be pulled the engine may launch a
+  superseded local tag; a drift check written against the configured image
+  reads that as drift and removes and recreates a working pool on every
+  reconcile until the registry answers. The same rule covers the console.
+- A steady-state reconcile of a running pool must not grow a dependency whose
+  failure reaches repair. A reconcile that fails for a pool with sandboxes
+  assigned repairs it, and repair removes the working container. Something a
+  running pool only *might* need — its moved bundles, a release that does not
+  resolve right now — is logged and retried (`applyMovedPoolBundles`), and
+  what a replacement needs is resolved before the container it replaces is
+  removed.
 - Do not reintroduce VM adoption. `vz`, `wslc`, and `libkrun` all end their VMs
   with the server process (see [VM Lifetime](DESIGN.md#vm-lifetime)); a runtime
   lock, a recorded PID, or an "is that launcher still mine" check is the
