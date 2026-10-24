@@ -127,13 +127,12 @@ func shortCommit(commit string) string {
 // state after its local terminal view has been closed. p is the report the
 // question was asked over, still on screen: the question goes with it.
 func (m *Model) finishSuccessfulApply(p *pane, choice string) tea.Cmd {
-	id := p.sandbox.ID
+	if choice == "archive" {
+		return m.archiveWorkspace(p.sandbox)
+	}
 	hadWorkspace := m.terminals.len() > 0
 	m.closeWorkspace()
 	m.layout()
-	if choice == "archive" {
-		return m.runVerb(VerbArchive, []string{id})
-	}
 	if m.attach != nil && hadWorkspace {
 		return m.exit(nil)
 	}

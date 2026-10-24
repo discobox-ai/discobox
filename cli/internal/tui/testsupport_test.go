@@ -319,8 +319,10 @@ type fakeSource struct {
 	// every server, folder and tag rather than on its own folder.
 	nothingSaved bool
 	runs         []RunRequest
-	did          []string // "verb id"
-	renames      []string // "id name"
+	did          []string      // "verb id"
+	doErr        error         // what every lifecycle verb answers
+	doGate       chan struct{} // when set, every lifecycle verb waits for it to close
+	renames      []string      // "id name"
 	// titles is what each renamed box was showing before it was given a name,
 	// which is what clearing the name shows again.
 	titles      map[string]string
@@ -640,10 +642,13 @@ func (f *fakeSource) stoppedCount() int {
 }
 
 func (f *fakeSource) Do(_ context.Context, verb Verb, id string) error {
+	if f.doGate != nil {
+		<-f.doGate
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.did = append(f.did, string(verb)+" "+id)
-	return nil
+	return f.doErr
 }
 
 func (f *fakeSource) Rename(_ context.Context, id, name string) error {

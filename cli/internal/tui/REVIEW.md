@@ -107,6 +107,14 @@
   `tea.Exec`, and nothing here erases them. `View` stamps `AltScreen`; a
   builder does not.
 
+- **A window that is one command's own (`Model.oneShot`) never lands on the
+  list.** Anything new that leaves the workspace decides where it starts what
+  that window does instead — `Model.exit`, or a wait screen until it can
+  (`archiveWorkspace`) — rather than inferring it later from screen state. An
+  archive from the workspace once fell through to the launcher's list, and a
+  first fix inferred the exit in `verbDone` from `attach != nil` and no panes,
+  which also fired on unrelated verbs and showed the list while it waited.
+
 ## Saved state
 
 - **The window's memory is one per machine, shared by every window open at

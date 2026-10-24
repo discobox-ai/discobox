@@ -516,3 +516,99 @@ func TestARunWindowsWarningIsOnTheWorkspace(t *testing.T) {
 		return m.primary() != nil && m.dialog == nil && strings.Contains(frame, "! /src/disco2:") && strings.Contains(frame, "from the last commit")
 	})
 }
+
+// Archiving the discobox from a run window's workspace takes the workspace
+// away, and the window with it: there is no list behind it to report on, so
+// the archive is waited for on a screen of its own, and Esc does not take that
+// down to show the list.
+func TestArchivingFromARunWindowClosesTheWindow(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+	d.wait("the workspace", func() bool { return m.primary() != nil && m.dialog == nil })
+
+	ds.doGate = make(chan struct{})
+	d.key("ctrl+a")
+	d.key("x")
+	d.wait("the archive's wait", func() bool { return m.dialog != nil && m.dialog.kind == dlgStatus })
+	d.key("esc")
+	if m.dialog == nil || m.dialog.kind != dlgStatus {
+		t.Fatalf("dialog = %+v, want the wait to stay up through Esc", m.dialog)
+	}
+	frame := plainFrame(m)
+	for _, row := range testSandboxes() {
+		if strings.Contains(frame, row.Name) {
+			t.Fatalf("the window showed the list while the archive was out:\n%s", frame)
+		}
+	}
+	// Esc does nothing here, so the wait offers no key for it.
+	if strings.Contains(frame, "Esc") || !strings.Contains(frame, "closes when the archive is answered") {
+		t.Fatalf("the archive's wait should say what happens and offer no Esc:\n%s", frame)
+	}
+	close(ds.doGate)
+	d.wait("the window to close", func() bool { return m.quit })
+
+	if got, want := ds.verbs(), []string{"archive " + ds.createdID}; !slices.Equal(got, want) {
+		t.Fatalf("verbs = %q, want %q", got, want)
+	}
+	if m.exitErr != nil {
+		t.Fatalf("exitErr = %v, want an archive that worked to be an ordinary exit", m.exitErr)
+	}
+}
+
+// An archive that fails ends the window with the failure, which the command
+// reports: the status line it would have gone on is not there to be read.
+func TestAFailedArchiveFromAnAttachEndsWithTheError(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.doErr = errors.New("server said no")
+	d, m := openAttached(t, ds, testSandboxes()[0])
+	d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+
+	d.key("ctrl+a")
+	d.key("x")
+	d.wait("the window to close", func() bool { return m.quit })
+
+	if m.exitErr == nil || !strings.Contains(m.exitErr.Error(), "archive: server said no") {
+		t.Fatalf("exitErr = %v, want the archive's failure", m.exitErr)
+	}
+}
+
+// The launcher's archive is unchanged: the workspace goes and the window
+// lands on the list, which reports it.
+func TestArchivingFromTheLauncherKeepsTheWindow(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	d.key("ctrl+a")
+	d.key("x")
+	d.wait("the archive", func() bool { return len(ds.verbs()) == 1 && m.busy == "" })
+
+	if m.quit {
+		t.Fatal("archiving from the launcher should not close the window")
+	}
+	if m.primary() != nil {
+		t.Fatal("the workspace should be closed")
+	}
+}
+
+// Only the archive that left the workspace closes the window: a stop's answer
+// is reported like any other verb's, and the window stays on the workspace.
+func TestStoppingFromAnAttachKeepsTheWindow(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m := openAttached(t, ds, testSandboxes()[0])
+	d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+
+	d.key("ctrl+a")
+	d.key("t")
+	d.wait("the stop", func() bool { return len(ds.verbs()) == 1 && m.busy == "" })
+
+	if m.quit {
+		t.Fatal("a stop's answer should not close the window")
+	}
+	if m.primary() == nil {
+		t.Fatal("the workspace should still be open")
+	}
+}
