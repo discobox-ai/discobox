@@ -439,6 +439,9 @@ func TestFactoryProviderOnALocalDriverRefusesAConsole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("factory error = %v", err)
 	}
+	// Closed before the test's directory is removed: its engine's database is
+	// in it, and Windows refuses to delete an open file.
+	t.Cleanup(func() { _ = built.Close() })
 	provider, ok := built.(sandbox.PoolRuntime)
 	if !ok {
 		t.Fatalf("factory built %T, which is no sandbox.PoolRuntime", built)
