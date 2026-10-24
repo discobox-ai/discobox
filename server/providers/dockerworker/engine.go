@@ -523,48 +523,87 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 		// configured image would remove and recreate it on every reconcile for
 		// as long as the registry stayed unreachable.
 		if forceRecreate || shouldRemoveExistingContainer(existing.Container, image, labels) {
+			// What the new box is made of is resolved before the old one is
+			// removed: a release that cannot be resolved right now leaves a
+			// working pool running, rather than taking it down and then
+			// failing to make its replacement.
+			bootstrap, box, err := e.poolBox(ctx, cli, pool, maker)
+			if err != nil {
+				return nil, recorded, false, err
+			}
 			if err := begin(ctx); err != nil {
 				return nil, recorded, false, err
 			}
 			if _, err := cli.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
 				return nil, recorded, false, err
 			}
-		} else {
-			// A pool's bundles that moved are applied in its running box, as a
-			// moved pin restarts a sandbox rather than rebuilding it: the box
-			// keeps its disk, its key and what it provisioned.
-			bootstrap, box, err := e.poolBox(ctx, cli, pool, maker)
+			inst, record, err := e.createPoolContainer(ctx, cli, pool, name, labels, maker, image, bootstrap, box)
 			if err != nil {
 				return nil, recorded, false, err
 			}
-			if !recorded.sameBundles(box) {
-				record, err := e.provisionPoolBox(ctx, cli, existing.Container.ID, maker, bootstrap, box)
-				if err != nil {
-					return nil, recorded, false, err
-				}
-				recorded = record
-			}
-			inst, err := e.waitContainerReady(ctx, cli, existing.Container.ID, false)
-			if err != nil && inst != nil && containerHealthStarting(*inst) {
-				// A container whose healthcheck has not passed yet is a host
-				// still coming up, not a broken one, and it is reported as
-				// such: a failed reconcile of a pool with sandboxes assigned
-				// repairs it, which removes and recreates this container and
-				// restarts the very healthcheck being waited on. A pool
-				// container restarts for ordinary reasons — a Docker restart,
-				// a development image rebuild — and something is usually
-				// waiting on it when it does.
-				return inst, recorded, false, fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, err)
-			}
-			return inst, recorded, false, err
+			return inst, record, true, nil
 		}
+		recorded, err = e.applyMovedPoolBundles(ctx, cli, existing.Container.ID, pool, maker, recorded, begin)
+		if err != nil {
+			return nil, recorded, false, err
+		}
+		inst, err := e.waitContainerReady(ctx, cli, existing.Container.ID, false)
+		if err != nil && inst != nil && containerHealthStarting(*inst) {
+			// A container whose healthcheck has not passed yet is a host
+			// still coming up, not a broken one, and it is reported as
+			// such: a failed reconcile of a pool with sandboxes assigned
+			// repairs it, which removes and recreates this container and
+			// restarts the very healthcheck being waited on. A pool
+			// container restarts for ordinary reasons — a Docker restart,
+			// a development image rebuild — and something is usually
+			// waiting on it when it does.
+			return inst, recorded, false, fmt.Errorf("%w: %w", sandbox.ErrPoolNotReachable, err)
+		}
+		return inst, recorded, false, err
 	}
 
-	inst, record, err := e.createPoolContainer(ctx, cli, pool, name, labels, maker, image)
+	bootstrap, box, err := e.poolBox(ctx, cli, pool, maker)
+	if err != nil {
+		return nil, recorded, false, err
+	}
+	inst, record, err := e.createPoolContainer(ctx, cli, pool, name, labels, maker, image, bootstrap, box)
 	if err != nil {
 		return nil, recorded, false, err
 	}
 	return inst, record, true, nil
+}
+
+// applyMovedPoolBundles applies a pool's moved bundles in its running box, as
+// a moved pin restarts a sandbox rather than rebuilding it: the box keeps its
+// disk, its key and what it provisioned (ADR 26-10-24-953 §5).
+//
+// It never fails the reconcile of a running pool: a release that does not
+// resolve right now (a registry unreachable after a server restart), or an
+// apply that fails, leaves the box running what it last provisioned, and is
+// logged and tried again on the pool's next reconcile. A failure here that
+// failed the reconcile would repair the pool — remove a working container and
+// the sandboxes' host with it — over bundles it did not need. Only begin's
+// error is returned: newer intent supersedes this pass.
+func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, containerID string, pool *model.Pool, maker poolruntime.PoolMaker, recorded poolBoxRecord, begin func(context.Context) error) (poolBoxRecord, error) {
+	bootstrap, box, err := e.poolBox(ctx, cli, pool, maker)
+	if err != nil {
+		slog.WarnContext(ctx, "keeping the pool's box as it is: what it is made of does not resolve", "pool", pool.ID, "error", err)
+		return recorded, nil
+	}
+	if recorded.sameBundles(box) {
+		return recorded, nil
+	}
+	// The apply restarts the agent the moved bundles carry, so placement is
+	// closed first, as it is before any agent is replaced.
+	if err := begin(ctx); err != nil {
+		return recorded, err
+	}
+	record, err := e.provisionPoolBox(ctx, cli, containerID, maker, bootstrap, box)
+	if err != nil {
+		slog.WarnContext(ctx, "keeping the pool's box as it is: its moved bundles did not apply", "pool", pool.ID, "error", err)
+		return recorded, nil
+	}
+	return record, nil
 }
 
 // recordedBox is what the pool's runtime state says the engine last placed
@@ -641,13 +680,9 @@ func (e *Engine) poolBox(ctx context.Context, cli *client.Client, pool *model.Po
 // in bringing a pool up — starts it, systemd as PID 1, and provisions it as
 // the pool's box (provisionPoolBox) before it waits for the agent the box's
 // bundles start.
-func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, maker poolruntime.PoolMaker, image string) (*container.InspectResponse, poolBoxRecord, error) {
+func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, maker poolruntime.PoolMaker, image string, bootstrap poolagent.Bootstrap, box sandbox.PoolBox) (*container.InspectResponse, poolBoxRecord, error) {
 	releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
 	defer releaseStart()
-	bootstrap, box, err := e.poolBox(ctx, cli, pool, maker)
-	if err != nil {
-		return nil, poolBoxRecord{}, err
-	}
 	config := &container.Config{
 		Image:  image,
 		Labels: labels,
@@ -673,14 +708,18 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 		}
 		config.ExposedPorts = network.PortSet{exposedPort: struct{}{}}
 		hostConfig.PortBindings = network.PortMap{exposedPort: []network.PortBinding{e.agentPortBinding()}}
-		// The base image declares no healthcheck: the agent's is this one. Its
-		// start period covers the box's provisioning, which runs before the
-		// agent it starts can answer.
+		// The base image declares no healthcheck: the agent's is this one.
+		// Its start period is a restart's, when the box's units start its
+		// agent at once, so an agent that never comes up reads as unhealthy
+		// within a minute. The first start provisions the box before there
+		// is an agent to answer, which may read as unhealthy already; the
+		// engine is the one waiting then, and waits out the agent the apply
+		// has just started (waitAgentAfterApply).
 		config.Healthcheck = &container.HealthConfig{
 			Test:        []string{"CMD-SHELL", fmt.Sprintf("curl -fsS http://127.0.0.1:%d/healthz >/dev/null || exit 1", e.cfg.AgentPort)},
 			Interval:    5 * time.Second,
 			Timeout:     2 * time.Second,
-			StartPeriod: provisionTimeout,
+			StartPeriod: 5 * time.Second,
 			Retries:     6,
 		}
 	} else {
@@ -739,8 +778,44 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	releaseStart()
 	releaseAgent := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForPoolAgent)
 	defer releaseAgent()
+	if waitForHealth {
+		if err := e.waitAgentAfterApply(ctx, cli, created.ID); err != nil {
+			return nil, poolBoxRecord{}, err
+		}
+	}
 	inst, err := e.waitContainerReady(ctx, cli, created.ID, waitForHealth)
 	return inst, record, err
+}
+
+// agentAfterApplyTimeout is how long the agent a box's apply has just started
+// may take to pass its healthcheck once, after a first start whose
+// provisioning outlasted the healthcheck's start period and left the container
+// reading as unhealthy.
+const agentAfterApplyTimeout = time.Minute
+
+// waitAgentAfterApply waits until the container's healthcheck has passed
+// since its box was provisioned, or it is not running, or the timeout: an
+// unhealthy status from before the apply says nothing about the agent it
+// started, and a check passing turns it healthy again.
+func (e *Engine) waitAgentAfterApply(ctx context.Context, cli *client.Client, id string) error {
+	deadline := time.Now().Add(agentAfterApplyTimeout)
+	for {
+		inspect, err := cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+		if err != nil {
+			return mapDockerNotFound(err)
+		}
+		state := inspect.Container.State
+		if state == nil || !state.Running || state.Health == nil || state.Health.Status != "unhealthy" || time.Now().After(deadline) {
+			return nil
+		}
+		timer := time.NewTimer(healthPollDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (e *Engine) agentPortBinding() network.PortBinding {
