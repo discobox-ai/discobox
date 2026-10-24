@@ -1152,8 +1152,12 @@ flowchart LR
   — before the runtime decides whether to build — and removed when it names
   none. Its bundles are the whole of a sandbox's scope; nothing the box reports
   reaches it. The `bundles.json` a pool wrote before, which named each bundle's
-  kind, is not read: such a sandbox is delivered nothing until its next create
-  says what, and keeps the agent its container holds. A snapshot build's is in its own tree
+  kind, is read when there is no `delivery.json`, as its bundles, platform
+  first, and no agent: the sandbox may fetch what it was pinned to, and the
+  pool places nothing in its container, which keeps the agent placed in it
+  then, until a create records what it is delivered now and removes the old
+  file. `agent-placed.json`'s pins read in the object form they had then
+  too (`agentlayer.Pins`). A snapshot build's is in its own tree
   (`layout.Root.Snapshot`), told from a sandbox's by its `layout.SnapshotIDPrefix`
   ID ([Snapshots](#snapshots)).
 - **Scope.** A manifest is answered when it is a pin of the sandbox under that
@@ -1202,7 +1206,7 @@ flowchart LR
   it. Nothing in the box decides what is placed. The agent is its own
   bundle, one layer (`assetcache.OpenAgentLayer` reads it, and only it, for
   the pool, never for the box); a layer that is not the agent's alone
-  (`agentlayer.AgentLayer`) is refused and the start fails.
+  (`agentlayer.ExtractAgent`) is refused and the start fails.
 - **A moved pin restarts, never rebuilds.** The control plane's fingerprint of
   a delivered sandbox leaves out its image and the pins its box applies at
   start, so a create that moves only those finds no drift. `deliveredMoved`
@@ -1232,15 +1236,16 @@ bundle. `bundle` names the files its maker places beside it.
 
 - **What it is**: `pool-agent/Dockerfile`'s `bundle` target, `FROM scratch`,
   holding two features (`bundle/features`):
-  - `pool-agent`: `discobox-pool-agent` (from the same build stage as the
-    image), `git` where absent, and the units `discobox-pool-agent.service`
+  - `pool-agent`: `discobox-pool-agent`, `git` where absent, and the units `discobox-pool-agent.service`
     and `discobox-proxy.service`;
   - `pool-builder`, which requires it: the pool-shared builder of ADR 0044 —
     BuildKit's binaries and the registry's from their upstream images,
     `discobox-pool-runc` as `/opt/discobox/bin/runc`, `registry.yml`, the
     builder's, registry's and mediator's units. It runs no `dockerd`: the
     pool's container has its daemon's socket bound in, which its sandboxes
-    run on. A pool whose sandboxes are machines turns it off.
+    run on. `apply` applies both: no pool whose sandboxes are machines runs
+    an agent yet, and turning `pool-builder` off for one is deferred (ADR
+    26-10-24-953, Deferred).
 
   Each runs its binaries from its feature's directory under the bundle's
   stable link (`agentlayer.BundleTree`), and restarts its units from a step

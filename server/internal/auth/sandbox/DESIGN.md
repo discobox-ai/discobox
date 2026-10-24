@@ -110,8 +110,11 @@ It is enrolled by the pool's maker, over the channel it made the box with
 
 Rules:
 
-- Only a pool's maker records its key, and only for a box it just made: a
-  reconcile over a running box does not enroll again.
+- Only a pool's maker records its key, over the channel it made the box with,
+  each time it provisions the box: at create, at repair, and when it applies
+  moved bundles in the running box. `provision identity` keeps a key the box
+  already has, so each enrollment after the first records the same key, and
+  nothing else writes `Pool.PublicKey`.
 - Runtime assertions use PASETO v4.public with Ed25519, a 5-minute TTL, and
   `iat`/`nbf` backdated 5 minutes for local VM clocks.
 - Pool authorization should be scoped to assigned work and provider/sandbox

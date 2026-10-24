@@ -1,17 +1,21 @@
 # Release manifests
 
-A manifest names runtime images by role: pool agent, sandbox base, VM guest
-and libkrun kernel. The sandbox base is optional: a release cut before the
-Docker driver owned one names none. Beside them, `Bundles` names the platform
+A manifest names runtime images by role: sandbox base, VM guest and libkrun
+kernel. The sandbox base is what every sandbox container and every Docker
+pool's runs (ADR 26-10-24-953 §2); a release cut before the Docker driver
+owned one names none, and runs a Docker pool's container from its
+`Images.PoolAgent` image instead, which a release from then on names none
+of: `Validate` takes either. Beside them, `Bundles` names the platform
 bundle and each harness's bundle by slug (ADR 26-10-16-423 §2): the server
 composes every harness's manifest from them and every box applies them.
 `Bundles.Agent` is the agent bundle, the sandbox agent alone, which whoever
-makes a box places in it (ADR 26-10-24-953 §2); a release cut before it names
+makes a box places in it, and `Bundles.PoolAgent` the pool bundle, a pool's
+box's one bundle (ADR 26-10-24-953 §2); a release cut before either names
 none, and still parses. These name bundles by role for the server to compose
-a box's ordered list from; nothing past the server sees the roles.
-`Bundles.PoolAgent` is the pool-agent bundle, the pool agent for a pool
-machine booted from a driver base (ADR 26-10-23-551 §2); a release cut before it names none, and still
-parses. No
+a box's ordered list from; nothing past the server sees the roles. A server
+runs only on a release that names what a pool's box is made of — the sandbox
+base image, the agent bundle and the pool bundle (`HasPoolBox`) — and refuses
+any other at startup. No
 harness is an image (§10), so a release from bundles on names no sandbox-agent
 or harness image; `Images.SandboxAgent` and `Images.Harnesses` are what a
 release from before bundles ran its sandboxes on, kept so the CLI still reads

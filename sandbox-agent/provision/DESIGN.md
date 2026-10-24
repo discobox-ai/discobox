@@ -58,7 +58,9 @@ in the content store, `agentlayer.BundleTree(name)`, pointed at the pin's
 tree before the run starts, so the paths a step or a link names stay the
 same across upgrades and follow the trees; a step's record keys its
 feature's directory too, so one applied from another path is applied
-again. Nothing says which
+again. Every feature's directory moved when the trees came to be linked by
+name, so the first start of a box made before on a new agent runs every step
+once more, which they are idempotent for (ADR 26-10-24-953, Consequences). Nothing says which
 tree is which ([ADR 26-10-24-953](../../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
 §1): order is the tie-break of what runs first, a later bundle's blocking
 features after an earlier one's, and what blocks is each feature's own

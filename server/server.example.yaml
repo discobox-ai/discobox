@@ -214,9 +214,9 @@
 #dockerPoolImage:
 
 # The Docker driver's Debian sandbox base image, which every sandbox
-# delivered its platform runs and the sandbox images are built FROM,
-# preloaded by a pool, for a provider whose own sandboxBaseImage setting
-# names none. Defaults to the released image for this build.
+# container and every Docker pool's container runs, for a provider whose
+# own sandboxBaseImage setting names none. Defaults to the released image
+# for this build.
 # Example: dockerSandboxBaseImage: ghcr.io/discobox-ai/discobox-sandbox-base:v0.8.0
 # Environment: DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE
 #dockerSandboxBaseImage:
@@ -227,9 +227,9 @@
 # Environment: DISCOBOX_AGENT_BUNDLE
 #agentBundle:
 
-# The pool-agent bundle a pool machine booted from a driver base is made
-# a pool agent's host with. No provider places it yet, so it has no
-# effect. Defaults to the released bundle for this build.
+# The pool bundle every pool's box applies: the pool agent, its proxy
+# and, on a Docker pool, its builder. Defaults to the released bundle for
+# this build.
 # Example: poolAgentBundle: ghcr.io/discobox-ai/discobox-pool-agent-bundle:v0.8.0
 # Environment: DISCOBOX_POOL_AGENT_BUNDLE
 #poolAgentBundle:
