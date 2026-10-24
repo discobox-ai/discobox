@@ -114,6 +114,22 @@ box into its new list (423 §7's rule for the platform, now for every pin).
 The server's sandbox columns become one list, migrated from the two pins
 each existing row has, in order: platform, then harness.
 
+*Amended 2026-10-24, before anything shipped against it:* the spec
+fingerprint hashes the whole manifest, so dropping the two pin columns, or
+taking the harness pin out of the delivered fingerprint, changes the
+fingerprint of every delivered sandbox, and its pool replaces each container
+at the next ensure — running ones included, which an observation alone
+reaches. So a sandbox pinned before this ADR keeps its `platformBundle` and
+`bundle` columns, is re-pinned in them, and keeps its harness pin in its
+delivered fingerprint, as it was: it is never migrated, and nothing about the
+list rebuilds it. A sandbox pinned since — created, imported, or one from
+before bundles when it is first pinned to them — is pinned as the list alone,
+and for it no bundle digest is in the fingerprint. The server reads and writes
+pins through accessors that serve either form, and its composition order,
+platform first, is what tells the list's pins apart; nothing past the server
+does. The agent pin is new for every sandbox, and in neither fingerprint, so
+a sandbox pinned before is pinned to the release's agent in place.
+
 ### 2. The agent is a bundle of its own, placed by whoever makes the box
 
 The **agent bundle** is `discobox-sandbox-agent` alone: one layer, one file,
