@@ -124,6 +124,35 @@ func (p Pins) Validate() error {
 	return nil
 }
 
+// UnmarshalJSON reads pins as the list they are, or as the object a box's
+// pins were before they were a list ({"platform": …, "harness": …}): that
+// form persists in records written before (a pool's agent-placed.json, a
+// snapshot's plan), and reads as the list it composes, the platform's bundle
+// first.
+func (p *Pins) UnmarshalJSON(data []byte) error {
+	var list []Pin
+	listErr := json.Unmarshal(data, &list)
+	if listErr == nil {
+		*p = list
+		return nil
+	}
+	var legacy struct {
+		Platform *Pin `json:"platform"`
+		Harness  *Pin `json:"harness"`
+	}
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		return listErr
+	}
+	pins := Pins{}
+	for _, pin := range []*Pin{legacy.Platform, legacy.Harness} {
+		if pin != nil && *pin != (Pin{}) {
+			pins = append(pins, *pin)
+		}
+	}
+	*p = pins
+	return nil
+}
+
 // ParsePins reads PinsFile.
 func ParsePins(data []byte) (Pins, error) {
 	var pins Pins

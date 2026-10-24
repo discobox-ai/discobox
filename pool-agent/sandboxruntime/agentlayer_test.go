@@ -330,3 +330,26 @@ func TestDeliveredMovedComparesWhatTheContainerBootedOn(t *testing.T) {
 
 // testRecordAgent is the agent the records these tests write name.
 var testRecordAgent = assetcache.Pin{Name: testAgentPin.Name, Digest: testAgentPin.Digest}
+
+// A pool that upgrades finds the agent-placed.json its earlier agent wrote,
+// whose pins are the object they were before they were a list. It reads as
+// what that pool placed, so a delivered sandbox's next create compares
+// against it rather than failing on it until someone deletes the record.
+func TestAPlacedRecordFromBeforePinsWereAListReads(t *testing.T) {
+	r := &DockerSandboxRuntime{root: withTestRoot(t)}
+	if err := os.MkdirAll(r.sandboxRoot("sbx_1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	digest := "sha256:" + strings.Repeat("a", 64)
+	legacy := `{"container":"ctr_1","layer":"sha256:layer","pins":{"platform":{"name":"discobox-platform","digest":"` + digest + `"}}}`
+	if err := os.WriteFile(r.placedRecordPath("sbx_1"), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record, ok, err := r.readPlaced("sbx_1")
+	if err != nil || !ok {
+		t.Fatalf("readPlaced = %v, %v; want the legacy record read", ok, err)
+	}
+	if len(record.Pins) != 1 || record.Pins[0].Name != "discobox-platform" || record.Pins[0].Digest != digest || record.Container != "ctr_1" {
+		t.Fatalf("record = %+v, want the platform pin it recorded", record)
+	}
+}
