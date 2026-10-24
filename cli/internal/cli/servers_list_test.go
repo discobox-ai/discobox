@@ -305,8 +305,8 @@ func TestSelectSandboxFindsAnIDOnWhicheverServerHasIt(t *testing.T) {
 		t.Fatalf("selectSandbox(%s) = %v, %s, %v, want the primary first", sandboxA, target, projectID, err)
 	}
 
-	if _, _, _, _, err := app.selectSandbox(cmd, "sbx_9qk5n25t2hh2rv0z"); err == nil || !strings.Contains(err.Error(), "any server") {
-		t.Fatalf("selectSandbox(unknown) error = %v, want it to say no server has it", err)
+	if _, _, _, _, err := app.selectSandbox(cmd, "sbx_zzzz"); err == nil || !strings.Contains(err.Error(), "any server") {
+		t.Fatalf("selectSandbox(unknown short ID) error = %v, want it to say no server has it", err)
 	}
 }
 
@@ -1349,12 +1349,12 @@ func TestShellTargetRoutesAnAddress(t *testing.T) {
 
 	app := &App{serverURL: primary.URL, projectID: "project-1"}
 	cmd, _ := commandForTest()
-	target, projectID, sandboxID, _, args, err := app.resolveShellTarget(cmd, []string{address + "/" + sandboxB, "ls", "-la"})
+	target, projectID, sandboxID, _, args, err := app.selectDiscoboxCommand(cmd, []string{address + "/" + sandboxB, "--", "ls", "-la"})
 	if err != nil {
-		t.Fatalf("resolveShellTarget(address) error = %v", err)
+		t.Fatalf("selectDiscoboxCommand(address) error = %v", err)
 	}
 	if target.serverURL != address || sandboxID != sandboxB || projectID != defaultProjectAlias {
-		t.Fatalf("resolveShellTarget(address) = %s %s %s", target.serverURL, projectID, sandboxID)
+		t.Fatalf("selectDiscoboxCommand(address) = %s %s %s", target.serverURL, projectID, sandboxID)
 	}
 	if !reflect.DeepEqual(args, []string{"ls", "-la"}) {
 		t.Fatalf("command = %v, want the address consumed as the discobox", args)
@@ -1362,8 +1362,8 @@ func TestShellTargetRoutesAnAddress(t *testing.T) {
 }
 
 // A discobox on a registered server is reached by its ID or its name as well
-// as by its address (ADR 0116 §4): shell, tools ssh and tools run resolve the
-// first argument across every server rather than trusting it to the primary.
+// as by its address (ADR 0116 §4): every command's DISCOBOX is resolved across
+// every server rather than trusted to the primary.
 func TestShellTargetFindsADiscoboxOnARegisteredServer(t *testing.T) {
 	useTempServersFile(t)
 	primary := fakeServer(t, "alpha", sandboxA)
@@ -1374,27 +1374,28 @@ func TestShellTargetFindsADiscoboxOnARegisteredServer(t *testing.T) {
 	// "sbx-…" is the discobox's hostname spelling of its ID (id.Hostname).
 	for _, reference := range []string{sandboxB, "box-b", "sbx-9qk5n25t2hh2rv0b"} {
 		cmd, _ := commandForTest()
-		target, projectID, sandboxID, _, args, err := app.resolveShellTarget(cmd, []string{reference, "ls"})
+		target, projectID, sandboxID, _, args, err := app.selectDiscoboxCommand(cmd, []string{reference, "--", "ls"})
 		if err != nil {
-			t.Fatalf("resolveShellTarget(%s) error = %v", reference, err)
+			t.Fatalf("selectDiscoboxCommand(%s) error = %v", reference, err)
 		}
 		if target.serverURL != other.URL || projectID != defaultProjectAlias || sandboxID != sandboxB {
-			t.Fatalf("resolveShellTarget(%s) = %s %s %s, want beta's discobox", reference, target.serverURL, projectID, sandboxID)
+			t.Fatalf("selectDiscoboxCommand(%s) = %s %s %s, want beta's discobox", reference, target.serverURL, projectID, sandboxID)
 		}
 		if !reflect.DeepEqual(args, []string{"ls"}) {
-			t.Fatalf("resolveShellTarget(%s) command = %v, want the reference consumed", reference, args)
+			t.Fatalf("selectDiscoboxCommand(%s) command = %v, want the command after --", reference, args)
 		}
 	}
 
 	// The primary's discobox is still the primary's, and a word that names no
-	// discobox is still the command.
+	// discobox is refused rather than taken for the command: the command goes
+	// after --.
 	cmd, _ := commandForTest()
-	target, _, sandboxID, _, _, err := app.resolveShellTarget(cmd, []string{"box-a"})
+	target, _, sandboxID, _, _, err := app.selectDiscoboxCommand(cmd, []string{"box-a"})
 	if err != nil || target != app || sandboxID != sandboxA {
-		t.Fatalf("resolveShellTarget(box-a) = %v %s %v, want the primary's", target, sandboxID, err)
+		t.Fatalf("selectDiscoboxCommand(box-a) = %v %s %v, want the primary's", target, sandboxID, err)
 	}
-	if _, _, _, _, _, err := app.resolveShellTarget(cmd, []string{"vim"}); err == nil || !strings.Contains(err.Error(), "name the discobox as the first argument") {
-		t.Fatalf("resolveShellTarget(vim) error = %v, want vim left as the command and the picker asked", err)
+	if _, _, _, _, _, err := app.selectDiscoboxCommand(cmd, []string{"vim"}); err == nil || !strings.Contains(err.Error(), `"vim"`) || !strings.Contains(err.Error(), "goes after --") {
+		t.Fatalf("selectDiscoboxCommand(vim) error = %v, want vim refused and the -- named", err)
 	}
 }
 
@@ -1446,12 +1447,12 @@ func TestHostnameSpelledIDFindsADiscoboxOnARegisteredServer(t *testing.T) {
 	const reference = "sbx-9qk5n25t2hh2rv0b"
 
 	cmd, _ := commandForTest()
-	target, _, sandboxID, _, args, err := app.resolveShellTarget(cmd, []string{reference, "ls"})
+	target, _, sandboxID, _, args, err := app.selectDiscoboxCommand(cmd, []string{reference, "--", "ls"})
 	if err != nil {
-		t.Fatalf("resolveShellTarget(%s) error = %v", reference, err)
+		t.Fatalf("selectDiscoboxCommand(%s) error = %v", reference, err)
 	}
 	if target.serverURL != other.URL || sandboxID != sandboxB || !reflect.DeepEqual(args, []string{"ls"}) {
-		t.Fatalf("resolveShellTarget(%s) = %s %s %v, want beta's discobox and the reference consumed", reference, target.serverURL, sandboxID, args)
+		t.Fatalf("selectDiscoboxCommand(%s) = %s %s %v, want beta's discobox and the command after --", reference, target.serverURL, sandboxID, args)
 	}
 
 	cmd, _ = commandForTest()
@@ -1675,5 +1676,51 @@ func TestListEveryServerFiltersTagsAServerIgnored(t *testing.T) {
 	}
 	if listed, _, _ := app.listEveryServer(context.Background(), sandboxFilter{}); len(listed) != 2 {
 		t.Fatalf("listed %d without a filter, want both", len(listed))
+	}
+}
+
+// A full ID no server lists — a deleted discobox, whose audit trail outlives
+// it — is taken on the primary as it stands, with several servers as with one.
+func TestSelectSandboxTakesAnUnlistedFullIDOnThePrimary(t *testing.T) {
+	useTempServersFile(t)
+	primary := fakeServer(t, "alpha", sandboxA)
+	other := fakeServer(t, "beta", sandboxB)
+	registerForTest(t, registeredServer{Name: "beta", Address: other.URL})
+	app := &App{serverURL: primary.URL, projectID: "project-1"}
+	cmd, _ := commandForTest()
+
+	const deleted = "sbx_9qk5n25t2hh2rv0d"
+	target, _, sandboxID, _, err := app.selectSandbox(cmd, deleted)
+	if err != nil || sandboxID != deleted || target.serverURL != primary.URL {
+		t.Fatalf("selectSandbox(%s) = %v %s %v, want the primary and the ID as given", deleted, target, sandboxID, err)
+	}
+}
+
+// A name that could be a short ID is checked against every server's IDs; with
+// a server silent that check is short, so the name is refused rather than
+// taken on what the silent server might hold.
+func TestSelectSandboxRefusesAnIDShapedNameWhileAServerIsSilent(t *testing.T) {
+	useTempServersFile(t)
+	alpha := fakeServerHandler("alpha")
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/sandboxes") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"sandboxes":[` + namedSandboxJSON("sbx_h1ssjzhp60emtc2n", "calm-heron", "9qk5", "present") + `]}`))
+			return
+		}
+		alpha.ServeHTTP(w, r)
+	}))
+	t.Cleanup(primary.Close)
+	registerForTest(t, registeredServer{Name: "beta", Address: deadServer(t)})
+	app := &App{serverURL: primary.URL, projectID: "project-1"}
+	cmd, _ := commandForTest()
+
+	_, _, _, _, err := app.selectSandbox(cmd, "9qk5")
+	if err == nil || !strings.Contains(err.Error(), "beta did not answer") {
+		t.Fatalf("selectSandbox(9qk5) error = %v, want it refused while beta is silent", err)
+	}
+	// A name no ID could be is the discobox it names, silent server or not.
+	if _, _, id, _, err := app.selectSandbox(cmd, "calm-heron"); err != nil || id != "sbx_h1ssjzhp60emtc2n" {
+		t.Fatalf("selectSandbox(calm-heron) = %q, %v", id, err)
 	}
 }

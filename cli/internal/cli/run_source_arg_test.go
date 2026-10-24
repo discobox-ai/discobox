@@ -50,8 +50,8 @@ func TestRunNeedsASourceWhenThereIsNobodyToAsk(t *testing.T) {
 	}{
 		"no arguments":         {args: []string{"-d"}},
 		"a prompt only by -p":  {args: []string{"-d", "-p", "fix it"}},
-		"a json request":       {args: []string{"--json"}, stdin: `{"prompt": "fix it"}`},
-		"a json request empty": {args: []string{"--json"}, stdin: `{}`},
+		"a json request":       {args: []string{"--from-json"}, stdin: `{"prompt": "fix it"}`},
+		"a json request empty": {args: []string{"--from-json"}, stdin: `{}`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := runWith(t, url, tc.stdin, tc.args...); !errors.Is(err, errRunNeedsSource) {
@@ -112,13 +112,13 @@ func TestRunLeavesUncommittedWorkOutUnlessAsked(t *testing.T) {
 	}{
 		{name: "by default", args: []string{"-d", "."}, wantMode: "clean", warned: true},
 		{name: "--include-dirty", args: []string{"-d", "--include-dirty", "."}, wantMode: "dirty"},
-		{name: "json by default", args: []string{"--json"}, wantMode: "clean", warned: true},
+		{name: "json by default", args: []string{"--from-json"}, wantMode: "clean", warned: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var posted map[string]any
 			server := runJSONServer(t, &posted)
 			stdin := ""
-			if tc.args[0] == "--json" {
+			if tc.args[0] == "--from-json" {
 				stdin = `{"source": "."}`
 			}
 			errOut, err := runWith(t, server.URL, stdin, tc.args...)

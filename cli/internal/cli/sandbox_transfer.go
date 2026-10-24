@@ -42,10 +42,9 @@ type sandboxImportResponse struct {
 }
 
 func (a *App) newSandboxExportCommand() *cobra.Command {
-	var out string
 	var stop bool
 	cmd := &cobra.Command{
-		Use:   "export DISCOBOX_ID",
+		Use:   "export DISCOBOX_ID [FILE]",
 		Short: "Write a discobox to a portable archive",
 		Long: `Write a discobox to a .dbox archive that can be imported on another server.
 
@@ -67,12 +66,20 @@ the destination binds each to its own secret of that name.
 
 A running discobox is refused: a copy taken while it is writing can catch a git
 index or a database part way through, and you would not find out until you
-imported it. Pass --stop to stop it first, which leaves it stopped.`,
+imported it. Pass --stop to stop it first, which leaves it stopped.
+
+FILE is where the archive is written, <name>.dbox when it is left out; "-"
+writes it to stdout.`,
 		Example: `  discobox admin box export my-box
-  discobox admin box export my-box --stop -o ~/backups/my-box.dbox
-  discobox admin box export my-box -o - | gzip > my-box.dbox.gz`,
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: a.completeSandboxes,
+  discobox admin box export my-box ~/backups/my-box.dbox --stop
+  discobox admin box export my-box - | gzip > my-box.dbox.gz`,
+		Args: cobra.RangeArgs(1, 2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) > 0 {
+				return nil, cobra.ShellCompDirectiveDefault
+			}
+			return a.completeSandboxes(cmd, args, toComplete)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
 			if err != nil {
@@ -82,14 +89,16 @@ imported it. Pass --stop to stop it first, which leaves it stopped.`,
 			if err != nil {
 				return err
 			}
-			destination := strings.TrimSpace(out)
+			var destination string
+			if len(args) > 1 {
+				destination = strings.TrimSpace(args[1])
+			}
 			if destination == "" {
 				destination = exportDefaultFileName(sandbox)
 			}
 			return a.exportSandboxTo(cmd.Context(), projectID, sandboxID, destination, cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
-	cmd.Flags().StringVarP(&out, "output", "o", "", "File to write; \"-\" writes to stdout (default \"<name>.dbox\")")
 	cmd.Flags().BoolVar(&stop, "stop", false, "Stop the discobox first, and leave it stopped")
 	return cmd
 }
@@ -194,15 +203,15 @@ far side are the same as for "export" and "import"; see those.
 }
 
 type sandboxImportOptions struct {
-	name        string
-	poolID      string
-	harnessSlug string
+	name    string
+	poolID  string
+	harness string
 }
 
 func addImportFlags(cmd *cobra.Command, opts *sandboxImportOptions) {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Name for the new discobox (default: the name it had)")
 	cmd.Flags().StringVar(&opts.poolID, "pool", "", "Pool to place it in (default: the destination project's default pool)")
-	cmd.Flags().StringVar(&opts.harnessSlug, "harness", "", "Harness to run it with (default: the one it had, resolved by name)")
+	cmd.Flags().StringVar(&opts.harness, "harness", "", "Harness to run it with, by slug (e.g. codex), name, or ID (default: the one it had, by its slug)")
 }
 
 // prepareSandboxForExport refuses a running discobox, or stops it when asked.
@@ -351,12 +360,12 @@ func (a *App) exportSandboxTo(ctx context.Context, projectID, sandboxID, destina
 	file, err := os.OpenFile(partial, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("%s already exists, left by an export that is running or did not finish; remove it or name another file with -o", partial)
+			return fmt.Errorf("%s already exists, left by an export that is running or did not finish; remove it or name another FILE", partial)
 		}
 		return err
 	}
 	// Said before the copy, not after: an export is gigabytes, and a
-	// redirect of stdout gets nothing without -o -, so the file this is
+	// redirect of stdout gets nothing without a FILE of -, so the file this is
 	// filling is otherwise invisible until it finishes.
 	fmt.Fprintf(stderr, "Exporting to %s…\n", destination)
 	written, err := writeExportFile(file, resp.Body)
@@ -390,7 +399,7 @@ func writeExportFile(file *os.File, body io.Reader) (int64, error) {
 
 func refuseExistingExport(destination string) error {
 	if _, err := os.Lstat(destination); err == nil {
-		return fmt.Errorf("%s already exists; name another file with -o", destination)
+		return fmt.Errorf("%s already exists; name another FILE", destination)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -441,8 +450,8 @@ func (a *App) importSandbox(ctx context.Context, projectID string, archive io.Re
 	if opts.poolID != "" {
 		query.Set("pool", opts.poolID)
 	}
-	if opts.harnessSlug != "" {
-		query.Set("harness", opts.harnessSlug)
+	if opts.harness != "" {
+		query.Set("harness", opts.harness)
 	}
 	if encoded := query.Encode(); encoded != "" {
 		target += "?" + encoded

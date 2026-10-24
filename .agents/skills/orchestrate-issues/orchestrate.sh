@@ -103,14 +103,14 @@ cmd_status() {
 
 cmd_screen() { # screen <discobox-id> [lines] [scrollback]
 	local u; u=$(use ai.discobox.sandbox "$SUPERVISE"); need "$u" "supervising boxes" || return 1
-	discobox-access run --use "$u" -- discobox admin terminal screen primary --discobox-id "$1" ${3:+--scrollback "$3"} </dev/null 2>&1 |
+	discobox-access run --use "$u" -- discobox admin terminal screen "$1" primary ${3:+--scrollback "$3"} </dev/null 2>&1 |
 		grep -v '^\s*$' | tail -"${2:-25}" | cut -c1-170
 }
 
 cmd_say() { # say <discobox-id> <keys or text>...
 	local id=$1 u; shift
 	u=$(use ai.discobox.sandbox "$SUPERVISE"); need "$u" "supervising boxes" || return 1
-	discobox-access run --use "$u" -- discobox admin terminal input primary --discobox-id "$id" "$@" </dev/null 2>&1 | tail -1
+	discobox-access run --use "$u" -- discobox admin terminal input "$id" primary "$@" </dev/null 2>&1 | tail -1
 }
 
 cmd_power() { # power start|stop|restart <discobox-id>...

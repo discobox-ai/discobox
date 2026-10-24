@@ -25,15 +25,16 @@ import (
 // only the discobox declares cannot be known until one is chosen, and is run
 // by the same command built on demand.
 func (a *App) newToolsCommand() *cobra.Command {
-	var sandboxID string
 	cmd := &cobra.Command{
-		Use:     "tools [flags] TOOL [ARG...]",
+		Use:     "tools TOOL [DISCOBOX] [-- ARG...]",
 		Aliases: []string{"tool", "t"},
 		Short:   "Run a development tool against a discobox",
 		Long: `Run a development tool against a discobox.
 
-Without --discobox-id the discobox is taken from the ones "discobox ls" shows: the
-only one when there is one, otherwise you are asked to pick.
+DISCOBOX is the NAME "discobox ls" prints, an ID, or a short prefix of one.
+Without it the discobox is taken from the ones "discobox ls" shows: the only one
+when there is one, otherwise you are asked to pick. The tool's own arguments go
+after --.
 
 git runs inside the discobox and ssh opens a session to it. Every other tool is
 declared in a file, and "discobox tools ls" lists the ones a discobox offers.
@@ -56,8 +57,7 @@ a tool that runs on this machine.`,
 			}
 			// A tool this machine does not declare: build its command now and
 			// run it on the arguments the lookup did not consume.
-			tool := a.newToolRunCommand(&sandboxID, args[0], "")
-			tool.Flags().StringVar(&sandboxID, "discobox-id", sandboxID, "Discobox to act on")
+			tool := a.newToolRunCommand(args[0], "")
 			tool.SetContext(cmd.Context())
 			tool.SetArgs(args[1:])
 			tool.SetIn(cmd.InOrStdin())
@@ -70,15 +70,10 @@ a tool that runs on this machine.`,
 	// Flags stop at the tool's name, so everything after it is the tool's
 	// command's to parse.
 	cmd.Flags().SetInterspersed(false)
-	// Which sandbox a tool acts on is the one thing every tool has in common,
-	// so it is asked once here and inherited. Everything else, including where
-	// the tool runs, belongs to the subcommand that means it.
-	cmd.PersistentFlags().StringVar(&sandboxID, "discobox-id", "", "Discobox to act on; when omitted, the only discobox there is, or a prompt to pick one")
-	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
 
-	cmd.AddCommand(a.newToolsGitCommand(&sandboxID))
-	cmd.AddCommand(a.newToolsSSHCommand(&sandboxID))
-	cmd.AddCommand(a.newToolsListCommand(&sandboxID))
+	cmd.AddCommand(a.newToolsGitCommand())
+	cmd.AddCommand(a.newToolsSSHCommand())
+	cmd.AddCommand(a.newToolsListCommand())
 	// A user directory that cannot be read leaves its tools to the on-demand
 	// path, which reports why when one is asked for.
 	local, _ := localTools()
@@ -86,7 +81,7 @@ a tool that runs on this machine.`,
 		if reservedToolIDs[def.ID] {
 			continue
 		}
-		cmd.AddCommand(a.newToolRunCommand(&sandboxID, def.ID, def.Description))
+		cmd.AddCommand(a.newToolRunCommand(def.ID, def.Description))
 	}
 	return cmd
 }
@@ -101,7 +96,7 @@ func userToolsDirHelp() string {
 }
 
 // newToolRunCommand is `discobox tools <id>`, for any declared tool.
-func (a *App) newToolRunCommand(sandboxID *string, id, short string) *cobra.Command {
+func (a *App) newToolRunCommand(id, short string) *cobra.Command {
 	var source, program string
 	if short == "" {
 		short = "Run the " + id + " tool"
@@ -112,29 +107,27 @@ func (a *App) newToolRunCommand(sandboxID *string, id, short string) *cobra.Comm
 		short = string(unicode.ToUpper(r)) + short[size:]
 	}
 	cmd := &cobra.Command{
-		Use:   id + " [DISCOBOX] [flags] [--] [ARG...]",
+		Use:   id + " [DISCOBOX] [flags] [-- ARG...]",
 		Short: short,
 		Long: short + `.
 
-Arguments are passed to the tool untouched; only the flags before them are
-consumed here. Use -- when a tool argument would otherwise be read as one of
-them. A leading argument naming one of the discoboxes "discobox ls" shows selects it.`,
-		Args: cobra.ArbitraryArgs,
+DISCOBOX is the NAME "discobox ls" prints, an ID, or a short prefix of one;
+without it the only discobox there is, or a pick. Everything after -- is
+passed to the tool untouched.`,
+		Args:              cobra.ArbitraryArgs,
+		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.runTool(cmd, id, *sandboxID, source, program, args)
+			return a.runTool(cmd, id, source, program, args)
 		},
 	}
-	// Stop parsing at the first positional argument so a leading sandbox
-	// reference and anything meant for the tool reach it intact.
-	cmd.Flags().SetInterspersed(false)
-	cmd.Flags().StringVarP(&source, "source", "s", "", "Source to work in, named by its slug; defaults to the discobox's primary source")
+	cmd.Flags().StringVar(&source, "source", "", "Source to work in, named by its slug; defaults to the discobox's primary source")
 	cmd.Flags().StringVar(&program, "program", "", "Program a tool that runs here runs, instead of the first of its declared programs on PATH")
 	return cmd
 }
 
 // runTool runs one declared tool against the discobox the command names.
-func (a *App) runTool(cmd *cobra.Command, id, sandboxArg, source, program string, args []string) error {
-	target, rest, err := a.resolveToolTarget(cmd, sandboxArg, source, args)
+func (a *App) runTool(cmd *cobra.Command, id, source, program string, args []string) error {
+	target, rest, err := a.resolveToolTarget(cmd, source, args)
 	if err != nil {
 		return err
 	}
@@ -182,14 +175,15 @@ func (a *App) runTool(cmd *cobra.Command, id, sandboxArg, source, program string
 
 // newToolsListCommand is `discobox tools ls`: every tool a discobox offers,
 // where each was declared, and why any of them cannot run.
-func (a *App) newToolsListCommand(sandboxID *string) *cobra.Command {
+func (a *App) newToolsListCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "ls [DISCOBOX]",
-		Aliases: []string{"list"},
-		Short:   "List the tools a discobox can be worked on with",
-		Args:    cobra.MaximumNArgs(1),
+		Use:               "ls [DISCOBOX]",
+		Aliases:           []string{"list"},
+		Short:             "List the tools a discobox can be worked on with",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			target, _, err := a.resolveToolTarget(cmd, *sandboxID, "", args)
+			target, _, err := a.resolveToolTarget(cmd, "", args)
 			if err != nil {
 				return err
 			}
@@ -217,48 +211,41 @@ func (a *App) newToolsListCommand(sandboxID *string) *cobra.Command {
 	return cmd
 }
 
-func (a *App) newToolsGitCommand(sandboxID *string) *cobra.Command {
+func (a *App) newToolsGitCommand() *cobra.Command {
 	var source string
 	cmd := &cobra.Command{
-		Use:   "git [flags] [--] ARG [ARG...]",
+		Use:   "git [DISCOBOX] [flags] -- ARG...",
 		Short: "Run git in a discobox source's working tree",
 		Long: `Run git inside a discobox, in the working tree of one of its sources.
 
-Without --source git runs in the discobox's default working directory, which is
-its primary source.
+DISCOBOX is the NAME "discobox ls" prints, an ID, or a short prefix of one;
+without it the only discobox there is, or a pick. Without --source git runs in
+the discobox's default working directory, which is its primary source.
 
-Every argument is passed to git as is; only the flags before the git arguments
-are consumed here. Use -- when a git argument would otherwise be read as one of
-them.`,
-		Example: `  discobox tools git status
-  discobox tools git -s docs log --oneline -5
-  discobox tools git --discobox-id sbx_01hq diff
-  discobox tools git -- --version`,
-		Args: cobra.MinimumNArgs(1),
+Everything after -- is passed to git as is.`,
+		Example: `  discobox tools git -- status
+  discobox tools git mybox --source docs -- log --oneline -5
+  discobox tools git sbx_01hq -- diff`,
+		Args:              cobra.ArbitraryArgs,
+		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.runToolInSource(cmd, *sandboxID, source, append([]string{"git"}, args...))
+			app, projectID, sandboxID, client, gitArgs, err := a.selectDiscoboxCommand(cmd, args)
+			if err != nil {
+				return err
+			}
+			if len(gitArgs) == 0 {
+				return fmt.Errorf("git's arguments go after --: %s -- status", cmd.CommandPath())
+			}
+			return app.runToolInSelected(cmd, projectID, sandboxID, client, source, nil, append([]string{"git"}, gitArgs...))
 		},
 	}
-	// Stop parsing flags at the first positional argument so everything from
-	// there on belongs to git: `discobox tools git log -s` sends -s to git, while
-	// `discobox tools git -s docs log` still selects the source here.
-	cmd.Flags().SetInterspersed(false)
-	cmd.Flags().StringVarP(&source, "source", "s", "", "Source to run in, named by its slug; defaults to the discobox's primary source")
+	cmd.Flags().StringVar(&source, "source", "", "Source to run in, named by its slug; defaults to the discobox's primary source")
 	return cmd
 }
 
-// runToolInSource runs command inside the sandbox, in the working tree of the
-// selected source, streamed to this terminal exactly like `discobox shell`.
-func (a *App) runToolInSource(cmd *cobra.Command, sandboxArg, sourceSlug string, command []string) error {
-	app, projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
-	if err != nil {
-		return err
-	}
-	return app.runToolInSelected(cmd, projectID, sandboxID, client, sourceSlug, nil, command)
-}
-
-// runToolInSelected is runToolInSource once the discobox is chosen, run by the
-// App aimed at the server it is on (selectSandbox).
+// runToolInSelected runs command inside the discobox, in the working tree of
+// the selected source, streamed to this terminal exactly like `discobox
+// shell`, by the App aimed at the server it is on (selectSandbox).
 func (a *App) runToolInSelected(cmd *cobra.Command, projectID, sandboxID string, client *apiclientgen.Client, sourceSlug string, env, command []string) error {
 	ctx := cmd.Context()
 	var err error

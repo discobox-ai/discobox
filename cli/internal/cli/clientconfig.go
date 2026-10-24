@@ -43,9 +43,9 @@ func newSkills(dirs []string, user *bool) ([]string, bool, error) {
 		return nil, false, err
 	}
 	if dirs == nil {
-		dirs = cfg.New.Skills
+		dirs = cfg.Run.Skills
 	}
-	userSkills := cfg.New.UserSkills
+	userSkills := cfg.Run.UserSkills
 	if user != nil {
 		userSkills = *user
 	}

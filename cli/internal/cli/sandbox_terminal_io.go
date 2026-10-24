@@ -21,24 +21,24 @@ import (
 // maxTerminalWait is the longest one wait call may hold (ADR 0137 §3).
 const maxTerminalWait = 60 * time.Second
 
-func (a *App) newSandboxTerminalScreenCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxTerminalScreenCommand() *cobra.Command {
 	var scrollback int64
 	cmd := &cobra.Command{
-		Use:   "screen TERMINAL_ID",
+		Use:   "screen DISCOBOX TERMINAL_ID",
 		Short: "Print a discobox terminal's screen as text",
 		Long: `Print what a discobox terminal shows, as a person looking at it would read it:
 the rendered screen, not the stream of escape sequences that drew it. Reading
 does not attach, resize the terminal, or count as activity.
 
 Pass "primary" for the discobox's harness terminal.`,
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: a.completeTerminals(sandboxID),
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: a.completeTerminals,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, resolvedSandboxID, api, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
+			a, projectID, resolvedSandboxID, api, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
-			terminalID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[0])
+			terminalID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[1])
 			if err != nil {
 				return err
 			}
@@ -120,10 +120,10 @@ func terminalInputParts(args []string, literal bool) []apimodel.SandboxExecInput
 	return parts
 }
 
-func (a *App) newSandboxTerminalInputCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxTerminalInputCommand() *cobra.Command {
 	var literal bool
 	cmd := &cobra.Command{
-		Use:   "input TERMINAL_ID KEY|TEXT...",
+		Use:   "input DISCOBOX TERMINAL_ID KEY|TEXT...",
 		Short: "Type keys and text into a discobox terminal",
 		Long: `Type into a discobox terminal without attaching. Like tmux send-keys, an
 argument that names a key is that key and anything else is text: Enter, Tab,
@@ -138,20 +138,20 @@ the discobox's harness terminal.
 It prints a resume point, taken just before the input was delivered: pass it
 to wait as --after, and a hook the input causes is found however soon it is
 recorded.`,
-		Example: `  discobox admin terminal input primary --discobox-id sbx_1 "run the tests again" Enter
-  discobox admin terminal input primary --discobox-id sbx_1 C-c`,
-		Args:              cobra.MinimumNArgs(2),
-		ValidArgsFunction: a.completeTerminals(sandboxID),
+		Example: `  discobox admin terminal input sbx_1 primary "run the tests again" Enter
+  discobox admin terminal input sbx_1 primary C-c`,
+		Args:              cobra.MinimumNArgs(3),
+		ValidArgsFunction: a.completeTerminals,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			parts := terminalInputParts(args[1:], literal)
+			parts := terminalInputParts(args[2:], literal)
 			if len(parts) == 0 {
 				return fmt.Errorf("nothing to send")
 			}
-			projectID, resolvedSandboxID, api, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
+			a, projectID, resolvedSandboxID, api, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
-			terminalID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[0])
+			terminalID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[1])
 			if err != nil {
 				return err
 			}
@@ -175,16 +175,16 @@ recorded.`,
 	return cmd
 }
 
-func (a *App) newSandboxTerminalWaitCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxTerminalWaitCommand() *cobra.Command {
 	var hooks []string
 	var after string
-	var quiet, timeout time.Duration
+	var idle, timeout time.Duration
 	var exit bool
 	cmd := &cobra.Command{
-		Use:   "wait TERMINAL_ID",
+		Use:   "wait DISCOBOX TERMINAL_ID",
 		Short: "Wait once for something to happen in a discobox terminal",
 		Long: `Block until one of the conditions given holds, and say which: a harness hook
-event (--hook), no output or input for a while (--quiet), or the terminal's
+event (--hook), no output or input for a while (--idle), or the terminal's
 program exiting (--exit). It is one wait, held at most 60s.
 
 A hook event may be named either as the harness emits it or by its canonical
@@ -199,26 +199,26 @@ wait resumes: pass it as --after, as input's output is passed, and a hook
 recorded between two calls is not missed. Without --after, only hooks recorded
 after the wait began count. Pass "primary" for the discobox's harness
 terminal.`,
-		Example: `  after=$(discobox admin terminal input primary --discobox-id sbx_1 "run the tests" Enter)
-  discobox admin terminal wait primary --discobox-id sbx_1 --hook Stop --after "$after"
-  discobox admin terminal wait primary --discobox-id sbx_1 --quiet 10s --exit`,
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: a.completeTerminals(sandboxID),
+		Example: `  after=$(discobox admin terminal input sbx_1 primary "run the tests" Enter)
+  discobox admin terminal wait sbx_1 primary --hook Stop --after "$after"
+  discobox admin terminal wait sbx_1 primary --idle 10s --exit`,
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: a.completeTerminals,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(hooks) == 0 && quiet <= 0 && !exit {
-				return fmt.Errorf("nothing to wait for: give --hook, --quiet or --exit")
+			if len(hooks) == 0 && idle <= 0 && !exit {
+				return fmt.Errorf("nothing to wait for: give --hook, --idle or --exit")
 			}
-			if quiet > 0 && quiet%time.Second != 0 {
-				return fmt.Errorf("--quiet is counted in whole seconds")
+			if idle > 0 && idle%time.Second != 0 {
+				return fmt.Errorf("--idle is counted in whole seconds")
 			}
 			if timeout <= 0 || timeout > maxTerminalWait || timeout%time.Second != 0 {
 				return fmt.Errorf("--timeout runs from 1s to %s, in whole seconds", maxTerminalWait)
 			}
-			projectID, resolvedSandboxID, api, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
+			a, projectID, resolvedSandboxID, api, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
-			terminalID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[0])
+			terminalID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[1])
 			if err != nil {
 				return err
 			}
@@ -229,8 +229,8 @@ terminal.`,
 			if after != "" {
 				body.Until.After = apiclientgen.NewOptString(after)
 			}
-			if quiet > 0 {
-				body.Until.QuietSeconds = apiclientgen.NewOptInt64(int64(quiet / time.Second))
+			if idle > 0 {
+				body.Until.QuietSeconds = apiclientgen.NewOptInt64(int64(idle / time.Second))
 			}
 			if exit {
 				body.Until.Exit = apiclientgen.NewOptBool(true)
@@ -267,7 +267,7 @@ terminal.`,
 	}
 	cmd.Flags().StringSliceVar(&hooks, "hook", nil, "Harness hook event to wait for, by its own or canonical name, such as Stop (repeatable)")
 	cmd.Flags().StringVar(&after, "after", "", "Only hooks recorded after this resume point, as input or a previous wait printed it")
-	cmd.Flags().DurationVar(&quiet, "quiet", 0, "Wait for no output or input for this long (e.g. 10s)")
+	cmd.Flags().DurationVar(&idle, "idle", 0, "Wait for no output or input for this long (e.g. 10s)")
 	cmd.Flags().BoolVar(&exit, "exit", false, "Wait for the terminal's program to exit")
 	cmd.Flags().DurationVar(&timeout, "timeout", maxTerminalWait, "Give up after this long, at most 60s")
 	return cmd

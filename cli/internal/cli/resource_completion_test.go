@@ -60,16 +60,15 @@ func TestPoolFlagCompletionListsPools(t *testing.T) {
 
 func TestTerminalCompletionUsesSandboxScope(t *testing.T) {
 	server := completionServer(t, map[string]string{
-		"/api/projects/project-1/sandboxes/sandbox-1/execs": `{"execs":[{"id":"terminal-1","harnessId":"codex","status":"running","command":["codex"],"workdir":"/workspace","tty":true,"createdAt":"2026-01-01T00:00:00Z"}]}`,
+		"/api/projects/project-1/sandboxes/sbx_h1ssjzhp60emtc2n/execs": `{"execs":[{"id":"terminal-1","harnessId":"codex","status":"running","command":["codex"],"workdir":"/workspace","tty":true,"createdAt":"2026-01-01T00:00:00Z"}]}`,
 	})
 	root := NewRootCommand()
 	setFlag(t, root, "server", server.URL)
 	setFlag(t, root, "project", "project-1")
-	parent := findCommand(t, root, "admin", "terminal")
-	setFlag(t, parent, "discobox-id", "sandbox-1")
 	cmd := findCommand(t, root, "admin", "terminal", "logs")
 
-	completions, directive := cmd.ValidArgsFunction(cmd, nil, "")
+	// The first argument is the discobox; the second completes within it.
+	completions, directive := cmd.ValidArgsFunction(cmd, []string{"sbx_h1ssjzhp60emtc2n"}, "")
 
 	if directive&cobra.ShellCompDirectiveNoFileComp == 0 {
 		t.Fatalf("directive = %v, want no file completion", directive)
@@ -79,16 +78,15 @@ func TestTerminalCompletionUsesSandboxScope(t *testing.T) {
 
 func TestExecCompletionUsesSandboxScope(t *testing.T) {
 	server := completionServer(t, map[string]string{
-		"/api/projects/project-1/sandboxes/sandbox-1/execs": `{"execs":[{"id":"exec-1","status":"exited","command":["go","test"],"workdir":"/workspace","tty":false,"createdAt":"2026-01-01T00:00:00Z"}]}`,
+		"/api/projects/project-1/sandboxes/sbx_h1ssjzhp60emtc2n/execs": `{"execs":[{"id":"exec-1","status":"exited","command":["go","test"],"workdir":"/workspace","tty":false,"createdAt":"2026-01-01T00:00:00Z"}]}`,
 	})
 	root := NewRootCommand()
 	setFlag(t, root, "server", server.URL)
 	setFlag(t, root, "project", "project-1")
-	parent := findCommand(t, root, "admin", "exec")
-	setFlag(t, parent, "discobox-id", "sandbox-1")
 	cmd := findCommand(t, root, "admin", "exec", "logs")
 
-	completions, directive := cmd.ValidArgsFunction(cmd, nil, "")
+	// The first argument is the discobox; the second completes within it.
+	completions, directive := cmd.ValidArgsFunction(cmd, []string{"sbx_h1ssjzhp60emtc2n"}, "")
 
 	if directive&cobra.ShellCompDirectiveNoFileComp == 0 {
 		t.Fatalf("directive = %v, want no file completion", directive)

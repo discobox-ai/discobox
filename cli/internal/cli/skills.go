@@ -69,7 +69,7 @@ func projectSkillsRepository(source apimodel.ProjectSkillsSource) (sandboxcreate
 }
 
 // newSkillsCommand manages the skills every new discobox gets: the project's
-// skills repositories on the server, and this client's new.skills in
+// skills repositories on the server, and this client's run.skills in
 // client.yaml. A value is filed by what it is, read as --skills reads it: a
 // Git URL is the project's, a directory is this machine's (ADR 26-10-14-894
 // §3).
@@ -81,7 +81,7 @@ func (a *App) newSkillsCommand() *cobra.Command {
 			"A repository, URL[@REF][//PATH] or GitHub's owner/repo[@REF][//PATH], is the\n" +
 			"project's: every discobox of the project is created with it, whoever creates\n" +
 			"it, checked out under skill-sources with each skill in PATH linked in. A\n" +
-			"directory is this machine's, kept in client.yaml's new.skills, and copied into\n" +
+			"directory is this machine's, kept in client.yaml's run.skills, and copied into\n" +
 			"every discobox created from here. owner/repo is the directory when one is there.\n\n" +
 			"A create adds the project's first, then client.yaml's or its own --skills, so\n" +
 			"yours win on a skill of the same name. --no-project-skills leaves the\n" +
@@ -126,7 +126,7 @@ type skillsListing struct {
 	Client  clientSkills                   `json:"client"`
 }
 
-// clientSkills is client.yaml's new.skills, as a create reads them, and the
+// clientSkills is client.yaml's run.skills, as a create reads them, and the
 // file they are in: empty when none is read.
 type clientSkills struct {
 	Path   string   `json:"path,omitempty"`
@@ -150,7 +150,7 @@ func (a *App) listSkills(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	listing := skillsListing{Project: project, Client: clientSkills{Path: cfg.Path, Skills: cfg.New.Skills}}
+	listing := skillsListing{Project: project, Client: clientSkills{Path: cfg.Path, Skills: cfg.Run.Skills}}
 	if listing.Project == nil {
 		listing.Project = []apimodel.ProjectSkillsSource{}
 	}
@@ -168,7 +168,7 @@ func (a *App) listSkills(cmd *cobra.Command) error {
 				return err
 			}
 		}
-		return writeResourceIDs(cmd.OutOrStdout(), cfg.New.Skills, func(skill string) string { return skill })
+		return writeResourceIDs(cmd.OutOrStdout(), cfg.Run.Skills, func(skill string) string { return skill })
 	}
 	home, _ := os.UserHomeDir()
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
@@ -177,7 +177,7 @@ func (a *App) listSkills(cmd *cobra.Command) error {
 		repo, _ := projectSkillsRepository(source)
 		fmt.Fprintf(tw, "project\t%s\t%s\n", repo.Display(home), source.ID)
 	}
-	for _, skill := range cfg.New.Skills {
+	for _, skill := range cfg.Run.Skills {
 		fmt.Fprintf(tw, "client.yaml\t%s\t\n", sourceref.Display(skill, home))
 	}
 	return tw.Flush()
@@ -233,7 +233,7 @@ type skillsEdit struct {
 
 // addSkills files one value where it belongs, read as --skills reads it: a
 // Git URL or GitHub shorthand in the project's skills sources, a directory in
-// client.yaml's new.skills (ADR 26-10-14-894 §3, ADR 26-10-15-664).
+// client.yaml's run.skills (ADR 26-10-14-894 §3, ADR 26-10-15-664).
 func addSkills(ctx context.Context, project projectClient, arg string) (skillsEdit, error) {
 	split, err := sandboxcreate.SplitSkills([]string{arg})
 	if err != nil {
@@ -300,7 +300,7 @@ func removeSkills(ctx context.Context, project projectClient, arg string) (skill
 	if err != nil {
 		return skillsEdit{}, err
 	}
-	if key, err := clientconfig.SkillKey("", value); err == nil && slices.ContainsFunc(cfg.New.Skills, func(skill string) bool {
+	if key, err := clientconfig.SkillKey("", value); err == nil && slices.ContainsFunc(cfg.Run.Skills, func(skill string) bool {
 		same, err := clientconfig.SkillKey("", skill)
 		return err == nil && same == key
 	}) {
@@ -335,7 +335,7 @@ func removeProjectSkills(ctx context.Context, client *apiclientgen.Client, proje
 }
 
 // removeClientSkill takes one entry, as a create reads it, out of
-// client.yaml's new.skills.
+// client.yaml's run.skills.
 func removeClientSkill(value string) (skillsEdit, error) {
 	path, err := clientconfig.RemoveSkill(value)
 	if err != nil {

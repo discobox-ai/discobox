@@ -53,35 +53,33 @@ type sandboxExecCreateOptions struct {
 }
 
 func (a *App) newSandboxExecCommand() *cobra.Command {
-	var sandboxID string
 	cmd := &cobra.Command{
 		Use:     "exec",
 		Aliases: []string{"execs"},
-		Short:   "Manage discobox exec commands",
+		Short:   "Manage discobox execs",
 	}
-	cmd.PersistentFlags().StringVar(&sandboxID, "discobox-id", "", "Discobox ID")
-	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
-	cmd.AddCommand(a.newSandboxExecCreateCommand(&sandboxID))
-	cmd.AddCommand(a.newSandboxExecListCommand(&sandboxID))
-	cmd.AddCommand(a.newSandboxExecLogsCommand(&sandboxID))
+	cmd.AddCommand(a.newSandboxExecCreateCommand())
+	cmd.AddCommand(a.newSandboxExecListCommand())
+	cmd.AddCommand(a.newSandboxExecLogsCommand())
 	return cmd
 }
 
-func (a *App) newSandboxExecCreateCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxExecCreateCommand() *cobra.Command {
 	var opts sandboxExecCreateOptions
 	cmd := &cobra.Command{
-		Use:   "create [flags] [--] COMMAND [ARG...]",
-		Short: "Create a discobox exec",
-		Args:  cobra.ArbitraryArgs,
+		Use:               "create [DISCOBOX] [flags] [-- COMMAND [ARG...]]",
+		Short:             "Create a discobox exec",
+		Args:              cobra.ArbitraryArgs,
+		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 && !opts.shell {
-				return fmt.Errorf("a command is required unless --shell is set")
-			}
-			projectID, resolvedSandboxID, _, err := a.sandboxExecRequest(cmd.Context(), *sandboxID)
+			a, projectID, resolvedSandboxID, _, command, err := a.selectDiscoboxCommand(cmd, args)
 			if err != nil {
 				return err
 			}
-			body, err := createSandboxExecBody(opts, args)
+			if len(command) == 0 && !opts.shell {
+				return fmt.Errorf("the command goes after --, as in %s DISCOBOX -- COMMAND, unless --shell is set", cmd.CommandPath())
+			}
+			body, err := createSandboxExecBody(opts, command)
 			if err != nil {
 				return err
 			}
@@ -109,19 +107,20 @@ func (a *App) newSandboxExecCreateCommand(sandboxID *string) *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.gid, "gid", nil, "Groups to run as inside the discobox, each a name or a numeric GID. The first is the primary group and the rest are supplementary; omit to inherit the discobox's own groups")
 	cmd.Flags().BoolVar(&opts.shell, "shell", false, "Run the discobox user's login shell instead of a command; the discobox resolves which shell that is")
 	cmd.Flags().BoolVarP(&opts.tty, "tty", "t", false, "Allocate a PTY")
-	cmd.Flags().BoolVarP(&opts.interactive, "interactive", "i", false, "Accepted for docker exec -it compatibility")
+	cmd.Flags().BoolVarP(&opts.interactive, "interactive", "i", false, "Send stdin to the command, which otherwise gets none; with -t, the local terminal goes raw")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Start the exec and print its record without streaming logs")
 	return cmd
 }
 
-func (a *App) newSandboxExecListCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxExecListCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "ls",
-		Aliases: []string{"list"},
-		Short:   "List discobox execs",
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			projectID, resolvedSandboxID, _, err := a.sandboxExecRequest(cmd.Context(), *sandboxID)
+		Use:               "ls [DISCOBOX]",
+		Aliases:           []string{"list"},
+		Short:             "List discobox execs",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, projectID, resolvedSandboxID, _, err := a.selectSandbox(cmd, discoboxArg(args))
 			if err != nil {
 				return err
 			}
@@ -136,19 +135,19 @@ func (a *App) newSandboxExecListCommand(sandboxID *string) *cobra.Command {
 	return cmd
 }
 
-func (a *App) newSandboxExecLogsCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxExecLogsCommand() *cobra.Command {
 	var includeInput bool
 	cmd := &cobra.Command{
-		Use:               "logs EXEC_ID",
+		Use:               "logs DISCOBOX EXEC_ID",
 		Short:             "Print discobox exec logs",
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: a.completeExecs(sandboxID),
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: a.completeExecs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, resolvedSandboxID, client, err := a.sandboxExecRequest(cmd.Context(), *sandboxID)
+			a, projectID, resolvedSandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
-			execID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[0])
+			execID, err := a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, args[1])
 			if err != nil {
 				return err
 			}
@@ -172,13 +171,6 @@ func (a *App) newSandboxExecLogsCommand(sandboxID *string) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&includeInput, "include-input", false, "Include input bytes as well as exec output")
 	return cmd
-}
-
-func (a *App) sandboxExecRequest(ctx context.Context, sandboxArg string) (string, string, *apiclientgen.Client, error) {
-	if strings.TrimSpace(sandboxArg) == "" {
-		return "", "", nil, fmt.Errorf("--discobox-id is required")
-	}
-	return a.sandboxRequest(ctx, sandboxArg)
 }
 
 func createSandboxExecBody(opts sandboxExecCreateOptions, command []string) (*apimodel.CreateSandboxExecRequest, error) {

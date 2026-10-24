@@ -208,7 +208,7 @@ func TestImportPostsTheArchiveAndReportsWarnings(t *testing.T) {
 	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse, projectID: "project-1"}
 	result, err := app.importSandbox(context.Background(), "project-1",
 		strings.NewReader("pretend this is a tar"),
-		sandboxImportOptions{name: "my-box-2", poolID: "pool_9", harnessSlug: "codex"})
+		sandboxImportOptions{name: "my-box-2", poolID: "pool_9", harness: "codex"})
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}

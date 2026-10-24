@@ -35,7 +35,7 @@ func (a *App) newJobListCommand() *cobra.Command {
 func (a *App) newJobGetCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:               "get JOB_ID",
-		Short:             "Get a job",
+		Short:             "Show a job",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeJobs,
 		RunE: func(cmd *cobra.Command, args []string) error {

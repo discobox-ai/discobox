@@ -2644,7 +2644,7 @@ type DataSource interface {
 
 	// Skills is the skills every new discobox gets from this window: the
 	// project's skills sources on one server, in the order a create adds them,
-	// then client.yaml's new.skills, which are this machine's whatever server
+	// then client.yaml's run.skills, which are this machine's whatever server
 	// the window is on (ADR 26-10-14-894).
 	Skills(ctx context.Context, server string) (SkillsListing, error)
 

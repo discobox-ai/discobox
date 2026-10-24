@@ -267,7 +267,7 @@ func (a *App) newServersRemoveCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:               "rm NAME...",
 		Aliases:           []string{"delete", "remove"},
-		Short:             "Stop listing a registered server's discoboxes; the server is not touched",
+		Short:             "Unregister a server; the server itself is not touched",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeServerNames(-1),
 		RunE: func(_ *cobra.Command, args []string) error {

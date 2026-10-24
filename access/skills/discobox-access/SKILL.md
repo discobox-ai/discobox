@@ -337,7 +337,7 @@ discobox-access run --use use_7f3a2b -- gh pr create --fill
 - Everything after `--` is your command, run exactly as written.
 - What your command reads on stdin — a here-document, a file, a pipe — is shown
   to the checker with it, up to 8 KiB, and your command still reads every
-  byte. A command that takes its request on stdin (`discobox run --json`,
+  byte. A command that takes its request on stdin (`discobox run --from-json`,
   `gh api --input -`) is judged by that request, so keep it to what was
   approved; past 8 KiB the checker is told it was not shown the rest.
 
@@ -544,7 +544,7 @@ discobox-access run --use <id> -- discobox secret request deny <request-id>
   with the secret of the delegation grant you hold, fitted within its
   remaining time: `approve` is then one call. Do not pass `--grant-ttl`: a
   lifetime you name that outlasts your delegation is refused rather than
-  fitted. Pass `--secret-id` only when the server says you were delegated
+  fitted. Pass `--secret` only when the server says you were delegated
   more than one secret that fits, naming one it lists. `discobox secret ls`
   shows you the secrets you were delegated, and nothing else of the
   project's.
@@ -562,13 +562,13 @@ A worker that stops with uncommitted work is either between steps or waiting
 on a question. Read its screen to tell which, and answer it:
 
 ```bash
-discobox-access run --use <id> -- discobox admin terminal screen primary --discobox-id <discobox-id>
-discobox-access run --use <id> -- discobox admin terminal input primary --discobox-id <discobox-id> "carry on and commit when the tests pass" Enter
-discobox-access run --use <id> -- discobox admin terminal wait primary --discobox-id <discobox-id> --hook Stop
+discobox-access run --use <id> -- discobox admin terminal screen <discobox-id> primary
+discobox-access run --use <id> -- discobox admin terminal input <discobox-id> primary "carry on and commit when the tests pass" Enter
+discobox-access run --use <id> -- discobox admin terminal wait <discobox-id> primary --hook Stop
 ```
 
 `primary` is the worker's harness terminal; `discobox admin terminal ls
---discobox-id <discobox-id>` lists the others. All of these run under the
+<discobox-id>` lists the others. All of these run under the
 supervise use above. Any discobox in this project but its judge answers;
 which ones a use reaches is the judge's to read from its words, and the
 judge is told which discobox created the one a call names, so the supervise

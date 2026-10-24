@@ -58,7 +58,7 @@ func TestTrustRequestApproveRefusesForever(t *testing.T) {
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"--server", "http://127.0.0.1:1", "--project", "project-1", "trust", "request", "approve", "treq_0123456789abcdef", "--ttl", "forever"})
-	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "always lapses") {
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "never ends") {
 		t.Fatalf("error = %v, want forever refused", err)
 	}
 }

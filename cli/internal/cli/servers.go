@@ -472,6 +472,15 @@ type unansweredServer struct {
 	err    error
 }
 
+// unansweredNames is the servers that did not answer, by name, for a message.
+func unansweredNames(silent []unansweredServer) string {
+	names := make([]string, 0, len(silent))
+	for _, s := range silent {
+		names = append(names, s.server.name)
+	}
+	return strings.Join(names, ", ")
+}
+
 // listEveryServer is `discobox ls` across every server: the primary's
 // discoboxes in --project, each registered server's in its default project,
 // asked concurrently and narrowed to filter. The primary failing fails the
@@ -616,7 +625,9 @@ func (s *server) findSandbox(ctx context.Context, value string) (projectID, sand
 	if err != nil {
 		return "", "", nil, false, err
 	}
-	res, err := client.ListSandboxes(ctx, apiclientgen.ListSandboxesParams{ProjectId: projectID})
+	// Judges included, as one server's resolveSandboxID includes them: an ID
+	// a discobox can be named by is the same on every server.
+	res, err := client.ListSandboxes(ctx, apiclientgen.ListSandboxesParams{ProjectId: projectID, IncludeJudge: apiclientgen.NewOptBool(true)})
 	if err != nil {
 		return "", "", nil, false, err
 	}
@@ -737,7 +748,7 @@ func (a *App) findOnEveryServer(ctx context.Context, set []*server, value string
 		if len(silent) > 0 {
 			return nil, "", "", nil, fmt.Errorf("no discobox matches %q on any server that answered; %s did not", value, strings.Join(silent, ", "))
 		}
-		return nil, "", "", nil, fmt.Errorf("no discobox matches %q on any server", value)
+		return nil, "", "", nil, listedOnNoServer{value: value}
 	default:
 		names := make([]string, 0, len(hits))
 		for _, h := range hits {
@@ -745,6 +756,14 @@ func (a *App) findOnEveryServer(ctx context.Context, set []*server, value string
 		}
 		return nil, "", "", nil, fmt.Errorf("%q matches a discobox on more than one server (%s); name it by its address, discobox://<server>/<discobox>", value, strings.Join(names, ", "))
 	}
+}
+
+// listedOnNoServer is findOnEveryServer's answer when every server answered
+// and none lists the discobox.
+type listedOnNoServer struct{ value string }
+
+func (e listedOnNoServer) Error() string {
+	return fmt.Sprintf("no discobox matches %q on any server", e.value)
 }
 
 // selectAddressedSandbox resolves a discobox's address: the server it names,

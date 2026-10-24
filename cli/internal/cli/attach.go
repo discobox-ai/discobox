@@ -14,8 +14,8 @@ import (
 // newAttachCommand implements `discobox attach`: open a discobox's own screen,
 // which is the launcher's window on that one discobox and nothing else. It is
 // the everyday shortcut for what pressing Enter on its row in `discobox console`
-// does, and --raw is what `discobox admin terminal attach primary
-// --discobox-id ID` spells out in full.
+// does, and --raw is what `discobox admin terminal attach DISCOBOX primary`
+// spells out in full.
 func (a *App) newAttachCommand() *cobra.Command {
 	var raw bool
 	cmd := &cobra.Command{

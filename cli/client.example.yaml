@@ -23,7 +23,7 @@
 
 # What discobox run, and the console's New Discobox panel, take when the
 # command line does not say.
-#new:
+#run:
   # Skills to install in every new discobox, as --skills reads them: a
   # directory whose subdirectories holding a SKILL.md are each a skill,
   # or a Git URL[@REF][//PATH] whose skills are linked from a checkout of

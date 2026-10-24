@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -24,11 +23,12 @@ discobox is deleted, and can be read only while it runs: reading them does not
 start it.`
 
 func (a *App) newAuditHooksCommand() *cobra.Command {
-	var sandboxID, terminalID, provider, event, since string
+	var terminalID, provider, event string
+	since := newSinceFlag()
 	var limit int
 	var follow bool
 	cmd := &cobra.Command{
-		Use:   "hooks",
+		Use:   "hooks [DISCOBOX]",
 		Short: "List the harness hook payloads a discobox recorded",
 		Long: `List the lifecycle hook payloads a discobox's coding harness published —
 session start, each tool call, notifications, stop — newest first. With
@@ -36,9 +36,10 @@ session start, each tool call, notifications, stop — newest first. With
 are recorded.
 
 ` + sandboxTrailNote,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			projectID, resolvedSandboxID, client, err := a.auditSandboxScope(cmd.Context(), sandboxID)
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, projectID, resolvedSandboxID, client, err := a.selectSandbox(cmd, discoboxArg(args))
 			if err != nil {
 				return err
 			}
@@ -56,10 +57,7 @@ are recorded.
 			if event != "" {
 				params.Event = apiclientgen.NewOptString(event)
 			}
-			sinceAt, err := parseOptionalSince(since)
-			if err != nil {
-				return err
-			}
+			sinceAt := since.from(time.Now())
 			source := harnessHookSource(client, params)
 			if a.output == "json" && !follow {
 				hooks, err := readAuditAll(cmd.Context(), source, a.auditReadOptions(cmd, sinceAt, limit, false))
@@ -80,33 +78,33 @@ are recorded.
 			})
 		},
 	}
-	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Discobox whose hooks to read (required)")
 	cmd.Flags().StringVar(&terminalID, "terminal-id", "", "Only hooks from this terminal (ID or prefix)")
 	cmd.Flags().StringVar(&provider, "provider", "", "Only hooks from this harness provider, such as claude-code")
 	cmd.Flags().StringVar(&event, "event", "", "Only this hook event, by its own or canonical name, such as PreToolUse")
-	cmd.Flags().StringVar(&since, "since", "", "Only hooks from this long ago (e.g. 1h) or since this RFC 3339 time")
+	cmd.Flags().Var(since, "since", "Only hooks from this long ago (e.g. 1h) or since this RFC 3339 time")
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of hooks to return")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing hooks as they are recorded")
-	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
-	_ = cmd.RegisterFlagCompletionFunc("terminal-id", a.completeTerminals(&sandboxID))
+	_ = cmd.RegisterFlagCompletionFunc("terminal-id", a.completeWithinDiscobox(a.completeTerminals))
 	return cmd
 }
 
 func (a *App) newAuditExecsCommand() *cobra.Command {
-	var sandboxID, execID, eventType, since string
+	var execID, eventType string
+	since := newSinceFlag()
 	var limit int
 	var follow bool
 	cmd := &cobra.Command{
-		Use:   "execs",
+		Use:   "execs [DISCOBOX]",
 		Short: "List the exec lifecycle events a discobox recorded",
 		Long: `List the lifecycle events of every exec in a discobox — created, started,
 attached, stopped, failed to start — newest first. With --follow, print the
 last --limit oldest first and keep printing events as they are recorded.
 
 ` + sandboxTrailNote,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			projectID, resolvedSandboxID, client, err := a.auditSandboxScope(cmd.Context(), sandboxID)
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, projectID, resolvedSandboxID, client, err := a.selectSandbox(cmd, discoboxArg(args))
 			if err != nil {
 				return err
 			}
@@ -121,10 +119,7 @@ last --limit oldest first and keep printing events as they are recorded.
 			if eventType != "" {
 				params.Type = apiclientgen.NewOptString(eventType)
 			}
-			sinceAt, err := parseOptionalSince(since)
-			if err != nil {
-				return err
-			}
+			sinceAt := since.from(time.Now())
 			source := execEventSource(client, params)
 			if a.output == "json" && !follow {
 				events, err := readAuditAll(cmd.Context(), source, a.auditReadOptions(cmd, sinceAt, limit, false))
@@ -145,25 +140,13 @@ last --limit oldest first and keep printing events as they are recorded.
 			})
 		},
 	}
-	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Discobox whose exec events to read (required)")
 	cmd.Flags().StringVar(&execID, "exec-id", "", "Only this exec's events (ID or prefix)")
 	cmd.Flags().StringVar(&eventType, "type", "", "Only this event type, such as exec.start.failed")
-	cmd.Flags().StringVar(&since, "since", "", "Only events from this long ago (e.g. 1h) or since this RFC 3339 time")
+	cmd.Flags().Var(since, "since", "Only events from this long ago (e.g. 1h) or since this RFC 3339 time")
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of events to return")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing events as they are recorded")
-	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
-	_ = cmd.RegisterFlagCompletionFunc("exec-id", a.completeExecs(&sandboxID))
+	_ = cmd.RegisterFlagCompletionFunc("exec-id", a.completeWithinDiscobox(a.completeExecs))
 	return cmd
-}
-
-// auditSandboxScope resolves the discobox a sandbox-kept trail is read from.
-// Unlike the pool and verdict trails these have no project-wide read: they
-// are inside each discobox.
-func (a *App) auditSandboxScope(ctx context.Context, sandboxID string) (string, string, *apiclientgen.Client, error) {
-	if strings.TrimSpace(sandboxID) == "" {
-		return "", "", nil, errors.New("--discobox-id is required: these records are kept inside each discobox")
-	}
-	return a.sandboxRequest(ctx, sandboxID)
 }
 
 // harnessHookSource reads a discobox's hook trail.
@@ -236,13 +219,6 @@ func execEventSource(client *apiclientgen.Client, params apiclientgen.ListExecEv
 		// As with hooks: random IDs, one writer committing as it records.
 		lookback: auditWriterLookback,
 	}
-}
-
-func parseOptionalSince(value string) (time.Time, error) {
-	if value == "" {
-		return time.Time{}, nil
-	}
-	return parseSince(value, time.Now())
 }
 
 // Every field but the time is whatever the discobox recorded, in a database it

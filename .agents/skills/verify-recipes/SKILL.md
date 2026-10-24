@@ -66,8 +66,8 @@ so filter it out). Ctrl-C at the welcome screen quits it normally.
 # Verifying what a box's program reports (OSC 7501, terminal queries)
 
 No attach needed: drive a `d run -d -H shell --no-source` box's primary with
-`d admin terminal input primary --discobox-id <id> "<cmd>" Enter` and read it
-with `d admin terminal screen primary --discobox-id <id>`; the shim's record is
+`d admin terminal input <id> primary "<cmd>" Enter` and read it
+with `d admin terminal screen <id> primary`; the shim's record is
 `d admin box get <id> -o json | jq '.runtime.agentStatus.sessions[]'` (`ls`
 lags it by the 15s poll). `d cp` scripts into `/tmp`.
 
@@ -135,7 +135,7 @@ iptables -S INPUT` shows the stub's rule, and `docker run --rm busybox:1.36
 ping -c1 -W2 example.com` on the default bridge, a user network, one with
 `-o com.docker.network.bridge.name=X`, and `--network host` shows nested
 resolution (busybox `nslookup` prints no addresses for single-label names;
-`ping`'s first line does). What resolved: `d admin audit dns --discobox-id <id>
+`ping`'s first line does). What resolved: `d admin audit dns --discobox <id>
 --since 15m`.
 
 - The box has no `nslookup`: `docker cp` `/bin/busybox` out of a `docker
@@ -170,8 +170,8 @@ and that the process started after the build (no `ps` in the image: walk
 - A self-signed TLS origin is refused (`502`, audited `blocked / policy`) until
   trusted: `discobox-access trust -use ... -why ... HOST:PORT` in the box, then
   `d trust request approve <treq>`.
-- What the proxy saw: `d admin audit http --discobox-id <id> --since 10m`;
-  bodies with `--discobox-id <id> --body http_N --part request|response`
+- What the proxy saw: `d admin audit http --discobox <id> --since 10m`;
+  bodies with `--discobox <id> --body http_N --part request|response`
   (`--body` alone errors). `--host 172.17.0.1` matched nothing.
 - A swapped credential needs `discobox-access run`, which the dev server
   refuses without a judge (no default harness) unless `judgeCommands: false`.
@@ -183,7 +183,7 @@ and that the process started after the build (no `ps` in the image: walk
   harness's row in `.tmp/discobox/discobox.db` (`sqlite3`; set it back after),
   then `d run -d -H <slug> --no-source -p x`. A `-s ENV=value` secret is not
   swapped until its request is approved (`d secret request approve <sreq>
-  --secret-id <id>`, IDs from `d secret request ls`); an unswapped sentinel
+  --secret <id>`, IDs from `d secret request ls`); an unswapped sentinel
   also gets a 401, so check the audit row's secret column. Sentinels are in
   the box's `/run/discobox/secrets/secrets.json` (root). What was recorded:
   `curl 127.0.0.1:8080/projects/<project>/secret-rejections`.
@@ -321,7 +321,7 @@ server, but its in-image `discobox-access` can lag the checkout: `grep -c
 
 - Approving needs a secret: `d secret create --name N --host H --token fake
   --max-grant-ttl forever` (the default cap is 1h, so a longer `--grant-ttl`
-  is refused without it), then `d secret request approve <sreq> --secret-id
+  is refused without it), then `d secret request approve <sreq> --secret
   N [--grant-ttl 2w|forever]`.
 - `request`, `wait`, and `list` need no judge; only `run` does (see the lead
   section below).
@@ -464,7 +464,7 @@ of `SERVER_LDFLAGS` in `Taskfile.yml`, `REGISTRY=ghcr.io/discobox-ai`,
 resolves bundles itself and otherwise cannot reach ghcr.
 
 - A box from a bundle has its harness only once provisioned: wait with
-  `admin exec --discobox-id <id> create -- discobox-provision wait <harness>`
+  `admin exec create <id> -- discobox-provision wait <harness>`
   (it fails until the platform's core lands; retry).
 - If a nested box's `apt-get` hangs on `Connection failed [IP: 127.0.0.1
   17008]`, its pool has no upstream proxy: the runc wrapper is injecting
@@ -644,7 +644,7 @@ d shell <sbx> -- curl -sS -D- https://assets.discobox.internal/discobox-platform
 - In the box: `/opt/discobox/bundles/{pins.json,state.json,layers,trees}`,
   `readlink /opt/discobox/current`; on the pool side
   `.../sandboxes/<sbx>/agent-placed.json` in the pool container.
-- What it fetched since its last start: `d admin audit http --discobox-id <sbx>
+- What it fetched since its last start: `d admin audit http --discobox <sbx>
   --since "$(docker inspect -f '{{.State.StartedAt}}' <ctr> | cut -c1-19)Z"
   --limit 5000 | grep assets.discobox.internal` (table output: `--host` with
   `-o json` answered 503 here). A restart fetches nothing; a moved platform
@@ -883,7 +883,7 @@ go tool task build:ubuntu-sandbox-base > $S/ubuntu.log 2>&1
 # start the isolated server above with
 # DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE=discobox-sandbox-base:ubuntu, then
 e new -d --no-source -H shell -p x
-e admin exec --discobox-id <id> create -- discobox-provision wait <f>
+e admin exec create <id> -- discobox-provision wait <f>
 d shell <id> -- sudo cat /var/log/discobox/provision/<f>.log   # result=applied per step
 ```
 
@@ -920,7 +920,7 @@ docker inspect vfail --format '{{.State.ExitCode}}'; docker logs vfail | tail -2
   the next boot. Edit `$S/data` with `sudo` (root-owned) between boots. For
   `main`'s behavior on the same tree, build its agent from `git archive HEAD`
   and bind it over `/opt/discobox/current/features/core/discobox-sandbox-agent:ro`.
-- A box's export is `d admin box export <box> -o <file>` (stop it first); the
+- A box's export is `d admin box export <box> <file>` (stop it first); the
   export container overrides the entrypoint. Without a pool: the same image
   with `--entrypoint /opt/discobox/current/features/core/discobox-sandbox-agent ... export data`,
   config and data mounted read-only, and `DISCOBOX_USER_{NAME,UID,GID,HOME}`
@@ -964,7 +964,7 @@ docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
   `discobox-access request --statement … --define WORD=DEFINITION` (or
   `statements`/`definitions` in `--json`), from a box on an image built with
   your `discobox-access`, and approve it with `secret request approve <id>
-  --secret-id N --policy-as-asked`. Create the box from SOURCE
+  --secret N --policy-as-asked`. Create the box from SOURCE
   `https://github.com/octocat/Hello-World` so `$primary.repo` has a value.
   The grant's `.policy.resolved` (`GET /projects/<p>/secret-grants`) shows
   what bound; `discobox-access wait request <id>` shows it as sentences.
@@ -1034,13 +1034,13 @@ curl -s "$B/stat?path=~"
 printf hi | curl -s -X PUT -H 'Content-Type: application/octet-stream' \
   --data-binary @- "$B/content?path=notes/a.md&parents=true"
 curl -s "$B/content?path=/etc/shadow" -w ' [%{http_code}]\n'   # 403: runs as the user
-d shell <sbx_id> sh -c 'ls -ln ~/notes/a.md' </dev/null   # owned by the user, not root
+d shell <sbx_id> -- sh -c 'ls -ln ~/notes/a.md' </dev/null   # owned by the user, not root
 ```
 
-- There is no `discobox exec`; `shell <id> <command…>` runs one, and needs
+- There is no `discobox exec`; `shell <id> -- <command…>` runs one, and needs
   `</dev/null` from a tool shell.
 - The CLI's callers: a user tool script (`$XDG_CONFIG_HOME/discobox/tools/<n>.sh`,
-  `tools <n> --discobox-id <id>`), a tool's `files:` (a `.yaml` tool with the
+  `tools <n> <id>`), a tool's `files:` (a `.yaml` tool with the
   default under `tools/<id>/`), a pasted image (console recipe above), and
   harness configure (`go tool task build:harness-stub-bundle`, `admin harness
   create --bundle discobox-harness-stub:local`, served as above, `admin

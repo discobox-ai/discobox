@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -41,16 +42,17 @@ func TestMatchSandboxArgShortIDResolvesUniqueMatch(t *testing.T) {
 }
 
 // The hyphenated spelling is the discobox's own hostname, so a full or short
-// ID copied from its shell prompt resolves; a name that begins "sbx-" is still
-// matched as a name first.
+// ID copied from its shell prompt resolves. A name that begins "sbx-" is
+// matched as a name first, unless it is also a short ID of another discobox,
+// which refuses it (TestMatchSandboxArgRefusesANameThatIsAnotherDiscoboxsShortID).
 func TestMatchSandboxArgAcceptsTheHostnameSpelling(t *testing.T) {
 	named := testSandboxWithID("sbx_23x11jnw03w11nf2")
-	named.Config.Name = "sbx-h1ssj"
+	named.Config.Name = "sbx-23x1"
 	sandboxes := []apimodel.Sandbox{testSandboxWithID("sbx_h1ssjzhp60emtc2n"), named}
 	for arg, want := range map[string]string{
 		"sbx-h1ssjzhp60emtc2n": "sbx_h1ssjzhp60emtc2n",
 		"sbx-h1ss":             "sbx_h1ssjzhp60emtc2n",
-		"sbx-h1ssj":            "sbx_23x11jnw03w11nf2",
+		"sbx-23x1":             "sbx_23x11jnw03w11nf2",
 		"sbx-0000000000000000": "sbx_0000000000000000",
 	} {
 		id, ok, err := matchSandboxArg(arg, sandboxes, configuredName)
@@ -71,14 +73,14 @@ func TestMatchSandboxIDsAcceptsTheHostnameSpelling(t *testing.T) {
 	}
 }
 
-func TestMatchSandboxArgNoMatchTreatedAsCommand(t *testing.T) {
+func TestMatchSandboxArgNoMatchIsNotAnError(t *testing.T) {
 	sandboxes := []apimodel.Sandbox{testSandboxWithID("sbx_h1ssjzhp60emtc2n")}
 	id, ok, err := matchSandboxArg("ls", sandboxes, configuredName)
 	if err != nil {
 		t.Fatalf("matchSandboxArg: %v", err)
 	}
 	if ok || id != "" {
-		t.Fatalf("id=%q ok=%v, want no match so the caller treats it as a command", id, ok)
+		t.Fatalf("id=%q ok=%v, want no match, for the caller to report", id, ok)
 	}
 }
 
@@ -110,7 +112,7 @@ func TestMatchSandboxArgAmbiguousShortIDErrors(t *testing.T) {
 
 // A full generated ID is trusted by shape alone, so `discobox shell` must not pay
 // for a sandbox listing it does not need before creating the exec — the same
-// no-extra-round-trip path a fully-specified --sandbox-id takes elsewhere.
+// no-extra-round-trip path a full ID takes as every command's DISCOBOX.
 func TestShellFullSandboxIDSkipsListingAndRunsCommand(t *testing.T) {
 	const sandboxID = "sbx_23x11jnw03w11nf2"
 	var createBody map[string]any
@@ -143,7 +145,7 @@ func TestShellFullSandboxIDSkipsListingAndRunsCommand(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", sandboxID, "ls", "-la"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", sandboxID, "--", "ls", "-la"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -161,7 +163,7 @@ func TestShellFullSandboxIDSkipsListingAndRunsCommand(t *testing.T) {
 }
 
 // A short ID that matches exactly one of the sandboxes `discobox ls` would show
-// resolves to that sandbox, and everything after it is the command.
+// resolves to that sandbox, and everything after the -- is the command.
 func TestShellShortIDMatchUsesListedSandbox(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	var listed bool
@@ -194,7 +196,7 @@ func TestShellShortIDMatchUsesListedSandbox(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", "sbx_h1ssj", "echo", "hi"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", "sbx_h1ssj", "--", "echo", "hi"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -211,10 +213,10 @@ func TestShellShortIDMatchUsesListedSandbox(t *testing.T) {
 	}
 }
 
-// When the first argument matches none of the sandboxes `discobox ls` would show,
-// it is the start of the command instead, and the single listed sandbox is
-// picked automatically the same way an omitted SANDBOX_ID would be elsewhere.
-func TestShellUnmatchedFirstArgIsCommandAndPicksSoleSandbox(t *testing.T) {
+// With no DISCOBOX before the --, the single listed discobox is picked the
+// way an omitted DISCOBOX is everywhere, and everything after the -- is the
+// command.
+func TestShellWithNoDiscoboxPicksTheSoleOne(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	var createBody map[string]any
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
@@ -244,7 +246,7 @@ func TestShellUnmatchedFirstArgIsCommandAndPicksSoleSandbox(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", "echo", "hi"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", "--", "echo", "hi"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -258,8 +260,39 @@ func TestShellUnmatchedFirstArgIsCommandAndPicksSoleSandbox(t *testing.T) {
 	}
 }
 
-// No command at all runs the sandbox user's login shell, exactly like the old
-// root `discobox exec` did with no arguments.
+// An argument is the discobox, never guessed to be the command: one that names
+// no discobox is refused, saying where a command goes, and more than one
+// before the -- is refused with the line that works. Neither runs anything.
+func TestShellNeverTakesADiscoboxArgumentForTheCommand(t *testing.T) {
+	const sandboxID = "sbx_h1ssjzhp60emtc2n"
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/projects/project-1/sandboxes" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"sandboxes":[` + testSandboxJSON(sandboxID, "alpha", "2026-06-17T00:00:00Z", "2026-06-17T00:00:01Z") + `]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	for args, want := range map[string][]string{
+		"echo":    {`no discobox for "echo"`, "a command goes after --: discobox shell -- echo"},
+		"echo hi": {"takes one DISCOBOX", "discobox shell echo -- hi"},
+	} {
+		cmd := NewRootCommand()
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "shell"}, strings.Fields(args)...))
+		err := cmd.Execute()
+		for _, part := range want {
+			if err == nil || !strings.Contains(err.Error(), part) {
+				t.Fatalf("shell %s error = %v, want %q", args, err, part)
+			}
+		}
+	}
+}
+
 func TestShellNoArgsRunsLoginShell(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	var createBody map[string]any
@@ -363,7 +396,7 @@ func TestShellAmbiguousShortIDErrorsBeforeAnyExecCall(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", "ab", "ls"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", "ab", "--", "ls"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -481,7 +514,7 @@ func TestShellSeparatorInsideCommandIsPassedThrough(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", sandboxID, "git", "log", "--", "docs/"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", sandboxID, "--", "git", "log", "--", "docs/"})
 
 	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "has ended with exit code 0") {
 		t.Fatalf("execute shell error = %v", err)
@@ -540,11 +573,10 @@ func titledSandbox(id, name, title string) apimodel.Sandbox {
 	return sandbox
 }
 
-// The whole point of the two settings: a window title is free-form text, so
-// under configuredName it must not be taken as a discobox reference. `discobox
-// shell vim` runs vim, even beside a discobox whose terminal is titled "vim" —
-// while `discobox rm vim`, which has no command word to confuse it with,
-// resolves that discobox.
+// The two settings: a window title is free-form text, so under configuredName
+// it is not taken as a discobox reference — `discobox cp vim:x .` reads vim as
+// a path — while under listedName, which every DISCOBOX argument takes, it
+// resolves the discobox titled that.
 func TestMatchSandboxArgTitleMatchesOnlyUnderListedName(t *testing.T) {
 	sandboxes := []apimodel.Sandbox{titledSandbox("sbx_h1ssjzhp60emtc2n", "brave-otter", "vim")}
 
@@ -609,15 +641,10 @@ func TestMatchSandboxArgEmptyNamesNothing(t *testing.T) {
 	}
 }
 
-// `discobox shell` passes configuredName, and this is the test that says so:
-// the settings above are only worth having if the command that must not take a
-// window title as its argument actually asks for that.
-//
-// A discobox titled "vim" sits in the directory, and `discobox shell vim` has
-// to leave "vim" as the command it runs. Under listedName the title would be
-// eaten as the discobox reference and the command would come back empty, which
-// is `shell` with no command -- the login shell, and no vim.
-func TestResolveShellTargetLeavesATitleToTheCommand(t *testing.T) {
+// `discobox shell` takes its DISCOBOX by the NAME `discobox ls` prints, a
+// window title included: an argument there is the discobox, so the title
+// `discobox ls` shows is the one that has to work.
+func TestShellTakesTheListedNameAsItsDiscobox(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	t.Setenv(hostid.EnvVar, "host_0123456789abcdef")
 	t.Chdir(t.TempDir())
@@ -635,16 +662,139 @@ func TestResolveShellTargetLeavesATitleToTheCommand(t *testing.T) {
 	app := &App{serverURL: server.URL, projectID: "project-1"}
 	cmd := &cobra.Command{}
 	cmd.SetContext(t.Context())
-	_, _, gotID, _, cmdArgs, err := app.resolveShellTarget(cmd, []string{"vim"})
+	_, _, gotID, _, cmdArgs, err := app.selectDiscoboxCommand(cmd, []string{"vim", "--", "ls"})
 	if err != nil {
-		t.Fatalf("resolveShellTarget: %v", err)
+		t.Fatalf("selectDiscoboxCommand: %v", err)
 	}
-	if got, want := strings.Join(cmdArgs, " "), "vim"; got != want {
-		t.Fatalf("command = %q, want %q -- the window title was taken as the discobox", got, want)
+	if gotID != sandboxID || strings.Join(cmdArgs, " ") != "ls" {
+		t.Fatalf("discobox %q command %q, want %q and ls", gotID, cmdArgs, sandboxID)
 	}
-	// The discobox still comes from the directory's one candidate, as it would
-	// with no argument at all.
-	if gotID != sandboxID {
-		t.Fatalf("discobox = %q, want %q", gotID, sandboxID)
+}
+
+// The -- alone decides which argument is which: before it at most the
+// discobox, after it the command with every later -- kept, whether pflag
+// consumed the separator or a command that parses no flags sees it.
+func TestSplitDiscoboxCommand(t *testing.T) {
+	for _, tc := range []struct {
+		args     []string
+		discobox string
+		command  []string
+		dashed   bool
+		err      string
+	}{
+		{args: nil},
+		{args: []string{"box"}, discobox: "box"},
+		{args: []string{"box", "--", "ls", "-la"}, discobox: "box", command: []string{"ls", "-la"}, dashed: true},
+		{args: []string{"--", "ls"}, command: []string{"ls"}, dashed: true},
+		{args: []string{"box", "--", "git", "log", "--", "docs/"}, discobox: "box", command: []string{"git", "log", "--", "docs/"}, dashed: true},
+		{args: []string{"box", "--"}, discobox: "box", command: []string{}, dashed: true},
+		{args: []string{"box", "ls"}, err: "shell box -- ls"},
+	} {
+		cmd := &cobra.Command{Use: "shell"}
+		cmd.Flags().SetInterspersed(false)
+		// No flags to parse: the -- reaches the split as an argument, as it
+		// does for tools ssh.
+		line, err := splitDiscoboxCommand(cmd, tc.args)
+		if tc.err != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.err) {
+				t.Fatalf("split %q error = %v, want %q", tc.args, err, tc.err)
+			}
+			continue
+		}
+		if err != nil || line.discobox != tc.discobox || !slices.Equal(line.command, tc.command) || line.dashed != tc.dashed {
+			t.Fatalf("split %q = %+v, %v; want %q %q dashed %v", tc.args, line, err, tc.discobox, tc.command, tc.dashed)
+		}
 	}
+}
+
+// Every command's DISCOBOX takes the NAME `discobox ls` prints, not only an
+// ID: selectSandbox resolves it the way rm and start do.
+func TestSelectSandboxTakesTheListedName(t *testing.T) {
+	const sandboxID = "sbx_h1ssjzhp60emtc2n"
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/projects/project-1/sandboxes" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write([]byte(`{"sandboxes":[` + namedSandboxJSON(sandboxID, "brave-otter", "Fixing the tests", "present") + `]}`))
+	}))
+	t.Cleanup(server.Close)
+	app := &App{serverURL: server.URL, projectID: "project-1"}
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	for _, reference := range []string{"brave-otter", "Fixing the tests", "sbx_h1ss"} {
+		if _, _, got, _, err := app.selectSandbox(cmd, reference); err != nil || got != sandboxID {
+			t.Fatalf("selectSandbox(%q) = %q, %v; want %q", reference, got, err, sandboxID)
+		}
+	}
+	if _, _, _, _, err := app.selectSandbox(cmd, "nothing-by-that-name"); err == nil {
+		t.Fatal("a name nothing answers to resolved")
+	}
+}
+
+// A listed name is written by the box, so a box that names itself another
+// discobox's short ID does not win that ID: the reference is refused as
+// naming one and being a short ID of the other, under either setting.
+func TestMatchSandboxArgRefusesANameThatIsAnotherDiscoboxsShortID(t *testing.T) {
+	sandboxes := []apimodel.Sandbox{
+		titledSandbox("sbx_01hqzhp60emtc2nx", "brave-otter", ""),
+		titledSandbox("sbx_h1ssjzhp60emtc2n", "calm-heron", "01hq"),
+	}
+	for _, arg := range []string{"01hq", "sbx_01hq"} {
+		if arg == "sbx_01hq" {
+			sandboxes[1].DisplayName = arg
+		}
+		id, ok, err := matchSandboxArg(arg, sandboxes, listedName)
+		if err == nil || ok || id != "" || !strings.Contains(err.Error(), "is a short ID of sbx_01hqzhp60emtc2nx") {
+			t.Fatalf("matchSandboxArg(%q) = %q %v %v, want the shadowing name refused", arg, id, ok, err)
+		}
+	}
+	// A name that is a short ID of the discobox it names is that discobox.
+	sandboxes = []apimodel.Sandbox{titledSandbox("sbx_h1ssjzhp60emtc2n", "calm-heron", "h1ss")}
+	if id, ok, err := matchSandboxArg("h1ss", sandboxes, listedName); err != nil || !ok || id != "sbx_h1ssjzhp60emtc2n" {
+		t.Fatalf("matchSandboxArg(h1ss) = %q %v %v, want its own discobox", id, ok, err)
+	}
+}
+
+// A judge is left out of a listing but is still named by its ID, so the check
+// that a name is not another discobox's short ID reads the judges too.
+func TestSelectSandboxRefusesANameThatIsAJudgesShortID(t *testing.T) {
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/projects/project-1/sandboxes" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		rows := namedSandboxJSON("sbx_h1ssjzhp60emtc2n", "calm-heron", "01hq", "present")
+		if r.URL.Query().Get("includeJudge") == "true" {
+			rows += "," + judgeSandboxJSON("sbx_01hqzhp60emtc2nx", "calm-heron")
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write([]byte(`{"sandboxes":[` + rows + `]}`))
+	}))
+	t.Cleanup(server.Close)
+	app := &App{serverURL: server.URL, projectID: "project-1"}
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	if _, _, id, _, err := app.selectSandbox(cmd, "01hq"); err == nil || !strings.Contains(err.Error(), "short ID of sbx_01hqzhp60emtc2nx") {
+		t.Fatalf("selectSandbox(01hq) = %q, %v; want the judge's short ID not taken by a name", id, err)
+	}
+	// The judge is named calm-heron too, and is no name candidate: the name
+	// is the work box's, not ambiguous between the two.
+	if _, _, id, _, err := app.selectSandbox(cmd, "calm-heron"); err != nil || id != "sbx_h1ssjzhp60emtc2n" {
+		t.Fatalf("selectSandbox(calm-heron) = %q, %v; want the work box, the judge not matched by name", id, err)
+	}
+	// Its ID still names it.
+	if _, _, id, _, err := app.selectSandbox(cmd, "sbx_01hqzh"); err != nil || id != "sbx_01hqzhp60emtc2nx" {
+		t.Fatalf("selectSandbox(sbx_01hqzh) = %q, %v; want the judge by its short ID", id, err)
+	}
+}
+
+// judgeSandboxJSON is a judge discobox's row, named name.
+func judgeSandboxJSON(id, name string) string {
+	return `{"id":"` + id + `","projectId":"project-1","createdByUserId":"user-1","displayName":"` + name + `",` +
+		`"config":{"name":"` + name + `","image":"","harnessMode":"judge"},"runtime":{"state":"ready","desiredState":"present","generation":1,"observedGeneration":1},` +
+		`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
 }

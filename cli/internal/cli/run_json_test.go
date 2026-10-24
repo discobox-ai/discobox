@@ -129,7 +129,7 @@ func TestRunGivesItsGrants(t *testing.T) {
 	}
 }
 
-// `new --json` takes the request from stdin, with no shell between the caller
+// `run --from-json` takes the request from stdin, with no shell between the caller
 // and the prompt or a use's sentence, and answers with the discobox as JSON.
 func TestRunTakesItsRequestAsJSON(t *testing.T) {
 	setHome(t, t.TempDir())
@@ -155,9 +155,9 @@ func TestRunTakesItsRequestAsJSON(t *testing.T) {
 			 "definitions": {"publish": "upload a new version of a package", "package": "an npm package", "registry": "an npm registry"}}
 		]
 	}`))
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "--json"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "--from-json"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute new --json: %v", err)
+		t.Fatalf("execute run --from-json: %v", err)
 	}
 
 	config := posted["config"].(map[string]any)
@@ -193,20 +193,20 @@ func TestRunTakesItsRequestAsJSON(t *testing.T) {
 }
 
 // A JSON request is the whole request: a flag or a word beside it is refused,
-// and so is a field --json does not know or a grant --grant would have refused.
+// and so is a field --from-json does not know or a grant --grant would have refused.
 func TestRunJSONRefusesWhatItCannotMean(t *testing.T) {
 	for name, tc := range map[string]struct {
 		args  []string
 		stdin string
 		want  string
 	}{
-		"a run flag beside it": {[]string{"run", "--json", "-p", "x"}, `{}`, "put --prompt in it"},
-		"a word beside it":     {[]string{"run", "--json", "fix"}, `{}`, `"prompt"`},
-		"an unknown field":     {[]string{"run", "--json"}, `{"promt": "x"}`, `unknown field "promt"`},
-		"two requests":         {[]string{"run", "--json"}, `{} {}`, "more than one request"},
-		"a grant with no use":  {[]string{"run", "--json"}, `{"grants": [{"id": "com.github.api"}]}`, "at least one use"},
-		"a grant naming both":  {[]string{"run", "--json"}, `{"grants": [{"id": "com.github.api", "secret": "gh", "envVar": "GH_TOKEN", "uses": [{"description": "x"}]}]}`, "not both"},
-		"a secret with no var": {[]string{"run", "--json"}, `{"grants": [{"secret": "gh", "uses": [{"description": "x"}]}]}`, `"envVar"`},
+		"a run flag beside it": {[]string{"run", "--from-json", "-p", "x"}, `{}`, "put --prompt in it"},
+		"a word beside it":     {[]string{"run", "--from-json", "fix"}, `{}`, `"prompt"`},
+		"an unknown field":     {[]string{"run", "--from-json"}, `{"promt": "x"}`, `unknown field "promt"`},
+		"two requests":         {[]string{"run", "--from-json"}, `{} {}`, "more than one request"},
+		"a grant with no use":  {[]string{"run", "--from-json"}, `{"grants": [{"id": "com.github.api"}]}`, "at least one use"},
+		"a grant naming both":  {[]string{"run", "--from-json"}, `{"grants": [{"id": "com.github.api", "secret": "gh", "envVar": "GH_TOKEN", "uses": [{"description": "x"}]}]}`, "not both"},
+		"a secret with no var": {[]string{"run", "--from-json"}, `{"grants": [{"secret": "gh", "uses": [{"description": "x"}]}]}`, `"envVar"`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cmd := NewRootCommand()
@@ -234,7 +234,7 @@ func grantHostsOf(grant map[string]any) []string {
 	return out
 }
 
-// `new --skills` and --json's "skills" read each directory's skills into the
+// `new --skills` and --from-json's "skills" read each directory's skills into the
 // request as content, which is what the server installs (ADR 26-10-09-395 §4).
 func TestRunCarriesItsSkills(t *testing.T) {
 	skillsDir := t.TempDir()
@@ -249,7 +249,7 @@ func TestRunCarriesItsSkills(t *testing.T) {
 	}
 	for name, args := range map[string][]string{
 		"flags": {"run", "-d", "--no-source", "--skills", skillsDir, "-p", "go"},
-		"json":  {"run", "--json"},
+		"json":  {"run", "--from-json"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			setHome(t, t.TempDir())
@@ -290,7 +290,7 @@ func TestRunCarriesItsSkills(t *testing.T) {
 }
 
 // client.yaml's new section is what `run` takes when its command line says
-// nothing about skills, and a flag or a --json field given replaces it rather
+// nothing about skills, and a flag or a --from-json field given replaces it rather
 // than adding to it (ADR 26-10-09-389).
 func TestRunTakesItsSkillsFromClientConfig(t *testing.T) {
 	writeSkill := func(t *testing.T, dir, name string) {
@@ -311,8 +311,8 @@ func TestRunTakesItsSkillsFromClientConfig(t *testing.T) {
 		{name: "nothing given", args: []string{"run", "-d", "--no-source", "-p", "go"}, want: []string{"configured", "mine"}},
 		{name: "--skills given", args: []string{"run", "-d", "--no-source", "--skills", "OTHER", "-p", "go"}, want: []string{"mine", "other"}},
 		{name: "--user-skills=false", args: []string{"run", "-d", "--no-source", "--user-skills=false", "-p", "go"}, want: []string{"configured"}},
-		{name: "json leaves both out", args: []string{"run", "--json"}, json: map[string]any{"noSource": true}, want: []string{"configured", "mine"}},
-		{name: "json says none", args: []string{"run", "--json"}, json: map[string]any{"noSource": true, "skills": []string{}, "userSkills": false}},
+		{name: "json leaves both out", args: []string{"run", "--from-json"}, json: map[string]any{"noSource": true}, want: []string{"configured", "mine"}},
+		{name: "json says none", args: []string{"run", "--from-json"}, json: map[string]any{"noSource": true, "skills": []string{}, "userSkills": false}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()
@@ -323,7 +323,7 @@ func TestRunTakesItsSkillsFromClientConfig(t *testing.T) {
 			configDir := t.TempDir()
 			writeSkill(t, filepath.Join(configDir, "team"), "configured")
 			configFile := filepath.Join(configDir, "client.yaml")
-			if err := os.WriteFile(configFile, []byte("new:\n  skills: [team]\n  userSkills: true\n"), 0o644); err != nil {
+			if err := os.WriteFile(configFile, []byte("run:\n  skills: [team]\n  userSkills: true\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			t.Setenv("DISCOBOX_CLIENT_CONFIG_FILE", configFile)
@@ -365,7 +365,7 @@ func TestRunTakesItsSkillsFromClientConfig(t *testing.T) {
 func TestRunRefusesAClientConfigItCannotRead(t *testing.T) {
 	setHome(t, t.TempDir())
 	configFile := filepath.Join(t.TempDir(), "client.yaml")
-	if err := os.WriteFile(configFile, []byte("new:\n  skils: [team]\n"), 0o644); err != nil {
+	if err := os.WriteFile(configFile, []byte("run:\n  skils: [team]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("DISCOBOX_CLIENT_CONFIG_FILE", configFile)

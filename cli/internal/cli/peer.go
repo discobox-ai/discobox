@@ -58,24 +58,6 @@ func (a *App) newPeerIDCommand() *cobra.Command {
 	return cmd
 }
 
-// newIrohAliasCommands keeps the spellings operators' notes already use:
-// `discobox admin iroh-id`, and `discobox admin iroh` with the same verbs.
-// Breaking them to tidy a command tree is a cost paid by users (ADR 0095 §5 on
-// iroh IDs, ADR 0097 §7).
-func (a *App) newIrohAliasCommands() []*cobra.Command {
-	id := a.newPeerIDCommand()
-	id.Use = "iroh-id"
-	id.Hidden = true
-	id.Short = "Print this machine's peer ID (use \"peer id\")"
-
-	group := a.newPeerCommand()
-	group.Use = "iroh"
-	group.Aliases = nil
-	group.Hidden = true
-	group.Short = "Manage peers (use \"peer\")"
-	return []*cobra.Command{id, group}
-}
-
 func (a *App) newPeerListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "ls",

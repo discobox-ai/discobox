@@ -58,22 +58,16 @@ func (a *App) completeJobs(cmd *cobra.Command, _ []string, toComplete string) ([
 	return a.completeProjectResource(cmd, toComplete, a.listJobCompletions)
 }
 
-func (a *App) completeTerminals(sandboxID *string) cobra.CompletionFunc {
-	return func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return a.completeSandboxScopedResource(cmd, sandboxID, toComplete, a.listTerminalCompletions)
-	}
+func (a *App) completeTerminals(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return a.completeSandboxScopedResource(cmd, args, toComplete, a.listTerminalCompletions)
 }
 
-func (a *App) completeExecs(sandboxID *string) cobra.CompletionFunc {
-	return func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return a.completeSandboxScopedResource(cmd, sandboxID, toComplete, a.listExecCompletions)
-	}
+func (a *App) completeExecs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return a.completeSandboxScopedResource(cmd, args, toComplete, a.listExecCompletions)
 }
 
-func (a *App) completeServices(sandboxID *string) cobra.CompletionFunc {
-	return func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return a.completeSandboxScopedResource(cmd, sandboxID, toComplete, a.listServiceCompletions)
-	}
+func (a *App) completeServices(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return a.completeSandboxScopedResource(cmd, args, toComplete, a.listServiceCompletions)
 }
 
 func (a *App) completeProjectResource(cmd *cobra.Command, toComplete string, list func(context.Context, *apiclientgen.Client, string) ([]string, error)) ([]string, cobra.ShellCompDirective) {
@@ -92,8 +86,25 @@ func (a *App) completeProjectResource(cmd *cobra.Command, toComplete string, lis
 	return filterCompletions(completions, toComplete), cobra.ShellCompDirectiveNoFileComp
 }
 
-func (a *App) completeSandboxScopedResource(cmd *cobra.Command, sandboxID *string, toComplete string, list func(context.Context, *apiclientgen.Client, string, string) ([]string, error)) ([]string, cobra.ShellCompDirective) {
-	if sandboxID == nil || strings.TrimSpace(*sandboxID) == "" {
+// completeWithinDiscobox is complete for a flag that names something in the
+// DISCOBOX given as the command's argument: nothing until there is one.
+func (a *App) completeWithinDiscobox(complete cobra.CompletionFunc) cobra.CompletionFunc {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) != 1 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return complete(cmd, args, toComplete)
+	}
+}
+
+// completeSandboxScopedResource completes a command written `DISCOBOX X`:
+// the discobox first, and then what list finds in the one args[0] names.
+func (a *App) completeSandboxScopedResource(cmd *cobra.Command, args []string, toComplete string, list func(context.Context, *apiclientgen.Client, string, string) ([]string, error)) ([]string, cobra.ShellCompDirective) {
+	switch len(args) {
+	case 0:
+		return a.completeSandboxes(cmd, args, toComplete)
+	case 1:
+	default:
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	projectID, err := a.projectIDValue()
@@ -105,7 +116,7 @@ func (a *App) completeSandboxScopedResource(cmd *cobra.Command, sandboxID *strin
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	ctx := commandContext(cmd)
-	resolvedSandboxID, err := a.resolveSandboxID(ctx, client, projectID, *sandboxID)
+	resolvedSandboxID, err := a.resolveListedSandbox(ctx, client, projectID, args[0])
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

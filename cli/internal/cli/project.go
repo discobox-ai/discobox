@@ -53,7 +53,7 @@ func (a *App) newProjectListCommand() *cobra.Command {
 }
 
 func (a *App) newProjectGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get PROJECT", Short: "Get a project", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get PROJECT", Short: "Show a project", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -215,7 +215,7 @@ every discobox in the project converges onto, running ones included.
 	_ = cmd.RegisterFlagCompletionFunc("sandbox-upgrade-policy", cobra.FixedCompletions(
 		[]string{"automatic", "manual"}, cobra.ShellCompDirectiveNoFileComp))
 	cmd.Flags().BoolVar(&welcomed, "welcomed", false, `Whether this project has shown its welcome screen; pass --welcomed=false to have the console show it again`)
-	addEgressFlags(cmd, &egressOpts, "the project")
+	addEgressUpdateFlags(cmd, &egressOpts, "the project")
 	return cmd
 }
 

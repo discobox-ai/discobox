@@ -26,7 +26,7 @@ func (a *App) newPushCommand() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "push [DISCOBOX] [flags]",
-		Short: "Push local commits to a discobox, to rebase onto there",
+		Short: "Push local commits to a discobox, for it to rebase onto",
 		Long: `Send this machine's commits to the pool a discobox fetches from, per
 docs/adr/0058 and docs/adr/26-10-10-545.
 

@@ -28,13 +28,13 @@ func TestEgressFlagsKeepThePartNotGiven(t *testing.T) {
 		{name: "neither flag", args: nil},
 		{name: "allow only keeps the restriction", args: []string{"--egress-allow", "a.example,b.example"}, wantSent: true, wantRead: true, wantAllow: []string{"a.example", "b.example"}, wantDeny: true},
 		{name: "deny only keeps the list", args: []string{"--egress-deny-by-default=false"}, wantSent: true, wantRead: true, wantAllow: []string{"github.com"}},
-		{name: "an empty allow clears the list", args: []string{"--egress-allow", ""}, wantSent: true, wantRead: true, wantAllow: []string{}, wantDeny: true},
+		{name: "clearing empties the list", args: []string{"--clear-egress-allow"}, wantSent: true, wantRead: true, wantAllow: []string{}, wantDeny: true},
 		{name: "both given reads nothing", args: []string{"--egress-allow", "x.example", "--egress-deny-by-default"}, wantSent: true, wantAllow: []string{"x.example"}, wantDeny: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var flags egressFlags
 			cmd := &cobra.Command{Use: "update"}
-			addEgressFlags(cmd, &flags, "the project")
+			addEgressUpdateFlags(cmd, &flags, "the project")
 			if err := cmd.ParseFlags(tc.args); err != nil {
 				t.Fatal(err)
 			}
@@ -57,5 +57,25 @@ func TestEgressFlagsKeepThePartNotGiven(t *testing.T) {
 				t.Fatalf("level = %v deny %v, want %v deny %v", allow, level.DenyByDefault.Or(false), tc.wantAllow, tc.wantDeny)
 			}
 		})
+	}
+}
+
+// An empty entry is refused, not dropped: emptying a list is
+// --clear-egress-allow, and an empty one is more likely a variable that
+// expanded to nothing.
+func TestEgressFlagsRefuseAnEmptyEntry(t *testing.T) {
+	for _, args := range [][]string{{"--egress-allow", ""}, {"--egress-allow", "a.example,,b.example"}, {"--egress-allow", " "}} {
+		var flags egressFlags
+		cmd := &cobra.Command{Use: "update"}
+		addEgressUpdateFlags(cmd, &flags, "the project")
+		if err := cmd.ParseFlags(args); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := flags.update(cmd, func() (apimodel.EgressPolicy, error) { return apimodel.EgressPolicy{}, nil }); err == nil {
+			t.Fatalf("update %q was accepted", args)
+		}
+		if _, _, err := flags.create(cmd); err == nil {
+			t.Fatalf("create %q was accepted", args)
+		}
 	}
 }

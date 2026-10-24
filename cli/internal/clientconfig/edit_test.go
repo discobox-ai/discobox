@@ -32,10 +32,15 @@ new:
 		t.Fatal(err)
 	}
 	got := string(data)
-	for _, want := range []string{"# my settings", "# skills I always want", "- ./team # relative to here", "- " + extra, "userSkills: true"} {
+	for _, want := range []string{"# my settings", "\nrun:\n", "# skills I always want", "- ./team # relative to here", "- " + extra, "userSkills: true"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("edited file lacks %q:\n%s", want, got)
 		}
+	}
+	// The section was written new, its name from before `run`; the edit
+	// renames it, and keeps everything in it.
+	if strings.Contains(got, "new:") {
+		t.Fatalf("edited file still says new:\n%s", got)
 	}
 	// Windows keeps no such mode to keep.
 	if info, err := os.Stat(path); runtime.GOOS != "windows" && (err != nil || info.Mode().Perm() != 0o600) {
@@ -45,8 +50,8 @@ new:
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(cfg.New.Skills) != 2 || cfg.New.Skills[0] != filepath.Join(dir, "team") || cfg.New.Skills[1] != extra {
-		t.Fatalf("skills = %q", cfg.New.Skills)
+	if len(cfg.Run.Skills) != 2 || cfg.Run.Skills[0] != filepath.Join(dir, "team") || cfg.Run.Skills[1] != extra {
+		t.Fatalf("skills = %q", cfg.Run.Skills)
 	}
 
 	// The relative entry is the same directory, as a create reads it.
@@ -66,8 +71,8 @@ new:
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(cfg.New.Skills) != 0 || !cfg.New.UserSkills {
-		t.Fatalf("config = %+v", cfg.New)
+	if len(cfg.Run.Skills) != 0 || !cfg.Run.UserSkills {
+		t.Fatalf("config = %+v", cfg.Run)
 	}
 }
 
@@ -83,8 +88,8 @@ func TestAddSkillCreatesTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(cfg.New.Skills) != 1 || cfg.New.Skills[0] != skills {
-		t.Fatalf("skills = %q", cfg.New.Skills)
+	if len(cfg.Run.Skills) != 1 || cfg.Run.Skills[0] != skills {
+		t.Fatalf("skills = %q", cfg.Run.Skills)
 	}
 }
 
@@ -95,14 +100,14 @@ func TestAddSkillRefusesWhatItCannotWrite(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "client.yaml")
 	t.Setenv(FileVar, path)
-	if err := os.WriteFile(path, []byte("new:\n  skils: []\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("run:\n  skils: []\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := AddSkill("/srv/skills"); err == nil {
 		t.Fatal("a file that does not parse was edited")
 	}
 	data, _ := os.ReadFile(path)
-	if string(data) != "new:\n  skils: []\n" {
+	if string(data) != "run:\n  skils: []\n" {
 		t.Fatalf("file changed: %q", data)
 	}
 }
@@ -133,7 +138,7 @@ func TestAddSkillKeepsAFileOfCommentsAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(cfg.New.Skills) != 1 || cfg.New.Skills[0] != skills {
-		t.Fatalf("skills = %q", cfg.New.Skills)
+	if len(cfg.Run.Skills) != 1 || cfg.Run.Skills[0] != skills {
+		t.Fatalf("skills = %q", cfg.Run.Skills)
 	}
 }

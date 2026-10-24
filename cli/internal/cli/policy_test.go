@@ -11,6 +11,8 @@ import (
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/apipolicy"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/pkg/policy"
 )
 
 // askedPolicyJSON is a policy as the server answers a read of the request
@@ -228,5 +230,35 @@ func TestTheWindowsRequestIsEscapedWhereItIsDrawn(t *testing.T) {
 	}
 	if req.Policy == nil || !strings.Contains(req.Policy.Definitions["push"], "\x1b") {
 		t.Fatal("the policy sent back on approval was changed; only what is drawn is escaped")
+	}
+}
+
+// Every flag that takes a statement takes the same sentence: --statement on
+// grants and rules, --rule-statement on approve, and --grant-statement, which
+// prefixes it with the credential only because one create can carry several
+// grants. All of them read it with policy.Written; this keeps it that way.
+func TestStatementFlagsTakeTheSameSentence(t *testing.T) {
+	sentence := `allow push on branch "fix-43" in repository "org/repo"`
+	definitions := []string{"branch=a git branch", "repository=a GitHub repository", "push=add commits to a branch"}
+	defined := policy.Definitions{}
+	for _, d := range definitions {
+		if err := defined.Set(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	direct, err := writtenPolicy([]string{sentence}, defined, "--statement", "--define")
+	if err != nil {
+		t.Fatalf("--statement: %v", err)
+	}
+	prefixed := make([]string, len(definitions))
+	for i, d := range definitions {
+		prefixed[i] = "com.github.api=" + d
+	}
+	grants, err := sandboxcreate.ParseGrants([]string{"com.github.api=fix issue 43"}, []string{"com.github.api=" + sentence}, prefixed)
+	if err != nil {
+		t.Fatalf("--grant-statement: %v", err)
+	}
+	if len(grants) != 1 || !reflect.DeepEqual(grants[0].Policy.Value, *direct) {
+		t.Fatalf("--grant-statement = %#v, --statement = %#v; want the same policy", grants, *direct)
 	}
 }

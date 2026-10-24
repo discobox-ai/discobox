@@ -351,12 +351,12 @@ sandbox_home() {
 
   # A running discobox is refused, and the refusal says how to get past it.
   archive="$DISCOBOX_BATS_TMP/transfer-source.dbox"
-  run cli admin box export "$source_id" -o "$archive"
+  run cli admin box export "$source_id" "$archive"
   [ "$status" -ne 0 ]
   [[ "$output" == *"--stop"* ]]
   [ ! -e "$archive" ]
 
-  run cli admin box export "$source_id" --stop -o "$archive"
+  run cli admin box export "$source_id" "$archive" --stop
   [ "$status" -eq 0 ]
   [ -s "$archive" ]
 

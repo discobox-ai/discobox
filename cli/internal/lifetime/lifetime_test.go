@@ -127,3 +127,43 @@ func TestSecondsIsWhatTheWireTakes(t *testing.T) {
 		t.Fatalf("Seconds(forever) = %d, want the zero that means it never expires", got)
 	}
 }
+
+// A flag remembers whether it was given, takes the words Parse takes, and a
+// lapsing one refuses forever.
+func TestFlag(t *testing.T) {
+	f := NewFlag()
+	if _, given := f.Duration(); given || f.String() != "" {
+		t.Fatalf("an unset flag reads given=%v %q", given, f.String())
+	}
+	if err := f.Set("forever"); err != nil {
+		t.Fatalf("Set(forever) = %v", err)
+	}
+	if d, given := f.Duration(); !given || d != Forever {
+		t.Fatalf("forever = %s, %v", d, given)
+	}
+	if err := f.Set("2w"); err != nil {
+		t.Fatalf("Set(2w) = %v", err)
+	}
+	if s, given := f.Seconds(); !given || s != 14*24*3600 {
+		t.Fatalf("2w = %d seconds, %v", s, given)
+	}
+	if err := f.Set("a while"); err == nil || !strings.Contains(err.Error(), "or forever") {
+		t.Fatalf("Set(a while) = %v", err)
+	}
+
+	lapsing := NewLapsingFlag()
+	for _, text := range []string{"forever", "0", "never"} {
+		if err := lapsing.Set(text); err == nil || !strings.Contains(err.Error(), "never ends") {
+			t.Fatalf("lapsing Set(%q) = %v, want it refused", text, err)
+		}
+	}
+	if err := lapsing.Set("a while"); err == nil || strings.Contains(err.Error(), "forever") {
+		t.Fatalf("lapsing Set(a while) = %v, want no forever offered", err)
+	}
+	if err := lapsing.Set("3d"); err != nil {
+		t.Fatalf("lapsing Set(3d) = %v", err)
+	}
+	if d, given := lapsing.Duration(); !given || d != 3*Day {
+		t.Fatalf("3d = %s, %v", d, given)
+	}
+}

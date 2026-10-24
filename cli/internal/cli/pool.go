@@ -11,11 +11,11 @@ import (
 )
 
 type poolOptions struct {
-	name         string
-	provider     string
-	cpuVCPUs     float64
-	memoryBytes  int64
-	storageBytes int64
+	name     string
+	provider string
+	cpuVCPUs float64
+	memory   byteSizeFlag
+	storage  byteSizeFlag
 }
 
 func (a *App) newPoolCommand() *cobra.Command {
@@ -64,7 +64,7 @@ func (a *App) newPoolListCommand() *cobra.Command {
 }
 
 func (a *App) newPoolGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get POOL", Short: "Get a pool", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get POOL", Short: "Show a pool", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -113,11 +113,11 @@ time and cannot be moved.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Comm
 		if cmd.Flags().Changed("cpu-vcpus") {
 			body.SetCpuVcpus(apiclientgen.NewOptFloat64(opts.cpuVCPUs))
 		}
-		if cmd.Flags().Changed("memory-bytes") {
-			body.SetMemoryBytes(apiclientgen.NewOptInt64(opts.memoryBytes))
+		if cmd.Flags().Changed("memory") {
+			body.SetMemoryBytes(apiclientgen.NewOptInt64(opts.memory.bytes))
 		}
-		if cmd.Flags().Changed("storage-bytes") {
-			body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storageBytes))
+		if cmd.Flags().Changed("storage") {
+			body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storage.bytes))
 		}
 		poolRes, err := client.CreatePool(cmd.Context(), body, apiclientgen.CreatePoolParams{ProjectId: projectID})
 		if err != nil {
@@ -165,11 +165,11 @@ base-image pulls are not filtered by any level (ADR 26-10-01-032 §7).
 		if cmd.Flags().Changed("cpu-vcpus") {
 			body.SetCpuVcpus(apiclientgen.NewOptFloat64(opts.cpuVCPUs))
 		}
-		if cmd.Flags().Changed("memory-bytes") {
-			body.SetMemoryBytes(apiclientgen.NewOptInt64(opts.memoryBytes))
+		if cmd.Flags().Changed("memory") {
+			body.SetMemoryBytes(apiclientgen.NewOptInt64(opts.memory.bytes))
 		}
-		if cmd.Flags().Changed("storage-bytes") {
-			body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storageBytes))
+		if cmd.Flags().Changed("storage") {
+			body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storage.bytes))
 		}
 		level, ok, err := egressOpts.update(cmd, func() (apimodel.EgressPolicy, error) {
 			res, err := client.GetPool(cmd.Context(), apiclientgen.GetPoolParams{ProjectId: projectID, PoolId: poolID})
@@ -200,7 +200,7 @@ base-image pulls are not filtered by any level (ADR 26-10-01-032 §7).
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Pool display name")
 	addPoolAttributeFlags(cmd, &opts)
-	addEgressFlags(cmd, &egressOpts, "the pool")
+	addEgressUpdateFlags(cmd, &egressOpts, "the pool")
 	return cmd
 }
 
@@ -238,11 +238,11 @@ project's default pool.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.complet
 }
 
 func (a *App) newPoolUnsetDefaultCommand() *cobra.Command {
-	return &cobra.Command{Use: "unset-default POOL", Short: "Clear the project default pool", Long: `Clear the project default pool.
+	return &cobra.Command{Use: "unset-default", Short: "Clear the project default pool", Long: `Clear the project default pool.
 
 Leaves the project with no default pool, so new discoboxes must name a pool
-explicitly with --pool. POOL must be the current default; this is also how
-you release the default before deleting that pool.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
+explicitly with --pool. This is also how you release the default before
+deleting that pool. With no default set, it changes nothing.`, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -251,17 +251,18 @@ you release the default before deleting that pool.`, Args: cobra.ExactArgs(1), V
 		if err != nil {
 			return err
 		}
-		poolID, err := a.resolvePoolID(cmd.Context(), client, projectID, args[0])
+		project, err := a.getProject(cmd.Context(), client, projectID)
 		if err != nil {
 			return err
 		}
-		res, err := client.UnsetDefaultPool(cmd.Context(), apiclientgen.UnsetDefaultPoolParams{ProjectId: projectID, PoolId: poolID})
-		if err != nil {
-			return err
-		}
-		project, err := expectResponse[apimodel.Project](res)
-		if err != nil {
-			return err
+		if poolID := project.DefaultPoolId.Or(""); poolID != "" {
+			res, err := client.UnsetDefaultPool(cmd.Context(), apiclientgen.UnsetDefaultPoolParams{ProjectId: projectID, PoolId: poolID})
+			if err != nil {
+				return err
+			}
+			if project, err = expectResponse[apimodel.Project](res); err != nil {
+				return err
+			}
 		}
 		if a.output == "json" {
 			return writeJSON(cmd.OutOrStdout(), project)
@@ -283,8 +284,8 @@ func (a *App) defaultPoolID(ctx context.Context, client *apiclientgen.Client, pr
 
 func addPoolAttributeFlags(cmd *cobra.Command, opts *poolOptions) {
 	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "vCPUs for the pool's VM, on providers that size a VM per pool (0 = provider and host default)")
-	cmd.Flags().Int64Var(&opts.memoryBytes, "memory-bytes", 0, "Memory in bytes for the pool's VM, on providers that size a VM per pool (0 = provider and host default)")
-	cmd.Flags().Int64Var(&opts.storageBytes, "storage-bytes", 0, "Storage in bytes for the pool; no provider accepts it today (0 = unset)")
+	cmd.Flags().Var(&opts.memory, "memory", "Memory for the pool's VM, such as 8g or 512m, on providers that size a VM per pool (0 = provider and host default)")
+	cmd.Flags().Var(&opts.storage, "storage", "Storage for the pool, such as 100g; no provider accepts it today (0 = unset)")
 }
 
 func (a *App) newPoolDeleteCommand() *cobra.Command {

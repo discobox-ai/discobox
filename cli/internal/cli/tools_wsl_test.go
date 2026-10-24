@@ -212,7 +212,7 @@ func writeFakeTool(t *testing.T, path, script string) {
 // distribution. See ADR 0074.
 func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 	root, record := fakeWSLMachine(t)
-	home, _, stderr, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001")
+	home, _, stderr, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
 	if err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
@@ -275,7 +275,7 @@ func TestToolsVSCodeOnWSLWritesBothSidesForALinuxEditor(t *testing.T) {
 	root, _ := fakeWSLMachine(t)
 	record := fakeVSCode(t)
 
-	home, state, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001")
+	home, state, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
 	if err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestToolsVSCodeOnWSLWritesBothSidesForALinuxEditor(t *testing.T) {
 // mount rather than guessed at.
 func TestToolsVSCodeOnWSLWithoutTheWindowsPATH(t *testing.T) {
 	root, _ := fakeWSLMachine(t, withoutWindowsPATH)
-	if _, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001"); err != nil {
+	if _, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
 	windowsConfig := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
@@ -321,7 +321,7 @@ func TestToolsVSCodeOnWSLWithoutTheWindowsPATH(t *testing.T) {
 // about a file the user never created.
 func TestToolsVSCodeOnWSLRefusesALeakyKey(t *testing.T) {
 	fakeWSLMachine(t, withLeakyKeyACL)
-	_, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001")
+	_, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
 	if err == nil {
 		t.Fatal("expected tools vscode to refuse a key another principal can read")
 	}
@@ -340,7 +340,7 @@ func TestToolsVSCodeOnWSLReportsTheWindowsSideForALinuxEditor(t *testing.T) {
 	root, _ := fakeWSLMachine(t, withLeakyKeyACL)
 	record := fakeVSCode(t)
 
-	home, state, stderr, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001")
+	home, state, stderr, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
 	if err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestSSHConfigPrintOnWSLIsThisSideOnly(t *testing.T) {
 func TestToolsZedOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 	root, record := fakeWSLMachine(t, withWindowsEditor("zed"))
 
-	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001"); err != nil {
+	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(), "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
 

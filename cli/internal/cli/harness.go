@@ -190,7 +190,7 @@ func (a *App) newHarnessListCommand() *cobra.Command {
 }
 
 func (a *App) newHarnessGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get HARNESS", Short: "Get a harness config", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get HARNESS", Short: "Show a harness config", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
@@ -481,7 +481,8 @@ and need not be listed.
 	cmd.Flags().StringVar(&opts.bundle, "bundle", "", "Register the harness bundle its manifest is read from, as a harness registered before bundles needs to refresh")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the harness's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
-	addEgressFlags(cmd, &egressOpts, "the harness")
+	addClearFlag(cmd, "file", "Remove every file the harness writes into its home directory")
+	addEgressUpdateFlags(cmd, &egressOpts, "the harness")
 	return cmd
 }
 
@@ -508,22 +509,31 @@ func (a *App) newHarnessSetDefaultCommand() *cobra.Command {
 }
 
 func (a *App) newHarnessUnsetDefaultCommand() *cobra.Command {
-	return &cobra.Command{Use: "unset-default HARNESS", Short: "Clear the project default harness config", Long: `Clear the project default harness config.
+	return &cobra.Command{Use: "unset-default", Short: "Clear the project default harness config", Long: `Clear the project default harness config.
 
 Leaves the project with no default, so new discoboxes created without an explicit
-harness run agent-less. HARNESS must be the current default; this is
-also how you release the default before disabling that harness.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
+harness run agent-less. This is also how you release the default before
+disabling that harness. With no default set, it changes nothing.`, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
 		}
-		res, err := client.UnsetDefaultHarnessConfig(cmd.Context(), apiclientgen.UnsetDefaultHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessID})
+		client, err := a.apiClient()
 		if err != nil {
 			return err
 		}
-		project, err := expectResponse[apimodel.Project](res)
+		project, err := a.getProject(cmd.Context(), client, projectID)
 		if err != nil {
 			return err
+		}
+		if harnessID := project.DefaultHarnessConfigId.Or(""); harnessID != "" {
+			res, err := client.UnsetDefaultHarnessConfig(cmd.Context(), apiclientgen.UnsetDefaultHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessID})
+			if err != nil {
+				return err
+			}
+			if project, err = expectResponse[apimodel.Project](res); err != nil {
+				return err
+			}
 		}
 		if a.output == "json" {
 			return writeJSON(cmd.OutOrStdout(), project)
@@ -648,6 +658,9 @@ func updateHarnessBody(cmd *cobra.Command, opts harnessUpdateOptions) (*apimodel
 			return nil, err
 		}
 		body.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray(files))
+	}
+	if listCleared(cmd.Flags(), "file") {
+		body.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{}))
 	}
 	return body, nil
 }

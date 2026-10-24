@@ -167,7 +167,7 @@ func TestAuditHooksAndExecsSendTheirFiltersAndPrintNewestFirst(t *testing.T) {
 		_, _ = w.Write([]byte(`{"hooks":[
 			{"id":"evt_hook1","provider":"claude-code","event":"SessionStart","payload":{},"createdAt":"2026-09-17T10:00:00Z"},
 			{"id":"h2","provider":"claude-code","event":"PreToolUse","payload":{},"createdAt":"2026-09-17T10:01:00Z"}]}`))
-	}, "hooks", "--discobox-id", sandboxID, "--provider", "claude-code", "--event", "PreToolUse", "--since", "1h")
+	}, "hooks", sandboxID, "--provider", "claude-code", "--event", "PreToolUse", "--since", "1h")
 	if err != nil {
 		t.Fatalf("hooks: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestAuditHooksAndExecsSendTheirFiltersAndPrintNewestFirst(t *testing.T) {
 		query = r.URL.Query()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"events":[{"id":"e1","execId":"exec_1","type":"exec.start.failed","message":"no such file\u001b[2J","details":{},"createdAt":"2026-09-17T10:00:00Z"}]}`))
-	}, "execs", "--discobox-id", sandboxID, "--type", "exec.start.failed")
+	}, "execs", sandboxID, "--type", "exec.start.failed")
 	if err != nil {
 		t.Fatalf("execs: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestAuditHooksAndExecsSendTheirFiltersAndPrintNewestFirst(t *testing.T) {
 	}
 
 	if _, _, err := runAudit(context.Background(), t, func(http.ResponseWriter, *http.Request) {}, "hooks"); err == nil {
-		t.Fatal("hooks without --discobox-id was accepted")
+		t.Fatal("hooks with no discobox to pick was accepted")
 	}
 }
 
@@ -243,7 +243,7 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 		}
 	}
 
-	stdout, stderr, err := runAudit(context.Background(), t, handler, "ls", "--discobox-id", sandboxID)
+	stdout, stderr, err := runAudit(context.Background(), t, handler, "ls", sandboxID)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -287,12 +287,21 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 	}
 
 	// Named, the DNS trail joins the timeline under the pool's attestation.
-	stdout, _, err = runAudit(context.Background(), t, handler, "ls", "--discobox-id", sandboxID, "--source", "dns")
+	stdout, _, err = runAudit(context.Background(), t, handler, "ls", sandboxID, "--source", "dns")
 	if err != nil {
 		t.Fatalf("list --source dns: %v", err)
 	}
 	if !strings.Contains(stdout, "dns_3") || !strings.Contains(stdout, "A api.github.com NOERROR 192.0.2.1") {
 		t.Fatalf("--source dns = %q, want the lookup", stdout)
+	}
+
+	// -q is the IDs alone, in the timeline's order: what `audit get` takes.
+	stdout, _, err = runAudit(context.Background(), t, handler, "ls", sandboxID, "-q")
+	if err != nil {
+		t.Fatalf("list -q: %v", err)
+	}
+	if got, want := strings.Fields(stdout), []string{"evt_hook1", "http_7", "cvd_1", "cvd_2", "sreq_1", "sreq_1"}; !slices.Equal(got, want) {
+		t.Fatalf("-q = %q, want %q", got, want)
 	}
 
 	// The attestor is gone from the table, not from the record: -o json keeps
@@ -301,7 +310,7 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 	mu.Lock()
 	asked = map[string]bool{}
 	mu.Unlock()
-	stdout, _, err = runAudit(context.Background(), t, handler, "ls", "--discobox-id", sandboxID, "--source", "http,creds", "-o", "json")
+	stdout, _, err = runAudit(context.Background(), t, handler, "ls", sandboxID, "--source", "http,creds", "-o", "json")
 	if err != nil {
 		t.Fatalf("list -o json: %v", err)
 	}
@@ -330,7 +339,7 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 
 	// An answer's record is the client's account of how the value was made;
 	// the ask is the control plane's (ADR 26-09-25-122 §6).
-	stdout, _, err = runAudit(context.Background(), t, handler, "ls", "--discobox-id", sandboxID, "--source", "refresh", "-o", "json")
+	stdout, _, err = runAudit(context.Background(), t, handler, "ls", sandboxID, "--source", "refresh", "-o", "json")
 	if err != nil {
 		t.Fatalf("list --source refresh: %v", err)
 	}
@@ -342,8 +351,12 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 		t.Fatalf("refresh records = %+v, want the answer as the client's word and the ask as the control plane's", got.Records)
 	}
 
-	if _, _, err := runAudit(context.Background(), t, handler, "list"); err == nil {
-		t.Fatal("list without --discobox-id was accepted")
+	nothingToPick := func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"sandboxes":[]}`))
+	}
+	if _, _, err := runAudit(context.Background(), t, nothingToPick, "list"); err == nil {
+		t.Fatal("list with no discobox to pick was accepted")
 	}
 }
 
@@ -437,7 +450,7 @@ func TestAuditListFollowMergesEveryTrailAsItIsRecorded(t *testing.T) {
 		if round >= 5 {
 			cancel()
 		}
-	}, "ls", "--discobox-id", sandboxID, "--follow")
+	}, "ls", sandboxID, "--follow")
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}

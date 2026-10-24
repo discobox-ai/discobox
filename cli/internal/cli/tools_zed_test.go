@@ -45,7 +45,7 @@ func runToolsZedCmd(t *testing.T, fake *sshConfigFakeServer, args ...string) (ho
 // tree rather than the home directory an SSH session lands in.
 func TestToolsZedWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 	record := fakeZed(t)
-	_, state, _, err := runToolsZedCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001")
+	_, state, _, err := runToolsZedCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
 	if err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestToolsZedWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 func TestToolsZedPassesEditorArgumentsThrough(t *testing.T) {
 	record := fakeZed(t)
 	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(),
-		"--discobox-id", "sbx_devbox00000001", "--", "--foreground"); err != nil {
+		"sbx_devbox00000001", "--", "--foreground"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
 	if args := editorArgs(t, record); args[len(args)-1] != "--foreground" {
@@ -88,7 +88,7 @@ func TestToolsZedEncodesTheWorkdir(t *testing.T) {
 		ingress:   sshConfigEnabledIngress,
 		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox", workdir: "/home/agent/my repo"}},
 	}
-	if _, _, _, err := runToolsZedCmd(t, fake, "--discobox-id", "sbx_devbox00000001"); err != nil {
+	if _, _, _, err := runToolsZedCmd(t, fake, "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
 	want := []string{"--new", "ssh://devbox/home/agent/my%20repo"}
@@ -105,7 +105,7 @@ func TestToolsZedOpensTheWorkingRootWhenNoWorkTreeIsKnown(t *testing.T) {
 		ingress:   sshConfigEnabledIngress,
 		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox"}},
 	}
-	if _, _, _, err := runToolsZedCmd(t, fake, "--discobox-id", "sbx_devbox00000001"); err != nil {
+	if _, _, _, err := runToolsZedCmd(t, fake, "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
 	want := []string{"--new", "ssh://devbox/workspace"}
@@ -119,7 +119,7 @@ func TestToolsZedOpensTheWorkingRootWhenNoWorkTreeIsKnown(t *testing.T) {
 func TestToolsZedFailsBeforeWritingWhenNoEditorIsInstalled(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("DISCOBOX_ZED", "")
-	_, state, _, err := runToolsZedCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001")
+	_, state, _, err := runToolsZedCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
 	if err == nil {
 		t.Fatal("expected tools zed to fail with no editor installed")
 	}
@@ -139,7 +139,7 @@ func TestToolsZedFailsBeforeWritingWhenNoEditorIsInstalled(t *testing.T) {
 func TestToolsZedHonorsTheNamedEditor(t *testing.T) {
 	record := fakeZed(t)
 	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(),
-		"--discobox-id", "sbx_devbox00000001", "--program", "zed"); err != nil {
+		"sbx_devbox00000001", "--program", "zed"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
 	if args := editorArgs(t, record); len(args) == 0 {
@@ -147,7 +147,7 @@ func TestToolsZedHonorsTheNamedEditor(t *testing.T) {
 	}
 
 	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(),
-		"--discobox-id", "sbx_devbox00000001", "--program", "not-an-editor"); err == nil {
+		"sbx_devbox00000001", "--program", "not-an-editor"); err == nil {
 		t.Fatal("expected an editor that is not installed to fail")
 	}
 }
@@ -164,7 +164,7 @@ func TestToolsZedDoesNotFallBackToVSCode(t *testing.T) {
 	record := fakeVSCode(t)
 	t.Setenv("PATH", filepath.Dir(record))
 	t.Setenv("DISCOBOX_ZED", "")
-	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001"); err == nil {
+	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(), "sbx_devbox00000001"); err == nil {
 		t.Fatal("expected tools zed to fail on a machine with only VS Code installed")
 	}
 }

@@ -15,7 +15,7 @@ import (
 )
 
 // What a command reads on stdin is shown to the judge (ADR 26-09-27-905): for
-// `discobox run --json` and its kind, it is the whole of what the command does.
+// `discobox run --from-json` and its kind, it is the whole of what the command does.
 
 // The request a command reads on stdin is sent to be judged, and the command
 // still reads every byte of it.
@@ -214,7 +214,7 @@ func TestTheLargestStdinShownFitsOneUseCall(t *testing.T) {
 	long := strings.Repeat("\x01", agentcreds.MaxReportedBytes)
 	body, err := json.Marshal(agentcreds.UseBody{
 		UseID:    "use_7f3c",
-		Command:  []string{"discobox", "new", "--json"},
+		Command:  []string{"discobox", "run", "--from-json"},
 		Stdin:    stdin.evidence(),
 		Reported: &agentcreds.Reported{WorkingDirectory: long, RepositoryRoot: long, RefCommit: long, RefSubject: long},
 	})

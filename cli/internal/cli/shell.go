@@ -2,38 +2,32 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/internal/hostid"
-	"github.com/discobox-ai/discobox/pkg/endpoint"
 	idpkg "github.com/discobox-ai/x/id"
 )
 
 // newShellCommand implements `discobox shell`: the everyday counterpart to the
-// raw, fully configurable `discobox admin exec create`, matching `discobox exec`'s
-// old behavior but with the sandbox and command sharing one positional list
-// instead of a --discobox-id flag. Cobra alone cannot tell DISCOBOX and CMD
-// apart, so RunE resolves it: see resolveShellTarget.
+// raw, fully configurable `discobox admin exec create`. It takes the discobox
+// and the command as `[DISCOBOX] [-- CMD...]` (selectDiscoboxCommand): the
+// argument before the -- is the discobox, and the command is everything after
+// it.
 func (a *App) newShellCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "shell [DISCOBOX] [--] [CMD...]",
+		Use:   "shell [DISCOBOX] [-- CMD...]",
 		Short: "Run a command in a discobox, or its login shell",
 		Long: `Run a command in a discobox and stream it to this terminal, or open its login
 shell.
 
-When the first argument names one of the discoboxes "discobox ls" shows — its ID, a short prefix of it, or a name unique
-among them — that discobox is used and every argument after it is the command.
-Otherwise there is no DISCOBOX: every argument is the command, and the
-discobox is taken from "discobox ls" instead — the only one when there is one,
-otherwise you are asked to pick.
-
-A -- ends this command's own arguments: everything after it is the command,
-whatever it looks like. Before the discobox it also means no argument names one,
-so "discobox shell -- ls" runs "ls" even in a project with a discobox called ls.
+DISCOBOX is the NAME "discobox ls" prints, an ID, or a short prefix of one.
+Without it the discobox is taken from "discobox ls": the only one when there is
+one, otherwise you are asked to pick. The command goes after --, and every
+argument after the -- is the command's, whatever it looks like.
 
 Without a command this starts a shell. In a terminal it is the one
 $DISCOBOX_SHELL names on this machine — or nu, when run from nushell, or else
@@ -48,18 +42,18 @@ the remote process, and shell exits with its exit code. If an interrupt stops
 getting through — the discobox or the server has gone quiet — Ctrl-C again says
 so, and one more quits shell and leaves the command where it is.`,
 		Example: `  discobox shell
-  discobox shell go test ./...
-  discobox shell sbx_01hq bash
+  discobox shell mybox
+  discobox shell mybox -- go test ./...
   discobox shell sbx_01hq -- ls -la
   discobox shell -- git log --oneline`,
-		Args: cobra.ArbitraryArgs,
+		Args:              cobra.ArbitraryArgs,
+		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Everything below talks to the server the discobox is on.
-			a, projectID, sandboxID, _, cmdArgs, err := a.resolveShellTarget(cmd, args)
+			a, projectID, sandboxID, _, cmdArgs, err := a.selectDiscoboxCommand(cmd, args)
 			if err != nil {
 				return err
 			}
-			cmdArgs = trimCommandSeparator(cmdArgs)
 			// A PTY is only correct when every stream this exec touches is one:
 			// allocating one for a pipe would echo input back and dress output in
 			// escape sequences the consumer never asked for.
@@ -87,181 +81,69 @@ so, and one more quits shell and leaves the command where it is.`,
 			return a.returnSandboxExecStatus(cmd.Context(), projectID, sandboxID, exec.ID)
 		},
 	}
-	// Stop parsing flags at the first positional argument so the command's own
-	// flags belong to it: `discobox shell sbx_01hq sh -c ...` passes -c through
-	// instead of failing on an unknown shorthand.
-	cmd.Flags().SetInterspersed(false)
 	return cmd
 }
 
-// trimCommandSeparator drops the -- that ends shell's own arguments, leaving
-// the command it introduced.
-//
-// Cobra cannot do this itself here. shell sets SetInterspersed(false) so its
-// flags stop at the first positional -- which is the sandbox -- and pflag only
-// recognizes a -- while it is still parsing flags (parseArgs in pflag's
-// flag.go: the non-flag branch appends the rest verbatim and returns). So the
-// separator in the documented `discobox shell sbx_01hq -- ls -la` arrives as an
-// ordinary argument, and without this it became the command's argv[0] and the
-// sandbox reported that -- is not an executable.
-//
-// Only the leading one goes. That is the rule every shell follows: past the
-// separator every argument is literal, -- included, so `discobox shell sbx -- --
-// x` runs `-- x` exactly as `env -- -- x` does. A -- anywhere else was typed
-// as part of the command and belongs to it -- `discobox shell git log -- path`
-// must reach git intact.
-//
-// `discobox tools ssh` shares resolveShellTarget but not this, because its
-// arguments are ssh's and splitSSHArgs already reads the separator the way ssh
-// does: it distinguishes a remote command from ssh's own options, which is a
-// finer answer than dropping the token here would leave it room to give.
-func trimCommandSeparator(args []string) []string {
-	if len(args) > 0 && args[0] == "--" {
-		return args[1:]
-	}
-	return args
+// discoboxCommandLine is a `[DISCOBOX] [-- ARG...]` command line: the
+// discobox it names, empty for none, and the command after the --.
+type discoboxCommandLine struct {
+	discobox string
+	command  []string
+	// dashed is whether the line had its --, which is what a hint about where
+	// a command goes needs to know.
+	dashed bool
 }
 
-// resolveShellTarget splits shell's positional arguments into the sandbox and
-// the command, since Cobra sees one flat list and cannot tell them apart on
-// its own. args[0] is tried against the sandboxes `discobox ls` shows
-// (matchSandboxArg); a match consumes it as
-// DISCOBOX and leaves the rest as the command. No match — including no
-// args at all — means every argument is the command, and the sandbox falls
-// back to the same picker `discobox apply` uses when DISCOBOX is omitted.
-// With more than one server known, the candidates and the picker are every
-// server's (resolveShellTargetOnEveryServer).
+// splitDiscoboxCommand reads a `[DISCOBOX] [-- ARG...]` command line. Which
+// argument is which is decided by the -- alone, never by what an argument
+// looks like (cli/DESIGN.md, "Command Naming"): before it is at most the
+// discobox, and after it is the command, -- included past the first. More than
+// one argument before it is refused with the line that works.
 //
-// A leading -- turns that guess off. It is the one case where the caller has
-// said outright that no argument names a sandbox, so `discobox shell -- ls` runs
-// ls even where a sandbox is called ls -- which is the whole reason to reach
-// for the separator. pflag consumed that -- before RunE ever saw the arguments
-// (it comes before the first positional, so flags are still being parsed) and
-// left ArgsLenAtDash behind to say where it was; 0 means nothing preceded it.
-// Nothing is trimmed for it here for the same reason: the token is already gone.
-func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (app *App, projectID, sandboxID string, client *apiclientgen.Client, cmdArgs []string, err error) {
-	// -1 is "no -- was parsed", which is also what a command with flag parsing
-	// disabled reports -- `discobox tools ssh` reaches here that way, and reads its
-	// own separator later.
-	namesSandbox := cmd.Flags().ArgsLenAtDash() != 0
-	// A discobox's address names its server as well as the discobox (ADR 0116
-	// §6), so it is resolved rather than matched: matchSandboxArg finds nothing
-	// in it — it is no ID, no name and no short ID — and without this the
-	// address fell through as the command a picked discobox would run.
-	if namesSandbox && len(args) > 0 {
-		if _, isAddress, addressErr := endpoint.ParseSandboxAddress(args[0]); isAddress {
-			if addressErr != nil {
-				return nil, "", "", nil, nil, addressErr
-			}
-			app, projectID, sandboxID, client, err = a.selectSandbox(cmd, args[0])
-			return app, projectID, sandboxID, client, args[1:], err
-		}
+// pflag consumes a -- while it still parses flags and says where it stood
+// (ArgsLenAtDash); a command that parses none of its own (tools ssh) sees the
+// -- as an argument instead, and it is found here.
+func splitDiscoboxCommand(cmd *cobra.Command, args []string) (discoboxCommandLine, error) {
+	line := discoboxCommandLine{}
+	before := args
+	if dash := cmd.Flags().ArgsLenAtDash(); dash >= 0 {
+		before, line.command, line.dashed = args[:dash], args[dash:], true
+	} else if i := slices.Index(args, "--"); i >= 0 {
+		before, line.command, line.dashed = args[:i], args[i+1:], true
 	}
-	set, err := a.servers()
-	if err != nil {
-		return nil, "", "", nil, nil, err
+	switch len(before) {
+	case 0:
+	case 1:
+		line.discobox = before[0]
+	default:
+		return discoboxCommandLine{}, fmt.Errorf("%s takes one DISCOBOX, and the command goes after --: %s %s -- %s",
+			cmd.CommandPath(), cmd.CommandPath(), before[0], strings.Join(before[1:], " "))
 	}
-	if len(set) > 1 {
-		return a.resolveShellTargetOnEveryServer(cmd, set, namesSandbox, args)
-	}
-	projectID, err = a.projectIDValue()
-	if err != nil {
-		return nil, "", "", nil, nil, err
-	}
-	client, err = a.apiClient()
-	if err != nil {
-		return nil, "", "", nil, nil, err
-	}
-	// A full generated ID needs no listing to recognize: its shape alone is
-	// unambiguous, and the server is the one that validates it exists — the same
-	// no-round-trip-it-doesn't-need path a fully-specified --discobox-id takes
-	// elsewhere.
-	if namesSandbox && len(args) > 0 {
-		if id := idpkg.Canonical(idpkg.PrefixSandbox, args[0]); idpkg.IsGenerated(id) {
-			return a, projectID, id, client, args[1:], nil
-		}
-	}
-	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID)
-	if err != nil {
-		return nil, "", "", nil, nil, err
-	}
-	if namesSandbox && len(args) > 0 {
-		// configuredName: args[0] here may be the command instead, and a
-		// window title is free-form enough to be one ("vim", "make").
-		id, ok, matchErr := matchSandboxArg(args[0], sandboxes, configuredName)
-		if matchErr != nil {
-			return nil, "", "", nil, nil, matchErr
-		}
-		if ok {
-			return a, projectID, id, client, args[1:], nil
-		}
-	}
-	localHostID, err := hostid.Get()
-	if err != nil {
-		return nil, "", "", nil, nil, err
-	}
-	sandboxID, err = pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes, localHostID), pickerOptions{
-		empty:     "there are no discoboxes; start one with `discobox run`",
-		ambiguous: "there is more than one discobox; name the discobox as the first argument",
-		recentKey: "sandbox:" + projectID,
-	})
-	return a, projectID, sandboxID, client, args, err
+	return line, nil
 }
 
-// resolveShellTargetOnEveryServer is resolveShellTarget once more than one
-// server is known (ADR 0116 §4): the same rules, over what `discobox ls` lists
-// across every server, and the answer aimed at the server the discobox is on.
-// A full generated ID is asked of every server, the primary first; a name or a
-// short ID is matched among the listed candidates and routed to the server its
-// row came from; and the picker spans every server. An argument that names
-// none of them is still the command, as it is with one server.
-func (a *App) resolveShellTargetOnEveryServer(cmd *cobra.Command, set []*server, namesSandbox bool, args []string) (*App, string, string, *apiclientgen.Client, []string, error) {
-	ctx := cmd.Context()
-	if namesSandbox && len(args) > 0 {
-		if id := idpkg.Canonical(idpkg.PrefixSandbox, args[0]); idpkg.IsGenerated(id) {
-			target, projectID, sandboxID, client, err := a.findOnEveryServer(ctx, set, id)
-			if err != nil {
-				return nil, "", "", nil, nil, err
-			}
-			return target.app, projectID, sandboxID, client, args[1:], nil
-		}
-	}
-	candidates, unreachable, err := a.sandboxCandidates(ctx)
+// selectDiscoboxCommand is splitDiscoboxCommand and selectSandbox together:
+// the discobox a `[DISCOBOX] [-- ARG...]` line names, on the server it is on,
+// and the command. A DISCOBOX that names nothing on a line without its -- is
+// most likely a command that left it out, so the error says where one goes.
+func (a *App) selectDiscoboxCommand(cmd *cobra.Command, args []string) (app *App, projectID, sandboxID string, client *apiclientgen.Client, command []string, err error) {
+	line, err := splitDiscoboxCommand(cmd, args)
 	if err != nil {
 		return nil, "", "", nil, nil, err
 	}
-	target, sandboxID, rest := (*server)(nil), "", args
-	if namesSandbox && len(args) > 0 {
-		// configuredName, for the reason resolveShellTarget gives.
-		matched, id, ok, err := matchServerSandboxArg(args[0], candidates, configuredName)
-		if err != nil {
-			return nil, "", "", nil, nil, err
-		}
-		if ok {
-			target, sandboxID, rest = matched, id, args[1:]
-		}
+	app, projectID, sandboxID, client, err = a.selectSandbox(cmd, line.discobox)
+	if err != nil && line.discobox != "" && !line.dashed {
+		return nil, "", "", nil, nil, fmt.Errorf("%w\na command goes after --: %s -- %s", err, cmd.CommandPath(), line.discobox)
 	}
-	if target == nil {
-		target, sandboxID, err = a.pickServerSandbox(cmd, set, candidates, unreachable,
-			"there are no discoboxes; start one with `discobox run`",
-			"there is more than one discobox; name the discobox as the first argument")
-		if err != nil {
-			return nil, "", "", nil, nil, err
-		}
-	}
-	projectID, client, err := target.projectClient(ctx)
-	if err != nil {
-		return nil, "", "", nil, nil, err
-	}
-	return target.app, projectID, sandboxID, client, rest, nil
+	return app, projectID, sandboxID, client, line.command, err
 }
 
 // nameMatch says which of a discobox's names an argument is allowed to be.
 //
 // configuredName is the name the discobox was created with and nothing else.
-// It is what an argument sharing its place with a command word has to match:
-// `discobox shell <arg> <cmd...>` guesses whether arg is a discobox at all, and
-// a generated name ("brave-otter") cannot collide with a command by accident.
+// It is what an argument that may be something else has to match: `discobox cp`
+// reads a reference before a colon as a discobox only when it names one, and a
+// generated name ("brave-otter") cannot collide with a local path by accident.
 //
 // listedName also matches the NAME `discobox ls` prints, which is that
 // configured name only until something titles the discobox's primary terminal
@@ -282,12 +164,10 @@ const (
 // candidates `discobox ls` shows: a full
 // generated ID, an exact sandbox name in the sense match asks for, or a short
 // ID. A full generated ID (id.IsGenerated) is trusted outright: its shape — a
-// resource prefix plus 16 random characters — is unique enough that no shell
-// command word could collide with it by accident. A short ID is matched against
-// these candidates exactly like a bare DISCOBOX argument would be elsewhere;
-// matching none of them is not an error; it just means arg is not a sandbox
-// reference, so the caller treats it as the start of a command instead.
-// Matching several is reported as ambiguous, the same as any other short-ID
+// resource prefix plus 16 random characters — is unique enough that nothing
+// else could collide with it by accident. A short ID is matched against these
+// candidates; matching none of them is not an error here, and what that means
+// is the caller's to say. Matching several is reported as ambiguous, the same as any other short-ID
 // collision in the CLI, since arg's shape said it was meant as an ID. An ID
 // full or short may be spelled with a hyphen, as the discobox's hostname
 // spells it ("sbx-…"). A full one is trusted outright like any full ID; a
@@ -296,30 +176,14 @@ func matchSandboxArg(arg string, sandboxes []apimodel.Sandbox, match nameMatch) 
 	if full := idpkg.Canonical(idpkg.PrefixSandbox, arg); idpkg.IsGenerated(full) {
 		return full, true, nil
 	}
-	// An exact name, before any ID matching: a name is what the listing shows
-	// and what people type, and matching it in full leaves no room for the
-	// guessing a prefix invites. Configured names are unique within a project
-	// (idx_sandbox_project_name), so a duplicate under configuredName would
-	// mean the candidate list spans projects; under listedName a shared window
-	// title is an everyday duplicate. Either way it is reported rather than
-	// picked between — deleting the discobox the user did not mean is not
-	// something a guess may cost.
-	switch named := sandboxesNamed(arg, sandboxes, match); len(named) {
-	case 0:
-	case 1:
-		return named[0], true, nil
-	default:
-		return "", false, fmt.Errorf("%q names more than one discobox (%s); use the discobox ID", arg, strings.Join(named, ", "))
+	if id, ok, err := matchSandboxName(arg, sandboxes, match); ok || err != nil {
+		return id, ok, err
 	}
 	arg = idpkg.Canonical(idpkg.PrefixSandbox, arg)
 	if !isResolvableShortID(arg) {
 		return "", false, nil
 	}
-	ids := make([]string, 0, len(sandboxes))
-	for _, sandbox := range sandboxes {
-		ids = append(ids, sandbox.ID)
-	}
-	switch matches := idpkg.ResolveShort(arg, ids); len(matches) {
+	switch matches := idpkg.ResolveShort(arg, sandboxIDs(sandboxes)); len(matches) {
 	case 0:
 		return "", false, nil
 	case 1:
@@ -327,6 +191,50 @@ func matchSandboxArg(arg string, sandboxes []apimodel.Sandbox, match nameMatch) 
 	default:
 		return "", false, fmt.Errorf("%q matches more than one discobox (%s); use a longer prefix", arg, strings.Join(matches, ", "))
 	}
+}
+
+// matchSandboxName is the name step of matchSandboxArg, and the whole of it
+// where a short ID is resolved elsewhere (selectSandboxOnEveryServer): the
+// one discobox arg names under match, before any ID matching. A name is what
+// the listing shows and what people type, and matching it in full leaves no
+// room for the guessing a prefix invites.
+//
+// A name more than one discobox answers to is refused rather than picked
+// between. Configured names are unique within a project
+// (idx_sandbox_project_name), so a duplicate under configuredName would mean
+// the candidate list spans projects; under listedName a shared window title
+// is an everyday duplicate.
+//
+// So is a name that is also a short ID of another discobox. A listed name is
+// written by the box — its meta name, its terminal's title — so a box naming
+// itself `01hq` would otherwise take the commands, source and keystrokes meant
+// for the discobox whose ID begins that way.
+func matchSandboxName(arg string, sandboxes []apimodel.Sandbox, match nameMatch) (id string, ok bool, err error) {
+	named := sandboxesNamed(arg, sandboxes, match)
+	switch len(named) {
+	case 0:
+		return "", false, nil
+	case 1:
+	default:
+		return "", false, fmt.Errorf("%q names more than one discobox (%s); use the discobox ID", arg, strings.Join(named, ", "))
+	}
+	if short := idpkg.Canonical(idpkg.PrefixSandbox, arg); isResolvableShortID(short) {
+		for _, other := range idpkg.ResolveShort(short, sandboxIDs(sandboxes)) {
+			if other != named[0] {
+				return "", false, fmt.Errorf("%q names discobox %s and is a short ID of %s; use the discobox ID", arg, named[0], other)
+			}
+		}
+	}
+	return named[0], true, nil
+}
+
+// sandboxIDs is the IDs of sandboxes, in order.
+func sandboxIDs(sandboxes []apimodel.Sandbox) []string {
+	ids := make([]string, 0, len(sandboxes))
+	for _, sandbox := range sandboxes {
+		ids = append(ids, sandbox.ID)
+	}
+	return ids
 }
 
 // sandboxesNamed returns the IDs of the sandboxes arg names, under match. The
@@ -337,6 +245,9 @@ func matchSandboxArg(arg string, sandboxes []apimodel.Sandbox, match nameMatch) 
 // Every ID that answers to arg comes back, not the first: a caller that cannot
 // tell which discobox was meant must say so rather than act on one of them.
 //
+// A judge answers to no name (ADR 26-09-22-838 §1 leaves it out of listings);
+// its ID still resolves, through the short-ID step and the shadow check.
+//
 // An empty arg names nothing. It would otherwise answer to any discobox whose
 // own name is empty, which is a match on the absence of a name rather than on a
 // name.
@@ -346,6 +257,11 @@ func sandboxesNamed(arg string, sandboxes []apimodel.Sandbox, match nameMatch) [
 	}
 	var ids []string
 	for _, sandbox := range sandboxes {
+		// A judge is named by its ID alone: it is in the candidates so a name
+		// cannot shadow its short ID, and is not one `discobox ls` prints.
+		if sandbox.Config.HarnessMode.Value == apiclientgen.SandboxConfigHarnessModeJudge {
+			continue
+		}
 		if sandbox.Config.Name == arg || (match == listedName && sandboxListedAs(sandbox, arg)) {
 			ids = append(ids, sandbox.ID)
 		}

@@ -699,8 +699,8 @@ func testTools() []Tool {
 			{Tool: "fresh", Name: "config.jsonc", Home: ".config/fresh/config.json", Default: "// vim: set ft=jsonc :\n{}\n"},
 			{Tool: "fresh", Name: "live_diff.json", Home: ".local/share/fresh/orchestrator/state/live_diff.json", Default: "{}\n"},
 		}},
-		{ID: "vscode", Key: "v", Label: "vscode", Detail: "open the box in VS Code, in a window of its own", Host: true},
-		{ID: "zed", Key: "z", Label: "zed", Detail: "open the box in Zed, in a window of its own", Host: true},
+		{ID: "vscode", Key: "v", Label: "vscode", Detail: "open the discobox in VS Code, in a window of its own", Host: true},
+		{ID: "zed", Key: "z", Label: "zed", Detail: "open the discobox in Zed, in a window of its own", Host: true},
 	}
 }
 

@@ -147,7 +147,7 @@ func run(opts options) error {
 	}
 	switch opts.mode {
 	case "direct":
-		command = append(command, "admin", "terminal", "--discobox-id", opts.sandbox, "attach", "primary")
+		command = append(command, "admin", "terminal", "attach", opts.sandbox, "primary")
 	case "console":
 		command = append(command, "console")
 	}

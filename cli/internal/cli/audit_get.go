@@ -22,7 +22,7 @@ import (
 func (a *App) newAuditGetCommand() *cobra.Command {
 	var poolID string
 	cmd := &cobra.Command{
-		Use:   "get DISCOBOX_ID RECORD_ID",
+		Use:   "get DISCOBOX RECORD_ID",
 		Short: "Print one audit record in full",
 		Long: `Print everything recorded about one audit record, by the ID "audit ls"
 reports for it.
@@ -45,7 +45,7 @@ escaped.`,
   discobox admin audit get sbx_1 cvd_k4m2p9x7q1w8r3t5`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.auditSandboxScope(cmd.Context(), args[0])
+			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -54,7 +54,7 @@ escaped.`,
 				return err
 			}
 			if len(recordings) > 0 {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "recorded bytes: discobox admin audit http --discobox-id %s --body %s [--part request|stream]\n",
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "recorded bytes: discobox admin audit http --discobox %s --body %s [--part request|stream]\n",
 					terminalSafe(sandboxID), terminalSafe(strings.TrimSpace(args[1])))
 			}
 			return nil

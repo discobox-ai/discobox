@@ -69,7 +69,7 @@ func (a *App) newProviderListCommand() *cobra.Command {
 }
 
 func (a *App) newProviderGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get PROVIDER", Short: "Get a provider instance", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProviders, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get PROVIDER", Short: "Show a provider instance", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProviders, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err

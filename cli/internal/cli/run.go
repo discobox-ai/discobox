@@ -26,7 +26,7 @@ type runCommandOptions struct {
 	// the same prompt as the shell split it.
 	promptFlag []string
 	detach     bool
-	// source is SOURCE, the first positional argument, or the --json
+	// source is SOURCE, the first positional argument, or the --from-json
 	// request's "source": what the discobox is cut from. Empty asks.
 	source string
 	// noSource creates the discobox with nothing materialized in it. It is
@@ -44,7 +44,7 @@ type runCommandOptions struct {
 	raw bool
 	// grant is --grant as given, with the policies --grant-statement and
 	// --grant-define give it, and grants what the create is given: parsed
-	// from them, or read from a --json request.
+	// from them, or read from a --from-json request.
 	grant          []string
 	grantStatement []string
 	grantDefine    []string
@@ -53,7 +53,7 @@ type runCommandOptions struct {
 	// short ID, or name. Empty is the project's default pool.
 	pool string
 	// skillDirs and userSkills are --skills and --user-skills as given, from
-	// the command line or a --json request: nil for one that was not, which
+	// the command line or a --from-json request: nil for one that was not, which
 	// takes what client.yaml says (newSkills). userSkillsFlag is where the
 	// flag itself lands.
 	skillDirs      []string
@@ -62,10 +62,10 @@ type runCommandOptions struct {
 	// noProjectSkills is --no-project-skills: the project's skills sources
 	// are left out of this create (ADR 26-10-14-894 §2).
 	noProjectSkills bool
-	// json reads the request from stdin instead of the command line, and
-	// prints the created discobox as JSON (runJSONRequest).
-	json bool
-	// flags is every flag a run takes, which --json refuses beside it.
+	// fromJSON is --from-json: the request is read from stdin instead of the
+	// command line, and the created discobox printed as JSON (runJSONRequest).
+	fromJSON bool
+	// flags is every flag a run takes, which --from-json refuses beside it.
 	flags *pflag.FlagSet
 }
 
@@ -91,7 +91,7 @@ func (a *App) newRunCommand() *cobra.Command {
 	return cmd
 }
 
-const runCommandShort = "Launch prompt in new discobox"
+const runCommandShort = "Run a prompt in a new discobox"
 
 const runCommandLong = `Launch a prompt in a new discobox cut from SOURCE.
 
@@ -196,11 +196,11 @@ whatever order they were given in.
 
 Either can be made the default for every new discobox, in the console too, in
 client.yaml under <XDG config home>/discobox (or wherever
-DISCOBOX_CLIENT_CONFIG_FILE names): new.skills and new.userSkills. When
+DISCOBOX_CLIENT_CONFIG_FILE names): run.skills and run.userSkills. When
 that variable is unset and <XDG config home>/discobox holds no client.yaml,
 the client writes client.example.yaml there, listing every setting. --skills
-given replaces new.skills rather than adding to it, and --user-skills=false
-turns new.userSkills off.
+given replaces run.skills rather than adding to it, and --user-skills=false
+turns run.userSkills off.
 
 --grant gives the new discobox a use of a credential: a well-known one by its
 ID, ID[@HOST]=USE, or a project secret, SECRET[@HOST]:ENV_VAR=USE. Its agent
@@ -208,12 +208,12 @@ takes it with discobox-access, one use at a time, and nothing in the discobox
 can read it. Repeat a credential to give it several uses. HOST may be several,
 joined by commas, for a credential sent to more than one site, as Copilot CLI
 sends a GitHub token: com.github.api@api.github.com,githubcopilot.com=USE. In
---json, "hosts" lists them.
+--from-json, "hosts" lists them.
 
---json reads the whole request from stdin as one JSON object instead, creates
-the discobox without attaching, and prints it as JSON. It is for a caller that
-would rather not quote a prompt and each use's sentence through a shell — an
-agent in a discobox making another, above all. "source" is SOURCE, required
+--from-json reads the whole request from stdin as one JSON object instead,
+creates the discobox without attaching, and prints it as JSON. It is for a
+caller that would rather not quote a prompt and each use's sentence through a
+shell — an agent in a discobox making another, above all. "source" is SOURCE, required
 unless "noSource" is set; every other field is optional, and each means what
 its flag does. No argument or other run flag may be given beside it:
 
@@ -248,7 +248,7 @@ const runCommandExample = `  discobox run . 'fix the failing tests'
   discobox run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> . 'fix the failing tests'
   discobox run --pool mac-mini . 'fix the failing tests'
   discobox run -d --grant 'com.github.api=push a branch to org/repo' . 'fix issue 42'
-  echo '{"source": ".", "prompt": "fix the failing tests"}' | discobox run --json
+  echo '{"source": ".", "prompt": "fix the failing tests"}' | discobox run --from-json
   discobox run --raw . 'fix the failing tests'
   discobox run . fix the failing tests
   discobox run . -- prompt starting with --flag-like text
@@ -262,7 +262,7 @@ const runCommandExample = `  discobox run . 'fix the failing tests'
 // is decided by position and the flag alone, never by what an argument looks
 // like.
 func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []string) error {
-	if opts.json {
+	if opts.fromJSON {
 		if err := opts.readJSONRequest(cmd, args); err != nil {
 			return err
 		}
@@ -325,7 +325,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	// inline. Without anybody, SOURCE was required.
 	askSource := opts.source == "" && !opts.noSource
 	window := !opts.detach && !opts.raw && canOpenWindow(cmd)
-	if askSource && (opts.json || !window && !canAskInline(cmd)) {
+	if askSource && (opts.fromJSON || !window && !canAskInline(cmd)) {
 		return errRunNeedsSource
 	}
 	// Until it is asked, the flags are checked against this directory: the
@@ -337,7 +337,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	opts.prompt.NoSource = opts.noSource
 	// A JSON request came in on stdin, so there is nobody on it to ask: a
 	// directory in no repository is copied.
-	if !opts.json {
+	if !opts.fromJSON {
 		opts.prompt.ConfirmCopyDirectory = confirmCopyDirectory(cmd, status)
 	}
 	opts.prompt.SkipDeclaredSources = !opts.declaredSources
@@ -424,7 +424,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	if err != nil {
 		return err
 	}
-	if opts.json {
+	if opts.fromJSON {
 		return writeJSON(cmd.OutOrStdout(), sandbox)
 	}
 	if opts.detach {
@@ -434,16 +434,16 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 }
 
 // addRunFlags gives cmd everything a run takes, and keeps the set in opts for
-// --json to check against.
+// --from-json to check against.
 func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags := pflag.NewFlagSet("run", pflag.ContinueOnError)
 	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after SOURCE")
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source to bring into the discobox, DIR, URL or GitHub OWNER/REPO, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under the discobox's working root (/workspace on Linux) where it cannot; either way it is named after itself, so -i ../foo is the source foo")
-	flags.StringArrayVar(&opts.skillDirs, "skills", nil, "Skills to install in the discobox: a directory, whose subdirectories holding a SKILL.md are each copied in as a skill, or a repository, URL or GitHub OWNER/REPO, then [@REF][//PATH], checked out under skill-sources with each skill in PATH linked in, so an edit can be pushed back; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills, but a linked skill wins over a copied one. Given, it replaces client.yaml's new.skills")
+	flags.StringArrayVar(&opts.skillDirs, "skills", nil, "Skills to install in the discobox: a directory, whose subdirectories holding a SKILL.md are each copied in as a skill, or a repository, URL or GitHub OWNER/REPO, then [@REF][//PATH], checked out under skill-sources with each skill in PATH linked in, so an edit can be pushed back; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills, but a linked skill wins over a copied one. Given, it replaces client.yaml's run.skills")
 	flags.BoolVar(&opts.noProjectSkills, "no-project-skills", false, "Leave the project's skills repositories (discobox skills) out of this discobox. Otherwise they are added ahead of any --skills, which win on a skill of the same name")
-	flags.BoolVar(&opts.userSkillsFlag, "user-skills", false, "Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills. Defaults to client.yaml's new.userSkills")
+	flags.BoolVar(&opts.userSkillsFlag, "user-skills", false, "Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills. Defaults to client.yaml's run.userSkills")
 	flags.StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	flags.StringVar(&opts.pool, "pool", "", "Pool to create the discobox on, by ID or name; defaults to the project's default pool. The discobox runs on the platform the pool hosts, and every path placed in it is that platform's")
 	flags.BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
@@ -454,7 +454,7 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.StringArrayVar(&opts.grant, "grant", nil, "A use of a credential to give the new discobox, as SECRET[@HOST[,HOST...]]:ENV_VAR=USE, or ID[@HOST[,HOST...]]=USE for a well-known credential such as com.github.api; repeat for more, and repeat a credential to give it several uses. Its agent takes the credential with discobox-access, one use at a time, under the policy --grant-statement gives it, and nothing in the discobox can read it")
 	flags.StringArrayVar(&opts.grantStatement, "grant-statement", nil, "A sentence of the policy a --grant carries, as CREDENTIAL=SENTENCE, CREDENTIAL being what the --grant names before its \"=\" (com.github.api, or github@github.com:GH_TOKEN); repeat for each statement. Every --grant carries a policy, which is what is enforced; its uses name the job")
 	flags.StringArrayVar(&opts.grantDefine, "grant-define", nil, "A word a --grant's statements use that is not a default (read, create, update, delete, manage, anything, anywhere), as CREDENTIAL=WORD=DEFINITION; repeat for each")
-	flags.BoolVar(&opts.json, "json", false, "Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON")
+	flags.BoolVar(&opts.fromJSON, "from-json", false, "Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON")
 	cmd.Flags().AddFlagSet(flags)
 	opts.flags = flags
 }

@@ -275,7 +275,7 @@ func newOptions(session Session) *optionSet {
 			hint:    "--no-project-skills · the project's skills repositories (" + SkillsKeyName + "), added ahead of any --skills",
 		},
 		optUserSkills: {
-			// Left alone it is client.yaml's new.userSkills, which is what
+			// Left alone it is client.yaml's run.userSkills, which is what
 			// `discobox run` gives a create that names neither way.
 			label: "User skills", kind: optChoice,
 			choices: []string{userSkillsConfigured, "on", "off"},

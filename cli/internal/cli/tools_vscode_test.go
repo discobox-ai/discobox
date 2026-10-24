@@ -116,7 +116,7 @@ func TestEditorsOpenDefaultPrimarySourceDirectory(t *testing.T) {
 				ingress:   sshConfigEnabledIngress,
 				sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox", sourceWithoutDestination: true}},
 			}
-			if _, _, _, err := runToolsCmd(t, fake, t.TempDir(), tc.name, "--discobox-id", "sbx_devbox00000001"); err != nil {
+			if _, _, _, err := runToolsCmd(t, fake, t.TempDir(), tc.name, "sbx_devbox00000001"); err != nil {
 				t.Fatal(err)
 			}
 			if got := editorArgs(t, record); !equalStrings(got, tc.want) {
@@ -132,7 +132,7 @@ func TestEditorsOpenDefaultPrimarySourceDirectory(t *testing.T) {
 // an SSH session lands in.
 func TestToolsVSCodeWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 	record := fakeVSCode(t)
-	_, state, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001")
+	_, state, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
 	if err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestToolsVSCodeWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 // default No and opens nothing.
 func TestToolsVSCodeSilencesTheWSLInstallPrompt(t *testing.T) {
 	record := fakeVSCode(t)
-	if _, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001"); err != nil {
+	if _, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
 	if got := editorEnv(t, record); got != "1" {
@@ -177,7 +177,7 @@ func TestToolsVSCodeIsReplacedByTheUsersOwnDeclaration(t *testing.T) {
 program: code
 args: [--reuse-window, --folder-uri, "vscode-remote://ssh-remote+{ssh.host}{workdir.urlpath}"]
 `)
-	if _, _, _, err := runToolsCmd(t, vscodeFakeServer(), home, "vscode", "--discobox-id", "sbx_devbox00000001"); err != nil {
+	if _, _, _, err := runToolsCmd(t, vscodeFakeServer(), home, "vscode", "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
 	want := []string{"--reuse-window", "--folder-uri", "vscode-remote://ssh-remote+devbox/home/agent/repo"}
@@ -191,7 +191,7 @@ args: [--reuse-window, --folder-uri, "vscode-remote://ssh-remote+{ssh.host}{work
 func TestToolsVSCodePassesEditorArgumentsThrough(t *testing.T) {
 	record := fakeVSCode(t)
 	if _, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(),
-		"--discobox-id", "sbx_devbox00000001", "--", "--disable-extensions"); err != nil {
+		"sbx_devbox00000001", "--", "--disable-extensions"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
 	if args := editorArgs(t, record); args[len(args)-1] != "--disable-extensions" {
@@ -207,7 +207,7 @@ func TestToolsVSCodeOpensTheWorkingRootWhenNoWorkTreeIsKnown(t *testing.T) {
 		ingress:   sshConfigEnabledIngress,
 		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox"}},
 	}
-	if _, _, _, err := runToolsVSCodeCmd(t, fake, "--discobox-id", "sbx_devbox00000001"); err != nil {
+	if _, _, _, err := runToolsVSCodeCmd(t, fake, "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
 	want := []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+devbox/workspace"}
@@ -221,7 +221,7 @@ func TestToolsVSCodeOpensTheWorkingRootWhenNoWorkTreeIsKnown(t *testing.T) {
 func TestToolsVSCodeFailsBeforeWritingWhenNoEditorIsInstalled(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("DISCOBOX_VSCODE", "")
-	_, state, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001")
+	_, state, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "sbx_devbox00000001")
 	if err == nil {
 		t.Fatal("expected tools vscode to fail with no editor installed")
 	}
@@ -240,7 +240,7 @@ func TestToolsVSCodeHonorsTheNamedEditor(t *testing.T) {
 	// The fake is installed as `code`; asking for it by name has to find it
 	// rather than fall through to the search.
 	if _, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(),
-		"--discobox-id", "sbx_devbox00000001", "--program", "code"); err != nil {
+		"sbx_devbox00000001", "--program", "code"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
 	if args := editorArgs(t, record); len(args) == 0 {
@@ -248,7 +248,7 @@ func TestToolsVSCodeHonorsTheNamedEditor(t *testing.T) {
 	}
 
 	if _, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(),
-		"--discobox-id", "sbx_devbox00000001", "--program", "not-an-editor"); err == nil {
+		"sbx_devbox00000001", "--program", "not-an-editor"); err == nil {
 		t.Fatal("expected an editor that is not installed to fail")
 	}
 }

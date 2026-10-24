@@ -180,7 +180,7 @@ create_probe_sandbox() {
 	local sandbox_args=(
 		admin box create
 		--name "$sandbox_name"
-		--harness-config "$harness_id"
+		--harness "$harness_id"
 		--cpu-vcpus "$cpu_vcpus"
 		--env "DISCOBOX_LATENCY_OUTPUT_PROFILE=$profile"
 		--wait

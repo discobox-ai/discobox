@@ -161,17 +161,14 @@ func TestSSHConnectWebSocketURL(t *testing.T) {
 }
 
 // TestToolsSSHDoesNotParseSSHFlags is the reason flag parsing is disabled on
-// this command: `discobox tools ssh -L 8080:localhost:3000` puts ssh's own flags
-// first, and cobra rejects unknown shorthand flags before RunE ever runs. The
-// command is pointed at a dead server so it fails later, on purpose — what is
-// asserted is that it got past argument parsing at all.
+// this command: `discobox tools ssh -- -L 8080:localhost:3000` hands ssh its own
+// flags, and cobra would reject unknown shorthand flags before RunE ever runs.
+// The command is pointed at a dead server so it fails later, on purpose — what
+// is asserted is that it got past argument parsing at all. Written where
+// DISCOBOX goes, without the --, the same flags are refused with the line
+// that works rather than looked for as a discobox.
 func TestToolsSSHDoesNotParseSSHFlags(t *testing.T) {
-	for _, args := range [][]string{
-		{"-L", "8080:localhost:3000"},
-		{"-N"},
-		{"-o", "ServerAliveInterval=30"},
-		{"-D", "1080", "-v"},
-	} {
+	run := func(args []string) error {
 		cmd := NewRootCommand()
 		cmd.SetOut(new(strings.Builder))
 		cmd.SetErr(new(strings.Builder))
@@ -179,14 +176,25 @@ func TestToolsSSHDoesNotParseSSHFlags(t *testing.T) {
 			"--server", "unix:///nonexistent/discobox-test.sock", "--auto-start-server=false",
 			"--project", "project-1", "tools", "ssh",
 		}, args...))
-		err := cmd.Execute()
+		return cmd.Execute()
+	}
+	for _, args := range [][]string{
+		{"-L", "8080:localhost:3000"},
+		{"-N"},
+		{"-o", "ServerAliveInterval=30"},
+		{"-D", "1080", "-v"},
+	} {
+		err := run(append([]string{"--"}, args...))
 		if err == nil {
 			t.Fatalf("%v: expected the dead server to fail the command", args)
 		}
-		for _, rejected := range []string{"unknown shorthand flag", "unknown flag", "flag needs an argument"} {
+		for _, rejected := range []string{"unknown shorthand flag", "unknown flag", "flag needs an argument", "go after --"} {
 			if strings.Contains(err.Error(), rejected) {
-				t.Fatalf("%v: cobra parsed ssh's flags: %v", args, err)
+				t.Fatalf("-- %v: the arguments were not ssh's: %v", args, err)
 			}
+		}
+		if err := run(args); err == nil || !strings.Contains(err.Error(), "ssh's arguments go after --: discobox tools ssh -- "+strings.Join(args, " ")) {
+			t.Fatalf("%v without --: error = %v, want the line that works", args, err)
 		}
 	}
 }

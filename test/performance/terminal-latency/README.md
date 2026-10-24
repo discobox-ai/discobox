@@ -11,7 +11,7 @@ and `discobox admin terminal ... attach`:
    sequence-tagged PTY echo. It is opt-in: it skips unless
    `DISCOBOX_TERMINAL_LATENCY_E2E=1`, which the runner sets.
 2. The direct probe, `main.go` in this directory, drives
-   `discobox admin terminal --discobox-id <id> attach primary` through a real
+   `discobox admin terminal attach <id> primary` through a real
    tmux PTY and writes `direct-<profile>.json`. It adds the CLI's local terminal
    and raw-mode path.
 

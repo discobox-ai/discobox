@@ -255,20 +255,11 @@ type toolTarget struct {
 }
 
 // resolveToolTarget is the discobox a `discobox tools` command names, and the
-// arguments left over for the tool.
-//
-// The discobox is --discobox-id when that was given, and otherwise whatever
-// `discobox shell` would have resolved — a leading argument naming a
-// discobox, or a pick — which is also what decides
-// where the tool's own arguments begin.
-func (a *App) resolveToolTarget(cmd *cobra.Command, sandboxArg, source string, args []string) (toolTarget, []string, error) {
+// arguments after its -- left over for the tool (selectDiscoboxCommand).
+func (a *App) resolveToolTarget(cmd *cobra.Command, source string, args []string) (toolTarget, []string, error) {
 	target := toolTarget{source: source}
 	var err error
-	rest := args
-	if strings.TrimSpace(sandboxArg) != "" {
-		target.app, target.projectID, target.sandboxID, target.client, err = a.selectSandbox(cmd, sandboxArg)
-	} else {
-		target.app, target.projectID, target.sandboxID, target.client, rest, err = a.resolveShellTarget(cmd, args)
-	}
+	var rest []string
+	target.app, target.projectID, target.sandboxID, target.client, rest, err = a.selectDiscoboxCommand(cmd, args)
 	return target, rest, err
 }

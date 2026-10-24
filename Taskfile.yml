@@ -566,7 +566,7 @@ tasks:
       #
       # DEV_LISTEN names iroh://, so the server binds an iroh endpoint and logs
       # the ID to dial it with. Reaching it needs that ID in
-      # <data dir>/authorized_ids — `discobox admin iroh-id` prints the one to add.
+      # <data dir>/authorized_ids — `discobox admin peer id` prints the one to add.
       # DISCOBOX_DEV_IROH=0 drops the iroh listener and keeps the socket.
       DISCOBOX_SERVER_LISTEN: '{{.DISCOBOX_SERVER_LISTEN | default .DEV_LISTEN}}'
       # Purge archived discoboxes after minutes rather than the production day.

@@ -134,7 +134,7 @@ func (d *apiDataSource) AuditBody(ctx context.Context, sandboxID, recordID, part
 	}
 	out.WriteString(terminalSafeMultiline(text))
 	if shown.cut {
-		fmt.Fprintf(&out, "\n\n… the first %d bytes. All of it: discobox admin audit http --discobox-id %s --body %s --part %s",
+		fmt.Fprintf(&out, "\n\n… the first %d bytes. All of it: discobox admin audit http --discobox %s --body %s --part %s",
 			auditBodyShown, terminalSafe(sandboxID), id, part)
 	}
 	return out.String(), nil
