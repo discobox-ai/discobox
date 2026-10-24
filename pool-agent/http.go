@@ -3,7 +3,6 @@ package poolagent
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,8 +10,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/discobox-ai/discobox/pool-agent/internalhttp"
 	"github.com/discobox-ai/discobox/pkg/poolauth"
+	"github.com/discobox-ai/discobox/pool-agent/internalhttp"
 )
 
 const (
@@ -24,7 +23,6 @@ const (
 	defaultSandboxInventoriesPath       = "/api/pools/{poolId}/sandbox-inventories"
 	defaultPoolResourcesPath            = "/api/pools/{poolId}/resources"
 	defaultHeldSandboxesPath            = "/api/pools/{poolId}/sandboxes"
-	defaultAssetsPath                   = "/api/pools/{poolId}/assets"
 )
 
 // HTTPClient registers pools through the control plane HTTP API.
@@ -38,7 +36,6 @@ type HTTPClient struct {
 	sandboxAgentStatusPath       string
 	poolResourcesPath            string
 	heldSandboxesPath            string
-	assetsPath                   string
 }
 
 type HTTPClientOption func(*HTTPClient)
@@ -58,7 +55,6 @@ func NewHTTPClient(baseURL string, opts ...HTTPClientOption) *HTTPClient {
 		sandboxAgentStatusPath:       defaultSandboxAgentStatusPath,
 		poolResourcesPath:            defaultPoolResourcesPath,
 		heldSandboxesPath:            defaultHeldSandboxesPath,
-		assetsPath:                   defaultAssetsPath,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -423,50 +419,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-// AssetRequest names one read of the control plane's asset routes (ADR
-// 26-10-16-423 §13): Path is beneath the pool's asset prefix,
-// /{name}/manifests/{digest} or /blobs/{digest}.
-type AssetRequest struct {
-	ControlPlaneURL string
-	ProjectID       string
-	PoolID          string
-	PrivateKey      ed25519.PrivateKey
-	Path            string
-}
-
-// FetchAsset reads a manifest or blob the pool's scope pins from the control
-// plane, as this pool. A status other than 200 is an error; the body is the
-// caller's to close, and to check against its digest.
-func (c *HTTPClient) FetchAsset(ctx context.Context, req AssetRequest) (io.ReadCloser, error) {
-	baseURL := strings.TrimRight(firstNonEmpty(req.ControlPlaneURL, c.baseURL), "/")
-	if baseURL == "" {
-		return nil, fmt.Errorf("control plane URL is required")
-	}
-	poolID := strings.TrimSpace(req.PoolID)
-	projectID := strings.TrimSpace(req.ProjectID)
-	if poolID == "" || projectID == "" {
-		return nil, fmt.Errorf("project and pool IDs are required")
-	}
-	token, err := poolauth.CreateToken(req.PrivateKey, poolauth.Claims{ProjectID: projectID, PoolID: poolID})
-	if err != nil {
-		return nil, fmt.Errorf("create pool assertion: %w", err)
-	}
-	assetsPath := strings.ReplaceAll(c.assetsPath, "{poolId}", url.PathEscape(poolID))
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+assetsPath+req.Path, nil)
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Authorization", "Bearer "+token)
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("asset read %s failed: status %d: %s", req.Path, resp.StatusCode, strings.TrimSpace(string(data)))
-	}
-	return resp.Body, nil
 }

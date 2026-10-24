@@ -74,37 +74,52 @@ func provisionBox(ctx context.Context, tracker *provision.Tracker, runtimeConfig
 }
 
 // fetchBundles applies the pins in agentlayer.PinsFile, when the pool placed
-// one, to the box's content store, and reports whether it did.
+// one, to the box's content store, and reports whether it did. It waits for
+// the box's first runtime-config document, which brings up the bridge every
+// fetch from assets.discobox.internal goes through.
 func fetchBundles(ctx context.Context, runtimeConfig *intake.Intake) (bool, error) {
-	data, err := os.ReadFile(agentlayer.PinsFile)
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	pins, err := agentlayer.ParsePins(data)
-	if err != nil {
+	pins, ok, err := placedPins()
+	if err != nil || !ok {
 		return false, err
 	}
 	if _, err := runtimeConfig.WaitApplied(ctx); err != nil {
 		return false, err
 	}
-	store := &bundlestore.Store{Root: "/", Fetcher: bundlestore.HTTPFetcher{}, Platform: imagecache.PoolPlatform(), Logger: slog.Default()}
+	return true, applyBundles(ctx, pins, bundlestore.HTTPFetcher{})
+}
+
+// placedPins is agentlayer.PinsFile, which the box's maker placed, and false
+// when it placed none.
+func placedPins() (agentlayer.Pins, bool, error) {
+	data, err := os.ReadFile(agentlayer.PinsFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	pins, err := agentlayer.ParsePins(data)
+	return pins, err == nil, err
+}
+
+// applyBundles brings pins into the box's content store through fetcher,
+// trying again a few times before it fails.
+func applyBundles(ctx context.Context, pins agentlayer.Pins, fetcher bundlestore.Fetcher) error {
+	store := &bundlestore.Store{Root: "/", Fetcher: fetcher, Platform: imagecache.PoolPlatform(), Logger: slog.Default()}
 	wait := bundleRetryWait
 	for attempt := 1; ; attempt++ {
 		err := store.Apply(ctx, pins)
 		if err == nil {
-			return true, nil
+			return nil
 		}
 		if attempt == bundleAttempts || ctx.Err() != nil {
-			return false, fmt.Errorf("fetch the box's bundles: %w", err)
+			return fmt.Errorf("fetch the box's bundles: %w", err)
 		}
 		slog.Warn("fetch the box's bundles; trying again", "attempt", attempt, "in", wait, "error", err)
 		select {
 		case <-time.After(wait):
 		case <-ctx.Done():
-			return false, ctx.Err()
+			return ctx.Err()
 		}
 		wait *= 2
 	}
