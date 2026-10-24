@@ -1,9 +1,6 @@
 package sandboxruntime
 
 import (
-	"archive/tar"
-	"bufio"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -119,76 +116,18 @@ func (r *DockerSandboxRuntime) sandboxAgent(ctx context.Context, sandboxID strin
 	}, true, nil
 }
 
-// extractAgent reads the layer digest and writes its agent to path. The layer
-// is read twice: once whole, to refuse anything but the agent's alone
-// (agentlayer.AgentLayer), and once for the agent.
+// extractAgent reads the layer digest and writes its agent to path,
+// refusing a layer that is not the agent's alone (agentlayer.ExtractAgent).
 func (r *DockerSandboxRuntime) extractAgent(ctx context.Context, sandboxID, digest, path string) error {
-	check, err := r.openLayer(ctx, sandboxID, digest)
-	if err != nil {
-		return err
-	}
-	err = agentlayer.AgentLayer(check)
-	check.Close()
-	if err != nil {
-		return fmt.Errorf("layer %s: %w", digest, err)
-	}
-	layer, err := r.openLayer(ctx, sandboxID, digest)
+	layer, err := r.agentLayers.OpenAgentLayer(ctx, sandboxID, digest)
 	if err != nil {
 		return err
 	}
 	defer layer.Close()
-	tr := tar.NewReader(layer)
-	for {
-		header, err := tr.Next()
-		if errors.Is(err, io.EOF) {
-			return fmt.Errorf("layer %s: %w", digest, agentlayer.ErrNotAgentLayer)
-		}
-		if err != nil {
-			return err
-		}
-		if header.Typeflag != tar.TypeReg {
-			continue
-		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return err
-		}
-		tmp := path + ".tmp"
-		out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
-		if err != nil {
-			return err
-		}
-		// The entry's own size: a layer that holds less fails, not a short agent.
-		_, copyErr := io.CopyN(out, tr, header.Size)
-		if err := errors.Join(copyErr, out.Close()); err != nil {
-			_ = os.Remove(tmp)
-			return fmt.Errorf("extract the agent from layer %s: %w", digest, err)
-		}
-		return os.Rename(tmp, path)
+	if err := agentlayer.ExtractAgent(layer, path); err != nil {
+		return fmt.Errorf("layer %s: %w", digest, err)
 	}
-}
-
-// openLayer is the layer's tar, ungzipped when it is compressed.
-func (r *DockerSandboxRuntime) openLayer(ctx context.Context, sandboxID, digest string) (io.ReadCloser, error) {
-	body, err := r.agentLayers.OpenAgentLayer(ctx, sandboxID, digest)
-	if err != nil {
-		return nil, err
-	}
-	buffered := bufio.NewReader(body)
-	if magic, _ := buffered.Peek(2); len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
-		zr, err := gzip.NewReader(buffered)
-		if err != nil {
-			body.Close()
-			return nil, err
-		}
-		return struct {
-			io.Reader
-			io.Closer
-		}{zr, body}, nil
-	}
-	return struct {
-		io.Reader
-		io.Closer
-	}{buffered, body}, nil
+	return nil
 }
 
 // placeAgent places the agent in the sandbox's container before it starts:

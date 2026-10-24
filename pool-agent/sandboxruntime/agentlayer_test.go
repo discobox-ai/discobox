@@ -199,8 +199,8 @@ func TestPlaceAgentCopiesTheLayerOnlyWhenTheBoxLacksIt(t *testing.T) {
 		t.Fatal("a new container was not given the layer")
 	}
 	// Extracted once on this side, however many starts.
-	if layers.opened != 2 {
-		t.Fatalf("layer opened %d times, want twice for its one extraction", layers.opened)
+	if layers.opened != 1 {
+		t.Fatalf("layer opened %d times, want once for its one extraction", layers.opened)
 	}
 	if _, err := os.Stat(filepath.Join(r.agentsDir(), agentlayer.Hex(digest), agentBinaryName)); err != nil {
 		t.Fatalf("the extracted agent: %v", err)

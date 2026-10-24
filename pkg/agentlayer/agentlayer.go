@@ -11,11 +11,15 @@ package agentlayer
 
 import (
 	"archive/tar"
+	"bufio"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"path"
+	"os"
+	pathpkg "path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -135,14 +139,27 @@ func ParsePins(data []byte) (Pins, error) {
 // ErrNotAgentLayer is a layer that is not the agent's alone.
 var ErrNotAgentLayer = errors.New("not the agent layer")
 
-// AgentLayer reads a layer's tar and fails with ErrNotAgentLayer unless it
-// holds the agent and nothing else: AgentFile, a regular file, and the
-// directories above it. The agent bundle is that one layer
-// (sandbox-agent/Dockerfile's agent stage, ADR 26-10-24-953 §2), which
-// whoever makes a box knows only by digest; this is what makes a wrong one
-// fail by name rather than boot a box from whatever file it holds.
-func AgentLayer(layer io.Reader) error {
-	tr := tar.NewReader(layer)
+// ExtractAgent reads a layer, its tar gzipped or not, and writes the agent it
+// holds to path, failing with ErrNotAgentLayer unless it holds the agent and
+// nothing else: AgentFile, a regular file, and the directories above it. The
+// agent bundle is that one layer (sandbox-agent/Dockerfile's agent stage, ADR
+// 26-10-24-953 §2), which whoever makes a box knows only by digest; this is
+// what makes a wrong one fail by name rather than boot a box from whatever
+// file it holds. Nothing is at path unless the whole layer was the agent's.
+func ExtractAgent(layer io.Reader, path string) error {
+	buffered := bufio.NewReader(layer)
+	var tarStream io.Reader = buffered
+	if magic, _ := buffered.Peek(2); len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
+		zr, err := gzip.NewReader(buffered)
+		if err != nil {
+			return fmt.Errorf("read layer: %w", err)
+		}
+		defer zr.Close()
+		tarStream = zr
+	}
+	tmp := path + ".tmp"
+	defer func() { _ = os.Remove(tmp) }()
+	tr := tar.NewReader(tarStream)
 	found := false
 	for {
 		header, err := tr.Next()
@@ -152,11 +169,24 @@ func AgentLayer(layer io.Reader) error {
 		if err != nil {
 			return fmt.Errorf("read layer: %w", err)
 		}
-		name := strings.TrimPrefix(path.Clean("/"+header.Name), "/")
+		name := strings.TrimPrefix(pathpkg.Clean("/"+header.Name), "/")
 		switch {
 		case header.Typeflag == tar.TypeDir && (name == "features" || name == "features/core"):
-		case header.Typeflag == tar.TypeReg && name == AgentFile:
+		case header.Typeflag == tar.TypeReg && name == AgentFile && !found:
 			found = true
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return err
+			}
+			out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755) //nolint:gosec // G302: the agent is an executable.
+			if err != nil {
+				return err
+			}
+			// The entry's own size: a layer that holds less fails, not a
+			// short agent.
+			_, copyErr := io.CopyN(out, tr, header.Size)
+			if err := errors.Join(copyErr, out.Close()); err != nil {
+				return fmt.Errorf("extract the agent: %w", err)
+			}
 		default:
 			return fmt.Errorf("%w: it holds %s", ErrNotAgentLayer, header.Name)
 		}
@@ -164,7 +194,7 @@ func AgentLayer(layer io.Reader) error {
 	if !found {
 		return fmt.Errorf("%w: it holds no %s", ErrNotAgentLayer, AgentFile)
 	}
-	return nil
+	return os.Rename(tmp, path)
 }
 
 // Agent is an agent layer to place: its digest, and the agent binary it
