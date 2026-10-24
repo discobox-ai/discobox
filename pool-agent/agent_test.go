@@ -137,6 +137,9 @@ func TestLoadReadsTheBootstrapFileUnderTheEnvironment(t *testing.T) {
 // The file holds the bootstrap token, so one another user may read is
 // refused rather than trusted.
 func TestLoadRefusesABootstrapFileOthersCanRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a Windows file's mode bits say nothing of who may read it, and no pool machine runs Windows")
+	}
 	path := filepath.Join(t.TempDir(), "bootstrap.json")
 	writeBootstrapFile(t, path, 0o644, poolagent.Bootstrap{PoolID: "pool-1", Token: "token-1"})
 	t.Setenv(poolagent.EnvBootstrapFile, path)
