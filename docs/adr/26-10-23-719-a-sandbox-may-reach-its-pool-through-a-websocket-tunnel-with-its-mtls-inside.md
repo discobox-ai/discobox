@@ -34,10 +34,12 @@ What every such edge does forward is a WebSocket upgrade.
 
 ### 1. `wss` is a transport, and mTLS runs inside it
 
-`pkg/wire` gains the scheme `wss://host[:port]/path`. Dialing it opens a
-WebSocket to that URL over the edge's TLS, verified against the system roots,
-and returns it as a `net.Conn`. `bridge.Dialer` runs the same mTLS handshake on
-that connection that it runs on TCP, vsock, or a unix socket: the pool's
+`pkg/wire` gains the scheme `wss://host[:port]/path`. It parses it, and leaves
+opening it to `bridge.Dialer`, the one thing that knows where a stream on it
+ends (§3): `wire` refuses to dial or listen on it. The Dialer opens a WebSocket
+to that URL over the edge's TLS, verified against the system roots, through
+`pkg/wstunnel`, and runs the same mTLS handshake on it that it runs on TCP,
+vsock, or a unix socket: the pool's
 server certificate verified against the mTLS CA as `serverName`, and the
 sandbox's client certificate presented. Material renewal (0126 §7) is
 unchanged.
@@ -62,15 +64,17 @@ tunnels, each with its own TCP connection and congestion window.
 
 ### 3. The dialer keeps idle tunnels and reuses them
 
-The `wss` transport keeps the tunnels that end cleanly, per URL, and a dial
+Each `wss` Dialer keeps the tunnels whose streams ended cleanly, and a dial
 takes an idle one before opening another. The limits are:
 
-- a cap on idle tunnels per URL;
+- a cap on idle tunnels per Dialer;
 - an idle timeout, kept shorter than the edge's own idle timeout;
 - a maximum age, kept shorter than the edge's longest request, after which a
   tunnel is retired at its next end of stream instead of going idle;
 - WebSocket pings while a tunnel is in use, so a quiet stream is not cut as
-  idle.
+  idle;
+- a bound on what ending a stream may wait for: the write of its end, and the
+  peer's answer, past which the tunnel is given up rather than held.
 
 A reused tunnel the edge cut without either side noticing fails during the
 inner TLS handshake, before any of the caller's bytes are sent. The dial is
@@ -82,12 +86,26 @@ trip to the pool, against about two for direct mTLS today and for a new tunnel.
 
 ### 4. The pool serves tunnels on a plain HTTP listener
 
-The pool agent serves a listener for the edge to forward to, with one path per
-service. A handler accepts the upgrade, wraps each stream in `tls.Server` with
-the same `RequireAndVerifyClientCert` configuration as that service's own
-listener, and hands it to that service's accept loop through a listener the
-handler feeds. Each tunnel loops, accepting one stream after another, until it
-closes.
+The pool's proxy unit serves a listener for the edge to forward to, with one
+path per service. A handler accepts the upgrade and splices each stream onto
+that service's own mTLS listener on the pool container's loopback, so the
+inner mTLS ends exactly where it does over TCP. Each tunnel loops, accepting
+one stream after another, until it closes.
+
+Splicing rather than handing each stream to the service's accept loop in
+process keeps the services as they are, at the cost of one loopback hop. The
+splice comes from a loopback address of the tunnel listener's own, and the DNS
+server exempts that address, and only it, from its per-source cap: every
+sandbox behind the edge arrives from it. All of loopback cannot be exempted,
+because the pool proxy carries any sandbox's connection to a loopback port.
+
+Nothing names a caller until the mTLS inside a stream completes, and every
+tunnel arrives from the edge, so the pool cannot limit each client: that is the
+edge's, which must limit upgrades per client. The listener bounds the tunnels
+it holds in total, sized from the descriptors they cost rather than set low
+enough to bite in use; a new tunnel must begin its first stream within
+seconds, so holding one costs a request; and the proxy's handshake is bounded
+in time.
 
 The listener is plain HTTP because the edge holds the public certificate and
 presents no client certificate of its own; the inner mTLS is what authenticates
@@ -97,8 +115,11 @@ apply to it.
 
 ### 5. Every pool endpoint can be a `wss` URL
 
-`PoolEndpoints.Proxy`, `Credentials`, `BuildKit`, and `DNS` may each name a
-`wss` URL. `DNS` becomes a wire URL like the others, where it was a bare
+`PoolEndpoints.Proxy`, `Credentials`, and `DNS` may each name a `wss` URL.
+`BuildKit` does not: a build's results come back through the pool registry,
+which is unauthenticated and protected only by the pool's private network
+(ADR 0126 §7), so no tunnel carries it, and a pool behind an edge names no
+builder. `DNS` becomes a wire URL like the others, where it was a bare
 `host:port`, and a bare `host:port` keeps meaning TCP so existing bootstraps
 still resolve. The DNS stub dials through `bridge.Dialer` like everything else,
 retiring its exception in `proxy/REVIEW.md`, and keeps its own connection reuse
@@ -107,8 +128,13 @@ above it.
 ### 6. The pool chooses, and direct mTLS stays the default
 
 A pool states the `wss` URLs in its sandboxes' bootstrap only when it is
-reachable solely through such an edge. Every other pool keeps the transports it
-uses today. Nothing in the sandbox probes or falls back between them.
+reachable solely through such an edge: when its container's environment names
+the edge's URL. Every other pool keeps the transports it uses today. Nothing in
+the sandbox probes or falls back between them.
+
+No provider sets that URL yet. Every provider today runs a pool's sandboxes
+beside it, on its own network; the one that places them behind an edge sets
+the URL per pool and exposes the tunnel listener to the edge.
 
 ## Alternatives rejected
 
@@ -156,6 +182,10 @@ uses today. Nothing in the sandbox probes or falls back between them.
   WebSockets must reconnect over such a pool. Direct mTLS has no such cap,
   which is one reason it stays the default.
 - The DNS server address in `PoolEndpoints` becomes a wire URL.
+- A pool behind an edge is as available as the edge keeps it: anyone who
+  reaches the edge can hold tunnels open up to the listener's total, which
+  only the edge can apportion per client. An edge that does not limit upgrades
+  per client leaves the pool's sandboxes open to that.
 
 ## Deferred
 
@@ -163,6 +193,11 @@ uses today. Nothing in the sandbox probes or falls back between them.
   is deferred until measurements on a real edge show the setup cost matters
   with reuse in place. It needs either the inner handshake done ahead or a
   change to the egress proxy's first-byte deadline.
+- **Provider wiring** — which provider sets a pool's tunnel URL, and how the
+  edge reaches the listener — waits for the first provider whose sandboxes
+  reach their pool only through an edge.
+- **Builds behind an edge** wait for the pool registry to authenticate its
+  pulls (ADR 0126 §7), at which point it can take a tunnel of its own.
 - **Per-pool tuning of the tunnel limits** (§3) is deferred until a second edge
   needs values the first does not. Until then they are constants chosen for the
   first provider this ships for.
