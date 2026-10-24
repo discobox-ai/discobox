@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -215,5 +216,41 @@ func TestArchiveLaysOnlyTheUnitsItIsGiven(t *testing.T) {
 	}
 	if _, ok := entries["opt/discobox/bundles/pins.json"]; !ok {
 		t.Error("no pins")
+	}
+}
+
+// Pins written before they were a list are the object a box's pins were then,
+// and persist in a pool's records of what it placed: they read as the list
+// they compose, the platform's bundle first.
+func TestPinsReadTheObjectTheyWereBeforeTheyWereAList(t *testing.T) {
+	const digest = "sha256:" + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	for name, tc := range map[string]struct {
+		data string
+		want Pins
+	}{
+		"platform and harness": {
+			data: `{"platform":{"name":"discobox-platform","digest":"` + digest + `"},"harness":{"name":"discobox-harness-shell","digest":"` + digest + `"}}`,
+			want: Pins{{Name: "discobox-platform", Digest: digest}, {Name: "discobox-harness-shell", Digest: digest}},
+		},
+		"platform alone": {
+			data: `{"platform":{"name":"discobox-platform","digest":"` + digest + `"}}`,
+			want: Pins{{Name: "discobox-platform", Digest: digest}},
+		},
+		"a list": {
+			data: `[{"name":"discobox-pool-agent-bundle","digest":"` + digest + `"}]`,
+			want: Pins{{Name: "discobox-pool-agent-bundle", Digest: digest}},
+		},
+	} {
+		var got Pins
+		if err := json.Unmarshal([]byte(tc.data), &got); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !slices.Equal(got, tc.want) {
+			t.Fatalf("%s: pins = %+v, want %+v", name, got, tc.want)
+		}
+	}
+	var got Pins
+	if err := json.Unmarshal([]byte(`"neither"`), &got); err == nil {
+		t.Fatal("a string read as pins")
 	}
 }

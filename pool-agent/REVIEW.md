@@ -270,14 +270,23 @@ durable state asks the same question.
   network setting added to one and not the other makes a snapshot a box of
   another kind than the ones started from it.
 
+## Records the pool keeps
+
+- **A type serialized into a pool-side record is a persisted schema.** The
+  records beside a sandbox's tree (`delivery.json`, `agent-placed.json`) and
+  a snapshot's plan outlive the agent that wrote them: a host's state
+  survives the pool container being recreated. Changing the shape of what
+  they hold — `agentlayer.Pins` became a list — or their file name needs a
+  reader for the old one (`Pins.UnmarshalJSON`, `readLegacyRecord`), and a
+  test with a record the previous release wrote. A record that no longer
+  decodes fails every create of its sandbox until someone deletes it.
+
 ## The pool bundle's features
 
 The pool bundle's units (`bundle/features/*/systemd`) run what its features
-link from the bundle's stable tree, and the image's (`image/systemd`) what it
-baked in, until the image goes; change one, change the other in the same
-change. A unit that reads a file the agent renders `Requires=` and is
-`After=` the agent's Type=notify unit: systemd starts it no sooner than the
-agent has written it.
+link from the bundle's stable tree. A unit that reads a file the agent renders
+`Requires=` and is `After=` the agent's Type=notify unit: systemd starts it no
+sooner than the agent has written it.
 
 A feature's binary moves under its stable link without any step's definition
 moving, so nothing would restart what runs it: each feature's `restart` step

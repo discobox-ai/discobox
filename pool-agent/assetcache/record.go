@@ -20,10 +20,16 @@ import (
 // beside the volumes rather than in one, as source-caches.json does: it is
 // this pool's own record of what the sandbox may fetch, the sandbox never
 // sees it, and every create rewrites it from the request, so nothing the box
-// reports ever reaches it. bundles.json, which named each bundle's kind, is
-// not read: a sandbox recorded only there is delivered nothing until its next
-// create, and keeps the agent its container holds.
+// reports ever reaches it.
 const RecordFileName = "delivery.json"
+
+// legacyRecordFileName is the record a pool kept before the agent was a
+// bundle of its own: the sandbox's bundles, each named by its kind. It is
+// read when there is no RecordFileName, as the bundles it names, platform
+// first, and no agent: the pool places nothing in such a sandbox, which keeps
+// the agent placed in it then, until a create records what it is delivered
+// now and removes it.
+const legacyRecordFileName = "bundles.json"
 
 // Pin is a bundle a sandbox is pinned to: the name the asset API addresses
 // it by, and the manifest or index digest it is pinned to. Nothing says which
@@ -43,6 +49,11 @@ type Delivery struct {
 
 // Delivered reports whether d delivers anything.
 func (d Delivery) Delivered() bool { return d.Agent != (Pin{}) || len(d.Bundles) > 0 }
+
+// PlacesAgent reports whether d names the agent its pool places: false for
+// nothing delivered, and for a sandbox recorded before the agent was a bundle
+// (legacyRecordFileName), whose container keeps the agent placed in it then.
+func (d Delivery) PlacesAgent() bool { return d.Agent != (Pin{}) }
 
 // pins is every bundle d reaches, its agent's included: what the pool keeps
 // blobs for. What the sandbox may fetch is its bundles alone; its agent is
@@ -90,6 +101,11 @@ func (p Pin) validate() error {
 // file. A delivery Validate refuses is refused, and nothing is written.
 func WriteRecord(sandboxRoot string, d Delivery) error {
 	path := filepath.Join(sandboxRoot, RecordFileName)
+	// What is recorded now replaces the record kept before it, which would
+	// otherwise be read again once this one is removed.
+	if err := os.Remove(filepath.Join(sandboxRoot, legacyRecordFileName)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
 	if !d.Delivered() {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
@@ -118,7 +134,7 @@ func WriteRecord(sandboxRoot string, d Delivery) error {
 func ReadRecord(sandboxRoot string) (Delivery, error) {
 	data, err := os.ReadFile(filepath.Join(sandboxRoot, RecordFileName))
 	if errors.Is(err, fs.ErrNotExist) {
-		return Delivery{}, nil
+		return readLegacyRecord(sandboxRoot)
 	}
 	if err != nil {
 		return Delivery{}, err
@@ -128,6 +144,41 @@ func ReadRecord(sandboxRoot string) (Delivery, error) {
 		return Delivery{}, fmt.Errorf("decode %s: %w", RecordFileName, err)
 	}
 	return d, d.Validate()
+}
+
+// readLegacyRecord is what a sandbox recorded in legacyRecordFileName is
+// delivered: the bundles it names, platform first, and no agent. None is the
+// zero Delivery.
+func readLegacyRecord(sandboxRoot string) (Delivery, error) {
+	data, err := os.ReadFile(filepath.Join(sandboxRoot, legacyRecordFileName))
+	if errors.Is(err, fs.ErrNotExist) {
+		return Delivery{}, nil
+	}
+	if err != nil {
+		return Delivery{}, err
+	}
+	var legacy []struct {
+		Kind   string `json:"kind"`
+		Name   string `json:"name"`
+		Digest string `json:"digest"`
+	}
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		return Delivery{}, fmt.Errorf("decode %s: %w", legacyRecordFileName, err)
+	}
+	var d Delivery
+	for _, kind := range []string{"platform", "harness"} {
+		for _, pin := range legacy {
+			if pin.Kind != kind {
+				continue
+			}
+			p := Pin{Name: pin.Name, Digest: pin.Digest}
+			if err := p.validate(); err != nil {
+				return Delivery{}, fmt.Errorf("%s: %w", legacyRecordFileName, err)
+			}
+			d.Bundles = append(d.Bundles, p)
+		}
+	}
+	return d, nil
 }
 
 // delivery is the record of the sandbox or snapshot build named sandboxID.

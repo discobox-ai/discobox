@@ -206,14 +206,14 @@ var ErrNoAgentLayer = errors.New("the agent bundle is not one layer for this poo
 
 // AgentLayer is the digest of the layer of the sandbox's agent bundle, for
 // the pool's platform: the bundle's one layer, the agent alone (ADR
-// 26-10-24-953 §2; agentlayer.AgentLayer checks what it holds). False is a
-// sandbox delivered nothing.
+// 26-10-24-953 §2; agentlayer.ExtractAgent checks what it holds). False is a
+// sandbox whose pool places no agent in it (Delivery.PlacesAgent).
 func (c *Cache) AgentLayer(ctx context.Context, sandboxID string) (string, bool, error) {
 	d, err := c.delivery(sandboxID)
 	if err != nil {
 		return "", false, err
 	}
-	if !d.Delivered() {
+	if !d.PlacesAgent() {
 		return "", false, nil
 	}
 	read, _, err := imagecache.ImageManifest(d.Agent.Digest, imagecache.PoolPlatform(), func(digest string) (imagecache.Manifest, error) {

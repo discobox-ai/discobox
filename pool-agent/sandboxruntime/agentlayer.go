@@ -72,9 +72,11 @@ func (r *DockerSandboxRuntime) deliveredPins(sandboxID string) (agentlayer.Pins,
 }
 
 // applied is the bundles d delivers as the box applies them, in order, and
-// false when it delivers nothing.
+// false when the pool places nothing in the box: d delivers nothing, or names
+// no agent, as a sandbox recorded before the agent was a bundle does, whose
+// container keeps the agent placed in it then (assetcache.Delivery.PlacesAgent).
 func applied(d assetcache.Delivery) (agentlayer.Pins, bool, error) {
-	if !d.Delivered() {
+	if !d.PlacesAgent() {
 		return nil, false, nil
 	}
 	out := make(agentlayer.Pins, 0, len(d.Bundles))
@@ -132,7 +134,8 @@ func (r *DockerSandboxRuntime) extractAgent(ctx context.Context, sandboxID, dige
 
 // placeAgent places the agent in the sandbox's container before it starts:
 // the layer when the pool has not placed it in this container, and its units
-// and pins always, recording what it placed (placedRecord). A sandbox delivered no platform is left as it is.
+// and pins always, recording what it placed (placedRecord). A sandbox whose
+// pool places no agent in it (applied) is left as it is.
 func (r *DockerSandboxRuntime) placeAgent(ctx context.Context, sandboxID, containerID string) error {
 	pins, ok, err := r.deliveredPins(sandboxID)
 	if err != nil || !ok {
