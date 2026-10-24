@@ -36,8 +36,8 @@
   and 11, whose fingerprint leaves out a delivered sandbox's image and
   platform pins (§7, as amended). It settles that ADR's
   deferred ids for a Linux machine sandbox's account (§14).
-- **§7 proposed to be narrowed, for a remote driver, by**: [26-10-23-551](26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
-  (Proposed) — the pool agent, not the provider, places a machine's agent
+- **§7 narrowed, for a remote driver, by**: [26-10-23-551](26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
+  — the pool agent, not the provider, places a machine's agent
   layer and runs its one command
 - **Date**: 2026-10-16
 - **Relates to**: [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md),
