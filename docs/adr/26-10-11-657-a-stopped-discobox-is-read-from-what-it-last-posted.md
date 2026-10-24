@@ -1,6 +1,7 @@
 # 26-10-11-657 — A stopped discobox is read from what it last posted
 
-- **Status**: Accepted
+- **Status**: Accepted (§4 narrowed for the derived `currentHarnessId` by
+  [26-10-24-650](26-10-24-650-a-stopped-sandbox-can-change-its-harness.md))
 - **Amended by**: [26-10-12-711](26-10-12-711-using-a-failed-discobox-with-no-container-repairs-it-once.md) — which reads never start a discobox (§4) is a
   use the control plane marks on the request, and the pool agent obeys the
   mark; it registers no route as `requireRunning` itself

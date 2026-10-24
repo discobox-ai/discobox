@@ -1,6 +1,7 @@
 # 0038 — Terminal identity is the exec id, and terminals revive in place
 
-- **Status**: Accepted
+- **Status**: Accepted (Decision items 1, 4–6 clarified by
+  [26-10-24-650](26-10-24-650-a-stopped-sandbox-can-change-its-harness.md))
 - **Date**: 2026-08-13
 
 ## Context
