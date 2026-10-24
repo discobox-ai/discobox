@@ -15,7 +15,7 @@ it.
 | `propose.go` | `ProposalJob`, `ProposalSystem`, `ProposalSchema`, `Proposal`, and `DecodeProposal`: the one thing the judge's model writes rather than decides, the statements a person starts an approval rule's policy from — the same work on any target of its kind, as sentences. |
 | `system.go` | `System`, the words the judge is given, and `PromptVersion`, which changes with them. |
 | `verdict.go` | `Answer`, `Need`, `Schema`, and `Decode`: what Discobox will accept as a verdict. |
-| `facts.go` | `Discobox`, `Facts` and `DelegationFacts`: what the control plane recorded about the discoboxes a job concerns, as the sentences it carries, and `DiscoboxOf`, the one conversion from the control plane's typed record (`policy.Facts`) to a `Discobox`. |
+| `facts.go` | `Discobox`, `Facts`, `DelegationFacts`, `TargetFacts` and `CommandFacts`: what the control plane recorded about the discoboxes a job concerns, as the sentences it carries, and `DiscoboxOf`, the one conversion from the control plane's typed record (`policy.Facts`) to a `Discobox`. |
 | `standing.go` | `Standing`, `Route`, and `Job.Admits`: an allow the judge asks to let stand for a route, and whether it may. |
 | `recognized.go` | `Recognition`, the names of the protocols, endpoints and parsers a pool recognizes, and `GuidanceFor`: the trusted words that go with each name. |
 | `jev/` | The same jobs put to TypeSafe's Jev rather than a model behind `discobox-prompt` (ADR 26-10-01-324): its HTTP client, the yes/no questions a job becomes, and the code that decides a `judge.Answer` from their probabilities. |
@@ -159,9 +159,25 @@ writes them about the discobox asking, `DelegationFacts` about both
 discoboxes of a delegation, since a use handed on means the receiving one, and
 `TargetFacts` about the discobox asking and the one a call to the discobox API
 names, since that call names it only by an ID and "the discoboxes this
-discobox created" is read by who created it (ADR 26-10-14-320 §5), so for the
-target it says so when no discobox did: each
-from what was recorded when that discobox was created — its ID, its sources'
+discobox created" is read by who created it (ADR 26-10-14-320 §5);
+`CommandFacts` says the same of every discobox a command names by its ID,
+since a command names its targets in its arguments and may name several; for
+a target each says so when no discobox did. An ID is a discobox's only
+identity, so facts are only ever about a discobox named by one: a name, a
+short ID or a window's title is a label another discobox can carry. A
+command's facts say which discoboxes it names by ID, never which it acts on,
+since the IDs are found in arguments the discobox wrote. So `System` (and
+Jev's command question) says a discobox a job may act on that no fact
+describes — one a command names any other way — has no known creator, and a
+limit to the discoboxes a given discobox created does not hold for it, and
+its command paragraph has the judge work out each operation's target from the
+command itself. That rule lives with commands, not facts: among the facts it
+made rule jobs' condition readings stricter. The judge reads the discobox
+CLI's grammar unaided, so a decoy that hides the target in it can still pass
+(`command-tag-a-persons-discobox-by-name-beside-one-it-created`). Those
+named past the cap are counted in a last fact rather than dropped
+unremarked.
+Each states what was recorded when that discobox was created — its ID, its sources'
 remotes and the ref each was created from, and the discobox that created it —
 and from nothing the discobox can move afterwards: not its name (meta it
 writes), not where its work has got to. Every sentence names its discobox by

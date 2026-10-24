@@ -138,7 +138,13 @@ create it is not stored yet. A request to the discobox API that names a
 discobox in the project is told about that discobox too (`judge.TargetFacts`,
 ADR 26-10-14-320 §5), read from its row: which discobox a call may act on is
 the judge's to decide, and who created it is what a use bounded to "the
-discoboxes this discobox created" is read by. The grant is read
+discoboxes this discobox created" is read by. A command spending the discobox
+API's credential is told the same of every discobox in the project its
+arguments name by ID (`judge.CommandFacts`) — a whole ID in either spelling,
+as an argument, a flag's value or a segment of an API path — and is never
+told which discoboxes it acts on. An ID is a discobox's only identity: a
+discobox named by a name or a short ID is left undescribed, which the judge
+reads as having no known creator. The grant is read
 again after the verdict, because a verdict takes a while and a grant can
 be revoked inside one. The question is composed only once a judge is found: a
 project with no judge refuses whatever the use turns out to say, and that

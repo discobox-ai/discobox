@@ -71,7 +71,7 @@ func DiscoboxOf(f policy.Facts) Discobox {
 // Facts is what the judge is told about the discobox asking, in Discobox's
 // words, at most MaxFacts of them.
 func Facts(asking Discobox) []string {
-	return facts(subject{role: "The discobox asking", discobox: asking})
+	return facts(MaxFacts, subject{role: "The discobox asking", discobox: asking})
 }
 
 // DelegationFacts is what the judge is told about a delegation: the discobox
@@ -80,7 +80,7 @@ func Facts(asking Discobox) []string {
 // discobox" means another one once it is handed on, and the judge can only
 // see that from what each was created with.
 func DelegationFacts(giving, receiving Discobox) []string {
-	return facts(
+	return facts(MaxFacts,
 		subject{role: "The discobox asking, which would hand the credential on,", discobox: giving},
 		subject{role: "The discobox it would hand the credential to", discobox: receiving},
 	)
@@ -94,10 +94,51 @@ func DelegationFacts(giving, receiving Discobox) []string {
 // when the target was. That no discobox created the target is stated, not
 // left to the absence of a sentence: it is the fact such a use turns on.
 func TargetFacts(asking, target Discobox) []string {
-	return facts(
+	return facts(MaxFacts,
 		subject{role: "The discobox asking", discobox: asking},
 		subject{role: "The discobox the request names, which it would act on,", discobox: target, statesNoCreator: true},
 	)
+}
+
+// CommandFacts is what the judge is told about a command that names
+// discoboxes by ID: the discobox asking, and each discobox the command names,
+// in the order it names them, said of each as TargetFacts says it of a
+// request's target. A command names its targets in its arguments — a
+// positional ID, a flag such as --discobox-id — rather than in a path, and
+// may name several. What is said of each is only that the command names it by
+// its ID: the IDs are found in arguments the discobox wrote, and a command can
+// act on a discobox it names some other way (a name, a short ID), so the facts
+// never say which discoboxes it acts on. System tells the judge
+// that a discobox no fact describes has no creator Discobox vouches for.
+//
+// Every discobox named is stated while the cap allows, each with all of its
+// core facts or none, and with room kept for every subject's other sources to
+// be listed or counted; those that do not fit are counted in a last fact, so
+// the judge reads them as undescribed rather than as not named.
+func CommandFacts(asking Discobox, named ...Discobox) []string {
+	subjects := []subject{{role: "The discobox asking", discobox: asking}}
+	used := subjects[0].least()
+	for i, target := range named {
+		s := subject{role: "A discobox the command names by its ID", discobox: target, statesNoCreator: true}
+		need := s.least()
+		if i < len(named)-1 {
+			// The slot that says the rest are not described.
+			need++
+		}
+		if used+need > MaxFacts {
+			break
+		}
+		subjects, used = append(subjects, s), used+s.least()
+	}
+	unstated := len(named) - (len(subjects) - 1)
+	if unstated == 0 {
+		return facts(MaxFacts, subjects...)
+	}
+	out := facts(MaxFacts-1, subjects...)
+	if unstated == 1 {
+		return append(out, "The command names 1 more discobox by its ID than is described here.")
+	}
+	return append(out, fmt.Sprintf("The command names %d more discoboxes by their IDs than are described here.", unstated))
 }
 
 // subject is one discobox a job's facts describe, and the words that say
@@ -110,14 +151,31 @@ type subject struct {
 	statesNoCreator bool
 }
 
+// least is the fewest facts facts states s in: who it is, its primary source
+// or that it has none, its creator when one is said, and, when it has other
+// sources, the one slot kept to list or count them.
+func (s subject) least() int {
+	if strings.TrimSpace(s.discobox.SandboxID) == "" {
+		return 0
+	}
+	n := 2
+	if strings.TrimSpace(s.discobox.CreatedBy) != "" || s.statesNoCreator {
+		n++
+	}
+	if len(s.discobox.Additional) > 0 {
+		n++
+	}
+	return n
+}
+
 // facts states each subject: who it is, its primary source and its creator,
-// and then the other sources of every subject while the cap allows. Every
+// and then the other sources of every subject while limit allows. Every
 // sentence names the discobox it is about, so facts about two read apart. A
 // discobox whose other sources do not all fit is said to have more than are
 // listed, so none of them is left out unremarked; the slot that says so is
 // kept for each subject before any is filled. A discobox with no ID says
 // nothing: a fact about a discobox that cannot be named would be about nobody.
-func facts(subjects ...subject) []string {
+func facts(limit int, subjects ...subject) []string {
 	var out []string
 	named := subjects[:0:0]
 	for _, s := range subjects {
@@ -156,7 +214,7 @@ func facts(subjects ...subject) []string {
 		}
 		reserved--
 		id := strings.TrimSpace(s.discobox.SandboxID)
-		room := MaxFacts - len(out) - reserved
+		room := limit - len(out) - reserved
 		listed := len(additional)
 		if listed > room {
 			listed = max(room-1, 0)

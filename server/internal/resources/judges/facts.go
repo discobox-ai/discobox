@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/discobox-ai/discobox/pkg/hostscope"
@@ -14,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"github.com/discobox-ai/x/id"
 )
 
 // requestFacts is what the judge is told about a request: the discobox asking
@@ -66,6 +68,59 @@ func namedDiscobox(projectID string, request *judge.Request) (id string, segment
 		return "", 0, false
 	}
 	return rest[3], segment + 3, true
+}
+
+// commandFacts is what the judge is told about a command: the discobox asking,
+// read from its row as for a request, and, when the command spends the
+// discobox API's credential, every discobox of the project it names by its ID,
+// in the order it names them (ADR 26-10-14-320 §5); what each was created
+// with, and by whom, is read from its row. An ID is a discobox's only
+// identity, so nothing else names one here: a name or a short ID is a label
+// the CLI resolves, which another discobox can carry or come to match, and
+// the judge is told that a discobox a command names that way has no creator
+// Discobox vouches for (judge.System).
+func (s *Service) commandFacts(ctx context.Context, projectID string, asking *model.Sandbox, host string, command []string) ([]string, error) {
+	gate, known := wellknown.Lookup(wellknown.DiscoboxSandbox)
+	if !known || hostscope.Normalize(host) != hostscope.Normalize(gate.Host()) {
+		return judge.Facts(judge.DiscoboxOf(asking.PolicyFacts())), nil
+	}
+	var named []judge.Discobox
+	for _, targetID := range namedDiscoboxes(command) {
+		target, err := s.store.GetSandbox(ctx, projectID, targetID)
+		if errors.Is(err, store.ErrNotFound) {
+			// A discobox that is not in the project is no target to state,
+			// as for a request.
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		named = append(named, judge.DiscoboxOf(target.PolicyFacts()))
+	}
+	if len(named) == 0 {
+		return judge.Facts(judge.DiscoboxOf(asking.PolicyFacts())), nil
+	}
+	return judge.CommandFacts(judge.DiscoboxOf(asking.PolicyFacts()), named...), nil
+}
+
+// namedDiscoboxes is every discobox ID a command's arguments name, once each,
+// in the order they first name it: an argument that is one, and one inside an
+// argument — a flag's value after "=", a segment of an API path — set apart by
+// characters no ID has. An ID is whole, in either spelling the CLI reads:
+// "sbx_…", and "sbx-…" as a discobox's hostname spells it (id.Canonical).
+func namedDiscoboxes(command []string) []string {
+	var named []string
+	for _, argument := range command {
+		for _, word := range strings.FieldsFunc(argument, func(r rune) bool {
+			return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' && r != '-'
+		}) {
+			full := id.Canonical(id.PrefixSandbox, word)
+			if strings.HasPrefix(full, id.PrefixSandbox+"_") && id.IsGenerated(full) && !slices.Contains(named, full) {
+				named = append(named, full)
+			}
+		}
+	}
+	return named
 }
 
 // delegationFacts is what the judge is told about a delegation: the discobox

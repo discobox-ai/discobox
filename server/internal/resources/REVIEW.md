@@ -1,0 +1,3 @@
+# resources review notes
+
+- A judged command's facts are about the discoboxes it names by their whole ID (`judges.namedDiscoboxes`, either spelling: `sbx_…` and `sbx-…`), and nothing else. An ID is a discobox's only identity; never resolve a name, a short ID or a window's title into a fact or a grant, since another discobox can carry or come to match that label, and stating the discobox it resolves to today hands the judge a decoy. A discobox named any other way is left undescribed, and `judge.System` has the judge read it as having no known creator; that is a judge's reading, which a real model has been seen to miss, so never word a command's facts as the discoboxes it acts on.
