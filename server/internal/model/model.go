@@ -810,7 +810,7 @@ type Pool struct {
 	// ProvisionProgress is what the provider driver is doing to bring this host
 	// up, for a client whose sandbox is waiting for a pool to take it. Unlike
 	// Conditions it is not agent-reported: the phases it names — fetching a VM
-	// image, booting the machine, pulling the pool-agent image — all happen
+	// image, booting the machine, pulling the pool's image — all happen
 	// before there is an agent to report anything.
 	ProvisionProgress   json.RawMessage `gorm:"column:provision_progress;type:text" json:"provisionProgress,omitempty" doc:"Latest provisioning progress reported by the provider driver, such as a VM image fetch or an image pull in flight"`
 	ProvisionProgressAt *time.Time      `gorm:"column:provision_progress_at" json:"provisionProgressAt,omitempty" doc:"When ProvisionProgress was observed" format:"date-time"`

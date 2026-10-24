@@ -22,10 +22,6 @@ setup_file() {
   command -v docker >/dev/null 2>&1 || skip "docker is required"
   docker info >/dev/null 2>&1 || skip "docker daemon is required"
 
-  # The image watcher in `task dev` owns this tag.
-  docker image inspect discobox-pool-agent:local >/dev/null 2>&1 ||
-    skip "discobox-pool-agent:local is missing; run 'task dev' to build it"
-
   # The pool container reaches the control plane over the host network, so the
   # development server's HTTP port has to be up and reachable.
   export DISCOBOX_BATS_PORT="${PORT:-18080}"
@@ -125,7 +121,6 @@ host_gateway() {
 import json
 print(json.dumps({
     "controlPlaneUrl": "$control_plane",
-    "image": "discobox-pool-agent:local",
     "systemd": True,
     "privileged": True,
     "cgroupNsMode": "host",

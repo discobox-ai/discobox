@@ -16,75 +16,23 @@ import (
 func TestMissingImageSpecsRebuildsWhatLeftTheDaemon(t *testing.T) {
 	specs := []imageSpec{
 		{name: baseSpecName, baseImage: "discobox-sandbox-base:local"},
-		{name: "pool-agent", baseImage: "discobox-pool-agent:local", parent: baseSpecName},
+		{name: "other", baseImage: "other:local"},
 	}
 	present := map[string]struct{}{
 		"discobox-sandbox-base:local": {},
-		"discobox-pool-agent:local":   {},
+		"other:local":                 {},
 	}
 
 	if got := specNames(missingFrom(specs, builtIn(present, nil))); len(got) != 0 {
 		t.Fatalf("missing = %v, want none when every image is present", got)
 	}
 
-	delete(present, "discobox-pool-agent:local")
+	// Nothing is built FROM another image, so losing the base rebuilds the base
+	// alone.
+	delete(present, "discobox-sandbox-base:local")
 	got := specNames(missingFrom(specs, builtIn(present, nil)))
-	if len(got) != 1 || got[0] != "pool-agent" {
-		t.Fatalf("missing = %v, want [pool-agent]", got)
-	}
-}
-
-// A rebuilt image is a new base, so everything layered on it has to be rebuilt
-// too — publishing an image built on a base that no longer exists is how the
-// manifest ends up describing something unbuildable. The real chain is base ->
-// pool-agent; the names here are synthetic so the mechanism is tested with more
-// than one child.
-func TestMissingParentRebuildsEveryImageLayeredOnIt(t *testing.T) {
-	specs := []imageSpec{
-		{name: baseSpecName, baseImage: "discobox-sandbox-base:local"},
-		{name: "pool-agent", baseImage: "discobox-pool-agent:local", parent: baseSpecName},
-		{name: "middle", baseImage: "middle:local", parent: baseSpecName},
-		{name: "leaf-a", baseImage: "leaf-a:local", parent: "middle"},
-		{name: "leaf-b", baseImage: "leaf-b:local", parent: "middle"},
-	}
-	present := map[string]struct{}{
-		"discobox-sandbox-base:local": {},
-		"discobox-pool-agent:local":   {},
-		"leaf-a:local":                {},
-		"leaf-b:local":                {},
-	}
-
-	got := specNames(missingFrom(specs, builtIn(present, nil)))
-	want := map[string]bool{"middle": true, "leaf-a": true, "leaf-b": true}
-	if len(got) != len(want) {
-		t.Fatalf("missing = %v, want the middle image and both leaves", got)
-	}
-	for _, name := range got {
-		if !want[name] {
-			t.Fatalf("unexpected rebuild of %q", name)
-		}
-	}
-}
-
-// Losing the shared base takes the pool agent with it. The sweep runs to a
-// fixed point, so a chain deeper than one level (synthetic here) is taken whole,
-// which a single non-repeated sweep would miss.
-func TestMissingSharedBaseRebuildsEveryImageBuiltOnIt(t *testing.T) {
-	specs := []imageSpec{
-		{name: baseSpecName, baseImage: "discobox-sandbox-base:local"},
-		{name: "pool-agent", baseImage: "discobox-pool-agent:local", parent: baseSpecName},
-		{name: "middle", baseImage: "middle:local", parent: baseSpecName},
-		{name: "leaf", baseImage: "leaf:local", parent: "middle"},
-	}
-	present := map[string]struct{}{
-		"discobox-pool-agent:local": {},
-		"middle:local":              {},
-		"leaf:local":                {},
-	}
-
-	got := specNames(missingFrom(specs, builtIn(present, nil)))
-	if len(got) != len(specs) {
-		t.Fatalf("missing = %v, want every image", got)
+	if len(got) != 1 || got[0] != baseSpecName {
+		t.Fatalf("missing = %v, want [%s]", got, baseSpecName)
 	}
 }
 
@@ -100,9 +48,9 @@ func TestMissingBundleLayoutIsExportedAgain(t *testing.T) {
 	}
 	specs := []imageSpec{
 		{name: "harness-codex", devPrefix: "discobox-harness-codex:dev-", bundle: true, layoutDir: dir},
-		{name: "pool-agent", baseImage: "discobox-pool-agent:local"},
+		{name: baseSpecName, baseImage: "discobox-sandbox-base:local"},
 	}
-	present := map[string]struct{}{"discobox-pool-agent:local": {}}
+	present := map[string]struct{}{"discobox-sandbox-base:local": {}}
 	published := []devimage.Bundle{{Reference: devImageTag("discobox-harness-codex:dev-", digest), Digest: digest, Layout: layout}}
 
 	if got := specNames(missingFrom(specs, builtIn(present, published))); len(got) != 0 {

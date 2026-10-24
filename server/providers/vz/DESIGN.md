@@ -17,12 +17,13 @@ Everything is ordered off that:
    store and extracts its boot artifacts. A CLI that launched the server has
    staged it there already (ADR 0113), so on a first run this is local work.
 2. The VM boots and its Docker daemon comes up.
-3. The pool-agent image reaches that daemon. A release pulls its pinned image
-   from the registry; in development, build-mode (`DevelopmentImageSync`)
-   builds the sandbox base and pool-agent images, and the platform and
-   harness bundles, on the daemon's own BuildKit, from the local checkout;
-   the server saves each bundle and serves it to pools (ADR 26-10-16-423 §13).
-4. The engine starts the pool-agent container.
+3. The sandbox base image reaches that daemon. A release pulls its pinned
+   image from the registry; in development, build-mode (`DevelopmentImageSync`)
+   builds it, and the agent, pool, platform and harness bundles, on the
+   daemon's own BuildKit, from the local checkout; the server saves each bundle
+   and serves it to pools (ADR 26-10-16-423 §13).
+4. The engine starts the pool's container and makes it a pool's box (ADR
+   26-10-24-953 §2; see [providers](../DESIGN.md#pool-bundle)).
 
 For the guest, the registry is load-bearing only for a machine's first fetch of
 each pinned digest — made by the CLI before the server starts, when a CLI
@@ -261,9 +262,9 @@ imply a new guest.
 
 It publishes as `discobox-vm`. The name carries no backend because the artifacts
 are not vz's to own — libkrun boots the same image on amd64 — and it is not
-called a pool image because that already means the pool-agent container
-(`dockerworker.DefaultPoolImage`), which this provider exposes as `workerImage`
-beside `guestImage`.
+called a pool image because that means the image a pool's container runs, the
+sandbox base image (`dockerworker.DefaultSandboxBaseImage`), which runs on the
+guest this boots.
 
 The compatibility surface between the two lines is narrow by construction — the
 VSOCK port map, the storage layout, the `discobox-users` share tag and where the

@@ -80,8 +80,8 @@ runtime contract for sandboxes is the pool-agent HTTP API reached through
 `AcquirePoolAgentClient`, `OpenConsole`, `OpenLogs`, and `BuildGuestImage`.
 `dockerworker.Engine` implements it for every Docker backend, and
 `discovm.Runtime` for disco-vm. The engine owns everything
-Docker: launching the pool-agent container with boot env, socket bind and host
-mounts, scoped volumes, the per-pool sandbox proxy network, health waits,
+Docker: launching the pool's container and making it the pool's box (see
+[Pool Bundle](#pool-bundle)), its socket bind and host mounts, scoped volumes, the per-pool sandbox proxy network, health waits,
 config-revision drift detection, and container replacement during repair. It
 hands the pool's size (CPU/memory) to the driver in `VMSpec`, where it sizes
 the VM layer (see Local VM Sizing), and sets no CPU or memory limit on any
@@ -203,9 +203,10 @@ reads the advancing timestamp as proof that a slow provision is still moving
 ## Pool Image Acquisition
 
 Docker does not fetch on container create: an image the daemon does not hold is
-a plain "No such image" error. The engine therefore inspects the configured pool
-image and pulls it if it is absent, before creating the pool-agent container or
-the console (`Engine.ensureImage`). This is the same rule the pool agent applies
+a plain "No such image" error. The engine therefore inspects the configured
+sandbox base image, which the pool's container runs, and pulls it if it is
+absent, before creating the pool's container or the console
+(`Engine.ensureImage`). This is the same rule the pool agent applies
 one level down to the sandbox image, and it is what makes a released binary work
 on a machine that has never built anything.
 
@@ -292,8 +293,8 @@ it until that machine is fenced (see [discovm](discovm/DESIGN.md) and its
 ## Development Image Convergence
 
 The development image watcher publishes a versioned manifest of
-content-addressed sandbox base and pool images, and the platform and harness
-bundles. When its explicit environment flag is enabled, server composition
+content-addressed sandbox base image, and the agent, pool, platform and
+harness bundles. When its explicit environment flag is enabled, server composition
 gives one shared `dockerworker.DevelopmentImageSynchronizer` to every engine.
 In build-mode it also builds each bundle no pool has built yet on the daemon
 it converges, saves it from that daemon into the server's development bundles
@@ -334,7 +335,7 @@ context over the driver's existing transport. Copy-mode addresses images by
 built image ID; build-mode addresses them by a reference content-addressed over
 the image's inputs, which is its freshness key. This is what makes development
 work at all on a host that never installs Docker, and it is the step the `vz`
-backend depends on to build its own pool image after the guest boots.
+backend depends on to build its sandbox base image after the guest boots.
 
 ## Image Reclamation
 
@@ -360,15 +361,16 @@ Reclamation runs from two places, because the two daemons are reached
 differently. `EnsurePool` reclaims on the daemon behind the pool it just
 reconciled, throttled to once per interval per pool: a VM backend has no
 long-lived host Docker client for a standing loop to hold, and one superseded
-pool image per upgrade is exactly what an upgrade's own reconcile then clears.
+sandbox base image per upgrade is exactly what an upgrade's own reconcile then clears.
 The local Docker provider additionally runs a standing hourly loop over the host
 daemon, where development rebuilds deposit an image per build with no pool
 activity required to notice.
 
 `Engine.imageKeepReferences` is what the container check cannot infer: the
-configured pool image, which has no container while every pool is stopped, and
-the development image set, whose sandbox base is what every sandbox container
-is created from, though no container may run it yet.
+configured sandbox base image, which has no container while every pool is
+stopped, and the development image set, whose sandbox base is what every
+sandbox and pool container is created from, though no container may run it
+yet.
 
 That keep set is a startup snapshot, so it cannot be the only protection: an
 image built after the server started is in no keep set at all. `imagereap` never
@@ -461,10 +463,10 @@ placed in the pool's box by the engine.
 
 `Engine.OpenConsole` gives an operator a root shell on the machine hosting a
 pool: a privileged container in the host's PID, IPC, network, UTS, and cgroup
-namespaces, running the pool image, with the host filesystem bind-mounted at
-`/host` and the host's Docker socket in place. (The pool image carries the
-Docker *client* for this, from the sandbox base image's Docker: a console
-with the daemon's socket and no client can inspect it only by hand.) It exists to debug the backends
+namespaces, running the sandbox base image, with the host filesystem
+bind-mounted at `/host` and the host's Docker socket in place. (The base
+carries the Docker *client* for this: a console with the daemon's socket and
+no client can inspect it only by hand.) It exists to debug the backends
 themselves — a WSL or macOS VM that will not bring Docker up, an agent that
 never registers — which is why it is engine-owned and reached through
 `Driver.AcquireDockerClient` rather than through the pool agent: the agent is
@@ -976,7 +978,7 @@ over stdin, and the session makes exactly one private COM call
 `server/providers/digitalocean` implements the `dockerworker.Driver` contract
 with one Docker-enabled Droplet per pool, keyed by the
 `discobox-pool-<pool_id>` tag. Configuration includes the API token, control
-plane URL, region/size/droplet image, pool-agent container image, registered
+plane URL, region/size/droplet image, sandbox base image, registered
 SSH keys plus the matching SSH private key, VPC UUID, tags, and feature flags.
 
 ## Exec Driver

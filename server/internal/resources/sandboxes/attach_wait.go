@@ -58,7 +58,7 @@ const sandboxReachablePollInterval = 500 * time.Millisecond
 //
 // The create path meets the same problem with the same answer, and this is its
 // poolAgentWaitCeiling: long enough for a container recreate that pulls a new
-// pool-agent image, and no longer.
+// sandbox base image, and no longer.
 //
 // A var so a test can reach the ceiling without spending five minutes on it.
 var sandboxPoolHostWaitCeiling = 5 * time.Minute

@@ -28,13 +28,14 @@ Everything is ordered off that:
    downloaded. libkrun is not Linux's default provider, so a CLI does not stage
    these ahead of a first run; the first pool fetches them into the store.
 2. The launcher child boots the VM and its Docker daemon comes up.
-3. With development image sync on, the engine converges the watcher's pool
-   and sandbox-base images onto that daemon — copied from the host daemon
+3. With development image sync on, the engine converges the watcher's
+   sandbox base image onto that daemon — copied from the host daemon
    (copy-mode, the Linux default) or built on the guest daemon's BuildKit from
    the local checkout (build-mode, which builds the bundles there too, for the
    server to save). See
    [Development Image Convergence](../DESIGN.md#development-image-convergence).
-4. The engine starts the pool-agent container.
+4. The engine starts the pool's container and makes it the pool's box (see
+   [Pool Bundle](../DESIGN.md#pool-bundle)).
 
 ## Process boundary
 

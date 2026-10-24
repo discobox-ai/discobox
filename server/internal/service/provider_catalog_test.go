@@ -470,7 +470,7 @@ func TestInitializeDefaultsDoesNotPersistDefaultDockerProviderImageFromEnv(t *te
 	if runtime.GOOS != "linux" {
 		t.Skip("default docker provider is installed on linux")
 	}
-	t.Setenv("DISCOBOX_DOCKER_POOL_IMAGE", "discobox-pool-agent:test")
+	t.Setenv("DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE", "discobox-sandbox-base:test")
 
 	ctx := context.Background()
 	appStore, projectID := newProviderCatalogTestStore(t)
@@ -504,7 +504,7 @@ func createPoolForInstance(ctx context.Context, t *testing.T, svc *service.Servi
 func assertDefaultDockerProviderConfig(t *testing.T, data []byte, expectedImage string) {
 	t.Helper()
 	var cfg struct {
-		Image            string   `json:"image"`
+		Image            string   `json:"sandboxBaseImage"`
 		AgentPort        int      `json:"agentPort"`
 		BindDockerSocket string   `json:"bindDockerSocket"`
 		HostMounts       []string `json:"hostMounts"`

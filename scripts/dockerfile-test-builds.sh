@@ -80,11 +80,13 @@ build_dockerfile() {
       run_task "$dockerfile" build:sandbox-base-image
       ;;
     pool-agent/Dockerfile)
-      run_task "$dockerfile" build:pool-agent-image
+      # Its one artifact is the pool bundle.
+      run_task "$dockerfile" build:pool-agent-bundle
       ;;
     sandbox-agent/Dockerfile)
-      # Its one artifact is the platform bundle; the stages before it build
-      # what it carries.
+      # Its artifacts are the agent bundle and the platform bundle; the stages
+      # before them build what they carry.
+      run_task "$dockerfile" build:agent-bundle
       run_task "$dockerfile" build:platform-bundle
       ;;
     harness/*/Dockerfile)

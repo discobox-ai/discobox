@@ -16,7 +16,7 @@ package guestimage
 // backend ends up quietly booting last release's guest.
 //
 // Published as discobox-vm, with no backend in the name, and deliberately not
-// called a pool image: that already means the pool-agent container
-// (dockerworker.DefaultPoolImage), which every VM provider exposes as
-// workerImage alongside this one.
+// called a pool image: that means the image a pool's container runs, the
+// sandbox base image (dockerworker.DefaultSandboxBaseImage), which runs on the
+// guest this boots.
 const DefaultVMImage = "ghcr.io/discobox-ai/discobox-vm@sha256:af1d6ee4ac0b833c7432f61651b29dacaad7a9c71e7e080ac3dfcdc1c8e46a48"

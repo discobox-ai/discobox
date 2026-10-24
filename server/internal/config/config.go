@@ -196,8 +196,12 @@ type Config struct {
 	// the pool agent's side of the same wire.
 	ImageRetention time.Duration `yaml:"imageRetention" env:"DISCOBOX_IMAGE_RETENTION" doc:"How long an unused Discobox image is kept on the host Docker daemon. The configured value is propagated into pool containers, so one setting governs both. A Go duration; defaults to 24h." example:"72h"`
 
-	// DockerPoolImage overrides the pool agent image the Docker provider runs.
-	DockerPoolImage string `yaml:"dockerPoolImage" env:"DISCOBOX_DOCKER_POOL_IMAGE" doc:"Pool agent image the Docker provider runs. Defaults to the released image for this build." example:"ghcr.io/discobox-ai/discobox-pool-agent:v0.8.0"`
+	// RetiredDockerPoolImage is server.yaml's dockerPoolImage, which named the
+	// pool-agent image a Docker pool's container ran. A pool's container runs
+	// the sandbox base image and is provisioned from the pool bundle (ADR
+	// 26-10-24-953 §2), so it is read only to warn (retiredKeys), and means
+	// nothing.
+	RetiredDockerPoolImage string `yaml:"dockerPoolImage" doc:"Retired, and ignored: a pool's container runs the sandbox base image (dockerSandboxBaseImage), provisioned from the pool bundle (poolAgentBundle). Read with a warning, and refused from the next release." example:"ghcr.io/discobox-ai/discobox-pool-agent:v0.8.0"`
 
 	// DockerSandboxBaseImage overrides the Docker driver's sandbox base image
 	// (ADR 26-10-16-423 §10).
@@ -436,13 +440,15 @@ func Load() (*Config, error) {
 		if !manifest.HasBundles() {
 			return nil, fmt.Errorf("release manifest %s names no bundles: it is from a release before harness bundles, which this server cannot run", cfg.ReleaseManifest)
 		}
+		if !manifest.HasPoolBox() {
+			return nil, fmt.Errorf("release manifest %s names no sandbox base image, agent bundle or pool bundle: it is from a release before a pool was a box, which this server cannot run", cfg.ReleaseManifest)
+		}
 		for slug := range manifest.Bundles.Harnesses {
 			if err := harnessdefs.ValidateSlug(slug); err != nil {
 				return nil, fmt.Errorf("release manifest harness: %w", err)
 			}
 		}
 		cfg.Release = &manifest
-		cfg.DockerPoolImage = manifest.Images.PoolAgent
 		cfg.DockerSandboxBaseImage = manifest.Images.SandboxBase
 		cfg.PoolAgentBundle = manifest.Bundles.PoolAgent
 		cfg.AgentBundle = manifest.Bundles.Agent
@@ -471,13 +477,15 @@ func Load() (*Config, error) {
 }
 
 // retiredKeys are the server.yaml keys read for one release, with a warning,
-// before a release refuses them (ADR 26-10-16-423 §10), each with what to do
-// about it. They mean nothing: the runnable images they named are not built
-// any more, and every box applies the platform bundle instead. The file is
+// before a release refuses them (ADR 26-10-16-423 §10, ADR 26-10-24-953 §2),
+// each with what to do about it. They mean nothing: the runnable images they
+// named are not built any more, and every box, a pool's among them, applies
+// bundles instead. The file is
 // the operator's (ADR 0096), so it is warned rather than refused at once.
 var retiredKeys = []struct{ key, advice string }{
 	{"defaultSandboxImage", "no discobox runs an image of its own any more, so it is ignored; do not move its value to platformBundle, which names a platform bundle and not an image"},
 	{"defaultSandboxImageDigest", "it goes with defaultSandboxImage"},
+	{"dockerPoolImage", "no pool runs a pool-agent image any more: its container runs dockerSandboxBaseImage, provisioned from poolAgentBundle"},
 }
 
 // retiredKeyWarnings names each retired key the file set.

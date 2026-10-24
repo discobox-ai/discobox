@@ -55,16 +55,18 @@ PY
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   rm -f build/discobox
   (cd cli && go build -o ../build/discobox ./cmd/discobox)
-  # Through the Taskfile rather than docker directly: the pool image is built
-  # FROM the sandbox base image, and this target is what knows to build that
-  # first; the base is also every sandbox container's image. The platform
+  # The sandbox base image is every sandbox container's, and every Docker
+  # pool's, which is provisioned from the pool bundle and the agent bundle
+  # (ADR 26-10-24-953 §2). The platform
   # bundle is what the server composes every harness bundle on, and what the
   # agent applies first in every box.
   #
-  # The bundles must be servable to the pool, which fetches them through the
+  # Every bundle must be servable to the pool, which fetches them through the
   # server's asset API; that API reads OCI layouts or registries, not the
   # daemon's :local tags.
-  go tool task build:pool-agent-image
+  go tool task build:sandbox-base-image
+  go tool task build:pool-agent-bundle
+  go tool task build:agent-bundle
   go tool task build:platform-bundle
   go tool task build:harness-stub-bundle
 
@@ -75,7 +77,7 @@ PY
   DISCOBOX_CONFIG_DIR="$DISCOBOX_BATS_CONFIG_DIR" \
   DISCOBOX_CACHE_DIR="$DISCOBOX_BATS_CACHE_DIR" \
   DISCOBOX_STATE_DIR="$DISCOBOX_BATS_STATE_DIR" \
-  DISCOBOX_DOCKER_POOL_IMAGE=discobox-pool-agent:local \
+  DISCOBOX_POOL_AGENT_BUNDLE=discobox-pool-agent-bundle:local \
   DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE=discobox-sandbox-base:local \
   DISPATCHER_ENABLED=true \
   DISPATCHER_POLL_INTERVAL=200ms \
@@ -135,7 +137,7 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
   # Backstop, scoped to this run's pools. Filtering on the ancestor image
   # instead is both too narrow (the project id is generated, never prj_default,
   # so the old filter matched nothing and leaked every pool) and too broad
-  # (discobox-pool-agent:local can share an image ID with a developer's own dev
+  # (discobox-sandbox-base:local can share an image ID with a developer's own dev
   # tag, so it would reap their running pools).
   for pool_id in $pool_ids; do
     docker ps -aq --filter "label=discobox.pool_id=$pool_id" | xargs -r docker rm -f >/dev/null 2>&1 || true
@@ -220,8 +222,8 @@ PY
 # default pool the one that has to be healthy, so this file uses it rather than
 # creating a second provider. Its provider already binds the host Docker socket
 # (so the locally built sandbox base image is visible) and reads PORT for its
-# control-plane URL; DISCOBOX_DOCKER_POOL_IMAGE points it at the locally built
-# pool-agent instead of an unpublished ghcr tag.
+# control-plane URL; DISCOBOX_POOL_AGENT_BUNDLE points it at the locally built
+# pool bundle instead of an unpublished ghcr tag.
 ensure_pool() {
   if [ -s "$DISCOBOX_BATS_POOL_FILE" ]; then
     cat "$DISCOBOX_BATS_POOL_FILE"

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,8 +33,7 @@ var bundleBuilder = flag.String("bundle-builder", "discobox", "Buildx builder fo
 const bundleLayoutDir = "build/assets"
 
 // baseSpecName is the Docker driver's sandbox base image, every sandbox
-// container's, which the pool agent's image builds FROM via the BASE_IMAGE
-// build arg.
+// container's, and the one runnable image the watcher builds.
 const baseSpecName = "sandbox-base"
 
 // platformSpecName is the platform bundle: the sandbox agent Dockerfile's
@@ -63,14 +61,13 @@ const poolAgentBundleEnvKey = "DISCOBOX_POOL_AGENT_BUNDLE"
 const platformBundleEnvKey = "DISCOBOX_PLATFORM_BUNDLE"
 
 type imageSpec struct {
-	name         string
-	baseImage    string
-	devPrefix    string
-	envImageKey  string
-	envDigestKey string
-	buildDir     string
-	buildArgs    []string
-	files        []string
+	name        string
+	baseImage   string
+	devPrefix   string
+	envImageKey string
+	buildDir    string
+	buildArgs   []string
+	files       []string
 	// metadataFile is the authoring-time image.json compacted into metadataArg
 	// at build time, which the Dockerfile turns into a manifest label. Both are
 	// empty for an image whose build labels no manifest.
@@ -84,13 +81,6 @@ type imageSpec struct {
 	contextDir string
 	dockerfile string
 	target     string
-	// parent names the spec whose built image this one builds FROM, and
-	// parentArg the build argument that carries it. The parent's build-arg value
-	// is rewritten to the parent's hashed dev tag so a child pins the exact base
-	// it was built on rather than the mutable :local tag. The one chain is
-	// base -> pool-agent; the bundles are FROM scratch, on no chain.
-	parent    string
-	parentArg string
 	// bundle marks a FROM scratch bundle (ADR 26-10-16-423 §2): never run, so
 	// copy-mode exports it into layoutDir, as an OCI image layout tar named by
 	// its digest, rather than into any Docker daemon, and records it among the
@@ -329,32 +319,9 @@ func publishedBundle(spec imageSpec, published []devimage.Bundle) (devimage.Bund
 // missingFrom is the decision behind missingImageSpecs, over whether each
 // spec's built image or bundle layout is present.
 func missingFrom(specs []imageSpec, present func(imageSpec) bool) []imageSpec {
-	missing := map[string]bool{}
+	var out []imageSpec
 	for _, spec := range specs {
 		if !present(spec) {
-			missing[spec.name] = true
-		}
-	}
-	// A rebuilt image is a new base, so everything layered on it has to be
-	// rebuilt too — otherwise the manifest would publish an image built on a
-	// base that no longer exists: a missing base takes the pool agent with it.
-	// Swept to a fixed point rather than once, so a deeper chain needs nothing
-	// more here.
-	for {
-		grew := false
-		for _, spec := range specs {
-			if spec.parent != "" && missing[spec.parent] && !missing[spec.name] {
-				missing[spec.name] = true
-				grew = true
-			}
-		}
-		if !grew {
-			break
-		}
-	}
-	out := make([]imageSpec, 0, len(missing))
-	for _, spec := range specs {
-		if missing[spec.name] {
 			out = append(out, spec)
 		}
 	}
@@ -443,9 +410,9 @@ func containerdImageStore(driverStatus []byte) bool {
 // buildx builder bundles are exported with (localBundleBuilder); empty, in
 // build mode, where nothing is built here, names none.
 func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpec, error) {
-	// The sandbox base image both agent images build FROM. Its inputs are
-	// folded into theirs below, so a base edit rebuilds them and changes their
-	// content tags rather than leaving them on a base that no longer exists.
+	// The sandbox base image every sandbox container and every Docker pool's
+	// runs (ADR 26-10-24-953 §2). Every bundle is FROM scratch, so none of
+	// them is built on it.
 	baseDir := filepath.Join("server", "providers", "dockerworker", "sandbox-image")
 	baseSeen := map[string]struct{}{}
 	if err := addTree(filepath.Join(repoRoot, baseDir), baseSeen); err != nil {
@@ -473,12 +440,9 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 	}
 	// The pool bundle is FROM scratch: the agent's build and the features it
 	// carries, and not the shared base.
-	poolAgentBundleSeen := maps.Clone(workerSeen)
+	poolAgentBundleSeen := workerSeen
 	if err := addTree(filepath.Join(workerRoot, "bundle", "features"), poolAgentBundleSeen); err != nil {
 		return nil, err
-	}
-	for file := range baseSeen {
-		workerSeen[file] = struct{}{}
 	}
 	sandboxRoot := filepath.Join(repoRoot, "sandbox-agent")
 	sandboxSeen := map[string]struct{}{}
@@ -543,24 +507,8 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 			files:       sortedFiles(baseSeen),
 		},
 		{
-			name:         "pool-agent",
-			baseImage:    "discobox-pool-agent:local",
-			devPrefix:    "discobox-pool-agent:dev-",
-			envImageKey:  "DISCOBOX_DOCKER_POOL_IMAGE",
-			envDigestKey: "DISCOBOX_DOCKER_POOL_IMAGE_DIGEST",
-			buildDir:     repoRoot,
-			buildArgs: []string{"build", "-f", "pool-agent/Dockerfile",
-				"--build-arg", "BASE_IMAGE=discobox-sandbox-base:local",
-				"-t", "discobox-pool-agent:local", "."},
-			contextDir: repoRoot,
-			dockerfile: "pool-agent/Dockerfile",
-			parent:     baseSpecName,
-			parentArg:  "BASE_IMAGE",
-			files:      sortedFiles(workerSeen),
-		},
-		{
-			// The pool agent for a pool machine booted from a driver base
-			// (ADR 26-10-23-551 §2), the image's agent by name of its stage.
+			// The pool bundle, a pool's box's one bundle (ADR 26-10-24-953
+			// §2).
 			name:        poolAgentBundleSpecName,
 			devPrefix:   "discobox-pool-agent-bundle:dev-",
 			envImageKey: poolAgentBundleEnvKey,
@@ -855,28 +803,9 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 			changedSpecs = append(changedSpecs, spec)
 		}
 	}
-	// An image is built after whatever it builds FROM, and is handed that
-	// parent's content-hashed dev tag rather than the mutable :local one. A child
-	// can change on its own while its parent is unchanged; in that case the
-	// parent's current dev tag is resolved from its built :local image.
-	ordered := parentsFirst(changedSpecs)
-	built := map[string]string{}
 	exported := map[string]devimage.Bundle{}
-	for _, spec := range ordered {
-		parentImage := ""
-		if spec.parent != "" {
-			resolved, ok := built[spec.parent]
-			if !ok {
-				var err error
-				resolved, err = resolveParentImage(ctx, repoRoot, allSpecs, spec.parent)
-				if err != nil {
-					return err
-				}
-			}
-			parentImage = resolved
-		}
+	for _, spec := range changedSpecs {
 		if spec.bundle {
-			// Nothing builds FROM a bundle, so it has no tag to hand on.
 			bundle, err := buildBundle(ctx, spec)
 			if err != nil {
 				return err
@@ -884,11 +813,9 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 			exported[spec.name] = bundle
 			continue
 		}
-		image, _, err := buildImage(ctx, spec, parentImage)
-		if err != nil {
+		if err := buildImage(ctx, spec); err != nil {
 			return err
 		}
-		built[spec.name] = image
 	}
 	manifest, err := developmentImages(ctx, repoRoot, allSpecs, exported, published)
 	if err != nil {
@@ -986,9 +913,6 @@ func developmentImageEnv(specs []imageSpec, manifest devimage.Manifest, manifest
 		if spec.envImageKey != "" {
 			values[spec.envImageKey] = entry.Reference
 		}
-		if spec.envDigestKey != "" {
-			values[spec.envDigestKey] = entry.ID
-		}
 	}
 	if len(used) != len(manifest.Images) {
 		return nil, fmt.Errorf("development image manifest has %d unexpected images", len(manifest.Images)-len(used))
@@ -1032,78 +956,11 @@ func developmentImages(ctx context.Context, repoRoot string, specs []imageSpec, 
 	return devimage.NewManifest(images, bundles)
 }
 
-// parentsFirst returns specs ordered so an image is built after the image it
-// builds FROM. A spec whose parent is not in this set is ready immediately —
-// that is the pass that rebuilds one harness while its base is unchanged.
-func parentsFirst(specs []imageSpec) []imageSpec {
-	ordered := make([]imageSpec, 0, len(specs))
-	placed := make(map[string]bool, len(specs))
-	// The graph is a shallow tree (base -> agents -> harnesses), so sweeping
-	// until nothing new can be placed is enough and needs no cycle bookkeeping.
-	for len(ordered) < len(specs) {
-		progressed := false
-		for _, spec := range specs {
-			if placed[spec.name] {
-				continue
-			}
-			if spec.parent != "" && containsSpec(specs, spec.parent) && !placed[spec.parent] {
-				continue
-			}
-			ordered = append(ordered, spec)
-			placed[spec.name] = true
-			progressed = true
-		}
-		if progressed {
-			continue
-		}
-		// Only reachable from a cycle in the parent links, which would otherwise
-		// spin here forever. Nothing orders the remainder, so keep spec order.
-		for _, spec := range specs {
-			if !placed[spec.name] {
-				ordered = append(ordered, spec)
-				placed[spec.name] = true
-			}
-		}
-	}
-	return ordered
-}
-
-// resolveParentImage returns the named spec's current dev tag by inspecting its
-// built :local image, for passes that rebuild a child without rebuilding what it
-// is built FROM.
-//
-// The tag is applied, not just derived. Only buildImage creates a dev tag, and
-// only for a build this watcher ran; anything else that rebuilds the base in
-// place — task build:sandbox-base-image, build:images, the Dockerfile hook — moves
-// :local to an image ID no dev tag names. A derived-but-absent tag is not a
-// local miss docker reports: it is a repository on Docker Hub, and the child's
-// FROM goes off to pull it. Tagging is exact rather than approximate, since the
-// ID came from :local itself, and is idempotent for the tag that already exists.
-func resolveParentImage(ctx context.Context, repoRoot string, specs []imageSpec, name string) (string, error) {
-	for _, spec := range specs {
-		if spec.name != name {
-			continue
-		}
-		imageID, err := commandOutput(ctx, repoRoot, "docker", "image", "inspect", "-f", "{{.Id}}", spec.baseImage)
-		if err != nil {
-			return "", fmt.Errorf("resolve %s base image: %w", spec.name, err)
-		}
-		image := devImageTag(spec.devPrefix, strings.TrimSpace(imageID))
-		if err := runCommand(ctx, repoRoot, "docker", "tag", spec.baseImage, image); err != nil {
-			return "", fmt.Errorf("tag %s as %s: %w", spec.baseImage, image, err)
-		}
-		return image, nil
-	}
-	return "", fmt.Errorf("no %s spec configured", name)
-}
-
 // renderBuildArgs fills in the placeholders a spec's docker argv carries: the
-// manifest metadata read from image.json, and the reference of the image this
-// one builds FROM. A missed parent fails quietly — the build succeeds against
-// the mutable :local tag — and a missed metadata argument fails the build
-// only because the Dockerfiles refuse an empty one, so this is separated from
-// the docker invocation to be assertable on its own.
-func renderBuildArgs(spec imageSpec, parentImage string) ([]string, error) {
+// manifest metadata read from image.json. A missed metadata argument fails the
+// build only because the Dockerfiles refuse an empty one, so this is separated
+// from the docker invocation to be assertable on its own.
+func renderBuildArgs(spec imageSpec) ([]string, error) {
 	buildArgs := append([]string{}, spec.buildArgs...)
 	replace := func(prefix, value string) {
 		for i, arg := range buildArgs {
@@ -1119,9 +976,6 @@ func renderBuildArgs(spec imageSpec, parentImage string) ([]string, error) {
 		}
 		replace(spec.metadataArg+"=", metadata)
 	}
-	if spec.parentArg != "" && parentImage != "" {
-		replace(spec.parentArg+"=", parentImage)
-	}
 	return buildArgs, nil
 }
 
@@ -1132,37 +986,37 @@ func renderBuildArgs(spec imageSpec, parentImage string) ([]string, error) {
 // fetches again.
 var bundleOutputArgs = []string{"--output", "type=docker,rewrite-timestamp=true", "--build-arg", "SOURCE_DATE_EPOCH=" + harness.BundleSourceDateEpoch}
 
-func buildImage(ctx context.Context, spec imageSpec, parentImage string) (string, string, error) {
-	buildArgs, err := renderBuildArgs(spec, parentImage)
+func buildImage(ctx context.Context, spec imageSpec) error {
+	buildArgs, err := renderBuildArgs(spec)
 	if err != nil {
-		return "", "", err
+		return err
 	}
 	if spec.bundle {
 		buildArgs = append(buildArgs[:1:1], append(bundleOutputArgs, buildArgs[1:]...)...)
 	}
 	if err := runCommand(ctx, spec.buildDir, "docker", buildArgs...); err != nil {
-		return "", "", err
+		return err
 	}
 	imageID, err := commandOutput(ctx, spec.buildDir, "docker", "image", "inspect", "-f", "{{.Id}}", spec.baseImage)
 	if err != nil {
-		return "", "", err
+		return err
 	}
 	imageID = strings.TrimSpace(imageID)
-	// Every image gets the hashed dev tag, including one nothing runs: it is what
-	// a child's FROM pins, so a base that is rebuilt in place cannot be silently
-	// swapped under an image already built on it.
+	// The hashed dev tag is the reference the manifest publishes, so a
+	// destination copies this exact build rather than whatever :local names by
+	// then.
 	image := devImageTag(spec.devPrefix, imageID)
 	if err := runCommand(ctx, spec.buildDir, "docker", "tag", spec.baseImage, image); err != nil {
-		return "", "", err
+		return err
 	}
 	log.Printf("built %s as %s (%s)", spec.name, image, imageID)
-	return image, imageID, nil
+	return nil
 }
 
 // buildBundle exports a bundle's stage to the layout its digest names, which
 // it is renamed to only once the export is whole.
 func buildBundle(ctx context.Context, spec imageSpec) (devimage.Bundle, error) {
-	buildArgs, err := renderBuildArgs(spec, "")
+	buildArgs, err := renderBuildArgs(spec)
 	if err != nil {
 		return devimage.Bundle{}, err
 	}

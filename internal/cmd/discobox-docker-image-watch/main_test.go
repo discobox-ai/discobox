@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -32,8 +31,8 @@ func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {
 
 func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 	specs, _ := loadDockerImageSpecs(t)
-	if len(specs) != 12 {
-		t.Fatalf("image specs = %d, want base, worker, the pool-agent bundle, the agent, platform, and seven harnesses' bundles", len(specs))
+	if len(specs) != 11 {
+		t.Fatalf("image specs = %d, want base, the pool-agent bundle, the agent, platform, and seven harnesses' bundles", len(specs))
 	}
 
 	gotNames := make([]string, 0, len(specs))
@@ -50,14 +49,11 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 			t.Fatalf("%s does not update an image reference in .env", spec.name)
 		}
 		gotEnvKeys[spec.envImageKey] = true
-		if spec.envDigestKey != "" {
-			gotEnvKeys[spec.envDigestKey] = true
-		}
 	}
 	// No harness is a runnable image (issue #270): a harness is its bundle
 	// alone, and the sandbox agent ships only as the agent bundle (ADR
 	// 26-10-24-953 §2).
-	wantNames := []string{baseSpecName, "pool-agent", poolAgentBundleSpecName, agentSpecName, "platform"}
+	wantNames := []string{baseSpecName, poolAgentBundleSpecName, agentSpecName, "platform"}
 	for _, name := range []string{"codex", "claude-code", "opencode", "copilot", "omp", "pi", "shell"} {
 		wantNames = append(wantNames, "harness-"+name)
 	}
@@ -65,8 +61,6 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 		t.Fatalf("image build order = %#v, want %#v", gotNames, wantNames)
 	}
 	for _, key := range []string{
-		"DISCOBOX_DOCKER_POOL_IMAGE",
-		"DISCOBOX_DOCKER_POOL_IMAGE_DIGEST",
 		"DISCOBOX_PLATFORM_BUNDLE",
 		"DISCOBOX_AGENT_BUNDLE",
 		"DISCOBOX_POOL_AGENT_BUNDLE",
@@ -86,6 +80,13 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 		if strings.HasPrefix(key, "DISCOBOX_DEFAULT_SANDBOX_IMAGE") ||
 			(strings.HasPrefix(key, "DISCOBOX_HARNESS_") && strings.HasSuffix(key, "_IMAGE")) {
 			t.Errorf("watcher still writes the runnable-image key %s", key)
+		}
+	}
+	// The pool-agent image is retired: a Docker pool's container runs the
+	// sandbox base image, provisioned from bundles (ADR 26-10-24-953 §2).
+	for _, key := range []string{"DISCOBOX_DOCKER_POOL_IMAGE", "DISCOBOX_DOCKER_POOL_IMAGE_DIGEST"} {
+		if gotEnvKeys[key] {
+			t.Errorf("watcher still writes the retired pool-agent image key %s", key)
 		}
 	}
 }
@@ -165,7 +166,7 @@ func TestDockerImageSpecsIncludeIndependentlyWatchedHarnesses(t *testing.T) {
 			t.Fatalf("bundle watcher for %s does not export its bundle into %s: %#v", name, layoutDir, bundle)
 		}
 		// FROM scratch: nothing of the sandbox agent is an input of the bundle.
-		if contains(bundle.files, sandboxDockerfile) || strings.Contains(args, "SANDBOX_AGENT_IMAGE") || bundle.parent != "" {
+		if contains(bundle.files, sandboxDockerfile) || strings.Contains(args, "SANDBOX_AGENT_IMAGE") {
 			t.Fatalf("%s bundle is built on the sandbox agent image: %#v", name, bundle)
 		}
 		if !bundle.bundle {
@@ -195,7 +196,7 @@ func TestDockerImageSpecsBuildThePlatformBundleFromItsOwnStage(t *testing.T) {
 	args := strings.Join(platform.buildArgs, " ")
 	if !strings.Contains(args, "-f sandbox-agent/Dockerfile --target platform") ||
 		!strings.Contains(args, "--output type=oci,dest="+partialLayout(filepath.Join(repoRoot, "build", "assets", "discobox-platform"))) ||
-		platform.envImageKey != "DISCOBOX_PLATFORM_BUNDLE" || !platform.bundle || platform.parent != "" {
+		platform.envImageKey != "DISCOBOX_PLATFORM_BUNDLE" || !platform.bundle {
 		t.Fatalf("platform bundle spec = %#v", platform)
 	}
 	for _, rel := range []string{"sandbox-agent/Dockerfile", "sandbox-agent/image.json", "harness/prompt-answer.sh"} {
@@ -217,8 +218,6 @@ func TestUpdateEnvUpdatesAllImageReferencesWithoutDroppingUserValues(t *testing.
 		t.Fatal(err)
 	}
 	values := map[string]string{
-		"DISCOBOX_DOCKER_POOL_IMAGE":          "discobox-pool-agent:dev-worker",
-		"DISCOBOX_DOCKER_POOL_IMAGE_DIGEST":   "sha256:worker",
 		"DISCOBOX_PLATFORM_BUNDLE":            "discobox-platform:dev-platform",
 		"DISCOBOX_HARNESS_CODEX_BUNDLE":       "discobox-harness-codex:dev-codex",
 		"DISCOBOX_HARNESS_CLAUDE_CODE_BUNDLE": "discobox-harness-claude-code:dev-claude",
@@ -246,16 +245,16 @@ func TestUpdateEnvUpdatesAllImageReferencesWithoutDroppingUserValues(t *testing.
 func TestDevelopmentImageEnvPublishesTheCompleteManifestAfterAPartialBuild(t *testing.T) {
 	specs := []imageSpec{
 		{name: baseSpecName, devPrefix: "m-base:dev-", envImageKey: "BASE"},
-		{name: "z-image", devPrefix: "z-image:dev-", envImageKey: "ZIMAGE", envDigestKey: "ZIMAGE_DIGEST"},
+		{name: "z-image", devPrefix: "z-image:dev-", envImageKey: "ZIMAGE"},
 		{name: "platform", devPrefix: "platform:dev-", envImageKey: "PLATFORM", bundle: true},
-		{name: "pool-agent", devPrefix: "a-pool:dev-", envImageKey: "POOL", envDigestKey: "POOL_DIGEST"},
+		{name: "a-image", devPrefix: "a-image:dev-", envImageKey: "AIMAGE"},
 	}
 	// A bundle is not among the images a pool daemon is given, but its
 	// reference is still published: the server serves it from its layout.
 	platformDigest := "sha256:" + strings.Repeat("ab", 32)
 	manifest, err := devimage.NewManifest([]devimage.Image{
 		{Reference: "z-image:dev-new", ID: "sha256:z-new"},
-		{Reference: "a-pool:dev-new", ID: "sha256:pool-new"},
+		{Reference: "a-image:dev-new", ID: "sha256:a-new"},
 		{Reference: "m-base:dev-new", ID: "sha256:base-new"},
 	}, []devimage.Bundle{{Reference: "platform:dev-new", Digest: platformDigest, Layout: filepath.Join(t.TempDir(), "platform.tar")}})
 	if err != nil {
@@ -267,8 +266,8 @@ func TestDevelopmentImageEnvPublishesTheCompleteManifestAfterAPartialBuild(t *te
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		"POOL": "a-pool:dev-new", "POOL_DIGEST": "sha256:pool-new",
-		"ZIMAGE": "z-image:dev-new", "ZIMAGE_DIGEST": "sha256:z-new",
+		"AIMAGE":         "a-image:dev-new",
+		"ZIMAGE":         "z-image:dev-new",
 		"PLATFORM":       "platform:dev-new",
 		"BASE":           "m-base:dev-new",
 		devimage.SyncEnv: "true", devimage.ManifestEnv: "/tmp/manifest.json",
@@ -278,93 +277,9 @@ func TestDevelopmentImageEnvPublishesTheCompleteManifestAfterAPartialBuild(t *te
 	}
 }
 
-// Every image built FROM another must both declare that parent and carry the
-// build argument buildImage rewrites, or it silently builds on the mutable
-// :local tag instead of the exact base it was meant to pin.
-func TestSpecsThreadTheImageTheyBuildFrom(t *testing.T) {
-	// Bundles are FROM scratch, so only the pool agent builds FROM another
-	// image: the one chain is base -> pool-agent.
-	wantParents := map[string]string{
-		baseSpecName:            "",
-		"pool-agent":            baseSpecName,
-		poolAgentBundleSpecName: "",
-		agentSpecName:           "",
-		platformSpecName:        "",
-	}
-	wantArgs := map[string]string{
-		"pool-agent": "BASE_IMAGE",
-	}
-	for _, harnessImage := range harnessImages {
-		wantParents["harness-"+harnessImage.name] = ""
-	}
-	specs, _ := loadDockerImageSpecs(t)
-	for _, spec := range specs {
-		want, ok := wantParents[spec.name]
-		if !ok {
-			t.Fatalf("unexpected image spec %q", spec.name)
-		}
-		if spec.parent != want {
-			t.Errorf("%s parent = %q, want %q", spec.name, spec.parent, want)
-		}
-		wantArg := wantArgs[spec.name]
-		if spec.parentArg != wantArg {
-			t.Errorf("%s parentArg = %q, want %q", spec.name, spec.parentArg, wantArg)
-		}
-		if wantArg == "" {
-			continue
-		}
-		hasArg := false
-		for _, arg := range spec.buildArgs {
-			if strings.HasPrefix(arg, wantArg+"=") {
-				hasArg = true
-			}
-		}
-		if !hasArg {
-			t.Errorf("%s has no %s build arg to rewrite: %#v", spec.name, wantArg, spec.buildArgs)
-		}
-	}
-}
-
-func TestParentsFirstOrdersEveryBaseBeforeWhatBuildsOnIt(t *testing.T) {
-	in := []imageSpec{
-		{name: "leaf-a", parent: "middle"},
-		{name: "middle", parent: baseSpecName},
-		{name: "leaf-b", parent: "middle"},
-		{name: baseSpecName},
-		{name: "pool-agent", parent: baseSpecName},
-	}
-	got := parentsFirst(in)
-	if len(got) != len(in) {
-		t.Fatalf("ordering dropped specs: got %d want %d", len(got), len(in))
-	}
-	at := map[string]int{}
-	for i, spec := range got {
-		at[spec.name] = i
-	}
-	for _, spec := range in {
-		if spec.parent == "" {
-			continue
-		}
-		if at[spec.parent] > at[spec.name] {
-			t.Errorf("%s built before its base %s: %v", spec.name, spec.parent, specNames(got))
-		}
-	}
-}
-
-// A pass that rebuilds only a child must not stall waiting for a parent that is
-// not in the set: that is the common case, the pool agent edited on an
-// unchanged base.
-func TestParentsFirstPlacesSpecsWhoseParentIsNotInTheSet(t *testing.T) {
-	in := []imageSpec{{name: "pool-agent", parent: baseSpecName}}
-	got := parentsFirst(in)
-	if len(got) != 1 || got[0].name != "pool-agent" {
-		t.Fatalf("parentsFirst = %v, want [pool-agent]", specNames(got))
-	}
-}
-
 func TestDevImageTag(t *testing.T) {
-	got := devImageTag("discobox-pool-agent:dev-", "sha256:0123456789abcdef0000")
-	if got != "discobox-pool-agent:dev-0123456789ab" {
+	got := devImageTag("discobox-sandbox-base:dev-", "sha256:0123456789abcdef0000")
+	if got != "discobox-sandbox-base:dev-0123456789ab" {
 		t.Fatalf("devImageTag = %q", got)
 	}
 }
@@ -537,91 +452,6 @@ func harnessDir(name string) string {
 		return "codex-cli"
 	}
 	return name
-}
-
-// The placeholder in a spec's argv must actually be replaced with the resolved
-// parent reference. Missing it is silent: the build succeeds against the
-// mutable :local tag, and the image is pinned to a base that can be replaced
-// underneath it.
-func TestRenderBuildArgsPinsTheResolvedParentReference(t *testing.T) {
-	spec := imageSpec{
-		name:      "pool-agent",
-		parent:    baseSpecName,
-		parentArg: "BASE_IMAGE",
-		buildArgs: []string{"build", "-f", "pool-agent/Dockerfile",
-			"--build-arg", "BASE_IMAGE=discobox-sandbox-base:local",
-			"-t", "discobox-pool-agent:local", "."},
-	}
-	got, err := renderBuildArgs(spec, "discobox-sandbox-base:dev-0123456789ab")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !contains(got, "BASE_IMAGE=discobox-sandbox-base:dev-0123456789ab") {
-		t.Fatalf("parent reference not pinned: %#v", got)
-	}
-	if contains(got, "BASE_IMAGE=discobox-sandbox-base:local") {
-		t.Fatalf("mutable base tag survived: %#v", got)
-	}
-	if contains(spec.buildArgs, "BASE_IMAGE=discobox-sandbox-base:dev-0123456789ab") {
-		t.Fatal("renderBuildArgs mutated the spec's own argv")
-	}
-}
-
-// A pass that rebuilds a child while its parent is unchanged resolves the parent
-// separately; when there is nothing to resolve the spec's own default must stand
-// rather than being blanked.
-func TestRenderBuildArgsLeavesTheDefaultWhenThereIsNoParentToPin(t *testing.T) {
-	spec := imageSpec{
-		name:      "pool-agent",
-		parent:    baseSpecName,
-		parentArg: "BASE_IMAGE",
-		buildArgs: []string{"build", "--build-arg", "BASE_IMAGE=discobox-sandbox-base:local"},
-	}
-	got, err := renderBuildArgs(spec, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !contains(got, "BASE_IMAGE=discobox-sandbox-base:local") {
-		t.Fatalf("default base tag was clobbered: %#v", got)
-	}
-}
-
-// The dev tag a child's FROM pins has to exist locally, not merely be derivable:
-// docker reads a tag it cannot find as a Docker Hub repository and goes off to
-// pull it, so a base rebuilt by anything other than this watcher — task
-// build:sandbox-base-image, the Dockerfile hook — fails the child's build with a
-// registry error rather than a missing-image one.
-func TestResolveParentImageTagsTheBaseItResolves(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell script on PATH")
-	}
-	calls := filepath.Join(t.TempDir(), "calls")
-	repoRoot := fakeDockerPath(t, "sha256:c2afa1b19563247d43a4b02802287dc907cd62e04039f0652488f45a7d07b9c9", calls)
-	specs := []imageSpec{{name: baseSpecName, baseImage: "discobox-sandbox-base:local", devPrefix: "discobox-sandbox-base:dev-"}}
-
-	got, err := resolveParentImage(t.Context(), repoRoot, specs, baseSpecName)
-	if err != nil {
-		t.Fatalf("resolve parent image: %v", err)
-	}
-	if want := "discobox-sandbox-base:dev-c2afa1b19563"; got != want {
-		t.Fatalf("resolved = %q, want %q", got, want)
-	}
-	if want := "tag discobox-sandbox-base:local discobox-sandbox-base:dev-c2afa1b19563"; !strings.Contains(readFile(t, calls), want) {
-		t.Fatalf("docker calls = %q, want the resolved tag applied", readFile(t, calls))
-	}
-}
-
-// fakeDockerPath puts a docker on PATH that answers `image inspect` with imageID
-// and records every invocation in calls, and returns a directory to run in.
-func fakeDockerPath(t *testing.T, imageID, calls string) string {
-	t.Helper()
-	dir := t.TempDir()
-	script := "#!/bin/sh\necho \"$@\" >> " + calls + "\ncase \"$1 $2\" in\n'image inspect') echo " + imageID + " ;;\nesac\n"
-	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return dir
 }
 
 func readFile(t *testing.T, path string) string {

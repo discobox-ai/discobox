@@ -14,18 +14,18 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
-// ensureImage makes the pool-agent image present on cli's daemon, pulling it if
-// it is not.
+// ensureImage makes the image a pool's container runs, the sandbox base image,
+// present on cli's daemon, pulling it if it is not.
 //
 // Docker does not pull on ContainerCreate: an absent image is a plain "No such
 // image" error, not a fetch. Nothing else fills the gap for this image either.
 // DevelopmentImageSync side-loads it from the developer's own daemon, which is
 // exactly what a development build wants and exactly what a released binary
 // does not have — it is nil there, so a release reached ContainerCreate with
-// the pool daemon holding no such image and no way to get one. The sandbox
-// image was never affected because the pool agent pulls that itself
-// (sandboxruntime.ensureImageAvailable); this is the same rule applied one
-// level up, to the image that pool agent ships in.
+// the pool daemon holding no such image and no way to get one. A sandbox's
+// image is the pool agent's to pull (sandboxruntime.ensureImageAvailable);
+// this is the same rule applied one level up, to the image the pool's own
+// container runs, the same sandbox base image (ADR 26-10-24-953 §2).
 //
 // Inspect first rather than pulling unconditionally: a development image tag
 // exists on no registry, so a pull would fail on the very images that are
@@ -43,23 +43,24 @@ func (e *Engine) ensureImage(ctx context.Context, lease *DockerClientLease, pool
 	if !ok {
 		return "", err
 	}
-	slog.WarnContext(ctx, "launching a superseded pool agent: the configured image could not be pulled",
+	slog.WarnContext(ctx, "launching a pool on a superseded sandbox base image: the configured image could not be pulled",
 		"pool", poolID, "configured_image", e.cfg.SandboxBaseImage, "image", fallback, "error", err)
 	return fallback, nil
 }
 
-// fallbackPoolImage is a pool-agent image already on cli's daemon to launch
-// when the configured one cannot be had.
+// fallbackPoolImage is a sandbox base image already on cli's daemon to launch
+// a pool's container from when the configured one cannot be had.
 //
-// A pool whose agent is a release behind still schedules sandboxes; a pool with
-// no agent at all schedules nothing. A registry that is briefly unreachable —
+// A pool on a base image a release behind still schedules sandboxes; a pool
+// with no container at all schedules nothing. Its agent and its bundles are
+// the box's own, placed in it whatever image it runs. A registry that is briefly unreachable —
 // the guest's own boot race against DHCP is one way to get there — is not worth
 // taking a working pool offline over, so a superseded image that is already
 // local beats failing the reconcile.
 //
-// Only the configured image's own repository is considered: the pool agent is
-// the one thing this may launch, and no other image on the daemon substitutes
-// for it. The most recently built tag wins, which is the newest release the
+// Only the configured image's own repository is considered: the sandbox base
+// image is the one thing this may launch, and no other image on the daemon
+// substitutes for it. The most recently built tag wins, which is the newest release the
 // daemon has ever held. Build time rather than local arrival time, because it
 // orders releases the way releases are ordered and costs no per-image inspect
 // to read.

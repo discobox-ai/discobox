@@ -87,8 +87,8 @@ type Options struct {
 	// rule config applies.
 	ListenEndpoints []string
 	// ServerDefaults are the provider settings the server configures rather
-	// than any one provider instance: the pool-agent image override and the
-	// host daemon's image retention window.
+	// than any one provider instance: the sandbox base image and bundle
+	// overrides, and the host daemon's image retention window.
 	ServerDefaults dockerworker.ServerDefaults
 	// WSLCCommand overrides the WSL Containers program the Windows host is
 	// checked for.

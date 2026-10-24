@@ -10,7 +10,7 @@ import "strings"
 // has no published bundle to reach for. A release overwrites both at link time
 // with the registry and tag of the bundles built for that release, which is
 // why they are vars and not consts, and is the same treatment
-// dockerworker.DefaultPoolImage gets.
+// dockerworker.DefaultSandboxBaseImage gets.
 //
 // One pair for every bundle rather than a full reference per harness: a
 // release publishes them together, to one registry, under one tag, and

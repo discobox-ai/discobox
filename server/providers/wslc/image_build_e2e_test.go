@@ -16,13 +16,15 @@ import (
 
 // TestDevelopmentImageBuildE2E proves the development image build-mode path end
 // to end on Windows: with no Docker daemon on the host, the production
-// DevelopmentImageSynchronizer builds the real pool-agent image inside a wslc
-// VM through that VM's embedded BuildKit, reached over the wslc bridge.
+// DevelopmentImageSynchronizer builds the real sandbox base image, which a
+// pool's container runs, inside a wslc VM through that VM's embedded BuildKit,
+// reached over the wslc bridge.
 //
 // The VM storage directory is deliberately stable rather than t.TempDir(), so
 // the persisted /var/lib/docker keeps the BuildKit layer cache between runs —
 // the same property that makes this fast for real development. The first run is
-// slow (it pulls the base images and compiles the agent in the guest).
+// slow (it pulls the distribution image and installs its packages in the
+// guest).
 //
 //	$env:DISCOBOX_WSLC_E2E="1"; go test -run TestDevelopmentImageBuildE2E -v -timeout 30m ./providers/wslc/
 func TestDevelopmentImageBuildE2E(t *testing.T) {
@@ -34,8 +36,9 @@ func TestDevelopmentImageBuildE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve repo root: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(repoRoot, "pool-agent", "Dockerfile")); err != nil {
-		t.Fatalf("repo root %s does not contain pool-agent/Dockerfile: %v", repoRoot, err)
+	baseDir := filepath.Join(repoRoot, "server", "providers", "dockerworker", "sandbox-image")
+	if _, err := os.Stat(filepath.Join(baseDir, "Dockerfile")); err != nil {
+		t.Fatalf("repo root %s does not contain the sandbox base image's Dockerfile: %v", repoRoot, err)
 	}
 
 	driver, err := NewDriver(DriverConfig{
@@ -64,12 +67,12 @@ func TestDevelopmentImageBuildE2E(t *testing.T) {
 
 	// A unique reference per run is what build-mode uses for freshness, mirroring
 	// the dev-<timestamp> tag the image watcher writes.
-	reference := "discobox-pool-agent:e2e-" + time.Now().UTC().Format("20060102150405")
+	reference := "discobox-sandbox-base:e2e-" + time.Now().UTC().Format("20060102150405")
 	sync, err := dockerworker.NewDevelopmentImageSynchronizer([]devimage.Image{{
 		Reference: reference,
 		Build: &devimage.BuildSpec{
-			Dockerfile: "pool-agent/Dockerfile",
-			Context:    repoRoot,
+			Dockerfile: "Dockerfile",
+			Context:    baseDir,
 			Platform:   "linux/amd64",
 		},
 	}}, nil)

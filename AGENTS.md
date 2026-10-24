@@ -27,7 +27,8 @@
 - `server/providers`: Docker, VM, cloud, and pool-backed provider implementations.
   `server/providers/dockerworker/sandbox-image` is the Docker driver's Debian
   sandbox base image every sandbox container runs, with its platform and
-  harness bundles applied, and the pool-agent image is built FROM.
+  harness bundles applied, and every Docker pool's container, with the pool
+  bundle applied.
 - `pool-agent`: nested Go module for the pool agent implementation.
 - `pool-agent/cmd/discobox-pool-agent`: pool agent entrypoint.
 - `sandbox-agent`: nested Go module for the sandbox agent runtime environment, and the platform bundle's build context.
@@ -42,7 +43,7 @@
   proxy) rather than a library package.
 - `internal/cmd`: development and build tools, under `internal` because they are
   this repository's own and nothing outside it should build them:
-  `discobox-docker-image-watch` (local sandbox base and pool-agent image, and
+  `discobox-docker-image-watch` (local sandbox base image, and agent, pool,
   platform and harness bundle, rebuild watcher), `discobox-dev-lock` (one `task dev` loop per checkout),
   `discobox-gzip` (portable file compression for the build),
   `discobox-server-manifest` (the server manifest a release CLI is linked with),

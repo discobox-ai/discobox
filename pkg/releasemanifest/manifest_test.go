@@ -153,8 +153,8 @@ func TestBundlesAreNotStaged(t *testing.T) {
 	}
 }
 
-// A release cut before the pool-agent bundle names none, and is still one a
-// server runs: it has no bundle to boot a pool machine with.
+// A release cut before the pool bundle names none, and is still a manifest the
+// CLI reads for an older server; a server refuses to run on it (HasPoolBox).
 func TestAReleaseFromBeforeThePoolAgentBundleStillParses(t *testing.T) {
 	m, err := Read("examples/v0.8.0.json")
 	if err != nil {
@@ -171,6 +171,44 @@ func TestAReleaseFromBeforeThePoolAgentBundleStillParses(t *testing.T) {
 	}
 	if _, err := Parse(data); err != nil {
 		t.Fatalf("refused a release with no pool-agent bundle: %v", err)
+	}
+	if m.HasPoolBox() {
+		t.Fatal("a release with no pool bundle reads as one a pool's box is made from")
+	}
+}
+
+// A release from a pool being a box on names no pool-agent image: a Docker
+// pool's container runs the sandbox base image, provisioned from the agent and
+// pool bundles (ADR 26-10-24-953 §2). It stages no pool-agent image, and one
+// naming neither image has nothing to run a pool's container from.
+func TestAReleaseOfPoolBoxesNamesNoPoolAgentImage(t *testing.T) {
+	m, err := Read("examples/v0.8.0.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withBundles(&m)
+	m.Images.PoolAgent, m.Images.SandboxBase = "", "ghcr.io/discobox-ai/discobox-sandbox-base:v0.9.0"
+	m.Bundles.Agent = "ghcr.io/discobox-ai/discobox-agent:v0.9.0"
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "\"poolAgent\":\"\"") {
+		t.Fatalf("an absent pool-agent image is written as empty: %s", data)
+	}
+	parsed, err := Parse(data)
+	if err != nil {
+		t.Fatalf("refused a release of pool boxes: %v", err)
+	}
+	if !parsed.HasPoolBox() {
+		t.Fatal("a release naming the sandbox base, agent and pool bundles does not read as one a pool's box is made from")
+	}
+	if slices.Contains(parsed.Images.References("linux", "amd64"), "") {
+		t.Fatal("a release with no pool-agent image stages an empty reference")
+	}
+	m.Images.SandboxBase = ""
+	if err := m.Validate(); err == nil || !strings.Contains(err.Error(), "neither a sandbox base image nor a pool-agent image") {
+		t.Fatalf("Validate() = %v, want a release naming neither image refused", err)
 	}
 }
 
