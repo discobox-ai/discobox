@@ -35,7 +35,7 @@ func (f *fakeAgentLayers) AgentLayer(context.Context, string) (string, bool, err
 	return f.digest, true, nil
 }
 
-func (f *fakeAgentLayers) OpenBlob(_ context.Context, _, digest string) (io.ReadCloser, error) {
+func (f *fakeAgentLayers) OpenAgentLayer(_ context.Context, _, digest string) (io.ReadCloser, error) {
 	if digest != f.digest {
 		return nil, errors.New("not the agent layer")
 	}
@@ -163,10 +163,10 @@ func TestPlaceAgentCopiesTheLayerOnlyWhenTheBoxLacksIt(t *testing.T) {
 	layers := &fakeAgentLayers{digest: digest, layer: gzippedAgentLayer(t, "agent-v1")}
 	r, daemon := placementFixture(t, layers)
 	pins := []assetcache.Pin{
-		{Kind: assetcache.KindPlatform, Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)},
-		{Kind: assetcache.KindHarness, Name: "discobox-harness-shell", Digest: "sha256:" + strings.Repeat("b", 64)},
+		{Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)},
+		{Name: "discobox-harness-shell", Digest: "sha256:" + strings.Repeat("b", 64)},
 	}
-	if err := assetcache.WriteRecord(r.sandboxRoot("sbx_1"), pins); err != nil {
+	if err := assetcache.WriteRecord(r.sandboxRoot("sbx_1"), assetcache.Delivery{Agent: testRecordAgent, Bundles: pins}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -219,7 +219,7 @@ func TestPlaceAgentLeavesTheLayerASnapshotHolds(t *testing.T) {
 		"img_snap": {snapshotAgentLabel: digest},
 		"img_old":  {snapshotAgentLabel: "sha256:" + strings.Repeat("d", 64)},
 	}
-	if err := assetcache.WriteRecord(r.sandboxRoot("sbx_1"), []assetcache.Pin{{Kind: assetcache.KindPlatform, Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}}); err != nil {
+	if err := assetcache.WriteRecord(r.sandboxRoot("sbx_1"), assetcache.Delivery{Agent: testRecordAgent, Bundles: []assetcache.Pin{{Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}}}); err != nil {
 		t.Fatal(err)
 	}
 	layerFile := strings.TrimPrefix(agentlayer.LayerDir(digest), "/") + "/" + agentlayer.AgentFile
@@ -253,7 +253,7 @@ func TestPlaceAgentLeavesAnUndeliveredSandbox(t *testing.T) {
 func TestPlaceAgentRefusesALayerThatIsNotTheAgentsAlone(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("c", 64)
 	r, daemon := placementFixture(t, &fakeAgentLayers{digest: digest, layer: gzippedAgentLayer(t, "agent", "features/core/discobox-access")})
-	if err := assetcache.WriteRecord(r.sandboxRoot("sbx_1"), []assetcache.Pin{{Kind: assetcache.KindPlatform, Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}}); err != nil {
+	if err := assetcache.WriteRecord(r.sandboxRoot("sbx_1"), assetcache.Delivery{Agent: testRecordAgent, Bundles: []assetcache.Pin{{Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.placeAgent(context.Background(), "sbx_1", "ctr_1"); !errors.Is(err, agentlayer.ErrNotAgentLayer) {
@@ -290,13 +290,13 @@ func TestDeliveredMovedComparesWhatTheContainerBootedOn(t *testing.T) {
 	}
 	r := &DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"}
 	pin := func(hex string) workerapimodel.BundlePin {
-		return workerapimodel.BundlePin{Kind: workerclient.BundlePinKindPlatform, Name: "discobox-platform", Digest: "sha256:" + strings.Repeat(hex, 64)}
+		return workerapimodel.BundlePin{Name: "discobox-platform", Digest: "sha256:" + strings.Repeat(hex, 64)}
 	}
 	create := func(p workerapimodel.BundlePin) *workerapimodel.PoolSandboxCreateRequest {
-		return &workerapimodel.PoolSandboxCreateRequest{SandboxId: "sbx_1", Bundles: workerclient.NewOptNilBundlePinArray([]workerapimodel.BundlePin{p})}
+		return &workerapimodel.PoolSandboxCreateRequest{SandboxId: "sbx_1", Agent: workerclient.NewOptBundlePin(testAgentPin), Bundles: workerclient.NewOptNilBundlePinArray([]workerapimodel.BundlePin{p})}
 	}
 	existing := &Sandbox{ID: "ctr_1", SandboxID: "sbx_1", Status: StatusRunning}
-	booted, _, _ := applied([]assetcache.Pin{{Kind: assetcache.KindPlatform, Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}})
+	booted, _, _ := applied(assetcache.Delivery{Agent: testRecordAgent, Bundles: []assetcache.Pin{{Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}}})
 	if err := os.MkdirAll(r.sandboxRoot("sbx_1"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -327,3 +327,6 @@ func TestDeliveredMovedComparesWhatTheContainerBootedOn(t *testing.T) {
 		t.Errorf("unrecorded container: %v, %v; want movedPins", got, err)
 	}
 }
+
+// testRecordAgent is the agent the records these tests write name.
+var testRecordAgent = assetcache.Pin{Name: testAgentPin.Name, Digest: testAgentPin.Digest}

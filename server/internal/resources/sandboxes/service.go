@@ -49,19 +49,20 @@ type Service struct {
 	// holds a discobox giving them to what it was delegated (ADR
 	// 26-09-30-782 §1).
 	secrets *resourcesecrets.Service
-	// platform answers the platform bundle the release names, which every
-	// sandbox is pinned to (ADR 26-10-16-423 §7). Nil pins none.
-	platform PlatformBundles
+	// release answers the bundles the release names that every delivered
+	// sandbox is pinned to: the platform and the agent (ADR 26-10-16-423 §7,
+	// ADR 26-10-24-953 §2). Nil pins none.
+	release ReleaseBundles
 }
 
-// PlatformBundles is what the release's platform bundle is pinned to.
-type PlatformBundles interface {
-	// CurrentPlatform resolves the release's reference, at most as stale as
-	// the resolver keeps it; zero when the server names no platform.
-	CurrentPlatform(ctx context.Context) (services.BundlePin, error)
-	// LatestPlatform is what the reference last resolved to, without asking
-	// again; zero when it has not resolved.
-	LatestPlatform() services.BundlePin
+// ReleaseBundles is what the release's bundles are pinned to.
+type ReleaseBundles interface {
+	// CurrentRelease resolves the release's references, at most as stale as
+	// the resolver keeps them; each zero when the server names none.
+	CurrentRelease(ctx context.Context) (services.ReleasePins, error)
+	// LatestRelease is what the references last resolved to, without asking
+	// again; each zero when it has not resolved.
+	LatestRelease() services.ReleasePins
 }
 
 func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUserID string, engine *reconcile.Engine) *Service {
@@ -116,9 +117,10 @@ func (s *Service) SetSecrets(secrets *resourcesecrets.Service) {
 	s.secrets = secrets
 }
 
-// SetPlatformBundles gives the service what pins a sandbox's platform bundle.
-func (s *Service) SetPlatformBundles(platform PlatformBundles) {
-	s.platform = platform
+// SetReleaseBundles gives the service what pins a sandbox to the release's
+// bundles.
+func (s *Service) SetReleaseBundles(release ReleaseBundles) {
+	s.release = release
 }
 
 // SandboxProviderCatalogItem describes a registered sandbox provider type.
@@ -295,16 +297,20 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err != nil {
 		return nil, err
 	}
-	// Every box applies the platform, whatever its harness: it is pinned
-	// here and moved only by a re-pin (ADR 26-10-16-423 §7). A platform the
-	// server names and cannot resolve fails the create rather than leave a
-	// box pinned to none, and a box on a bundle needs one.
-	platformBundle, err := s.currentPlatform(ctx)
+	// Every box applies the platform, whatever its harness, and is placed
+	// with the agent: both are pinned here and moved only by a re-pin (ADR
+	// 26-10-16-423 §7, ADR 26-10-24-953 §2). A bundle the server names and
+	// cannot resolve fails the create rather than leave a box pinned to none,
+	// and a box on a bundle needs both.
+	release, err := s.currentRelease(ctx)
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadGateway, err.Error())
 	}
-	if harnessPins.Bundle.Reference != "" && platformBundle.Digest == "" {
+	if harnessPins.Bundle.Reference != "" && release.Platform.Digest == "" {
 		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "this server names no platform bundle, which every discobox on a harness bundle applies")
+	}
+	if harnessPins.Bundle.Reference != "" && release.Agent.Digest == "" {
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "this server names no agent bundle, which every discobox on a harness bundle is placed with")
 	}
 	sandbox := &model.Sandbox{
 		ID:                 sandboxID,
@@ -324,11 +330,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			Prompt:                config.Prompt,
 			Image:                 harnessPins.Image,
 			ImageDigest:           harnessPins.ImageDigest,
-			Bundle:                harnessPins.Bundle.Reference,
-			BundleDigest:          harnessPins.Bundle.Digest,
 			HarnessManifestDigest: harnessPins.ManifestDigest,
-			PlatformBundle:        platformBundle.Reference,
-			PlatformBundleDigest:  platformBundle.Digest,
 			Env:                   map[string]string(config.Env.Or(nil)),
 			Source:                source,
 			SourceCodeReferences:  sourceCodeReferences,
@@ -347,6 +349,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		SourceRoot: sourceRoot,
 		Origin:     origin,
 		OriginKey:  originKey,
+	}
+	sandbox.SetPins(release.Platform, harnessPins.Bundle)
+	if release.Platform.Digest != "" {
+		sandbox.SetAgentPin(release.Agent)
 	}
 	if level, ok := config.Egress.Get(); ok {
 		if sandbox.Egress, err = services.EgressPolicyToModel(level); err != nil {
@@ -1133,12 +1139,12 @@ func (s *Service) UpgradeHarnessConfigSandboxes(ctx context.Context, projectID, 
 	return s.upgradeStoppedSandboxes(ctx, projectID, harnessConfigID)
 }
 
-// UpgradePlatformSandboxes moves every project's stopped sandboxes onto the
-// platform bundle the release's reference now resolves to (ADR 26-10-16-423
-// §7). It is UpgradeHarnessConfigSandboxes for the pin every sandbox shares,
-// run when that reference resolves to a digest it had not, as a server
-// starting on a new release first does.
-func (s *Service) UpgradePlatformSandboxes(ctx context.Context) error {
+// UpgradeReleaseSandboxes moves every project's stopped sandboxes onto the
+// bundles the release's references now resolve to (ADR 26-10-16-423 §7). It
+// is UpgradeHarnessConfigSandboxes for the pins every sandbox shares, run when
+// a reference resolves to a digest it had not, as a server starting on a new
+// release first does.
+func (s *Service) UpgradeReleaseSandboxes(ctx context.Context) error {
 	projects, err := s.store.ListProjects(ctx)
 	if err != nil {
 		return err
@@ -1180,13 +1186,14 @@ func (s *Service) StartPinningUndelivered(ctx context.Context) {
 }
 
 // PinUndeliveredSandboxes moves every sandbox from before bundles onto its
-// harness config's bundle and the platform its server's release names (ADR
+// harness config's bundle and the bundles its server's release names (ADR
 // 26-10-16-423 §§7, 10): it was pinned to a runnable harness image, which no
 // release builds any more, so its pool has nothing to build its next
 // container from until it is pinned to the bundles a box applies. It runs on
-// every start, each time the platform moves, and every undeliveredPinInterval
-// (StartPinningUndelivered), and takes every such sandbox it finds settled
-// with no container running (store.ListUndeliveredSandboxes).
+// every start, each time the release's bundles move, and every
+// undeliveredPinInterval (StartPinningUndelivered), and takes every such
+// sandbox it finds settled with no container running
+// (store.ListUndeliveredSandboxes).
 //
 // Unlike an upgrade it is not the project's policy to refuse: the image the
 // sandbox ran is gone either way. A stopped or failed one is recorded intent,
@@ -1195,17 +1202,25 @@ func (s *Service) StartPinningUndelivered(ctx context.Context) {
 // unarchive that builds one. A running one keeps the container it has until
 // it stops, or an upgrade or a repair re-pins it, and reports its available
 // upgrade until then. One whose config has no bundle with a digest to pin, or whose
-// platform cannot be resolved now, is left for a later pass.
+// release bundles cannot be resolved now, is left for a later pass.
+//
+// A sandbox pinned to a platform from before the agent was a bundle of its
+// own (ADR 26-10-24-953 §2), running or not, is pinned to the release's agent
+// in place: neither fingerprint includes it, so nothing is rebuilt, and its
+// pool places it at the sandbox's next start.
 func (s *Service) PinUndeliveredSandboxes(ctx context.Context) error {
+	if err := s.pinAgentlessSandboxes(ctx); err != nil {
+		return err
+	}
 	candidates, err := s.store.ListUndeliveredSandboxes(ctx)
 	if err != nil || len(candidates) == 0 {
 		return err
 	}
 	// Asked once for the pass rather than of each sandbox: with no platform
-	// to pin there is nothing to do, which the next pass, or the platform's
+	// or agent to pin there is nothing to do, which the next pass, or their
 	// move, comes back to.
-	if platform, err := s.currentPlatform(ctx); err != nil || platform.Digest == "" {
-		slog.InfoContext(ctx, "sandboxes from before bundles wait for the platform to resolve", "count", len(candidates), "error", err)
+	if release, err := s.currentRelease(ctx); err != nil || release.Platform.Digest == "" || release.Agent.Digest == "" {
+		slog.InfoContext(ctx, "sandboxes from before bundles wait for the release's bundles to resolve", "count", len(candidates), "error", err)
 		return nil
 	}
 	for i := range candidates {
@@ -1219,7 +1234,7 @@ func (s *Service) PinUndeliveredSandboxes(ctx context.Context) error {
 				"projectId", sb.ProjectID, "sandboxId", sb.ID, "error", err)
 			continue
 		}
-		if repin.Harness == (services.HarnessPins{}) || repin.Platform.Digest == "" {
+		if repin.Harness == (services.HarnessPins{}) || repin.Platform.Digest == "" || repin.Agent.Digest == "" {
 			// Its harness has no bundle — registered before bundles, until
 			// one is registered for it — which every pass finds again, so it
 			// is no warning: create and repair say why to whoever asks.
@@ -1229,7 +1244,7 @@ func (s *Service) PinUndeliveredSandboxes(ctx context.Context) error {
 		}
 		pin := func(sb *model.Sandbox) {
 			// Read again under the write: a sandbox pinned since is left.
-			if sb.PlatformBundleDigest == "" {
+			if sb.PlatformPin().Digest == "" {
 				repin.Available = true
 				repin.apply(sb)
 			}
@@ -1247,7 +1262,37 @@ func (s *Service) PinUndeliveredSandboxes(ctx context.Context) error {
 		slog.InfoContext(ctx, "pinned a sandbox from before bundles to its bundles",
 			"projectId", sb.ProjectID, "sandboxId", sb.ID, "previousImage", sb.Image,
 			"bundle", repin.Harness.Bundle.Reference, "bundleDigest", repin.Harness.Bundle.Digest,
-			"platformBundleDigest", repin.Platform.Digest)
+			"platformBundleDigest", repin.Platform.Digest, "agentBundleDigest", repin.Agent.Digest)
+	}
+	return nil
+}
+
+// pinAgentlessSandboxes pins every sandbox pinned to a platform and to no
+// agent to the release's agent, in place (PinUndeliveredSandboxes).
+func (s *Service) pinAgentlessSandboxes(ctx context.Context) error {
+	candidates, err := s.store.ListAgentlessSandboxes(ctx)
+	if err != nil || len(candidates) == 0 {
+		return err
+	}
+	release, err := s.currentRelease(ctx)
+	if err != nil || release.Agent.Digest == "" {
+		slog.InfoContext(ctx, "sandboxes pinned to no agent wait for the release's agent to resolve", "count", len(candidates), "error", err)
+		return nil
+	}
+	for i := range candidates {
+		sb := &candidates[i]
+		_, err := s.updateSandboxMetadata(ctx, sb.ProjectID, sb.ID, func(sb *model.Sandbox) {
+			if sb.AgentBundleDigest == "" && sb.PlatformPin().Digest != "" {
+				sb.SetAgentPin(release.Agent)
+			}
+		})
+		if err != nil {
+			slog.WarnContext(ctx, "skip pinning a sandbox to the release's agent; cannot record it",
+				"projectId", sb.ProjectID, "sandboxId", sb.ID, "error", err)
+			continue
+		}
+		slog.InfoContext(ctx, "pinned a sandbox to the release's agent",
+			"projectId", sb.ProjectID, "sandboxId", sb.ID, "agentBundleDigest", release.Agent.Digest)
 	}
 	return nil
 }
@@ -1302,8 +1347,9 @@ func (s *Service) upgradeStoppedSandboxes(ctx context.Context, projectID, harnes
 		slog.InfoContext(ctx, "upgraded stopped sandbox to its current pins",
 			"projectId", projectID, "sandboxId", sb.ID, "harnessConfigId", configID,
 			"previousImageDigest", sb.ImageDigest, "imageDigest", repin.Harness.ImageDigest,
-			"previousBundleDigest", sb.BundleDigest, "bundleDigest", repin.Harness.Bundle.Digest,
-			"previousPlatformBundleDigest", sb.PlatformBundleDigest, "platformBundleDigest", repin.Platform.Digest,
+			"previousBundleDigest", sb.HarnessPin().Digest, "bundleDigest", repin.Harness.Bundle.Digest,
+			"previousPlatformBundleDigest", sb.PlatformPin().Digest, "platformBundleDigest", repin.Platform.Digest,
+			"previousAgentBundleDigest", sb.AgentBundleDigest, "agentBundleDigest", repin.Agent.Digest,
 			"retryingFailure", sb.ErrorMessage != nil || sb.State == model.SandboxStateFailed)
 	}
 	return nil
@@ -1371,17 +1417,18 @@ func (s *Service) currentRepin(ctx context.Context, sb *model.Sandbox) (sandboxR
 		}
 		config = nil
 	}
-	// A platform that cannot be resolved now is no move of it: the re-pin
-	// still carries the harness's, and the sandbox keeps the platform it has
-	// (SandboxPinTarget.Apply). Repair is a recovery path, and a fan-out runs
-	// once per move; neither may be refused for a registry being away.
-	platform, err := s.currentPlatform(ctx)
+	// A release bundle that cannot be resolved now is no move of it: the
+	// re-pin still carries the harness's, and the sandbox keeps the platform
+	// and agent it has (SandboxPinTarget.Apply). Repair is a recovery path,
+	// and a fan-out runs once per move; neither may be refused for a registry
+	// being away.
+	release, err := s.currentRelease(ctx)
 	if err != nil {
-		slog.WarnContext(ctx, "re-pin without the platform bundle; it cannot be resolved",
+		slog.WarnContext(ctx, "re-pin without the release's bundles; they cannot be resolved",
 			"projectId", sb.ProjectID, "sandboxId", sb.ID, "error", err)
-		platform = services.BundlePin{}
+		release = services.ReleasePins{}
 	}
-	target, available := services.SandboxUpgradeTarget(sb, config, platform)
+	target, available := services.SandboxUpgradeTarget(sb, config, release)
 	if target.Empty() {
 		// Nothing to move to, which an empty target tells callers apart from
 		// a re-pin that is merely already applied.
@@ -1397,13 +1444,14 @@ func (s *Service) currentRepin(ctx context.Context, sb *model.Sandbox) (sandboxR
 	return repin, nil
 }
 
-// currentPlatform is the platform bundle the release's reference resolves to
-// now (ADR 26-10-16-423 §7), zero when the server names none.
-func (s *Service) currentPlatform(ctx context.Context) (services.BundlePin, error) {
-	if s.platform == nil {
-		return services.BundlePin{}, nil
+// currentRelease is the bundles the release's references resolve to now
+// (ADR 26-10-16-423 §7, ADR 26-10-24-953 §2), each zero when the server names
+// none.
+func (s *Service) currentRelease(ctx context.Context) (services.ReleasePins, error) {
+	if s.release == nil {
+		return services.ReleasePins{}, nil
 	}
-	return s.platform.CurrentPlatform(ctx)
+	return s.release.CurrentRelease(ctx)
 }
 
 // fallbackHarnessConfig is the reserved `shell` built-in, or nil when seeding
@@ -1426,12 +1474,12 @@ func (s *Service) fallbackHarnessConfig(ctx context.Context, projectID string) (
 
 // UpgradeBasis exposes what an upgrade is read against to the API mappers,
 // which report a sandbox's available upgrade and must give the same answer this
-// service applies. The platform is the one last resolved, never asked for
-// afresh: a read is not held up by a registry.
+// service applies. The release's bundles are the ones last resolved, never
+// asked for afresh: a read is not held up by a registry.
 func (s *Service) UpgradeBasis(ctx context.Context, projectID string) (services.SandboxUpgradeBasis, error) {
 	var basis services.SandboxUpgradeBasis
-	if s.platform != nil {
-		basis.Platform = s.platform.LatestPlatform()
+	if s.release != nil {
+		basis.Release = s.release.LatestRelease()
 	}
 	fallback, err := s.fallbackHarnessConfig(ctx, projectID)
 	basis.Fallback = fallback

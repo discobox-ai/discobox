@@ -164,9 +164,13 @@ func (s *Store) ListStoppedSandboxes(ctx context.Context, projectID, harnessConf
 	return sandboxes, err
 }
 
+// noBundleList is a sandbox whose bundles column holds no list: one pinned
+// before ADR 26-10-24-953, in its own columns, or to nothing.
+const noBundleList = "(bundles IS NULL OR bundles IN ('', 'null', '[]'))"
+
 // ListUndeliveredSandboxes lists every settled sandbox no container runs that
-// is pinned to no platform bundle: one from before bundles, pinned to the
-// runnable harness image it ran (ADR 26-10-16-423 §10). The stopped and failed
+// is pinned to no platform bundle, in either form: one from before bundles,
+// pinned to the runnable harness image it ran (ADR 26-10-16-423 §10). The stopped and failed
 // ones ListStoppedSandboxes lists, of every project, and the archived ones,
 // which a later unarchive builds a container for. A running one is not listed:
 // its container stays until something rebuilds it, which pins it then.
@@ -178,6 +182,7 @@ func (s *Store) ListUndeliveredSandboxes(ctx context.Context) ([]model.Sandbox, 
 	var sandboxes []model.Sandbox
 	err = read.
 		Where("platform_bundle_digest = ?", "").
+		Where(noBundleList).
 		Where("generation = observed_generation").
 		Omit("skills").
 		Where("(desired_state = ? AND ((state = ? AND runtime_state = ?) OR (state = ? AND runtime_state IN ?))) OR (desired_state = ? AND state = ?)",
@@ -185,6 +190,24 @@ func (s *Store) ListUndeliveredSandboxes(ctx context.Context) ([]model.Sandbox, 
 			model.SandboxStateReady, model.SandboxRuntimeStateStopped,
 			model.SandboxStateFailed, []string{model.SandboxRuntimeStateStopped, ""},
 			model.DesiredStateArchived, model.SandboxStateArchived).
+		Order("id ASC").
+		Find(&sandboxes).Error
+	return sandboxes, err
+}
+
+// ListAgentlessSandboxes lists every sandbox pinned to a platform and to no
+// agent bundle, in any state: one pinned before the agent was a bundle of its
+// own (ADR 26-10-24-953 §2), whose pool placed the agent from its platform.
+func (s *Store) ListAgentlessSandboxes(ctx context.Context) ([]model.Sandbox, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var sandboxes []model.Sandbox
+	err = read.
+		Select("id", "project_id", "platform_bundle_digest", "bundles", "agent_bundle_digest").
+		Where("agent_bundle_digest = ?", "").
+		Where("platform_bundle_digest <> '' OR NOT " + noBundleList).
 		Order("id ASC").
 		Find(&sandboxes).Error
 	return sandboxes, err

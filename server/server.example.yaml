@@ -220,6 +220,12 @@
 # Environment: DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE
 #dockerSandboxBaseImage:
 
+# The agent bundle, the sandbox agent alone, which a pool places in every
+# discobox before it starts. Defaults to the one this build ships.
+# Example: agentBundle: ghcr.io/discobox-ai/discobox-agent:v0.8.0
+# Environment: DISCOBOX_AGENT_BUNDLE
+#agentBundle:
+
 # The pool-agent bundle a pool machine booted from a driver base is made
 # a pool agent's host with. No provider places it yet, so it has no
 # effect. Defaults to the released bundle for this build.

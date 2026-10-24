@@ -276,8 +276,8 @@ func (a answered) stamp(row *model.CredentialVerdict) {
 	row.Role = judge.Role
 	row.PromptVersion = judge.PromptVersion
 	row.JudgeSandboxID = a.sandbox.ID
-	row.Bundle = a.sandbox.Bundle
-	row.BundleDigest = a.sandbox.BundleDigest
+	harness := a.sandbox.HarnessPin()
+	row.Bundle, row.BundleDigest = harness.Reference, harness.Digest
 	if a.sandbox.HarnessConfigID != nil {
 		row.HarnessConfigID = *a.sandbox.HarnessConfigID
 	}

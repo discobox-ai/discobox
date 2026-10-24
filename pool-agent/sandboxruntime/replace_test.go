@@ -62,6 +62,7 @@ func TestASpecChangeThatCannotGetItsImageKeepsTheContainer(t *testing.T) {
 		Config: workerapimodel.SandboxConfig{
 			SpecFingerprint: workerclient.NewOptString("spec-new"),
 		},
+		Agent:               workerclient.NewOptBundlePin(testAgentPin),
 		Bundles:               workerclient.NewOptNilBundlePinArray(replacePlatformPins()),
 		ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerclient.ResolvedHarnessConfig{}),
 	})
@@ -140,6 +141,7 @@ func TestACreateAskedToStartFinishesOneThatNeverStartedItsContainer(t *testing.T
 					SpecFingerprint: workerclient.NewOptString("spec-1"),
 					Start:           tc.start,
 				},
+				Agent:               workerclient.NewOptBundlePin(testAgentPin),
 				Bundles:               workerclient.NewOptNilBundlePinArray(replacePlatformPins()),
 				ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerclient.ResolvedHarnessConfig{}),
 			})
@@ -158,7 +160,7 @@ func TestACreateAskedToStartFinishesOneThatNeverStartedItsContainer(t *testing.T
 // replacePlatformPins delivers a sandbox its platform, without which no
 // container is built for it at all (ErrUndelivered).
 func replacePlatformPins() []workerapimodel.BundlePin {
-	return []workerapimodel.BundlePin{{Kind: workerclient.BundlePinKindPlatform, Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}}
+	return []workerapimodel.BundlePin{{Name: "discobox-platform", Digest: "sha256:" + strings.Repeat("a", 64)}}
 }
 
 // A container's recorded fingerprint is the whole answer to whether its spec

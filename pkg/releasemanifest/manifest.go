@@ -61,7 +61,11 @@ type Images struct {
 // A release cut before the pool-agent bundle names no PoolAgent, and is still
 // valid; a server on it has no bundle to boot a pool machine with.
 type Bundles struct {
-	Platform  string            `json:"platform"`
+	Platform string `json:"platform"`
+	// Agent is the agent bundle, the sandbox agent alone, which whoever makes
+	// a box places in it (ADR 26-10-24-953 §2). A release cut before it names
+	// none.
+	Agent     string            `json:"agent,omitempty"`
 	Harnesses map[string]string `json:"harnesses"`
 	PoolAgent string            `json:"poolAgent,omitempty"`
 }
@@ -149,6 +153,11 @@ func (m Manifest) validateBundles() error {
 	}
 	if err := validateImage(m.Bundles.Platform); err != nil {
 		return fmt.Errorf("release manifest platform bundle: %w", err)
+	}
+	if m.Bundles.Agent != "" {
+		if err := validateImage(m.Bundles.Agent); err != nil {
+			return fmt.Errorf("release manifest agent bundle: %w", err)
+		}
 	}
 	if m.Bundles.PoolAgent != "" {
 		if err := validateImage(m.Bundles.PoolAgent); err != nil {

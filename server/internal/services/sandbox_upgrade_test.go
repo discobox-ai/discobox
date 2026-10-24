@@ -35,7 +35,7 @@ func shellConfig() *model.HarnessConfig {
 }
 
 func bundleTarget(ref, digest string) SandboxPinTarget {
-	return SandboxPinTarget{Harness: HarnessPins{Bundle: BundlePin{Reference: ref, Digest: digest}}}
+	return SandboxPinTarget{Harness: HarnessPins{Bundle: model.BundlePin{Reference: ref, Digest: digest}}}
 }
 
 // TestSandboxUpgradeTargetIsSharedByBothPaths pins the rule that the read path
@@ -111,7 +111,7 @@ func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			target, available := SandboxUpgradeTarget(tc.sandbox, tc.config, BundlePin{})
+			target, available := SandboxUpgradeTarget(tc.sandbox, tc.config, ReleasePins{})
 			if target != tc.wantTarget || available != tc.wantAvailable {
 				t.Fatalf("target = %+v available = %v, want %+v / %v", target, available, tc.wantTarget, tc.wantAvailable)
 			}
@@ -152,7 +152,7 @@ func TestSandboxUpgradeTargetFollowsAManifestFile(t *testing.T) {
 	config := &model.HarnessConfig{Image: "file:///etc/discobox/harness.json", ImageDigest: contentDigest("manifest-new")}
 	sb := sandboxWithHarness("harness-1", "", "")
 	sb.Image, sb.ImageDigest = config.Image, contentDigest("manifest-old")
-	target, available := SandboxUpgradeTarget(sb, config, BundlePin{})
+	target, available := SandboxUpgradeTarget(sb, config, ReleasePins{})
 	want := SandboxPinTarget{Harness: HarnessPins{Image: config.Image, ImageDigest: config.ImageDigest}}
 	if target != want || !available {
 		t.Fatalf("target = %+v available = %v, want %+v", target, available, want)
@@ -174,7 +174,7 @@ func TestSandboxUpgradeTargetFollowsAManifestFile(t *testing.T) {
 func TestSandboxUpgradeTargetIgnoresConfigMode(t *testing.T) {
 	sb := sandboxWithHarness("", shellBundle, contentDigest("shell-old"))
 	sb.HarnessMode = "config"
-	if target, available := SandboxUpgradeTarget(sb, shellConfig(), BundlePin{}); target != (SandboxPinTarget{}) || available {
+	if target, available := SandboxUpgradeTarget(sb, shellConfig(), ReleasePins{}); target != (SandboxPinTarget{}) || available {
 		t.Fatalf("target = %+v available = %v, want nothing to move to", target, available)
 	}
 }
@@ -184,7 +184,7 @@ func TestSandboxUpgradeTargetIgnoresConfigMode(t *testing.T) {
 // unconverged sandbox has nowhere to go yet.
 func TestSandboxUpgradeWithoutAFallbackConfig(t *testing.T) {
 	sb := sandboxWithHarness("", shellBundle, contentDigest("shell-old"))
-	if target, available := SandboxUpgradeTarget(sb, nil, BundlePin{}); target != (SandboxPinTarget{}) || available {
+	if target, available := SandboxUpgradeTarget(sb, nil, ReleasePins{}); target != (SandboxPinTarget{}) || available {
 		t.Fatalf("target = %+v available = %v, want nothing to move to", target, available)
 	}
 	if rendered := SandboxUpgrade(sb, SandboxUpgradeBasis{}); rendered != nil {
@@ -203,12 +203,12 @@ func TestSandboxUpgradeTargetStaysOnTheSandboxsPlatform(t *testing.T) {
 	sb := sandboxWithHarness("harness-1", "", "")
 	sb.Image, sb.ImageDigest = config.Image, contentDigest("manifest-old")
 	sb.Platform = platform.Platform{OS: "linux", Arch: "arm64"}
-	if target, available := SandboxUpgradeTarget(sb, config, BundlePin{}); !target.Empty() || available {
+	if target, available := SandboxUpgradeTarget(sb, config, ReleasePins{}); !target.Empty() || available {
 		t.Fatalf("target = %+v, available = %t; want nothing to move to", target, available)
 	}
 	for _, platforms := range []platform.Set{platform.NewSet(sb.Platform, config.Platforms[0]), nil} {
 		config.Platforms = platforms
-		if target, available := SandboxUpgradeTarget(sb, config, BundlePin{}); target.Harness.ImageDigest != config.ImageDigest || !available {
+		if target, available := SandboxUpgradeTarget(sb, config, ReleasePins{}); target.Harness.ImageDigest != config.ImageDigest || !available {
 			t.Fatalf("platforms %q: target = %+v, available = %t; want the config's manifest file", platforms, target, available)
 		}
 	}
@@ -243,7 +243,7 @@ func TestSandboxUpgradeTargetFollowsTheBundles(t *testing.T) {
 	config := &model.HarnessConfig{
 		Bundle: "ghcr.io/discobox-ai/discobox-harness-codex:v1", BundleDigest: contentDigest("bundle-new"),
 	}
-	platform := BundlePin{Reference: "ghcr.io/discobox-ai/discobox-platform:v1", Digest: contentDigest("platform-new")}
+	platform := model.BundlePin{Reference: "ghcr.io/discobox-ai/discobox-platform:v1", Digest: contentDigest("platform-new")}
 	current := func() *model.Sandbox {
 		sb := sandboxWithHarness("harness-1", config.Bundle, config.BundleDigest)
 		sb.PlatformBundle, sb.PlatformBundleDigest = platform.Reference, platform.Digest
@@ -252,7 +252,7 @@ func TestSandboxUpgradeTargetFollowsTheBundles(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		sandbox    func(*model.Sandbox)
-		platform   BundlePin
+		platform   model.BundlePin
 		wantReason any
 	}{
 		{name: "nothing moved", platform: platform},
@@ -277,12 +277,12 @@ func TestSandboxUpgradeTargetFollowsTheBundles(t *testing.T) {
 			if tc.sandbox != nil {
 				tc.sandbox(sb)
 			}
-			target, available := SandboxUpgradeTarget(sb, config, tc.platform)
+			target, available := SandboxUpgradeTarget(sb, config, ReleasePins{Platform: tc.platform})
 			if available != (tc.wantReason != nil) {
 				t.Fatalf("available = %v, want %v", available, tc.wantReason != nil)
 			}
 			sb.HarnessConfig = config
-			rendered := SandboxUpgrade(sb, SandboxUpgradeBasis{Platform: tc.platform})
+			rendered := SandboxUpgrade(sb, SandboxUpgradeBasis{Release: ReleasePins{Platform: tc.platform}})
 			if rendered["reason"] != tc.wantReason {
 				t.Fatalf("reason = %v, want %v", rendered["reason"], tc.wantReason)
 			}
@@ -306,14 +306,14 @@ func TestSandboxUpgradeTargetFollowsTheBundles(t *testing.T) {
 // has nothing to move to still follows it, without its harness pin being
 // touched, and a config-mode sandbox follows nothing.
 func TestThePlatformIsATargetWithoutAHarnessOne(t *testing.T) {
-	platform := BundlePin{Reference: "ghcr.io/discobox-ai/discobox-platform:v1", Digest: contentDigest("platform-new")}
+	platform := model.BundlePin{Reference: "ghcr.io/discobox-ai/discobox-platform:v1", Digest: contentDigest("platform-new")}
 	sb := sandboxWithHarness("harness-1", "discobox-harness-codex:v1", contentDigest("codex-old"))
 	sb.PlatformBundleDigest = contentDigest("platform-old")
-	target, available := SandboxUpgradeTarget(sb, nil, platform)
+	target, available := SandboxUpgradeTarget(sb, nil, ReleasePins{Platform: platform})
 	if !available || target.Harness != (HarnessPins{}) || target.Platform != platform {
 		t.Fatalf("target = %+v available = %v, want the platform alone", target, available)
 	}
-	if rendered := SandboxUpgrade(sb, SandboxUpgradeBasis{Platform: platform}); rendered["reason"] != "platformBundleDigestChanged" {
+	if rendered := SandboxUpgrade(sb, SandboxUpgradeBasis{Release: ReleasePins{Platform: platform}}); rendered["reason"] != "platformBundleDigestChanged" {
 		t.Fatalf("rendered %v, want the platform's upgrade", rendered)
 	}
 	target.Apply(sb)
@@ -321,7 +321,7 @@ func TestThePlatformIsATargetWithoutAHarnessOne(t *testing.T) {
 		t.Fatalf("applied bundle %q platform %q, want the bundle kept and the platform moved", sb.BundleDigest, sb.PlatformBundleDigest)
 	}
 	sb.HarnessMode = "config"
-	if target, available := SandboxUpgradeTarget(sb, nil, platform); !target.Empty() || available {
+	if target, available := SandboxUpgradeTarget(sb, nil, ReleasePins{Platform: platform}); !target.Empty() || available {
 		t.Fatalf("config-mode target = %+v available = %v, want nothing", target, available)
 	}
 }

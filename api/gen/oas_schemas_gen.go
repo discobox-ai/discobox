@@ -31114,8 +31114,10 @@ func (s *SandboxUpdateConfig) SetName(val OptString) {
 // Ref: #/components/schemas/SandboxUpgrade
 type SandboxUpgrade struct {
 	// Whether the harness config now resolves to a different bundle or manifest file, or the release to
-	// a different platform bundle, than this sandbox is pinned to.
+	// a different platform or agent bundle, than this sandbox is pinned to.
 	Available bool `json:"available"`
+	// Agent bundle digest this sandbox's pool places it with.
+	CurrentAgentBundleDigest OptString `json:"currentAgentBundleDigest"`
 	// Harness bundle digest this sandbox is pinned to.
 	CurrentBundleDigest OptString `json:"currentBundleDigest"`
 	// Platform bundle digest this sandbox is pinned to.
@@ -31126,6 +31128,8 @@ type SandboxUpgrade struct {
 	CurrentImageDigest OptString `json:"currentImageDigest"`
 	// Why an upgrade is available, the first pin that moved.
 	Reason OptSandboxUpgradeReason `json:"reason"`
+	// Agent bundle digest an upgrade would pin this sandbox to.
+	TargetAgentBundleDigest OptString `json:"targetAgentBundleDigest"`
 	// Harness bundle digest an upgrade would pin this sandbox to.
 	TargetBundleDigest OptString `json:"targetBundleDigest"`
 	// Manifest file this sandbox's harness config resolves to now.
@@ -31139,6 +31143,11 @@ type SandboxUpgrade struct {
 // GetAvailable returns the value of Available.
 func (s *SandboxUpgrade) GetAvailable() bool {
 	return s.Available
+}
+
+// GetCurrentAgentBundleDigest returns the value of CurrentAgentBundleDigest.
+func (s *SandboxUpgrade) GetCurrentAgentBundleDigest() OptString {
+	return s.CurrentAgentBundleDigest
 }
 
 // GetCurrentBundleDigest returns the value of CurrentBundleDigest.
@@ -31166,6 +31175,11 @@ func (s *SandboxUpgrade) GetReason() OptSandboxUpgradeReason {
 	return s.Reason
 }
 
+// GetTargetAgentBundleDigest returns the value of TargetAgentBundleDigest.
+func (s *SandboxUpgrade) GetTargetAgentBundleDigest() OptString {
+	return s.TargetAgentBundleDigest
+}
+
 // GetTargetBundleDigest returns the value of TargetBundleDigest.
 func (s *SandboxUpgrade) GetTargetBundleDigest() OptString {
 	return s.TargetBundleDigest
@@ -31191,6 +31205,11 @@ func (s *SandboxUpgrade) SetAvailable(val bool) {
 	s.Available = val
 }
 
+// SetCurrentAgentBundleDigest sets the value of CurrentAgentBundleDigest.
+func (s *SandboxUpgrade) SetCurrentAgentBundleDigest(val OptString) {
+	s.CurrentAgentBundleDigest = val
+}
+
 // SetCurrentBundleDigest sets the value of CurrentBundleDigest.
 func (s *SandboxUpgrade) SetCurrentBundleDigest(val OptString) {
 	s.CurrentBundleDigest = val
@@ -31214,6 +31233,11 @@ func (s *SandboxUpgrade) SetCurrentImageDigest(val OptString) {
 // SetReason sets the value of Reason.
 func (s *SandboxUpgrade) SetReason(val OptSandboxUpgradeReason) {
 	s.Reason = val
+}
+
+// SetTargetAgentBundleDigest sets the value of TargetAgentBundleDigest.
+func (s *SandboxUpgrade) SetTargetAgentBundleDigest(val OptString) {
+	s.TargetAgentBundleDigest = val
 }
 
 // SetTargetBundleDigest sets the value of TargetBundleDigest.
@@ -31244,6 +31268,7 @@ const (
 	SandboxUpgradeReasonBundleDigestChanged         SandboxUpgradeReason = "bundleDigestChanged"
 	SandboxUpgradeReasonManifestDigestChanged       SandboxUpgradeReason = "manifestDigestChanged"
 	SandboxUpgradeReasonPlatformBundleDigestChanged SandboxUpgradeReason = "platformBundleDigestChanged"
+	SandboxUpgradeReasonAgentBundleDigestChanged    SandboxUpgradeReason = "agentBundleDigestChanged"
 )
 
 // AllValues returns all SandboxUpgradeReason values.
@@ -31253,6 +31278,7 @@ func (SandboxUpgradeReason) AllValues() []SandboxUpgradeReason {
 		SandboxUpgradeReasonBundleDigestChanged,
 		SandboxUpgradeReasonManifestDigestChanged,
 		SandboxUpgradeReasonPlatformBundleDigestChanged,
+		SandboxUpgradeReasonAgentBundleDigestChanged,
 	}
 }
 
@@ -31266,6 +31292,8 @@ func (s SandboxUpgradeReason) MarshalText() ([]byte, error) {
 	case SandboxUpgradeReasonManifestDigestChanged:
 		return []byte(s), nil
 	case SandboxUpgradeReasonPlatformBundleDigestChanged:
+		return []byte(s), nil
+	case SandboxUpgradeReasonAgentBundleDigestChanged:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -31286,6 +31314,9 @@ func (s *SandboxUpgradeReason) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxUpgradeReasonPlatformBundleDigestChanged:
 		*s = SandboxUpgradeReasonPlatformBundleDigestChanged
+		return nil
+	case SandboxUpgradeReasonAgentBundleDigestChanged:
+		*s = SandboxUpgradeReasonAgentBundleDigestChanged
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

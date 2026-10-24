@@ -68,12 +68,13 @@ flowchart LR
   `services.SandboxUpgradeTarget`. Two callers use it: the read path that
   reports an available upgrade, and `Service.currentRepin`, which resolves
   the change that `UpgradeSandbox`, `RepairSandbox`,
-  `UpgradeHarnessConfigSandboxes` and `UpgradePlatformSandboxes` apply. The
+  `UpgradeHarnessConfigSandboxes` and `UpgradeReleaseSandboxes` apply. The
   change is all of a sandbox's pins: harness bundle (or manifest file), the
-  harness manifest composed from it (`HarnessManifestDigest`), and platform
-  bundle (ADR 26-10-16-423 §7). The read path is handed the platform last
-  resolved (`UpgradeBasis`) so it never waits on a registry; the re-pin
-  resolves it, at most a minute stale. Sharing it means a sandbox cannot
+  harness manifest composed from it (`HarnessManifestDigest`), and the
+  release's platform and agent bundles (ADR 26-10-16-423 §7, ADR 26-10-24-953
+  §2). The read path is handed the release's bundles last resolved
+  (`UpgradeBasis`) so it never waits on a registry; the re-pin resolves them,
+  at most a minute stale. Sharing it means a sandbox cannot
   accept an upgrade its listing says it does not have.
 - **A sandbox pins the manifest its container is built with.** The harness's
   env, files and volumes are its config's snapshot of the bundle's labels
@@ -82,18 +83,29 @@ flowchart LR
   `HarnessManifestDigest`. It is in both fingerprints: a moved one rebuilds
   the container as a moved bundle does, and is an upgrade of its own
   (`manifestDigestChanged`) when nothing else moved.
-- **A sandbox is not rebuilt by its platform.** A sandbox whose every pin is a
-  content digest, a platform among them, is delivered: it runs the provider's
-  sandbox base image, and its pool places the platform's agent and its pins
-  before every start (`pool-agent/DESIGN.md`, ADR 26-10-16-423 §7). Its
-  fingerprint is `SandboxManifest.DeliveredFingerprint`, which leaves out the
-  image and platform pins and nothing else, so a server's moved platform
-  restarts a running sandbox into it and leaves its store and its provisioning
-  in place. Its harness bundle pin and `HarnessManifestDigest` stay in: the
-  harness's manifest is what its container is built with, so a moved one
-  rebuilds it. A sandbox with a pin
-  that is not a content digest (`sandboxBundlePins`) — one from before
-  bundles, until `PinUndeliveredSandboxes` reaches it — is sent none and keeps
+- **Pins are one ordered list, in two forms.** A sandbox is pinned to the
+  platform and then its harness's bundle, and to the agent its pool places
+  it with (ADR 26-10-24-953 §§1–2). One pinned since that ADR keeps them in
+  `Bundles`, the list, and the agent in `AgentBundle`; one pinned before
+  keeps its `PlatformBundle` and `Bundle` columns, and is re-pinned in them,
+  so its fingerprint changes only as its pins do and nothing about the list
+  rebuilds it. Everything reads and writes pins through
+  `SandboxManifest.PlatformPin`, `HarnessPin`, `BundlePins` and `SetPins`,
+  never by form; the list's order is the server's composition, platform
+  first, and nothing past the server names which pin is which.
+- **A sandbox is not rebuilt by a moved pin.** A sandbox whose every bundle
+  pin is a content digest is delivered: it runs the provider's sandbox base
+  image, and its pool places the agent and its pins before every start
+  (`pool-agent/DESIGN.md`). Its fingerprint is
+  `SandboxManifest.DeliveredFingerprint`, which leaves out the image, the
+  platform, the list and the agent, so a moved one restarts a running sandbox
+  into it and leaves its store and its provisioning in place.
+  `HarnessManifestDigest` stays in: the harness's manifest is what its
+  container is built with, so a moved one rebuilds it. A sandbox pinned before
+  the list keeps its harness `Bundle` in too, as it was. The agent is in
+  neither fingerprint. A sandbox with a bundle pin that is not a content
+  digest, or no agent (`sandboxDelivery`) — one from before bundles, until
+  `PinUndeliveredSandboxes` reaches it — is sent nothing and keeps
   `SandboxManifest.Fingerprint`: its pool keeps the container it has while
   that does not move, and builds it no other.
 - A sandbox name is unique within its project (`idx_sandbox_project_name`),
@@ -589,11 +601,11 @@ and is answered as a 400 about the archive rather than an error about the pool
   CLI offers is the caller's, not something taken on their behalf. An archived
   sandbox exports fine: it is a tree with no container, which is exactly the
   shape an export reads.
-- **Export passes the sandbox's pins** (`sandboxBundlePins`) to
-  `Provider.ExportTree`. The tree is read by the export mode of the agent its
-  platform pin names, and an archived sandbox, or one whose create failed, has
-  no container left on the pool to name it (ADR 0129 §1), so the pool records
-  the pins it is sent. Not the current platform: that agent did not write the
+- **Export passes the sandbox's pins** (`sandboxDelivery`) to
+  `Provider.ExportTree`. The tree is read by the export mode of the agent it
+  is pinned to, and an archived sandbox, or one whose create failed, has no
+  container left on the pool to name it (ADR 0129 §1), so the pool records
+  the pins it is sent. Not the current agent: that agent did not write the
   tree.
 - **Import restores the tree before the row exists**, and refuses before it
   restores. The row is what wakes the reconciler, so the order is: resolve pool,

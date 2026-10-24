@@ -9,10 +9,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"path"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/harness"
@@ -919,20 +921,34 @@ type SandboxManifest struct {
 	// composed from the harness bundle's labels on the platform's layer. It is
 	// in both fingerprints, so a platform-layer edit, which moves no bundle
 	// digest, rebuilds the container as a moved harness bundle does.
-	HarnessManifestDigest string               `gorm:"column:harness_manifest_digest;not null;type:text;default:''" json:"harnessManifestDigest,omitempty" doc:"Digest of the composed harness manifest this sandbox's container is built with"`
-	PlatformBundle        string               `gorm:"column:platform_bundle;not null;type:text;default:''" json:"platformBundle,omitempty" doc:"Platform bundle this sandbox is pinned to"`
-	PlatformBundleDigest  string               `gorm:"column:platform_bundle_digest;not null;type:text;default:''" json:"platformBundleDigest,omitempty" doc:"Manifest digest of the platform bundle this sandbox is pinned to"`
-	Env                   map[string]string    `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Environment variables available to sandbox-agent terminals and execs by default"`
-	Source                *GitSource           `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
-	SourceCodeReferences  SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Additional Git sources to materialize in the sandbox"`
-	UserName              *string              `gorm:"column:user_name;type:text" json:"userName,omitempty" doc:"Username to use inside the sandbox"`
-	UserUID               *int                 `gorm:"column:user_uid" json:"userUid,omitempty" doc:"UID to use inside the sandbox"`
-	UserGID               *int                 `gorm:"column:user_gid" json:"userGid,omitempty" doc:"Primary group ID to use inside the sandbox"`
-	UserGroupName         *string              `gorm:"column:user_group_name;type:text" json:"userGroupName,omitempty" doc:"Primary group name to use inside the sandbox, resolved inside it"`
-	UserAdditionalGroups  []string             `gorm:"column:user_additional_groups;type:text;serializer:json" json:"userAdditionalGroups,omitempty" doc:"Supplementary groups, each a group name or a numeric GID"`
-	HomeDirectory         *string              `gorm:"column:home_directory;type:text" json:"homeDirectory,omitempty" doc:"User home directory to use inside the sandbox"`
-	GitUserName           *string              `gorm:"column:git_user_name;type:text" json:"gitUserName,omitempty" doc:"Value for git's user.name inside the sandbox"`
-	GitUserEmail          *string              `gorm:"column:git_user_email;type:text" json:"gitUserEmail,omitempty" doc:"Value for git's user.email inside the sandbox"`
+	HarnessManifestDigest string `gorm:"column:harness_manifest_digest;not null;type:text;default:''" json:"harnessManifestDigest,omitempty" doc:"Digest of the composed harness manifest this sandbox's container is built with"`
+	PlatformBundle        string `gorm:"column:platform_bundle;not null;type:text;default:''" json:"platformBundle,omitempty" doc:"Platform bundle this sandbox is pinned to"`
+	PlatformBundleDigest  string `gorm:"column:platform_bundle_digest;not null;type:text;default:''" json:"platformBundleDigest,omitempty" doc:"Manifest digest of the platform bundle this sandbox is pinned to"`
+	// Bundles is the ordered list of bundles a sandbox pinned since ADR
+	// 26-10-24-953 applies (§1): the platform, then its harness's when it has
+	// one, the order the server composes them in and the box applies them in.
+	// Such a sandbox leaves Bundle and PlatformBundle empty; one pinned before
+	// keeps them, and has none here, so its fingerprint is what it was. Read
+	// and write them through PlatformPin, HarnessPin, BundlePins and SetPins,
+	// never by form. Omitted when empty.
+	Bundles []BundlePin `gorm:"column:bundles;type:text;serializer:json" json:"bundles,omitempty" doc:"Bundles this sandbox applies, in order"`
+	// AgentBundle and AgentBundleDigest are the agent bundle this sandbox's
+	// pool places it with (ADR 26-10-24-953 §2), pinned with the platform.
+	// Neither fingerprint includes them: the agent is placed at every start,
+	// and what it applies is the bundles.
+	AgentBundle          string               `gorm:"column:agent_bundle;not null;type:text;default:''" json:"agentBundle,omitempty" doc:"Agent bundle this sandbox's pool places it with"`
+	AgentBundleDigest    string               `gorm:"column:agent_bundle_digest;not null;type:text;default:''" json:"agentBundleDigest,omitempty" doc:"Manifest digest of the agent bundle this sandbox is pinned to"`
+	Env                  map[string]string    `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Environment variables available to sandbox-agent terminals and execs by default"`
+	Source               *GitSource           `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
+	SourceCodeReferences SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Additional Git sources to materialize in the sandbox"`
+	UserName             *string              `gorm:"column:user_name;type:text" json:"userName,omitempty" doc:"Username to use inside the sandbox"`
+	UserUID              *int                 `gorm:"column:user_uid" json:"userUid,omitempty" doc:"UID to use inside the sandbox"`
+	UserGID              *int                 `gorm:"column:user_gid" json:"userGid,omitempty" doc:"Primary group ID to use inside the sandbox"`
+	UserGroupName        *string              `gorm:"column:user_group_name;type:text" json:"userGroupName,omitempty" doc:"Primary group name to use inside the sandbox, resolved inside it"`
+	UserAdditionalGroups []string             `gorm:"column:user_additional_groups;type:text;serializer:json" json:"userAdditionalGroups,omitempty" doc:"Supplementary groups, each a group name or a numeric GID"`
+	HomeDirectory        *string              `gorm:"column:home_directory;type:text" json:"homeDirectory,omitempty" doc:"User home directory to use inside the sandbox"`
+	GitUserName          *string              `gorm:"column:git_user_name;type:text" json:"gitUserName,omitempty" doc:"Value for git's user.name inside the sandbox"`
+	GitUserEmail         *string              `gorm:"column:git_user_email;type:text" json:"gitUserEmail,omitempty" doc:"Value for git's user.email inside the sandbox"`
 	// Skills ride the sandbox's bootstrap, so they are spec: fixed at create
 	// and part of the fingerprint. Omitted when empty, which keeps the
 	// fingerprint of every sandbox created without them what it was before
@@ -961,6 +977,7 @@ type SandboxManifest struct {
 // (createSandboxIntent), and the reconciler fails rather than launching when
 // it cannot read them.
 func (m SandboxManifest) Fingerprint() string {
+	m.AgentBundle, m.AgentBundleDigest = "", ""
 	encoded, err := json.Marshal(m)
 	if err != nil {
 		// Marshaling a manifest cannot fail for the types it holds. If it ever
@@ -975,20 +992,23 @@ func (m SandboxManifest) Fingerprint() string {
 // DeliveredFingerprint is the spec digest of a sandbox its pool delivers the
 // platform to (ADR 26-10-16-423 §7, as amended): Fingerprint without the
 // pins such a container is not built from. It runs the provider's sandbox
-// base image and applies its platform at every start, so a moved platform
-// pin restarts it rather than rebuilding it, and it keeps its content store
-// and what it provisioned. Its harness bundle pin stays: the harness's
-// manifest — the env, files and volumes a container is built with — is
-// resolved from the config that pin was taken with, so a moved one rebuilds
-// the container. The image pair is left out too, which a sandbox from before
-// bundles still carries until it is pinned to them.
+// base image and applies its bundles at every start, so a moved pin restarts
+// it rather than rebuilding it, and it keeps its content store and what it
+// provisioned (ADR 26-10-24-953 §1). What its container is built with is the
+// composed harness manifest, whose digest stays in, so a manifest-layer edit
+// rebuilds it. A sandbox pinned before that ADR keeps its harness bundle pin
+// in, as it was, so a moved one rebuilds its container still: dropping it
+// would rebuild every such container once. The image pair is left out too,
+// which a sandbox from before bundles still carries until it is pinned to
+// them.
 //
-// These two pairs are the only fields it leaves out. A field added to
-// SandboxManifest is in it, as in Fingerprint, unless it is another pin a box
-// applies at its start.
+// A field added to SandboxManifest is in it, as in Fingerprint, unless it is
+// another pin a box applies at its start.
 func (m SandboxManifest) DeliveredFingerprint() string {
 	m.Image, m.ImageDigest = "", ""
 	m.PlatformBundle, m.PlatformBundleDigest = "", ""
+	m.Bundles = nil
+	m.AgentBundle, m.AgentBundleDigest = "", ""
 	encoded, err := json.Marshal(struct {
 		Delivered SandboxManifest `json:"delivered"`
 	}{m})
@@ -997,6 +1017,104 @@ func (m SandboxManifest) DeliveredFingerprint() string {
 	}
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
+}
+
+// BundlePin is a bundle by reference and the manifest digest it is pinned to
+// (ADR 26-10-16-423 §§7, 13).
+type BundlePin struct {
+	Reference string `json:"reference"`
+	Digest    string `json:"digest"`
+}
+
+// Name is the name the asset API addresses the bundle by.
+func (p BundlePin) Name() string { return BundleName(p.Reference) }
+
+// BundleName is the name a bundle is addressed by: the last component of its
+// reference's repository, so ghcr.io/discobox-ai/discobox-platform:v1 and a
+// development build's discobox-platform:dev-<digest> are both
+// discobox-platform.
+// Empty for a reference that does not parse.
+func BundleName(ref string) string {
+	parsed, err := name.ParseReference(strings.TrimSpace(ref))
+	if err != nil {
+		return ""
+	}
+	return path.Base(parsed.Context().RepositoryStr())
+}
+
+// pinnedBefore reports a sandbox pinned before ADR 26-10-24-953, which keeps
+// its pins in Bundle and PlatformBundle.
+func (m SandboxManifest) pinnedBefore() bool {
+	return len(m.Bundles) == 0 && (m.PlatformBundleDigest != "" || m.BundleDigest != "")
+}
+
+// PlatformPin is the platform bundle the sandbox applies, whichever form it
+// is pinned in; zero when it is pinned to none.
+func (m SandboxManifest) PlatformPin() BundlePin {
+	if m.pinnedBefore() {
+		return BundlePin{Reference: m.PlatformBundle, Digest: m.PlatformBundleDigest}
+	}
+	if len(m.Bundles) > 0 {
+		return m.Bundles[0]
+	}
+	return BundlePin{}
+}
+
+// HarnessPin is the harness bundle the sandbox applies after the platform;
+// zero for a sandbox on a harness with no bundle.
+func (m SandboxManifest) HarnessPin() BundlePin {
+	if m.pinnedBefore() {
+		return BundlePin{Reference: m.Bundle, Digest: m.BundleDigest}
+	}
+	if len(m.Bundles) > 1 {
+		return m.Bundles[1]
+	}
+	return BundlePin{}
+}
+
+// BundlePins is every bundle the sandbox applies, in order: what its pool is
+// sent, and what keeps their blobs in the server's store.
+func (m SandboxManifest) BundlePins() []BundlePin {
+	var pins []BundlePin
+	for _, pin := range []BundlePin{m.PlatformPin(), m.HarnessPin()} {
+		if strings.TrimSpace(pin.Reference) != "" {
+			pins = append(pins, pin)
+		}
+	}
+	return pins
+}
+
+// AgentPin is the agent bundle the sandbox's pool places it with; zero when
+// it is pinned to none.
+func (m SandboxManifest) AgentPin() BundlePin {
+	return BundlePin{Reference: m.AgentBundle, Digest: m.AgentBundleDigest}
+}
+
+// SetPins pins the sandbox to platform and then harness, a zero harness
+// being none. A sandbox pinned before ADR 26-10-24-953 keeps its form, so its
+// fingerprint changes only as its pins do; any other is pinned as the list.
+// A harness with no platform — one re-pinned while the release's platform
+// cannot be resolved, which no box can be delivered — is kept in the form
+// from before the list too, since the list's first pin is the platform.
+func (m *SandboxManifest) SetPins(platform, harness BundlePin) {
+	if m.pinnedBefore() || (platform.Reference == "" && harness.Reference != "") {
+		m.PlatformBundle, m.PlatformBundleDigest = platform.Reference, platform.Digest
+		m.Bundle, m.BundleDigest = harness.Reference, harness.Digest
+		return
+	}
+	m.Bundle, m.BundleDigest, m.PlatformBundle, m.PlatformBundleDigest = "", "", "", ""
+	m.Bundles = nil
+	if platform.Reference != "" {
+		m.Bundles = append(m.Bundles, platform)
+	}
+	if harness.Reference != "" {
+		m.Bundles = append(m.Bundles, harness)
+	}
+}
+
+// SetAgentPin pins the sandbox to the agent bundle pin.
+func (m *SandboxManifest) SetAgentPin(pin BundlePin) {
+	m.AgentBundle, m.AgentBundleDigest = pin.Reference, pin.Digest
 }
 
 // SandboxHarnessChange is a proposed spec, kept separate until the pool has

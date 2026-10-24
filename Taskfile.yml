@@ -386,6 +386,15 @@ tasks:
       # 26-10-23-551 §2), by name: the Dockerfile's default target is the image.
       - docker build -f pool-agent/Dockerfile --target bundle -t {{.POOL_AGENT_BUNDLE}} .
 
+  build:agent-bundle:
+    desc: Build the agent bundle, the sandbox agent alone FROM scratch
+    vars:
+      AGENT_BUNDLE: '{{.AGENT_BUNDLE | default "discobox-agent:local"}}'
+    cmds:
+      # What whoever makes a box places in it before the box applies its
+      # bundles (ADR 26-10-24-953 §2), by name: one layer, the agent alone.
+      - docker build -f sandbox-agent/Dockerfile --target agent -t {{.AGENT_BUNDLE}} .
+
   build:platform-bundle:
     desc: Build the platform bundle, every platform feature under /features/ FROM scratch
     vars:
@@ -401,10 +410,11 @@ tasks:
         -t {{.PLATFORM_BUNDLE}} .
 
   build:images:
-    desc: Build the pool and sandbox base images, the pool-agent and platform bundles, and every included harness's bundle
+    desc: Build the pool and sandbox base images, the pool-agent, agent and platform bundles, and every included harness's bundle
     cmds:
       - task: build:pool-agent-image
       - task: build:pool-agent-bundle
+      - task: build:agent-bundle
       - task: build:platform-bundle
       - task: build:harness-bundles
 
@@ -1898,6 +1908,14 @@ tasks:
           IMAGE: pool-agent-bundle
           DOCKERFILE: pool-agent/Dockerfile
           TARGET: bundle
+          BUNDLE: "yes"
+      # The agent bundle the server's release pins (ADR 26-10-24-953 §2): the
+      # agent alone, a multi-architecture index like the platform bundle.
+      - task: release:image
+        vars:
+          IMAGE: agent
+          DOCKERFILE: sandbox-agent/Dockerfile
+          TARGET: agent
           BUNDLE: "yes"
       # The platform bundle the server's release pins (ADR 26-10-16-423 §7): a
       # multi-architecture index like the images, since it carries the agent

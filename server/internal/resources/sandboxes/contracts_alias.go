@@ -15,7 +15,7 @@ type Sandbox = contract.Sandbox
 type Status = contract.Status
 type AssignedPort = contract.AssignedPort
 type BundlePin = contract.BundlePin
-type BundleKind = contract.BundleKind
+type Delivery = contract.Delivery
 type ResolvedHarnessConfig = contract.ResolvedHarnessConfig
 type ProviderStatus = contract.ProviderStatus
 type ProviderConfigField = contract.ProviderConfigField
@@ -35,8 +35,6 @@ var ErrNoContainer = contract.ErrNoContainer
 var ErrPowerDownRefused = contract.ErrPowerDownRefused
 
 const PowerDownIdle = contract.PowerDownIdle
-const BundlePlatform = contract.BundlePlatform
-const BundleHarness = contract.BundleHarness
 const PowerDownSleep = contract.PowerDownSleep
 
 var ErrImageUnavailable = contract.ErrImageUnavailable

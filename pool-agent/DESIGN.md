@@ -20,7 +20,7 @@ from the in-sandbox `sandbox-agent` API.
 | `cmd/discobox-cp-relay` | wslc guest half of the control-plane channel: multiplexes the guest's stdio with `cpmux` and serves the Unix socket the agent reaches the control plane through. |
 | `.` | Root `poolagent` Go package: boot contract, registration flow, control-plane HTTP client (`http.go`), status reporting, the standing sandbox-agent status poller (`statuspoll.go`, ADR 0030), resource accounting (`resourcereport.go`, `storagescan.go`, `cgroup.go`), and high-level command orchestration. |
 | `server` | Pool-local HTTP server, health/metadata endpoints, generated sandbox API route/auth adapter, the sandbox HTTP/sandbox-agent/Git proxy routes, the Git cache routes the control plane forwards clients' deliveries to (`sandbox_git_cache.go`), on-demand start (`autostart.go`), the loopback origin listener the pool proxy forwards sandboxes' origin fetches to (`NewOriginRouter`; see [Git origins](#git-origins)), and the socket it forwards their bundle fetches to (`Config.AssetListener`; see [Bundle Assets](#bundle-assets)). |
-| `assetcache` | The pool's pull-through cache of bundles (ADR 26-10-16-423 §13): each sandbox's record of the bundles it is pinned to (`bundles.json`), and each snapshot build's, kept apart from them by its `layout.SnapshotIDPrefix` ID ([Snapshots](#snapshots)), the blob store under `layout.PoolBuild`, filled through the agent's control-plane client (`HTTPClient.FetchAsset`), the `assets.discobox.internal` handler scoped to one sandbox's record, the sweep, and the agent layer of a sandbox's platform pin (`AgentLayer`). See [Bundle Assets](#bundle-assets). |
+| `assetcache` | The pool's pull-through cache of bundles (ADR 26-10-16-423 §13): each sandbox's record of what it is delivered (`delivery.json`: its agent and its ordered bundles), and each snapshot build's, kept apart from them by its `layout.SnapshotIDPrefix` ID ([Snapshots](#snapshots)), the blob store under `layout.PoolBuild`, filled through the agent's control-plane client (`HTTPClient.FetchAsset`), the `assets.discobox.internal` handler scoped to one sandbox's bundles, the sweep, and the one layer of a sandbox's agent bundle (`AgentLayer`, `OpenAgentLayer`), which only the pool reads. See [Bundle Assets](#bundle-assets). |
 | `cpmux` | Symmetric yamux session over one duplex byte stream, for guests that can only be dialed inward (wslc). |
 | `sandboxtoken` | Tokens the pool issues its own sandboxes, signed with the same key under their own audience (`discobox-pool-sandbox`); `origin:fetch` is accepted on the `git-origins` route alone. |
 | `internalhttp` | The transport for the pool's own HTTP, which never honors `HTTP_PROXY`: the control-plane client's, and the base of every transport a sandbox `Dialer` builds. |
@@ -28,7 +28,7 @@ from the in-sandbox `sandbox-agent` API.
 | `gitcache` | The pool's cache of Git ([ADR 26-10-10-545](../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)): one bare repository per cache key under `layout.Root.PoolGitCache`, a namespace `refs/namespaces/<sandboxID>-<slug>/` per sandbox source, and the remote's own branches and tags under `refs/cache/`. Owns the pin, the configuration a push is received under, the pre-receive check a sandbox's push is held to (the agent binary run as `git-cache-pre-receive`), namespace export and import, and the sweep that removes namespaces, drops unused caches and collects the rest. It never fetches. See [Git origins](#git-origins). |
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
 | `image` | Files baked into the pool image: the systemd units (proxy, buildkitd, mediator, registry) and `registry.yml`. |
-| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the base image the sandbox's container runs, with the agent of its platform pin bound read-only ([Delivering the Agent](#delivering-the-agent)) — the pins the control plane sends with the export, recorded as a create's are, since an archived sandbox may have been pinned since its last create — as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). It starts a delivered sandbox from a snapshot of its plan when it has one, and builds one when it does not ([Snapshots](#snapshots)). In-sandbox path wiring for the primary volumes is delegated to the sandbox agent's `discobox-wire.service` (ADR 0007, ADR 26-10-10-767); the per-source data mount already lands at its final runtime-owned path. |
+| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the base image the sandbox's container runs, with the agent it is pinned to bound read-only ([Delivering the Agent](#delivering-the-agent)) — the pins the control plane sends with the export, recorded as a create's are, since an archived sandbox may have been pinned since its last create — as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). It starts a delivered sandbox from a snapshot of its plan when it has one, and builds one when it does not ([Snapshots](#snapshots)). In-sandbox path wiring for the primary volumes is delegated to the sandbox agent's `discobox-wire.service` (ADR 0007, ADR 26-10-10-767); the per-source data mount already lands at its final runtime-owned path. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
 | `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031) and a sandbox's read of its own egress audit (ADR 26-10-02-678), the origins and assets hosts the proxy forwards to the agent (`origins.go`, ADR 26-10-08-561; `assets.go`, ADR 26-10-16-423 §13), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
@@ -1139,17 +1139,21 @@ fetching what it lacks from the server's pool asset routes once
 flowchart LR
   box["box: GET name, manifest or blob"] --> proxy["pool proxy<br/>GET/HEAD only"]
   proxy -->|"X-Discobox-Pool-Client"| cache["assetcache.Handler"]
-  cache --> rec{"in this sandbox's<br/>bundles.json?"}
+  cache --> rec{"in this sandbox's<br/>delivery.json bundles?"}
   rec -->|no| nf["404, the server never asked"]
   rec -->|yes| store[("blob store<br/>PoolBuild/assets")]
   store -.->|missing, one fetch per digest| server["server<br/>/api/pools/{pool}/assets/…"]
 ```
 
-- **The record** (`assetcache.WriteRecord`) is `sandboxes/{sandbox}/bundles.json`,
+- **The record** (`assetcache.WriteRecord`) is `sandboxes/{sandbox}/delivery.json`,
   beside `source-caches.json` and as pool-private: the create request's
-  `bundles`, rewritten on every create — before the runtime decides whether to
-  build — and removed when it names none. It is the whole of a sandbox's scope;
-  nothing the box reports reaches it. A snapshot build's is in its own tree
+  `agent` and its ordered `bundles` (`assetcache.Delivery`, [ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
+  §§1–2), with nothing saying which bundle is which, rewritten on every create
+  — before the runtime decides whether to build — and removed when it names
+  none. Its bundles are the whole of a sandbox's scope; nothing the box reports
+  reaches it. The `bundles.json` a pool wrote before, which named each bundle's
+  kind, is not read: such a sandbox is delivered nothing until its next create
+  says what, and keeps the agent its container holds. A snapshot build's is in its own tree
   (`layout.Root.Snapshot`), told from a sandbox's by its `layout.SnapshotIDPrefix`
   ID ([Snapshots](#snapshots)).
 - **Scope.** A manifest is answered when it is a pin of the sandbox under that
@@ -1164,24 +1168,26 @@ flowchart LR
   damaged blob is removed and its response aborted, and concurrent reads of a
   digest share one fetch, detached from the first reader and bounded.
 - **Removal is by reference** (`Sweep`, hourly): a blob goes once no sandbox's
-  or build's record reaches it and it is older than an hour.
+  or build's record reaches it, its agent's included, and it is older than an
+  hour.
 
 ## Delivering the Agent
 
-Every sandbox is **delivered** its platform
+Every sandbox is **delivered** its agent and its bundles
 ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
-§§7, 10): its container is the provider's sandbox base image
+§§7, 10, [ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
+§§1–2): its container is the provider's sandbox base image
 (`EnvSandboxBaseImage`, which the Docker driver sets from its
 `sandboxBaseImage`), unpinned, or a snapshot of its plan built on that base
-([Snapshots](#snapshots)); no harness is an image. A create with no platform
-pin is a sandbox from before bundles, pinned to the runnable image it ran: a
-container it has whose spec matches is kept, and building one is refused,
+([Snapshots](#snapshots)); no harness is an image. A create that delivers
+nothing is a sandbox from before bundles, pinned to the runnable image it ran:
+a container it has whose spec matches is kept, and building one is refused,
 `ErrUndelivered` (an `ErrImageUnavailable`), until the control plane pins it
 to its bundles.
 
 ```mermaid
 flowchart LR
-  rec[("bundles.json<br/>platform + harness pins")] --> layer["assetcache.AgentLayer<br/>platform manifest's last layer"]
+  rec[("delivery.json<br/>agent + ordered bundles")] --> layer["assetcache.AgentLayer<br/>the agent bundle's one layer"]
   layer --> ext[("PoolBuild/agents/&lt;layer&gt;<br/>the agent, extracted once")]
   ext --> arch["agentlayer.Archive<br/>layer (if the box lacks it),<br/>units, current link, pins"]
   arch -->|"CopyToContainer /, before ContainerStart"| box["container"]
@@ -1193,24 +1199,29 @@ flowchart LR
   (`agent-placed.json`, beside the tree) says it placed that layer in that
   container, or the container runs a snapshot that holds it, and the units, the `/opt/discobox/current` link and `pins.json`
   every time, so a box boots on the pins and units of the pool that starts
-  it. Nothing in the box decides what is placed. A layer that is not the
-  agent's alone (`agentlayer.AgentLayer`) is refused and the start fails.
-- **A moved platform restarts, never rebuilds.** The control plane's
-  fingerprint of a delivered sandbox leaves its image and platform pins out,
-  so a create that moves only those finds no drift. `deliveredMoved` compares
-  the create with what the record says the container last booted on —
+  it. Nothing in the box decides what is placed. The agent is its own
+  bundle, one layer (`assetcache.OpenAgentLayer` reads it, and only it, for
+  the pool, never for the box); a layer that is not the agent's alone
+  (`agentlayer.AgentLayer`) is refused and the start fails.
+- **A moved pin restarts, never rebuilds.** The control plane's fingerprint of
+  a delivered sandbox leaves out its image and the pins its box applies at
+  start, so a create that moves only those finds no drift. `deliveredMoved`
+  compares the create's bundles with what the record says the container last
+  booted on —
   level-triggered, so a restart that failed is made by the next create: a
   running container is stopped and started into them, keeping its store and
   what it provisioned, and a stopped one boots on them next (ADR 0021 §3).
   A container started from a snapshot runs the base the snapshot was built
   on. When the sandbox base image moved too, the container is rebuilt onto it:
   only a new container takes a new base, and only a move of its pins — an
-  upgrade, a repair, a stopped sandbox following its server — moves it.
+  upgrade, a repair, a stopped sandbox following its server — moves it. A
+  moved agent alone restarts nothing: it is placed at the sandbox's next
+  start.
 - **Export** runs the base image with the extracted agent bound read-only at
   `exportAgentPath`: the export container is not the box, and nothing in the
   sandbox reaches the pool's copy.
 - The extracted agents are swept with the image reclaim, once no sandbox's
-  platform reaches their layer.
+  agent pin reaches their layer.
 
 ## The Pool-Agent Bundle
 
@@ -1262,7 +1273,7 @@ which a box started from, and nothing fails for want of one.
 
 ```mermaid
 flowchart LR
-  create["delivered create"] --> key["plan key: base image ID, project, pool,<br/>pins, features off, provisionEgress"]
+  create["delivered create"] --> key["plan key: base image ID, project, pool,<br/>agent, pins, features off, provisionEgress"]
   key -->|"discobox-snapshot:&lt;key&gt; on its base"| snap["run the snapshot"]
   key -->|"none"| base["run the base image"] --> ask["build it in the background<br/>(one at a time; a failure waits an hour)"]
   ask --> build["build container: base + agent layer + pins,<br/>SnapshotPlan bound at /etc/discobox"]
@@ -1271,8 +1282,8 @@ flowchart LR
 
 - **The key** (`snapshotPlan`) is everything the snapshot holds depends on
   and nothing of the sandbox: the base image's ID, the project and pool, the
-  platform and harness pins, the features turned off, and the create's
-  `provisionEgress`. Every sandbox of one plan shares one snapshot.
+  agent it is placed with and its bundles in order, the features turned off,
+  and the create's `provisionEgress`. Every sandbox of one plan shares one snapshot.
 - **A build is anonymous.** Its proxy identity is its own
   (`layout.SnapshotIDPrefix`), with a client certificate, and an asset record
   of the plan's pins and a registry namespace (`RegistryNamespacePath`) in its

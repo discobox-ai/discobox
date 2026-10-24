@@ -52806,6 +52806,12 @@ func (s *SandboxUpgrade) encodeFields(e *jx.Encoder) {
 		e.Bool(s.Available)
 	}
 	{
+		if s.CurrentAgentBundleDigest.Set {
+			e.FieldStart("currentAgentBundleDigest")
+			s.CurrentAgentBundleDigest.Encode(e)
+		}
+	}
+	{
 		if s.CurrentBundleDigest.Set {
 			e.FieldStart("currentBundleDigest")
 			s.CurrentBundleDigest.Encode(e)
@@ -52836,6 +52842,12 @@ func (s *SandboxUpgrade) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.TargetAgentBundleDigest.Set {
+			e.FieldStart("targetAgentBundleDigest")
+			s.TargetAgentBundleDigest.Encode(e)
+		}
+	}
+	{
 		if s.TargetBundleDigest.Set {
 			e.FieldStart("targetBundleDigest")
 			s.TargetBundleDigest.Encode(e)
@@ -52861,17 +52873,19 @@ func (s *SandboxUpgrade) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxUpgrade = [10]string{
-	0: "available",
-	1: "currentBundleDigest",
-	2: "currentPlatformBundleDigest",
-	3: "currentImage",
-	4: "currentImageDigest",
-	5: "reason",
-	6: "targetBundleDigest",
-	7: "targetImage",
-	8: "targetImageDigest",
-	9: "targetPlatformBundleDigest",
+var jsonFieldsNameOfSandboxUpgrade = [12]string{
+	0:  "available",
+	1:  "currentAgentBundleDigest",
+	2:  "currentBundleDigest",
+	3:  "currentPlatformBundleDigest",
+	4:  "currentImage",
+	5:  "currentImageDigest",
+	6:  "reason",
+	7:  "targetAgentBundleDigest",
+	8:  "targetBundleDigest",
+	9:  "targetImage",
+	10: "targetImageDigest",
+	11: "targetPlatformBundleDigest",
 }
 
 // Decode decodes SandboxUpgrade from json.
@@ -52894,6 +52908,16 @@ func (s *SandboxUpgrade) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"available\"")
+			}
+		case "currentAgentBundleDigest":
+			if err := func() error {
+				s.CurrentAgentBundleDigest.Reset()
+				if err := s.CurrentAgentBundleDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"currentAgentBundleDigest\"")
 			}
 		case "currentBundleDigest":
 			if err := func() error {
@@ -52944,6 +52968,16 @@ func (s *SandboxUpgrade) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"reason\"")
+			}
+		case "targetAgentBundleDigest":
+			if err := func() error {
+				s.TargetAgentBundleDigest.Reset()
+				if err := s.TargetAgentBundleDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"targetAgentBundleDigest\"")
 			}
 		case "targetBundleDigest":
 			if err := func() error {
@@ -53066,6 +53100,8 @@ func (s *SandboxUpgradeReason) Decode(d *jx.Decoder) error {
 		*s = SandboxUpgradeReasonManifestDigestChanged
 	case SandboxUpgradeReasonPlatformBundleDigestChanged:
 		*s = SandboxUpgradeReasonPlatformBundleDigestChanged
+	case SandboxUpgradeReasonAgentBundleDigestChanged:
+		*s = SandboxUpgradeReasonAgentBundleDigestChanged
 	default:
 		*s = SandboxUpgradeReason(v)
 	}

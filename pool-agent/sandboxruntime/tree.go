@@ -77,11 +77,11 @@ const exportStderrLimit = 16 * 1024
 // in this repository makes, and it leaves the archive without its SHA256SUMS,
 // so a reader that never saw the error still refuses what it got.
 //
-// pins are the bundles the control plane has the sandbox pinned to, which it
-// owns: recorded as a create records them, since an archived sandbox, or one
+// delivered is what the control plane has the sandbox pinned to, which it
+// owns: recorded as a create records it, since an archived sandbox, or one
 // pinned since its last create, has a record here that does not say so, and
-// the agent the tree is read with is its platform's.
-func (r *DockerSandboxRuntime) ExportTree(ctx context.Context, sandboxID string, pins []assetcache.Pin) (io.ReadCloser, error) {
+// the agent the tree is read with is the one it names.
+func (r *DockerSandboxRuntime) ExportTree(ctx context.Context, sandboxID string, delivered assetcache.Delivery) (io.ReadCloser, error) {
 	root := r.sandboxRoot(sandboxID)
 	if _, err := os.Stat(root); err != nil {
 		if os.IsNotExist(err) {
@@ -109,8 +109,8 @@ func (r *DockerSandboxRuntime) ExportTree(ctx context.Context, sandboxID string,
 	if err != nil {
 		return nil, fmt.Errorf("export sandbox %s: %w", sandboxID, err)
 	}
-	if len(pins) > 0 {
-		if err := assetcache.WriteRecord(root, pins); err != nil {
+	if delivered.Delivered() {
+		if err := assetcache.WriteRecord(root, delivered); err != nil {
 			removeOrigins()
 			return nil, fmt.Errorf("export sandbox %s: record its bundles: %w", sandboxID, err)
 		}
@@ -280,9 +280,9 @@ func (r *DockerSandboxRuntime) runExportMode(ctx context.Context, sandboxID stri
 }
 
 // exportImage resolves the image a sandbox's tree is read with — the
-// provider's sandbox base image — and the agent of its platform pin to bind
-// into it. A sandbox pinned to no platform is from before bundles, and has
-// nothing to be read with until it is pinned to its bundles.
+// provider's sandbox base image — and the agent it is delivered to bind into
+// it. A sandbox delivered nothing is from before bundles, and has nothing to
+// be read with until it is pinned to its bundles.
 func (r *DockerSandboxRuntime) exportImage(ctx context.Context, sandboxID string) (string, string, error) {
 	if _, ok, err := r.deliveredPins(sandboxID); err != nil {
 		return "", "", err
@@ -294,7 +294,7 @@ func (r *DockerSandboxRuntime) exportImage(ctx context.Context, sandboxID string
 		return "", "", fmt.Errorf("the agent to export sandbox %s with: %w", sandboxID, err)
 	}
 	if !ok {
-		return "", "", fmt.Errorf("the agent to export sandbox %s with: this pool reads no agent layer of its platform", sandboxID)
+		return "", "", fmt.Errorf("the agent to export sandbox %s with: this pool reads no agent layer of its agent bundle", sandboxID)
 	}
 	// The base image its container runs, which is the pool's current one only
 	// until that moves; with no container, the pool's.

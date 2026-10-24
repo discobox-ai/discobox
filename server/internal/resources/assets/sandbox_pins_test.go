@@ -44,7 +44,7 @@ func TestASandboxsPinStaysInScopeAfterItsConfigMoves(t *testing.T) {
 	_, err = f.service.AssetManifest(asPool("pool-2"), "pool-2", "discobox-harness-acme", f.acme.manifest)
 	wantStatus(t, err, 404)
 
-	f.service.now = func() time.Time { return time.Now().Add(pruneGrace + platformRetry) }
+	f.service.now = func() time.Time { return time.Now().Add(pruneGrace + releaseRetry) }
 	if _, err := f.service.Prune(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestASandboxsPinStaysInScopeAfterItsConfigMoves(t *testing.T) {
 func TestThePlatformMovingIsTold(t *testing.T) {
 	f := newFixture(t)
 	moves := make(chan struct{}, 4)
-	f.service.OnPlatformMoved(func(context.Context) { moves <- struct{}{} })
+	f.service.OnReleaseMoved(func(context.Context) { moves <- struct{}{} })
 	wantMoves := func(n int) {
 		t.Helper()
 		for range n {
@@ -78,26 +78,27 @@ func TestThePlatformMovingIsTold(t *testing.T) {
 		}
 	}
 
-	if pin := f.service.LatestPlatform(); pin.Digest != "" {
+	if pin := f.service.LatestRelease().Platform; pin.Digest != "" {
 		t.Fatalf("latest before any resolution = %+v, want none", pin)
 	}
-	f.service.ResolvePlatform(context.Background())
+	f.service.ResolveRelease(context.Background())
 	wantMoves(1)
-	pin, err := f.service.CurrentPlatform(context.Background())
+	release, err := f.service.CurrentRelease(context.Background())
+	pin := release.Platform
 	if err != nil || pin.Reference != platformRef || pin.Digest != f.index {
 		t.Fatalf("current platform = %+v, %v; want %s@%s", pin, err, platformRef, f.index)
 	}
-	if latest := f.service.LatestPlatform(); latest != pin {
+	if latest := f.service.LatestRelease().Platform; latest != pin {
 		t.Fatalf("latest = %+v, want %+v", latest, pin)
 	}
-	f.service.ResolvePlatform(context.Background())
+	f.service.ResolveRelease(context.Background())
 	wantMoves(0)
 
 	moved := f.registry.index(t, f.registry.image(t, "platform v2"))
 	f.registry.tags[platformRef] = moved
-	f.service.now = func() time.Time { return time.Now().Add(platformRetry) }
-	if pin, err := f.service.CurrentPlatform(context.Background()); err != nil || pin.Digest != moved {
-		t.Fatalf("current platform after the tag moved = %+v, %v; want %s", pin, err, moved)
+	f.service.now = func() time.Time { return time.Now().Add(releaseRetry) }
+	if release, err := f.service.CurrentRelease(context.Background()); err != nil || release.Platform.Digest != moved {
+		t.Fatalf("current platform after the tag moved = %+v, %v; want %s", release.Platform, err, moved)
 	}
 	wantMoves(1)
 }

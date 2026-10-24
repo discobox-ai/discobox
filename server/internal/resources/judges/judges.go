@@ -367,7 +367,7 @@ func matches(existing *model.Sandbox, wanted *judgeSpec) bool {
 	// when the configuration behind it changes. A platform-layer edit moves
 	// the manifest and no bundle. A judge from before bundles is pinned to
 	// none, and is replaced by one that is.
-	return existing.BundleDigest == wanted.bundleDigest && existing.HarnessManifestDigest == wanted.manifestDigest
+	return existing.HarnessPin().Digest == wanted.bundleDigest && existing.HarnessManifestDigest == wanted.manifestDigest
 }
 
 func (s *Service) create(ctx context.Context, projectID string, wanted *judgeSpec) (*model.Sandbox, error) {

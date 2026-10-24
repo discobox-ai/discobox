@@ -110,7 +110,7 @@ func (p *recordingProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRe
 	return nil, nil
 }
 
-func (*recordingProvider) ExportTree(context.Context, sandbox.SandboxRef, string, []sandbox.BundlePin, []byte) (io.ReadCloser, error) {
+func (*recordingProvider) ExportTree(context.Context, sandbox.SandboxRef, string, sandbox.Delivery, []byte) (io.ReadCloser, error) {
 	return nil, nil
 }
 

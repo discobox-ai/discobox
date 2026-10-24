@@ -32,8 +32,8 @@ func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {
 
 func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 	specs, _ := loadDockerImageSpecs(t)
-	if len(specs) != 11 {
-		t.Fatalf("image specs = %d, want base, worker, the pool-agent bundle, platform, and seven harnesses' bundles", len(specs))
+	if len(specs) != 12 {
+		t.Fatalf("image specs = %d, want base, worker, the pool-agent bundle, the agent, platform, and seven harnesses' bundles", len(specs))
 	}
 
 	gotNames := make([]string, 0, len(specs))
@@ -55,8 +55,9 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 		}
 	}
 	// No harness is a runnable image (issue #270): a harness is its bundle
-	// alone, and the sandbox agent ships only as the platform bundle.
-	wantNames := []string{baseSpecName, "pool-agent", poolAgentBundleSpecName, "platform"}
+	// alone, and the sandbox agent ships only as the agent bundle (ADR
+	// 26-10-24-953 §2).
+	wantNames := []string{baseSpecName, "pool-agent", poolAgentBundleSpecName, agentSpecName, "platform"}
 	for _, name := range []string{"codex", "claude-code", "opencode", "copilot", "omp", "pi", "shell"} {
 		wantNames = append(wantNames, "harness-"+name)
 	}
@@ -67,6 +68,7 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 		"DISCOBOX_DOCKER_POOL_IMAGE",
 		"DISCOBOX_DOCKER_POOL_IMAGE_DIGEST",
 		"DISCOBOX_PLATFORM_BUNDLE",
+		"DISCOBOX_AGENT_BUNDLE",
 		"DISCOBOX_POOL_AGENT_BUNDLE",
 		"DISCOBOX_HARNESS_CODEX_BUNDLE",
 		"DISCOBOX_HARNESS_CLAUDE_CODE_BUNDLE",
@@ -84,6 +86,31 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 		if strings.HasPrefix(key, "DISCOBOX_DEFAULT_SANDBOX_IMAGE") ||
 			(strings.HasPrefix(key, "DISCOBOX_HARNESS_") && strings.HasSuffix(key, "_IMAGE")) {
 			t.Errorf("watcher still writes the runnable-image key %s", key)
+		}
+	}
+}
+
+// The agent bundle is exported as a layout from the sandbox agent
+// Dockerfile's agent stage, FROM scratch: the agent's build is its input, and
+// no feature is (ADR 26-10-24-953 §2), so an edit to one rebuilds the platform
+// alone.
+func TestDockerImageSpecsExportTheAgentBundle(t *testing.T) {
+	specs, repoRoot := loadDockerImageSpecs(t)
+	bundle, ok := specNamed(specs, agentSpecName)
+	if !ok {
+		t.Fatal("missing the agent bundle's watcher")
+	}
+	args := strings.Join(bundle.buildArgs, " ")
+	layoutDir := filepath.Join(repoRoot, "build", "assets", "discobox-agent")
+	if !bundle.bundle || bundle.layoutDir != layoutDir || !strings.Contains(args, "-f sandbox-agent/Dockerfile --target agent") || bundle.envImageKey != agentBundleEnvKey {
+		t.Fatalf("agent bundle watcher does not export the agent stage into %s: %#v", layoutDir, bundle)
+	}
+	if !contains(bundle.files, filepath.Join(repoRoot, "sandbox-agent", "cmd", "discobox-sandbox-agent", "main.go")) {
+		t.Fatal("the agent bundle does not watch the agent's source")
+	}
+	for _, file := range bundle.files {
+		if strings.Contains(file, string(filepath.Separator)+"features"+string(filepath.Separator)) {
+			t.Fatalf("the agent bundle watches a feature's file: %s", file)
 		}
 	}
 }
@@ -261,6 +288,7 @@ func TestSpecsThreadTheImageTheyBuildFrom(t *testing.T) {
 		baseSpecName:            "",
 		"pool-agent":            baseSpecName,
 		poolAgentBundleSpecName: "",
+		agentSpecName:           "",
 		platformSpecName:        "",
 	}
 	wantArgs := map[string]string{

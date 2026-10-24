@@ -279,7 +279,7 @@ func (p *fakeProvider) Definition() sandbox.ProviderDefinition {
 	return p.definition
 }
 
-func (*fakeProvider) ExportTree(context.Context, sandbox.SandboxRef, string, []sandbox.BundlePin, []byte) (io.ReadCloser, error) {
+func (*fakeProvider) ExportTree(context.Context, sandbox.SandboxRef, string, sandbox.Delivery, []byte) (io.ReadCloser, error) {
 	return nil, nil
 }
 

@@ -5,15 +5,12 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/http"
-	"path"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
-
-	"github.com/google/go-containerregistry/pkg/name"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -298,16 +295,16 @@ func SandboxToAPI(sandbox *model.Sandbox, basis SandboxUpgradeBasis) (serverapi.
 	if sandbox.ImageDigest != "" {
 		config["imageDigest"] = sandbox.ImageDigest
 	}
-	if sandbox.BundleDigest != "" {
-		config["bundle"] = sandbox.Bundle
-		config["bundleDigest"] = sandbox.BundleDigest
+	if harness := sandbox.HarnessPin(); harness.Digest != "" {
+		config["bundle"] = harness.Reference
+		config["bundleDigest"] = harness.Digest
 	}
 	if sandbox.HarnessManifestDigest != "" {
 		config["harnessManifestDigest"] = sandbox.HarnessManifestDigest
 	}
-	if sandbox.PlatformBundleDigest != "" {
-		config["platformBundle"] = sandbox.PlatformBundle
-		config["platformBundleDigest"] = sandbox.PlatformBundleDigest
+	if platform := sandbox.PlatformPin(); platform.Digest != "" {
+		config["platformBundle"] = platform.Reference
+		config["platformBundleDigest"] = platform.Digest
 	}
 	if sandbox.HarnessConfigID != nil {
 		config["harnessConfigId"] = *sandbox.HarnessConfigID
@@ -490,35 +487,12 @@ func SandboxToAPI(sandbox *model.Sandbox, basis SandboxUpgradeBasis) (serverapi.
 	return result, nil
 }
 
-// BundlePin is a bundle by reference and the manifest digest it is pinned to
-// (ADR 26-10-16-423 §§7, 13).
-type BundlePin struct {
-	Reference string
-	Digest    string
-}
-
-// Name is the name the asset API addresses the bundle by.
-func (p BundlePin) Name() string { return BundleName(p.Reference) }
-
-// BundleName is the name a bundle is addressed by: the last component of its
-// reference's repository, so ghcr.io/discobox-ai/discobox-platform:v1 and a
-// development build's discobox-platform:dev-<digest> are both
-// discobox-platform.
-// Empty for a reference that does not parse.
-func BundleName(ref string) string {
-	parsed, err := name.ParseReference(strings.TrimSpace(ref))
-	if err != nil {
-		return ""
-	}
-	return path.Base(parsed.Context().RepositoryStr())
-}
-
 // HarnessPins is what a harness config pins a sandbox to (ADR 26-10-16-423
 // §2): its bundle, which the box applies, or, for a template with no image,
 // its manifest file — one of the two — and the digest of the manifest
 // composed from it, which its container is built with.
 type HarnessPins struct {
-	Bundle         BundlePin
+	Bundle         model.BundlePin
 	Image          string
 	ImageDigest    string
 	ManifestDigest string
@@ -535,7 +509,7 @@ func HarnessConfigPins(config *model.HarnessConfig) (HarnessPins, bool) {
 	manifest := strings.TrimSpace(config.ManifestDigest)
 	if bundle := strings.TrimSpace(config.Bundle); bundle != "" {
 		digest := strings.TrimSpace(config.BundleDigest)
-		return HarnessPins{Bundle: BundlePin{Reference: bundle, Digest: digest}, ManifestDigest: manifest}, imagecache.IsDigest(digest)
+		return HarnessPins{Bundle: model.BundlePin{Reference: bundle, Digest: digest}, ManifestDigest: manifest}, imagecache.IsDigest(digest)
 	}
 	// A config's image is a manifest file's or nothing: no harness is an
 	// image (ADR 26-10-16-423 §10).
@@ -548,32 +522,49 @@ func HarnessConfigPins(config *model.HarnessConfig) (HarnessPins, bool) {
 // manifest file, the whole manifest of a template with no image.
 const ManifestFileScheme = "file://"
 
+// ReleasePins are the bundles the release names that every delivered box is
+// pinned to: the platform it applies first, and the agent its pool places it
+// with (ADR 26-10-24-953 §2). Each is zero when the release's reference has
+// not resolved.
+type ReleasePins struct {
+	Platform model.BundlePin
+	Agent    model.BundlePin
+}
+
 // SandboxPinTarget is what a sandbox is pinned to: its harness config's
-// pins, and the platform bundle the box applies.
+// pins, and the release's.
 type SandboxPinTarget struct {
 	// Harness is zero when the harness config offers nothing to move to,
 	// which leaves the sandbox's own in place.
 	Harness HarnessPins
-	// Platform is the platform bundle the release's reference resolves to;
-	// zero when it is not known, which leaves the sandbox's own in place.
-	Platform BundlePin
+	// Platform and Agent are the release's bundles as its references
+	// resolve; a zero one is not known, which leaves the sandbox's own in
+	// place.
+	Platform model.BundlePin
+	Agent    model.BundlePin
 }
 
 // Empty reports whether the target has nothing to move a sandbox to.
 func (t SandboxPinTarget) Empty() bool { return t == SandboxPinTarget{} }
 
-// Apply writes the target's pins onto sandbox. A harness or a platform the
-// target does not name leaves the sandbox's as it is. A harness it names
-// replaces all three, so a sandbox from before bundles leaves the runnable
-// image it carried behind once it is pinned to its bundle.
+// Apply writes the target's pins onto sandbox. A harness, a platform or an
+// agent the target does not name leaves the sandbox's as it is. A harness it
+// names replaces all three of its pins, so a sandbox from before bundles
+// leaves the runnable image it carried behind once it is pinned to its
+// bundle.
 func (t SandboxPinTarget) Apply(sandbox *model.Sandbox) {
+	platform, harness := sandbox.PlatformPin(), sandbox.HarnessPin()
 	if t.Harness != (HarnessPins{}) {
 		sandbox.Image, sandbox.ImageDigest = t.Harness.Image, t.Harness.ImageDigest
-		sandbox.Bundle, sandbox.BundleDigest = t.Harness.Bundle.Reference, t.Harness.Bundle.Digest
+		harness = t.Harness.Bundle
 		sandbox.HarnessManifestDigest = t.Harness.ManifestDigest
 	}
 	if t.Platform.Digest != "" {
-		sandbox.PlatformBundle, sandbox.PlatformBundleDigest = t.Platform.Reference, t.Platform.Digest
+		platform = t.Platform
+	}
+	sandbox.SetPins(platform, harness)
+	if t.Agent.Digest != "" {
+		sandbox.SetAgentPin(t.Agent)
 	}
 }
 
@@ -581,14 +572,16 @@ func (t SandboxPinTarget) Apply(sandbox *model.Sandbox) {
 func (t SandboxPinTarget) upgradeReason(sandbox *model.Sandbox) string {
 	harness := t.Harness != (HarnessPins{})
 	switch {
-	case harness && t.Harness.Bundle.Digest != sandbox.BundleDigest:
+	case harness && t.Harness.Bundle.Digest != sandbox.HarnessPin().Digest:
 		return "bundleDigestChanged"
 	case harness && t.Harness.ImageDigest != strings.TrimSpace(sandbox.ImageDigest):
 		return "imageDigestChanged"
 	case harness && t.Harness.ManifestDigest != sandbox.HarnessManifestDigest:
 		return "manifestDigestChanged"
-	case t.Platform.Digest != "" && t.Platform.Digest != sandbox.PlatformBundleDigest:
+	case t.Platform.Digest != "" && t.Platform.Digest != sandbox.PlatformPin().Digest:
 		return "platformBundleDigestChanged"
+	case t.Agent.Digest != "" && t.Agent.Digest != sandbox.AgentBundleDigest:
+		return "agentBundleDigestChanged"
 	}
 	return "bundleDigestChanged"
 }
@@ -600,14 +593,15 @@ func (t SandboxPinTarget) upgradeReason(sandbox *model.Sandbox) string {
 // is a sandbox lying about itself.
 //
 // The harness's pins are its config's now (HarnessConfigPins), and the
-// platform the bundle the release's reference resolves to now, zero when that
-// is not known (ADR 26-10-16-423 §7). A pin that moved makes an upgrade
-// available, and it is the digest that says so: comparing tags would report
-// "up to date" for every sandbox on a tag its workflow rebuilds in place,
-// which is the failure ADR 0016 §1 exists to prevent. The platform is every
-// box's, so it is a target of its own even for a sandbox whose harness has
-// nothing to move to; only a config-mode sandbox, which runs the configure
-// flow and is thrown away, follows nothing.
+// platform and agent the bundles the release's references resolve to now,
+// each zero when that is not known (ADR 26-10-16-423 §7, ADR 26-10-24-953
+// §2). A pin that moved makes an upgrade available, and it is the digest that
+// says so: comparing tags would report "up to date" for every sandbox on a tag
+// its workflow rebuilds in place, which is the failure ADR 0016 §1 exists to
+// prevent. The release's bundles are every box's, so they are a target of
+// their own even for a sandbox whose harness has nothing to move to; only a
+// config-mode sandbox, which runs the configure flow and is thrown away,
+// follows nothing.
 //
 // A sandbox from before bundles, pinned to a runnable harness image, has no
 // bundle pin, so its harness's bundle is always a move for it.
@@ -624,7 +618,7 @@ func (t SandboxPinTarget) upgradeReason(sandbox *model.Sandbox) string {
 // A config whose manifest file's template does not run on the sandbox's
 // platform is nothing to move to: a sandbox never leaves its own (ADR 0145
 // §1). A sandbox whose pool has not yet declared one is not held back by it.
-func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig, platform BundlePin) (SandboxPinTarget, bool) {
+func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig, release ReleasePins) (SandboxPinTarget, bool) {
 	if sandbox.HarnessMode == "config" {
 		return SandboxPinTarget{}, false
 	}
@@ -632,12 +626,16 @@ func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig, p
 	available := false
 	if pins, ok := harnessTarget(sandbox, config); ok {
 		target.Harness = pins
-		available = sandbox.HarnessConfigID == nil || pins.Bundle.Digest != sandbox.BundleDigest ||
+		available = sandbox.HarnessConfigID == nil || pins.Bundle.Digest != sandbox.HarnessPin().Digest ||
 			pins.ImageDigest != strings.TrimSpace(sandbox.ImageDigest) || pins.ManifestDigest != sandbox.HarnessManifestDigest
 	}
-	if platform.Digest != "" {
-		target.Platform = platform
-		available = available || platform.Digest != sandbox.PlatformBundleDigest
+	if release.Platform.Digest != "" {
+		target.Platform = release.Platform
+		available = available || release.Platform.Digest != sandbox.PlatformPin().Digest
+	}
+	if release.Agent.Digest != "" {
+		target.Agent = release.Agent
+		available = available || release.Agent.Digest != sandbox.AgentBundleDigest
 	}
 	return target, available
 }
@@ -658,11 +656,11 @@ func harnessTarget(sandbox *model.Sandbox, config *model.HarnessConfig) (Harness
 // SandboxUpgradeBasis is what a sandbox's available upgrade is read against
 // besides its own harness config: the project's reserved `shell` config,
 // which a legacy sandbox with no harness config of its own upgrades to (ADR
-// 0032 §4; nil when seeding has not created it), and the platform bundle the
-// release's reference was last resolved to (zero when it has not been).
+// 0032 §4; nil when seeding has not created it), and the release's bundles as
+// its references were last resolved (each zero when it has not been).
 type SandboxUpgradeBasis struct {
 	Fallback *model.HarnessConfig
-	Platform BundlePin
+	Release  ReleasePins
 }
 
 // SandboxUpgrade renders the upgrade field of a sandbox API response, or nil
@@ -680,7 +678,7 @@ func SandboxUpgrade(sandbox *model.Sandbox, basis SandboxUpgradeBasis) map[strin
 	if sandbox.HarnessConfigID == nil {
 		config = basis.Fallback
 	}
-	target, available := SandboxUpgradeTarget(sandbox, config, basis.Platform)
+	target, available := SandboxUpgradeTarget(sandbox, config, basis.Release)
 	if target.Empty() {
 		return nil
 	}
@@ -691,17 +689,23 @@ func SandboxUpgrade(sandbox *model.Sandbox, basis SandboxUpgradeBasis) map[strin
 	if target.Harness.ImageDigest != "" {
 		upgrade["targetImage"], upgrade["targetImageDigest"] = target.Harness.Image, target.Harness.ImageDigest
 	}
-	if sandbox.BundleDigest != "" {
-		upgrade["currentBundleDigest"] = sandbox.BundleDigest
+	if digest := sandbox.HarnessPin().Digest; digest != "" {
+		upgrade["currentBundleDigest"] = digest
 	}
 	if target.Harness.Bundle.Digest != "" {
 		upgrade["targetBundleDigest"] = target.Harness.Bundle.Digest
 	}
-	if sandbox.PlatformBundleDigest != "" {
-		upgrade["currentPlatformBundleDigest"] = sandbox.PlatformBundleDigest
+	if digest := sandbox.PlatformPin().Digest; digest != "" {
+		upgrade["currentPlatformBundleDigest"] = digest
 	}
 	if target.Platform.Digest != "" {
 		upgrade["targetPlatformBundleDigest"] = target.Platform.Digest
+	}
+	if sandbox.AgentBundleDigest != "" {
+		upgrade["currentAgentBundleDigest"] = sandbox.AgentBundleDigest
+	}
+	if target.Agent.Digest != "" {
+		upgrade["targetAgentBundleDigest"] = target.Agent.Digest
 	}
 	if available {
 		upgrade["reason"] = target.upgradeReason(sandbox)

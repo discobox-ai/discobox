@@ -120,9 +120,11 @@
   pin from anything but `agentlayer.PinsFile`, which the pool places: what
   the box may fetch is the pool's record, and a pin the box chose would
   only be refused there.
-- **The agent layer is the platform bundle's last layer, alone.** A pool
-  finds it by position (`agentlayer.AgentLayer`); a `COPY` after the agent's
-  in the `platform` stage, or one beside it, stops every box booting.
+- **The agent bundle is one layer, the agent alone.** Whoever makes a box
+  places it from the `agent` stage's one layer (`agentlayer.AgentLayer`,
+  ADR 26-10-24-953 §2); a second `COPY` there stops every box booting. The
+  platform carries no agent: core links the placed one
+  (`/opt/discobox/current`), never a copy in a tree.
 - **Every `COPY` into the `platform` stage is `--link`.** Without it each
   layer carries `/features/` as the stage last left it, so an edit to one
   feature moved every layer after it, and every box fetched them all again: a

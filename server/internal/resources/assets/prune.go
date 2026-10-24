@@ -10,8 +10,8 @@ import (
 )
 
 // Removal is by reference (ADR 26-10-16-423 §13): a blob leaves the store
-// when no pin — a sandbox or harness config of any project, or a platform
-// digest this server has answered — reaches it any more.
+// when no pin — a sandbox or harness config of any project, or a release
+// bundle's digest this server has answered — reaches it any more.
 const (
 	// pruneInterval is how often the store is swept.
 	pruneInterval = time.Hour
@@ -43,13 +43,17 @@ func (s *Service) StartPruning(ctx context.Context) {
 // Prune removes every blob no pin reaches, and reports how many it removed.
 //
 // What a pin reaches is read from the store alone, never fetched: a manifest
-// the store lacks has nothing beneath it there to keep. When the platform the
+// the store lacks has nothing beneath it there to keep. When a bundle the
 // release pins cannot be resolved, nothing is removed, since what it reaches
 // is then unknown.
 func (s *Service) Prune(ctx context.Context) (int, error) {
-	platform, err := s.platform.pins(ctx, false)
-	if err != nil {
-		return 0, fmt.Errorf("prune skipped: %w", err)
+	var release []string
+	for _, bundle := range s.releaseBundles() {
+		digests, err := bundle.pins(ctx, false)
+		if err != nil {
+			return 0, fmt.Errorf("prune skipped: %w", err)
+		}
+		release = append(release, digests...)
 	}
 	configs, err := s.store.ListHarnessConfigBundles(ctx)
 	if err != nil {
@@ -61,13 +65,13 @@ func (s *Service) Prune(ctx context.Context) (int, error) {
 	}
 	keep := map[string]bool{}
 	for _, sb := range sandboxes {
-		for _, digest := range []string{sb.BundleDigest, sb.PlatformBundleDigest} {
-			if imagecache.IsDigest(digest) {
-				s.blobs.Reach(digest, keep)
+		for _, bundle := range append(sb.BundlePins(), sb.AgentPin()) {
+			if imagecache.IsDigest(bundle.Digest) {
+				s.blobs.Reach(bundle.Digest, keep)
 			}
 		}
 	}
-	for _, digest := range platform {
+	for _, digest := range release {
 		s.blobs.Reach(digest, keep)
 	}
 	for _, config := range configs {

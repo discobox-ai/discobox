@@ -189,6 +189,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	assetService := assets.New(store, assets.Options{
 		Dir:            options.AssetDir,
 		PlatformBundle: options.Harnesses.PlatformBundle,
+		AgentBundle:    dockerworker.EffectiveAgentBundle(options.ServerDefaults),
 		ReleaseBundles: releaseBundles,
 		Development:    options.DevelopmentBundles,
 	})
@@ -206,17 +207,17 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 				slog.WarnContext(ctx, "development bundle built but a project's harnesses were not seeded onto it", "projectId", project.ID, "error", err)
 			}
 		}
-		assetService.ResolvePlatform(ctx)
+		assetService.ResolveRelease(ctx)
 	})
-	// Every sandbox is pinned to the platform the release names, and a
-	// stopped one follows it when the reference resolves somewhere new (ADR
-	// 26-10-16-423 §7).
-	sandboxService.SetPlatformBundles(assetService)
-	assetService.OnPlatformMoved(func(ctx context.Context) {
-		if err := sandboxService.UpgradePlatformSandboxes(ctx); err != nil {
-			slog.WarnContext(ctx, "platform bundle moved but stopped sandboxes were not upgraded", "error", err)
+	// Every sandbox is pinned to the platform and the agent the release
+	// names, and a stopped one follows them when a reference resolves
+	// somewhere new (ADR 26-10-16-423 §7, ADR 26-10-24-953 §2).
+	sandboxService.SetReleaseBundles(assetService)
+	assetService.OnReleaseMoved(func(ctx context.Context) {
+		if err := sandboxService.UpgradeReleaseSandboxes(ctx); err != nil {
+			slog.WarnContext(ctx, "a release bundle moved but stopped sandboxes were not upgraded", "error", err)
 		}
-		// A sandbox from before bundles waits on a platform to be pinned to.
+		// A sandbox from before bundles waits on them to be pinned to.
 		if err := sandboxService.PinUndeliveredSandboxes(ctx); err != nil {
 			slog.WarnContext(ctx, "pin sandboxes from before bundles", "error", err)
 		}
@@ -282,7 +283,7 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	s.poolControlPlane.StartBootstrapTokenCleanup(ctx)
 	s.assets.StartPruning(ctx)
-	go s.assets.ResolvePlatform(ctx)
+	go s.assets.ResolveRelease(ctx)
 	s.StartPinningUndelivered(ctx)
 	if err := s.EnsureExistingSandboxProviderInstances(ctx); err != nil {
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)

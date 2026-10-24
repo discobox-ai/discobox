@@ -43,3 +43,10 @@ func BundleRef(name string) string {
 func PlatformBundleRef() string {
 	return BundleRef("discobox-platform")
 }
+
+// AgentBundleRef returns the reference for the agent bundle this build pins
+// (ADR 26-10-24-953 §2): the sandbox agent alone, which whoever makes a box
+// places in it, published with the platform bundle and located as it is.
+func AgentBundleRef() string {
+	return BundleRef("discobox-agent")
+}

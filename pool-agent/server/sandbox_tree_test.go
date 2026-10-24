@@ -21,7 +21,7 @@ type failingTreeRuntime struct {
 	*sandboxruntime.MemorySandboxRuntime
 }
 
-func (failingTreeRuntime) ExportTree(context.Context, string, []assetcache.Pin) (io.ReadCloser, error) {
+func (failingTreeRuntime) ExportTree(context.Context, string, assetcache.Delivery) (io.ReadCloser, error) {
 	reader, writer := io.Pipe()
 	go func() {
 		_, _ = writer.Write(make([]byte, 1024))
@@ -66,16 +66,16 @@ func TestExportTreeAbortsTheResponseWhenTheWalkFails(t *testing.T) {
 	}
 }
 
-// pinRecordingRuntime records the pins an export was asked to read with.
+// pinRecordingRuntime records what an export was asked to read with.
 type pinRecordingRuntime struct {
 	*sandboxruntime.MemorySandboxRuntime
-	pins   *[]assetcache.Pin
+	pins   *assetcache.Delivery
 	called *bool
 	err    error
 }
 
-func (r pinRecordingRuntime) ExportTree(_ context.Context, _ string, pins []assetcache.Pin) (io.ReadCloser, error) {
-	*r.pins = pins
+func (r pinRecordingRuntime) ExportTree(_ context.Context, _ string, delivered assetcache.Delivery) (io.ReadCloser, error) {
+	*r.pins = delivered
 	*r.called = true
 	if r.err != nil {
 		return nil, r.err
@@ -83,37 +83,41 @@ func (r pinRecordingRuntime) ExportTree(_ context.Context, _ string, pins []asse
 	return io.NopCloser(strings.NewReader("")), nil
 }
 
-// The control plane owns the pins, so the bundles an export reads with arrive
-// on the request, each as <kind>:<name>@<digest>; one that does not parse is
-// the caller's mistake, refused before anything is read. A sandbox pinned to
-// no platform has nothing to be read with, which is a conflict the caller can
-// act on — by pinning it — not a failure (ADR 0129 §3, ADR 26-10-16-423 §10).
+// The control plane owns the pins, so what an export reads with arrives on
+// the request: the agent once, and each bundle in order, each as
+// <name>@<digest>, with nothing saying which bundle is which. One that does
+// not parse, or an agent with no bundles or bundles with no agent, is the
+// caller's mistake, refused before anything is read. A sandbox delivered
+// nothing has nothing to be read with, which is a conflict the caller can act
+// on — by pinning it — not a failure (ADR 0129 §3, ADR 26-10-16-423 §10).
 func TestExportTreeTakesThePinsFromTheRequest(t *testing.T) {
 	const projectID, poolID, sandboxID = "project-1", "pool-1", "sandbox-1"
+	agent := "discobox-agent@sha256:" + strings.Repeat("c", 64)
 	platform := "sha256:" + strings.Repeat("a", 64)
 	harness := "sha256:" + strings.Repeat("b", 64)
-	pinned := []string{"platform:discobox-platform@" + platform, "harness:discobox-harness-shell@" + harness}
-	want := []assetcache.Pin{
-		{Kind: assetcache.KindPlatform, Name: "discobox-platform", Digest: platform},
-		{Kind: assetcache.KindHarness, Name: "discobox-harness-shell", Digest: harness},
+	pinned := []string{"discobox-platform@" + platform, "discobox-harness-shell@" + harness}
+	want := assetcache.Delivery{
+		Agent:   assetcache.Pin{Name: "discobox-agent", Digest: "sha256:" + strings.Repeat("c", 64)},
+		Bundles: []assetcache.Pin{{Name: "discobox-platform", Digest: platform}, {Name: "discobox-harness-shell", Digest: harness}},
 	}
 	for name, tc := range map[string]struct {
+		agent   string
 		bundles []string
 		err     error
 		status  int
-		want    []assetcache.Pin
+		want    assetcache.Delivery
 	}{
-		"pinned to its bundles":   {bundles: pinned, status: http.StatusOK, want: want},
-		"pinned to no platform":   {err: sandboxruntime.ErrUndelivered, status: http.StatusUnprocessableEntity, want: []assetcache.Pin{}},
-		"no kind":                 {bundles: []string{"discobox-platform@" + platform}, status: http.StatusBadRequest},
-		"an unknown kind":         {bundles: []string{"image:discobox-platform@" + platform}, status: http.StatusBadRequest},
-		"no name":                 {bundles: []string{"platform:@" + platform}, status: http.StatusBadRequest},
-		"no digest":               {bundles: []string{"platform:discobox-platform"}, status: http.StatusBadRequest},
-		"a tag, not a digest":     {bundles: []string{"platform:discobox-platform@latest"}, status: http.StatusBadRequest},
-		"one malformed among two": {bundles: []string{pinned[0], "harness:discobox-harness-shell@sha256:abc"}, status: http.StatusBadRequest},
+		"pinned to its bundles":   {agent: agent, bundles: pinned, status: http.StatusOK, want: want},
+		"delivered nothing":       {err: sandboxruntime.ErrUndelivered, status: http.StatusUnprocessableEntity},
+		"bundles with no agent":   {bundles: pinned, status: http.StatusBadRequest},
+		"an agent with no bundle": {agent: agent, status: http.StatusBadRequest},
+		"no name":                 {agent: agent, bundles: []string{"@" + platform}, status: http.StatusBadRequest},
+		"no digest":               {agent: agent, bundles: []string{"discobox-platform"}, status: http.StatusBadRequest},
+		"a tag, not a digest":     {agent: agent, bundles: []string{"discobox-platform@latest"}, status: http.StatusBadRequest},
+		"one malformed among two": {agent: agent, bundles: []string{pinned[0], "discobox-harness-shell@sha256:abc"}, status: http.StatusBadRequest},
 	} {
 		t.Run(name, func(t *testing.T) {
-			var got []assetcache.Pin
+			var got assetcache.Delivery
 			var called bool
 			publicKey, sign := testPoolTokenSigner(t)
 			router, err := NewRouter(Config{
@@ -127,6 +131,9 @@ func TestExportTreeTakesThePinsFromTheRequest(t *testing.T) {
 			server := httptest.NewServer(router)
 			t.Cleanup(server.Close)
 			query := url.Values{TreeBundleParam: tc.bundles}
+			if tc.agent != "" {
+				query.Set(TreeAgentParam, tc.agent)
+			}
 			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
 				server.URL+"/api/project/project-1/pool/pool-1/sandboxes/sandbox-1/tree?"+query.Encode(), nil)
 			if err != nil {
@@ -147,7 +154,7 @@ func TestExportTreeTakesThePinsFromTheRequest(t *testing.T) {
 				}
 				return
 			}
-			if !called || !slices.Equal(got, tc.want) {
+			if !called || got.Agent != tc.want.Agent || !slices.Equal(got.Bundles, tc.want.Bundles) {
 				t.Fatalf("pins = %+v, want %+v", got, tc.want)
 			}
 		})

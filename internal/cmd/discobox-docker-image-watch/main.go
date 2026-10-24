@@ -42,6 +42,14 @@ const baseSpecName = "sandbox-base"
 // FROM scratch stage holding every platform feature (ADR 26-10-16-423 §7).
 const platformSpecName = "platform"
 
+// agentSpecName is the agent bundle: the sandbox agent Dockerfile's FROM
+// scratch stage holding the agent alone (ADR 26-10-24-953 §2).
+const agentSpecName = "agent"
+
+// agentBundleEnvKey is the .env key the server reads the agent bundle from.
+// Keep in sync with the server's DISCOBOX_AGENT_BUNDLE setting.
+const agentBundleEnvKey = "DISCOBOX_AGENT_BUNDLE"
+
 // poolAgentBundleSpecName is the pool-agent bundle: pool-agent/Dockerfile's
 // FROM scratch stage holding the agent and its units (ADR 26-10-23-551 §2).
 const poolAgentBundleSpecName = "pool-agent-bundle"
@@ -484,8 +492,15 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 	if err != nil {
 		return nil, err
 	}
+	// The agent bundle is the agent's build alone: its Go inputs and the
+	// files the build stage copies, none of the features.
+	agentSeen := map[string]struct{}{}
 	for _, file := range sandboxFiles {
 		sandboxSeen[file] = struct{}{}
+		agentSeen[file] = struct{}{}
+	}
+	for _, rel := range []string{".dockerignore", "go.mod", "go.sum", filepath.Join("sandbox-agent", "Dockerfile")} {
+		addFile(repoRoot, rel, agentSeen)
 	}
 	for _, rel := range []string{
 		".dockerignore",
@@ -558,6 +573,19 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 			bundle:     true,
 			layoutDir:  bundleLayoutDirOf(repoRoot, "discobox-pool-agent-bundle"),
 			files:      sortedFiles(poolAgentBundleSeen),
+		},
+		{
+			name:        agentSpecName,
+			devPrefix:   "discobox-agent:dev-",
+			envImageKey: agentBundleEnvKey,
+			buildDir:    repoRoot,
+			buildArgs:   bundleBuildArgs(builder, bundleLayoutDirOf(repoRoot, "discobox-agent"), "-f", "sandbox-agent/Dockerfile", "--target", "agent", "."),
+			contextDir:  repoRoot,
+			dockerfile:  "sandbox-agent/Dockerfile",
+			target:      "agent",
+			bundle:      true,
+			layoutDir:   bundleLayoutDirOf(repoRoot, "discobox-agent"),
+			files:       sortedFiles(agentSeen),
 		},
 		{
 			name:        platformSpecName,

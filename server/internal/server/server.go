@@ -247,6 +247,7 @@ func Run(ctx context.Context) error {
 			PoolImage:        cfg.DockerPoolImage,
 			SandboxBaseImage: cfg.DockerSandboxBaseImage,
 			PoolAgentBundle:  cfg.PoolAgentBundle,
+			AgentBundle:      cfg.AgentBundle,
 			Release:          cfg.Release,
 			ImageRetention:   cfg.ImageRetention,
 			ImageCache:       imageCache,

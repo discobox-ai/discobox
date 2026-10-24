@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/devbundles"
+	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
@@ -28,12 +29,13 @@ import (
 type Options struct {
 	// Dir is the blob store: an OCI layout holding blobs no entry names.
 	Dir string
-	// PlatformBundle is the platform bundle the release pins, which every pool
-	// is answered.
+	// PlatformBundle and AgentBundle are the platform and agent bundles the
+	// release pins, which every pool is answered.
 	PlatformBundle string
-	// ReleaseBundles are the bundle references the release names: the
-	// platform's and the built-in harnesses'. Only these are pulled with the
-	// server's registry credentials.
+	AgentBundle    string
+	// ReleaseBundles are the other bundle references the release names: the
+	// built-in harnesses' and the pool's. Only these, the platform and the
+	// agent are pulled with the server's registry credentials.
 	ReleaseBundles []string
 	// Development are the development bundles, read from their OCI image
 	// layouts, which a development server's release references name.
@@ -44,7 +46,8 @@ type Options struct {
 type Service struct {
 	store    *store.Store
 	blobs    *imagecache.Layout
-	platform *platformPins
+	platform *releasePins
+	agent    *releasePins
 	release  map[string]bool
 	// sources are where a blob the store lacks is looked for, in order;
 	// resolvers, what a reference names now.
@@ -75,7 +78,7 @@ func New(store *store.Store, opts Options) *Service {
 
 func newService(store *store.Store, opts Options, sources, resolvers []source) *Service {
 	release := map[string]bool{}
-	for _, ref := range append([]string{opts.PlatformBundle}, opts.ReleaseBundles...) {
+	for _, ref := range append([]string{opts.PlatformBundle, opts.AgentBundle}, opts.ReleaseBundles...) {
 		if ref = strings.TrimSpace(ref); ref != "" {
 			release[ref] = true
 		}
@@ -88,62 +91,78 @@ func newService(store *store.Store, opts Options, sources, resolvers []source) *
 		resolvers: resolvers,
 		now:       time.Now,
 	}
-	s.platform = &platformPins{ref: strings.TrimSpace(opts.PlatformBundle), resolve: s.resolve, now: func() time.Time { return s.now() }}
+	s.platform = &releasePins{what: "platform bundle", ref: strings.TrimSpace(opts.PlatformBundle), resolve: s.resolve, now: func() time.Time { return s.now() }}
+	s.agent = &releasePins{what: "agent bundle", ref: strings.TrimSpace(opts.AgentBundle), resolve: s.resolve, now: func() time.Time { return s.now() }}
 	return s
 }
 
-// OnPlatformMoved has moved run, detached from any read, each time the
-// release's platform reference resolves to a digest other than the one before,
-// the first resolution included. Set it before the service is used.
-func (s *Service) OnPlatformMoved(moved func(ctx context.Context)) {
-	s.platform.moved = func(string) { moved(context.Background()) }
+// releaseBundles is each bundle the release pins every pool is answered.
+func (s *Service) releaseBundles() []*releasePins { return []*releasePins{s.platform, s.agent} }
+
+// OnReleaseMoved has moved run, detached from any read, each time one of
+// the release's bundle references — the platform's, the agent's — resolves to
+// a digest other than the one before, the first resolution included. Set it
+// before the service is used.
+func (s *Service) OnReleaseMoved(moved func(ctx context.Context)) {
+	for _, bundle := range s.releaseBundles() {
+		bundle.moved = func(string) { moved(context.Background()) }
+	}
 }
 
-// ResolvePlatform resolves the release's platform reference now, so the
-// sandboxes pinned to it follow a release the server starts on without
+// ResolveRelease resolves the release's bundle references now, so the
+// sandboxes pinned to them follow a release the server starts on without
 // waiting for a read to ask (ADR 26-10-16-423 §7). A reference pinned by
 // digest never resolves, and is reported moved here instead.
-func (s *Service) ResolvePlatform(ctx context.Context) {
-	if s.platform.ref == "" {
-		return
-	}
-	if s.platform.fixed() != "" {
-		if s.platform.moved != nil {
-			go s.platform.moved(s.platform.fixed())
+func (s *Service) ResolveRelease(ctx context.Context) {
+	for _, bundle := range s.releaseBundles() {
+		if bundle.ref == "" {
+			continue
 		}
-		return
-	}
-	if _, err := s.platform.pins(ctx, true); err != nil {
-		slog.Warn("resolve the platform bundle", "reference", s.platform.ref, "error", err)
+		if bundle.fixed() != "" {
+			if bundle.moved != nil {
+				go bundle.moved(bundle.fixed())
+			}
+			continue
+		}
+		if _, err := bundle.pins(ctx, true); err != nil {
+			slog.Warn("resolve a release bundle", "bundle", bundle.what, "reference", bundle.ref, "error", err)
+		}
 	}
 }
 
-// CurrentPlatform is the platform bundle the release's reference resolves
-// to, asked again once the last answer is a minute old; zero when the server
-// names none.
-func (s *Service) CurrentPlatform(ctx context.Context) (services.BundlePin, error) {
-	if s.platform.ref == "" {
-		return services.BundlePin{}, nil
+// CurrentRelease is the bundles the release's references resolve to, each
+// asked again once its last answer is a minute old; each zero when the
+// server names none.
+func (s *Service) CurrentRelease(ctx context.Context) (services.ReleasePins, error) {
+	for _, bundle := range s.releaseBundles() {
+		if bundle.ref == "" {
+			continue
+		}
+		if _, err := bundle.pins(ctx, false); err != nil {
+			return services.ReleasePins{}, err
+		}
 	}
-	if _, err := s.platform.pins(ctx, false); err != nil {
-		return services.BundlePin{}, err
-	}
-	return s.LatestPlatform(), nil
+	return s.LatestRelease(), nil
 }
 
-// LatestPlatform is what the release's platform reference last resolved to,
-// without asking again; zero when it has not resolved.
-func (s *Service) LatestPlatform() services.BundlePin {
-	digest := s.platform.current()
+// LatestRelease is what the release's references last resolved to, without
+// asking again; each zero when it has not resolved.
+func (s *Service) LatestRelease() services.ReleasePins {
+	return services.ReleasePins{Platform: latest(s.platform), Agent: latest(s.agent)}
+}
+
+func latest(bundle *releasePins) model.BundlePin {
+	digest := bundle.current()
 	if digest == "" {
-		return services.BundlePin{}
+		return model.BundlePin{}
 	}
-	return services.BundlePin{Reference: s.platform.ref, Digest: digest}
+	return model.BundlePin{Reference: bundle.ref, Digest: digest}
 }
 
 // ResolveAssetName answers the manifest a bundle name in the pool's scope is
-// pinned to now, for registration and re-pinning: the platform's, resolved
-// afresh — a pool is answered whatever the release's reference names — or the
+// pinned to now, for registration and re-pinning: a release bundle's,
+// resolved afresh — a pool is answered whatever the release's reference
+// names — or the
 // digest a harness config of the pool's project records. A harness's tag that
 // has moved since is not followed: its new digest is answered once it is
 // re-pinned (ADR 0016), never before.
@@ -152,12 +171,15 @@ func (s *Service) ResolveAssetName(ctx context.Context, poolID, name string) (se
 	if err != nil {
 		return services.AssetContent{}, err
 	}
-	if s.platform.ref != "" && services.BundleName(s.platform.ref) == name {
-		digest, err := s.platform.newest(ctx)
+	for _, bundle := range s.releaseBundles() {
+		if bundle.ref == "" || model.BundleName(bundle.ref) != name {
+			continue
+		}
+		digest, err := bundle.newest(ctx)
 		if err != nil {
 			return services.AssetContent{}, apperrors.NewStatusError(http.StatusBadGateway, err.Error())
 		}
-		return s.openManifest(ctx, pin{ref: s.platform.ref, digest: digest, release: true}, digest)
+		return s.openManifest(ctx, pin{ref: bundle.ref, digest: digest, release: true}, digest)
 	}
 	pins, err := s.harnessPins(ctx, projectID)
 	if err != nil {
@@ -188,7 +210,7 @@ func (s *Service) AssetManifest(ctx context.Context, poolID, name, digest string
 	if !imagecache.IsDigest(digest) {
 		return services.AssetContent{}, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("digest %q is not sha256:<64 hex>", digest))
 	}
-	pins, platformErr, err := s.scope(ctx, poolID)
+	pins, releaseErr, err := s.scope(ctx, poolID)
 	if err != nil {
 		return services.AssetContent{}, err
 	}
@@ -210,8 +232,8 @@ func (s *Service) AssetManifest(ctx context.Context, poolID, name, digest string
 			}
 		}
 	}
-	if platformErr != nil {
-		return services.AssetContent{}, apperrors.NewStatusError(http.StatusBadGateway, platformErr.Error())
+	if releaseErr != nil {
+		return services.AssetContent{}, apperrors.NewStatusError(http.StatusBadGateway, releaseErr.Error())
 	}
 	return services.AssetContent{}, apperrors.NewStatusError(http.StatusNotFound, fmt.Sprintf("manifest %s of %q is not pinned in this pool's scope", digest, name))
 }
@@ -222,7 +244,7 @@ func (s *Service) AssetBlob(ctx context.Context, poolID, digest string) (service
 	if !imagecache.IsDigest(digest) {
 		return services.AssetContent{}, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("digest %q is not sha256:<64 hex>", digest))
 	}
-	pins, platformErr, err := s.scope(ctx, poolID)
+	pins, releaseErr, err := s.scope(ctx, poolID)
 	if err != nil {
 		return services.AssetContent{}, err
 	}
@@ -234,8 +256,8 @@ func (s *Service) AssetBlob(ctx context.Context, poolID, digest string) (service
 			return s.open(digest, "")
 		}
 	}
-	if platformErr != nil {
-		return services.AssetContent{}, apperrors.NewStatusError(http.StatusBadGateway, platformErr.Error())
+	if releaseErr != nil {
+		return services.AssetContent{}, apperrors.NewStatusError(http.StatusBadGateway, releaseErr.Error())
 	}
 	return services.AssetContent{}, apperrors.NewStatusError(http.StatusNotFound, fmt.Sprintf("blob %s is referenced by no manifest in this pool's scope", digest))
 }
