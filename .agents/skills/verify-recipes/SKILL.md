@@ -945,6 +945,26 @@ e admin harness configure judgestub && e admin harness set-default judgestub
 docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
 ```
 
+- A bundle registered with `admin harness create --bundle` is never served
+  to a pool: the asset API reads layouts only for the references the release
+  names (the platform and built-in harnesses), so its configure box fails
+  with `fetch the box's bundles … 502`. Stand the stub in for a built-in
+  instead: build it with that harness's own `harness/<id>/image.json` label
+  and the prompt feature under `/features/<id>/`, export it with `docker
+  buildx build --builder default --provenance=false --sbom=false --output
+  type=oci,dest=<tar>`, add `{reference, digest, layout}` (digest from the
+  tar's `index.json`) to a copy of `.tmp/discobox-dev-images.json` named by
+  `DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST`, and point that harness's
+  `DISCOBOX_HARNESS_<ID>_BUNDLE` at it. Not `shell`: the server never makes
+  a judge of it ("runs no model"); `pi` works, and is configured with no
+  credential.
+- Every judged command's verdict records the job as the judge read it:
+  `sqlite3 -json $S/data/discobox.db "select command, prompt from
+  credential_verdicts"`, `.prompt | fromjson | .facts`. Wrapped as
+  `{name, why, expect, job}` cases, those jobs go to a real model with
+  `discobox-judge-eval -wrapper harness/claude-code/prompt.sh` (the box's
+  `claude` is logged in); to compare against `main`, run the same cases from
+  `git archive origin/main` extracted to a scratch dir.
 - The judge discobox comes up on the judges' scan, up to a minute after
   `set-default`; its ID is `projects.judge_sandbox_id` in
   `$S/data/discobox.db` (the API does not show it, and `admin box ls` hides it).
