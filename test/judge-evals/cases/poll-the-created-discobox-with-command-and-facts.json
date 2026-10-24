@@ -47,12 +47,14 @@
         "project": "default"
       }
     },
-    "target": {
-      "discobox": {
-        "id": "sbx_99sxwvjtnv0sgsdw",
-        "project": "default",
-        "createdBy": "sbx_lead"
+    "targets": [
+      {
+        "discobox": {
+          "id": "sbx_99sxwvjtnv0sgsdw",
+          "project": "default",
+          "createdBy": "sbx_lead"
+        }
       }
-    }
+    ]
   }
 }

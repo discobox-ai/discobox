@@ -64,27 +64,29 @@
         }
       ]
     },
-    "target": {
-      "discobox": {
-        "id": "sbx_8r2d5n1c7w4h9q3j",
-        "project": "default",
-        "createdBy": "sbx_4kq8w2m7v9t3x6pn"
-      },
-      "sources": [
-        {
-          "slug": "primary",
-          "primary": true,
-          "remote": {
-            "host": "github.com",
-            "repo": "acme/web",
-            "url": "https://github.com/acme/web"
-          },
-          "ref": {
-            "type": "branch",
-            "name": "main"
+    "targets": [
+      {
+        "discobox": {
+          "id": "sbx_8r2d5n1c7w4h9q3j",
+          "project": "default",
+          "createdBy": "sbx_4kq8w2m7v9t3x6pn"
+        },
+        "sources": [
+          {
+            "slug": "primary",
+            "primary": true,
+            "remote": {
+              "host": "github.com",
+              "repo": "acme/web",
+              "url": "https://github.com/acme/web"
+            },
+            "ref": {
+              "type": "branch",
+              "name": "main"
+            }
           }
-        }
-      ]
-    }
+        ]
+      }
+    ]
   }
 }

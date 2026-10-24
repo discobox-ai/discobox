@@ -196,3 +196,84 @@ func TestACommandWithNoJudgeToAskSaysTheWayOut(t *testing.T) {
 		t.Fatalf("JudgeCommand() error = %v, want a judge not ready refused without a remedy it does not need", err)
 	}
 }
+
+// A command spending the discobox API's credential names the discoboxes it
+// acts on in its arguments — a positional ID, a flag's value, a segment of an
+// API path, in either spelling of an ID — and is judged knowing what was
+// recorded about each when it was created, beside the one asking: who created
+// it is what a use bounded to "the discoboxes this discobox created" is read
+// by (ADR 26-10-14-320 §5). An ID is a discobox's only identity, so a name, a
+// short ID, an ID of no discobox in the project, and an ID in a command under
+// another credential's use state nothing: the judge is told a discobox no
+// fact describes has no creator it can rely on (judge.System).
+func TestACommandStatesTheDiscoboxesItNames(t *testing.T) {
+	ctx := context.Background()
+	service, appStore, fake := gateJudge(t, sandboxapi.JudgeAnswer{Allow: sandboxapi.NewOptBool(true), Reason: "its own worker"})
+	const child, persons, third, missing = "sbx_0123456789abcdef", "sbx_fedcba9876543210", "sbx_0123zzzzzzzzzzzz", "sbx_00000000000000zz"
+	for _, sandbox := range []*model.Sandbox{
+		{ID: child, ProjectID: "project-1", PoolID: "pool-1", Name: "child", CreatedBySandboxID: new("sbx-lead")},
+		{ID: persons, ProjectID: "project-1", PoolID: "pool-1", Name: "persons"},
+		{ID: third, ProjectID: "project-1", PoolID: "pool-1", Name: "third", CreatedBySandboxID: new("sbx-lead")},
+	} {
+		if err := appStore.CreateSandbox(ctx, sandbox); err != nil {
+			t.Fatalf("create sandbox %s: %v", sandbox.ID, err)
+		}
+	}
+	leadFacts := []string{
+		"The discobox asking is sbx-lead.",
+		"sbx-lead was created with no source.",
+	}
+	childFacts := []string{
+		"A discobox the command names by its ID is " + child + ".",
+		child + " was created with no source.",
+		child + " was created by the discobox sbx-lead.",
+	}
+	personsFacts := []string{
+		"A discobox the command names by its ID is " + persons + ".",
+		persons + " was created with no source.",
+		persons + " was created by no discobox.",
+	}
+	gate := services.ApprovedUse{
+		Purpose: "look after the discoboxes this discobox created", Host: "api.discobox.internal", Credential: "ai.discobox.sandbox", GrantID: "grant-1",
+	}
+	github := services.ApprovedUse{Purpose: "open a pull request in org/repo", Host: "api.github.com", Credential: "GitHub token", GrantID: "grant-1"}
+	for _, tc := range []struct {
+		name    string
+		use     services.ApprovedUse
+		command []string
+		want    []string
+	}{
+		{"by its ID", gate, []string{"discobox", "admin", "box", "get", child}, slices.Concat(leadFacts, childFacts)},
+		{"by a flag", gate, []string{"discobox", "admin", "terminal", "screen", "primary", "--discobox-id", child}, slices.Concat(leadFacts, childFacts)},
+		{"by a flag's value", gate, []string{"discobox", "admin", "terminal", "screen", "primary", "--discobox-id=" + child}, slices.Concat(leadFacts, childFacts)},
+		{"in an API path", gate, []string{"discobox", "admin", "api", "-X", "POST", "/projects/default/sandboxes/" + persons + "/stop"}, slices.Concat(leadFacts, personsFacts)},
+		{"as its hostname spells it", gate, []string{"discobox", "admin", "box", "delete", "sbx-fedcba9876543210"}, slices.Concat(leadFacts, personsFacts)},
+		{"two, each once, in either spelling", gate, []string{"discobox", "rm", persons, child, "sbx-fedcba9876543210", persons}, slices.Concat(leadFacts, personsFacts, childFacts)},
+		{"by a short ID", gate, []string{"discobox", "admin", "box", "get", "sbx-fedc"}, leadFacts},
+		{"one not in the project", gate, []string{"discobox", "admin", "box", "get", missing}, leadFacts},
+		{"by its name", gate, []string{"discobox", "admin", "box", "get", "persons"}, leadFacts},
+		{"by its name, beside an ID", gate, []string{"discobox", "tag", "persons", "note=" + child}, slices.Concat(leadFacts, childFacts)},
+		{"by the random part alone", gate, []string{"discobox", "admin", "box", "get", "fedcba9876543210"}, leadFacts},
+		{"none", gate, []string{"discobox", "admin", "box", "ls"}, leadFacts},
+		{"under another credential's use", github, []string{"gh", "pr", "create", "--title", child}, leadFacts},
+		// More than fit are not left out unremarked: the judge reads them as
+		// named and undescribed.
+		{"more than fit", gate, []string{"discobox", "rm", child, persons, third}, slices.Concat(leadFacts, childFacts,
+			[]string{"The command names 2 more discoboxes by their IDs than are described here."})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service.SetUses(approvedUses{use: tc.use})
+			asked := len(fake.asked())
+			if _, err := service.JudgeCommand(ctx, "pool-1", services.CommandAsk{SandboxID: "sbx-lead", UseID: "use_abc", Command: tc.command}); err != nil {
+				t.Fatalf("JudgeCommand() error = %v", err)
+			}
+			jobs := fake.asked()
+			if len(jobs) != asked+1 {
+				t.Fatalf("the judge was asked %d times, want once more", len(jobs)-asked)
+			}
+			if got := jobs[len(jobs)-1].Facts; !slices.Equal(got, tc.want) {
+				t.Fatalf("facts =\n%q\nwant\n%q", got, tc.want)
+			}
+		})
+	}
+}

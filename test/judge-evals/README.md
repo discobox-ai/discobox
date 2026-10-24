@@ -97,11 +97,11 @@ A command or request case may also carry its approval as a grant's policy
 (ADR 26-10-20-782 §1): `policy` holds the `statements` as sentences, the
 `definitions` of their words, and, when a statement uses a variable, the typed
 `facts` of the discobox asking that it resolves against and binds to — with
-the `target`'s, for a call that names a discobox. The case is then asked
+the `target`'s, for a call or command that names a discobox. The case is then asked
 twice, as recorded and as `<name>@policy` — judged against the statements
 bound to that discobox, as a server judges a grant that carries one — and the
 summary compares the two. A policy case with `facts` is told what the server
-states from them (`judge.Facts`, `judge.TargetFacts`), in place of the facts
+states from them (`judge.Facts`, `judge.TargetFacts`, `judge.CommandFacts`), in place of the facts
 it was recorded with. A policy whose allows bind to nothing there is refused
 without asking, as the server refuses it. The runner's own test loads every
 case and policy, so `go tool task test` fails on a broken one; `-case

@@ -137,9 +137,10 @@ type CasePolicy struct {
 	// is judged. A case whose discobox has no record has none, and a variable
 	// then matches nothing.
 	Facts *policy.Facts `json:"facts,omitempty"`
-	// Target is the record of the discobox a call to the discobox API names,
-	// for a case that makes one.
-	Target *policy.Facts `json:"target,omitempty"`
+	// Targets are the records of the discoboxes a call to the discobox API,
+	// or a command, names, in the order it names them, for a case that makes
+	// one: a call names one, a command any number.
+	Targets []policy.Facts `json:"targets,omitempty"`
 }
 
 // policySuffix names the case judged against a case's policy rather than its
@@ -169,10 +170,18 @@ func (c Case) underPolicy() (Case, error) {
 	// policy's variables bind to are one record. One without keeps the facts
 	// it was recorded with.
 	switch {
-	case c.Policy.Target != nil && c.Policy.Facts == nil:
+	case len(c.Policy.Targets) > 0 && c.Policy.Facts == nil:
 		return Case{}, errors.New("a target is stated beside the discobox asking: give facts too")
-	case c.Policy.Target != nil:
-		derived.Job.Facts = judge.TargetFacts(judge.DiscoboxOf(facts), judge.DiscoboxOf(*c.Policy.Target))
+	case len(c.Policy.Targets) > 0 && c.Job.Kind == judge.KindCommand:
+		named := make([]judge.Discobox, 0, len(c.Policy.Targets))
+		for _, target := range c.Policy.Targets {
+			named = append(named, judge.DiscoboxOf(target))
+		}
+		derived.Job.Facts = judge.CommandFacts(judge.DiscoboxOf(facts), named...)
+	case len(c.Policy.Targets) == 1:
+		derived.Job.Facts = judge.TargetFacts(judge.DiscoboxOf(facts), judge.DiscoboxOf(c.Policy.Targets[0]))
+	case len(c.Policy.Targets) > 1:
+		return Case{}, errors.New("a call to the discobox API names one discobox: give one target")
 	case c.Policy.Facts != nil:
 		derived.Job.Facts = judge.Facts(judge.DiscoboxOf(facts))
 	}

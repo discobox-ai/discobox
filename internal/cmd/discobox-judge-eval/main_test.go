@@ -42,11 +42,24 @@ func TestTheRecordedCasesLoad(t *testing.T) {
 	// asking, and the discobox a call names.
 	created := byName["facts-target-a-discobox-it-created"+policySuffix]
 	if !slices.Equal(created.Job.Facts, judge.TargetFacts(judge.DiscoboxOf(*byName["facts-target-a-discobox-it-created"].Policy.Facts),
-		judge.DiscoboxOf(*byName["facts-target-a-discobox-it-created"].Policy.Target))) {
+		judge.DiscoboxOf(byName["facts-target-a-discobox-it-created"].Policy.Targets[0]))) {
 		t.Fatalf("facts = %q, want the server's", created.Job.Facts)
 	}
 	if !slices.ContainsFunc(created.Job.Purposes, func(s string) bool { return strings.Contains(s, `created by "sbx_4kq8w2m7v9t3x6pn"`) }) {
 		t.Fatalf("statements = %q, want $this bound to the discobox asking", created.Job.Purposes)
+	}
+
+	// A command case's policy run is told what its recorded run was, every
+	// discobox it names included: one whose targets leave a discobox out
+	// asks the policy run an easier question than the case records.
+	for name, recorded := range byName {
+		derived, ok := byName[name+policySuffix]
+		if !ok || recorded.Job.Kind != judge.KindCommand || recorded.Policy == nil || len(recorded.Policy.Targets) == 0 {
+			continue
+		}
+		if !slices.Equal(derived.Job.Facts, recorded.Job.Facts) {
+			t.Errorf("%s: facts under its policy =\n%q\nwant the ones it records:\n%q", name, derived.Job.Facts, recorded.Job.Facts)
+		}
 	}
 
 	// A policy whose allow binds to nothing is refused without asking.

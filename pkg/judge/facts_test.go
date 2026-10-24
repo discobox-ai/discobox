@@ -150,6 +150,126 @@ func TestARequestNamingADiscoboxStatesItBesideTheOneAsking(t *testing.T) {
 	}
 }
 
+// A command names discoboxes by ID in its arguments, and may name several:
+// each is stated beside the one asking, in the order it is named, with who
+// created it or that no discobox did. What is said of each is that the
+// command names it, never that it acts on it: the IDs come from arguments the
+// discobox wrote.
+func TestACommandNamingDiscoboxesStatesEachBesideTheOneAsking(t *testing.T) {
+	t.Parallel()
+	asking := judge.Discobox{SandboxID: "sbx_lead"}
+	child := judge.Discobox{SandboxID: "sbx_child", CreatedBy: "sbx_lead"}
+	persons := judge.Discobox{SandboxID: "sbx_persons", Primary: &judge.Source{Remote: "https://github.com/acme/web"}}
+	want := []string{
+		"The discobox asking is sbx_lead.",
+		"sbx_lead was created with no source.",
+		"A discobox the command names by its ID is sbx_child.",
+		"sbx_child was created with no source.",
+		"sbx_child was created by the discobox sbx_lead.",
+		"A discobox the command names by its ID is sbx_persons.",
+		"The primary source sbx_persons was created with is the Git repository github.com/acme/web.",
+		"sbx_persons was created by no discobox.",
+	}
+	if got := judge.CommandFacts(asking, child, persons); !slices.Equal(got, want) {
+		t.Fatalf("CommandFacts() =\n%q\nwant\n%q", got, want)
+	}
+}
+
+// A discobox is stated with all of its core facts or not at all, and those
+// that do not fit under the cap are counted in a last fact, so the judge
+// reads them as named and undescribed — and a limit to the discoboxes the
+// asking one created does not hold for them — rather than as not named. The
+// asking discobox's other sources give way first.
+func TestACommandNamingMoreDiscoboxesThanFitCountsTheRest(t *testing.T) {
+	t.Parallel()
+	asking := judge.Discobox{
+		SandboxID: "sbx_lead", CreatedBy: "sbx_root",
+		Primary:    &judge.Source{Remote: "https://github.com/acme/web"},
+		Additional: []judge.Source{{Remote: "https://github.com/acme/docs"}},
+	}
+	child := func(id string) judge.Discobox { return judge.Discobox{SandboxID: id, CreatedBy: "sbx_lead"} }
+	for _, tc := range []struct {
+		name   string
+		asking *judge.Discobox
+		named  []judge.Discobox
+		want   []string
+	}{
+		{
+			name:  "one fits beside the asking discobox's other source",
+			named: []judge.Discobox{child("sbx_a")},
+			want: []string{
+				"The discobox asking is sbx_lead.",
+				"The primary source sbx_lead was created with is the Git repository github.com/acme/web.",
+				"sbx_lead was created by the discobox sbx_root.",
+				"A discobox the command names by its ID is sbx_a.",
+				"sbx_a was created with no source.",
+				"sbx_a was created by the discobox sbx_lead.",
+				"Another source sbx_lead was created with is the Git repository github.com/acme/docs.",
+			},
+		},
+		{
+			name:  "two do not: the second is counted",
+			named: []judge.Discobox{child("sbx_a"), child("sbx_b")},
+			want: []string{
+				"The discobox asking is sbx_lead.",
+				"The primary source sbx_lead was created with is the Git repository github.com/acme/web.",
+				"sbx_lead was created by the discobox sbx_root.",
+				"A discobox the command names by its ID is sbx_a.",
+				"sbx_a was created with no source.",
+				"sbx_a was created by the discobox sbx_lead.",
+				"Another source sbx_lead was created with is the Git repository github.com/acme/docs.",
+				"The command names 1 more discobox by its ID than is described here.",
+			},
+		},
+		{
+			name:  "three",
+			named: []judge.Discobox{child("sbx_a"), child("sbx_b"), child("sbx_c")},
+			want: []string{
+				"The discobox asking is sbx_lead.",
+				"The primary source sbx_lead was created with is the Git repository github.com/acme/web.",
+				"sbx_lead was created by the discobox sbx_root.",
+				"A discobox the command names by its ID is sbx_a.",
+				"sbx_a was created with no source.",
+				"sbx_a was created by the discobox sbx_lead.",
+				"Another source sbx_lead was created with is the Git repository github.com/acme/docs.",
+				"The command names 2 more discoboxes by their IDs than are described here.",
+			},
+		},
+		{
+			// Created by a person, so its core facts and two named
+			// discoboxes' would fill the cap exactly: the slot its other
+			// source needs leaves room for only one.
+			name:   "a lead a person created, with another source, naming two",
+			asking: &judge.Discobox{SandboxID: "sbx_lead", Primary: asking.Primary, Additional: asking.Additional},
+			named:  []judge.Discobox{child("sbx_a"), child("sbx_b")},
+			want: []string{
+				"The discobox asking is sbx_lead.",
+				"The primary source sbx_lead was created with is the Git repository github.com/acme/web.",
+				"A discobox the command names by its ID is sbx_a.",
+				"sbx_a was created with no source.",
+				"sbx_a was created by the discobox sbx_lead.",
+				"Another source sbx_lead was created with is the Git repository github.com/acme/docs.",
+				"The command names 1 more discobox by its ID than is described here.",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asking := asking
+			if tc.asking != nil {
+				asking = *tc.asking
+			}
+			got := judge.CommandFacts(asking, tc.named...)
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("CommandFacts() =\n%q\nwant\n%q", got, tc.want)
+			}
+			job := judge.Job{Kind: judge.KindCommand, Purpose: "look after the discoboxes this discobox created", Host: "api.discobox.internal", Round: 1, Command: []string{"discobox", "rm"}, Facts: got}
+			if err := job.Validate(); err != nil {
+				t.Fatalf("Validate() = %v, want the facts within the cap", err)
+			}
+		})
+	}
+}
+
 // Whoever created a discobox named its ref, and a fact is Discobox speaking:
 // a name that could carry a sentence is not repeated, nor one JSON would
 // escape, and nor is a commit that is not one.

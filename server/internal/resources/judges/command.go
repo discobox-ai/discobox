@@ -67,7 +67,9 @@ func (s *Service) JudgeCommand(ctx context.Context, poolID string, ask services.
 	if err != nil {
 		return judge.Answer{}, err
 	}
-	job.Facts = judge.Facts(judge.DiscoboxOf(asking.PolicyFacts()))
+	if job.Facts, err = s.commandFacts(ctx, project.ID, asking, use.Host, ask.Command); err != nil {
+		return judge.Answer{}, err
+	}
 	if job, err = underPolicy(job, use, asking); err != nil {
 		return judge.Answer{}, err
 	}
