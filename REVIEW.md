@@ -90,3 +90,9 @@ Global review expectations:
   inside its Status parenthesis, before the `)` that closes `Accepted (`:
   appending after that `)` leaves the note outside it and a stray `)` at the
   end, and one change made that mistake on three rows (ADR 26-10-23-551).
+- Import `pool-agent/vmtest` only from `_test.go` files, in any module.
+  `RunFakeGuestIfInvoked` turns the running binary into disco-vm's fake guest
+  agent when its first argument is `guest`, and that agent runs whatever exec
+  requests reach its listen address as host processes. In a shipped binary
+  (the pool agent, the server) that is a host-exec backdoor one argument
+  opens, and nothing in the build refuses the import, so a review has to.
