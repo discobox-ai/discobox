@@ -210,7 +210,7 @@ func (h helper) do(ctx context.Context, attr *syscall.SysProcAttr, req Request, 
 	if readErr != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		<-sent
+		<-sent //nolint:errcheck // Reap the writer; the response failure above is the cause reported.
 		return Result{}, nil, fmt.Errorf("the files helper did not answer: %w %s", readErr, strings.TrimSpace(stderr.String()))
 	}
 	if answer.Error != nil || req.Op != OpRead {
@@ -228,7 +228,7 @@ func (h helper) do(ctx context.Context, attr *syscall.SysProcAttr, req Request, 
 		}
 		return answer.Result, nil, nil
 	}
-	<-sent
+	<-sent //nolint:errcheck // A successful read response confirms the helper received the request.
 	return answer.Result, &helperContent{r: out, cmd: cmd, stdout: stdout, stderr: stderr}, nil
 }
 
