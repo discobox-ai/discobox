@@ -1,6 +1,6 @@
 # 26-10-10-545 — Git reaches a pool only from a client, and is cached there per remote
 
-- **Status**: Accepted
+- **Status**: Accepted (§1's pool that never fetches and clientless create that parks, §3's order for a remote-URL source, and the rejection of lent or anonymous pool fetches superseded, for sandboxes created after it, by [26-10-23-948](26-10-23-948-a-pool-pulls-a-cached-source-first-and-a-client-supplies-what-the-pull-could-not.md))
 - **Date**: 2026-10-10
 - **Supersedes**, for sandboxes created after it except where
   a line says every sandbox:
