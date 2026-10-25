@@ -67,3 +67,12 @@
   too.** It leaves out the pins a delivered box applies at its start (image,
   platform) and covers everything else; another such pin belongs in its
   list, and anything a container is built from must not.
+
+## Harness changes
+
+- Clear the previous initial prompt when selecting another harness: retaining
+  `SandboxManifest.Prompt` replays it through the revived terminal's boot prompt
+  into the new agent. Terminal identity survives; a conversation is not migrated.
+- Keep pending target references protected from deletion, and publish an archive
+  marker before clearing a pool fence. Either gap can strand an accepted switch
+  or let an old runtime start after a failed archive.

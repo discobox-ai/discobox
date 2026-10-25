@@ -251,3 +251,28 @@ func TestSandboxFailureReasonSendsAFailedAutomaticRepairToRepair(t *testing.T) {
 		t.Fatalf("a message naming the command = %q, want it said once", got)
 	}
 }
+
+func TestUpdateHarnessPreservesSelectorAndRejectsEmpty(t *testing.T) {
+	for _, value := range []string{"codex", "My Codex", "harness_123", " "} {
+		cmd := &cobra.Command{}
+		opts := sandboxUpdateOptions{}
+		addUpdateFlags(cmd, &opts)
+		if err := cmd.Flags().Set("harness", value); err != nil {
+			t.Fatal(err)
+		}
+		body, err := updateSandboxBody(cmd, opts)
+		if value == " " {
+			if err == nil {
+				t.Fatal("accepted empty harness")
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		config, _ := body.Config.Get()
+		if config.Harness.Or("") != value || config.HarnessConfigId.IsSet() {
+			t.Fatalf("selector rewritten: %+v", config)
+		}
+	}
+}

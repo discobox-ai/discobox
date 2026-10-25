@@ -5730,6 +5730,12 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.HarnessChangeId.Set {
+			e.FieldStart("harnessChangeId")
+			s.HarnessChangeId.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("config")
 		s.Config.Encode(e)
 	}
@@ -5781,18 +5787,19 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxCreateRequest = [11]string{
+var jsonFieldsNameOfPoolSandboxCreateRequest = [12]string{
 	0:  "$schema",
 	1:  "bundles",
-	2:  "config",
-	3:  "egress",
-	4:  "provisionEgress",
-	5:  "gateways",
-	6:  "resolvedHarnessConfig",
-	7:  "sandboxId",
-	8:  "sentinels",
-	9:  "sentinelRoutes",
-	10: "secretEnv",
+	2:  "harnessChangeId",
+	3:  "config",
+	4:  "egress",
+	5:  "provisionEgress",
+	6:  "gateways",
+	7:  "resolvedHarnessConfig",
+	8:  "sandboxId",
+	9:  "sentinels",
+	10: "sentinelRoutes",
+	11: "secretEnv",
 }
 
 // Decode decodes PoolSandboxCreateRequest from json.
@@ -5824,8 +5831,18 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"bundles\"")
 			}
+		case "harnessChangeId":
+			if err := func() error {
+				s.HarnessChangeId.Reset()
+				if err := s.HarnessChangeId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"harnessChangeId\"")
+			}
 		case "config":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				if err := s.Config.Decode(d); err != nil {
 					return err
@@ -5875,7 +5892,7 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resolvedHarnessConfig\"")
 			}
 		case "sandboxId":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -5926,8 +5943,8 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b10000100,
-		0b00000000,
+		0b00001000,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -7447,6 +7464,12 @@ func (s *PoolSandboxUpdateRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ReserveHarnessChange.Set {
+			e.FieldStart("reserveHarnessChange")
+			s.ReserveHarnessChange.Encode(e)
+		}
+	}
+	{
 		if s.Config.Set {
 			e.FieldStart("config")
 			s.Config.Encode(e)
@@ -7484,14 +7507,15 @@ func (s *PoolSandboxUpdateRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxUpdateRequest = [7]string{
+var jsonFieldsNameOfPoolSandboxUpdateRequest = [8]string{
 	0: "$schema",
-	1: "config",
-	2: "egress",
-	3: "gateways",
-	4: "sentinels",
-	5: "sentinelRoutes",
-	6: "secretEnv",
+	1: "reserveHarnessChange",
+	2: "config",
+	3: "egress",
+	4: "gateways",
+	5: "sentinels",
+	6: "sentinelRoutes",
+	7: "secretEnv",
 }
 
 // Decode decodes PoolSandboxUpdateRequest from json.
@@ -7511,6 +7535,16 @@ func (s *PoolSandboxUpdateRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
+			}
+		case "reserveHarnessChange":
+			if err := func() error {
+				s.ReserveHarnessChange.Reset()
+				if err := s.ReserveHarnessChange.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reserveHarnessChange\"")
 			}
 		case "config":
 			if err := func() error {

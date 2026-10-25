@@ -2343,3 +2343,58 @@ func TestMigrateRespellsDiscoVMImageKinds(t *testing.T) {
 		t.Errorf("harness config image kind = %q, want vm/vz", gotConfig.ImageKind)
 	}
 }
+
+func TestHarnessBindingProvenanceUpgradePreservesAssignments(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{DSN: ":memory:"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	configID := "harness-old"
+	for _, row := range []any{
+		&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"},
+		&model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "Docker"},
+		&model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "Pool", ProviderInstanceID: "provider-1"}},
+		&model.HarnessConfig{ID: configID, ProjectID: "project-1", Slug: "old", Name: "Old"},
+		&model.Sandbox{ID: "sb-1", ProjectID: "project-1", CreatedByUserID: "user-1", PoolID: "pool-1", Name: "Box", SandboxManifest: model.SandboxManifest{HarnessConfigID: &configID}},
+		&model.Secret{ID: "secret-1", ProjectID: "project-1", Name: "Key", Type: model.SecretTypeToken, UniqueKey: "key"},
+		&model.HarnessConfigSecretBinding{ProjectID: "project-1", HarnessConfigID: configID, EnvName: "HARNESS_KEY", SecretID: "secret-1"},
+		&model.SandboxSecret{ID: "binding-harness", ProjectID: "project-1", SandboxID: "sb-1", EnvName: "HARNESS_KEY", SecretID: "secret-1", Sentinel: "sentinel-harness"},
+		&model.SandboxSecret{ID: "binding-explicit", ProjectID: "project-1", SandboxID: "sb-1", EnvName: "MY_KEY", SecretID: "secret-1", Sentinel: "sentinel-explicit"},
+	} {
+		if err := db.Write.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Write.Migrator().DropColumn(&model.SandboxSecret{}, "SourceHarnessConfigID"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var assignments []model.SandboxSecret
+	if err := db.Write.Order("id").Find(&assignments).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(assignments) != 2 || assignments[0].SourceHarnessConfigID != "" || assignments[1].SourceHarnessConfigID != "" || assignments[1].Sentinel != "sentinel-harness" {
+		t.Fatalf("legacy assignments were not preserved: %+v", assignments)
+	}
+	// A later explicitly added assignment is not reclassified on another startup.
+	if err := db.Write.Model(&model.SandboxSecret{}).Where("id = ?", "binding-harness").Update("source_harness_config_id", "").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var explicit model.SandboxSecret
+	if err := db.Write.First(&explicit, "id = ?", "binding-harness").Error; err != nil {
+		t.Fatal(err)
+	}
+	if explicit.SourceHarnessConfigID != "" {
+		t.Fatal("later explicit assignment was reclassified")
+	}
+}

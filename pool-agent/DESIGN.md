@@ -2142,3 +2142,16 @@ same loop sweeps what an interrupted snapshot build left.
 - Keep in-sandbox agent API implementation code in the `sandbox-agent`
   module; pool-local provider operation routes and their generated server
   adapter belong under `server`.
+
+## Stopped-only harness changes
+
+A sandbox update's `reserveHarnessChange` takes the sandbox's power lock and
+checks the runtime is stopped (ADR 26-10-24-650). It records a pool-owned
+`harness-change.json` beside the sandbox's durable tree, outside its mounts.
+The matching create's `harnessChangeId` is required before any side effects;
+old creates are refused even after the replacement settles. Every start checks
+that the fence is applied. The matching create marks it applied only after
+success, under the same power lock; retries keep the same ID. No timeout can
+release it after a pool or server restart. Archive publishes its archive marker before removing the fence along with
+the runtime; the durable workspace remains. Provisioning on the next boot is
+still the sandbox agent's readiness gate, and the switch itself starts nothing.

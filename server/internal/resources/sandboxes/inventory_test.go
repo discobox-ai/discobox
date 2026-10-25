@@ -272,3 +272,32 @@ func TestAcquireRunningSandboxHTTPClientRefusesOnlyAStoppedSandboxOnAnUnreachabl
 		t.Fatalf("running sandbox, pool unreachable: err = %v; want the pool's unreachability", err)
 	}
 }
+
+func TestStoppedInventoryShowsNewSelectionWithoutRewritingHistory(t *testing.T) {
+	service, _, observedAt := inventoryFixture(t)
+	target := bundledConfig(t, service.store, codexBundle, codexBundleV2)
+	sb, err := service.store.GetSandbox(context.Background(), "project-1", "sb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sb.HarnessConfigID = &target.ID
+	sb.HarnessChangeID = "applied-change"
+	if err := service.store.UpdateSandbox(context.Background(), sb); err != nil {
+		t.Fatal(err)
+	}
+	document := strings.Replace(postedInventory, `"fromTheFuture": 1}`, `"fromTheFuture": 1,"harnessId":"old","currentHarnessId":"old"}`, 1)
+	if err := service.store.PutSandboxInventory(context.Background(), "project-1", "pool-1", "sb-1", "sha256:changed", []byte(document), observedAt.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	out := readInventory(t, service, services.InventoryRead{Part: services.InventoryExec, ID: "exec-1"})
+	if string(out["currentHarnessId"]) != `"`+target.ID+`"` || string(out["harnessId"]) != `"old"` || string(out["fromTheFuture"]) != "1" {
+		t.Fatalf("wrong composed inventory: %s", out)
+	}
+	stored, err := service.store.GetSandboxInventory(context.Background(), "project-1", "sb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(stored.Document), `"currentHarnessId":"old"`) {
+		t.Fatal("stored history was rewritten")
+	}
+}

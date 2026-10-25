@@ -546,6 +546,11 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 		terminals = h.terminals.List()
 	}
 	sessions := agentstatus.ComputeSessionStatus(terminals)
+	if h.terminals != nil {
+		for i := range sessions {
+			sessions[i].CurrentHarnessID = h.terminals.CurrentHarnessID()
+		}
+	}
 	listening := h.ports.Snapshot()
 
 	response := sandboxapi.SandboxAgentStatusResponse{
@@ -853,6 +858,9 @@ func sandboxAgentSessionStatus(in agentstatus.SessionStatus) sandboxapi.SandboxA
 		AttacherCount: int64(in.AttacherCount),
 		ExecStatus:    in.ExecStatus,
 	}
+	if in.CurrentHarnessID != "" {
+		out.CurrentHarnessId = sandboxapi.NewOptString(in.CurrentHarnessID)
+	}
 	if in.HarnessID != "" {
 		out.HarnessId = sandboxapi.NewOptString(in.HarnessID)
 	}
@@ -950,6 +958,9 @@ func (h *handler) sandboxExec(in execs.Exec) sandboxapi.SandboxExec {
 		out.Metadata = sandboxapi.NewOptSandboxExecMetadata(sandboxapi.SandboxExecMetadata(stringMap(in.Metadata)))
 	}
 	if harnessID := terminal.HarnessID(in); harnessID != "" {
+		if h.terminals != nil {
+			out.CurrentHarnessId = sandboxapi.NewOptString(h.terminals.CurrentHarnessID())
+		}
 		out.HarnessId = sandboxapi.NewOptString(harnessID)
 	}
 	if terminal.IsPrimary(in) {

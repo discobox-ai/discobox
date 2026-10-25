@@ -256,7 +256,7 @@ func (a *App) listTerminalCompletions(ctx context.Context, _ *apiclientgen.Clien
 	completions := make([]string, 0, len(terminals)+1)
 	completions = append(completions, completionItem(primaryExecID, "the discobox's primary terminal, relaunched if stopped"))
 	for _, terminal := range terminals {
-		completions = append(completions, completionItem(terminal.ID, completionDescription(terminal.HarnessId.Or(""), string(terminal.Status))))
+		completions = append(completions, completionItem(terminal.ID, completionDescription(terminal.CurrentHarnessId.Or(terminal.HarnessId.Or("")), string(terminal.Status))))
 	}
 	return completions, nil
 }

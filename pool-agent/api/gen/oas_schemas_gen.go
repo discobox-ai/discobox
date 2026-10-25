@@ -4200,7 +4200,10 @@ type PoolSandboxCreateRequest struct {
 	// earlier create recorded, and assets.discobox.internal answers the sandbox only manifests and blobs
 	// they reach. Absent or empty is none.
 	Bundles OptNilBundlePinArray `json:"bundles"`
-	Config  SandboxConfig        `json:"config"`
+	// Durable stopped-only harness change fence to apply. Must match the pool reservation when one
+	// exists.
+	HarnessChangeId OptString     `json:"harnessChangeId"`
+	Config          SandboxConfig `json:"config"`
 	// The sandbox's effective egress policy, recorded with the pool proxy before the container is built
 	// so it is in force from the sandbox's first request. Absent means unrestricted.
 	Egress OptEgressPolicy `json:"egress"`
@@ -4235,6 +4238,11 @@ func (s *PoolSandboxCreateRequest) GetSchema() OptURI {
 // GetBundles returns the value of Bundles.
 func (s *PoolSandboxCreateRequest) GetBundles() OptNilBundlePinArray {
 	return s.Bundles
+}
+
+// GetHarnessChangeId returns the value of HarnessChangeId.
+func (s *PoolSandboxCreateRequest) GetHarnessChangeId() OptString {
+	return s.HarnessChangeId
 }
 
 // GetConfig returns the value of Config.
@@ -4290,6 +4298,11 @@ func (s *PoolSandboxCreateRequest) SetSchema(val OptURI) {
 // SetBundles sets the value of Bundles.
 func (s *PoolSandboxCreateRequest) SetBundles(val OptNilBundlePinArray) {
 	s.Bundles = val
+}
+
+// SetHarnessChangeId sets the value of HarnessChangeId.
+func (s *PoolSandboxCreateRequest) SetHarnessChangeId(val OptString) {
+	s.HarnessChangeId = val
 }
 
 // SetConfig sets the value of Config.
@@ -4823,8 +4836,11 @@ func (s *PoolSandboxRuntimeMetadata) init() PoolSandboxRuntimeMetadata {
 // Ref: #/components/schemas/PoolSandboxUpdateRequest
 type PoolSandboxUpdateRequest struct {
 	// A URL to the JSON Schema for this object.
-	Schema OptURI                 `json:"$schema"`
-	Config OptSandboxUpdateConfig `json:"config"`
+	Schema OptURI `json:"$schema"`
+	// Reserve a stopped sandbox for this durable harness change ID. Idempotent for the same reservation;
+	// blocks starts until its matching create succeeds.
+	ReserveHarnessChange OptString              `json:"reserveHarnessChange"`
+	Config               OptSandboxUpdateConfig `json:"config"`
 	// Replacement effective egress policy, recorded with the pool proxy for a sandbox whose container
 	// exists; one with no container is answered not found and nothing is recorded, since its create
 	// carries the policy. This is how a policy change reaches a sandbox (ADR 26-10-01-032 §5); absent
@@ -4847,6 +4863,11 @@ type PoolSandboxUpdateRequest struct {
 // GetSchema returns the value of Schema.
 func (s *PoolSandboxUpdateRequest) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetReserveHarnessChange returns the value of ReserveHarnessChange.
+func (s *PoolSandboxUpdateRequest) GetReserveHarnessChange() OptString {
+	return s.ReserveHarnessChange
 }
 
 // GetConfig returns the value of Config.
@@ -4882,6 +4903,11 @@ func (s *PoolSandboxUpdateRequest) GetSecretEnv() OptNilPoolSandboxUpdateRequest
 // SetSchema sets the value of Schema.
 func (s *PoolSandboxUpdateRequest) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetReserveHarnessChange sets the value of ReserveHarnessChange.
+func (s *PoolSandboxUpdateRequest) SetReserveHarnessChange(val OptString) {
+	s.ReserveHarnessChange = val
 }
 
 // SetConfig sets the value of Config.

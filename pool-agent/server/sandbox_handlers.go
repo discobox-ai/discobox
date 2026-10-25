@@ -355,6 +355,9 @@ func normalizeSandboxResponse(sb *sandboxruntime.Sandbox) {
 }
 
 func mapRuntimeError(err error) error {
+	if errors.Is(err, sandboxruntime.ErrHarnessChangeRefused) {
+		return newTypedStatusError(http.StatusConflict, err.Error(), workerapimodel.ErrorTypeHarnessChangeRefused)
+	}
 	if errors.Is(err, sandboxruntime.ErrNotFound) {
 		return newStatusError(http.StatusNotFound, http.StatusText(http.StatusNotFound))
 	}

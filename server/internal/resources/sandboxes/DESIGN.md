@@ -182,7 +182,7 @@ a dirty row no other reconcile returns over.
 or tool list, one exec or service, a terminal's screen — from the
 `sandbox_inventories` row the pool agent last reported for the sandbox
 ([ADR 26-10-11-657](../../../../docs/adr/26-10-11-657-a-stopped-discobox-is-read-from-what-it-last-posted.md) §4).
-The answer is the part as posted, never re-encoded from a model of it, plus
+The answer preserves posted fields, including unknown ones, plus
 `observedAt`; records are served as posted, so an exec last seen running reads
 as running. The primary terminal's alias is resolved as the sandbox agent
 resolves it: a primary that is starting or running, else the most recently
@@ -962,3 +962,32 @@ client narration reads pool provisioning progress, falling back to "waiting
 for the pool agent to become ready". Fresh health resumes creation, even while
 the pool lifecycle verdict still reflects a previous server run. Concrete pool
 failures and a silent startup timeout propagate to the sandbox error.
+
+## Changing the selected harness
+
+`UpdateSandbox` accepts a harness selector or explicit config ID (ADR
+26-10-24-650). Same-config selection does not upgrade. A different selection
+requires a settled, present sandbox and a configured, compatible target.
+
+A persisted `PendingHarnessChange` carries the proposed manifest separately from
+its effective spec, with a generation bump and dirty mark. Reconciliation asks
+the pool to reserve its stopped runtime using that proposal's ID. A runtime
+refusal clears the proposal and records the refusal without changing the
+selected harness. A transient connection failure keeps the proposal retryable.
+The pool's durable fence blocks starts and stale creates across process restarts.
+
+Once reserved, a transaction applies the whole target manifest and harness-owned
+secret assignments, advances the generation, clears the proposal and marks it
+dirty. Reconciliation sends the matching fence ID with its create; the pool
+releases starts only after that spec is applied. The replacement stays stopped;
+boot-time provisioning and readiness run on the next start. Archive/delete
+cancel a pending proposal and archive clears the pool fence. Explicit sandbox
+secret bindings survive; `SourceHarnessConfigID` identifies bindings to replace.
+Legacy bindings without trustworthy provenance are retained as sandbox overrides,
+even if their env names match the new harness.
+
+The pending target has an indexed `PendingHarnessConfigID` foreign key, so it
+cannot be deleted while reservation or promotion is outstanding. Terminal
+inventory and cached status sessions compose only the new `currentHarnessId`
+from the selected config, leaving historical fields and timestamps as posted.
+The original initial prompt is cleared when selecting another harness.

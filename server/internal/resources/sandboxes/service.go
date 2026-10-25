@@ -383,7 +383,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			for _, in := range config.Secrets {
 				inlineEnvs[strings.TrimSpace(in.Env)] = struct{}{}
 			}
-			harnessAssignments, err := s.applyHarnessConfigSecrets(ctx, projectID, sandbox, harnessConfigID, inlineEnvs)
+			harnessAssignments, err := prepareHarnessConfigSecrets(ctx, s.store, projectID, sandbox, harnessConfigID, inlineEnvs)
 			if err != nil {
 				return nil, err
 			}
@@ -695,6 +695,13 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 
+	var change *model.SandboxHarnessChange
+	if config, ok := input.Config.Get(); ok {
+		change, err = s.prepareHarnessChange(ctx, sandbox, config)
+		if err != nil {
+			return nil, err
+		}
+	}
 	egressChanged := false
 	if config, ok := input.Config.Get(); ok {
 		if name, ok := config.Name.Get(); ok {
@@ -709,8 +716,28 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 	}
 
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
-		if err := txStore.UpdateSandbox(ctx, sandbox); err != nil {
-			return err
+		if change == nil {
+			if err := txStore.UpdateSandbox(ctx, sandbox, store.WithGeneration(sandbox.Generation)); err != nil {
+				return err
+			}
+		}
+
+		if change != nil {
+			if s.engine == nil {
+				return errors.New("reconcile engine is required")
+			}
+			previous := sandbox.Generation
+			sandbox.IncrementGeneration()
+			sandbox.RecordIntent(model.DesiredStatePresent)
+			sandbox.PendingHarnessChange = change
+			sandbox.PendingHarnessConfigID = change.Manifest.HarnessConfigID
+			sandbox.HarnessChangeError = ""
+			if err := txStore.UpdateSandbox(ctx, sandbox, store.WithGeneration(previous)); err != nil {
+				return err
+			}
+			if err := s.engine.MarkDirtyTx(ctx, txDB, SandboxResourceType, SandboxDirtyID(projectID, sandboxID)); err != nil {
+				return err
+			}
 		}
 		if !egressChanged {
 			return nil
@@ -731,6 +758,19 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 		return s.engine.MarkDirtyTx(ctx, txDB, SandboxProxyPolicyResourceType, SandboxDirtyID(projectID, sandboxID))
 	}); err != nil {
 		return nil, err
+	}
+	if change != nil {
+		if _, err := s.NewSandboxReconciler().Reconcile(ctx, SandboxDirtyID(projectID, sandboxID)); err != nil {
+			return nil, err
+		}
+		updated, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+		if err != nil {
+			return nil, err
+		}
+		if updated.HarnessChangeError != "" {
+			return nil, apperrors.NewStatusError(http.StatusConflict, updated.HarnessChangeError)
+		}
+		return updated, nil
 	}
 	return s.store.GetSandbox(ctx, projectID, sandboxID)
 }

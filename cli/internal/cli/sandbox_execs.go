@@ -838,23 +838,24 @@ type sandboxExecRecordsResponse struct {
 }
 
 type sandboxExecRecord struct {
-	ID        string                         `json:"id"`
-	Status    apiclientgen.SandboxExecStatus `json:"status"`
-	Command   []string                       `json:"command"`
-	Workdir   string                         `json:"workdir"`
-	Env       map[string]string              `json:"env"`
-	User      *sandboxExecUser               `json:"user"`
-	Tty       bool                           `json:"tty"`
-	Unit      *string                        `json:"unit"`
-	Pid       *int64                         `json:"pid"`
-	ExitCode  *int64                         `json:"exitCode"`
-	Error     *string                        `json:"error"`
-	CreatedAt time.Time                      `json:"createdAt"`
-	StartedAt *time.Time                     `json:"startedAt"`
-	ExitedAt  *time.Time                     `json:"exitedAt"`
-	Metadata  map[string]string              `json:"metadata"`
-	HarnessID *string                        `json:"harnessId"`
-	Primary   *bool                          `json:"primary"`
+	ID               string                         `json:"id"`
+	Status           apiclientgen.SandboxExecStatus `json:"status"`
+	Command          []string                       `json:"command"`
+	Workdir          string                         `json:"workdir"`
+	Env              map[string]string              `json:"env"`
+	User             *sandboxExecUser               `json:"user"`
+	Tty              bool                           `json:"tty"`
+	Unit             *string                        `json:"unit"`
+	Pid              *int64                         `json:"pid"`
+	ExitCode         *int64                         `json:"exitCode"`
+	Error            *string                        `json:"error"`
+	CreatedAt        time.Time                      `json:"createdAt"`
+	StartedAt        *time.Time                     `json:"startedAt"`
+	ExitedAt         *time.Time                     `json:"exitedAt"`
+	Metadata         map[string]string              `json:"metadata"`
+	CurrentHarnessID *string                        `json:"currentHarnessId"`
+	HarnessID        *string                        `json:"harnessId"`
+	Primary          *bool                          `json:"primary"`
 	// ObservedAt is set on a record read while the discobox was not running:
 	// it is what the discobox last posted, and when (ADR 26-10-11-657 §4).
 	ObservedAt *time.Time `json:"observedAt"`
@@ -1127,6 +1128,9 @@ func (r sandboxExecRecord) model() apimodel.SandboxExec {
 	}
 	if r.Metadata != nil {
 		exec.SetMetadata(apiclientgen.NewOptSandboxExecMetadata(apiclientgen.SandboxExecMetadata(r.Metadata)))
+	}
+	if r.CurrentHarnessID != nil {
+		exec.SetCurrentHarnessId(apiclientgen.NewOptString(*r.CurrentHarnessID))
 	}
 	if r.HarnessID != nil {
 		exec.SetHarnessId(apiclientgen.NewOptString(*r.HarnessID))

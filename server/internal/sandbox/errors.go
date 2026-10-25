@@ -39,6 +39,8 @@ var (
 
 	// ErrNotRunning indicates the runtime sandbox is not running.
 	ErrNotRunning = errors.New("sandbox not running")
+	// ErrHarnessChangeRefused is the pool refusing a stopped-only harness change.
+	ErrHarnessChangeRefused = errors.New("harness change refused")
 
 	// ErrAlreadyRunning indicates the runtime sandbox is already running.
 	ErrAlreadyRunning = errors.New("sandbox already running")

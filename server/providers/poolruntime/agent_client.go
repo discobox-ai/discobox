@@ -367,6 +367,9 @@ func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, st
 	}
 	defer release()
 	req := &poolapimodel.PoolSandboxUpdateRequest{}
+	if opts.ReserveHarnessChange != "" {
+		req.ReserveHarnessChange = poolclient.NewOptString(opts.ReserveHarnessChange)
+	}
 	if opts.Sentinels != nil {
 		req.Sentinels = poolclient.NewOptNilStringArray(opts.Sentinels)
 	}
@@ -752,6 +755,9 @@ func poolHarnessVolumes(volumes []harness.Volume) []poolapimodel.HarnessVolume {
 
 func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) *poolapimodel.PoolSandboxCreateRequest {
 	out := &poolapimodel.PoolSandboxCreateRequest{SandboxId: sandboxID}
+	if opts.HarnessChangeID != "" {
+		out.HarnessChangeId = poolclient.NewOptString(opts.HarnessChangeID)
+	}
 	config := &out.Config
 	if opts.SpecFingerprint != "" {
 		config.SpecFingerprint = poolclient.NewOptString(opts.SpecFingerprint)
@@ -1091,6 +1097,8 @@ func mapPoolClientError(err error) error {
 		// refused create settle as a converged, healthy sandbox that had no
 		// container at all.
 		switch poolErrorType(statusErr) {
+		case poolapimodel.ErrorTypeHarnessChangeRefused:
+			return fmt.Errorf("%w: %s", sandbox.ErrHarnessChangeRefused, poolClientErrorMessage(statusErr))
 		case poolapimodel.ErrorTypeSandboxArchived:
 			return sandbox.ErrArchived
 		case poolapimodel.ErrorTypeSandboxNoContainer:

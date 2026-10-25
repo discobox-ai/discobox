@@ -86,6 +86,10 @@ func (s *Service) recordSandboxIntent(ctx context.Context, projectID, sandboxID,
 		previousGeneration := sandbox.Generation
 		sandbox.IncrementGeneration()
 		sandbox.RecordIntent(desiredState)
+		if desiredState != model.DesiredStatePresent {
+			sandbox.PendingHarnessChange = nil
+			sandbox.PendingHarnessConfigID = nil
+		}
 		for _, fn := range mutate {
 			fn(sandbox)
 		}

@@ -551,7 +551,7 @@ func storedSandboxIDs(root string) ([]string, error) {
 	return ids, nil
 }
 
-func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapimodel.PoolSandboxCreateRequest) (*Sandbox, error) {
+func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapimodel.PoolSandboxCreateRequest) (result *Sandbox, resultErr error) {
 	sandboxID := ""
 	if req != nil {
 		sandboxID = strings.TrimSpace(req.SandboxId)
@@ -582,6 +582,15 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
+	if err := r.harnessCreateAllowed(sandboxID, req.HarnessChangeId.Or("")); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if resultErr == nil {
+			resultErr = r.finishHarnessChange(sandboxID, req.HarnessChangeId.Or(""))
+		}
+	}()
+
 	// The bundles it is pinned to, which are all assets.discobox.internal
 	// answers it (ADR 26-10-16-423 §13). Recorded on every create, not only
 	// one that builds, so a sandbox from before the record gets one from the
@@ -1579,6 +1588,9 @@ func proxySentinelRoutes(in map[string][]workerapimodel.SentinelRoute) map[strin
 }
 
 func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error) {
+	if req != nil && req.ReserveHarnessChange.IsSet() {
+		return r.reserveHarnessChange(ctx, sandboxID, req.ReserveHarnessChange.Value)
+	}
 	if req != nil {
 		if req.Egress.IsSet() {
 			policy := egressPolicy(req.Egress)
@@ -2596,8 +2608,9 @@ func compactLogTail(logs string) string {
 
 // MemorySandboxRuntime is a lightweight runtime for tests and non-Docker embeds.
 type MemorySandboxRuntime struct {
-	mu        sync.Mutex
-	sandboxes map[string]*Sandbox
+	harnessChanges map[string]harnessChangeFence
+	mu             sync.Mutex
+	sandboxes      map[string]*Sandbox
 	// archived stands in for the on-disk marker: an entry here has no sandbox
 	// in the map (archiving drops the container) but is still held as data.
 	archived   map[string]struct{}
@@ -2677,8 +2690,24 @@ func (r *MemorySandboxRuntime) CreateSandbox(_ context.Context, req *workerapimo
 	if req == nil {
 		return nil, fmt.Errorf("sandbox create request is required")
 	}
+	f := r.harnessChanges[req.SandboxId]
+	if f.ID != "" && f.ID != req.HarnessChangeId.Or("") {
+		return nil, ErrHarnessChangeRefused
+	}
 	now := time.Now().UTC()
 	sb := &Sandbox{ID: req.SandboxId, SandboxID: req.SandboxId, Status: StatusRunning, CreatedAt: now, StartedAt: &now, Env: copyMap(map[string]string(optSandboxConfigEnv(req.Config.Env)))}
+	if req.HarnessChangeId.IsSet() {
+		if r.harnessChanges == nil {
+			r.harnessChanges = map[string]harnessChangeFence{}
+		}
+		r.harnessChanges[req.SandboxId] = harnessChangeFence{ID: req.HarnessChangeId.Value, Applied: true}
+		sb.Status = StatusStopped
+		if f.Applied {
+			if old := r.sandboxes[req.SandboxId]; old != nil {
+				sb.Status = old.Status
+			}
+		}
+	}
 	r.sandboxes[req.SandboxId] = sb
 	// Kept as the Docker runtime labels it, afresh on every create: a run
 	// sandbox names no mode.
@@ -2701,12 +2730,25 @@ func (r *MemorySandboxRuntime) GetSandbox(_ context.Context, sandboxID string) (
 	return cloneSandbox(sb), nil
 }
 
-func (r *MemorySandboxRuntime) UpdateSandbox(_ context.Context, sandboxID string, _ *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error) {
+func (r *MemorySandboxRuntime) UpdateSandbox(_ context.Context, sandboxID string, req *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sb := r.sandboxes[sandboxID]
 	if sb == nil {
 		return nil, ErrNotFound
+	}
+	if req != nil && req.ReserveHarnessChange.IsSet() {
+		change := req.ReserveHarnessChange.Value
+		f := r.harnessChanges[sandboxID]
+		if f.ID != change {
+			if (f.ID != "" && !f.Applied) || (sb.Status != StatusStopped && sb.Status != StatusCreated) {
+				return nil, ErrHarnessChangeRefused
+			}
+			if r.harnessChanges == nil {
+				r.harnessChanges = map[string]harnessChangeFence{}
+			}
+			r.harnessChanges[sandboxID] = harnessChangeFence{ID: change}
+		}
 	}
 	return cloneSandbox(sb), nil
 }
@@ -2714,6 +2756,7 @@ func (r *MemorySandboxRuntime) UpdateSandbox(_ context.Context, sandboxID string
 func (r *MemorySandboxRuntime) ArchiveSandbox(_ context.Context, sandboxID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	delete(r.harnessChanges, sandboxID)
 	delete(r.sandboxes, sandboxID)
 	delete(r.harnessModes, sandboxID)
 	r.archived[sandboxID] = struct{}{}
@@ -2723,6 +2766,7 @@ func (r *MemorySandboxRuntime) ArchiveSandbox(_ context.Context, sandboxID strin
 func (r *MemorySandboxRuntime) DeleteSandbox(_ context.Context, sandboxID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	delete(r.harnessChanges, sandboxID)
 	delete(r.sandboxes, sandboxID)
 	delete(r.harnessModes, sandboxID)
 	delete(r.archived, sandboxID)
@@ -2801,6 +2845,9 @@ func (r *MemorySandboxRuntime) ClearCache(context.Context) ([]string, error) {
 func (r *MemorySandboxRuntime) StartSandbox(_ context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if f := r.harnessChanges[sandboxID]; f.ID != "" && !f.Applied {
+		return ErrHarnessChangeRefused
+	}
 	sb := r.sandboxes[sandboxID]
 	if sb == nil {
 		if _, archived := r.archived[sandboxID]; archived {

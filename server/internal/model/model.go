@@ -999,8 +999,21 @@ func (m SandboxManifest) DeliveredFingerprint() string {
 	return hex.EncodeToString(sum[:])
 }
 
+// SandboxHarnessChange is a proposed spec, kept separate until the pool has
+// reserved the stopped runtime. It survives a server restart (ADR 26-10-24-650).
+type SandboxHarnessChange struct {
+	ID       string
+	Manifest SandboxManifest
+}
+
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
+	PendingHarnessConfigID *string               `gorm:"type:text;index" json:"-"`
+	PendingHarnessConfig   *HarnessConfig        `gorm:"foreignKey:PendingHarnessConfigID" json:"-"`
+	HarnessChangeID        string                `gorm:"type:text;not null;default:''" json:"-"`
+	PendingHarnessChange   *SandboxHarnessChange `gorm:"type:text;serializer:json" json:"-"`
+	HarnessChangeError     string                `gorm:"type:text;not null;default:''" json:"-"`
+
 	ID              string `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
 	ProjectID       string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_sandbox_project_name,priority:1" json:"projectId" doc:"Project ID"`
 	CreatedByUserID string `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
@@ -1950,12 +1963,14 @@ type SandboxInventory struct {
 // proxy swaps it for the real value resolved from the referenced secret. The
 // sentinel is non-secret but is not exposed through the API.
 type SandboxSecret struct {
-	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable assignment ID"`
-	ProjectID string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	SandboxID string `gorm:"column:sandbox_id;not null;type:text;index;uniqueIndex:idx_sandbox_secret_env,priority:1" json:"sandboxId" doc:"Sandbox ID"`
-	SecretID  string `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Assigned secret ID"`
-	EnvName   string `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_sandbox_secret_env,priority:2" json:"envName" doc:"Environment variable name injected into the sandbox"`
-	Sentinel  string `gorm:"column:sentinel;not null;type:text;uniqueIndex" json:"-"`
+	// SourceHarnessConfigID distinguishes harness bindings from explicit sandbox bindings.
+	SourceHarnessConfigID string `gorm:"type:text;not null;default:''" json:"-"`
+	ID                    string `gorm:"primaryKey;type:text" json:"id" doc:"Stable assignment ID"`
+	ProjectID             string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	SandboxID             string `gorm:"column:sandbox_id;not null;type:text;index;uniqueIndex:idx_sandbox_secret_env,priority:1" json:"sandboxId" doc:"Sandbox ID"`
+	SecretID              string `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Assigned secret ID"`
+	EnvName               string `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_sandbox_secret_env,priority:2" json:"envName" doc:"Environment variable name injected into the sandbox"`
+	Sentinel              string `gorm:"column:sentinel;not null;type:text;uniqueIndex" json:"-"`
 	// Format is the template the sentinel was minted from. A rebind compares it
 	// against the replacement secret's format to decide whether the sentinel can
 	// be kept, which it must be able to do after the old secret row is gone.

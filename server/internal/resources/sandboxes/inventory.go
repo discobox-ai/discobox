@@ -53,7 +53,9 @@ func (s *Service) AcquireRunningSandboxHTTPClient(ctx context.Context, projectID
 //
 // The answer is the part as the sandbox agent posted it, not re-encoded from a
 // model of it, so a field this server does not know still reaches the client,
-// with one field added: observedAt, when the sandbox last had this inventory.
+// with observedAt, when the sandbox last had this inventory. After a harness
+// switch, currentHarnessId alone is derived from its selected config; the
+// historical harnessId and other observations remain as posted.
 // A live answer has none, which is how a client tells them apart. Records are
 // served as posted — an exec last seen running reads as running — because
 // what the sandbox last said is the whole of what is known.
@@ -61,7 +63,8 @@ func (s *Service) ReadSandboxInventory(ctx context.Context, projectID, sandboxID
 	if err := authorizeRequestedScopes(ctx, scopes); err != nil {
 		return nil, err
 	}
-	if _, err := s.store.GetSandbox(ctx, projectID, sandboxID); err != nil {
+	sb, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
 		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	inventory, err := s.store.GetSandboxInventory(ctx, projectID, sandboxID)
@@ -83,6 +86,27 @@ func (s *Service) ReadSandboxInventory(ctx context.Context, projectID, sandboxID
 				"discobox %s is not running, and what it last posted has no %s. Reading it does not start it: start it with `discobox start %s` to read them", sandboxID, name, sandboxID))
 		}
 		return raw, nil
+	}
+	// Only the new selection field is derived. The inventory and every other
+	// posted observation remain as recorded, with their original observedAt.
+	if sb.HarnessChangeID != "" && sb.HarnessConfigID != nil {
+		if raw, ok := parts["execs"]; ok {
+			var records []json.RawMessage
+			if err := json.Unmarshal(raw, &records); err != nil {
+				return nil, err
+			}
+			for i, record := range records {
+				selected, err := services.CurrentTerminalHarness(record, *sb.HarnessConfigID)
+				if err != nil {
+					return nil, err
+				}
+				records[i] = selected
+			}
+			parts["execs"], err = json.Marshal(records)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	observedAt := inventory.ObservedAt.UTC()
 	switch read.Part {

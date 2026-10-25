@@ -405,7 +405,7 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 		for _, assignment := range assignments {
 			inlineEnvs[assignment.EnvName] = struct{}{}
 		}
-		harnessAssignments, err := s.applyHarnessConfigSecrets(ctx, projectID, sb, harnessConfig.ID, inlineEnvs)
+		harnessAssignments, err := prepareHarnessConfigSecrets(ctx, s.store, projectID, sb, harnessConfig.ID, inlineEnvs)
 		if err != nil {
 			return nil, err
 		}

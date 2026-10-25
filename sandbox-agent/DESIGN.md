@@ -1216,3 +1216,9 @@ and host-Docker providers use the same development images without a registry.
   both websocket ends of an attach (CLI dial, `shimproxy.AttachWebSocket`)
   run keepalive ping loops that close the tunnel when the peer stops
   answering.
+
+Harness switching (ADR 26-10-24-650) preserves terminal IDs and creation metadata
+but promises no conversation transfer. Exec responses and session status expose
+`currentHarnessId` from the sandbox's resolved harness separately from the
+historical `harnessId`. Revival uses that resolved harness; the provisioning
+readiness gate still holds its launch until its required features are ready.
