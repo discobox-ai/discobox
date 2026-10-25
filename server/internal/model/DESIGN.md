@@ -131,7 +131,6 @@ erDiagram
     HARNESS_CONFIG ||--o{ HARNESS_CONFIG_SECRET_BINDING : binds
     SANDBOX_PROVIDER_INSTANCE ||--o{ POOL : backs
     POOL ||--o{ SANDBOX : schedules
-    POOL ||--o{ POOL_BOOTSTRAP_TOKEN : registers_with
 
     SECRET ||--o{ SECRET_GRANT : authorizes
     SECRET ||--o{ SANDBOX_SECRET : fills
@@ -218,14 +217,6 @@ erDiagram
         bool degraded
     }
 
-    POOL_BOOTSTRAP_TOKEN {
-        string id
-        string pool_id
-        bytes token_hash
-        datetime expires_at
-        datetime used_at
-        datetime revoked_at
-    }
 
     SANDBOX_ACCESS_ISSUER_KEY {
         string project_id
