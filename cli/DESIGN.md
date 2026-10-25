@@ -121,14 +121,8 @@ transport helpers where OpenAPI does not model the stream.
   registered a second time, hidden (`newConsoleCommand` takes the spelling):
   not an alias, since cobra prints aliases in help and `tui` is not taught.
   `internal/tui` keeps its package name.
-- Bare `discobox` runs the console when stdin and stdout are both
-  terminals, and prints its help when they are not (`App.runConsole`, also reached
-  from `discobox console`). Typing a program's name is how you ask for it, and the
-  console is the one thing you can ask for without knowing a subcommand; a
-  pipe, a script or CI expected output, and a full-screen window is not an
-  answer to that. The leader there comes from the environment only: a flag
-  would have to be persistent to be reachable, and every subcommand would carry
-  one that means nothing to it.
+- Bare `discobox` prints help in terminals, pipes, and scripts. Open the
+  interactive window explicitly with `discobox console` (`App.runConsole`).
 - **Words after the bare command are subcommands, not a prompt.** A prompt is
   words and a misspelling is a word, so nothing can tell the two apart once
   they share a spelling — a prompt goes after `run`, and the words at the root
@@ -201,7 +195,7 @@ transport helpers where OpenAPI does not model the stream.
   session running.
 - `--raw` creates the discobox on this side and streams its terminal: for a
   pipe, a recording, or a terminal to keep as it is. It is also what a run or attach with no terminal to draw a
-  window on gets (`canOpenWindow`), the same rule bare `discobox` follows, and
+  window on gets (`canOpenWindow`), and
   what `-d` implies — it prints the discobox on stdout, which a window would be
   sitting on.
 - `discobox attach`'s window is opened on the sandbox record the command

@@ -135,8 +135,8 @@ Make a discobox with "%[1]s run":
   %[1]s run . 'fix the failing tests'
   %[1]s run -H codex -d . 'fix the failing tests'
 
-With no command at all it opens the console, where the same thing is one prompt
-and an Enter. See "%[1]s run --help" for everything run takes.`, name),
+With no command it shows this help. Open the console with "%[1]s console".
+See "%[1]s run --help" for everything run takes.`, name),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// The flags in front of a subcommand are parsed by the command they
@@ -181,24 +181,11 @@ and an Enter. See "%[1]s run --help" for everything run takes.`, name),
 		// Bare `discobox` is never a run: that is `discobox run` and nothing
 		// else, so the only way to make a discobox is to name the command that
 		// does (ADR 26-09-25-027).
-		//
-		// Bare `discobox` at a terminal opens the launcher: it is the one thing
-		// you can ask for without knowing a subcommand, and typing the name of
-		// a program is how you ask for it. Anywhere else — a pipe, a script,
-		// CI — it prints its help, because a full-screen window is not an
-		// answer to a program that expected output.
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if showVersion {
 				return app.printVersion(cmd)
 			}
-			if !isTerminalStream(cmd.OutOrStdout()) || !isTerminalStream(cmd.InOrStdin()) {
-				return cmd.Help()
-			}
-			// No leader override here: validate already took the environment's,
-			// and --leader is the console command's own. A flag would have to be a
-			// persistent one to be reachable from a bare `discobox`, and every
-			// subcommand would then carry a flag that means nothing to it.
-			return app.runConsole(cmd, "")
+			return cmd.Help()
 		},
 	}
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault(serverEnv, endpoint.DefaultEndpoint()), "Discobox API server endpoint, or a registered server's name; defaults to the primary \"discobox admin remote primary\" set, and to the local server when none is")
