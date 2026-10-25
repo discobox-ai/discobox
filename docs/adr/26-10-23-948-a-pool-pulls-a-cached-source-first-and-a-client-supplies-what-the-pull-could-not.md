@@ -1,8 +1,8 @@
 # 26-10-23-948 — A pool pulls a cached source first, and a client supplies what the pull could not
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-10-23
-- **Supersedes**, once accepted and for sandboxes created after it:
+- **Supersedes**, for sandboxes created after it:
   [26-10-10-545](26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)
   §1's "the pool never fetches from a remote and never holds a credential for
   one" and "a create that names a Git source and has no client parks", §3's
