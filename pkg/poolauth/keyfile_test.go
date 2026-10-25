@@ -3,6 +3,7 @@ package poolauth
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -18,8 +19,11 @@ func TestLoadOrCreateKeyMakesTheKeyOnce(t *testing.T) {
 	if err != nil || !created {
 		t.Fatalf("LoadOrCreateKey = %v, %v; want a key made", created, err)
 	}
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("key file = %v, %v; want 0600", info, err)
+	// Windows does not expose POSIX permission bits.
+	if runtime.GOOS != "windows" {
+		if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("key file = %v, %v; want 0600", info, err)
+		}
 	}
 	again, created, err := LoadOrCreateKey(path)
 	if err != nil || created || !again.Equal(made) {

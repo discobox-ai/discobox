@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -179,8 +180,15 @@ func TestExtractAgentTakesTheAgentAlone(t *testing.T) {
 		if err := ExtractAgent(bytes.NewReader(data), path); err != nil {
 			t.Fatalf("%s: the agent's layer: %v", name, err)
 		}
-		if info, err := os.Stat(path); err != nil || info.Size() != 3 || info.Mode().Perm()&0o100 == 0 {
+		if info, err := os.Stat(path); err != nil || info.Size() != 3 {
 			t.Fatalf("%s: extracted agent = %v, %v", name, info, err)
+		}
+		// Windows does not expose POSIX executable bits.
+		if runtime.GOOS != "windows" {
+			info, err := os.Stat(path)
+			if err != nil || info.Mode().Perm()&0o100 == 0 {
+				t.Fatalf("%s: extracted agent is not executable: %v, %v", name, info, err)
+			}
 		}
 	}
 	for name, layer := range map[string][]byte{
