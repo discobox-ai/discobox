@@ -1081,7 +1081,10 @@ func TestTheTerminalTitleIgnoresTheFocusedTab(t *testing.T) {
 	term.send("\x1b]2;go test ./...\x07")
 	d.wait("the title", func() bool { return m.View().WindowTitle == "go test ./..." })
 
-	ds.execTerm("exec_shell1").send("\x1b]2;less config.yaml\x07")
+	// The poll can open a second stream before NewShell's answer arrives.
+	// The pane keeps the first arrival and closes the other, while execTerm
+	// records the latest open. Send to the stream this pane actually kept.
+	m.shells.panes[0].stream.(*fakeTerminal).send("\x1b]2;less config.yaml\x07")
 	d.wait("the tab's own title", func() bool {
 		return strings.TrimSpace(m.shells.panes[0].term.Title()) == "less config.yaml"
 	})
