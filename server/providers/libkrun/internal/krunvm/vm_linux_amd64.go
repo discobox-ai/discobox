@@ -183,7 +183,7 @@ func startPasst(cfg Config) (*passtProcess, error) {
 		}
 		if time.Now().After(deadline) {
 			_ = cmd.Process.Kill()
-			<-passt.exited
+			<-passt.exited //nolint:errcheck // Reap the killed process; report the startup timeout below.
 			return nil, fmt.Errorf("passt did not create %s within %s; see %s", cfg.PasstSocket, passtStartTimeout, logPath)
 		}
 		time.Sleep(10 * time.Millisecond)

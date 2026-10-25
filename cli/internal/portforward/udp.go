@@ -224,7 +224,7 @@ func (f *Forwarder) carry(bound *binding, fl *flow, table *flowTable) {
 	// Closing the tunnel is what unblocks the reader, which is waited for so
 	// that nothing a flow started outlives the forwarder's Close.
 	_ = remote.Close()
-	<-replies
+	<-replies //nolint:errcheck // Wait for reader shutdown; err already records why the flow ended.
 	if errors.Is(err, errFlowIdle) || isClosed(err) {
 		err = nil
 	}

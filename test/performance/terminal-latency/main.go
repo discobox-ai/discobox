@@ -256,7 +256,7 @@ type tmuxController struct {
 	stdin   io.WriteCloser
 	output  *streamBuffer
 	stderr  lockedBuffer
-	done    chan error
+	done    chan struct{}
 	bytes   atomic.Uint64
 	mu      sync.Mutex
 	closed  bool
@@ -288,7 +288,7 @@ func startTmux(ctx context.Context, command []string, width, height int) (*tmuxC
 		cmd:     cmd,
 		stdin:   stdin,
 		output:  newStreamBuffer(8 * 1024 * 1024),
-		done:    make(chan error, 1),
+		done:    make(chan struct{}),
 	}
 	cmd.Stderr = &controller.stderr
 	if err := cmd.Start(); err != nil {
@@ -298,7 +298,7 @@ func startTmux(ctx context.Context, command []string, width, height int) (*tmuxC
 	go func() {
 		err := cmd.Wait()
 		controller.output.finish(err)
-		controller.done <- err
+		close(controller.done)
 	}()
 	return controller, nil
 }

@@ -387,7 +387,7 @@ func (r *SystemdRunner) Watch(ctx context.Context) (<-chan string, error) {
 				case <-ctx.Done():
 					return
 				}
-			case <-dropped:
+			case <-dropped: //nolint:errcheck // Any dropped update triggers the same recovery sweep.
 				// systemd's dispatcher drops updates rather than blocking when
 				// the buffer fills. The names are lost, so the only honest
 				// answer is to make the reader sweep: an empty name says
