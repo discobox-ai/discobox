@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/gitprogress"
+
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
@@ -74,7 +76,7 @@ func poolRemote(spec sandboxconfig.Source) string {
 // helper is empty for an origin that takes no token, so that a source the
 // sandbox clones from its remote keeps whatever credential helper its user
 // configures. progress is told how far the clone has got each time git says.
-func (r *repository) prepare(ctx context.Context, source sandboxconfig.RuntimeSource, spec sandboxconfig.Source, helper string, progress func(CloneProgress)) (bool, error) {
+func (r *repository) prepare(ctx context.Context, source sandboxconfig.RuntimeSource, spec sandboxconfig.Source, helper string, progress func(gitprogress.Progress)) (bool, error) {
 	gitDir := filepath.Join(r.dir, ".git")
 	pool := poolRemote(spec)
 	switch _, err := os.Stat(gitDir); {
@@ -183,7 +185,7 @@ func (r *repository) finish(ctx context.Context) (string, error) {
 // source is a full clone of the remote — so it runs with --progress and its
 // meters are parsed and handed to progress as they change, for the pool to
 // report while it waits (ADR 0060).
-func (r *repository) clone(ctx context.Context, originURL string, spec sandboxconfig.Source, helper string, progress func(CloneProgress)) (bool, error) {
+func (r *repository) clone(ctx context.Context, originURL string, spec sandboxconfig.Source, helper string, progress func(gitprogress.Progress)) (bool, error) {
 	var credentials []string
 	if helper != "" {
 		// For these two commands only; ensurePoolRemote then writes the same into
@@ -219,7 +221,7 @@ func (r *repository) clone(ctx context.Context, originURL string, spec sandboxco
 	// The meters are git's English: a translated one would parse as a message
 	// and simply not be reported.
 	cmd.Env = append(cmd.Env, "LC_ALL=C")
-	stderr := &progressWriter{report: progress}
+	stderr := &gitprogress.Writer{Report: progress}
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		return false, gitError(args, err, stderr.String())

@@ -1171,6 +1171,8 @@ type Listing struct {
 // RunRequest is what Enter in the prompt asks for: `discobox run`'s arguments, and
 // nothing the command does not have.
 type RunRequest struct {
+	Credentials        CredentialUI
+	LendGitCredentials bool
 	// Prompt is what the harness is given to do, as the create takes it: the
 	// arguments. The composer holds one piece of text and sends it as one
 	// argument — splitting it would be inventing tokens nobody typed — while
@@ -2365,7 +2367,7 @@ type DataSource interface {
 	// performs against a parked discobox, run by an attach before it dials
 	// (ADR 26-09-24-005). report is told each step as it begins. It returns once the
 	// discobox is free to start, or with why it could not be delivered.
-	DeliverSource(ctx context.Context, sandboxID string, report func(string)) error
+	DeliverSource(ctx context.Context, sandboxID string, report func(string), credentials CredentialUI) error
 
 	// Workspace reports what a create would carry in from the source directory,
 	// so the window can ask the questions still open before it creates anything.
@@ -2390,7 +2392,7 @@ type DataSource interface {
 	MeasureDirectory(ctx context.Context, dir string) (total func() DirectoryTotal, stop func())
 
 	// Do runs a lifecycle verb against one sandbox.
-	Do(ctx context.Context, verb Verb, sandboxID string) error
+	Do(ctx context.Context, verb Verb, sandboxID string, credentials CredentialUI) error
 
 	// Rename gives one sandbox a new name: the one in its meta, which its row
 	// shows from then on whatever its harness titles the terminal. It is not a

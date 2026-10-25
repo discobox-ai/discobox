@@ -1163,13 +1163,14 @@ type Sandbox struct {
 	// Egress is the discobox's own level of its egress policy
 	// (ADR 26-10-01-032). It is not in the manifest, whose fingerprint rebuilds
 	// the container: a policy change converges at the pool proxy.
-	Egress            egress.Policy         `gorm:"column:egress;type:text;serializer:json" json:"egress" doc:"The discobox's own egress policy level"`
-	SourceRoot        *string               `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
-	Origin            *Origin               `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host the sandbox was created from. Immutable after create."`
-	SourceDeliveredAt *time.Time            `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`
-	AppliedCommits    []AppliedSourceCommit `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful discobox apply runs that landed this sandbox's commits on a host. Client-reported; append-only."`
-	OriginKey         *string               `gorm:"column:origin_key;type:text;index" json:"-" doc:"Where the sandbox belongs on the client that created it: SandboxOriginKey of its origin and primary source. Indexed; what listings filter on."`
-	ProviderState     json.RawMessage       `gorm:"column:provider_state;type:text" json:"providerState,omitempty" doc:"Non-secret provider state"`
+	Egress            egress.Policy                   `gorm:"column:egress;type:text;serializer:json" json:"egress" doc:"The discobox's own egress policy level"`
+	SourceRoot        *string                         `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
+	Origin            *Origin                         `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host the sandbox was created from. Immutable after create."`
+	SourceDeliveries  map[string]sourcecache.Delivery `gorm:"column:source_deliveries;type:text;serializer:json" json:"sourceDeliveries,omitempty"`
+	SourceDeliveredAt *time.Time                      `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`
+	AppliedCommits    []AppliedSourceCommit           `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful discobox apply runs that landed this sandbox's commits on a host. Client-reported; append-only."`
+	OriginKey         *string                         `gorm:"column:origin_key;type:text;index" json:"-" doc:"Where the sandbox belongs on the client that created it: SandboxOriginKey of its origin and primary source. Indexed; what listings filter on."`
+	ProviderState     json.RawMessage                 `gorm:"column:provider_state;type:text" json:"providerState,omitempty" doc:"Non-secret provider state"`
 	// RepairGeneration marks one generation as a repair (ADR 0035): when it
 	// equals Generation, ensure tears the runtime down (provider Archive:
 	// container and disposable state dropped, durable tree kept) before the

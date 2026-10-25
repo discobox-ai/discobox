@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
+
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/proxy/egress"
@@ -200,4 +202,8 @@ func TestAssignSandboxHarnessSecretsBlocksUnboundRequired(t *testing.T) {
 	if !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusBadRequest {
 		t.Fatalf("err = %v, want 400", err)
 	}
+}
+
+func (p *recordingProvider) PullSource(context.Context, sandbox.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
+	panic("unexpected source pull")
 }

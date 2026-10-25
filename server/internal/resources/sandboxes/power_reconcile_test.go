@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
+
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	services "github.com/discobox-ai/discobox/server/internal/services"
@@ -336,4 +338,8 @@ func TestARefusedSuspendKeepsTheWake(t *testing.T) {
 	if got := f.load(t).WakeAt; got == nil || !got.Equal(at) {
 		t.Fatalf("wake = %v after a refused suspend, want %v kept", got, at)
 	}
+}
+
+func (p *powerProvider) PullSource(context.Context, sandbox.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
+	panic("unexpected source pull")
 }

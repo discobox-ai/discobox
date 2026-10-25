@@ -258,7 +258,7 @@ func TestALocalCheckoutIsDeliveredOnceAndPinnedAfter(t *testing.T) {
 	var steps []Step
 	report := Report(func(step Step) { steps = append(steps, step) })
 
-	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-one", source), local, pool.server.URL, "token", report); err != nil {
+	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-one", source), local, pool.server.URL, "token", report, DeliveryOptions{}); err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
 	got := pool.refs("sbx-one", "primary")
@@ -282,7 +282,7 @@ func TestALocalCheckoutIsDeliveredOnceAndPinnedAfter(t *testing.T) {
 		t.Fatalf("lease = %q, want the delivered commit %q", lease, unpushed)
 	}
 
-	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-two", source), local, pool.server.URL, "token", nil); err != nil {
+	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-two", source), local, pool.server.URL, "token", nil, DeliveryOptions{}); err != nil {
 		t.Fatalf("deliver a second sandbox: %v", err)
 	}
 	if pool.pushes.Load() != 1 {
@@ -311,7 +311,7 @@ func TestADirtyWorkspaceSnapshotIsDeliveredWithItsBranch(t *testing.T) {
 			BaseCommit:  apiclientgen.NewOptString(base),
 		}),
 	}
-	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-one", source), NewLocalSources(map[string]string{"": work}), pool.server.URL, "token", nil); err != nil {
+	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-one", source), NewLocalSources(map[string]string{"": work}), pool.server.URL, "token", nil, DeliveryOptions{}); err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
 	got := pool.refs("sbx-one", "primary")
@@ -345,7 +345,7 @@ func TestARemoteURLIsFetchedByTheClientOnlyWhenThePoolLacksIt(t *testing.T) {
 
 	var steps []Step
 	report := Report(func(step Step) { steps = append(steps, step) })
-	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-one", remoteSource(first)), nil, pool.server.URL, "token", report); err != nil {
+	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-one", remoteSource(first)), nil, pool.server.URL, "token", report, DeliveryOptions{}); err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
 	got := pool.refs("sbx-one", "primary")
@@ -365,7 +365,7 @@ func TestARemoteURLIsFetchedByTheClientOnlyWhenThePoolLacksIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	steps = nil
-	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-two", remoteSource(first)), nil, pool.server.URL, "token", report); err != nil {
+	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-two", remoteSource(first)), nil, pool.server.URL, "token", report, DeliveryOptions{}); err != nil {
 		t.Fatalf("deliver a second sandbox: %v", err)
 	}
 	if slices.Contains(steps, StepFetchingSource) || pool.pushes.Load() != 1 {
@@ -382,7 +382,7 @@ func TestARemoteURLIsFetchedByTheClientOnlyWhenThePoolLacksIt(t *testing.T) {
 	// holds is fetched from the pool, and the remote gives only the rest.
 	second := deliverCommit(t, remoteWork, "b")
 	before := pool.fetches.Load()
-	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-three", remoteSource(second)), nil, pool.server.URL, "token", nil); err != nil {
+	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-three", remoteSource(second)), nil, pool.server.URL, "token", nil, DeliveryOptions{}); err != nil {
 		t.Fatalf("deliver after the remote moved: %v", err)
 	}
 	if pool.fetches.Load() == before {
@@ -428,7 +428,7 @@ func TestARemoteSourcesStartingDirectoryIsCheckedAtDelivery(t *testing.T) {
 		return source
 	}
 
-	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-one", startingIn("app")), nil, pool.server.URL, "token", nil); err != nil {
+	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-one", startingIn("app")), nil, pool.server.URL, "token", nil, DeliveryOptions{}); err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
 	if pool.pushes.Load() != 1 {
@@ -442,21 +442,21 @@ func TestARemoteSourcesStartingDirectoryIsCheckedAtDelivery(t *testing.T) {
 	}
 	var steps []Step
 	report := Report(func(step Step) { steps = append(steps, step) })
-	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-two", startingIn("app")), nil, pool.server.URL, "token", report); err != nil {
+	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-two", startingIn("app")), nil, pool.server.URL, "token", report, DeliveryOptions{}); err != nil {
 		t.Fatalf("deliver a second sandbox: %v", err)
 	}
 	if !slices.Contains(steps, StepFetchingSource) || pool.pushes.Load() != 1 {
 		t.Fatalf("second delivery: steps %v, %d pushes; want a fetch to check and a pin", steps, pool.pushes.Load())
 	}
 
-	err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-three", startingIn("missing/dir")), nil, pool.server.URL, "token", nil)
+	err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-three", startingIn("missing/dir")), nil, pool.server.URL, "token", nil, DeliveryOptions{})
 	if err == nil || !strings.Contains(err.Error(), "missing/dir") {
 		t.Fatalf("deliver into a directory the commit lacks = %v, want a refusal naming it", err)
 	}
 	if got := pool.refs("sbx-three", "primary"); len(got) != 0 {
 		t.Fatalf("a refused delivery reached the pool: %v", got)
 	}
-	err = DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-four", startingIn("app/main.go")), nil, pool.server.URL, "token", nil)
+	err = DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-four", startingIn("app/main.go")), nil, pool.server.URL, "token", nil, DeliveryOptions{})
 	if err == nil || !strings.Contains(err.Error(), "app/main.go") {
 		t.Fatalf("deliver into a file = %v, want a refusal naming it", err)
 	}
@@ -469,7 +469,7 @@ func TestARemoteSourcesStartingDirectoryIsCheckedAtDelivery(t *testing.T) {
 	deliverGit(t, remoteWork, "add", "current")
 	deliverGit(t, remoteWork, "commit", "--quiet", "-m", "link")
 	commit = deliverGit(t, remoteWork, "rev-parse", "HEAD")
-	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-five", startingIn("current")), nil, pool.server.URL, "token", nil); err != nil {
+	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-five", startingIn("current")), nil, pool.server.URL, "token", nil, DeliveryOptions{}); err != nil {
 		t.Fatalf("deliver into a linked directory: %v", err)
 	}
 }
@@ -487,7 +487,7 @@ func TestADeliveryWaitsOnlyForAPoolThatIsNotUpYet(t *testing.T) {
 	source := apimodel.GitSource{LocalDirectory: apiclientgen.NewOptString(work), Checkout: branchCheckout(commit, "main")}
 
 	pool.notReady.Store(3)
-	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-one", source), NewLocalSources(map[string]string{"": work}), pool.server.URL, "token", nil); err != nil {
+	if err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-one", source), NewLocalSources(map[string]string{"": work}), pool.server.URL, "token", nil, DeliveryOptions{}); err != nil {
 		t.Fatalf("deliver to a pool still coming up: %v", err)
 	}
 	if got := pool.refs("sbx-one", "primary"); got["refs/heads/main"] != commit {
@@ -495,7 +495,7 @@ func TestADeliveryWaitsOnlyForAPoolThatIsNotUpYet(t *testing.T) {
 	}
 
 	// Any other refusal is an answer.
-	err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-two", source), NewLocalSources(map[string]string{"": work}), pool.server.URL, "wrong-token", nil)
+	err := DeliverSource(t.Context(), pool, "p", cacheSandbox("sbx-two", source), NewLocalSources(map[string]string{"": work}), pool.server.URL, "wrong-token", nil, DeliveryOptions{})
 	if err == nil || !strings.Contains(err.Error(), "refused the source") {
 		t.Fatalf("a refused pin = %v, want the refusal", err)
 	}
@@ -506,10 +506,14 @@ func TestADeliveredSandboxIsNotDeliveredAgain(t *testing.T) {
 	pool := newFakePool(t)
 	sandbox := cacheSandbox("sbx-one", apimodel.GitSource{LocalDirectory: apiclientgen.NewOptString(t.TempDir()), Checkout: branchCheckout(testCommit, "main")})
 	sandbox.Runtime.SourceDeliveredAt = apiclientgen.NewOptDateTime(time.Now())
-	if err := DeliverSource(t.Context(), pool, "p", sandbox, nil, pool.server.URL, "token", nil); err != nil {
+	if err := DeliverSource(t.Context(), pool, "p", sandbox, nil, pool.server.URL, "token", nil, DeliveryOptions{}); err != nil {
 		t.Fatalf("deliver: %v", err)
 	}
 	if pool.pins.Load() != 0 || len(pool.completed) != 0 {
 		t.Fatal("a delivered sandbox was delivered again")
 	}
+}
+
+func (p *fakePool) PullSandboxSource(context.Context, *apimodel.PullSandboxSourceBody, apiclientgen.PullSandboxSourceParams) (apiclientgen.PullSandboxSourceRes, error) {
+	panic("unexpected credential loan")
 }

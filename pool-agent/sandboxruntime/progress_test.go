@@ -84,7 +84,7 @@ func TestPublishSandboxProgressRefusesAPhaselessReport(t *testing.T) {
 	observed, stop := watchProgress(t, runtime)
 	defer stop()
 
-	runtime.publishSandboxProgress(t.Context(), SandboxProgressObservation{SandboxID: "sbx_1"})
+	runtime.PublishSandboxProgress(t.Context(), SandboxProgressObservation{SandboxID: "sbx_1"})
 	runtime.publishSandboxPhase(t.Context(), "sbx_1", PhaseStartingContainer)
 
 	select {

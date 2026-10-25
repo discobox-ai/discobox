@@ -31,6 +31,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/gitprogress"
+
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
@@ -60,7 +62,7 @@ type SourceState struct {
 	Error string
 	// Progress is how far the clone has got while State is cloning, nil
 	// until git has said.
-	Progress *CloneProgress
+	Progress *gitprogress.Progress
 	// Revision is the runtime-config revision the state was reached under.
 	Revision  int64
 	UpdatedAt time.Time
@@ -272,7 +274,7 @@ func (c *Converger) converge(ctx context.Context, revision int64, source sandbox
 	}
 	state.State = StateCloning
 	cloning := c.setState(state)
-	cloned, err := repo.prepare(ctx, source, c.manifest[source.Slug], helper, func(progress CloneProgress) {
+	cloned, err := repo.prepare(ctx, source, c.manifest[source.Slug], helper, func(progress gitprogress.Progress) {
 		c.cloneProgress(cloning, progress)
 	})
 	if err != nil {
@@ -324,7 +326,7 @@ func (c *Converger) stillDesired(source sandboxconfig.RuntimeSource) bool {
 // cloneProgress records how far the clone that set state has got. The state
 // it set is still the one recorded unless the attempt has ended, and an ended
 // attempt's last meter is not news.
-func (c *Converger) cloneProgress(state SourceState, progress CloneProgress) {
+func (c *Converger) cloneProgress(state SourceState, progress gitprogress.Progress) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	current, ok := c.states[state.Slug]

@@ -5,6 +5,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
+
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/discobox-ai/discobox/pkg/platform"
@@ -21,6 +23,7 @@ import (
 // Providers own runtime mechanics only. Application services own persistence,
 // orchestration, authorization, and API shape.
 type Provider interface {
+	PullSource(context.Context, SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error)
 	Initialize(ctx context.Context, instance *model.SandboxProviderInstance) error
 	Close() error
 	Definition() ProviderDefinition
@@ -134,17 +137,18 @@ type SandboxRef struct {
 
 // Sandbox is the runtime provider's view of a sandbox instance.
 type Sandbox struct {
-	ID        string
-	SandboxID string
-	Status    Status
-	Image     string
-	CreatedAt time.Time
-	StartedAt *time.Time
-	StoppedAt *time.Time
-	Error     string
-	Metadata  map[string]string
-	Ports     []AssignedPort
-	Env       map[string]string
+	SourceDeliveries map[string]sourcecache.Delivery
+	ID               string
+	SandboxID        string
+	Status           Status
+	Image            string
+	CreatedAt        time.Time
+	StartedAt        *time.Time
+	StoppedAt        *time.Time
+	Error            string
+	Metadata         map[string]string
+	Ports            []AssignedPort
+	Env              map[string]string
 }
 
 // AssignedPort describes a runtime-assigned port mapping.
@@ -179,6 +183,7 @@ type StateEvent struct {
 type CreateOptions struct {
 	HarnessChangeID string
 
+	PullSources bool
 	// SpecFingerprint is the digest of the sandbox's manifest — without the
 	// platform pin for a sandbox delivered its platform
 	// (SandboxManifest.DeliveredFingerprint). The

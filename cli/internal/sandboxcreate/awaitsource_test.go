@@ -243,7 +243,7 @@ func TestDeliverSourceStopsWhenAnotherDeliveryIsReported(t *testing.T) {
 	// is reported twice.
 	client := &awaitClient{runtimes: []apimodel.SandboxRuntime{parked, delivered}}
 
-	err := DeliverSource(t.Context(), client, "project-1", parkedWithPushSource(commit), NewLocalSources(map[string]string{"": repo}), "http://127.0.0.1:1", "token", nil)
+	err := DeliverSource(t.Context(), client, "project-1", parkedWithPushSource(commit), NewLocalSources(map[string]string{"": repo}), "http://127.0.0.1:1", "token", nil, DeliveryOptions{})
 	if err != nil {
 		t.Fatalf("DeliverSource: %v, want the other delivery to stand for this one", err)
 	}
@@ -256,7 +256,7 @@ func TestDeliverSourceReportsAPushThatKeepsFailing(t *testing.T) {
 	commit := strings.TrimSpace(runSourceTestGit(t, repo)("rev-parse", "HEAD"))
 	client := &awaitClient{runtimes: []apimodel.SandboxRuntime{{State: apiclientgen.SandboxRuntimeStateAwaitingSource}}}
 
-	err := DeliverSource(t.Context(), client, "project-1", parkedWithPushSource(commit), NewLocalSources(map[string]string{"": repo}), "http://127.0.0.1:1", "token", nil)
+	err := DeliverSource(t.Context(), client, "project-1", parkedWithPushSource(commit), NewLocalSources(map[string]string{"": repo}), "http://127.0.0.1:1", "token", nil, DeliveryOptions{})
 	if err == nil || !strings.Contains(err.Error(), "push source to discobox") {
 		t.Fatalf("DeliverSource = %v, want the push's own failure", err)
 	}
@@ -307,13 +307,13 @@ func TestDeliverSourceStopsWhenAnotherDeliveryReportedFirst(t *testing.T) {
 	delivered := apimodel.SandboxRuntime{State: apiclientgen.SandboxRuntimeStateReady, SourceDeliveredAt: apiclientgen.NewOptDateTime(time.Now())}
 
 	client := &awaitClient{runtimes: []apimodel.SandboxRuntime{parked, delivered}, completeErr: errors.New("sandbox is not awaiting its source")}
-	if err := DeliverSource(t.Context(), client, "project-1", parkedWithPushSource(commit), NewLocalSources(map[string]string{"": repo}), serverURL, "token", nil); err != nil {
+	if err := DeliverSource(t.Context(), client, "project-1", parkedWithPushSource(commit), NewLocalSources(map[string]string{"": repo}), serverURL, "token", nil, DeliveryOptions{}); err != nil {
 		t.Fatalf("DeliverSource: %v, want the other delivery to stand for this one", err)
 	}
 
 	// Nobody else reported it: the refusal is the answer.
 	client = &awaitClient{runtimes: []apimodel.SandboxRuntime{parked}, completeErr: errors.New("sandbox is not awaiting its source")}
-	err := DeliverSource(t.Context(), client, "project-1", parkedWithPushSource(commit), NewLocalSources(map[string]string{"": repo}), serverURL, "token", nil)
+	err := DeliverSource(t.Context(), client, "project-1", parkedWithPushSource(commit), NewLocalSources(map[string]string{"": repo}), serverURL, "token", nil, DeliveryOptions{})
 	if err == nil || !strings.Contains(err.Error(), "not awaiting its source") {
 		t.Fatalf("DeliverSource = %v, want the refused completion", err)
 	}
@@ -341,7 +341,7 @@ func TestDeliverSourceLeavesABranchThatHasMovedPastThePinnedCommit(t *testing.T)
 	git("update-ref", leaseRef, later)
 
 	client := &awaitClient{runtimes: []apimodel.SandboxRuntime{{State: apiclientgen.SandboxRuntimeStateAwaitingSource}}, completeOK: true}
-	if err := DeliverSource(t.Context(), client, "project-1", parkedWithPushSource(pinned), NewLocalSources(map[string]string{"": repo}), serverURL, "token", nil); err != nil {
+	if err := DeliverSource(t.Context(), client, "project-1", parkedWithPushSource(pinned), NewLocalSources(map[string]string{"": repo}), serverURL, "token", nil, DeliveryOptions{}); err != nil {
 		t.Fatalf("DeliverSource: %v, want the origin's branch to stand for the pinned commit", err)
 	}
 	if client.completes != 1 {
@@ -353,4 +353,8 @@ func TestDeliverSourceLeavesABranchThatHasMovedPastThePinnedCommit(t *testing.T)
 	if lease := strings.TrimSpace(git("rev-parse", leaseRef)); lease != later {
 		t.Fatalf("lease = %s, want it left at %s", lease, later)
 	}
+}
+
+func (c *awaitClient) PullSandboxSource(context.Context, *apimodel.PullSandboxSourceBody, apiclientgen.PullSandboxSourceParams) (apiclientgen.PullSandboxSourceRes, error) {
+	panic("unexpected credential loan")
 }

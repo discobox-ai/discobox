@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/internal/hostid"
@@ -148,7 +150,7 @@ func TestDeliverBeforeAttachLeavesADiscoboxThisMachineCannotDeliver(t *testing.T
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app, client, paths := parkedSourceServer(t, dir, tc.host, commit, tc.parkedReads)
-			if err := app.deliverBeforeAttach(t.Context(), client, "project-1", "sbx_1", nil); err != nil {
+			if err := app.deliverBeforeAttach(t.Context(), client, "project-1", "sbx_1", nil, sandboxcreate.DeliveryOptions{}); err != nil {
 				t.Fatalf("deliverBeforeAttach: %v", err)
 			}
 			if got := paths.all(); len(got) != 1 {
@@ -165,7 +167,7 @@ func TestDeliverBeforeAttachRefusesADeliveryItCannotFinish(t *testing.T) {
 	const gone = "0123456789abcdef0123456789abcdef01234567"
 	app, client, paths := parkedSourceServer(t, dir, thisHost, gone, 100)
 	var steps []string
-	err := app.deliverBeforeAttach(t.Context(), client, "project-1", "sbx_1", func(step string) { steps = append(steps, step) })
+	err := app.deliverBeforeAttach(t.Context(), client, "project-1", "sbx_1", func(step string) { steps = append(steps, step) }, sandboxcreate.DeliveryOptions{})
 	if err == nil {
 		t.Fatal("deliverBeforeAttach: got nil error, want the delivery refused")
 	}
@@ -192,7 +194,9 @@ func TestDeliverBeforeAttachJoinsADeliveryInFlight(t *testing.T) {
 	app.deliveries = map[string]*delivery{"sbx_1": running}
 
 	answer := make(chan error, 1)
-	go func() { answer <- app.deliverBeforeAttach(t.Context(), client, "project-1", "sbx_1", nil) }()
+	go func() {
+		answer <- app.deliverBeforeAttach(t.Context(), client, "project-1", "sbx_1", nil, sandboxcreate.DeliveryOptions{})
+	}()
 	running.err = errors.New("the first delivery failed")
 	close(running.done)
 

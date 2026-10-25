@@ -194,6 +194,18 @@ func (h *Handler) CompleteSandboxSourcePush(ctx context.Context, req *apimodel.C
 	return &body, nil
 }
 
+func (h *Handler) PullSandboxSource(ctx context.Context, req *apimodel.PullSandboxSourceBody, params serverapi.PullSandboxSourceParams) (serverapi.PullSandboxSourceRes, error) {
+	sandbox, err := h.services.Sandboxes.PullSandboxSource(ctx, params.ProjectId, params.SandboxId, params.Slug, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.SandboxToAPI(sandbox, h.upgradeBasis(ctx, params.ProjectId))
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) CompleteSandboxApply(ctx context.Context, req *apimodel.CompleteSandboxApplyBody, params serverapi.CompleteSandboxApplyParams) (serverapi.CompleteSandboxApplyRes, error) {
 	sandbox, err := h.services.Sandboxes.CompleteSandboxApply(ctx, params.ProjectId, params.SandboxId, *req)
 	if err != nil {

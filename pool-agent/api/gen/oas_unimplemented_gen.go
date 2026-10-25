@@ -137,6 +137,13 @@ func (UnimplementedHandler) PoolPowerDownSandbox(ctx context.Context, req *PoolS
 	return r, ht.ErrNotImplemented
 }
 
+// PoolPullSandboxSource implements pool-pull-sandbox-source operation.
+//
+// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/sources/{slug}/pull
+func (UnimplementedHandler) PoolPullSandboxSource(ctx context.Context, req *PoolSourcePullRequest, params PoolPullSandboxSourceParams) (r *SourceDelivery, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // PoolRestartSandbox implements pool-restart-sandbox operation.
 //
 // Restart pool sandbox.

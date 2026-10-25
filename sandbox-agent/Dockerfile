@@ -15,6 +15,7 @@ COPY pkg/declared ./pkg/declared
 COPY pkg/execstream ./pkg/execstream
 COPY pkg/fsdurable ./pkg/fsdurable
 COPY pkg/gitbackend ./pkg/gitbackend
+COPY pkg/gitprogress ./pkg/gitprogress
 COPY harness ./harness
 COPY pkg/hostscope ./pkg/hostscope
 COPY pkg/imagecache ./pkg/imagecache

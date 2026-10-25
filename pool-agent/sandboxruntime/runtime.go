@@ -219,6 +219,7 @@ const (
 
 // Runtime performs local sandbox operations for one pool agent.
 type Runtime interface {
+	PublishSandboxProgress(context.Context, SandboxProgressObservation)
 	// ListSandboxes is every sandbox with a container on this pool, running or
 	// stopped. It is the runtime half of a sandbox, and an archived one has
 	// none — see StoredSandboxIDs for the durable half.
@@ -3900,3 +3901,5 @@ func validateCreateRequest(sandboxID string, req *workerapimodel.PoolSandboxCrea
 	}
 	return nil
 }
+
+func (r *MemorySandboxRuntime) PublishSandboxProgress(context.Context, SandboxProgressObservation) {}

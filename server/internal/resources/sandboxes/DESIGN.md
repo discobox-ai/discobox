@@ -780,15 +780,17 @@ runtime component interprets its contents. The keys are folded into the
 create's spec fingerprint (`sourceDataFingerprint`), so a container built
 without those mounts is rebuilt.
 
-Every Git source of a sandbox is delivered by a client into its pool's cache of
+Every Git source of a sandbox is delivered into its pool's cache of
 Git, and nothing chooses between deliveries
 ([ADR 26-10-10-545](../../../../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)
 §1). `resolveSourceDelivery` records that on each source at create — the
 primary `Source` and every `SourceCodeReferences` entry alike — as
 `GitSource.Delivery = cache` and a `GitSource.CacheKey`. Both are the server's
 record: a create that names a delivery is refused, and a cache key a client
-sent is replaced. The server never runs Git and the pool never fetches from a
-remote.
+sent is replaced. The server never runs Git. The pool pulls remote sources anonymously over
+HTTPS alongside create (ADR 26-10-23-948); `SourceDeliveries`, outside the manifest,
+records pending pulls and their results by source slug. Only new creates opt
+into these pulls; older rows keep their previous client delivery behavior.
 
 `sourceCacheKey` names the pool cache, through `sourcecache`:
 
@@ -867,14 +869,19 @@ its slug: a namespace of a cache, or a repository of its own.
 The commit is fixed at create in `Checkout.Commit`; `complete-source-push` only
 confirms it, and a mismatch is refused.
 
-Completion is one report for the whole sandbox, not one per source: the client
-delivers every client-delivered source and then names them all, keyed by slug, in a
-single `complete-source-push`. Resuming per source would start the harness
-against a workspace still missing the sources not yet pushed, so the report is
-refused unless it covers every one of them — a missing source, an unknown slug,
-or a commit that is not the one the source names all leave the sandbox parked.
-`SourceDeliveredAt` therefore stays one timestamp: it records that the client
-finished delivering, which is the only moment the sandbox can act on.
+Completion is recorded per source in `SourceDeliveries`. A client may report a
+subset of sources at their immutable checkout commits; unknown slugs and
+mismatched commits are refused. Repeating the same report is idempotent, even
+after the sandbox starts. `SourceDeliveredAt` records when the last source
+arrived, whether by a pool pull or a client push. Until then the sandbox stays
+parked. The additive nullable JSON column needs no backfill: old sandboxes
+continue to use their existing `SourceDeliveredAt`.
+
+`POST …/sources/{slug}/pull` lends a user's credential for one request to the
+pool, after an anonymous pull reported `needs_credential`. The service reads
+the source from the sandbox and forwards it with the credential in memory;
+neither is accepted as source metadata from the caller. Sandbox callers may
+push, but cannot lend credentials.
 
 Waiting is bounded (`sourcePushTimeout`, 30m): `StateChangedAt` anchors the
 deadline and the reconcile returns it as `reconcile.Result.RequeueAt`, which

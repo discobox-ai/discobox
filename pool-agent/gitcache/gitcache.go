@@ -4,7 +4,7 @@
 // A client's push lands in a namespace, and because every namespace of a
 // remote shares one object store the push carries only what the pool has not
 // been sent before. A sandbox clones its own namespace and reaches no other.
-// The pool never fetches: everything here arrived in a client's push.
+// The pool also pulls remote sources over HTTPS (ADR 26-10-23-948).
 //
 // What a cache holds, by ref:
 //

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
+
 	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/database"
@@ -722,4 +724,8 @@ func (p *supersededAtBeginProvider) ReconcilePool(ctx context.Context, _ sandbox
 func (p *supersededAtBeginProvider) RepairPool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, string, func(context.Context) error) error {
 	p.repairs++
 	return nil
+}
+
+func (stubPoolProvider) PullSource(context.Context, sandbox.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
+	panic("unexpected source pull")
 }

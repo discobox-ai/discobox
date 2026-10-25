@@ -859,6 +859,13 @@ type Invoker interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal
 	ProposeSandboxRule(ctx context.Context, request *JudgeProposalJob, params ProposeSandboxRuleParams) (ProposeSandboxRuleRes, error)
+	// PullSandboxSource invokes pull-sandbox-source operation.
+	//
+	// Lend credentials for one HTTPS pull of the recorded source. Credentials are used inside this
+	// request and never persisted. Sandbox callers cannot lend credentials.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/pull
+	PullSandboxSource(ctx context.Context, request *PullSandboxSourceBody, params PullSandboxSourceParams) (PullSandboxSourceRes, error)
 	// PurgeSandbox invokes purge-sandbox operation.
 	//
 	// Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the
@@ -15566,6 +15573,141 @@ func (c *Client) sendProposeSandboxRule(ctx context.Context, request *JudgePropo
 
 	stage = "DecodeResponse"
 	result, err := decodeProposeSandboxRuleResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// PullSandboxSource invokes pull-sandbox-source operation.
+//
+// Lend credentials for one HTTPS pull of the recorded source. Credentials are used inside this
+// request and never persisted. Sandbox callers cannot lend credentials.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/pull
+func (c *Client) PullSandboxSource(ctx context.Context, request *PullSandboxSourceBody, params PullSandboxSourceParams) (PullSandboxSourceRes, error) {
+	res, err := c.sendPullSandboxSource(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendPullSandboxSource(ctx context.Context, request *PullSandboxSourceBody, params PullSandboxSourceParams) (res PullSandboxSourceRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("pull-sandbox-source"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/pull"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, PullSandboxSourceOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [7]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/sources/"
+	{
+		// Encode "slug" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "slug",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.Slug))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	pathParts[6] = "/pull"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodePullSandboxSourceRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodePullSandboxSourceResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

@@ -315,6 +315,14 @@ sandbox IDs are runtime evidence, not user authorization input.
 
 ## Delivering and Re-delivering Source (`discobox push`)
 
+The pool attempts anonymous HTTPS pulls during create (ADR 26-10-23-948).
+Delivery results are recorded per source; clients push what they hold or
+answer a failed pull. A user's credential may be lent for one synchronous
+`POST …/sources/{slug}/pull`, never persisted or lent by a sandbox. The sandbox
+starts once all sources have arrived. Details live in the
+[sandboxes design](internal/resources/sandboxes/DESIGN.md).
+
+
 A source's commits arrive over the `git-origins` proxy above: create's
 delivery (a pin, then a push of what the pin could not create) and every later
 `discobox push` (ADR 0058) write the same origin on the pool — the source's

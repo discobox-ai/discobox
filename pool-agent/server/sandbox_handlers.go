@@ -6,7 +6,10 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
 
 	workerapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
@@ -67,8 +70,26 @@ func (s *sandboxService) PoolCreateSandbox(ctx context.Context, req *workerapimo
 	if err != nil {
 		return nil, err
 	}
+	// Pull beside runtime creation: neither waits for the other's resources.
+	var deliveries map[string]sourcecache.Delivery
+	var pullErr error
+	var pull sync.WaitGroup
+	pull.Add(1)
+	go func() { defer pull.Done(); deliveries, pullErr = s.pullSources(ctx, &converted) }()
 	sb, err := s.runtime.CreateSandbox(ctx, &converted)
-	return sandboxOutput(sb, err, &converted.Config)
+	pull.Wait()
+	if err == nil {
+		err = pullErr
+	}
+	out, err := sandboxOutput(sb, err, &converted.Config)
+	if out != nil {
+		results := workerapi.PoolSandboxInstanceSourceDeliveries{}
+		for slug, d := range deliveries {
+			results[slug] = workerapi.SourceDelivery{Status: d.Status, Protocol: workerapi.NewOptString(d.Protocol), Host: workerapi.NewOptString(d.Host), Path: workerapi.NewOptString(d.Path)}
+		}
+		out.SourceDeliveries = workerapi.NewOptPoolSandboxInstanceSourceDeliveries(results)
+	}
+	return out, err
 }
 
 func (s *sandboxService) PoolGetSandbox(ctx context.Context, params workerapi.PoolGetSandboxParams) (*workerapimodel.PoolSandboxInstance, error) {

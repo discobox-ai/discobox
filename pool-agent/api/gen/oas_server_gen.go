@@ -99,6 +99,10 @@ type Handler interface {
 	//
 	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/power-down
 	PoolPowerDownSandbox(ctx context.Context, req *PoolSandboxPowerDownRequest, params PoolPowerDownSandboxParams) (*PoolSandboxPowerDownResult, error)
+	// PoolPullSandboxSource implements pool-pull-sandbox-source operation.
+	//
+	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/sources/{slug}/pull
+	PoolPullSandboxSource(ctx context.Context, req *PoolSourcePullRequest, params PoolPullSandboxSourceParams) (*SourceDelivery, error)
 	// PoolRestartSandbox implements pool-restart-sandbox operation.
 	//
 	// Restart pool sandbox.

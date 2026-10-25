@@ -359,6 +359,32 @@ func (s *GatewayHeaderModifier) SetAdd(val []GatewayHeader) {
 	s.Add = val
 }
 
+// Ref: #/components/schemas/GitCredential
+type GitCredential struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// GetUsername returns the value of Username.
+func (s *GitCredential) GetUsername() string {
+	return s.Username
+}
+
+// GetPassword returns the value of Password.
+func (s *GitCredential) GetPassword() string {
+	return s.Password
+}
+
+// SetUsername sets the value of Username.
+func (s *GitCredential) SetUsername(val string) {
+	s.Username = val
+}
+
+// SetPassword sets the value of Password.
+func (s *GitCredential) SetPassword(val string) {
+	s.Password = val
+}
+
 // Ref: #/components/schemas/GitSource
 type GitSource struct {
 	Checkout OptGitSourceCheckout `json:"checkout"`
@@ -1260,6 +1286,52 @@ func (o OptGatewayHeaderModifier) Get() (v GatewayHeaderModifier, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptGatewayHeaderModifier) Or(d GatewayHeaderModifier) GatewayHeaderModifier {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptGitCredential returns new OptGitCredential with value set to v.
+func NewOptGitCredential(v GitCredential) OptGitCredential {
+	return OptGitCredential{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGitCredential is optional GitCredential.
+type OptGitCredential struct {
+	Value GitCredential
+	Set   bool
+}
+
+// IsSet returns true if OptGitCredential was set.
+func (o OptGitCredential) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGitCredential) Reset() {
+	var v GitCredential
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGitCredential) SetTo(v GitCredential) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGitCredential) Get() (v GitCredential, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGitCredential) Or(d GitCredential) GitCredential {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -2522,6 +2594,52 @@ func (o OptPoolListHTTPAuditOrder) Get() (v PoolListHTTPAuditOrder, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptPoolListHTTPAuditOrder) Or(d PoolListHTTPAuditOrder) PoolListHTTPAuditOrder {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPoolSandboxInstanceSourceDeliveries returns new OptPoolSandboxInstanceSourceDeliveries with value set to v.
+func NewOptPoolSandboxInstanceSourceDeliveries(v PoolSandboxInstanceSourceDeliveries) OptPoolSandboxInstanceSourceDeliveries {
+	return OptPoolSandboxInstanceSourceDeliveries{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolSandboxInstanceSourceDeliveries is optional PoolSandboxInstanceSourceDeliveries.
+type OptPoolSandboxInstanceSourceDeliveries struct {
+	Value PoolSandboxInstanceSourceDeliveries
+	Set   bool
+}
+
+// IsSet returns true if OptPoolSandboxInstanceSourceDeliveries was set.
+func (o OptPoolSandboxInstanceSourceDeliveries) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolSandboxInstanceSourceDeliveries) Reset() {
+	var v PoolSandboxInstanceSourceDeliveries
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolSandboxInstanceSourceDeliveries) SetTo(v PoolSandboxInstanceSourceDeliveries) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolSandboxInstanceSourceDeliveries) Get() (v PoolSandboxInstanceSourceDeliveries, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolSandboxInstanceSourceDeliveries) Or(d PoolSandboxInstanceSourceDeliveries) PoolSandboxInstanceSourceDeliveries {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -4185,6 +4303,8 @@ func (s *PoolListHTTPAuditOrder) UnmarshalText(data []byte) error {
 
 // Ref: #/components/schemas/PoolSandboxCreateRequest
 type PoolSandboxCreateRequest struct {
+	// Try anonymous HTTPS pulls for sources still awaiting delivery.
+	PullSources OptBool `json:"pullSources"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// The agent bundle the pool places in the sandbox before each start (ADR 26-10-24-953 §2), the
@@ -4222,6 +4342,11 @@ type PoolSandboxCreateRequest struct {
 	// through a channel separate from sandbox.json (docs/adr/0012 section 3), independently refreshed as
 	// secrets rotate.
 	SecretEnv OptNilPoolSandboxCreateRequestSecretEnv `json:"secretEnv"`
+}
+
+// GetPullSources returns the value of PullSources.
+func (s *PoolSandboxCreateRequest) GetPullSources() OptBool {
+	return s.PullSources
 }
 
 // GetSchema returns the value of Schema.
@@ -4287,6 +4412,11 @@ func (s *PoolSandboxCreateRequest) GetSentinelRoutes() OptNilPoolSandboxCreateRe
 // GetSecretEnv returns the value of SecretEnv.
 func (s *PoolSandboxCreateRequest) GetSecretEnv() OptNilPoolSandboxCreateRequestSecretEnv {
 	return s.SecretEnv
+}
+
+// SetPullSources sets the value of PullSources.
+func (s *PoolSandboxCreateRequest) SetPullSources(val OptBool) {
+	s.PullSources = val
 }
 
 // SetSchema sets the value of Schema.
@@ -4384,12 +4514,18 @@ func (s *PoolSandboxCreateRequestSentinelRoutes) init() PoolSandboxCreateRequest
 
 // Ref: #/components/schemas/PoolSandboxInstance
 type PoolSandboxInstance struct {
+	SourceDeliveries OptPoolSandboxInstanceSourceDeliveries `json:"sourceDeliveries"`
 	// A URL to the JSON Schema for this object.
 	Schema                OptURI                   `json:"$schema"`
 	Config                SandboxConfig            `json:"config"`
 	ResolvedHarnessConfig OptResolvedHarnessConfig `json:"resolvedHarnessConfig"`
 	Runtime               PoolSandboxRuntime       `json:"runtime"`
 	SandboxId             string                   `json:"sandboxId"`
+}
+
+// GetSourceDeliveries returns the value of SourceDeliveries.
+func (s *PoolSandboxInstance) GetSourceDeliveries() OptPoolSandboxInstanceSourceDeliveries {
+	return s.SourceDeliveries
 }
 
 // GetSchema returns the value of Schema.
@@ -4417,6 +4553,11 @@ func (s *PoolSandboxInstance) GetSandboxId() string {
 	return s.SandboxId
 }
 
+// SetSourceDeliveries sets the value of SourceDeliveries.
+func (s *PoolSandboxInstance) SetSourceDeliveries(val OptPoolSandboxInstanceSourceDeliveries) {
+	s.SourceDeliveries = val
+}
+
 // SetSchema sets the value of Schema.
 func (s *PoolSandboxInstance) SetSchema(val OptURI) {
 	s.Schema = val
@@ -4440,6 +4581,17 @@ func (s *PoolSandboxInstance) SetRuntime(val PoolSandboxRuntime) {
 // SetSandboxId sets the value of SandboxId.
 func (s *PoolSandboxInstance) SetSandboxId(val string) {
 	s.SandboxId = val
+}
+
+type PoolSandboxInstanceSourceDeliveries map[string]SourceDelivery
+
+func (s *PoolSandboxInstanceSourceDeliveries) init() PoolSandboxInstanceSourceDeliveries {
+	m := *s
+	if m == nil {
+		m = map[string]SourceDelivery{}
+		*s = m
+	}
+	return m
 }
 
 // Ref: #/components/schemas/PoolSandboxListResponse
@@ -4968,6 +5120,87 @@ func (s *PoolSandboxUpdateRequestSentinelRoutes) init() PoolSandboxUpdateRequest
 		*s = m
 	}
 	return m
+}
+
+// Ref: #/components/schemas/PoolSourcePullRequest
+type PoolSourcePullRequest struct {
+	Key         string           `json:"key"`
+	Remote      string           `json:"remote"`
+	Commit      string           `json:"commit"`
+	Branch      string           `json:"branch"`
+	Snapshot    OptBool          `json:"snapshot"`
+	WorkingPath OptString        `json:"workingPath"`
+	Credential  OptGitCredential `json:"credential"`
+}
+
+// GetKey returns the value of Key.
+func (s *PoolSourcePullRequest) GetKey() string {
+	return s.Key
+}
+
+// GetRemote returns the value of Remote.
+func (s *PoolSourcePullRequest) GetRemote() string {
+	return s.Remote
+}
+
+// GetCommit returns the value of Commit.
+func (s *PoolSourcePullRequest) GetCommit() string {
+	return s.Commit
+}
+
+// GetBranch returns the value of Branch.
+func (s *PoolSourcePullRequest) GetBranch() string {
+	return s.Branch
+}
+
+// GetSnapshot returns the value of Snapshot.
+func (s *PoolSourcePullRequest) GetSnapshot() OptBool {
+	return s.Snapshot
+}
+
+// GetWorkingPath returns the value of WorkingPath.
+func (s *PoolSourcePullRequest) GetWorkingPath() OptString {
+	return s.WorkingPath
+}
+
+// GetCredential returns the value of Credential.
+func (s *PoolSourcePullRequest) GetCredential() OptGitCredential {
+	return s.Credential
+}
+
+// SetKey sets the value of Key.
+func (s *PoolSourcePullRequest) SetKey(val string) {
+	s.Key = val
+}
+
+// SetRemote sets the value of Remote.
+func (s *PoolSourcePullRequest) SetRemote(val string) {
+	s.Remote = val
+}
+
+// SetCommit sets the value of Commit.
+func (s *PoolSourcePullRequest) SetCommit(val string) {
+	s.Commit = val
+}
+
+// SetBranch sets the value of Branch.
+func (s *PoolSourcePullRequest) SetBranch(val string) {
+	s.Branch = val
+}
+
+// SetSnapshot sets the value of Snapshot.
+func (s *PoolSourcePullRequest) SetSnapshot(val OptBool) {
+	s.Snapshot = val
+}
+
+// SetWorkingPath sets the value of WorkingPath.
+func (s *PoolSourcePullRequest) SetWorkingPath(val OptString) {
+	s.WorkingPath = val
+}
+
+// SetCredential sets the value of Credential.
+func (s *PoolSourcePullRequest) SetCredential(val OptGitCredential) {
+	s.Credential = val
 }
 
 // PoolSyncNoContent is response for PoolSync operation.
@@ -5748,4 +5981,53 @@ func (s *SentinelRoute) SetPath(val OptString) {
 // SetUseId sets the value of UseId.
 func (s *SentinelRoute) SetUseId(val OptString) {
 	s.UseId = val
+}
+
+// Ref: #/components/schemas/SourceDelivery
+type SourceDelivery struct {
+	// Delivered, needs_credential, missing_commit, or unreachable.
+	Status   string    `json:"status"`
+	Protocol OptString `json:"protocol"`
+	Host     OptString `json:"host"`
+	Path     OptString `json:"path"`
+}
+
+// GetStatus returns the value of Status.
+func (s *SourceDelivery) GetStatus() string {
+	return s.Status
+}
+
+// GetProtocol returns the value of Protocol.
+func (s *SourceDelivery) GetProtocol() OptString {
+	return s.Protocol
+}
+
+// GetHost returns the value of Host.
+func (s *SourceDelivery) GetHost() OptString {
+	return s.Host
+}
+
+// GetPath returns the value of Path.
+func (s *SourceDelivery) GetPath() OptString {
+	return s.Path
+}
+
+// SetStatus sets the value of Status.
+func (s *SourceDelivery) SetStatus(val string) {
+	s.Status = val
+}
+
+// SetProtocol sets the value of Protocol.
+func (s *SourceDelivery) SetProtocol(val OptString) {
+	s.Protocol = val
+}
+
+// SetHost sets the value of Host.
+func (s *SourceDelivery) SetHost(val OptString) {
+	s.Host = val
+}
+
+// SetPath sets the value of Path.
+func (s *SourceDelivery) SetPath(val OptString) {
+	s.Path = val
 }

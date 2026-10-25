@@ -3527,3 +3527,8 @@ fires a timer or runs a listener. The driver, which stands in for the runtime, f
 and runs listeners as the runtime would. The cursor's blink, the one timer a
 widget sets itself, is named in `libraryTimers`.
 
+
+Credential consent during source delivery uses the operation's narration feed:
+a question waits for the dialog's answer, and Git's credential process runs via
+`tea.ExecProcess` with stdout captured by the delivery layer. A stale feed
+answers no; dismissing the question falls back to client fetch and push.

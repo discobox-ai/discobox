@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
+
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/resources/sandboxes"
@@ -421,4 +423,12 @@ func newExecutorTestStore(t *testing.T) *store.Store {
 		t.Fatalf("create project: %v", err)
 	}
 	return store.New(db.Write, db.Read)
+}
+
+func (p *missingRuntimeProvider) PullSource(context.Context, sandboxes.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
+	panic("unexpected source pull")
+}
+
+func (p failingSandboxProvider) PullSource(context.Context, sandboxes.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
+	panic("unexpected source pull")
 }
