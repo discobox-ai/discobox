@@ -26,6 +26,8 @@ func TestPullPinsOnlyTheRemoteAndLendsForOneRequest(t *testing.T) {
 	secret := w.commit("private")
 	w.git("--git-dir="+remote, "update-ref", "refs/heads/main", commit)
 	var requireCredential atomic.Bool
+	var authStatus atomic.Int32
+	authStatus.Store(http.StatusUnauthorized)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(out http.ResponseWriter, r *http.Request) {
 		if r.UserAgent() == "discobox-sandbox-agent (port probe)" {
 			out.WriteHeader(200)
@@ -35,7 +37,7 @@ func TestPullPinsOnlyTheRemoteAndLendsForOneRequest(t *testing.T) {
 			u, p, ok := r.BasicAuth()
 			if !ok || u != "reader" || p != "password" {
 				out.Header().Set("WWW-Authenticate", `Basic realm="git"`)
-				out.WriteHeader(401)
+				out.WriteHeader(int(authStatus.Load()))
 				return
 			}
 		}
@@ -96,6 +98,16 @@ func TestPullPinsOnlyTheRemoteAndLendsForOneRequest(t *testing.T) {
 	// Stop the remote from serving arbitrary object IDs.
 	w.git("--git-dir="+remote, "config", "uploadpack.hideRefs", "refs/namespaces")
 	requireCredential.Store(true)
+	authStatus.Store(http.StatusForbidden)
+	result, err = store.Pull(t.Context(), sourcecache.PullRequest{Key: key, Remote: url, SandboxID: "sbx-forbidden", Slug: "primary", Commit: commit, Branch: "main"}, nil)
+	if err != nil || result.Status != sourcecache.NeedsCredential {
+		t.Fatalf("403 challenge: %+v, %v", result, err)
+	}
+	result, err = store.Pull(t.Context(), sourcecache.PullRequest{Key: key, Remote: url, SandboxID: "sbx-forbidden", Slug: "primary", Commit: commit, Branch: "main", Credential: &sourcecache.Credential{Username: "reader", Password: "password"}}, nil)
+	if err != nil || result.Status != sourcecache.Delivered {
+		t.Fatalf("lent credential after403: %+v, %v", result, err)
+	}
+	authStatus.Store(http.StatusUnauthorized)
 	result, err = store.Pull(t.Context(), sourcecache.PullRequest{Key: key, Remote: url, SandboxID: "sbx-two", Slug: "primary", Commit: commit, Branch: "main", Snapshot: false, Credential: nil}, nil)
 	if err != nil || result.Status != sourcecache.NeedsCredential {
 		t.Fatalf("private pull: %+v, %v", result, err)
@@ -114,5 +126,21 @@ func TestPullPinsOnlyTheRemoteAndLendsForOneRequest(t *testing.T) {
 	result, err = store.Pull(t.Context(), sourcecache.PullRequest{Key: key, Remote: url, SandboxID: "sbx-three", Slug: "primary", Commit: commit, Branch: "main", Snapshot: false, Credential: nil}, nil)
 	if err != nil || result.Status != sourcecache.NeedsCredential {
 		t.Fatalf("later anonymous pull retained credential: %+v, %v", result, err)
+	}
+}
+
+func TestAuthChallengeTraceIsBoundedAndRequires403(t *testing.T) {
+	for _, test := range []struct {
+		trace     string
+		challenge bool
+	}{
+		{"<= Recv header: HTTP/2 403\n<= Recv header: WWW-Authenticate: Basic realm=git\n", true},
+		{"<= Recv header: HTTP/2 403\n", false},
+		{"<= Recv header: HTTP/2 500\n<= Recv header: WWW-Authenticate: Basic realm=git\n", false},
+		{strings.Repeat("x", 1<<20), false},
+	} {
+		if got := authChallenge(strings.NewReader(test.trace)); got != test.challenge {
+			t.Fatalf("challenge=%v want%v", got, test.challenge)
+		}
 	}
 }

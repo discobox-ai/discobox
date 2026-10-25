@@ -1009,6 +1009,9 @@ results; failed pulls leave delivery to a client. A credential can be lent for
 one synchronous generated `sources/{slug}/pull` request, with no credential helper, SSH agent,
 redirect, persistence, or logging of the credential. Pulls share the cache's
 sweep hold with pushes, and use temporary refs distinct from every namespace.
+Git normally hides an auth-challenged 403's headers. Curl's redacted,
+header-only trace is consumed through an anonymous pipe to classify that result;
+only a challenge bit survives, never trace text on disk or in errors.
 A dirty workspace still needs its client's snapshot; published refs are retained
 even when the checkout cannot be pinned. Pull progress uses `pkg/gitprogress`
 and the runtime's `PublishSandboxProgress` sink, the same numeric clone counts

@@ -1,9 +1,11 @@
 package gitcache
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -75,11 +77,14 @@ func (s *Store) Pull(ctx context.Context, request sourcecache.PullRequest, repor
 		env = []string{"GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=" + helper, "DISCOBOX_PULL_USERNAME=" + credential.Username, "DISCOBOX_PULL_PASSWORD=" + credential.Password}
 	}
 	args := []string{"-c", "credential.helper=", "-c", "http.followRedirects=false", "-c", "http.lowSpeedLimit=1", "-c", "http.lowSpeedTime=60", "-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "gc.auto=0", "fetch", "--progress", "--no-tags", "--no-write-fetch-head", u.String()}
-	_, err = fetch(ctx, path, env, report, append(args, "+refs/heads/*:"+prefix+"heads/*", "+refs/tags/*:"+prefix+"tags/*")...)
+	if credential != nil {
+		args = append([]string{"-c", "http.proactiveAuth=basic"}, args...)
+	}
+	challenged, err := fetch(ctx, path, env, report, append(args, "+refs/heads/*:"+prefix+"heads/*", "+refs/tags/*:"+prefix+"tags/*")...)
 	if err != nil {
 		// Git asks askpass for an HTTP credential only after an auth challenge.
 		message := err.Error()
-		if strings.Contains(message, "could not read Username") || strings.Contains(message, "Authentication failed") || strings.Contains(message, "401") {
+		if challenged || strings.Contains(message, "could not read Username") || strings.Contains(message, "Authentication failed") || strings.Contains(message, "401") {
 			result.Status = sourcecache.NeedsCredential
 		}
 		return result, nil
@@ -187,16 +192,57 @@ func (s *Store) Pull(ctx context.Context, request sourcecache.PullRequest, repor
 }
 
 // fetch reports Git's numeric meters without retaining remote-controlled prose.
-func fetch(ctx context.Context, path string, env []string, report func(gitprogress.Progress), args ...string) (string, error) {
+func fetch(ctx context.Context, path string, env []string, report func(gitprogress.Progress), args ...string) (bool, error) {
 	//nolint:gosec // Fixed executable; HTTPS URL and refspecs are validated by Pull.
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = append(gitbackend.BaseEnv(), env...)
 	cmd.Env = append(cmd.Env, "GIT_DIR="+path, "LC_ALL=C")
 	stderr := &gitprogress.Writer{Report: report}
 	cmd.Stderr = stderr
-	err := childproc.Run(cmd)
+	// Curl's response headers are needed to distinguish a challenged 403 from
+	// an ordinary denial. Send traces to a pipe, never a file or stderr: only
+	// the challenge bit survives, and request headers/data are never retained.
+	reader, writer, err := os.Pipe()
 	if err != nil {
-		return "", fmt.Errorf("fetch: %w: %s", err, stderr.String())
+		return false, err
 	}
-	return "", nil
+	defer reader.Close()
+	cmd.ExtraFiles = []*os.File{writer}
+	cmd.Env = append(cmd.Env, "GIT_TRACE_CURL=3", "GIT_TRACE_CURL_NO_DATA=1", "GIT_TRACE_REDACT=1")
+	challenge := make(chan bool, 1)
+	go func() { challenge <- authChallenge(reader) }()
+	err = childproc.Run(cmd)
+	_ = writer.Close()
+	challenged := <-challenge
+	if err != nil {
+		return challenged, fmt.Errorf("fetch: %w: %s", err, stderr.String())
+	}
+	return false, nil
+}
+
+// authChallenge consumes the bounded header trace without logging any of it.
+func authChallenge(reader io.Reader) bool {
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 4096), 16<<10)
+	forbidden, challenged := false, false
+	for scanner.Scan() {
+		_, header, ok := strings.Cut(scanner.Text(), "<= Recv header: ")
+		if !ok {
+			continue
+		}
+		lower := strings.ToLower(header)
+		if strings.HasPrefix(lower, "http/") {
+			parts := strings.Fields(lower)
+			forbidden = len(parts) > 1 && parts[1] == "403"
+		}
+		if forbidden && strings.HasPrefix(lower, "www-authenticate:") && strings.TrimSpace(strings.TrimPrefix(lower, "www-authenticate:")) != "" {
+			challenged = true
+		}
+	}
+	if scanner.Err() != nil {
+		challenged = false
+	}
+	// A malicious overlong line must neither grow memory nor block Git's pipe.
+	_, _ = io.Copy(io.Discard, reader)
+	return challenged
 }
