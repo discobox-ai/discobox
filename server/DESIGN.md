@@ -262,7 +262,10 @@ The pool agent refuses them for a sandbox that is not running, marking the
 409 with `X-Discobox-Sandbox-Not-Running`, and the proxy
 (`sandbox_agent_terminals_proxy.go`) answers that refusal from the inventory
 the sandbox last posted (`SandboxService.ReadSandboxInventory`): the part as
-posted, plus `observedAt`. A live answer has no `observedAt`. A sandbox that
+posted, plus `observedAt`. After a harness switch, the new `currentHarnessId` alone is composed from the
+selected config, including in cached status sessions; historical `harnessId`,
+unknown fields and timestamps stay as posted (ADR 26-10-24-650 §4).
+A live answer has no `observedAt`. A sandbox that
 has posted nothing is a 409.
 
 ```mermaid

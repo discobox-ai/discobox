@@ -56,3 +56,6 @@ const ErrorTypeSandboxPowerDownRefused = "https://discobox.ai/errors/sandbox-pow
 // not: a suspend of a stopped sandbox (ADR 26-10-16-420 §3). Nothing was
 // changed.
 const ErrorTypeSandboxNotRunning = "https://discobox.ai/errors/sandbox-not-running"
+
+// ErrorTypeHarnessChangeRefused identifies a stopped-only spec precondition failure.
+const ErrorTypeHarnessChangeRefused = "https://discobox.ai/errors/harness-change-refused"

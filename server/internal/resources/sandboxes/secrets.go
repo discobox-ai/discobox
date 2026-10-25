@@ -68,12 +68,12 @@ func (s *Service) prepareSandboxSecrets(ctx context.Context, projectID string, s
 // request; an inline secret wins over a binding for the same env. It returns
 // the assignment rows to persist; sentinels reach the sandbox through the
 // secrets channel, never sandbox.Env.
-func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID string, sandbox *model.Sandbox, harnessConfigID string, inlineEnvs map[string]struct{}) ([]*model.SandboxSecret, error) {
-	config, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
+func prepareHarnessConfigSecrets(ctx context.Context, st *store.Store, projectID string, sandbox *model.Sandbox, harnessConfigID string, inlineEnvs map[string]struct{}) ([]*model.SandboxSecret, error) {
+	config, err := st.GetHarnessConfig(ctx, projectID, harnessConfigID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "harness config not found")
 	}
-	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, harnessConfigID)
+	bindings, err := st.ListHarnessConfigSecretBindings(ctx, projectID, harnessConfigID)
 	if err != nil {
 		return nil, err
 	}
@@ -105,19 +105,19 @@ func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID strin
 		if _, ok := inlineEnvs[b.EnvName]; ok {
 			continue // an explicit per-sandbox secret wins over the binding
 		}
-		secret, err := s.store.GetSecret(ctx, projectID, b.SecretID)
+		secret, err := st.GetSecret(ctx, projectID, b.SecretID)
 		if err != nil {
 			if errors.Is(err, store.ErrNotFound) {
 				continue // secret deleted out from under the binding; skip
 			}
 			return nil, err
 		}
-		format := s.store.SentinelFormat(ctx, secret)
+		format := st.SentinelFormat(ctx, secret)
 		sentinel, err := secretformat.MintSentinel(format)
 		if err != nil {
 			return nil, err
 		}
-		assignments = append(assignments, &model.SandboxSecret{
+		assignments = append(assignments, &model.SandboxSecret{SourceHarnessConfigID: harnessConfigID,
 			ProjectID: projectID,
 			SandboxID: sandbox.ID,
 			SecretID:  secret.ID,
@@ -327,7 +327,7 @@ func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sa
 		if err != nil {
 			return nil, err
 		}
-		if err := s.store.CreateSandboxSecret(ctx, &model.SandboxSecret{
+		if err := s.store.CreateSandboxSecret(ctx, &model.SandboxSecret{SourceHarnessConfigID: harnessConfigID,
 			ProjectID: projectID,
 			SandboxID: sandboxID,
 			SecretID:  secret.ID,
@@ -527,7 +527,7 @@ func rebindSandboxSecretRows(ctx context.Context, st *store.Store, projectID str
 	changed := false
 	for _, binding := range bindings {
 		assignment := byEnv[binding.EnvName]
-		if assignment == nil || assignment.SecretID == binding.SecretID {
+		if assignment == nil || assignment.SourceHarnessConfigID != *sandboxModel.HarnessConfigID || assignment.SecretID == binding.SecretID {
 			// No assignment for this env means the sandbox was never given the
 			// secret; minting one here would hand a running sandbox a credential
 			// its harness cannot pick up. Creation stays at sandbox create.

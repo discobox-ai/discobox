@@ -39260,6 +39260,12 @@ func (s *SandboxAgentSessionStatus) encodeFields(e *jx.Encoder) {
 		e.Str(s.TerminalId)
 	}
 	{
+		if s.CurrentHarnessId.Set {
+			e.FieldStart("currentHarnessId")
+			s.CurrentHarnessId.Encode(e)
+		}
+	}
+	{
 		if s.HarnessId.Set {
 			e.FieldStart("harnessId")
 			s.HarnessId.Encode(e)
@@ -39303,16 +39309,17 @@ func (s *SandboxAgentSessionStatus) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxAgentSessionStatus = [9]string{
+var jsonFieldsNameOfSandboxAgentSessionStatus = [10]string{
 	0: "terminalId",
-	1: "harnessId",
-	2: "primary",
-	3: "title",
-	4: "lastAccessedAt",
-	5: "startedAt",
-	6: "attacherCount",
-	7: "execStatus",
-	8: "programStatus",
+	1: "currentHarnessId",
+	2: "harnessId",
+	3: "primary",
+	4: "title",
+	5: "lastAccessedAt",
+	6: "startedAt",
+	7: "attacherCount",
+	8: "execStatus",
+	9: "programStatus",
 }
 
 // Decode decodes SandboxAgentSessionStatus from json.
@@ -39336,6 +39343,16 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"terminalId\"")
 			}
+		case "currentHarnessId":
+			if err := func() error {
+				s.CurrentHarnessId.Reset()
+				if err := s.CurrentHarnessId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"currentHarnessId\"")
+			}
 		case "harnessId":
 			if err := func() error {
 				s.HarnessId.Reset()
@@ -39347,7 +39364,7 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"harnessId\"")
 			}
 		case "primary":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Bool()
 				s.Primary = bool(v)
@@ -39389,7 +39406,7 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"startedAt\"")
 			}
 		case "attacherCount":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Int64()
 				s.AttacherCount = int64(v)
@@ -39401,7 +39418,7 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"attacherCount\"")
 			}
 		case "execStatus":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ExecStatus = string(v)
@@ -39432,8 +39449,8 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b11000101,
-		0b00000000,
+		0b10001001,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -43268,6 +43285,12 @@ func (s *SandboxExec) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.CurrentHarnessId.Set {
+			e.FieldStart("currentHarnessId")
+			s.CurrentHarnessId.Encode(e)
+		}
+	}
+	{
 		if s.HarnessId.Set {
 			e.FieldStart("harnessId")
 			s.HarnessId.Encode(e)
@@ -43281,7 +43304,7 @@ func (s *SandboxExec) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxExec = [20]string{
+var jsonFieldsNameOfSandboxExec = [21]string{
 	0:  "observedAt",
 	1:  "id",
 	2:  "status",
@@ -43300,8 +43323,9 @@ var jsonFieldsNameOfSandboxExec = [20]string{
 	15: "startedAt",
 	16: "exitedAt",
 	17: "metadata",
-	18: "harnessId",
-	19: "primary",
+	18: "currentHarnessId",
+	19: "harnessId",
+	20: "primary",
 }
 
 // Decode decodes SandboxExec from json.
@@ -43519,6 +43543,16 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"metadata\"")
+			}
+		case "currentHarnessId":
+			if err := func() error {
+				s.CurrentHarnessId.Reset()
+				if err := s.CurrentHarnessId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"currentHarnessId\"")
 			}
 		case "harnessId":
 			if err := func() error {
@@ -52654,6 +52688,18 @@ func (s *SandboxUpdateConfig) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *SandboxUpdateConfig) encodeFields(e *jx.Encoder) {
 	{
+		if s.Harness.Set {
+			e.FieldStart("harness")
+			s.Harness.Encode(e)
+		}
+	}
+	{
+		if s.HarnessConfigId.Set {
+			e.FieldStart("harnessConfigId")
+			s.HarnessConfigId.Encode(e)
+		}
+	}
+	{
 		if s.Egress.Set {
 			e.FieldStart("egress")
 			s.Egress.Encode(e)
@@ -52667,9 +52713,11 @@ func (s *SandboxUpdateConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxUpdateConfig = [2]string{
-	0: "egress",
-	1: "name",
+var jsonFieldsNameOfSandboxUpdateConfig = [4]string{
+	0: "harness",
+	1: "harnessConfigId",
+	2: "egress",
+	3: "name",
 }
 
 // Decode decodes SandboxUpdateConfig from json.
@@ -52680,6 +52728,26 @@ func (s *SandboxUpdateConfig) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "harness":
+			if err := func() error {
+				s.Harness.Reset()
+				if err := s.Harness.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"harness\"")
+			}
+		case "harnessConfigId":
+			if err := func() error {
+				s.HarnessConfigId.Reset()
+				if err := s.HarnessConfigId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"harnessConfigId\"")
+			}
 		case "egress":
 			if err := func() error {
 				s.Egress.Reset()

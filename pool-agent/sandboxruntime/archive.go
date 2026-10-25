@@ -99,6 +99,10 @@ func (r *DockerSandboxRuntime) ArchiveSandbox(ctx context.Context, sandboxID str
 		return fmt.Errorf("archive sandbox %s: %w", sandboxID, err)
 	}
 
+	if err := os.Remove(r.harnessFencePath(sandboxID)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
 	sb, err := r.GetSandbox(ctx, sandboxID)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err

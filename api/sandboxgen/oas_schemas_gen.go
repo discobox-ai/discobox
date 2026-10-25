@@ -5060,6 +5060,9 @@ func (s *SandboxAgentResourceUsageSource) UnmarshalText(data []byte) error {
 type SandboxAgentSessionStatus struct {
 	// Number of clients currently attached to this terminal.
 	AttacherCount int64 `json:"attacherCount"`
+	// The sandbox's selected harness used for this terminal's current or next revival. The historical
+	// harnessId and creation metadata remain unchanged.
+	CurrentHarnessId OptString `json:"currentHarnessId"`
 	// Underlying exec process status.
 	ExecStatus string    `json:"execStatus"`
 	HarnessId  OptString `json:"harnessId"`
@@ -5082,6 +5085,11 @@ type SandboxAgentSessionStatus struct {
 // GetAttacherCount returns the value of AttacherCount.
 func (s *SandboxAgentSessionStatus) GetAttacherCount() int64 {
 	return s.AttacherCount
+}
+
+// GetCurrentHarnessId returns the value of CurrentHarnessId.
+func (s *SandboxAgentSessionStatus) GetCurrentHarnessId() OptString {
+	return s.CurrentHarnessId
 }
 
 // GetExecStatus returns the value of ExecStatus.
@@ -5127,6 +5135,11 @@ func (s *SandboxAgentSessionStatus) GetTitle() OptString {
 // SetAttacherCount sets the value of AttacherCount.
 func (s *SandboxAgentSessionStatus) SetAttacherCount(val int64) {
 	s.AttacherCount = val
+}
+
+// SetCurrentHarnessId sets the value of CurrentHarnessId.
+func (s *SandboxAgentSessionStatus) SetCurrentHarnessId(val OptString) {
+	s.CurrentHarnessId = val
 }
 
 // SetExecStatus sets the value of ExecStatus.
@@ -5579,6 +5592,9 @@ type SandboxExec struct {
 	// Command argv executed in the sandbox.
 	Command   []string  `json:"command"`
 	CreatedAt time.Time `json:"createdAt"`
+	// The sandbox's selected harness used for this terminal's current or next revival. The historical
+	// harnessId and creation metadata remain unchanged.
+	CurrentHarnessId OptString `json:"currentHarnessId"`
 	// Additional environment variables for the exec process.
 	Env OptSandboxExecEnv `json:"env"`
 	// Runtime error detail when the exec failed.
@@ -5633,6 +5649,11 @@ func (s *SandboxExec) GetCommand() []string {
 // GetCreatedAt returns the value of CreatedAt.
 func (s *SandboxExec) GetCreatedAt() time.Time {
 	return s.CreatedAt
+}
+
+// GetCurrentHarnessId returns the value of CurrentHarnessId.
+func (s *SandboxExec) GetCurrentHarnessId() OptString {
+	return s.CurrentHarnessId
 }
 
 // GetEnv returns the value of Env.
@@ -5733,6 +5754,11 @@ func (s *SandboxExec) SetCommand(val []string) {
 // SetCreatedAt sets the value of CreatedAt.
 func (s *SandboxExec) SetCreatedAt(val time.Time) {
 	s.CreatedAt = val
+}
+
+// SetCurrentHarnessId sets the value of CurrentHarnessId.
+func (s *SandboxExec) SetCurrentHarnessId(val OptString) {
+	s.CurrentHarnessId = val
 }
 
 // SetEnv sets the value of Env.

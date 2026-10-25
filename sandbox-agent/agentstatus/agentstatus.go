@@ -46,9 +46,10 @@ type GitSourceStatus struct {
 
 // SessionStatus is the observed record of one harness terminal.
 type SessionStatus struct {
-	TerminalID string `json:"terminalId"`
-	HarnessID  string `json:"harnessId,omitempty"`
-	Primary    bool   `json:"primary"`
+	CurrentHarnessID string `json:"currentHarnessId,omitempty"`
+	TerminalID       string `json:"terminalId"`
+	HarnessID        string `json:"harnessId,omitempty"`
+	Primary          bool   `json:"primary"`
 	// Title is the window title the program in the session last set (OSC
 	// 0/2), read from its shim's screen emulator. It is the session's own
 	// name for itself — a harness usually titles it after what it is doing —

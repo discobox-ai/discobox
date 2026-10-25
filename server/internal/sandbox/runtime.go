@@ -177,6 +177,8 @@ type StateEvent struct {
 
 // CreateOptions configures sandbox creation.
 type CreateOptions struct {
+	HarnessChangeID string
+
 	// SpecFingerprint is the digest of the sandbox's manifest — without the
 	// platform pin for a sandbox delivered its platform
 	// (SandboxManifest.DeliveredFingerprint). The
@@ -288,6 +290,9 @@ type BundlePin struct {
 // to a running sandbox in place. It mirrors the CreateOptions shape; only the
 // fields present here may be updated after creation.
 type UpdateOptions struct {
+	// ReserveHarnessChange fences starts until the matching create applies.
+	ReserveHarnessChange string
+
 	// Sentinels replaces the placeholder secret set registered with the proxy for
 	// runtime swapping. It mirrors CreateOptions.Sentinels. Nil leaves the set as
 	// it is; an empty, non-nil set removes it.

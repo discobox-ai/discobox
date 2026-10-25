@@ -910,6 +910,9 @@ components:
                     description: Number of clients currently attached to this terminal.
                     format: int64
                     type: integer
+                currentHarnessId:
+                    description: The sandbox's selected harness used for this terminal's current or next revival. The historical harnessId and creation metadata remain unchanged.
+                    type: string
                 execStatus:
                     description: Underlying exec process status.
                     type: string
@@ -1069,6 +1072,9 @@ components:
                     type: array
                 createdAt:
                     format: date-time
+                    type: string
+                currentHarnessId:
+                    description: The sandbox's selected harness used for this terminal's current or next revival. The historical harnessId and creation metadata remain unchanged.
                     type: string
                 env:
                     additionalProperties:

@@ -1324,3 +1324,12 @@ func cloneInt64(in *int64) *int64 {
 	out := *in
 	return &out
 }
+
+// CurrentHarnessID is the sandbox's selected harness, independent of a
+// terminal's immutable creation metadata (ADR 26-10-24-650).
+func (s *Service) CurrentHarnessID() string {
+	if s.harness.ID != "" {
+		return s.harness.ID
+	}
+	return ShellHarnessID
+}

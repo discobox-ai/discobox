@@ -216,6 +216,9 @@ func (r *SandboxReconciler) ReconcileSandbox(ctx context.Context, sandbox *model
 	generation := sandbox.Generation
 	switch sandbox.DesiredState {
 	case model.DesiredStatePresent:
+		if sandbox.PendingHarnessChange != nil {
+			return r.applyHarnessChange(ctx, sandbox)
+		}
 		return r.ensure(ctx, sandbox, generation)
 	case model.DesiredStateArchived:
 		return r.archive(ctx, sandbox, generation)
@@ -575,6 +578,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	opts.Name = sb.Name
 	opts.Description = sb.Description
 	opts.HarnessConfigID = sb.HarnessConfigID
+	opts.HarnessChangeID = sb.HarnessChangeID
 	opts.HarnessMode = sb.HarnessMode
 	opts.Model = sb.Model
 	opts.ModelServiceTier = sb.ModelServiceTier

@@ -146,7 +146,7 @@ func (s *Store) DeleteHarnessConfig(ctx context.Context, projectID, configID str
 		}
 		// A live sandbox still using the config blocks deletion with a clear error.
 		var liveRefs int64
-		if err := tx.Model(&model.Sandbox{}).Where("harness_config_id = ?", configID).Count(&liveRefs).Error; err != nil {
+		if err := tx.Model(&model.Sandbox{}).Where("harness_config_id = ? OR pending_harness_config_id = ?", configID, configID).Count(&liveRefs).Error; err != nil {
 			return err
 		}
 		if liveRefs > 0 {

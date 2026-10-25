@@ -7597,6 +7597,12 @@ func (s *SandboxAgentSessionStatus) encodeFields(e *jx.Encoder) {
 		e.Int64(s.AttacherCount)
 	}
 	{
+		if s.CurrentHarnessId.Set {
+			e.FieldStart("currentHarnessId")
+			s.CurrentHarnessId.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("execStatus")
 		e.Str(s.ExecStatus)
 	}
@@ -7640,16 +7646,17 @@ func (s *SandboxAgentSessionStatus) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxAgentSessionStatus = [9]string{
+var jsonFieldsNameOfSandboxAgentSessionStatus = [10]string{
 	0: "attacherCount",
-	1: "execStatus",
-	2: "harnessId",
-	3: "lastAccessedAt",
-	4: "primary",
-	5: "programStatus",
-	6: "startedAt",
-	7: "terminalId",
-	8: "title",
+	1: "currentHarnessId",
+	2: "execStatus",
+	3: "harnessId",
+	4: "lastAccessedAt",
+	5: "primary",
+	6: "programStatus",
+	7: "startedAt",
+	8: "terminalId",
+	9: "title",
 }
 
 // Decode decodes SandboxAgentSessionStatus from json.
@@ -7673,8 +7680,18 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"attacherCount\"")
 			}
+		case "currentHarnessId":
+			if err := func() error {
+				s.CurrentHarnessId.Reset()
+				if err := s.CurrentHarnessId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"currentHarnessId\"")
+			}
 		case "execStatus":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.ExecStatus = string(v)
@@ -7706,7 +7723,7 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"lastAccessedAt\"")
 			}
 		case "primary":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Bool()
 				s.Primary = bool(v)
@@ -7738,7 +7755,7 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"startedAt\"")
 			}
 		case "terminalId":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.TerminalId = string(v)
@@ -7769,8 +7786,8 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b10010011,
-		0b00000000,
+		0b00100101,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -8676,6 +8693,12 @@ func (s *SandboxExec) encodeFields(e *jx.Encoder) {
 		json.EncodeDateTime(e, s.CreatedAt)
 	}
 	{
+		if s.CurrentHarnessId.Set {
+			e.FieldStart("currentHarnessId")
+			s.CurrentHarnessId.Encode(e)
+		}
+	}
+	{
 		if s.Env.Set {
 			e.FieldStart("env")
 			s.Env.Encode(e)
@@ -8781,27 +8804,28 @@ func (s *SandboxExec) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxExec = [20]string{
+var jsonFieldsNameOfSandboxExec = [21]string{
 	0:  "command",
 	1:  "createdAt",
-	2:  "env",
-	3:  "error",
-	4:  "exitCode",
-	5:  "exitedAt",
-	6:  "harnessId",
-	7:  "id",
-	8:  "metadata",
-	9:  "observedAt",
-	10: "pid",
-	11: "primary",
-	12: "startedAt",
-	13: "startupCommand",
-	14: "status",
-	15: "stopped",
-	16: "tty",
-	17: "unit",
-	18: "user",
-	19: "workdir",
+	2:  "currentHarnessId",
+	3:  "env",
+	4:  "error",
+	5:  "exitCode",
+	6:  "exitedAt",
+	7:  "harnessId",
+	8:  "id",
+	9:  "metadata",
+	10: "observedAt",
+	11: "pid",
+	12: "primary",
+	13: "startedAt",
+	14: "startupCommand",
+	15: "status",
+	16: "stopped",
+	17: "tty",
+	18: "unit",
+	19: "user",
+	20: "workdir",
 }
 
 // Decode decodes SandboxExec from json.
@@ -8844,6 +8868,16 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"createdAt\"")
+			}
+		case "currentHarnessId":
+			if err := func() error {
+				s.CurrentHarnessId.Reset()
+				if err := s.CurrentHarnessId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"currentHarnessId\"")
 			}
 		case "env":
 			if err := func() error {
@@ -8896,7 +8930,7 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"harnessId\"")
 			}
 		case "id":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -8977,7 +9011,7 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"startupCommand\"")
 			}
 		case "status":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -8997,7 +9031,7 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"stopped\"")
 			}
 		case "tty":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := d.Bool()
 				s.Tty = bool(v)
@@ -9029,7 +9063,7 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"user\"")
 			}
 		case "workdir":
-			requiredBitSet[2] |= 1 << 3
+			requiredBitSet[2] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Workdir = string(v)
@@ -9050,9 +9084,9 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
-		0b10000011,
-		0b01000000,
-		0b00001001,
+		0b00000011,
+		0b10000001,
+		0b00010010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

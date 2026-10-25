@@ -42,7 +42,7 @@ func newRebindFixture(t *testing.T) (*Service, *store.Store, *recordingProvider,
 	}); err != nil {
 		t.Fatalf("report running: %v", err)
 	}
-	assignments, err := svc.applyHarnessConfigSecrets(ctx, "project-1", sb, config.ID, nil)
+	assignments, err := prepareHarnessConfigSecrets(ctx, svc.store, "project-1", sb, config.ID, nil)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -280,5 +280,28 @@ func TestRebindRowsRepairsDriftWithoutService(t *testing.T) {
 	}
 	if after.Sentinel != before.Sentinel {
 		t.Fatal("sentinel churned on a same-format repair")
+	}
+}
+
+func TestRebindDoesNotReplaceAnExplicitSandboxBinding(t *testing.T) {
+	svc, st, _, config, _ := newRebindFixture(t)
+	assignment := onlyAssignment(t, st)
+	assignment.SourceHarnessConfigID = ""
+	if err := st.DeleteSandboxSecrets(context.Background(), assignment.SandboxID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSandboxSecret(context.Background(), &assignment); err != nil {
+		t.Fatal(err)
+	}
+	replacement := bearerSecret(t, st, "replacement-explicit", "")
+	if err := st.UpsertHarnessConfigSecretBinding(context.Background(), &model.HarnessConfigSecretBinding{ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: assignment.EnvName, SecretID: replacement.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RebindSandboxSecrets(context.Background(), "project-1", "sb-1"); err != nil {
+		t.Fatal(err)
+	}
+	got := onlyAssignment(t, st)
+	if got.SecretID != assignment.SecretID || got.Sentinel != assignment.Sentinel {
+		t.Fatal("explicit sandbox binding was replaced by harness binding")
 	}
 }

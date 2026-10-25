@@ -299,3 +299,15 @@ bootstrap-token rows in the same database operation.
 Pool repair is not delete. Repair is an in-place recovery operation that
 replaces the runtime under the same pool identity and must preserve the pool
 row and pool-local state (named volumes).
+
+`Sandbox.PendingHarnessChange` is a durable proposal, separate from its effective
+manifest until its pool reserves the stopped runtime. Its indexed
+`PendingHarnessConfigID` foreign key keeps that target from being deleted. `HarnessChangeID` fences
+its replacement at the pool; `HarnessChangeError` records a refused proposal.
+These internal fields are outside the manifest fingerprint and public JSON.
+`SandboxSecret.SourceHarnessConfigID` records which injected bindings came from
+the harness so a change can replace those while retaining explicit bindings.
+
+Existing secret assignments have no trustworthy harness provenance and retain
+sandbox-override precedence. Matching an old harness binding does not establish
+ownership; migration never guesses from that match.

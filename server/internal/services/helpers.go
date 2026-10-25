@@ -395,7 +395,15 @@ func SandboxToAPI(sandbox *model.Sandbox, basis SandboxUpgradeBasis) (serverapi.
 		runtime["automaticRepair"] = sandbox.AutomaticRepair
 	}
 	if len(sandbox.AgentStatus) > 0 {
-		runtime["agentStatus"] = sandbox.AgentStatus
+		status := sandbox.AgentStatus
+		if sandbox.HarnessChangeID != "" && sandbox.HarnessConfigID != nil {
+			var err error
+			status, err = sandboxAgentStatusCurrentHarness(status, *sandbox.HarnessConfigID)
+			if err != nil {
+				return serverapi.Sandbox{}, err
+			}
+		}
+		runtime["agentStatus"] = status
 	}
 	if sandbox.AgentStatusObservedAt != nil {
 		runtime["agentStatusObservedAt"] = *sandbox.AgentStatusObservedAt

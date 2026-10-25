@@ -364,6 +364,9 @@ func (r *DockerSandboxRuntime) powerTarget(ctx context.Context, sandboxID string
 }
 
 func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string) error {
+	if err := r.harnessStartAllowed(sandboxID); err != nil {
+		return err
+	}
 	// Archiving removes the container, so reaching here with a marked tree means
 	// a container survived a partial archive. Starting it would silently undo the
 	// archive and put the sandbox back beyond the reach of its retention policy.

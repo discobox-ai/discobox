@@ -1678,6 +1678,9 @@ components:
             properties:
                 terminalId:
                     type: string
+                currentHarnessId:
+                    description: The sandbox's selected harness used for this terminal's current or next revival. The historical harnessId and creation metadata remain unchanged.
+                    type: string
                 harnessId:
                     type: string
                 primary:
@@ -2230,6 +2233,9 @@ components:
                         type: string
                     description: Caller-supplied exec metadata.
                     type: object
+                currentHarnessId:
+                    description: The sandbox's selected harness used for this terminal's current or next revival. The historical harnessId and creation metadata remain unchanged.
+                    type: string
                 harnessId:
                     description: Harness this exec runs, when created in harness (terminal) mode.
                     type: string
@@ -6958,6 +6964,14 @@ components:
         SandboxUpdateConfig:
             additionalProperties: false
             properties:
+                harness:
+                    description: Harness selector (slug, name or ID), resolved in this sandbox's project. Mutually exclusive with harnessConfigId. A different harness requires a stopped sandbox.
+                    minLength: 1
+                    type: string
+                harnessConfigId:
+                    description: Explicit harness config ID in this sandbox's project. Mutually exclusive with harness. A different harness requires a stopped sandbox.
+                    minLength: 1
+                    type: string
                 egress:
                     $ref: '#/components/schemas/EgressPolicy'
                     description: Replaces the discobox's own egress policy level.

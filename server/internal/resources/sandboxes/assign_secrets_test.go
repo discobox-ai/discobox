@@ -20,6 +20,7 @@ import (
 // recordingProvider is a no-op sandbox.Provider that records the sentinel set
 // passed to Update.
 type recordingProvider struct {
+	updates []sandbox.UpdateOptions
 	updated [][]string
 	routes  []map[string][]secretroute.Route
 	// updateErrs fail the next updates, one each, in order.
@@ -50,6 +51,7 @@ func (p *recordingProvider) Create(context.Context, sandbox.SandboxRef, []byte, 
 	return nil, nil, p.createErr
 }
 func (p *recordingProvider) Update(_ context.Context, _ sandbox.SandboxRef, state []byte, opts sandbox.UpdateOptions) (*sandbox.Sandbox, []byte, error) {
+	p.updates = append(p.updates, opts)
 	if len(p.updateErrs) > 0 {
 		err := p.updateErrs[0]
 		p.updateErrs = p.updateErrs[1:]

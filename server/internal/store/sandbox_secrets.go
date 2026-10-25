@@ -448,3 +448,21 @@ func (s *Store) ListSandboxIDsHoldingSecret(ctx context.Context, projectID, secr
 		Pluck("sandbox_id", &out).Error
 	return out, err
 }
+
+// ReplaceSandboxHarnessSecrets changes only harness-owned injected bindings;
+// explicit and agent-requested bindings remain with the sandbox.
+func (s *Store) ReplaceSandboxHarnessSecrets(ctx context.Context, sandboxID string, assignments []*model.SandboxSecret) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	if err := write.Where("sandbox_id = ? AND source_harness_config_id <> '' AND agent_requested = ?", sandboxID, false).Delete(&model.SandboxSecret{}).Error; err != nil {
+		return err
+	}
+	for _, assignment := range assignments {
+		if err := s.CreateSandboxSecret(ctx, assignment); err != nil {
+			return err
+		}
+	}
+	return nil
+}

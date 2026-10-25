@@ -59,8 +59,9 @@ type sandboxCreateOptions struct {
 }
 
 type sandboxUpdateOptions struct {
-	name   string
-	egress egressFlags
+	harness string
+	name    string
+	egress  egressFlags
 }
 
 func (a *App) newSandboxCommand() *cobra.Command {
@@ -221,9 +222,13 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 func (a *App) newSandboxUpdateCommand() *cobra.Command {
 	var opts sandboxUpdateOptions
 	cmd := &cobra.Command{
-		Use:   "update DISCOBOX_ID",
+		Use:   "update DISCOBOX",
 		Short: "Update a discobox",
 		Long: `Update a discobox.
+
+--harness selects a configured harness by slug, name or ID. Stop the discobox
+first; the update leaves it stopped. The new harness provisions on its next start.
+Conversation state is not transferred between harnesses.
 
 --egress-allow and --egress-deny-by-default set the discobox's own egress level,
 which it converges onto while running.
@@ -232,7 +237,7 @@ which it converges onto while running.
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
+			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, args[0])
 			if err != nil {
 				return err
 			}
@@ -271,6 +276,7 @@ which it converges onto while running.
 		},
 	}
 	addUpdateFlags(cmd, &opts)
+	_ = cmd.RegisterFlagCompletionFunc("harness", a.completeHarnessConfigNames)
 	return cmd
 }
 
@@ -656,6 +662,7 @@ func (a *App) resolveGrantSecrets(ctx context.Context, client *apiclientgen.Clie
 }
 
 func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
+	cmd.Flags().StringVarP(&opts.harness, "harness", "H", "", "Harness `HARNESS` (slug, name or ID); requires a stopped discobox")
 	cmd.Flags().StringVar(&opts.name, "name", "", "Discobox name")
 	addEgressUpdateFlags(cmd, &opts.egress, "the discobox")
 }
@@ -806,6 +813,15 @@ func updateSandboxBody(cmd *cobra.Command, opts sandboxUpdateOptions) (*apimodel
 			Name: apiclientgen.NewOptString(opts.name),
 		}))
 	}
+	if cmd.Flags().Changed("harness") {
+		if strings.TrimSpace(opts.harness) == "" {
+			return nil, fmt.Errorf("--harness requires a slug, name or ID")
+		}
+		config, _ := body.Config.Get()
+		config.Harness = apiclientgen.NewOptString(opts.harness)
+		body.SetConfig(apiclientgen.NewOptSandboxUpdateConfig(config))
+	}
+
 	return body, nil
 }
 

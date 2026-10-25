@@ -136,3 +136,13 @@ columns, not the ID. Mint IDs with `id.New(id.Prefix<Type>)` from
 register new prefixes in that package's `id.go`, in the `discobox-ai/x`
 repository. Composite keys and fixed well-known rows (e.g. `user_default`) may
 use non-generated IDs when that is part of the table design.
+
+Harness switching adds nullable proposal JSON, empty-default fence/refusal
+columns and an indexed pending-target foreign key to existing sandboxes.
+`SourceHarnessConfigID` defaults to empty on existing secret assignments. Their
+original ownership cannot be recovered reliably: even a matching harness binding
+may have been overridden explicitly. Migration preserves them as sandbox-owned
+instead of inferring provenance and later deleting an explicit binding. Only
+newly materialized harness bindings carry provenance and are replaced on a switch.
+Legacy assignments therefore keep sandbox-override precedence until explicitly
+changed, including when their env name matches the newly selected harness.

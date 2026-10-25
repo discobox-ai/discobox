@@ -76,7 +76,7 @@ func tuiExec(exec apimodel.SandboxExec) tui.Exec {
 	return tui.Exec{
 		ID:           exec.ID,
 		Command:      command,
-		Harness:      exec.HarnessId.Value,
+		Harness:      exec.CurrentHarnessId.Or(exec.HarnessId.Value),
 		Primary:      exec.Primary.Value,
 		Service:      metadata[sandboxServiceIDMetadata],
 		Tool:         execToolID(metadata[execToolMetadataKey]),

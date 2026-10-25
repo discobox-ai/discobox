@@ -3342,3 +3342,12 @@ Pool list/get output shows lifecycle `STATE` separately from `HEALTH` and
 server-derived `READY`. Unknown health after server restart is a wait for the
 pool agent, with current driver provisioning progress shown when available.
 `UPDATED` remains the row update timestamp, not proof of a fresh heartbeat.
+
+`admin box update DISCOBOX --harness HARNESS` uses `selectSandbox` and the App,
+server and project it returns; the server resolves the harness slug, name or ID
+as for `run -H` and import (ADR 26-10-24-650). An empty selector is refused,
+omission leaves the selection unchanged, and selecting `shell` requests a shell.
+Only changing the selected harness requires a stopped sandbox; name and egress
+updates keep their existing rules. The command does not stop, start or attach.
+Terminal displays and completion prefer `currentHarnessId`, with `harnessId` as
+the fallback for an older agent; creation metadata remains historical.

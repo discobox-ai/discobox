@@ -24805,9 +24805,12 @@ func (s *SandboxAgentResourceUsageSource) UnmarshalText(data []byte) error {
 
 // Ref: #/components/schemas/SandboxAgentSessionStatus
 type SandboxAgentSessionStatus struct {
-	TerminalId string    `json:"terminalId"`
-	HarnessId  OptString `json:"harnessId"`
-	Primary    bool      `json:"primary"`
+	TerminalId string `json:"terminalId"`
+	// The sandbox's selected harness used for this terminal's current or next revival. The historical
+	// harnessId and creation metadata remain unchanged.
+	CurrentHarnessId OptString `json:"currentHarnessId"`
+	HarnessId        OptString `json:"harnessId"`
+	Primary          bool      `json:"primary"`
 	// Window title the program in the session last set (OSC 0/2), read from its terminal emulator.
 	// Absent when the session never titled itself - the sandbox's name and prompt are already on the
 	// record, so nothing is backfilled here.
@@ -24829,6 +24832,11 @@ type SandboxAgentSessionStatus struct {
 // GetTerminalId returns the value of TerminalId.
 func (s *SandboxAgentSessionStatus) GetTerminalId() string {
 	return s.TerminalId
+}
+
+// GetCurrentHarnessId returns the value of CurrentHarnessId.
+func (s *SandboxAgentSessionStatus) GetCurrentHarnessId() OptString {
+	return s.CurrentHarnessId
 }
 
 // GetHarnessId returns the value of HarnessId.
@@ -24874,6 +24882,11 @@ func (s *SandboxAgentSessionStatus) GetProgramStatus() OptSandboxAgentProgramSta
 // SetTerminalId sets the value of TerminalId.
 func (s *SandboxAgentSessionStatus) SetTerminalId(val string) {
 	s.TerminalId = val
+}
+
+// SetCurrentHarnessId sets the value of CurrentHarnessId.
+func (s *SandboxAgentSessionStatus) SetCurrentHarnessId(val OptString) {
+	s.CurrentHarnessId = val
 }
 
 // SetHarnessId sets the value of HarnessId.
@@ -26734,6 +26747,9 @@ type SandboxExec struct {
 	ExitedAt  OptDateTime `json:"exitedAt"`
 	// Caller-supplied exec metadata.
 	Metadata OptSandboxExecMetadata `json:"metadata"`
+	// The sandbox's selected harness used for this terminal's current or next revival. The historical
+	// harnessId and creation metadata remain unchanged.
+	CurrentHarnessId OptString `json:"currentHarnessId"`
 	// Harness this exec runs, when created in harness (terminal) mode.
 	HarnessId OptString `json:"harnessId"`
 	// Whether this is the sandbox's primary harness terminal.
@@ -26828,6 +26844,11 @@ func (s *SandboxExec) GetExitedAt() OptDateTime {
 // GetMetadata returns the value of Metadata.
 func (s *SandboxExec) GetMetadata() OptSandboxExecMetadata {
 	return s.Metadata
+}
+
+// GetCurrentHarnessId returns the value of CurrentHarnessId.
+func (s *SandboxExec) GetCurrentHarnessId() OptString {
+	return s.CurrentHarnessId
 }
 
 // GetHarnessId returns the value of HarnessId.
@@ -26928,6 +26949,11 @@ func (s *SandboxExec) SetExitedAt(val OptDateTime) {
 // SetMetadata sets the value of Metadata.
 func (s *SandboxExec) SetMetadata(val OptSandboxExecMetadata) {
 	s.Metadata = val
+}
+
+// SetCurrentHarnessId sets the value of CurrentHarnessId.
+func (s *SandboxExec) SetCurrentHarnessId(val OptString) {
+	s.CurrentHarnessId = val
 }
 
 // SetHarnessId sets the value of HarnessId.
@@ -31028,10 +31054,26 @@ func (s *SandboxTrustRequestStatusStatus) UnmarshalText(data []byte) error {
 
 // Ref: #/components/schemas/SandboxUpdateConfig
 type SandboxUpdateConfig struct {
+	// Harness selector (slug, name or ID), resolved in this sandbox's project. Mutually exclusive with
+	// harnessConfigId. A different harness requires a stopped sandbox.
+	Harness OptString `json:"harness"`
+	// Explicit harness config ID in this sandbox's project. Mutually exclusive with harness. A different
+	// harness requires a stopped sandbox.
+	HarnessConfigId OptString `json:"harnessConfigId"`
 	// Replaces the discobox's own egress policy level.
 	Egress OptEgressPolicy `json:"egress"`
 	// Sandbox name.
 	Name OptString `json:"name"`
+}
+
+// GetHarness returns the value of Harness.
+func (s *SandboxUpdateConfig) GetHarness() OptString {
+	return s.Harness
+}
+
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *SandboxUpdateConfig) GetHarnessConfigId() OptString {
+	return s.HarnessConfigId
 }
 
 // GetEgress returns the value of Egress.
@@ -31042,6 +31084,16 @@ func (s *SandboxUpdateConfig) GetEgress() OptEgressPolicy {
 // GetName returns the value of Name.
 func (s *SandboxUpdateConfig) GetName() OptString {
 	return s.Name
+}
+
+// SetHarness sets the value of Harness.
+func (s *SandboxUpdateConfig) SetHarness(val OptString) {
+	s.Harness = val
+}
+
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *SandboxUpdateConfig) SetHarnessConfigId(val OptString) {
+	s.HarnessConfigId = val
 }
 
 // SetEgress sets the value of Egress.

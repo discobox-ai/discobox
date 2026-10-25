@@ -529,6 +529,10 @@ components:
                         $ref: '#/components/schemas/BundlePin'
                     nullable: true
                     type: array
+                harnessChangeId:
+                    description: Durable stopped-only harness change fence to apply. Must match the pool reservation when one exists.
+                    minLength: 1
+                    type: string
                 config:
                     "$ref": "#/components/schemas/SandboxConfig"
                 egress:
@@ -1086,6 +1090,10 @@ components:
                     example: https://example.com/schemas/PoolSandboxUpdateRequest.json
                     format: uri
                     readOnly: true
+                    type: string
+                reserveHarnessChange:
+                    description: Reserve a stopped sandbox for this durable harness change ID. Idempotent for the same reservation; blocks starts until its matching create succeeds.
+                    minLength: 1
                     type: string
                 config:
                     "$ref": "#/components/schemas/SandboxUpdateConfig"

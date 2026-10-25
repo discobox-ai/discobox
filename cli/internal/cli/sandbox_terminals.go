@@ -316,7 +316,7 @@ func (a *App) writeSandboxTerminals(cmd *cobra.Command, terminals []apimodel.San
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			terminal.ID,
-			terminal.HarnessId.Or(""),
+			terminal.CurrentHarnessId.Or(terminal.HarnessId.Or("")),
 			terminal.Status,
 			pid,
 			exitCode,
