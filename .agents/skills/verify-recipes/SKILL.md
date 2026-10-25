@@ -11,13 +11,13 @@ Confirm `build/discobox` is newer than your last edit before driving it.
 
 ## Open the console
 
-Bare `discobox` opens the console without creating a box; it is the cheapest
-way to reach `runConsole` (and the terminal guard it starts).
+`discobox console` opens the console without creating a box and reaches
+`runConsole` (and the terminal guard it starts). Bare `discobox` prints help.
 
 ```bash
 tmux -L verify new-session -d -s v -x 150 -y 40 -c "$PWD" \
   "env -u DISCOBOX_SERVER PS1='\$ ' bash --norc --noprofile"
-tmux -L verify send-keys -t v './build/discobox --server http://127.0.0.1:8080; echo "exit=$?"' Enter
+tmux -L verify send-keys -t v './build/discobox --server http://127.0.0.1:8080 console; echo "exit=$?"' Enter
 tmux -L verify capture-pane -p -t v
 ```
 

@@ -78,8 +78,8 @@ discobox terminal is up.`,
 	return cmd
 }
 
-// runConsole starts the console. It is reached five ways — `discobox console`,
-// `discobox` with nothing to do, `discobox configure`, which is the console
+// runConsole starts the console. It is reached four ways — `discobox console`,
+// `discobox configure`, which is the console
 // opened on its harnesses screen, `discobox run`, which is it opened on one run
 // (`tui.WithRun`), and `discobox attach`, which is it opened on one discobox
 // (`tui.WithAttach`) — so it lives here rather than inside any one's RunE.
@@ -146,8 +146,8 @@ func (a *App) runConsole(cmd *cobra.Command, leaderFlag string, options ...tui.O
 
 // canOpenWindow reports whether this invocation can put a full-screen window
 // on the terminal it was run from, which is what `discobox run` and `discobox
-// attach` do unless --raw says otherwise. It is the rule bare `discobox`
-// already uses: a pipe, a script, or CI has no terminal to draw one on, and
+// attach` do unless --raw says otherwise. A pipe, a script, or CI has no
+// terminal to draw one on, and
 // there the attach is the byte stream it always was.
 func canOpenWindow(cmd *cobra.Command) bool {
 	return isTerminalStream(cmd.InOrStdin()) && isTerminalStream(cmd.OutOrStdout())
