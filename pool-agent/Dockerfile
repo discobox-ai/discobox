@@ -12,6 +12,7 @@ COPY pkg/auditid ./pkg/auditid
 COPY pkg/controlplane ./pkg/controlplane
 COPY pkg/fsdurable ./pkg/fsdurable
 COPY pkg/gitbackend ./pkg/gitbackend
+COPY pkg/gitprogress ./pkg/gitprogress
 COPY harness ./harness
 COPY pkg/hostscope ./pkg/hostscope
 COPY pkg/imagecache ./pkg/imagecache

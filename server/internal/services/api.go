@@ -38,6 +38,8 @@ type UpdateHarnessConfigBody = apimodel.UpdateHarnessConfigBody
 type UpdateSecretBody = apimodel.UpdateSecretBody
 type RefreshSecretBody = apimodel.RefreshSecretBody
 type CreateSandboxBody = apimodel.CreateSandboxBody
+type PullSandboxSourceBody = apimodel.PullSandboxSourceBody
+
 type CompleteSandboxSourcePushBody = apimodel.CompleteSandboxSourcePushBody
 type CompleteSandboxApplyBody = apimodel.CompleteSandboxApplyBody
 type UpdateSandboxMetaBody = apimodel.UpdateSandboxMetaBody
@@ -197,6 +199,7 @@ type SandboxService interface {
 	// The pool agent recreates the container from it and keeps the power state
 	// it had (ADR 0021).
 	UpgradeSandbox(ctx context.Context, projectID, sandboxID string, input UpgradeSandboxBody) (*model.Sandbox, error)
+	PullSandboxSource(ctx context.Context, projectID, sandboxID, slug string, input PullSandboxSourceBody) (*model.Sandbox, error)
 	CompleteSandboxSourcePush(ctx context.Context, projectID, sandboxID string, input CompleteSandboxSourcePushBody) (*model.Sandbox, error)
 	CompleteSandboxApply(ctx context.Context, projectID, sandboxID string, input CompleteSandboxApplyBody) (*model.Sandbox, error)
 	// UpdateSandboxMeta carries a change to the name, description or tags into the

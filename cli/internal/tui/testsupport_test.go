@@ -561,7 +561,7 @@ func (f *fakeSource) WatchProvisioning(_ context.Context, sandboxID string, repo
 	}
 }
 
-func (f *fakeSource) DeliverSource(_ context.Context, sandboxID string, report func(string)) error {
+func (f *fakeSource) DeliverSource(_ context.Context, sandboxID string, report func(string), _ CredentialUI) error {
 	f.mu.Lock()
 	f.delivered = append(f.delivered, sandboxID)
 	f.execOpensAtDelivery = append(f.execOpensAtDelivery, len(f.execOpens))
@@ -641,7 +641,7 @@ func (f *fakeSource) stoppedCount() int {
 	return f.stopped
 }
 
-func (f *fakeSource) Do(_ context.Context, verb Verb, id string) error {
+func (f *fakeSource) Do(_ context.Context, verb Verb, id string, _ CredentialUI) error {
 	if f.doGate != nil {
 		<-f.doGate
 	}

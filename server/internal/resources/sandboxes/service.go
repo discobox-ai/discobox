@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
+
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
@@ -411,6 +413,12 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 				return nil, apperrors.NewStatusError(http.StatusBadRequest,
 					fmt.Sprintf("%s is already delivered to the new discobox another way; give its grant another variable", binding.EnvName))
 			}
+		}
+	}
+	sandbox.SourceDeliveries = map[string]sourcecache.Delivery{}
+	for _, entry := range clientDeliveredSources(sandbox) {
+		if entry.source.CacheKey != nil && strings.HasPrefix(*entry.source.CacheKey, "remote/") && entry.source.Slug != nil {
+			sandbox.SourceDeliveries[*entry.source.Slug] = sourcecache.Delivery{Status: "pending"}
 		}
 	}
 	return s.createSandboxIntent(ctx, sandbox, append(assignments, grants.Bindings...), grants)
@@ -1496,10 +1504,9 @@ func (s *Service) UpgradeBasis(ctx context.Context, projectID string) (services.
 // CompleteSandboxSourcePush reports that a client finished delivering a
 // sandbox's sources, which is what lets the sandbox start on them.
 //
-// The report covers every client-delivered source at once — the primary
-// source and each source code reference. A sandbox missing one of them would
-// start against an incomplete workspace, so it waits for all of them rather
-// than resuming per source.
+// Each report may cover a subset of sources. Delivery is merged per slug;
+// only the last delivered source permits the sandbox to start. Repeating a
+// report at the same checkout commit is idempotent (ADR 26-10-23-948).
 //
 // A delivery does not wait for the sandbox (ADR 26-10-10-545 §3): a client
 // delivers into its pool's cache while the image is pulled and the sandbox
@@ -1528,24 +1535,46 @@ func (s *Service) CompleteSandboxSourcePush(ctx context.Context, projectID, sand
 		return nil, apperrors.NewStatusError(http.StatusConflict,
 			"no sandbox source is delivered by a client; nothing is waiting to be delivered")
 	}
-	// Reject anything but a sandbox still owed its source, which is one that
-	// has not run: created and not yet parked, or parked. A completion for
-	// any other would restart it out from under whatever is running in it.
-	if !awaitingSourcePush(existing) || !sandboxHasNeverRun(existing.State) {
-		return nil, apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("sandbox is not awaiting its source (state %q)", existing.State))
+	// Repeated completion confirms the immutable commit without restarting a
+	// sandbox. Reports may cover a subset; only the last source resumes it.
+	if len(input.Sources) == 0 {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "no sources reported")
 	}
-	if err := verifySourcePushCommits(pending, input.Sources); err != nil {
+	if existing.SourceDeliveredAt == nil && !sandboxHasNeverRun(existing.State) {
+		return nil, apperrors.NewStatusError(http.StatusConflict, "sandbox is not awaiting its source")
+	}
+	selected := []gitSourceEntry{}
+	for _, entry := range pending {
+		if entry.source.Slug != nil {
+			if _, ok := input.Sources[*entry.source.Slug]; ok {
+				selected = append(selected, entry)
+			}
+		}
+	}
+	if err := verifySourcePushCommits(selected, input.Sources); err != nil {
 		return nil, err
 	}
-	now := time.Now().UTC()
-	sandbox, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, func(sb *model.Sandbox) {
-		sb.SourceDeliveredAt = &now
-	})
-	if err != nil {
-		return nil, apperrors.NotFound(err, "sandbox not found")
+	if existing.SourceDeliveredAt != nil {
+		return existing, nil
 	}
-	return sandbox, nil
+	return s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, func(sb *model.Sandbox) {
+		if sb.SourceDeliveries == nil {
+			sb.SourceDeliveries = map[string]sourcecache.Delivery{}
+		}
+		for slug := range input.Sources {
+			sb.SourceDeliveries[slug] = sourcecache.Delivery{Status: sourcecache.Delivered}
+		}
+		all := true
+		for _, entry := range clientDeliveredSources(sb) {
+			if entry.source.Slug == nil || sb.SourceDeliveries[*entry.source.Slug].Status != sourcecache.Delivered {
+				all = false
+			}
+		}
+		if all {
+			now := time.Now().UTC()
+			sb.SourceDeliveredAt = &now
+		}
+	})
 }
 
 // verifySourcePushCommits checks the client's report against what the sandbox

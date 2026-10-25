@@ -127,6 +127,7 @@ const (
 	ProposeApprovalRuleFromGrantOperation     OperationName = "ProposeApprovalRuleFromGrant"
 	ProposeApprovalRulesOperation             OperationName = "ProposeApprovalRules"
 	ProposeSandboxRuleOperation               OperationName = "ProposeSandboxRule"
+	PullSandboxSourceOperation                OperationName = "PullSandboxSource"
 	PurgeSandboxOperation                     OperationName = "PurgeSandbox"
 	PutProjectGatewayOperation                OperationName = "PutProjectGateway"
 	PutSandboxRuntimeConfigOperation          OperationName = "PutSandboxRuntimeConfig"

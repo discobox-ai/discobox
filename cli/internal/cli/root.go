@@ -905,6 +905,13 @@ func (t debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func logRequestBody(out io.Writer, req *http.Request) (*http.Request, error) {
+	// This request lends a real credential. Even --debug must never read or
+	// render its body; the body still goes to the transport unchanged.
+	if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/sandboxes/") && strings.Contains(req.URL.Path, "/sources/") && strings.HasSuffix(req.URL.Path, "/pull") {
+		fmt.Fprintln(out, "> body: [REDACTED Git credential]")
+		return req, nil
+	}
+
 	if req.Body == nil || req.Body == http.NoBody {
 		return req, nil
 	}

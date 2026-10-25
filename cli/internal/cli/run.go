@@ -21,7 +21,8 @@ import (
 )
 
 type runCommandOptions struct {
-	prompt sandboxcreate.PromptOptions
+	lendGitCredentials bool
+	prompt             sandboxcreate.PromptOptions
 	// promptFlag is -p: the prompt as one argument. The words after `run` are
 	// the same prompt as the shell split it.
 	promptFlag []string
@@ -407,7 +408,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	if err != nil {
 		return err
 	}
-	err = sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, local, gitServerURL, a.token, report)
+	err = sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, local, gitServerURL, a.token, report, credentialDeliveryOptions(cmd, status, opts.lendGitCredentials))
 	releaseGitServerURL()
 	local.Close()
 	if err != nil {
@@ -437,6 +438,8 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 // --from-json to check against.
 func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags := pflag.NewFlagSet("run", pflag.ContinueOnError)
+	flags.BoolVar(&opts.lendGitCredentials, "lend-git-credentials", false, "Allow lending Git HTTPS credentials to the pool for one source pull")
+
 	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after SOURCE")
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
@@ -712,6 +715,7 @@ func warningLine(warning string) string {
 // open one.
 func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.RunRequest {
 	req := tui.RunRequest{
+		LendGitCredentials:  opts.lendGitCredentials,
 		Prompt:              prompt,
 		Source:              opts.source,
 		NoSource:            opts.noSource,

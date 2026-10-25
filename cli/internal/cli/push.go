@@ -300,7 +300,7 @@ func (a *App) deliverAwaitedSource(ctx context.Context, cmd *cobra.Command, clie
 	status := newStatusLine(cmd.ErrOrStderr())
 	defer status.clear()
 	step := func(step sandboxcreate.Step) { status.set(string(step)) }
-	sources, err := a.deliverParkedSource(ctx, client, projectID, sandbox, pending, hostID, gitServerURL, dirOverrides, step)
+	sources, err := a.deliverParkedSource(ctx, client, projectID, sandbox, pending, hostID, gitServerURL, dirOverrides, step, credentialDeliveryOptions(cmd, status, false))
 	status.clear()
 	if err != nil {
 		return err
@@ -323,7 +323,7 @@ func (a *App) deliverAwaitedSource(ctx context.Context, cmd *cobra.Command, clie
 // Every source is resolved and checked before any of them is pushed: a
 // delivery the server would refuse halfway through leaves the discobox parked
 // with a partly written origin.
-func (a *App) deliverParkedSource(ctx context.Context, client *apiclientgen.Client, projectID string, sandbox *apimodel.Sandbox, pending []sandboxcreate.PendingSourcePush, hostID, gitServerURL string, dirOverrides map[string]string, step sandboxcreate.Report) ([]pushSourceReport, error) {
+func (a *App) deliverParkedSource(ctx context.Context, client *apiclientgen.Client, projectID string, sandbox *apimodel.Sandbox, pending []sandboxcreate.PendingSourcePush, hostID, gitServerURL string, dirOverrides map[string]string, step sandboxcreate.Report, options sandboxcreate.DeliveryOptions) ([]pushSourceReport, error) {
 	roots := make(map[string]string, len(pending))
 	sources := make([]pushSourceReport, 0, len(pending))
 	for _, entry := range pending {
@@ -358,7 +358,7 @@ func (a *App) deliverParkedSource(ctx context.Context, client *apiclientgen.Clie
 			Commit:   commit,
 		})
 	}
-	if err := sandboxcreate.DeliverSource(ctx, client, projectID, sandbox, sandboxcreate.NewLocalSources(roots), gitServerURL, a.token, step); err != nil {
+	if err := sandboxcreate.DeliverSource(ctx, client, projectID, sandbox, sandboxcreate.NewLocalSources(roots), gitServerURL, a.token, step, options); err != nil {
 		return nil, err
 	}
 	return sources, nil

@@ -1267,7 +1267,7 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
-	err = sandboxcreate.DeliverSource(ctx, d.client, d.projectID, sandbox, local, gitServerURL, d.app.token, step)
+	err = sandboxcreate.DeliverSource(ctx, d.client, d.projectID, sandbox, local, gitServerURL, d.app.token, step, sandboxcreate.DeliveryOptions{LendCredentials: req.LendGitCredentials, ConfirmCredential: req.Credentials.Confirm, RunCredential: req.Credentials.Run})
 	releaseGitServerURL()
 	local.Close()
 	if err != nil {
@@ -1302,15 +1302,15 @@ func (d *apiDataSource) WatchProvisioning(ctx context.Context, sandboxID string,
 
 // DeliverSource delivers the source a parked discobox is waiting for before
 // the workspace attaches to it (ADR 26-09-24-005); see deliverBeforeAttach.
-func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, report func(string)) error {
+func (d *apiDataSource) DeliverSource(ctx context.Context, sandboxID string, report func(string), credentials tui.CredentialUI) error {
 	d = d.at(sandboxID)
-	return d.app.deliverBeforeAttach(ctx, d.client, d.projectID, sandboxID, report)
+	return d.app.deliverBeforeAttach(ctx, d.client, d.projectID, sandboxID, report, sandboxcreate.DeliveryOptions{ConfirmCredential: credentials.Confirm, RunCredential: credentials.Run})
 }
 
 // Do runs a lifecycle verb against one sandbox. These go straight to the API
 // rather than through their Cobra commands: the commands print a sandbox table
 // on success, and the window reports on its own status line instead.
-func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string) error {
+func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string, credentials tui.CredentialUI) error {
 	d = d.at(sandboxID)
 	switch verb {
 	case tui.VerbStart:
@@ -1319,8 +1319,14 @@ func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string)
 		if err != nil {
 			return err
 		}
-		_, err = expectResponse[apimodel.Sandbox](res)
-		return err
+		record, err := expectResponse[apimodel.Sandbox](res)
+		if err != nil {
+			return err
+		}
+		if !record.Runtime.SourceDeliveredAt.IsSet() && len(sandboxcreate.PendingSourcePushes(record)) > 0 {
+			return d.app.deliverBeforeAttach(ctx, d.client, d.projectID, sandboxID, nil, sandboxcreate.DeliveryOptions{ConfirmCredential: credentials.Confirm, RunCredential: credentials.Run})
+		}
+		return nil
 
 	case tui.VerbStop:
 		res, err := d.client.StopSandbox(ctx, &apimodel.StopSandboxBody{},

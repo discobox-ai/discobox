@@ -182,3 +182,7 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   image by name and bytes (`clipimage.ReadFile`), on a local drive — and never
   trusts the text that named it. A `file://` link's fragment, a `.png` symlink
   and a Windows share path all led somewhere else.
+
+- A remote's URL path is decoded text. Render it through `terminalSafe` in
+  credential consent, and reject controls before forming Git credential input:
+  a declared repository can percent-encode OSC or CSI sequences in its URL.

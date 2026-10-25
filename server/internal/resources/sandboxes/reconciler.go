@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
+
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
@@ -474,6 +476,14 @@ func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.
 		return secretState, err
 	}
 	createOpts.Start = start
+	if sb.SourceDeliveredAt == nil {
+		for _, delivery := range sb.SourceDeliveries {
+			if delivery.Status != sourcecache.Delivered {
+				createOpts.PullSources = true
+				break
+			}
+		}
+	}
 	if err := r.applyTrustKey(ctx, sb, &createOpts); err != nil {
 		return secretState, err
 	}
@@ -494,6 +504,26 @@ func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.
 	}
 	if runtimeSandbox != nil {
 		setProviderState(sb, runtimeSandbox)
+		if sb.SourceDeliveredAt == nil {
+			if sb.SourceDeliveries == nil {
+				sb.SourceDeliveries = map[string]sourcecache.Delivery{}
+			}
+			for slug, result := range runtimeSandbox.SourceDeliveries {
+				if sb.SourceDeliveries[slug].Status != sourcecache.Delivered {
+					sb.SourceDeliveries[slug] = result
+				}
+			}
+			all := true
+			for _, entry := range clientDeliveredSources(sb) {
+				if entry.source.Slug == nil || sb.SourceDeliveries[*entry.source.Slug].Status != sourcecache.Delivered {
+					all = false
+				}
+			}
+			if all && len(clientDeliveredSources(sb)) > 0 {
+				now := time.Now().UTC()
+				sb.SourceDeliveredAt = &now
+			}
+		}
 	}
 	return secretState, nil
 }

@@ -147,11 +147,11 @@ type CloneProgress struct {
 	Bytes int64
 }
 
-// publishSandboxProgress reports provisioning progress immediately, if a
+// PublishSandboxProgress reports provisioning progress immediately, if a
 // watcher is running. It is best-effort in the same way publishSandboxState is:
 // progress that nobody is listening for is dropped rather than queued, and the
 // complete sync remains the thing that makes the channel correct.
-func (r *DockerSandboxRuntime) publishSandboxProgress(ctx context.Context, observation SandboxProgressObservation) {
+func (r *DockerSandboxRuntime) PublishSandboxProgress(ctx context.Context, observation SandboxProgressObservation) {
 	publish, _ := r.progressPublisher.Load().(func(context.Context, SandboxProgressObservation) error)
 	if publish == nil || strings.TrimSpace(observation.SandboxID) == "" || strings.TrimSpace(observation.Phase) == "" {
 		return
@@ -170,7 +170,7 @@ func (r *DockerSandboxRuntime) publishSandboxProgress(ctx context.Context, obser
 // publishSandboxPullProgress reports the image pull, the one phase that can say
 // how far in it is.
 func (r *DockerSandboxRuntime) publishSandboxPullProgress(ctx context.Context, sandboxID string, pull PullProgress) {
-	r.publishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: PhasePullingImage, Pull: &pull})
+	r.PublishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: PhasePullingImage, Pull: &pull})
 }
 
 // publishSandboxCloneProgress reports the sandbox cloning a source. It is
@@ -178,13 +178,13 @@ func (r *DockerSandboxRuntime) publishSandboxPullProgress(ctx context.Context, s
 // remote that is still packing what it will send says nothing new for
 // seconds, and a phase a client sees go unrestated reads as over (ADR 0060).
 func (r *DockerSandboxRuntime) publishSandboxCloneProgress(ctx context.Context, sandboxID string, clone CloneProgress) {
-	r.publishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: PhaseMaterializingSource, Clone: &clone})
+	r.PublishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: PhaseMaterializingSource, Clone: &clone})
 }
 
 // publishSandboxPhase reports a phase with nothing measured. It is the call the
 // create path makes at each of its own boundaries.
 func (r *DockerSandboxRuntime) publishSandboxPhase(ctx context.Context, sandboxID, phase string) {
-	r.publishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: phase})
+	r.PublishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: phase})
 }
 
 // WatchSandboxProgress installs the progress sink for as long as ctx lives. It

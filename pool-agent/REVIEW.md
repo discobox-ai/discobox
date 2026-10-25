@@ -114,9 +114,11 @@ reasons.
 - **Mark a namespace before writing it** (`Receiving`, `markNamespace`). One
   with refs and no record is one the sweep cannot attribute, and so never
   removes.
-- **A cache is never shallow, and never fetches.** Do not add a path that runs
-  `git fetch` against a remote from the pool, or one that accepts a shallow
-  push.
+- **A cache is never shallow.** Pull full history and refuse shallow pushes.
+- **A pull pins only what its remote supplied in that request** (ADR 26-10-23-948).
+  An unadvertised commit must be fetched into an empty repository first:
+  fetching its ID into a cache that already holds it can succeed without
+  asking the remote for it, leaking another sandbox's private cached object.
 - An imported origin (`origins/<slug>.git` out of an archive) is untrusted
   down to its `config`. Never run git in it or fetch from its path: read its
   refs as files and lend its objects as an alternate
@@ -292,3 +294,7 @@ A feature's binary moves under its stable link without any step's definition
 moving, so nothing would restart what runs it: each feature's `restart` step
 names its binaries as `inputs`, and a new bundle restarts exactly what it
 changed. A step added that lays a binary needs it there too.
+
+- Bound incomplete Git stderr lines as well as completed error messages. A
+  forge controls sideband text; a line without a newline must not grow the
+  trusted pool process's memory without limit (`pkg/gitprogress.Writer`).

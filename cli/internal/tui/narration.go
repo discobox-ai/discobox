@@ -32,8 +32,10 @@ type narration struct {
 // narrationLine is one line of a feed: a step of the work, or a warning about
 // it, which is not a step and is not drawn as one (narrated).
 type narrationLine struct {
-	text    string
-	warning bool
+	question *credentialQuestion
+	process  *credentialProcess
+	text     string
+	warning  bool
 }
 
 // report delivers one step, dropping it when the window is not keeping up. The
@@ -58,9 +60,11 @@ func (n narration) close() { close(n.ch) }
 
 // narrationMsg is one line from a narrated operation.
 type narrationMsg struct {
-	source  narration
-	text    string
-	warning bool
+	question *credentialQuestion
+	process  *credentialProcess
+	source   narration
+	text     string
+	warning  bool
 }
 
 // narrationCapacity is how many reports may be in flight. Two would do — the
@@ -90,12 +94,24 @@ func (m *Model) nextNarration(feed narration) tea.Cmd {
 			// nothing to re-arm, which is also what stops this goroutine.
 			return nil
 		}
-		return narrationMsg{source: feed, text: line.text, warning: line.warning}
+		return narrationMsg{source: feed, text: line.text, warning: line.warning, question: line.question, process: line.process}
 	})
 }
 
 // narrated reports one line, and asks for the next.
 func (m *Model) narrated(msg narrationMsg) tea.Cmd {
+	if msg.question != nil {
+		return m.credentialQuestion(msg)
+	}
+	if msg.process != nil {
+		process := msg.process
+		if msg.source.gen != m.busyGen {
+			process.answer <- context.Canceled
+			return m.nextNarration(msg.source)
+		}
+		return tea.Batch(tea.ExecProcess(process.command, func(err error) tea.Msg { process.answer <- err; return nil }), m.nextNarration(msg.source))
+	}
+
 	// A warning is not a step of the wait, and the next step would replace it
 	// on the busy line before anyone read it: uncommitted changes left out of
 	// the discobox, a repository settings file the create could not read all

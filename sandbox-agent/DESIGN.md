@@ -1232,3 +1232,6 @@ sentinels, then explicit request overrides. The harness's file-delivered
 credentials are excluded from automatic export; the file installer retains
 the complete sentinel map for rendering. Existing processes keep their inherited
 environment. Agent-requested credentials do not enter the delivered map.
+
+Git clone meters are parsed by the shared `pkg/gitprogress` package, also used
+by pool pulls. Source convergence keeps ownership of clone state and reporting.

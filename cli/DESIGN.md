@@ -2288,9 +2288,19 @@ up yet. Sources are delivered together. A discobox created before pools cached
 Git can hold a `delivery: push` source, whose repository is made with the
 sandbox; that one still waits for `awaiting_source` before it is pushed.
 
-Every source is delivered before any of them is reported: the sandbox starts on
-that one report, keyed by source slug, and starting it earlier would run the
-harness against a workspace still missing a source.
+The pool also tries each remote anonymously over HTTPS while creating the
+sandbox (ADR 26-10-23-948). A client already holding the commit pushes at once.
+Otherwise it waits for the recorded result: a delivered source needs nothing;
+a failed pull falls back to the client fetch and push. For `needs_credential`,
+`DeliveryOptions` carries consent from an inline or console question, or the explicit
+`run --lend-git-credentials` flag. Only then does `git credential fill` run;
+a successful pull approves the credential, an authentication failure rejects
+it. Interactive consent and Git prompting are serialized across sources;
+the console's narration feed carries the question and hands terminal ownership
+to Git with Bubble Tea's `ExecProcess`. The same UI reaches later attach/start
+and push delivery. Sandbox clients always fetch and push. With no consent,
+nothing is lent.
+Source completion is per slug; the server starts only after all sources arrive.
 
 A local source is delivered out of the `sandboxcreate.LocalSources` that create
 returned, not out of a repository re-resolved from the source argument. For a directory with
@@ -2361,7 +2371,7 @@ each source's recorded `localDirectory` (or a `--dir` override, as `apply` and a
 rebase-time push resolve it).
 
 Every source is resolved and checked before any of them is pushed
-(`CheckDeliverable`), because the discobox resumes on one report covering all of
+(`CheckDeliverable`), because the discobox resumes only after delivery of all of
 them: a delivery that cannot finish must not leave half of itself in an origin.
 Three things make one impossible, and each is refused by name — the commit is
 gone from the local repository, the workspace snapshot ref is gone, or the

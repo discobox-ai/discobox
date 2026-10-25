@@ -13,7 +13,10 @@ sets off — seeding the built-in harnesses onto it, resolving the platform
 again — is the services', which the set notifies (`OnBuilt`).
 
 Providers own runtime mechanics only; services own persistence, authorization,
-orchestration, and API shape.
+orchestration, and API shape. `Provider.PullSource` forwards one immutable
+source description and a request-scoped credential through the generated pool
+client. The sandbox service records the returned delivery; the provider never
+persists the credential (ADR 26-10-23-948).
 
 A pool is its own runtime host (ADR-0006): a VM, a Docker host, or (later) a pod
 runs the pool-agent container, and the pool's sandboxes run beside it on the

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -69,12 +70,14 @@ var clientGitCacheRoot = func() (string, error) {
 
 // cacheDelivery is where a delivery goes and as whom.
 type cacheDelivery struct {
-	client    sourceDeliveryClient
-	serverURL string
-	projectID string
-	sandboxID string
-	token     string
-	report    Report
+	client       sourceDeliveryClient
+	serverURL    string
+	projectID    string
+	sandboxID    string
+	token        string
+	report       Report
+	options      DeliveryOptions
+	credentialUI *sync.Mutex
 }
 
 // deliveredToCache reports whether a source is delivered into its pool's
@@ -203,9 +206,34 @@ func (d cacheDelivery) deliverLocal(ctx context.Context, source apimodel.GitSour
 // of a pool that never fetches and never holds a credential, and it is paid
 // once per remote per pool.
 func (d cacheDelivery) deliverRemote(ctx context.Context, source apimodel.GitSource, slug, remote, originURL, commit, branch string) error {
-	listed, peeled, err := listRemote(ctx, remote)
+	cachePath, err := clientCachePath(remote)
 	if err != nil {
-		return fmt.Errorf("list the refs of source %q at %s: %w", slug, remote, err)
+		return err
+	}
+	tipFromCache, heldErr := gitutil.Output(ctx, cachePath, nil, nil, "rev-parse", "--verify", "--quiet", commit+"^{commit}")
+	held := heldErr == nil && tipFromCache != ""
+	var listed map[string]string
+	var peeled map[string]string
+	if held {
+		listed = map[string]string{}
+		peeled = map[string]string{commit: strings.TrimSpace(tipFromCache)}
+		for _, prefix := range []string{remoteTrackingPrefix, "refs/tags/"} {
+			refs, err := refsUnder(ctx, cachePath, prefix)
+			if err != nil {
+				return err
+			}
+			for name, object := range refs {
+				listed[prefix+name] = object
+			}
+		}
+	} else {
+		if done, err := d.waitForPull(ctx, slug, remote, commit); err != nil || done {
+			return err
+		}
+		listed, peeled, err = listRemote(ctx, remote)
+		if err != nil {
+			return fmt.Errorf("list the refs of source %q at %s: %w", slug, remote, err)
+		}
 	}
 	// A source pinned at an annotated tag names the tag; a branch holds the
 	// commit it peels to.
@@ -233,7 +261,7 @@ func (d cacheDelivery) deliverRemote(ctx context.Context, source apimodel.GitSou
 	if err != nil {
 		return err
 	}
-	if !fetched {
+	if !fetched && !held {
 		d.report.step(StepFetchingSource)
 		// What the pool already has, when it will say: a project member's to
 		// fetch and not a sandbox's, and worth nothing but bytes saved, so a
@@ -491,7 +519,7 @@ func listRemote(ctx context.Context, remote string) (refs, peeled map[string]str
 
 // clientCache is this client's bare repository for remote, made if it is not
 // there.
-func clientCache(ctx context.Context, remote string) (string, error) {
+func clientCachePath(remote string) (string, error) {
 	root, err := clientGitCacheRoot()
 	if err != nil {
 		return "", err
@@ -501,7 +529,15 @@ func clientCache(ctx context.Context, remote string) (string, error) {
 		name = strings.TrimSpace(remote)
 	}
 	sum := sha256.Sum256([]byte(name))
-	path := filepath.Join(root, hex.EncodeToString(sum[:16])+".git")
+	return filepath.Join(root, hex.EncodeToString(sum[:16])+".git"), nil
+}
+
+func clientCache(ctx context.Context, remote string) (string, error) {
+	path, err := clientCachePath(remote)
+	if err != nil {
+		return "", err
+	}
+	root := filepath.Dir(path)
 	if _, err := os.Stat(filepath.Join(path, "HEAD")); err == nil {
 		return path, nil
 	}

@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
+
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
@@ -722,4 +724,8 @@ func (*recordingSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRe
 
 func (*recordingSandboxProvider) ImportTree(_ context.Context, _ sandboxes.SandboxRef, poolID string, _ platform.Platform, _ io.Reader) (string, error) {
 	return poolID, nil
+}
+
+func (p *recordingSandboxProvider) PullSource(context.Context, sandboxes.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
+	panic("unexpected source pull")
 }
