@@ -298,3 +298,7 @@ changed. A step added that lays a binary needs it there too.
 - Bound incomplete Git stderr lines as well as completed error messages. A
   forge controls sideband text; a line without a newline must not grow the
   trusted pool process's memory without limit (`pkg/gitprogress.Writer`).
+
+- When classifying Git HTTP authentication from a trace, keep the trace on a
+  bounded, drained pipe with data disabled and redaction enabled. Never send
+  it to stderr or a file: a lent request may carry real credentials.
