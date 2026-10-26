@@ -25,10 +25,10 @@ func TestDeclaredServicesWaitForTheSources(t *testing.T) {
 	go func() {
 		defer close(done)
 		startDeclaredServices(context.Background(), quietLogger(),
-			[]func(context.Context) error{func(context.Context) error {
+			func(context.Context) error {
 				<-released
 				return nil
-			}, nil},
+			},
 			func(context.Context, *slog.Logger) error {
 				started.Store(true)
 				return nil
@@ -62,12 +62,12 @@ func TestDeclaredServicesStartWithNoGate(t *testing.T) {
 }
 
 // A wait that ends because the agent is shutting down, or failed, is not a
-// start: provisioning's readiness is a gate as the sources are.
+// start: failed source delivery must never launch services.
 func TestDeclaredServicesDoNotStartWhenTheWaitFails(t *testing.T) {
 	for _, waitErr := range []error{context.Canceled, errors.New("watch failed")} {
 		var started atomic.Bool
 		startDeclaredServices(context.Background(), quietLogger(),
-			[]func(context.Context) error{nil, func(context.Context) error { return waitErr }},
+			func(context.Context) error { return waitErr },
 			func(context.Context, *slog.Logger) error {
 				started.Store(true)
 				return nil

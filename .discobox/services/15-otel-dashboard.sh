@@ -1,5 +1,6 @@
 #!/bin/bash
 #---
+# features: [docker]
 # name: OTEL Metrics Dashboard
 # description: Runs the Aspire Dashboard OTLP receiver and metrics UI on port 18888
 # ports: 18888

@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -46,7 +49,9 @@ func newFakeUnits(t *testing.T) *fakeUnits {
 }
 
 func (f *fakeUnits) Start(_ context.Context, req execs.StartRequest) (execs.StartResult, error) {
+	f.mu.Lock()
 	f.starts = append(f.starts, req)
+	f.mu.Unlock()
 	// The record the shim publishes starts from the one the exec layer wrote
 	// before launching, so identity and metadata are the real ones.
 	record := readExecRecord(req.RuntimePath)
@@ -77,8 +82,8 @@ func (f *fakeUnits) Start(_ context.Context, req execs.StartRequest) (execs.Star
 }
 
 func (f *fakeUnits) Stop(_ context.Context, unit string) error {
-	f.stops = append(f.stops, unit)
 	f.mu.Lock()
+	f.stops = append(f.stops, unit)
 	defer f.mu.Unlock()
 	if shim, ok := f.shims[unit]; ok {
 		shim.close()
@@ -708,5 +713,262 @@ func TestAnImageDeclarationOfAFeatureTurnedOffIsNotRead(t *testing.T) {
 		if declaration.Port == 6900 {
 			t.Errorf("the desktop's port is declared: %+v", declaration)
 		}
+	}
+}
+
+func TestServiceWaitsDoNotSerializeBootLaunches(t *testing.T) {
+	manager, _, root := newTestManager(t)
+	writeService(t, root, "10-all.sh", "#!/bin/sh\n#---\n# name: API\n#---\ntrue\n", 0o755)
+	writeService(t, root, "20-selected.sh", "#!/bin/sh\n#---\n# features: [go]\n#---\ntrue\n", 0o755)
+	allWaiting := make(chan struct{})
+	var allWaitingOnce sync.Once
+	selectedWaiting := make(chan struct{})
+	release := make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	manager.awaitFeatures = func(ctx context.Context, features []string) error {
+		if len(features) != 0 {
+			if !slices.Equal(features, []string{"go"}) {
+				return fmt.Errorf("dependencies: %v", features)
+			}
+			close(selectedWaiting)
+			return nil
+		}
+		allWaitingOnce.Do(func() { close(allWaiting) })
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-release:
+			return nil
+		}
+	}
+	done := make(chan error, 1)
+	go func() { done <- manager.EnsureStarted(ctx, nil) }()
+	for _, gate := range []chan struct{}{allWaiting, selectedWaiting} {
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	}
+	for {
+		service, err := manager.Get("selected")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if service.Status == StatusRunning {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(time.Millisecond):
+		}
+	}
+	service, err := manager.Get("all")
+	if err != nil || service.ExecID != "" {
+		t.Fatalf("started before provisioning: %+v, %v", service, err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	service, err = manager.Get("all")
+	if err != nil || service.Status != StatusRunning {
+		t.Fatalf("after provisioning: %+v, %v", service, err)
+	}
+}
+
+func TestFailedProvisioningPreventsServiceLaunchAndPreservesRunningService(t *testing.T) {
+	manager, units, root := newTestManager(t)
+	writeService(t, root, "api.sh", "#!/bin/sh\n#---\n# name: API\n#---\ntrue\n", 0o755)
+	failure := errors.New("docker failed (log: /logs/docker)")
+	manager.awaitFeatures = func(context.Context, []string) error { return failure }
+	if _, err := manager.Start(context.Background(), "api"); !errors.Is(err, failure) {
+		t.Fatalf("start: %v", err)
+	}
+	if len(units.starts) != 0 {
+		t.Fatal("launched before provisioning")
+	}
+	manager.awaitFeatures = nil
+	started, err := manager.Start(context.Background(), "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.awaitFeatures = func(context.Context, []string) error { return failure }
+	if service, err := manager.Start(context.Background(), "api"); err != nil || service.ExecID != started.ExecID {
+		t.Fatalf("live start: %+v, %v", service, err)
+	}
+	if _, err := manager.Restart(context.Background(), "api"); !errors.Is(err, failure) {
+		t.Fatalf("restart: %v", err)
+	}
+	if len(units.stops) != 0 || len(units.starts) != 1 {
+		t.Fatal("failed restart interrupted running service")
+	}
+}
+
+func TestProvisioningWaitDoesNotBlockStopOrCanceledRequests(t *testing.T) {
+	for _, operation := range []string{"start", "restart"} {
+		t.Run(operation, func(t *testing.T) {
+			manager, _, root := newTestManager(t)
+			writeService(t, root, "api.sh", apiScript, 0o755)
+			if operation == "restart" {
+				if _, err := manager.Start(context.Background(), "api"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			waiting := make(chan struct{}, 2)
+			manager.awaitFeatures = func(ctx context.Context, _ []string) error {
+				waiting <- struct{}{}
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				var err error
+				if operation == "restart" {
+					_, err = manager.Restart(ctx, "api")
+				} else {
+					_, err = manager.Start(ctx, "api")
+				}
+				done <- err
+			}()
+			select {
+			case <-waiting:
+			case <-time.After(time.Second):
+				t.Fatal("launch never waited")
+			}
+			stopped := make(chan error, 1)
+			go func() { _, err := manager.Stop(context.Background(), "api"); stopped <- err }()
+			select {
+			case err := <-stopped:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("provisioning wait blocked Stop")
+			}
+			canceled, stop := context.WithCancel(context.Background())
+			stop()
+			request := make(chan error, 1)
+			go func() { _, err := manager.Start(canceled, "api"); request <- err }()
+			select {
+			case err := <-request:
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("canceled start: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("canceled request blocked behind provisioning")
+			}
+			cancel()
+			if err := <-done; !errors.Is(err, context.Canceled) {
+				t.Fatalf("waiting launch: %v", err)
+			}
+		})
+	}
+}
+
+func TestBootDiscoversImageServicesInstalledDuringProvisioning(t *testing.T) {
+	manager, units, root := newTestManager(t)
+	writeService(t, root, "early.sh", "#!/bin/sh\n#---\n# features: [core]\n#---\ntrue\n", 0o755)
+	waiting := make(chan struct{})
+	release := make(chan struct{})
+	manager.awaitFeatures = func(ctx context.Context, features []string) error {
+		if len(features) != 0 {
+			return nil
+		}
+		close(waiting)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-release:
+			return errors.New("an unrelated async feature failed")
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- manager.EnsureStarted(ctx, nil) }()
+	select {
+	case <-waiting:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	for {
+		service, err := manager.Get("early")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if service.Status == StatusRunning {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(time.Millisecond):
+		}
+	}
+	// Only an image declaration installed during provisioning may join this
+	// boot's launch set. A new repository declaration waits for the next boot.
+	script := "#!/bin/sh\n#---\n# features: [core]\n#---\ntrue\n"
+	if err := os.WriteFile(filepath.Join(manager.builtinDir, "late-image.sh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeService(t, root, "late-project.sh", script, 0o755)
+	// A repository override remains authoritative on the second discovery.
+	writeService(t, root, "shadow.sh", script, 0o755)
+	if err := os.WriteFile(filepath.Join(manager.builtinDir, "shadow.sh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]Status{"early": StatusRunning, "late-image": StatusRunning, "late-project": StatusStopped, "shadow": StatusStopped} {
+		service, err := manager.Get(id)
+		if err != nil || service.Status != want {
+			t.Errorf("%s: %+v, %v; want %s", id, service, err, want)
+		}
+	}
+	if len(units.starts) != 2 {
+		t.Fatalf("starts = %d, want early project plus late image", len(units.starts))
+	}
+}
+
+func TestProvisioningWaitRechecksBuiltinOwner(t *testing.T) {
+	for _, operation := range []string{"start", "restart"} {
+		t.Run(operation, func(t *testing.T) {
+			manager, units, _ := newTestManager(t)
+			script := "#!/bin/sh\n#---\n# feature: desktop\n#---\ntrue\n"
+			if err := os.WriteFile(filepath.Join(manager.builtinDir, "desktop.sh"), []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			var off atomic.Bool
+			manager.featureOff = func(feature string) bool { return feature == "desktop" && off.Load() }
+			if operation == "restart" {
+				if _, err := manager.Start(context.Background(), "desktop"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			starts := len(units.starts)
+			manager.awaitFeatures = func(context.Context, []string) error {
+				off.Store(true)
+				return nil
+			}
+			var err error
+			if operation == "restart" {
+				_, err = manager.Restart(context.Background(), "desktop")
+			} else {
+				_, err = manager.Start(context.Background(), "desktop")
+			}
+			if !errors.Is(err, ErrNotFound) {
+				t.Fatalf("%s after owner disabled: %v", operation, err)
+			}
+			if len(units.starts) != starts || len(units.stops) != 0 {
+				t.Fatal("disabled builtin was launched or its existing run stopped")
+			}
+		})
 	}
 }

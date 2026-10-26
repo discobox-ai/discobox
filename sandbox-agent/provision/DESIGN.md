@@ -137,8 +137,12 @@ provisioned fresh on purpose. `snapshot` is not part of a step's digest
 ## Its state
 
 `Tracker` holds the document, replaces `provision.json` whole on each change,
-and is what the agent's readiness gates (`terminal`'s `AwaitProvision`, the
-declared services) and status report read. Each feature's steps write to
+and is what the agent's gates and status report read. Terminals use
+`AwaitReady`; declared services use `AwaitFeatures`, waiting for either their
+named features or, by default, the full run, including async features. Status
+updates wake feature waiters without polling. A required feature's failure or
+explicit opt-out prevents launch; the default ignores opt-outs. Each feature's
+steps write to
 `/var/log/discobox/provision/<feature>.log`.
 
 ## Placeholders

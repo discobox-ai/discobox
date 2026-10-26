@@ -70,6 +70,8 @@ const (
 // appear is indistinguishable from one nobody declared, and the usual cause —
 // a missing executable bit — is invisible in an editor.
 type Definition struct {
+	// Features names provisioning dependencies. Empty waits for all features.
+	Features []string
 	// ID is the identity every command addresses a service by. It is derived
 	// from the filename — `10-discobox-api.sh` is `discobox-api` — unless the
 	// declaration names one with `id:`.
@@ -218,6 +220,9 @@ func definition(file declared.File) Definition {
 		return def
 	}
 	fields := file.Fields
+	for _, field := range fields.Strings("features") {
+		def.Features = append(def.Features, strings.FieldsFunc(field, isPortSeparator)...)
+	}
 	ports, err := parsePorts(fields)
 	if err != nil {
 		def.Problem = "front matter: " + err.Error()
