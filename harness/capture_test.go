@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
@@ -39,6 +40,9 @@ func TestBuiltInCaptureProtocol(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {
+			if runtime.GOOS == "windows" && (tc.id == "omp" || tc.id == "opencode") {
+				t.Skip("native export fixture requires POSIX executable scripts")
+			}
 			home := t.TempDir()
 			write := func(name, body string, mode os.FileMode) {
 				t.Helper()

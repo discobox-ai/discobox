@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -82,7 +83,7 @@ func TestCaptureUsesDeliveredBaselineAndPersistsCandidate(t *testing.T) {
 		t.Fatal("candidate changed across persistence")
 	}
 	info, _ := os.Stat(s.capture.path)
-	if info.Mode().Perm() != 0600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatalf("private state mode %v", info.Mode())
 	}
 	p2, _ := s.HarnessConfigChanges(ctx)
@@ -847,6 +848,9 @@ func TestSentinelHistoryExhaustionFailsProtected(t *testing.T) {
 }
 
 func TestCaptureCommandUsesLiveSecretEnvironment(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("capture manifests use POSIX executable paths and the sandbox's Unix process runner")
+	}
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is required for the capture process regression")

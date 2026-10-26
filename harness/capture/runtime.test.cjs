@@ -423,7 +423,10 @@ fs.writeFileSync(file,JSON.stringify(doc));
     process.env.PATH = old;
   };
 }
-test("native DB capture and handoff use exports/imports; launch guard preserves local login", () => {
+test("native DB capture and handoff use exports/imports; launch guard preserves local login", {
+  skip: process.platform !== "linux" &&
+    "Native handoff requires Linux /proc and POSIX executable stubs",
+}, () => {
   for (const id of ["omp", "opencode"]) {
     const f = fixture(id),
       provider = id === "omp" ? "anthropic" : "openai";
@@ -512,7 +515,10 @@ test("Codex captures edits from actual rendered bundle config and retains portab
     f.close();
   }
 });
-test("OpenCode retries logout/import midpoint and restores captured active account", () => {
+test("OpenCode retries logout/import midpoint and restores captured active account", {
+  skip: process.platform !== "linux" &&
+    "Native handoff requires Linux /proc and POSIX executable stubs",
+}, () => {
   const f = fixture("opencode");
   const restore = nativeStub(f, "opencode", [
     {
@@ -568,7 +574,10 @@ test("OpenCode retries logout/import midpoint and restores captured active accou
     f.close();
   }
 });
-test("OpenCode midpoint retry preserves a newer local account instead of switching over it", () => {
+test("OpenCode midpoint retry preserves a newer local account instead of switching over it", {
+  skip: process.platform !== "linux" &&
+    "Native handoff requires Linux /proc and POSIX executable stubs",
+}, () => {
   const f = fixture("opencode");
   const restore = nativeStub(f, "opencode", [
     {
@@ -795,7 +804,10 @@ test("reminted file sentinel remains a keep binding until ordinary repair delive
     f.close();
   }
 });
-test("native DB export recognizes an old sentinel alias and still captures a subsequent real login", () => {
+test("native DB export recognizes an old sentinel alias and still captures a subsequent real login", {
+  skip: process.platform === "win32" &&
+    "Native export fixture requires POSIX executable stubs",
+}, () => {
   const f = fixture("opencode"),
     name = "OPENCODE_OPENAI_CREDENTIAL";
   const restore = nativeStub(f, "opencode", [
@@ -863,7 +875,10 @@ test("prior alias from another binding cannot become a secret or keep the wrong 
   }
 });
 
-test("launcher-only context lets a reminted delivery replace old DB sentinels without trusting it for capture", () => {
+test("launcher-only context lets a reminted delivery replace old DB sentinels without trusting it for capture", {
+  skip: process.platform !== "linux" &&
+    "Native handoff requires Linux /proc and POSIX executable stubs",
+}, () => {
   const f = fixture("opencode"),
     name = "OPENCODE_OPENAI_CREDENTIAL";
   const row = (key) => ({
