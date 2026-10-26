@@ -40,6 +40,45 @@ func TestPromptComposerLongPasteAndResize(t *testing.T) {
 	}
 }
 
+func TestPromptComposerGrowsInline(t *testing.T) {
+	m := newPromptComposer(t.Context())
+	m.Init()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if m.text.Height() != 2 || m.View().AltScreen {
+		t.Fatal("composer must start inline with two rows")
+	}
+	m.Update(tea.PasteMsg{Content: "first\nsecond\nthird\nfourth"})
+	if m.text.Height() != 4 {
+		t.Fatalf("height = %d, want 4", m.text.Height())
+	}
+	m.Update(keyPress("ctrl+home"))
+	m.Update(keyPress("ctrl+k"))
+	// A long paste must scroll without truncation even after the viewport caps.
+	want := strings.Repeat("line\n", 200)
+	m.text.Reset()
+	m.Update(tea.PasteMsg{Content: want})
+	if m.text.Height() != 19 || m.text.Value() != want {
+		t.Fatalf("capped height = %d, content bytes = %d", m.text.Height(), len(m.text.Value()))
+	}
+	m.Update(tea.WindowSizeMsg{Width: 40, Height: 12})
+	if m.text.Height() != 7 || m.text.Value() != want {
+		t.Fatal("resizing must cap the viewport without losing text")
+	}
+	m.text.Reset()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if m.text.Height() != 2 {
+		t.Fatalf("empty composer did not shrink: height = %d", m.text.Height())
+	}
+	m.Update(tea.PasteMsg{Content: strings.Repeat("word ", 50)})
+	if m.text.Height() <= 2 {
+		t.Fatal("soft wrapping must grow the field")
+	}
+	m.Update(keyPress("ctrl+d"))
+	if m.View().Content != "" {
+		t.Fatal("leaving the composer must clear its rows")
+	}
+}
+
 func TestPromptComposerExternalEdit(t *testing.T) {
 	m := newPromptComposer(t.Context())
 	path := filepath.Join(t.TempDir(), "prompt.md")

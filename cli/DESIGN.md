@@ -107,7 +107,7 @@ transport helpers where OpenAPI does not model the stream.
   [ADR 26-09-25-027](../docs/adr/26-09-25-027-only-new-makes-a-discobox.md),
   written when the command was `new`.
 - **An entire prompt of `-` is composed before creation.** With terminal
-  stdin, `tui.ComposePrompt` opens a multiline field on stderr (also for
+  stdin, `tui.ComposePrompt` opens an inline multiline field on stderr (also for
   `-d` and `--raw`): Enter adds a newline, Ctrl-D submits, Esc/Ctrl-C cancels,
   and Alt-E uses the console's external editor round trip. With nonterminal
   stdin, the prompt is read verbatim as one argument, retaining newlines.
@@ -115,6 +115,8 @@ transport helpers where OpenAPI does not model the stream.
   other prompt words and JSON request prompts remain literal.
   Esc confirms before discarding any nonempty buffer; `y` discards, `n` or
   Esc returns to editing. Ctrl-C cancels directly.
+  The field starts at two rows, grows with wrapped content up to the terminal
+  height, then scrolls; leaving the composer removes its rows.
 - **The interactive window is `console`.** It was `tui` first, so `tui` is
   registered a second time, hidden (`newConsoleCommand` takes the spelling):
   not an alias, since cobra prints aliases in help and `tui` is not taught.
