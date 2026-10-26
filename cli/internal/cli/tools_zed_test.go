@@ -139,7 +139,7 @@ func TestToolsZedFailsBeforeWritingWhenNoEditorIsInstalled(t *testing.T) {
 func TestToolsZedHonorsTheNamedEditor(t *testing.T) {
 	record := fakeZed(t)
 	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(),
-		"sbx_devbox00000001", "--program", "zed"); err != nil {
+		"--program", "zed", "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools zed: %v", err)
 	}
 	if args := editorArgs(t, record); len(args) == 0 {
@@ -147,7 +147,7 @@ func TestToolsZedHonorsTheNamedEditor(t *testing.T) {
 	}
 
 	if _, _, _, err := runToolsZedCmd(t, vscodeFakeServer(),
-		"sbx_devbox00000001", "--program", "not-an-editor"); err == nil {
+		"--program", "not-an-editor", "sbx_devbox00000001"); err == nil {
 		t.Fatal("expected an editor that is not installed to fail")
 	}
 }

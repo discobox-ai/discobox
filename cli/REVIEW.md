@@ -99,7 +99,7 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   what an argument looks like.** `run`'s first argument is SOURCE unless
   `--no-source` is given; a SOURCE that does not resolve is an error naming
   the form that works, not a guess that it was a prompt. Only zero arguments
-  open a picker. A command that runs a command reads `[DISCOBOX] [-- ARG...]`
+  open a picker. A command that runs a command reads `[DISCOBOX] [--] [ARG...]`
   through `splitDiscoboxCommand`; one that parses no flags (`tools ssh`) has
   to say what a leading `-` means itself, since nothing stops it reaching
   DISCOBOX.
@@ -137,6 +137,10 @@ enforces the ones a tree walk can see. These are the ones it cannot:
     about `discobox-access request --json`, which kept its name;
   - format strings, as `%d new keys` became `%d run keys` in a test's failure
     message.
+
+- **Changing where flag parsing stops requires auditing argv producers.**
+  Scripts and console launchers must put CLI flags before DISCOBOX; otherwise
+  those flags become the remote command. Check callers outside Go tests too.
 
 ## Handing the sandbox's paths to host tools
 

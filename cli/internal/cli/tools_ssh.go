@@ -9,7 +9,7 @@ import (
 
 func (a *App) newToolsSSHCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "ssh [DISCOBOX] [-- SSH_ARG...]",
+		Use:   "ssh [DISCOBOX] [--] [SSH_ARG...]",
 		Short: "Open an SSH session to a discobox",
 		Long: `Open an SSH session to a discobox, over the connection this CLI already has.
 
@@ -20,7 +20,8 @@ ssh_config. The key is the one exception — it is
 enrolled in the project, and reused rather than replaced on later runs.
 
 DISCOBOX is the NAME "discobox ls" prints, an ID, or a short prefix of one;
-without it the only discobox there is, or a pick. Everything after -- is passed
+without it the only discobox there is, or a pick. Arguments after DISCOBOX,
+with an optional -- separator, are passed
 to ssh untouched, its options and then the remote command, as ssh reads them.`,
 		Example: `  discobox tools ssh
   discobox tools ssh mybox

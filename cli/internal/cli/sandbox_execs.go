@@ -67,7 +67,7 @@ func (a *App) newSandboxExecCommand() *cobra.Command {
 func (a *App) newSandboxExecCreateCommand() *cobra.Command {
 	var opts sandboxExecCreateOptions
 	cmd := &cobra.Command{
-		Use:               "create [DISCOBOX] [flags] [-- COMMAND [ARG...]]",
+		Use:               "create [flags] [DISCOBOX] [--] [COMMAND [ARG...]]",
 		Short:             "Create a discobox exec",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: a.completeSandboxes,
@@ -77,7 +77,7 @@ func (a *App) newSandboxExecCreateCommand() *cobra.Command {
 				return err
 			}
 			if len(command) == 0 && !opts.shell {
-				return fmt.Errorf("the command goes after --, as in %s DISCOBOX -- COMMAND, unless --shell is set", cmd.CommandPath())
+				return fmt.Errorf("a command is required, as in %s DISCOBOX COMMAND, unless --shell is set", cmd.CommandPath())
 			}
 			body, err := createSandboxExecBody(opts, command)
 			if err != nil {
@@ -100,6 +100,7 @@ func (a *App) newSandboxExecCreateCommand() *cobra.Command {
 			return a.returnSandboxExecStatus(cmd.Context(), projectID, resolvedSandboxID, exec.ID)
 		},
 	}
+	cmd.Flags().SetInterspersed(false)
 	cmd.Flags().StringVar(&opts.workdir, "workdir", "", "Working directory inside the discobox")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
 	cmd.Flags().StringVar(&opts.user, "user", "", "User name or UID[:GID] to run as inside the discobox")
