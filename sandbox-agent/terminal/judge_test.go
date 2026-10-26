@@ -54,7 +54,6 @@ func newJudgeService(t *testing.T, mode, wrapper string) *Service {
 		Execs:       execManager,
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),
-		Env:         env,
 		Harness:     config.Harness{ID: "claude-code", Command: []string{"/usr/local/bin/claude"}},
 		HarnessMode: mode,
 		Units:       units,

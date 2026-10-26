@@ -1222,3 +1222,13 @@ but promises no conversation transfer. Exec responses and session status expose
 `currentHarnessId` from the sandbox's resolved harness separately from the
 historical `harnessId`. Revival uses that resolved harness; the provisioning
 readiness gate still holds its launch until its required features are ready.
+
+## Execution secret environment
+
+`execs.Manager.Environment` owns the environment shared by plain commands,
+login shells, harness terminals, relaunches, and one-shot executions. It reads
+the live sentinel map for each execution: base environment, then secret
+sentinels, then explicit request overrides. The harness's file-delivered
+credentials are excluded from automatic export; the file installer retains
+the complete sentinel map for rendering. Existing processes keep their inherited
+environment. Agent-requested credentials do not enter the delivered map.

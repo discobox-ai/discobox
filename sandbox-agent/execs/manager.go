@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -258,6 +259,8 @@ type Manager struct {
 	runtimeDir     string
 	databasePath   string
 	env            map[string]string
+	secretEnv      func() map[string]string
+	fileSecrets    []string
 	units          UnitManager
 	audit          AuditRecorder
 	logs           LogSink
@@ -307,9 +310,13 @@ type ManagerConfig struct {
 	// to the same sqlite file to write log chunks (see LogSink).
 	DatabasePath string
 	Env          map[string]string
-	Units        UnitManager
-	Audit        AuditRecorder
-	Logs         LogSink
+	// SecretEnv reads the live env-name to sentinel map for each execution.
+	SecretEnv func() map[string]string
+	// FileSecrets are delivered through harness files, never automatically exported.
+	FileSecrets []string
+	Units       UnitManager
+	Audit       AuditRecorder
+	Logs        LogSink
 }
 
 func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
@@ -337,6 +344,8 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 		runtimeDir:     runtimeDir,
 		databasePath:   strings.TrimSpace(cfg.DatabasePath),
 		env:            cloneMap(cfg.Env),
+		secretEnv:      cfg.SecretEnv,
+		fileSecrets:    append([]string(nil), cfg.FileSecrets...),
 		units:          units,
 		audit:          cfg.Audit,
 		logs:           cfg.Logs,
@@ -344,9 +353,26 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 	}, nil
 }
 
+// Environment resolves the common execution environment. Live secret sentinels
+// override the base environment; explicit request variables override both.
+// File-delivered credentials remain available to file templates only.
+func (m *Manager) Environment(override map[string]string, user *User) map[string]string {
+	base := m.env
+	if m.secretEnv != nil {
+		secrets := m.secretEnv()
+		exported := make(map[string]string, len(secrets))
+		for name, sentinel := range secrets {
+			if !slices.Contains(m.fileSecrets, name) {
+				exported[name] = sentinel
+			}
+		}
+		base = MergeEnv(base, exported)
+	}
+	return EnvWithRuntimeDefaults(MergeEnv(base, override), user)
+}
+
 // MergeEnv overlays override on base, returning nil when both are empty. It is
-// exported so the terminal layer can compute the same effective environment the
-// exec will run with (e.g. to pass to the harness installer) before creation.
+// exported for callers overlaying explicit environment variables.
 func MergeEnv(base, override map[string]string) map[string]string {
 	if len(base) == 0 && len(override) == 0 {
 		return nil
@@ -453,7 +479,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 	if err != nil {
 		return Exec{}, err
 	}
-	env := EnvWithRuntimeDefaults(MergeEnv(m.env, req.Env), user)
+	env := m.Environment(req.Env, user)
 	// The workdir is resolved after the run user and env, because `~` expands
 	// against the home directory of the identity the exec actually runs as.
 	workdir, err := m.resolveWorkdir(req.Workdir, HomeDir(user, env))
@@ -855,7 +881,7 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 	if err != nil {
 		return Exec{}, err
 	}
-	env := EnvWithRuntimeDefaults(MergeEnv(m.env, req.Env), user)
+	env := m.Environment(req.Env, user)
 	// Fence the previous run: the shim outlives its command to serve replay,
 	// and it holds the socket path the new generation must bind. Only an ended
 	// run is ever fenced — the status switch above returns live ones untouched.
@@ -1053,7 +1079,7 @@ func (m *Manager) DefaultWorkdir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	env := EnvWithRuntimeDefaults(m.env, user)
+	env := m.Environment(nil, user)
 	return m.resolveWorkdir("", HomeDir(user, env))
 }
 
@@ -1071,7 +1097,7 @@ func (m *Manager) SourceRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	env := EnvWithRuntimeDefaults(m.env, user)
+	env := m.Environment(nil, user)
 	return m.resolveWorkdir(m.sourceRoot, HomeDir(user, env))
 }
 

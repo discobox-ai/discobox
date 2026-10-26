@@ -32,7 +32,6 @@ func newHarnesslessService(t *testing.T) *Service {
 		Execs:       execManager,
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),
-		Env:         map[string]string{"PATH": "/usr/bin"},
 		Units:       &fakeUnits{},
 		Installer:   &noopInstaller{},
 	})
@@ -130,7 +129,6 @@ func newTestService(t *testing.T, installer Installer) (*Service, *fakeUnits) {
 		Execs:       execManager,
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),
-		Env:         env,
 		Harness:     config.Harness{ID: "codex", Command: []string{"codex"}},
 		Units:       units,
 		Installer:   installer,

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
-	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
 // A harness that authenticates from a file reads a sentinel the proxy swaps on
@@ -54,11 +53,7 @@ func (s *Service) RestoreSecretFiles(ctx context.Context) ([]string, error) {
 // against: the same base a terminal is created with, minus anything a specific
 // create request would have added. Home is all it reads it for.
 func (s *Service) installEnv() map[string]string {
-	base := s.env
-	if s.secretEnv != nil {
-		base = execs.MergeEnv(base, s.exportedSecretEnv())
-	}
-	return execs.EnvWithRuntimeDefaults(base, s.defaultUser)
+	return s.execs.Environment(nil, s.defaultUser)
 }
 
 // WatchSecretFiles keeps the harness's sentinel-bearing files intact for as

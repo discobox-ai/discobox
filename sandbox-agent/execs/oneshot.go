@@ -47,7 +47,7 @@ func (m *Manager) RunOnce(ctx context.Context, req OnceRequest) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	env := EnvWithRuntimeDefaults(MergeEnv(m.env, req.Env), user)
+	env := m.Environment(req.Env, user)
 	dir := req.Dir
 	if dir == "" {
 		if dir, err = m.resolveWorkdir("", HomeDir(user, env)); err != nil {

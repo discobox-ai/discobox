@@ -110,7 +110,7 @@ func (s *Service) installSkills() error {
 	}
 	// HOME as the exec that will read these files resolves it, which is what
 	// completes the run user's home when no layer named one.
-	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(s.env, nil), s.defaultUser)
+	env := s.execs.Environment(nil, s.defaultUser)
 	home, err := resolveHomeDir(s.homeDirectory, s.defaultUser, env)
 	if err != nil {
 		return fmt.Errorf("install %s: %w", ProjectSkillsDir, err)
