@@ -1,7 +1,9 @@
 # 26-10-14-718 — The omp harness imports its credentials at launch and publishes its lifecycle through an extension
 
 - **Status**: Accepted (§5's judge thinking at its model's default superseded by
-  [26-10-16-965](26-10-16-965-the-omp-judge-answers-with-thinking-off-and-configure-proves-it-can.md))
+  [26-10-16-965](26-10-16-965-the-omp-judge-answers-with-thinking-off-and-configure-proves-it-can.md);
+  §2 narrowed for pending local credentials by
+  [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md))
 - **Date**: 2026-10-14
 
 ## Context
