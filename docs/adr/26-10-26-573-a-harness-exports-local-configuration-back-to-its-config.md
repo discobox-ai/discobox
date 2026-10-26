@@ -1,6 +1,6 @@
 # 26-10-26-573 — A harness exports local configuration back to its config
 
-- **Status**: Proposed (on acceptance: narrows 0011 §2 for a credential's
+- **Status**: Accepted (narrows 0011 §2 for a credential's
   originating sandbox, 26-10-14-718 §2 for pending local credentials, and
   26-10-15-848 §3 for pending and accepted local credentials)
 - **Date**: 2026-10-26

@@ -1,6 +1,7 @@
 # 26-10-15-848 — The opencode harness runs opencode 2
 
-- **Status**: Accepted
+- **Status**: Accepted (§3 narrowed for pending and accepted local credentials by
+  [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md))
 - **Date**: 2026-10-15
 - **Supersedes**: [0127](0127-the-opencode-harness-runs-opencode-1.md) §1
   and §2, and its rejection of opencode 2; its §3, §4's choice of judge model,
