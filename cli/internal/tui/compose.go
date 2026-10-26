@@ -10,6 +10,7 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // ComposePrompt writes a run's prompt before handing it to the normal creation
@@ -28,6 +29,8 @@ type promptComposer struct {
 	status    string
 	discard   bool
 	done      bool
+	width     int
+	height    int
 }
 
 func newPromptComposer(ctx context.Context) *promptComposer {
@@ -42,17 +45,18 @@ func newPromptComposer(ctx context.Context) *promptComposer {
 	text.MaxWidth = 0
 	text.KeyMap = promptKeyMap()
 	text.Placeholder = "Write your prompt…"
-	text.SetWidth(76)
-	return &promptComposer{ctx: ctx, text: text}
+	m := &promptComposer{ctx: ctx, text: text, width: 80, height: 24}
+	m.layout()
+	return m
 }
 
 func (m *promptComposer) Init() tea.Cmd { return m.text.Focus() }
 
 func (m *promptComposer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	defer m.layout()
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.text.MaxHeight = max(1, msg.Height-5)
-		m.text.SetWidth(max(1, msg.Width-2))
+		m.width, m.height = max(1, msg.Width), max(1, msg.Height)
 	case tea.KeyPressMsg:
 		if m.discard {
 			switch keyName(msg) {
@@ -117,16 +121,27 @@ func (m *promptComposer) View() tea.View {
 	if m.done {
 		return tea.NewView("")
 	}
+	return tea.NewView(ansi.Hardwrap("Write a prompt", m.width, true) + "\n\n" + m.text.View() + "\n" + m.footer())
+}
+
+// The footer wraps explicitly so the inline renderer can count every row it
+// owns. Its actual height also leaves room for every shortcut and error.
+func (m *promptComposer) footer() string {
 	var b strings.Builder
-	b.WriteString("Write a prompt\n\n")
-	b.WriteString(m.text.View())
 	if m.discard {
-		b.WriteString("\nDiscard this prompt? y discard · n/Esc keep editing")
+		b.WriteString("Discard this prompt? y discard · n/Esc keep editing")
 	} else {
-		b.WriteString("\nEnter newline · Ctrl-D submit · Esc cancel · Alt-E editor")
+		b.WriteString("Enter newline · Ctrl-D submit · Esc cancel · Alt-E editor")
 	}
 	if m.status != "" {
 		b.WriteString("\n" + m.status)
 	}
-	return tea.NewView(b.String())
+	return ansi.Hardwrap(b.String(), m.width, true)
+}
+
+func (m *promptComposer) layout() {
+	headingRows := 2 + (ansi.StringWidth("Write a prompt")-1)/m.width
+	footerRows := strings.Count(m.footer(), "\n") + 1
+	m.text.MaxHeight = max(1, m.height-headingRows-footerRows-1)
+	m.text.SetWidth(max(1, m.width-2))
 }
