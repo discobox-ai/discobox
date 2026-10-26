@@ -240,7 +240,7 @@ func TestToolsVSCodeHonorsTheNamedEditor(t *testing.T) {
 	// The fake is installed as `code`; asking for it by name has to find it
 	// rather than fall through to the search.
 	if _, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(),
-		"sbx_devbox00000001", "--program", "code"); err != nil {
+		"--program", "code", "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
 	if args := editorArgs(t, record); len(args) == 0 {
@@ -248,7 +248,7 @@ func TestToolsVSCodeHonorsTheNamedEditor(t *testing.T) {
 	}
 
 	if _, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(),
-		"sbx_devbox00000001", "--program", "not-an-editor"); err == nil {
+		"--program", "not-an-editor", "sbx_devbox00000001"); err == nil {
 		t.Fatal("expected an editor that is not installed to fail")
 	}
 }

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,20 +13,19 @@ import (
 
 // newShellCommand implements `discobox shell`: the everyday counterpart to the
 // raw, fully configurable `discobox admin exec create`. It takes the discobox
-// and the command as `[DISCOBOX] [-- CMD...]` (selectDiscoboxCommand): the
-// argument before the -- is the discobox, and the command is everything after
-// it.
+// and an optional -- before the command (selectDiscoboxCommand).
 func (a *App) newShellCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "shell [DISCOBOX] [-- CMD...]",
+		Use:   "shell [DISCOBOX] [--] [CMD...]",
 		Short: "Run a command in a discobox, or its login shell",
 		Long: `Run a command in a discobox and stream it to this terminal, or open its login
 shell.
 
 DISCOBOX is the NAME "discobox ls" prints, an ID, or a short prefix of one.
 Without it the discobox is taken from "discobox ls": the only one when there is
-one, otherwise you are asked to pick. The command goes after --, and every
-argument after the -- is the command's, whatever it looks like.
+one, otherwise you are asked to pick. The command follows DISCOBOX; an optional -- separates them explicitly.
+Use a leading -- to omit DISCOBOX and have it selected for you.
+CLI flags go before DISCOBOX; everything after it is passed to the command.
 
 Without a command this starts a shell. In a terminal it is the one
 $DISCOBOX_SHELL names on this machine — or nu, when run from nushell, or else
@@ -44,7 +42,7 @@ so, and one more quits shell and leaves the command where it is.`,
 		Example: `  discobox shell
   discobox shell mybox
   discobox shell mybox -- go test ./...
-  discobox shell sbx_01hq -- ls -la
+  discobox shell sbx_01hq ls -la
   discobox shell -- git log --oneline`,
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: a.completeSandboxes,
@@ -81,11 +79,11 @@ so, and one more quits shell and leaves the command where it is.`,
 			return a.returnSandboxExecStatus(cmd.Context(), projectID, sandboxID, exec.ID)
 		},
 	}
+	cmd.Flags().SetInterspersed(false)
 	return cmd
 }
 
-// discoboxCommandLine is a `[DISCOBOX] [-- ARG...]` command line: the
-// discobox it names, empty for none, and the command after the --.
+// discoboxCommandLine names a discobox, empty for selection, and its command.
 type discoboxCommandLine struct {
 	discobox string
 	command  []string
@@ -94,36 +92,33 @@ type discoboxCommandLine struct {
 	dashed bool
 }
 
-// splitDiscoboxCommand reads a `[DISCOBOX] [-- ARG...]` command line. Which
-// argument is which is decided by the -- alone, never by what an argument
-// looks like (cli/DESIGN.md, "Command Naming"): before it is at most the
-// discobox, and after it is the command, -- included past the first. More than
-// one argument before it is refused with the line that works.
-//
-// pflag consumes a -- while it still parses flags and says where it stood
-// (ArgsLenAtDash); a command that parses none of its own (tools ssh) sees the
-// -- as an argument instead, and it is found here.
+// splitDiscoboxCommand reads an optional discobox followed by command arguments.
+// A leading -- omits the discobox; a -- immediately after it is optional.
+// Later separators belong to the command.
 func splitDiscoboxCommand(cmd *cobra.Command, args []string) (discoboxCommandLine, error) {
 	line := discoboxCommandLine{}
-	before := args
-	if dash := cmd.Flags().ArgsLenAtDash(); dash >= 0 {
-		before, line.command, line.dashed = args[:dash], args[dash:], true
-	} else if i := slices.Index(args, "--"); i >= 0 {
-		before, line.command, line.dashed = args[:i], args[i+1:], true
+	if cmd.Flags().ArgsLenAtDash() == 0 {
+		line.command, line.dashed = args, true
+		return line, nil
 	}
-	switch len(before) {
-	case 0:
-	case 1:
-		line.discobox = before[0]
-	default:
-		return discoboxCommandLine{}, fmt.Errorf("%s takes one DISCOBOX, and the command goes after --: %s %s -- %s",
-			cmd.CommandPath(), cmd.CommandPath(), before[0], strings.Join(before[1:], " "))
+	if len(args) == 0 {
+		return line, nil
+	}
+	if args[0] == "--" {
+		line.command, line.dashed = args[1:], true
+		return line, nil
+	}
+	line.discobox, line.command = args[0], args[1:]
+	if cmd.Flags().ArgsLenAtDash() == 1 {
+		line.dashed = true
+	} else if len(line.command) > 0 && line.command[0] == "--" {
+		line.command, line.dashed = line.command[1:], true
 	}
 	return line, nil
 }
 
 // selectDiscoboxCommand is splitDiscoboxCommand and selectSandbox together:
-// the discobox a `[DISCOBOX] [-- ARG...]` line names, on the server it is on,
+// the discobox a `[DISCOBOX] [--] [ARG...]` line names, on the server it is on,
 // and the command. A DISCOBOX that names nothing on a line without its -- is
 // most likely a command that left it out, so the error says where one goes.
 func (a *App) selectDiscoboxCommand(cmd *cobra.Command, args []string) (app *App, projectID, sandboxID string, client *apiclientgen.Client, command []string, err error) {

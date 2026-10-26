@@ -172,7 +172,7 @@ SANDBOX_ID=$(api_ok POST "/harness-configs/$HARNESS_ID/configure" | jq -er .id)
 # exec that succeeds means the sandbox and its pool are up.
 echo "Waiting for $SANDBOX_ID to be reachable…"
 tries=0
-until discobox admin exec create "$SANDBOX_ID" --user root -- true </dev/null >/dev/null 2>&1; do
+until discobox admin exec create --user root "$SANDBOX_ID" -- true </dev/null >/dev/null 2>&1; do
 	tries=$((tries + 1))
 	[ "$tries" -lt 120 ] || die "$SANDBOX_ID never became reachable"
 	sleep 2
@@ -185,7 +185,7 @@ done
 # content, so the exec fails until the platform's core is in place.
 echo "Waiting for $SANDBOX_ID to provision $HARNESS…"
 tries=0
-until discobox admin exec create "$SANDBOX_ID" --user root -- discobox-provision wait "$HARNESS" </dev/null >/dev/null 2>&1; do
+until discobox admin exec create --user root "$SANDBOX_ID" -- discobox-provision wait "$HARNESS" </dev/null >/dev/null 2>&1; do
 	tries=$((tries + 1))
 	[ "$tries" -lt 300 ] || die "$SANDBOX_ID never provisioned $HARNESS"
 	sleep 2
@@ -221,7 +221,7 @@ EOF
 # Carried in the command line rather than on stdin, which an exec does not
 # forward; base64 keeps it one inert word.
 REPLACEMENT_B64=$(printf '%s\n' "$REPLACEMENT" | base64 | tr -d '\n')
-discobox admin exec create "$SANDBOX_ID" --user root -- \
+discobox admin exec create --user root "$SANDBOX_ID" -- \
 	sh -c "echo '$REPLACEMENT_B64' | base64 -d >'$CONFIGURE_COMMAND' && chmod 0755 '$CONFIGURE_COMMAND'" </dev/null >/dev/null
 
 api_ok POST "/harness-configs/$HARNESS_ID/configure/attach" >/dev/null

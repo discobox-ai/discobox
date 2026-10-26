@@ -1041,19 +1041,15 @@ session writes stdout frames to stdout and stderr frames to stderr, with no
 special case for the PTY: a TTY exec merges at the PTY and simply never sends a
 stderr frame, which the client neither detects nor needs to.
 
-`discobox shell [DISCOBOX] [-- CMD...]` (`internal/cli/shell.go`) is one of the
-commands written `[DISCOBOX] [-- ARG...]`: `shell`, `tools git`, `tools ssh`,
-every declared tool, and `admin exec create`. `splitDiscoboxCommand` reads
-the line by the `--` alone — before it at most one argument, the discobox;
-after it the command, with any later `--` its own — and never by what an
-argument looks like ([ADR 26-10-24-254](../docs/adr/26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md) §1). pflag consumes a `--` while it still parses
-flags and reports where it stood (`ArgsLenAtDash`); a command that parses
-none of its own (`tools ssh`) sees it as an argument, and the split finds it
-there. More than one argument before it is refused with the line that works
-(`discobox shell box -- ls`), and `selectDiscoboxCommand` adds, to a DISCOBOX
-that names nothing on a line with no `--`, where a command goes — that is
-what `discobox shell ls` most likely meant. Flags are parsed wherever they
-stand before the `--`, so `tools git mybox --source docs -- log` works.
+`discobox shell [DISCOBOX] [--] [CMD...]` and the tool and exec-create
+commands read the first positional as DISCOBOX and the remaining words as the
+command through `splitDiscoboxCommand`. An optional `--` immediately after
+DISCOBOX separates it explicitly; a leading `--` omits DISCOBOX and selects
+one interactively. Later separators belong to the command. No argument's
+contents are used to guess whether it is a discobox or a command.
+CLI flags go before DISCOBOX; flag parsing stops at the first positional so
+the command's flags pass through untouched. This relaxes the mandatory
+separator described in ADR 26-10-24-254 section 1.
 
 The discobox is `selectSandbox`'s, the same as every DISCOBOX
 ([Choosing a Sandbox Interactively](#choosing-a-sandbox-interactively)). A
@@ -1074,7 +1070,7 @@ the console's shell pane does the same. It is read per request and stored nowher
 preference.
 
 `discobox tools` groups the everyday development tools run *against* a sandbox —
-`git`, `ssh`, `vscode`, and `zed`. Each takes `[DISCOBOX] [-- ARG...]` like
+`git`, `ssh`, `vscode`, and `zed`. Each takes `[DISCOBOX] [--] [ARG...]` like
 `shell`, and everything else belongs to the subcommand that means it,
 including where the tool runs: `git` runs inside the sandbox and takes
 `--source` (with no shorthand: `-s` is `--secret` on `run`), while `ssh`,

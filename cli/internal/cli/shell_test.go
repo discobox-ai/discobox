@@ -145,7 +145,7 @@ func TestShellFullSandboxIDSkipsListingAndRunsCommand(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", sandboxID, "--", "ls", "-la"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell", sandboxID, "ls", "-la"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -278,7 +278,7 @@ func TestShellNeverTakesADiscoboxArgumentForTheCommand(t *testing.T) {
 
 	for args, want := range map[string][]string{
 		"echo":    {`no discobox for "echo"`, "a command goes after --: discobox shell -- echo"},
-		"echo hi": {"takes one DISCOBOX", "discobox shell echo -- hi"},
+		"echo hi": {`no discobox for "echo"`, "discobox shell -- echo"},
 	} {
 		cmd := NewRootCommand()
 		cmd.SetOut(io.Discard)
@@ -671,9 +671,8 @@ func TestShellTakesTheListedNameAsItsDiscobox(t *testing.T) {
 	}
 }
 
-// The -- alone decides which argument is which: before it at most the
-// discobox, after it the command with every later -- kept, whether pflag
-// consumed the separator or a command that parses no flags sees it.
+// The first positional selects the discobox; its separator is optional,
+// and later separators are kept for the command.
 func TestSplitDiscoboxCommand(t *testing.T) {
 	for _, tc := range []struct {
 		args     []string
@@ -688,7 +687,8 @@ func TestSplitDiscoboxCommand(t *testing.T) {
 		{args: []string{"--", "ls"}, command: []string{"ls"}, dashed: true},
 		{args: []string{"box", "--", "git", "log", "--", "docs/"}, discobox: "box", command: []string{"git", "log", "--", "docs/"}, dashed: true},
 		{args: []string{"box", "--"}, discobox: "box", command: []string{}, dashed: true},
-		{args: []string{"box", "ls"}, err: "shell box -- ls"},
+		{args: []string{"box", "ls"}, discobox: "box", command: []string{"ls"}},
+		{args: []string{"box", "git", "log", "--", "docs/"}, discobox: "box", command: []string{"git", "log", "--", "docs/"}},
 	} {
 		cmd := &cobra.Command{Use: "shell"}
 		cmd.Flags().SetInterspersed(false)
