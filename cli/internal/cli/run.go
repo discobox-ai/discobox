@@ -102,6 +102,12 @@ argument. Use -- when the words need to be separated from command flags
 explicitly. This is the only command that makes a discobox: the bare "discobox"
 takes no prompt and none of these flags.
 
+Use - as the entire prompt to write it without shell escaping. At a terminal,
+it opens a multiline composer: Enter adds a newline, Ctrl-D submits, Esc or
+Ctrl-C cancels, and Alt-E opens $VISUAL/$EDITOR. With piped stdin, - reads the
+prompt from stdin instead. An empty or whitespace-only prompt cancels the run.
+Esc asks for confirmation before discarding a nonempty prompt.
+
 By default run opens the console's window and makes the discobox there: a
 question still open — where to cut from, whether to copy a directory in no
 repository — is asked on it, the wait is drawn on it, and
@@ -237,6 +243,8 @@ its flag does. No argument or other run flag may be given beside it:
   }`
 
 const runCommandExample = `  discobox run . 'fix the failing tests'
+  discobox run . -
+  cat prompt.md | discobox run . -
   discobox run -H codex -d . 'fix the failing tests'
   discobox run ../api -p 'fix the failing tests'
   discobox run org/repo@main 'fix the failing tests'
@@ -320,6 +328,17 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	// whichever the shell makes easier and both arrive as argv tokens. The flag
 	// leads because it is the one that had to be quoted.
 	prompt := append(append([]string(nil), opts.promptFlag...), args...)
+	// JSON prompts are literal data, including a prompt containing only "-".
+	if !opts.fromJSON && len(prompt) == 1 && prompt[0] == "-" {
+		text, err := readRunPrompt(cmd)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(text) == "" {
+			return errPickCanceled
+		}
+		prompt = []string{text}
+	}
 	// A run that named no source is asked one wherever there is somebody to
 	// ask: on the window's create card, or — for -d and --raw at a terminal —
 	// inline. Without anybody, SOURCE was required.
