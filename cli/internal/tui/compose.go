@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strings"
 
@@ -26,18 +27,22 @@ type promptComposer struct {
 	submitted string
 	status    string
 	discard   bool
+	done      bool
 }
 
 func newPromptComposer(ctx context.Context) *promptComposer {
 	text := textarea.New()
 	text.ShowLineNumbers = false
 	text.CharLimit = 0
-	text.MaxHeight = 0
+	text.DynamicHeight = true
+	text.MinHeight = 2
+	text.MaxHeight = 20
+	// MaxHeight bounds the viewport, not how much prompt text can be entered.
+	text.MaxContentHeight = math.MaxInt
 	text.MaxWidth = 0
 	text.KeyMap = promptKeyMap()
 	text.Placeholder = "Write your prompt…"
 	text.SetWidth(76)
-	text.SetHeight(12)
 	return &promptComposer{ctx: ctx, text: text}
 }
 
@@ -46,12 +51,13 @@ func (m *promptComposer) Init() tea.Cmd { return m.text.Focus() }
 func (m *promptComposer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.text.MaxHeight = max(1, msg.Height-5)
 		m.text.SetWidth(max(1, msg.Width-2))
-		m.text.SetHeight(max(1, msg.Height-5))
 	case tea.KeyPressMsg:
 		if m.discard {
 			switch keyName(msg) {
 			case "y", "Y":
+				m.done = true
 				return m, tea.Quit
 			case "n", "N", "esc", "ctrl+c":
 				m.discard = false
@@ -64,11 +70,14 @@ func (m *promptComposer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.discard = true
 				return m, nil
 			}
+			m.done = true
 			return m, tea.Quit
 		case "ctrl+c":
+			m.done = true
 			return m, tea.Quit
 		case "ctrl+d":
 			m.submitted = m.text.Value()
+			m.done = true
 			return m, tea.Quit
 		case "alt+e", "f2":
 			return m, editPrompt(m.ctx, m.text.Value())
@@ -105,6 +114,9 @@ func (m *promptComposer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *promptComposer) View() tea.View {
+	if m.done {
+		return tea.NewView("")
+	}
 	var b strings.Builder
 	b.WriteString("Write a prompt\n\n")
 	b.WriteString(m.text.View())
@@ -116,7 +128,5 @@ func (m *promptComposer) View() tea.View {
 	if m.status != "" {
 		b.WriteString("\n" + m.status)
 	}
-	v := tea.NewView(b.String())
-	v.AltScreen = true
-	return v
+	return tea.NewView(b.String())
 }
