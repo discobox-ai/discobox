@@ -91,6 +91,22 @@
   escapes them as it does all text a discobox wrote (`cli/REVIEW.md`).
 - **Never wait on provisioning from the agent's start.** The agent serves
   first; only the readiness gates wait (`Tracker.AwaitReady`).
+- **Services wait for their own provisioning dependencies.** An empty
+  `features` list waits for the full run, including async features; a stated
+  list waits only for those features. Gate all launches in `services.Manager`,
+  including API starts and restarts. Boot launches wait independently, so a
+  default service cannot hold up one whose stated features are ready. Do not
+  put the harness's `AwaitReady` gate in front of service discovery again.
+- **Wait for provisioning outside service lifecycle locks.** A restart can
+  wait minutes under a live service; holding its lock prevents Stop and other
+  requests from returning. Recheck live state under the lock before launching.
+- **Discover provisioned image services after provisioning too.** Early
+  discovery lets repository services launch independently, but a feature can
+  install an image declaration later this boot. Revisit newly installed image
+  declarations once the run ends, even on failure, without autostarting new
+  repository declarations or retrying services already attempted. Recheck a
+  builtin's owner after its wait: discovery can precede the plan marking its
+  feature off, and that declaration must then stay hidden and never launch.
 - **Every terminal launch waits for provisioning, not only the primary's,
   and a terminal that needs no launch does not.** `terminal.Service.awaitProvisioned` is called by
   `Create`, the primary's launch, and `Revive` — an attach by a terminal's own

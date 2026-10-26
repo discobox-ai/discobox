@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -25,6 +27,8 @@ type Tracker struct {
 	status provisionspec.Status
 	// readied is closed once readiness is decided, either way.
 	readied chan struct{}
+	// changed wakes feature waiters after each status update.
+	changed chan struct{}
 	// readyDecided is whether it has been.
 	readyDecided bool
 	// running is whether a run is still provisioning.
@@ -38,6 +42,7 @@ func NewTracker(path string) *Tracker {
 		path:    path,
 		status:  provisionspec.Status{State: provisionspec.StatePending, Features: map[string]provisionspec.FeatureStatus{}},
 		readied: make(chan struct{}),
+		changed: make(chan struct{}),
 	}
 }
 
@@ -69,6 +74,57 @@ func (t *Tracker) AwaitReady(ctx context.Context) error {
 		return errors.New(t.status.Error)
 	}
 	return nil
+}
+
+// AwaitFeatures waits for the named features to finish provisioning. An empty
+// list waits for the whole run, including async features; disabled features
+// do not prevent that default. An explicitly required disabled feature fails.
+// As with Wait, features absent from a started plan belong to the image.
+func (t *Tracker) AwaitFeatures(ctx context.Context, features []string) error {
+	for {
+		t.mu.Lock()
+		changed := t.changed
+		var problems []error
+		pending := t.status.State == provisionspec.StatePending
+		if len(features) == 0 {
+			pending = !t.status.State.Done()
+			if !pending {
+				for _, name := range slices.Sorted(maps.Keys(t.status.Features)) {
+					if t.status.Features[name].State == provisionspec.StateFailed {
+						problems = append(problems, Problem(t.status, name))
+					}
+				}
+			}
+		} else {
+			for _, name := range features {
+				if feature, ok := t.status.Features[name]; ok {
+					pending = pending || !feature.State.Done()
+					if err := Problem(t.status, name); err != nil {
+						problems = append(problems, err)
+					}
+				}
+			}
+		}
+		// A failed readiness can mean no plan could be fetched or constructed.
+		if t.readyDecided && !t.status.Ready && (len(features) == 0 && !pending || len(t.status.Features) == 0) {
+			problems = append(problems, fmt.Errorf("provision the sandbox: %s", t.status.Error))
+		}
+		t.mu.Unlock()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if len(problems) > 0 {
+			return errors.Join(problems...)
+		}
+		if !pending {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-changed:
+		}
+	}
 }
 
 // Write writes the document as it stands, as a run does on each change.
@@ -172,6 +228,8 @@ func (t *Tracker) update(change func(*provisionspec.Status)) {
 	change(&t.status)
 	t.status.State = t.state()
 	t.status.UpdatedAt = time.Now().UTC()
+	close(t.changed)
+	t.changed = make(chan struct{})
 	t.writeLocked()
 }
 

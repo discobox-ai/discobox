@@ -2,6 +2,7 @@ package provision
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -290,11 +291,25 @@ func TestReadinessDoesNotWaitForTheBackground(t *testing.T) {
 		t.Errorf("core = %+v", core)
 	}
 
+	// A service depending only on core may launch now; a default service
+	// must wait for docker's background steps as well.
+	if err := tracker.AwaitFeatures(ctx, []string{provisionspec.Core}); err != nil {
+		t.Fatalf("core dependency: %v", err)
+	}
+	waitCtx, stop := context.WithTimeout(ctx, 20*time.Millisecond)
+	if err := tracker.AwaitFeatures(waitCtx, nil); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("all dependencies before background completion: %v", err)
+	}
+	stop()
+
 	if err := os.WriteFile(release, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+	if err := tracker.AwaitFeatures(ctx, nil); err != nil {
+		t.Fatalf("all dependencies after background completion: %v", err)
 	}
 	if b.exists(filepath.Join(PlaceholderDir, "dockerd")) {
 		t.Error("the placeholder outlived its feature")

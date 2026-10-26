@@ -95,7 +95,7 @@ type Config struct {
 	RuntimeConfig *intake.Intake
 	// Provision is the box's provisioning this boot, which the binary runs
 	// beside the server (ADR 26-10-16-423 §5): the primary terminal and the
-	// declared services wait for its readiness, and the status report
+	// declared services wait for their provisioning dependencies, and the status report
 	// carries its document. nil waits for nothing and reports none.
 	Provision *provision.Tracker
 }
@@ -151,9 +151,6 @@ type agentRuntime struct {
 	// a second, independently constructed copy of "wait for delivery" is how
 	// one of them goes stale.
 	awaitSources func(context.Context) error
-	// awaitProvision is provisioning's readiness, nil when nothing is
-	// provisioned.
-	awaitProvision func(context.Context) error
 	// sourceConverger clones the sources the runtime-config document names
 	// and answers their origins' credential helper (ADR 0126 §4).
 	sourceConverger *sourceconverge.Converger
@@ -392,7 +389,6 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		listenAddr:   cfg.ListenAddress,
 		awaitSources: awaitSources,
 
-		awaitProvision:  awaitProvision,
 		sourceConverger: sourceConverger,
 	}, nil
 }
@@ -421,6 +417,7 @@ func newServiceManager(execManager *execs.Manager, tracker *provision.Tracker) (
 	cfg := services.ManagerConfig{Execs: execManager, Root: root}
 	if tracker != nil {
 		cfg.FeatureOff = func(feature string) bool { return tracker.Status().Off(feature) }
+		cfg.AwaitFeatures = tracker.AwaitFeatures
 	}
 	return services.NewManager(cfg)
 }
@@ -647,7 +644,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// none, since it exists to run one setup command and end, not to be worked
 	// in.
 	if config.WorkedIn(cfg.HarnessMode) && built.services != nil {
-		go startDeclaredServices(ctx, logger, []func(context.Context) error{built.awaitSources, built.awaitProvision}, built.services.EnsureStarted)
+		go startDeclaredServices(ctx, logger, built.awaitSources, built.services.EnsureStarted)
 	}
 	// Exec state converges on notifications rather than a poll (ADR 0115): the
 	// shim's own runtime write for an ordinary exit, and systemd's unit signals
@@ -758,11 +755,8 @@ func serveCredentials(ctx context.Context, logger *slog.Logger, bridgePath strin
 // error, since most repositories declare none, so starting before delivery did
 // not fail: it found nothing, said nothing, and never looked again. The same
 // gate the primary terminal's first launch clears is what this clears.
-func startDeclaredServices(ctx context.Context, logger *slog.Logger, gates []func(context.Context) error, start func(context.Context, *slog.Logger) error) {
-	for _, await := range gates {
-		if await == nil {
-			continue
-		}
+func startDeclaredServices(ctx context.Context, logger *slog.Logger, await func(context.Context) error, start func(context.Context, *slog.Logger) error) {
+	if await != nil {
 		switch err := await(ctx); {
 		case err == nil:
 		case errors.Is(err, context.Canceled):

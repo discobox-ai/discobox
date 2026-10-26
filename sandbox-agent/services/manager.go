@@ -65,6 +65,8 @@ type Service struct {
 // ManagerConfig wires the service layer to the exec primitive it runs on.
 type ManagerConfig struct {
 	Execs *execs.Manager
+	// AwaitFeatures waits for provisioning dependencies; nil means no provisioning.
+	AwaitFeatures func(context.Context, []string) error
 	// Root is the repository root services are declared in and run in: the
 	// sandbox's primary source directory, which DirName is resolved under and
 	// which is also where an exec that names no workdir starts.
@@ -85,8 +87,9 @@ type ManagerConfig struct {
 // two clients, or a client and the boot flow, cannot hold different ideas of
 // what is running.
 type Manager struct {
-	execs *execs.Manager
-	root  string
+	execs         *execs.Manager
+	awaitFeatures func(context.Context, []string) error
+	root          string
 	// builtinDir is where the image's own declarations live. A field rather
 	// than the constant directly so a test can point it somewhere real.
 	builtinDir string
@@ -117,11 +120,12 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 		builtinDir = BuiltinDir
 	}
 	return &Manager{
-		execs:      cfg.Execs,
-		root:       cfg.Root,
-		builtinDir: builtinDir,
-		featureOff: cfg.FeatureOff,
-		lifecycle:  map[string]*sync.Mutex{},
+		execs:         cfg.Execs,
+		awaitFeatures: cfg.AwaitFeatures,
+		root:          cfg.Root,
+		builtinDir:    builtinDir,
+		featureOff:    cfg.FeatureOff,
+		lifecycle:     map[string]*sync.Mutex{},
 	}, nil
 }
 
@@ -242,8 +246,27 @@ func (m *Manager) Start(ctx context.Context, id string) (Service, error) {
 	if !def.Runnable() {
 		return Service{}, fmt.Errorf("service %s cannot run: %s", def.ID, def.Problem)
 	}
+	// Check live state under the lifecycle lock, but never hold it while
+	// provisioning waits: Stop must still be able to end a running service.
 	unlock := m.lock(def.ID)
+	if existing, ok := m.execFor(def.ID); ok && live(existing) {
+		unlock()
+		return project(def, &existing), nil
+	}
+	unlock()
+	if m.awaitFeatures != nil {
+		if err := m.awaitFeatures(ctx, def.Features); err != nil {
+			return Service{}, err
+		}
+	}
+	// Discovery can precede the provisioning plan deciding this owner off.
+	if def.Builtin && def.Feature != "" && m.featureOff != nil && m.featureOff(def.Feature) {
+		return Service{}, ErrNotFound
+	}
+	unlock = m.lock(def.ID)
 	defer unlock()
+	// Another caller may have launched it while we waited; startLocked
+	// checks the live state again before creating or relaunching anything.
 	exec, err := m.startLocked(ctx, def)
 	if err != nil {
 		return Service{}, err
@@ -283,6 +306,14 @@ func (m *Manager) Restart(ctx context.Context, id string) (Service, error) {
 	if !def.Runnable() {
 		return Service{}, fmt.Errorf("service %s cannot run: %s", def.ID, def.Problem)
 	}
+	if m.awaitFeatures != nil {
+		if err := m.awaitFeatures(ctx, def.Features); err != nil {
+			return Service{}, err
+		}
+	}
+	if def.Builtin && def.Feature != "" && m.featureOff != nil && m.featureOff(def.Feature) {
+		return Service{}, ErrNotFound
+	}
 	unlock := m.lock(def.ID)
 	defer unlock()
 	if exec, ok := m.execFor(def.ID); ok && live(exec) {
@@ -314,7 +345,7 @@ func (m *Manager) Logs(ctx context.Context, id string) ([]execs.LogEntry, error)
 // EnsureStarted starts every runnable declared service, once, and is what the
 // sandbox calls at boot.
 //
-// The launches are sequenced but the services are not ordered: each is started
+// The launches wait independently for their provisioning dependencies: each is started
 // without waiting for the one before it to be ready, so a declaration order is
 // a listing order and never a dependency (ADR 0070 §1). A service that fails to
 // start is logged and the rest still come up — one broken script must not cost
@@ -332,35 +363,62 @@ func (m *Manager) EnsureStarted(ctx context.Context, logger *slog.Logger) error 
 	// tree existed looks like, and that was invisible until somebody read the
 	// exec table. Say what was looked at and what was found.
 	logger.Debug("discovered sandbox service declarations", "root", m.root, "count", len(defs))
-	for _, def := range defs {
-		// A declaration that starts nothing is not a declaration that failed.
-		// Something else already serves its ports — a socket unit, a nested
-		// container — and warning about it every boot would put a permanent
-		// complaint in the log for a file doing exactly what it says.
+	var launches sync.WaitGroup
+	seen := make(map[string]bool, len(defs))
+	launch := func(def Definition) {
+		// Metadata-only and broken declarations have nothing to launch.
 		if def.Start == StartNever {
-			continue
+			return
 		}
 		if !def.Runnable() {
 			logger.Warn("skipping sandbox service declaration", "service", def.ID, "file", def.FileName, "problem", def.Problem)
-			continue
+			return
 		}
-		if _, err := m.Start(ctx, def.ID); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
+		launches.Go(func() {
+			if _, err := m.Start(ctx, def.ID); err != nil && ctx.Err() == nil {
+				logger.Error("start sandbox service", "service", def.ID, "error", err)
 			}
-			logger.Error("start sandbox service", "service", def.ID, "error", err)
+		})
+	}
+	for _, def := range defs {
+		seen[def.ID] = true
+		launch(def)
+	}
+	// Provisioning can install image declarations after this boot's initial
+	// discovery. Revisit only those: a project declaration added mid-session
+	// is deliberately not autostarted. Existing declarations are tried once.
+	if m.awaitFeatures != nil {
+		// Failure still ends provisioning; each discovered service checks its own
+		// dependencies, so an unrelated failure must not suppress this discovery.
+		_ = m.awaitFeatures(ctx, nil)
+		if ctx.Err() == nil {
+			defs, err = m.discover()
+			if err == nil {
+				for _, def := range defs {
+					if def.Builtin && !seen[def.ID] {
+						launch(def)
+					}
+				}
+			}
 		}
 	}
-	return nil
+
+	launches.Wait()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	return err
 }
 
 // startLocked creates or relaunches the service's exec. The caller holds the
 // service's lifecycle lock.
 func (m *Manager) startLocked(ctx context.Context, def Definition) (execs.Exec, error) {
-	if existing, ok := m.execFor(def.ID); ok {
-		if live(existing) {
-			return existing, nil
-		}
+	existing, exists := m.execFor(def.ID)
+	if exists && live(existing) {
+		return existing, nil
+	}
+	if exists {
 		// Relaunch re-runs the record's own command under a fresh unit
 		// generation, keeping the exec id. Env and user are deliberately left
 		// to the manager to re-resolve, so a service picks up the sandbox's

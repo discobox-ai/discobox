@@ -536,3 +536,24 @@ func TestTheShippedDesktopDeclarationIsValid(t *testing.T) {
 		t.Fatalf("the declaration has no display name for a client to label the link with")
 	}
 }
+
+func TestServiceFeatureDependencies(t *testing.T) {
+	for _, field := range []string{"", "# features: []\n", "# features: [go, docker]\n", "# features: go, docker\n"} {
+		t.Run(field, func(t *testing.T) {
+			root := t.TempDir()
+			writeService(t, root, "api.sh", "#!/bin/sh\n#---\n"+field+"#---\ntrue\n", 0o755)
+			defs, err := Discover("", root)
+			if err != nil || len(defs) != 1 {
+				t.Fatalf("discover: %v, %v", defs, err)
+			}
+			got := strings.Join(defs[0].Features, ",")
+			want := ""
+			if strings.Contains(field, "go") {
+				want = "go,docker"
+			}
+			if got != want {
+				t.Fatalf("features = %q, want %q", got, want)
+			}
+		})
+	}
+}

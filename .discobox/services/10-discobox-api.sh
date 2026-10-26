@@ -1,5 +1,6 @@
 #!/bin/bash
 #---
+# features: [go, docker]
 # name: Discobox API
 # description: The full dev loop — discobox-server with hot reload, plus the development image watcher
 #---
