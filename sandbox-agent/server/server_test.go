@@ -476,7 +476,6 @@ func TestAgentTerminalResourceStreamReplaysHistory(t *testing.T) {
 		Harness:     cfg.Harness,
 		WorkingRoot: cfg.WorkingRoot,
 		RuntimeDir:  cfg.RuntimeDir,
-		Env:         map[string]string{"PATH": "/usr/bin"},
 		Units:       runner,
 		Installer:   cfg.Installer,
 	})
@@ -704,5 +703,39 @@ func TestGetSandboxAgentStatusOmitsAnEmptyResourceSample(t *testing.T) {
 	}
 	if got, ok := status.Resources.Get(); !ok || got.CPU.UsageUsec != 42 {
 		t.Fatalf("resources = %+v (set %v), want the sample", got, ok)
+	}
+}
+
+func TestEveryExecPathReceivesSecretEnvironment(t *testing.T) {
+	publicKey, signToken := sandboxAgentTestSigner(t)
+	runner := &sandboxAgentFakeRunner{}
+	cfg := testConfigWithRunner(publicKey, runner)
+	secrets := map[string]string{"GH_TOKEN": "sentinel-first", "FILE_TOKEN": "sentinel-file"}
+	cfg.SecretEnv = func() map[string]string { return secrets }
+	cfg.Harness.FileSecrets = []string{"FILE_TOKEN"}
+	router, err := NewRouter(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{`{"shell":true}`, `{"command":["echo","ok"]}`, `{}`} {
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/projects/project-1/sandboxes/sandbox-1/execs", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecWrite))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(resp, req)
+		if resp.Code != http.StatusCreated {
+			t.Fatalf("%s: status %d: %s", body, resp.Code, resp.Body.String())
+		}
+		env := runner.starts[len(runner.starts)-1].Env
+		if env["GH_TOKEN"] != secrets["GH_TOKEN"] {
+			t.Fatalf("%s: secret not injected", body)
+		}
+		if _, ok := env["FILE_TOKEN"]; ok {
+			t.Fatalf("%s: file credential exported", body)
+		}
+		secrets["GH_TOKEN"] = "sentinel-next"
+	}
+	if secrets["FILE_TOKEN"] != "sentinel-file" {
+		t.Fatal("file sentinel removed from source")
 	}
 }

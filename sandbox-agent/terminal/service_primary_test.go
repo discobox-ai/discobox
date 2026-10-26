@@ -100,7 +100,6 @@ func TestPrimaryTerminalRunsWithTheExecDefaultUsersGroups(t *testing.T) {
 		Execs:       execManager,
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),
-		Env:         map[string]string{"PATH": "/usr/bin"},
 		Harness:     config.Harness{ID: "codex", Command: []string{"codex"}},
 		Units:       units,
 		Installer:   &noopInstaller{},

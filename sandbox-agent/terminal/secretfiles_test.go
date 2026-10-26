@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
 //nolint:gosec // A path, not a credential.
@@ -260,7 +261,11 @@ func TestWatchSecretFilesSkipsConfigSandboxes(t *testing.T) {
 // Outside config mode it reconciles immediately rather than waiting a tick.
 func TestWatchSecretFilesReconcilesOnStart(t *testing.T) {
 	installer := &countingInstaller{}
-	svc := &Service{harness: credentialsHarness(), installer: installer}
+	manager, err := execs.NewManagerWithConfig(execs.ManagerConfig{WorkingRoot: t.TempDir(), RuntimeDir: t.TempDir(), Units: &fakeUnits{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{execs: manager, harness: credentialsHarness(), installer: installer}
 	ctx, cancel := context.WithCancel(context.Background())
 	go svc.WatchSecretFiles(ctx, slog.New(slog.DiscardHandler))
 

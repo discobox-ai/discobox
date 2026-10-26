@@ -44,7 +44,6 @@ func TestWaitAnswersWithTheNamedHook(t *testing.T) {
 		Harness:     cfg.Harness,
 		WorkingRoot: cfg.WorkingRoot,
 		RuntimeDir:  cfg.RuntimeDir,
-		Env:         map[string]string{"PATH": "/usr/bin"},
 		Units:       runner,
 		Installer:   cfg.Installer,
 	})

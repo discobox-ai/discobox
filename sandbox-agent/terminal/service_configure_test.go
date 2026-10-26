@@ -31,7 +31,6 @@ func newConfigureService(t *testing.T) (*Service, *fakeUnits) {
 		Execs:       execManager,
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),
-		Env:         env,
 		Harness:     config.Harness{ID: "codex", Command: []string{"/usr/local/libexec/discobox/configure-codex"}},
 		HarnessMode: config.HarnessModeConfig,
 		Units:       units,

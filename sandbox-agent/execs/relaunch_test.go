@@ -26,11 +26,13 @@ func (m *stopRecordingUnitManager) Stop(_ context.Context, unit string) error {
 func TestManagerRelaunchRevivesLostExecInPlace(t *testing.T) {
 	units := &stopRecordingUnitManager{}
 	audit := newRecordingAudit()
+	token := "sentinel-before"
 	manager, err := NewManagerWithConfig(ManagerConfig{
 		WorkingRoot: "/workspace",
 		RuntimeDir:  t.TempDir(),
 		Units:       units,
 		Audit:       audit,
+		SecretEnv:   func() map[string]string { return map[string]string{"GH_TOKEN": token} },
 	})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
@@ -52,6 +54,7 @@ func TestManagerRelaunchRevivesLostExecInPlace(t *testing.T) {
 		t.Fatalf("pre-relaunch status = %q (found %v), want lost", got.Status, ok)
 	}
 
+	token = "sentinel-after"
 	revived, err := manager.Relaunch(context.Background(), RelaunchRequest{
 		ID:             created.ID,
 		Env:            map[string]string{"FRESH": "yes"},
@@ -76,6 +79,9 @@ func TestManagerRelaunchRevivesLostExecInPlace(t *testing.T) {
 		t.Fatalf("unit starts = %d, want the original plus the revival", len(units.starts))
 	}
 	start := units.starts[1]
+	if start.Env["GH_TOKEN"] != "sentinel-after" {
+		t.Fatal("relaunch missed live secret")
+	}
 	if start.Unit != revived.Unit || start.ID != created.ID {
 		t.Fatalf("start = %#v, want same exec id under the new unit", start)
 	}

@@ -92,7 +92,6 @@ func newReviveService(t *testing.T, harness config.Harness, harnessMode string) 
 		Execs:       execManager,
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),
-		Env:         env,
 		Harness:     harness,
 		HarnessMode: harnessMode,
 		Units:       units,
@@ -286,7 +285,6 @@ func TestReviveRunsTheSandboxsHarnessNotTheRecords(t *testing.T) {
 		Execs:       fx.execs,
 		WorkingRoot: fx.dir,
 		RuntimeDir:  filepath.Join(fx.dir, "rt"),
-		Env:         map[string]string{"PATH": "/usr/bin"},
 		Harness: config.Harness{
 			ID:              "harness_destination",
 			Command:         []string{"claude"},

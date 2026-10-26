@@ -155,7 +155,6 @@ func newLaunchTestService(t *testing.T, installer Installer, state PrimaryStateS
 		Execs:        execManager,
 		WorkingRoot:  dir,
 		RuntimeDir:   filepath.Join(dir, "rt"),
-		Env:          env,
 		Harness:      config.Harness{ID: "codex", Command: []string{"codex"}, RelaunchCommand: []string{"codex", "resume"}},
 		Units:        units,
 		Installer:    installer,

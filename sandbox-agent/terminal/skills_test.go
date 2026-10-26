@@ -36,7 +36,6 @@ func newSkillsTestService(t *testing.T, source, home string, state PrimaryStateS
 		Execs:        execManager,
 		WorkingRoot:  dir,
 		RuntimeDir:   filepath.Join(dir, "rt"),
-		Env:          env,
 		Harness:      config.Harness{ID: "codex", Command: []string{"codex"}},
 		Units:        units,
 		Installer:    &noopInstaller{},

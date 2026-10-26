@@ -16,7 +16,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"text/template"
@@ -77,10 +76,9 @@ type ServiceConfig struct {
 	SandboxConfig map[string]any
 	WorkingRoot   string
 	RuntimeDir    string
-	Env           map[string]string
 	// SecretEnv returns the sandbox's current secret-bound
 	// envName->sentinel map, read live from the secrets file (ADR 0012 §3)
-	// rather than baked into Env. Called fresh at every exec. May be nil.
+	// for rendering harness files. Execution environments are owned by Execs.
 	SecretEnv    func() map[string]string
 	ExecDefaults config.ExecDefaults
 	Units        execs.UnitManager
@@ -116,9 +114,6 @@ type ServiceConfig struct {
 type Service struct {
 	execs          *execs.Manager
 	harness        config.Harness
-	env            map[string]string
-	secretEnv      func() map[string]string
-	fileSecrets    []string
 	defaultUser    *execs.User
 	hookSocketPath string
 	installer      Installer
@@ -188,9 +183,6 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	s := &Service{
 		execs:          cfg.Execs,
 		harness:        cloneHarness(cfg.Harness),
-		env:            cloneMap(cfg.Env),
-		secretEnv:      cfg.SecretEnv,
-		fileSecrets:    append([]string(nil), cfg.Harness.FileSecrets...),
 		defaultUser:    defaultUser,
 		installer:      cfg.Installer,
 		primaryState:   cfg.PrimaryState,
@@ -228,30 +220,6 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		}}
 	}
 	return s, nil
-}
-
-// exportedSecretEnv is the sentinel map minus the harness's file-delivered
-// credentials. Those still exist as sentinels -- FileInstaller renders them
-// into the file the harness reads -- but they must not also appear in its
-// environment: a CLI that reads both prefers the variable, and a credential
-// arriving that way carries none of the metadata the file does, so exporting it
-// silently defeats the file (harness.SecretDeliveryFile).
-//
-// Withholding is by explicit declaration only. A sentinel nobody declared --
-// bound to this sandbox by hand -- is exported exactly as before.
-func (s *Service) exportedSecretEnv() map[string]string {
-	env := s.secretEnv()
-	if len(env) == 0 || len(s.fileSecrets) == 0 {
-		return env
-	}
-	out := make(map[string]string, len(env))
-	for name, sentinel := range env {
-		if slices.Contains(s.fileSecrets, name) {
-			continue
-		}
-		out[name] = sentinel
-	}
-	return out
 }
 
 func (s *Service) SetHookSocketPath(path string) {
@@ -295,14 +263,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	if err != nil {
 		return execs.Exec{}, err
 	}
-	base := s.env
-	if s.secretEnv != nil {
-		// Read fresh at every exec: the secrets file is refreshed
-		// independently of sandbox.json (grant approval, rotation, OAuth
-		// refresh), so a stale in-memory copy would miss updates (ADR 0012 §3).
-		base = execs.MergeEnv(base, s.exportedSecretEnv())
-	}
-	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(base, req.Env), s.defaultUser)
+	env := s.execs.Environment(req.Env, s.defaultUser)
 	// Resolved after env for the same reason the exec layer does it: `~`
 	// expands against the run user's home directory.
 	workdir, err := s.execs.ResolveWorkdir(req.Workdir, execs.HomeDir(s.defaultUser, env))
@@ -500,13 +461,7 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 	if err != nil {
 		return execs.Exec{}, err
 	}
-	base := s.env
-	if s.secretEnv != nil {
-		// Read fresh at every run, same as Create: sentinels rotate
-		// independently of sandbox.json (ADR 0012 §3).
-		base = execs.MergeEnv(base, s.exportedSecretEnv())
-	}
-	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(base, nil), s.defaultUser)
+	env := s.execs.Environment(nil, s.defaultUser)
 	env["DISCOBOX_TERMINAL_ID"] = id
 	if s.hookSocketPath != "" {
 		env["DISCOBOX_HOOK_SOCKET"] = s.hookSocketPath
@@ -987,7 +942,7 @@ func (s *Service) resolveHarness(requested string) (config.Harness, string, erro
 // login shell, resolved by `execs` so a shell terminal and a `shell: true` exec
 // land on the same shell.
 func (s *Service) shellAgent() (config.Harness, error) {
-	command, err := execs.ShellCommand(s.defaultUser, s.env)
+	command, err := execs.ShellCommand(s.defaultUser, s.execs.Environment(nil, s.defaultUser))
 	if err != nil {
 		return config.Harness{}, err
 	}

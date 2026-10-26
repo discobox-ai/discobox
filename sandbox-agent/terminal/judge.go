@@ -110,12 +110,7 @@ func (s *Service) askJudge(ctx context.Context, system, prompt, schema string) (
 		return nil, err
 	}
 
-	env := s.env
-	if s.secretEnv != nil {
-		// Read fresh, as an exec does: the judge's own credential is an
-		// ordinary harness secret, and it is refreshed under it.
-		env = execs.MergeEnv(env, s.exportedSecretEnv())
-	}
+	env := s.execs.Environment(nil, s.defaultUser)
 	workdir, err := s.execs.DefaultWorkdir()
 	if err != nil {
 		return nil, err

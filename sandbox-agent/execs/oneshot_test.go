@@ -193,3 +193,22 @@ func TestRunOnceRemovesItsTmpdirHoweverItEnds(t *testing.T) {
 		t.Fatalf("the command's TMPDIR %s is still there after it was killed", tmpdir)
 	}
 }
+
+func TestRunOnceReceivesLiveSecretEnvironment(t *testing.T) {
+	manager := oneShotManager(t, systemPath(""))
+	token := "sentinel-first"
+	manager.secretEnv = func() map[string]string { return map[string]string{"GH_TOKEN": token, "FILE_TOKEN": "sentinel-file"} }
+	manager.fileSecrets = []string{"FILE_TOKEN"}
+	for _, value := range []string{"sentinel-first", "sentinel-next"} {
+		token = value
+		out, err := manager.RunOnce(context.Background(), OnceRequest{
+			Command: []string{"/bin/sh", "-c", `printf '%s:%s' "$GH_TOKEN" "${FILE_TOKEN-unset}"`}, MaxOutput: 128,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(out) != value+":unset" {
+			t.Fatalf("output = %q", out)
+		}
+	}
+}
