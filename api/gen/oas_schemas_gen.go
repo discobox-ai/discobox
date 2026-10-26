@@ -19408,8 +19408,8 @@ func (s *PoolResources) init() PoolResources {
 	return m
 }
 
-// The agent-facing twin of SandboxCloneProgress, refining materializing_source with the source being
-// cloned and how far the sandbox's clone of it has got.
+// The agent-facing twin of SandboxCloneProgress, refining fetching_source or materializing_source
+// with Git transfer progress.
 // Ref: #/components/schemas/PoolSandboxCloneProgress
 type PoolSandboxCloneProgress struct {
 	// What is being cloned, for a person to read - a remote's host and path, or a local checkout's
@@ -19535,6 +19535,7 @@ type PoolSandboxProvisionPhase string
 const (
 	PoolSandboxProvisionPhasePullingImage        PoolSandboxProvisionPhase = "pulling_image"
 	PoolSandboxProvisionPhasePreparingVolumes    PoolSandboxProvisionPhase = "preparing_volumes"
+	PoolSandboxProvisionPhaseFetchingSource      PoolSandboxProvisionPhase = "fetching_source"
 	PoolSandboxProvisionPhaseMaterializingSource PoolSandboxProvisionPhase = "materializing_source"
 	PoolSandboxProvisionPhaseCreatingContainer   PoolSandboxProvisionPhase = "creating_container"
 	PoolSandboxProvisionPhaseStartingContainer   PoolSandboxProvisionPhase = "starting_container"
@@ -19546,6 +19547,7 @@ func (PoolSandboxProvisionPhase) AllValues() []PoolSandboxProvisionPhase {
 	return []PoolSandboxProvisionPhase{
 		PoolSandboxProvisionPhasePullingImage,
 		PoolSandboxProvisionPhasePreparingVolumes,
+		PoolSandboxProvisionPhaseFetchingSource,
 		PoolSandboxProvisionPhaseMaterializingSource,
 		PoolSandboxProvisionPhaseCreatingContainer,
 		PoolSandboxProvisionPhaseStartingContainer,
@@ -19559,6 +19561,8 @@ func (s PoolSandboxProvisionPhase) MarshalText() ([]byte, error) {
 	case PoolSandboxProvisionPhasePullingImage:
 		return []byte(s), nil
 	case PoolSandboxProvisionPhasePreparingVolumes:
+		return []byte(s), nil
+	case PoolSandboxProvisionPhaseFetchingSource:
 		return []byte(s), nil
 	case PoolSandboxProvisionPhaseMaterializingSource:
 		return []byte(s), nil
@@ -19581,6 +19585,9 @@ func (s *PoolSandboxProvisionPhase) UnmarshalText(data []byte) error {
 		return nil
 	case PoolSandboxProvisionPhasePreparingVolumes:
 		*s = PoolSandboxProvisionPhasePreparingVolumes
+		return nil
+	case PoolSandboxProvisionPhaseFetchingSource:
+		*s = PoolSandboxProvisionPhaseFetchingSource
 		return nil
 	case PoolSandboxProvisionPhaseMaterializingSource:
 		*s = PoolSandboxProvisionPhaseMaterializingSource
@@ -25560,9 +25567,9 @@ func (s *SandboxCPUConsumptionAdditional) init() SandboxCPUConsumptionAdditional
 	return m
 }
 
-// The source a materializing_source phase is cloning, and how far the clone has got. The
-// sandbox clones its own sources, so the counts are the sandbox agent's, read by the pool
-// while it waits on them. Only source is certain: a sandbox whose agent predates
+// Git transfer progress: fetching_source carries the pool fetch counts, while
+// materializing_source carries the sandbox clone counts read by the pool.
+// Only source is certain: a sandbox whose agent predates
 // reporting clone progress, or a clone git has said nothing about yet, has no stage.
 // Ref: #/components/schemas/SandboxCloneProgress
 type SandboxCloneProgress struct {
@@ -28639,15 +28646,16 @@ func (*SandboxProviderInstance) updateSandboxProviderInstanceRes() {}
 // What a provisioning sandbox is being made to do right now, named for a client that
 // is waiting to attach and wants to know what it is waiting for. It is an
 // observation and never a state: it decides nothing, and it is history the moment the
-// phase ends. pulling_image carries pull byte counts and materializing_source the clone
-// of the source it is materializing; the rest are named work with no denominator to
-// report.
+// phase ends. pulling_image carries image byte counts. fetching_source reports the
+// pool fetching a remote into its cache; materializing_source reports the sandbox
+// checking out a source. Both Git phases carry clone progress.
 // Ref: #/components/schemas/SandboxProvisionPhase
 type SandboxProvisionPhase string
 
 const (
 	SandboxProvisionPhasePullingImage        SandboxProvisionPhase = "pulling_image"
 	SandboxProvisionPhasePreparingVolumes    SandboxProvisionPhase = "preparing_volumes"
+	SandboxProvisionPhaseFetchingSource      SandboxProvisionPhase = "fetching_source"
 	SandboxProvisionPhaseMaterializingSource SandboxProvisionPhase = "materializing_source"
 	SandboxProvisionPhaseCreatingContainer   SandboxProvisionPhase = "creating_container"
 	SandboxProvisionPhaseStartingContainer   SandboxProvisionPhase = "starting_container"
@@ -28659,6 +28667,7 @@ func (SandboxProvisionPhase) AllValues() []SandboxProvisionPhase {
 	return []SandboxProvisionPhase{
 		SandboxProvisionPhasePullingImage,
 		SandboxProvisionPhasePreparingVolumes,
+		SandboxProvisionPhaseFetchingSource,
 		SandboxProvisionPhaseMaterializingSource,
 		SandboxProvisionPhaseCreatingContainer,
 		SandboxProvisionPhaseStartingContainer,
@@ -28672,6 +28681,8 @@ func (s SandboxProvisionPhase) MarshalText() ([]byte, error) {
 	case SandboxProvisionPhasePullingImage:
 		return []byte(s), nil
 	case SandboxProvisionPhasePreparingVolumes:
+		return []byte(s), nil
+	case SandboxProvisionPhaseFetchingSource:
 		return []byte(s), nil
 	case SandboxProvisionPhaseMaterializingSource:
 		return []byte(s), nil
@@ -28695,6 +28706,9 @@ func (s *SandboxProvisionPhase) UnmarshalText(data []byte) error {
 	case SandboxProvisionPhasePreparingVolumes:
 		*s = SandboxProvisionPhasePreparingVolumes
 		return nil
+	case SandboxProvisionPhaseFetchingSource:
+		*s = SandboxProvisionPhaseFetchingSource
+		return nil
 	case SandboxProvisionPhaseMaterializingSource:
 		*s = SandboxProvisionPhaseMaterializingSource
 		return nil
@@ -28715,7 +28729,7 @@ func (s *SandboxProvisionPhase) UnmarshalText(data []byte) error {
 // Work underway on a sandbox that has no state transition to announce it, reported by
 // the hosting pool-agent. A client waiting to attach reads this to say what
 // it is waiting for. The phase always says what is happening; pull and clone refine the
-// two phases that can report how far in they are, because an image pull and a clone of
+// phases that can report how far in they are, because an image pull and a clone of
 // a large remote are the longest things an attach waits behind. The pool restates
 // materializing_source with each read of the clone, so the phase stays fresh for the
 // whole of a long one.

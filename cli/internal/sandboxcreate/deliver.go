@@ -141,7 +141,7 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 	// One step for the delivery as a whole rather than one per repository: a
 	// sandbox cut from several sources delivers them together, and naming
 	// each would be a line that changes faster than it can be read.
-	report.step(StepPushingSource)
+	report.step(StepDeliveringSource)
 	// Deliveries run together, and a frontend's line is not theirs to write
 	// to at once.
 	var reporting sync.Mutex
@@ -178,6 +178,7 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 		if err != nil {
 			return err
 		}
+		serialized.step(StepPushingSource)
 		leaseRef := sandboxgit.OriginLeaseRef(sandbox.ID, slug, pushBranch(branch))
 		if err := pushSource(ctx, repoRoot, originURL, token, leaseRef, commit, branch, snapshotRef); err != nil {
 			// Another client can be delivering this discobox at the same time:

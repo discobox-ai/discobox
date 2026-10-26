@@ -72,7 +72,10 @@ func ProvisionStatus(sandbox *apimodel.Sandbox) Step {
 		// is named anyway so the line is never silently wrong.
 		return "the discobox is archived"
 	case apiclientgen.SandboxRuntimeStateAwaitingSource:
-		return "waiting for its source to be pushed"
+		if phase := recordedPhase(runtime); phase != "" {
+			return phase
+		}
+		return "waiting for source delivery"
 	}
 	if provisioned(sandbox) {
 		return ""
@@ -188,18 +191,25 @@ func recordedPhase(runtime apimodel.SandboxRuntime) Step {
 	if pull, ok := progress.Pull.Get(); ok && progress.Phase == apiclientgen.SandboxProvisionPhasePullingImage {
 		return pullLine(pull)
 	}
-	if clone, ok := progress.Clone.Get(); ok && progress.Phase == apiclientgen.SandboxProvisionPhaseMaterializingSource {
-		return cloneLine(clone)
+	if clone, ok := progress.Clone.Get(); ok {
+		switch progress.Phase {
+		case apiclientgen.SandboxProvisionPhaseFetchingSource:
+			return cloneLine(clone, "pool fetching ")
+		case apiclientgen.SandboxProvisionPhaseMaterializingSource:
+			return cloneLine(clone, "sandbox checking out ")
+		}
 	}
 	switch progress.Phase {
 	case apiclientgen.SandboxProvisionPhasePullingImage:
 		return "pulling the discobox image"
 	case apiclientgen.SandboxProvisionPhasePreparingVolumes:
 		return "preparing the discobox's storage"
+	case apiclientgen.SandboxProvisionPhaseFetchingSource:
+		return "pool fetching source"
 	case apiclientgen.SandboxProvisionPhaseMaterializingSource:
 		// The sandbox clones every source itself, from the remote or from the
 		// pool's origin for one delivered from the client's machine.
-		return "cloning the source into the discobox"
+		return "sandbox checking out source"
 	case apiclientgen.SandboxProvisionPhaseCreatingContainer:
 		return "creating the container"
 	case apiclientgen.SandboxProvisionPhaseStartingContainer:
@@ -246,15 +256,15 @@ func pullLine(pull apimodel.SandboxPullProgress) Step {
 	return Step(line)
 }
 
-// cloneLine renders the sandbox cloning a source: which one — the remote it
+// cloneLine renders a pool fetch or sandbox checkout: which source — the remote it
 // comes from, which is where the time goes on a slow clone — and how far in.
 //
 // Unlike the pull's, the object counts are a percentage: git knows each
 // stage's total before the stage starts, so the ratio only moves forward.
 // The bytes are what git has shown, which it starts showing only once the
 // clone is slow enough to need a throughput.
-func cloneLine(clone apimodel.SandboxCloneProgress) Step {
-	line := "cloning " + displaySafe(clone.Source)
+func cloneLine(clone apimodel.SandboxCloneProgress, operation string) Step {
+	line := operation + displaySafe(clone.Source)
 	objects, total, received := clone.Objects.Or(0), clone.ObjectsTotal.Or(0), clone.Bytes.Or(0)
 	percent := func() string {
 		return fmt.Sprintf("%d%%", objects*100/total)

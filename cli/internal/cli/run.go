@@ -684,7 +684,10 @@ func reportDeclaredSource(notes noteFunc) sandboxcreate.ReportDeclaredSourceFunc
 func declaredSourceLine(source sandboxcreate.DeclaredSource) string {
 	switch {
 	case !source.Local:
-		return fmt.Sprintf("source %s: cloning %s (no checkout at %s)",
+		if source.Checkout == "" {
+			return fmt.Sprintf("source %s: using remote %s", source.Name, source.URL)
+		}
+		return fmt.Sprintf("source %s: using remote %s (no checkout at %s)",
 			source.Name, source.URL, source.Checkout)
 	case source.Origin != "":
 		// The checkout is used anyway — a fork next door is the usual reason,

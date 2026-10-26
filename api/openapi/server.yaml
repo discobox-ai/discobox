@@ -7091,12 +7091,13 @@ components:
                 What a provisioning sandbox is being made to do right now, named for a client that
                 is waiting to attach and wants to know what it is waiting for. It is an
                 observation and never a state: it decides nothing, and it is history the moment the
-                phase ends. pulling_image carries pull byte counts and materializing_source the clone
-                of the source it is materializing; the rest are named work with no denominator to
-                report.
+                phase ends. pulling_image carries image byte counts. fetching_source reports the
+                pool fetching a remote into its cache; materializing_source reports the sandbox
+                checking out a source. Both Git phases carry clone progress.
             enum:
                 - pulling_image
                 - preparing_volumes
+                - fetching_source
                 - materializing_source
                 - creating_container
                 - starting_container
@@ -7108,7 +7109,7 @@ components:
                 Work underway on a sandbox that has no state transition to announce it, reported by
                 the hosting pool-agent. A client waiting to attach reads this to say what
                 it is waiting for. The phase always says what is happening; pull and clone refine the
-                two phases that can report how far in they are, because an image pull and a clone of
+                phases that can report how far in they are, because an image pull and a clone of
                 a large remote are the longest things an attach waits behind. The pool restates
                 materializing_source with each read of the clone, so the phase stays fresh for the
                 whole of a long one.
@@ -7125,9 +7126,9 @@ components:
         SandboxCloneProgress:
             additionalProperties: false
             description: |-
-                The source a materializing_source phase is cloning, and how far the clone has got. The
-                sandbox clones its own sources, so the counts are the sandbox agent's, read by the pool
-                while it waits on them. Only source is certain: a sandbox whose agent predates
+                Git transfer progress: fetching_source carries the pool fetch counts, while
+                materializing_source carries the sandbox clone counts read by the pool.
+                Only source is certain: a sandbox whose agent predates
                 reporting clone progress, or a clone git has said nothing about yet, has no stage.
             properties:
                 source:
@@ -7248,6 +7249,7 @@ components:
             enum:
                 - pulling_image
                 - preparing_volumes
+                - fetching_source
                 - materializing_source
                 - creating_container
                 - starting_container
@@ -7305,7 +7307,7 @@ components:
             type: object
         PoolSandboxCloneProgress:
             additionalProperties: false
-            description: The agent-facing twin of SandboxCloneProgress, refining materializing_source with the source being cloned and how far the sandbox's clone of it has got.
+            description: The agent-facing twin of SandboxCloneProgress, refining fetching_source or materializing_source with Git transfer progress.
             properties:
                 source:
                     description: What is being cloned, for a person to read - a remote's host and path, or a local checkout's directory name

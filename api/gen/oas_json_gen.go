@@ -28951,6 +28951,8 @@ func (s *PoolSandboxProvisionPhase) Decode(d *jx.Decoder) error {
 		*s = PoolSandboxProvisionPhasePullingImage
 	case PoolSandboxProvisionPhasePreparingVolumes:
 		*s = PoolSandboxProvisionPhasePreparingVolumes
+	case PoolSandboxProvisionPhaseFetchingSource:
+		*s = PoolSandboxProvisionPhaseFetchingSource
 	case PoolSandboxProvisionPhaseMaterializingSource:
 		*s = PoolSandboxProvisionPhaseMaterializingSource
 	case PoolSandboxProvisionPhaseCreatingContainer:
@@ -47904,6 +47906,8 @@ func (s *SandboxProvisionPhase) Decode(d *jx.Decoder) error {
 		*s = SandboxProvisionPhasePullingImage
 	case SandboxProvisionPhasePreparingVolumes:
 		*s = SandboxProvisionPhasePreparingVolumes
+	case SandboxProvisionPhaseFetchingSource:
+		*s = SandboxProvisionPhaseFetchingSource
 	case SandboxProvisionPhaseMaterializingSource:
 		*s = SandboxProvisionPhaseMaterializingSource
 	case SandboxProvisionPhaseCreatingContainer:

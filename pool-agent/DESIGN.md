@@ -492,6 +492,10 @@ counting both would nearly double the total. Both totals grow while the manifest
 is walked, so the pair is a ratio at a moment and never progress toward a fixed
 target.
 
+Git progress uses `fetching_source` for a pool fetch and
+`materializing_source` for a sandbox checkout. The pool publishes the source
+name before starting its fetch, then throttles Git meter reports.
+
 Clone progress refines materializing a source. The sandbox clones its own
 sources, so the counts are its agent's (`GET .../sources`), and the settle wait
 (`awaitSourcesMaterialized`) restates the phase on every read of them — twice a
