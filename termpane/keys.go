@@ -268,6 +268,11 @@ func ctrlEncodable(code rune) bool {
 // on Tab, whose back-tab the emulator encodes; Ctrl only on the codes with a
 // control byte.
 func foldToEncodable(key tea.Key) tea.Key {
+	// Ctrl-/ is the traditional alias for Ctrl-_ (US, 0x1f). The
+	// emulator only recognizes the latter spelling.
+	if key.Mod&uv.ModCtrl != 0 && key.Code == '/' {
+		key.Code = '_'
+	}
 	mod := key.Mod & uv.ModAlt
 	if key.Mod&uv.ModShift != 0 && key.Code == uv.KeyTab {
 		mod |= uv.ModShift

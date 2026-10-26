@@ -108,6 +108,9 @@ byte. `modifiedKeySeq` asks the same question at its door, against
 parameter with nowhere to put one would read `;1` for every arrow key on a
 Windows machine.
 
+Ctrl-/ is normalized to Ctrl-_ before this fold: both denote the traditional
+`0x1f` control byte, but the emulator only encodes the underscore spelling.
+
 **The numpad is the keys it is labeled with** (`foldKeypad`). A pane is handed
 keys, not scancodes: the host terminal already decoded the keystroke under its
 own keypad mode — the numeric one, since nothing a Bubble Tea window runs asks
