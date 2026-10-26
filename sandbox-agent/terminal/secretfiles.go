@@ -62,7 +62,7 @@ func (s *Service) WatchSecretFiles(ctx context.Context, logger *slog.Logger) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	if len(s.harness.Files) == 0 {
+	if len(s.harness.Files) == 0 && s.capture == nil {
 		return
 	}
 	// Not in a config sandbox. There, the credentials file is not a delivery to
@@ -102,11 +102,21 @@ func (s *Service) WatchSecretFiles(ctx context.Context, logger *slog.Logger) {
 // after its first write, and restoring one would take a file back from the
 // harness it was handed to. A credential delivered that way is delivered once
 // by contract; reconciling it would break the contract rather than the bug.
-func (i FileInstaller) RestoreSecretFiles(_ context.Context, harness config.Harness, env map[string]string) ([]string, error) {
-	if len(harness.Files) == 0 || i.Secrets == nil {
+func (i FileInstaller) RestoreSecretFiles(ctx context.Context, harness config.Harness, env map[string]string) ([]string, error) {
+	if (len(harness.Files) == 0 || i.Secrets == nil) && i.Capture == nil {
 		return nil, nil
 	}
-	sentinels := i.Secrets()
+	release, err := i.Capture.guard(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	var sentinels map[string]string
+	if i.Capture != nil {
+		sentinels = i.Capture.sentinels()
+	} else {
+		sentinels = i.Secrets()
+	}
 	if len(sentinels) == 0 {
 		return nil, nil
 	}
@@ -117,8 +127,8 @@ func (i FileInstaller) RestoreSecretFiles(_ context.Context, harness config.Harn
 	home = filepath.Clean(home)
 
 	var restored []string
-	for _, file := range harness.Files {
-		if !file.Template || file.CreateOnly {
+	for _, file := range i.Capture.files(harness.Files) {
+		if !file.Template || file.CreateOnly || i.Capture.protect(file.Path, false) {
 			continue
 		}
 		path, err := homeRelativePath(home, file.Path)

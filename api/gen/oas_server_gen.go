@@ -8,6 +8,12 @@ import (
 
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
+	// AcknowledgeSandboxHarnessConfig implements acknowledge-sandbox-harness-config operation.
+	//
+	// Acknowledge sandbox harness config.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-ack
+	AcknowledgeSandboxHarnessConfig(ctx context.Context, req *HarnessConfigAcknowledgment, params AcknowledgeSandboxHarnessConfigParams) (AcknowledgeSandboxHarnessConfigRes, error)
 	// ApproveSecretRequest implements approve-secret-request operation.
 	//
 	// Approve a secret request.
@@ -58,6 +64,12 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 	AttachSandboxExecOnce(ctx context.Context, req AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (AttachSandboxExecOnceRes, error)
+	// CaptureSandboxHarnessConfig implements capture-sandbox-harness-config operation.
+	//
+	// Capture sandbox harness config.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-capture
+	CaptureSandboxHarnessConfig(ctx context.Context, req *HarnessConfigCandidateRequest, params CaptureSandboxHarnessConfigParams) (CaptureSandboxHarnessConfigRes, error)
 	// ClearPoolCache implements clear-pool-cache operation.
 	//
 	// Stop every sandbox on a pool and empty its caches.
@@ -317,6 +329,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/trust-requests/{requestId}/deny
 	DenyTrustRequest(ctx context.Context, params DenyTrustRequestParams) (DenyTrustRequestRes, error)
+	// DiscardSandboxHarnessConfigChanges implements discard-sandbox-harness-config-changes operation.
+	//
+	// Discard sandbox harness config changes.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
+	DiscardSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params DiscardSandboxHarnessConfigChangesParams) (DiscardSandboxHarnessConfigChangesRes, error)
 	// ForceJob implements force-job operation.
 	//
 	// Force a pending, scheduled, or backoff job to run immediately.
@@ -437,6 +455,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
 	GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (GetSandboxExecScreenRes, error)
+	// GetSandboxHarnessConfigChanges implements get-sandbox-harness-config-changes operation.
+	//
+	// Get sandbox harness config changes.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
+	GetSandboxHarnessConfigChanges(ctx context.Context, params GetSandboxHarnessConfigChangesParams) (GetSandboxHarnessConfigChangesRes, error)
 	// GetSandboxPolicyFacts implements get-sandbox-policy-facts operation.
 	//
 	// What the control plane recorded about a sandbox when it was created, typed, and what each variable
@@ -894,6 +918,18 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/reconcile
 	ReconcileSandbox(ctx context.Context, params ReconcileSandboxParams) (ReconcileSandboxRes, error)
+	// ReconsiderSandboxHarnessConfig implements reconsider-sandbox-harness-config operation.
+	//
+	// Reconsider sandbox harness config.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-reconsider
+	ReconsiderSandboxHarnessConfig(ctx context.Context, req *HarnessConfigReconsideration, params ReconsiderSandboxHarnessConfigParams) (ReconsiderSandboxHarnessConfigRes, error)
+	// ReconsiderSandboxHarnessConfigChanges implements reconsider-sandbox-harness-config-changes operation.
+	//
+	// Reconsider sandbox harness config changes.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider
+	ReconsiderSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigSelection, params ReconsiderSandboxHarnessConfigChangesParams) (ReconsiderSandboxHarnessConfigChangesRes, error)
 	// RefreshHarnessConfigImage implements refresh-harness-config-image operation.
 	//
 	// Re-inspect the harness config's bundle, or its manifest file, and re-snapshot its label
@@ -1017,6 +1053,12 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/secret-grants/{grantId}
 	RevokeSecretGrant(ctx context.Context, params RevokeSecretGrantParams) (RevokeSecretGrantRes, error)
+	// SaveSandboxHarnessConfigChanges implements save-sandbox-harness-config-changes operation.
+	//
+	// Save sandbox harness config changes.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
+	SaveSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params SaveSandboxHarnessConfigChangesParams) (SaveSandboxHarnessConfigChangesRes, error)
 	// SendSandboxExecInput implements send-sandbox-exec-input operation.
 	//
 	// Writes text and named keys to the terminal, in order, the way typing into an attach does, and

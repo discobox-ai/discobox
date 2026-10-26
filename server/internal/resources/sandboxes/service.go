@@ -594,7 +594,8 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 
 // AcquireSandboxHTTPClientForServer is the same acquire for a call Discobox
 // makes itself rather than on behalf of somebody: putting a job to the
-// project's judge (ADR 26-09-22-838 §2). There are no caller scopes to check,
+// project's judge (ADR 26-09-22-838 §2), or acknowledging a committed harness
+// capture receipt (ADR 26-10-26-573). There are no caller scopes to check,
 // because there is no caller — the scopes are this code's own, and the route
 // they reach is the one they name.
 //

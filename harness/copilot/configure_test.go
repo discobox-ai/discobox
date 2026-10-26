@@ -78,6 +78,11 @@ func newConfigureEnv(t *testing.T) *configureEnv {
 		t.Fatal(err)
 	}
 	writeExecutable(t, env.script, strings.ReplaceAll(string(raw), "/run/discobox/configure/", env.runDir))
+	normalizer, err := os.ReadFile("copilot-normalize.cjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, filepath.Join(dir, "copilot-normalize.cjs"), string(normalizer))
 	// `script -q -e -c CMD /dev/null` runs CMD with a terminal; here it just
 	// runs it.
 	writeExecutable(t, filepath.Join(env.bin, "script"), "#!/bin/sh\nexec sh -c \"$4\"\n")

@@ -13,3 +13,4 @@ ARG HARNESS_METADATA
 LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
 COPY agent.conf check-launcher.sh configure.sh credentials.sh install-cli.sh launch.sh managed-config.json model.sh prompt.sh provision.yaml /features/opencode/
 COPY hook-plugin /features/opencode/hook-plugin
+COPY capture.sh image.json opencode-normalize.cjs /features/opencode/

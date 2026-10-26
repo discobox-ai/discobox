@@ -168,6 +168,10 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 	if err != nil {
 		return nil, apperrors.NotFound(err, "harness config not found")
 	}
+	if input.Revision != config.Revision {
+		return nil, apperrors.NewStatusError(http.StatusConflict, "harness configuration changed; reload it before saving")
+	}
+
 	// A bundle registered for the config is a new manifest, read and written
 	// the way a refresh does. It is registered on its own: the snapshot it
 	// takes rewrites the files and the egress hosts a person would be setting
@@ -419,7 +423,22 @@ func (s *Service) SetHarnessConfigSecretBinding(ctx context.Context, projectID, 
 		EnvName:         envName,
 		SecretID:        secretID,
 	}
-	if err := s.store.UpsertHarnessConfigSecretBinding(ctx, binding); err != nil {
+	if err := s.store.Transaction(ctx, func(tx *store.Store, db *gorm.DB) error {
+		current, err := tx.GetHarnessConfig(ctx, projectID, config.ID)
+		if err != nil {
+			return err
+		}
+		if err := tx.UpdateHarnessConfig(ctx, current); err != nil {
+			return err
+		}
+		if err := tx.UpsertHarnessConfigSecretBinding(ctx, binding); err != nil {
+			return err
+		}
+		if s.sandboxes != nil {
+			return s.sandboxes.RebindHarnessConfigSecretsTx(ctx, tx, db, projectID, config.ID)
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	// Sandboxes already running this config hold a sentinel bound to whatever
@@ -436,13 +455,22 @@ func (s *Service) SetHarnessConfigSecretBinding(ctx context.Context, projectID, 
 // DeleteHarnessConfigSecretBinding removes a harness config's binding for an
 // environment variable.
 func (s *Service) DeleteHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName string) error {
-	if _, err := s.store.GetHarnessConfig(ctx, projectID, configID); err != nil {
-		return apperrors.NotFound(err, "harness config not found")
-	}
-	if err := s.store.DeleteHarnessConfigSecretBinding(ctx, projectID, configID, strings.TrimSpace(envName)); err != nil {
-		return apperrors.NotFound(err, "harness config secret binding not found")
-	}
-	return nil
+	return s.store.Transaction(ctx, func(tx *store.Store, db *gorm.DB) error {
+		config, err := tx.GetHarnessConfig(ctx, projectID, configID)
+		if err != nil {
+			return err
+		}
+		if err := tx.UpdateHarnessConfig(ctx, config); err != nil {
+			return err
+		}
+		if err := tx.DeleteHarnessConfigSecretBinding(ctx, projectID, configID, strings.TrimSpace(envName)); err != nil {
+			return err
+		}
+		if s.sandboxes != nil {
+			return s.sandboxes.RebindHarnessConfigSecretsTx(ctx, tx, db, projectID, configID)
+		}
+		return nil
+	})
 }
 
 // SeedBuiltIns creates the included harness configs for a project and keeps their
@@ -617,6 +645,7 @@ func (s *Service) updateHarnessConfig(ctx context.Context, config *model.Harness
 			if err := txStore.SetHarnessConfigEgress(ctx, config.ProjectID, config.ID, *personLevel); err != nil {
 				return err
 			}
+			config.Revision++
 		}
 		return s.markEgressChangedTx(ctx, txStore, txDB, config, personLevel != nil)
 	})
@@ -813,6 +842,7 @@ func snapshotImageMetadata(config *model.HarnessConfig, inspected imageMetadata)
 	if image == nil {
 		image = &harness.Image{}
 	}
+	config.SaveBack = image.SaveBack
 	config.RunCommand, config.RelaunchCommand = conventionCommands(config.Slug, *image)
 	config.ConfigCommand, config.ConfigReminder, config.ConfigPorts = nil, "", nil
 	if image.Config != nil {

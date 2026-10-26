@@ -250,9 +250,10 @@ sequenceDiagram
     end
 ```
 
-- **Every agent call happens inside a user request**, using the caller's
-  credentials (`AcquireSandboxHTTPClient`). The control plane never contacts a
-  sandbox on its own authority.
+- Configure's agent calls happen inside a user request, using the caller's
+  credentials (`AcquireSandboxHTTPClient`). The separate capture-delivery
+  reconciler uses an explicit server-only lease to acknowledge already-committed
+  intent; it cannot collect new credentials.
 - The client says *when* to commit but never *what happened*: the exit status is
   read from the sandbox, so a caller cannot mark a harness configured without
   having run the flow.
@@ -263,10 +264,11 @@ sequenceDiagram
 - In config mode the sandbox-agent defers the primary until attach, so seeding
   always precedes the configure command.
 - Re-configuring is allowed and clobbers any in-flight attempt, so an abandoned
-  run cannot wedge a harness. The reconciler (resource type `harnessConfig`) is
-  a **janitor only**: it reaps a configure sandbox once the config has gone
-  `configureTTL` (1h) since its last update without a commit, records that as
-  `ConfigureError`, and touches no agent.
+  run cannot wedge a harness. The reconciler (resource type `harnessConfig`)
+  reaps a configure sandbox once the config has gone `configureTTL` (1h) since
+  its last update without a commit and records `ConfigureError`. It also retries
+  capture acknowledgments. Cleanup runs independently before delivery, so an
+  unreachable capture origin cannot strand a configure sandbox.
 - The configure sandbox runs as `harness.ConfigureUserName`/`ConfigureUserUID`
   (`discobox`, 10000), **not root**. A run sandbox mirrors the caller's own user
   (ADR 0025 §5); this one has no source and no caller identity to mirror, so the
@@ -469,10 +471,9 @@ Delete is refused (409) while any sandbox still references the config.
   a harness that opens on its own trust prompt for the directory it was just
   launched in. See `sandbox-agent/DESIGN.md`.
 - `SandboxRuntime` is this package's whole seam onto sandboxes, and it carries
-  two unrelated duties: the configure flow's sandbox lifecycle and agent access
-  (`CreateSandbox`, `DeleteSandbox`, `AcquireSandboxHTTPClient`), and the two
-  fan-outs that follow a config change — `RebindHarnessConfigSecrets` when a
-  binding moves, `UpgradeHarnessConfigSandboxes` when the bundle does.
+  configure's sandbox lifecycle and caller-authorized access; server-authorized
+  delivery of committed capture receipts; and config-change fan-outs that rebind
+  credentials and upgrade bundle pins.
 - The configure flow reaches the sandbox agent through `SandboxRuntime`
   (`AcquireSandboxHTTPClient`), which authorizes the caller's scopes — so it only
   works from inside a user request, which is the point.
@@ -486,3 +487,46 @@ Delete is refused (409) while any sandbox still references the config.
   configure output read back, through the files API (ADR 26-10-22-499), as the
   sandbox's default user — not through execs of `sh` and `cat` — so the lease
   asks for `exec:read` (the primary's status) and `files:read`/`files:write`.
+
+## Saving local harness configuration
+
+A registered bundle's `SaveBack` definition is snapshotted with its manifest.
+The agent reports a redacted preview and retains an immutable, bounded candidate;
+only an authenticated user can ask this service to fetch its credential payload.
+Private capture and acknowledgment calls use explicit agent scopes and are not
+proxied as user routes.
+
+`commitCapture` locks the config and bound secret rows, checks the candidate's
+config revision, manifest digest and binding/value revisions, then commits a
+patch to `ConfiguredFiles`, owned secrets, bindings, grants, sentinel assignments,
+dirty marks and an idempotency receipt in one transaction. The origin receives
+an assignment for each newly captured env; existing per-box overrides are kept,
+and other boxes keep the normal binding/grant delivery lifecycle. Missing fields
+leave remote state alone. Removing a settings override reveals the bundle baseline;
+missing local credentials never delete shared secrets. Provider endpoints and
+routes come from registered metadata. Hand-bound secrets survive replacement:
+the config receives a new owned secret instead of modifying the user's secret.
+
+The receipt contains the accepted baseline, never exported credential values.
+A retry after a lost reply reads the receipt and retries acknowledgment rather
+than replaying a potentially rotated OAuth token. Only after that durable commit
+does the agent install sentinels. An acknowledgment failure reports
+`saved-handoff-pending`; the config reconciler retries the pending receipt under
+an explicit server-only write scope without waking a stopped origin or asking
+for its credentials again. The receipt and dirty mark survive restart. An
+unrelated settings or name edit still permits the accepted handoff with
+current conditional revisions and the receipt's templates. A changed manifest,
+harness or binding identity instead sends an explicit superseded acknowledgment:
+the origin releases retained accepted credentials without installing stale
+sentinels. The receipt is terminal only after the origin accepts that outcome.
+An OAuth refresh of the same binding is safe. Local credentials remain usable
+until handoff succeeds.
+The originating harness and proxy can still race upstream OAuth refresh while
+the harness caches real credentials (ADR 26-10-26-573).
+
+Every config row update uses a revision compare-and-swap. The public editor
+request carries the revision originally read, so loading the latest row at
+request time cannot hide an intervening save. Configure captures its
+starting revision and bound-secret revisions and commits transactionally only
+while both still match. Deconfigure and manual binding mutations also advance
+the config revision, so an older local capture cannot resurrect removed state.

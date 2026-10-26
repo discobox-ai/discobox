@@ -81,6 +81,249 @@ components:
             required:
                 - error
             type: object
+        HarnessCaptureBaseline:
+            additionalProperties: false
+            properties:
+                configRevision:
+                    format: int64
+                    type: integer
+                files:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureFile'
+                    nullable: true
+                    type: array
+                harnessConfigId:
+                    type: string
+                manifestDigest:
+                    type: string
+                projectFiles:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                secretRevisions:
+                    additionalProperties:
+                        type: string
+                    type: object
+            required:
+                - harnessConfigId
+                - configRevision
+                - manifestDigest
+            type: object
+        HarnessCaptureCredential:
+            additionalProperties: false
+            properties:
+                account:
+                    type: string
+                envName:
+                    type: string
+                generation:
+                    type: string
+                keep:
+                    type: boolean
+                localId:
+                    type: string
+                provider:
+                    type: string
+                type:
+                    type: string
+                value:
+                    additionalProperties: true
+                    type: object
+            required:
+                - provider
+                - envName
+                - type
+            type: object
+        HarnessCaptureCredentialPreview:
+            additionalProperties: false
+            properties:
+                account:
+                    type: string
+                envName:
+                    type: string
+                provider:
+                    type: string
+                type:
+                    type: string
+            required:
+                - provider
+                - envName
+                - type
+            type: object
+        HarnessCaptureDiagnostic:
+            additionalProperties: false
+            properties:
+                code:
+                    type: string
+                message:
+                    type: string
+                path:
+                    type: string
+            required:
+                - code
+                - message
+            type: object
+        HarnessCaptureFile:
+            additionalProperties: false
+            properties:
+                content:
+                    type: string
+                createOnly:
+                    type: boolean
+                path:
+                    type: string
+                template:
+                    type: boolean
+            required:
+                - path
+                - content
+            type: object
+        HarnessCaptureFileChange:
+            additionalProperties: false
+            properties:
+                file:
+                    $ref: '#/components/schemas/HarnessCaptureFile'
+                path:
+                    type: string
+                remove:
+                    type: boolean
+            required:
+                - path
+            type: object
+        HarnessConfigAcknowledgment:
+            additionalProperties: false
+            properties:
+                baseline:
+                    $ref: '#/components/schemas/HarnessCaptureBaseline'
+                candidateId:
+                    type: string
+                files:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureFile'
+                    nullable: true
+                    type: array
+                sentinels:
+                    additionalProperties:
+                        type: string
+                    type: object
+                superseded:
+                    type: boolean
+            required:
+                - candidateId
+                - baseline
+                - files
+                - sentinels
+            type: object
+        HarnessConfigCandidate:
+            additionalProperties: false
+            properties:
+                baseline:
+                    $ref: '#/components/schemas/HarnessCaptureBaseline'
+                credentials:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureCredential'
+                    nullable: true
+                    type: array
+                diagnostics:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureDiagnostic'
+                    nullable: true
+                    type: array
+                files:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureFileChange'
+                    nullable: true
+                    type: array
+                id:
+                    type: string
+                secretRevisions:
+                    additionalProperties:
+                        type: string
+                    type: object
+                writeRevision:
+                    format: int64
+                    type: integer
+            required:
+                - id
+                - baseline
+                - writeRevision
+                - files
+                - credentials
+            type: object
+        HarnessConfigCandidateRequest:
+            additionalProperties: false
+            properties:
+                candidateId:
+                    type: string
+            required:
+                - candidateId
+            type: object
+        HarnessConfigChanges:
+            additionalProperties: false
+            properties:
+                candidateId:
+                    type: string
+                configRevision:
+                    format: int64
+                    type: integer
+                credentials:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureCredentialPreview'
+                    nullable: true
+                    type: array
+                diagnostics:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureDiagnostic'
+                    nullable: true
+                    type: array
+                files:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureFileChange'
+                    nullable: true
+                    type: array
+                harnessConfigId:
+                    type: string
+                state:
+                    type: string
+            required:
+                - harnessConfigId
+                - configRevision
+                - state
+                - files
+                - credentials
+            type: object
+        HarnessConfigReconsideration:
+            additionalProperties: false
+            properties:
+                current:
+                    $ref: '#/components/schemas/HarnessCaptureBaseline'
+                selection:
+                    $ref: '#/components/schemas/HarnessConfigSelection'
+            required:
+                - selection
+                - current
+            type: object
+        HarnessConfigSelection:
+            additionalProperties: false
+            properties:
+                candidateId:
+                    type: string
+                keepFiles:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                replaceCredentials:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+            required:
+                - candidateId
+                - keepFiles
+                - replaceCredentials
+            type: object
         HarnessHookLog:
             additionalProperties: false
             properties:
@@ -983,6 +1226,10 @@ components:
                 autostop:
                     $ref: '#/components/schemas/SandboxAgentAutostopStatus'
                     description: The sandbox's idle-stop policy. Absent while the policy is not running, which in a configure-mode sandbox is always.
+                harnessConfigCandidate:
+                    type: string
+                harnessConfigState:
+                    type: string
                 meta:
                     $ref: '#/components/schemas/SandboxMeta'
                     description: The sandbox's name, description and tags, read from ~/.discobox/meta.json in the sandbox user's home, which is their system of record. Empty when there is no such file. Absent when the file could not be read or is not valid, in which case metaError says why.
@@ -3028,6 +3275,180 @@ paths:
             summary: Stat a path in a discobox.
             tags:
                 - Sandbox Files
+    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-ack:
+        post:
+            operationId: acknowledge-sandbox-harness-config
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/HarnessConfigAcknowledgment'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HarnessConfigChanges'
+                    description: Result.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Acknowledge sandbox harness config.
+            tags:
+                - Harness Config Save Back
+    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-capture:
+        post:
+            operationId: capture-sandbox-harness-config
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/HarnessConfigCandidateRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HarnessConfigCandidate'
+                    description: Result.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Capture sandbox harness config.
+            tags:
+                - Harness Config Save Back
+    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes:
+        get:
+            operationId: get-sandbox-harness-config-changes
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HarnessConfigChanges'
+                    description: Result.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Get sandbox harness config changes.
+            tags:
+                - Harness Config Save Back
+    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard:
+        post:
+            operationId: discard-sandbox-harness-config-changes
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/HarnessConfigCandidateRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HarnessConfigChanges'
+                    description: Result.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Discard sandbox harness config changes.
+            tags:
+                - Harness Config Save Back
+    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-reconsider:
+        post:
+            operationId: reconsider-sandbox-harness-config
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/HarnessConfigReconsideration'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HarnessConfigChanges'
+                    description: Result.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Reconsider sandbox harness config.
+            tags:
+                - Harness Config Save Back
     /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks:
         get:
             operationId: list-harness-hooks

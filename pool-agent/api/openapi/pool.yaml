@@ -1,5 +1,388 @@
 components:
     schemas:
+        HarnessCaptureBaseline:
+            additionalProperties: false
+            properties:
+                configRevision:
+                    format: int64
+                    type: integer
+                files:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureFile'
+                    nullable: true
+                    type: array
+                harnessConfigId:
+                    type: string
+                manifestDigest:
+                    type: string
+                projectFiles:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                secretRevisions:
+                    additionalProperties:
+                        type: string
+                    type: object
+            required:
+                - harnessConfigId
+                - configRevision
+                - manifestDigest
+            type: object
+        HarnessCaptureCredential:
+            additionalProperties: false
+            properties:
+                account:
+                    type: string
+                envName:
+                    type: string
+                generation:
+                    type: string
+                keep:
+                    type: boolean
+                localId:
+                    type: string
+                provider:
+                    type: string
+                type:
+                    type: string
+                value:
+                    additionalProperties: true
+                    type: object
+            required:
+                - provider
+                - envName
+                - type
+            type: object
+        HarnessCaptureCredentialPreview:
+            additionalProperties: false
+            properties:
+                account:
+                    type: string
+                envName:
+                    type: string
+                provider:
+                    type: string
+                type:
+                    type: string
+            required:
+                - provider
+                - envName
+                - type
+            type: object
+        HarnessCaptureDiagnostic:
+            additionalProperties: false
+            properties:
+                code:
+                    type: string
+                message:
+                    type: string
+                path:
+                    type: string
+            required:
+                - code
+                - message
+            type: object
+        HarnessCaptureFile:
+            additionalProperties: false
+            properties:
+                content:
+                    type: string
+                createOnly:
+                    type: boolean
+                path:
+                    type: string
+                template:
+                    type: boolean
+            required:
+                - path
+                - content
+            type: object
+        HarnessCaptureFileChange:
+            additionalProperties: false
+            properties:
+                file:
+                    $ref: '#/components/schemas/HarnessCaptureFile'
+                path:
+                    type: string
+                remove:
+                    type: boolean
+            required:
+                - path
+            type: object
+        HarnessCaptureOAuth:
+            additionalProperties: false
+            properties:
+                clientId:
+                    type: string
+                encoding:
+                    type: string
+                tokenUrl:
+                    type: string
+            required:
+                - tokenUrl
+                - clientId
+            type: object
+        HarnessCaptureProvider:
+            additionalProperties: false
+            properties:
+                envName:
+                    type: string
+                host:
+                    type: string
+                id:
+                    type: string
+                multipleAccounts:
+                    type: boolean
+                oauth:
+                    $ref: '#/components/schemas/HarnessCaptureOAuth'
+                routes:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureRoute'
+                    nullable: true
+                    type: array
+                types:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+            required:
+                - id
+                - envName
+                - types
+            type: object
+        HarnessCaptureRoute:
+            additionalProperties: false
+            properties:
+                host:
+                    type: string
+                path:
+                    type: string
+                use:
+                    type: string
+            required:
+                - host
+            type: object
+        HarnessCaptureSetting:
+            additionalProperties: false
+            properties:
+                templateSuffix:
+                    type: string
+                createOnly:
+                    type: boolean
+                fields:
+                    additionalProperties:
+                        type: string
+                    type: object
+                format:
+                    type: string
+                path:
+                    type: string
+            required:
+                - path
+                - format
+                - fields
+            type: object
+        HarnessConfigAcknowledgment:
+            additionalProperties: false
+            properties:
+                superseded:
+                    type: boolean
+                baseline:
+                    $ref: '#/components/schemas/HarnessCaptureBaseline'
+                candidateId:
+                    type: string
+                files:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureFile'
+                    nullable: true
+                    type: array
+                sentinels:
+                    additionalProperties:
+                        type: string
+                    type: object
+            required:
+                - candidateId
+                - baseline
+                - files
+                - sentinels
+            type: object
+        HarnessConfigCandidate:
+            additionalProperties: false
+            properties:
+                baseline:
+                    $ref: '#/components/schemas/HarnessCaptureBaseline'
+                credentials:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureCredential'
+                    nullable: true
+                    type: array
+                diagnostics:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureDiagnostic'
+                    nullable: true
+                    type: array
+                files:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureFileChange'
+                    nullable: true
+                    type: array
+                id:
+                    type: string
+                secretRevisions:
+                    additionalProperties:
+                        type: string
+                    type: object
+                writeRevision:
+                    format: int64
+                    type: integer
+            required:
+                - id
+                - baseline
+                - writeRevision
+                - files
+                - credentials
+            type: object
+        HarnessConfigCandidateRequest:
+            additionalProperties: false
+            properties:
+                candidateId:
+                    type: string
+            required:
+                - candidateId
+            type: object
+        HarnessConfigChanges:
+            additionalProperties: false
+            properties:
+                candidateId:
+                    type: string
+                configRevision:
+                    format: int64
+                    type: integer
+                credentials:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureCredentialPreview'
+                    nullable: true
+                    type: array
+                diagnostics:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureDiagnostic'
+                    nullable: true
+                    type: array
+                files:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureFileChange'
+                    nullable: true
+                    type: array
+                harnessConfigId:
+                    type: string
+                state:
+                    type: string
+            required:
+                - harnessConfigId
+                - configRevision
+                - state
+                - files
+                - credentials
+            type: object
+        HarnessConfigReconsideration:
+            additionalProperties: false
+            properties:
+                current:
+                    $ref: '#/components/schemas/HarnessCaptureBaseline'
+                selection:
+                    $ref: '#/components/schemas/HarnessConfigSelection'
+            required:
+                - selection
+                - current
+            type: object
+        HarnessConfigSaveBack:
+            additionalProperties: false
+            properties:
+                credentialFiles:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                credentialSettings:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureSetting'
+                    nullable: true
+                    type: array
+                exportCommand:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                handoffCommand:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                providers:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureProvider'
+                    nullable: true
+                    type: array
+                settings:
+                    items:
+                        $ref: '#/components/schemas/HarnessCaptureSetting'
+                    nullable: true
+                    type: array
+                version:
+                    format: int64
+                    type: integer
+                watch:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+            required:
+                - version
+                - watch
+                - exportCommand
+                - handoffCommand
+                - providers
+                - settings
+            type: object
+        HarnessConfigSaveResult:
+            additionalProperties: false
+            properties:
+                candidateId:
+                    type: string
+                configRevision:
+                    format: int64
+                    type: integer
+                harnessConfigId:
+                    type: string
+                state:
+                    type: string
+            required:
+                - candidateId
+                - harnessConfigId
+                - configRevision
+                - state
+            type: object
+        HarnessConfigSelection:
+            additionalProperties: false
+            properties:
+                candidateId:
+                    type: string
+                keepFiles:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                replaceCredentials:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+            required:
+                - candidateId
+                - keepFiles
+                - replaceCredentials
+            type: object
         HarnessConfigFile:
             additionalProperties: false
             properties:
@@ -254,6 +637,10 @@ components:
         ResolvedHarnessConfig:
             additionalProperties: false
             properties:
+                saveBack:
+                    $ref: '#/components/schemas/HarnessConfigSaveBack'
+                captureBaseline:
+                    $ref: '#/components/schemas/HarnessCaptureBaseline'
                 files:
                     items:
                         "$ref": "#/components/schemas/HarnessConfigFile"

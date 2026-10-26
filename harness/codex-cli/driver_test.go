@@ -20,7 +20,15 @@ func TestDefinitionConfigure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := string(scriptBytes)
+	normalizer, err := os.ReadFile("codex-normalize.cjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := os.ReadFile("image.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(scriptBytes) + string(normalizer) + string(metadata)
 	if !strings.Contains(script, harness.ConfigureOutputPath) {
 		t.Fatalf("configure script does not write the harness-configure.json contract: %s", script)
 	}

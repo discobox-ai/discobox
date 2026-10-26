@@ -38,6 +38,8 @@
 # without ever being readable in this sandbox. Keeping it is reported back as
 # usePrevious, not as a value.
 set -eu
+HARNESS_CAPTURE_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+export HARNESS_CAPTURE_DIR
 
 PREVIOUS_CONFIG=/run/discobox/configure/harness-previous-config.json
 OUTPUT=/run/discobox/configure/harness-configure.json
@@ -184,23 +186,14 @@ stored_token() {
 		} catch (err) {
 			process.exit(3);
 		}
-		const user = state.lastLoggedInUser || {};
-		if (typeof user.host !== 'string' || typeof user.login !== 'string') {
-			process.exit(3);
-		}
-		if (user.host.replace(/\/+$/, '') !== process.env.COPILOT_CONFIGURE_HOST) {
-			process.stderr.write(`Copilot signed in to ${user.host}, and this harness can only run Copilot against ${process.env.COPILOT_CONFIGURE_HOST}.\n`);
+		const { entry } = require(require('path').join(process.env.HARNESS_CAPTURE_DIR, 'copilot-normalize.cjs'));
+		let selected;
+		try { selected = entry(state); } catch {
+			process.stderr.write('Copilot signed in to an unsupported host; this harness can only run Copilot against https://github.com.\n');
 			process.exit(4);
 		}
-		// Copilot keeps the token under the account's key, and under the same key
-		// with the provider appended; either is the one token.
-		const tokens = state.authTokens || {};
-		const key = `${user.host}:${user.login}`;
-		const entry = tokens[key] || tokens[`${key}:github`] || {};
-		if (typeof entry.token !== 'string' || !entry.token) {
-			process.exit(3);
-		}
-		process.stdout.write(entry.token);
+		if (!selected) process.exit(3);
+		process.stdout.write(selected.value.token);
 	NODE_EOF
 }
 

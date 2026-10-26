@@ -25,6 +25,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
@@ -1237,7 +1238,11 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
 	}
-	doc := buildSandboxDocument(r.paths, r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, r.poolPublicKey(), resolvedImage, r.poolEndpoints, req, proxyEnv, project)
+	doc, err := buildSandboxDocument(r.paths, r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, r.poolPublicKey(), resolvedImage, r.poolEndpoints, req, proxyEnv, project)
+	if err != nil {
+		return err
+	}
+
 	data, err := marshalSandboxDocument(doc)
 	if err != nil {
 		return err
@@ -1350,7 +1355,7 @@ func documentVolumes(volumes []workerapimodel.HarnessVolume) []harness.Volume {
 // trust — the control plane's, and the pool's for runtime-config deliveries —
 // where the pool serves it, and the create-time config, and no private key or
 // secret.
-func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID, controlPlanePublicKey, poolPublicKey, resolvedImage string, pool sandboxconfig.PoolEndpoints, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) sandboxconfig.Document {
+func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID, controlPlanePublicKey, poolPublicKey, resolvedImage string, pool sandboxconfig.PoolEndpoints, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) (sandboxconfig.Document, error) {
 	publicKeys := map[string]string{sandboxconfig.ControlPlanePublicKeyName: controlPlanePublicKey}
 	if poolPublicKey != "" {
 		publicKeys[sandboxconfig.PoolPublicKeyName] = poolPublicKey
@@ -1513,7 +1518,40 @@ func buildSandboxDocument(paths sandboxpath.Paths, projectID, sandboxID, poolID,
 		sort.Strings(proxyEnvNames)
 		doc.Runtime.ProxyEnvs = proxyEnvNames
 	}
-	return doc
+	if resolved, ok := req.ResolvedHarnessConfig.Get(); ok {
+		if value, ok := resolved.SaveBack.Get(); ok {
+			data, err := json.Marshal(&value)
+			if err != nil {
+				return doc, err
+			}
+			doc.Image.SaveBack = new(harnesscapture.Definition)
+			if err := json.Unmarshal(data, doc.Image.SaveBack); err != nil {
+				return doc, err
+			}
+			if err := doc.Image.SaveBack.Validate(); err != nil {
+				return doc, err
+			}
+		}
+		if value, ok := resolved.CaptureBaseline.Get(); ok {
+			data, err := json.Marshal(&value)
+			if err != nil {
+				return doc, err
+			}
+			doc.Runtime.CaptureBaseline = new(harnesscapture.Baseline)
+			if err := json.Unmarshal(data, doc.Runtime.CaptureBaseline); err != nil {
+				return doc, err
+			}
+		}
+	}
+	if doc.Image.SaveBack != nil {
+		baseline := doc.Runtime.CaptureBaseline
+		resolved := req.ResolvedHarnessConfig.Value
+		if baseline == nil || baseline.HarnessConfigID != resolved.ID || baseline.ConfigRevision < 1 || baseline.ManifestDigest == "" {
+			return doc, errors.New("harness capture requires matching delivery provenance")
+		}
+	}
+
+	return doc, nil
 }
 
 // prepareOwnedTree creates dir and asserts ownership over everything inside it.

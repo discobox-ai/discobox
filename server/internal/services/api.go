@@ -9,6 +9,7 @@ import (
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/auditid"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/judge"
 	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
@@ -94,6 +95,10 @@ type ProjectService interface {
 
 // HarnessConfigService manages project-scoped harness configurations.
 type HarnessConfigService interface {
+	GetSandboxHarnessConfigChanges(context.Context, string, string) (harnesscapture.Preview, error)
+	SaveSandboxHarnessConfigChanges(context.Context, string, string, harnesscapture.CandidateRequest) (harnesscapture.SaveResult, error)
+	ReconsiderSandboxHarnessConfigChanges(context.Context, string, string, harnesscapture.Selection) (harnesscapture.Preview, error)
+	DiscardSandboxHarnessConfigChanges(context.Context, string, string, harnesscapture.CandidateRequest) (harnesscapture.Preview, error)
 	ListHarnessConfigs(ctx context.Context, projectID string) ([]model.HarnessConfig, error)
 	CreateHarnessConfig(ctx context.Context, projectID string, input CreateHarnessConfigBody) (*model.HarnessConfig, error)
 	GetHarnessConfig(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error)

@@ -512,7 +512,7 @@ func TestPruneRemovesWhatNoPinReaches(t *testing.T) {
 	read(t, mustBlob(t, f, f.platform.layer))
 	// project-2's harness is repinned to something else.
 	moved := f.registry.image(t, "other v2")
-	if err := f.service.store.UpdateHarnessConfig(context.Background(), &model.HarnessConfig{ID: "hc-2", ProjectID: "project-2", Slug: "other", Name: "Other", Bundle: otherRef, BundleDigest: moved.manifest}); err != nil {
+	if err := f.service.store.UpdateHarnessConfig(context.Background(), &model.HarnessConfig{Revision: 1, ID: "hc-2", ProjectID: "project-2", Slug: "other", Name: "Other", Bundle: otherRef, BundleDigest: moved.manifest}); err != nil {
 		t.Fatal(err)
 	}
 	if removed, err := f.service.Prune(context.Background()); err != nil || removed != 0 {

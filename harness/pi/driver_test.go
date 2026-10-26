@@ -66,13 +66,13 @@ func writeExecutable(t *testing.T, path, content string) {
 }
 
 func TestDefinitionConfigure(t *testing.T) {
-	script := readFile(t, "configure.sh")
+	script := readFile(t, "configure.sh") + readFile(t, "pi-normalize.cjs") + readFile(t, "image.json")
 	for _, required := range []string{
 		harness.ConfigureOutputPath,
 		harness.ConfigurePreviousConfigPath,
 		// Reuse goes through the PREV_ sentinel and comes back as usePrevious,
 		// so no credential is read or re-emitted when the existing one is kept.
-		`process.env['PREV_' + envName]`,
+		`sentinels[envName]`,
 		"usePrevious",
 		// auth.json is JSON, so a quote inside a template action arrives at
 		// the renderer backslash-escaped and the parser rejects it.

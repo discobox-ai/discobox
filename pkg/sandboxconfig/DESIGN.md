@@ -268,3 +268,10 @@ sandbox, delivered as one revisioned document to the sandbox agent's
   round-trip test fails when the two drift. The agent's apply side is
   [`sandbox-agent/intake`](../../sandbox-agent/DESIGN.md).
 
+
+## Capture ownership
+
+The image owns the registered `SaveBack` definition. Runtime owns the delivered
+`CaptureBaseline`, including configuration and credential revisions. Effective
+configuration carries both as explicit harness fields, independently of diagnostic
+provenance, and records project file paths for exclusion from shared defaults.

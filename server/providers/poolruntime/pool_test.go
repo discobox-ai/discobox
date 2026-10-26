@@ -790,3 +790,31 @@ func TestSchedulablePoolGivesUpOnASilentPool(t *testing.T) {
 		t.Fatalf("schedulablePool error = %v, want ErrNoSandboxCapacity", err)
 	}
 }
+
+func TestCaptureLeaseForwardsSandboxAgentAuthority(t *testing.T) {
+	for _, scope := range []string{"harness-config:read", "harness-config:capture", "harness-config:write"} {
+		t.Run(scope, func(t *testing.T) {
+			runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
+			runtimeProvider.staticToken = true
+			manager := &fakePoolManager{pool: activePool("pool-1")}
+			provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+			state := poolRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"pool_id": "pool-1"}})
+			lease, err := provider.AcquireHTTPClient(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, []string{scope}, sandbox.UseAction)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer lease.Release()
+			token, err := lease.ForwardAuthorizationToken(context.Background())
+			if err != nil || token != "sandbox-agent-token" {
+				t.Fatalf("forward authority missing: %v", err)
+			}
+			if len(manager.sandboxAgentTokenClaims) != 1 {
+				t.Fatal("sandbox token was not minted")
+			}
+			claims := manager.sandboxAgentTokenClaims[0]
+			if claims.ProjectID != "project-1" || claims.PoolID != "pool-1" || claims.SandboxID != "sandbox-1" || !reflect.DeepEqual(claims.Scopes, []string{scope}) {
+				t.Fatalf("incorrect downstream claims: %#v", claims)
+			}
+		})
+	}
+}

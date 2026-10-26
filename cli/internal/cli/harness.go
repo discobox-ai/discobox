@@ -33,6 +33,7 @@ type harnessUpdateOptions struct {
 func (a *App) newHarnessCommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "harness", Aliases: []string{"harnesses"}, Short: "Manage harness configs"}
 	cmd.AddCommand(a.newHarnessListCommand())
+	cmd.AddCommand(a.newHarnessChangesCommand(), a.newHarnessSaveCommand(), a.newHarnessDiscardCommand(), a.newHarnessReconsiderCommand())
 	cmd.AddCommand(a.newHarnessGetCommand())
 	cmd.AddCommand(a.newHarnessCreateCommand())
 	cmd.AddCommand(a.newHarnessConfigureCommand())
@@ -450,16 +451,17 @@ and need not be listed.
 		if err != nil {
 			return err
 		}
+		currentRes, err := client.GetHarnessConfig(cmd.Context(), apiclientgen.GetHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessID})
+		if err != nil {
+			return err
+		}
+		current, err := expectResponse[apimodel.HarnessConfig](currentRes)
+		if err != nil {
+			return err
+		}
+		body.Revision = current.Revision.Or(0)
 		level, ok, err := egressOpts.update(cmd, func() (apimodel.EgressPolicy, error) {
-			res, err := client.GetHarnessConfig(cmd.Context(), apiclientgen.GetHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessID})
-			if err != nil {
-				return apimodel.EgressPolicy{}, err
-			}
-			harness, err := expectResponse[apimodel.HarnessConfig](res)
-			if err != nil {
-				return apimodel.EgressPolicy{}, err
-			}
-			return harness.Egress.Value, nil
+			return current.Egress.Value, nil
 		})
 		if err != nil {
 			return err

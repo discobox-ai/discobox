@@ -12,3 +12,5 @@ ARG HARNESS_METADATA
 # so the expansion does.
 LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
 COPY agent.conf check-launcher.sh configure.sh hooks.json install-cli.sh launch.sh prompt.sh provision.yaml system-config.toml /features/codex-cli/
+COPY capture.sh image.json /features/codex-cli/
+COPY codex-normalize.cjs /features/codex-cli/

@@ -114,7 +114,7 @@ delivered() {
 #     own import of the same auth.json in a sandbox that ran opencode 1, or one
 #     connected by hand — is switched to, and one that is the provider's only
 #     credential is not.
-sync() {
+sync_locked() {
 	data="${XDG_DATA_HOME:-$HOME/.local/share}/opencode"
 	synced="${XDG_STATE_HOME:-$HOME/.local/state}/discobox/opencode-credentials.synced"
 	want=$(delivered)
@@ -180,6 +180,16 @@ sync() {
 	fi
 	mkdir -p "$(dirname "$synced")"
 	printf '%s' "$want" >"$synced"
+}
+
+# The agent uses this same advisory lock around export, repair and handoff.
+sync() {
+	mkdir -p "$HOME/.config/discobox"
+	(
+		flock -x 9
+		/usr/local/libexec/discobox/opencode-capture guard || exit 0
+		sync_locked
+	) 9>"$HOME/.config/discobox/harness-capture.lock"
 }
 
 case ${1-} in

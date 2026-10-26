@@ -18,8 +18,9 @@ import (
 
 func editTestConfig() *apimodel.HarnessConfig {
 	return &apimodel.HarnessConfig{
-		ID:   "hc_1",
-		Name: "Claude",
+		ID:       "hc_1",
+		Revision: apiclientgen.NewOptInt64(7),
+		Name:     "Claude",
 		Files: apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{
 			{Path: "settings.json", Content: "declared"},
 		}),
@@ -143,6 +144,9 @@ func TestEditHarnessFileUpdatesConfiguredBucket(t *testing.T) {
 		t.Fatal("editHarnessFile should report the change")
 	}
 
+	if gotBody["revision"] != float64(7) {
+		t.Fatalf("lost original editor revision: %v", gotBody["revision"])
+	}
 	if _, ok := gotBody["files"]; ok {
 		t.Fatalf("editing a configured file must not touch the declared files: %v", gotBody)
 	}
@@ -194,5 +198,35 @@ func TestEditHarnessFileUnknownPathListsFiles(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q should list available file %q", err, want)
 		}
+	}
+}
+
+func TestEditorSaveUsesOriginalRevisionAndReportsConflict(t *testing.T) {
+	fakeEditor(t, "edited")
+	// The editor was opened on revision7; another save has committed revision8.
+	cfg := editTestConfig()
+	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut && r.Method != http.MethodPatch {
+			t.Fatalf("editor re-read newer config: %s", r.Method)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["revision"] != float64(7) {
+			t.Fatalf("edited revision was replaced: %v", body["revision"])
+		}
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"status":409,"title":"Conflict","detail":"harness configuration changed"}`))
+	}))
+	defer server.Close()
+	client, err := apiclientgen.NewClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := (&App{}).editHarnessFile(t.Context(), client, "project-1", cfg, ".claude.json", nil, os.Stdout, os.Stderr)
+	if changed || err == nil || !strings.Contains(err.Error(), "409") {
+		t.Fatalf("stale editor save: changed=%v err=%v", changed, err)
 	}
 }

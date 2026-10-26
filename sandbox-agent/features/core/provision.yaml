@@ -14,6 +14,10 @@
 # from access/ (sandbox-agent/Dockerfile).
 apiVersion: discobox.ai/provision/v1
 steps:
+  - name: harness-capture-runtime
+    file: {path: /usr/local/libexec/discobox/harness-capture/runtime.cjs, source: harness-capture/runtime.cjs}
+  - name: harness-capture-settings
+    file: {path: /usr/local/libexec/discobox/harness-capture/settings.cjs, source: harness-capture/settings.cjs}
   # sudo and passwd for the sandbox's account (ADR 0025); procps for the
   # agent's resource report; sftp-server, which `discobox cp` runs as an exec.
   - name: packages

@@ -37,6 +37,76 @@
       "command": [
         "/usr/local/libexec/discobox/configure-codex"
       ]
+    },
+    "saveBack": {
+      "version": 1,
+      "watch": [
+        ".codex/config.toml",
+        ".codex/auth.json"
+      ],
+      "exportCommand": [
+        "/usr/local/libexec/discobox/codex-capture",
+        "export"
+      ],
+      "handoffCommand": [
+        "/usr/local/libexec/discobox/codex-capture",
+        "handoff"
+      ],
+      "providers": [
+        {
+          "id": "openai-key",
+          "envName": "OPENAI_API_KEY",
+          "types": [
+            "token"
+          ],
+          "host": "api.openai.com"
+        },
+        {
+          "id": "openai",
+          "envName": "CODEX_OAUTH_TOKEN",
+          "types": [
+            "oauth"
+          ],
+          "oauth": {
+            "tokenUrl": "https://auth.openai.com/oauth/token",
+            "clientId": "app_EMoamEEZ73f0CkXaXp7hrann"
+          }
+        }
+      ],
+      "settings": [
+        {
+          "path": ".codex/config.toml",
+          "format": "toml",
+          "fields": {
+            "model": "string",
+            "model_provider": "string",
+            "model_reasoning_effort": "string",
+            "model_reasoning_summary": "string",
+            "model_verbosity": "string",
+            "personality": "string",
+            "web_search": "string",
+            "tui.notifications": "boolean"
+          },
+          "templateSuffix": "[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n"
+        }
+      ],
+      "credentialFiles": [
+        ".codex/auth.json"
+      ],
+      "credentialSettings": [
+        {
+          "path": ".codex/auth.json",
+          "format": "json",
+          "fields": {
+            "OPENAI_API_KEY": "secret-or-null",
+            "tokens.access_token": "secret",
+            "tokens.refresh_token": "placeholder",
+            "tokens.id_token": "id-token",
+            "tokens.account_id": "string",
+            "last_refresh": "string"
+          }
+        }
+      ]
     }
   }
 }

@@ -127,7 +127,18 @@ func (s *Store) UpdateHarnessConfig(ctx context.Context, config *model.HarnessCo
 	if err != nil {
 		return err
 	}
-	return write.Omit(egressColumn).Save(config).Error
+	previous := config.Revision
+	config.Revision++
+	result := write.Model(&model.HarnessConfig{}).Where("id = ? AND project_id = ? AND revision = ?", config.ID, config.ProjectID, previous).Select("*").Omit(egressColumn, "Project", "Sandboxes").Updates(config)
+	if result.Error != nil {
+		config.Revision = previous
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		config.Revision = previous
+		return ErrGenerationConflict
+	}
+	return nil
 }
 
 func (s *Store) DeleteHarnessConfig(ctx context.Context, projectID, configID string) error {

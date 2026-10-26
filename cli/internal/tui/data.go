@@ -393,6 +393,8 @@ type Sandbox struct {
 	// ones that failed (ADR 26-10-16-423 §6). Empty once all are ready. It
 	// was written by the box and made displayable already.
 	Provisioning string
+	// HarnessConfigPending reports a captured local settings or credential change.
+	HarnessConfigPending bool
 
 	// Repaired is the last automatic repair of this box, once it is over. It is
 	// carried because a repair that works clears the failure it answered, and

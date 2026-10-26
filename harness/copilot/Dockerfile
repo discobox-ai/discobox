@@ -12,3 +12,5 @@ ARG HARNESS_METADATA
 # so the expansion does.
 LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
 COPY agent.conf check-launcher.sh configure.sh hooks.json install-cli.sh launch.sh prompt.sh provision.yaml /features/copilot/
+COPY capture.sh image.json /features/copilot/
+COPY copilot-normalize.cjs /features/copilot/

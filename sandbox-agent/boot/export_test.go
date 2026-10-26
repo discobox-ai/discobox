@@ -193,3 +193,15 @@ func exportedFiles(t *testing.T, subtrees ...string) map[string]string {
 	}
 	return got
 }
+
+func TestCaptureStateExcludedWithoutDedicatedVolume(t *testing.T) {
+	excluded := captureExportExclusions([]harness.ResolvedVolume{{Path: "/var/lib/discobox", Kind: harness.VolumeData}}, 1500, "/var/lib/discobox/harness-capture")
+	for _, p := range []string{"data/var/lib/discobox/harness-capture", "data/var/lib/discobox/upper/harness-capture"} {
+		if _, ok := excluded[p]; !ok {
+			t.Fatalf("private spool can travel: %s", p)
+		}
+	}
+	if _, ok := excluded["data/var/lib/discobox"]; ok {
+		t.Fatal("agent database must still travel")
+	}
+}

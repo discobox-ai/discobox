@@ -561,3 +561,78 @@ func rebindSandboxSecretRows(ctx context.Context, st *store.Store, projectID str
 	}
 	return changed, nil
 }
+
+// RebindHarnessConfigSecretsTx changes assignments and schedules delivery in the
+// same transaction as the credential replacement, including cache invalidation
+// when a sentinel's bytes did not change.
+func (s *Service) RebindHarnessConfigSecretsTx(ctx context.Context, st *store.Store, db *gorm.DB, projectID, configID string) error {
+	ids, err := st.ListSandboxIDsForHarnessConfig(ctx, projectID, configID)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		sb, err := st.GetSandbox(ctx, projectID, id)
+		if err != nil {
+			return err
+		}
+		if _, err := rebindSandboxSecretRows(ctx, st, projectID, sb); err != nil {
+			return err
+		}
+		if s.engine != nil {
+			if err := s.engine.MarkDirtyTx(ctx, db, SentinelsResourceType, SandboxDirtyID(projectID, id)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EnsureCaptureOriginSecretsTx makes newly saved credentials consumable by the
+// originating sandbox. Other boxes retain their existing assignment lifecycle;
+// per-box overrides win even when a captured value rebinds the shared config.
+func (s *Service) EnsureCaptureOriginSecretsTx(ctx context.Context, st *store.Store, db *gorm.DB, projectID, sandboxID, configID string, envs []string) error {
+	box, err := st.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return err
+	}
+	if box.HarnessConfigID == nil || *box.HarnessConfigID != configID {
+		return store.ErrGenerationConflict
+	}
+	assignments, err := st.ListInjectedSandboxSecrets(ctx, projectID, sandboxID)
+	if err != nil {
+		return err
+	}
+	present := map[string]bool{}
+	for _, a := range assignments {
+		present[a.EnvName] = true
+	}
+	bindings, err := st.ListHarnessConfigSecretBindings(ctx, projectID, configID)
+	if err != nil {
+		return err
+	}
+	wanted := map[string]bool{}
+	for _, env := range envs {
+		wanted[env] = true
+	}
+	for _, binding := range bindings {
+		if !wanted[binding.EnvName] || present[binding.EnvName] {
+			continue
+		}
+		secret, err := st.GetSecret(ctx, projectID, binding.SecretID)
+		if err != nil {
+			return err
+		}
+		format := st.SentinelFormat(ctx, secret)
+		sentinel, err := secretformat.MintSentinel(format)
+		if err != nil {
+			return err
+		}
+		if err := st.CreateSandboxSecret(ctx, &model.SandboxSecret{ProjectID: projectID, SandboxID: sandboxID, SecretID: secret.ID, EnvName: binding.EnvName, Sentinel: sentinel, Format: format, SourceHarnessConfigID: configID}); err != nil {
+			return err
+		}
+	}
+	if s.engine != nil {
+		return s.engine.MarkDirtyTx(ctx, db, SentinelsResourceType, SandboxDirtyID(projectID, sandboxID))
+	}
+	return nil
+}

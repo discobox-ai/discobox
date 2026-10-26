@@ -17,6 +17,7 @@ import (
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/auditid"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	poolclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
@@ -51,7 +52,34 @@ func (p *poolAgentClient) Create(ctx context.Context, ref sandbox.SandboxRef, st
 		return nil, state, err
 	}
 	defer release()
-	poolSandbox, err := client.PoolCreateSandbox(ctx, poolCreateRequestFromOptions(ref.SandboxID, opts), poolclient.PoolCreateSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID})
+	request := poolCreateRequestFromOptions(ref.SandboxID, opts)
+	if opts.ResolvedHarnessConfig != nil {
+		resolved := request.ResolvedHarnessConfig.Value
+		if value := opts.ResolvedHarnessConfig.SaveBack; value != nil {
+			data, err := json.Marshal(value)
+			if err != nil {
+				return nil, state, err
+			}
+			var converted poolclient.HarnessConfigSaveBack
+			if err := json.Unmarshal(data, &converted); err != nil {
+				return nil, state, err
+			}
+			resolved.SaveBack = poolclient.NewOptHarnessConfigSaveBack(converted)
+		}
+		if value := opts.ResolvedHarnessConfig.CaptureBaseline; value != nil {
+			data, err := json.Marshal(value)
+			if err != nil {
+				return nil, state, err
+			}
+			var converted poolclient.HarnessCaptureBaseline
+			if err := json.Unmarshal(data, &converted); err != nil {
+				return nil, state, err
+			}
+			resolved.CaptureBaseline = poolclient.NewOptHarnessCaptureBaseline(converted)
+		}
+		request.ResolvedHarnessConfig.SetTo(resolved)
+	}
+	poolSandbox, err := client.PoolCreateSandbox(ctx, request, poolclient.PoolCreateSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID})
 	if err != nil {
 		mapped := mapPoolClientError(err)
 		if errors.Is(mapped, sandbox.ErrAlreadyExists) {
@@ -604,7 +632,8 @@ func (p *poolAgentClient) sandboxAgentAuthTokenProvider(ref sandbox.SandboxRef, 
 func requiresSandboxAgentToken(scopes []string) bool {
 	for _, scope := range scopes {
 		switch scope {
-		case poolagentauth.ScopeTerminalRead, poolagentauth.ScopeTerminalWrite, poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite,
+		case harnesscapture.ScopeRead, harnesscapture.ScopeCapture, harnesscapture.ScopeWrite,
+			poolagentauth.ScopeTerminalRead, poolagentauth.ScopeTerminalWrite, poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite,
 			poolagentauth.ScopeFilesRead, poolagentauth.ScopeFilesWrite,
 			poolagentauth.ScopeTCPConnect, poolagentauth.ScopeUDPConnect, poolagentauth.ScopeJudgeRun,
 			// The worktree's Git route is served by the sandbox agent, which

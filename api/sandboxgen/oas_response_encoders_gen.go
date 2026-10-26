@@ -15,6 +15,20 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+func encodeAcknowledgeSandboxHarnessConfigResponse(response *HarnessConfigChanges, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	span.SetStatus(codes.Ok, http.StatusText(200))
+
+	e := new(jx.Encoder)
+	response.Encode(e)
+	if _, err := e.WriteTo(w); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
 func encodeAttachSandboxExecResponse(response *AttachSandboxExecSwitchingProtocols, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Access-Control-Expose-Headers", "Connection,Upgrade")
 	// Encoding response headers.
@@ -73,6 +87,20 @@ func encodeAttachSandboxExecOnceResponse(response AttachSandboxExecOnceOK, w htt
 	return nil
 }
 
+func encodeCaptureSandboxHarnessConfigResponse(response *HarnessConfigCandidate, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	span.SetStatus(codes.Ok, http.StatusText(200))
+
+	e := new(jx.Encoder)
+	response.Encode(e)
+	if _, err := e.WriteTo(w); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
 func encodeConfirmSandboxAutostopResponse(response *SandboxAutostopConfirmation, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
@@ -118,6 +146,20 @@ func encodeCreateSandboxExecResponse(response *CreateSandboxExecResponse, w http
 func encodeDeleteSandboxExecResponse(response *DeleteSandboxExecNoContent, w http.ResponseWriter, span trace.Span) error {
 	w.WriteHeader(204)
 	span.SetStatus(codes.Ok, http.StatusText(204))
+
+	return nil
+}
+
+func encodeDiscardSandboxHarnessConfigChangesResponse(response *HarnessConfigChanges, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	span.SetStatus(codes.Ok, http.StatusText(200))
+
+	e := new(jx.Encoder)
+	response.Encode(e)
+	if _, err := e.WriteTo(w); err != nil {
+		return errors.Wrap(err, "write")
+	}
 
 	return nil
 }
@@ -179,6 +221,20 @@ func encodeGetSandboxExecResourcesResponse(response *ResourceSnapshot, w http.Re
 }
 
 func encodeGetSandboxExecScreenResponse(response *SandboxExecScreen, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	span.SetStatus(codes.Ok, http.StatusText(200))
+
+	e := new(jx.Encoder)
+	response.Encode(e)
+	if _, err := e.WriteTo(w); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
+func encodeGetSandboxHarnessConfigChangesResponse(response *HarnessConfigChanges, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
@@ -468,6 +524,20 @@ func encodeReadSandboxFileResponse(response ReadSandboxFileOK, w http.ResponseWr
 		defer closer.Close()
 	}
 	if _, err := io.Copy(writer, response); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
+func encodeReconsiderSandboxHarnessConfigResponse(response *HarnessConfigChanges, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	span.SetStatus(codes.Ok, http.StatusText(200))
+
+	e := new(jx.Encoder)
+	response.Encode(e)
+	if _, err := e.WriteTo(w); err != nil {
 		return errors.Wrap(err, "write")
 	}
 

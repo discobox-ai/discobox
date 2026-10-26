@@ -538,3 +538,21 @@ user waits on every single start.
   line numbers as the core, without saying so. A run that stops at the round
   cap or on a question has edited the tree since an earlier run's card, and is
   exactly when the user is handed the change to judge.
+
+## Private harness capture routes
+
+- Match capture scopes using ogen's `uri.NormalizeEscapedPath` convention,
+  preserving encoded slashes. Comparing raw escaped literals misses routes such
+  as `%68arness-config-capture` that ogen dispatches as `harness-config-capture`.
+  Exercise the authenticator and generated router together when changing these
+  scopes; helper-only tests cannot detect disagreement between the two.
+
+## Harness capture baselines
+
+- A versioned exporter response is not necessarily a complete baseline. Partial
+  diagnostics can omit valid delivered settings during bundle startup or parser
+  failure. Normalize into a temporary result, validate completeness before
+  caching it, and retry incomplete cached projections from the original
+  delivered files. Otherwise every omitted baseline file becomes a false local
+  change, even after the exporter recovers. Cover restart with a persisted
+  version-1/partial baseline and an already-created false candidate.

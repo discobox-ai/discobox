@@ -501,7 +501,7 @@ func TestPlacementMatchesTheImageKind(t *testing.T) {
 	// The column's default stands in for a kind left out of an insert, so the
 	// undeclared one — what the migration leaves a manifest-file harness — is
 	// written the way the migration writes it.
-	if err := s.UpdateHarnessConfig(ctx, &model.HarnessConfig{ID: "hc-undeclared", ProjectID: "project-1", Slug: "undeclared", Name: "undeclared",
+	if err := s.UpdateHarnessConfig(ctx, &model.HarnessConfig{Revision: 1, ID: "hc-undeclared", ProjectID: "project-1", Slug: "undeclared", Name: "undeclared",
 		Platforms: platform.NewSet(platform.Pool())}); err != nil {
 		t.Fatal(err)
 	}

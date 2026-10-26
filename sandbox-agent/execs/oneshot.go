@@ -18,6 +18,8 @@ import (
 // user's environment, is this package's to know — the credentials, the
 // environment defaults, and the working directory are the ones an exec gets.
 type OnceRequest struct {
+	// Stdin is bounded private input supplied by the caller; it is never recorded.
+	Stdin []byte
 	// Command is the argv, run directly and never through a shell.
 	Command []string
 	// Env is the environment the command receives, complete: the caller merges
@@ -84,6 +86,7 @@ func (m *Manager) RunOnce(ctx context.Context, req OnceRequest) ([]byte, error) 
 
 	//nolint:gosec // The command is the caller's by design, as every exec's is.
 	cmd := exec.CommandContext(ctx, program, req.Command[1:]...)
+	cmd.Stdin = bytes.NewReader(req.Stdin)
 	cmd.Env = envList(env)
 	cmd.Dir = dir
 	cmd.SysProcAttr = attributes

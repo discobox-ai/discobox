@@ -988,6 +988,10 @@ func TestHarnessCreateAndUpdateSendTheBundle(t *testing.T) {
 			_, _ = w.Write([]byte(`{"harnessConfigs":[]}`))
 			return
 		}
+		if r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID {
+			_, _ = w.Write([]byte(`{"id":"` + harnessID + `","revision":3,"projectId":"project-1","slug":"custom","name":"Custom","builtIn":false,"configured":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			return
+		}
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode body: %v", err)
@@ -1018,6 +1022,9 @@ func TestHarnessCreateAndUpdateSendTheBundle(t *testing.T) {
 	}
 	if _, image := gotCreate["image"]; gotCreate["bundle"] != "example.com/custom:v1" || image {
 		t.Fatalf("create body = %v, want the bundle and no image", gotCreate)
+	}
+	if gotUpdate["revision"] != float64(3) {
+		t.Fatalf("update did not retain read revision: %v", gotUpdate)
 	}
 	if gotUpdate["bundle"] != "example.com/custom:v2" {
 		t.Fatalf("update body = %v, want the bundle", gotUpdate)

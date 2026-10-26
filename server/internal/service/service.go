@@ -328,8 +328,8 @@ func (s *Service) registerReconcilers() error {
 	if err := s.RegisterJobs(sandboxOptions...); err != nil {
 		return err
 	}
-	// Drives in-flight harness configure flows to completion, including ones that
-	// outlive a server restart.
+	// Delivers committed harness capture acknowledgments and reaps configure
+	// flows, including accepted intent that outlives a server restart.
 	if err := s.engine.Register(harnessconfigs.HarnessConfigResourceType, s.harnessConfigs); err != nil {
 		return err
 	}

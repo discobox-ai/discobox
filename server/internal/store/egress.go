@@ -97,7 +97,22 @@ func (s *Store) SetPoolEgress(ctx context.Context, projectID, poolID string, lev
 // SetHarnessConfigEgress writes the egress level a person set on a harness
 // config, and nothing else.
 func (s *Store) SetHarnessConfigEgress(ctx context.Context, projectID, configID string, level egress.Policy) error {
-	return s.setEgress(ctx, &model.HarnessConfig{}, projectID, configID, level)
+	encoded, err := json.Marshal(level)
+	if err != nil {
+		return err
+	}
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	result := write.Model(&model.HarnessConfig{}).Where("project_id = ? AND id = ?", projectID, configID).Updates(map[string]any{egressColumn: string(encoded), "revision": gorm.Expr("revision + 1")})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) setEgress(ctx context.Context, row any, projectID, id string, level egress.Policy) error {

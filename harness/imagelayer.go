@@ -354,6 +354,9 @@ func mergeHarness(base, over *Image) *Image {
 		config.Ports = append([]ConfigPort(nil), over.Config.Ports...)
 		merged.Config = &config
 	}
+	if over.SaveBack != nil {
+		merged.SaveBack = over.SaveBack
+	}
 	merged.Files = mergeFiles(merged.Files, over.Files)
 	merged.Secrets = mergeSecrets(merged.Secrets, over.Secrets)
 	// A host is its own identity, so egress hosts accumulate: a layer adds the
