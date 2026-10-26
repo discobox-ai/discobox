@@ -102,10 +102,14 @@
   Bubble Tea, never sees its answer: the probe swallows it. Anything else that
   needs DA1 shares the probe's.
 
-- **Every frame is on the alternate screen.** Nothing is printed inline: rows
+- **Every console `Model` frame is on the alternate screen.** Nothing is printed inline: rows
   left on the primary screen surface again on the way out or around a
   `tea.Exec`, and nothing here erases them. `View` stamps `AltScreen`; a
   builder does not.
+  The standalone `ComposePrompt` is deliberately inline: it owns and clears
+  its rows, starts at two editable lines, and grows without hiding shell history.
+  Wrap its footer explicitly and budget those rows when sizing the editor,
+  so narrow terminals show both the submit and discard-confirmation keys.
 
 - **A window that is one command's own (`Model.oneShot`) never lands on the
   list.** Anything new that leaves the workspace decides where it starts what

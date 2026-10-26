@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestPromptComposerMultiline(t *testing.T) {
@@ -57,7 +58,7 @@ func TestPromptComposerGrowsInline(t *testing.T) {
 	want := strings.Repeat("line\n", 200)
 	m.text.Reset()
 	m.Update(tea.PasteMsg{Content: want})
-	if m.text.Height() != 19 || m.text.Value() != want {
+	if m.text.Height() != 20 || m.text.Value() != want {
 		t.Fatalf("capped height = %d, content bytes = %d", m.text.Height(), len(m.text.Value()))
 	}
 	m.Update(tea.WindowSizeMsg{Width: 40, Height: 12})
@@ -76,6 +77,35 @@ func TestPromptComposerGrowsInline(t *testing.T) {
 	m.Update(keyPress("ctrl+d"))
 	if m.View().Content != "" {
 		t.Fatal("leaving the composer must clear its rows")
+	}
+}
+
+func TestPromptComposerNarrowFooter(t *testing.T) {
+	m := newPromptComposer(t.Context())
+	m.Init()
+	m.Update(tea.WindowSizeMsg{Width: 20, Height: 12})
+	m.Update(tea.PasteMsg{Content: strings.Repeat("line\n", 100)})
+	for _, confirm := range []bool{false, true} {
+		if confirm {
+			m.Update(keyPress("esc"))
+		}
+		view := m.View().Content
+		if rows := strings.Count(view, "\n") + 1; rows > 12 {
+			t.Fatalf("composer uses %d rows in a 12-row terminal", rows)
+		}
+		for _, line := range strings.Split(view, "\n") {
+			if width := ansi.StringWidth(line); width > 20 {
+				t.Fatalf("line is %d cells wide: %q", width, line)
+			}
+		}
+		footer := strings.ReplaceAll(m.footer(), "\n", "")
+		want := "Ctrl-D submit"
+		if confirm {
+			want = "n/Esc keep editing"
+		}
+		if !strings.Contains(footer, want) {
+			t.Fatalf("footer lost %q: %q", want, footer)
+		}
 	}
 }
 
