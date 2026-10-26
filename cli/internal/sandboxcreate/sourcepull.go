@@ -83,6 +83,13 @@ func (d cacheDelivery) waitForPull(ctx context.Context, slug, remote, commit str
 			return false, nil
 		}
 		step := Status(ctx, d.client, d.projectID, sb)
+		if !strings.HasPrefix(string(step), "pool fetching ") {
+			waiting := Step("waiting for pool to fetch " + displaySafe(strings.TrimPrefix(sourcecache.RemoteKey(remote), "remote/")))
+			if step != "" {
+				waiting += " — " + step
+			}
+			step = waiting
+		}
 		if step != lastStep {
 			lastStep = step
 			stall.Progressed()

@@ -264,6 +264,9 @@ sandbox create requests.
   ([ADR 0060](../../../docs/adr/0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md)).
   The words are `Step` constants here so the two frontends cannot describe one
   stage differently; where the line is drawn and when it is cleared is theirs.
+- Delivery preparation does not claim a push occurred. Actual client transfers
+  say "client fetching" or "client pushing"; recorded `fetching_source` says
+  "pool fetching", and `materializing_source` says "sandbox checking out".
 - Not every line is a step this client takes. `ProvisionStatus` renders what the
   pool agent recorded on the discobox — a phase, for a pull its byte and
   layer counts, and for a source's clone the source and git's counts — ignoring

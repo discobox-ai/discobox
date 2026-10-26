@@ -1,6 +1,7 @@
 package sandboxcreate
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -35,7 +36,7 @@ func TestProvisionStatusPrefersTheRecordedPhase(t *testing.T) {
 	}{
 		{"pull", apiclientgen.SandboxProvisionPhasePullingImage, "pulling the discobox image"},
 		{"volumes", apiclientgen.SandboxProvisionPhasePreparingVolumes, "preparing the discobox's storage"},
-		{"source", apiclientgen.SandboxProvisionPhaseMaterializingSource, "cloning the source into the discobox"},
+		{"source", apiclientgen.SandboxProvisionPhaseMaterializingSource, "sandbox checking out source"},
 		{"create", apiclientgen.SandboxProvisionPhaseCreatingContainer, "creating the container"},
 		{"start", apiclientgen.SandboxProvisionPhaseStartingContainer, "starting the container"},
 		{"agent", apiclientgen.SandboxProvisionPhaseWaitingForAgent, "waiting for the discobox to come up"},
@@ -194,7 +195,7 @@ func TestAutomaticRepairCauseIsOnlyARepairInFlights(t *testing.T) {
 // phase a user can act on.
 func TestProvisionStatusNamesTheSourcePush(t *testing.T) {
 	runtime := apimodel.SandboxRuntime{State: apiclientgen.SandboxRuntimeStateAwaitingSource}
-	if got := ProvisionStatus(provisioning(runtime)); got != "waiting for its source to be pushed" {
+	if got := ProvisionStatus(provisioning(runtime)); got != "waiting for source delivery" {
 		t.Fatalf("status = %q, want the push named", got)
 	}
 }
@@ -209,40 +210,52 @@ func TestProvisionStatusNamesTheCloneAndHowFarItHasGot(t *testing.T) {
 		clone apimodel.SandboxCloneProgress
 		want  Step
 	}{
-		{"not started", apimodel.SandboxCloneProgress{Source: source}, "cloning " + source},
-		{"control characters", apimodel.SandboxCloneProgress{Source: "example.com/a\x1b[2Jb\u202e"}, `cloning example.com/a\x1b[2Jb\u202e`},
+		{"not started", apimodel.SandboxCloneProgress{Source: source}, "sandbox checking out " + source},
+		{"control characters", apimodel.SandboxCloneProgress{Source: "example.com/a\x1b[2Jb\u202e"}, `sandbox checking out example.com/a\x1b[2Jb\u202e`},
 		{"counting", apimodel.SandboxCloneProgress{
 			Source: source,
 			Stage:  apiclientgen.NewOptCloneProgressStage(apiclientgen.CloneProgressStageCounting),
-		}, "cloning " + source + " — waiting for the remote to pack it"},
+		}, "sandbox checking out " + source + " — waiting for the remote to pack it"},
 		{"receiving", apimodel.SandboxCloneProgress{
 			Source:       source,
 			Stage:        apiclientgen.NewOptCloneProgressStage(apiclientgen.CloneProgressStageReceiving),
 			Objects:      apiclientgen.NewOptInt64(17739),
 			ObjectsTotal: apiclientgen.NewOptInt64(35477),
 			Bytes:        apiclientgen.NewOptInt64(15623782),
-		}, "cloning " + source + " — 14.9 MiB, 50% of 35477 objects"},
+		}, "sandbox checking out " + source + " — 14.9 MiB, 50% of 35477 objects"},
 		{"receiving before a throughput", apimodel.SandboxCloneProgress{
 			Source:       source,
 			Stage:        apiclientgen.NewOptCloneProgressStage(apiclientgen.CloneProgressStageReceiving),
 			Objects:      apiclientgen.NewOptInt64(3),
 			ObjectsTotal: apiclientgen.NewOptInt64(4),
-		}, "cloning " + source + " — 75% of 4 objects"},
+		}, "sandbox checking out " + source + " — 75% of 4 objects"},
 		{"resolving", apimodel.SandboxCloneProgress{
 			Source:       source,
 			Stage:        apiclientgen.NewOptCloneProgressStage(apiclientgen.CloneProgressStageResolving),
 			Objects:      apiclientgen.NewOptInt64(2576),
 			ObjectsTotal: apiclientgen.NewOptInt64(25762),
 			Bytes:        apiclientgen.NewOptInt64(28940697),
-		}, "cloning " + source + " — 27.6 MiB received, resolving deltas 9%"},
+		}, "sandbox checking out " + source + " — 27.6 MiB received, resolving deltas 9%"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			runtime := recentProgress(apiclientgen.SandboxProvisionPhaseMaterializingSource)
-			progress := runtime.ProvisionProgress.Value
-			progress.Clone = apiclientgen.NewOptSandboxCloneProgress(tc.clone)
-			runtime.ProvisionProgress = apiclientgen.NewOptSandboxProvisionProgress(progress)
-			if got := ProvisionStatus(provisioning(runtime)); got != tc.want {
-				t.Fatalf("status = %q, want %q", got, tc.want)
+			for _, phase := range []apiclientgen.SandboxProvisionPhase{
+				apiclientgen.SandboxProvisionPhaseMaterializingSource,
+				apiclientgen.SandboxProvisionPhaseFetchingSource,
+			} {
+				runtime := recentProgress(phase)
+				progress := runtime.ProvisionProgress.Value
+				progress.Clone = apiclientgen.NewOptSandboxCloneProgress(tc.clone)
+				runtime.ProvisionProgress = apiclientgen.NewOptSandboxProvisionProgress(progress)
+				want := tc.want
+				if phase == apiclientgen.SandboxProvisionPhaseFetchingSource {
+					want = Step(strings.Replace(string(want), "sandbox checking out ", "pool fetching ", 1))
+				}
+				for _, state := range []apiclientgen.SandboxRuntimeState{apiclientgen.SandboxRuntimeStatePending, apiclientgen.SandboxRuntimeStateAwaitingSource} {
+					runtime.State = state
+					if got := ProvisionStatus(provisioning(runtime)); got != want {
+						t.Fatalf("phase %s state %s: status = %q, want %q", phase, state, got, want)
+					}
+				}
 			}
 		})
 	}

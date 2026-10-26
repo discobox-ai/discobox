@@ -7,11 +7,11 @@ import (
 
 func TestAGitMeterBecomesTheStepItBelongsTo(t *testing.T) {
 	for meter, want := range map[string]Step{
-		"Receiving objects:  42% (1234/2938), 12.30 MiB | 1.20 MiB/s": "fetching source: receiving objects 42%, 12.30 MiB at 1.20 MiB/s",
-		"Receiving objects:   3% (89/2938)":                           "fetching source: receiving objects 3%",
-		"remote: Compressing objects: 100% (87/87), done.":            "fetching source: compressing objects 100%",
-		"Resolving deltas:  67% (804/1200)":                           "fetching source: resolving deltas 67%",
-		"Writing objects: 100% (30/30), 4.52 KiB | 4.52 MiB/s, done.": "fetching source: writing objects 100%, 4.52 KiB at 4.52 MiB/s",
+		"Receiving objects:  42% (1234/2938), 12.30 MiB | 1.20 MiB/s": "client fetching source: receiving objects 42%, 12.30 MiB at 1.20 MiB/s",
+		"Receiving objects:   3% (89/2938)":                           "client fetching source: receiving objects 3%",
+		"remote: Compressing objects: 100% (87/87), done.":            "client fetching source: compressing objects 100%",
+		"Resolving deltas:  67% (804/1200)":                           "client fetching source: resolving deltas 67%",
+		"Writing objects: 100% (30/30), 4.52 KiB | 4.52 MiB/s, done.": "client fetching source: writing objects 100%, 4.52 KiB at 4.52 MiB/s",
 	} {
 		got, ok := progressStep(StepFetchingSource, meter)
 		if !ok || got != want {
@@ -39,7 +39,7 @@ func TestATransferReportsItsProgressAndKeepsGitsWordsForTheError(t *testing.T) {
 	if err := gitTransfer(t.Context(), bare, nil, StepFetchingSource, report, "fetch", "--progress", "file://"+work, "main"); err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
-	if len(steps) == 0 || !strings.HasPrefix(string(steps[0]), "fetching source: ") {
+	if len(steps) == 0 || !strings.HasPrefix(string(steps[0]), "client fetching source: ") {
 		t.Fatalf("a fetch reported %v, want its progress", steps)
 	}
 	err := gitTransfer(t.Context(), bare, nil, StepFetchingSource, nil, "fetch", "--progress", "file://"+work+"-absent", "main")

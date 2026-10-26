@@ -100,11 +100,13 @@ func pullWorkingPath(source workerapimodel.GitSource) string {
 
 func (s *sandboxService) pullProgress(ctx context.Context, sandboxID, remote string) func(gitprogress.Progress) {
 	var last time.Time
+	source := strings.TrimPrefix(sourcecache.RemoteKey(remote), "remote/")
+	s.runtime.PublishSandboxProgress(ctx, sandboxruntime.SandboxProgressObservation{SandboxID: sandboxID, Phase: sandboxruntime.PhaseFetchingSource, Clone: &sandboxruntime.CloneProgress{Source: source}})
 	return func(p gitprogress.Progress) {
 		if time.Since(last) < 200*time.Millisecond {
 			return
 		}
 		last = time.Now()
-		s.runtime.PublishSandboxProgress(ctx, sandboxruntime.SandboxProgressObservation{SandboxID: sandboxID, Phase: sandboxruntime.PhaseMaterializingSource, Clone: &sandboxruntime.CloneProgress{Source: sourcecache.RemoteKey(remote), Stage: string(p.Stage), Objects: p.Objects, ObjectsTotal: p.ObjectsTotal, Bytes: p.Bytes}})
+		s.runtime.PublishSandboxProgress(ctx, sandboxruntime.SandboxProgressObservation{SandboxID: sandboxID, Phase: sandboxruntime.PhaseFetchingSource, Clone: &sandboxruntime.CloneProgress{Source: source, Stage: string(p.Stage), Objects: p.Objects, ObjectsTotal: p.ObjectsTotal, Bytes: p.Bytes}})
 	}
 }

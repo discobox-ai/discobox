@@ -96,13 +96,14 @@ func (r *DockerSandboxRuntime) publishSandboxState(ctx context.Context, sandboxI
 // the phase a sandbox was last in means nothing once it is up. That is the
 // whole reason they ride the progress array rather than the state one.
 //
-// PhasePullingImage and PhaseMaterializingSource are the phases with something
-// to measure — the pull's bytes, the sandbox's clone; the rest are named work.
+// PhasePullingImage, PhaseFetchingSource and PhaseMaterializingSource measure
+// image bytes, pool fetches and sandbox clones; the rest are named work.
 // Reporting them anyway is the point — a client that can say "creating the
 // container" is not looking at a hang.
 const (
 	PhasePullingImage        = "pulling_image"
 	PhasePreparingVolumes    = "preparing_volumes"
+	PhaseFetchingSource      = "fetching_source"
 	PhaseMaterializingSource = "materializing_source"
 	PhaseCreatingContainer   = "creating_container"
 	PhaseStartingContainer   = "starting_container"
@@ -124,13 +125,13 @@ type SandboxProgressObservation struct {
 	// Pull refines PhasePullingImage with how far in it is. No other phase
 	// sets it.
 	Pull *PullProgress
-	// Clone refines PhaseMaterializingSource with the source the sandbox is
-	// cloning and how far it has got. No other phase sets it.
+	// Clone refines PhaseFetchingSource or PhaseMaterializingSource with the
+	// source being transferred and how far it has got.
 	Clone *CloneProgress
 }
 
-// CloneProgress is a sandbox's clone of one of its sources, as its agent
-// reports it (sandbox-agent/sourceconverge). Only Source is certain: an agent
+// CloneProgress measures a pool fetch or a sandbox clone of a source.
+// Only Source is certain: an agent
 // that predates reporting a clone's progress, or a clone git has said nothing
 // about yet, leaves the rest zero.
 type CloneProgress struct {

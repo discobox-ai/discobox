@@ -36,12 +36,12 @@ const (
 	// can take a while on a cold pool, and the one that gives way to the
 	// provisioning phases it is waiting on as they are recorded. A source
 	// delivered into a pool's cache waits for nothing of the kind.
-	StepAwaitingSource Step = "waiting for the discobox to accept its source"
-	StepPushingSource  Step = "pushing source"
+	StepAwaitingSource   Step = "waiting for the discobox to accept its source"
+	StepDeliveringSource Step = "preparing source delivery"
+	StepPushingSource    Step = "client pushing source"
 	// StepFetchingSource is a remote-URL source being fetched into this
-	// client's own cache of its remote, because its pool does not hold it yet
-	// and only a client reaches a remote (ADR 26-10-10-545 §3).
-	StepFetchingSource Step = "fetching source"
+	// client's own cache when delivery needs a client-side fallback.
+	StepFetchingSource Step = "client fetching source"
 )
 
 // Report receives each step as it begins. A nil Report is valid and reports

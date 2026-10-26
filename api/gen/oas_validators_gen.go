@@ -4666,6 +4666,8 @@ func (s PoolSandboxProvisionPhase) Validate() error {
 		return nil
 	case "preparing_volumes":
 		return nil
+	case "fetching_source":
+		return nil
 	case "materializing_source":
 		return nil
 	case "creating_container":
@@ -7757,6 +7759,8 @@ func (s SandboxProvisionPhase) Validate() error {
 	case "pulling_image":
 		return nil
 	case "preparing_volumes":
+		return nil
+	case "fetching_source":
 		return nil
 	case "materializing_source":
 		return nil
