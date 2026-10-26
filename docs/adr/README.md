@@ -81,6 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
+| [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md) | A harness exports local configuration back to its config | Proposed (on acceptance: narrows 0011 §2, 26-10-14-718 §2, and 26-10-15-848 §3) |
 | [26-10-24-650](26-10-24-650-a-stopped-sandbox-can-change-its-harness.md) | A stopped sandbox can change its harness | Accepted (narrows 0021 §§3–4 for harness changes and clarifies 0038 Decision items 1, 4–6; narrows 26-10-11-657 §4 for the derived `currentHarnessId`) |
 | [0001](0001-sandbox-origin-and-remote-source-push.md) | Sandbox origin and remote source push | Accepted (§1's `Origin.ProjectPath` and derivation of `OriginKey` superseded by [0111](0111-the-origin-is-the-client-and-its-key-names-where-the-source-came-from.md); §3's local bind as a provider capability and §4's placing of the push after provisioning superseded, for sandboxes created after it, by [26-10-10-545](26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)) |
 | [0002](0002-harness-config-is-the-only-harness-concept.md) | Harness config is the only harness concept | Accepted |
