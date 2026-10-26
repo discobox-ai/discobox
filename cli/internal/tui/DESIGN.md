@@ -2820,6 +2820,16 @@ Ctrl-J all keep the prompt open and split the line. Enhanced terminals report
 the Enter chords distinctly; Ctrl-J also covers terminals that encode
 Ctrl-Enter as the traditional line-feed control byte.
 
+`ComposePrompt` (`compose.go`) is the server-independent field `run SOURCE -`
+opens before its normal creation flow, including detached and raw runs. It
+uses the same textarea word keymap and external-editor round trip, with Enter
+for newlines and Ctrl-D to submit. Esc/Ctrl-C returns no prompt; it owns no
+console draft or session state. Its alternate screen draws on the supplied
+writer (the command's stderr), leaving stdout for the run's output.
+Esc on a nonempty buffer asks before discarding: `y` exits, `n` or Esc keeps
+editing. This confirmation holds keys and pastes so they cannot change the
+buffer behind it. Ctrl-C cancels directly outside the confirmation.
+
 **Enter's prompt is spent when the server takes the create, and not before**
 (`submitting`, `promptSpentMsg`, `DataSource.Run`'s `accepted`). From Enter
 until the server answers, the composer is read-only and a second Enter does
