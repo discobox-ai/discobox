@@ -19,6 +19,7 @@ import (
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/judge"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/policy"
@@ -360,12 +361,16 @@ type ProjectUserKey = SandboxAccessIssuerKey
 // configure flow completes successfully; Deconfigure reverses that by removing
 // the assets the flow created.
 type HarnessConfig struct {
-	ID         string `gorm:"primaryKey;type:text" json:"id" doc:"Stable harness config ID"`
-	ProjectID  string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_harness_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
-	Slug       string `gorm:"column:slug;not null;type:text;default:'';index" json:"slug" doc:"Stable, URL-safe identifier used to select the harness config (e.g. codex). Unique within the project." pattern:"^[a-z0-9][a-z0-9-]*$"`
-	BuiltIn    bool   `gorm:"column:built_in;not null;default:false" json:"builtIn" doc:"True for the included harnesses seeded by the server. Built-in configs track their bundle and cannot be deleted."`
-	Configured bool   `gorm:"column:configured;not null;default:false" json:"configured" doc:"True once the configure flow completed successfully. Only configured harnesses can be selected to run."`
-	Name       string `gorm:"column:name;not null;type:text;uniqueIndex:idx_harness_config_project_name,priority:2" json:"name" doc:"Harness config name" maxLength:"200"`
+	Revision                 int64                      `gorm:"not null;default:1" json:"revision"`
+	SaveBack                 *harnesscapture.Definition `gorm:"type:text;serializer:json" json:"saveBack,omitempty"`
+	ConfigureRevision        int64                      `gorm:"not null;default:0" json:"-"`
+	ConfigureSecretRevisions map[string]string          `gorm:"type:text;serializer:json" json:"-"`
+	ID                       string                     `gorm:"primaryKey;type:text" json:"id" doc:"Stable harness config ID"`
+	ProjectID                string                     `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_harness_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
+	Slug                     string                     `gorm:"column:slug;not null;type:text;default:'';index" json:"slug" doc:"Stable, URL-safe identifier used to select the harness config (e.g. codex). Unique within the project." pattern:"^[a-z0-9][a-z0-9-]*$"`
+	BuiltIn                  bool                       `gorm:"column:built_in;not null;default:false" json:"builtIn" doc:"True for the included harnesses seeded by the server. Built-in configs track their bundle and cannot be deleted."`
+	Configured               bool                       `gorm:"column:configured;not null;default:false" json:"configured" doc:"True once the configure flow completed successfully. Only configured harnesses can be selected to run."`
+	Name                     string                     `gorm:"column:name;not null;type:text;uniqueIndex:idx_harness_config_project_name,priority:2" json:"name" doc:"Harness config name" maxLength:"200"`
 	// Bundle is the harness bundle the manifest is read from and every box on
 	// the harness applies (ADR 26-10-16-423 §2). Image is a manifest file, the
 	// whole manifest of a template with no image (ADR 0145 §3), and empty on a
@@ -2318,6 +2323,7 @@ func AllModels() []any {
 		&ServerState{},
 		&SandboxAccessIssuerKey{},
 		&HarnessConfig{},
+		&HarnessCaptureReceipt{},
 		&HarnessConfigSecretBinding{},
 		&Sandbox{},
 		&SandboxProviderInstance{},

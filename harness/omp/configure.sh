@@ -36,6 +36,8 @@
 # holding its sentinel afterwards was not replaced, and is reported back as
 # usePrevious rather than as a value.
 set -eu
+HARNESS_CAPTURE_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+export HARNESS_CAPTURE_DIR
 
 PREVIOUS_CONFIG=/run/discobox/configure/harness-previous-config.json
 OUTPUT=/run/discobox/configure/harness-configure.json
@@ -182,180 +184,15 @@ classify_credentials() {
 		OMP_CONFIGURE_FAR_FUTURE_EXPIRY="$FAR_FUTURE_EXPIRY" \
 		OMP_CONFIGURE_REFRESH_PLACEHOLDER="$REFRESH_PLACEHOLDER" node <<-'NODE_EOF'
 		const fs = require('fs');
-		let exported = {};
-		try {
-			exported = JSON.parse(fs.readFileSync(process.env.OMP_CONFIGURE_EXPORT, 'utf8')) || {};
-		} catch (err) {
-			exported = {};
-		}
-		let previous = {};
-		try {
-			previous = JSON.parse(fs.readFileSync(process.env.OMP_CONFIGURE_PREVIOUS, 'utf8')) || {};
-		} catch (err) {
-			previous = {};
-		}
-		const farFuture = Number(process.env.OMP_CONFIGURE_FAR_FUTURE_EXPIRY);
-		const placeholder = process.env.OMP_CONFIGURE_REFRESH_PLACEHOLDER;
-
-		// The previous run's entries and secret types, by the env name each
-		// entry's template action names.
-		const action = /\{\{\s*\.secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/;
-		const previousEntries = new Map();
-		const kept = (previous.files || []).find((f) => f && f.path === process.env.OMP_CONFIGURE_CREDENTIALS_PATH);
-		try {
-			const doc = JSON.parse(kept ? kept.content : '{}') || {};
-			for (const entry of Array.isArray(doc.credentials) ? doc.credentials : []) {
-				const match = JSON.stringify(entry).match(action);
-				if (match) previousEntries.set(match[1], entry);
-			}
-		} catch (err) {
-			// A previous file that does not parse keeps nothing.
-		}
-		const previousTypes = new Map((previous.secrets || []).map((s) => [s && s.envName, s && s.type]));
-
-		// oauthRefresh: the providers whose OAuth login the control plane can
-		// renew, and how. Each is a property of that provider's public OAuth
-		// client — its token endpoint, client id, and request encoding — not of
-		// any one sign-in, so they are fixed here rather than read from the
-		// export. omp signs in to these with the same clients the claude-code and
-		// codex images (and opencode's xAI) are refreshed for. A provider not
-		// listed is delivered as a plain token.
-		const oauthRefresh = {
-			anthropic: { tokenUrl: 'https://console.anthropic.com/v1/oauth/token', clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e' },
-			'openai-codex': { tokenUrl: 'https://auth.openai.com/oauth/token', clientId: 'app_EMoamEEZ73f0CkXaXp7hrann' },
-			// xAI's token endpoint takes the refresh request form-encoded.
-			'xai-oauth': { tokenUrl: 'https://auth.x.ai/oauth2/token', clientId: 'b1a00492-073a-47ea-816f-4c329264a828', tokenRequestEncoding: 'form' },
-		};
-
-		// Which secret each credential is. omp keeps several accounts of one
-		// provider side by side, and exports them in whatever order its store
-		// holds them, which a sign-in replacing one can change — so a position
-		// in the export names nothing. Three passes, each taking only names the
-		// ones before it left:
-		//   1. A credential still holding the PREV_ sentinel of a previous
-		//      secret is that secret, kept.
-		//   2. A new credential for an account a previous secret held — the
-		//      same provider, accountId and email — replaces that secret in
-		//      place.
-		//   3. Anything else takes the provider's lowest free name: the first
-		//      account OMP_<PROVIDER>_CREDENTIAL, the next _2.
-		const baseName = (provider) => 'OMP_' + provider.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') + '_CREDENTIAL';
-		const identity = (provider, credential) =>
-			credential && (credential.accountId || credential.email) ? JSON.stringify([provider, credential.accountId || '', credential.email || '']) : '';
-		const sentinels = new Map();
-		for (const name of previousEntries.keys()) {
-			const sentinel = process.env['PREV_' + name];
-			if (sentinel) sentinels.set(sentinel, name);
-		}
-		const credentials = [];
-		for (const item of Array.isArray(exported.credentials) ? exported.credentials : []) {
-			const provider = item && item.provider;
-			const value = item && item.credential;
-			if (typeof provider !== 'string' || !provider || !value || typeof value !== 'object') continue;
-			const material = value.type === 'api_key' ? value.key : value.type === 'oauth' ? value.access : undefined;
-			if (typeof material !== 'string' || !material) continue;
-			credentials.push({ provider, value, material });
-		}
-		const taken = new Set();
-		for (const c of credentials) {
-			const name = sentinels.get(c.material);
-			if (name && !taken.has(name)) {
-				c.envName = name;
-				c.kept = true;
-				taken.add(name);
-			}
-		}
-		for (const c of credentials) {
-			// A sentinel no secret claimed is a copy of one already kept, and
-			// a sentinel is never captured as a credential's value.
-			if (c.envName || sentinels.has(c.material)) continue;
-			const id = identity(c.provider, c.value);
-			if (!id) continue;
-			for (const [name, entry] of previousEntries) {
-				if (!taken.has(name) && identity(entry.provider, entry.credential) === id) {
-					c.envName = name;
-					taken.add(name);
-					break;
-				}
-			}
-		}
-		for (const c of credentials) {
-			if (c.envName || sentinels.has(c.material)) continue;
-			const base = baseName(c.provider);
-			let name = base;
-			for (let n = 2; taken.has(name); n++) name = `${base}_${n}`;
-			c.envName = name;
-			taken.add(name);
-		}
-
-		// notice says when a login nothing renews stops working, or that it
-		// already has: a kept one as much as a new one, since a reconfigure
-		// about something else would otherwise carry a dead login on in
-		// silence.
-		const notice = (provider, credential) => {
-			if (!credential || credential.type !== 'oauth') return undefined;
-			const expires = Number(credential.expires) || 0;
-			if (expires <= 0 || expires >= farFuture) return undefined;
-			const day = new Date(expires).toISOString().slice(0, 10);
-			if (expires <= Date.now()) {
-				return `${provider}'s sign-in expired ${day}, and Discobox cannot renew it. Sign in to it again, or with an API key.`;
-			}
-			return `${provider}'s sign-in expires ${day}, and Discobox cannot renew it. Configure again after that, or sign in with an API key.`;
-		};
-
-		const plan = [];
-		for (const { provider, value, envName, kept } of credentials) {
-			if (!envName) continue;
-			const label = value.email ? `omp: ${provider} (${value.email})` : `omp: ${provider}`;
-			if (kept) {
-				const entry = previousEntries.get(envName);
-				const type = previousTypes.get(envName) || 'token';
-				plan.push({ envName, provider, label, kept: true, type, entry, notice: type === 'token' ? notice(provider, entry.credential) : undefined });
-				continue;
-			}
-			// Dotted field access, never a quoted map key: this content is JSON,
-			// so a quote inside a template action is escaped into the file itself
-			// and Go's template parser rejects it — which breaks every sandbox
-			// launch while configure still reports success. An env name is
-			// always a valid template field name, so there is nothing to quote.
-			const template = `{{ .secrets.${envName} }}`;
-			const planned = { envName, provider, label, kept: false };
-			if (value.type === 'api_key') {
-				planned.type = 'token';
-				planned.value = { token: value.key };
-				planned.entry = { provider, credential: { ...value, key: template } };
-			} else {
-				const spec = oauthRefresh[provider];
-				if (spec && value.refresh && value.refresh !== value.access) {
-					planned.type = 'oauth';
-					planned.value = { token: value.access, refreshToken: value.refresh, tokenUrl: spec.tokenUrl, clientId: spec.clientId };
-					if (spec.tokenRequestEncoding) planned.value.tokenRequestEncoding = spec.tokenRequestEncoding;
-					if (Number(value.expires) > 0) planned.value.accessTokenExpiresAt = Number(value.expires);
-					// The refresh token stays in the control plane, so a refresh
-					// from inside a sandbox could not succeed — and does not need
-					// to, since a sentinel does not go stale.
-					planned.entry = { provider, credential: { ...value, access: template, refresh: placeholder, expires: farFuture } };
-				} else {
-					planned.type = 'token';
-					planned.value = { token: value.access };
-					// A provider that authenticates with the refresh field itself
-					// (GitHub Copilot stores its token in both) gets the sentinel
-					// there too; a real refresh token becomes the placeholder.
-					planned.entry = {
-						provider,
-						credential: {
-							...value,
-							access: template,
-							refresh: value.refresh === value.access ? template : placeholder,
-						},
-					};
-					planned.notice = notice(provider, value);
-				}
-			}
-			plan.push(planned);
-		}
-		fs.writeFileSync(process.env.OMP_CONFIGURE_PLAN, JSON.stringify(plan));
-		process.stdout.write(String(plan.length));
+		const path = require('path');
+		const dir = process.env.HARNESS_CAPTURE_DIR;
+		const { normalize } = require(path.join(dir, 'omp-normalize.cjs'));
+		const definition = require(path.join(dir, 'omp-image.json')).harness.saveBack;
+		const read = (p, fallback) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return fallback; } };
+		const sentinels = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('PREV_')).map(([k,v]) => [k.slice(5),v]));
+		const result = normalize(read(process.env.OMP_CONFIGURE_EXPORT, {}), read(process.env.OMP_CONFIGURE_PREVIOUS, {}), sentinels, definition);
+		fs.writeFileSync(process.env.OMP_CONFIGURE_PLAN, JSON.stringify(result.plan));
+		process.stdout.write(String(result.plan.length));
 	NODE_EOF
 }
 

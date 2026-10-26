@@ -4,6 +4,7 @@ import (
 	"maps"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 )
 
 // APIVersion is the sandbox.json contract version.
@@ -60,12 +61,14 @@ type Config struct {
 // harness per sandbox, already selected — there is nothing left to resolve
 // at boot.
 type Harness struct {
-	ID              string   `json:"id"`
-	Name            string   `json:"name"`
-	Description     string   `json:"description,omitempty"`
-	RunCommand      []string `json:"runCommand"`
-	RelaunchCommand []string `json:"relaunchCommand,omitempty"`
-	ConfigCommand   []string `json:"configCommand,omitempty"`
+	SaveBack        *harnesscapture.Definition `json:"saveBack,omitempty"`
+	CaptureBaseline *harnesscapture.Baseline   `json:"captureBaseline,omitempty"`
+	ID              string                     `json:"id"`
+	Name            string                     `json:"name"`
+	Description     string                     `json:"description,omitempty"`
+	RunCommand      []string                   `json:"runCommand"`
+	RelaunchCommand []string                   `json:"relaunchCommand,omitempty"`
+	ConfigCommand   []string                   `json:"configCommand,omitempty"`
 }
 
 // Provenance is diagnostic only: the raw per-layer inputs Effective merged,
@@ -110,6 +113,8 @@ func Effective(doc Document) (Config, Provenance) {
 	}
 
 	cfg.Harness = Harness{
+		SaveBack:        doc.Image.SaveBack,
+		CaptureBaseline: doc.Runtime.CaptureBaseline,
 		ID:              doc.Image.HarnessID,
 		Name:            doc.Image.HarnessName,
 		Description:     doc.Image.HarnessDescription,
@@ -121,6 +126,16 @@ func Effective(doc Document) (Config, Provenance) {
 	cfg.Env = mergeEnv(doc.Image.Env, doc.Runtime.Env)
 	cfg.ProxyEnvs = cloneStrings(doc.Runtime.ProxyEnvs)
 	cfg.Files = mergeFiles(doc.Image.Files, doc.Runtime.Files, doc.Project)
+	if cfg.Harness.CaptureBaseline != nil {
+		baseline := *cfg.Harness.CaptureBaseline
+		baseline.ProjectFiles = nil
+		if doc.Project != nil {
+			for _, f := range doc.Project.FilesAdd {
+				baseline.ProjectFiles = append(baseline.ProjectFiles, f.Path)
+			}
+		}
+		cfg.Harness.CaptureBaseline = &baseline
+	}
 
 	if doc.Project != nil {
 		cfg.WorkingDirectorySubpath = doc.Project.WorkingDirectorySubpath

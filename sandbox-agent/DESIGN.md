@@ -806,6 +806,70 @@ in `.env`. On restart the server converges that manifest onto every Docker
 daemon before reconciling its pool-agent container, so local-VM, cloud, exec,
 and host-Docker providers use the same development images without a registry.
 
+## Harness configuration capture
+
+`terminal/capture.go` owns the save-back lifecycle (ADR 26-10-26-573). The
+resolved harness supplies a versioned export/handoff protocol and bounded HOME
+watch paths. The agent polls their metadata, waits for stable changes, and
+periodically exports even unchanged metadata; DB WAL inputs are declared by the
+harness. Commands run through `execs.RunOnce` as the resolved sandbox user with
+bounded private input/output and a 60-second deadline, outside exec history and
+audit. Status reads an atomic snapshot of the last completed observation, so
+a slow native credential export never holds up status polling.
+
+The initial comparison is the exporter's normalization of **delivered files**,
+not the first local observation. Portable settings exclude project-owned paths.
+Acknowledgment applies only the accepted local patch to this delivered baseline;
+remote write revisions are separate, so remote settings never delivered to this
+box do not become apparent local edits. Reconsideration selects portable files
+only; the harness projects credential templates from the selected immutable
+credentials and current bindings, keeping credentials and delivery atomic.
+Random immutable candidates and acknowledgment receipts live beside the agent
+DB in a mode-0700 `harness-capture` directory, with atomic mode-0600 state writes. Only pending candidates retain reusable
+credential values. Observation/discard suppression uses stripped metadata and a
+private digest; completed handoff and discard purge their secret-bearing
+snapshots and abandoned atomic-write staging files. A concurrent captured save
+retains its handoff identity/generation, redacting already-acknowledged values.
+The spool is excluded from exports, including ancestor volume overlays in boxes
+whose original manifest predates its dedicated excluded volume. Bootstrap's
+config identity and manifest digest are authoritative over persisted state.
+
+The agent serializes observation, installation, restoration and handoff with the
+launcher's HOME `.config/discobox/harness-capture.lock`. The file is opened with
+`os.Root` confinement before locking, so root never follows a user-controlled
+escaping symlink. Export errors preserve watched inputs; new credentials and
+unsupported/partial logins protect credential files. Existing watched settings
+survive terminal recreation. Configure-mode sandboxes do not enable capture.
+
+Only a durable server acknowledgment permits sentinel handoff. The receipt is
+persisted first and retried after restart. The bundle conditionally updates the
+captured generation, preserving a newer local login; accepted templates and
+sentinels remain the restoration baseline even while the runtime secrets feed
+catches up. The acknowledgment bridge remembers the runtime sentinel it
+replaced, yields as soon as delivery catches up or changes again, and records
+bounded nonsecret aliases so a stale delivered sentinel is never offered as a
+new real credential. Alias exhaustion preserves local inputs and fails capture
+closed. Native launch guards read only the nonsecret, atomically written HOME
+`.config/discobox/harness-sentinels.json` context under the shared lock; export
+and server validation never trust that user-readable file as capture authority.
+No process restart is forced. The accepted OAuth refresh race with
+a process that cached its real token remains possible.
+
+A terminal supersession receipt purges the accepted private material without
+writing local files or adopting remote state. Nonsecret generation fingerprints
+suppress that stale login until a fresh login is observed, including across
+restart; newer distinct pending logins survive. Changed manifest definitions
+refuse reconsideration before invoking the installed exporter and require current
+bundle delivery and recapture. Delivery of a different or unsupported harness
+invalidates its predecessor's reserved spool.
+
+The public changes endpoint exposes portable file changes and credential
+metadata; agent status reports only candidate ID/state. Real credential values
+travel only through the private capture route under explicit control-plane
+`harness-config:capture` authority. Ack, reconsider and discard require explicit
+`harness-config:write`; neither scope is implied by `*` or accepted from a pool
+signer. Error output never includes exporter stderr or parse fragments.
+
 ## Runtime Rules
 
 - **What a sandbox exists for decides what starts in it** (`config.WorkedIn`).

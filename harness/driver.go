@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
 )
 
@@ -109,14 +110,15 @@ const (
 // downloading its filesystem layers. There is no separate baked-in file —
 // image.json is only the build-time authoring source for the label.
 type Image struct {
-	ID              string     `json:"id"`
-	Name            string     `json:"name"`
-	Description     string     `json:"description,omitempty"`
-	RunCommand      []string   `json:"runCommand"`
-	RelaunchCommand []string   `json:"relaunchCommand,omitempty"`
-	Files           []File     `json:"files,omitempty"`
-	Secrets         []Secret   `json:"secrets,omitempty"`
-	Config          *ImageMode `json:"config,omitempty"`
+	SaveBack        *harnesscapture.Definition `json:"saveBack,omitempty"`
+	ID              string                     `json:"id"`
+	Name            string                     `json:"name"`
+	Description     string                     `json:"description,omitempty"`
+	RunCommand      []string                   `json:"runCommand"`
+	RelaunchCommand []string                   `json:"relaunchCommand,omitempty"`
+	Files           []File                     `json:"files,omitempty"`
+	Secrets         []Secret                   `json:"secrets,omitempty"`
+	Config          *ImageMode                 `json:"config,omitempty"`
 	// EgressHosts are the destinations the harness needs to work at all — its
 	// model API, chiefly — in the egress allow-entry form ("api.anthropic.com",
 	// "*.example.com"). They join the harness level's allow list of every

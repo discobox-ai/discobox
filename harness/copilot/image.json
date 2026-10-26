@@ -65,6 +65,85 @@
       "command": [
         "/usr/local/libexec/discobox/configure-copilot"
       ]
+    },
+    "saveBack": {
+      "version": 1,
+      "watch": [
+        ".copilot/settings.json",
+        ".copilot/config.json"
+      ],
+      "exportCommand": [
+        "/usr/local/libexec/discobox/copilot-capture",
+        "export"
+      ],
+      "handoffCommand": [
+        "/usr/local/libexec/discobox/copilot-capture",
+        "handoff"
+      ],
+      "providers": [
+        {
+          "id": "github",
+          "envName": "COPILOT_GITHUB_TOKEN",
+          "types": [
+            "token"
+          ],
+          "routes": [
+            {
+              "host": "githubcopilot.com"
+            },
+            {
+              "host": "githubcopilot.com",
+              "path": "/v1/messages"
+            },
+            {
+              "host": "githubcopilot.com",
+              "path": "/mcp/readonly"
+            },
+            {
+              "host": "githubcopilot.com",
+              "path": "/agents/swe/internal/memory"
+            },
+            {
+              "host": "api.github.com",
+              "path": "/copilot_internal"
+            },
+            {
+              "host": "api.github.com",
+              "path": "/repos/github/copilot-cli/releases"
+            },
+            {
+              "host": "githubcopilot.com",
+              "path": "/mcp",
+              "use": "GitHub's MCP server used only for light read-only GitHub queries (reading files, issues, pull requests, searching code); nothing that creates, changes or deletes anything on GitHub"
+            },
+            {
+              "host": "githubcopilot.com",
+              "path": "/agents",
+              "use": "reading Copilot's own agent tasks and sessions; nothing that starts a cloud agent task or session or otherwise creates, changes or deletes anything"
+            },
+            {
+              "host": "github.com",
+              "use": "light read-only GitHub queries such as reading a file, an issue or a pull request, or searching code; nothing that creates, changes or deletes anything on GitHub"
+            }
+          ]
+        }
+      ],
+      "settings": [
+        {
+          "path": ".copilot/settings.json",
+          "format": "jsonc",
+          "fields": {
+            "model": "string",
+            "theme": "string",
+            "stream": "boolean",
+            "screenReader": "boolean"
+          }
+        }
+      ],
+      "credentialFiles": [
+        ".copilot/config.json"
+      ],
+      "credentialSettings": []
     }
   }
 }

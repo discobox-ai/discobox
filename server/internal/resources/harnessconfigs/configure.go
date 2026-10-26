@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	neturl "net/url"
 	"slices"
@@ -27,11 +28,11 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/x/id"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// HarnessConfigResourceType is the reconcile engine resource type for harness
-// configs. The reconciler is a janitor: it reaps configure sandboxes that were
-// started but never committed.
+// HarnessConfigResourceType drives durable capture acknowledgments and reaps
+// configure sandboxes that were started but never committed.
 const HarnessConfigResourceType = "harnessConfig"
 
 // configureTTL is how long an in-flight configure may sit uncommitted before the
@@ -102,13 +103,16 @@ func configureSecretType(declared string) (string, error) {
 	return "", fmt.Errorf("unknown secret type %q, want %q or %q", declared, model.SecretTypeToken, model.SecretTypeOAuth)
 }
 
-// SandboxRuntime is the slice of sandbox behavior the configure flow needs: it
-// runs an ephemeral sandbox, reaches its agent, and removes it when done.
+// SandboxRuntime owns the sandbox operations used by configure, capture
+// delivery and config-change fan-outs.
 //
 // AcquireSandboxHTTPClient authorizes the caller's scopes, so every agent call
 // the configure flow makes happens inside a user request with that user's
-// credentials. Nothing here talks to a sandbox on its own authority.
+// credentials. User-initiated operations retain caller authorization; delivery
+// of a committed capture receipt uses the explicit server-only lease.
 type SandboxRuntime interface {
+	AcquireSandboxHTTPClientForServer(context.Context, string, string, []string, services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error)
+	EnsureCaptureOriginSecretsTx(context.Context, *store.Store, *gorm.DB, string, string, string, []string) error
 	CreateSandbox(ctx context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error)
 	DeleteSandbox(ctx context.Context, projectID, sandboxID string) error
 	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string, use services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error)
@@ -116,6 +120,7 @@ type SandboxRuntime interface {
 	// config's bindings now name. Configure is one of the two places a binding's
 	// secret changes, and the only one that can replace it outright.
 	RebindHarnessConfigSecrets(ctx context.Context, projectID, harnessConfigID string) error
+	RebindHarnessConfigSecretsTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, harnessConfigID string) error
 	// MarkSecretHoldersDirtyTx marks the sandboxes holding a secret for
 	// reconcile in the transaction that changes its routes, so each converges
 	// on them (ADR 26-10-02-924).
@@ -133,6 +138,7 @@ type SandboxRuntime interface {
 
 // Dirtier schedules reconciliation.
 type Dirtier interface {
+	MarkDirtyTx(context.Context, *gorm.DB, string, string) error
 	MarkDirtyAt(ctx context.Context, resourceType, id string, at time.Time) error
 }
 
@@ -141,7 +147,7 @@ type Dirtier interface {
 // secret bindings, and its image (ADR 0082).
 func (s *Service) SetSandboxRuntime(runtime SandboxRuntime) { s.sandboxes = runtime }
 
-// SetDirtier installs the reconcile hook used to reap abandoned configures.
+// SetDirtier installs durable capture delivery and configure cleanup scheduling.
 func (s *Service) SetDirtier(dirtier Dirtier) { s.dirtier = dirtier }
 
 // markJudge says the project's judge may no longer be the right one: its
@@ -213,7 +219,14 @@ func (s *Service) ConfigureHarnessConfig(ctx context.Context, projectID, configI
 		return nil, err
 	}
 
+	baseline, baselineErr := s.store.CaptureBaseline(ctx, projectID, config.ID)
+	if baselineErr != nil {
+		_ = s.sandboxes.DeleteSandbox(context.WithoutCancel(ctx), projectID, created.ID)
+		return nil, baselineErr
+	}
+	config.ConfigureSecretRevisions = baseline.SecretRevisions
 	config.ConfigureSandboxID = created.ID
+	config.ConfigureRevision = config.Revision + 1
 	config.ConfigureError = ""
 	if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
 		// The sandbox is untracked if we cannot record it, so do not leak it.
@@ -337,21 +350,71 @@ func (s *Service) CommitHarnessConfigConfigure(ctx context.Context, projectID, c
 		return nil, apperrors.NewStatusError(http.StatusConflict, configureErr.Error())
 	}
 	if configureErr == nil {
-		configureErr = s.applyConfigureOutput(ctx, config, sandboxID, out)
+		configureErr = s.store.Transaction(ctx, func(tx *store.Store, db *gorm.DB) error {
+			var locked model.HarnessConfig
+			if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ? AND id = ?", projectID, configID).First(&locked).Error; err != nil {
+				return err
+			}
+			current, err := tx.GetHarnessConfig(ctx, projectID, configID)
+			if err != nil {
+				return err
+			}
+			if current.Revision != config.Revision || (current.ConfigureRevision != 0 && current.ConfigureRevision != current.Revision) {
+				return captureConflict()
+			}
+			bindings, err := tx.ListHarnessConfigSecretBindings(ctx, projectID, configID)
+			if err != nil {
+				return err
+			}
+			for _, binding := range bindings {
+				var secret model.Secret
+				if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ? AND id = ?", projectID, binding.SecretID).First(&secret).Error; err != nil {
+					return err
+				}
+			}
+			baseline, err := tx.CaptureBaseline(ctx, projectID, configID)
+			if err != nil {
+				return err
+			}
+			if current.ConfigureRevision != 0 && !maps.Equal(current.ConfigureSecretRevisions, baseline.SecretRevisions) {
+				return captureConflict()
+			}
+			scoped := *s
+			scoped.store = tx
+			if err := scoped.applyConfigureOutput(ctx, current, sandboxID, out); err != nil {
+				return err
+			}
+			current.ConfigureSandboxID = ""
+			current.ConfigureError = ""
+			current.ConfigureRevision = 0
+			current.ConfigureSecretRevisions = nil
+			current.Configured = true
+			if err := tx.UpdateHarnessConfig(ctx, current); err != nil {
+				return err
+			}
+			config = current
+			return nil
+		})
 	}
-
-	config.ConfigureSandboxID = ""
 	if configureErr != nil {
-		config.ConfigureError = configureErr.Error()
-		slog.WarnContext(ctx, "harness configure failed",
-			"harnessConfigId", config.ID, "sandboxId", sandboxID, "error", configureErr)
-	} else {
-		config.Configured = true
-		config.ConfigureError = ""
-		slog.InfoContext(ctx, "harness configured", "harnessConfigId", config.ID, "sandboxId", sandboxID)
-	}
-	if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
-		return nil, err
+		// Clear only lifecycle fields on the current revision, never the stale
+		// settings snapshot the configure command started with.
+		if err := s.store.Transaction(ctx, func(tx *store.Store, _ *gorm.DB) error {
+			current, err := tx.GetHarnessConfig(ctx, projectID, configID)
+			if err != nil {
+				return err
+			}
+			if current.ConfigureSandboxID != sandboxID {
+				return captureConflict()
+			}
+			current.ConfigureSandboxID = ""
+			current.ConfigureRevision = 0
+			current.ConfigureSecretRevisions = nil
+			current.ConfigureError = "configure failed or configuration changed"
+			return tx.UpdateHarnessConfig(ctx, current)
+		}); err != nil {
+			return nil, err
+		}
 	}
 	// The configure sandbox is ephemeral: drop it whichever way the run went.
 	if err := s.sandboxes.DeleteSandbox(ctx, projectID, sandboxID); err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -572,21 +635,17 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 	}
 	config.ConfiguredFiles = out.Files
 	config.ConfiguredSecretIDs = createdSecretIDs
-	// Existing sandboxes still point at the previous generation of secrets. The
-	// update-in-place branch above keeps their IDs stable and needs no rebind,
-	// but a disable clears ConfiguredSecretIDs, so the next configure lands in
-	// the mint-a-new-secret branch and every sandbox created before it is left
-	// naming a secret this run just deleted.
-	if s.sandboxes != nil {
-		if err := s.sandboxes.RebindHarnessConfigSecrets(ctx, config.ProjectID, config.ID); err != nil {
-			return fmt.Errorf("rebind sandboxes after configure: %w", err)
-		}
-	}
 	// A secret updated in place or kept may hold the routes of an image the
 	// config has since moved off; they are written, and their holders marked,
 	// in one transaction.
 	return s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
-		return s.syncConfiguredSecretRoutes(ctx, txStore, txDB, config)
+		if err := s.syncConfiguredSecretRoutes(ctx, txStore, txDB, config); err != nil {
+			return err
+		}
+		if s.sandboxes != nil {
+			return s.sandboxes.RebindHarnessConfigSecretsTx(ctx, txStore, txDB, config.ProjectID, config.ID)
+		}
+		return nil
 	})
 }
 
@@ -773,46 +832,77 @@ func (s *Service) DeconfigureHarnessConfig(ctx context.Context, projectID, confi
 		return nil, apperrors.NewStatusError(http.StatusConflict,
 			fmt.Sprintf("harness %q is the project default; set a different default or unset it before disabling", config.Slug))
 	}
-	for _, secretID := range config.ConfiguredSecretIDs {
-		secretID = strings.TrimSpace(secretID)
-		if secretID == "" {
-			continue
+	if err := s.store.Transaction(ctx, func(tx *store.Store, db *gorm.DB) error {
+		var err error
+		config, err = tx.GetHarnessConfig(ctx, projectID, configID)
+		if err != nil {
+			return err
 		}
-		if err := s.store.DeleteSecret(ctx, projectID, secretID); err != nil && !errors.Is(err, store.ErrNotFound) {
-			return nil, err
+		// Claim the row first so another configure/save cannot pass its revision.
+		if err := tx.UpdateHarnessConfig(ctx, config); err != nil {
+			return err
 		}
-	}
-	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, configID)
-	if err != nil {
+		for _, secretID := range config.ConfiguredSecretIDs {
+			secretID = strings.TrimSpace(secretID)
+			if secretID == "" {
+				continue
+			}
+			if err := tx.DeleteSecret(ctx, projectID, secretID); err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+		}
+		bindings, err := tx.ListHarnessConfigSecretBindings(ctx, projectID, configID)
+		if err != nil {
+			return err
+		}
+		for _, binding := range bindings {
+			if err := tx.DeleteHarnessConfigSecretBinding(ctx, projectID, configID, binding.EnvName); err != nil &&
+				!errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+		}
+		config.Configured = false
+		config.ConfiguredFiles = nil
+		config.ConfiguredSecretIDs = nil
+		config.ConfigureError = ""
+		if err := tx.UpdateHarnessConfig(ctx, config); err != nil {
+			return err
+		}
+		if s.sandboxes != nil {
+			return s.sandboxes.RebindHarnessConfigSecretsTx(ctx, tx, db, projectID, configID)
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	for _, binding := range bindings {
-		if err := s.store.DeleteHarnessConfigSecretBinding(ctx, projectID, configID, binding.EnvName); err != nil &&
-			!errors.Is(err, store.ErrNotFound) {
-			return nil, err
-		}
-	}
-	config.Configured = false
-	config.ConfiguredFiles = nil
-	config.ConfiguredSecretIDs = nil
-	config.ConfigureError = ""
-	if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
-		return nil, err
-	}
+
 	return s.store.GetHarnessConfig(ctx, projectID, configID)
 }
 
-// Reconcile reaps a configure sandbox whose flow was started but never committed
-// (the client crashed, detached, or walked away). It never touches the sandbox
-// agent, so it needs no credentials of its own.
+// Reconcile delivers committed capture acknowledgments and reaps abandoned
+// configure sandboxes. Acknowledgments use an explicit server-only lease and
+// never reread or resubmit captured credentials.
 func (s *Service) Reconcile(ctx context.Context, configID string) (reconcile.Result, error) {
-	config, err := s.store.GetHarnessConfigByID(ctx, configID)
+	var config *model.HarnessConfig
+	err := s.store.Transaction(ctx, func(tx *store.Store, _ *gorm.DB) error {
+		var err error
+		config, err = tx.GetHarnessConfigByID(ctx, configID)
+		return err
+	})
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return reconcile.Result{}, nil
 		}
 		return reconcile.Result{}, err
 	}
+	// Cleanup is independent of delivery: an unreachable origin must never
+	// strand a configure sandbox past its deadline.
+	result, cleanupErr := s.reapConfigureSandbox(ctx, config)
+	deliveryErr := s.reconcileCaptureAcknowledgments(ctx, config)
+	return result, errors.Join(cleanupErr, deliveryErr)
+}
+
+func (s *Service) reapConfigureSandbox(ctx context.Context, config *model.HarnessConfig) (reconcile.Result, error) {
 	sandboxID := strings.TrimSpace(config.ConfigureSandboxID)
 	if sandboxID == "" {
 		return reconcile.Result{}, nil
@@ -833,6 +923,8 @@ func (s *Service) Reconcile(ctx context.Context, configID string) (reconcile.Res
 		return reconcile.Result{}, err
 	}
 	config.ConfigureSandboxID = ""
+	config.ConfigureRevision = 0
+	config.ConfigureSecretRevisions = nil
 	config.ConfigureError = "configure was never completed and timed out"
 	return reconcile.Result{}, s.store.UpdateHarnessConfig(ctx, config)
 }

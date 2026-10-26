@@ -9,6 +9,7 @@ import (
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/auditid"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
@@ -320,6 +321,8 @@ type UpdateOptions struct {
 // ResolvedHarnessConfig is the sandbox-local harness configuration captured
 // at sandbox create time.
 type ResolvedHarnessConfig struct {
+	SaveBack        *harnesscapture.Definition
+	CaptureBaseline *harnesscapture.Baseline
 	ID              string
 	Name            string
 	Description     string

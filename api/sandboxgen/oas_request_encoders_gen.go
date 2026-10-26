@@ -10,6 +10,20 @@ import (
 	ht "github.com/ogen-go/ogen/http"
 )
 
+func encodeAcknowledgeSandboxHarnessConfigRequest(
+	req *HarnessConfigAcknowledgment,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeAttachSandboxExecOnceRequest(
 	req AttachSandboxExecOnceReq,
 	r *http.Request,
@@ -17,6 +31,20 @@ func encodeAttachSandboxExecOnceRequest(
 	const contentType = "application/octet-stream"
 	body := req
 	ht.SetBody(r, body, contentType)
+	return nil
+}
+
+func encodeCaptureSandboxHarnessConfigRequest(
+	req *HarnessConfigCandidateRequest,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
 	return nil
 }
 
@@ -50,6 +78,20 @@ func encodeCopySandboxFileRequest(
 
 func encodeCreateSandboxExecRequest(
 	req *CreateSandboxExecRequest,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeDiscardSandboxHarnessConfigChangesRequest(
+	req *HarnessConfigCandidateRequest,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
@@ -120,6 +162,20 @@ func encodeProposeSandboxRuleRequest(
 
 func encodePutSandboxRuntimeConfigRequest(
 	req *SandboxRuntimeConfig,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeReconsiderSandboxHarnessConfigRequest(
+	req *HarnessConfigReconsideration,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

@@ -8,13 +8,24 @@
     "FORCE_HYPERLINK": "1"
   },
   "volumes": [
-    { "path": "/var/lib/claude-code", "volume": "data", "uid": "%UID%", "gid": "%GID%", "mode": "0700" }
+    {
+      "path": "/var/lib/claude-code",
+      "volume": "data",
+      "uid": "%UID%",
+      "gid": "%GID%",
+      "mode": "0700"
+    }
   ],
   "harness": {
     "id": "claude-code",
     "name": "Claude Code",
     "description": "Anthropic Claude Code coding harness.",
-    "egressHosts": ["api.anthropic.com", "claude.ai", "platform.claude.com", "mcp-proxy.anthropic.com"],
+    "egressHosts": [
+      "api.anthropic.com",
+      "claude.ai",
+      "platform.claude.com",
+      "mcp-proxy.anthropic.com"
+    ],
     "files": [
       {
         "path": ".claude.json",
@@ -33,20 +44,111 @@
         "required": true,
         "oneOfGroup": "auth",
         "delivery": "file",
-        "rejectionScope": [{ "host": "api.anthropic.com", "paths": ["/v1/messages"] }]
+        "rejectionScope": [
+          {
+            "host": "api.anthropic.com",
+            "paths": [
+              "/v1/messages"
+            ]
+          }
+        ]
       },
       {
         "name": "CLAUDE_CODE_OAUTH_TOKEN",
         "required": true,
         "oneOfGroup": "auth",
         "delivery": "file",
-        "rejectionScope": [{ "host": "api.anthropic.com", "paths": ["/v1/messages"] }]
+        "rejectionScope": [
+          {
+            "host": "api.anthropic.com",
+            "paths": [
+              "/v1/messages"
+            ]
+          }
+        ]
       }
     ],
     "config": {
       "reminder": "Run /login, optionally adjust /model and /config, then finish configuration with /exit.",
       "command": [
         "/usr/local/libexec/discobox/configure-claude-code"
+      ]
+    },
+    "saveBack": {
+      "version": 1,
+      "watch": [
+        ".claude/settings.json",
+        ".claude/.credentials.json",
+        ".claude.json"
+      ],
+      "exportCommand": [
+        "/usr/local/libexec/discobox/claude-code-capture",
+        "export"
+      ],
+      "handoffCommand": [
+        "/usr/local/libexec/discobox/claude-code-capture",
+        "handoff"
+      ],
+      "providers": [
+        {
+          "id": "anthropic-key",
+          "envName": "ANTHROPIC_API_KEY",
+          "types": [
+            "token"
+          ],
+          "host": "api.anthropic.com"
+        },
+        {
+          "id": "anthropic",
+          "envName": "CLAUDE_CODE_OAUTH_TOKEN",
+          "types": [
+            "oauth"
+          ],
+          "oauth": {
+            "tokenUrl": "https://console.anthropic.com/v1/oauth/token",
+            "clientId": "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+          },
+          "host": "api.anthropic.com"
+        }
+      ],
+      "settings": [
+        {
+          "path": ".claude/settings.json",
+          "format": "json",
+          "fields": {
+            "model": "string",
+            "effortLevel": "string",
+            "language": "string",
+            "alwaysThinkingEnabled": "boolean",
+            "showTurnDuration": "boolean",
+            "spinnerTipsEnabled": "boolean"
+          }
+        }
+      ],
+      "credentialFiles": [
+        ".claude/.credentials.json",
+        ".claude.json"
+      ],
+      "credentialSettings": [
+        {
+          "path": ".claude/.credentials.json",
+          "format": "json",
+          "fields": {
+            "claudeAiOauth.accessToken": "secret",
+            "claudeAiOauth.refreshToken": "placeholder",
+            "claudeAiOauth.expiresAt": "number",
+            "claudeAiOauth.scopes": "string-array",
+            "claudeAiOauth.subscriptionType": "string"
+          }
+        },
+        {
+          "path": ".claude.json",
+          "format": "json",
+          "fields": {
+            "primaryApiKey": "secret",
+            "hasCompletedOnboarding": "boolean"
+          }
+        }
       ]
     }
   }

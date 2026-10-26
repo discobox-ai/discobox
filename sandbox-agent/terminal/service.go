@@ -72,10 +72,11 @@ type ServiceConfig struct {
 	// merged from the image and project layers by pool-agent's Effective() call.
 	// A zero-value Harness (empty ID) means the sandbox has no harness at all,
 	// which resolves to the shell fallback.
-	Harness       config.Harness
-	SandboxConfig map[string]any
-	WorkingRoot   string
-	RuntimeDir    string
+	Harness         config.Harness
+	SandboxConfig   map[string]any
+	WorkingRoot     string
+	RuntimeDir      string
+	CaptureStateDir string
 	// SecretEnv returns the sandbox's current secret-bound
 	// envName->sentinel map, read live from the secrets file (ADR 0012 §3)
 	// for rendering harness files. Execution environments are owned by Execs.
@@ -112,6 +113,7 @@ type ServiceConfig struct {
 // Service is the harness-terminal layer over execs.Manager.
 
 type Service struct {
+	capture        *captureManager
 	execs          *execs.Manager
 	harness        config.Harness
 	defaultUser    *execs.User
@@ -198,6 +200,17 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		installing:     map[string]struct{}{},
 		launches:       map[string]*terminalLaunch{},
 	}
+	if (cfg.Harness.SaveBack == nil || cfg.HarnessMode == config.HarnessModeConfig) && cfg.CaptureStateDir != "" {
+		if err := invalidateCaptureState(cfg.CaptureStateDir); err != nil {
+			return nil, err
+		}
+	}
+	if cfg.Harness.SaveBack != nil && cfg.HarnessMode != config.HarnessModeConfig {
+		s.capture, err = newCaptureManager(s, cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if s.installer == nil {
 		// Where this sandbox's terminals start, resolved by the exec layer that
 		// will start them rather than derived a second time here. A harness that
@@ -211,6 +224,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 				// The run user as the exec layer resolved it, not the manifest
 				// fields it was resolved from: a sandbox whose manifest names
 				// nobody still runs as somebody, and the files belong to them.
+				Capture:       s.capture,
 				User:          defaultUser,
 				HomeDirectory: cfg.ExecDefaults.HomeDirectory,
 				SandboxConfig: cfg.SandboxConfig,
@@ -988,6 +1002,7 @@ func (i CompositeInstaller) RestoreSecretFiles(ctx context.Context, harness conf
 
 // FileInstaller writes a harness's configured files into its home directory.
 type FileInstaller struct {
+	Capture *captureManager
 	// User is the run user, already resolved through every layer the exec
 	// path uses. Nil means the manifest named nobody and the harness inherits
 	// this process's identity, which is still an identity with a home.
@@ -1020,16 +1035,24 @@ type FileInstaller struct {
 	Secrets func() map[string]string
 }
 
-func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness, _ string, env map[string]string) error {
-	if len(harness.Files) == 0 {
+func (i FileInstaller) EnsureInstalled(ctx context.Context, harness config.Harness, _ string, env map[string]string) error {
+	if len(harness.Files) == 0 && i.Capture == nil {
 		return nil
 	}
+	release, err := i.Capture.guard(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	home, err := resolveHomeDir(i.HomeDirectory, i.User, env)
 	if err != nil {
 		return fmt.Errorf("harness %q has files to install but %w", harness.ID, err)
 	}
 	home = filepath.Clean(home)
-	for _, file := range harness.Files {
+	for _, file := range i.Capture.files(harness.Files) {
+		if i.Capture.protect(file.Path, true) {
+			continue
+		}
 		path, err := homeRelativePath(home, file.Path)
 		if err != nil {
 			return fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
@@ -1045,6 +1068,10 @@ func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness
 			return fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
 		}
 	}
+	if i.Capture != nil {
+		i.Capture.state.Installed = true
+		return i.Capture.persist()
+	}
 	return nil
 }
 
@@ -1054,7 +1081,9 @@ func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness
 // config that already carried either cannot shadow them silently.
 func (i FileInstaller) templateContext() map[string]any {
 	var sentinels map[string]string
-	if i.Secrets != nil {
+	if i.Capture != nil {
+		sentinels = i.Capture.sentinels()
+	} else if i.Secrets != nil {
 		sentinels = i.Secrets()
 	}
 	out := make(map[string]any, len(i.SandboxConfig)+2)

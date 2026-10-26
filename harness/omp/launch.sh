@@ -34,18 +34,19 @@ if [ -r /etc/profile.d/omp-proxy.sh ]; then
 	. /etc/profile.d/omp-proxy.sh
 fi
 
-# The credentials the harness config holds reach omp as an `omp auth export`
-# document, templated with this sandbox's sentinels, and omp keeps credentials
-# in SQLite, so they go in through its own `omp auth import` (ADR 26-10-14-718
-# §2). Every launch imports it again: an import replaces the same provider's
-# key and the same account's login, so this is idempotent, and a login the
-# sandbox replaced in place is restored. A failed import is reported and omp
-# starts anyway, signed in to whatever it already had.
+# Serialize imports with capture/repair. A local login is never replaced by
+# an older delivered document; the acknowledged handoff owns that transition.
 CREDENTIALS="$HOME/.config/discobox/omp-credentials.json"
 if [ -s "$CREDENTIALS" ]; then
-	if ! imported=$(omp auth import "$CREDENTIALS" 2>&1); then
-		printf '%s\n' "discobox: omp could not import the harness's credentials:" "$imported" >&2
-	fi
+	mkdir -p "$HOME/.config/discobox"
+	(
+		flock -x 9
+		if /usr/local/libexec/discobox/omp-capture guard; then
+			if ! omp auth import "$CREDENTIALS" >/dev/null 2>&1; then
+				printf '%s\n' "discobox: omp could not import the harness's credentials." >&2
+			fi
+		fi
+	) 9>"$HOME/.config/discobox/harness-capture.lock"
 fi
 
 # --auto-approve approves every tool. The sandbox is the isolation boundary, so

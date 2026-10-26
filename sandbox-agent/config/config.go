@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxpath"
@@ -94,11 +96,13 @@ type ExecDefaults struct {
 
 // Harness is the sandbox's one effective, fully-resolved harness.
 type Harness struct {
-	ID              string        `json:"id"`
-	Name            string        `json:"name"`
-	Command         []string      `json:"command"`
-	RelaunchCommand []string      `json:"relaunchCommand,omitempty"`
-	Files           []HarnessFile `json:"files,omitempty"`
+	SaveBack        *harnesscapture.Definition `json:"saveBack,omitempty"`
+	CaptureBaseline *harnesscapture.Baseline   `json:"captureBaseline,omitempty"`
+	ID              string                     `json:"id"`
+	Name            string                     `json:"name"`
+	Command         []string                   `json:"command"`
+	RelaunchCommand []string                   `json:"relaunchCommand,omitempty"`
+	Files           []HarnessFile              `json:"files,omitempty"`
 	// FileSecrets names the declared credentials the harness reads from an
 	// installed file, whose sentinel is therefore withheld from the harness's
 	// environment (harness.SecretDeliveryFile).
@@ -219,6 +223,8 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 	if strings.TrimSpace(effective.Harness.ID) != "" {
 		cfg.Harness = Harness{
 			ID:              effective.Harness.ID,
+			SaveBack:        effective.Harness.SaveBack,
+			CaptureBaseline: effective.Harness.CaptureBaseline,
 			Name:            effective.Harness.Name,
 			Command:         cloneCommand(harnessCommand),
 			RelaunchCommand: cloneCommand(effective.Harness.RelaunchCommand),
@@ -350,4 +356,13 @@ func applyDefaults(cfg *Config) {
 	if cfg.Resources.RetentionCount <= 0 {
 		cfg.Resources.RetentionCount = 300
 	}
+}
+
+// CaptureStateDir is private durable state beside the agent database. Boot
+// excludes it even for boxes created before the dedicated volume was declared.
+func CaptureStateDir(databasePath string) string {
+	if databasePath == "" {
+		return "/var/lib/discobox/harness-capture"
+	}
+	return filepath.Join(filepath.Dir(databasePath), "harness-capture")
 }

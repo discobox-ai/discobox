@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -951,6 +952,12 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		row.Agent = agent
 	}
 	row.Provisioning = sandboxProvisioning(sb)
+	if status, ok := sb.Runtime.AgentStatus.Get(); ok {
+		var candidate string
+		if json.Unmarshal(status["harnessConfigCandidate"], &candidate) == nil {
+			row.HarnessConfigPending = candidate != ""
+		}
+	}
 	row.AgentObservedAt = sb.Runtime.AgentStatusObservedAt.Or(time.Time{})
 	if git := sandboxGitStatus(sb); git.Known {
 		row.Git = tui.GitState{

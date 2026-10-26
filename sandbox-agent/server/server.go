@@ -221,22 +221,23 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		awaitProvision = cfg.Provision.AwaitReady
 	}
 	manager, err := terminal.NewService(terminal.ServiceConfig{
-		Execs:          execManager,
-		Harness:        cfg.Harness,
-		SandboxConfig:  cfg.SandboxConfig,
-		WorkingRoot:    cfg.WorkingRoot,
-		RuntimeDir:     cfg.RuntimeDir,
-		SecretEnv:      cfg.SecretEnv,
-		ExecDefaults:   cfg.ExecDefaults,
-		Units:          cfg.ExecUnitManager,
-		Installer:      cfg.Installer,
-		PrimaryState:   localStore,
-		HarnessMode:    cfg.HarnessMode,
-		Prompt:         cfg.Prompt,
-		Skills:         cfg.Skills,
-		SkillsSources:  cfg.SkillsSources,
-		AwaitSources:   awaitSources,
-		AwaitProvision: awaitProvision,
+		CaptureStateDir: config.CaptureStateDir(cfg.DatabasePath),
+		Execs:           execManager,
+		Harness:         cfg.Harness,
+		SandboxConfig:   cfg.SandboxConfig,
+		WorkingRoot:     cfg.WorkingRoot,
+		RuntimeDir:      cfg.RuntimeDir,
+		SecretEnv:       cfg.SecretEnv,
+		ExecDefaults:    cfg.ExecDefaults,
+		Units:           cfg.ExecUnitManager,
+		Installer:       cfg.Installer,
+		PrimaryState:    localStore,
+		HarnessMode:     cfg.HarnessMode,
+		Prompt:          cfg.Prompt,
+		Skills:          cfg.Skills,
+		SkillsSources:   cfg.SkillsSources,
+		AwaitSources:    awaitSources,
+		AwaitProvision:  awaitProvision,
 	})
 	if err != nil {
 		return agentRuntime{}, err
@@ -655,6 +656,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// token it holds is a placeholder. This restores the sentinel so the next
 	// launch is signed in. See terminal/secretfiles.go.
 	go manager.WatchSecretFiles(ctx, logger)
+	go manager.WatchHarnessConfig(ctx)
 	// The listening-port watcher is the one status component with a standing
 	// loop behind it, because classifying a port means connecting to whatever
 	// is behind it (ADR 0046).

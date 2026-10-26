@@ -13,6 +13,15 @@ type UnimplementedHandler struct{}
 
 var _ Handler = UnimplementedHandler{}
 
+// AcknowledgeSandboxHarnessConfig implements acknowledge-sandbox-harness-config operation.
+//
+// Acknowledge sandbox harness config.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-ack
+func (UnimplementedHandler) AcknowledgeSandboxHarnessConfig(ctx context.Context, req *HarnessConfigAcknowledgment, params AcknowledgeSandboxHarnessConfigParams) (r *HarnessConfigChanges, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // AttachSandboxExec implements attach-sandbox-exec operation.
 //
 // Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input
@@ -38,6 +47,15 @@ func (UnimplementedHandler) AttachSandboxExec(ctx context.Context, params Attach
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 func (UnimplementedHandler) AttachSandboxExecOnce(ctx context.Context, req AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (r AttachSandboxExecOnceOK, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// CaptureSandboxHarnessConfig implements capture-sandbox-harness-config operation.
+//
+// Capture sandbox harness config.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-capture
+func (UnimplementedHandler) CaptureSandboxHarnessConfig(ctx context.Context, req *HarnessConfigCandidateRequest, params CaptureSandboxHarnessConfigParams) (r *HarnessConfigCandidate, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -81,6 +99,15 @@ func (UnimplementedHandler) CreateSandboxExec(ctx context.Context, req *CreateSa
 // DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
 func (UnimplementedHandler) DeleteSandboxExec(ctx context.Context, params DeleteSandboxExecParams) error {
 	return ht.ErrNotImplemented
+}
+
+// DiscardSandboxHarnessConfigChanges implements discard-sandbox-harness-config-changes operation.
+//
+// Discard sandbox harness config changes.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
+func (UnimplementedHandler) DiscardSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params DiscardSandboxHarnessConfigChangesParams) (r *HarnessConfigChanges, _ error) {
+	return r, ht.ErrNotImplemented
 }
 
 // GetSandboxAgentInventory implements get-sandbox-agent-inventory operation.
@@ -130,6 +157,15 @@ func (UnimplementedHandler) GetSandboxExecResources(ctx context.Context, params 
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
 func (UnimplementedHandler) GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (r *SandboxExecScreen, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetSandboxHarnessConfigChanges implements get-sandbox-harness-config-changes operation.
+//
+// Get sandbox harness config changes.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
+func (UnimplementedHandler) GetSandboxHarnessConfigChanges(ctx context.Context, params GetSandboxHarnessConfigChangesParams) (r *HarnessConfigChanges, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -344,6 +380,15 @@ func (UnimplementedHandler) PutSandboxRuntimeConfig(ctx context.Context, req *Sa
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
 func (UnimplementedHandler) ReadSandboxFile(ctx context.Context, params ReadSandboxFileParams) (r ReadSandboxFileOK, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ReconsiderSandboxHarnessConfig implements reconsider-sandbox-harness-config operation.
+//
+// Reconsider sandbox harness config.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-reconsider
+func (UnimplementedHandler) ReconsiderSandboxHarnessConfig(ctx context.Context, req *HarnessConfigReconsideration, params ReconsiderSandboxHarnessConfigParams) (r *HarnessConfigChanges, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

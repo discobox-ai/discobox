@@ -27,6 +27,12 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	// which it answers from the sandbox's last inventory when this agent
 	// refuses them (ADR 26-10-11-657 §4); the unbounded reads — logs, events,
 	// resource samples — start the sandbox, as every action does.
+	// Capture uses the same token-directed lifecycle boundary as other agent operations.
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/harness-config-changes", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/harness-config-capture", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/harness-config-ack", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/harness-config-reconsider", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/harness-config-changes/discard", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/harness-hooks", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/exec-events", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 	// Reading a terminal's screen, or waiting on it, is not use (ADR 0137 §2):
@@ -180,6 +186,15 @@ func authorizeProxyScope(r *http.Request, scope string) error {
 }
 
 func sandboxAgentRequiredScope(r *http.Request) string {
+	switch {
+	case strings.HasSuffix(r.URL.Path, "/harness-config-capture"):
+		return "harness-config:capture"
+	case strings.HasSuffix(r.URL.Path, "/harness-config-ack"), strings.HasSuffix(r.URL.Path, "/harness-config-reconsider"), strings.HasSuffix(r.URL.Path, "/harness-config-changes/discard"):
+		return "harness-config:write"
+	case strings.HasSuffix(r.URL.Path, "/harness-config-changes"):
+		return "harness-config:read"
+	}
+
 	// The files API is told by its whole route, before any test of a part of
 	// the path: an exec or a service named "files" is not one.
 	if op, ok := filesRoute(r.URL.EscapedPath()); ok {

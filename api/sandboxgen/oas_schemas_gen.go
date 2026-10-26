@@ -396,6 +396,681 @@ func (s *ErrorResponseStatusCode) SetResponse(val ErrorResponse) {
 	s.Response = val
 }
 
+// Ref: #/components/schemas/HarnessCaptureBaseline
+type HarnessCaptureBaseline struct {
+	ConfigRevision  int64                                    `json:"configRevision"`
+	Files           OptNilHarnessCaptureFileArray            `json:"files"`
+	HarnessConfigId string                                   `json:"harnessConfigId"`
+	ManifestDigest  string                                   `json:"manifestDigest"`
+	ProjectFiles    OptNilStringArray                        `json:"projectFiles"`
+	SecretRevisions OptHarnessCaptureBaselineSecretRevisions `json:"secretRevisions"`
+}
+
+// GetConfigRevision returns the value of ConfigRevision.
+func (s *HarnessCaptureBaseline) GetConfigRevision() int64 {
+	return s.ConfigRevision
+}
+
+// GetFiles returns the value of Files.
+func (s *HarnessCaptureBaseline) GetFiles() OptNilHarnessCaptureFileArray {
+	return s.Files
+}
+
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *HarnessCaptureBaseline) GetHarnessConfigId() string {
+	return s.HarnessConfigId
+}
+
+// GetManifestDigest returns the value of ManifestDigest.
+func (s *HarnessCaptureBaseline) GetManifestDigest() string {
+	return s.ManifestDigest
+}
+
+// GetProjectFiles returns the value of ProjectFiles.
+func (s *HarnessCaptureBaseline) GetProjectFiles() OptNilStringArray {
+	return s.ProjectFiles
+}
+
+// GetSecretRevisions returns the value of SecretRevisions.
+func (s *HarnessCaptureBaseline) GetSecretRevisions() OptHarnessCaptureBaselineSecretRevisions {
+	return s.SecretRevisions
+}
+
+// SetConfigRevision sets the value of ConfigRevision.
+func (s *HarnessCaptureBaseline) SetConfigRevision(val int64) {
+	s.ConfigRevision = val
+}
+
+// SetFiles sets the value of Files.
+func (s *HarnessCaptureBaseline) SetFiles(val OptNilHarnessCaptureFileArray) {
+	s.Files = val
+}
+
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *HarnessCaptureBaseline) SetHarnessConfigId(val string) {
+	s.HarnessConfigId = val
+}
+
+// SetManifestDigest sets the value of ManifestDigest.
+func (s *HarnessCaptureBaseline) SetManifestDigest(val string) {
+	s.ManifestDigest = val
+}
+
+// SetProjectFiles sets the value of ProjectFiles.
+func (s *HarnessCaptureBaseline) SetProjectFiles(val OptNilStringArray) {
+	s.ProjectFiles = val
+}
+
+// SetSecretRevisions sets the value of SecretRevisions.
+func (s *HarnessCaptureBaseline) SetSecretRevisions(val OptHarnessCaptureBaselineSecretRevisions) {
+	s.SecretRevisions = val
+}
+
+type HarnessCaptureBaselineSecretRevisions map[string]string
+
+func (s *HarnessCaptureBaselineSecretRevisions) init() HarnessCaptureBaselineSecretRevisions {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/HarnessCaptureCredential
+type HarnessCaptureCredential struct {
+	Account    OptString                        `json:"account"`
+	EnvName    string                           `json:"envName"`
+	Generation OptString                        `json:"generation"`
+	Keep       OptBool                          `json:"keep"`
+	LocalId    OptString                        `json:"localId"`
+	Provider   string                           `json:"provider"`
+	Type       string                           `json:"type"`
+	Value      OptHarnessCaptureCredentialValue `json:"value"`
+}
+
+// GetAccount returns the value of Account.
+func (s *HarnessCaptureCredential) GetAccount() OptString {
+	return s.Account
+}
+
+// GetEnvName returns the value of EnvName.
+func (s *HarnessCaptureCredential) GetEnvName() string {
+	return s.EnvName
+}
+
+// GetGeneration returns the value of Generation.
+func (s *HarnessCaptureCredential) GetGeneration() OptString {
+	return s.Generation
+}
+
+// GetKeep returns the value of Keep.
+func (s *HarnessCaptureCredential) GetKeep() OptBool {
+	return s.Keep
+}
+
+// GetLocalId returns the value of LocalId.
+func (s *HarnessCaptureCredential) GetLocalId() OptString {
+	return s.LocalId
+}
+
+// GetProvider returns the value of Provider.
+func (s *HarnessCaptureCredential) GetProvider() string {
+	return s.Provider
+}
+
+// GetType returns the value of Type.
+func (s *HarnessCaptureCredential) GetType() string {
+	return s.Type
+}
+
+// GetValue returns the value of Value.
+func (s *HarnessCaptureCredential) GetValue() OptHarnessCaptureCredentialValue {
+	return s.Value
+}
+
+// SetAccount sets the value of Account.
+func (s *HarnessCaptureCredential) SetAccount(val OptString) {
+	s.Account = val
+}
+
+// SetEnvName sets the value of EnvName.
+func (s *HarnessCaptureCredential) SetEnvName(val string) {
+	s.EnvName = val
+}
+
+// SetGeneration sets the value of Generation.
+func (s *HarnessCaptureCredential) SetGeneration(val OptString) {
+	s.Generation = val
+}
+
+// SetKeep sets the value of Keep.
+func (s *HarnessCaptureCredential) SetKeep(val OptBool) {
+	s.Keep = val
+}
+
+// SetLocalId sets the value of LocalId.
+func (s *HarnessCaptureCredential) SetLocalId(val OptString) {
+	s.LocalId = val
+}
+
+// SetProvider sets the value of Provider.
+func (s *HarnessCaptureCredential) SetProvider(val string) {
+	s.Provider = val
+}
+
+// SetType sets the value of Type.
+func (s *HarnessCaptureCredential) SetType(val string) {
+	s.Type = val
+}
+
+// SetValue sets the value of Value.
+func (s *HarnessCaptureCredential) SetValue(val OptHarnessCaptureCredentialValue) {
+	s.Value = val
+}
+
+// Ref: #/components/schemas/HarnessCaptureCredentialPreview
+type HarnessCaptureCredentialPreview struct {
+	Account  OptString `json:"account"`
+	EnvName  string    `json:"envName"`
+	Provider string    `json:"provider"`
+	Type     string    `json:"type"`
+}
+
+// GetAccount returns the value of Account.
+func (s *HarnessCaptureCredentialPreview) GetAccount() OptString {
+	return s.Account
+}
+
+// GetEnvName returns the value of EnvName.
+func (s *HarnessCaptureCredentialPreview) GetEnvName() string {
+	return s.EnvName
+}
+
+// GetProvider returns the value of Provider.
+func (s *HarnessCaptureCredentialPreview) GetProvider() string {
+	return s.Provider
+}
+
+// GetType returns the value of Type.
+func (s *HarnessCaptureCredentialPreview) GetType() string {
+	return s.Type
+}
+
+// SetAccount sets the value of Account.
+func (s *HarnessCaptureCredentialPreview) SetAccount(val OptString) {
+	s.Account = val
+}
+
+// SetEnvName sets the value of EnvName.
+func (s *HarnessCaptureCredentialPreview) SetEnvName(val string) {
+	s.EnvName = val
+}
+
+// SetProvider sets the value of Provider.
+func (s *HarnessCaptureCredentialPreview) SetProvider(val string) {
+	s.Provider = val
+}
+
+// SetType sets the value of Type.
+func (s *HarnessCaptureCredentialPreview) SetType(val string) {
+	s.Type = val
+}
+
+type HarnessCaptureCredentialValue map[string]jx.Raw
+
+func (s *HarnessCaptureCredentialValue) init() HarnessCaptureCredentialValue {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/HarnessCaptureDiagnostic
+type HarnessCaptureDiagnostic struct {
+	Code    string    `json:"code"`
+	Message string    `json:"message"`
+	Path    OptString `json:"path"`
+}
+
+// GetCode returns the value of Code.
+func (s *HarnessCaptureDiagnostic) GetCode() string {
+	return s.Code
+}
+
+// GetMessage returns the value of Message.
+func (s *HarnessCaptureDiagnostic) GetMessage() string {
+	return s.Message
+}
+
+// GetPath returns the value of Path.
+func (s *HarnessCaptureDiagnostic) GetPath() OptString {
+	return s.Path
+}
+
+// SetCode sets the value of Code.
+func (s *HarnessCaptureDiagnostic) SetCode(val string) {
+	s.Code = val
+}
+
+// SetMessage sets the value of Message.
+func (s *HarnessCaptureDiagnostic) SetMessage(val string) {
+	s.Message = val
+}
+
+// SetPath sets the value of Path.
+func (s *HarnessCaptureDiagnostic) SetPath(val OptString) {
+	s.Path = val
+}
+
+// Ref: #/components/schemas/HarnessCaptureFile
+type HarnessCaptureFile struct {
+	Content    string  `json:"content"`
+	CreateOnly OptBool `json:"createOnly"`
+	Path       string  `json:"path"`
+	Template   OptBool `json:"template"`
+}
+
+// GetContent returns the value of Content.
+func (s *HarnessCaptureFile) GetContent() string {
+	return s.Content
+}
+
+// GetCreateOnly returns the value of CreateOnly.
+func (s *HarnessCaptureFile) GetCreateOnly() OptBool {
+	return s.CreateOnly
+}
+
+// GetPath returns the value of Path.
+func (s *HarnessCaptureFile) GetPath() string {
+	return s.Path
+}
+
+// GetTemplate returns the value of Template.
+func (s *HarnessCaptureFile) GetTemplate() OptBool {
+	return s.Template
+}
+
+// SetContent sets the value of Content.
+func (s *HarnessCaptureFile) SetContent(val string) {
+	s.Content = val
+}
+
+// SetCreateOnly sets the value of CreateOnly.
+func (s *HarnessCaptureFile) SetCreateOnly(val OptBool) {
+	s.CreateOnly = val
+}
+
+// SetPath sets the value of Path.
+func (s *HarnessCaptureFile) SetPath(val string) {
+	s.Path = val
+}
+
+// SetTemplate sets the value of Template.
+func (s *HarnessCaptureFile) SetTemplate(val OptBool) {
+	s.Template = val
+}
+
+// Ref: #/components/schemas/HarnessCaptureFileChange
+type HarnessCaptureFileChange struct {
+	File   OptHarnessCaptureFile `json:"file"`
+	Path   string                `json:"path"`
+	Remove OptBool               `json:"remove"`
+}
+
+// GetFile returns the value of File.
+func (s *HarnessCaptureFileChange) GetFile() OptHarnessCaptureFile {
+	return s.File
+}
+
+// GetPath returns the value of Path.
+func (s *HarnessCaptureFileChange) GetPath() string {
+	return s.Path
+}
+
+// GetRemove returns the value of Remove.
+func (s *HarnessCaptureFileChange) GetRemove() OptBool {
+	return s.Remove
+}
+
+// SetFile sets the value of File.
+func (s *HarnessCaptureFileChange) SetFile(val OptHarnessCaptureFile) {
+	s.File = val
+}
+
+// SetPath sets the value of Path.
+func (s *HarnessCaptureFileChange) SetPath(val string) {
+	s.Path = val
+}
+
+// SetRemove sets the value of Remove.
+func (s *HarnessCaptureFileChange) SetRemove(val OptBool) {
+	s.Remove = val
+}
+
+// Ref: #/components/schemas/HarnessConfigAcknowledgment
+type HarnessConfigAcknowledgment struct {
+	Baseline    HarnessCaptureBaseline               `json:"baseline"`
+	CandidateId string                               `json:"candidateId"`
+	Files       []HarnessCaptureFile                 `json:"files"`
+	Sentinels   HarnessConfigAcknowledgmentSentinels `json:"sentinels"`
+	Superseded  OptBool                              `json:"superseded"`
+}
+
+// GetBaseline returns the value of Baseline.
+func (s *HarnessConfigAcknowledgment) GetBaseline() HarnessCaptureBaseline {
+	return s.Baseline
+}
+
+// GetCandidateId returns the value of CandidateId.
+func (s *HarnessConfigAcknowledgment) GetCandidateId() string {
+	return s.CandidateId
+}
+
+// GetFiles returns the value of Files.
+func (s *HarnessConfigAcknowledgment) GetFiles() []HarnessCaptureFile {
+	return s.Files
+}
+
+// GetSentinels returns the value of Sentinels.
+func (s *HarnessConfigAcknowledgment) GetSentinels() HarnessConfigAcknowledgmentSentinels {
+	return s.Sentinels
+}
+
+// GetSuperseded returns the value of Superseded.
+func (s *HarnessConfigAcknowledgment) GetSuperseded() OptBool {
+	return s.Superseded
+}
+
+// SetBaseline sets the value of Baseline.
+func (s *HarnessConfigAcknowledgment) SetBaseline(val HarnessCaptureBaseline) {
+	s.Baseline = val
+}
+
+// SetCandidateId sets the value of CandidateId.
+func (s *HarnessConfigAcknowledgment) SetCandidateId(val string) {
+	s.CandidateId = val
+}
+
+// SetFiles sets the value of Files.
+func (s *HarnessConfigAcknowledgment) SetFiles(val []HarnessCaptureFile) {
+	s.Files = val
+}
+
+// SetSentinels sets the value of Sentinels.
+func (s *HarnessConfigAcknowledgment) SetSentinels(val HarnessConfigAcknowledgmentSentinels) {
+	s.Sentinels = val
+}
+
+// SetSuperseded sets the value of Superseded.
+func (s *HarnessConfigAcknowledgment) SetSuperseded(val OptBool) {
+	s.Superseded = val
+}
+
+type HarnessConfigAcknowledgmentSentinels map[string]string
+
+func (s *HarnessConfigAcknowledgmentSentinels) init() HarnessConfigAcknowledgmentSentinels {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/HarnessConfigCandidate
+type HarnessConfigCandidate struct {
+	Baseline        HarnessCaptureBaseline                   `json:"baseline"`
+	Credentials     []HarnessCaptureCredential               `json:"credentials"`
+	Diagnostics     OptNilHarnessCaptureDiagnosticArray      `json:"diagnostics"`
+	Files           []HarnessCaptureFileChange               `json:"files"`
+	ID              string                                   `json:"id"`
+	SecretRevisions OptHarnessConfigCandidateSecretRevisions `json:"secretRevisions"`
+	WriteRevision   int64                                    `json:"writeRevision"`
+}
+
+// GetBaseline returns the value of Baseline.
+func (s *HarnessConfigCandidate) GetBaseline() HarnessCaptureBaseline {
+	return s.Baseline
+}
+
+// GetCredentials returns the value of Credentials.
+func (s *HarnessConfigCandidate) GetCredentials() []HarnessCaptureCredential {
+	return s.Credentials
+}
+
+// GetDiagnostics returns the value of Diagnostics.
+func (s *HarnessConfigCandidate) GetDiagnostics() OptNilHarnessCaptureDiagnosticArray {
+	return s.Diagnostics
+}
+
+// GetFiles returns the value of Files.
+func (s *HarnessConfigCandidate) GetFiles() []HarnessCaptureFileChange {
+	return s.Files
+}
+
+// GetID returns the value of ID.
+func (s *HarnessConfigCandidate) GetID() string {
+	return s.ID
+}
+
+// GetSecretRevisions returns the value of SecretRevisions.
+func (s *HarnessConfigCandidate) GetSecretRevisions() OptHarnessConfigCandidateSecretRevisions {
+	return s.SecretRevisions
+}
+
+// GetWriteRevision returns the value of WriteRevision.
+func (s *HarnessConfigCandidate) GetWriteRevision() int64 {
+	return s.WriteRevision
+}
+
+// SetBaseline sets the value of Baseline.
+func (s *HarnessConfigCandidate) SetBaseline(val HarnessCaptureBaseline) {
+	s.Baseline = val
+}
+
+// SetCredentials sets the value of Credentials.
+func (s *HarnessConfigCandidate) SetCredentials(val []HarnessCaptureCredential) {
+	s.Credentials = val
+}
+
+// SetDiagnostics sets the value of Diagnostics.
+func (s *HarnessConfigCandidate) SetDiagnostics(val OptNilHarnessCaptureDiagnosticArray) {
+	s.Diagnostics = val
+}
+
+// SetFiles sets the value of Files.
+func (s *HarnessConfigCandidate) SetFiles(val []HarnessCaptureFileChange) {
+	s.Files = val
+}
+
+// SetID sets the value of ID.
+func (s *HarnessConfigCandidate) SetID(val string) {
+	s.ID = val
+}
+
+// SetSecretRevisions sets the value of SecretRevisions.
+func (s *HarnessConfigCandidate) SetSecretRevisions(val OptHarnessConfigCandidateSecretRevisions) {
+	s.SecretRevisions = val
+}
+
+// SetWriteRevision sets the value of WriteRevision.
+func (s *HarnessConfigCandidate) SetWriteRevision(val int64) {
+	s.WriteRevision = val
+}
+
+// Ref: #/components/schemas/HarnessConfigCandidateRequest
+type HarnessConfigCandidateRequest struct {
+	CandidateId string `json:"candidateId"`
+}
+
+// GetCandidateId returns the value of CandidateId.
+func (s *HarnessConfigCandidateRequest) GetCandidateId() string {
+	return s.CandidateId
+}
+
+// SetCandidateId sets the value of CandidateId.
+func (s *HarnessConfigCandidateRequest) SetCandidateId(val string) {
+	s.CandidateId = val
+}
+
+type HarnessConfigCandidateSecretRevisions map[string]string
+
+func (s *HarnessConfigCandidateSecretRevisions) init() HarnessConfigCandidateSecretRevisions {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/HarnessConfigChanges
+type HarnessConfigChanges struct {
+	CandidateId     OptString                           `json:"candidateId"`
+	ConfigRevision  int64                               `json:"configRevision"`
+	Credentials     []HarnessCaptureCredentialPreview   `json:"credentials"`
+	Diagnostics     OptNilHarnessCaptureDiagnosticArray `json:"diagnostics"`
+	Files           []HarnessCaptureFileChange          `json:"files"`
+	HarnessConfigId string                              `json:"harnessConfigId"`
+	State           string                              `json:"state"`
+}
+
+// GetCandidateId returns the value of CandidateId.
+func (s *HarnessConfigChanges) GetCandidateId() OptString {
+	return s.CandidateId
+}
+
+// GetConfigRevision returns the value of ConfigRevision.
+func (s *HarnessConfigChanges) GetConfigRevision() int64 {
+	return s.ConfigRevision
+}
+
+// GetCredentials returns the value of Credentials.
+func (s *HarnessConfigChanges) GetCredentials() []HarnessCaptureCredentialPreview {
+	return s.Credentials
+}
+
+// GetDiagnostics returns the value of Diagnostics.
+func (s *HarnessConfigChanges) GetDiagnostics() OptNilHarnessCaptureDiagnosticArray {
+	return s.Diagnostics
+}
+
+// GetFiles returns the value of Files.
+func (s *HarnessConfigChanges) GetFiles() []HarnessCaptureFileChange {
+	return s.Files
+}
+
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *HarnessConfigChanges) GetHarnessConfigId() string {
+	return s.HarnessConfigId
+}
+
+// GetState returns the value of State.
+func (s *HarnessConfigChanges) GetState() string {
+	return s.State
+}
+
+// SetCandidateId sets the value of CandidateId.
+func (s *HarnessConfigChanges) SetCandidateId(val OptString) {
+	s.CandidateId = val
+}
+
+// SetConfigRevision sets the value of ConfigRevision.
+func (s *HarnessConfigChanges) SetConfigRevision(val int64) {
+	s.ConfigRevision = val
+}
+
+// SetCredentials sets the value of Credentials.
+func (s *HarnessConfigChanges) SetCredentials(val []HarnessCaptureCredentialPreview) {
+	s.Credentials = val
+}
+
+// SetDiagnostics sets the value of Diagnostics.
+func (s *HarnessConfigChanges) SetDiagnostics(val OptNilHarnessCaptureDiagnosticArray) {
+	s.Diagnostics = val
+}
+
+// SetFiles sets the value of Files.
+func (s *HarnessConfigChanges) SetFiles(val []HarnessCaptureFileChange) {
+	s.Files = val
+}
+
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *HarnessConfigChanges) SetHarnessConfigId(val string) {
+	s.HarnessConfigId = val
+}
+
+// SetState sets the value of State.
+func (s *HarnessConfigChanges) SetState(val string) {
+	s.State = val
+}
+
+// Ref: #/components/schemas/HarnessConfigReconsideration
+type HarnessConfigReconsideration struct {
+	Current   HarnessCaptureBaseline `json:"current"`
+	Selection HarnessConfigSelection `json:"selection"`
+}
+
+// GetCurrent returns the value of Current.
+func (s *HarnessConfigReconsideration) GetCurrent() HarnessCaptureBaseline {
+	return s.Current
+}
+
+// GetSelection returns the value of Selection.
+func (s *HarnessConfigReconsideration) GetSelection() HarnessConfigSelection {
+	return s.Selection
+}
+
+// SetCurrent sets the value of Current.
+func (s *HarnessConfigReconsideration) SetCurrent(val HarnessCaptureBaseline) {
+	s.Current = val
+}
+
+// SetSelection sets the value of Selection.
+func (s *HarnessConfigReconsideration) SetSelection(val HarnessConfigSelection) {
+	s.Selection = val
+}
+
+// Ref: #/components/schemas/HarnessConfigSelection
+type HarnessConfigSelection struct {
+	CandidateId        string   `json:"candidateId"`
+	KeepFiles          []string `json:"keepFiles"`
+	ReplaceCredentials []string `json:"replaceCredentials"`
+}
+
+// GetCandidateId returns the value of CandidateId.
+func (s *HarnessConfigSelection) GetCandidateId() string {
+	return s.CandidateId
+}
+
+// GetKeepFiles returns the value of KeepFiles.
+func (s *HarnessConfigSelection) GetKeepFiles() []string {
+	return s.KeepFiles
+}
+
+// GetReplaceCredentials returns the value of ReplaceCredentials.
+func (s *HarnessConfigSelection) GetReplaceCredentials() []string {
+	return s.ReplaceCredentials
+}
+
+// SetCandidateId sets the value of CandidateId.
+func (s *HarnessConfigSelection) SetCandidateId(val string) {
+	s.CandidateId = val
+}
+
+// SetKeepFiles sets the value of KeepFiles.
+func (s *HarnessConfigSelection) SetKeepFiles(val []string) {
+	s.KeepFiles = val
+}
+
+// SetReplaceCredentials sets the value of ReplaceCredentials.
+func (s *HarnessConfigSelection) SetReplaceCredentials(val []string) {
+	s.ReplaceCredentials = val
+}
+
 // Ref: #/components/schemas/HarnessHookLog
 type HarnessHookLog struct {
 	// Claude Code's name for the same event, absent when Claude Code has no name for it. Match on this
@@ -1613,6 +2288,190 @@ func (o OptFloat64) Or(d float64) float64 {
 	return d
 }
 
+// NewOptHarnessCaptureBaselineSecretRevisions returns new OptHarnessCaptureBaselineSecretRevisions with value set to v.
+func NewOptHarnessCaptureBaselineSecretRevisions(v HarnessCaptureBaselineSecretRevisions) OptHarnessCaptureBaselineSecretRevisions {
+	return OptHarnessCaptureBaselineSecretRevisions{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessCaptureBaselineSecretRevisions is optional HarnessCaptureBaselineSecretRevisions.
+type OptHarnessCaptureBaselineSecretRevisions struct {
+	Value HarnessCaptureBaselineSecretRevisions
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessCaptureBaselineSecretRevisions was set.
+func (o OptHarnessCaptureBaselineSecretRevisions) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessCaptureBaselineSecretRevisions) Reset() {
+	var v HarnessCaptureBaselineSecretRevisions
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessCaptureBaselineSecretRevisions) SetTo(v HarnessCaptureBaselineSecretRevisions) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessCaptureBaselineSecretRevisions) Get() (v HarnessCaptureBaselineSecretRevisions, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessCaptureBaselineSecretRevisions) Or(d HarnessCaptureBaselineSecretRevisions) HarnessCaptureBaselineSecretRevisions {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptHarnessCaptureCredentialValue returns new OptHarnessCaptureCredentialValue with value set to v.
+func NewOptHarnessCaptureCredentialValue(v HarnessCaptureCredentialValue) OptHarnessCaptureCredentialValue {
+	return OptHarnessCaptureCredentialValue{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessCaptureCredentialValue is optional HarnessCaptureCredentialValue.
+type OptHarnessCaptureCredentialValue struct {
+	Value HarnessCaptureCredentialValue
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessCaptureCredentialValue was set.
+func (o OptHarnessCaptureCredentialValue) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessCaptureCredentialValue) Reset() {
+	var v HarnessCaptureCredentialValue
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessCaptureCredentialValue) SetTo(v HarnessCaptureCredentialValue) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessCaptureCredentialValue) Get() (v HarnessCaptureCredentialValue, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessCaptureCredentialValue) Or(d HarnessCaptureCredentialValue) HarnessCaptureCredentialValue {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptHarnessCaptureFile returns new OptHarnessCaptureFile with value set to v.
+func NewOptHarnessCaptureFile(v HarnessCaptureFile) OptHarnessCaptureFile {
+	return OptHarnessCaptureFile{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessCaptureFile is optional HarnessCaptureFile.
+type OptHarnessCaptureFile struct {
+	Value HarnessCaptureFile
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessCaptureFile was set.
+func (o OptHarnessCaptureFile) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessCaptureFile) Reset() {
+	var v HarnessCaptureFile
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessCaptureFile) SetTo(v HarnessCaptureFile) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessCaptureFile) Get() (v HarnessCaptureFile, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessCaptureFile) Or(d HarnessCaptureFile) HarnessCaptureFile {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptHarnessConfigCandidateSecretRevisions returns new OptHarnessConfigCandidateSecretRevisions with value set to v.
+func NewOptHarnessConfigCandidateSecretRevisions(v HarnessConfigCandidateSecretRevisions) OptHarnessConfigCandidateSecretRevisions {
+	return OptHarnessConfigCandidateSecretRevisions{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessConfigCandidateSecretRevisions is optional HarnessConfigCandidateSecretRevisions.
+type OptHarnessConfigCandidateSecretRevisions struct {
+	Value HarnessConfigCandidateSecretRevisions
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessConfigCandidateSecretRevisions was set.
+func (o OptHarnessConfigCandidateSecretRevisions) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessConfigCandidateSecretRevisions) Reset() {
+	var v HarnessConfigCandidateSecretRevisions
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessConfigCandidateSecretRevisions) SetTo(v HarnessConfigCandidateSecretRevisions) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessConfigCandidateSecretRevisions) Get() (v HarnessConfigCandidateSecretRevisions, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessConfigCandidateSecretRevisions) Or(d HarnessConfigCandidateSecretRevisions) HarnessConfigCandidateSecretRevisions {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptHarnessHookLog returns new OptHarnessHookLog with value set to v.
 func NewOptHarnessHookLog(v HarnessHookLog) OptHarnessHookLog {
 	return OptHarnessHookLog{
@@ -2343,6 +3202,195 @@ func (o OptListHarnessHooksOrder) Get() (v ListHarnessHooksOrder, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptListHarnessHooksOrder) Or(d ListHarnessHooksOrder) ListHarnessHooksOrder {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessCaptureDiagnosticArray returns new OptNilHarnessCaptureDiagnosticArray with value set to v.
+func NewOptNilHarnessCaptureDiagnosticArray(v []HarnessCaptureDiagnostic) OptNilHarnessCaptureDiagnosticArray {
+	return OptNilHarnessCaptureDiagnosticArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessCaptureDiagnosticArray is optional nullable []HarnessCaptureDiagnostic.
+type OptNilHarnessCaptureDiagnosticArray struct {
+	Value []HarnessCaptureDiagnostic
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessCaptureDiagnosticArray was set.
+func (o OptNilHarnessCaptureDiagnosticArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessCaptureDiagnosticArray) Reset() {
+	var v []HarnessCaptureDiagnostic
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessCaptureDiagnosticArray) SetTo(v []HarnessCaptureDiagnostic) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessCaptureDiagnosticArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessCaptureDiagnosticArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessCaptureDiagnostic
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessCaptureDiagnosticArray) Get() (v []HarnessCaptureDiagnostic, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessCaptureDiagnosticArray) Or(d []HarnessCaptureDiagnostic) []HarnessCaptureDiagnostic {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessCaptureFileArray returns new OptNilHarnessCaptureFileArray with value set to v.
+func NewOptNilHarnessCaptureFileArray(v []HarnessCaptureFile) OptNilHarnessCaptureFileArray {
+	return OptNilHarnessCaptureFileArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessCaptureFileArray is optional nullable []HarnessCaptureFile.
+type OptNilHarnessCaptureFileArray struct {
+	Value []HarnessCaptureFile
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessCaptureFileArray was set.
+func (o OptNilHarnessCaptureFileArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessCaptureFileArray) Reset() {
+	var v []HarnessCaptureFile
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessCaptureFileArray) SetTo(v []HarnessCaptureFile) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessCaptureFileArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessCaptureFileArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessCaptureFile
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessCaptureFileArray) Get() (v []HarnessCaptureFile, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessCaptureFileArray) Or(d []HarnessCaptureFile) []HarnessCaptureFile {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilStringArray returns new OptNilStringArray with value set to v.
+func NewOptNilStringArray(v []string) OptNilStringArray {
+	return OptNilStringArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilStringArray is optional nullable []string.
+type OptNilStringArray struct {
+	Value []string
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilStringArray was set.
+func (o OptNilStringArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilStringArray) Reset() {
+	var v []string
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilStringArray) SetTo(v []string) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilStringArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilStringArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []string
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilStringArray) Get() (v []string, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilStringArray) Or(d []string) []string {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -5336,7 +6384,9 @@ func (s *SandboxAgentSourceStateState) UnmarshalText(data []byte) error {
 type SandboxAgentStatusResponse struct {
 	// The sandbox's idle-stop policy. Absent while the policy is not running, which in a configure-mode
 	// sandbox is always.
-	Autostop OptSandboxAgentAutostopStatus `json:"autostop"`
+	Autostop               OptSandboxAgentAutostopStatus `json:"autostop"`
+	HarnessConfigCandidate OptString                     `json:"harnessConfigCandidate"`
+	HarnessConfigState     OptString                     `json:"harnessConfigState"`
 	// The sandbox's name, description and tags, read from ~/.discobox/meta.json in the sandbox user's
 	// home, which is their system of record. Empty when there is no such file. Absent when the file
 	// could not be read or is not valid, in which case metaError says why.
@@ -5370,6 +6420,16 @@ type SandboxAgentStatusResponse struct {
 // GetAutostop returns the value of Autostop.
 func (s *SandboxAgentStatusResponse) GetAutostop() OptSandboxAgentAutostopStatus {
 	return s.Autostop
+}
+
+// GetHarnessConfigCandidate returns the value of HarnessConfigCandidate.
+func (s *SandboxAgentStatusResponse) GetHarnessConfigCandidate() OptString {
+	return s.HarnessConfigCandidate
+}
+
+// GetHarnessConfigState returns the value of HarnessConfigState.
+func (s *SandboxAgentStatusResponse) GetHarnessConfigState() OptString {
+	return s.HarnessConfigState
 }
 
 // GetMeta returns the value of Meta.
@@ -5425,6 +6485,16 @@ func (s *SandboxAgentStatusResponse) GetSources() []SandboxAgentGitSourceStatus 
 // SetAutostop sets the value of Autostop.
 func (s *SandboxAgentStatusResponse) SetAutostop(val OptSandboxAgentAutostopStatus) {
 	s.Autostop = val
+}
+
+// SetHarnessConfigCandidate sets the value of HarnessConfigCandidate.
+func (s *SandboxAgentStatusResponse) SetHarnessConfigCandidate(val OptString) {
+	s.HarnessConfigCandidate = val
+}
+
+// SetHarnessConfigState sets the value of HarnessConfigState.
+func (s *SandboxAgentStatusResponse) SetHarnessConfigState(val OptString) {
+	s.HarnessConfigState = val
 }
 
 // SetMeta sets the value of Meta.

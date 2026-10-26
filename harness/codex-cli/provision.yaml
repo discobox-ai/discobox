@@ -33,3 +33,9 @@ steps:
   # through (ADR 0079). On PATH: its callers resolve it by name.
   - name: prompt
     file: {path: /usr/local/bin/discobox-prompt, source: prompt.sh, mode: "0755"}
+  - name: capture
+    file: {path: /usr/local/libexec/discobox/codex-capture, source: capture.sh, mode: "0755"}
+  - name: capture-metadata
+    file: {path: /usr/local/libexec/discobox/codex-image.json, source: image.json}
+  - name: capture-normalizer
+    file: {path: /usr/local/libexec/discobox/codex-normalize.cjs, source: codex-normalize.cjs}

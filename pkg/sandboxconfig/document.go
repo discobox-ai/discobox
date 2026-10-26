@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 )
@@ -27,7 +28,8 @@ type Document struct {
 // other layer may set it, except where explicitly noted as an override grant
 // on ImageLayer/ProjectLayer.
 type RuntimeLayer struct {
-	SandboxID string `json:"sandboxId"`
+	CaptureBaseline *harnesscapture.Baseline `json:"captureBaseline,omitempty"`
+	SandboxID       string                   `json:"sandboxId"`
 	// Image is the identity of the image this sandbox actually runs — the
 	// resolved image ID the pool host launched, not the (mutable) reference it
 	// was asked for. Diagnostic: Effective drops it, so it reaches sandbox.json
@@ -305,9 +307,10 @@ type File struct {
 // ImageLayer carries the immutable harness contract and defaults baked into
 // one sandbox image, snapshotted from the registered image's OCI label.
 type ImageLayer struct {
-	HarnessID          string `json:"harnessId,omitempty"`
-	HarnessName        string `json:"harnessName,omitempty"`
-	HarnessDescription string `json:"harnessDescription,omitempty"`
+	SaveBack           *harnesscapture.Definition `json:"saveBack,omitempty"`
+	HarnessID          string                     `json:"harnessId,omitempty"`
+	HarnessName        string                     `json:"harnessName,omitempty"`
+	HarnessDescription string                     `json:"harnessDescription,omitempty"`
 
 	// RunCommand and RelaunchCommand are an override grant: the project layer
 	// may replace them wholesale.

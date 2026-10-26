@@ -107,6 +107,8 @@ func newConfigureEnv(t *testing.T) *configureEnv {
 		}
 	}
 	writeExecutable(t, env.script, strings.ReplaceAll(readFile(t, "configure.sh"), "/run/discobox/configure/", env.runDir))
+	writeExecutable(t, filepath.Join(dir, "omp-image.json"), readFile(t, "image.json"))
+	writeExecutable(t, filepath.Join(dir, "omp-normalize.cjs"), readFile(t, "omp-normalize.cjs"))
 	// `script -q -e -c CMD /dev/null` runs CMD with a terminal; here it just
 	// runs it.
 	writeExecutable(t, filepath.Join(env.bin, "script"), "#!/bin/sh\nexec sh -c \"$4\"\n")

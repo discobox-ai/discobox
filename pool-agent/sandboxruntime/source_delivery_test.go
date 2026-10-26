@@ -65,7 +65,10 @@ func TestSandboxDocumentMarksSourcesAwaitingDelivery(t *testing.T) {
 		},
 	})
 
-	doc := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", proxyagent.PoolEndpoints(""), req, nil, nil)
+	doc, buildErr := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", proxyagent.PoolEndpoints(""), req, nil, nil)
+	if buildErr != nil {
+		t.Fatal(buildErr)
+	}
 	byslug := map[string]sandboxconfig.Source{}
 	for _, source := range doc.Runtime.Sources {
 		byslug[source.Slug] = source

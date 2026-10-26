@@ -38,6 +38,8 @@
 # without ever being readable in this sandbox. Keeping it is reported back as
 # usePrevious, not as a value.
 set -eu
+HARNESS_CAPTURE_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+export HARNESS_CAPTURE_DIR
 
 PREVIOUS_CONFIG=/run/discobox/configure/harness-previous-config.json
 OUTPUT=/run/discobox/configure/harness-configure.json
@@ -61,8 +63,6 @@ OAUTH_ENV=CLAUDE_CODE_OAUTH_TOKEN
 # public OAuth client, not of any one login, so they are baked into the harness
 # rather than read from the credentials file. The control plane uses them to
 # refresh the access token via grant_type=refresh_token.
-OAUTH_TOKEN_URL="https://console.anthropic.com/v1/oauth/token"
-OAUTH_CLIENT_ID="9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
 # Holds the collected OAuth payload JSON between extraction and write_output.
 OAUTH_PAYLOAD_FILE=""
@@ -140,41 +140,17 @@ previous_env() {
 extract_oauth_payload() {
 	[ -f "$CREDENTIALS_FILE" ] || return 1
 	collected_payload=$(CLAUDE_CONFIGURE_CREDENTIALS_FILE="$CREDENTIALS_FILE" \
-		CLAUDE_CONFIGURE_TOKEN_URL="$OAUTH_TOKEN_URL" \
-		CLAUDE_CONFIGURE_CLIENT_ID="$OAUTH_CLIENT_ID" node <<-'NODE_EOF'
+		node <<-'NODE_EOF'
 		const fs = require('fs');
-		let oauth = {};
-		try {
-			oauth = (JSON.parse(fs.readFileSync(process.env.CLAUDE_CONFIGURE_CREDENTIALS_FILE, 'utf8')) || {}).claudeAiOauth || {};
-		} catch (err) {
-			oauth = {};
-		}
-		if (typeof oauth.accessToken !== 'string' || !oauth.accessToken ||
-			typeof oauth.refreshToken !== 'string' || !oauth.refreshToken) {
-			process.exit(3);
-		}
-		const out = {
-			token: oauth.accessToken,
-			refreshToken: oauth.refreshToken,
-			tokenUrl: process.env.CLAUDE_CONFIGURE_TOKEN_URL,
-			clientId: process.env.CLAUDE_CONFIGURE_CLIENT_ID,
-		};
-		if (typeof oauth.expiresAt === 'number') {
-			out.accessTokenExpiresAt = oauth.expiresAt;
-		}
-		// Copied verbatim, never defaulted: an absent scope list has to stay
-		// absent so nothing downstream can mistake a guess for what the
-		// authorization server actually granted.
-		if (Array.isArray(oauth.scopes)) {
-			const scopes = oauth.scopes.filter((s) => typeof s === 'string' && s);
-			if (scopes.length) {
-				out.scopes = scopes;
-			}
-		}
-		if (typeof oauth.subscriptionType === 'string' && oauth.subscriptionType) {
-			out.subscriptionType = oauth.subscriptionType;
-		}
-		process.stdout.write(JSON.stringify(out));
+		const path = require('path');
+		const dir = process.env.HARNESS_CAPTURE_DIR;
+		const { oauth } = require(path.join(dir, 'claude-code-normalize.cjs'));
+		const definition = require(path.join(dir, 'claude-code-image.json')).harness.saveBack;
+		let auth;
+		try { auth = JSON.parse(fs.readFileSync(process.env.CLAUDE_CONFIGURE_CREDENTIALS_FILE, 'utf8')); } catch { process.exit(3); }
+		let result;
+		try { result = oauth(auth.claudeAiOauth || {}, definition.providers.find(p => p.id === 'anthropic')); } catch { process.exit(3); }
+		process.stdout.write(JSON.stringify(result));
 	NODE_EOF
 	) || return 1
 	[ -n "$collected_payload" ] || return 1
@@ -498,27 +474,7 @@ write_output() {
 		// sentinel does not expire, and the control plane keeps the real token
 		// fresh behind it. refreshToken is a placeholder for the same reason:
 		// the field must be present, and it is never reachable.
-		const credentialsFile = (oauth) => ({
-			path: process.env.CLAUDE_CONFIGURE_CREDENTIALS_PATH,
-			template: true,
-			content: JSON.stringify({
-				claudeAiOauth: {
-					// Dotted field access, never a quoted map key. This whole
-				// object is JSON-encoded to become the file's content, so a
-				// quote inside a template action comes out backslash-escaped
-				// and Go's parser rejects it ("unexpected \\ in operand") —
-				// which breaks every sandbox launch while configure still
-				// reports success. A secret's env name is always a valid
-				// template field name (HarnessConfigEnvVarNamePattern), so
-				// there is nothing to quote.
-				accessToken: `{{ .secrets.${process.env.CLAUDE_CONFIGURE_OAUTH_ENV} }}`,
-					refreshToken: 'discobox-refresh-happens-in-the-control-plane',
-					expiresAt: Number(process.env.CLAUDE_CONFIGURE_CREDENTIALS_EXPIRES_AT),
-					scopes: oauth.scopes,
-					subscriptionType: oauth.subscriptionType,
-				},
-			}, null, 2),
-		});
+		const { credentialsFile } = require(require('path').join(process.env.HARNESS_CAPTURE_DIR, 'claude-code-normalize.cjs'));
 
 		if (payload && Array.isArray(payload.scopes) && payload.scopes.length) {
 			files.push(credentialsFile(payload));

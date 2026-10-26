@@ -18,6 +18,7 @@ COPY pkg/gitbackend ./pkg/gitbackend
 COPY pkg/gitprogress ./pkg/gitprogress
 COPY harness ./harness
 COPY pkg/hostscope ./pkg/hostscope
+COPY pkg/harnesscapture ./pkg/harnesscapture
 COPY pkg/imagecache ./pkg/imagecache
 COPY internal/filelock ./internal/filelock
 COPY pkg/judge ./pkg/judge
@@ -105,6 +106,7 @@ COPY pkg/fsdurable ./pkg/fsdurable
 COPY harness ./harness
 COPY pkg/health ./pkg/health
 COPY pkg/hostscope ./pkg/hostscope
+COPY pkg/harnesscapture ./pkg/harnesscapture
 COPY pkg/imagecache ./pkg/imagecache
 COPY internal ./internal
 COPY pkg/platform ./pkg/platform
@@ -182,6 +184,7 @@ COPY --link sandbox-agent/features/core /features/core
 # the harness wrappers it serves (harness/DESIGN.md), and the discobox-access
 # skill in the module whose flags it documents (ADR 0080 §3).
 COPY --link harness/prompt-answer.sh /features/core/prompt-answer.sh
+COPY --link harness/capture /features/core/harness-capture
 COPY --link access/skills/discobox-access /features/core/skills/discobox-access
 COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-access /features/core/discobox-access
 COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-review /features/review/discobox-review

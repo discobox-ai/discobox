@@ -10,6 +10,20 @@ import (
 	ht "github.com/ogen-go/ogen/http"
 )
 
+func encodeAcknowledgeSandboxHarnessConfigRequest(
+	req *HarnessConfigAcknowledgment,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeApproveSecretRequestRequest(
 	req *ApproveSecretRequestBody,
 	r *http.Request,
@@ -59,6 +73,20 @@ func encodeAttachSandboxExecOnceRequest(
 	const contentType = "application/octet-stream"
 	body := req
 	ht.SetBody(r, body, contentType)
+	return nil
+}
+
+func encodeCaptureSandboxHarnessConfigRequest(
+	req *HarnessConfigCandidateRequest,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
 	return nil
 }
 
@@ -328,6 +356,20 @@ func encodeCreateSecretRequestRequest(
 	return nil
 }
 
+func encodeDiscardSandboxHarnessConfigChangesRequest(
+	req *HarnessConfigCandidateRequest,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeJudgeCommandForPoolRequest(
 	req *PoolCommandAsk,
 	r *http.Request,
@@ -468,6 +510,34 @@ func encodePutSandboxRuntimeConfigRequest(
 	return nil
 }
 
+func encodeReconsiderSandboxHarnessConfigRequest(
+	req *HarnessConfigReconsideration,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeReconsiderSandboxHarnessConfigChangesRequest(
+	req *HarnessConfigSelection,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeRefreshSecretRequest(
 	req *RefreshSecretBody,
 	r *http.Request,
@@ -596,6 +666,20 @@ func encodeResolveSandboxSecretRequest(
 
 func encodeRestartSandboxRequest(
 	req *RestartSandboxBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeSaveSandboxHarnessConfigChangesRequest(
+	req *HarnessConfigCandidateRequest,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

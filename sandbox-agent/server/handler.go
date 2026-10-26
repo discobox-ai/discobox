@@ -560,6 +560,11 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 		Ports:      make([]sandboxapi.SandboxAgentListeningPort, 0, len(listening)),
 		Resources:  sandboxAgentResourceUsage(h.resourceSampler.Sample(ctx)),
 	}
+	if h.terminals != nil {
+		preview := h.terminals.HarnessConfigStatus()
+		response.HarnessConfigCandidate = sandboxapi.NewOptString(preview.CandidateID)
+		response.HarnessConfigState = sandboxapi.NewOptString(preview.State)
+	}
 	for _, source := range sources {
 		response.Sources = append(response.Sources, sandboxAgentGitSourceStatus(source))
 	}

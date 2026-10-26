@@ -491,6 +491,9 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 		return nil, err
 	}
 	addFile(repoRoot, filepath.Join("harness", "prompt-answer.sh"), sandboxSeen)
+	if err := addTree(filepath.Join(repoRoot, "harness", "capture"), sandboxSeen); err != nil {
+		return nil, err
+	}
 	// The platform bundle is FROM scratch, so the shared base is not among
 	// its inputs.
 	platformSeen := sandboxSeen

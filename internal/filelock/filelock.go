@@ -74,3 +74,14 @@ func HolderPID(path string) (int, bool) {
 	}
 	return pid, true
 }
+
+// TryAcquireFile takes ownership of an already-open file and locks it without
+// writing to it. Callers can use os.Root to open a confined, untrusted path.
+// The file is closed on failure; Release closes it on success.
+func TryAcquireFile(file *os.File) (*Lock, error) {
+	if err := lockFileNB(file); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	return &Lock{file: file}, nil
+}

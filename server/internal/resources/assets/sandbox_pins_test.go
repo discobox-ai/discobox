@@ -22,7 +22,7 @@ func TestASandboxsPinStaysInScopeAfterItsConfigMoves(t *testing.T) {
 	}
 	moved := f.registry.image(t, "acme v2")
 	f.registry.tags[acmeRef] = moved.manifest
-	if err := f.service.store.UpdateHarnessConfig(ctx, &model.HarnessConfig{ID: "hc-1", ProjectID: "project-1", Slug: "acme", Name: "Acme", Bundle: acmeRef, BundleDigest: moved.manifest}); err != nil {
+	if err := f.service.store.UpdateHarnessConfig(ctx, &model.HarnessConfig{Revision: 1, ID: "hc-1", ProjectID: "project-1", Slug: "acme", Name: "Acme", Bundle: acmeRef, BundleDigest: moved.manifest}); err != nil {
 		t.Fatal(err)
 	}
 

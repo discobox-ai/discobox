@@ -64,7 +64,7 @@ func readFile(t *testing.T, path string) string {
 }
 
 func TestDefinitionConfigure(t *testing.T) {
-	script := readFile(t, "configure.sh")
+	script := readFile(t, "configure.sh") + readFile(t, "omp-normalize.cjs") + readFile(t, "image.json")
 	for _, required := range []string{
 		harness.ConfigureOutputPath,
 		harness.ConfigurePreviousConfigPath,
@@ -304,14 +304,16 @@ func TestLaunchImportsTheCredentials(t *testing.T) {
 				failure = `if [ "$1" = auth ]; then echo "bad export" >&2; exit 1; fi`
 			}
 			writeExecutable(t, filepath.Join(bin, "omp"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$LOG\"\n"+failure+"\n")
-			cmd := exec.CommandContext(t.Context(), "sh", "launch.sh") //nolint:gosec // The launcher under test.
+			launcher := filepath.Join(dir, "launch.sh")
+			writeExecutable(t, launcher, strings.ReplaceAll(readFile(t, "launch.sh"), "/usr/local/libexec/discobox/omp-capture", "true"))
+			cmd := exec.CommandContext(t.Context(), "sh", launcher) //nolint:gosec // The launcher under test.
 			log := filepath.Join(dir, "log")
 			cmd.Env = append(os.Environ(), "HOME="+home, "LOG="+log, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("launch.sh: %v\n%s", err, out)
 			}
-			if tc.importFails && !strings.Contains(string(out), "bad export") {
+			if tc.importFails && !strings.Contains(string(out), "could not import") {
 				t.Errorf("a failed import was not reported: %q", out)
 			}
 			got := strings.Split(strings.TrimSpace(strings.ReplaceAll(readFile(t, log), home, "HOME")), "\n")

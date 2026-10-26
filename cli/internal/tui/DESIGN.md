@@ -3532,3 +3532,7 @@ Credential consent during source delivery uses the operation's narration feed:
 a question waits for the dialog's answer, and Git's credential process runs via
 `tea.ExecProcess` with stdout captured by the delivery layer. A stale feed
 answers no; dismissing the question falls back to client fetch and push.
+A selected sandbox with a pending harness capture shows the `admin harness changes`
+command in its row. Agent errors, blocking questions, and provisioning still take
+precedence. The notification carries no credential material and never saves
+anything automatically.

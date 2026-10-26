@@ -12,3 +12,4 @@ ARG HARNESS_METADATA
 # so the expansion does.
 LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
 COPY agent.conf check-launcher.sh configure.sh discobox.yml hook-extension.js install-cli.sh launch.sh prompt.sh provision.yaml proxy-env.sh /features/omp/
+COPY capture.sh image.json omp-normalize.cjs /features/omp/

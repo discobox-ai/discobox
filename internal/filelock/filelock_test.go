@@ -89,3 +89,42 @@ func TestTryAcquireWithoutADirectory(t *testing.T) {
 		t.Fatal("acquire in a missing directory succeeded, want error")
 	}
 }
+
+// A descriptor opened through os.Root can be locked without following its
+// pathname again or changing a file's existing contents.
+func TestTryAcquireFilePreservesContents(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	f, err := root.OpenFile("lock", os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.WriteString("keep"); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := filelock.TryAcquireFile(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := root.OpenFile("lock", os.O_RDWR, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = filelock.TryAcquireFile(other); !errors.Is(err, filelock.ErrBusy) {
+		t.Fatalf("second lock: %v", err)
+	}
+	if err = lock.Release(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := root.ReadFile("lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "keep" {
+		t.Fatal("locking modified contents")
+	}
+}
