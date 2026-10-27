@@ -95,3 +95,10 @@ Global review expectations:
   requests reach its listen address as host processes. In a shipped binary
   (the pool agent, the server) that is a host-exec backdoor one argument
   opens, and nothing in the build refuses the import, so a review has to.
+- When the dead-code check flags a function whose last caller went with a
+  retired concept, remove everything only that function fed — a type, a field,
+  a branch that reads it, a helper only its tests still call — not just the
+  function it flagged. The check counts tests and a branch that can never fire
+  as callers: deleting only `NewStatusErrorOfKind` left the whole problem-kind
+  mechanism and `secrets.Redact` in place, unreachable from anything real
+  (ADR 26-10-27-880).

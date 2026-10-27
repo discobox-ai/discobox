@@ -24,9 +24,6 @@ type StatusError struct {
 	Status  int
 	Message string
 	Cause   error
-	// Kind identifies the problem to a program, where the problem is one a
-	// caller has to act on differently. Most errors leave it empty.
-	Kind Kind
 }
 
 func (e StatusError) Error() string {
@@ -54,34 +51,4 @@ func NotFound(err error, message string) error {
 		return StatusError{Status: http.StatusNotFound, Message: message, Cause: err}
 	}
 	return err
-}
-
-// Kind is the stable identifier of a problem, served as the response's `type`
-// so that a program can tell one refusal from another without reading the
-// sentence a person reads. Most refusals have none: a kind exists only where a
-// caller must do something different because of it, and every one of those is
-// a decision somebody made on purpose.
-//
-// They are URNs rather than URLs. A problem type is an identifier and is not
-// required to resolve to anything, and a URL here would be a promise to host a
-// page at it forever.
-type Kind string
-
-// KindOf returns the problem kind err carries, if it carries one.
-func KindOf(err error) (Kind, bool) {
-	var carrier interface{ ProblemKind() Kind }
-	if errors.As(err, &carrier) {
-		kind := carrier.ProblemKind()
-		return kind, kind != ""
-	}
-	return "", false
-}
-
-// ProblemKind makes a StatusError a carrier of its kind.
-func (e StatusError) ProblemKind() Kind { return e.Kind }
-
-// NewStatusErrorOfKind returns a status error a caller can recognize by its
-// kind rather than by the sentence it carries.
-func NewStatusErrorOfKind(status int, kind Kind, message string) error {
-	return StatusError{Status: status, Kind: kind, Message: message}
 }
