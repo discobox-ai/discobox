@@ -90,7 +90,7 @@ version (from `go.mod`):
 # Export portable helpers through the Linux Dagger toolchain; copy this
 # directory to the Mac if it was exported on another machine:
 dagger api call native-inputs export --path=build/native-inputs
-# Workspace tests, Darwin-specific lint/vet, native build/sign/smoke:
+# Darwin-specific package tests and lint/vet, native build/sign/smoke:
 go tool task native:macos
 # For a clean checkout of an existing release tag:
 go tool task native:macos:build -- -version vX.Y.Z
@@ -105,8 +105,11 @@ go tool task native:smoke
 ```
 
 Actions invokes `go run ./internal/cmd/discobox-native-ci` directly; Task is a
-local shortcut. Windows needs no Docker or Nix. Native tests cover the modules
-in `go.work`. Mac also uses the existing Darwin-specific linter script and
+local shortcut. Windows needs no Docker or Nix. Windows runs workspace tests. Mac tests packages whose Go/cgo/test files
+differ from Linux plus the explicit native behavior contract in
+`discobox-native-ci` (installer, clipboard, TUI, VZ, sandbox manager and service).
+The complete Linux suite stays in Dagger. Add native runtime branches and
+native dependency boundaries to that contract even when filenames stay the same. Mac also uses the existing Darwin-specific linter script and
 builds with cgo and the Apple SDK. Portable helper receipts must match source
 revision and repository, and each helper is hashed before it is embedded.
 Tagged builds also reject helpers exported from a dirty source snapshot.

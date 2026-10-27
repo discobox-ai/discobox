@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -89,5 +90,22 @@ func TestPortableInputTransferRejectsTamperedPayload(t *testing.T) {
 	}
 	if _, _, err = loadPortableInputs(dir, r.Revision, r.Repository, true); err == nil {
 		t.Fatal("accepted modified helper bytes")
+	}
+}
+
+// Listing includes platform implementations and the explicit native behavioral
+// contract, while omitting unrelated packages already exercised on Linux.
+func TestDarwinPackageSelection(t *testing.T) {
+	pkgs, err := darwinPackages(t.Context(), []string{"../../../pkg/layout", "../../../pkg/secretformat", "../../../pkg/installer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pkg := range []string{"layout", "installer"} {
+		if !slices.Contains(pkgs, "github.com/discobox-ai/discobox/pkg/"+pkg) {
+			t.Fatalf("missing native %s: %v", pkg, pkgs)
+		}
+	}
+	if slices.Contains(pkgs, "github.com/discobox-ai/discobox/pkg/secretformat") {
+		t.Fatalf("repeated portable tests: %v", pkgs)
 	}
 }

@@ -16,8 +16,12 @@ making that work portable.
 
 Dagger retains Linux checks, portable helper and executable builds, OCI builds,
 release assembly and publication. Native Actions invokes repository-owned Go
-commands: macOS runs Darwin lint/vet, workspace tests, and native build/sign/smoke;
+commands: macOS runs Darwin lint/vet, Darwin-specific package tests, and native build/sign/smoke;
 Windows runs workspace tests and smokes Linux's exact cross-built executables.
+Darwin tests select packages with different Go/cgo/test files from Linux plus
+an explicit contract for runtime-selected Darwin behavior and native dependencies.
+Windows retains the complete workspace suite to cover ACL/process behavior
+reached through platform-specific dependencies in shared-file tests.
 Portable helpers are transferred from Linux so macOS does not rebuild them.
 
 Release jobs check out the same explicit tag. macOS signs the final server

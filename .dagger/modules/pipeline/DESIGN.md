@@ -35,7 +35,10 @@ Native execution belongs to conventional Actions jobs or the same local Go
 command on macOS/Windows (`internal/cmd/discobox-native-ci`). Dagger exports
 portable helpers; Mac consumes them, builds with the Apple SDK, signs the
 server before hashing it into the CLI manifest, signs the CLI, and records
-signing/entitlement/smoke checks and final digests. CI Windows tests and smokes
+signing/entitlement/smoke checks and final digests. Darwin tests/vet select packages whose Go/cgo/test file lists differ from
+Linux plus an explicit native behavioral contract in the host command. Windows
+keeps workspace tests, including shared-file ACL/process tests through native
+dependencies. The complete Linux suite stays in Dagger. CI Windows tests and smokes
 Linux's exact cross-built executables. Native plans are informational, never
 verification results.
 

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -54,8 +55,8 @@ func TestProvisionWithoutWiringSeedsWhatTheBootstrapDeclares(t *testing.T) {
 			skel = true
 		}
 	}
-	if !skel {
-		t.Fatalf("runs = %v, want the home seeded from /etc/skel", git.runs)
+	if skel != (runtime.GOOS == "linux") {
+		t.Fatalf("runs = %v, home skeleton copy must run only on Linux", git.runs)
 	}
 }
 
