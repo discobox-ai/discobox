@@ -1,0 +1,1 @@
+can you debug why "discobox attach --raw sbx_12rwzg2t2fq0ae6r" hangs and never recovers. In this situation we have to repair to fix it. 1. Why can't we recover. 2. If repair is truely required can we detect and just do that.
