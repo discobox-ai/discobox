@@ -1,0 +1,1 @@
+I think our `task dev` is stuck in reboot look. I keep trying to do a `discobox admin box transfer` and in the process one of the servers always seems to restart. both are running task dev. do we write a temp file that happens trigger a rebuild?
