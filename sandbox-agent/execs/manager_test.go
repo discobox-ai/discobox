@@ -218,12 +218,10 @@ func TestManagerDefaultsExecFromSandboxConfig(t *testing.T) {
 }
 
 func TestManagerPreservesExecNPMAndPathOverrides(t *testing.T) {
-	// The default user names no gid, so resolution completes it from the
-	// account database -- the fixture's, where dev is uid 1000 with gid 2000,
-	// never the machine's own. That is /etc/passwd in the guest; on Windows the
-	// same lookup goes to the account SIDs, where dev with uid 1000 is nobody.
-	if runtime.GOOS == "windows" {
-		t.Skip("completing a gid reads the guest's passwd database; the sandbox is Linux")
+	// This fixture completes dev's gid from the Linux guest account database.
+	// macOS and Windows run as the agent's own account instead.
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux guest account fixture; native exec identity has separate tests")
 	}
 	t.Cleanup(runuser.FixedDatabase())
 	runner := &fakeUnitManager{}

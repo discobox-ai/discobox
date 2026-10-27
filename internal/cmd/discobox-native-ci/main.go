@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -81,6 +82,79 @@ func packages(ctx context.Context) ([]string, error) {
 	}
 	return result, nil
 }
+
+// Darwin tests cover packages compiled from different files than Linux, plus
+// the behavioral contract below. Windows keeps the workspace suite: platform
+// ACL and process tests also live in shared files, reached via native dependencies.
+// File selection alone cannot establish that a package behaves portably.
+type packageFiles struct {
+	ImportPath                                   string
+	GoFiles, CgoFiles, TestGoFiles, XTestGoFiles []string
+}
+
+func sameFiles(a, b packageFiles) bool {
+	return slices.Equal(a.GoFiles, b.GoFiles) && slices.Equal(a.CgoFiles, b.CgoFiles) &&
+		slices.Equal(a.TestGoFiles, b.TestGoFiles) && slices.Equal(a.XTestGoFiles, b.XTestGoFiles)
+}
+
+func darwinPackages(ctx context.Context, patterns []string) ([]string, error) {
+	list := func(platform string) ([]packageFiles, error) {
+		out, err := command(ctx, "", []string{"GOOS=" + platform, "CGO_ENABLED=1"}, append([]string{"go", "list", "-e", "-json"}, patterns...)...)
+		if err != nil {
+			return nil, err
+		}
+		decoder := json.NewDecoder(strings.NewReader(out))
+		var result []packageFiles
+		for {
+			var pkg packageFiles
+			if err := decoder.Decode(&pkg); err == io.EOF {
+				break
+			} else if err != nil {
+				return nil, err
+			}
+			result = append(result, pkg)
+		}
+		return result, nil
+	}
+	linux, err := list("linux")
+	if err != nil {
+		return nil, err
+	}
+	native, err := list("darwin")
+	if err != nil {
+		return nil, err
+	}
+	baseline := make(map[string]packageFiles, len(linux))
+	for _, pkg := range linux {
+		baseline[pkg.ImportPath] = pkg
+	}
+	var result []string
+	for _, pkg := range native {
+		if len(pkg.GoFiles)+len(pkg.CgoFiles)+len(pkg.TestGoFiles)+len(pkg.XTestGoFiles) > 0 && !sameFiles(pkg, baseline[pkg.ImportPath]) {
+			result = append(result, pkg.ImportPath)
+		}
+	}
+	// Same-file Darwin behavior and native dependency boundaries must be covered
+	// explicitly. Keep this contract when adding another runtime.GOOS branch.
+	for _, pkg := range []string{
+		"github.com/discobox-ai/discobox/pkg/installer",
+		"github.com/discobox-ai/discobox/cli/internal/clipimage",
+		"github.com/discobox-ai/discobox/cli/internal/tui",
+		"github.com/discobox-ai/discobox/server/providers/vz",
+		"github.com/discobox-ai/discobox/server/internal/sandbox",
+		"github.com/discobox-ai/discobox/server/internal/service",
+	} {
+		if _, exists := baseline[pkg]; exists && !slices.Contains(result, pkg) {
+			result = append(result, pkg)
+		}
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("no Darwin packages selected")
+	}
+	fmt.Printf("Darwin packages: %s\n", strings.Join(result, " "))
+	return result, nil
+}
+
 func run(ctx context.Context) error {
 	mode := flag.String("mode", "check", "check, build, or smoke")
 	version := flag.String("version", "", "release version; empty for CI")
@@ -109,9 +183,16 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("unknown mode %q", *mode)
 	}
 	if *mode == "check" {
-		pkgs, err := packages(ctx)
+		patterns, err := packages(ctx)
 		if err != nil {
 			return err
+		}
+		pkgs := patterns
+		if runtime.GOOS == "darwin" {
+			pkgs, err = darwinPackages(ctx, patterns)
+			if err != nil {
+				return err
+			}
 		}
 		if err = execute(ctx, append([]string{"go", "test"}, pkgs...)...); err != nil {
 			return err
