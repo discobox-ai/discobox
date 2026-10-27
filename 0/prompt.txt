@@ -1,0 +1,1 @@
+does claude code have any mechanism to deliver an event to an agent? Like if have the TUI running can I run something somewhere else and send a message to it?
