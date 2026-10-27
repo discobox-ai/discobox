@@ -1,0 +1,1 @@
+jev 1.14 I believe came out can we look at what changes and if we should upgrade, most likely we should. but I'd like to know if theres new things about it that we should know and take advantage of. Don't make any changes, just do research
