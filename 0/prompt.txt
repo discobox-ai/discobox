@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b196j59xb</task-id>
+<tool-use-id>toolu_01JxpNUjeefBXwJonD56WSNT</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/a85d80ae-0c76-4b02-8055-f61a5d8cd16d/tasks/b196j59xb.output</output-file>
+<status>completed</status>
+<summary>Background command "gh run watch 38757457838 --repo discobox-ai/discobox --exit-status --interval 30 &gt;/dev/null 2&gt;&amp;1; echo exit=$?; gh run view 38757457838 --repo discobox-ai/discobox --json jobs -q '.jobs[]|.name+" "+.conclusion'" completed (exit code 0)</summary>
+</task-notification>
