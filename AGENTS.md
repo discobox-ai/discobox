@@ -46,6 +46,7 @@
   `discobox-docker-image-watch` (local sandbox base image, and agent, pool,
   platform and harness bundle, rebuild watcher), `discobox-dev-lock` (one `task dev` loop per checkout),
   `discobox-gzip` (portable file compression for the build),
+  `discobox-native-ci` (native macOS build/sign/checks and Windows tests/smoke),
   `discobox-server-manifest` (the server manifest a release CLI is linked with),
   `discobox-installers` (stamps the install scripts a release uploads with that
   release and its binaries' digests), `discobox-installer-logo` (draws the console's
@@ -68,47 +69,30 @@ Do not create new branches or worktrees unless explicitly told to.
 
 ## Commands
 
-The toolchain comes from the Nix flake. Enter it with `nix develop`, or let
-direnv do it via `.envrc`; every command below assumes that shell.
-
-Use Taskfile targets through the Go tool-managed `task` binary:
-
-```bash
-go tool task --list
-```
-
-Common targets:
+The host development toolchain comes from `nix develop` or direnv. CI and
+release toolchains run in Dagger containers and require the pinned Dagger CLI
+(`v1.0.0-beta.21`) and a container runtime. See `docs/dagger.md`.
 
 ```bash
-go tool task test       # root module tests
-go tool task test:all   # root and nested module tests
-go tool task check      # static checks
-go tool task check-hooks # wait for background hook work and report what failed
-go tool task rerun-hooks # re-run failed or never-run hooks
-go tool task generate   # regenerate generated files
-go tool task build      # build all binaries and local Docker images
+dagger check                         # complete Linux checks and pipeline tests
+dagger api call ci export --path=build/ci
+dagger api call preview export --path=build/release/preview
+go tool task --list                  # shortcuts and host development tasks
+go tool task dev                     # local development server and watcher
 ```
 
-What CI runs, and what to run before pushing something build-related:
+`Taskfile.yml` delegates CI, verification, generation, and release operations
+to `.dagger/modules/pipeline`. Implement new pipeline behavior there, not in
+Actions or Taskfile shell blocks. Dagger never calls Task. Native macOS and
+Windows jobs invoke `internal/cmd/discobox-native-ci` directly; Task exposes
+local shortcuts. Publishing requires same-version/revision macOS artifacts,
+signing/smoke evidence, and verified final digests. A Linux pass does not prove
+native execution; inspect all three CI jobs.
 
-```bash
-go tool task ci:check   # check, dead code, shellcheck, the windows/amd64 cross type-check, and Dockerfile COPY paths
-go tool task ci:test    # every module's tests, the way CI runs them
-go tool task verify     # fmt, go.mod, generated files, and Mermaid are current
-```
-
-At the end of a code-changing task, run `go tool task check-hooks` before
-handing work back. The hooks in `.discobox/hooks` run in the background as
-files change — formatting, tidy, codegen, Dockerfile builds, lint, shellcheck,
-tests, Mermaid validation, and whether a `task dev` loop's build is broken — and
-this is what reports whether any of them failed. If its output looks stale, meaning a
-reported failure names code you have already fixed, run
-`go tool task rerun-hooks` and check again. The hooks are this repository's;
-what runs them is the `discobox-hooks` tool from `discobox-ai/hooks`,
-declared in the root `go.mod`.
-
-Prefer adding or updating `Taskfile.yml` targets instead of documenting ad hoc
-commands here.
+At the end of a code-changing task, run `go tool task check-hooks`. If a hook
+failure names code already fixed, run `go tool task rerun-hooks` and check
+again. Hooks remain owned by `.discobox/hooks` and run the same Dagger-backed
+entry points as developers. `discobox-hooks` is a root `go.mod` tool.
 
 ## Implementation Quality
 

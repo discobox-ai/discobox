@@ -1,20 +1,23 @@
 # Reading a CI failure
 
-Shared by `open-pr` and `push-main`. CI is `.github/workflows/ci.yml`; six
-jobs: `check` (`ci:check`), `test` (`ci:test`), `verify`, `build`
-(`release:build`), `darwin` (`ci:darwin`), `windows` (`ci:test` on Windows).
-It takes about eight minutes on Depot's runners; `darwin` and `windows` are
-the longest jobs. Inside a discobox every `gh` call goes through `discobox-access run`.
+Shared by `open-pr` and `push-main`. CI is `.github/workflows/ci.yml`:
+`pipeline` runs portable Dagger CI, followed by `native-macos` (Darwin tests,
+lint/vet, signed build and smoke) and `native-windows` (Windows tests and smoke
+of the exact cross-built executables). All three must succeed. The native jobs
+consume artifacts from `pipeline`; their absence or skip does not prove native
+coverage. Changes under `.dagger` also trigger the separate VM guest/kernel
+workflows. Cold image/kernel builds can outlast the application checks.
+Inside a discobox every `gh` call goes through `discobox-access run`.
 
 ## Read a finished job while the run is still going
 
 `gh run view --log-failed` refuses while the run is still in progress. To read a
 finished job's log while its siblings are still going — which is most of the
-time, since `windows` is one of the longest jobs — go through the API:
+time, since native jobs follow the portable job — go through the API:
 
 ```bash
 J=$(gh run view <run-id> --repo discobox-ai/discobox --json jobs \
-  -q '.jobs[]|select(.name=="windows")|.databaseId')
+  -q '.jobs[]|select(.name=="native-windows")|.databaseId')
 gh api repos/discobox-ai/discobox/actions/jobs/$J/logs \
   | sed 's/\x1b\[[0-9;]*m//g' > <scratchpad>/windows.log
 grep -nE "(--- FAIL|FAIL\s+github|panic:)" <scratchpad>/windows.log

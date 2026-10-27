@@ -727,9 +727,11 @@ It does not run `update-ca-certificates`. That tool rebuilds the whole store at
 a flat ~0.8s whether it is adding one certificate or 150, measured at 1.7s of a
 ~4.2s wait for an attachable terminal. Instead:
 
-- The image ships the finished system store at **`/opt/discobox/ca-certificates`**,
-  built by core's `prebuild-ca-store.sh`, a copy of `update-ca-certificates` with
-  `ETCCERTSDIR` redirected there.
+- The platform bundle ships core's `prebuild-ca-store.sh`. Core provisioning
+  builds the finished system store at **`/opt/discobox/ca-certificates`** using
+  the distro certificates already installed in the machine or base image:
+  a copy of `update-ca-certificates` with `ETCCERTSDIR` redirected there and
+  build-time local anchors excluded.
 - At boot `discobox-ca-anchor -store /etc/ssl/certs` seeds what is missing from
   it, appends every anchor to the bundle, and hashes only the anchors
   (`runcca.MaterializeTrustStore`). ~85ms.

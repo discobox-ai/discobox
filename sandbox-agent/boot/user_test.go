@@ -165,15 +165,24 @@ func noMounts(t *testing.T, mounts ...string) {
 	t.Cleanup(func() { mountInfoPath, loginUsersDir = prevMounts, prevUsers })
 }
 
-// accountHome makes a directory owned by this test's own uid, the only owner
-// a test can give it, for an account at that uid.
+// accountHome makes a directory owned by a non-root account. Unprivileged
+// tests use their own uid; root can give the fixture to a deletable account.
 func accountHome(t *testing.T) (string, int) {
 	t.Helper()
 	home := filepath.Join(t.TempDir(), "provider")
 	if err := os.MkdirAll(filepath.Join(home, ".nvm"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return home, os.Getuid()
+	uid := os.Getuid()
+	if uid == 0 {
+		// A provider account must be deletable. Root is protected even when
+		// the tests run as root, as they do inside Dagger's Go container.
+		uid = 1000
+		if err := os.Chown(home, uid, -1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return home, uid
 }
 
 func ran(runs [][]string, name string) []string {

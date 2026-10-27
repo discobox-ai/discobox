@@ -1100,7 +1100,7 @@ agent, runs `provision identity`, enrolls the key, and runs `provision apply`.
   same key. Delete a test pool with `d admin pool rm <id>`.
 - The release manifest: `./build/discobox-server manifest` refuses in a dev
   build (its `:latest` defaults); render the release link with `RELEASE_TAG=v9.9.9
-  go tool task release:binary TARGET_OS=linux TARGET_ARCH=amd64
+  dagger api call release-build --target-os=linux --target-arch=amd64 export --path=build/release/bin
   REGISTRY=ghcr.io/example RELEASE_REPO=example/discobox --dry` and run its
   `go run -ldflags=... ./server/cmd/discobox-server manifest`. Never run
   `discobox-server` with any other argument to "try" a flag: it starts a server.

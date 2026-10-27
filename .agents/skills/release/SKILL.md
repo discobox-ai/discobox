@@ -131,11 +131,9 @@ discobox-access run --use <id> -- git -c credential.helper= \
 The tag goes the same way, under the same use, with `refs/tags/vX.Y.Z` in
 place of `HEAD:main`.
 
-One consequence: `Taskfile.yml`'s `RELEASE_REPO` reads `GITHUB_REPOSITORY` and
-otherwise only `origin`, matching only github.com URLs, so it resolves empty here and
-`scripts/brew-formula.sh` falls back to its own `discobox-ai/discobox` default.
-That is correct by accident, not by design — if the formula ever points at the
-wrong repo, this is why.
+The Dagger constructor takes an explicit repository and defaults to
+`discobox-ai/discobox`. For a fork, pass `dagger api call --repository=OWNER/REPO`;
+source transport remotes do not choose release destinations.
 
 ### Inside a discobox: ask for access once, up front
 
@@ -208,389 +206,120 @@ Deliberately left out: `brew:refresh`, `brew:publish`, deleting a pushed tag,
 and promoting (§7). Each is a failure path or a human's decision, and the moment
 one is needed is a moment the human should be looking anyway. Ask then.
 
-## 1. Land the work
+## 1. Current pipeline boundary
 
-Follow the repository's git workflow: commit on the branch already checked out,
-do not create branches.
-
-If `upstream/main` has commits you do not (`git log --oneline main..upstream/main`),
-rebase rather than merge:
-
-```bash
-git fetch upstream
-git rebase upstream/main
-```
-
-Commits already applied upstream — a rebased copy of your own work, which is
-common here — are patch-identical and drop out silently. Confirm with
-`git cherry -v upstream/main main`: a `-` means upstream already has that patch.
-
-## 2. Get it green
-
-Run the CI test half locally first. It is the same target CI runs, and finding a
-failure here costs seconds rather than a seven-minute round trip:
+The repository now uses `.dagger/modules/pipeline` (ADR 26-10-26-225).
+Native macOS and Windows commands run conventionally in Actions or on a local
+machine of that operating system. Linux builds portable executables/helpers;
+Mac consumes the helpers and supplies signed source-bound artifacts. A Linux
+pass does not verify native execution. Never fake a native receipt. Missing
+Mac artifacts still block assembly and publication. Rehearse locally instead:
 
 ```bash
-go tool task ci:test    # every module's tests, the way CI runs them
-go tool task ci:check   # lint, dead code, shellcheck, and the windows/amd64 cross type-check
+dagger check
+dagger api call ci export --path=build/ci
+dagger api call preview --version=v0.0.0-preview --images export --path=build/release/preview
 ```
 
-Then push and watch the run:
+Inspect `preview.json`, `native/macos.json`, and `native/windows.json`. The
+native reports describe external commands; they are not successful test results. VM image and
+kernel releases remain separate, executable Dagger operations.
+
+## 2. Source and validation
+
+Follow the checked-out branch policy. Build and test the exact release source.
+Building and publishing product artifacts requires a clean checkout whose HEAD
+matches the remote version tag. Promotion operates on an already published
+release and uses the current pipeline without rebuilding historical source.
+The operator passes the repository explicitly when targeting a fork:
 
 ```bash
-git push upstream main
-gh run list --repo discobox-ai/discobox --workflow ci.yml --branch main --limit 1
-gh run view <run-id> --repo discobox-ai/discobox \
-  --json status,conclusion,jobs -q '.status+" "+(.conclusion//"-"), (.jobs[]|.name+" "+.status+" "+(.conclusion//"-"))'
+dagger api call --repository=OWNER/REPO ci export --path=build/ci
 ```
 
-Six jobs must pass: `check`, `test`, `verify`, `build`, `darwin`, `windows`.
+Actions triggers Dagger and native repository commands, supplies credentials,
+and transports native artifacts. CI jobs are `pipeline`, `native-macos`, and
+`native-windows`. The first includes portable checks and cross-builds.
+A green job therefore does not establish native coverage. Verify locally first;
+use GitHub's run status only as evidence that its event adapter also ran.
 
-### Reading a failure
-
-`gh run view --log-failed` refuses while the run is in progress. To read a
-finished job's log while its siblings are still going — which is most of the
-time, since `windows` is the longest job — fetch it from the API:
+## 3. Build and assemble
 
 ```bash
-J=$(gh run view <run-id> --repo discobox-ai/discobox --json jobs -q '.jobs[]|select(.name=="windows")|.databaseId')
-gh api repos/discobox-ai/discobox/actions/jobs/$J/logs \
-  | sed 's/\x1b\[[0-9;]*m//g' > /tmp/win.log
-grep -nE "(--- FAIL|FAIL\s+github|panic:)" /tmp/win.log
+dagger api call release-build --version=vX.Y.Z export --path=build/release/bin
+dagger api call release-assemble --version=vX.Y.Z --artifacts=build/release/bin export --path=build/release/assembled
 ```
 
-### One failure hides the rest
+The second command requires the real Mac files and receipt to have been placed
+in the artifact directory. It verifies matching platform receipts and digests,
+merges release.json, and stamps installers from the final binaries. Never fake
+a receipt or substitute a cross-compiled unsigned Darwin executable.
 
-`test:all` runs every module's packages in one `go test`, so one run reports
-every package that fails. A fix can still uncover a failure behind the line
-that broke, so a green `windows` job after a fix is not evidence the fix was the
-last problem. Expect to iterate, and do not promise a single round trip.
+## 4. Explicit publication
 
-### What actually breaks on the non-Linux runners
-
-Real failures found this way, all worth checking before pushing:
-
-- **Unix socket paths over ~108 bytes.** CI's `TMPDIR` is long; `t.TempDir()`
-  adds the test's own name. Use `shorttmp.Dir(t)` for any directory a socket
-  gets bound under. Reproduce locally with
-  `TMPDIR=/some/deliberately/long/path go test ./...`.
-- **Windows has no POSIX file mode.** `os.Chmod(dir, 0o000)` leaves it readable;
-  there is no executable bit to carry over. Skip those assertions with
-  `runtime.GOOS == "windows"` and say why.
-- **`filepath` vs `path`.** Guest paths — anything inside a sandbox or pool —
-  are never host paths. A path inside a sandbox is its platform's: build and
-  compare it with `sandboxpath`. A pool's own paths, which is all of `layout`,
-  are Linux paths on every host: use `path`. `filepath.Dir` cleans to
-  backslashes on Windows and quietly stops matching.
-- **Host paths fed to guest-path code.** The exec manager resolves workdirs as
-  guest paths, so a `C:\...` source is read as relative and joined onto the
-  working root. Such a test is POSIX-only; skip it on Windows.
-
-Fix these properly rather than skipping wholesale — one of them (a home
-directory resolved before checking whether there was anything to install) was a
-real launch failure that only Windows exposed.
-
-## 3. Tag the commit CI verified
-
-Check what CI actually ran against. Local `main` may have moved on while the
-run was going, and the commit being tagged must be one that is on upstream
-`main`:
+When native artifacts are available and publication is authorized, the full
+entry point is:
 
 ```bash
-git fetch upstream
-git rev-parse HEAD upstream/main         # the release commit is on main
-git log --oneline upstream/main..HEAD    # anything here has NOT been through CI
+dagger api call release --version=vX.Y.Z --native-artifacts=build/native --username=USER --registry-password=env:REGISTRY_PASSWORD --token=env:GH_TOKEN --tap-token=env:TAP_TOKEN
 ```
 
-Then read what is going out, against the previous release tag:
+Credentials are Dagger Secrets. Do not print them or embed them into shell
+command strings. A local `gh` credential can be supplied with
+`--token=cmd:'gh auth token'`. Use discobox-access for credentials not already
+granted; the initial policy above does not grant write access to the tap.
+
+Publication creates a GitHub prerelease. A dot version also advances registry
+latest aliases and the Homebrew dev formula. Explicit semver prereleases
+advance neither. `release-publish` consumes assembled artifacts; it never
+rebuilds them. The source's real commit and final-server-digest-before-CLI
+ordering must survive signing and publication unchanged.
+
+## 5. Homebrew and promotion
+
+Homebrew refresh now writes formula contents directly, with no cross-repo
+workflow dispatch. Ask explicitly for tap contents write permission when it is
+needed; the former dispatch-only permission is insufficient.
 
 ```bash
-git log --oneline <previous-tag>..HEAD
+dagger api call brew-refresh --token=env:TAP_TOKEN
 ```
 
-Say how many commits that is and what is notable in them before tagging. It is
-the last moment anyone can notice that a release is carrying something it
-should not.
-
-Tag the green commit explicitly — do not assume `HEAD`:
+Stable promotion remains a separate human decision and only accepts a dot
+version. When explicitly asked to promote:
 
 ```bash
-git tag -a vX.Y.Z -m "vX.Y.Z" <green-commit>
-git push upstream vX.Y.Z
+dagger api call promote --version=vX.Y.Z --token=env:GH_TOKEN --tap-token=env:TAP_TOKEN
 ```
 
-Untested commits sitting on top of the green one go out in a later tag, after a
-CI run of their own. Say so rather than sweeping them in.
+This updates the prerelease state and recomputes the Homebrew channels. It does
+not submit winget. Re-running a release/promotion step must inspect current
+external state; do not assume a previous successful Dagger build means the
+publication destination is still correct.
 
-## 4. The release workflow
+## 6. winget remains manual
 
-Pushing the tag triggers `.github/workflows/release.yml`: `binaries` (linux and
-darwin legs — darwin because cgo, the macOS SDK, and codesigning are
-native-only), `images` (multi-arch, pushed to ghcr), then `publish`, which
-creates the GitHub release and uploads `build/release/bin`.
+Automatic winget submission is disabled. Do not open a submission as an extra
+release or promotion step. When explicitly authorized:
 
 ```bash
-gh run list --repo discobox-ai/discobox --workflow release.yml --limit 1
-gh run watch <run-id> --repo discobox-ai/discobox --exit-status
+dagger api call winget-manifests --version=vX.Y.Z --token=env:GH_TOKEN export --path=build/winget
+dagger api call winget-publish --version=vX.Y.Z --token=env:WINGET_TOKEN
 ```
 
-Wait for it to complete rather than polling — about seven minutes, `images`
-being the long pole rather than the darwin leg of `binaries`. The next step
-downloads the assets it uploads, so running early just fails.
+Submission needs a classic PAT with public_repo for the account that owns the
+fork. It opens/updates a PR in microsoft/winget-pkgs, whose validation and
+moderator control publication. Report the PR as pending; never claim it merged
+or Windows validation ran unless their native jobs actually succeeded.
 
-Do not write the release notes by hand. `release:publish` creates the release
-with `--generate-notes` and `--prerelease`, always — every release is cut as a
-prerelease and blessed later (ADR 0105). `isPrerelease: true` here is the
-expected result, not a problem to fix. Confirm it rather than reproducing it:
+## 7. VM artifact lines
 
 ```bash
-gh release view vX.Y.Z --repo discobox-ai/discobox \
-  --json isPrerelease,assets -q '"prerelease=\(.isPrerelease) assets=\(.assets|length)"'
+dagger api call vm-check --kind=guest
+dagger api call vm-check --kind=kernel
+dagger api call vm-publish --kind=guest --version=vX.Y.Z --registry=ghcr.io/OWNER --username=USER --password=env:REGISTRY_PASSWORD
 ```
 
-The assets include `install.sh` and `install.ps1`, which `release:publish`
-stamps with the tag and every CLI binary's SHA-256 just before it uploads
-(`release:installers`, ADR 0110). `edge.discobox.ai` serves the newest
-release's installer, so once the release is up it should name this tag:
-
-```bash
-curl -sSfL https://edge.discobox.ai | grep -m1 '^release='
-```
-
-`release:image` separately decides whether ghcr's `:latest` moves, from
-`release:dot` — exactly `vMAJOR.MINOR.PATCH`. A dot release moves it; a
-`-rc`/`-alpha` tag does not.
-
-Every step is a Taskfile target that also runs locally (ADR 0066 §1):
-`release:build`, `release:images`, `release:publish`.
-
-## 5. The Homebrew tap
-
-**For a dot release this is automatic, and it feeds `discobox-dev` only.** The
-release workflow's `publish` job dispatches `update-formula.yml` in
-`discobox-ai/homebrew-tap` as soon as the GitHub release exists (`brew:refresh`,
-using `HOMEBREW_TAP_TOKEN`). The tap regenerates **both** formulae with this
-repository's `scripts/brew-formula.sh` and commits whichever changed:
-
-- `discobox-dev.rb` from the newest dot release — which is what you just cut.
-- `discobox.rb` from the newest release a human has marked stable — which this
-  is not, so it does not move here.
-
-Check the one that should have moved:
-
-```bash
-gh api repos/discobox-ai/homebrew-tap/contents/Formula/discobox-dev.rb \
-  -q '.content' | base64 -d | grep -m1 version
-```
-
-**That dispatch is the only thing that updates the tap.** It had a 30 minute
-cron; that was deleted on purpose. A backstop that quietly covers for a broken
-release step is a backstop that stops anyone noticing the step is broken, so the
-release fails instead — a missing or expired `HOMEBREW_TAP_TOKEN` turns the
-`publish` job red rather than leaving `brew install discobox-dev` a version
-behind.
-
-The consequence for this skill: **a red `publish` step here is a real failure and
-the tap is genuinely stale.** Do not wait it out. Fix the token, then send the
-dispatch by hand — the same one the release workflow sends, and safe to repeat:
-
-```bash
-go tool task brew:refresh
-```
-
-And the override, which regenerates and pushes one formula directly rather than
-asking the tap to, for a tag the tap's own rule will not take at all:
-
-```bash
-go tool task brew:publish -- --dev vX.Y.Z                   # discobox-dev
-go tool task brew:publish -- vX.Y.Z                         # discobox (stable)
-go tool task brew:publish -- --dev --prerelease vX.Y.Z-rc1  # an rc, said out loud
-```
-
-`--dev` picks the formula; without it you are writing `discobox.rb`, which is
-the stable channel and not this skill's to move. `--prerelease` is required for
-anything that is not exactly `vMAJOR.MINOR.PATCH`, and nothing sets it
-automatically: neither channel serves an rc, so one reaching either is a
-decision somebody makes out loud. The task refuses first and downloads second,
-so a missing flag costs nothing.
-
-It writes to `discobox-ai/homebrew-tap` using the operator's own `gh`
-credentials. `go tool task brew:formula -- [--dev] vX.Y.Z` generates a formula
-without pushing, which is the safe dry run.
-
-## 6. The winget pull request
-
-**Switched off, and nothing automatic opens one.** winget is a stable channel,
-so its submission belonged to `promote.yml` — and that job is currently removed.
-[microsoft/winget-pkgs#432935](https://github.com/microsoft/winget-pkgs/pull/432935),
-the first Discobox package, is open and waiting on the account's one-time CLA
-signature and a moderator. A pull request per release while that sits there puts
-the package at the back of the review queue each time rather than stacking
-versions behind it. Nothing is lost by waiting: winget has never served
-discobox, so no published version is going stale.
-
-So its absence from both the release run *and* the promote run is correct right
-now. Do not treat it as a failure, and do not open one to be helpful.
-
-Once 432935 merges, restore the `winget` job in `promote.yml` — the comment
-where it was says exactly what it contained.
-
-The by-hand path still works and is the only one: it is idempotent, and says
-`winget already serves <version>` rather than opening a second request:
-
-```bash
-go tool task winget:publish -- vX.Y.Z
-```
-
-It refuses anything that is not exactly `vMAJOR.MINOR.PATCH`. An rc reaching
-winget takes `--prerelease` typed out, because winget has no notion of a channel
-and whatever is published is what `winget install discobox` gives everyone.
-
-Only after the GitHub release exists, either way: the checksums are of the
-`discobox-windows-*.zip` archives (amd64 and arm64) the release uploaded.
-
-Unlike the tap, **opening the request is not the end**. The Windows Package
-Manager Community Repository is Microsoft's; their validation pipeline runs the
-submission and a moderator merges it. Report the URL and say the version is
-pending review, not published. Two things need a human on that thread:
-
-- The account's *first ever* pull request has to sign the CLA, which is a reply
-  on the thread. Once only — after that it submits unattended.
-- A `Needs-Author-Feedback` label means a moderator asked something. Threads go
-  stale after 5 days and close after 8.
-
-### The token
-
-`winget:publish` needs a **classic** PAT with `public_repo` (fine-grained
-tokens are not accepted), for an account that has forked
-`microsoft/winget-pkgs`, and checks the token's scopes before it writes
-anything. By hand that is your own `gh` credential; the `winget` job, once
-restored, takes it from the `WINGET_TOKEN` secret. `GITHUB_TOKEN` cannot do
-this — it may only write to this repository, and the submission is a pull
-request from a fork of somebody else's. The restored job should fail without
-the secret: nothing else submits, so a missing token is a version winget
-silently never gets, and that is worth a red run.
-
-`go tool task winget:manifests` generates the three manifests without opening
-anything, which is the safe dry run. Nothing about the submission is validated
-on Windows — `winget validate` and `winget install --manifest` need Windows and
-this release runs on Linux and macOS — so the pull request body says so rather
-than ticking those boxes.
-
-Once the *first* submission merges, add the install line to `README.md` beside
-the `brew install` one — it is deliberately not there yet, because until a
-version is published `winget install Discobox.Discobox` finds nothing:
-
-```
-winget install Discobox.Discobox
-```
-
-The identifier is `Discobox.Discobox` and the version string is the tag without
-its `v`. Neither may drift: winget sorts semantic and string versions
-differently, so a package that publishes both forms ends up pinned to whichever
-version wins the wrong comparison, and the only fix is deleting the odd one out.
-
-## 7. Marking a release stable
-
-**This is not part of cutting a release, and it is not yours to do.** A tag you
-just pushed is on the dev channel; it becomes stable when a human decides it
-did. Hand back at the end of §5 and say so.
-
-When the user does ask for it in those terms — "mark v0.3.1 stable", "promote
-it", "push it to the real brew" — the act is on GitHub: open the release and
-untick **"Set as a pre-release"**. That runs `promote.yml`, which gates on
-`release:require-dot` and then updates `brew install discobox`. It does **not**
-open a winget request — that job is switched off (§6).
-
-```bash
-gh release edit vX.Y.Z --repo discobox-ai/discobox --prerelease=false --latest
-gh run list --repo discobox-ai/discobox --workflow promote.yml --limit 1
-```
-
-**Confirm the run actually started**, and do not report the promotion as done
-until it has. `promote.yml` listens on three activity types and gates on the
-release's own `prerelease` field, precisely because which type a checkbox-only
-edit emits is not something GitHub documents plainly. If no run appears within a
-minute, that is the case it was hedged against — dispatch it by hand rather than
-waiting:
-
-```bash
-gh workflow run promote.yml --repo discobox-ai/discobox -f tag=vX.Y.Z
-```
-
-Four things to know before running any of it:
-
-- **It is outward-facing and effectively one-way.** Both stable channels
-  recompute from the newest blessed release, so backing it out means blessing a
-  different release, not undoing this one — and a winget pull request, once
-  opened, is Microsoft's to merge. Confirm the version out loud first.
-- **Only a `vMAJOR.MINOR.PATCH` tag can be promoted.** `promote.yml` refuses an
-  rc, because winget sorts semantic and string versions differently and a
-  package serving both forms ends up pinned to the wrong one.
-- **`--latest` is a separate GitHub flag** from `--prerelease=false`, and it is
-  the repository header rather than any channel. Pass it unless the user is
-  blessing something older than the current stable release.
-- **A release is promoted by the Taskfile it was cut with.** A release event
-  carries the tag as `GITHUB_REF`, so the workflow file that runs is the tagged
-  commit's — which means a tag cut before `promote.yml` existed cannot be
-  promoted by the checkbox at all, and no run will appear. Use the dispatch.
-
-The `workflow_dispatch` above is also how to re-run a half-failed promotion
-without touching the release again.
-
-`discobox.ai` serves the stable release's installer through the mirror's
-`latest` alias, which reads the same box, so it moves the moment the box is
-unticked rather than when `promote.yml` finishes:
-
-```bash
-curl -sSfL https://discobox.ai | grep -m1 '^release='
-```
-
-Until the first release carrying `install.sh` is blessed, that answers with an
-error: there is no stable installer to serve. When it first names a tag, add
-`curl -sSfL https://discobox.ai | sh` to `README.md` beside the `brew install`
-line — it is deliberately not there before then, for the reason the winget line
-is not.
-
-## If a tag was pushed on a red commit
-
-Decide immediately, while the release workflow is still building — it is much
-cheaper before `publish` creates the GitHub release. Ask the user which:
-
-- **Cancel and delete** (`gh run cancel`, `git push upstream :refs/tags/<tag>`),
-  then re-tag that number on the green commit. Nothing red is ever published.
-- **Let it finish and supersede it** with the next number. The bad release stays
-  in the release list as a prerelease, which is what every release is until
-  somebody blesses it — so nothing about it reaches `brew install discobox` or
-  winget, and the only channel to correct is `discobox-dev`, which the next tag
-  moves anyway.
-
-That second option is cheap, and usually right. Deleting a
-pushed tag is outward-facing; do not choose it unprompted.
-
-## Waiting
-
-Measured over the last ten runs of each: **CI takes about 7 minutes and the
-release workflow about 7 minutes**, and queue time is effectively zero — these
-are Depot runners and they start immediately. Earlier revisions of this file
-claimed a 20-plus-minute `darwin` queue. That is not what happens, and budgeting
-for it wastes real time.
-
-Where CI's seven minutes go, slowest first — every job runs in parallel, so the
-wall clock is just the top row:
-
-| job | median | |
-| --- | --- | --- |
-| `windows` | 7.2m | the critical path; 230s of it is `cd cli && go test ./...` |
-| `darwin` | 5.7m | over half is Nix install, cache restore, and `nix develop` |
-| `test` | 3.2m | |
-| `check` | 1.9m | |
-| `build` | 1.0m | |
-| `verify` | 0.7m | |
-
-Release, same shape: `images` 4.7m and `binaries` (darwin) 3.5m in parallel,
-then `publish` 1.0m.
-
-Still do not sit in a polling loop — arm a Monitor that exits when the run
-completes and keep working. Just expect it to fire in about seven minutes, not
-twenty.
+`vm/v*` tags address guests; `vm-kernel/v*` tags address kernels. Their digest
+outputs are pins for the server, not implicit edits to it. Verification inspects
+the actual kernel and filesystem configuration; it does not claim a VM boot.
