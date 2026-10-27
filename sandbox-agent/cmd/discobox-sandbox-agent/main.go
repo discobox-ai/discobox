@@ -197,6 +197,7 @@ func run(name string, args []string) int {
 	serverConfig := server.ConfigFromHarnessConfig(cfg)
 	serverConfig.RuntimeConfig = runtimeConfig
 	serverConfig.Provision = tracker
+	serverConfig.ClearCaches = func() ([]string, error) { return boot.ClearCaches(configPath) }
 	if err := server.Serve(ctx, slog.Default(), serverConfig); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("serve sandbox agent", "error", err)
 		return 1

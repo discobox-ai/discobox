@@ -37,6 +37,10 @@ type ClearPoolCacheRes interface {
 	clearPoolCacheRes()
 }
 
+type ClearSandboxCacheRes interface {
+	clearSandboxCacheRes()
+}
+
 type CommitHarnessConfigConfigureRes interface {
 	commitHarnessConfigConfigureRes()
 }

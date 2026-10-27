@@ -102,6 +102,13 @@ func (h *Handler) ResumeSandboxAutostop(context.Context, serverapi.ResumeSandbox
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+// ClearSandboxCache is what a machine pool asks the sandbox to empty its own
+// caches with (ADR 26-10-23-551 §3). Like the autostop routes beside it, it
+// is the pool's route, neither served nor proxied here.
+func (h *Handler) ClearSandboxCache(context.Context, serverapi.ClearSandboxCacheParams) (serverapi.ClearSandboxCacheRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 func (h *Handler) ListHarnessHooks(context.Context, serverapi.ListHarnessHooksParams) (serverapi.ListHarnessHooksRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }

@@ -142,6 +142,11 @@ func TestFilesAPIHasItsOwnScopes(t *testing.T) {
 	if resp := filesRequest(t, router, token(ScopeFilesRead), http.MethodGet, read, nil, ""); resp.Code != http.StatusOK {
 		t.Errorf("stat with files:read = %d %s", resp.Code, resp.Body)
 	}
+	// The route is told as the generated router reads it, so an escaped
+	// letter needs the files scopes as well (sandbox-agent/REVIEW.md).
+	if resp := filesRequest(t, router, token(ScopeStatusRead), http.MethodGet, strings.Replace(read, "/files/", "/%66iles/", 1), nil, ""); resp.Code != http.StatusForbidden {
+		t.Errorf("stat at an escaped path with status:read = %d, want 403", resp.Code)
+	}
 	for _, target := range []string{"/execs", "/execs/files", "/services/files"} {
 		if resp := filesRequest(t, router, token(ScopeFilesRead, ScopeFilesWrite), http.MethodGet, target, nil, ""); resp.Code != http.StatusForbidden {
 			t.Errorf("GET %s with the files scopes = %d, want 403", target, resp.Code)

@@ -2005,6 +2005,16 @@ components:
                     description: The file name of that wake. Text the sandbox chose.
                     type: string
             type: object
+        SandboxCacheClearance:
+            additionalProperties: false
+            description: What the sandbox emptied on its pool's word.
+            properties:
+                paths:
+                    description: The cache paths whose contents were removed, each kept as an empty directory.
+                    items:
+                        type: string
+                    type: array
+            type: object
         SandboxAutostopResumption:
             additionalProperties: false
             description: What the sandbox did on being told it was thawed.
@@ -3581,7 +3591,7 @@ components:
             type: object
         ClearPoolCacheBody:
             additionalProperties: false
-            description: The outcome of clearing a pool's caches (its sandbox cache, build cache, registry, proxy response cache, and unused images). The pool agent answers only once they are empty.
+            description: The outcome of clearing a pool's caches. A container pool stops its running sandboxes and empties the caches they share (its sandbox cache, build cache, registry, proxy response cache, and unused images); a machine pool, whose sandboxes share no cache, empties its proxy response cache and has each running sandbox's agent empty that sandbox's own caches, stopping nothing. The pool agent answers only once they are empty.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -3590,7 +3600,7 @@ components:
                     readOnly: true
                     type: string
                 stoppedSandboxIds:
-                    description: Sandboxes that were running and were stopped so the caches could be cleared. Nothing is started again afterwards; a stopped sandbox starts on its next use.
+                    description: Sandboxes that were running and were stopped so the caches could be cleared; none on a machine pool. Nothing is started again afterwards; a stopped sandbox starts on its next use.
                     items:
                         type: string
                     type: array
@@ -11040,6 +11050,40 @@ paths:
             summary: Tell the sandbox its pool thawed it.
             tags:
                 - Sandbox Autostop
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/cache/clear:
+        post:
+            description: Empties every cache path the sandbox's bootstrap declares, in place, keeping each directory. A machine sandbox's cache is on its own disk, so its pool clears it through its agent rather than emptying a cache of its own (ADR 26-10-23-551 §3). Only a token carrying the pool-only cache-clear scope may call it.
+            operationId: clear-sandbox-cache
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxCacheClearance'
+                    description: The caches are empty.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Empty the sandbox's caches.
+            tags:
+                - Sandbox Runtime Config
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/sources:
         get:

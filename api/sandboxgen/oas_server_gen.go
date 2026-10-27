@@ -42,6 +42,15 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-capture
 	CaptureSandboxHarnessConfig(ctx context.Context, req *HarnessConfigCandidateRequest, params CaptureSandboxHarnessConfigParams) (*HarnessConfigCandidate, error)
+	// ClearSandboxCache implements clear-sandbox-cache operation.
+	//
+	// Empties every cache path the sandbox's bootstrap declares, in place, keeping each directory. A
+	// machine sandbox's cache is on its own disk, so its pool clears it through its agent rather than
+	// emptying a cache of its own (ADR 26-10-23-551 §3). Only a token carrying the pool-only
+	// cache-clear scope may call it.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/cache/clear
+	ClearSandboxCache(ctx context.Context, params ClearSandboxCacheParams) (*SandboxCacheClearance, error)
 	// ConfirmSandboxAutostop implements confirm-sandbox-autostop operation.
 	//
 	// Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its

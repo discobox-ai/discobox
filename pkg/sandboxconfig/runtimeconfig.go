@@ -63,10 +63,17 @@ const RuntimeConfigScope = "runtime-config"
 // the pool holds the power lock the confirmation is asked under.
 const AutostopConfirmScope = "autostop-confirm"
 
+// CacheClearScope is the sandbox-agent token scope that empties the sandbox's
+// caches in place (ADR 26-10-23-551 §3): a machine sandbox's cache is on its
+// own disk, so its pool clears it through its agent. Like the scopes above it
+// is the pool's alone and signed with the pool's key.
+const CacheClearScope = "cache-clear"
+
 // RuntimeAgent is the sandbox-agent configuration the pool may change while
 // the sandbox exists. It is applied to the running agent when delivered, not
-// written into sandbox.json, which is the static bootstrap and is never
-// rewritten (ADR 26-10-08-127 §§1, 5).
+// written into sandbox.json, which is the static bootstrap and is rewritten
+// only when its box is rebuilt: a container replaced, or a machine made again
+// in place (ADR 26-10-08-127 §§1, 5, ADR 26-10-27-345).
 type RuntimeAgent struct {
 	// IdleTimeout is the pool's idle timeout as a Go duration (ADR 0108);
 	// empty leaves the sandbox agent on its default.
