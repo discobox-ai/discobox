@@ -117,7 +117,7 @@ transport helpers where OpenAPI does not model the stream.
   Esc returns to editing. Ctrl-C cancels directly.
   The field starts at two rows, grows with wrapped content up to the terminal
   height, then scrolls; leaving the composer removes its rows.
-- **The interactive window is `console`.** It was `tui` first, so `tui` is
+- **The interactive window is `console`, with alias `c`.** It was `tui` first, so `tui` is
   registered a second time, hidden (`newConsoleCommand` takes the spelling):
   not an alias, since cobra prints aliases in help and `tui` is not taught.
   `internal/tui` keeps its package name.
