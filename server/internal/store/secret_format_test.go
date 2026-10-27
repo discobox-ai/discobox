@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -163,7 +164,7 @@ func TestAnOAuthRefreshWritesTheFormat(t *testing.T) {
 	}
 	sec, _ := s.GetSecret(ctx, "project-1", "sec-oauth")
 	sec.EncryptedValue = []byte(`{"token":"sk-ant-oat01-` + strings.Repeat("d", 95) + `","refreshToken":"r"}`)
-	if err := s.UpdateSecretValueIfUnchanged(ctx, sec, sec.UpdatedAt); err != nil {
+	if err := s.UpdateSecretValueIfUnchanged(ctx, sec, sec.Revision); err != nil {
 		t.Fatalf("refresh write: %v", err)
 	}
 	got, _ := s.GetSecret(ctx, "project-1", "sec-oauth")
@@ -183,4 +184,43 @@ func createSecret(t *testing.T, s *store.Store, id, name string) *model.Secret {
 		t.Fatalf("create %s: %v", id, err)
 	}
 	return secret
+}
+
+// Every write that moves updated_at advances the revision, whatever the clock
+// says: Windows stamps two writes in one tick alike, and a refresh guarded on
+// the timestamp would then overwrite a rotation it never saw.
+func TestSecretWritesAdvanceTheRevision(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createSecret(t, s, "sec-rev", "rev")
+	stale, _ := s.GetSecret(ctx, "project-1", "sec-rev")
+	if stale.Revision != 1 {
+		t.Fatalf("created revision = %d, want 1", stale.Revision)
+	}
+	edited := *stale
+	edited.Name = "rev-renamed"
+	if err := s.UpdateSecret(ctx, &edited); err != nil {
+		t.Fatal(err)
+	}
+	if edited.Revision != 2 {
+		t.Fatalf("revision after an update = %d, want 2", edited.Revision)
+	}
+	host := "api.example.com"
+	if err := s.SetSecretLimits(ctx, "project-1", "sec-rev", &host, nil); err != nil {
+		t.Fatal(err)
+	}
+	stale.EncryptedValue = []byte(`{"token":"y"}`)
+	if err := s.UpdateSecretValueIfUnchanged(ctx, stale, stale.Revision); !errors.Is(err, store.ErrGenerationConflict) {
+		t.Fatalf("refresh from a stale revision err = %v, want ErrGenerationConflict", err)
+	}
+	got, _ := s.GetSecret(ctx, "project-1", "sec-rev")
+	if got.Revision != 3 {
+		t.Fatalf("revision after setting limits = %d, want 3", got.Revision)
+	}
+	if err := s.UpdateSecretValueIfUnchanged(ctx, got, got.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if got.Revision != 4 {
+		t.Fatalf("revision after a refresh = %d, want 4", got.Revision)
+	}
 }

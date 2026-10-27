@@ -61,9 +61,13 @@ re-reads the rows rather than being told
 - `WithGeneration` / `WithPoolGeneration` (and `UpdatePoolWithGeneration`)
   guard reads and writes on the resource generation; a write that matches no
   row returns `ErrGenerationConflict`.
-- `UpdateSecretValueIfUnchanged` (guarded on `updated_at`) and
+- `UpdateSecretValueIfUnchanged` (guarded on the secret's `revision`) and
   `UpdateSecretRequestIfPending` (guarded on status) return
   `ErrGenerationConflict` the same way.
+- A secret's `revision` advances in SQL on every write that moves `updated_at`
+  (`UpdateSecret`, `SetSecretLimits`, `UpdateSecretValueIfUnchanged`). Checks
+  compare it, never a timestamp: a coarse clock (Windows) stamps two writes in
+  one tick alike.
 
 ## Field Ownership on Whole-Row Writes
 
@@ -205,7 +209,7 @@ use the same health derivation; see [pools](../resources/pools/DESIGN.md).
 `UpdateHarnessConfig` compares the caller's `Revision`, advances it on success,
 and returns `ErrGenerationConflict` on a stale snapshot; it never inserts a row
 as a fallback. `CaptureBaseline` records config revision and the identity plus
-`UpdatedAt` of every bound secret. Save-back checks it under row locks, so both
+`Revision` of every bound secret. Save-back checks it under row locks, so both
 binding replacement and an OAuth refresh invalidate an earlier candidate.
 `HarnessCaptureReceipt` records the accepted baseline under project, sandbox,
 config and opaque candidate ID; it retains no exported credential material.

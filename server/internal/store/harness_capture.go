@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
@@ -37,7 +38,7 @@ func (s *Store) CaptureBaseline(ctx context.Context, projectID, configID string)
 		if err != nil {
 			return b, err
 		}
-		b.SecretRevisions[binding.EnvName] = secret.ID + ":" + secret.UpdatedAt.UTC().Format(time.RFC3339Nano)
+		b.SecretRevisions[binding.EnvName] = secret.ID + ":" + strconv.FormatInt(secret.Revision, 10)
 	}
 	return b, nil
 }

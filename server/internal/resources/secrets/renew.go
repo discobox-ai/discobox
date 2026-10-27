@@ -182,14 +182,14 @@ func (s *Service) renewLocked(ctx context.Context, projectID, secretID string, f
 		return nil, err
 	}
 
-	prevUpdatedAt := secret.UpdatedAt
+	prevRevision := secret.Revision
 	//nolint:gosec // Secret values are marshaled before store encryption.
 	valueBytes, err := json.Marshal(renewed)
 	if err != nil {
 		return nil, err
 	}
 	secret.EncryptedValue = valueBytes
-	if err := s.store.UpdateSecretValueIfUnchanged(ctx, secret, prevUpdatedAt); err != nil {
+	if err := s.store.UpdateSecretValueIfUnchanged(ctx, secret, prevRevision); err != nil {
 		if isGenerationConflict(err) {
 			// Another process renewed first; its value is authoritative.
 			fresh, ferr := s.store.GetSecret(ctx, projectID, secretID)

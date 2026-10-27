@@ -561,7 +561,7 @@ sandbox's environment, which is minted once and stored.
 An OAuth secret's access token rides in `SecretValue.Token` so the proxy swap is
 identical to a token's. It is refreshed server-side on resolve when near
 expiry, collapsed onto one upstream refresh by a singleflight group so a
-rotating refresh token is spent once, persisted behind an `updated_at` guard so
+rotating refresh token is spent once, persisted behind a `revision` guard so
 a concurrent rotation elsewhere wins rather than being clobbered, and the
 resolution's expiry is capped by the token's own so the proxy re-resolves as it
 ages out. A failed refresh serves the token on hand; only having no token at
@@ -580,7 +580,7 @@ already spent. See ADR 0127 §3.
 An exchange credential's renewal is OAuth's with a different request
 (ADR 26-10-08-452). `renew.go` owns what the two share: renewal on resolve
 within `tokenRenewSkew`, one renewal per secret at a time (`renewing`), the
-`updated_at` guard, the resolution's expiry capped by the token's own, the
+`revision` guard, the resolution's expiry capped by the token's own, the
 token on hand served when a renewal fails, and `forceRenew` on a rejection.
 `oauth.go` makes OAuth's refresh request; `exchange.go` makes the exchange, by
 the recipe `recipe.go` reads.

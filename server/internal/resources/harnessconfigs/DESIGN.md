@@ -358,7 +358,7 @@ one place that decrypts and hands out a value:
   pair before returning. The refresh token rotates on every use, so the server
   is the **single writer**: a per-secret `singleflight` collapses concurrent
   resolves onto one upstream refresh, and the persisted write is guarded by the
-  row's `updated_at` (`UpdateSecretValueIfUnchanged`) so a refresh in another
+  row's `revision` (`UpdateSecretValueIfUnchanged`) so a refresh in another
   process cannot be clobbered.
 - The rotated token's expiry comes from the response's `expires_in`, and from
   the access token's own `exp` claim when the endpoint omits it (JWT access

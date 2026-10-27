@@ -1432,6 +1432,11 @@ type Secret struct {
 	// service owns the default a creator who names none receives.
 	MaxGrantTTL    int64  `gorm:"column:max_grant_ttl_seconds;not null" json:"maxGrantTTLSeconds" doc:"Longest a grant on this secret may live, in seconds; 0 allows grants that never expire"`
 	EncryptedValue []byte `gorm:"column:encrypted_value" json:"-"`
+	// Revision advances on every write that moves updated_at, in the
+	// statement itself. It, not updated_at, is the secret's generation: a
+	// coarse clock (Windows) gives two writes in one tick the same
+	// timestamp, and a check comparing them would miss the second.
+	Revision int64 `gorm:"column:revision;not null;default:1" json:"-"`
 	// TTL is how long a token's value is good for after it is written, in
 	// seconds (ADR 26-09-25-122 §1). Zero never goes stale, which is every
 	// token written before the field existed.

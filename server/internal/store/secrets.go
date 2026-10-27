@@ -102,7 +102,7 @@ func (s *Store) valueFormat(ctx context.Context, secret *model.Secret, fallback 
 //
 // Only the format column is written: this is a correction of what the store
 // says about the value, not a write of the secret, and it must not move the
-// updated_at an OAuth refresh uses as its generation guard.
+// revision an OAuth refresh uses as its generation guard.
 func (s *Store) RefreshSecretFormats(ctx context.Context) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
@@ -186,6 +186,7 @@ func (s *Store) SetSecretLimits(ctx context.Context, projectID, secretID string,
 	if len(columns) == 0 {
 		return nil
 	}
+	columns["revision"] = gorm.Expr("revision + 1")
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
@@ -278,11 +279,22 @@ func (s *Store) UpdateSecret(ctx context.Context, secret *model.Secret) error {
 		// a writer of their own (MarkSecretValueStale), and a row read before
 		// that write must not put the old ones back (store DESIGN, "Field
 		// Ownership on Whole-Row Writes").
-		save := tx
+		//
+		// The revision advances in SQL rather than from the copy the caller
+		// read, so a concurrent writer's advance is never written back over.
+		omit := []string{"revision"}
 		if !replacedValue {
-			save = tx.Omit("value_updated_at", "value_expires_at")
+			omit = append(omit, "value_updated_at", "value_expires_at")
 		}
-		if err := save.Save(sealed).Error; err != nil {
+		if err := tx.Omit(omit...).Save(sealed).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.Secret{}).Where("project_id = ? AND id = ?", sealed.ProjectID, sealed.ID).
+			UpdateColumn("revision", gorm.Expr("revision + 1")).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.Secret{}).Select("revision").Where("project_id = ? AND id = ?", sealed.ProjectID, sealed.ID).
+			Scan(&sealed.Revision).Error; err != nil {
 			return err
 		}
 		if !replacedValue {
@@ -413,11 +425,11 @@ func answerRefreshRequests(tx *gorm.DB, projectID, secretID string, answer *mode
 }
 
 // UpdateSecretValueIfUnchanged replaces a secret's encrypted value only if its
-// row has not been updated since prevUpdatedAt. It is the atomic swap the OAuth
-// refresh relies on: a concurrent refresh in another process bumps updated_at,
+// row is still at prevRevision. It is the atomic swap the OAuth
+// refresh relies on: a concurrent refresh in another process advances revision,
 // so the loser sees zero rows affected (ErrGenerationConflict) and re-reads the
 // winner's freshly rotated credential instead of clobbering it with a stale one.
-func (s *Store) UpdateSecretValueIfUnchanged(ctx context.Context, secret *model.Secret, prevUpdatedAt time.Time) error {
+func (s *Store) UpdateSecretValueIfUnchanged(ctx context.Context, secret *model.Secret, prevRevision int64) error {
 	sealed, err := s.sealSecretForWrite(ctx, secret)
 	if err != nil {
 		return err
@@ -428,12 +440,12 @@ func (s *Store) UpdateSecretValueIfUnchanged(ctx context.Context, secret *model.
 	}
 	// The format rides with the value, as on every other value write; one a
 	// person set is left alone.
-	columns := map[string]any{"encrypted_value": sealed.EncryptedValue}
+	columns := map[string]any{"encrypted_value": sealed.EncryptedValue, "revision": prevRevision + 1}
 	if !sealed.FormatSet {
 		columns["format"] = sealed.Format
 	}
 	result := write.Model(&model.Secret{}).
-		Where("project_id = ? AND id = ? AND updated_at = ?", sealed.ProjectID, sealed.ID, prevUpdatedAt).
+		Where("project_id = ? AND id = ? AND revision = ?", sealed.ProjectID, sealed.ID, prevRevision).
 		Updates(columns)
 	if result.Error != nil {
 		return result.Error
@@ -441,6 +453,7 @@ func (s *Store) UpdateSecretValueIfUnchanged(ctx context.Context, secret *model.
 	if result.RowsAffected == 0 {
 		return ErrGenerationConflict
 	}
+	sealed.Revision = prevRevision + 1
 	*secret = *sealed
 	return nil
 }
