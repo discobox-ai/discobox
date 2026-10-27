@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>b0ytby1ln</task-id>
+<summary>Monitor event: "CI run 37138456033 job results"</summary>
+<event>darwin: success</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
