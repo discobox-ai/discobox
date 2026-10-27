@@ -1,0 +1,1 @@
+Sorry, it this scrollback on the server side being stored or scrollback on the clent side being stored?  Also if we switch to strings how much space would be svae. The column width is the width of this current screen if you can figure that out
