@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -431,9 +432,13 @@ func coveringGrant(grants []retiredGrant, projectID, secretID string, scopes [][
 	if len(members) == 0 {
 		return nil, nil
 	}
+	return mergeUpgradeGrants(members, what), members
+}
+
+func mergeUpgradeGrants(members []retiredGrant, what string) *retiredGrant {
 	out := members[0]
 	if len(members) == 1 {
-		return &out, members
+		return &out
 	}
 	ids := make([]string, 0, len(members))
 	anyHost := false
@@ -457,7 +462,7 @@ func coveringGrant(grants []retiredGrant, projectID, secretID string, scopes [][
 	}
 	log.Printf("%s was covered by %d grants (%s); its binding takes all their hosts and the earliest expiry (ADR 26-10-27-880 §8)",
 		what, len(members), strings.Join(ids, ", "))
-	return &out, members
+	return &out
 }
 
 // bindingIDFor is the binding ID a row converted into a binding gets: its own
@@ -505,25 +510,64 @@ func createUpgradeBinding(tx *gorm.DB, binding *model.SecretBinding) error {
 // bindDelegationGrants makes a delegate binding on its sandbox of every live
 // delegation grant, recording grant ID to binding ID in grantBindings.
 func bindDelegationGrants(db *gorm.DB, grants []retiredGrant, grantBindings map[string]string) error {
+	groups := map[[3]string][]retiredGrant{}
+	var keys [][3]string
 	for _, grant := range grants {
 		if grant.Purpose != retiredGrantPurposeDelegate || grant.Scope != retiredGrantScopeSandbox {
 			continue
 		}
-		binding := &model.SecretBinding{
-			ID:         bindingIDFor(grant.ID),
-			ProjectID:  grant.ProjectID,
-			SecretID:   grant.SecretID,
-			TargetKind: model.SecretBindingTargetSandbox,
-			TargetID:   grant.ScopeKey,
-			Delegate:   true,
-			Routes:     grantRoutes(grant),
-			ExpiresAt:  grant.ExpiresAt,
+		key := [3]string{grant.ProjectID, grant.ScopeKey, grant.SecretID}
+		if len(groups[key]) == 0 {
+			keys = append(keys, key)
 		}
-		if err := db.Transaction(func(tx *gorm.DB) error { return createUpgradeBinding(tx, binding) }); err != nil {
+		groups[key] = append(groups[key], grant)
+	}
+	for _, key := range keys {
+		members := groups[key]
+		grant := mergeUpgradeGrants(members, fmt.Sprintf("sandbox %s's delegation of %s", key[1], key[2]))
+		binding := &model.SecretBinding{
+			ID: bindingIDFor(grant.ID), ProjectID: grant.ProjectID, SecretID: grant.SecretID,
+			TargetKind: model.SecretBindingTargetSandbox, TargetID: grant.ScopeKey,
+			Delegate: true, Routes: grantRoutes(*grant), ExpiresAt: grant.ExpiresAt,
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			// A failed older migration may already have committed one member.
+			// Keep its ID so existing children and requests still refer to it.
+			var rows []model.SecretBinding
+			if err := tx.Where("target_kind = ? AND target_id = ? AND secret_id = ?", binding.TargetKind, binding.TargetID, binding.SecretID).Find(&rows).Error; err != nil {
+				return err
+			}
+			if len(rows) == 0 {
+				return createUpgradeBinding(tx, binding)
+			}
+			existing := rows[0]
+			if !existing.Delegate || existing.Use || existing.ProjectID != binding.ProjectID {
+				return fmt.Errorf("cannot migrate delegation for sandbox %s: conflicting binding %s", binding.TargetID, existing.ID)
+			}
+			routes, expires := binding.Routes, binding.ExpiresAt
+			*binding = existing
+			if reflect.DeepEqual(existing.Routes, routes) && reflect.DeepEqual(existing.ExpiresAt, expires) {
+				return nil
+			}
+			binding.Routes, binding.ExpiresAt = routes, expires
+			if err := tx.Save(binding).Error; err != nil {
+				return err
+			}
+			if expires != nil {
+				if err := reconcile.MarkAtTx(context.Background(), tx, bindingExpiryResourceType, bindingExpiryID, *expires); err != nil {
+					return err
+				}
+			}
+			return tx.Create(&model.SecretBindingEvent{ProjectID: binding.ProjectID, BindingID: binding.ID,
+				SecretID: binding.SecretID, Event: model.SecretBindingEventUpdated,
+				Actor: model.SecretBindingActorSystem, Cause: "upgrade", Binding: *binding}).Error
+		}); err != nil {
 			return err
 		}
-		grantBindings[grant.ID] = binding.ID
-		log.Printf("delegation grant %s of project %s is delegate binding %s on sandbox %s (ADR 26-10-27-880 §8)", grant.ID, grant.ProjectID, binding.ID, grant.ScopeKey)
+		for _, member := range members {
+			grantBindings[member.ID] = binding.ID
+		}
+		log.Printf("delegation grants of project %s are delegate binding %s on sandbox %s (ADR 26-10-27-880 §8)", grant.ProjectID, binding.ID, grant.ScopeKey)
 	}
 	return nil
 }

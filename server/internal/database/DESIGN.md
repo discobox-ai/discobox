@@ -61,8 +61,10 @@ by what it is looking for and is idempotent:
    use binding on it, one no grant covered a pending request from it. A
    binding made from grants takes every covering grant's hosts as routes (`*`
    when one had none) and the earliest expiry, logged when there were several.
-   A delegation grant becomes a delegate binding and what was handed on under
-   it its child; refresh requests move to `secret_refresh_requests`, the
+   Delegation grants for the same sandbox and secret share one delegate binding,
+   taking all their hosts and the earliest expiry; a partially migrated binding
+   keeps its ID and receives an audited update. What was handed on under
+   it becomes its child; refresh requests move to `secret_refresh_requests`, the
    proxy's own requests are deleted, an agent's keep their hosts as routes;
    each binding is recorded as created by the system for the `upgrade`, takes
    the ID of the row it replaces so a re-run finds it, and arms the expiry

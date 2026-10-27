@@ -3,6 +3,7 @@ package database_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log"
 	"path/filepath"
 	"reflect"
@@ -452,5 +453,78 @@ func TestMigrateArmsTheExpirySweepAsTheStoreDoes(t *testing.T) {
 	}
 	if marks != 1 {
 		t.Fatalf("expiry marks = %d, want the sweep armed for the binding's expiry", marks)
+	}
+}
+
+func TestMigrateMergesDuplicateDelegations(t *testing.T) {
+	for _, partial := range []bool{false, true} {
+		t.Run(fmt.Sprint("partial=", partial), func(t *testing.T) {
+			db := openGrantEra(t)
+			early := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+			late := early.Add(time.Hour)
+			for _, stmt := range []string{
+				`INSERT INTO secrets (id, project_id, name, type, max_grant_ttl_seconds) VALUES ('sec_dup', 'project-1', 'dup', 'token', 0)`,
+				`INSERT INTO secret_grants (id, project_id, secret_id, scope, scope_key, hosts, purpose, expires_at) VALUES ('grant_a', 'project-1', 'sec_dup', 'sandbox', 'sbx-parent', '["github.com"]', 'delegate', ?)`,
+				`INSERT INTO secret_grants (id, project_id, secret_id, scope, scope_key, hosts, purpose, expires_at) VALUES ('grant_b', 'project-1', 'sec_dup', 'sandbox', 'sbx-parent', '["gitlab.com"]', 'delegate', ?)`,
+			} {
+				args := []any{}
+				if strings.Contains(stmt, "grant_a") {
+					args = append(args, late)
+				}
+				if strings.Contains(stmt, "grant_b") {
+					args = append(args, early)
+				}
+				if err := db.Write.Exec(stmt, args...).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, grantID := range []string{"grant_a", "grant_b"} {
+				if err := db.Write.Exec(`INSERT INTO secret_requests
+                    (id, project_id, requested_by, sandbox_id, secret_id, name, env_name, grant_id, purpose, status)
+                    VALUES (?, 'project-1', 'agent:sbx-parent', 'sbx-parent', 'sec_dup', 'dup', '', ?, 'delegate', 'approved')`, "req_"+grantID, grantID).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if partial {
+				if err := db.Write.Create(&model.SecretBinding{ID: "bind_a", ProjectID: "project-1", SecretID: "sec_dup", TargetKind: model.SecretBindingTargetSandbox, TargetID: "sbx-parent", Delegate: true, Routes: []model.SecretRoute{{Host: "github.com"}}, ExpiresAt: &late, CreatedBy: model.SecretBindingActorSystem}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			for run := 0; run < 2; run++ {
+				if err := db.Migrate(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				var bindings []model.SecretBinding
+				if err := db.Write.Find(&bindings).Error; err != nil {
+					t.Fatal(err)
+				}
+				if len(bindings) != 1 {
+					t.Fatalf("bindings: %+v", bindings)
+				}
+				got := bindings[0]
+				if got.ID != "bind_a" || !got.Delegate || got.Use || got.ExpiresAt == nil || !got.ExpiresAt.Equal(early) || !reflect.DeepEqual(got.Routes, []model.SecretRoute{{Host: "github.com"}, {Host: "gitlab.com"}}) {
+					t.Fatalf("binding: %+v", got)
+				}
+				var requests []model.SecretRequest
+				if err := db.Write.Find(&requests).Error; err != nil {
+					t.Fatal(err)
+				}
+				if len(requests) != 2 {
+					t.Fatalf("requests: %+v", requests)
+				}
+				for _, request := range requests {
+					if request.BindingID != got.ID {
+						t.Fatalf("request lost its binding: %+v", request)
+					}
+				}
+				var events []model.SecretBindingEvent
+				if err := db.Write.Find(&events).Error; err != nil {
+					t.Fatal(err)
+				}
+				if len(events) != 1 {
+					t.Fatalf("events: %+v", events)
+				}
+			}
+		})
 	}
 }
