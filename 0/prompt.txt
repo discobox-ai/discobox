@@ -1,0 +1,1 @@
+what prevents the pool agent from garbage collection an id it doesn't know about while it's transfering
