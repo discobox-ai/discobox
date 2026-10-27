@@ -523,8 +523,10 @@ write_output() {
 			} catch (err) {
 				body = '';
 			}
-			const { stripProjects } = require(require('path').join(process.env.HARNESS_CAPTURE_DIR, 'codex-normalize.cjs'));
-			const settings = stripProjects(body);
+			const path = require('path');
+			const { project } = require(path.join(process.env.HARNESS_CAPTURE_DIR, 'harness-capture/settings.cjs'));
+			const definition = require(path.join(process.env.HARNESS_CAPTURE_DIR, 'codex-image.json')).harness.saveBack;
+			const settings = project(body, definition.settings.find(s => s.path === '.codex/config.toml')).content;
 			return {
 				path: process.env.CODEX_CONFIGURE_CONFIG_PATH,
 				template: true,

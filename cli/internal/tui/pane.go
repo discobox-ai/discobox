@@ -663,6 +663,7 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 	// the two screens is the point: the workspace is a discobox with the
 	// cursor on it, and what you can do to it does not change with where you
 	// are looking at it from.
+	opts = append(opts, termpane.WithPrefixBinding(harnessChangesKey, paneActionMsg{key: harnessChangesKey}))
 	for key := range interactions {
 		opts = append(opts, termpane.WithPrefixBinding(key, paneActionMsg{key: key}))
 	}

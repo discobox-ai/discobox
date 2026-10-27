@@ -56,8 +56,10 @@ type timerMsg struct {
 // for, so a test can assert on the command a key press turned into rather than
 // on the frame it drew.
 type fakeSource struct {
-	resources Resources
-	mu        sync.Mutex
+	harnessChanges       HarnessChanges
+	harnessChangesWrites []string
+	resources            Resources
+	mu                   sync.Mutex
 	// skills is what the skills screen lists, and skillsErr what an add
 	// fails with.
 	skills    []SkillsEntry
@@ -2297,4 +2299,23 @@ func waitsUnwrapped(block chan struct{}) tea.Cmd {
 		<-block
 		return nil
 	}
+}
+
+func (f *fakeSource) HarnessChanges(_ context.Context, id string) (HarnessChanges, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "HarnessChanges@"+id)
+	return f.harnessChanges, nil
+}
+func (f *fakeSource) SaveHarnessChanges(_ context.Context, id, candidate string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.harnessChangesWrites = append(f.harnessChangesWrites, "save "+id+" "+candidate)
+	return "saved", nil
+}
+func (f *fakeSource) DiscardHarnessChanges(_ context.Context, id, candidate string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.harnessChangesWrites = append(f.harnessChangesWrites, "discard "+id+" "+candidate)
+	return "discarded", nil
 }

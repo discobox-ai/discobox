@@ -257,67 +257,69 @@
         {
           "path": ".config/opencode/opencode.json",
           "format": "jsonc",
-          "fields": {
-            "model": "string",
-            "small_model": "string",
-            "theme": "string",
-            "username": "string",
-            "autoupdate": "boolean",
-            "share": "string"
-          }
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "provider.*.options.apiKey",
+            "provider.*.options.headers",
+            "mcp.*.environment",
+            "mcp.*.headers",
+            "mcp.*.oauth.clientSecret"
+          ]
         },
         {
           "path": ".config/opencode/opencode.jsonc",
           "format": "jsonc",
-          "fields": {
-            "model": "string",
-            "small_model": "string",
-            "theme": "string",
-            "username": "string",
-            "autoupdate": "boolean",
-            "share": "string"
-          }
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "provider.*.options.apiKey",
+            "provider.*.options.headers",
+            "mcp.*.environment",
+            "mcp.*.headers",
+            "mcp.*.oauth.clientSecret"
+          ]
         },
         {
           "path": ".config/opencode/config.json",
           "format": "jsonc",
-          "fields": {
-            "model": "string",
-            "small_model": "string",
-            "theme": "string",
-            "username": "string",
-            "autoupdate": "boolean",
-            "share": "string"
-          }
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "provider.*.options.apiKey",
+            "provider.*.options.headers",
+            "mcp.*.environment",
+            "mcp.*.headers",
+            "mcp.*.oauth.clientSecret"
+          ]
         },
         {
           "path": ".config/opencode/cli.json",
           "format": "jsonc",
-          "fields": {
-            "model": "string",
-            "small_model": "string",
-            "theme": "string",
-            "username": "string",
-            "autoupdate": "boolean",
-            "share": "string"
-          }
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "provider.*.options.apiKey",
+            "provider.*.options.headers",
+            "mcp.*.environment",
+            "mcp.*.headers",
+            "mcp.*.oauth.clientSecret"
+          ]
         },
         {
           "path": ".local/state/opencode/model.json",
           "format": "json",
-          "fields": {
-            "selected.modelID": "string",
-            "selected.providerID": "string"
-          },
-          "createOnly": true
+          "createOnly": true,
+          "exclude": [
+            "recent"
+          ]
         },
         {
           "path": ".config/discobox/opencode-harness.json",
           "format": "json",
-          "fields": {
-            "judgeModel": "string",
-            "webSearch": "boolean"
-          }
+          "exclude": [
+            "about"
+          ]
         }
       ],
       "credentialFiles": [

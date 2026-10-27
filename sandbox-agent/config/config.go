@@ -358,9 +358,9 @@ func applyDefaults(cfg *Config) {
 	}
 }
 
-// CaptureStateDir is private durable state beside the agent database. Boot
-// excludes it even for boxes created before the dedicated volume was declared.
-func CaptureStateDir(databasePath string) string {
+// CaptureRecoveryDir stores nonsecret capture checkpoints beside the agent DB.
+// Boot still excludes this path to protect legacy volumes containing old spools.
+func CaptureRecoveryDir(databasePath string) string {
 	if databasePath == "" {
 		return "/var/lib/discobox/harness-capture"
 	}

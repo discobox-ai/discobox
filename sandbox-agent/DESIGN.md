@@ -810,9 +810,11 @@ and host-Docker providers use the same development images without a registry.
 
 `terminal/capture.go` owns the save-back lifecycle (ADR 26-10-26-573). The
 resolved harness supplies a versioned export/handoff protocol and bounded HOME
-watch paths. The agent polls their metadata, waits for stable changes, and
-periodically exports even unchanged metadata; DB WAL inputs are declared by the
-harness. Commands run through `execs.RunOnce` as the resolved sandbox user with
+watch paths. Filesystem notifications trigger debounced exports, backed by a
+periodic rescan; DB WAL inputs are declared by the harness. The protocol is
+language-independent: each harness supplies its own executables and runtime.
+The core platform neither installs nor invokes Node for capture. Commands run
+through `execs.RunOnce` as the resolved sandbox user with
 bounded private input/output and a 60-second deadline, outside exec history and
 audit. Status reads an atomic snapshot of the last completed observation, so
 a slow native credential export never holds up status polling.
@@ -824,15 +826,34 @@ remote write revisions are separate, so remote settings never delivered to this
 box do not become apparent local edits. Reconsideration selects portable files
 only; the harness projects credential templates from the selected immutable
 credentials and current bindings, keeping credentials and delivery atomic.
-Random immutable candidates and acknowledgment receipts live beside the agent
-DB in a mode-0700 `harness-capture` directory, with atomic mode-0600 state writes. Only pending candidates retain reusable
-credential values. Observation/discard suppression uses stripped metadata and a
-private digest; completed handoff and discard purge their secret-bearing
-snapshots and abandoned atomic-write staging files. A concurrent captured save
-retains its handoff identity/generation, redacting already-acknowledged values.
-The spool is excluded from exports, including ancestor volume overlays in boxes
-whose original manifest predates its dedicated excluded volume. Bootstrap's
-config identity and manifest digest are authoritative over persisted state.
+Random immutable candidates, observations and export output live in
+`/run/discobox/harness-capture`, in a mode-0700 directory with atomic mode-0600
+writes. They survive agent restart but disappear on sandbox reboot. The durable
+checkpoint beside the agent DB contains delivered/accepted templates, revisions,
+sentinel aliases and acknowledgment metadata. Frozen saves retain only their
+candidate identity, changed paths/removals and credential fingerprints; no raw
+candidate values or unaccepted file contents enter the checkpoint. The checkpoint
+commits before the ephemeral snapshot, whose sequence must match on reload.
+
+After reboot, unsaved changes are exported afresh with new candidate IDs. A
+server-committed save can still finish: its receipt supplies accepted files and
+sentinels, and a fresh local export must match the frozen credential fingerprints
+before handoff. A newer login is preserved as a local conflict. Retryable handoff
+keeps the server receipt pending. Recovery retains at most 128 frozen saves,
+preserving the active receipt; an evicted acknowledgment advances only write
+revisions and leaves all local files and comparison baselines untouched for
+fresh review. Completed handoff and discard purge raw
+snapshots and abandoned staging files. Legacy durable raw state is removed on
+migration; its export exclusions remain for older sandboxes. Bootstrap's config
+identity and manifest digest are authoritative over persisted state.
+
+Filesystem notifications
+on declared files' parent directories trigger capture after one second of quiet.
+Ancestor watches cover directories created or replaced during login; atomic
+file replacements remain visible. A 30-second rescan repairs missing watches
+and covers missed events or filesystems without notifications. Notifications
+only trigger the exporter; normalized comparison decides whether a candidate
+exists.
 
 The agent serializes observation, installation, restoration and handoff with the
 launcher's HOME `.config/discobox/harness-capture.lock`. The file is opened with

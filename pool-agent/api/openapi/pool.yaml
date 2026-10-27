@@ -170,6 +170,11 @@ components:
                     type: string
                 createOnly:
                     type: boolean
+                exclude:
+                    type: array
+                    items:
+                        type: string
+                    description: Known credential and local paths omitted from ordinary settings; * matches one object path segment and ** any depth.
                 fields:
                     additionalProperties:
                         type: string
@@ -181,7 +186,6 @@ components:
             required:
                 - path
                 - format
-                - fields
             type: object
         HarnessConfigAcknowledgment:
             additionalProperties: false

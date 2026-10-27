@@ -416,7 +416,6 @@ function capture(id, definition, normalizer, input) {
               }
             }
           }
-          body = normalizer.stripProjects(body);
         }
         // pi's first-run release marker is bookkeeping, not user intent.
         if (id === "pi" && spec.path === ".pi/agent/settings.json") {
@@ -431,7 +430,7 @@ function capture(id, definition, normalizer, input) {
         }
         // The bundled harness settings explain their editor in `about`.
         // Only this known metadata path and string field are descriptive;
-        // wrong types and other unknown keys still need diagnostics.
+        // Other ordinary preferences remain intact.
         if (spec.path === `.config/discobox/${id}-harness.json`) {
           const settings = JSON.parse(body);
           if (
@@ -446,7 +445,8 @@ function capture(id, definition, normalizer, input) {
         return project(body, spec);
       };
       const got = normalize(content, !!input.baselineOnly);
-      if (got.unsupported.length) diagnostic(spec.path, "unsupported");
+      // Known credential/local exclusions are normalization, not warnings.
+      // Their mere presence must not create a perpetual pending candidate.
       // Creating a vendor state file containing only changelog/cache fields is
       // not a portable settings edit. An empty projection is meaningful only
       // when it clears recognized settings from the delivered baseline.

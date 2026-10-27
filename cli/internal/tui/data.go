@@ -2437,6 +2437,11 @@ type DataSource interface {
 	// still can be.
 	PushSources(ctx context.Context, sandboxID string, held map[string]string) ([]SourcePush, error)
 
+	// Harness changes are safe previews; writes always name the reviewed candidate.
+	HarnessChanges(ctx context.Context, sandboxID string) (HarnessChanges, error)
+	SaveHarnessChanges(ctx context.Context, sandboxID, candidateID string) (string, error)
+	DiscardHarnessChanges(ctx context.Context, sandboxID, candidateID string) (string, error)
+
 	// Harnesses is one server's harnesses, oldest first, which is the order
 	// they were registered in. It is read at startup as well as by the harnesses
 	// screen, for the server the next create goes to: the run options offer

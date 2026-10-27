@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -23,7 +24,7 @@ func captureFixture(t *testing.T) (*Service, *model.HarnessConfig, harnesscaptur
 func captureFixtureStore(t *testing.T, st *store.Store) (*Service, *model.HarnessConfig, harnesscapture.Candidate) {
 	t.Helper()
 	ctx := context.Background()
-	cfg := &model.HarnessConfig{ID: "hc-capture", ProjectID: "project-1", Name: "Capture", ManifestDigest: "sha256:fixture", SaveBack: &harnesscapture.Definition{Version: 1, Watch: []string{"~/.fixture"}, ExportCommand: []string{"/bin/export"}, HandoffCommand: []string{"/bin/handoff"}, Providers: []harnesscapture.Provider{{ID: "fixture", EnvName: "API_TOKEN", Types: []string{"token"}, Host: "api.example.com", Routes: []harnesscapture.Route{{Host: "api.example.com"}}}}, Settings: []harnesscapture.Setting{{Path: "~/.fixture", Format: "json", Fields: map[string]string{"model": "string"}}}}}
+	cfg := &model.HarnessConfig{ID: "hc-capture", ProjectID: "project-1", Name: "Capture", ManifestDigest: "sha256:fixture", SaveBack: &harnesscapture.Definition{Version: 1, Watch: []string{"~/.fixture"}, ExportCommand: []string{"/bin/export"}, HandoffCommand: []string{"/bin/handoff"}, Providers: []harnesscapture.Provider{{ID: "fixture", EnvName: "API_TOKEN", Types: []string{"token"}, Host: "api.example.com", Routes: []harnesscapture.Route{{Host: "api.example.com"}}}}, Settings: []harnesscapture.Setting{{Path: "~/.fixture", Format: "json", Exclude: []string{"apiKey", "api_key", "env"}}}}}
 	if err := st.CreateHarnessConfig(ctx, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -222,6 +223,13 @@ func TestCapturePreviewRejectsUnclassifiedFileAndRedactsDiagnostics(t *testing.T
 	}
 	if bytes.Contains(data, []byte("raw-secret")) {
 		t.Fatal("diagnostic leaked secret")
+	}
+	p.Diagnostics = []harnesscapture.Diagnostic{{Code: "partial", Path: cfg.SaveBack.Watch[0], Message: "raw-secret"}}
+	if err := s.validateCapturePreview(context.Background(), cfg.ProjectID, "sbx-capture", &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Diagnostics[0].Path != cfg.SaveBack.Watch[0] || p.Diagnostics[0].Code != "capture-incomplete" || strings.Contains(p.Diagnostics[0].Message, "raw-secret") {
+		t.Fatalf("diagnostic should identify the registered file without its error text: %+v", p.Diagnostics)
 	}
 }
 

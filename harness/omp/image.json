@@ -302,21 +302,21 @@
         {
           "path": ".omp/agent/config.yml",
           "format": "yaml",
-          "fields": {
-            "theme": "string",
-            "defaultModel": "string",
-            "modelRoles.default": "string",
-            "modelRoles.smol": "string",
-            "thinkingLevel": "string",
-            "compaction.enabled": "boolean"
-          }
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "providers.*.apiKey",
+            "providers.*.headers",
+            "mcpServers.*.env",
+            "mcpServers.*.headers"
+          ]
         },
         {
           "path": ".config/discobox/omp-harness.json",
           "format": "json",
-          "fields": {
-            "judgeModel": "string"
-          }
+          "exclude": [
+            "about"
+          ]
         }
       ],
       "credentialFiles": [

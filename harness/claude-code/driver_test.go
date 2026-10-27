@@ -39,7 +39,7 @@ func TestImageLaunchesClaudeWithSourceScopedMemory(t *testing.T) {
 		t.Fatalf("manifest overrides the harness-run convention: run=%v relaunch=%v",
 			image.Harness.RunCommand, image.Harness.RelaunchCommand)
 	}
-	if got, want := featuretest.Load(t).Installs("launch.sh"), "/usr/local/bin/"+harness.RunCommand; got != want {
+	if got, want := featuretest.Load(t, ".").Installs("launch.sh"), "/usr/local/bin/"+harness.RunCommand; got != want {
 		t.Fatalf("the feature installs the launcher at %q, want %q", got, want)
 	}
 	for _, command := range []string{"/login", "/model", "/config", "/exit"} {

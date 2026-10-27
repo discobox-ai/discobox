@@ -61,7 +61,7 @@ test("pi exports renewable login and safe settings, then recognizes delivered se
     assert.equal(out.credentials[0].value.refreshToken, "real-refresh");
     assert.equal(out.credentials[0].type, "oauth");
     assert(!JSON.stringify(out.files).includes("never-copy"));
-    assert(out.diagnostics.length);
+    assert.equal(out.diagnostics.length, 0);
     const sentinels = { PI_ANTHROPIC_CREDENTIAL: "synthetic-sentinel" };
     const delivered = render(out.files, sentinels);
     for (const file of delivered) f.write(file.path, file.content);
@@ -380,7 +380,7 @@ test("OMP normalization keeps account bindings across export order", () => {
 test("portable projection excludes trust and credentials; malformed grammar fails closed", () => {
   const spec = {
     format: "toml",
-    fields: { model: "string", "tui.notifications": "boolean" },
+    exclude: ["projects", "apiKey"],
   };
   const got = project(
     'model = "safe"\n[projects.private]\ntrust_level = "trusted"\n[tui]\nnotifications = true',
@@ -392,7 +392,7 @@ test("portable projection excludes trust and credentials; malformed grammar fail
   assert.throws(() => project('model = "unterminated', spec));
   const jc = project(
     '{"model":"https://example.test/a//b",/* comment */"apiKey":"secret",}',
-    { format: "jsonc", fields: { model: "string" } },
+    { format: "jsonc", exclude: ["apiKey"] },
   );
   assert(jc.content.includes("https://example.test/a//b"));
   assert(!jc.content.includes("secret"));
@@ -974,7 +974,7 @@ test("unknown-only fresh settings churn is absent while clearing delivered porta
   }
 });
 
-test("an invalid known setting does not clear the delivered value", () => {
+test("settings values are preserved without duplicating a vendor preference schema", () => {
   const f = fixture("pi"),
     p = ".pi/agent/settings.json";
   try {
@@ -985,11 +985,8 @@ test("an invalid known setting does not clear the delivered value", () => {
         files: [{ path: p, content: '{"defaultModel":"delivered"}' }],
       },
     });
-    assert.equal(
-      out.files.some((file) => file.path === p),
-      false,
-    );
-    assert(out.diagnostics.some((d) => d.path === p && d.code === "partial"));
+    assert.equal(JSON.parse(out.files.find((file) => file.path === p).content).defaultModel, 42);
+    assert(!out.diagnostics.some((d) => d.path === p));
   } finally {
     f.close();
   }
@@ -1041,15 +1038,15 @@ test("bundled descriptive about metadata is ignored in current and delivered har
       assert(!result.diagnostics.some((d) => d.path === p));
       assert(!JSON.stringify(result.files).includes("Bundled editor instructions"));
     }
-    f.write(p, { about: "Bundled text", judgeModel: "model", unknownOption: "never-copy" });
+    f.write(p, { about: "Bundled text", judgeModel: "model", unknownOption: "preserved" });
     const unknown = f.run();
-    assert(unknown.diagnostics.some((d) => d.path === p && d.code === "unsupported"));
-    assert(!JSON.stringify(unknown.files).includes("never-copy"));
+    assert(!unknown.diagnostics.some((d) => d.path === p));
+    assert(JSON.stringify(unknown.files).includes("preserved"));
     f.write(p, { about: 123, judgeModel: "model" });
-    assert(f.run().diagnostics.some((d) => d.path === p && d.code === "unsupported"));
+    assert(!f.run().diagnostics.some((d) => d.path === p));
     f.write(p, { about: "Bundled text", judgeModel: "model" });
     f.write(".pi/agent/settings.json", { about: "not harness metadata" });
-    assert(f.run().diagnostics.some((d) => d.path === ".pi/agent/settings.json" && d.code === "unsupported"));
+    assert(!f.run().diagnostics.some((d) => d.path === ".pi/agent/settings.json"));
   } finally {
     f.close();
   }
@@ -1103,4 +1100,78 @@ test("Codex empty settings compare unrendered delivery templates without evaluat
   } finally {
     f.close();
   }
+});
+
+
+test("all harnesses preserve future preferences and redact known credential locations", () => {
+  for (const [id, p, body, secret] of [
+    ["claude-code", ".claude/settings.json", {theme:"light", newPreference:{nested:[true,{accent:"blue"}]},env:{ANTHROPIC_API_KEY:"local-secret"}}, "local-secret"],
+    ["copilot", ".copilot/settings.json", {theme:"light",newPreference:{nested:[1,2]},authTokens:{host:"local-secret"}}, "local-secret"],
+    ["pi", ".pi/agent/settings.json", {theme:"light",newPreference:{nested:[1,2]},apiKey:"local-secret"}, "local-secret"],
+    ["opencode", ".config/opencode/opencode.json", {theme:"light",newPreference:{nested:[1,2]},provider:{custom:{options:{apiKey:"local-secret",baseURL:"https://provider.example"}}}}, "local-secret"],
+    ["omp", ".omp/agent/config.yml", "theme: light\nnewPreference:\n  nested: [one, two]\napiKey: local-secret\n", "local-secret"],
+    ["codex", ".codex/config.toml", 'theme = "light"\nnewPreference = { nested = ["one", "two"] }\n[model_providers.custom]\napi_key = "local-secret"\nbase_url = "https://provider.example"\n', "local-secret"],
+  ]) {
+    const f = fixture(id);
+    try {
+      f.write(p, body);
+      const exported = f.run().files.find(file => file.path === p);
+      assert(exported, id);
+      assert(exported.content.includes("light"), id);
+      assert(exported.content.includes("newPreference"), id);
+      assert(!exported.content.includes(secret), id);
+    } finally { f.close(); }
+  }
+});
+
+test("rich TOML and YAML settings survive normalization", () => {
+  const toml = project('theme = "light"\n[[profiles.work.tools]]\nname = "one"\nargs = ["--flag", "two"]\n[profiles.work.env]\nTOKEN = "secret"\n', {format:"toml",exclude:["profiles.*.env"]});
+  assert(toml.content.includes("tools"));
+  assert(toml.content.includes("--flag"));
+  assert(!toml.content.includes("secret"));
+  const yaml = project('theme: light\nfeature:\n  description: |\n    multiple\n    lines\n  sequence:\n    - enabled: true\n      names: [one, two]\n', {format:"yaml"});
+  assert.equal(JSON.parse(yaml.content).feature.sequence[0].enabled, true);
+});
+
+
+test("Claude bundled settings and theme changes normalize without warning-only candidates", () => {
+  const f = fixture("claude-code");
+  try {
+    const p = ".claude/settings.json";
+    const baseline = require("../claude-code/image.json").harness.files.find(file => file.path === p);
+    f.write(p, baseline.content);
+    const delivered = f.run({...f.input,baseline:{files:[baseline]},baselineOnly:true});
+    const unchanged = f.run({...f.input,baseline:{files:[baseline]}});
+    assert.equal(unchanged.diagnostics.length, 0);
+    assert.deepEqual(unchanged.files, delivered.files);
+    const settings = JSON.parse(baseline.content);
+    settings.theme = "light";
+    f.write(p, settings);
+    const changed = f.run({...f.input,baseline:{files:[baseline]}});
+    assert.equal(changed.diagnostics.length, 0);
+    assert.equal(JSON.parse(changed.files.find(file => file.path === p).content).theme,"light");
+    const after = f.run({...f.input,baseline:{files:changed.files},baselineOnly:true});
+    assert.deepEqual(after.files, changed.files);
+    assert.equal(after.diagnostics.length, 0);
+  } finally { f.close(); }
+});
+
+
+test("Codex parses local project tables without corrupting multiline strings", () => {
+ const f=fixture("codex"), p=".codex/config.toml";
+ try {
+  f.write(p, 'developer_instructions = """\nExplain projects:\n[projects.example]\ntrust_level = "trusted"\n"""\n[projects.local]\ntrust_level = "trusted"\n[shell_environment_policy.set]\nAWS_SECRET_ACCESS_KEY = "never-copy"\n');
+  const result=f.run();
+  const config=result.files.find(file=>file.path===p);
+  assert(config);
+  assert(config.content.includes("Explain projects"));
+  assert(config.content.includes("projects.example"));
+  assert(!config.content.includes("projects.local"));
+  assert(!config.content.includes("never-copy"));
+  assert.equal(result.diagnostics.length,0);
+  f.write(p, 'developer_instructions = "{{ .secrets.OTHER }}"\n');
+  const unsafe=f.run();
+  assert(!unsafe.files.some(file=>file.path===p));
+  assert(unsafe.diagnostics.some(d=>d.path===p&&d.code==="partial"));
+ } finally { f.close(); }
 });

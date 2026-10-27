@@ -1416,6 +1416,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case harnessFileMsg:
 		return m.editHarnessFile(msg.harness, msg.path)
 
+	case harnessChangesLoadedMsg:
+		return m.showHarnessChanges(msg)
+	case harnessChangesDoneMsg:
+		return m.harnessChangesDone(msg)
 	case harnessDoneMsg:
 		return m.harnessDone(msg)
 
@@ -2288,6 +2292,7 @@ func (m *Model) actions(targets []Sandbox) []action {
 			why: attachWhy(one, targets)},
 		{key: "s", press: "s", label: "shell", detail: "open a shell in the box", enabled: attachable,
 			why: attachWhy(one, targets)},
+		{key: harnessChangesKey, press: harnessChangesKey, label: "review config", detail: "review and save local settings and logins", enabled: one && targets[0].State == StateRunning, why: "takes one running box"},
 		{key: applyKey, press: applyKey, label: "apply", detail: "bring the changes back to " + m.session.Directory, enabled: applyable,
 			why: applyWhy},
 		{key: renameKey, press: renameKey, label: "rename", detail: "type a new name for the box", enabled: renameable,
@@ -2397,6 +2402,9 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 		ids = append(ids, s.ID)
 	}
 
+	if key == harnessChangesKey {
+		return m.reviewHarnessChanges(targets[0])
+	}
 	if key == renameKey {
 		return m.askRename(targets[0])
 	}
@@ -4284,6 +4292,9 @@ func (m *Model) paneHints() []hint {
 	// nothing points at is a picker nobody opens.
 	hints = append(hints, pressing(leader+" "+toolsKey+" tools", leader, toolsKey))
 	hints = append(hints, pressing(leader+" "+auditKey+" audit", leader, auditKey))
+	if m.currentBox().HarnessConfigPending {
+		hints = append(hints, pressing(leader+" "+harnessChangesKey+" review config", leader, harnessChangesKey))
+	}
 	// The issue and the pull request are offered where there is one to show:
 	// an issue= or a pr= tag on a GitHub repository.
 	if _, ok := m.currentBox().workNumber(false); ok {
@@ -4428,6 +4439,7 @@ func (m *Model) helpText() string {
 		"    R      repair — rebuild the discobox in place on the",
 		"           current image, keeping its workspace and changes",
 		"    " + credentialsKey + "      answer the credential request waiting on it",
+		"    H      review and save harness settings and logins",
 		"    e      rename          t  stop",
 		"    T      start           x  archive (Del too)",
 		"    U      unarchive       P  purge",

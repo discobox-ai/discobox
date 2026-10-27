@@ -167,9 +167,17 @@ an exporter cannot choose an arbitrary URL for server-side refresh or widen
 an existing grant. Unsupported custom providers remain diagnostics until a
 trusted provider definition exists. Secrets use the secret store's sealing
 path, never ordinary configured-file content, notifications, audit bodies,
-error messages, or logs. Ordinary settings export is schema-aware: recognized
-credential fields are extracted, unsupported credential-bearing or unknown
-fields are reported rather than copied under an assumption that they are safe.
+error messages, or logs. Ordinary settings preserve unknown preferences and
+structured values. Harness-owned normalization identifies credential locations,
+extracts supported logins, and omits known inline credential containers and
+machine-local or Discobox-managed state. These exclusions are authored with the
+harness metadata and enforced independently by the server. Credential documents
+retain strict schemas; they are not treated as ordinary settings. A preference
+allowlist is rejected because each new vendor setting (for example, a theme)
+would otherwise require a Discobox update. This is normalization of known
+credential shapes, not secret scanning of arbitrary strings embedded by a user
+in a hook, URL, or other preference. Malformed documents and unsupported logins
+remain diagnostic; recognized exclusions alone are not pending changes.
 
 ### 4. Capture precedes restoration; acknowledgment precedes handoff
 
@@ -178,9 +186,21 @@ state machine. It distinguishes a delivered sentinel, a new supported
 credential, an expected derived token, a cleared login, and an unsupported
 value. It captures a new credential before any restoration or launch-time
 import can overwrite it. Pending candidates are private to the sandbox and
-survive agent restart; any spool is bounded, mode 0600 in a private directory,
-excluded from sandbox export, and removed when acknowledged or discarded.
-Fingerprints used for local comparison never enter public status or logs.
+survive agent restart in a bounded mode-0600 spool in a private directory under
+`/run`, removed when acknowledged or discarded. Raw observations, pending file
+contents and credential values never enter durable capture storage. Reboot
+loses pending candidate identities; the harness's local files are exported again
+for fresh review. The harness's own credential storage remains its responsibility.
+
+A durable checkpoint retains delivered and accepted templates, revisions,
+sentinel aliases and acknowledgment metadata. Before submitting a frozen save,
+record its identity, changed paths/removals and credential fingerprints there,
+without raw values or unaccepted file contents. After reboot, the server receipt
+supplies accepted content and a fresh local export must match those fingerprints
+before handoff. A newer login remains untouched. Retryable handoff retains the
+server receipt for reconciliation. Legacy secret-bearing durable spools and
+staging files are removed during migration, without backup. Fingerprints used
+for local comparison never enter public status or logs.
 
 An unsaved, rejected, conflicting, or unacknowledged candidate is not evidence
 that its credential reached the server. Preserve it and expose its state.

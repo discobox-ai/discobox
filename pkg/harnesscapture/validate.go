@@ -15,7 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// NormalizeSettings projects only explicitly declared portable scalar fields.
+// NormalizeSettings accepts ordinary settings and rejects known excluded paths.
 // The resulting JSON is canonical regardless of the input format. Exporters
 // preserve the harness's file format; validation compares its parsed structure.
 func NormalizeSettings(s Setting, content string) (map[string]any, error) {
@@ -24,6 +24,9 @@ func NormalizeSettings(s Setting, content string) (map[string]any, error) {
 			return nil, errors.New("settings lack registered template suffix")
 		}
 		content = strings.TrimSuffix(content, s.TemplateSuffix)
+		if strings.Contains(content, "{{") {
+			return nil, errors.New("settings prefix contains an unregistered template action")
+		}
 	}
 	var value map[string]any
 	switch s.Format {
@@ -43,53 +46,62 @@ func NormalizeSettings(s Setting, content string) (map[string]any, error) {
 	default:
 		return nil, errors.New("unsupported settings format")
 	}
-	out := map[string]any{}
-	for field, kind := range s.Fields {
-		if literal, ok := value[field]; ok {
-			if !scalarType(literal, kind) {
-				return nil, errors.New("invalid portable settings field type")
-			}
-			out[field] = literal
-			continue
-		}
-		parts := strings.Split(field, ".")
-		var v any = value
-		found := true
-		for _, p := range parts {
-			m, ok := v.(map[string]any)
-			if !ok {
-				found = false
-				break
-			}
-			v, ok = m[p]
-			if !ok {
-				found = false
-				break
-			}
-		}
-		if !found {
-			continue
-		}
-		if !scalarType(v, kind) {
-			return nil, errors.New("invalid portable settings field type")
-		}
-		target := out
-		for _, p := range parts[:len(parts)-1] {
-			next, ok := target[p].(map[string]any)
-			if !ok {
-				next = map[string]any{}
-				target[p] = next
-			}
-			target = next
-		}
-		target[parts[len(parts)-1]] = v
+	// TOML arrays of tables decode as []map[string]any, while YAML can
+	// produce maps with non-string keys. Normalize the entire tree before
+	// checking exclusions so no parser-specific container bypasses traversal.
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, errors.New("settings must contain JSON-compatible objects")
 	}
-	// Reject unknown fields; never allow an exporter to smuggle a credential in
-	// a settings member that its registered metadata did not authorize.
-	if !reflect.DeepEqual(value, out) {
-		return nil, errors.New("settings contain fields outside the portable schema")
+	if err := json.Unmarshal(encoded, &value); err != nil {
+		return nil, errors.New("invalid settings structure")
 	}
-	return out, nil
+	if len(s.Fields) != 0 {
+		return nil, errors.New("legacy settings allowlist: refresh the harness bundle metadata")
+	}
+	if value == nil {
+		return nil, errors.New("settings must be an object")
+	}
+	if err := validateSettingsTree(value, nil, s.Exclude); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+func validateSettingsTree(value any, keys []string, excluded []string) error {
+	for _, pattern := range excluded {
+		if settingsPathMatches(strings.Split(pattern, "."), keys) {
+			return errors.New("settings contain an excluded credential or local field")
+		}
+	}
+	switch v := value.(type) {
+	case map[string]any:
+		for key, child := range v {
+			if key == "__proto__" || key == "constructor" || key == "prototype" {
+				return errors.New("unsafe settings key")
+			}
+			if err := validateSettingsTree(child, append(slices.Clone(keys), key), excluded); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for i, child := range v {
+			if err := validateSettingsTree(child, append(slices.Clone(keys), fmt.Sprint(i)), excluded); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func settingsPathMatches(pattern, keys []string) bool {
+	if len(pattern) == 0 {
+		return len(keys) == 0
+	}
+	if pattern[0] == "**" {
+		return settingsPathMatches(pattern[1:], keys) || (len(keys) > 0 && settingsPathMatches(pattern, keys[1:]))
+	}
+	return len(keys) > 0 && (pattern[0] == "*" || pattern[0] == keys[0]) && settingsPathMatches(pattern[1:], keys[1:])
 }
 func scalarType(v any, kind string) bool {
 	switch kind {

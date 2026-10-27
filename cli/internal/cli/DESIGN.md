@@ -7,7 +7,10 @@ this command. `admin harness save SANDBOX CANDIDATE` commits that exact candidat
 repeating it retries acknowledgment. `admin harness reconsider` requires explicit
 `--keep-file` and `--replace-credential` selections before creating a new
 candidate against current revisions. `admin harness discard` leaves local files alone.
-The console reports a pending candidate from agent status. The configure commands
+The console reports a pending candidate from agent status; `H` opens its review
+card with explicit save and discard actions. CLI previews print the commands for
+the exact displayed candidate and identify diagnostic-only candidates as having
+no saveable changes. The configure commands
 remain available; save-back does not depend on a configure session.
 
 Harness update requests carry the revision read before editing. The editor keeps

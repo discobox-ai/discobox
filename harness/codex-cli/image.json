@@ -77,17 +77,23 @@
         {
           "path": ".codex/config.toml",
           "format": "toml",
-          "fields": {
-            "model": "string",
-            "model_provider": "string",
-            "model_reasoning_effort": "string",
-            "model_reasoning_summary": "string",
-            "model_verbosity": "string",
-            "personality": "string",
-            "web_search": "string",
-            "tui.notifications": "boolean"
-          },
-          "templateSuffix": "[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n"
+          "templateSuffix": "[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n",
+          "exclude": [
+            "projects",
+            "api_key",
+            "model_providers.*.api_key",
+            "model_providers.*.experimental_bearer_token",
+            "model_providers.*.http_headers",
+            "mcp_servers.*.env",
+            "mcp_servers.*.http_headers",
+            "mcp_servers.*.bearer_token",
+            "shell_environment_policy.set",
+            "profiles.*.shell_environment_policy.set",
+            "mcp_servers.*.oauth.client_secret",
+            "profiles.*.mcp_servers.*.oauth.client_secret",
+            "model_providers.*.auth",
+            "profiles.*.model_providers.*.auth"
+          ]
         }
       ],
       "credentialFiles": [

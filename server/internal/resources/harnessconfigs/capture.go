@@ -433,7 +433,22 @@ func (s *Service) validateCapturePreview(ctx context.Context, projectID, sandbox
 		return nil
 	}
 	for i := range p.Diagnostics {
-		p.Diagnostics[i] = harnesscapture.Diagnostic{Code: "capture-warning", Message: "The harness reported unsupported local configuration; inspect it locally."}
+		original := p.Diagnostics[i]
+		diagnostic := harnesscapture.Diagnostic{Code: "capture-warning", Message: "The harness reported unsupported local configuration; inspect it locally."}
+		// Only registered paths and fixed messages cross this boundary. A
+		// harness's free-form error or invented path may contain a credential.
+		if cfg.SaveBack != nil && (slices.Contains(cfg.SaveBack.Watch, original.Path) || slices.Contains(cfg.SaveBack.CredentialFiles, original.Path)) {
+			diagnostic.Path = original.Path
+		}
+		switch original.Code {
+		case "partial":
+			diagnostic.Code = "capture-incomplete"
+			diagnostic.Message = "Configuration is incomplete, unreadable, or invalid. Check the local file; it has been retained unchanged."
+		case "unsupported":
+			diagnostic.Code = "capture-unsupported"
+			diagnostic.Message = "The harness cannot export this configuration or login format. Check the local file; it has been retained unchanged."
+		}
+		p.Diagnostics[i] = diagnostic
 	}
 	return nil
 }

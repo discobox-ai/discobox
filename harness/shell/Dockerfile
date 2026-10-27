@@ -19,4 +19,4 @@ ARG HARNESS_METADATA
 # that forgot rather than as a bundle declaring nothing, and only a running
 # server would ever say so. A FROM scratch stage has no shell to check it in,
 # so the expansion does.
-LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
+LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . harness/shell/image.json)\"}"

@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"maps"
 	"os"
@@ -26,7 +25,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
-const CaptureStateDirectory = "/var/lib/discobox/harness-capture"
+const CaptureStateDirectory = "/run/discobox/harness-capture"
 
 var ErrCaptureConflict = errors.New("harness configuration candidate changed")
 var ErrCaptureDefinitionChanged = errors.New("harness definition changed; deliver the current harness bundle and capture again")
@@ -36,6 +35,10 @@ var ErrCaptureUnavailable = errors.New("harness configuration capture unavailabl
 // The acknowledgment is persisted before touching a credential file, so a
 // restart retries the conditional handoff rather than losing the receipt.
 type captureState struct {
+	RecoveryOrder        []string                   `json:"recoveryOrder,omitempty"`
+	RetiredFingerprints  []string                   `json:"retiredFingerprints,omitempty"`
+	Sequence             uint64                     `json:"sequence"`
+	Recovery             map[string]captureRecovery `json:"recovery,omitempty"`
 	KnownSentinels       map[string][]string        `json:"knownSentinels,omitempty"`
 	SentinelPredecessors map[string]string          `json:"sentinelPredecessors,omitempty"`
 	ReceiptPredecessors  map[string]string          `json:"receiptPredecessors,omitempty"`
@@ -65,6 +68,7 @@ type captureManager struct {
 	definition          hc.Definition
 	state               captureState
 	path, home, workdir string
+	recoveryPath        string
 	user                *execs.User
 	secrets             func() map[string]string
 	sandbox             map[string]any
@@ -92,6 +96,9 @@ func newCaptureManager(s *Service, cfg ServiceConfig) (*captureManager, error) {
 		dir = CaptureStateDirectory
 	}
 	m := &captureManager{execs: cfg.Execs, definition: *cfg.Harness.SaveBack, path: filepath.Join(dir, "state.json"), home: home, workdir: workdir, user: s.defaultUser, secrets: cfg.SecretEnv, sandbox: cfg.SandboxConfig}
+	if cfg.CaptureRecoveryDir != "" {
+		m.recoveryPath = filepath.Join(cfg.CaptureRecoveryDir, "checkpoint.json")
+	}
 	m.run = m.command
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
@@ -100,19 +107,13 @@ func newCaptureManager(s *Service, cfg ServiceConfig) (*captureManager, error) {
 		return nil, err
 	}
 	m.state = captureState{Baseline: *cfg.Harness.CaptureBaseline, History: map[string]hc.Candidate{}, State: "clean"}
-	invalidated := false
-	data, err := readCaptureFile(m.path)
-	if err == nil {
-		if err = json.Unmarshal(data, &m.state); err != nil {
-			return nil, errors.New("invalid private capture state")
-		}
-		// Bootstrap authority, never a config ID that traveled from another box.
-		if m.state.Baseline.HarnessConfigID != cfg.Harness.CaptureBaseline.HarnessConfigID || m.state.Baseline.ManifestDigest != cfg.Harness.CaptureBaseline.ManifestDigest {
-			m.state = captureState{Baseline: *cfg.Harness.CaptureBaseline, History: map[string]hc.Candidate{}, State: "clean"}
-			invalidated = true
-		}
-	} else if !os.IsNotExist(err) {
+	if err := m.loadCaptureState(); err != nil {
 		return nil, err
+	}
+	invalidated := false
+	if m.state.Baseline.HarnessConfigID != cfg.Harness.CaptureBaseline.HarnessConfigID || m.state.Baseline.ManifestDigest != cfg.Harness.CaptureBaseline.ManifestDigest {
+		m.state = captureState{Baseline: *cfg.Harness.CaptureBaseline, History: map[string]hc.Candidate{}, State: "clean"}
+		invalidated = true
 	}
 	if !m.state.Installed && cfg.PrimaryState != nil {
 		launched, err := cfg.PrimaryState.PrimaryTerminalLaunched(context.Background())
@@ -245,35 +246,13 @@ func (m *captureManager) input(baselineOnly bool) hc.ExportInput {
 	return hc.ExportInput{Version: hc.Version, Definition: m.definition, Baseline: m.state.Baseline, BaselineOnly: baselineOnly, Sentinels: m.sentinels(), KnownSentinels: m.state.KnownSentinels, WorkingDir: m.workdir}
 }
 func (m *captureManager) persist() error {
-	data, err := json.Marshal(m.state)
-	if err != nil {
+	if err := m.persistCheckpoint(); err != nil {
 		return err
 	}
-	if len(data) > 8*hc.MaxBytes {
-		return errors.New("capture state exceeds limit")
-	}
-	f, err := os.CreateTemp(filepath.Dir(m.path), ".capture-")
-	if err != nil {
+	if err := writeCaptureSnapshot(m.path, m.state); err != nil {
 		return err
 	}
-	name := f.Name()
-	defer os.Remove(name)
-	if _, err = f.Write(data); err == nil {
-		err = f.Sync()
-	}
-	if e := f.Close(); err == nil {
-		err = e
-	}
-	if err != nil {
-		return err
-	}
-	if err = os.Rename(name, m.path); err != nil {
-		return err
-	}
-	if err := m.removeAbandonedWrites(); err != nil {
-		return err
-	}
-	return fsdurable.SyncDir(filepath.Dir(m.path))
+	return m.removeAbandonedWrites()
 }
 func (m *captureManager) lock(_ context.Context) (func(), error) {
 	m.mu.Lock()
@@ -444,7 +423,7 @@ func (m *captureManager) observe(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if len(m.state.Superseded) > 0 {
+	if len(m.state.Superseded) > 0 || len(m.state.RetiredFingerprints) > 0 {
 		if m.supersededObservation(observed) {
 			m.state.Observed = publicObservation(observed)
 			m.state.ObservedDigest = digest
@@ -454,6 +433,7 @@ func (m *captureManager) observe(ctx context.Context) error {
 			return m.persist()
 		}
 		m.state.Superseded = nil
+		m.state.RetiredFingerprints = nil
 		if m.state.State == "superseded" {
 			m.state.State = "clean"
 		}
@@ -571,9 +551,9 @@ func (m *captureManager) preview() hc.Preview {
 	if m.state.Receipt != nil {
 		p.State = "saved-handoff-pending"
 	}
-	if len(m.state.Superseded) > 0 || m.state.State == "superseded" {
+	if (len(m.state.Superseded) > 0 || len(m.state.RetiredFingerprints) > 0) || m.state.State == "superseded" {
 		message := "Saved settings changed remotely. Make a new local edit; the previous candidate cannot be reconsidered."
-		if len(m.state.Superseded) > 0 {
+		if len(m.state.Superseded) > 0 || len(m.state.RetiredFingerprints) > 0 {
 			message = "Saved credentials changed remotely. A new local login is required; the previous candidate cannot be reconsidered."
 		}
 		p.Diagnostics = append(p.Diagnostics, hc.Diagnostic{Code: "superseded", Message: message})
@@ -814,16 +794,18 @@ func (s *Service) AcknowledgeHarnessConfig(ctx context.Context, a hc.Acknowledgm
 		return m.supersede(a)
 	}
 	if a.CandidateID == m.state.LastAcknowledged && m.state.Receipt == nil {
-		return m.preview(), nil
+		return hc.Preview{State: "saved", CandidateID: a.CandidateID}, nil
 	}
 	if a.Baseline.ConfigRevision < m.writeRevision() {
 		return hc.Preview{}, ErrCaptureConflict
 	}
-	if _, ok := m.state.History[a.CandidateID]; !ok {
-		return hc.Preview{}, ErrCaptureConflict
-	}
 	if a.Baseline.HarnessConfigID != m.state.Baseline.HarnessConfigID {
 		return hc.Preview{}, ErrCaptureConflict
+	}
+	if _, ok := m.state.History[a.CandidateID]; !ok {
+		if _, recoverable := m.state.Recovery[a.CandidateID]; !recoverable {
+			return hc.Preview{State: "saved", CandidateID: a.CandidateID}, m.finishUnrecoverableAcknowledgment(a)
+		}
 	}
 	if m.state.Receipt == nil || m.state.Receipt.CandidateID != a.CandidateID {
 		m.state.ReceiptPredecessors = m.runtimeSentinels()
@@ -845,8 +827,13 @@ func (m *captureManager) handoff(ctx context.Context) error {
 		return nil
 	}
 	c, ok := m.state.History[a.CandidateID]
+	conflict := false
 	if !ok {
-		return ErrCaptureConflict
+		var err error
+		c, conflict, err = m.recoverCandidate(ctx, *a)
+		if err != nil {
+			return err
+		}
 	}
 	files := slices.Clone(a.Files)
 	tmpl := maps.Clone(m.sandbox)
@@ -866,13 +853,16 @@ func (m *captureManager) handoff(ctx context.Context) error {
 		}
 	}
 	var result hc.HandoffResult
-	if err := m.run(ctx, m.definition.HandoffCommand, hc.Handoff{Version: hc.Version, CandidateID: c.ID, Credentials: c.Credentials, Files: files, Sentinels: a.Sentinels}, &result); err != nil {
+	if conflict {
+		result.State = "local-conflict"
+	} else if err := m.run(ctx, m.definition.HandoffCommand, hc.Handoff{Version: hc.Version, CandidateID: c.ID, Credentials: c.Credentials, Files: files, Sentinels: a.Sentinels}, &result); err != nil {
 		return err
 	}
 	if result.State != "applied" && result.State != "local-conflict" {
 		return errors.New("credential handoff deferred")
 	}
 	m.state.LastAcknowledged = a.CandidateID
+	delete(m.state.Recovery, a.CandidateID)
 	delete(m.state.Frozen, a.CandidateID)
 	m.state.AcceptedFiles = slices.Clone(a.Files)
 	m.state.Sentinels = maps.Clone(a.Sentinels)
@@ -883,8 +873,10 @@ func (m *captureManager) handoff(ctx context.Context) error {
 	// Only the accepted local patch was delivered. Remote-only settings in
 	// the receipt remain remote, even though its revision now gates writes.
 	m.state.Baseline.Files = applyCaptureFiles(m.state.Baseline.Files, c.Files)
-	m.state.WriteRevision = a.Baseline.ConfigRevision
-	m.state.SecretRevisions = maps.Clone(a.Baseline.SecretRevisions)
+	if a.Baseline.ConfigRevision >= m.writeRevision() {
+		m.state.WriteRevision = a.Baseline.ConfigRevision
+		m.state.SecretRevisions = maps.Clone(a.Baseline.SecretRevisions)
+	}
 	m.state.Normalized = hc.Export{}
 	m.state.Discarded = ""
 	m.state.Receipt = nil
@@ -902,44 +894,9 @@ func (s *Service) WatchHarnessConfig(ctx context.Context) {
 	if s.capture == nil {
 		return
 	}
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	previous := ""
-	stable := ""
-	last := time.Time{}
-	for {
-		stamp := s.capture.watchStamp()
-		// Wait for two equal polls after a change; every 30 seconds rescan even
-		// unchanged metadata, including databases whose WAL is declared separately.
-		if (stamp == previous && stamp != stable) || time.Since(last) >= 30*time.Second {
-			_, _ = s.HarnessConfigChanges(ctx)
-			stable = stamp
-			last = time.Now()
-		}
-		previous = stamp
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}
-func (m *captureManager) watchStamp() string {
-	var stamp strings.Builder
-	root, err := os.OpenRoot(m.home)
-	if err != nil {
-		return "unavailable"
-	}
-	defer root.Close()
-	for _, path := range m.definition.Watch {
-		info, err := root.Stat(path)
-		if err != nil {
-			stamp.WriteString(path + ":missing;")
-			continue
-		}
-		fmt.Fprintf(&stamp, "%s:%d:%d:%d;", path, info.Size(), info.ModTime().UnixNano(), info.Mode())
-	}
-	return stamp.String()
+	watchHarnessConfig(ctx, s.capture.home, s.capture.definition.Watch, func() {
+		_, _ = s.HarnessConfigChanges(ctx)
+	}, time.Second, 30*time.Second)
 }
 
 func (m *captureManager) files(files []config.HarnessFile) []config.HarnessFile {
@@ -1020,6 +977,7 @@ func (m *captureManager) purge(completed hc.Candidate) {
 	}
 	for id, c := range m.state.History {
 		if id == completed.ID {
+			delete(m.state.Recovery, id)
 			delete(m.state.History, id)
 			delete(m.state.Frozen, id)
 			continue
@@ -1092,6 +1050,9 @@ func (m *captureManager) supersededObservation(observed hc.Export) bool {
 		if v.Keep {
 			continue
 		}
+		if slices.Contains(m.state.RetiredFingerprints, captureCredentialFingerprint(v)) {
+			return true
+		}
 		for _, old := range m.state.Superseded {
 			if old.EnvName == v.EnvName && ((old.Generation != "" && old.Generation == v.Generation) || (old.Digest != "" && old.Digest == credentialDigest(v))) {
 				return true
@@ -1103,10 +1064,18 @@ func (m *captureManager) supersededObservation(observed hc.Export) bool {
 func (m *captureManager) supersede(a hc.Acknowledgment) (hc.Preview, error) {
 	c, ok := m.state.History[a.CandidateID]
 	if !ok {
-		return m.preview(), nil
-	} // Already purged, or a different harness was delivered.
+		m.state.RetiredFingerprints = append(m.state.RetiredFingerprints, m.state.Recovery[a.CandidateID].Credentials...)
+		delete(m.state.Recovery, a.CandidateID)
+		m.state.LastAcknowledged = a.CandidateID
+		if m.state.Receipt != nil && m.state.Receipt.CandidateID == a.CandidateID {
+			m.state.Receipt = nil
+			m.state.ReceiptPredecessors = nil
+		}
+		return hc.Preview{State: "superseded", CandidateID: a.CandidateID}, m.persist()
+	}
 	for _, v := range c.Credentials {
 		if !v.Keep {
+			m.state.RetiredFingerprints = append(m.state.RetiredFingerprints, captureCredentialFingerprint(v))
 			m.state.Superseded = append(m.state.Superseded, retiredCaptureCredential{EnvName: v.EnvName, Generation: v.Generation, Digest: credentialDigest(v)})
 		}
 	}

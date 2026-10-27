@@ -24,7 +24,7 @@ func captureFixture(t *testing.T) (*Service, *hc.Export, *string) {
 	t.Helper()
 	home := t.TempDir()
 	state := t.TempDir()
-	d := hc.Definition{Version: 1, Watch: []string{"settings.json", "auth.json"}, CredentialFiles: []string{"auth.json"}, ExportCommand: []string{"/export"}, HandoffCommand: []string{"/handoff"}, Settings: []hc.Setting{{Path: "settings.json", Format: "json", Fields: map[string]string{"model": "string"}}}, Providers: []hc.Provider{{ID: "test", EnvName: "TOKEN", Types: []string{"token"}}}}
+	d := hc.Definition{Version: 1, Watch: []string{"settings.json", "auth.json"}, CredentialFiles: []string{"auth.json"}, ExportCommand: []string{"/export"}, HandoffCommand: []string{"/handoff"}, Settings: []hc.Setting{{Path: "settings.json", Format: "json", Exclude: []string{"apiKey", "env"}}}, Providers: []hc.Provider{{ID: "test", EnvName: "TOKEN", Types: []string{"token"}}}}
 	baseline := hc.File{Path: "settings.json", Content: `{"model":"old"}`}
 	observed := &hc.Export{Version: 1, Files: []hc.File{{Path: "settings.json", Content: `{"model":"new"}`}}}
 	outcome := "applied"
@@ -342,7 +342,7 @@ func TestCaptureStatusDoesNotWaitForExporter(t *testing.T) {
 func TestReconsiderAcknowledgmentDoesNotAdoptUndeliveredRemoteSettings(t *testing.T) {
 	s, observed, _ := captureFixture(t)
 	ctx := t.Context()
-	s.capture.definition.Settings = append(s.capture.definition.Settings, hc.Setting{Path: "other.json", Format: "json", Fields: map[string]string{"model": "string"}})
+	s.capture.definition.Settings = append(s.capture.definition.Settings, hc.Setting{Path: "other.json", Format: "json", Exclude: []string{"apiKey", "env"}})
 	other := hc.File{Path: "other.json", Content: `{"model":"original"}`}
 	s.capture.state.Baseline.Files = append(s.capture.state.Baseline.Files, other)
 	observed.Files = append(observed.Files, other)
@@ -851,25 +851,24 @@ func TestCaptureCommandUsesLiveSecretEnvironment(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("capture manifests use POSIX executable paths and the sandbox's Unix process runner")
 	}
-	node, err := exec.LookPath("node")
+	binary, err := os.Executable()
 	if err != nil {
-		t.Skip("node is required for the capture process regression")
+		t.Fatal(err)
 	}
 	home := t.TempDir()
 	live := map[string]string{"ROTATING_TOKEN": "first", "FILE_TOKEN": "file-sentinel"}
-	manager, err := execs.NewManagerWithConfig(execs.ManagerConfig{WorkingRoot: home, RuntimeDir: filepath.Join(home, "runtime"), Env: map[string]string{"HOME": home, "PATH": os.Getenv("PATH")}, SecretEnv: func() map[string]string { return live }, FileSecrets: []string{"FILE_TOKEN"}, Units: &fakeUnits{}})
+	manager, err := execs.NewManagerWithConfig(execs.ManagerConfig{WorkingRoot: home, RuntimeDir: filepath.Join(home, "runtime"), Env: map[string]string{"HOME": home, "PATH": home, "DISCOBOX_TEST_CAPTURE_HELPER": "1"}, SecretEnv: func() map[string]string { return live }, FileSecrets: []string{"FILE_TOKEN"}, Units: &fakeUnits{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	fixture, _, _ := captureFixture(t)
 	definition := fixture.capture.definition
-	definition.ExportCommand = []string{node}
-	definition.HandoffCommand = []string{node}
+	definition.ExportCommand = []string{binary, "-test.run=^TestCaptureNativeHelper$"}
+	definition.HandoffCommand = definition.ExportCommand
 	service, err := NewService(ServiceConfig{Execs: manager, WorkingRoot: home, RuntimeDir: filepath.Join(home, "runtime"), CaptureStateDir: t.TempDir(), ExecDefaults: config.ExecDefaults{HomeDirectory: home}, SecretEnv: func() map[string]string { return live }, Harness: config.Harness{SaveBack: &definition, CaptureBaseline: &hc.Baseline{HarnessConfigID: "config", ConfigRevision: 1}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := `process.stdout.write(JSON.stringify({token:process.env.ROTATING_TOKEN||'',file:process.env.FILE_TOKEN||'',home:process.env.HOME}))`
 	for _, want := range []string{"first", "refreshed", ""} {
 		if want == "" {
 			delete(live, "ROTATING_TOKEN")
@@ -877,7 +876,7 @@ func TestCaptureCommandUsesLiveSecretEnvironment(t *testing.T) {
 			live["ROTATING_TOKEN"] = want
 		}
 		var got struct{ Token, File, Home string }
-		if err = service.capture.command(t.Context(), []string{node, "-e", script}, struct{}{}, &got); err != nil {
+		if err = service.capture.command(t.Context(), definition.ExportCommand, struct{}{}, &got); err != nil {
 			t.Fatal(err)
 		}
 		if got.Token != want || got.File != "" || got.Home != home {
@@ -887,6 +886,22 @@ func TestCaptureCommandUsesLiveSecretEnvironment(t *testing.T) {
 	if len(manager.List()) != 0 {
 		t.Fatal("capture helper created an execution record")
 	}
+}
+
+// A native executable implements the JSON command protocol with an empty PATH:
+// the core runner must not require Node or any other interpreter.
+func TestCaptureNativeHelper(_ *testing.T) {
+	if os.Getenv("DISCOBOX_TEST_CAPTURE_HELPER") != "1" {
+		return
+	}
+	var input map[string]any
+	if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil {
+		os.Exit(2)
+	}
+	if err := json.NewEncoder(os.Stdout).Encode(map[string]string{"token": os.Getenv("ROTATING_TOKEN"), "file": os.Getenv("FILE_TOKEN"), "home": os.Getenv("HOME")}); err != nil {
+		os.Exit(2)
+	}
+	os.Exit(0)
 }
 
 func TestPartialBaselineNormalizationIsRetriedAcrossRestart(t *testing.T) {

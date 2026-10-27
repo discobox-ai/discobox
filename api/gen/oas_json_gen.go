@@ -12219,8 +12219,20 @@ func (s *HarnessCaptureSetting) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("fields")
-		s.Fields.Encode(e)
+		if s.Exclude != nil {
+			e.FieldStart("exclude")
+			e.ArrStart()
+			for _, elem := range s.Exclude {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.Fields.Set {
+			e.FieldStart("fields")
+			s.Fields.Encode(e)
+		}
 	}
 	{
 		e.FieldStart("format")
@@ -12232,12 +12244,13 @@ func (s *HarnessCaptureSetting) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessCaptureSetting = [5]string{
+var jsonFieldsNameOfHarnessCaptureSetting = [6]string{
 	0: "templateSuffix",
 	1: "createOnly",
-	2: "fields",
-	3: "format",
-	4: "path",
+	2: "exclude",
+	3: "fields",
+	4: "format",
+	5: "path",
 }
 
 // Decode decodes HarnessCaptureSetting from json.
@@ -12269,9 +12282,28 @@ func (s *HarnessCaptureSetting) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"createOnly\"")
 			}
-		case "fields":
-			requiredBitSet[0] |= 1 << 2
+		case "exclude":
 			if err := func() error {
+				s.Exclude = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Exclude = append(s.Exclude, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"exclude\"")
+			}
+		case "fields":
+			if err := func() error {
+				s.Fields.Reset()
 				if err := s.Fields.Decode(d); err != nil {
 					return err
 				}
@@ -12280,7 +12312,7 @@ func (s *HarnessCaptureSetting) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"fields\"")
 			}
 		case "format":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Format = string(v)
@@ -12292,7 +12324,7 @@ func (s *HarnessCaptureSetting) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"format\"")
 			}
 		case "path":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.Path = string(v)
@@ -12313,7 +12345,7 @@ func (s *HarnessCaptureSetting) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011100,
+		0b00110000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -24126,6 +24158,40 @@ func (s OptHarnessCaptureOAuth) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptHarnessCaptureOAuth) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes HarnessCaptureSettingFields as json.
+func (o OptHarnessCaptureSettingFields) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes HarnessCaptureSettingFields from json.
+func (o *OptHarnessCaptureSettingFields) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptHarnessCaptureSettingFields to nil")
+	}
+	o.Set = true
+	o.Value = make(HarnessCaptureSettingFields)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptHarnessCaptureSettingFields) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptHarnessCaptureSettingFields) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

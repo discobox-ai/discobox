@@ -267,33 +267,25 @@
         {
           "path": ".pi/agent/settings.json",
           "format": "json",
-          "fields": {
-            "defaultProvider": "string",
-            "defaultModel": "string",
-            "defaultThinkingLevel": "string",
-            "theme": "string",
-            "hideThinkingBlock": "boolean",
-            "compaction.enabled": "boolean",
-            "compaction.reserveTokens": "number",
-            "compaction.keepRecentTokens": "number"
-          }
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "providers.*.apiKey",
+            "providers.*.headers",
+            "lastChangelogVersion"
+          ]
         },
         {
           "path": ".pi/agent/keybindings.json",
           "format": "json",
-          "fields": {
-            "app.interrupt": "string-array",
-            "app.exit": "string-array",
-            "app.suspend": "string-array",
-            "app.model.select": "string-array"
-          }
+          "exclude": []
         },
         {
           "path": ".config/discobox/pi-harness.json",
           "format": "json",
-          "fields": {
-            "judgeModel": "string"
-          }
+          "exclude": [
+            "about"
+          ]
         }
       ],
       "credentialFiles": [

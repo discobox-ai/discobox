@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/harness/internal/featuretest"
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 )
 
@@ -36,10 +37,7 @@ func TestEveryHarnessFeatureLoadsAndIsCopiedWhole(t *testing.T) {
 	for _, spec := range specs {
 		dir := filepath.Dir(spec)
 		t.Run(dir, func(t *testing.T) {
-			feature, err := provisionspec.LoadFeature(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
+			feature := featuretest.Load(t, dir)
 			for _, name := range feature.Spec.Requires {
 				if !slices.Contains(provided, name) {
 					t.Errorf("requires %q, which the platform does not provide", name)
@@ -82,9 +80,18 @@ func copiedInto(dockerfile, tree string) []string {
 		dest := args[len(args)-1]
 		switch {
 		case strings.HasSuffix(dest, "/") && strings.TrimSuffix(dest, "/") == tree:
-			copied = append(copied, args[:len(args)-1]...)
+			for _, source := range args[:len(args)-1] {
+				copied = append(copied, filepath.Base(source))
+			}
 		case strings.HasPrefix(dest, tree+"/"):
-			copied = append(copied, strings.TrimPrefix(dest, tree+"/"))
+			relative := strings.TrimSuffix(strings.TrimPrefix(dest, tree+"/"), "/")
+			if strings.HasSuffix(dest, "/") {
+				for _, source := range args[:len(args)-1] {
+					copied = append(copied, relative+"/"+filepath.Base(source))
+				}
+			} else {
+				copied = append(copied, relative)
+			}
 		}
 	}
 	return copied

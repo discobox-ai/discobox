@@ -115,14 +115,14 @@
         {
           "path": ".claude/settings.json",
           "format": "json",
-          "fields": {
-            "model": "string",
-            "effortLevel": "string",
-            "language": "string",
-            "alwaysThinkingEnabled": "boolean",
-            "showTurnDuration": "boolean",
-            "spinnerTipsEnabled": "boolean"
-          }
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "primaryApiKey",
+            "claudeAiOauth",
+            "env",
+            "apiKeyHelper"
+          ]
         }
       ],
       "credentialFiles": [
