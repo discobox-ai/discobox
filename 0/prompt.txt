@@ -1,0 +1,16 @@
+okay, can you trouble shoot this issue. make no changes ```
+
+<pasted_content id="398f">
+darren@beenie:~/src/disco2$ discobox admin box transfer sbx_xw5j6q1ndb54he4j --to beenie
+Streaming dreamy_antonelli to beenie…
+Archived dreamy_antonelli on d1-etqbsvr
+ID                    NAME              STATE     HARNESS      GIT           CHANGES  ERROR  UPDATED
+sbx_1p9kh8hz6z2anq3g  dreamy_antonelli  starting  claude-code  main@f25a425  -               1 second ago
+darren@beenie:~/src/disco2$ discobox attach sbx_1p9kh8hz6z2anq3g
+attach: attach exec: harness "harness_njsjtgr52ty2tsdn" is not configured
+darren@beenie:~/src/disco2$ discobox attach sbx_1p9kh8hz6z2anq3g
+attach: attach exec: harness "harness_njsjtgr52ty2tsdn" is not configured
+darren@beenie:~/src/disco2$
+</pasted_content id="398f">
+
+```
