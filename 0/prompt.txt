@@ -1,0 +1,10 @@
+<task-notification>
+<task-id>bigh7jr5p</task-id>
+<tool-use-id>toolu_01BfiQrmxavGPEwCMXznZP9s</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/9ebd1b36-3747-4d18-8bd9-f1e64b3195d7/tasks/bigh7jr5p.output</output-file>
+<status>completed</status>
+<summary>Monitor "Release run 37139404692 for v0.13.0" stream ended</summary>
+<event>publish: success
+run completed: success</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
