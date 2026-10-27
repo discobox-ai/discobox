@@ -1,0 +1,1 @@
+is the source always delivered by pushing to discobox server? Does discobox server or the pool agent ever pull/clone?
