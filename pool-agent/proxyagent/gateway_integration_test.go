@@ -53,7 +53,7 @@ func TestSandboxGatewaysRouteOnlyThatSandbox(t *testing.T) {
 		t.Fatalf("create proxy: %v", err)
 	}
 	t.Cleanup(func() { _ = server.Close() })
-	policy := newPolicyPublisher(server, cfg, newActivations(), func(err error) { t.Errorf("apply proxy config: %v", err) })
+	policy := newPolicyPublisher(server, cfg, func(err error) { t.Errorf("apply proxy config: %v", err) })
 	go func() { _ = server.ListenAndServe() }()
 	routedClient := sandboxClient(t, server, routed)
 	otherClient := sandboxClient(t, server, other)
@@ -126,7 +126,7 @@ func TestResolverAsksForGatewayHeaders(t *testing.T) {
 	if err := WriteResolveContext(root, testProjectID, testPoolID, srv.URL, "tok-123"); err != nil {
 		t.Fatal(err)
 	}
-	resolver := newSecretResolver(root, testProjectID, testPoolID, newActivations())
+	resolver := newSecretResolver(root, testProjectID, testPoolID)
 	values, err := resolver.ResolveGatewayHeaders(context.Background(), proxy.GatewayHeadersRequest{
 		ClientID: "sb-1", Gateway: "anthropic", Env: []string{"DISCOBOX_GATEWAY_KEY", "DISCOBOX_GATEWAY_UNSET"},
 	})
@@ -152,7 +152,7 @@ func TestResolverGatewayHeadersRefusedIsAnError(t *testing.T) {
 	}))
 	defer srv.Close()
 	_ = WriteResolveContext(root, testProjectID, testPoolID, srv.URL, "tok")
-	resolver := newSecretResolver(root, testProjectID, testPoolID, newActivations())
+	resolver := newSecretResolver(root, testProjectID, testPoolID)
 	if _, err := resolver.ResolveGatewayHeaders(context.Background(), proxy.GatewayHeadersRequest{ClientID: "sb-1", Gateway: "g", Env: []string{"DISCOBOX_GATEWAY_X"}}); err == nil {
 		t.Fatal("a 404 was taken as an answer")
 	}

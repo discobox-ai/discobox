@@ -96,7 +96,7 @@ func (s *Server) handleControlListDNS(w http.ResponseWriter, r *http.Request) {
 	// A DNS query has a name, not a host, and none of an exchange's status,
 	// policy verdict or credential use; a filter on those is refused rather
 	// than ignored, for the reason the SOCKS read gives.
-	for _, param := range []string{"host", "use_id", "min_status", "max_status", "blocked"} {
+	for _, param := range []string{"host", "min_status", "max_status", "blocked"} {
 		if r.URL.Query().Has(param) {
 			http.Error(w, param+" does not apply to DNS queries", http.StatusBadRequest)
 			return
@@ -254,7 +254,7 @@ const AuditTruncatedHeader = "X-Discobox-Audit-Truncated"
 // (auditid.ExchangeID): the prefix is what says which trail an ID names, and a
 // SOCKS read handed one would answer an arbitrary suffix of a different table
 // as though the cursor meant something there.
-var httpOnlyControlParams = []string{"use_id", "min_status", "max_status", "blocked", "after_id"}
+var httpOnlyControlParams = []string{"min_status", "max_status", "blocked", "after_id"}
 
 func controlQueryOptions(r *http.Request) (audit.QueryOptions, error) {
 	query := r.URL.Query()
@@ -265,7 +265,6 @@ func controlQueryOptions(r *http.Request) (audit.QueryOptions, error) {
 	opts := audit.QueryOptions{
 		ClientID:  query.Get("client_id"),
 		Host:      query.Get("host"),
-		UseID:     query.Get("use_id"),
 		Since:     since,
 		Until:     until,
 		Ascending: ascending,

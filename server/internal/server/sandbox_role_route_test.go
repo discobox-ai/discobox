@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -34,10 +36,19 @@ func forwardRoute(t *testing.T, router http.Handler, method, path, body, token, 
 	return resp
 }
 
+// allowDiscoboxAPI lets a sandbox call the discobox API (ADR 26-10-27-880 §9).
+func allowDiscoboxAPI(ctx context.Context, t *testing.T, db *gorm.DB, sandboxID string) {
+	t.Helper()
+	if err := db.WithContext(ctx).Model(&model.Sandbox{}).Where("id = ?", sandboxID).Update("discobox_api", true).Error; err != nil {
+		t.Fatalf("allow the discobox API: %v", err)
+	}
+}
+
 // The sandbox role is a fixed list of routes in the sandbox's own project, and
 // a forwarded call outside it is refused whatever else would admit it — in
 // particular the routes any authenticated caller reaches, like enrolling a
-// peer or registering a pool.
+// peer or registering a pool. A sandbox that may not call the API is refused
+// every route.
 func TestASandboxHoldsOnlyTheSandboxRole(t *testing.T) {
 	skipWithoutDocker(t)
 	ctx := context.Background()
@@ -47,28 +58,25 @@ func TestASandboxHoldsOnlyTheSandboxRole(t *testing.T) {
 	token := signPoolAssertion(t, projectID, routeTestPoolID, key, poolauth.ScopeSandboxForward)
 	project := "/projects/" + projectID
 
+	if resp := forwardRoute(t, router, http.MethodGet, project+"/sandboxes", "", token, routeTestPoolID, routeTestSandboxID); resp.Code != http.StatusForbidden {
+		t.Fatalf("status = %d without the API, want 403; body = %s", resp.Code, resp.Body.String())
+	}
+	allowDiscoboxAPI(ctx, t, db.Write, routeTestSandboxID)
+
 	for _, tc := range []struct {
 		method, path string
 		want         int
 	}{
 		{http.MethodGet, project + "/sandboxes", http.StatusOK},
 		{http.MethodGet, "/projects/default/sandboxes", http.StatusOK},
-		{http.MethodGet, project + "/sandboxes/" + routeTestSandboxID, http.StatusOK},
 		{http.MethodGet, project + "/secrets", http.StatusOK},
 		{http.MethodGet, project + "/secret-requests", http.StatusOK},
 
 		{http.MethodDelete, project + "/sandboxes/" + routeTestSandboxID, http.StatusForbidden},
 		{http.MethodPost, project + "/secrets", http.StatusForbidden},
 		{http.MethodGet, project + "/secret-grants", http.StatusForbidden},
-		// An approval rule is a person's: a discobox never lists, reads,
-		// makes or edits one, and asks for no proposals (ADR 26-10-12-330 §1).
-		{http.MethodGet, project + "/approval-rules", http.StatusForbidden},
-		{http.MethodPost, project + "/approval-rules", http.StatusForbidden},
-		{http.MethodGet, project + "/approval-rules/rule_1", http.StatusForbidden},
-		{http.MethodPatch, project + "/approval-rules/rule_1", http.StatusForbidden},
-		{http.MethodDelete, project + "/approval-rules/rule_1", http.StatusForbidden},
-		{http.MethodPost, project + "/secret-requests/sreq_1/rule-proposals", http.StatusForbidden},
-		{http.MethodPost, project + "/secret-grants/grant_1/rule-proposals", http.StatusForbidden},
+		// It reaches only the discoboxes it created, and is not its own creator.
+		{http.MethodGet, project + "/sandboxes/" + routeTestSandboxID, http.StatusForbidden},
 		{http.MethodGet, project + "/pools", http.StatusForbidden},
 		{http.MethodGet, "/projects/another-project/sandboxes", http.StatusForbidden},
 		{http.MethodGet, "/projects", http.StatusForbidden},
@@ -83,47 +91,41 @@ func TestASandboxHoldsOnlyTheSandboxRole(t *testing.T) {
 	}
 }
 
-// A discobox starts, stops, restarts and repairs any discobox in its project,
+// A discobox starts, stops, restarts and repairs the discoboxes it created,
 // and the call gets past the role and the handler into the sandbox service:
-// neither refuses a sandbox caller (ADR 26-10-02-478 §1, ADR 26-10-14-320
-// §§1, 3). Both discoboxes are archived, so the service answers with its own
-// refusal before it resolves a provider or instructs the pool; what lies past
-// that point reads no principal, and is not reached here. The project's judge
-// is refused before the service is asked (ADR 26-10-14-320 §4).
-func TestASandboxPowersAnyDiscoboxInItsProjectButTheJudge(t *testing.T) {
+// neither refuses a sandbox caller (ADR 26-10-02-478 §1, ADR 26-10-27-880 §9).
+// Its worker is archived, so the service answers with its own refusal before
+// it resolves a provider or instructs the pool. A discobox a person created is
+// refused before the service is asked.
+func TestASandboxPowersTheDiscoboxesItCreated(t *testing.T) {
 	skipWithoutDocker(t)
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
 	router := newTestApp(ctx, t, db)
 	projectID, key := seedCredentialRoutePool(ctx, t, db.Write, router)
+	allowDiscoboxAPI(ctx, t, db.Write, routeTestSandboxID)
 	token := signPoolAssertion(t, projectID, routeTestPoolID, key, poolauth.ScopeSandboxForward)
 	lead := routeTestSandboxID
 	archived := model.ResourceLifecycle{DesiredState: model.DesiredStateArchived}
 	for _, sandbox := range []*model.Sandbox{
 		{ID: "sbx-worker", Name: "worker", CreatedBySandboxID: &lead, ResourceLifecycle: archived},
 		{ID: "sbx-persons", Name: "persons", ResourceLifecycle: archived},
-		{ID: "sbx-judge", Name: "judge"},
 	} {
 		sandbox.ProjectID, sandbox.PoolID = projectID, routeTestPoolID
 		if err := db.Write.WithContext(ctx).Create(sandbox).Error; err != nil {
 			t.Fatalf("create sandbox %s: %v", sandbox.ID, err)
 		}
 	}
-	if err := db.Write.WithContext(ctx).Model(&model.Project{}).Where("id = ?", projectID).Update("judge_sandbox_id", "sbx-judge").Error; err != nil {
-		t.Fatalf("name the project's judge: %v", err)
-	}
 
 	for _, action := range []string{"start", "stop", "restart", "repair"} {
-		for _, target := range []string{"sbx-worker", "sbx-persons"} {
-			t.Run(action+" "+target, func(t *testing.T) {
-				resp := forwardRoute(t, router, http.MethodPost, "/projects/default/sandboxes/"+target+"/"+action, "{}", token, routeTestPoolID, lead)
-				if resp.Code != http.StatusConflict || !strings.Contains(resp.Body.String(), "archived") {
-					t.Fatalf("status = %d, want the service's 409 for an archived discobox; body = %s", resp.Code, resp.Body.String())
-				}
-			})
-		}
-		t.Run(action+" the judge", func(t *testing.T) {
-			resp := forwardRoute(t, router, http.MethodPost, "/projects/default/sandboxes/sbx-judge/"+action, "{}", token, routeTestPoolID, lead)
+		t.Run(action+" its worker", func(t *testing.T) {
+			resp := forwardRoute(t, router, http.MethodPost, "/projects/default/sandboxes/sbx-worker/"+action, "{}", token, routeTestPoolID, lead)
+			if resp.Code != http.StatusConflict || !strings.Contains(resp.Body.String(), "archived") {
+				t.Fatalf("status = %d, want the service's 409 for an archived discobox; body = %s", resp.Code, resp.Body.String())
+			}
+		})
+		t.Run(action+" a person's discobox", func(t *testing.T) {
+			resp := forwardRoute(t, router, http.MethodPost, "/projects/default/sandboxes/sbx-persons/"+action, "{}", token, routeTestPoolID, lead)
 			if resp.Code != http.StatusForbidden {
 				t.Fatalf("status = %d, want 403; body = %s", resp.Code, resp.Body.String())
 			}
@@ -131,19 +133,19 @@ func TestASandboxPowersAnyDiscoboxInItsProjectButTheJudge(t *testing.T) {
 	}
 }
 
-// A discobox changes the meta of any discobox in its project, and the call
-// gets past the role and the handler into the sandbox service: neither refuses
-// a sandbox caller (ADR 26-10-08-447 §1, ADR 26-10-14-320 §1). The change both
-// sets and removes one tag, so the service refuses it as the caller's mistake
-// before it starts the discobox or leases a client to it; what lies past that
-// point is the scope check authorizeRequestedScopes already admits, and is not
-// reached here.
-func TestASandboxTagsAnyDiscoboxInItsProject(t *testing.T) {
+// A discobox changes the meta of the discoboxes it created, and the call gets
+// past the role and the handler into the sandbox service: neither refuses a
+// sandbox caller (ADR 26-10-08-447 §1). The change both sets and removes one
+// tag, so the service refuses it as the caller's mistake before it starts the
+// discobox or leases a client to it. A person's discobox is refused before the
+// service is asked.
+func TestASandboxTagsTheDiscoboxesItCreated(t *testing.T) {
 	skipWithoutDocker(t)
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
 	router := newTestApp(ctx, t, db)
 	projectID, key := seedCredentialRoutePool(ctx, t, db.Write, router)
+	allowDiscoboxAPI(ctx, t, db.Write, routeTestSandboxID)
 	token := signPoolAssertion(t, projectID, routeTestPoolID, key, poolauth.ScopeSandboxForward)
 	lead := routeTestSandboxID
 	for _, sandbox := range []*model.Sandbox{
@@ -157,13 +159,13 @@ func TestASandboxTagsAnyDiscoboxInItsProject(t *testing.T) {
 	}
 	const body = `{"setTags":{"to-delete":""},"removeTags":["to-delete"]}`
 
-	for _, target := range []string{"sbx-worker", "sbx-persons"} {
-		t.Run(target, func(t *testing.T) {
-			resp := forwardRoute(t, router, http.MethodPatch, "/projects/default/sandboxes/"+target+"/meta", body, token, routeTestPoolID, lead)
-			if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "both set and removed") {
-				t.Fatalf("status = %d, want the service's 400 for the change; body = %s", resp.Code, resp.Body.String())
-			}
-		})
+	resp := forwardRoute(t, router, http.MethodPatch, "/projects/default/sandboxes/sbx-worker/meta", body, token, routeTestPoolID, lead)
+	if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "both set and removed") {
+		t.Fatalf("status = %d, want the service's 400 for the change; body = %s", resp.Code, resp.Body.String())
+	}
+	resp = forwardRoute(t, router, http.MethodPatch, "/projects/default/sandboxes/sbx-persons/meta", body, token, routeTestPoolID, lead)
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 for a person's discobox; body = %s", resp.Code, resp.Body.String())
 	}
 }
 

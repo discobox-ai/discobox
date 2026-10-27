@@ -114,7 +114,6 @@ func (h *Handler) ListHTTPAudit(ctx context.Context, params serverapi.ListHTTPAu
 		SandboxID: params.SandboxId.Or(""),
 		PoolID:    params.PoolId.Or(""),
 		Host:      params.Host.Or(""),
-		UseID:     params.UseId.Or(""),
 		Since:     params.Since.Or(time.Time{}),
 		Until:     params.Until.Or(time.Time{}),
 		MinStatus: params.MinStatus.Or(0),

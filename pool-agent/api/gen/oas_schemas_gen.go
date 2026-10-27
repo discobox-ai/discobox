@@ -233,7 +233,7 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 
 // One of the sandbox's project's gateways (ADR 26-10-16-470), as proxy/gateway.Route reads it. A
 // request beneath match is forwarded to target, with match's path replaced by target's, once every
-// other policy has judged it as the sandbox sent it.
+// other policy has decided on it as the sandbox sent it.
 // Ref: #/components/schemas/Gateway
 type Gateway struct {
 	Name           string                   `json:"name"`
@@ -4302,13 +4302,13 @@ type PoolHTTPAuditExchange struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// True when the proxy refused the request itself and never sent it -- by its destination policy, by
-	// the credential judge, at the discobox API's gate, or because the control plane could not resolve a
-	// credential it carries. blockedReason says which, and why.
+	// a credential's routes, at the discobox API's gate, or because the control plane could not resolve
+	// a credential it carries. blockedReason says which, and why.
 	Blocked bool `json:"blocked"`
 	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
-	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential
-	// unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that
-	// could not set its headers -- then the reason.
+	// policy, "route:" for a credential whose routes do not allow the request, "gate:" for the discobox
+	// API's gate, "credential unavailable:" for a credential the control plane could not resolve,
+	// "gateway:" for a gateway that could not set its headers -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// True when the response came from the pool's response cache.
 	CacheHit OptBool `json:"cacheHit"`
@@ -4334,8 +4334,6 @@ type PoolHTTPAuditExchange struct {
 	// them. It is optional because a pool agent older than ADR 26-10-01-240 does not send it, and absent
 	// means no secret was named.
 	SwappedSecretIds []string `json:"swappedSecretIds"`
-	// Approved credential uses whose sentinels were swapped into this request.
-	SwappedUseIds []string `json:"swappedUseIds"`
 	// True for an upgraded (e.g. WebSocket) connection.
 	Upgrade OptBool `json:"upgrade"`
 	// The upgrade protocol.
@@ -4412,11 +4410,6 @@ func (s *PoolHTTPAuditExchange) GetStatus() int {
 // GetSwappedSecretIds returns the value of SwappedSecretIds.
 func (s *PoolHTTPAuditExchange) GetSwappedSecretIds() []string {
 	return s.SwappedSecretIds
-}
-
-// GetSwappedUseIds returns the value of SwappedUseIds.
-func (s *PoolHTTPAuditExchange) GetSwappedUseIds() []string {
-	return s.SwappedUseIds
 }
 
 // GetUpgrade returns the value of Upgrade.
@@ -4504,11 +4497,6 @@ func (s *PoolHTTPAuditExchange) SetSwappedSecretIds(val []string) {
 	s.SwappedSecretIds = val
 }
 
-// SetSwappedUseIds sets the value of SwappedUseIds.
-func (s *PoolHTTPAuditExchange) SetSwappedUseIds(val []string) {
-	s.SwappedUseIds = val
-}
-
 // SetUpgrade sets the value of Upgrade.
 func (s *PoolHTTPAuditExchange) SetUpgrade(val OptBool) {
 	s.Upgrade = val
@@ -4543,13 +4531,13 @@ type PoolHTTPAuditExchangeDetail struct {
 	// Where the gateway the request fell under sent it (ADR 26-10-16-470); absent when none did.
 	ForwardedUrl OptString `json:"forwardedUrl"`
 	// True when the proxy refused the request itself and never sent it -- by its destination policy, by
-	// the credential judge, at the discobox API's gate, or because the control plane could not resolve a
-	// credential it carries. blockedReason says which, and why.
+	// a credential's routes, at the discobox API's gate, or because the control plane could not resolve
+	// a credential it carries. blockedReason says which, and why.
 	Blocked bool `json:"blocked"`
 	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
-	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential
-	// unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that
-	// could not set its headers -- then the reason.
+	// policy, "route:" for a credential whose routes do not allow the request, "gate:" for the discobox
+	// API's gate, "credential unavailable:" for a credential the control plane could not resolve,
+	// "gateway:" for a gateway that could not set its headers -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// Why the response cache could not be used.
 	CacheError OptString `json:"cacheError"`
@@ -4609,8 +4597,6 @@ type PoolHTTPAuditExchangeDetail struct {
 	// them. It is optional because a pool agent older than ADR 26-10-01-240 does not send it, and absent
 	// means no secret was named.
 	SwappedSecretIds []string `json:"swappedSecretIds"`
-	// Approved credential uses whose sentinels were swapped into this request.
-	SwappedUseIds []string `json:"swappedUseIds"`
 	// True for an upgraded (e.g. WebSocket) connection.
 	Upgrade OptBool `json:"upgrade"`
 	// Bytes the sandbox sent over the upgraded connection.
@@ -4798,11 +4784,6 @@ func (s *PoolHTTPAuditExchangeDetail) GetStreamSessionId() OptString {
 // GetSwappedSecretIds returns the value of SwappedSecretIds.
 func (s *PoolHTTPAuditExchangeDetail) GetSwappedSecretIds() []string {
 	return s.SwappedSecretIds
-}
-
-// GetSwappedUseIds returns the value of SwappedUseIds.
-func (s *PoolHTTPAuditExchangeDetail) GetSwappedUseIds() []string {
-	return s.SwappedUseIds
 }
 
 // GetUpgrade returns the value of Upgrade.
@@ -5010,11 +4991,6 @@ func (s *PoolHTTPAuditExchangeDetail) SetSwappedSecretIds(val []string) {
 	s.SwappedSecretIds = val
 }
 
-// SetSwappedUseIds sets the value of SwappedUseIds.
-func (s *PoolHTTPAuditExchangeDetail) SetSwappedUseIds(val []string) {
-	s.SwappedUseIds = val
-}
-
 // SetUpgrade sets the value of Upgrade.
 func (s *PoolHTTPAuditExchangeDetail) SetUpgrade(val OptBool) {
 	s.Upgrade = val
@@ -5213,8 +5189,8 @@ type PoolSandboxCreateRequest struct {
 	// their real secret values are swapped at runtime.
 	Sentinels OptNilStringArray `json:"sentinels"`
 	// Routes keyed by stable sentinel, for an injected secret that carries routes (ADR 26-10-02-924).
-	// Every request carrying such a sentinel must fall on one, and is judged when the most specific
-	// routes it falls on all carry a use.
+	// Every request carrying such a sentinel must fall on one, and the most specific routes it falls on
+	// must not be blocked.
 	SentinelRoutes OptNilPoolSandboxCreateRequestSentinelRoutes `json:"sentinelRoutes"`
 	// Secret-bound environment variable name to sentinel placeholder value. Delivered to the sandbox
 	// through a channel separate from sandbox.json (docs/adr/0012 section 3), independently refreshed as
@@ -5377,8 +5353,8 @@ func (s *PoolSandboxCreateRequestSecretEnv) init() PoolSandboxCreateRequestSecre
 }
 
 // Routes keyed by stable sentinel, for an injected secret that carries routes (ADR 26-10-02-924).
-// Every request carrying such a sentinel must fall on one, and is judged when the most specific
-// routes it falls on all carry a use.
+// Every request carrying such a sentinel must fall on one, and the most specific routes it falls on
+// must not be blocked.
 type PoolSandboxCreateRequestSentinelRoutes map[string][]SentinelRoute
 
 func (s *PoolSandboxCreateRequestSentinelRoutes) init() PoolSandboxCreateRequestSentinelRoutes {
@@ -6286,8 +6262,7 @@ func (s *ResolvedHarnessConfigEnv) init() ResolvedHarnessConfigEnv {
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
 	HarnessConfigId OptString `json:"harnessConfigId"`
-	// What this sandbox exists for, carried through to its sandbox configuration; judge is the project's
-	// judge.
+	// What this sandbox exists for, carried through to its sandbox configuration.
 	HarnessMode         OptSandboxConfigHarnessMode `json:"harnessMode"`
 	Model               OptString                   `json:"model"`
 	ModelReasoningLevel OptString                   `json:"modelReasoningLevel"`
@@ -6523,14 +6498,12 @@ func (s *SandboxConfigFeatures) init() SandboxConfigFeatures {
 	return m
 }
 
-// What this sandbox exists for, carried through to its sandbox configuration; judge is the project's
-// judge.
+// What this sandbox exists for, carried through to its sandbox configuration.
 type SandboxConfigHarnessMode string
 
 const (
 	SandboxConfigHarnessModeRun    SandboxConfigHarnessMode = "run"
 	SandboxConfigHarnessModeConfig SandboxConfigHarnessMode = "config"
-	SandboxConfigHarnessModeJudge  SandboxConfigHarnessMode = "judge"
 )
 
 // AllValues returns all SandboxConfigHarnessMode values.
@@ -6538,7 +6511,6 @@ func (SandboxConfigHarnessMode) AllValues() []SandboxConfigHarnessMode {
 	return []SandboxConfigHarnessMode{
 		SandboxConfigHarnessModeRun,
 		SandboxConfigHarnessModeConfig,
-		SandboxConfigHarnessModeJudge,
 	}
 }
 
@@ -6548,8 +6520,6 @@ func (s SandboxConfigHarnessMode) MarshalText() ([]byte, error) {
 	case SandboxConfigHarnessModeRun:
 		return []byte(s), nil
 	case SandboxConfigHarnessModeConfig:
-		return []byte(s), nil
-	case SandboxConfigHarnessModeJudge:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -6564,9 +6534,6 @@ func (s *SandboxConfigHarnessMode) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxConfigHarnessModeConfig:
 		*s = SandboxConfigHarnessModeConfig
-		return nil
-	case SandboxConfigHarnessModeJudge:
-		*s = SandboxConfigHarnessModeJudge
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -6847,10 +6814,15 @@ func (s *SandboxUser) SetUID(val OptInt64) {
 // path is a prefix matched on whole segments.
 // Ref: #/components/schemas/SentinelRoute
 type SentinelRoute struct {
-	Host string    `json:"host"`
-	Path OptString `json:"path"`
-	// The use a request on this route is judged against; empty sends it unjudged.
-	UseId OptString `json:"useId"`
+	// Refuse every request on this route; a more specific route still answers for the paths beneath it.
+	Blocked OptBool   `json:"blocked"`
+	Host    string    `json:"host"`
+	Path    OptString `json:"path"`
+}
+
+// GetBlocked returns the value of Blocked.
+func (s *SentinelRoute) GetBlocked() OptBool {
+	return s.Blocked
 }
 
 // GetHost returns the value of Host.
@@ -6863,9 +6835,9 @@ func (s *SentinelRoute) GetPath() OptString {
 	return s.Path
 }
 
-// GetUseId returns the value of UseId.
-func (s *SentinelRoute) GetUseId() OptString {
-	return s.UseId
+// SetBlocked sets the value of Blocked.
+func (s *SentinelRoute) SetBlocked(val OptBool) {
+	s.Blocked = val
 }
 
 // SetHost sets the value of Host.
@@ -6876,11 +6848,6 @@ func (s *SentinelRoute) SetHost(val string) {
 // SetPath sets the value of Path.
 func (s *SentinelRoute) SetPath(val OptString) {
 	s.Path = val
-}
-
-// SetUseId sets the value of UseId.
-func (s *SentinelRoute) SetUseId(val OptString) {
-	s.UseId = val
 }
 
 // Ref: #/components/schemas/SourceDelivery

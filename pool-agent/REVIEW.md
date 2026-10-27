@@ -57,7 +57,12 @@ timeout, readiness — is a change to the runtime-config record
 (`decideRuntimeConfig`) and a delivery, never a file. And nothing the pool
 decides is read back from the sandbox's volumes, which the sandbox can write:
 keep a record of your own beside the tree (`runtime-config.json`,
-`project-layer.json`) instead (ADR 26-10-08-127).
+`project-layer.json`, `file-secrets.json`) instead (ADR 26-10-08-127).
+`sandbox.json` above all: the pool writes it once, and from then on it is the
+box's to replace — with a symlink to `/dev/zero` or a FIFO, which the pool
+agent, as root on the host, would follow and read without bound. It has been
+read back twice (`recordedSandboxUser`, and the credential environment before
+`file-secrets.json`); record what you need from the request that wrote it.
 
 The one other write is the agent's placement in a delivered sandbox's
 container, before each start and never into a running one: the agent layer,

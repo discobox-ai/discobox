@@ -17,9 +17,6 @@ var (
 	// ErrInUse indicates a resource cannot be deleted because another live
 	// resource still references it.
 	ErrInUse = errors.New("resource is in use")
-	// ErrAgentVariableHeld indicates a discobox's variable is bound to another
-	// secret that a live grant still delivers (BindAgentSecret).
-	ErrAgentVariableHeld = errors.New("agent credential variable is held by another secret")
 )
 
 // Store owns GORM handles for application persistence.

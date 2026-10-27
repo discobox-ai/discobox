@@ -471,20 +471,10 @@ const (
 	// HarnessModeConfig exists to run a harness's setup command once, driven
 	// by the control plane, rather than to be worked in.
 	HarnessModeConfig = "config"
-	// HarnessModeJudge is the project's judge (ADR 26-09-22-838 §1): it answers
-	// judging asks and nothing else. No terminal is launched in it, no
-	// repository services start, and it is not powered off when idle, since
-	// being ready is the whole of what it is for.
-	HarnessModeJudge = "judge"
 )
 
 // WorkedIn reports whether a sandbox in this harness mode exists to be worked
-// in. The modes that answer no each exist to do one thing for somebody else.
+// in. A configure sandbox exists to run its harness's setup once instead.
 func WorkedIn(harnessMode string) bool {
-	switch harnessMode {
-	case HarnessModeConfig, HarnessModeJudge:
-		return false
-	default:
-		return true
-	}
+	return harnessMode != HarnessModeConfig
 }

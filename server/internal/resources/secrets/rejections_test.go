@@ -28,7 +28,7 @@ func TestRecordRejectionOfATokenNeedsAPerson(t *testing.T) {
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
-	err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretRejectedOutcome, "")
+	err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretRejectedOutcome)
 	if err != nil {
 		t.Fatalf("record rejection: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestRecordRejectionRenewsAnOAuthCredentialBeforeJudgingIt(t *testing.T) {
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
-	err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, "")
+	err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome)
 	if err != nil {
 		t.Fatalf("record rejection: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestRecordRejectionRecordsAFailedRenewal(t *testing.T) {
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
-	err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedAfterRetryOutcome, "use-1")
+	err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedAfterRetryOutcome)
 	if err != nil {
 		t.Fatalf("record rejection: %v", err)
 	}
@@ -122,9 +122,6 @@ func TestRecordRejectionRecordsAFailedRenewal(t *testing.T) {
 	got := mustRejection(t, st, sec.ID, "api.anthropic.com")
 	if got.Reason != model.SecretRejectionReasonRefreshFailed {
 		t.Fatalf("reason = %q, want %q", got.Reason, model.SecretRejectionReasonRefreshFailed)
-	}
-	if got.UseID != "use-1" {
-		t.Fatalf("use = %q, want the use the sentinel was minted for", got.UseID)
 	}
 }
 
@@ -148,7 +145,7 @@ func TestRecordRejectionAfterASuccessfulRenewalSaysSo(t *testing.T) {
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
-	err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, "")
+	err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome)
 	if err != nil {
 		t.Fatalf("record rejection: %v", err)
 	}
@@ -182,7 +179,7 @@ func TestRecordRejectionRenewsOncePerCooldown(t *testing.T) {
 	}
 
 	for _, sandbox := range []string{"sb-1", "sb-2", "sb-3"} {
-		err := svc.RecordSandboxSecretRejection(ctx, "pool-1", sandbox, "SENTINEL-"+sandbox, "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, "")
+		err := svc.RecordSandboxSecretRejection(ctx, "pool-1", sandbox, "SENTINEL-"+sandbox, "api.anthropic.com", resourcesecrets.SecretRejectedOutcome)
 		if err != nil {
 			t.Fatalf("record rejection from %s: %v", sandbox, err)
 		}
@@ -240,7 +237,7 @@ func TestARenewalThatFixesNothingIsNotRecoveryTwice(t *testing.T) {
 
 	// The first rejection renews, and nothing is recorded: the new credential
 	// deserves its chance.
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome); err != nil {
 		t.Fatalf("record first rejection: %v", err)
 	}
 	if got := mustRejections(t, st); len(got) != 0 {
@@ -248,7 +245,7 @@ func TestARenewalThatFixesNothingIsNotRecoveryTwice(t *testing.T) {
 	}
 
 	// The renewed credential is refused too. That is the end of the renewing.
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome); err != nil {
 		t.Fatalf("record second rejection: %v", err)
 	}
 	if n := minted.Load(); n != 1 {
@@ -273,7 +270,7 @@ func TestRecordRejectionIsPerHost(t *testing.T) {
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
 	for _, host := range []string{"api.github.com", "uploads.github.com"} {
-		if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", host, resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+		if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", host, resourcesecrets.SecretRejectedOutcome); err != nil {
 			t.Fatalf("record rejection at %s: %v", host, err)
 		}
 	}
@@ -282,7 +279,7 @@ func TestRecordRejectionIsPerHost(t *testing.T) {
 	}
 
 	// And a clearance is per host too.
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretAcceptedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretAcceptedOutcome); err != nil {
 		t.Fatalf("record acceptance: %v", err)
 	}
 	remaining := mustRejections(t, st)
@@ -302,10 +299,10 @@ func TestAcceptedOutcomeClearsARejection(t *testing.T) {
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretRejectedOutcome); err != nil {
 		t.Fatalf("record rejection: %v", err)
 	}
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretAcceptedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretAcceptedOutcome); err != nil {
 		t.Fatalf("record acceptance: %v", err)
 	}
 	if got := mustRejections(t, st); len(got) != 0 {
@@ -323,7 +320,7 @@ func TestReplacingASecretValueClearsItsRejections(t *testing.T) {
 	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretRejectedOutcome); err != nil {
 		t.Fatalf("record rejection: %v", err)
 	}
 
@@ -375,7 +372,7 @@ func TestListSecretRejectionsNamesTheHarnessThatOwnsTheCredential(t *testing.T) 
 	createSandboxWithHarness(t, st, "sb-1", "pool-1", cfg.ID)
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome); err != nil {
 		t.Fatalf("record rejection: %v", err)
 	}
 
@@ -408,7 +405,7 @@ func TestRecordRejectionRefusesAnotherPoolsSandbox(t *testing.T) {
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
-	err := svc.RecordSandboxSecretRejection(ctx, "pool-2", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretRejectedOutcome, "")
+	err := svc.RecordSandboxSecretRejection(ctx, "pool-2", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretRejectedOutcome)
 	if err == nil {
 		t.Fatal("record rejection from the wrong pool succeeded, want a refusal")
 	}
@@ -425,7 +422,7 @@ func TestRecordRejectionRefusesAnUnknownOutcome(t *testing.T) {
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", "shrugged", ""); err == nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", "shrugged"); err == nil {
 		t.Fatal("unknown outcome was accepted, want a refusal")
 	}
 }
@@ -480,7 +477,7 @@ func TestATokenEndpointOutageIsNotAVerdict(t *testing.T) {
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome); err != nil {
 		t.Fatalf("record rejection: %v", err)
 	}
 	if got := mustRejections(t, st); len(got) != 0 {
@@ -492,7 +489,7 @@ func TestATokenEndpointOutageIsNotAVerdict(t *testing.T) {
 
 	// And nothing is suppressed: the next report tries the renewal again, which
 	// is what makes this recoverable rather than sticky.
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome); err != nil {
 		t.Fatalf("record second rejection: %v", err)
 	}
 	if n := calls.Load(); n != 2 {
@@ -523,7 +520,7 @@ func TestARefusedRenewalIsAVerdict(t *testing.T) {
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome); err != nil {
 		t.Fatalf("record rejection: %v", err)
 	}
 	got := mustRejection(t, st, sec.ID, "api.anthropic.com")
@@ -612,7 +609,7 @@ func TestAStandingRejectionSurvivesAnUnjudgeableRenewal(t *testing.T) {
 		t.Fatalf("age the rejection: %v", err)
 	}
 
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.anthropic.com", resourcesecrets.SecretRejectedOutcome); err != nil {
 		t.Fatalf("record rejection: %v", err)
 	}
 

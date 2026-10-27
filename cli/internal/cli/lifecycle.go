@@ -64,11 +64,10 @@ its workspace, and the work in it, is kept.`,
 // discobox answers to the name it is listed under.
 //
 // A discobox can run these: the sandbox role allows start, stop, and restart
-// on any discobox in its project but the judge, and the listing (ADR
-// 26-10-02-478 §1, ADR 26-10-14-320 §1). Its every call is also judged against the use it was
-// approved for, so a command given only full IDs — which name a discobox
+// on the discoboxes it created, and the listing (ADR 26-10-02-478 §1, ADR
+// 26-10-27-880 §9). A command given only full IDs — which name a discobox
 // outright — makes no listing call at all: `discobox stop sbx_…` is the one
-// call its use describes, as `admin box stop` was.
+// call it needs, as `admin box stop` was.
 func (a *App) newLifecycleCommand(action sandboxLifecycle) *cobra.Command {
 	return &cobra.Command{
 		Use:   action.verb + " DISCOBOX...",

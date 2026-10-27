@@ -2,7 +2,6 @@ package secrets
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -11,47 +10,42 @@ import (
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
-	"github.com/discobox-ai/discobox/pkg/judge"
-	"github.com/discobox-ai/discobox/pkg/policy"
-	"github.com/discobox-ai/discobox/pkg/wellknown"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
-	"golang.org/x/sync/errgroup"
 )
 
-// SandboxGrants are the use grants a discobox is created with and the agent
+// SandboxGrants are the use grants a discobox is created with and the
 // bindings that deliver them, built and checked but not yet stored.
 type SandboxGrants struct {
 	Grants   []*model.SecretGrant
 	Bindings []*model.SandboxSecret
-	// Delegations are, when a discobox gives the uses, the delegation grant
-	// each grant is made under, by index (ADR 26-09-30-782 §1); nil when a
+	// Delegations are, when a discobox gives the grants, the delegation grant
+	// each grant is made under, by index (ADR 26-10-27-880 §3); nil when a
 	// person gives them. The create holds each grant to its delegation again
 	// in its transaction (HoldDelegations).
 	Delegations []*model.SecretGrant
-	// Grantor is the discobox giving the uses, when one is.
+	// Grantor is the discobox giving the grants, when one is.
 	Grantor string
 }
 
-// PrepareSandboxGrants checks the uses a discobox is being created with and
-// builds the grants and bindings that give them to it (ADR 0140 §4). They are
-// stored by the create, in the transaction that stores the discobox, so a
-// create whose grants cannot all be minted creates nothing.
+// PrepareSandboxGrants checks the credentials a discobox is being created
+// with and builds the grants, and the bindings that deliver them, that give
+// them to it (ADR 26-10-27-880 §5). They are stored by the create, in the
+// transaction that stores the discobox, so a create whose grants cannot all
+// be minted creates nothing. A binding is an ordinary injected one: the new
+// discobox finds a sentinel in the variable named, which its pool swaps on
+// the hosts the grant covers.
 //
 // Each is held to what a person's grant of the same shape is held to: a
-// concrete host, every one within the secret's own binding, a lifetime within its limit,
-// and at least one use. One environment variable carries one credential.
+// concrete host, every one within the secret's own binding, and a lifetime
+// within its limit. One environment variable carries one credential.
 //
 // A discobox giving them is held to what it may hand on, as when it approves a
-// request (ADR 26-09-30-782 §1): each grant is made under a live delegation
-// grant it holds of that secret, covering the hosts and fitting the lifetime,
-// whose policy its policy is within (ADR 26-10-20-782 §11) — the
-// longest-lived that covers it, asked once every grant has passed what can
-// refuse it without the judge. A lifetime it did not name is then fitted to
-// that delegation.
+// request: each grant is made under a live delegation grant it holds of that
+// secret, covering the hosts and fitting the lifetime — the longest-lived that
+// does. A lifetime it did not name is fitted to that delegation.
 func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sandbox *model.Sandbox, requested []apimodel.SandboxGrant) (SandboxGrants, error) {
 	sandboxID := sandbox.ID
 	var out SandboxGrants
@@ -65,15 +59,7 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 	if byDiscobox {
 		out.Grantor = principal.SandboxID
 	}
-	var credentials []string
-	// What each grant a discobox gives may be made under, and whether its
-	// lifetime was named, by index: which delegation it is made under, and so
-	// how long a lifetime nobody named lasts, waits for its policy to be held
-	// to theirs.
-	var fitting [][]*model.SecretGrant
-	var givenPolicies []*policy.Policy
-	var namedTTL []bool
-	var ttls []int64
+	now := time.Now().UTC()
 	boundTo := map[string]string{}
 	for _, in := range requested {
 		if byDiscobox {
@@ -93,9 +79,10 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 		if err := guardGrantHosts(secret, hosts); err != nil {
 			return SandboxGrants{}, err
 		}
-		// A lifetime fitted to a delegation later only ever shortens, never
-		// to forever, so one within the secret's limit now stays within it.
+		// A lifetime fitted to a delegation only ever shortens, never to
+		// forever, so one within the secret's limit stays within it.
 		ttl := in.GrantTTLSeconds.Or(secret.MaxGrantTTL)
+		var delegation *model.SecretGrant
 		if byDiscobox {
 			delegations, err := s.delegationsOf(ctx, projectID, principal.SandboxID, secret.ID, hosts)
 			if err != nil {
@@ -109,49 +96,15 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 			if delegations, err = delegationsFitting(delegations, ttl, named); err != nil {
 				return SandboxGrants{}, err
 			}
-			fitting = append(fitting, delegations)
-			namedTTL = append(namedTTL, named)
-			ttls = append(ttls, ttl)
+			delegation = delegations[0]
+			if !named {
+				if ttl, err = fitTTL(delegation, ttl, now); err != nil {
+					return SandboxGrants{}, err
+				}
+			}
 		}
 		if err := guardGrantTTL(secret, ttl); err != nil {
 			return SandboxGrants{}, err
-		}
-		given, err := convertAPIUses(in.Uses)
-		if err != nil {
-			return SandboxGrants{}, err
-		}
-		uses, err := mintUseIDs(given)
-		if err != nil {
-			return SandboxGrants{}, err
-		}
-		if len(uses) == 0 {
-			return SandboxGrants{}, apperrors.NewStatusError(http.StatusBadRequest, "a grant for a new discobox requires at least one use")
-		}
-		// A policy given to a new discobox is for it, so its variables
-		// resolve from the new discobox's record — $this is the discobox
-		// created, not the one creating it (ADR 26-10-20-782 §4).
-		var approved *policy.Policy
-		givenPolicy, err := services.PolicyFromAPI(in.Policy)
-		if err != nil {
-			return SandboxGrants{}, err
-		}
-		if err := guardPolicy(uses, givenPolicy); err != nil {
-			return SandboxGrants{}, err
-		}
-		// A discobox gives a policy only within one it was delegated (ADR
-		// 26-10-20-782 §11), which is held to below.
-		if byDiscobox {
-			givenPolicies = append(givenPolicies, givenPolicy)
-		}
-		if givenPolicy != nil {
-			facts := sandbox.PolicyFacts()
-			resolved := givenPolicy.Resolve(facts)
-			// Bound, a value can be longer than its variable: what a judge is
-			// shown is held to what a judge job can carry (judge.PolicyFits).
-			if err := judge.PolicyFits(resolved.Bound(facts)); err != nil {
-				return SandboxGrants{}, apperrors.NewStatusError(http.StatusBadRequest, "policy: "+err.Error())
-			}
-			approved = &resolved
 		}
 		grant := &model.SecretGrant{
 			ProjectID: projectID,
@@ -160,26 +113,21 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 			ScopeKey:  sandboxID,
 			Hosts:     hosts,
 			GrantedBy: grantedBy,
-			Uses:      uses,
-			Policy:    approved,
-			EnvName:   envName,
 			Purpose:   model.SecretGrantPurposeUse,
 		}
+		if delegation != nil {
+			grant.DelegationID = delegation.ID
+		}
 		if ttl > 0 {
-			expires := time.Now().UTC().Add(time.Duration(ttl) * time.Second)
+			expires := now.Add(time.Duration(ttl) * time.Second)
 			grant.ExpiresAt = &expires
 		}
 		out.Grants = append(out.Grants, grant)
-		out.Delegations = append(out.Delegations, nil)
-		credential := secret.Name
-		if id := strings.TrimSpace(in.WellKnownId.Or("")); id != "" {
-			credential = id
-		}
-		credentials = append(credentials, credential)
+		out.Delegations = append(out.Delegations, delegation)
 
 		switch previous, bound := boundTo[envName]; {
 		case !bound:
-			binding, err := st.NewAgentBinding(ctx, projectID, sandboxID, envName, secret)
+			binding, err := st.NewSandboxBinding(ctx, projectID, sandboxID, envName, secret)
 			if err != nil {
 				return SandboxGrants{}, err
 			}
@@ -190,55 +138,13 @@ func (s *Service) PrepareSandboxGrants(ctx context.Context, projectID string, sa
 				fmt.Sprintf("%s is given two different credentials; one environment variable carries one", envName))
 		}
 	}
-	if byDiscobox {
-		// Grants are asked about at once, not one after another: the create
-		// is a discobox's own call, held open by its pool's gate for two
-		// minutes, and each grant's asks are bounded together to fit inside
-		// that (services.DelegationBound) — one grant after another, two slow
-		// ones would not. The first refusal cancels the rest, and is the
-		// answer.
-		judging, judgingCtx := errgroup.WithContext(ctx)
-		for i, grant := range out.Grants {
-			judging.Go(func() error {
-				// Under the one bound a grant has: of the delegations its
-				// lifetime fits, the first whose policy covers the one given.
-				ctx, cancel := context.WithTimeout(judgingCtx, services.DelegationBound)
-				defer cancel()
-				delegation, err := s.delegationCovering(ctx, projectID, principal.SandboxID, fitting[i], givenPolicies[i], sandbox, "", credentials[i], grant.Hosts)
-				if err != nil {
-					return err
-				}
-				out.Delegations[i], grant.DelegationID = delegation, delegation.ID
-				return nil
-			})
-		}
-		if err := judging.Wait(); err != nil {
-			return SandboxGrants{}, err
-		}
-		now := time.Now().UTC()
-		for i, grant := range out.Grants {
-			if namedTTL[i] {
-				continue
-			}
-			ttl, err := fitTTL(out.Delegations[i], ttls[i], now)
-			if err != nil {
-				return SandboxGrants{}, err
-			}
-			grant.ExpiresAt = nil
-			if ttl > 0 {
-				expires := now.Add(time.Duration(ttl) * time.Second)
-				grant.ExpiresAt = &expires
-			}
-		}
-	}
 	return out, nil
 }
 
 // delegatedGrant resolves the secret a grant a discobox gives names, among the
 // secrets it was delegated and nothing else, before anything reads it: a
-// secret named by ID, or a prefix of one, as IDs are matched elsewhere; a
-// well-known credential by the secret marked for it, which must be one it was
-// delegated. A secret it was not delegated — or one that does not exist —
+// secret named by ID, or a prefix of one, as IDs are matched elsewhere. A
+// secret it was not delegated — or one that does not exist —
 // answers with the same refusal, so naming secrets cannot tell it which the
 // project holds, how they are bound, or what they are called (as for an
 // approval's --secret).
@@ -252,13 +158,6 @@ func (s *Service) delegatedGrant(ctx context.Context, projectID, grantorID strin
 	delegated := map[string]bool{}
 	for i := range delegations {
 		delegated[delegations[i].SecretID] = true
-	}
-	if id := strings.TrimSpace(in.WellKnownId.Or("")); id != "" {
-		marked, err := s.store.FindSecretByWellKnownID(ctx, projectID, id)
-		if err != nil || !delegated[marked.ID] {
-			return in, notDelegated
-		}
-		return in, nil
 	}
 	named := strings.TrimSpace(in.SecretId.Or(""))
 	if named == "" {
@@ -284,8 +183,8 @@ func (s *Service) delegatedGrant(ctx context.Context, projectID, grantorID strin
 
 // HoldDelegations holds each grant a discobox gives on a create to the
 // delegation it was made under, read again in the create's transaction: still
-// the grantor's, live, covering the hosts, with the policy it was held to, and
-// lasting at least as long as the grant. A delegation revoked or changed since
+// the grantor's, live, covering the hosts, and lasting at least as long as the
+// grant. A delegation revoked or changed since
 // the grants were prepared refuses the create, which then creates nothing.
 func HoldDelegations(ctx context.Context, txStore *store.Store, grants SandboxGrants) error {
 	now := time.Now().UTC()
@@ -307,67 +206,25 @@ func HoldDelegations(ctx context.Context, txStore *store.Store, grants SandboxGr
 }
 
 // sandboxGrantTarget is the secret, variable, and hosts one grant for a new
-// discobox names: by a well-known ID, whose marked secret answers it and whose
-// variable and host it carries, or by a secret and a variable spelled out. The
-// hosts default to the secret's host, or the well-known credential's first.
-//
-// A gate is not given this way. Giving a discobox the discobox API lets it
-// create discoboxes and give them credentials in turn, so a person grants it,
-// by approving a discobox's own request (ADR 0140 §4).
+// discobox names. The hosts default to the secret's host.
 func sandboxGrantTarget(ctx context.Context, st *store.Store, projectID string, in apimodel.SandboxGrant) (*model.Secret, string, []string, error) {
 	bad := func(format string, args ...any) (*model.Secret, string, []string, error) {
 		return nil, "", nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(format, args...))
 	}
 	hosts, named := askedHosts(in.Hosts)
-	id := strings.TrimSpace(in.WellKnownId.Or(""))
 	secretID, envName := strings.TrimSpace(in.SecretId.Or("")), strings.TrimSpace(in.EnvVar.Or(""))
-	if id == "" {
-		if secretID == "" {
-			return bad("a grant for a new discobox names a secret, or a well-known credential by its ID")
-		}
-		secret, err := st.GetSecret(ctx, projectID, secretID)
-		if err != nil {
-			return nil, "", nil, apperrors.NotFound(err, "secret not found")
-		}
-		// Named by its secret's ID, a gate is still a gate: the rule is about
-		// the credential, not the spelling.
-		if isGateSecret(secret) {
-			return nil, "", nil, gateGivenOnlyByAPerson(secret.WellKnownID)
-		}
-		if envName == "" || strings.ContainsAny(envName, "=\x00") {
-			return bad("a grant for a new discobox requires the environment variable its agent receives it in")
-		}
-		if !named {
-			hosts = hostscope.List(secret.Host)
-		}
-		return secret, envName, hosts, nil
+	if secretID == "" {
+		return bad("a grant for a new discobox names a secret")
 	}
-	if secretID != "" || envName != "" {
-		return bad("%s names its own secret and variable; give the ID or spell them out, not both", id)
-	}
-	if known, ok := wellknown.Lookup(id); ok && known.Gate {
-		return nil, "", nil, gateGivenOnlyByAPerson(id)
-	}
-	_, envName, hosts, err := wellKnownAsk(id, "", "", hosts)
+	secret, err := st.GetSecret(ctx, projectID, secretID)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, "", nil, apperrors.NotFound(err, "secret not found")
 	}
-	secret, err := st.FindSecretByWellKnownID(ctx, projectID, id)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return bad("no secret fulfills %s yet: a person marks one by approving the first request for it", id)
-		}
-		return nil, "", nil, err
+	if envName == "" || strings.ContainsAny(envName, "=\x00") {
+		return bad("a grant for a new discobox requires the environment variable it receives the credential in")
+	}
+	if !named {
+		hosts = hostscope.List(secret.Host)
 	}
 	return secret, envName, hosts, nil
-}
-
-// gateGivenOnlyByAPerson refuses handing a gate on. A discobox that could give
-// the discobox API could give every credential onward without a person seeing
-// it, so the API is granted only by a person approving a discobox's own
-// request for it (ADR 0140 §4) — never at create, and never by a discobox
-// answering the inbox.
-func gateGivenOnlyByAPerson(id string) error {
-	return apperrors.NewStatusError(http.StatusForbidden,
-		fmt.Sprintf("%s is granted by a person, approving a discobox's own request for it", id))
 }

@@ -224,15 +224,13 @@ that mark.
 
 | Use | Routes | Stopped sandbox | Not usable yet | Failed, no container |
 | --- | --- | --- | --- | --- |
-| action | exec attach, create, input, start, delete; service start, stop, restart; HTTP, tcp and udp; ssh; the worktree's git; the judge; harness configure; meta write | the pool is asked to start it before the lease is handed out | waited for | repaired, once |
+| action | exec attach, create, input, start, delete; service start, stop, restart; HTTP, tcp and udp; ssh; the worktree's git; harness configure; meta write | the pool is asked to start it before the lease is handed out | waited for | repaired, once |
 | read | exec logs, events, resources; service logs; a source's origin, and what the pool's cache holds of it | started by the pool agent when the request arrives | answered at once | answered at once |
 | inspect | exec list and get; service list and get; tools | never started: the pool agent waits out a boot under way and refuses it otherwise, and the refusal is answered from the sandbox's last inventory ([below](#a-sandbox-that-is-not-running-is-read-from-its-inventory)) | answered at once | answered at once |
 | observe | terminal screen, exec wait, exec-events, harness-hooks | refused by the pool agent, a boot under way included; the screen is answered from the inventory | answered at once | answered at once |
 
-`AcquireSandboxHTTPClientForServer` is the same acquire for a call the server
-makes itself, with no caller scopes to check: putting a job to the project's
-judge, which bounds it with `judge.ReachWait`. An acquire for an attach is
-refused for a sandbox principal: a discobox does not attach to another.
+An acquire for an attach is refused for a sandbox principal: a discobox does
+not attach to another.
 
 ### An action waits
 
@@ -595,7 +593,7 @@ and is answered as a 400 about the archive rather than an error about the pool
   source's shared data, and its references' absent.
 - **No secret value ever enters an archive.** Bindings travel as
   `{env, secret name}`; anonymous secrets (minted from an inline value,
-  referenced only by ID) and agent-requested bindings do not travel at all. On
+  referenced only by ID) do not travel at all. On
   import, each binding resolves against this project's secret of that name, and
   what cannot be matched is a `Warnings` entry rather than a refusal.
 - **Export refuses a running sandbox** here and again in the pool agent. The
@@ -638,21 +636,27 @@ recoverable and collected by the project's ordinary retention.
 A discobox may create discoboxes through the discobox API, in the sandbox role
 ([ADR 0140](../../../../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)).
 What it creates is created as the user who created it (`auth.ActingUserID`),
-and it may give the new discobox uses of project secrets it was delegated —
-grants minted in the create's own transaction, each held to a delegation
-grant it holds and its uses to the judge's reading of that delegation's (see
-the secrets package's
-[DESIGN.md](../secrets/DESIGN.md#a-discobox-created-with-uses)). It may not give
-inline secrets, which put a value inside the new discobox where anything in it
-could read it.
+and it may give the new discobox project secrets it was delegated — grants
+and bindings minted in the create's own transaction, each held to a
+delegation grant it holds (see the secrets package's
+[DESIGN.md](../secrets/DESIGN.md#a-discobox-created-with-secrets)). It may not
+give inline secrets, which put a value inside the new discobox where anything
+in it could read it. A create may set `DiscoboxAPI`, whether the new discobox
+may call the discobox API at all; a discobox creating one may set it only when
+it has it itself, and only a person changes it later
+([ADR 26-10-27-880](../../../../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
+§9). The flag is not confined to the credentials its holder was given: a
+discobox with it may create discoboxes on any harness config in the project,
+and each runs with that harness config's credentials. Like the egress level it
+has its own setter (`store.SetSandboxDiscoboxAPI`) and is never written by a
+whole-row save.
 
 The new discobox records its creator (`CreatedBySandboxID`, immutable after
 create). The creator authorizes one thing by it: reading and answering the
 secret requests the new discobox files, within what the creator was delegated
 ([ADR 26-09-30-782](../../../../docs/adr/26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md)
-§§2–3). Everything else the role does to a discobox it may do to any in its
-project but the project's judge, and which one is the judge's question
-([ADR 26-10-14-320](../../../../docs/adr/26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md)):
+§§2–3), and everything else the role does to a discobox: it acts only on the
+discoboxes it created (ADR 26-10-27-880 §9):
 delivering its source; reading and typing into its terminals, and reading an
 exec's record, transcript and events; starting, stopping, restarting,
 repairing and upgrading it, which are the same instructions a person sends and
@@ -661,9 +665,8 @@ logs and starting, stopping and restarting them; reaching its ports over HTTP;
 and changing its name, description and tags, whose write into the discobox
 leases the `exec:write` its terminal input already does. A sandbox's calls
 lease only `sandbox:write`, `exec:read`, `exec:write` and `sandbox:http`
-(`authorizeRequestedScopes`), and never attach. The creator is a fact the judge
-is told about the discobox a call names. Nothing cascades by it: no archive,
-no purge, no inherited grant.
+(`authorizeRequestedScopes`), and never attach. Nothing cascades by the
+creator: no archive, no purge, no inherited grant.
 
 It may not create one that can reach a destination it cannot
 (`refuseWiderThanCreator`, [Proxy policy](#proxy-policy)): the new discobox's effective
@@ -955,8 +958,10 @@ the sandbox as failed. A sandbox no pool holds yet is skipped. Every send of a
 sentinel set — `ensure`'s create, a live push, this delivery — re-reads the
 routes once its pool has answered and marks the delivery again if they moved
 (`markSentinelsIfStale`), so a create that read the routes before a change and
-landed after its delivery cannot leave the old ones in place. A judge discobox's injected sentinels carry no routes
-(`Sandbox.HoldsInjectedSecretsToRoutes`).
+landed after its delivery cannot leave the old ones in place. An approved
+agent request marks the asking sandbox's delivery too
+(`MarkSandboxSentinelsDirtyTx`), in the transaction that bound its variable,
+so the binding reaches it while it runs.
 
 ## The Sandbox's Own Address
 

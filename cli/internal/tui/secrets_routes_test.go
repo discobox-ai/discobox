@@ -16,8 +16,8 @@ func routesFixture(t *testing.T) (*Model, *fakeSource) {
 	ds.projectSecrets = []Secret{
 		{ID: "sec_routed", Name: "copilot", Type: "token", MaxTTL: time.Hour, Routes: []SecretRoute{
 			{Host: "githubcopilot.com"},
-			{Host: "githubcopilot.com", Path: "/mcp", Use: "Read-only GitHub queries"},
-			{Host: "github.com", Use: "Reading a pull request"},
+			{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
+			{Host: "github.com", Blocked: true},
 		}},
 		{ID: "sec_plain", Name: "github", Type: "token", MaxTTL: time.Hour},
 	}
@@ -27,7 +27,7 @@ func routesFixture(t *testing.T) (*Model, *fakeSource) {
 	return m, ds
 }
 
-// Opening a secret says where it may be sent and which of those are judged.
+// Opening a secret says where it may be sent and which of those are blocked.
 func TestOpeningASecretShowsItsRoutes(t *testing.T) {
 	t.Parallel()
 	m, _ := routesFixture(t)
@@ -36,8 +36,8 @@ func TestOpeningASecretShowsItsRoutes(t *testing.T) {
 	body := dialogText(m)
 	for _, want := range []string{
 		"githubcopilot.com · allowed",
-		"githubcopilot.com/mcp · judged: Read-only GitHub queries",
-		"github.com · judged: Reading a pull request",
+		"githubcopilot.com/mcp · blocked",
+		"github.com · blocked",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body = %q, want %q", body, want)
@@ -52,7 +52,7 @@ func TestRoutesAreEditedRowByRow(t *testing.T) {
 	m, ds := routesFixture(t)
 
 	send(t, m, keyPress("e"))
-	if got := formValue(t, m, secretRouteKey+"1"); got != "githubcopilot.com/mcp=Read-only GitHub queries" {
+	if got := formValue(t, m, secretRouteKey+"1"); got != "githubcopilot.com/mcp=blocked" {
 		t.Fatalf("second route row = %q", got)
 	}
 	if got := formValue(t, m, secretRouteKey+"3"); got != "" {
@@ -60,11 +60,11 @@ func TestRoutesAreEditedRowByRow(t *testing.T) {
 	}
 	clearRow(t, m, secretRouteKey+"0")
 	clearRow(t, m, secretRouteKey+"2")
-	typeInto(t, m, secretRouteKey+"3", "api.github.com/repos/ = Open a pull request")
+	typeInto(t, m, secretRouteKey+"3", "api.github.com/repos/ = blocked")
 	drain(t, m, submitForm(t, m), 0)
 	want := []SecretRoute{
-		{Host: "githubcopilot.com", Path: "/mcp", Use: "Read-only GitHub queries"},
-		{Host: "api.github.com", Path: "/repos", Use: "Open a pull request"},
+		{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
+		{Host: "api.github.com", Path: "/repos", Blocked: true},
 	}
 	if len(ds.updated) != 1 || ds.updated[0].Routes == nil || !slices.Equal(*ds.updated[0].Routes, want) {
 		t.Fatalf("updated = %#v, want routes %#v", ds.updated, want)
@@ -95,18 +95,18 @@ func TestRoutesAreClearedAndAnUntouchedCardSendsNone(t *testing.T) {
 }
 
 // A row that is not a route is refused on the card, naming it, and nothing is
-// sent.
+// sent: a use after "=" is no longer one.
 func TestAMalformedRouteKeepsTheCardUp(t *testing.T) {
 	t.Parallel()
 	m, ds := routesFixture(t)
 
 	send(t, m, keyPress("e"))
-	typeInto(t, m, secretRouteKey+"3", "github.com/a//b")
+	typeInto(t, m, secretRouteKey+"3", "github.com/a=Read-only queries")
 	send(t, m, keyPress("ctrl+s"))
 	if m.dialog == nil || m.dialog.kind != dlgForm {
 		t.Fatalf("dialog = %s, want the card kept up", describe(m.dialog))
 	}
-	if !strings.Contains(m.dialog.form.err, "github.com/a//b") {
+	if !strings.Contains(m.dialog.form.err, "github.com/a=Read-only queries") {
 		t.Fatalf("err = %q, want the row named", m.dialog.form.err)
 	}
 	if len(ds.updated) != 0 {
@@ -122,9 +122,9 @@ func TestANewSecretTakesARoute(t *testing.T) {
 	send(t, m, keyPress("n"))
 	typeInto(t, m, "name", "github")
 	typeInto(t, m, "token", "ghp_example")
-	typeInto(t, m, secretRouteKey+"0", "github.com=Read-only GitHub queries")
+	typeInto(t, m, secretRouteKey+"0", "github.com")
 	drain(t, m, submitForm(t, m), 0)
-	want := []SecretRoute{{Host: "github.com", Use: "Read-only GitHub queries"}}
+	want := []SecretRoute{{Host: "github.com"}}
 	if len(ds.createdSecrets) != 1 || !slices.Equal(ds.createdSecrets[0].Routes, want) {
 		t.Fatalf("created = %#v, want the route sent with it", ds.createdSecrets)
 	}

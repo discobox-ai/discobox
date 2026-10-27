@@ -101,9 +101,8 @@ func TestRunOnceKeepsStderrOutOfItsMessage(t *testing.T) {
 
 // A command whose children outlive it must not outlive its deadline. Killing
 // the child alone leaves whatever it started holding the output open, and the
-// wait would not return while anything can still write to it — which, for the
-// judge, means a single wedged wrapper and no verdict from that discobox ever
-// again.
+// wait would not return while anything can still write to it — which means a
+// single wedged helper holds its caller open for good.
 func TestRunOnceEndsWithItsContextEvenWithChildrenLeftRunning(t *testing.T) {
 	dir := t.TempDir()
 	writeProgram(t, dir, "wedge", "#!/bin/sh\nsleep 120 &\nsleep 120\n")
@@ -167,8 +166,7 @@ func TestRunOnceRefusesAJobItCannotRun(t *testing.T) {
 
 // A command gets a TMPDIR of its own, and it is gone once the command is, even
 // a command killed by its deadline — which runs no cleanup of its own, since
-// its whole group is killed. A judge's wrapper stages a CLI's state and a copy
-// of its account there.
+// its whole group is killed. A helper may stage a CLI's state there.
 func TestRunOnceRemovesItsTmpdirHoweverItEnds(t *testing.T) {
 	dir := t.TempDir()
 	said := filepath.Join(dir, "tmpdir")

@@ -2,7 +2,6 @@ package secrets_test
 
 import (
 	"net/http"
-	"strings"
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -12,7 +11,7 @@ import (
 )
 
 // delegationGrant is a person's grant to the test discobox of a GitHub token
-// for it to hand on, in the shape delegation requires: one discobox, with uses.
+// for it to hand on, in the shape delegation requires: one discobox.
 func delegationGrant(t *testing.T, secretID string) services.CreateSecretGrantBody {
 	t.Helper()
 	return services.CreateSecretGrantBody{
@@ -20,10 +19,7 @@ func delegationGrant(t *testing.T, secretID string) services.CreateSecretGrantBo
 		Scope:    serverapi.CreateSecretGrantBodyScopeSandbox,
 		ScopeKey: serverapi.NewOptString(testSandboxID),
 		Hosts:    []string{"github.com"},
-		EnvVar:   serverapi.NewOptString("GH_TOKEN"),
-		Uses:     serverapi.NewOptNilSecretUseArray([]serverapi.SecretUse{{Description: "push a branch to org/repo"}}),
 		Purpose:  serverapi.NewOptCreateSecretGrantBodyPurpose(serverapi.CreateSecretGrantBodyPurposeDelegate),
-		Policy:   policyAsked(t),
 	}
 }
 
@@ -46,8 +42,8 @@ func TestAGrantIsForUseUnlessItSaysOtherwise(t *testing.T) {
 }
 
 // A delegation grant is for handing the credential on, and for nothing else:
-// it is bound to nothing, offered to nobody, and found by no lookup that hands
-// a credential out. A grant is one or the other, so the person approving it is
+// it is bound to nothing, listed as what its holder may hand on, and found by
+// no lookup that hands a credential out. A grant is one or the other, so the person approving it is
 // agreeing to one thing.
 func TestADelegationGrantIsNotTheHoldersToUse(t *testing.T) {
 	ctx := testPrincipalContext()
@@ -66,8 +62,8 @@ func TestADelegationGrantIsNotTheHoldersToUse(t *testing.T) {
 		t.Fatalf("bindings = %#v, %v; want nothing bound for a holder that may not use it", bindings, err)
 	}
 	credentials, err := svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID)
-	if err != nil || len(credentials) != 0 {
-		t.Fatalf("credentials = %#v, %v; want nothing offered to its holder", credentials, err)
+	if err != nil || len(credentials) != 1 || credentials[0].Purpose != model.SecretGrantPurposeDelegate || credentials[0].EnvName != "" {
+		t.Fatalf("credentials = %#v, %v; want the delegation listed, with no variable", credentials, err)
 	}
 	if found, err := st.FindLiveGrant(ctx, "project-1", secret.ID, "github.com",
 		[]store.GrantScope{{Scope: model.SecretGrantScopeSandbox, ScopeKey: testSandboxID}}); err == nil {
@@ -75,8 +71,8 @@ func TestADelegationGrantIsNotTheHoldersToUse(t *testing.T) {
 	}
 }
 
-// Delegation is one discobox's, a use at a time; anything else is refused
-// rather than minted as something other than was asked for.
+// Delegation is one discobox's; anything else is refused rather than minted
+// as something other than was asked for.
 func TestADelegationGrantRefusesTheWrongShape(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, _ := newAgentCredentialService(t)
@@ -85,12 +81,6 @@ func TestADelegationGrantRefusesTheWrongShape(t *testing.T) {
 	projectWide := delegationGrant(t, secret.ID)
 	projectWide.Scope = serverapi.CreateSecretGrantBodyScopeProject
 	projectWide.ScopeKey = serverapi.OptString{}
-	projectWide.Uses = serverapi.OptNilSecretUseArray{}
-	projectWide.EnvVar = serverapi.OptString{}
-
-	noUses := delegationGrant(t, secret.ID)
-	noUses.Uses = serverapi.OptNilSecretUseArray{}
-	noUses.EnvVar = serverapi.OptString{}
 
 	nobody := delegationGrant(t, secret.ID)
 	nobody.ScopeKey = serverapi.NewOptString("sbx-nobody")
@@ -100,24 +90,11 @@ func TestADelegationGrantRefusesTheWrongShape(t *testing.T) {
 		want int
 	}{
 		"wider than one discobox":             {projectWide, http.StatusBadRequest},
-		"without uses":                        {noUses, http.StatusBadRequest},
 		"held by a discobox that isn't there": {nobody, http.StatusNotFound},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := svc.CreateSecretGrant(ctx, "project-1", tc.body)
 			requireStatus(t, err, tc.want)
 		})
-	}
-}
-
-// A grant a person makes names its uses on one line each, as an ask does.
-func TestAGrantsUseIsWrittenOnOneLine(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, _ := newAgentCredentialService(t)
-	secret := createBearerSecret(ctx, t, svc)
-	body := delegationGrant(t, secret.ID)
-	body.Uses = serverapi.NewOptNilSecretUseArray([]serverapi.SecretUse{{Description: "push a branch to org/repo\r\nnever main"}})
-	if _, err := svc.CreateSecretGrant(ctx, "project-1", body); err == nil || !strings.Contains(err.Error(), "one line") {
-		t.Fatalf("err = %v, want the use refused for running over several lines", err)
 	}
 }

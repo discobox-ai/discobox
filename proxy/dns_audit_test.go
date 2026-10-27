@@ -114,7 +114,7 @@ func TestControlDNSRefusesHTTPFiltersAndCursors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, query := range []string{"host=example.com", "use_id=use_abc", "min_status=400", "blocked=true", "after_id=http_1", "id=http_1"} {
+	for _, query := range []string{"host=example.com", "min_status=400", "blocked=true", "after_id=http_1", "id=http_1"} {
 		resp, err := client.get(context.Background(), url+"/audit/dns?"+query, token)
 		if err != nil {
 			t.Fatal(err)

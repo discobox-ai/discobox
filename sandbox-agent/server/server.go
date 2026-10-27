@@ -617,9 +617,6 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// command is interactive and reads inputs seeded into the sandbox after it is
 	// running, so launching it at boot would race that seeding. Attaching to the
 	// virtual primary exec id launches it (see terminal.ResolvePrimary).
-	//
-	// A judge launches no terminal at all: it answers its pool and is worked in
-	// by nobody (ADR 26-09-22-838 §1).
 	if config.WorkedIn(cfg.HarnessMode) {
 		// The wakes that fell due while the sandbox was down are handed to the
 		// harness this boot launches, and nowhere else (ADR 26-10-16-337 §7).
@@ -665,9 +662,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// The sandbox powers itself off once nothing has happened in it for the
 	// idle timeout, and the pool agent's auto-start brings it back (ADR 0108).
 	// A configure-mode sandbox runs one setup command for a flow the control
-	// plane drives, so its lifetime belongs to that flow and not to this. A
-	// judge is idle exactly when nothing is being judged, and powering it off
-	// then would put a cold start in front of the next credential anyone uses.
+	// plane drives, so its lifetime belongs to that flow and not to this.
 	if config.WorkedIn(cfg.HarnessMode) {
 		go built.autostop.Run(ctx)
 	}

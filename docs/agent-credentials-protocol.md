@@ -1,23 +1,24 @@
 # Agent Credentials Protocol v1
 
 A small HTTP protocol an agent inside a sandbox uses to **ask a human** for a
-credential it was not provisioned with, and then **use** it. Three operations:
-`list`, `request`, and `get`. A second
-verb, [trust](#trust--ask-for-a-host-to-be-trusted), asks for a host whose
+credential it was not provisioned with, and to learn when it has it. Two
+operations: `list` and `request` (with its poll), and
+[environment](#environment--what-is-in-my-variables-now), which a process
+started before a grant reads to take it up. A second verb,
+[trust](#trust--ask-for-a-host-to-be-trusted), asks for a host whose
 certificate the sandbox's egress refuses to be trusted for it. A third,
 [audit](#audit--what-became-of-my-requests), reads back what the egress did
-with the sandbox's own requests. A fourth,
-[facts](#facts--what-am-i-working-on), says what the implementation recorded
-about the caller, for writing a policy against.
+with the sandbox's own requests.
 
-The protocol knows nothing about Discobox but the shape of a policy an ask
-may carry (below) and of the facts its variables resolve against, which are
-the root `policy` package's. It is the contract between the
-in-sandbox CLI (`discobox-access`) and whatever serves it, so the same CLI
-works against Discobox's sandbox-agent and against any other implementation.
+The protocol knows nothing about Discobox and never carries a value. It is the
+contract between the in-sandbox CLI (`discobox-access`) and whatever serves it,
+so the same CLI works against Discobox's sandbox-agent and against any other
+implementation.
 
-Decision record:
-[ADR 0031](adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md).
+Decision records:
+[ADR 0031](adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md),
+and [ADR 26-10-27-880](adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md),
+which removed the judge, policies, uses and the `get` operation.
 
 ## Transport
 
@@ -37,7 +38,7 @@ A failure is the HTTP status plus a body carrying a **stable code** and a
 message:
 
 ```json
-{ "code": "denied", "error": "no live approved use use_7f3c…" }
+{ "code": "denied", "error": "this request is not this sandbox's own" }
 ```
 
 | Code | Status | What the caller should do |
@@ -59,16 +60,29 @@ to know, and the remedy is the same for all three.
 
 The message never repeats the code. They are two halves of one answer.
 
-## The value a `get` returns is not necessarily a secret
+## A granted credential arrives in its variable
 
-`get` returns **a value to place in an environment variable**, not a promise
-about what that value is. An implementation may return the real credential. The
-Discobox implementation deliberately returns an *ephemeral sentinel* — a
-byte-shaped lookalike that means nothing outside a short activation window, and
-that the egress proxy exchanges for the real credential on the way out.
+The protocol hands out nothing. An implementation delivers a granted
+credential itself, in the variable the request named. Discobox puts a
+*sentinel* there — a byte-shaped lookalike of the credential — in the
+environment of every command started from then on; its egress proxy swaps it
+for the real value on the hosts and routes the grant covers, and refuses a
+request on a route it does not. A process already running when the grant
+lands does not see it: it reads what is delivered now with `environment`.
 
-A client must therefore treat the value as opaque: pass it to the child process
-and do not parse, log, persist, or reuse it after `expiresAt`.
+## `environment` — what is in my variables now?
+
+```
+GET /v1/credentials/environment
+200 {"variables": {"GH_TOKEN": "ghp_…"}}
+```
+
+Every variable a credential is delivered in, and what is delivered there now.
+It is for a process that started before a grant — a harness's tool shell
+inherits the environment the harness was launched with, never a later one —
+to take the credential up: `eval "$(discobox-access env)"`. It never carries a
+value; in Discobox each one is the credential's sentinel, which only that
+sandbox's egress exchanges.
 
 ## `list` — what am I allowed to use?
 
@@ -83,21 +97,18 @@ GET /v1/credentials
       "name": "github",
       "envVar": "GITHUB_TOKEN",
       "hosts": ["api.github.com"],
-      "uses": [
-        {
-          "useId": "use_7f3c…",
-          "description": "Open a pull request against the current repository",
-          "expiresAt": "2026-08-12T18:00:00Z"
-        }
-      ]
+      "purpose": "use",
+      "expiresAt": "2026-08-12T18:00:00Z"
     }
   ]
 }
 ```
 
-`list` never returns values. `expiresAt` is when the approval behind the use
-lapses; an absent `expiresAt` means it does not expire on its own. `hosts` are
-where the credential may be sent.
+`list` never returns values. `envVar` is where the credential is delivered,
+`hosts` where it may be sent, and `expiresAt` when the approval lapses; absent,
+it does not expire on its own. A credential with `purpose` `delegate` is one
+the caller may give the sandboxes it creates, and is not delivered to the
+caller itself, so it has no `envVar`.
 
 ## `request` — ask for something new
 
@@ -111,14 +122,6 @@ POST /v1/credentials/requests
   "envVar": "GITHUB_TOKEN",
   "hosts": ["api.github.com"],
   "justification": "The task asks me to open a PR with the fix.",
-  "uses": [{ "description": "Open a pull request against the current repository" }],
-  "policy": {
-    "statements": [
-      { "effect": "allow", "actions": ["create"], "resourceType": "pull request",
-        "scope": { "type": "repository", "name": "$primary.repo" } }
-    ],
-    "definitions": { "pull request": "a GitHub pull request", "repository": "a GitHub repository" }
-  },
   "grantTTLSeconds": 14400
 }
 ```
@@ -127,188 +130,56 @@ POST /v1/credentials/requests
 { "requestId": "req_1a2b…", "status": "pending", "purpose": "use" }
 ```
 
+`name` is the credential asked for, `envVar` the variable it is wanted in, and
+`hosts` the destinations it will be sent to: one, or several for a credential
+one tool sends to more than one site — Copilot CLI sends one GitHub token to
+`api.github.com` and to `githubcopilot.com`. Each covers the hosts beneath it
+([ADR 26-10-02-393](adr/26-10-02-393-a-credential-request-and-its-grant-may-name-several-hosts.md)).
+All three are required; an ask without them is `invalid`. A body that still
+names a destination as `host`, as a client that predates `hosts` sends, is
+`invalid` rather than read without it; an empty `host` is no destination.
+`justification` is shown to the person answering; nothing evaluates it.
+
 `grantTTLSeconds` is optional: how long the agent asks the approval to last. It
 is a suggestion, not a term — Discobox shows it to the approver as the answer
 already chosen, and they may choose any other. Absent or `0` asks for nothing in
-particular, so forever cannot be asked for: the approver may still grant it, but
-the one answer that never comes back to be asked again is never the default.
+particular, so forever cannot be asked for. An ask runs from 1 second to
+**2592000 (thirty days)**; outside that range it is `invalid`. The ceiling is
+part of the contract, because an ask is only worth anything if it can be shown
+to a human as an answer: a ten-year ask is one keystroke from a credential
+that outlives the work.
 
-An ask runs from 1 second to **2592000 (thirty days)**; outside that range it is
-`invalid`. The ceiling is part of the contract rather than a Discobox limit,
-because an ask is only worth anything if it can be shown to a human as an
-answer: a ten-year ask is one keystroke from a credential that outlives the
-work, and a number large enough to overflow the duration a client converts it to
-lands back near zero, which reads as forever.
-
-`purpose` is optional: `use`, the default, asks to use the credential; `delegate`
-asks to hand it on to other sandboxes instead. One or the other, never both, so
-a person approving it agrees to one thing. Discobox mints a delegation grant for
-an approved ask to delegate: its policy bounds every policy the asking sandbox
-may hand on, and it authorizes nothing the asking sandbox sends itself, so `list` does
-not report it and `use` does not take a value under it. Any other value is
+`purpose` is optional: `use`, the default, asks to use the credential;
+`delegate` asks to give it to the sandboxes the caller creates. One or the
+other, never both. Only a person answers an ask to delegate. Any other value is
 `invalid`. The answer, and every poll of it, carries the `purpose` the
-implementation recorded; one that predates purposes reports none, and has
-recorded an ask to use.
+implementation recorded.
 
-`hosts` are the destinations the credential will be sent to: one, or several
-for a credential one tool sends to more than one site — Copilot CLI sends one
-GitHub token to `api.github.com` and to `githubcopilot.com`. Each covers the
-hosts beneath it, and the approval is one grant and one set of uses, spent at any of
-them ([ADR 26-10-02-393](adr/26-10-02-393-a-credential-request-and-its-grant-may-name-several-hosts.md)).
-`hosts` replaced `host` in place, under `v1`: the protocol's only clients are
-Discobox's own `discobox-access`, which a discobox upgrade or recreation
-replaces. A body that still names a destination as `host` is `invalid`,
-rather than read without it; an empty `host`, which such a client sends when
-it named none, is no destination.
-A destination is required by the Discobox implementation, which refuses to mint
-a host-unscoped approval through this flow. Discobox also requires `name`, a valid `envVar`, at least one use
-with a description, and answers `invalid` without them; every
-implementation requires a `policy` (below). A second ask for the
-same `id`, `envVar`, hosts (in any order), and `purpose` while one is still pending returns
-that pending request rather than a new one.
-
-`id` is optional: a well-known credential's reverse-DNS ID, such as
-`com.github.api`, in place of `name`, `envVar`, and the hosts, which an
-implementation fills from what it knows the ID to mean. What the ask does spell
-out is passed on as it was sent, so the implementation that knows the ID is the
-one that checks it. An implementation that
-knows no such ID answers `invalid`, and so does one given an ID beside a `name`,
-`envVar`, or a host the ID does not name. An ask by ID that names no host is
-for the ID's first host alone; `com.github.api` is `github.com`, and may also
-be asked for at `githubcopilot.com` by naming it. Discobox's registry is the root
-`wellknown` package.
-
-```json
-{
-  "id": "com.github.api",
-  "justification": "The task asks me to open a PR with the fix.",
-  "uses": [{ "description": "Open a pull request against the current repository" }],
-  "policy": {
-    "statements": [
-      { "effect": "allow", "actions": ["create"], "resourceType": "pull request",
-        "scope": { "type": "repository", "name": "$primary.repo" } }
-    ],
-    "definitions": { "pull request": "a GitHub pull request", "repository": "a GitHub repository" }
-  }
-}
-```
-
-An ask carries a `policy` beside its `uses`: statements of actions on
-resources in scopes, with a definition for every word that is not a default
-([ADR 26-10-20-782](adr/26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md)
-§1; the shape is the root `policy` package). An implementation refuses one
-that does not validate as `invalid`, and an ask without one the same way,
-saying what a policy is (`agentcreds.NoPolicyAsked`): every ask carries a
-policy, since it is what the grant enforces (#312). The granted status and `list` carry the approved policy, with
-`resolved` holding what each variable — `$this`, `$primary.repo` and the
-rest — resolved to for the calling sandbox. `uses` name the job, in the
-agent's own words, and are still what `get` takes; where Discobox judges what
-a use is spent on, it judges it against the policy, whichever use was named.
-The wire carries the policy's structure only. A client lets its caller write
-statements as sentences and shows them back as sentences — the `policy`
-package's `ParseStatements` and `FormatStatements`, whose grammar is
-`pkg/policy/DESIGN.md`'s — and should validate before it sends, so a malformed
-policy is refused where it was written; `discobox-access request --statement`
-does both.
-
-```json
-{
-  "id": "com.github.api",
-  "justification": "The task asks me to fix issue #43 as a pull request.",
-  "uses": [{ "description": "Fix issue #43 in acme/web as a pull request" }],
-  "policy": {
-    "statements": [
-      { "effect": "allow", "actions": ["push"], "resourceType": "branch", "name": "fix-43",
-        "scope": { "type": "repository", "name": "$primary.repo" }, "when": null, "unless": null }
-    ],
-    "definitions": { "push": "update a branch's commits", "branch": "a git branch", "repository": "a GitHub repository" }
-  }
-}
-```
+A second ask for the same `envVar`, hosts (in any order) and `purpose` while
+one is still pending returns that pending request rather than a new one.
 
 Approval is human-latency, so `request` is **asynchronous**: it answers
-`202 Accepted` immediately and the client polls. A project may hold approval
-rules that answer a request without a person
-([ADR 26-10-12-330](adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md));
-the protocol is the same either way. A rule is for the repositories it names —
-it answers a discobox whose primary source is one of them — or for every
-discobox in the project, and what it may approve is a policy: a request is
-covered when the `policy` it asks for falls within the rule's, compared by
-code, with the judge reading only conditions code cannot compare. A rule
-only ever approves, so a request none covers stays
-`pending` for a person, and a client cannot tell — and need not know — which
-of the two answered.
+`202 Accepted` immediately and the client polls.
 
 ```
 GET /v1/credentials/requests/{requestId}
 ```
 
 ```json
-{ "requestId": "req_1a2b…", "status": "granted", "purpose": "use", "uses": [{ "useId": "use_7f3c…", "description": "…", "expiresAt": "2026-08-12T18:00:00Z" }] }
+{ "requestId": "req_1a2b…", "status": "granted", "purpose": "use",
+  "credential": { "name": "github", "envVar": "GITHUB_TOKEN", "hosts": ["api.github.com"], "expiresAt": "2026-08-12T18:00:00Z" } }
 ```
 
-`status` is one of `pending`, `granted`, `denied`. `uses` is present once
-granted — the approver may have edited the descriptions, so the granted uses
-are authoritative, not the requested ones. For `purpose` `use` they carry the
-ids `get` accepts; for `delegate` they name the job the credential is
-delegated for, and `get` accepts none of them. Each granted use's `expiresAt` is when the
-approval lapses, as `list` reports it: the lifetime the approver chose, which
-need not be the one asked for, and absent when it does not expire on its own.
-Discobox reports an approval whose grant has since been revoked as `denied`,
-and a request id that is not the calling sandbox's own as `not_found`.
+`status` is one of `pending`, `granted`, `denied`. `credential` is present once
+granted, as `list` reports it — the hosts and lifetime the approver chose,
+which need not be the ones asked for. In Discobox a request may also be
+answered by the sandbox that created the caller, when it holds a grant to
+delegate that credential; the protocol is the same either way. Discobox
+reports an approval whose grant has since been revoked as `denied`, and a
+request id that is not the calling sandbox's own as `not_found`.
 
 Blocking is the client's job (`--wait` on the CLI), built on this poll. There is
 no long-poll and no synchronous request primitive.
-
-## `get` — take a value for one command
-
-```
-POST /v1/credentials/use
-```
-
-```json
-{
-  "useId": "use_7f3c…",
-  "command": ["gh", "pr", "create", "--body-file", "-"],
-  "stdin": { "content": "Fixes #42" },
-  "reported": { "workingDirectory": "/src/repo", "repositoryRoot": "/src/repo" }
-}
-```
-
-```json
-{ "envVar": "GITHUB_TOKEN", "value": "ghp_…", "expiresAt": "2026-08-12T17:05:00Z" }
-```
-
-The caller **declares the command it is about to run**, and with it what that
-command will read on standard input (`stdin`: the text shown, and in `missing`
-a sentence for whatever was not) and where the caller says it runs
-(`reported`: its directory, its repository root, and the commit and subject of
-a git ref the command names, each at most `MaxReportedBytes`). All of it is the
-caller's word.
-
-An implementation **may judge the command before it hands out a value**, and
-Discobox does
-([ADR 26-09-22-838](adr/26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) §3):
-the pool asks the project's judge, on trusted ground, whether the command
-carries out the approved use, and mints nothing unless it allows it. The
-verdict is recorded by the control plane before the pool mints
-([ADR 0091](adr/0091-a-credential-is-not-issued-without-a-verdict-on-record.md)).
-A refusal, or a judge that could not be reached, answers `denied` with the
-judge's reason. A server that does not judge commands (`judgeCommands: false`,
-[ADR 26-10-02-054](adr/26-10-02-054-commands-are-judged-by-default-and-requests-by-opt-in.md))
-mints without asking. Discobox answers `invalid` when `useId` or `command` is
-missing.
-
-Because a judge may have to be brought up first, a `get` can take minutes: a
-client waits up to `UseTimeout` (4 minutes) for it, where every other call is
-bounded at seconds.
-
-The declaration is not the request that reaches the internet. In Discobox the
-proxy still holds every sentinel to its grant's hosts and its window, and a
-server that opts in (`judgeCredentials`) judges each request that carries one.
-
-`expiresAt` is the end of this value's window. A client that needs the
-credential again after it passes calls `get` again rather than holding the value.
 
 ## `trust` — ask for a host to be trusted
 
@@ -327,15 +198,17 @@ POST /v1/trusts/requests
 {
   "host": "34.70.64.109:443",
   "justification": "The user's GKE cluster; its API server uses the cluster's own CA.",
-  "uses": [{ "description": "Read-only kubectl: get/list/describe pods, deployments, events" }],
   "suppliedCA": "-----BEGIN CERTIFICATE-----…",
   "grantTTLSeconds": 14400
 }
 ```
 
 `host` is `host:port`, `:443` when no port is named; a trust covers exactly that
-endpoint and nothing beneath it. `uses` say what the sandbox will send the host,
-and every request it then sends there is judged against them. `suppliedCA` is
+endpoint and nothing beneath it. A trust says which certificate to accept there
+and nothing about what may be sent: a credential sent to a trusted host is held
+to its own grant and routes like any other
+([ADR 26-10-27-880](adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §10).
+`justification` is shown to the person answering. `suppliedCA` is
 optional: a CA the caller already has from a source it trusts. It is refused as
 `invalid` unless the chain the implementation observes verifies against it.
 `grantTTLSeconds` is read as a credential request's is.
@@ -356,7 +229,7 @@ GET /v1/trusts/requests/{requestId}
 
 ```json
 { "requestId": "treq_…", "status": "granted", "host": "34.70.64.109:443",
-  "pin": { "kind": "ca", "sha256": "…" }, "uses": [{ "useId": "use_…", "description": "…" }] }
+  "pin": { "kind": "ca", "sha256": "…" } }
 ```
 
 `status` is `pending`, `granted`, `denied`, or `unneeded`. Each certificate in
@@ -370,10 +243,10 @@ GET /v1/trusts
 
 ```json
 { "trusts": [ { "host": "34.70.64.109:443", "pin": { "kind": "ca", "sha256": "…" },
-                "uses": [ … ], "expiresAt": "2026-09-25T00:00:00Z" } ] }
+                "expiresAt": "2026-09-25T00:00:00Z" } ] }
 ```
 
-There is no use call: a trust hands nothing to a process. It changes what the
+A trust hands nothing to a process. It changes what the
 implementation's egress accepts, for every process in the sandbox.
 A client that carries its own CA rather than the sandbox's trust store still
 has to be pointed at whatever the egress presents; in Discobox that is the
@@ -388,7 +261,8 @@ which is how an agent learns to ask.
 ## `audit` — what became of my requests
 
 An implementation's egress refuses some requests — a host it does not trust,
-a credential used outside its approved use — and says why in the response. A
+a credential sent somewhere its routes do not allow — and says why in the
+response. A
 program that does not pass that on leaves the agent with a failure and no
 reason. The audit verb reads the reason back. Decision record:
 [ADR 26-10-02-678](adr/26-10-02-678-a-sandbox-reads-its-own-egress-audit-through-the-access-protocol.md).
@@ -401,7 +275,7 @@ GET /v1/audit/http?host=api.github.com&blocked=true&since=2026-10-02T12:00:00Z&l
 { "exchanges": [ { "id": "http_812", "createdAt": "2026-10-02T12:00:01Z",
   "method": "POST", "url": "https://api.github.com/repos/o/r/pulls",
   "host": "api.github.com", "status": 403, "blocked": true,
-  "blockedReason": "judge: …", "durationMs": 41, "useIds": ["use_7f3c…"] } ] }
+  "blockedReason": "route: …", "durationMs": 41 } ] }
 ```
 
 Newest first. Every parameter is optional: `host` keeps one destination (a
@@ -412,14 +286,12 @@ a window, and `limit` is 20 when absent and at most 200 — more is read as 200.
 An implementation may return fewer than the limit, the newest, to keep the
 response within 1 MiB; a narrower read reaches the rest.
 A value that does not parse is `invalid`. `blocked` means the implementation
-refused the request rather than the destination, and `blockedReason` says why;
-`useIds` are the approved uses whose sentinels the request carried — spent when
-it was let through, refused under when it was blocked. A refusal by the
+refused the request rather than the destination, and `blockedReason` says why.
+A refusal by the
 destination itself, a 401 for a missing or wrong credential, is an ordinary
 exchange with that status, not a blocked one. An exchange is a summary: no
-headers and no bodies, and an implementation that hands out short-lived
-values redacts any still live from the URL and reason, since a URL is recorded
-as sent. A service that predates the verb answers 404, which a client reads
+headers and no bodies, and a value swapped into a URL is recorded as the
+placeholder the caller sent. A service that predates the verb answers 404, which a client reads
 as the verb missing, not as an empty record.
 
 The read is the caller's own: the transport names whose exchanges these are,
@@ -430,121 +302,44 @@ In Discobox the pool's proxy unit answers it from its own audit trail, keyed
 by the sandbox ID the client certificate carries, for the trail's retention
 window.
 
-## `facts` — what am I working on?
-
-A policy an ask carries names its scope with variables — `$primary.repo`
-rather than a repository spelled out — which resolve when a person approves
-it, from the implementation's record of the caller
-([ADR 26-10-20-782](adr/26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md)
-§4). The facts verb reads that record and what each variable resolves to, so
-an agent writes a policy against values it has seen.
-
-```
-GET /v1/facts
-```
-
-```json
-{
-  "facts": {
-    "discobox": { "id": "sbx_…", "createdBy": "sbx_…", "project": "default" },
-    "sources": [ { "slug": "primary", "primary": true,
-                   "remote": { "host": "github.com", "repo": "discobox-ai/discobox", "url": "https://github.com/discobox-ai/discobox" },
-                   "ref": { "type": "branch", "name": "main" }, "commit": "…" } ]
-  },
-  "variables": [
-    { "name": "$this", "value": "sbx_…", "resolved": true },
-    { "name": "$primary.repo", "value": "discobox-ai/discobox", "resolved": true },
-    { "name": "$primary.upstream", "resolved": false }
-  ]
-}
-```
-
-`variables` lists every variable a policy may use, resolved or not: `$this`,
-the `$primary` variables, then `$sources.<slug>.repo` for each source with a
-slug. One with `resolved: false` matches nothing. `createdBy` is absent when
-a person created the caller, and `remote` for a source with no network
-remote. Everything here is the implementation's record, never what the
-caller reports about itself — in Discobox, the control plane's, which
-resolves the variables itself and is what a policy resolves against at
-approval. A service that predates the verb answers 404.
-
 ## The client shape that fits it best
 
 The reference client is `discobox-access`. Its primary consumer is an LLM
-agent, and the operations do not all have the same shape, so they deliberately
-do not get the same interface.
-
-**Wrapping a command takes argv**, because the command it executes *is* the
-command it declares — encoding it as JSON would put a translation step between
-the two, and cost the child's exit status:
+agent. **Asking takes JSON**, because the ask carries free text through a shell
+that reads quotes and apostrophes as syntax:
 
 ```
-discobox-access run --use <useId> -- gh pr create --fill
-```
-
-The returned value is injected into that child process's environment only —
-never into the shell, a dotfile, or a file on disk — replacing rather than
-joining any same-named variable, so a stale export cannot shadow it.
-
-**Asking takes JSON**, because the ask is nested and carries free text through a
-shell that reads quotes and apostrophes as syntax:
-
-```
-discobox-access request --json <<'EOF'
+discobox-access request --json <<'JSON'
 {
   "name": "github",
   "envVar": "GITHUB_TOKEN",
   "hosts": ["api.github.com"],
   "justification": "the user's task asks me to open a PR",
-  "uses": [{"description": "Open a PR against the current repo"}],
-  "statements": ["allow create on pull request in repository $primary.repo"],
-  "definitions": {"pull request": "a GitHub pull request", "repository": "a GitHub repository"},
   "wait": true
 }
-EOF
+JSON
 ```
 
 `--json` means "talk to me in JSON" in whichever direction a command has:
 structured output everywhere, and a structured body on stdin for `request`.
-Results go to stdout and failures to stderr, always — which is what lets `run`
-hand its child the real stdout untouched.
-
-**The reference client runs nothing it was not given a value for.**
-`discobox-access` judges nothing itself: it sends the argv, its stdin and where
-it runs on `get`, and starts the command only when a value comes back. Whether
-the command is judged is the implementation's decision, made on its side of the
-call, so a client that skips the CLI is judged the same way.
-
-**The reference client has no unwrapped way to take a value.** The wire
-operation above is `get` for a reason — a caller of the protocol may still ask
-for a value with no command attached — but `discobox-access` itself dropped
-that as a CLI capability
-([ADR 0092](adr/0092-the-cli-has-no-unjudged-way-to-take-a-value.md)): a value
-with nothing for the judge to have ruled on is exactly the case the judge
-cannot help with, and this client does not keep offering one just because
-wrapping is sometimes inconvenient. `list` and the flag form of `request`
-remain, for scripting the parts that were never about a value in the first
-place.
+Results go to stdout and failures to stderr, always.
 
 ## Implementing the server side
 
-An implementation owns four decisions the protocol does not make (and, for
+An implementation owns the decisions the protocol does not make (and, for
 the trust verb, what its egress verifies and how a pin reaches it):
 
 1. **Who may call it.** The protocol carries no identity beyond the optional
    bearer token; the transport decides whose credentials these are.
-2. **What `get` returns.** Real value, or a scoped stand-in.
-3. **How a request reaches a human.** The protocol only says a request has an
+2. **How a request reaches a human.** The protocol only says a request has an
    id and a status that eventually settles.
-4. **Whether a command is judged.** `get` carries the evidence; whether a
-   judge reads it before a value is handed out, and where its verdict is
-   recorded, is not specified.
+3. **How a granted credential is delivered.** The protocol never carries one.
 
 In Discobox: sandbox-agent serves the protocol on sandbox loopback
 (`127.0.0.1:17010`) and relays each call to the pool over the sandbox's mTLS
 client certificate, whose common name is the sandbox ID and is the identity.
-The pool's proxy unit (`pool-agent/proxyagent`, on `:17083`) answers it: it
-calls the control plane, where grants and cleartext live, and mints the
-ephemeral sentinel. See
+The pool's proxy unit (`pool-agent/proxyagent`, on `:17083`) answers it by
+calling the control plane, where grants and cleartext live; an approved
+request becomes a grant and a sentinel bound to the variable asked for. See
 [`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md) and
 [`sandbox-agent/DESIGN.md`](../sandbox-agent/DESIGN.md).

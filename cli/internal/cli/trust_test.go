@@ -14,7 +14,7 @@ import (
 )
 
 const trustRequestJSON = `{"id":"treq_0123456789abcdef","projectId":"project-1","sandboxId":"sbx_1","requestedBy":"agent:sbx_1","host":"34.70.64.109:443","status":"%s",` +
-	`"uses":[{"description":"read-only kubectl"}],"observedChain":[` +
+	`"justification":"read-only kubectl on the user's cluster","observedChain":[` +
 	`{"subject":"CN=kube-apiserver","issuer":"CN=cluster-ca","ips":["34.70.64.109"],"notBefore":"2026-09-01T00:00:00Z","notAfter":"2027-09-01T00:00:00Z","sha256":"aaaa","spkiSha256":"bbbb","pem":"leaf"},` +
 	`{"subject":"CN=cluster-ca","issuer":"CN=cluster-ca","notBefore":"2026-01-01T00:00:00Z","notAfter":"2031-01-01T00:00:00Z","sha256":"cccc","spkiSha256":"dddd","isCA":true,"selfSigned":true,"pem":"ca"}],` +
 	`"createdAt":"2026-09-24T00:00:00Z","updatedAt":"2026-09-24T00:00:01Z"}`
@@ -96,7 +96,7 @@ func TestATrustItemBecomesAnInboxRequestWithItsDefaultPin(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	req := toTUITrustRequest(request)
-	if req.Trust == nil || req.Host != "34.70.64.109:443" || req.SandboxID != "sbx_1" || len(req.Uses) != 1 || len(req.Trust.Chain) != 2 {
+	if req.Trust == nil || req.Host != "34.70.64.109:443" || req.SandboxID != "sbx_1" || req.Justification == "" || len(req.Trust.Chain) != 2 {
 		t.Fatalf("request = %+v", req)
 	}
 	if req.Trust.DefaultPin != (tui.TrustPin{Kind: tui.TrustPinCA, SHA256: "cccc"}) {

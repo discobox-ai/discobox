@@ -263,7 +263,6 @@ func (h *httpProxy) refuseGateway(req *http.Request, meta *requestMeta, client c
 		AppliedPattern:       meta.appliedPattern,
 		AppliedHeaders:       meta.appliedHeaders,
 		ForwardedURL:         meta.forwardedURL,
-		SwappedUseIDs:        meta.swappedUseIDs,
 		SwappedSecretIDs:     meta.swappedSecretIDs,
 		RedactRequestHeaders: meta.redactRequestHeaders(),
 		RequestHeaders:       req.Header,

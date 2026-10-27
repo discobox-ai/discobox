@@ -54,6 +54,11 @@ MarkDirtyDrift(ctx, "pool", id)            // drift mark: never cuts a failure b
 MarkDirtyDriftTx(ctx, tx, "pool", id)      // MarkDirtyDrift in the caller's transaction
 ```
 
+`reconcile.MarkTx(ctx, tx, type, id)` is `MarkDirtyTx` for a writer with no
+engine — a database upgrade, which runs before one exists. It writes the same
+mark, which the engine claims from the table once it starts; anything running
+beside an engine marks through the engine, so it is woken.
+
 - The `Tx` forms take the caller's transaction so a write and the dirty mark
   it earns commit atomically (transactional outbox): an intent write, or an
   observation whose mark nothing else would re-find if it were lost.
@@ -201,8 +206,6 @@ resource forever.
 | `sandboxProxyPolicy` | [sandboxes](../resources/sandboxes/DESIGN.md#proxy-policy) | none: marked with every egress level or gateway change and every write after a create |
 | `sandboxPower` | [sandboxes](../resources/sandboxes/DESIGN.md#sleep-idle-and-the-scheduled-start) | none: marked as drift by a status that asks for a power-down, and with intent by every outside power instruction and archive; the wake is a `RequeueAt` timer on its own dirty row, with `wake_at` as the durable copy |
 | `harnessConfig` | [harnessconfigs](../resources/harnessconfigs/DESIGN.md) | none |
-| `judge` | [judges](../resources/DESIGN.md) | every project |
-| `ruleRequest` | [secrets](../resources/secrets/DESIGN.md#approval-rules) | none: a scan would re-mark a request whose judge cannot answer and cancel its backoff |
 
 ## What callers look like
 

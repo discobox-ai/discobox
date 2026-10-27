@@ -1,8 +1,12 @@
 // Package secretroute answers where a secret may be sent (ADR 26-10-02-924):
-// which of the routes a secret carries a request falls on, if any.
+// which of the routes a secret carries a request falls on, if any, and whether
+// that route refuses it.
 //
 // A route is a host, which covers itself and every host beneath it the way a
-// hostscope does, and an optional path prefix matched on whole segments. The
+// hostscope does, and an optional path prefix matched on whole segments. A
+// blocked route refuses every request it is the most specific route for: it
+// is what a route a judge used to read became, so that removing the judge
+// sent nothing on it unjudged (ADR 26-10-27-880). The
 // control plane normalizes the routes a person or a harness image writes, and
 // the pool proxy matches every request a secret is swapped into against them.
 // Both go through this package so the route a person wrote is the route that
@@ -19,12 +23,12 @@ import (
 )
 
 // Route is where a secret may be sent: a host and everything beneath it, and
-// within that, an optional path prefix. UseID names the approved use a
-// request on the route is judged against; empty sends it unjudged.
+// within that, an optional path prefix. A blocked route refuses the requests
+// it is the most specific route for.
 type Route struct {
-	Host  string `json:"host"`
-	Path  string `json:"path,omitempty"`
-	UseID string `json:"useId,omitempty"`
+	Host    string `json:"host"`
+	Path    string `json:"path,omitempty"`
+	Blocked bool   `json:"blocked,omitempty"`
 }
 
 // Normalize is the one reading of a route's host and path. The host is
@@ -60,30 +64,40 @@ func Normalize(host, routePath string) (string, string, error) {
 	return host, trimmed, nil
 }
 
-// Parse reads a route as a person types it, HOST[/PATH][=USE]: split at the
-// first "=", the left is the host up to its first "/" and the path after it,
-// and the right, trimmed, is the use. The host and path are normalized.
-func Parse(text string) (host, routePath, use string, err error) {
-	where, use, _ := strings.Cut(text, "=")
-	use = strings.TrimSpace(use)
+// BlockedSuffix marks a blocked route in the form a person types.
+const BlockedSuffix = "=blocked"
+
+// Parse reads a route as a person types it, HOST[/PATH][=blocked]: the host up
+// to the first "/", the path after it, and the suffix to block it. The host
+// and path are normalized. Anything else after an "=" is refused: it is the
+// use a route once carried, which nothing reads any more.
+func Parse(text string) (Route, error) {
+	where, suffix, cut := strings.Cut(strings.TrimSpace(text), "=")
+	blocked := false
+	if cut {
+		if strings.TrimSpace(suffix) != strings.TrimPrefix(BlockedSuffix, "=") {
+			return Route{}, fmt.Errorf("route %q: a route is HOST[/PATH] or HOST[/PATH]%s; a route no longer carries a use", text, BlockedSuffix)
+		}
+		blocked = true
+	}
 	where = strings.TrimSpace(where)
-	host, routePath = where, ""
+	host, routePath := where, ""
 	if i := strings.Index(where, "/"); i >= 0 {
 		host, routePath = where[:i], where[i:]
 	}
-	host, routePath, err = Normalize(host, routePath)
+	host, routePath, err := Normalize(host, routePath)
 	if err != nil {
-		return "", "", "", err
+		return Route{}, err
 	}
-	return host, routePath, use, nil
+	return Route{Host: host, Path: routePath, Blocked: blocked}, nil
 }
 
 // Format is a route as Parse reads it.
-func Format(host, routePath, use string) string {
-	if use == "" {
-		return host + routePath
+func Format(route Route) string {
+	if route.Blocked {
+		return route.Host + route.Path + BlockedSuffix
 	}
-	return host + routePath + "=" + use
+	return route.Host + route.Path
 }
 
 // RequestPaths are the paths a request's URL is matched on, each with its dot
@@ -153,4 +167,27 @@ func Match(routes []Route, host, requestPath string) []Route {
 		}
 	}
 	return out
+}
+
+// Decide says whether a request to host at rawURL may carry a secret that has
+// routes, and why not when it may not. Every reading of the path
+// (RequestPaths) must fall on a route, and the most specific routes it falls
+// on must not be blocked; a tie with a blocked route refuses. A secret with no
+// routes is not held to any, and is allowed here.
+func Decide(routes []Route, host, rawURL string) (allowed bool, reason string) {
+	if len(routes) == 0 {
+		return true, ""
+	}
+	for _, requestPath := range RequestPaths(rawURL) {
+		matched := Match(routes, host, requestPath)
+		if len(matched) == 0 {
+			return false, fmt.Sprintf("this credential has no route to %s%s", host, requestPath)
+		}
+		for _, route := range matched {
+			if route.Blocked {
+				return false, fmt.Sprintf("this credential's route %s refuses %s%s", Format(route), host, requestPath)
+			}
+		}
+	}
+	return true, ""
 }

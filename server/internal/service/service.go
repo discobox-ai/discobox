@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/endpoint"
-	"github.com/discobox-ai/discobox/pkg/judge/jev"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/devbundles"
@@ -19,7 +18,6 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/resources/gateways"
 	"github.com/discobox-ai/discobox/server/internal/resources/harnessconfigs"
 	resourcejobs "github.com/discobox-ai/discobox/server/internal/resources/jobs"
-	"github.com/discobox-ai/discobox/server/internal/resources/judges"
 	"github.com/discobox-ai/discobox/server/internal/resources/peers"
 	"github.com/discobox-ai/discobox/server/internal/resources/pools"
 	"github.com/discobox-ai/discobox/server/internal/resources/projects"
@@ -62,11 +60,8 @@ type Service struct {
 	providerService  *providers.Service
 	poolControlPlane *pools.ControlPlane
 	harnessConfigs   *harnessconfigs.Service
-	judges           *judges.Service
 	assets           *assets.Service
 	gateways         *gateways.Service
-	// ruleRequests tests approval rules against pending credential requests.
-	ruleRequests *secrets.RuleRequests
 }
 
 type Options struct {
@@ -107,20 +102,9 @@ type Options struct {
 	// a sandbox is started with. Empty when the server does not listen on iroh,
 	// where that address would reach nothing; sandboxes then get none.
 	ServerPeerID string
-	// Judging is what this server judges: commands, credential-bearing
-	// requests, both or neither (ADR 26-10-02-054). While it judges nothing,
-	// no project has a judge and nothing is asked one.
-	Judging judges.Judging
-	// JudgeJev, when set, is what judges instead of a judge discobox per
-	// project (ADR 26-10-01-324).
-	JudgeJev *jev.Client
 	// ConfiguredGateways is the server configuration file's gateways
 	// (ADR 26-10-17-271).
 	ConfiguredGateways gateways.Configured
-	// JudgeJevFallback puts every job Jev is unsure of to the project's judge
-	// discobox, which every project then keeps and which decides it, rather than
-	// refusing it. A refusal Jev is sure of stands either way.
-	JudgeJevFallback bool
 }
 
 func New(store *store.Store, engine *reconcile.Engine, options Options) *Service {
@@ -158,26 +142,6 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	// And back: a change to a secret's routes is carried to the running
 	// discoboxes holding it (ADR 26-10-02-924).
 	secretService.SetSecretHolders(sandboxService)
-	// The project's judge is converged like any other resource (ADR 26-09-22-838 §1):
-	// it exists when the project has a pool for it and a configured default
-	// harness, and is replaced when that harness is — unless the server judges
-	// with Jev, when no project has a judge discobox (ADR 26-10-01-324 §2).
-	judgeService := judges.New(store, sandboxService, nil, options.Judging, options.JudgeJev, options.JudgeJevFallback)
-	// Reaching the judge's own agent is the sandbox service's to do; which
-	// discobox is the judge is this one's (ADR 26-09-22-838 §2).
-	judgeService.SetLeases(sandboxService)
-	// What an approved use allows is the credential broker's to say, so the
-	// question a judge is put is composed from the live grant rather than from
-	// what the asking pool sent (ADR 26-09-22-838 §4). It is the same service that
-	// answers for host trust, built above.
-	judgeService.SetUses(secretService)
-	// And the other way: a discobox handing a credential on is asked of the
-	// project's judge — whether the uses fall within its delegation — while
-	// the credential broker approves (ADR 26-09-30-782 §3).
-	secretService.SetJudge(judgeService)
-	// Approval rules are tested against a request when it is filed and when
-	// a rule changes (ADR 26-10-12-330 §4); the engine is what runs the tests.
-	secretService.SetDirtier(engine)
 	// The bundles a release names are the ones the server's own registry
 	// credentials pull; a project's are pulled without them.
 	var releaseBundles []string
@@ -252,10 +216,8 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		options:          options,
 		poolControlPlane: poolControlPlane,
 		harnessConfigs:   harnessConfigService,
-		judges:           judgeService,
 		assets:           assetService,
 		gateways:         gatewayService,
-		ruleRequests:     secretService.RuleRequests(),
 	}
 }
 
@@ -333,25 +295,12 @@ func (s *Service) registerReconcilers() error {
 	if err := s.engine.Register(harnessconfigs.HarnessConfigResourceType, s.harnessConfigs); err != nil {
 		return err
 	}
-	// Keeps each project's judge matching what the project says it should be,
-	// and finds the ones nothing thought to mark.
-	if err := s.engine.Register(judges.JudgeResourceType, s.judges); err != nil {
-		return err
-	}
-	// Tests each project's approval rules against its pending credential
-	// requests, off the path that files one (ADR 26-10-12-330 §4).
-	if err := s.engine.Register(secrets.RuleRequestResourceType, s.ruleRequests); err != nil {
-		return err
-	}
 	return s.poolControlPlane.RegisterJobs(s.SandboxProviderManager())
 }
 
 func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {
 	return s.Service.SandboxProviderManager()
 }
-
-// Judges answers a pool asking for a verdict from the project's judge.
-func (s *Service) Judges() *judges.Service { return s.judges }
 
 // Assets is the asset API's service, which only a pool reaches.
 func (s *Service) Assets() *assets.Service { return s.assets }

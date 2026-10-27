@@ -146,20 +146,6 @@ func encodeCopySandboxFileRequest(
 	return nil
 }
 
-func encodeCreateApprovalRuleRequest(
-	req *CreateApprovalRuleBody,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
 func encodeCreateHarnessConfigRequest(
 	req *CreateHarnessConfigBody,
 	r *http.Request,
@@ -370,48 +356,6 @@ func encodeDiscardSandboxHarnessConfigChangesRequest(
 	return nil
 }
 
-func encodeJudgeCommandForPoolRequest(
-	req *PoolCommandAsk,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeJudgeForPoolRequest(
-	req *PoolJudgeAsk,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeJudgeSandboxRequest(
-	req *JudgeJob,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
 func encodeMakeSandboxDirectoryRequest(
 	req *SandboxFileMkdirRequest,
 	r *http.Request,
@@ -442,20 +386,6 @@ func encodeMintSandboxAgentStatusTokensRequest(
 
 func encodeMoveSandboxFileRequest(
 	req *SandboxFileTransferRequest,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeProposeSandboxRuleRequest(
-	req *JudgeProposalJob,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
@@ -750,20 +680,6 @@ func encodeStopSandboxRequest(
 
 func encodeSuspendSandboxRequest(
 	req *SuspendSandboxBody,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeUpdateApprovalRuleRequest(
-	req *UpdateApprovalRuleBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

@@ -1,6 +1,6 @@
 ---
 name: discobox-access
-description: Ask a human for a credential this sandbox was not given, and run one command with it; or ask for a host whose certificate is refused to be trusted. Use when a command fails with 401/403, when a CLI says it is not logged in or has no token (gh, npm, docker, curl against a private API), when a request answers 502 with an X-Discobox-Untrusted-Host header (a Kubernetes API server, an internal service with its own CA), when an outbound request fails and the program that made it does not say why, or to check which credentials you may already use.
+description: Ask a human for a credential this sandbox was not given, or for a host whose certificate is refused to be trusted, and wait for the answer. Use when a command fails with 401/403, when a CLI says it is not logged in or has no token (gh, npm, docker, curl against a private API), when a request answers 502 with an X-Discobox-Untrusted-Host header (a Kubernetes API server, an internal service with its own CA), when an outbound request fails and the program that made it does not say why, or to check which credentials you already hold.
 allowed-tools: Bash
 ---
 
@@ -11,22 +11,26 @@ long-lived secrets. When a command needs a credential you do not have, you do
 not have to stop and ask in chat: `discobox-access` asks a person, they answer
 in their discobox window, and you carry on.
 
-Every command below is safe to run and none of them prints a secret.
+A credential you hold is already in its environment variable, for every
+command you start. It is a stand-in the sandbox's egress swaps for the real
+value, and only on the hosts it was approved for. Use it as you would any
+token: `gh pr create`, `npm publish`, `curl -H "Authorization: Bearer
+$API_TOKEN" …`. Nothing here prints a secret.
 
 ## Stay with approval requests until they resolve
 
-For credentials and host trust, use `wait: true` or `--wait`. If your execution
-tool returns a running session or job ID, keep waiting on **that same
-execution**. A tool yield is not a timeout or a completed request. In Codex,
-use `write_stdin` for an `exec_command` session; if `functions.exec` itself
-yields a cell ID, use `functions.wait` for that cell.
+For credentials and host trust, use `--wait` (or `"wait": true`). If your
+execution tool returns a running session or job ID, keep waiting on **that
+same execution**. A tool yield is not a timeout or a completed request. In
+Codex, use `write_stdin` for an `exec_command` session; if `functions.exec`
+itself yields a cell ID, use `functions.wait` for that cell.
 
 While approval is pending, provide occasional progress updates and continue
 independent work when useful. Do not end your turn merely to announce that
-access was requested, and do not ask the user to say "continue". After approval,
-automatically resume the authorized task. Stop waiting only when the request
-resolves, the command reports an actual timeout or failure, or the user cancels.
-Elapsed time is never approval.
+access was requested, and do not ask the user to say "continue". After
+approval, automatically resume the authorized task. Stop waiting only when the
+request resolves, the command reports an actual timeout or failure, or the
+user cancels. Elapsed time is never approval.
 
 If the running execution is lost, resume waiting on the existing request ID;
 do not create a replacement request:
@@ -44,306 +48,95 @@ the result.
 
 ## 1. Check what you already have
 
-**Run this before every request**, even for something you were granted a
-moment ago:
+**Run this before every request:**
 
 ```bash
 discobox-access list
 ```
 
-Each credential lists the **use IDs** approved for it, and how long each lasts:
-
 ```
-github (GH_TOKEN → github.com)
-  use_7f3a2b  Fix issue #43 in acme/web as a pull request from branch fix-43 into main. … [expires 2026-10-09T18:00:00Z]
-  use_9c4d1e  Triage issues in acme/web. Read anything in the repository; … [never expires]
+github (GH_TOKEN → github.com, api.github.com) [expires 2026-10-09T18:00:00Z]
+npm (delegate: give it to the discoboxes you create → registry.npmjs.org) [never expires]
 ```
 
-If the command you want to run is part of the job one of those uses names,
-skip to step 3. A use
-listed here has not expired, whatever lifetime you asked for: the person
-approving picks the lifetime, often a longer one than you asked, and
-`[never expires]` means exactly that. Never assume a use has lapsed because
-the time you asked for has passed — `list` is the answer.
-
-`list` leads with this discobox's primary source as the control plane
-recorded it — `github.com/acme/web at branch main` — which is the repository
-to name in a policy, as `$primary.repo`. `discobox-access facts` shows every source and the value of
-each variable a policy may use (`$primary.repo  acme/web`); a variable that
-resolves to nothing matches nothing. Those values, not your git remotes, are
-what an approval binds to.
+Each line is a credential, the variable it is in, and the hosts it may be sent
+to (each covers the hosts beneath it). The person approving picks the
+lifetime, often a different one than you asked for; `[never expires]` means
+exactly that, and `list` is the answer to whether something has lapsed.
 
 If a command *already works*, the credential is already in your environment —
-nothing here is needed. Ask only when something actually failed for want of one.
+nothing here is needed. Ask only when something actually failed for want of
+one.
 
 ## 2. Ask for one
 
-Ask for a **policy**: statements, as sentences, of exactly what the job may
-do, beside one use that names the job.
+```bash
+discobox-access request \
+  --name github --env-var GH_TOKEN --hosts github.com,api.github.com \
+  --justification "Fix issue #43 in acme/web as a pull request from branch fix-43 into main" \
+  --ttl 4h --wait
+```
+
+- `--name` names the credential the way a person would recognise it
+  (`github`, `npm`, `openai`).
+- `--env-var` is the variable you want it in. Once granted, it is set for
+  every command you start from then on; a shell already running keeps its old
+  environment, so start a new one.
+- `--hosts` is every site you will send it to, comma-separated or repeated.
+  It is sent nowhere else: a request carrying it to any other host reaches
+  that host with the stand-in, and fails as unauthenticated.
+- `--justification` is what the person reads: the task and its target, in
+  one line.
+- `--ttl` asks how long to keep it (`30m`, `4h`, up to `720h`). The person
+  may choose otherwise. Leave it out to let them pick.
+- `--delegate` asks to give the credential to the discoboxes you create,
+  rather than to use it yourself (§5).
+
+With `--json`, the same request is read from stdin, which keeps quotes and
+apostrophes in your justification out of the shell's hands:
 
 ```bash
 discobox-access request --json <<'EOF'
 {
-  "id": "com.github.api",
-  "justification": "the task asks me to fix issue #43 and get the fix merged through a pull request",
-  "uses": [{"description": "Fix issue #43 in acme/web as a pull request from branch fix-43 into main"}],
-  "statements": [
-    "allow read on anything in repository $primary.repo",
-    "allow push on branch \"fix-43\" in repository $primary.repo",
-    "allow create, update on pull request in repository $primary.repo when \"its head is fix-43 and its base is main\"",
-    "allow create on comment within pull request in repository $primary.repo",
-    "allow rerun on workflow run in repository $primary.repo when \"it failed\"",
-    "deny force-push, delete on branch in anywhere",
-    "deny merge, close on pull request in anywhere",
-    "deny delete on comment in anywhere",
-    "deny read on secret in anywhere"
-  ],
-  "definitions": {
-    "repository": "a GitHub repository",
-    "branch": "a git branch in a repository",
-    "pull request": "a GitHub pull request",
-    "comment": "a comment or review reply on a pull request or issue",
-    "workflow run": "a GitHub Actions run",
-    "secret": "an Actions, Dependabot or environment secret",
-    "push": "add commits to a branch, or move it with --force-with-lease",
-    "force-push": "move a branch with --force and no lease",
-    "rerun": "re-run a run's failed jobs",
-    "merge": "merge a pull request into its base",
-    "close": "close a pull request without merging it"
-  },
-  "grantTTLSeconds": 3600,
-  "wait": true,
-  "timeoutSeconds": 3600
+  "name": "github",
+  "envVar": "GH_TOKEN",
+  "hosts": ["github.com", "api.github.com"],
+  "justification": "Fix issue #43 in acme/web as a pull request from branch fix-43 into main",
+  "grantTTLSeconds": 14400,
+  "wait": true
 }
 EOF
 ```
 
-- `id` — a well-known credential (below); for any other, `name`, `envVar`
-  and `hosts` instead:
-  - `name` — what the credential is called, in ordinary words (`github`,
-    `npm`).
-  - `envVar` — the variable the command expects it in. Get this right: it is
-    the variable your command will actually read.
-  - `hosts` — where it will be sent, as narrow as the truth allows. A tool
-    that sends one credential to several sites gets them all in one request:
-    Copilot CLI sends its GitHub token to `["api.github.com", "githubcopilot.com"]`.
-- `justification` — why *this task* needs it. A person reads this to decide.
-- `uses` — **one use per job**, in a line: the job and its target. Its ID is
-  what you `run` under, and the person approving reads it as your words for
-  the job. Every command is checked against the policy, whichever use it
-  names, so the use only names the job.
-- `statements` — the policy: what the job may do, and what it must never do.
-  Every request carries one; one without is refused. "Writing a policy",
-  below, is how.
-- `definitions` — what each word your statements use means, for every word
-  but the defaults. A person approves them with the statements.
-- `grantTTLSeconds` — optional: how long you need the credential, in seconds,
-  from 1 to 2592000 (thirty days). The person sees it as the answer already
-  picked and may pick another. Ask for about as long as the task will take, not
-  longer; leave it out to let them choose. You cannot ask for forever, and an
-  ask outside that range is refused as `invalid`.
-- `purpose` — optional: `"delegate"` (`--delegate`) asks to hand the
-  credential on to other discoboxes rather than to use it. Its statements are
-  then what you may hand on: every policy you hand on must fall within them.
-  The approval lets you run nothing with it yourself — its use IDs are not
-  `run` uses and `list` does not show them.
-  Leave it out to ask to use the credential; if you need both, ask twice.
-- `wait: true` blocks until a human answers. Without it you get a request ID
-  back and the request sits pending — use `wait --json request REQUEST_ID`.
+`purpose` (`"use"`, the default, or `"delegate"`) and `timeoutSeconds` (how
+long `wait` waits) are the other fields. An unknown field is refused, so a
+typo cannot drop your justification.
 
-### Well-known credentials
-
-Some credentials Discobox already knows the shape of. Ask for one of these by
-its ID, and leave out `name`, `envVar`, and `hosts` — the ID says them, and
-getting them wrong is then impossible:
-
-| ID | What it is for | Delivered in | Sent to |
-| --- | --- | --- | --- |
-| `com.github.api` | GitHub: repositories over HTTPS, the REST and GraphQL API as `gh` uses it, and the Copilot API | `GH_TOKEN` | `github.com`, and the hosts beneath it such as `api.github.com`; `githubcopilot.com` too when named, as `--hosts api.github.com,githubcopilot.com` for Copilot CLI |
-| `ai.discobox.sandbox` | The discobox API: create, list, and get discoboxes; on any discobox in this project but its judge, deliver its source, read and type into its terminals, start, stop, restart, repair, and upgrade it, run its services and read their logs, reach its ports over HTTP, and tag it; and answer the credential requests of the ones you created | `DISCOBOX_TOKEN` | `api.discobox.internal`, through this discobox's pool |
-
-```bash
-discobox-access request com.github.api --use "Open a pull request from branch fix-43 into main of acme/web" \
-  --statement 'allow read on anything in repository $primary.repo' \
-  --statement 'allow push on branch "fix-43" in repository $primary.repo' \
-  --statement 'allow create on pull request in repository $primary.repo when "its head is fix-43 and its base is main"' \
-  --statement 'deny force-push, delete on branch in anywhere' \
-  --statement 'deny merge, close on pull request in anywhere' \
-  --define 'repository=a GitHub repository' --define 'branch=a git branch in a repository' \
-  --define 'pull request=a GitHub pull request' --define 'push=add commits to a branch' \
-  --define 'force-push=move a branch with --force and no lease' \
-  --define 'merge=merge a pull request into its base' --define 'close=close a pull request without merging it' \
-  --why "the task asks for a PR" --wait
-```
-
-or `"id": "com.github.api"` in the `--json` body. Everything else — `uses`,
-`statements`, `definitions`, `justification`, `grantTTLSeconds`, `purpose`,
-`wait` — is asked for exactly as above; with flags, `--statement` and
-`--define WORD=DEFINITION` repeat.
-For anything not in this table, spell out `name`, `envVar`, and `hosts`.
-
-`ai.discobox.sandbox` is how you drive other discoboxes; §5 says how to ask
-for it and launch them.
-
-Use `--json` with a heredoc rather than flags: your justification will contain
-apostrophes and quotes, and the shell would eat them. Unknown JSON fields are
-rejected, so a misspelled key fails loudly instead of being dropped.
-
-### Writing a policy
-
-A policy is what a person approves and a model then holds every command to.
-Each statement is one sentence:
-
-```
-statement := ("allow" | "deny") action ("," action)* "on" resource ("within" resource)* ["in" scope] ["when" quoted] ["unless" quoted]
-resource  := type [name] ["created" "by" name]
-scope     := type [name] ("of" resource)*
-action    := word+
-type      := word+
-name      := quoted | variable
-```
-
-`discobox-access request` parses and checks it before anything is sent. A
-statement that does not parse, or a policy nobody could approve, is refused
-(`invalid`, exit 2) with where it went wrong and the grammar: fix what it
-names and send it again.
-
-1. **Words are unquoted; names are quoted or a variable.** `pull request` is
-   a type of two words; `branch "fix-43"` is a type and a name. A name may be
-   a glob (`branch "discobox/*"`). `in repository acme/web` is refused — the
-   scope has no name; write `in repository "acme/web"`. `within` names what
-   the resource sits in (`on comment within pull request "812"`), `of` what
-   the scope sits in (`in namespace "web" of cluster "staging"`), each read
-   from the inside out; `created by $this` limits a resource to the ones
-   this discobox created.
-2. **Name the target with a variable when it is this discobox's.**
-   `$primary.repo` is the repository this discobox works on, as the control
-   plane recorded it; `discobox-access facts` lists every variable and its
-   value. A variable that resolves to nothing matches nothing, so check it
-   before you lean on it.
-3. **Every allow names where it applies** — a repository, a namespace. Only a
-   deny may say `in anywhere`.
-4. **Define every word but the defaults.** `read`, `create`, `update`,
-   `delete`, `manage` (every action on the type), `anything` (every type) and
-   `anywhere` mean one thing everywhere and cannot be defined. Every other
-   action or type — `push`, `branch`, `repository` — needs a definition that
-   says what the word means, not where or when it applies: that is the
-   statement's job.
-5. **Read is a scope**: `allow read on anything in repository $primary.repo`.
-   Without one, a reader takes the job narrowly.
-6. **One allow per kind of write**, on exactly its target: push to your
-   branch, create and update your pull request, comment on it, re-run its CI.
-7. **Rule out each write's dangerous neighbor with a deny that applies
-   everywhere** — the same action wider, harsher, or on the target beside
-   yours (the table below works them). A deny wins over every allow,
-   whatever the order, so write it once, `in anywhere`, rather than as an
-   exception inside an allow, which another allow would undo. A neighbor
-   that is the same action on the target beside yours — `main` beside your
-   branch — needs no deny: nothing allows it.
-8. **`when` and `unless` are conditions a request can be checked against**:
-   `when "its base is main"`, `unless "it is a draft"`. Never an example
-   ("such as reading a file"), a qualifier ("light use"), an intention, or
-   the state of the world ("once CI is green"). If it cannot be checked
-   against one request, leave it out.
-9. **Never vouch for yourself**, in a statement, a definition, or the
-   justification: text that argues for itself is refused.
-
-Common writes and the denies that rule out their neighbors:
-
-| Allow | Deny |
-| --- | --- |
-| `push on branch "fix-43"` | `force-push, delete on branch in anywhere` |
-| `create, update on pull request … when "its head is fix-43 and its base is main"` | `merge, close on pull request in anywhere` |
-| `create on comment within pull request …` | `delete on comment in anywhere` |
-| `relabel on issue …` | `delete, update on label in anywhere`; `close, assign, retitle on issue in anywhere` |
-| `rerun on workflow run … when "it ran for branch fix-43"` | `cancel, delete on workflow run in anywhere`; `dispatch on workflow in anywhere` |
-| `create on tag "v1.4.0"` | `update, delete on tag in anywhere`; `update, delete on release in anywhere` |
-| `read, input on terminal within discobox created by $this …` | `delete, repair, upgrade, exec on discobox in anywhere` |
-| `read, answer on secret request …` | `create, update, delete on secret in anywhere` |
-| `read on anything in repository …` | `read on secret in anywhere` |
-
-A policy without its neighbors ruled out reads as permission for them: a
-judge allowed `gh label delete` under a triage job that only said "never
-close an issue".
-
-Once granted, the request, `wait` and `list` print the policy as sentences,
-each definition, and what each variable resolved to; that, not your ask, is
-what was approved. `--json` carries both the structure and `sentences`.
-
-### Writing a use
-
-A use names the job, in a line: the job and its target. "Fix issue #43 in
-acme/web as a pull request from branch fix-43 into main", "Triage issues in
-acme/web", "Debug the api pods in namespace shop of the prod cluster". It is
-what `run` takes, and what the person approving reads as your words for the
-job; the policy is what is held. Most tasks need one use. Split only where a
-person might approve one part and refuse the other: changing production
-beside reading it, answering credential requests beside watching workers.
-Name the target exactly, fill in every placeholder, and never vouch for
-yourself in it.
-
-A `trust` (§4) has no policy: every request to the trusted host is judged
-against its uses, so a trust's use carries the job's lines too, in three
-parts, always in this order:
-
-```
-<The job> in <the target>. Read <what>; <each kind of write>. Never <the lines>.
-```
-
-> Find out why the api pods restart in namespace shop of the prod cluster.
-> Read anything in namespace shop; change nothing. Never exec into a pod or
-> read secrets.
-
-Say what it reads as a scope, name every kind of write, and for each write
-name in "Never …" its dangerous neighbor — the table under "Writing a
-policy" lists them — each one a request can show: "never delete a pod", not
-"never break anything".
-
-When a command is refused under a use or a policy you hold, read the
-reason. Do not ask again for the same job with the refused command spelled
-out. Either:
-
-- **the command was not the job** — do it another way;
-- **the job grew** — ask for the new job: a use that names it, and the
-  statements it needs; or
-- **it plainly is a step of the job and was refused anyway** (a judge can
-  refuse a read the policy covers) — ask once for that step as a job of its
-  own, in the same shape: the use "Read the CI of pull request #812 in
-  acme/web", with `allow read on workflow run in repository $primary.repo`
-  and `deny rerun, cancel on workflow run in anywhere`. Say in the
-  justification what it is a step of and what the refusal said.
-
-An approved request prints the use IDs you may now run with, and when it
-reports one, the expiry the person chose; `list` is what says how long a use
-lasts, forever included — read it there rather than remembering your ask. A
-denial exits
-non-zero — that is an answer, not an error. Do not re-ask for the same thing;
-tell the user it was denied and what you cannot do without it.
+A granted request says what you now hold, as the person chose it — the hosts
+and lifetime may differ from your ask.
 
 ## 3. Use it
 
+Run the command that needs it. The credential is in the variable you named,
+for every command started once it has reached your discobox — which follows
+the grant by a few seconds, as the pool is told. If the variable is not there
+yet, or a request carrying it is refused as unauthenticated, run `env` again
+in a moment. A shell that was already
+running — your harness's tool shell inherits the environment the harness was
+launched with — takes it up first:
+
 ```bash
-discobox-access run --use use_7f3a2b -- gh pr create --fill
+eval "$(discobox-access env)"
 ```
 
-- The credential goes into that one child process's environment and nowhere
-  else. It exits with your command's own status, like `env`(1).
-- Before it runs, a model checks your command against the grant's policy,
-  whichever of its uses you name. **Stay inside what was approved.** Any
-  command that does what an allow covers, on its target, is fine, written
-  however you need it; a command no allow covers, or one a deny matches, is
-  refused with `denied` and never starts. If the work has grown, ask for
-  what it now needs in step 2 rather than stretching what you hold.
-- Everything after `--` is your command, run exactly as written.
-- What your command reads on stdin — a here-document, a file, a pipe — is shown
-  to the checker with it, up to 8 KiB, and your command still reads every
-  byte. A command that takes its request on stdin (`discobox run --from-json`,
-  `gh api --input -`) is judged by that request, so keep it to what was
-  approved; past 8 KiB the checker is told it was not shown the rest.
+`env` prints an export for every credential variable and what is delivered in
+it now: a placeholder your egress exchanges, never the credential itself
+(`--json` for the map).
 
-There is no command that prints the value on its own. `run` is the only way to
-use one — if what you need to run cannot be `exec`'d directly, wrap it in a
-shell: `discobox-access run --use use_7f3a2b -- sh -c '...'`.
+A request the credential is not allowed to go on is refused by the egress
+before it leaves, and the reason is in the response and in the audit (§6): a
+credential's secret may carry routes — paths on its hosts it may and may not
+be sent to — that a person set.
 
 ## 4. A host whose certificate is refused
 
@@ -354,8 +147,7 @@ refused by this sandbox's egress. You see it as a `502` whose
 
 ```bash
 discobox-access trust 34.70.64.109:443 \
-  --use "Debug the web app in namespace web of this cluster. Read anything in namespace web; change nothing. Never exec into a pod or read secrets." \
-  --why "the user's GKE cluster; its API server uses the cluster's own CA" \
+  --justification "the user's GKE cluster; its API server uses the cluster's own CA" \
   --wait
 ```
 
@@ -365,9 +157,7 @@ discobox-access trust 34.70.64.109:443 \
   `gcloud container clusters describe NAME --format='value(masterAuth.clusterCaCertificate)' | base64 -d`.
   It is refused unless the host's chain verifies against it.
 - The trust is this sandbox's alone, for exactly that `host:port`, and it
-  lapses. **Every request you then send the host is judged against the uses
-  you name**, so write them as "Writing a use" says a trust's are: the job
-  and its target, what it reads and writes, and its lines.
+  lapses. It makes that certificate acceptable there and nowhere else.
 - Trusting a host is not authenticating to it: a token for it is still a
   credential, asked for with `request` for that host — the cluster's own
   host, since a token approved for `googleapis.com` is never sent to
@@ -391,130 +181,60 @@ discobox-access trust 34.70.64.109:443 \
   `gcloud container clusters describe NAME --format='value(endpoint)'`):
   1. `trust` that IP, with `--ca-file` holding the cluster CA from the same
      `describe` (`masterAuth.clusterCaCertificate`, base64-decoded).
-  2. `request` the Google access token (`CLOUDSDK_AUTH_ACCESS_TOKEN`) with
-     `host` set to that IP, not `googleapis.com`: kubectl sends it to the
-     cluster, and a sentinel approved for another host is never swapped
-     there. Its use is the same job as the trust's, and its policy says it
-     in statements: `allow read on anything in namespace "web" of cluster
-     "staging"`, `deny exec on pod in anywhere`, `deny read on secret in
-     anywhere`.
+  2. `request` the Google access token (`--env-var CLOUDSDK_AUTH_ACCESS_TOKEN`)
+     with `--hosts` set to that IP, not `googleapis.com`: kubectl sends it to
+     the cluster.
 
-  Then point the kubeconfig at the MITM CA (above) and run kubectl under that
-  use: `discobox-access run --use <id> -- kubectl get pods`.
+  Then point the kubeconfig at the MITM CA (above) and run kubectl.
 - An `unneeded` answer whose reason names an upstream proxy means this
   sandbox's egress goes through another proxy that checks the host itself;
   if the host is still refused, it has to be trusted where that proxy runs.
-- `discobox-access trusts` lists what this sandbox trusts. `--json` reads the
-  same fields from stdin as `request` does: `host`, `justification`, `uses`,
-  `suppliedCA`, `grantTTLSeconds`, `wait`, `timeoutSeconds`.
+- `discobox-access trusts` lists what this sandbox trusts. `--json` reads
+  `host`, `justification`, `suppliedCA`, `grantTTLSeconds`, `wait` and
+  `timeoutSeconds` from stdin.
 
 ## 5. Launching other discoboxes
 
-`ai.discobox.sandbox` is how you drive other discoboxes: create workers, watch
-them, and answer what they ask for. The `discobox` CLI is installed and already
-pointed at the API; run it under an approved use, as with any credential.
+The `discobox` CLI is installed and already pointed at the discobox API. It
+works only in a discobox a person has given API access; without it every call
+is refused, and only a person can turn it on — ask the user in chat, since
+`discobox-access` cannot ask for it. With it you can create discoboxes, and
+start, stop, tag and read the terminals of the ones **you created**; nothing
+else in the project.
 
 **Launch workers with no credentials, and give them only what they ask for.**
 A worker starts with none. When it needs one it asks with `discobox-access`,
-as you do, and you approve or deny that request. Do not pass `--grant` or
-`"grants"` to `discobox run`: a create is judged against your policy, and
-credentials folded into it are judged there as if handing them on were part
-of the prompt. Answering a request is where handing a credential on is
-decided.
+as you do, and you approve or deny that request.
 
-### Ask for everything up front, once
-
-Before the first worker, ask for everything the orchestration needs in one
-request, so the person approves once and you can work on your own afterwards.
-`<project>` is the project `discobox-access facts` names:
+Before the first worker, ask to delegate each credential your workers will
+need — `--delegate`, with the hosts they will reach and no `--env-var`, since a
+delegation is delivered to nothing in your discobox — so a person approves
+once and you can answer your workers afterwards:
 
 ```bash
-discobox-access request --json <<'EOF'
-{
-  "id": "ai.discobox.sandbox",
-  "justification": "the task asks me to split the work across worker discoboxes; I create them with no credentials and answer what they ask for",
-  "uses": [
-    {"description": "Create worker discoboxes from <this directory>"},
-    {"description": "Supervise the discoboxes I created"},
-    {"description": "Answer pending credential requests from the discoboxes I created"}
-  ],
-  "statements": [
-    "allow read on settings in project \"<project>\"",
-    "allow create on discobox in project \"<project>\" when \"it is created from <this directory> with any prompt and no grants and no secrets\"",
-    "allow push on source within discobox created by $this in project \"<project>\"",
-    "allow read, start, stop, restart, tag on discobox created by $this in project \"<project>\"",
-    "allow read, input on terminal within discobox created by $this in project \"<project>\"",
-    "allow read, answer on secret request in project \"<project>\"",
-    "allow read on secret in project \"<project>\"",
-    "deny delete, repair, upgrade, exec on discobox in anywhere",
-    "deny create, update, delete on secret in anywhere"
-  ],
-  "definitions": {
-    "settings": "a project's settings, and the skill sources its discoboxes are created with",
-    "discobox": "a Discobox sandbox: its record in the discobox API, /projects/<project>/sandboxes/<id>",
-    "project": "a Discobox project, by the ID discobox-access facts names it by, which the API uses in its paths, /projects/<id>/",
-    "source": "a git source delivered into a discobox: its origin, and the refs pinned in it",
-    "terminal": "a terminal of a discobox, such as the primary one its harness runs in",
-    "secret request": "a discobox's request for a credential",
-    "secret": "a project secret: its name, host and grants, never its value",
-    "push": "push commits and refs into a source",
-    "input": "type keys or text into a terminal",
-    "start": "power a discobox on",
-    "stop": "power a discobox off",
-    "restart": "stop a discobox and start it again",
-    "tag": "set or remove a discobox's tags",
-    "answer": "approve a secret request, or deny it",
-    "repair": "rebuild a discobox's runtime from its record",
-    "upgrade": "move a discobox to a newer image",
-    "exec": "start a command or run a service in a discobox, or reach its ports"
-  },
-  "grantTTLSeconds": 28800,
-  "wait": true
-}
-EOF
+discobox-access request --delegate \
+  --name github --hosts github.com,api.github.com \
+  --justification "hand GitHub to the worker discoboxes I create for issues #43 and #44 of acme/web" \
+  --ttl 8h --wait
 ```
 
-Then, for each credential your workers will need, ask to delegate it
-(`"purpose": "delegate"`, in §2), with a policy that holds every policy a
-worker will ask for: the worker's own statements, each name widened to what
-covers all of them — `branch "fix-*"` for workers on `fix-43` and `fix-44` —
-with the same denies and the same definitions, word for word. A worker's
-policy is handed on only when it falls within yours: every allow it asks for
-is narrower than one of yours, it carries every deny of yours, and a word you
-both use means the same. Ask for a lifetime as long as the orchestration.
-Without a delegation you approve nothing: the server hands on only what a
-delegation grant you hold covers — that credential, to its host, for no
-longer than it lasts — so a person sees what you mean to hand on before you
-hand on any of it.
-
-These are three jobs, split where a person might approve one and not
-another: making boxes, driving the ones you made, and handing out
-credentials.
-
-Say nothing in the answer statement about whose request it is. Only the
-server can tell whose a request is, and it enforces that; a condition no
-request shows is one the judge cannot check (rule 8 of "Writing a policy").
-
-Word the create condition as broadly as above: **any prompt**. A condition
-that quotes the prompt, or names which work it is for, is read against the
-prompt of every create, and the judge mistakes the worker's instructions for
-your purpose.
+A delegation authorizes nothing you send yourself; ask separately to use the
+credential if you need it too.
 
 ### Create a worker
 
 ```bash
-discobox-access run --use <id> -- discobox run -d . \
+discobox run -d . \
   -p "Implement issue #43 in org/repo. Follow CLAUDE.md, make the tests pass, and commit locally on main. Do not push or open a pull request."
 ```
 
 - **The prompt states the task and nothing else.** Do not tell the worker how
-  to get credentials or which to ask for, and do not name skills: its own
-  skills say how, and credentials named in a prompt are read as credentials
-  you are handing out. It asks for what it needs when it knows.
+  to get credentials or which to ask for: its own skills say how, and it asks
+  for what it needs when it knows.
 - It is cut from SOURCE, here `.`, the directory you run it in, at its
   current commit. Only what is committed is handed over; `--include-dirty`
-  carries your uncommitted work too. `--no-source` gives it nothing checked out;
-  `-i ../other` brings in another source beside it.
+  carries your uncommitted work too. `--no-source` gives it nothing checked
+  out; `-i ../other` brings in another source beside it.
 - It runs the project's default harness, as your user, with your Git identity.
   Leave `-H` out unless the person asked for a particular harness.
 - It prints the new discobox; its ID is how you read it again:
@@ -523,38 +243,22 @@ discobox-access run --use <id> -- discobox run -d . \
 ### Answer what your workers ask for
 
 ```bash
-discobox-access run --use <id> -- discobox secret request ls -o json
-discobox-access run --use <id> -- discobox secret request get <request-id>
-discobox-access run --use <id> -- discobox secret request approve <request-id> --policy-as-asked
-discobox-access run --use <id> -- discobox secret request deny <request-id>
+discobox secret request ls -o json
+discobox secret request get <request-id>
+discobox secret request approve <request-id>
+discobox secret request deny <request-id>
 ```
 
 - **You see and answer only your own discoboxes' requests.** The listing holds
   nothing else, and the server refuses any other.
-- Read each request's `justification`, its `uses`, and its policy — `-o json`
-  carries each statement as its sentence under `policy.sentences`. Approve
-  what the worker's task needs and what you were delegated; deny the rest.
-  You approve the policy as asked: never widen it, and do not rewrite it —
-  a policy that reaches past what the task needs is denied, and the worker
-  asks again.
-- **Approve with the full request ID and `--policy-as-asked`.** The server
-  holds the policy within your delegation's — every allow narrower than one
-  of yours, every deny of yours carried, every word defined alike — asks the
-  judge only whether a condition it asks for is within yours, and answers
-  with the secret of the delegation grant you hold, fitted within its
-  remaining time: `approve` is then one call. Do not pass `--grant-ttl`: a
-  lifetime you name that outlasts your delegation is refused rather than
-  fitted. Pass `--secret` only when the server says you were delegated
-  more than one secret that fits, naming one it lists. `discobox secret ls`
-  shows you the secrets you were delegated, and nothing else of the
-  project's.
-- A request to delegate, a request the proxy opened, and a policy your
-  delegation does not cover are refused: those wait for a person. So does
-  every request when you hold no delegation grant.
-
-You cannot give a discobox `ai.discobox.sandbox`: a person grants that, when
-the new discobox asks for it itself. What you approve is recorded as given by
-you.
+- Read each request's `justification` and hosts. Approve what the worker's
+  task needs and what you were delegated; deny the rest.
+- The server approves only under a delegation you hold of that secret, whose
+  hosts cover every host asked and which outlasts the grant, and fits the
+  grant's lifetime within it. Pass `--secret` only when the server says you
+  were delegated more than one secret that fits.
+- A request to delegate waits for a person, as does every request when you
+  hold no delegation that covers it.
 
 ### See and talk to what your workers are doing
 
@@ -562,43 +266,23 @@ A worker that stops with uncommitted work is either between steps or waiting
 on a question. Read its screen to tell which, and answer it:
 
 ```bash
-discobox-access run --use <id> -- discobox admin terminal screen <discobox-id> primary
-discobox-access run --use <id> -- discobox admin terminal input <discobox-id> primary "carry on and commit when the tests pass" Enter
-discobox-access run --use <id> -- discobox admin terminal wait <discobox-id> primary --hook Stop
+discobox admin terminal screen <discobox-id> primary
+discobox admin terminal input <discobox-id> primary "carry on and commit when the tests pass" Enter
+discobox admin terminal wait <discobox-id> primary --hook Stop
 ```
 
 `primary` is the worker's harness terminal; `discobox admin terminal ls
-<discobox-id>` lists the others. All of these run under the
-supervise use above. Any discobox in this project but its judge answers;
-which ones a use reaches is the judge's to read from its words, and the
-judge is told which discobox created the one a call names, so the supervise
-use's "the discoboxes I created" holds you to yours.
-
-A worker that has stopped — `discobox admin box ls` shows it, and `screen`
-answers that it is stopped rather than starting it — is started again with
-`discobox start`, and a wedged one with `discobox restart`. Stop a worker
-only when you are done with it: stopping ends whatever it is doing. Its
-workspace and uncommitted work survive either way.
-
-```bash
-discobox-access run --use <id> -- discobox start <discobox-id>
-discobox-access run --use <id> -- discobox stop <discobox-id>
-```
-
-If a start fails, the error says why; a worker it cannot bring back is a
-person's to repair.
-
-Anything outside these commands is refused: you cannot attach to, start a
-command in, archive, or delete a discobox you made.
+<discobox-id>` lists the others. A worker that has stopped is started again
+with `discobox start`, and a wedged one with `discobox restart`. Stop a worker
+only when you are done with it. Its workspace and uncommitted work survive
+either way. Anything else — attaching, archiving, deleting — is a person's.
 
 ## 6. A request that failed without saying why
 
 Every outbound HTTP request this sandbox makes goes through an egress proxy
-that records what became of it. When it refuses one — a host that is not
-trusted, a credential used outside its approved use, a call the judge would
-not allow — it says why in the response, and many programs drop that: an SDK
-that reports "request failed", a build that says "could not fetch". Read the
-record instead:
+that records what became of it. When it refuses one, it says why in the
+response, and many programs drop that: an SDK that reports "request failed", a
+build that says "could not fetch". Read the record instead:
 
 ```
 discobox-access audit --blocked --since 10m
@@ -606,33 +290,22 @@ discobox-access audit --blocked --since 10m
 
 ```
 2026-10-02T12:00:01Z  403 BLOCKED  POST https://api.github.com/repos/o/r/pulls
-    reason: judge: opening a pull request is not the approved use
-    uses: use_7f3c…
+    reason: route: this credential has no route to api.github.com/repos/o/r/pulls
 ```
-
-The reason tells you what to do next:
 
 | reason begins | what happened | what to do |
 | --- | --- | --- |
-| `judge:` | the request was held up to the policy its credential was approved with (or a trust's uses), and refused | send what that policy covers, or ask for the policy you need (§2) |
+| `route:` | the credential's routes do not allow it on that path | send it where its routes allow, or tell the user what you need |
 | `upstream certificate …` | the host's certificate is not trusted | ask for a trust (§4) |
-| `gate:` | a call to the discobox API without a live use of `ai.discobox.sandbox` | do what the reason says (§5) |
+| `gate:` | a call to the discobox API was refused | this discobox has no API access; tell the user (§5) |
 | `host denied` | this discobox's network policy does not allow the host | nothing here changes it; tell the user |
 
-A request the destination refused is not `BLOCKED`: a 401 or 403 for a missing
-or wrong credential is recorded with that status. Leave out `--blocked` to see
-those — then check what you have (§1) and ask (§2). `uses:` names the approved
-uses the request carried. `--host` narrows to one destination (any port when
-you name none), and `--json` gives the same fields structured. It shows only
-this sandbox's requests.
-
-## Never do this with the value
-
-- Do not echo it, log it, or include it in a message to the user.
-- Do not write it into a file, a `.env`, a config, or a shell export.
-- Do not reuse the value later — it expires in minutes. Run the use again
-  instead; the use itself lasts as long as `list` says.
-- Do not commit anything containing it.
+A request the destination refused is not `BLOCKED`: a 401 or 403 for a
+missing or wrong credential is recorded with that status. Leave out
+`--blocked` to see those — then check what you have (§1) and ask (§2).
+`--host` narrows to one destination (any port when you name none), and
+`--json` gives the same fields structured. It shows only this sandbox's
+requests.
 
 ## When it fails
 
@@ -641,14 +314,13 @@ Failures go to stderr, with `--json` as `{"error":{"code":"...","message":"..."}
 | code | what it means | what to do |
 | --- | --- | --- |
 | `invalid` | the call was malformed | fix the flags or JSON and retry |
-| `denied` | you may not use this | ask for it with `request`, or accept the answer |
-| `not_found` | that use ID means nothing here | run `list` again; it may have expired |
+| `denied` | you may not do this | ask for it with `request`, or accept the answer |
+| `not_found` | that request ID means nothing here | check the ID; ask again only if it is gone |
 | `unavailable` | the service could not answer | retry once, then tell the user |
 
 Exit status: `0` fine, `1` the call failed or the answer was no, `2` you
-invoked it wrongly. Under `run`, your command's own status passes through.
+invoked it wrongly.
 
 To see exactly what was sent and answered, put `--debug` before the command
-(`discobox-access --debug run --use ... -- ...`): every call to the credentials
-service is printed on stderr with its body and the answer's. A credential's
-value shows as `<redacted>`.
+(`discobox-access --debug request ...`): every call to the credentials service
+is printed on stderr with its body and the answer's.

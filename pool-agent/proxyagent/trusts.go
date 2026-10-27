@@ -165,13 +165,12 @@ type trustPinDoc struct {
 }
 
 type hostTrustDoc struct {
-	ID        string             `json:"id"`
-	SandboxID string             `json:"sandboxId"`
-	Host      string             `json:"host"`
-	Pin       trustPinDoc        `json:"pin"`
-	PinPEM    string             `json:"pinPem,omitempty"`
-	Uses      []credentialUseDoc `json:"uses,omitempty"`
-	ExpiresAt time.Time          `json:"expiresAt"`
+	ID        string      `json:"id"`
+	SandboxID string      `json:"sandboxId"`
+	Host      string      `json:"host"`
+	Pin       trustPinDoc `json:"pin"`
+	PinPEM    string      `json:"pinPem,omitempty"`
+	ExpiresAt time.Time   `json:"expiresAt"`
 }
 
 type listHostTrustsDoc struct {
@@ -182,36 +181,29 @@ type createTrustRequestDoc struct {
 	SandboxID       string                   `json:"sandboxId"`
 	Host            string                   `json:"host"`
 	Justification   string                   `json:"justification,omitempty"`
-	Uses            []credentialUseDoc       `json:"uses"`
 	GrantTTLSeconds int64                    `json:"grantTTLSeconds,omitempty"`
 	ObservedChain   []agentcreds.Certificate `json:"observedChain"`
 	SuppliedCA      *agentcreds.Certificate  `json:"suppliedCA,omitempty"`
 }
 
 type trustRequestStatusDoc struct {
-	RequestID string             `json:"requestId"`
-	Status    string             `json:"status"`
-	Host      string             `json:"host"`
-	Pin       *trustPinDoc       `json:"pin,omitempty"`
-	Uses      []credentialUseDoc `json:"uses,omitempty"`
+	RequestID string       `json:"requestId"`
+	Status    string       `json:"status"`
+	Host      string       `json:"host"`
+	Pin       *trustPinDoc `json:"pin,omitempty"`
 }
 
 func (d hostTrustDoc) proxyTrust() proxy.HostTrust {
-	useIDs := make([]string, 0, len(d.Uses))
-	for _, use := range d.Uses {
-		useIDs = append(useIDs, use.UseID)
-	}
 	return proxy.HostTrust{
 		ClientID:  d.SandboxID,
 		Host:      d.Host,
 		Pin:       proxy.TrustPin{Kind: d.Pin.Kind, SHA256: d.Pin.SHA256, PEM: d.PinPEM},
-		UseIDs:    useIDs,
 		ExpiresAt: d.ExpiresAt,
 	}
 }
 
 func (d trustRequestStatusDoc) protocol() agentcreds.TrustRequestStatus {
-	status := agentcreds.TrustRequestStatus{RequestID: d.RequestID, Status: d.Status, Host: d.Host, Uses: protocolUses(d.Uses, nil)}
+	status := agentcreds.TrustRequestStatus{RequestID: d.RequestID, Status: d.Status, Host: d.Host}
 	if d.Pin != nil {
 		status.Pin = &agentcreds.Pin{Kind: d.Pin.Kind, SHA256: d.Pin.SHA256}
 	}
@@ -256,7 +248,6 @@ func (b *credentialBroker) Trusts(ctx context.Context) ([]agentcreds.Trust, erro
 		out = append(out, agentcreds.Trust{
 			Host:      doc.Host,
 			Pin:       agentcreds.Pin{Kind: doc.Pin.Kind, SHA256: doc.Pin.SHA256},
-			Uses:      protocolUses(doc.Uses, &expiresAt),
 			ExpiresAt: &expiresAt,
 		})
 	}
@@ -303,15 +294,10 @@ func (b *credentialBroker) RequestTrust(ctx context.Context, body agentcreds.Tru
 		described := describeCertificate(ca)
 		supplied = &described
 	}
-	uses := make([]credentialUseDoc, 0, len(body.Uses))
-	for _, use := range body.Uses {
-		uses = append(uses, credentialUseDoc{Description: use.Description})
-	}
 	doc, err := b.controlPlan.createTrustRequest(ctx, createTrustRequestDoc{
 		SandboxID:       b.sandboxID,
 		Host:            endpoint,
 		Justification:   body.Justification,
-		Uses:            uses,
 		GrantTTLSeconds: body.GrantTTLSeconds,
 		ObservedChain:   chain,
 		SuppliedCA:      supplied,

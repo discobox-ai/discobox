@@ -39,7 +39,6 @@ func createTrustRequest(ctx context.Context, t *testing.T, svc *resourcesecrets.
 		SandboxId:     testSandboxID,
 		Host:          "34.70.64.109",
 		Justification: serverapi.NewOptString("the user's GKE cluster"),
-		Uses:          []apimodel.SecretUse{{Description: "read-only kubectl"}},
 		ObservedChain: chain,
 	})
 	if err != nil {
@@ -67,16 +66,15 @@ func TestTrustRequestRefusesAnAskWithNothingToPin(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, _ := newAgentCredentialService(t)
 	for name, body := range map[string]services.CreateSandboxTrustRequestBody{
-		"no chain": {SandboxId: testSandboxID, Host: "10.0.0.1", Uses: []apimodel.SecretUse{{Description: "x"}}},
-		"no uses":  {SandboxId: testSandboxID, Host: "10.0.0.1", ObservedChain: []apimodel.ObservedCertificate{testLeaf}},
-		"no host":  {SandboxId: testSandboxID, Host: "https://x/y", Uses: []apimodel.SecretUse{{Description: "x"}}, ObservedChain: []apimodel.ObservedCertificate{testLeaf}},
+		"no chain": {SandboxId: testSandboxID, Host: "10.0.0.1"},
+		"no host":  {SandboxId: testSandboxID, Host: "https://x/y", ObservedChain: []apimodel.ObservedCertificate{testLeaf}},
 	} {
 		if _, err := svc.CreateSandboxTrustRequest(ctx, testPoolID, body); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
 	// A pool speaks only for its own sandboxes.
-	body := services.CreateSandboxTrustRequestBody{SandboxId: testSandboxID, Host: "10.0.0.1", Uses: []apimodel.SecretUse{{Description: "x"}}, ObservedChain: []apimodel.ObservedCertificate{testLeaf}}
+	body := services.CreateSandboxTrustRequestBody{SandboxId: testSandboxID, Host: "10.0.0.1", ObservedChain: []apimodel.ObservedCertificate{testLeaf}}
 	if _, err := svc.CreateSandboxTrustRequest(ctx, "pool-other", body); err == nil {
 		t.Error("another pool's ask was accepted")
 	}
@@ -103,8 +101,8 @@ func TestApprovingATrustPinsTheChainsCAByDefault(t *testing.T) {
 	if status.TrustID != trust.ID || trust.Pin.Kind != model.TrustPinKindCA || trust.Pin.SHA256 != testCA.SHA256 || trust.PinPEM != "ca-pem" {
 		t.Fatalf("trust = %+v", trust)
 	}
-	if len(trust.Uses) != 1 || !strings.HasPrefix(trust.Uses[0].UseID, "use_") || trust.GrantedBy != "user-1" {
-		t.Fatalf("trust uses %+v, granted by %q", trust.Uses, trust.GrantedBy)
+	if trust.GrantedBy != "user-1" {
+		t.Fatalf("trust granted by %q, want the person who approved it", trust.GrantedBy)
 	}
 	if left := time.Until(trust.ExpiresAt); left <= 0 || left > time.Hour+time.Minute {
 		t.Fatalf("trust expires in %s, want the one-hour default", left)
@@ -136,13 +134,12 @@ func TestApprovingATrustPinsOnlyWhatWasObserved(t *testing.T) {
 	approved, err := svc.ApproveTrustRequest(ctx, "project-1", req.ID, services.ApproveTrustRequestBody{
 		Pin:             serverapi.NewOptTrustPin(apimodel.TrustPin{Kind: serverapi.TrustPinKindLeafSpki, SHA256: testLeaf.SpkiSha256}),
 		GrantTTLSeconds: serverapi.NewOptInt64(600),
-		Uses:            serverapi.NewOptNilSecretUseArray([]apimodel.SecretUse{{Description: "kubectl get pods -n web"}}),
 	})
 	if err != nil {
 		t.Fatalf("approve leaf key: %v", err)
 	}
 	_, trust, _ := svc.GetSandboxTrustRequest(ctx, testPoolID, testSandboxID, approved.ID)
-	if trust == nil || trust.Pin.Kind != model.TrustPinKindLeafSPKI || trust.PinPEM != "" || trust.Uses[0].Description != "kubectl get pods -n web" {
+	if trust == nil || trust.Pin.Kind != model.TrustPinKindLeafSPKI || trust.PinPEM != "" {
 		t.Fatalf("trust = %+v", trust)
 	}
 	if _, err := svc.ApproveTrustRequest(ctx, "project-1", req.ID, services.ApproveTrustRequestBody{}); !isStatus(err, 409) {

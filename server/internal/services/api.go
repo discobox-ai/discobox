@@ -10,8 +10,6 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
-	"github.com/discobox-ai/discobox/pkg/judge"
-	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/proxy/gateway"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -21,9 +19,6 @@ import (
 )
 
 type ApproveSecretRequestBody = apimodel.ApproveSecretRequestBody
-type CreateApprovalRuleBody = apimodel.CreateApprovalRuleBody
-type UpdateApprovalRuleBody = apimodel.UpdateApprovalRuleBody
-type RuleProposals = apimodel.RuleProposalsBody
 type CreateHarnessConfigBody = apimodel.CreateHarnessConfigBody
 type SetHarnessConfigSecretBindingBody = apimodel.SetHarnessConfigSecretBindingBody
 type CreateSecretBody = apimodel.CreateSecretBody
@@ -180,7 +175,7 @@ type SandboxService interface {
 	UpgradeBasis(ctx context.Context, projectID string) (SandboxUpgradeBasis, error)
 	// ListSandboxes filters on the sandboxes' recorded tags as well as where
 	// they came from; no selectors lists them whatever their tags.
-	ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector, listOptions ...store.SandboxListOption) ([]model.Sandbox, error)
+	ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector) ([]model.Sandbox, error)
 	CreateSandbox(ctx context.Context, projectID string, input CreateSandboxBody) (*model.Sandbox, error)
 	GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	UpdateSandbox(ctx context.Context, projectID, sandboxID string, input UpdateSandboxBody) (*model.Sandbox, error)
@@ -274,7 +269,6 @@ type HTTPAuditFilter struct {
 	SandboxID string
 	PoolID    string
 	Host      string
-	UseID     string
 	Since     time.Time
 	// Until keeps records written at or before it, for a reader paging back
 	// newest first.
@@ -449,16 +443,7 @@ type SecretService interface {
 	ApproveSecretRequest(ctx context.Context, projectID, requestID string, input ApproveSecretRequestBody) (*model.SecretRequest, error)
 	DenySecretRequest(ctx context.Context, projectID, requestID string) error
 
-	ListSecretGrants(ctx context.Context, projectID, secretID, ruleID string) ([]model.SecretGrant, error)
-	// Approval rules (ADR 26-10-12-330): a project's standing answers to
-	// credential requests, made only by a person.
-	ListApprovalRules(ctx context.Context, projectID string) ([]model.ApprovalRule, error)
-	GetApprovalRule(ctx context.Context, projectID, ruleID string) (*model.ApprovalRule, error)
-	CreateApprovalRule(ctx context.Context, projectID string, input CreateApprovalRuleBody) (*model.ApprovalRule, error)
-	UpdateApprovalRule(ctx context.Context, projectID, ruleID string, input UpdateApprovalRuleBody) (*model.ApprovalRule, error)
-	DeleteApprovalRule(ctx context.Context, projectID, ruleID string) error
-	ProposeApprovalRules(ctx context.Context, projectID, requestID string) (*RuleProposals, error)
-	ProposeApprovalRuleFromGrant(ctx context.Context, projectID, grantID string) (*RuleProposals, error)
+	ListSecretGrants(ctx context.Context, projectID, secretID string) ([]model.SecretGrant, error)
 	CreateSecretGrant(ctx context.Context, projectID string, input CreateSecretGrantBody) (*model.SecretGrant, error)
 	RevokeSecretGrant(ctx context.Context, projectID, grantID string) error
 
@@ -466,22 +451,15 @@ type SecretService interface {
 	// RecordSandboxSecretRejection takes what an upstream made of a credential
 	// the pool's proxy swapped in, and decides whether it needs a person
 	// (ADR 0132). ListSecretRejections is what the window reads back.
-	RecordSandboxSecretRejection(ctx context.Context, poolID, sandboxID, sentinel, host, outcome, useID string) error
+	RecordSandboxSecretRejection(ctx context.Context, poolID, sandboxID, sentinel, host, outcome string) error
 	ListSecretRejections(ctx context.Context, projectID string) ([]model.SecretRejection, error)
 
 	// The agent credentials broker (ADR 0031). Every call is made by a pool
 	// agent on behalf of one of its own sandboxes, so each takes the calling
 	// pool's ID and verifies the sandbox belongs to it.
-	ListSandboxCredentials(ctx context.Context, poolID, sandboxID string) ([]store.AgentCredential, error)
-	// SandboxPolicyFacts is the sandbox's record as a policy's variables
-	// resolve from it (ADR 26-10-20-782 §4).
-	SandboxPolicyFacts(ctx context.Context, poolID, sandboxID string) (policy.Facts, error)
+	ListSandboxCredentials(ctx context.Context, poolID, sandboxID string) ([]SandboxCredential, error)
 	CreateSandboxCredentialRequest(ctx context.Context, poolID string, input CreateSandboxCredentialRequestBody) (*model.SecretRequest, error)
 	GetSandboxCredentialRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.SecretRequest, *model.SecretGrant, error)
-	// ListCredentialVerdicts reads that record back for a project's members.
-	// Unlike the broker calls above it is a user read, scoped by project, and
-	// does not require the sandbox a verdict names to still exist.
-	ListCredentialVerdicts(ctx context.Context, projectID string, filter CredentialVerdictFilter) ([]model.CredentialVerdict, error)
 	// ListSecretRefreshEvents reads the refresh audit trail: each ask for a
 	// new value of a token, and how it was answered (ADR 26-09-25-122 §6).
 	ListSecretRefreshEvents(ctx context.Context, projectID string, filter SecretRefreshFilter) ([]model.SecretRefreshEvent, error)
@@ -505,12 +483,23 @@ type HostTrustService interface {
 	DeleteSandboxHostTrust(ctx context.Context, projectID, sandboxID, trustID string) error
 }
 
-// CredentialVerdictFilter is the store's filter, named here so a handler builds
-// it through its services dependency rather than importing internal/store.
-type CredentialVerdictFilter = store.CredentialVerdictFilter
+// SandboxCredential is one credential a sandbox holds, as the agent
+// credentials protocol lists it (ADR 26-10-27-880): a live grant covering
+// the sandbox, and for a use grant the variable its sentinel is delivered in.
+// A delegation grant has no variable: it delivers nothing to its holder.
+type SandboxCredential struct {
+	Name      string
+	EnvName   string
+	SecretID  string
+	GrantID   string
+	Hosts     []string
+	Purpose   string
+	ExpiresAt *time.Time
+}
 
 // SecretRefreshFilter is the store's filter for the refresh trail, named here
-// for the reason CredentialVerdictFilter is.
+// so a handler builds it through its services dependency rather than
+// importing internal/store.
 type SecretRefreshFilter = store.SecretRefreshFilter
 
 // SSHKeyService manages project-scoped SSH keys that authorize SSH access to
@@ -645,11 +634,8 @@ type Services struct {
 	SkillsSources  SkillsSourceService
 	Gateways       GatewayService
 	Peers          PeerService
-	// Judges answers a pool asking for a verdict from the project's judge
-	// (ADR 26-09-22-838 §2). It has no other route: nothing a person calls reaches it.
-	Judges JudgeService
 	// Assets answers a pool's reads of the bundles in its scope (ADR
-	// 26-10-16-423 §13). Like Judges, only a pool reaches it.
+	// 26-10-16-423 §13). Only a pool reaches it.
 	Assets AssetService
 }
 
@@ -677,138 +663,6 @@ type AssetContent struct {
 	Digest    string
 	Size      int64
 	Body      io.ReadCloser
-}
-
-// JudgeService puts a question to the judge of a project: a pool's ask about
-// one of its discoboxes' requests or commands, or the server's own about a
-// discobox handing a credential on.
-type JudgeService interface {
-	Judge(ctx context.Context, poolID string, ask JudgeAsk) (judge.Answer, error)
-	JudgeCommand(ctx context.Context, poolID string, ask CommandAsk) (judge.Answer, error)
-	JudgeDelegation(ctx context.Context, projectID string, ask DelegationAsk) (judge.Answer, error)
-	// JudgeRule is an approval rule's reading (ADR 26-10-12-330 §5): whether
-	// the conditions of an allow a discobox asked for are within those of the
-	// rule's allow that covers it otherwise. It answers from a verdict on
-	// record for the same question before asking anybody.
-	JudgeRule(ctx context.Context, projectID string, ask RuleAsk) (judge.Answer, error)
-	// ProposeRule has the project's judge discobox write the wider policy of
-	// a rule from one request's (§7). An error is no proposal: no model that can
-	// write, or one that did not.
-	ProposeRule(ctx context.Context, projectID string, job judge.ProposalJob) (judge.Proposal, error)
-}
-
-// RuleAsk is whether the conditions of one allow a request asked for are
-// within those of one allow of an approval rule, which code found to cover it
-// in every other part (ADR 26-10-22-689). Job is the question as
-// judge.HoldToRule put it — the two allows as their sentences bound for the
-// discobox that asked, and that discobox's facts (ADR 26-10-14-691) — and the
-// rest says what the verdict is recorded against. The justification is not in
-// it: it authorizes nothing and can only steer.
-type RuleAsk struct {
-	// RuleID is the rule being tested, empty while it is still a proposal.
-	// RequestID is the request tested, and SandboxID the discobox that filed
-	// it.
-	RuleID    string
-	RequestID string
-	SandboxID string
-	Job       judge.Job
-}
-
-// DelegationBound is how long the judge may take over the uses one grant a
-// discobox hands on, across every delegation it is asked about. The approval
-// or create that asks is a discobox's own call, held open by its pool's gate
-// for two minutes (pool-agent's gateHTTPTimeout) — less than an ordinary ask's
-// bound, a judge brought up and then thinking — so the question is answered
-// inside it, with room left for the verdict, the approval's transaction, and
-// the way back: the discobox then reads why it was refused rather than the
-// gate giving up on a silence. The asker bounds its asks together by it, and
-// the judge bounds each by it alone.
-const DelegationBound = 100 * time.Second
-
-// DelegationAsk is a discobox about to hand a credential on, by approving
-// another discobox's request or giving it on a create: whether the conditions
-// of one allow it would hand on fall within those of a delegated allow that
-// covers it otherwise (ADR 26-10-20-782 §11). Code compares everything else of
-// the policy handed on with the delegation's, and asks this only of what it
-// leaves unsettled; the uses handed on are not judged. It is the server's own
-// question, composed from the grant and the request it read, so everything in
-// it is what the server holds rather than what a discobox said.
-type DelegationAsk struct {
-	// ApproverID is the discobox handing the credential on, and For the
-	// discobox it hands it to: its row, since on a create it is not stored
-	// yet, and the judge is told what it was created with (ADR 26-10-14-691).
-	// RequestID is the request it is approving, and empty when it gives the
-	// grant on a create.
-	ApproverID string
-	For        *model.Sandbox
-	RequestID  string
-	// DelegationGrantID is the delegation grant it approves under, which the
-	// verdict is recorded against.
-	DelegationGrantID string
-	// Delegated is one delegated allow and Uses one allow handed on, each as
-	// its sentence with variables written as the values they resolved to,
-	// which code found the same in every part but their when and unless. The
-	// question is whether the one is within the other. The words'
-	// definitions are not sent: code held every word both use to one
-	// definition, so the conditions are all that is compared. They are lists
-	// because the judge's delegation job reads them as it read uses, before
-	// every hand-off carried a policy.
-	Delegated []string
-	Uses      []string
-	// Credential and Hosts are what is handed on and where it may go.
-	Credential string
-	Hosts      []string
-}
-
-// JudgeAsk is a pool asking about one of its discoboxes' requests: which
-// discobox, which approved use it is spending, and what the proxy observed.
-//
-// What that use authorizes is deliberately not in here. The sentence, the
-// credential's name and the host are read from the live grant the use belongs
-// to, so that nothing a pool or a sandbox sends can widen the question its own
-// request is judged against (ADR 26-09-22-838 §4).
-type JudgeAsk struct {
-	SandboxID string
-	UseID     string
-	// Round is which ask this is, from 1. A later round exists because the
-	// judge asked to be shown the body.
-	Round int
-	// Command is what the discobox declared it was running, which is context
-	// and not authority.
-	Command []string
-	Request *judge.Request
-	// Timeout is how long the asker will wait for the answer, or zero when it
-	// did not say. The rounds of one request share one deadline, so a later
-	// round arrives with less than the first had.
-	Timeout time.Duration
-}
-
-// CommandAsk is a pool asking about a command one of its discoboxes is about
-// to run under an approved use, before it mints anything for it
-// (ADR 26-09-22-838 §3). Everything in it is the discobox's: what the use
-// approves is read from the live grant, never taken from the ask.
-type CommandAsk struct {
-	SandboxID string
-	UseID     string
-	Command   []string
-	Stdin     *judge.Input
-	Reported  *judge.Reported
-}
-
-// ApprovedUse is what a request is judged against: the sentence a person
-// approved, the credential in the words they read it as, and the host the
-// grant is limited to.
-type ApprovedUse struct {
-	Purpose string
-	// Policy is the grant's policy as approved, with what its variables
-	// resolved to, when the grant carries one (ADR 26-10-20-782 §1). A job
-	// under it is judged against the whole policy rather than Purpose.
-	Policy     *policy.Policy
-	Credential string
-	Host       string
-	// GrantID is the grant the use belongs to, which a verdict is recorded
-	// against. A use a host trust was granted for has none.
-	GrantID string
 }
 
 // InventoryRead names one of the reads a sandbox's inventory answers

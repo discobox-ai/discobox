@@ -199,7 +199,7 @@ func TestDockerImageSpecsBuildThePlatformBundleFromItsOwnStage(t *testing.T) {
 		platform.envImageKey != "DISCOBOX_PLATFORM_BUNDLE" || !platform.bundle {
 		t.Fatalf("platform bundle spec = %#v", platform)
 	}
-	for _, rel := range []string{"sandbox-agent/Dockerfile", "sandbox-agent/image.json", "harness/prompt-answer.sh"} {
+	for _, rel := range []string{"sandbox-agent/Dockerfile", "sandbox-agent/image.json"} {
 		if !contains(platform.files, filepath.Join(repoRoot, filepath.FromSlash(rel))) {
 			t.Errorf("platform bundle watcher does not rebuild when %s changes", rel)
 		}

@@ -199,7 +199,7 @@ func TestARefreshRequestIsAPersonsToAnswer(t *testing.T) {
 	}
 	req := pendingRefresh(t, st, sec.ID)
 
-	if _, err := approveAsAsked(testPrincipalContext(), t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: apigen.NewOptString(sec.ID)}); statusOf(err) != http.StatusBadRequest {
+	if _, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: apigen.NewOptString(sec.ID)}); statusOf(err) != http.StatusBadRequest {
 		t.Fatalf("approve err = %v, want 400", err)
 	}
 	asSandbox := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypeSandbox, SandboxID: "sb-1"})
@@ -219,7 +219,7 @@ func TestARefreshRequestIsAPersonsToAnswer(t *testing.T) {
 // rejection, its value is stale from now, and a refresh request says why.
 func TestARefusedRenewableTokenAsksForANewValue(t *testing.T) {
 	svc, st, _, sec := renewableFixture(t, time.Now().UTC().Add(-2*time.Minute))
-	err := svc.RecordSandboxSecretRejection(context.Background(), "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome, "")
+	err := svc.RecordSandboxSecretRejection(context.Background(), "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome)
 	if err != nil {
 		t.Fatalf("record: %v", err)
 	}
@@ -323,48 +323,22 @@ func TestARefreshRequestIsNotTheAskForAGrant(t *testing.T) {
 	}
 }
 
-// A token created for a well-known ID answers it from the start, and the ID
-// is one secret's: a second is refused, as is a gate.
-func TestASecretCanBeCreatedForAWellKnownID(t *testing.T) {
+// A token created with a refresh command and no lifetime is short-lived by
+// assumption: it takes the default a command gets.
+func TestATokenWithACommandAndNoLifetimeTakesTheDefault(t *testing.T) {
 	svc := newTestService(t)
 	ctx := testPrincipalContext()
-	body := services.CreateSecretBody{
-		Name:        "github",
-		Type:        apigen.CreateSecretBodyTypeToken,
-		Value:       apigen.SecretValue{Token: apigen.NewOptString("gho_x")},
-		WellKnownId: apigen.NewOptString("com.github.api"),
-	}
-	sec, err := svc.CreateSecret(ctx, "project-1", body)
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	if sec.WellKnownID != "com.github.api" {
-		t.Fatalf("wellKnownId = %q, want the ID it was created for", sec.WellKnownID)
-	}
-	// Created with no command, it has no lifetime; one created with gh's
-	// command and none named takes the lifetime GitHub's token really has.
-	if sec.TTL != 0 {
-		t.Fatalf("ttl = %d, want none without a command", sec.TTL)
-	}
-	if err := svc.DeleteSecret(ctx, "project-1", sec.ID); err != nil {
-		t.Fatal(err)
-	}
-	body.RefreshCommand = apigen.NewOptNilStringArray([]string{"gh", "auth", "token"})
-	sec, err = svc.CreateSecret(ctx, "project-1", body)
+	sec, err := svc.CreateSecret(ctx, "project-1", services.CreateSecretBody{
+		Name:           "github",
+		Type:           apigen.CreateSecretBodyTypeToken,
+		Value:          apigen.SecretValue{Token: apigen.NewOptString("gho_x")},
+		RefreshCommand: apigen.NewOptNilStringArray([]string{"gh", "auth", "token"}),
+	})
 	if err != nil {
 		t.Fatalf("create with command: %v", err)
 	}
-	if sec.TTL != 24*60*60 {
-		t.Fatalf("ttl = %d, want GitHub's day", sec.TTL)
-	}
-	body.Name = "github-2"
-	if _, err := svc.CreateSecret(ctx, "project-1", body); statusOf(err) != http.StatusConflict {
-		t.Fatalf("second secret for the ID err = %v, want 409", err)
-	}
-	body.Name = "gate"
-	body.WellKnownId = apigen.NewOptString("ai.discobox.sandbox")
-	if _, err := svc.CreateSecret(ctx, "project-1", body); statusOf(err) != http.StatusBadRequest {
-		t.Fatalf("gate err = %v, want 400", err)
+	if sec.TTL != model.DefaultRefreshTTL {
+		t.Fatalf("ttl = %d, want the default %d", sec.TTL, model.DefaultRefreshTTL)
 	}
 }
 
@@ -379,7 +353,7 @@ func TestTheStaleMarkSurvivesAnEditAndSparesAFreshValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome); err != nil {
 		t.Fatal(err)
 	}
 	before.Name = "github-renamed"
@@ -398,7 +372,7 @@ func TestTheStaleMarkSurvivesAnEditAndSparesAFreshValue(t *testing.T) {
 	if _, err := svc.RefreshSecret(testPrincipalContext(), "project-1", sec.ID, services.RefreshSecretBody{Value: "gho_new", Via: apigen.RefreshSecretBodyViaEntered}); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "github.com", resourcesecrets.SecretRejectedOutcome); err != nil {
 		t.Fatal(err)
 	}
 	fresh, _ := svc.GetSecret(ctx, "project-1", sec.ID)

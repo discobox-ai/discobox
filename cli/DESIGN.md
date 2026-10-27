@@ -21,11 +21,8 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/tui` | The `discobox console` window: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local TCP listeners and UDP sockets kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/localpty` | Running one of this CLI's own commands on a pty of its own for a console pane: `creack/pty` on Unix, ConPTY on Windows (ADR 0065). Sets `DISCOBOX_PARENT_PID` on the child. |
-| `internal/apipolicy` | A credential policy between the API's shape (`apimodel.AccessPolicy`) and the `policy` package's, through the generated type's own JSON. One home, because the CLI's request and rule commands, the console's data source, and `sandboxcreate`'s `--grant` parse all send or read one. |
 | `internal/lifetime` | How long a grant lives, said the way people say it: the presets an approval offers, the words every length-of-time flag parses (`Flag`: `--ttl`, `--grant-ttl`, `--max-grant-ttl`, `--expires-in`, and `--since` counting back), and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
 | `internal/refreshcmd` | Running the command a token suggests for its renewal (ADR 26-09-25-122): an argument vector split as a person types it, run with no shell, no stdin, a deadline, and a bound on output, printed value trimmed. Shared by `discobox secret refresh`/`create` and the console's data source, so the command a person was shown is run one way everywhere. |
-| `internal/policyview` | A credential policy as the person approving it reads it (ADR 26-10-20-782 §3): statements grouped by scope, the `anywhere` denies once under `global`, conditions under their statement, each variable followed by its resolved value (or "does not resolve, so it matches nothing"), and each non-default word followed by its definition where it is first used. Each line carries the sentence's `policy.Tokens`, noted, so the console highlights it as syntax; the CLI prints its plain text. Display only: what an approval sends is the policy as read, never these lines. Shared by the console's request and grant cards and the CLI's `secret request get`, `approve` and `grant ls`; `Unbound` draws a rule's policy, its variables bare since a rule binds them to whichever discobox asks. |
-| `internal/uselines` | A credential use broken into the lines a person reads it in — a line per sentence, and the writes after "Read …;" and the items of "Never …" set in under theirs — in the shape the discobox-access skill teaches, where it is there. Display only and optimistic: every word kept in order, and a use outside the shape is broken less, never reworded. The server takes a use on one line and stores and judges it as written. Shared by the console's cards and the CLI's `get` tables. |
 | `internal/clipimage` | The images a paste means on this machine: the OS clipboard's (osascript, wl-paste/xclip, PowerShell from Windows and WSL) and the image files a pasted path names. The console carries them into a discobox. |
 | `internal/clipwatch` | Keeping up with the Windows clipboard while the console is open — in process on Windows, through the embedded `discobox-clipwatch` helper (installed under `%LOCALAPPDATA%\discobox\bin\<digest>`, the other builds' copies pruned) on WSL — so a dictation tool's Ctrl-V is answered with the text it pasted before it puts the clipboard back. Event-driven (`AddClipboardFormatListener`), idle at zero CPU. |
 | `internal/wsl` | The questions only Windows can answer when the CLI runs in a WSL distribution: whether it does, `wslpath` either way, where a Windows program is (PATH, or its fixed Windows path when the distribution does not inherit PATH), and a Windows environment variable through `cmd.exe`. Every package that crosses into Windows from WSL asks through it. |
@@ -979,11 +976,10 @@ not an everyday verb, and stays `admin box purge`.
 everyday power commands, and `admin box start|stop|restart` stay the raw forms
 that take an ID, accept `--force`, and print the record the API answered with.
 They resolve arguments by `rm`'s rule over the same listing, and report through
-`runActionMany`. A discobox driving others in its project runs them under the
-sandbox role (ADR 26-10-02-478 §1, ADR 26-10-14-320), where every call is judged against the use
-it was approved for; so when every argument is a full ID the listing is not
-fetched, and the command makes only the call its use names. The in-box skills
-teach these forms.
+`runActionMany`. A discobox driving the ones it created runs them under the
+sandbox role (ADR 26-10-02-478 §1, ADR 26-10-27-880 §9); when every argument
+is a full ID the listing is not fetched, and the command makes only the call
+it needs. The in-box skills teach these forms.
 
 Which *name* that is, is `nameMatch` (`internal/cli/shell.go`), and `rm` is the
 command that made the distinction necessary. The NAME column is
@@ -1002,10 +998,7 @@ listing has usually stopped printing.
   user can see is the only one they can type. Because the box writes that
   name, one that is also a short ID of another discobox is refused
   (`matchSandboxName`) rather than taken over the ID, and so is an ID-shaped
-  name while a server is silent. The resolving listing keeps judges
-  (`sandboxFilter.judges`) for the IDs alone: a name is matched against the
-  rows `discobox ls` prints, which a judge is not (`sandboxesNamed` skips it),
-  and its short ID is checked against every ID, a judge's included. It
+  name while a server is silent. It
   matches the title as the table prints it as well as raw (`sandboxListedAs`):
   `writeSandboxes` collapses whitespace and cuts past `sandboxNameColumnWidth`,
   and the cut form is the spelling on the user's screen.
@@ -1270,7 +1263,7 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
 - **A placeholder says what resolves.** It is `DISCOBOX`, `POOL`, `PROJECT`,
   `HARNESS`, `SECRET` or `PROVIDER` where a name resolves as well as an ID
   (`resolvePoolID`, `resolveListedSandbox`, …). It is `X_ID` where only an ID
-  or a short ID does: the raw `admin box` forms, requests, rules, grants,
+  or a short ID does: the raw `admin box` forms, requests, grants,
   jobs, execs, terminals, keys, peers and audit records. Arguments are written
   `UPPER`, never `<lower>`.
 - **Short help is a sentence** starting with a capital letter. A declared
@@ -1820,25 +1813,12 @@ per ADR 0112. Each trail is read where it is kept, through the control plane:
 | --- | --- | --- | --- | --- |
 | `http` | `list-http-audit`, `get-http-audit`, and the hand-wired recording route for `--body` | each pool | `http_<row>` | row id, per pool |
 | `dns` | `list-dns-audit`; `get` reads one row through it by `id` | each pool | `dns_<row>` | row id, per pool |
-| `creds` | `list-credential-verdicts` | control plane | `cvd_…` | time |
 | `refresh` | `list-secret-refreshes`; `get` reads a request's events through it by `id` | control plane | `sreq_…` | time |
 | `hooks` | `list-harness-hooks` | inside the discobox | `evt_…` | time |
 | `execs` | `list-exec-events` | inside the discobox | `evt_…` | time |
 | `list` | every trail but `dns` unless `--source` names it, merged by time, for one discobox | | each trail's own | each trail's own |
 | `get` | whichever trail the ID names | | | |
 
-`creds` lists the judge's verdicts, `--kind` picks one: `command`, a command
-`discobox-access run` declared, judged before its value was minted;
-`request`, a request the proxy observed; `delegation`, a discobox handing a
-credential on; and `rule`, the conditions of an allow a request asked for read
-against an approval rule's allow (below), which `--rule-id` narrows to one rule's. The control plane records each `judge` before it answers. A
-`command` row of origin `sandbox` predates that: a discobox's own judge's word.
-`RTT` is the round trip each asker timed. `--prompt` prints each verdict in
-full; `--jev-input` does too, with exactly what Jev was sent on a server that
-judges with Jev (the request body to its API, laid out with `json.Indent`,
-which changes only whitespace), and escaped as data like the prompt. A verdict
-the judge discobox decided after Jev was unsure names both
-(ADR 26-10-12-669).
 `refresh` is the asks for a new value of a token and how each closed
 (ADR 26-09-25-122 §6), two events per request — `asked`, then `answered` or
 `dismissed` — so a follower reading forward by time sees the answer arrive
@@ -1846,11 +1826,10 @@ rather than a record that changed behind it; its key is the request ID and the
 event. An answer's record is attested `client`, the answering client's account
 of how the value was made; the ask and a dismissal are `control-plane`'s.
 `--discobox` matches the discobox that most recently needed the value.
-`http`'s `USES` column is the join to `creds`, by `--use-id` on either; a
-discobox's calls to the discobox API carry the use they were made under too.
-Its `REFUSED BY` column says what refused a request the proxy never sent — the
-host policy, the credential judge, the discobox API's gate, or a credential the
-control plane could not resolve (`httpAuditRefuser`, read from the start of `blockedReason`) — and `list`'s
+`http`'s `SECRETS` column names the secrets swapped into a request
+(ADR 26-10-01-240). Its `REFUSED BY` column says what refused a request the
+proxy never sent — the host policy, a credential's routes, the discobox API's
+gate, or a credential the control plane could not resolve (`httpAuditRefuser`, read from the start of `blockedReason`) — and `list`'s
 line for one says why. `hooks`,
 `execs` and `ls` take the discobox as `[DISCOBOX]`, picked when it is left out,
 and the filters on the project-wide trails as `--discobox`; a stopped discobox
@@ -1868,7 +1847,7 @@ records.
   trails are stamped by three different machines — the pool proxy, the
   control plane, the sandbox agent — so a shared position would read every
   trail from the clock of whichever is ahead: a pool a few minutes fast would
-  leave the verdict trail permanently unread, silently. A trail's cursor, its
+  leave the refresh trail permanently unread, silently. A trail's cursor, its
   lookback and its newest record are its own, and the merge only decides the
   order records print in.
 - **A read back pages by time** (`readAuditBack`). An endpoint answers at most
@@ -1898,14 +1877,13 @@ records.
   every record in the listing is that one discobox's, and not the pool, because
   a discobox runs on one. `SOURCE` is also what says how much a record is worth
   (ADR 0130 §2): `http` is the proxy's own observation, `hooks` and `execs` are
-  the discobox's account of itself, a `creds` record says `use` or `report`, and
-  a `refresh` record reads `answered` with how the client says it made the value.
+  the discobox's account of itself, and a `refresh` record reads `answered` with how the client says it made the value.
   The attestor stays a field in `-o json`.
 - **`get DISCOBOX RECORD_ID` routes on the ID.** `http_…` is read from
   the pool the discobox runs on — resolved from the discobox, since a record ID
   is only unique on one pool, with `--pool` for a discobox that is gone — and
-  shows the fields no listing carries. `cvd_…` is a verdict, printed like
-  `creds --prompt --jev-input`. `evt_…` is a hook or an exec event, and since the sandbox
+  shows the fields no listing carries. `sreq_…` is a refresh request's
+  events. `evt_…` is a hook or an exec event, and since the sandbox
   agent numbers both from one sequence, both trails are asked; an ID is in at
   most one. A read that fails for a reason of its own (a stopped discobox
   answers 409) is reported as that, not as "no such record". Recorded bodies
@@ -2884,104 +2862,42 @@ own; see the console design doc.
 
 ## Grants and a Request as JSON (ADR 26-09-24-630)
 
-`discobox run --grant` gives the new discobox uses of credentials in
-`admin box create --grant`'s form. Every grant carries a policy (#312):
-`--grant-statement CREDENTIAL=SENTENCE` and `--grant-define
-CREDENTIAL=WORD=DEFINITION`, CREDENTIAL being what the `--grant` names before
-its `=`, matched as repeated `--grant` values are grouped, so the hosts in
-another order are the same grant. Both commands parse through
-`sandboxcreate.ParseGrants`, which refuses a grant with no statement, a
-statement for no grant, and a policy that does not validate before anything
-is sent, and resolve a secret's name to its ID through
-`App.resolveGrantSecrets`; `PromptOptions.Grants` carries the result, and the
-window, handed the three flags as given (`RunRequest.Grant`,
-`GrantStatement`, `GrantDefine`), parses and resolves in its own create.
+`discobox run --grant SECRET[@HOST[,HOST...]]:ENV_VAR` gives the new discobox a
+project secret in `admin box create --grant`'s form: a sandbox grant for the
+hosts named (the secret's own when none are), delivered as a sentinel in
+ENV_VAR (ADR 26-10-27-880). One variable is given once. Both commands parse
+through `sandboxcreate.ParseGrants` and resolve a secret's name to its ID
+through `App.resolveGrantSecrets`; `PromptOptions.Grants` carries the result,
+and the window, handed the flag as given (`RunRequest.Grant`), parses and
+resolves in its own create. A discobox creating one gives only what a
+delegation grant it holds covers; the server checks that.
 
-`secret grant create` takes the same policy as `--statement` and `--define`
-beside `--use` (a delegation's included), and refuses either without the
-other: a grant with uses carries a policy, and a standing grant, with no
-uses, carries none. `secret request ls|get -o json` prints a request's policy
-with a `sentences` list beside its structure (`requestJSON`), as
-discobox-access prints one, so a lead compares a worker's ask with its
-skill's word for word.
+`--discobox-api` on both creates sets the new discobox's `discoboxApi`: it may
+call the discobox API through its pool, acting only on the discoboxes it
+creates (ADR 26-10-27-880 §9). A person sets or clears it on an existing one
+with `admin box update DISCOBOX --discobox-api[=false]`.
+
+`secret grant create` mints a standing grant: a scope, hosts and a lifetime.
+`--delegate` makes it a delegation grant instead, sandbox scope only: its
+discobox may give the credential to the discoboxes it creates and may not use
+it. `secret request approve` answers a request with a secret, hosts and a
+lifetime; there is nothing else to approve.
 
 `--from-json` (`runJSONRequest`, `run_json.go`) reads the whole request from stdin
-as one object whose fields are the run flags', with grants spelled the way
-`discobox-access request --json` asks for a credential — `uses`,
-`statements` and `definitions`. It fills the same
+as one object whose fields are the run flags', with grants as `secret`,
+`envVar` and `hosts` and the API flag as `discoboxApi`. It fills the same
 `runCommandOptions` the flags do, so one validation and one create path serve
 both; it refuses any run flag or word beside it rather than merging two
 answers, forces `-d`, asks nothing (stdin is the request), and prints the
 created discobox as JSON. It exists for an agent in a discobox making another,
-which would otherwise quote a prompt and each use's sentence through a shell,
-and it is what the in-box skills teach.
+which would otherwise quote a prompt through a shell, and it is what the in-box
+skills teach.
 
 The SSH sync every create ends with (`syncSSHConfigAfterCreate`) is skipped,
 with a note, when the server refuses it with a 403: a discobox creating
 another may not enroll a key, which would reach every discobox in the
 project, and has no use for an `ssh_config`. `admin ssh-config --write` calls
 `writeProjectSSHConfig` itself, where a refusal is the answer.
-
-## Approval Rules (`discobox secret rule`, ADR 26-10-12-330)
-
-`secret_rule.go`. An approval rule is a project's standing answer to a
-credential request that asks for a policy, and the CLI is the two ways a
-person makes one. What it approves is a policy, written as discobox-access
-writes one: `--statement` a sentence each, `--define WORD=DEFINITION` a
-non-default word each (`--rule-statement`/`--rule-define` on
-`approve --auto`). It is parsed (`policy.ParseStatements`) and validated
-(`Policy.Validate`) before anything is sent, and a refusal carries
-`policy.Grammar` (`writtenPolicy`, `policy.go`).
-
-- **Directly**: `secret rule create|ls|get|update|delete`, as
-  `secret grant create` makes a pre-approval. `create` takes `--repo`
-  (repeatable, or comma-separated) or `--every-discobox`, and refuses a rule
-  that says neither. `update` sends only the flags given;
-  `--disabled[=false]` is an edit, `--repo` replaces the repositories,
-  `--every-discobox` sends `everyDiscobox`, which removes them, and
-  `--statement` replaces the whole policy, so definitions without statements
-  are refused. A rule's credential and purpose are not edited.
-- **From a request**: `secret request approve --auto` sends a `rule` on the
-  approve body, so the rule and the approval are one write. With nothing else
-  said it is the narrowest rule: the policy as asked (no `policy` on the
-  rule), for the repository of the discobox that asked, which the server
-  names. `--auto` implies `--policy-as-asked`: the request is read and its
-  policy sent as the approval's, which also refuses a request of uses alone
-  before anything is written. `--rule-repo`, `--rule-every-discobox`,
-  `--rule-statement` and `--rule-define` say otherwise, and are refused
-  without `--auto` rather than dropped. The rule made is read back whole.
-
-A repository is sent as typed: a URL, git's scp-like form, or `host/path`. The
-server reads it, stores it as `host/path`, and refuses a bare `org/repo`.
-
-`secret request propose` prints what auto approve offers — the repository of
-the discobox that asked, and the policy the project's judge wrote (the same
-work on any target of its kind) with whether it covers the request and why,
-or why it could not be a rule's — and makes nothing. The policy is printed as
-the `--rule-statement`/`--rule-define` flags that send it, shell-quoted, so
-it becomes a rule only by being passed, and the text approved is text the
-person handled; with none the rule approves the policy as asked. Statements
-the server refused are printed as written, and offered as no flag.
-
-- A proposal is a model's policy written from an agent's ask, and a rule's
-  may be one too: both are shown whole and through `terminalSafe`, as a
-  rule's repositories are. `secret rule get` prints the policy as its
-  canonical sentences and `"word" means: …` rows (`policySentenceRows`), the
-  words `--statement` and `--define` write it in, and the variables it binds
-  to whichever discobox asks; `ls` its first statement and how many more.
-- **A rule for every discobox is never what saying nothing makes.** It takes
-  its flag on `create`, `update` and `approve --auto`, each refused beside
-  repositories, and each sends `everyDiscobox: true` — never an empty or
-  missing list, which the server refuses on create and update and reads as
-  the asking discobox's repository on an approve. It is said
-  in the ADR's words wherever it is shown (`everyDiscobox`): it approves for
-  discoboxes that do not exist yet.
-- `secret rule ls|get` show the repositories (`FOR`), or that it is for every
-  discobox.
-- `secret request get` lists each rule tested against a pending request and
-  why it did not cover it — a rule for other repositories says so as a fact;
-  `secret grant ls --rule` lists what a rule minted, by its full ID, since the
-  rule may be gone.
 
 ## The Two IDs an Enrollment Is Made Of (`discobox id`)
 
@@ -3358,7 +3274,7 @@ pool agent, with current driver provisioning progress shown when available.
 server and project it returns; the server resolves the harness slug, name or ID
 as for `run -H` and import (ADR 26-10-24-650). An empty selector is refused,
 omission leaves the selection unchanged, and selecting `shell` requests a shell.
-Only changing the selected harness requires a stopped sandbox; name and egress
-updates keep their existing rules. The command does not stop, start or attach.
+Only changing the selected harness requires a stopped sandbox; name, egress and
+`--discobox-api` updates keep their existing rules. The command does not stop, start or attach.
 Terminal displays and completion prefer `currentHarnessId`, with `harnessId` as
 the fallback for an older agent; creation metadata remains historical.

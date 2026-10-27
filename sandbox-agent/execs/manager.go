@@ -403,7 +403,7 @@ func MergeEnv(base, override map[string]string) map[string]string {
 //
 // It returns a new map and never writes to the one it was given: callers pass
 // the manager's and the terminal service's own base environment, which
-// concurrent execs and judging runs read at the same time.
+// concurrent execs read at the same time.
 func EnvWithRuntimeDefaults(base map[string]string, user *User) map[string]string {
 	env := make(map[string]string, len(base)+8)
 	for key, value := range base {
@@ -1116,7 +1116,7 @@ func (m *Manager) resolveWorkdir(requested, home string) (string, error) {
 		// is only as present as the checkout makes it: never committed,
 		// ignored, or removed since. An exec that named no workdir then
 		// starts at the source root, which the checkout always has, rather
-		// than every terminal, shell and judge run failing to start.
+		// than every terminal and shell failing to start.
 		if m.sourceRoot != "" && requested != m.sourceRoot && !isDirectory(requested) {
 			requested = m.sourceRoot
 		}

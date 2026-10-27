@@ -482,15 +482,13 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 	}
 	addFile(repoRoot, ".dockerignore", sandboxSeen)
 	// The files the Dockerfile copies into the platform's features from
-	// outside sandbox-agent: the brand assets, the prompt helper, and the
-	// discobox-access skill.
+	// outside sandbox-agent: the brand assets and the discobox-access skill.
 	if err := addTree(filepath.Join(repoRoot, "assets", "brand"), sandboxSeen); err != nil {
 		return nil, err
 	}
 	if err := addTree(filepath.Join(repoRoot, "access", "skills", "discobox-access"), sandboxSeen); err != nil {
 		return nil, err
 	}
-	addFile(repoRoot, filepath.Join("harness", "prompt-answer.sh"), sandboxSeen)
 	// The platform bundle is FROM scratch, so the shared base is not among
 	// its inputs.
 	platformSeen := sandboxSeen

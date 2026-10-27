@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"path"
-	"sort"
 	"strings"
 	"time"
 
@@ -20,13 +19,10 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
-	"github.com/discobox-ai/discobox/pkg/judge"
 	"github.com/discobox-ai/discobox/pkg/platform"
-	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/pkg/sourcecache"
-	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/x/id"
 )
@@ -245,18 +241,6 @@ type Project struct {
 	Default                bool   `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's default project"`
 	DefaultPoolID          string `gorm:"column:default_pool_id;type:text;default:''" json:"defaultPoolId,omitempty" doc:"Default pool ID for new sandboxes"`
 	DefaultHarnessConfigID string `gorm:"column:default_harness_config_id;type:text;default:''" json:"defaultHarnessConfigId,omitempty" doc:"Default harness config ID"`
-	// JudgePoolID is the pool the project's judge runs in (ADR 26-09-22-838 §1). It is
-	// recorded when the project's first pool is made, because that pool runs
-	// Linux containers on every platform Discobox supports, and a judge is one.
-	// It is not chosen again afterwards: a pool whose discoboxes are whole VMs
-	// of another operating system asks this pool's judge rather than running
-	// one of its own.
-	JudgePoolID string `gorm:"column:judge_pool_id;type:text;default:''" json:"-" doc:"Pool the project's judge runs in"`
-	// JudgeSandboxID is which discobox is this project's judge. Judge mode is
-	// something anybody may create, so the mode alone does not say which one
-	// Discobox runs and keeps converged; this does, and it is written by the
-	// judge's own convergence and by nothing else.
-	JudgeSandboxID string `gorm:"column:judge_sandbox_id;type:text;default:''" json:"-" doc:"The discobox that is this project's judge"`
 	// ArchiveRetentionSeconds is how long this project's archived sandboxes are
 	// kept before they are purged (ADR 0022 §4). Zero means the server default:
 	// a project that has never chosen gets the default as it changes, rather
@@ -598,89 +582,6 @@ func (s *GitSource) Root() string {
 		return strings.TrimSpace(*s.URL)
 	}
 	return ""
-}
-
-// RepositoryURL is the repository a source is of, as it was recorded at
-// create: its URL when it has one, and otherwise the remote its client
-// reported for a local checkout. A source that names both is its URL's: the
-// URL is the repository its creator named, and an upstream beside it is not
-// asked to stand in for it. It is the one answer to
-// which repository a discobox is: an approval rule's repositories are
-// compared with it, and the judge is told it (ADR 26-10-14-691), so the two
-// cannot name different repositories for one discobox.
-func (s *GitSource) RepositoryURL() string {
-	switch {
-	case s == nil:
-		return ""
-	case s.URL != nil && strings.TrimSpace(*s.URL) != "":
-		return strings.TrimSpace(*s.URL)
-	case s.UpstreamURL != nil:
-		return strings.TrimSpace(*s.UpstreamURL)
-	}
-	return ""
-}
-
-// PolicyFacts is what the control plane recorded about a sandbox when it was
-// created, typed: what a policy's variables resolve from (ADR 26-10-20-782
-// §4), and what the judge is told (judge.DiscoboxOf). Nothing it reports about
-// itself since is read. The primary source is the one the sandbox was created
-// with; the others follow in destination order, so the facts are the same
-// every time. A source with no slug cannot be named by $sources.<slug>.repo.
-func (s *Sandbox) PolicyFacts() policy.Facts {
-	out := policy.Facts{Discobox: policy.Discobox{ID: s.ID, Project: s.ProjectID}}
-	if s.CreatedBySandboxID != nil {
-		out.Discobox.CreatedBy = *s.CreatedBySandboxID
-	}
-	if s.Source != nil {
-		primary := s.Source.policySource()
-		primary.Primary = true
-		out.Sources = append(out.Sources, primary)
-	}
-	destinations := make([]string, 0, len(s.SourceCodeReferences))
-	for destination := range s.SourceCodeReferences {
-		destinations = append(destinations, destination)
-	}
-	sort.Strings(destinations)
-	for _, destination := range destinations {
-		source := s.SourceCodeReferences[destination]
-		out.Sources = append(out.Sources, source.policySource())
-	}
-	return out
-}
-
-// policySource is one source as it was created, as a fact.
-func (s *GitSource) policySource() policy.Source {
-	out := policy.Source{Remote: policyRemote(s.RepositoryURL())}
-	if s.Slug != nil {
-		out.Slug = *s.Slug
-	}
-	if checkout := s.Checkout; checkout != nil {
-		if checkout.RefName != nil && *checkout.RefName != "" {
-			out.Ref = &policy.Ref{Name: *checkout.RefName}
-			if checkout.RefType != nil {
-				out.Ref.Type = *checkout.RefType
-			}
-		}
-		if checkout.Commit != nil {
-			out.Commit = *checkout.Commit
-		}
-	}
-	return out
-}
-
-// policyRemote is a source's remote, in any spelling git accepts, as a fact:
-// nil when it names no repository on a network. A remote on a pool's origins
-// host resolves only inside the discobox that has it, so it is none.
-func policyRemote(remote string) *policy.Remote {
-	normalized := sourceref.NormalizeRemote(remote)
-	if normalized == "" || sourcecache.OnPoolOriginsHost(remote) {
-		return nil
-	}
-	host, repo, ok := strings.Cut(normalized, "/")
-	if !ok || repo == "" {
-		return nil
-	}
-	return &policy.Remote{Host: host, Repo: repo, URL: "https://" + normalized}
 }
 
 // GitSourceCheckout identifies the immutable checkout and user-facing ref.
@@ -1168,7 +1069,13 @@ type Sandbox struct {
 	// Egress is the discobox's own level of its egress policy
 	// (ADR 26-10-01-032). It is not in the manifest, whose fingerprint rebuilds
 	// the container: a policy change converges at the pool proxy.
-	Egress            egress.Policy                   `gorm:"column:egress;type:text;serializer:json" json:"egress" doc:"The discobox's own egress policy level"`
+	Egress egress.Policy `gorm:"column:egress;type:text;serializer:json" json:"egress" doc:"The discobox's own egress policy level"`
+	// DiscoboxAPI lets the discobox call the discobox API through its pool,
+	// in the sandbox role, on the discoboxes it created (ADR 26-10-27-880 §9).
+	// Like Egress it has its own setter (store.SetSandboxDiscoboxAPI) and is
+	// never written by a whole-row save: a person changes it while the
+	// reconciler holds a copy of the row.
+	DiscoboxAPI       bool                            `gorm:"column:discobox_api;not null;default:false" json:"discoboxApi,omitempty" doc:"The discobox may call the discobox API through its pool, acting only on the discoboxes it created"`
 	SourceRoot        *string                         `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
 	Origin            *Origin                         `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host the sandbox was created from. Immutable after create."`
 	SourceDeliveries  map[string]sourcecache.Delivery `gorm:"column:source_deliveries;type:text;serializer:json" json:"sourceDeliveries,omitempty"`
@@ -1291,15 +1198,6 @@ type AutomaticRepair struct {
 	// and a sandbox can fail again on the same generation, when a container
 	// lost later cannot be rebuilt.
 	LandedAt *time.Time `json:"landedAt,omitempty" doc:"When the repair landed. Absent while it runs, and when it failed." format:"date-time"`
-}
-
-// HoldsInjectedSecretsToRoutes reports whether the proxy holds this
-// discobox's injected secrets to their routes (ADR 26-10-02-924 §5). A
-// judge's are not: its harness's requests would wait on its own verdict, and
-// ADR 26-09-22-838 relies on its credential having no use. Both what a pool is
-// handed and what the control plane answers for a route's use ask this.
-func (s *Sandbox) HoldsInjectedSecretsToRoutes() bool {
-	return s.HarnessMode != sandboxconfig.HarnessModeJudge
 }
 
 // AutomaticRepairAllowed reports whether using this sandbox, found to have no
@@ -1443,9 +1341,9 @@ const (
 	SecretGrantScopeProject       = "project"
 
 	// SecretGrantPurposeUse and SecretGrantPurposeDelegate are what a grant
-	// authorizes its holder to do with the credential: use it, or hand it to
-	// other discoboxes. A grant is one or the other, never both, so a person
-	// approving one is agreeing to one thing.
+	// authorizes its holder to do with the credential: use it, or give it to
+	// the discoboxes it creates. A grant is one or the other, never both, so a
+	// person approving one is agreeing to one thing.
 	SecretGrantPurposeUse      = "use"
 	SecretGrantPurposeDelegate = "delegate"
 
@@ -1487,7 +1385,7 @@ const (
 // Secret is a project-scoped encrypted credential that can be requested by sandboxes.
 type Secret struct {
 	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable secret ID"`
-	ProjectID string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_project_type_host,priority:1;uniqueIndex:idx_secret_project_well_known,priority:1" json:"projectId" doc:"Project ID"`
+	ProjectID string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_project_type_host,priority:1" json:"projectId" doc:"Project ID"`
 	// Name is part of the uniqueness domain. Without it a project could hold
 	// only one secret per (type, host) — and since nothing infers a host any
 	// more, that collapsed to one unbound token per project: a GitHub token and
@@ -1534,10 +1432,6 @@ type Secret struct {
 	// service owns the default a creator who names none receives.
 	MaxGrantTTL    int64  `gorm:"column:max_grant_ttl_seconds;not null" json:"maxGrantTTLSeconds" doc:"Longest a grant on this secret may live, in seconds; 0 allows grants that never expire"`
 	EncryptedValue []byte `gorm:"column:encrypted_value" json:"-"`
-	// WellKnownID is the well-known credential this secret fulfills: a
-	// request for that ID resolves to it. At most one secret in a project
-	// carries a given ID, which the partial unique index holds.
-	WellKnownID string `gorm:"column:well_known_id;not null;type:text;default:'';uniqueIndex:idx_secret_project_well_known,priority:2,where:well_known_id <> ''" json:"wellKnownId,omitempty" doc:"Well-known credential this secret fulfills"`
 	// TTL is how long a token's value is good for after it is written, in
 	// seconds (ADR 26-09-25-122 §1). Zero never goes stale, which is every
 	// token written before the field existed.
@@ -1548,9 +1442,8 @@ type Secret struct {
 	RefreshCommand []string `gorm:"column:refresh_command;type:text;serializer:json" json:"refreshCommand,omitempty" doc:"Command a person's client may run to produce a new value"`
 	// Routes are where the credential may be sent, whoever holds it (ADR
 	// 26-10-02-924). With any, every request a sentinel for it is swapped into
-	// must fall on one: the most specific routes covering it send it unjudged
-	// when one of them carries no use, and judge it against their uses when
-	// all do. None leaves it to its grants.
+	// must fall on one, and the most specific routes covering it must not be
+	// blocked (secretroute.Decide). None leaves it to its grants.
 	Routes []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Where the credential may be sent; every request it is sent in must fall on one"`
 	// ValueUpdatedAt is when the current value was written, set by the store
 	// on create and on every replaced value.
@@ -1572,46 +1465,31 @@ func (Secret) TableName() string { return "secrets" }
 
 // SecretRoute is one place a secret may be sent (ADR 26-10-02-924): a host
 // and everything beneath it, and within it an optional path prefix matched on
-// whole segments. A route with a use judges every request on it against that
-// sentence, under UseID; one without sends them unjudged.
+// whole segments. A blocked route refuses every request it is the most
+// specific route for; it is what a route whose use a judge read became, so
+// removing the judge sent nothing on it unjudged (ADR 26-10-27-880).
 type SecretRoute struct {
-	UseID string `json:"useId,omitempty" doc:"Stable use ID of the route's use, minted when it was written"`
-	Host  string `json:"host" doc:"Host the route covers, and every host beneath it"`
-	Path  string `json:"path,omitempty" doc:"Path prefix matched on whole segments; empty is the whole host"`
-	Use   string `json:"use,omitempty" doc:"Sentence a request on this route is judged against; empty sends it unjudged"`
+	Host    string `json:"host" doc:"Host the route covers, and every host beneath it"`
+	Path    string `json:"path,omitempty" doc:"Path prefix matched on whole segments; empty is the whole host"`
+	Blocked bool   `json:"blocked,omitempty" doc:"Refuse every request this route is the most specific route for"`
 }
 
-// ReplaceRoutes sets the secret's routes to routes, in order, normalized. A
-// route whose host, path and use are unchanged keeps its use ID, so a verdict
-// recorded against it still stands; a new use is minted an ID, never handed
-// one, and a route without a use has none. Repeats collapse. A route with no
-// host or a malformed path is an error. changed reports whether anything moved.
+// ReplaceRoutes sets the secret's routes to routes, in order, normalized.
+// Repeats collapse. A route with no host or a malformed path is an error.
+// changed reports whether anything moved.
 func (s *Secret) ReplaceRoutes(routes []SecretRoute) (changed bool, err error) {
-	type key struct{ host, path, use string }
-	existing := make(map[key]string, len(s.Routes))
-	for _, route := range s.Routes {
-		existing[key{route.Host, route.Path, route.Use}] = route.UseID
-	}
 	var out []SecretRoute
-	seen := map[key]bool{}
+	seen := map[SecretRoute]bool{}
 	for _, route := range routes {
 		host, path, err := secretroute.Normalize(route.Host, route.Path)
 		if err != nil {
 			return false, err
 		}
-		k := key{host, path, strings.TrimSpace(route.Use)}
-		if seen[k] {
+		next := SecretRoute{Host: host, Path: path, Blocked: route.Blocked}
+		if seen[next] {
 			continue
 		}
-		seen[k] = true
-		next := SecretRoute{Host: k.host, Path: k.path, Use: k.use}
-		if next.Use != "" {
-			if next.UseID = existing[k]; next.UseID == "" {
-				if next.UseID, err = id.New(PrefixSecretUse); err != nil {
-					return false, err
-				}
-			}
-		}
+		seen[next] = true
 		out = append(out, next)
 	}
 	changed = len(out) != len(s.Routes)
@@ -1622,12 +1500,12 @@ func (s *Secret) ReplaceRoutes(routes []SecretRoute) (changed bool, err error) {
 	return changed, nil
 }
 
-// ProxyRoutes are the secret's routes as the pool proxy enforces them: by use
-// ID, never by sentence. Nil when it carries none.
+// ProxyRoutes are the secret's routes as the pool proxy enforces them. Nil
+// when it carries none.
 func (s *Secret) ProxyRoutes() []secretroute.Route {
 	var out []secretroute.Route
 	for _, route := range s.Routes {
-		out = append(out, secretroute.Route{Host: route.Host, Path: route.Path, UseID: route.UseID})
+		out = append(out, secretroute.Route{Host: route.Host, Path: route.Path, Blocked: route.Blocked})
 	}
 	return out
 }
@@ -1764,26 +1642,6 @@ type SecretValue struct {
 	Exchange map[string]string `json:"exchange,omitempty"`
 }
 
-// PrefixSecretUse identifies one approved way to use a credential. A use ID is
-// the control plane's — minted at approval, or when a secret's routes are
-// written — never the requester's, so an agent cannot name the use it will
-// later present (ADR 0031 §5).
-//
-// It sits here rather than beside every other prefix because those live in
-// github.com/discobox-ai/x/id, outside this repository; move it there and drop
-// this const once that package carries it.
-const PrefixSecretUse = "use"
-
-// SecretUse is one way a credential may be used: a human-readable sentence an
-// agent asked for and an approver confirmed or edited. UseID is empty on the
-// requested uses of a SecretRequest and set on the approved uses of a
-// SecretGrant — IDs are minted by the approval, so an agent cannot name the use
-// it will later present (ADR 0031 §5).
-type SecretUse struct {
-	UseID       string `json:"useId,omitempty" doc:"Stable use ID, minted at approval"`
-	Description string `json:"description" doc:"What the credential may be used for"`
-}
-
 // SecretRequest records a runtime ask for a secret that has no covering grant.
 // It is the approval-inbox item: a human resolves it by minting a SecretGrant
 // (which approves it) or denying it. Authorization state — who approved, expiry —
@@ -1793,10 +1651,11 @@ type SecretUse struct {
 // rather than pretending they are one shape (ADR 0031 §5):
 //
 //   - Reactive: the proxy hit an unresolvable sentinel and auto-minted a bare
-//     request. It carries no Name, EnvName, Justification, or Uses.
+//     request. It carries no Name, EnvName, or Justification.
 //   - Protocol-originated: an agent asked through the agent credentials
-//     protocol, saying what it needs, why, and what for. Approving one must
-//     produce a host-scoped grant carrying approved uses.
+//     protocol, naming the credential, the variable it wants it in, the hosts
+//     it will send it to, and why. Approving one mints a host-scoped grant
+//     for its sandbox and, for a use, binds the variable there.
 type SecretRequest struct {
 	ID string `gorm:"primaryKey;type:text" json:"id" doc:"Stable request ID"`
 	// ProjectID and SecretID are also the open-refresh index: one pending
@@ -1809,32 +1668,23 @@ type SecretRequest struct {
 	// Hosts are where the credential is asked for (ADR 26-10-02-393 §1): the
 	// destination the proxy observed, for a reactive or refresh request, and
 	// every host an agent named, for one from the protocol.
-	Hosts         []string    `gorm:"column:hosts;type:text;serializer:json" json:"hosts,omitempty" doc:"Hosts named at request time"`
-	Name          string      `gorm:"column:name;not null;type:text;default:''" json:"name,omitempty" doc:"Credential name the agent asked for, for protocol-originated requests"`
-	EnvName       string      `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable the credential is wanted in, for protocol-originated requests"`
-	Justification string      `gorm:"column:justification;not null;type:text;default:''" json:"justification,omitempty" doc:"Why the agent says it needs the credential"`
-	Uses          []SecretUse `gorm:"column:uses;type:text;serializer:json" json:"uses,omitempty" doc:"Uses the agent asked for; approval mints their IDs onto the grant"`
-	// Policy is what the agent asked the credential to authorize, as
-	// statements (ADR 26-10-20-782 §1), beside its uses. Nil on every request
-	// that asked with uses alone, which is every request written before
-	// policies.
-	Policy *policy.Policy `gorm:"column:policy;type:text;serializer:json" json:"policy,omitempty" doc:"The policy the agent asked for, beside its uses; read, its resolved holds what each variable resolves to now for the requesting discobox, and approving the request resolves them onto the grant"`
+	Hosts         []string `gorm:"column:hosts;type:text;serializer:json" json:"hosts,omitempty" doc:"Hosts named at request time"`
+	Name          string   `gorm:"column:name;not null;type:text;default:''" json:"name,omitempty" doc:"Credential name the agent asked for, for protocol-originated requests"`
+	EnvName       string   `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable the credential is wanted in, for protocol-originated requests"`
+	Justification string   `gorm:"column:justification;not null;type:text;default:''" json:"justification,omitempty" doc:"Why the agent says it needs the credential"`
 	// GrantTTL is how long the agent asked the grant to live, in seconds. It is
 	// what an approval starts from, never what it is held to: the approver
 	// chooses the lifetime. Zero is "nothing in particular", not forever — an
 	// agent cannot ask for a grant that never lapses.
 	GrantTTL int64 `gorm:"column:grant_ttl_seconds;not null;default:0" json:"grantTTLSeconds,omitempty" doc:"Grant lifetime the agent asked for, in seconds; absent when it named none"`
 	// Purpose is what the agent asked the credential for: to use it, or to
-	// delegate it to other discoboxes. Approving the request mints a grant
-	// with this purpose. Every request written before an agent could ask to
+	// give it to the discoboxes it creates. Approving the request mints a
+	// grant with this purpose. Every request written before an agent could ask to
 	// delegate asked to use, which the column's default gives it.
-	Purpose  string `gorm:"column:purpose;not null;type:text;default:'use'" json:"purpose,omitempty" doc:"What the agent asked the credential for: to use it, or to delegate it to other discoboxes" enum:"use,delegate"`
+	Purpose  string `gorm:"column:purpose;not null;type:text;default:'use'" json:"purpose,omitempty" doc:"What the agent asked the credential for: to use it, or to give it to the discoboxes it creates" enum:"use,delegate"`
 	SecretID string `gorm:"column:secret_id;not null;type:text;default:'';uniqueIndex:idx_secret_request_open_refresh,priority:2,where:reason = 'refresh' AND status = 'pending'" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
 	Status   string `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
 	GrantID  string `gorm:"column:grant_id;not null;type:text;default:''" json:"grantId,omitempty" doc:"Grant that satisfied this request; set when approved"`
-	// WellKnownID is the well-known credential the agent asked for by ID;
-	// approving the request binds the secret that fulfills it.
-	WellKnownID string `gorm:"column:well_known_id;not null;type:text;default:''" json:"wellKnownId,omitempty" doc:"Well-known credential the agent asked for by ID"`
 	// Reason is why the request exists when it is not an ask for a grant.
 	// SecretRequestReasonRefresh asks for a new value of a token that went
 	// stale or was refused (ADR 26-09-25-122 §4): a third species, answered by
@@ -1850,11 +1700,6 @@ type SecretRequest struct {
 	ClosedAt  *time.Time `gorm:"column:closed_at;index" json:"-"`
 	CreatedAt time.Time  `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt time.Time  `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	// RuleTests are the approval rules tested against a pending request and
-	// what came of each (ADR 26-10-12-330 §4), read from the rules and the
-	// verdicts on record when a person reads the request. Never stored, and
-	// never shown to a discobox.
-	RuleTests []RuleTest `gorm:"-" json:"ruleTests,omitempty" doc:"The approval rules tested against a pending request and why each did not cover it; shown to a person, never to a discobox"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
@@ -1901,10 +1746,9 @@ const (
 )
 
 // FromProtocol reports whether the request came through the agent credentials
-// protocol rather than the proxy's reactive sentinel path. Declared uses are
-// what separates them: only an agent that asked can say what it wants the
-// credential for.
-func (r *SecretRequest) FromProtocol() bool { return len(r.Uses) > 0 }
+// protocol rather than the proxy's reactive sentinel path or a refresh. Only
+// an agent that asked names the credential it wants.
+func (r *SecretRequest) FromProtocol() bool { return r.Name != "" && !r.IsRefresh() }
 
 func (SecretRequest) TableName() string { return "secret_requests" }
 
@@ -1916,8 +1760,8 @@ func (r *SecretRequest) BeforeCreate(_ *gorm.DB) error {
 			return err
 		}
 	}
-	// Stamped in UTC rather than left to autoCreateTime, for the reason
-	// CredentialVerdict's is: SQLite compares a time as text carrying its
+	// Stamped in UTC rather than left to autoCreateTime, which fills it in
+	// the server's local zone: SQLite compares a time as text carrying its
 	// offset, and the refresh trail bounds its reads by this column.
 	if r.CreatedAt.IsZero() {
 		r.CreatedAt = time.Now().UTC()
@@ -1943,44 +1787,17 @@ type SecretGrant struct {
 	GrantedBy string     `gorm:"column:granted_by;not null;type:text;default:''" json:"grantedBy,omitempty" doc:"Principal ID that created the grant"`
 	GrantedAt time.Time  `gorm:"column:granted_at;autoCreateTime" json:"grantedAt" doc:"Creation timestamp" format:"date-time"`
 	ExpiresAt *time.Time `gorm:"column:expires_at" json:"expiresAt,omitempty" doc:"Expiry time; empty never expires" format:"date-time"`
-	// Uses are the approved ways this credential may be used, each with an ID an
-	// agent presents to take a value for one command. A grant with no uses is a
-	// plain standing authorization; one with uses is what the agent credentials
-	// protocol reports and activates against (ADR 0031 §5).
-	Uses []SecretUse `gorm:"column:uses;type:text;serializer:json" json:"uses,omitempty" doc:"Approved uses, confirmed or edited at approval time"`
-	// Policy is what the grant authorizes, as approved (ADR 26-10-20-782 §1):
-	// its statements, their definitions, and the value each variable resolved
-	// to for the sandbox the grant is for. A command or request under a grant
-	// that carries one is judged against it, bound to the discobox asking,
-	// rather than against a use's sentence. Every grant with uses carries one
-	// (#312); nil on a standing grant, which has no uses for it to narrow.
-	Policy *policy.Policy `gorm:"column:policy;type:text;serializer:json" json:"policy,omitempty" doc:"The approved policy, with the value each of its variables resolved to for the sandbox the grant is for"`
-	// EnvName is the variable an agent receives the credential in, on a grant
-	// that carries uses. It lives here rather than only on the binding because
-	// a grant wider than one sandbox has no binding yet: the binding is minted
-	// for each discobox the first time its agent asks what it may use, and this
-	// is what names it.
-	EnvName string `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable an agent receives the credential in; set on a grant with uses"`
 	// Purpose is what the grant authorizes its holder to do: use the
-	// credential, or delegate it to other discoboxes — never both, so a person
-	// approving a grant agrees to one thing. A delegation grant authorizes
-	// nothing its holder sends. Every grant written before delegation existed
+	// credential, or give it to the discoboxes it creates — never both, so a
+	// person approving a grant agrees to one thing. A delegation grant
+	// authorizes nothing its holder sends, and is held by one sandbox. Every grant written before delegation existed
 	// is a use grant, which the column's default gives it.
-	Purpose string `gorm:"column:purpose;not null;type:text;default:'use'" json:"purpose" doc:"What the grant authorizes its holder to do: use the credential, or delegate it to other discoboxes" enum:"use,delegate"`
-	// RuleID is the approval rule the grant was minted under, when a rule
-	// approved the request rather than a person or a discobox
-	// (ADR 26-10-12-330 §4). The grant is independent of it once made:
-	// disabling or deleting the rule revokes nothing, and this is how its
-	// grants are found to be revoked deliberately. Empty on every other
-	// grant, which is what every row written before rules already is.
-	RuleID string `gorm:"column:rule_id;not null;type:text;default:'';index" json:"ruleId,omitempty" doc:"Approval rule the grant was minted under, when a rule approved the request"`
+	Purpose string `gorm:"column:purpose;not null;type:text;default:'use'" json:"purpose" doc:"What the grant authorizes its holder to do: use the credential, or give it to the discoboxes it creates" enum:"use,delegate"`
 	// DelegationID is the delegation grant a discobox handed this grant on
 	// under, by approving a request of a discobox it created or giving it on
-	// a create (ADR 26-10-20-782 §11). It is how a handed-on grant is traced
-	// to the delegation that allowed it when code settled the hand-off and no
-	// judge was asked, so no verdict names it. Like RuleID it records, and
-	// revokes nothing: the grant stands if the delegation goes. Empty on every
-	// other grant, and on one handed on before it was recorded.
+	// a create (ADR 26-10-27-880 §3). It is how a handed-on grant is traced to
+	// the delegation that allowed it. It records, and revokes nothing: the
+	// grant stands if the delegation goes. Empty on every other grant.
 	DelegationID string    `gorm:"column:delegation_id;not null;type:text;default:'';index" json:"delegationId,omitempty" doc:"Delegation grant a discobox handed this grant on under, when one did"`
 	CreatedAt    time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt    time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
@@ -1992,16 +1809,6 @@ type SecretGrant struct {
 // delegation grant withholds it; an empty purpose is a row read before the
 // column existed, which is a use grant.
 func (g *SecretGrant) MayUse() bool { return g.Purpose != SecretGrantPurposeDelegate }
-
-// FindUse returns the approved use with the given ID.
-func (g *SecretGrant) FindUse(useID string) (SecretUse, bool) {
-	for _, use := range g.Uses {
-		if use.UseID == useID && useID != "" {
-			return use, true
-		}
-	}
-	return SecretUse{}, false
-}
 
 func (SecretGrant) TableName() string { return "secret_grants" }
 
@@ -2069,22 +1876,8 @@ type SandboxSecret struct {
 	// Format is the template the sentinel was minted from. A rebind compares it
 	// against the replacement secret's format to decide whether the sentinel can
 	// be kept, which it must be able to do after the old secret row is gone.
-	Format string `gorm:"column:format;type:text" json:"-"`
-	// AgentRequested marks a binding created by approving an agent credentials
-	// protocol request. Its sentinel is never written into the sandbox
-	// environment or secrets.json and is never registered with the proxy: the
-	// only thing that ever reaches the sandbox is an ephemeral sentinel the pool
-	// agent mints for one use and translates back to this one at swap time
-	// (ADR 0031 §4). An always-present sentinel is always worth stealing; this
-	// one is inert by default.
-	//
-	// It is part of the env-name uniqueness domain rather than exempt from it:
-	// the index exists to stop two bindings fighting over one injected
-	// environment variable, and an agent-requested binding is a different
-	// channel, so a sandbox can hold both a harness-injected GITHUB_TOKEN and an
-	// agent-requested one without either displacing the other.
-	AgentRequested bool      `gorm:"column:agent_requested;not null;default:false;uniqueIndex:idx_sandbox_secret_env,priority:3" json:"agentRequested,omitempty" doc:"Binding created by an agent credential request; never injected into the sandbox"`
-	CreatedAt      time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	Format    string    `gorm:"column:format;type:text" json:"-"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 }
 
 func (SandboxSecret) TableName() string { return "sandbox_secrets" }
@@ -2096,173 +1889,6 @@ func (s *SandboxSecret) BeforeCreate(_ *gorm.DB) error {
 		if err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-// CredentialVerdict is one judge decision about an agent credential use. It
-// is either of two kinds, recorded by two different parties.
-//
-// A command verdict (ADR 0091) is the discobox's own judge's decision about a
-// command, recorded on the call that takes a value for it so that no value is
-// issued without one: the call that mints the value is the call that carries
-// the verdict. Its origin is the sandbox, and everything in it is that
-// sandbox's word. A denied command never reaches that call — ADR 0079 §1
-// judges before the value is taken, so a refusal mints nothing — and so leaves
-// no row here on its own. Volunteered distinguishes the two provenances: false
-// for a verdict that rode an issued credential, true for one a sandbox chose
-// to report after a denial that would otherwise leave no trace at all.
-//
-// A request verdict (ADR 26-09-22-838 §8) is the project's judge's answer
-// about one request the proxy observed, recorded by the control plane before
-// the answer goes back to the pool, so a request that carried a credential
-// has one whichever way it was decided. Its origin is the judge, which a
-// sandbox can never claim: nothing a pool relays writes one.
-type CredentialVerdict struct {
-	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable verdict ID"`
-	ProjectID string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	// Kind and Origin default to what every row written before request
-	// verdicts existed was, so adding the columns is the whole upgrade.
-	Kind      string `gorm:"column:kind;not null;type:text;default:'command';index" json:"kind" doc:"What was judged: command, request, delegation, or an approval rule's conditions against a request's" enum:"command,request,delegation,rule"`
-	Origin    string `gorm:"column:origin;not null;type:text;default:'sandbox'" json:"origin" doc:"Who judged: sandbox, for a discobox's own judge, or judge, for the project's" enum:"sandbox,judge"`
-	SandboxID string `gorm:"column:sandbox_id;not null;type:text;index" json:"sandboxId" doc:"Sandbox the command ran in, or the request came from"`
-	// GrantID is resolved from UseID against the sandbox's live grants at
-	// record time, best-effort: a grant revoked in the moment between judging
-	// and recording leaves this empty rather than failing the write, because
-	// the verdict is still complete evidence about the command without it.
-	//
-	// On a delegation verdict it is the delegation grant the approval was
-	// judged against — what the grant a discobox handed on is traced to
-	// (ADR 26-09-30-782 §3) — and UseID is empty: what was judged is the
-	// delegation's uses against the ones handed on, both in the prompt.
-	GrantID string `gorm:"column:grant_id;not null;type:text;default:'';index" json:"grantId,omitempty" doc:"Grant the use belonged to, when it could still be resolved; on a delegation verdict, the delegation grant judged against"`
-	UseID   string `gorm:"column:use_id;not null;type:text;index" json:"useId" doc:"Approved use the command was judged against"`
-	// SecretRequestID is, on a delegation verdict, the request the discobox
-	// was approving, whose GrantID is the grant the approval minted — so a
-	// handed-on grant is found from its request, and its verdict from either.
-	// Empty on every other verdict, which is what every row written before
-	// delegation verdicts existed already is.
-	//
-	// On a rule verdict it is the request the rule was tested against.
-	SecretRequestID string `gorm:"column:secret_request_id;not null;type:text;default:'';index" json:"secretRequestId,omitempty" doc:"On a delegation verdict, the secret request the discobox was approving; on a rule verdict, the request the rule was tested against. The request names the grant the approval minted"`
-	// ForSandboxID is, on a delegation verdict, the discobox the uses were
-	// handed on to: the requester of an approval, or the discobox a create
-	// gave them to, which has no request to name it by.
-	ForSandboxID string `gorm:"column:for_sandbox_id;not null;type:text;default:'';index" json:"forSandboxId,omitempty" doc:"On a delegation verdict, the discobox the uses were handed on to"`
-	// RuleID is, on a rule verdict, the approval rule that was being tested
-	// (ADR 26-10-12-330 §5). It is empty on one recorded while a rule was
-	// still being proposed, which names its request instead.
-	RuleID string `gorm:"column:rule_id;not null;type:text;default:'';index" json:"ruleId,omitempty" doc:"On a rule verdict, the approval rule tested; empty while the rule was still a proposal"`
-	// QuestionDigest is, on a rule verdict, the SHA-256 of the prompt that was
-	// judged: the rule's sentences and what they were read against.
-	// It is how a question already answered is found rather than asked again,
-	// and why an edited rule is asked afresh: its question differs.
-	QuestionDigest string `gorm:"column:question_digest;not null;type:text;default:'';index" json:"questionDigest,omitempty" doc:"On a rule verdict, the digest of the question judged, by which an answer on record is reused"`
-	// Command is serialized JSON rather than a joined string: SecretGrant.Uses
-	// already sets the precedent for a slice column on this model, and keeping
-	// argv elements distinct is what let the judge — and lets a reader of this
-	// row later — see the command the way it was executed rather than a shell's
-	// guess at where it would have split.
-	Command []string `gorm:"column:command;type:text;serializer:json" json:"command,omitempty" doc:"The argv the judge was shown"`
-	// Request is the evidence as the judge was shown it: redacted before it
-	// left the pool, so nothing here needs redacting again.
-	Request *judge.Request `gorm:"column:request;type:text;serializer:json" json:"request,omitempty" doc:"The request the judge was shown, redacted"`
-	// Round is which ask about one request this answered. Zero on a command
-	// verdict, which is asked once.
-	Round int  `gorm:"column:round;not null;default:0" json:"round,omitempty" doc:"Which ask about the request this answered, from 1"`
-	Allow bool `gorm:"column:allow;not null" json:"allow" doc:"What the judge decided"`
-	// Need is set when the judge asked to be shown the body instead of
-	// deciding. Allow is false then, because asking is not allowing.
-	Need          *judge.Need `gorm:"column:need;type:text;serializer:json" json:"need,omitempty" doc:"What the judge asked to be shown instead of deciding"`
-	Reason        string      `gorm:"column:reason;not null;type:text;default:''" json:"reason,omitempty" doc:"The judge's own sentence"`
-	Role          string      `gorm:"column:role;not null;type:text;default:''" json:"role,omitempty" doc:"The role discobox-prompt was asked for (e.g. judge), never a vendor model id"`
-	Prompt        string      `gorm:"column:prompt;not null;type:text;default:''" json:"prompt,omitempty" doc:"The exact prompt the judge was given, including the facts block"`
-	PromptVersion string      `gorm:"column:prompt_version;not null;type:text;default:''" json:"promptVersion,omitempty" doc:"The version of the system prompt the judge was given"`
-	// LatencyMS is the round trip, timed by whoever asked: discobox-access
-	// around its wrapper for a command verdict, the control plane around the
-	// call to the judge's discobox for a request verdict.
-	LatencyMS int64 `gorm:"column:latency_ms;not null;default:0" json:"latencyMs,omitempty" doc:"Round trip from asking the judge to its answer, in milliseconds"`
-	// The judge that answered a request verdict: the discobox, and the harness
-	// and bundle it ran, read when it was asked. Empty on a command verdict,
-	// whose judge is the discobox itself. Image and ImageDigest are the
-	// runnable harness image a judge from before bundles ran, which is what a
-	// verdict recorded then names; no judge runs one since (ADR 26-10-16-423
-	// §10).
-	JudgeSandboxID  string `gorm:"column:judge_sandbox_id;not null;type:text;default:''" json:"judgeSandboxId,omitempty" doc:"The project judge that answered"`
-	HarnessConfigID string `gorm:"column:harness_config_id;not null;type:text;default:''" json:"harnessConfigId,omitempty" doc:"Harness config the judge ran"`
-	Bundle          string `gorm:"column:bundle;not null;type:text;default:''" json:"bundle,omitempty" doc:"Harness bundle the judge ran"`
-	BundleDigest    string `gorm:"column:bundle_digest;not null;type:text;default:''" json:"bundleDigest,omitempty" doc:"Digest of the harness bundle the judge ran"`
-	Image           string `gorm:"column:image;not null;type:text;default:''" json:"image,omitempty" doc:"Runnable image a judge from before bundles ran"`
-	ImageDigest     string `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Digest of the runnable image a judge from before bundles ran"`
-	// Model and Probabilities are the judge that answered when it was Jev
-	// rather than a judge discobox (ADR 26-10-01-324 §6): the versioned
-	// model it reported, and the probability of yes it gave each question,
-	// which is what the verdict was decided from. Empty on every other
-	// verdict, which is what every row written before Jev already is.
-	Model         string             `gorm:"column:model;not null;type:text;default:''" json:"model,omitempty" doc:"The Jev model that answered, when the server judges with Jev rather than a judge discobox"`
-	Probabilities map[string]float64 `gorm:"column:probabilities;type:text;serializer:json" json:"probabilities,omitempty" doc:"The probability of yes Jev gave each question the verdict was decided from, by question ID"`
-	// JevInput is exactly what Jev was sent when it was asked: the JSON body
-	// of the request to its API, with the state and the questions, and none
-	// of the key. It is the job's evidence in Jev's shape, so it carries what
-	// Prompt does — a discobox's request, command and stdin, redacted before
-	// the job was built, never a credential's value — and is display data the
-	// same way. Null on every other verdict, which is what every row written
-	// before it already is, so adding the column is the whole upgrade.
-	JevInput    json.RawMessage `gorm:"column:jev_input;type:text;serializer:json" json:"jevInput,omitempty" doc:"Exactly what Jev was sent, when it was asked: the JSON body of the request to its API, with the state and the questions"`
-	Volunteered bool            `gorm:"column:volunteered;not null;default:false" json:"volunteered" doc:"True when the sandbox reported this after a denial the issuing call never saw"`
-	// StandingRoute and StandingUntil are an allow the judge let stand, as
-	// the control plane admitted it (ADR 26-09-25-428): until then, a request
-	// from the same discobox, under the same use, to the same host, whose
-	// method and path match the route is allowed on this row's word. Both are
-	// empty on every other verdict, which is what every row written before
-	// standing allows existed already is.
-	StandingRoute string     `gorm:"column:standing_route;not null;type:text;default:''" json:"standingRoute,omitempty" doc:"Route this allow was let stand for"`
-	StandingUntil *time.Time `gorm:"column:standing_until;index" json:"standingUntil,omitempty" doc:"When the standing allow stops covering requests" format:"date-time"`
-	// StandingVerdictID is set on a request a standing allow decided: the
-	// verdict that let it stand, which is whose judge and reason this row
-	// repeats. No model read this request.
-	StandingVerdictID string    `gorm:"column:standing_verdict_id;not null;type:text;default:''" json:"standingVerdictId,omitempty" doc:"The verdict whose standing allow decided this request"`
-	CreatedAt         time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-
-	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
-}
-
-func (CredentialVerdict) TableName() string { return "credential_verdicts" }
-
-// The kinds and origins a CredentialVerdict records.
-const (
-	CredentialVerdictKindCommand    = judge.KindCommand
-	CredentialVerdictKindRequest    = judge.KindRequest
-	CredentialVerdictKindDelegation = judge.KindDelegation
-	CredentialVerdictKindRule       = judge.KindRule
-
-	CredentialVerdictOriginSandbox = "sandbox"
-	CredentialVerdictOriginJudge   = "judge"
-)
-
-func (c *CredentialVerdict) BeforeCreate(_ *gorm.DB) error {
-	if c.ID == "" {
-		var err error
-		c.ID, err = id.New(id.PrefixCredentialVerdict)
-		if err != nil {
-			return err
-		}
-	}
-	// Stamped here, in UTC, rather than left to autoCreateTime, which fills the
-	// field in the server's local zone. SQLite keeps a time as text carrying
-	// its offset and compares it as text, so a row written at +09:00 and a
-	// `since` bound at UTC disagree by nine hours about which is later.
-	// ListCredentialVerdicts binds its bound in UTC for the same reason.
-	if c.CreatedAt.IsZero() {
-		c.CreatedAt = time.Now().UTC()
-	} else {
-		c.CreatedAt = c.CreatedAt.UTC()
-	}
-	// The same text comparison bounds a standing allow's lookup, so its
-	// expiry is written in UTC as well.
-	if c.StandingUntil != nil {
-		until := c.StandingUntil.UTC()
-		c.StandingUntil = &until
 	}
 	return nil
 }
@@ -2285,13 +1911,11 @@ type SecretRejection struct {
 	Host string `gorm:"column:host;primaryKey;type:text" json:"host" doc:"Destination host that refused the credential"`
 	// Reason is why a person is needed: see SecretRejectionReasons.
 	Reason string `gorm:"column:reason;not null;type:text" json:"reason" doc:"Why the rejection needs a person rather than another attempt" enum:"unrefreshable,refresh-failed,rejected-after-refresh"`
-	// SandboxID and UseID are where it was last seen, kept for the report
-	// rather than for matching: a harness credential fails in every sandbox on
-	// that harness, and naming the most recent one is how somebody finds their
-	// way to it. UseID is set when the refused sentinel was minted for one
-	// agent-credential use (ADR 0079).
+	// SandboxID is where it was last seen, kept for the report rather than
+	// for matching: a harness credential fails in every sandbox on that
+	// harness, and naming the most recent one is how somebody finds their way
+	// to it.
 	SandboxID string `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"Sandbox that most recently saw the rejection"`
-	UseID     string `gorm:"column:use_id;not null;type:text;default:''" json:"useId,omitempty" doc:"Agent credential use the refused sentinel was minted for, when it was one"`
 	// Count is how many times this has been reported. The proxy coalesces its
 	// reports, so this counts minutes of failure rather than requests.
 	Count       int64     `gorm:"column:count;not null;default:0" json:"count" doc:"How many times the rejection has been reported"`
@@ -2337,10 +1961,8 @@ func AllModels() []any {
 		&ProjectSkillsSource{},
 		&ProjectGateway{},
 		&Peer{},
-		&CredentialVerdict{},
 		&SecretRejection{},
 		&HostTrustRequest{},
 		&HostTrust{},
-		&ApprovalRule{},
 	}
 }

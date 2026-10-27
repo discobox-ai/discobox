@@ -1850,8 +1850,6 @@ type PoolListHTTPAuditParams struct {
 	SandboxId OptString `json:",omitempty,omitzero"`
 	// Only exchanges to this host.
 	Host OptString `json:",omitempty,omitzero"`
-	// Only exchanges that spent this approved credential use.
-	UseId OptString `json:",omitempty,omitzero"`
 	// Only exchanges recorded at or after this time.
 	Since OptDateTime `json:",omitempty,omitzero"`
 	// Only exchanges recorded at or before this time, for paging back newest first.
@@ -1902,15 +1900,6 @@ func unpackPoolListHTTPAuditParams(packed middleware.Parameters) (params PoolLis
 		}
 		if v, ok := packed[key]; ok {
 			params.Host = v.(OptString)
-		}
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "useId",
-			In:   "query",
-		}
-		if v, ok := packed[key]; ok {
-			params.UseId = v.(OptString)
 		}
 	}
 	{
@@ -2158,47 +2147,6 @@ func decodePoolListHTTPAuditParams(args [2]string, argsEscaped bool, r *http.Req
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "host",
-			In:   "query",
-			Err:  err,
-		}
-	}
-	// Decode query: useId.
-	if err := func() error {
-		cfg := uri.QueryParameterDecodingConfig{
-			Name:    "useId",
-			Style:   uri.QueryStyleForm,
-			Explode: true,
-		}
-
-		if err := q.HasParam(cfg); err == nil {
-			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
-				var paramsDotUseIdVal string
-				if err := func() error {
-					val, err := d.DecodeValue()
-					if err != nil {
-						return err
-					}
-
-					c, err := conv.ToString(val)
-					if err != nil {
-						return err
-					}
-
-					paramsDotUseIdVal = c
-					return nil
-				}(); err != nil {
-					return err
-				}
-				params.UseId.SetTo(paramsDotUseIdVal)
-				return nil
-			}); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "useId",
 			In:   "query",
 			Err:  err,
 		}

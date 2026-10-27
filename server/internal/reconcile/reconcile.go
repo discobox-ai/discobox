@@ -289,9 +289,28 @@ func (e *Engine) MarkDirtyAtTx(ctx context.Context, tx *gorm.DB, resourceType, i
 	return e.markDirtyAtTx(ctx, tx, resourceType, id, at, true)
 }
 
-// markDirtyAtTx is the one implementation. overrideBackoff says whether this
-// mark may pull a row forward out of a failure backoff; see MarkDirtyDrift.
+// markDirtyAtTx is MarkDirtyAtTx and MarkDirtyDriftTx: the one mark
+// (writeMark), then a wake, so the engine claims it without waiting for its
+// next poll.
 func (e *Engine) markDirtyAtTx(ctx context.Context, tx *gorm.DB, resourceType, id string, at time.Time, overrideBackoff bool) error {
+	if err := writeMark(ctx, tx, resourceType, id, at, overrideBackoff); err != nil {
+		return err
+	}
+	e.wake()
+	return nil
+}
+
+// MarkTx is MarkDirtyTx for a writer that runs with no engine: a database
+// upgrade, which runs before any engine exists. It writes the same mark, and
+// whatever engine starts afterwards claims it from the table. Anything that
+// runs beside an engine marks through it instead, so the engine is woken.
+func MarkTx(ctx context.Context, tx *gorm.DB, resourceType, id string) error {
+	return writeMark(ctx, tx, resourceType, id, time.Now(), true)
+}
+
+// writeMark is the one implementation of a mark. overrideBackoff says whether
+// it may pull a row forward out of a failure backoff; see MarkDirtyDrift.
+func writeMark(ctx context.Context, tx *gorm.DB, resourceType, id string, at time.Time, overrideBackoff bool) error {
 	if resourceType == "" || id == "" {
 		return fmt.Errorf("reconcile: resource type and id are required")
 	}
@@ -306,7 +325,7 @@ func (e *Engine) markDirtyAtTx(ctx context.Context, tx *gorm.DB, resourceType, i
 		NotBefore:    at,
 		MarkedAt:     now,
 	}
-	err := tx.WithContext(ctx).Clauses(clause.OnConflict{
+	return tx.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "resource_type"}, {Name: "resource_id"}},
 		DoUpdates: clause.Assignments(map[string]any{
 			"seq":       gorm.Expr("reconcile_dirty.seq + 1"),
@@ -316,11 +335,6 @@ func (e *Engine) markDirtyAtTx(ctx context.Context, tx *gorm.DB, resourceType, i
 			"updated_at": now,
 		}),
 	}).Create(&row).Error
-	if err != nil {
-		return err
-	}
-	e.wake()
-	return nil
 }
 
 // pullForwardExpr builds the not_before assignment for an upsert.

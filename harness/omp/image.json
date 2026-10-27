@@ -13,10 +13,6 @@
       {
         "path": ".omp/agent/extensions/discobox-hooks.js",
         "content": "// Discobox's hooks for omp, installed with the image. Removing this file stops them.\nexport { default } from \"/usr/local/libexec/discobox/omp-hook-extension.js\";\n"
-      },
-      {
-        "path": ".config/discobox/omp-harness.json",
-        "content": "{\n  \"about\": \"Discobox's settings for the omp harness. Edit with: discobox admin harness edit omp .config/discobox/omp-harness.json\",\n  \"judgeModel\": \"\"\n}\n"
       }
     ],
     "config": {

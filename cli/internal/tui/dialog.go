@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -113,32 +112,6 @@ type dialog struct {
 	page  int
 	input textinput.Model
 	err   bool
-	// keyFirst, on an input card, is asked about each key before the card
-	// answers it, and handed what the field holds: a card whose field edits
-	// a line of a list walks the list on ↑ and ↓, and toggles a pick on Space
-	// or Enter (askLines). handled keeps the key from the field and from
-	// Enter's answer; Esc is never asked.
-	keyFirst func(msg tea.KeyPressMsg, typed string) (cmd tea.Cmd, handled bool)
-	// cancelTyped, on an input card, is Esc handed what the field holds, for
-	// a card whose way back keeps the text half typed into it.
-	cancelTyped func(typed string) tea.Cmd
-	// itemPress, on an input card, is a press on one of its rows — the rows a
-	// list the field edits draws above it (askLines) — handed what the field
-	// holds. An input card's items are drawn and marked as a menu's are, and
-	// answered here rather than by action, which is the field's.
-	itemPress func(idx int, typed string) tea.Cmd
-	// pasteRefused, on an input card, is said instead of taking a paste,
-	// while the field is not where typing goes (a pick of a list is).
-	pasteRefused string
-	// editor, on an input card, is a field drawn in place of one of its rows
-	// (editAt) rather than under them: the line of a list being edited, as
-	// tall as its text wraps to, so a long sentence is seen whole as it is
-	// written (askLines). A card with one takes typing there, not in input,
-	// and draws no field of its own. inlineRows is such a card, editor or
-	// not: its last row is the field's new line.
-	editor     *textarea.Model
-	editAt     int
-	inlineRows bool
 
 	// emphasis is the one line a question turns on — the size of a directory
 	// being measured behind it — drawn under the body in the window's accent
@@ -306,24 +279,15 @@ type line struct {
 	text   string
 	tone   tone
 	bullet bool
-	// indent is how many steps of two columns the line is set in, before
-	// any bullet: how a use broken into its parts hangs them under its first
-	// line (useLines).
-	indent int
-	// hang is how many steps further the rows it wraps onto are set in,
-	// where a row set in only as far as the line would read as a line of
-	// its own (policyLines).
-	hang int
 	// spans, when set, are drawn in place of text, each in its own tone.
 	spans []span
 }
 
 // span is a run of a line in a style of its own, written with a space
-// before it unless glued.
+// before it.
 type span struct {
 	text  string
 	style func(*styles) lipgloss.Style
-	glued bool
 }
 
 // section is one named block of a dialog body: a rule carrying its name, the
@@ -424,9 +388,6 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		if d.kind == dlgForm && d.form.listing {
 			d.form.closeList()
 			return nil, false
-		}
-		if d.kind == dlgInput && d.cancelTyped != nil {
-			return d.cancelTyped(d.typed()), true
 		}
 		return d.cancel(), true
 	}
@@ -541,40 +502,17 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return d.create.update(msg)
 
 	case dlgInput:
-		if d.keyFirst != nil {
-			if cmd, handled := d.keyFirst(msg, d.typed()); handled {
-				return cmd, false
-			}
-		}
 		if keyName(msg) == "enter" {
 			if d.action != nil {
-				return d.action(strings.TrimSpace(d.typed())), true
+				return d.action(strings.TrimSpace(d.input.Value())), true
 			}
 			return nil, true
 		}
 		var cmd tea.Cmd
-		if d.editor != nil {
-			*d.editor, cmd = d.editor.Update(msg)
-			return cmd, false
-		}
-		if d.inlineRows {
-			// A card whose rows are its field takes no typing where no row is
-			// being edited.
-			return nil, false
-		}
 		d.input, cmd = d.input.Update(msg)
 		return cmd, false
 	}
 	return nil, false
-}
-
-// typed is what an input card's field holds: the line being edited in place,
-// or the field under the card.
-func (d *dialog) typed() string {
-	if d.editor != nil {
-		return d.editor.Value()
-	}
-	return d.input.Value()
 }
 
 // paste takes bracketed pasted text.
@@ -588,17 +526,7 @@ func (d *dialog) paste(msg tea.PasteMsg) tea.Cmd {
 	case dlgForm:
 		return d.form.paste(msg)
 	case dlgInput:
-		if d.pasteRefused != "" {
-			// Said where it was dropped, as typing there is: nothing lands
-			// in a field the keys are not in.
-			d.emphasis = d.pasteRefused
-			return nil
-		}
 		var cmd tea.Cmd
-		if d.editor != nil {
-			*d.editor, cmd = d.editor.Update(msg)
-			return cmd
-		}
 		d.input, cmd = d.input.Update(msg)
 		return cmd
 	case dlgMessage, dlgText:
@@ -1052,15 +980,6 @@ func (d *dialog) viewFoot(st *styles, z *zones, top, inner, avail, itemRoom int,
 
 	case dlgInput:
 		answer()
-		if len(d.items) > 0 {
-			b.WriteString(d.viewItems(st, z, row(), inner, itemRoom))
-		}
-		if d.inlineRows {
-			// The field is one of the rows, drawn where it is.
-			footer()
-			keys(pressing("Enter accepts", "enter"), pressing("Esc cancels", "esc"))
-			break
-		}
 		// The field is a field: a press in it puts the caret where the
 		// pointer is, rather than only bringing the card into focus it
 		// already has.
@@ -1161,17 +1080,15 @@ func (d *dialog) sectionLines(st *styles, room int) []string {
 		}
 		for _, l := range sec.lines {
 			// A bullet hangs its wrapped rows under the text rather than under
-			// the mark, so a list of uses reads as a list however long each
-			// one runs.
-			lead := strings.Repeat("  ", l.indent)
-			hang := lead + strings.Repeat("  ", l.hang)
+			// the mark, so a list reads as a list however long each item runs.
+			lead, hang := "", ""
 			if l.bullet {
-				lead, hang = lead+"· ", hang+"  "
+				lead, hang = "· ", "  "
 			}
 			if len(l.spans) > 0 {
 				var styled strings.Builder
 				for i, sp := range l.spans {
-					if i > 0 && !sp.glued {
+					if i > 0 {
 						styled.WriteString(" ")
 					}
 					styled.WriteString(sp.style(st).Render(sp.text))
@@ -1251,10 +1168,6 @@ func (d *dialog) viewItems(st *styles, z *zones, top, inner, room int) string {
 		key, detail := "", it.detail
 		if pressW > 0 {
 			key = padANSI(st.key.Render(it.press), pressW) + "  "
-			if d.inlineRows {
-				// A list's numbers are headings of what is written, not keys.
-				key = padANSI(st.name.Render(it.press), pressW) + "  "
-			}
 			if !it.enabled {
 				key = padANSI(st.dimText.Render(it.press), pressW) + "  "
 			}
@@ -1280,7 +1193,7 @@ func (d *dialog) viewItems(st *styles, z *zones, top, inner, room int) string {
 			// A label longer than its row is drawn whole too, its rest
 			// wrapped under it at the label's column: a menu that wraps is
 			// one whose rows are read in full.
-			if lines := d.labelLines(it.label, max(labelW-lipgloss.Width(note), 14)); len(lines) > 1 {
+			if lines := wrap(it.label, max(labelW-lipgloss.Width(note), 14)); len(lines) > 1 {
 				labelText, labelMore = lines[0], lines[1:]
 			}
 		} else {
@@ -1289,27 +1202,6 @@ func (d *dialog) viewItems(st *styles, z *zones, top, inner, room int) string {
 			// it would sit a row above the item it is for.
 			// Only the breaks go: the spacing inside a line is the detail's.
 			detail = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(detail)
-		}
-		if d.editor != nil && i == d.editAt {
-			// The line being edited is its editor, in its place: every row
-			// of it wrapped, the chevron on the first.
-			edited := strings.Split(d.layoutEditor(inner, keyCol, wrapping).View(), "\n")
-			for line := range edited {
-				z.markRow(hit{kind: hitDialogItem, idx: i}, y+line, inner+2*dialogPadLeft)
-			}
-			for n, text := range edited {
-				gutter, number := " ", strings.Repeat(" ", keyCol)
-				if n == 0 {
-					gutter = st.key.Render("❯")
-					if pressW > 0 {
-						number = padANSI(st.name.Render(it.press), pressW) + "  "
-					}
-				}
-				b.WriteString(padANSI(gutter+" "+number+text, inner))
-				b.WriteString("\n")
-			}
-			y += len(edited)
-			continue
 		}
 		rows := 1 + len(labelMore) + len(under)
 		// The row is a press, and it says so under the pointer: a menu that
@@ -1321,14 +1213,7 @@ func (d *dialog) viewItems(st *styles, z *zones, top, inner, room int) string {
 			z.markRow(hit{kind: hitDialogItem, idx: i}, y+line, inner+2*dialogPadLeft)
 		}
 		bar, label := " ", st.dimText
-		if d.inlineRows {
-			// Every line of a list is what is being written, and reads as
-			// text; only the chevron says which is under the cursor.
-			label = st.name
-		}
-		if i == d.cursor && it.enabled && d.inlineRows {
-			bar = st.key.Render("❯")
-		} else if i == d.cursor && it.enabled {
+		if i == d.cursor && it.enabled {
 			bar, label = st.key.Render("❯"), st.cursorName
 		} else if it.enabled && z.hovering(0, y, inner+2*dialogPadLeft, rows) {
 			label = st.hover
@@ -1417,41 +1302,10 @@ func (d *dialog) itemRows(inner int) int {
 		if it.note != "" {
 			note = 2 + lipgloss.Width(it.note)
 		}
-		if d.editor != nil && d.editAt >= 0 && d.editAt < len(d.items) && it.key == d.items[d.editAt].key {
-			rows += d.layoutEditor(inner, keyCol, true).Height()
-			continue
-		}
-		rows += max(len(d.labelLines(it.label, max(labelW-note, 14))), 1) + len(wrappedDetail(detail, d.wrapRoom(inner, keyCol)))
+		rows += max(len(wrap(it.label, max(labelW-note, 14))), 1) + len(wrappedDetail(detail, d.wrapRoom(inner, keyCol)))
 	}
 	return rows
 }
-
-// labelLines is a label wrapped to its row. A list's lines wrap as the row
-// editor wraps them (editorLines), so a line breaks at the same places
-// whether it is the one being edited or not; every other label wraps as
-// text does.
-func (d *dialog) labelLines(label string, width int) []string {
-	if d.inlineRows {
-		return editorLines(label, width)
-	}
-	return wrap(label, width)
-}
-
-// layoutEditor sizes the row editor to the card it is drawn in: as wide as a
-// row's text, and as tall as its text wraps to — one row when the menu is
-// drawn a row an item, which scrolls the line under the cursor instead.
-func (d *dialog) layoutEditor(inner, keyCol int, wrapping bool) *textarea.Model {
-	d.editor.MaxHeight = 1
-	if wrapping {
-		d.editor.MaxHeight = editorMaxRows
-	}
-	d.editor.SetWidth(max(inner-2-keyCol, 14))
-	return d.editor
-}
-
-// editorMaxRows is the tallest a row being edited draws: a use is one
-// sentence, and past this it scrolls under the cursor.
-const editorMaxRows = 12
 
 // wrappedDetail is the rows a detail takes under its label: none for an item
 // that has nothing to say, rather than a blank row.

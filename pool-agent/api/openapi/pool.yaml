@@ -551,19 +551,19 @@ components:
             additionalProperties: false
             description: Where a secret may be sent (ADR 26-10-02-924). A host covers itself and every host beneath it; a path is a prefix matched on whole segments.
             properties:
+                blocked:
+                    description: Refuse every request on this route; a more specific route still answers for the paths beneath it
+                    type: boolean
                 host:
                     type: string
                 path:
-                    type: string
-                useId:
-                    description: The use a request on this route is judged against; empty sends it unjudged
                     type: string
             required:
                 - host
             type: object
         Gateway:
             additionalProperties: false
-            description: One of the sandbox's project's gateways (ADR 26-10-16-470), as proxy/gateway.Route reads it. A request beneath match is forwarded to target, with match's path replaced by target's, once every other policy has judged it as the sandbox sent it.
+            description: One of the sandbox's project's gateways (ADR 26-10-16-470), as proxy/gateway.Route reads it. A request beneath match is forwarded to target, with match's path replaced by target's, once every other policy has decided on it as the sandbox sent it.
             properties:
                 name:
                     type: string
@@ -706,11 +706,10 @@ components:
                 harnessConfigId:
                     type: string
                 harnessMode:
-                    description: What this sandbox exists for, carried through to its sandbox configuration; judge is the project's judge.
+                    description: What this sandbox exists for, carried through to its sandbox configuration.
                     enum:
                         - run
                         - config
-                        - judge
                     type: string
                 model:
                     type: string
@@ -969,7 +968,7 @@ components:
                     nullable: true
                     type: array
                 sentinelRoutes:
-                    description: Routes keyed by stable sentinel, for an injected secret that carries routes (ADR 26-10-02-924). Every request carrying such a sentinel must fall on one, and is judged when the most specific routes it falls on all carry a use.
+                    description: Routes keyed by stable sentinel, for an injected secret that carries routes (ADR 26-10-02-924). Every request carrying such a sentinel must fall on one, and the most specific routes it falls on must not be blocked.
                     additionalProperties:
                         items:
                             $ref: '#/components/schemas/SentinelRoute'
@@ -1110,10 +1109,10 @@ components:
                     readOnly: true
                     type: string
                 blocked:
-                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, at the discobox API's gate, or because the control plane could not resolve a credential it carries. blockedReason says which, and why.
+                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by a credential's routes, at the discobox API's gate, or because the control plane could not resolve a credential it carries. blockedReason says which, and why.
                     type: boolean
                 blockedReason:
-                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that could not set its headers -- then the reason.
+                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "route:" for a credential whose routes do not allow the request, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that could not set its headers -- then the reason.
                     type: string
                 cacheHit:
                     description: True when the response came from the pool's response cache
@@ -1155,11 +1154,6 @@ components:
                     items:
                         type: string
                     type: array
-                swappedUseIds:
-                    description: Approved credential uses whose sentinels were swapped into this request
-                    items:
-                        type: string
-                    type: array
                 upgrade:
                     description: True for an upgraded (e.g. WebSocket) connection
                     type: boolean
@@ -1178,7 +1172,6 @@ components:
             - host
             - status
             - blocked
-            - swappedUseIds
             type: object
         PoolHTTPAuditExchangeDetail:
             additionalProperties: false
@@ -1210,10 +1203,10 @@ components:
                     description: Where the gateway the request fell under sent it (ADR 26-10-16-470); absent when none did
                     type: string
                 blocked:
-                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, at the discobox API's gate, or because the control plane could not resolve a credential it carries. blockedReason says which, and why.
+                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by a credential's routes, at the discobox API's gate, or because the control plane could not resolve a credential it carries. blockedReason says which, and why.
                     type: boolean
                 blockedReason:
-                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that could not set its headers -- then the reason.
+                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "route:" for a credential whose routes do not allow the request, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that could not set its headers -- then the reason.
                     type: string
                 cacheError:
                     description: Why the response cache could not be used
@@ -1317,11 +1310,6 @@ components:
                     items:
                         type: string
                     type: array
-                swappedUseIds:
-                    description: Approved credential uses whose sentinels were swapped into this request
-                    items:
-                        type: string
-                    type: array
                 upgrade:
                     description: True for an upgraded (e.g. WebSocket) connection
                     type: boolean
@@ -1352,7 +1340,6 @@ components:
             - host
             - status
             - blocked
-            - swappedUseIds
             - requestHeaders
             - responseHeaders
             - appliedHeaders
@@ -2403,12 +2390,6 @@ paths:
                 name: host
                 schema:
                     description: Only exchanges to this host
-                    type: string
-            -   description: Only exchanges that spent this approved credential use
-                in: query
-                name: useId
-                schema:
-                    description: Only exchanges that spent this approved credential use
                     type: string
             -   description: Only exchanges recorded at or after this time
                 in: query

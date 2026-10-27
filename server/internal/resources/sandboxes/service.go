@@ -135,14 +135,12 @@ type SandboxProviderCatalogItem struct {
 	ConfigFields []ProviderConfigField
 }
 
-// ListSandboxes answers with the project's discoboxes. A judge is not one of
-// them unless it is asked for: it runs no terminal and holds no work, so it is
-// not what asking what is in a project means (ADR 26-09-22-838 §1).
-func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector, listOptions ...store.SandboxListOption) ([]model.Sandbox, error) {
+// ListSandboxes answers with the project's discoboxes.
+func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, tags []sandboxmeta.Selector) ([]model.Sandbox, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
 	}
-	sandboxes, err := s.store.ListSandboxes(ctx, projectID, sourceRoot, originKeys, listOptions...)
+	sandboxes, err := s.store.ListSandboxes(ctx, projectID, sourceRoot, originKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -216,10 +214,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox {
 		if len(config.Secrets) > 0 {
 			// Inline secrets put a value inside the new discobox where anything
-			// in it can read it. A sandbox gives another discobox uses of a
-			// credential, which only discobox-access can take (grants, below).
+			// in it can read it. A sandbox gives another discobox a secret it
+			// was delegated, as a grant and a sentinel (grants, below).
 			return nil, apperrors.NewStatusError(http.StatusForbidden,
-				"a discobox gives a new discobox uses of a secret, through grants, never its value")
+				"a discobox gives a new discobox a secret through grants, never its value")
 		}
 		createdBySandboxID = &principal.SandboxID
 	}
@@ -359,6 +357,21 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if level, ok := config.Egress.Get(); ok {
 		if sandbox.Egress, err = services.EgressPolicyToModel(level); err != nil {
 			return nil, err
+		}
+	}
+	// Whether the new discobox may call the discobox API (ADR 26-10-27-880
+	// §9). A discobox creating one passes on only what it has. The flag is not
+	// confined to credentials it holds: a discobox with it may create children
+	// on any harness config in the project, and each runs with its harness
+	// config's credentials.
+	if sandbox.DiscoboxAPI = input.DiscoboxApi.Or(false); sandbox.DiscoboxAPI && createdBySandboxID != nil {
+		creator, err := s.store.GetSandbox(ctx, projectID, *createdBySandboxID)
+		if err != nil {
+			return nil, apperrors.NotFound(err, "the creating discobox was not found")
+		}
+		if !creator.DiscoboxAPI {
+			return nil, apperrors.NewStatusError(http.StatusForbidden,
+				"a discobox gives the discobox API only when it has it itself")
 		}
 	}
 	if createdBySandboxID != nil {
@@ -581,8 +594,8 @@ func (s *Service) GetSandbox(ctx context.Context, projectID, sandboxID string) (
 // the pool start it, and repairs it once if it failed and has no container.
 // Nothing has been forwarded at that point, so nothing has to be replayed.
 func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string, use services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error) {
-	// A discobox reads and types into another's terminal one judged call at a
-	// time, and does not attach to it (ADR 26-10-01-397 §2).
+	// A discobox reads and types into another's terminal one call at a time,
+	// and does not attach to it (ADR 26-10-01-397 §2).
 	if principal, ok := auth.PrincipalFromContext(ctx); ok && use.Attach && principal.Type == auth.PrincipalTypeSandbox {
 		return nil, nil, apperrors.NewStatusError(http.StatusForbidden, "a discobox does not attach to another")
 	}
@@ -593,16 +606,14 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 }
 
 // AcquireSandboxHTTPClientForServer is the same acquire for a call Discobox
-// makes itself rather than on behalf of somebody: putting a job to the
-// project's judge (ADR 26-09-22-838 §2), or acknowledging a committed harness
-// capture receipt (ADR 26-10-26-573). There are no caller scopes to check,
-// because there is no caller — the scopes are this code's own, and the route
-// they reach is the one they name.
+// makes itself rather than on behalf of somebody: acknowledging a committed
+// harness capture receipt (ADR 26-10-26-573). There are no caller scopes to
+// check, because there is no caller — the scopes are this code's own, and the
+// route they reach is the one they name.
 //
-// As an action it waits, which a judge needs: one on a pool the server has not
-// heard from since it started is the ordinary state for the first heartbeat
-// after a restart, and a refusal there blocks a request the judge would have
-// allowed. The caller bounds the wait with its context.
+// As an action it waits: a sandbox on a pool the server has not heard from
+// since it started is the ordinary state for the first heartbeat after a
+// restart. The caller bounds the wait with its context.
 func (s *Service) AcquireSandboxHTTPClientForServer(ctx context.Context, projectID, sandboxID string, scopes []string, use services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error) {
 	return s.acquireForUse(ctx, projectID, sandboxID, scopes, use)
 }
@@ -729,6 +740,15 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 			egressChanged = true
 		}
 	}
+	// Whether the discobox may call the discobox API is a person's to change
+	// (ADR 26-10-27-880 §9); the sandbox role reaches no update anyway.
+	discoboxAPI, discoboxAPIChanged := input.DiscoboxApi.Get()
+	if discoboxAPIChanged {
+		if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox {
+			return nil, apperrors.NewStatusError(http.StatusForbidden, "whether a discobox may call the discobox API is a person's to change")
+		}
+		sandbox.DiscoboxAPI = discoboxAPI
+	}
 
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		if change == nil {
@@ -751,6 +771,14 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 				return err
 			}
 			if err := s.engine.MarkDirtyTx(ctx, txDB, SandboxResourceType, SandboxDirtyID(projectID, sandboxID)); err != nil {
+				return err
+			}
+		}
+		// Its own write, as the egress level's is: UpdateSandbox never writes
+		// it (store.SetSandboxDiscoboxAPI). The server's sandbox role reads it
+		// on every call, so nothing is delivered.
+		if discoboxAPIChanged {
+			if err := txStore.SetSandboxDiscoboxAPI(ctx, projectID, sandboxID, discoboxAPI); err != nil {
 				return err
 			}
 		}

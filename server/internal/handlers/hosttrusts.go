@@ -195,7 +195,6 @@ func sandboxTrustRequestStatus(req *model.HostTrustRequest, trust *model.HostTru
 	case req.Status == model.HostTrustRequestStatusApproved && trust != nil:
 		resp.Status = serverapi.SandboxTrustRequestStatusStatusGranted
 		resp.SetPin(serverapi.NewOptTrustPin(apimodel.TrustPin{Kind: serverapi.TrustPinKind(trust.Pin.Kind), SHA256: trust.Pin.SHA256}))
-		resp.SetUses(serverapi.NewOptNilSecretUseArray(apiSecretUses(trust.Uses)))
 	case req.Status != model.HostTrustRequestStatusPending:
 		resp.Status = serverapi.SandboxTrustRequestStatusStatusDenied
 	}

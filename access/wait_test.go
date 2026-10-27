@@ -13,17 +13,17 @@ func TestResumeWait(t *testing.T) {
 		for _, terminal := range []string{agentcreds.StatusGranted, agentcreds.StatusDenied} {
 			t.Run(kind+"/"+terminal, func(t *testing.T) {
 				const id = "opaque_existing_id"
-				uses := []agentcreds.Use{{UseID: "use_ready", Description: "finish the task"}}
+				granted := &agentcreds.Credential{Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"github.com"}}
 				svc := &fakeService{
 					requestPolls: []agentcreds.RequestStatus{
 						{RequestID: id, Status: agentcreds.StatusPending},
 						{RequestID: id, Status: agentcreds.StatusPending},
-						{RequestID: id, Status: terminal, Uses: uses},
+						{RequestID: id, Status: terminal, Credential: granted},
 					},
 					trustPolls: []agentcreds.TrustRequestStatus{
 						{RequestID: id, Status: agentcreds.StatusPending},
 						{RequestID: id, Status: agentcreds.StatusPending},
-						{RequestID: id, Status: terminal, Uses: uses},
+						{RequestID: id, Status: terminal, Host: "github.com:443"},
 					},
 				}
 				serve(t, svc)
@@ -35,12 +35,23 @@ func TestResumeWait(t *testing.T) {
 				if code != wantCode {
 					t.Fatalf("exit %d, want %d: %s", code, wantCode, stderr)
 				}
-				var result agentcreds.RequestStatus
+				var result struct {
+					RequestID  string                 `json:"requestId"`
+					Status     string                 `json:"status"`
+					Credential *agentcreds.Credential `json:"credential"`
+					Host       string                 `json:"host"`
+				}
 				if err := json.Unmarshal([]byte(stdout), &result); err != nil {
 					t.Fatal(err)
 				}
-				if result.RequestID != id || result.Status != terminal || len(result.Uses) != 1 || result.Uses[0].UseID != "use_ready" {
+				if result.RequestID != id || result.Status != terminal {
 					t.Fatalf("result: %#v", result)
+				}
+				if kind == "request" && (result.Credential == nil || result.Credential.EnvVar != "GITHUB_TOKEN") {
+					t.Fatalf("result: %#v, want the credential granted", result)
+				}
+				if kind == "trust" && result.Host != "github.com:443" {
+					t.Fatalf("result: %#v, want the trust's host", result)
 				}
 				assertProgress(t, stderr, kind, id, true)
 				ids := svc.requestIDs
@@ -117,10 +128,10 @@ func TestPendingCreationIncludesResumeNotice(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			svc := &fakeService{trustStatus: agentcreds.TrustRequestStatus{RequestID: "treq_1", Status: agentcreds.StatusPending}}
 			serve(t, svc)
-			body := `{"name":"example","envVar":"EXAMPLE_TOKEN","hosts":["example.test"],"uses":[{"description":"read"}],"statements":["allow read on anything in repository $primary.repo"],"definitions":{"repository":"a GitHub repository"}}`
+			body := `{"name":"example","envVar":"EXAMPLE_TOKEN","hosts":["example.test"],"justification":"read"}`
 			id := "sreq_1"
 			if kind == "trust" {
-				body = `{"host":"example.test","uses":[{"description":"read"}]}`
+				body = `{"host":"example.test","justification":"read"}`
 				id = "treq_1"
 			}
 			stdout, stderr, code := capture(t, body, func() int { return Run([]string{kind, "--json"}) })

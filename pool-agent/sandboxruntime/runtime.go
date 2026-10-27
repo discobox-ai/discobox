@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -826,6 +827,9 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	}); err != nil {
 		return nil, false, err
 	}
+	if err := r.publishCredentialEnvironment(sandboxID, secretEnv); err != nil {
+		return nil, false, err
+	}
 	baseEnv := mergeEnv(map[string]string(optSandboxConfigEnv(config.Env)), proxyMaterial.Env)
 	name := sandboxContainerName(r.poolID, sandboxID)
 	cfg := &container.Config{
@@ -1242,7 +1246,11 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 	if err != nil {
 		return err
 	}
-
+	// Recorded beside the tree from what the control plane sent, so nothing
+	// later has to read sandbox.json back to know it.
+	if err := r.recordFileSecrets(sandboxID, doc.Image.Secrets); err != nil {
+		return err
+	}
 	data, err := marshalSandboxDocument(doc)
 	if err != nil {
 		return err
@@ -1620,7 +1628,7 @@ func proxySentinelRoutes(in map[string][]workerapimodel.SentinelRoute) map[strin
 	out := make(map[string][]secretroute.Route, len(in))
 	for sentinel, routes := range in {
 		for _, route := range routes {
-			out[sentinel] = append(out[sentinel], secretroute.Route{Host: route.Host, Path: route.Path.Or(""), UseID: route.UseId.Or("")})
+			out[sentinel] = append(out[sentinel], secretroute.Route{Host: route.Host, Path: route.Path.Or(""), Blocked: route.Blocked.Or(false)})
 		}
 	}
 	return out
@@ -1692,11 +1700,94 @@ func (r *DockerSandboxRuntime) updateSandboxSecretEnv(ctx context.Context, sandb
 	if err != nil {
 		return err
 	}
+	if err := r.publishCredentialEnvironment(sandboxID, secretEnv); err != nil {
+		return err
+	}
 	if sb.Status != StatusRunning {
 		// The next start delivers what is recorded.
 		return r.recordRuntimeConfig(sandboxID, set)
 	}
 	return logRuntimeConfigFailure(ctx, sandboxID, r.deliverRuntimeConfig(ctx, sandboxID, set))
+}
+
+// publishCredentialEnvironment tells the pool's credentials broker which
+// variables this sandbox's credentials are delivered in, and the sentinel in
+// each (proxyagent.SetSandboxEnvironment): its secret environment less the
+// harness secrets the pool's own record says are read from a file
+// (fileSecretsRecord), whose sentinel is kept out of the harness's environment
+// (harness.SecretDeliveryFile) and so must not be put back into it by a process
+// asking for its variables. A sandbox with no record — one a pool that predates
+// it created — is published none until a create writes one: which of its
+// secrets are file-delivered is not known, and sandbox.json, which says, is the
+// sandbox's to write and never read back.
+func (r *DockerSandboxRuntime) publishCredentialEnvironment(sandboxID string, secretEnv map[string]string) error {
+	record, ok, err := r.readFileSecretsRecord(sandboxID)
+	if err != nil {
+		return err
+	}
+	var env map[string]string
+	if ok {
+		env = cloneStringMap(secretEnv)
+		for _, name := range record.FileSecrets {
+			delete(env, name)
+		}
+	}
+	return proxyagent.SetSandboxEnvironment(r.root, r.projectID, r.poolID, sandboxID, env)
+}
+
+// fileSecretsRecordName is the pool's record of which of a sandbox's harness
+// secrets are delivered in a file rather than its environment, in the
+// sandbox's tree root beside — not inside — the volumes it mounts, as
+// runtime-config.json and project-layer.json are.
+const fileSecretsRecordName = "file-secrets.json"
+
+type fileSecretsRecord struct {
+	FileSecrets []string `json:"fileSecrets"`
+}
+
+func (r *DockerSandboxRuntime) fileSecretsRecordPath(sandboxID string) string {
+	return filepath.Join(r.sandboxRoot(sandboxID), fileSecretsRecordName)
+}
+
+// recordFileSecrets writes which of the harness secrets a create sent are
+// read from a file.
+func (r *DockerSandboxRuntime) recordFileSecrets(sandboxID string, secrets []harness.Secret) error {
+	record := fileSecretsRecord{FileSecrets: []string{}}
+	for _, secret := range secrets {
+		if secret.Delivery == harness.SecretDeliveryFile {
+			record.FileSecrets = append(record.FileSecrets, secret.Name)
+		}
+	}
+	data, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(r.sandboxRoot(sandboxID), 0o755); err != nil {
+		return fmt.Errorf("record file secrets: %w", err)
+	}
+	path := r.fileSecretsRecordPath(sandboxID)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return fmt.Errorf("record file secrets: %w", err)
+	}
+	return os.Rename(tmp, path)
+}
+
+// readFileSecretsRecord is the sandbox's file secrets record, and false when
+// none has been written.
+func (r *DockerSandboxRuntime) readFileSecretsRecord(sandboxID string) (fileSecretsRecord, bool, error) {
+	data, err := os.ReadFile(r.fileSecretsRecordPath(sandboxID))
+	if errors.Is(err, fs.ErrNotExist) {
+		return fileSecretsRecord{}, false, nil
+	}
+	if err != nil {
+		return fileSecretsRecord{}, false, err
+	}
+	var record fileSecretsRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		return fileSecretsRecord{}, false, fmt.Errorf("parse %s: %w", fileSecretsRecordName, err)
+	}
+	return record, true, nil
 }
 
 // updateSandboxProxyPolicy records a pushed part of a sandbox's proxy record —

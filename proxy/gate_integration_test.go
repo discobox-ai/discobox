@@ -23,8 +23,9 @@ import (
 
 const testGateHost = "api.discobox.internal"
 
-// gateResolver admits a request carrying "Bearer live-use" and answers it
-// itself, the way the pool's gate answers from the control plane.
+// gateResolver answers a request itself, the way the pool's gate answers from
+// the control plane. A request it is told to refuse, by a header the test
+// sets, it refuses; one it is told to fail, it lets in and then fails.
 type gateResolver struct {
 	noGatewayHeaders
 	stubResolver
@@ -36,19 +37,16 @@ func (r *gateResolver) Gate(_ context.Context, req secrets.GateRequest) (secrets
 	r.mu.Lock()
 	r.seen = append(r.seen, req.ClientID+" "+req.Request.Method+" "+req.Request.URL.Path)
 	r.mu.Unlock()
-	switch req.Request.Header.Get("Authorization") {
-	case "Bearer live-use":
-	case "Bearer failing-use":
+	switch req.Request.Header.Get("X-Test-Gate") {
+	case "":
+	case "fail":
 		// Let in, and then the upstream behind the gate did not answer.
-		return secrets.GateAdmission{UseID: "use_failed"}, errors.New("control plane reset the connection")
-	case "Bearer judged-use":
-		// A use the gate recognized and the judge then refused.
-		return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "not what use_judged was approved for", UseID: "use_judged"}
+		return secrets.GateAdmission{}, errors.New("control plane reset the connection")
 	default:
-		return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "no live use of ai.discobox.sandbox"}
+		return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "this pool cannot reach the control plane yet"}
 	}
 	body := "admitted " + req.ClientID
-	return secrets.GateAdmission{UseID: "use_live", Response: &http.Response{
+	return secrets.GateAdmission{Response: &http.Response{
 		StatusCode:    http.StatusOK,
 		Header:        http.Header{"Content-Type": []string{"text/plain"}},
 		Body:          io.NopCloser(strings.NewReader(body)),
@@ -58,9 +56,9 @@ func (r *gateResolver) Gate(_ context.Context, req secrets.GateRequest) (secrets
 	}}, nil
 }
 
-// The gate host is never sent to the internet. A request carrying a live use
-// is answered by the gate, whatever the allowlist says of the host; anything
-// else is refused by the proxy and recorded once, as blocked.
+// The gate host is never sent to the internet. A request is answered by the
+// gate, whatever the allowlist says of the host; one the gate refuses is
+// refused by the proxy and recorded once, as blocked.
 func TestHTTPProxyGateHostIsAnsweredByTheGateAlone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -95,14 +93,14 @@ func TestHTTPProxyGateHostIsAnsweredByTheGateAlone(t *testing.T) {
 	addr := waitForAddr(t, server)
 	client := gateClient(t, addr.String(), prepared.Clients["sandbox-1"])
 
-	call := func(token string) (int, string) {
+	call := func(gate string) (int, string) {
 		t.Helper()
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+testGateHost+"/projects/default/sandboxes", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
+		if gate != "" {
+			req.Header.Set("X-Test-Gate", gate)
 		}
 		resp, err := client.Do(req)
 		if err != nil {
@@ -113,25 +111,19 @@ func TestHTTPProxyGateHostIsAnsweredByTheGateAlone(t *testing.T) {
 		return resp.StatusCode, string(body)
 	}
 
-	if status, body := call("live-use"); status != http.StatusOK || body != "admitted sandbox-1" {
+	if status, body := call(""); status != http.StatusOK || body != "admitted sandbox-1" {
 		t.Fatalf("admitted call = %d %q, want the gate's answer for sandbox-1", status, body)
 	}
-	if status, body := call("not-a-use"); status != http.StatusForbidden || body != "blocked by proxy: no live use of ai.discobox.sandbox" {
+	if status, body := call("refuse"); status != http.StatusForbidden || body != "blocked by proxy: this pool cannot reach the control plane yet" {
 		t.Fatalf("refused call = %d %q, want a 403 carrying the gate's reason alone", status, body)
 	}
-	if status, _ := call(""); status != http.StatusForbidden {
-		t.Fatalf("call with nothing = %d, want 403", status)
-	}
-	if status, _ := call("judged-use"); status != http.StatusForbidden {
-		t.Fatalf("judged call = %d, want 403", status)
-	}
-	if status, body := call("failing-use"); status != http.StatusBadGateway || !strings.Contains(body, "unreachable") {
+	if status, body := call("fail"); status != http.StatusBadGateway || !strings.Contains(body, "unreachable") {
 		t.Fatalf("failed call = %d %q, want a 502 saying the API was unreachable", status, body)
 	}
 	resolver.mu.Lock()
 	seen := append([]string(nil), resolver.seen...)
 	resolver.mu.Unlock()
-	if len(seen) != 5 || seen[0] != "sandbox-1 GET /projects/default/sandboxes" {
+	if len(seen) != 3 || seen[0] != "sandbox-1 GET /projects/default/sandboxes" {
 		t.Fatalf("gate saw %q, want every call, from the sandbox that made it", seen)
 	}
 
@@ -155,38 +147,22 @@ func TestHTTPProxyGateHostIsAnsweredByTheGateAlone(t *testing.T) {
 	if err := pools.Read.Where("client_id = ?", "sandbox-1").Order("id").Find(&exchanges).Error; err != nil {
 		t.Fatalf("read audit exchanges: %v", err)
 	}
-	// Every row says which use it was, where there was one: the admitted
-	// call's, and the refused call that carried a use the gate recognized.
 	var blocked, answered, failed int
 	for _, exchange := range exchanges {
 		switch {
-		case exchange.Blocked && strings.HasPrefix(exchange.BlockedReason, "gate: not what use_judged"):
-			blocked++
-			if exchange.SwappedUseIDs != "use_judged" {
-				t.Fatalf("judged row uses = %q, want the use it carried", exchange.SwappedUseIDs)
-			}
 		case exchange.Blocked && strings.HasPrefix(exchange.BlockedReason, "gate: "):
 			blocked++
-			if exchange.SwappedUseIDs != "" {
-				t.Fatalf("refused row uses = %q, want none: it carried no use", exchange.SwappedUseIDs)
-			}
 		case !exchange.Blocked && exchange.Status == http.StatusOK:
 			answered++
-			if exchange.SwappedUseIDs != "use_live" {
-				t.Fatalf("admitted row uses = %q, want the use it was let in under", exchange.SwappedUseIDs)
-			}
 		case !exchange.Blocked && exchange.Status == http.StatusBadGateway:
 			// Let in and then failed: it may have been acted on, so it is
-			// no refusal, and it keeps the use it went under.
+			// no refusal.
 			failed++
-			if exchange.SwappedUseIDs != "use_failed" {
-				t.Fatalf("failed row uses = %q, want the use it was let in under", exchange.SwappedUseIDs)
-			}
 		default:
 			t.Fatalf("unexpected audit row %+v", exchange)
 		}
 	}
-	if blocked != 3 || answered != 1 || failed != 1 {
+	if blocked != 1 || answered != 1 || failed != 1 {
 		t.Fatalf("audit = %d blocked, %d answered, %d failed; want each refusal once, the admitted call once, and the failed call once, as no refusal", blocked, answered, failed)
 	}
 }

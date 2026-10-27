@@ -322,7 +322,7 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   subdirectory would lose its services.
 - **A default workdir must exist when an exec starts.** systemd refuses a unit
   whose `WorkingDirectory` is missing, so a default that is not there fails
-  every terminal, shell and judge run, not one exec. A start directory can be
+  every terminal and shell, not one exec. A start directory can be
   missing: never committed, gitignored, or removed since. It falls back to
   `SourceRoot` (`resolveWorkdir`). A new default must have a fallback that
   always exists.

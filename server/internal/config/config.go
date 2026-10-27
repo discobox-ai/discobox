@@ -140,46 +140,15 @@ type Config struct {
 	RetiredSandboxImage       string `yaml:"defaultSandboxImage" doc:"Retired, and ignored: no discobox runs an image of its own any more. Read with a warning, and refused from the next release; remove it rather than moving it to platformBundle, which names a platform bundle and not an image." example:"ghcr.io/discobox-ai/discobox-sandbox-agent:v0.8.0"`
 	RetiredSandboxImageDigest string `yaml:"defaultSandboxImageDigest" doc:"Retired, and ignored with defaultSandboxImage. Read with a warning, and refused from the next release." example:"sha256:4f2a9c1e7b3d8a6f0e5c2b9d7a1f3e8c6b4d2a0f9e7c5b3a1d8f6e4c2b0a9d7e"`
 
-	// JudgeCommands has the judge decide whether the command
-	// `discobox-access run` declares carries out the use it names, before the
-	// pool mints a credential for it, and whether a discobox may hand a
-	// credential on (ADR 26-09-22-838 §3, ADR 26-10-02-054).
-	//
-	// It is on by default. A command is judged once, before anything is
-	// minted, so it costs one verdict per command an agent chose to run. Off,
-	// the pool mints without asking and records no verdict, and a discobox
-	// hands nothing on.
-	JudgeCommands bool `yaml:"judgeCommands" env:"DISCOBOX_JUDGE_COMMANDS" default:"true" doc:"Have each project's judge decide whether a command discobox-access runs carries out the approved use it names, before a credential is issued for it, and whether a discobox may hand a credential on. On by default. A project whose default harness runs no model then runs no credentialed command unless the server judges with Jev. Off, credentials are issued for whatever command asks, with no verdict on record, and no discobox hands one on."`
-
-	// JudgeCredentials has the judge decide whether each credential-bearing
-	// request the proxy observes is part of what its use was approved for
-	// (ADR 26-09-22-838 §4).
-	//
-	// It is off by default and opted into: it puts a model in front of every
-	// such request, holding its connection open, and a busy discobox sends
-	// many per command. Its key predates JudgeCommands, which is why it does
-	// not say requests (ADR 26-10-02-054 §1).
-	JudgeCredentials bool `yaml:"judgeCredentials" env:"DISCOBOX_JUDGE_CREDENTIALS" doc:"Have each project's judge decide whether each credential-bearing request is part of what the credential's approved use allows. Off by default. While it is off credentials are resolved for whatever request carries them, held only to the host and grant they were approved for. Commands are judged by judgeCommands."`
-
-	// JudgeBackend is what answers when judgeCommands or judgeCredentials is on: each
-	// project's judge discobox, or TypeSafe's Jev, asked by this server
-	// directly (ADR 26-10-01-324). It is the server's choice, like judging
-	// itself. auto is resolved by Load, so after it this is harness or jev:
-	// a server given a Jev key judges with Jev without being told twice.
-	JudgeBackend string `yaml:"judgeBackend" env:"DISCOBOX_JUDGE_BACKEND" enum:"auto,harness,jev" default:"auto" doc:"What judges credential use when judgeCommands or judgeCredentials is on: auto, jev when jevApiKey is set and harness otherwise; harness, a judge discobox per project running the project's default harness; or jev, TypeSafe's Jev, asked by this server directly, which requires jevApiKey."`
-	// JevAPIKey is required when JudgeBackend is jev, and is what auto
-	// chooses Jev by.
-	JevAPIKey string `yaml:"jevApiKey" env:"DISCOBOX_JEV_API_KEY" doc:"TypeSafe API key the server asks Jev with. Setting it makes judgeBackend auto choose jev; judgeBackend jev requires it." example:"-"`
-	// JevModel is pinned to a version by default, because the thresholds the
-	// judge decides Jev's probabilities against were tuned on one.
-	JevModel string `yaml:"jevModel" env:"DISCOBOX_JEV_MODEL" default:"jev-1.13.0" doc:"The Jev model asked when judgeBackend is jev. A version rather than the jev-latest alias, which moves when TypeSafe ships a new one."`
-	// JevUnsure is what happens to a job Jev can neither allow nor refuse
-	// with confidence: put to the project's judge discobox, which each
-	// project then keeps, or refused. Put by default (ADR 26-10-12-669): what
-	// Jev is unsure of is where its refusals were wrong, and the judge
-	// discobox is there to settle it. A refusal Jev is sure of is final
-	// either way.
-	JevUnsure string `yaml:"jevUnsure" env:"DISCOBOX_JEV_UNSURE" enum:"harness,refuse" default:"harness" doc:"What a jev judge does with a command, request or delegation it is unsure about, being neither sure enough to allow it nor sure enough to refuse it: harness, ask the project's judge discobox (as judgeBackend harness runs one), which then decides, so every project keeps a judge discobox for them; or refuse it, and run no judge discobox. Jev's allows and the refusals it is sure of are final either way, and an ask to be shown a request's body goes back to be answered; with harness, the rounds after the judge discobox asked for a body are its to decide too."`
+	// RetiredJudge* and RetiredJev* are server.yaml's judging keys. No judge
+	// decides credential use any more (ADR 26-10-27-880), so they are read
+	// only to warn (retiredKeys), and mean nothing.
+	RetiredJudgeCommands    string `yaml:"judgeCommands" doc:"Retired, and ignored: no judge decides credential use any more. Read with a warning, and refused from the next release." example:"true"`
+	RetiredJudgeCredentials string `yaml:"judgeCredentials" doc:"Retired, and ignored: no judge decides credential use any more. Read with a warning, and refused from the next release." example:"false"`
+	RetiredJudgeBackend     string `yaml:"judgeBackend" doc:"Retired, and ignored: no judge decides credential use any more. Read with a warning, and refused from the next release." example:"harness"`
+	RetiredJevAPIKey        string `yaml:"jevApiKey" doc:"Retired, and ignored: nothing asks Jev any more. Read with a warning, and refused from the next release. No example: it was a credential." example:"-"`
+	RetiredJevModel         string `yaml:"jevModel" doc:"Retired, and ignored: nothing asks Jev any more. Read with a warning, and refused from the next release." example:"jev-1.13.0"`
+	RetiredJevUnsure        string `yaml:"jevUnsure" doc:"Retired, and ignored: nothing asks Jev any more. Read with a warning, and refused from the next release." example:"harness"`
 
 	// ArchiveRetention is how long an archived sandbox is kept before it is
 	// purged, for projects that have not set their own retention. Zero means
@@ -405,14 +374,6 @@ func Load() (*Config, error) {
 	if !configured("databaseDsn") {
 		cfg.DatabaseDSN = defaultDatabaseDSN(cfg.DataDir)
 	}
-	// auto is a choice made from the key: Jev when there is one to ask it
-	// with, and the judge discobox otherwise.
-	if cfg.JudgeBackend == JudgeBackendAuto {
-		cfg.JudgeBackend = JudgeBackendHarness
-		if strings.TrimSpace(cfg.JevAPIKey) != "" {
-			cfg.JudgeBackend = JudgeBackendJev
-		}
-	}
 	if !configured("databaseDriver") {
 		cfg.DatabaseDriver = gormdb.DetectDriver(cfg.DatabaseDSN)
 	}
@@ -486,6 +447,12 @@ var retiredKeys = []struct{ key, advice string }{
 	{"defaultSandboxImage", "no discobox runs an image of its own any more, so it is ignored; do not move its value to platformBundle, which names a platform bundle and not an image"},
 	{"defaultSandboxImageDigest", "it goes with defaultSandboxImage"},
 	{"dockerPoolImage", "no pool runs a pool-agent image any more: its container runs dockerSandboxBaseImage, provisioned from poolAgentBundle"},
+	{"judgeCommands", "no judge decides credential use any more (ADR 26-10-27-880)"},
+	{"judgeCredentials", "no judge decides credential use any more (ADR 26-10-27-880)"},
+	{"judgeBackend", "no judge decides credential use any more (ADR 26-10-27-880)"},
+	{"jevApiKey", "nothing asks Jev any more (ADR 26-10-27-880)"},
+	{"jevModel", "nothing asks Jev any more (ADR 26-10-27-880)"},
+	{"jevUnsure", "nothing asks Jev any more (ADR 26-10-27-880)"},
 }
 
 // retiredKeyWarnings names each retired key the file set.
@@ -580,42 +547,8 @@ func (c *Config) validate(configured func(string) bool) error {
 	if _, _, err := c.GatewayRoutes(); err != nil {
 		return err
 	}
-	switch c.JudgeBackend {
-	case JudgeBackendAuto:
-		// Load resolves it; a Config built some other way has not been.
-		return fmt.Errorf("judgeBackend auto was not resolved")
-	case JudgeBackendHarness:
-	case JudgeBackendJev:
-		// Refused at startup whether or not judging is on: a server told to
-		// judge with Jev and given no key would otherwise start, and refuse
-		// every credential the moment judging is turned on.
-		if strings.TrimSpace(c.JevAPIKey) == "" {
-			return fmt.Errorf("jevApiKey is required when judgeBackend is jev")
-		}
-		if strings.TrimSpace(c.JevModel) == "" {
-			return fmt.Errorf("jevModel is required when judgeBackend is jev")
-		}
-		if c.JevUnsure != JevUnsureRefuse && c.JevUnsure != JevUnsureHarness {
-			return fmt.Errorf("jevUnsure must be one of: %s, %s", JevUnsureRefuse, JevUnsureHarness)
-		}
-	default:
-		return fmt.Errorf("judgeBackend must be one of: %s, %s, %s", JudgeBackendAuto, JudgeBackendHarness, JudgeBackendJev)
-	}
 	return nil
 }
-
-// The judge backends judgeBackend chooses between.
-const (
-	JudgeBackendAuto    = "auto"
-	JudgeBackendHarness = "harness"
-	JudgeBackendJev     = "jev"
-)
-
-// What jevUnsure does with a job Jev is unsure about.
-const (
-	JevUnsureRefuse  = "refuse"
-	JevUnsureHarness = "harness"
-)
 
 func defaultDatabaseDSN(dataDir string) string {
 	return "sqlite3://" + filepath.Join(dataDir, "discobox.db")

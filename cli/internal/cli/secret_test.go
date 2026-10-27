@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -24,21 +25,25 @@ func TestSecretRoutesFlagsReplaceOrClear(t *testing.T) {
 	}
 	routes, ok, err := secretRoutesFlags(newFlags(
 		"--route", "GitHubCopilot.com",
-		"--route", "githubcopilot.com/mcp/=read-only queries = nothing else",
-		"--route", "github.com= reading a pull request "))
+		"--route", "githubcopilot.com/mcp/=blocked",
+		"--route", "github.com = blocked "))
 	if !ok || err != nil || len(routes) != 3 {
 		t.Fatalf("routes = %#v, ok = %t, err = %v, want all three", routes, ok, err)
 	}
-	describe := func(route apimodel.SecretRouteInput) [3]string {
-		return [3]string{route.Host, route.Path.Or(""), route.Use.Or("")}
+	type described struct {
+		host, path string
+		blocked    bool
 	}
-	for i, want := range [][3]string{
-		{"githubcopilot.com", "", ""},
-		{"githubcopilot.com", "/mcp", "read-only queries = nothing else"},
-		{"github.com", "", "reading a pull request"},
+	describe := func(route apimodel.SecretRouteInput) described {
+		return described{route.Host, route.Path.Or(""), route.Blocked.Or(false)}
+	}
+	for i, want := range []described{
+		{"githubcopilot.com", "", false},
+		{"githubcopilot.com", "/mcp", true},
+		{"github.com", "", true},
 	} {
 		if got := describe(routes[i]); got != want {
-			t.Fatalf("route %d = %q, want %q", i, got, want)
+			t.Fatalf("route %d = %+v, want %+v", i, got, want)
 		}
 	}
 	if routes, ok, err := secretRoutesFlags(newFlags("--clear-route")); !ok || err != nil || routes == nil || len(routes) != 0 {
@@ -57,9 +62,25 @@ func TestSecretRoutesFlagsReplaceOrClear(t *testing.T) {
 	if refused := runCLIRefused(t, "http://127.0.0.1:1", "secret", "update", "github", "--clear-route=false", "--route", "github.com"); strings.Contains(refused, "cannot be used together") {
 		t.Fatalf("--clear-route=false with --route = %q, want it let through", refused)
 	}
-	for _, bad := range []string{"=a use", "/mcp", "github.com/a//b", "github.com/a b"} {
+	for _, bad := range []string{"=blocked", "/mcp", "github.com/a//b", "github.com/a b", "github.com=read-only queries"} {
 		if _, _, err := secretRoutesFlags(newFlags("--route", bad)); err == nil {
 			t.Fatalf("--route %q succeeded, want it refused", bad)
 		}
 	}
+}
+
+// runCLIRefused runs the CLI against serverURL and returns why it refused,
+// failing when it did not.
+func runCLIRefused(t *testing.T, serverURL string, args ...string) string {
+	t.Helper()
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs(append([]string{"--server", serverURL, "--project", "project-1"}, args...))
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("%v was not refused", args)
+	}
+	return err.Error()
 }

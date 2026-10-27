@@ -20,7 +20,6 @@ func waitingTrust() CredentialRequest {
 		SandboxID:     "sbx_one",
 		Host:          "34.70.64.109:443",
 		Justification: "the user's GKE cluster uses its own CA",
-		Uses:          []string{"read-only kubectl: get pods and events"},
 		Created:       time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC),
 		Trust: &TrustAsk{
 			Chain:      []TrustCertificate{leaf, ca},
@@ -48,7 +47,7 @@ func TestATrustRequestAsksWhichCertificateToPin(t *testing.T) {
 		t.Fatalf("dialog = %s, want the trust card", describe(m.dialog))
 	}
 	body := dialogText(m)
-	for _, want := range []string{"34.70.64.109:443", "this discobox alone", "read-only kubectl", "CN=kube-apiserver", "CN=cluster-ca", "self-signed"} {
+	for _, want := range []string{"34.70.64.109:443", "this discobox alone", "its own CA", "CN=kube-apiserver", "CN=cluster-ca", "self-signed"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("card = %q, want it to carry %q", body, want)
 		}

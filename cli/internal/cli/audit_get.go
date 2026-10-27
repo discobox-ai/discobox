@@ -28,8 +28,8 @@ func (a *App) newAuditGetCommand() *cobra.Command {
 reports for it.
 
 The ID says which trail to read: http_<row> is an exchange the pool's proxy
-recorded, dns_<row> a lookup the pool answered, cvd_… a credential verdict,
-sreq_… an ask for a new value of a token and how it was answered, and evt_…
+recorded, dns_<row> a lookup the pool answered, sreq_… an ask for a new value
+of a token and how it was answered, and evt_…
 either a harness hook or an exec event, both of which the discobox keeps inside
 itself.
 
@@ -42,7 +42,7 @@ are unbounded bytes; the record says which were recorded, and
 Every value a discobox wrote is shown as data, with non-printing characters
 escaped.`,
 		Example: `  discobox admin audit get sbx_1 http_10219
-  discobox admin audit get sbx_1 cvd_k4m2p9x7q1w8r3t5`,
+  discobox admin audit get sbx_1 sreq_k4m2p9x7q1w8r3t5`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, projectID, sandboxID, client, err := a.selectSandbox(cmd, args[0])
@@ -77,14 +77,12 @@ func (a *App) writeAuditRecord(ctx context.Context, out io.Writer, asJSON bool, 
 		return a.printHTTPAuditRecord(ctx, out, asJSON, client, projectID, poolID, sandboxID, recordID)
 	case auditid.IsDNSQuery(recordID):
 		return nil, a.printDNSAuditRecord(ctx, out, asJSON, client, projectID, poolID, sandboxID, recordID)
-	case strings.HasPrefix(recordID, "cvd_"):
-		return nil, a.printCredentialVerdictRecord(ctx, out, asJSON, client, projectID, sandboxID, recordID)
 	case strings.HasPrefix(recordID, "sreq_"):
 		return nil, a.printSecretRefreshRecord(ctx, out, asJSON, client, projectID, sandboxID, recordID)
 	case strings.HasPrefix(recordID, "evt_"):
 		return nil, a.printSandboxTrailRecord(ctx, out, asJSON, client, projectID, sandboxID, recordID)
 	default:
-		return nil, fmt.Errorf("%q is not an audit record ID: they are written http_<row>, dns_<row>, cvd_…, sreq_… or evt_…", terminalSafe(recordID))
+		return nil, fmt.Errorf("%q is not an audit record ID: they are written http_<row>, dns_<row>, sreq_… or evt_…", terminalSafe(recordID))
 	}
 }
 
@@ -132,7 +130,6 @@ func (a *App) printHTTPAuditRecord(ctx context.Context, out io.Writer, asJSON bo
 		{"status", httpAuditDetailStatus(detail)},
 		{"duration", (time.Duration(detail.DurationMillis.Or(0)) * time.Millisecond).String()},
 		{"secrets", a.auditSecretNames(ctx, client, projectID, detail.SwappedSecretIds)},
-		{"uses", terminalSafe(strings.Join(detail.SwappedUseIds, ", "))},
 		{"gateway", auditFieldPair(detail.AppliedRuleId.Or(""), detail.AppliedPattern.Or(""))},
 		{"forwarded to", terminalSafe(detail.ForwardedUrl.Or(""))},
 		{"gateway headers", terminalSafe(strings.Join(detail.AppliedHeaders, ", "))},
@@ -160,36 +157,6 @@ func (a *App) printHTTPAuditRecord(ctx context.Context, out io.Writer, asJSON bo
 		recordings = append(recordings, httpAuditPartStream)
 	}
 	return recordings, nil
-}
-
-// printCredentialVerdictRecord reads one verdict from the control plane's own
-// trail, through the list it is filtered out of by ID: the trail is
-// project-scoped for the reason ADR 0130 §5 gives, and a verdict outlives the
-// discobox it describes.
-func (a *App) printCredentialVerdictRecord(ctx context.Context, out io.Writer, asJSON bool, client *apiclientgen.Client, projectID, sandboxID, recordID string) error {
-	res, err := client.ListCredentialVerdicts(ctx, apiclientgen.ListCredentialVerdictsParams{
-		ProjectId: projectID,
-		SandboxId: apiclientgen.NewOptString(sandboxID),
-		ID:        apiclientgen.NewOptString(recordID),
-		Limit:     apiclientgen.NewOptInt(1),
-	})
-	if err != nil {
-		return err
-	}
-	body, err := expectResponse[apimodel.ListCredentialVerdictsBody](res)
-	if err != nil {
-		return err
-	}
-	verdicts := body.GetCredentialVerdicts()
-	if len(verdicts) == 0 {
-		return auditRecordNotFound(recordID, sandboxID)
-	}
-	if asJSON {
-		return writeTerminalSafeJSON(out, &verdicts[0])
-	}
-	// One record is printed in full, which for a Jev verdict includes exactly
-	// what Jev was sent.
-	return writeCredentialVerdictBlocks(out, verdicts[:1], true)
 }
 
 // printSandboxTrailRecord reads one record the discobox keeps inside itself.

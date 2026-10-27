@@ -2,20 +2,14 @@ package tui
 
 import (
 	"errors"
-	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
-	"github.com/discobox-ai/discobox/cli/internal/policyview"
-	"github.com/discobox-ai/discobox/pkg/policy"
-	"github.com/discobox-ai/discobox/pkg/wellknown"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 )
 
 // The credential inbox is an interruption budget: an agent can ask at any
@@ -35,7 +29,6 @@ func waitingRequest() CredentialRequest {
 		Host:          "api.github.com",
 		Type:          "bearer",
 		Justification: "the task asks me to open a PR",
-		Uses:          []string{"Open a pull request against the current repo"},
 		Created:       time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC),
 	}
 }
@@ -123,7 +116,7 @@ func TestTheRowKeyAsksWhatWasRequested(t *testing.T) {
 		t.Fatal("the key on a marked row opened nothing")
 	}
 	body := dialogText(m)
-	for _, want := range []string{"github", "GH_TOKEN", "api.github.com", "open a PR", "Open a pull request"} {
+	for _, want := range []string{"github", "GH_TOKEN", "api.github.com", "open a PR"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dialog body = %q, want it to carry %q", body, want)
 		}
@@ -161,44 +154,9 @@ func TestAnAskToDelegateSaysWhatItIs(t *testing.T) {
 	if !onRequestCard(m) {
 		t.Fatalf("dialog = %s, want the request card", describe(m.dialog))
 	}
-	for _, want := range []string{"never to use it", "uses it would delegate"} {
+	for _, want := range []string{"never uses it", "the task asks me to open a PR"} {
 		if !strings.Contains(dialogText(m), want) {
 			t.Fatalf("card = %q, want it to carry %q", dialogText(m), want)
-		}
-	}
-}
-
-// A use written as one long sentence is read on the card in its parts: the
-// job, what it reads, each write and each line it will not cross set in under
-// them, every word as the agent wrote it.
-func TestAUseIsReadInItsParts(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	req := waitingRequest()
-	req.Uses = []string{"Fix issue #43 in acme/web as a pull request from branch fix-43 into main. " +
-		"Read anything in the repository; push that branch, and open the pull request. " +
-		"Never push main, delete a branch, or read secrets."}
-	ds.requests = []CredentialRequest{req}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if !onRequestCard(m) {
-		t.Fatalf("dialog = %s, want the request card", describe(m.dialog))
-	}
-	rows := strings.Split(dialogText(m), "\n")
-	for _, want := range []string{
-		"· Fix issue #43 in acme/web as a pull request from branch fix-43 into main.",
-		"  Read anything in the repository;",
-		"    push that branch,",
-		"    and open the pull request.",
-		"  Never push main,",
-		"    delete a branch,",
-		"    or read secrets.",
-	} {
-		// Inside the frame, from the card's margin, so the indent is
-		// compared too.
-		if !slices.ContainsFunc(rows, func(row string) bool { return strings.Contains(row, "│  "+want+" ") }) {
-			t.Fatalf("card =\n%s\nwant a row reading %q", dialogText(m), want)
 		}
 	}
 }
@@ -344,21 +302,6 @@ func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
 	// guessed at, so the row follows the server.
 	if len(m.requests["sbx_one"]) != 0 {
 		t.Fatalf("requests = %#v, want the answered one gone", m.requests)
-	}
-}
-
-// A well-known credential's marked secret is the answer the last approval
-// gave, so it is offered first whatever its host.
-func TestTheSecretAnsweringAWellKnownCredentialIsOfferedFirst(t *testing.T) {
-	t.Parallel()
-	req := waitingRequest()
-	req.WellKnownID = wellknown.GitHubAPI
-	ordered := secretsForRequest([]Secret{
-		{ID: "sec_exact", Host: "api.github.com"},
-		{ID: "sec_marked", Host: "", WellKnownID: wellknown.GitHubAPI},
-	}, req)
-	if ordered[0].ID != "sec_marked" {
-		t.Fatalf("order = %v, want the marked secret first", ordered)
 	}
 }
 
@@ -1040,57 +983,14 @@ func TestDecliningToRebindReturnsToTheQuestion(t *testing.T) {
 	}
 }
 
-// A credential with nothing behind it — the discobox API — is let in or not.
-// Its card offers no secret to choose and nothing to type — only to let it in,
-// this once or by a rule — and approving it names no secret: the server
-// answers it.
-func TestAGateIsApprovedWithoutASecret(t *testing.T) {
-	t.Parallel()
-	req := policyRequest()
-	req.Name, req.EnvVar, req.Host, req.WellKnownID = "discobox", "DISCOBOX_TOKEN", "api.discobox.internal", wellknown.DiscoboxSandbox
-	ds := newFakeSource(testSandboxes()...)
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	if m.dialog == nil || len(m.dialog.items) != 3 || m.dialog.items[0].key != "gate" || m.dialog.items[1].key != "auto" || m.dialog.items[2].key != "deny" {
-		t.Fatalf("dialog = %s, want only approve, auto approve and deny", describe(m.dialog))
-	}
-	// It says what it hands over before it is agreed to.
-	if card := cardWords(m); !strings.Contains(card, "what approving gives it") || !strings.Contains(card, "within what you separately delegate") {
-		t.Fatalf("card = %q, want it to say what approving gives the discobox", card)
-	}
-	drain(t, m, m.dialog.action("gate"), 0)
-	if !strings.Contains(dialogText(m), "no secret") {
-		t.Fatalf("lifetime card = %q, want it to say no secret answers it", dialogText(m))
-	}
-	grantFor(t, m, lifetime.Day)
-
-	if len(ds.createdSecrets) != 0 {
-		t.Fatalf("created = %#v, want nothing typed or stored", ds.createdSecrets)
-	}
-	if len(ds.approvals) != 1 || ds.approvals[0].SecretID != "" || ds.approvals[0].TTLSeconds != 86400 {
-		t.Fatalf("approvals = %#v, want one naming no secret, for a day", ds.approvals)
-	}
-}
-
 // A request card longer than the window still fits it, with its answers on
-// screen: the request a lead discobox makes for the discobox API names ten
-// uses, and a card that runs off the bottom hides Approve and Deny.
+// screen: a card that runs off the bottom hides the secrets and Deny.
 func TestALongRequestCardKeepsItsAnswersOnScreen(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	req := waitingRequest()
-	req.Name, req.EnvVar, req.Type = "discobox", "DISCOBOX_TOKEN", "token"
-	req.Host, req.WellKnownID = "api.discobox.internal", wellknown.DiscoboxSandbox
 	req.GrantTTL = 72 * time.Hour
-	req.Justification = strings.Repeat("the user asked me to have worker discoboxes keep four pull requests reviewed, green and rebased ", 3)
-	req.Uses = nil
-	for i := range 10 {
-		req.Uses = append(req.Uses, fmt.Sprintf("discobox admin terminal input <terminal-id-%d> --discobox-id <discobox-id> [--literal] <keys or text>: "+
-			"type keys and messages into the terminal of a discobox I created, to answer its questions, give it its next step, or tell it to continue", i))
-	}
+	req.Justification = strings.Repeat("the user asked me to have worker discoboxes keep four pull requests reviewed, green and rebased ", 40)
 	ds.mu.Lock()
 	ds.requests = []CredentialRequest{req}
 	ds.mu.Unlock()
@@ -1105,7 +1005,7 @@ func TestALongRequestCardKeepsItsAnswersOnScreen(t *testing.T) {
 		t.Errorf("the card is %d rows in a window of %d", len(lines), m.height)
 	}
 	onScreen := strings.Join(lines[:min(len(lines), m.height)], "\n")
-	for _, answer := range []string{"Approve", "Deny"} {
+	for _, answer := range []string{"New credential", "Deny"} {
 		if !strings.Contains(onScreen, answer) {
 			t.Errorf("%s is not on screen", answer)
 		}
@@ -1113,157 +1013,32 @@ func TestALongRequestCardKeepsItsAnswersOnScreen(t *testing.T) {
 }
 
 // The wheel reads a long request card to its end, with the answers still under
-// it: what approving hands over is the last thing on the card, and the first
-// thing an approval turns on.
+// it.
 func TestTheWheelScrollsALongRequestCard(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	req := waitingRequest()
-	req.Name, req.WellKnownID = "discobox", wellknown.DiscoboxSandbox
-	req.Uses = nil
-	for i := range 30 {
-		req.Uses = append(req.Uses, "use "+strconv.Itoa(i))
-	}
+	const last = "and that is the end of why"
+	req.Justification = strings.Repeat("the user asked me to keep four pull requests reviewed, green and rebased; ", 40) + last
 	ds.mu.Lock()
 	ds.requests = []CredentialRequest{req}
 	ds.mu.Unlock()
 	send(t, m, tickMsg{})
 	send(t, m, keyPress(credentialsKey))
 
-	const last = "but only within what you separately delegate to it"
 	if strings.Contains(frameText(m), last) {
 		t.Fatalf("the card fits, so there is nothing to scroll:\n%s", frameText(m))
 	}
-	_, y := at(t, m, "use 3")
-	for range 20 {
+	_, y := at(t, m, "the user asked me")
+	for range 40 {
 		send(t, m, tea.MouseWheelMsg{X: m.width / 2, Y: y, Button: tea.MouseWheelDown})
 	}
 	text := frameText(m)
 	if !strings.Contains(text, last) {
 		t.Errorf("the wheel did not reach the end of the card:\n%s", text)
 	}
-	if !strings.Contains(text, "Approve") || !strings.Contains(text, "Deny") {
+	if !strings.Contains(text, "Deny") {
 		t.Errorf("the answers left the card as it scrolled:\n%s", text)
-	}
-}
-
-// A request that asks for a policy shows it on its card, rendered for the
-// person approving it, and approving it sends that policy back as it was
-// read: what is granted is what the card showed (ADR 26-10-20-782 §3).
-func TestARequestsPolicyIsShownAndApprovedAsShown(t *testing.T) {
-	t.Parallel()
-	asked := &policy.Policy{
-		Statements: []policy.Statement{{
-			Effect: policy.Allow, Actions: []string{"create"}, ResourceType: "pull request",
-			Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryRepo},
-		}, {
-			Effect: policy.Deny, Actions: []string{"delete"}, ResourceType: policy.Anything,
-			Scope: policy.Scope{Type: policy.Anywhere},
-		}},
-		Definitions: map[string]string{"pull request": "a GitHub pull request", "repository": "a GitHub repository"},
-		Resolved:    map[string]string{policy.VarPrimaryRepo: "acme/web"},
-	}
-	req := waitingRequest()
-	req.Policy, req.PolicyLines = asked, policyview.Lines(*asked)
-	ds := newFakeSource(testSandboxes()...)
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	card := dialogText(m)
-	for _, want := range []string{
-		"policy it asks for",
-		"in repository (a GitHub repository) $primary.repo (acme/web)",
-		"allow create on pull request (a GitHub pull request)",
-		"global",
-		"deny delete on anything",
-	} {
-		if !strings.Contains(card, want) {
-			t.Fatalf("card lacks %q:\n%s", want, card)
-		}
-	}
-
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	grantFor(t, m, time.Hour)
-	if len(ds.approvals) != 1 || ds.approvals[0].Policy != asked {
-		t.Fatalf("approvals = %#v, want the request's policy sent as read", ds.approvals)
-	}
-}
-
-// A grant that carries a policy shows it, as approved, on its card.
-func TestAGrantsPolicyIsShownOnItsCard(t *testing.T) {
-	t.Parallel()
-	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	approved := policy.Policy{
-		Statements: []policy.Statement{{
-			Effect: policy.Allow, Actions: []string{"read"}, ResourceType: "issue",
-			Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryUpstream},
-		}},
-		Definitions: map[string]string{"issue": "a GitHub issue", "repository": "a GitHub repository"},
-	}
-	m.reviewGrant("", "GitHub token", Grant{ID: "grant_1", Scope: "sandbox", ScopeKey: "sbx_one", Policy: policyview.Lines(approved)}, nil)
-	// Read as words, whichever row a long line wraps onto.
-	card := strings.Join(strings.Fields(strings.ReplaceAll(dialogText(m), "│", " ")), " ")
-	for _, want := range []string{
-		"approved policy",
-		"$primary.upstream (does not resolve, so it matches nothing)",
-		"allow read on issue (a GitHub issue)",
-	} {
-		if !strings.Contains(card, want) {
-			t.Fatalf("card lacks %q:\n%s", want, card)
-		}
-	}
-}
-
-// Only a request that asks for a policy is offered "auto approve": a rule's
-// content is a policy the request's is held to, so an ask of uses alone stays
-// a person's to answer each time, as the server's ruleProposable says.
-func TestOnlyARequestWithAPolicyIsRuleable(t *testing.T) {
-	t.Parallel()
-	req := waitingRequest()
-	req.SandboxID = "sbx_one"
-	if req.Ruleable() {
-		t.Fatal("an agent's ask with uses alone is offered a rule")
-	}
-	if !policyRequest().Ruleable() {
-		t.Fatal("an agent's ask that carries a policy is not ruleable")
-	}
-	delegating := policyRequest()
-	delegating.Delegate = true
-	if delegating.Ruleable() {
-		t.Fatal("an ask to delegate is offered a rule, which approves no delegation")
-	}
-}
-
-// On a narrow card a policy line wraps onto rows set in past every line of
-// the rendering, so the tail of a statement never reads as a statement of
-// its own, nor a heading's tail as a heading.
-func TestAWrappedPolicyLineHangsPastEveryLine(t *testing.T) {
-	t.Parallel()
-	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	approved := policy.Policy{
-		Statements: []policy.Statement{{
-			Effect: policy.Allow, Actions: []string{"create", "update"}, ResourceType: "pull request",
-			CreatedBy: policy.VarThis, Scope: policy.Scope{Type: "repository", Name: policy.VarPrimaryRepo},
-		}},
-		Definitions: map[string]string{"pull request": "a GitHub pull request", "repository": "a GitHub repository"},
-		Resolved:    map[string]string{policy.VarPrimaryRepo: "discobox-ai/discobox", policy.VarThis: "sbx_one"},
-	}
-	m.reviewGrant("", "GitHub token", Grant{ID: "grant_1", Scope: "sandbox", ScopeKey: "sbx_one", Policy: policyview.Lines(approved)}, nil)
-	card := ansi.Strip(m.dialog.view(m.st, &m.zones, 50, 60))
-	var rows []string
-	for _, row := range strings.Split(card, "\n") {
-		rows = append(rows, strings.TrimRight(strings.Trim(strings.TrimSpace(row), "│"), " "))
-	}
-	text := strings.Join(rows, "\n")
-	for _, want := range []string{
-		"\n  in repository (a GitHub repository)\n        $primary.repo (discobox-ai/discobox)\n",
-		"\n    allow create, update on pull request\n        (a GitHub pull request) created by\n        $this (sbx_one)\n",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("card lacks %q:\n%s", want, text)
-		}
 	}
 }
 
@@ -1292,5 +1067,25 @@ func TestARequestCardShowsTheRawRequest(t *testing.T) {
 	drain(t, m, m.dialog.onCancel(), 0)
 	if !onRequestCard(m) {
 		t.Fatalf("esc left %s, want the request card", describe(m.dialog))
+	}
+}
+
+// An agent's ask to delegate a credential names none of the variable an ask to
+// use it does, and is still an agent's: the person approving the power to hand
+// a credential on is told who asked and why, not that the proxy hit a sentinel.
+func TestAnAgentsAskToDelegateIsFromTheAgent(t *testing.T) {
+	for _, tc := range []struct {
+		request CredentialRequest
+		want    bool
+	}{
+		{CredentialRequest{Name: "github", EnvVar: "GH_TOKEN"}, true},
+		{CredentialRequest{Name: "github"}, true},
+		{CredentialRequest{}, false},
+		{CredentialRequest{Name: "github", Refresh: &RefreshAsk{}}, false},
+		{CredentialRequest{Name: "34.70.64.109:443", Trust: &TrustAsk{}}, false},
+	} {
+		if got := tc.request.FromAgent(); got != tc.want {
+			t.Fatalf("FromAgent(%+v) = %v, want %v", tc.request, got, tc.want)
+		}
 	}
 }

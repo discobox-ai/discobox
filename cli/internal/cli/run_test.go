@@ -401,7 +401,7 @@ func TestRunWindowRequestCarriesTheCommand(t *testing.T) {
 	opts.prompt.Env = []string{"MODE=test"}
 	opts.prompt.Secret = []string{"OPENAI_API_KEY=sk-x"}
 	opts.prompt.Include = []string{"../bar"}
-	opts.grant = []string{"com.github.api=push a branch to org/repo"}
+	opts.grant = []string{"github@github.com:GH_TOKEN"}
 
 	req := app.runWindowRequest(&opts, []string{"fix", "the", "tests"})
 
@@ -413,7 +413,7 @@ func TestRunWindowRequestCarriesTheCommand(t *testing.T) {
 	}
 	if req.Harness != "codex" || !slices.Equal(req.Env, []string{"MODE=test"}) ||
 		!slices.Equal(req.Secret, []string{"OPENAI_API_KEY=sk-x"}) || !slices.Equal(req.Include, []string{"../bar"}) ||
-		!slices.Equal(req.Grant, []string{"com.github.api=push a branch to org/repo"}) {
+		!slices.Equal(req.Grant, []string{"github@github.com:GH_TOKEN"}) {
 		t.Fatalf("request = %+v, want every flag that describes the create", req)
 	}
 	if !req.SkipDeclaredSources {

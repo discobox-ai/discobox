@@ -91,7 +91,7 @@ const rejectionStaleAfter = 30 * time.Minute
 // The sentinel is resolved exactly as ResolveSandboxSecret resolves it, and the
 // calling pool must own the sandbox it belongs to: a report is about a
 // credential, and naming one is the same act of trust as asking for its value.
-func (s *Service) RecordSandboxSecretRejection(ctx context.Context, poolID, sandboxID, sentinel, host, outcome, useID string) error {
+func (s *Service) RecordSandboxSecretRejection(ctx context.Context, poolID, sandboxID, sentinel, host, outcome string) error {
 	outcome = strings.TrimSpace(outcome)
 	if !slices.Contains(secretRejectionOutcomes, outcome) {
 		return apperrors.NewStatusError(http.StatusBadRequest, "unknown rejection outcome")
@@ -129,7 +129,7 @@ func (s *Service) RecordSandboxSecretRejection(ctx context.Context, poolID, sand
 	if standing != nil && time.Since(standing.LastSeenAt) < rejectionJudgeCooldown {
 		// Already judged, recently. Record that it is still happening and do
 		// not spend another renewal on an answer we have.
-		return s.recordRejection(ctx, assignment.ProjectID, secret.ID, host, standing.Reason, sandboxID, useID)
+		return s.recordRejection(ctx, assignment.ProjectID, secret.ID, host, standing.Reason, sandboxID)
 	}
 
 	verdict := s.judgeRejection(ctx, secret)
@@ -153,11 +153,11 @@ func (s *Service) RecordSandboxSecretRejection(ctx context.Context, poolID, sand
 		// standing, and only a report with nothing standing behind it records
 		// nothing at all.
 		if standing != nil {
-			return s.recordRejection(ctx, assignment.ProjectID, secret.ID, host, standing.Reason, sandboxID, useID)
+			return s.recordRejection(ctx, assignment.ProjectID, secret.ID, host, standing.Reason, sandboxID)
 		}
 		return nil
 	}
-	return s.recordRejection(ctx, assignment.ProjectID, secret.ID, host, string(verdict), sandboxID, useID)
+	return s.recordRejection(ctx, assignment.ProjectID, secret.ID, host, string(verdict), sandboxID)
 }
 
 // verdict is what a rejection came to. The two that are not a reason are named
@@ -228,14 +228,13 @@ func (s *Service) noteRenewal(secretID string) {
 	// project's secrets.
 }
 
-func (s *Service) recordRejection(ctx context.Context, projectID, secretID, host, reason, sandboxID, useID string) error {
+func (s *Service) recordRejection(ctx context.Context, projectID, secretID, host, reason, sandboxID string) error {
 	return s.store.RecordSecretRejection(ctx, &model.SecretRejection{
 		ProjectID: projectID,
 		SecretID:  secretID,
 		Host:      host,
 		Reason:    reason,
 		SandboxID: strings.TrimSpace(sandboxID),
-		UseID:     strings.TrimSpace(useID),
 	})
 }
 

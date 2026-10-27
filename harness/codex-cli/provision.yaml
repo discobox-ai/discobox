@@ -35,10 +35,6 @@ steps:
   - name: harness-run
     check: check-launcher.sh
     file: {path: /usr/local/bin/discobox-harness-run, source: launch.sh, mode: "0755"}
-  # The one-shot prompting interface in-sandbox tools ask for a model
-  # through (ADR 0079). On PATH: its callers resolve it by name.
-  - name: prompt
-    file: {path: /usr/local/bin/discobox-prompt, source: prompt.sh, mode: "0755"}
   - name: capture
     file: {path: /usr/local/libexec/discobox/codex-capture, source: capture.sh, mode: "0755"}
   - name: capture-metadata

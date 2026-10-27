@@ -90,9 +90,9 @@ export default {
   id: "discobox-hooks",
   setup: async ({ event, tool }) => {
     // Nothing to publish to when the sandbox agent is not listening — a
-    // configure sandbox, the tool-free judge, or opencode run outside a
-    // Discobox terminal. The publisher tolerates it, but spawning a process
-    // per event to discover that does not.
+    // configure sandbox, or opencode run outside a Discobox terminal. The
+    // publisher tolerates it, but spawning a process per event to discover
+    // that does not.
     if (!process.env.DISCOBOX_HOOK_SOCKET) return;
 
     // Sessions known to have a parent, learned from the `session.created`

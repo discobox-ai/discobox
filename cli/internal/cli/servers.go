@@ -625,9 +625,7 @@ func (s *server) findSandbox(ctx context.Context, value string) (projectID, sand
 	if err != nil {
 		return "", "", nil, false, err
 	}
-	// Judges included, as one server's resolveSandboxID includes them: an ID
-	// a discobox can be named by is the same on every server.
-	res, err := client.ListSandboxes(ctx, apiclientgen.ListSandboxesParams{ProjectId: projectID, IncludeJudge: apiclientgen.NewOptBool(true)})
+	res, err := client.ListSandboxes(ctx, apiclientgen.ListSandboxesParams{ProjectId: projectID})
 	if err != nil {
 		return "", "", nil, false, err
 	}

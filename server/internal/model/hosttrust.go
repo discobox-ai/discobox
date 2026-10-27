@@ -72,13 +72,12 @@ type TrustPin struct {
 // is an approval-inbox item beside SecretRequest; a person resolves it by
 // approving a pin, which mints a HostTrust, or by denying it.
 type HostTrustRequest struct {
-	ID            string      `gorm:"primaryKey;type:text" json:"id" doc:"Stable request ID"`
-	ProjectID     string      `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	SandboxID     string      `gorm:"column:sandbox_id;not null;type:text;index" json:"sandboxId" doc:"Sandbox the trust is asked for"`
-	RequestedBy   string      `gorm:"column:requested_by;not null;type:text" json:"requestedBy" doc:"Principal ID of the requestor"`
-	Host          string      `gorm:"column:host;not null;type:text" json:"host" doc:"The endpoint to trust, host:port"`
-	Justification string      `gorm:"column:justification;not null;type:text;default:''" json:"justification,omitempty" doc:"Why the agent says it needs to reach the host"`
-	Uses          []SecretUse `gorm:"column:uses;type:text;serializer:json" json:"uses,omitempty" doc:"What the agent says it will send the host"`
+	ID            string `gorm:"primaryKey;type:text" json:"id" doc:"Stable request ID"`
+	ProjectID     string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	SandboxID     string `gorm:"column:sandbox_id;not null;type:text;index" json:"sandboxId" doc:"Sandbox the trust is asked for"`
+	RequestedBy   string `gorm:"column:requested_by;not null;type:text" json:"requestedBy" doc:"Principal ID of the requestor"`
+	Host          string `gorm:"column:host;not null;type:text" json:"host" doc:"The endpoint to trust, host:port"`
+	Justification string `gorm:"column:justification;not null;type:text;default:''" json:"justification,omitempty" doc:"Why the agent says it needs to reach the host"`
 	// GrantTTL is how long the agent asked the trust to last, in seconds. It is
 	// the approval's default, never its term; zero asked for nothing in
 	// particular.
@@ -109,8 +108,9 @@ func (r *HostTrustRequest) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
-// HostTrust is one sandbox's pin for one endpoint. Every request the sandbox
-// sends the host is judged against Uses.
+// HostTrust is one sandbox's pin for one endpoint. It makes that certificate
+// acceptable for the endpoint alone, and decides nothing about the requests
+// sent there (ADR 26-10-27-880 §10).
 type HostTrust struct {
 	ID        string   `gorm:"primaryKey;type:text" json:"id" doc:"Stable host trust ID"`
 	ProjectID string   `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
@@ -119,12 +119,11 @@ type HostTrust struct {
 	Pin       TrustPin `gorm:"embedded;embeddedPrefix:pin_" json:"pin" doc:"The pinned certificate"`
 	// PinPEM is the pinned CA itself, which the proxy builds its root set
 	// from. A leaf-spki pin has none: the key's hash is the whole pin.
-	PinPEM    string      `gorm:"column:pin_pem;not null;type:text;default:''" json:"pinPem,omitempty" doc:"The pinned CA, PEM-encoded; absent for a leaf-spki pin"`
-	Uses      []SecretUse `gorm:"column:uses;type:text;serializer:json" json:"uses,omitempty" doc:"Approved uses, with the IDs the judge is given"`
-	ExpiresAt time.Time   `gorm:"column:expires_at;not null" json:"expiresAt" doc:"When the trust lapses" format:"date-time"`
-	GrantedBy string      `gorm:"column:granted_by;not null;type:text" json:"grantedBy" doc:"Principal ID of the approver"`
-	RequestID string      `gorm:"column:request_id;not null;type:text;default:''" json:"requestId,omitempty" doc:"Trust request the trust was approved from"`
-	CreatedAt time.Time   `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	PinPEM    string    `gorm:"column:pin_pem;not null;type:text;default:''" json:"pinPem,omitempty" doc:"The pinned CA, PEM-encoded; absent for a leaf-spki pin"`
+	ExpiresAt time.Time `gorm:"column:expires_at;not null" json:"expiresAt" doc:"When the trust lapses" format:"date-time"`
+	GrantedBy string    `gorm:"column:granted_by;not null;type:text" json:"grantedBy" doc:"Principal ID of the approver"`
+	RequestID string    `gorm:"column:request_id;not null;type:text;default:''" json:"requestId,omitempty" doc:"Trust request the trust was approved from"`
+	CreatedAt time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }

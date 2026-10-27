@@ -104,20 +104,6 @@ func encodeDiscardSandboxHarnessConfigChangesRequest(
 	return nil
 }
 
-func encodeJudgeSandboxRequest(
-	req *JudgeJob,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
 func encodeMakeSandboxDirectoryRequest(
 	req *SandboxFileMkdirRequest,
 	r *http.Request,
@@ -134,20 +120,6 @@ func encodeMakeSandboxDirectoryRequest(
 
 func encodeMoveSandboxFileRequest(
 	req *SandboxFileTransferRequest,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeProposeSandboxRuleRequest(
-	req *JudgeProposalJob,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

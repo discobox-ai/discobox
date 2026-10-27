@@ -175,7 +175,6 @@ func unmarshalConfig(data []byte, cfg *Config) error {
 const (
 	HarnessModeRun    = sandboxconfig.HarnessModeRun
 	HarnessModeConfig = sandboxconfig.HarnessModeConfig
-	HarnessModeJudge  = sandboxconfig.HarnessModeJudge
 )
 
 // WorkedIn reports whether a sandbox in this harness mode exists to be worked
@@ -317,7 +316,7 @@ func (c Config) Validate() error {
 		return fmt.Errorf("provider.publicKeys.%s is required", sandboxconfig.ControlPlanePublicKeyName)
 	}
 	switch c.HarnessMode {
-	case "", HarnessModeRun, HarnessModeConfig, HarnessModeJudge:
+	case "", HarnessModeRun, HarnessModeConfig:
 	default:
 		return fmt.Errorf("unsupported harnessMode %q", c.HarnessMode)
 	}

@@ -41,10 +41,9 @@ var yamlEnumAliases = map[string]string{
 	"CreateSecretGrantBody.purpose":              "SecretGrant.purpose",
 	"ApproveSecretRequestBody.scope":             "SecretGrant.scope",
 	"CreateSandboxCredentialRequestBody.purpose": "SecretGrant.purpose",
+	"SandboxCredential.purpose":                  "SecretGrant.purpose",
 	"SandboxCredentialRequestStatus.purpose":     "SecretGrant.purpose",
 	"ResolveSandboxSecretResponse.status":        "SecretRequest.status",
-	"CreateApprovalRuleBody.purpose":             "ApprovalRule.purpose",
-	"RuleProposalsBody.purpose":                  "ApprovalRule.purpose",
 	// The sandbox owns the full existence vocabulary, so the tag on the embedded
 	// ResourceLifecycle is authoritative for it. The pool does not match:
 	// only a sandbox can be archived (ADR 0022 §1), so Pool.desiredState is a
@@ -65,10 +64,9 @@ var yamlEnumAliases = map[string]string{
 //
 //nolint:gosec // G101: these are contract enum names, not credentials.
 var yamlOwnedEnums = map[string]string{
-	"AccessPolicyStatement.effect": "a policy is the root policy package's type, stored as one JSON column; policy.Allow and policy.Deny are its values and policy.Validate refuses any other",
-	"Pool.health":                  "derived by Pool.Health from heartbeat freshness and reported readiness",
-	"RefreshSecretBody.via":        "a narrowing of SecretRefreshAnswer.via: a client says it ran the command or a person entered the value; update is recorded only for an ordinary write",
-	"Job.status":                   "job status values are owned by the orchestration module; model.Job.Status is untagged text",
+	"Pool.health":           "derived by Pool.Health from heartbeat freshness and reported readiness",
+	"RefreshSecretBody.via": "a narrowing of SecretRefreshAnswer.via: a client says it ran the command or a person entered the value; update is recorded only for an ordinary write",
+	"Job.status":            "job status values are owned by the orchestration module; model.Job.Status is untagged text",
 	// Both axes now diverge per resource, which is what a single embedded tag
 	// cannot express: the shared tag is the union, and each resource's schema
 	// narrows it (ADR 0017 §2, ADR 0022 §1).
@@ -77,10 +75,9 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxRuntime.state":                 "per-resource narrowing of the embedded ResourceLifecycle",
 	"SandboxRuntime.displayState":          "derived presentation state computed by the API layer, not stored on the model",
 	"PoolSandboxState.state":               "the pool agent's reporting vocabulary: the states a runtime can actually observe, a subset of the model's",
-	"SandboxConfig.harnessMode":            "model.Sandbox.HarnessMode is untagged text; run/config/judge is a contract-level restriction",
+	"SandboxConfig.harnessMode":            "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
 	"SandboxAutostopConfirmRequest.reason": "a request the pool makes of a sandbox agent; no model field carries it",
-	"SandboxCreateConfig.harnessMode":      "model.Sandbox.HarnessMode is untagged text; run/config/judge is a contract-level restriction",
-	"JudgeJob.kind":                        "what a judge is asked about, owned by the root judge package and never stored (ADR 26-09-22-838)",
+	"SandboxCreateConfig.harnessMode":      "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
 	"SandboxTool.runs":                     "a declaration's vocabulary, owned by the root tools package and listed by the sandbox agent; no model stores it (ADR 0125)",
 	"SandboxTool.layer":                    "the sandbox's two declaration directories, owned by the root tools package; no model stores it (ADR 0125)",
 	"SandboxExec.status":                   "exec lifecycle is owned by the sandbox-agent",

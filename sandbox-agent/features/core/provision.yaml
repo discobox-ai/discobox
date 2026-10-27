@@ -1,8 +1,8 @@
 # Core (ADR 26-10-16-423 §4): not a feature, never off, and blocking. What
 # makes a box a discobox: the links to the agent and the personalities it
 # ships at its own version, discobox-access, the trust store the egress CA
-# joins, the shell and prompt helpers every harness relies on, and the skills
-# that teach an agent the box.
+# joins, the shell helpers every harness relies on, and the skills that teach
+# an agent the box.
 #
 # Not the agent, nor its own units, which boot a box before any feature is
 # provisioned: the agent is a bundle of its own, and its units agentlayer's
@@ -10,8 +10,7 @@
 # box applies its bundles (ADR 26-10-24-953 §2).
 #
 # The build puts what is not this directory's beside it: the discobox-access
-# binary, discobox-prompt-answer from harness/, and the discobox-access skill
-# from access/ (sandbox-agent/Dockerfile).
+# binary and the discobox-access skill from access/ (sandbox-agent/Dockerfile).
 apiVersion: discobox.ai/provision/v1
 steps:
   # sudo and passwd for the sandbox's account (ADR 0025); procps for the
@@ -34,9 +33,6 @@ steps:
   # agent of its own; a harness's feature overwrites it (ADR 0086 §3).
   - name: harness-run
     file: {path: /usr/local/bin/discobox-harness-run, source: harness-run, mode: "0755"}
-  # The one JSON document in a wrapper's output (harness/DESIGN.md).
-  - name: prompt-answer
-    file: {path: /usr/local/bin/discobox-prompt-answer, source: prompt-answer.sh, mode: "0755"}
   # The shell a client prefers, when the box has it (ADR 0138).
   - name: shell
     file: {path: /usr/local/bin/discobox-shell, source: discobox-shell, mode: "0755"}

@@ -87,11 +87,11 @@ func newAuditServiceWith(t *testing.T, shape func(*model.Pool)) (*Service, *audi
 	provider := &auditPoolProvider{
 		rows: map[string][]sandbox.HTTPAuditExchange{
 			"pool-a": {
-				{ID: 2, CreatedAt: at(1), SandboxID: "sandbox-gone", Host: "a.example.com", SwappedUseIDs: []string{}},
-				{ID: 1, CreatedAt: at(5), SandboxID: "sandbox-gone", Host: "a.example.com", SwappedUseIDs: []string{}},
+				{ID: 2, CreatedAt: at(1), SandboxID: "sandbox-gone", Host: "a.example.com"},
+				{ID: 1, CreatedAt: at(5), SandboxID: "sandbox-gone", Host: "a.example.com"},
 			},
 			"pool-b": {
-				{ID: 9, CreatedAt: at(3), SandboxID: "sandbox-live", Host: "b.example.com", SwappedUseIDs: []string{"use_x"}},
+				{ID: 9, CreatedAt: at(3), SandboxID: "sandbox-live", Host: "b.example.com", SwappedSecretIDs: []string{"sec_x"}},
 			},
 		},
 		errs:    map[string]error{"pool-c": sandbox.ErrPoolAgentUnsupported},
@@ -373,12 +373,12 @@ func TestListHTTPAuditNeverCutsInsideAPoolsWriteOrder(t *testing.T) {
 	// but stamped before it, which is what the recorder's queue produces.
 	provider.rows = map[string][]sandbox.HTTPAuditExchange{
 		"pool-a": {
-			{ID: 1, CreatedAt: at(1), SandboxID: "sandbox-gone", SwappedUseIDs: []string{}},
-			{ID: 2, CreatedAt: at(9), SandboxID: "sandbox-gone", SwappedUseIDs: []string{}},
+			{ID: 1, CreatedAt: at(1), SandboxID: "sandbox-gone"},
+			{ID: 2, CreatedAt: at(9), SandboxID: "sandbox-gone"},
 		},
 		"pool-b": {
-			{ID: 10, CreatedAt: at(8), SandboxID: "sandbox-live", SwappedUseIDs: []string{}},
-			{ID: 11, CreatedAt: at(7), SandboxID: "sandbox-live", SwappedUseIDs: []string{}},
+			{ID: 10, CreatedAt: at(8), SandboxID: "sandbox-live"},
+			{ID: 11, CreatedAt: at(7), SandboxID: "sandbox-live"},
 		},
 	}
 	result, err := svc.ListHTTPAudit(context.Background(), "project-1", services.HTTPAuditFilter{

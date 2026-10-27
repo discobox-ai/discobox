@@ -86,10 +86,8 @@ func (s *Store) GetSecretGrant(ctx context.Context, projectID, grantID string) (
 }
 
 // ListSecretGrants returns a project's grants, optionally filtered to a single
-// secret, or to those one approval rule minted (ADR 26-10-12-330 §4): a rule's
-// grants are independent of it once made, and this is how they are found to
-// be revoked deliberately.
-func (s *Store) ListSecretGrants(ctx context.Context, projectID, secretID, ruleID string) ([]model.SecretGrant, error) {
+// secret.
+func (s *Store) ListSecretGrants(ctx context.Context, projectID, secretID string) ([]model.SecretGrant, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
@@ -97,9 +95,6 @@ func (s *Store) ListSecretGrants(ctx context.Context, projectID, secretID, ruleI
 	query := read.Where("project_id = ?", projectID)
 	if secretID != "" {
 		query = query.Where("secret_id = ?", secretID)
-	}
-	if ruleID != "" {
-		query = query.Where("rule_id = ?", ruleID)
 	}
 	var out []model.SecretGrant
 	err = query.Order("granted_at ASC").Find(&out).Error
@@ -148,9 +143,9 @@ func (s *Store) FindLiveGrant(ctx context.Context, projectID, secretID, host str
 	now := time.Now().UTC()
 	// The host is matched in Go rather than in SQL: a grant covers each of its
 	// hosts and everything beneath them (hostscope.CoversAny), which is a relation
-	// SQL equality cannot express and which must read identically here, in the
-	// pool agent's activation check, and in the guard on what a grant may point
-	// a secret at.
+	// SQL equality cannot express and which must read identically here, in
+	// delegation's host check, and in the guard on what a grant may point a
+	// secret at.
 	var candidates []model.SecretGrant
 	err = read.
 		Where("project_id = ? AND secret_id = ? AND (expires_at IS NULL OR expires_at > ?)",
@@ -216,24 +211,19 @@ func (s *Store) ListLiveDelegationGrants(ctx context.Context, projectID, sandbox
 	return out, err
 }
 
-// ListLiveAgentGrants returns the live grants that carry uses and cover one of
-// the given scopes, narrowest first.
-//
-// It is not FindLiveGrant: that call answers "may this credential go to this
-// host", matching a destination the proxy observed. This one answers "what may
-// this discobox's agent ask for", where the host is part of the reply rather
-// than the question, and only a grant with declared uses is an answer — a
-// standing grant that happens to cover the same secret is not an approval of
-// any use (ADR 0031 §5).
-func (s *Store) ListLiveAgentGrants(ctx context.Context, projectID string, scopes []GrantScope) ([]model.SecretGrant, error) {
+// ListLiveGrantsCovering returns the live grants that cover one of the given
+// scopes, of either purpose, narrowest scope first: what a discobox holds,
+// which the agent credentials protocol lists (ADR 26-10-27-880). It is not
+// FindLiveGrant, which answers whether a credential may go to one host.
+func (s *Store) ListLiveGrantsCovering(ctx context.Context, projectID string, scopes []GrantScope) ([]model.SecretGrant, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
 	}
-	allowed := make(map[GrantScope]int, len(scopes))
-	for rank, sc := range scopes {
+	rank := make(map[GrantScope]int, len(scopes))
+	for i, sc := range scopes {
 		if sc.ScopeKey != "" {
-			allowed[sc] = rank
+			rank[sc] = i
 		}
 	}
 	var candidates []model.SecretGrant
@@ -246,19 +236,13 @@ func (s *Store) ListLiveAgentGrants(ctx context.Context, projectID string, scope
 	}
 	var out []model.SecretGrant
 	for i := range candidates {
-		if len(candidates[i].Uses) == 0 || !candidates[i].MayUse() {
-			continue
+		if _, ok := rank[GrantScope{Scope: candidates[i].Scope, ScopeKey: candidates[i].ScopeKey}]; ok {
+			out = append(out, candidates[i])
 		}
-		if _, ok := allowed[GrantScope{Scope: candidates[i].Scope, ScopeKey: candidates[i].ScopeKey}]; !ok {
-			continue
-		}
-		out = append(out, candidates[i])
 	}
-	// Narrowest first, so the grant somebody wrote about this one discobox
-	// claims its environment variable ahead of one written about the project.
 	sort.SliceStable(out, func(i, j int) bool {
-		return allowed[GrantScope{Scope: out[i].Scope, ScopeKey: out[i].ScopeKey}] <
-			allowed[GrantScope{Scope: out[j].Scope, ScopeKey: out[j].ScopeKey}]
+		return rank[GrantScope{Scope: out[i].Scope, ScopeKey: out[i].ScopeKey}] <
+			rank[GrantScope{Scope: out[j].Scope, ScopeKey: out[j].ScopeKey}]
 	})
 	return out, nil
 }

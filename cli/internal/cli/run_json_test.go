@@ -67,14 +67,6 @@ func postedGrants(t *testing.T, posted map[string]any) []map[string]any {
 	return grants
 }
 
-func grantUses(grant map[string]any) []string {
-	var uses []string
-	for _, use := range grant["uses"].([]any) {
-		uses = append(uses, use.(map[string]any)["description"].(string))
-	}
-	return uses
-}
-
 // `new --grant` gives the new discobox what `admin box create --grant` does, a
 // secret named by name reaching the server by its ID. A discobox making
 // another is refused the SSH sync, and the create stands (ADR 26-09-24-630 §4).
@@ -90,36 +82,22 @@ func TestRunGivesItsGrants(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "--no-source",
-		"--grant", "com.github.api=push a branch to org/repo",
-		"--grant", "npm@registry.npmjs.org:NPM_TOKEN=publish @org/pkg",
-		"--grant-statement", `com.github.api=allow push on branch "fix-42" in repository "org/repo"`,
-		"--grant-define", "com.github.api=push=add commits to a branch",
-		"--grant-define", "com.github.api=branch=a git branch",
-		"--grant-define", "com.github.api=repository=a GitHub repository",
-		"--grant-statement", `npm@registry.npmjs.org:NPM_TOKEN=allow publish on package "@org/pkg" in registry "registry.npmjs.org"`,
-		"--grant-define", "npm@registry.npmjs.org:NPM_TOKEN=publish=upload a new version of a package",
-		"--grant-define", "npm@registry.npmjs.org:NPM_TOKEN=package=an npm package",
-		"--grant-define", "npm@registry.npmjs.org:NPM_TOKEN=registry=an npm registry",
+		"--grant", "npm@registry.npmjs.org:NPM_TOKEN",
+		"--discobox-api",
 		"-p", "fix issue 42"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute new: %v", err)
 	}
 
 	grants := postedGrants(t, posted)
-	if len(grants) != 2 {
-		t.Fatalf("grants = %#v, want two", posted["grants"])
+	if len(grants) != 1 {
+		t.Fatalf("grants = %#v, want one", posted["grants"])
 	}
-	if grants[0]["wellKnownId"] != "com.github.api" || grants[0]["secretId"] != nil ||
-		strings.Join(grantUses(grants[0]), "|") != "push a branch to org/repo" {
-		t.Fatalf("first grant = %#v, want com.github.api by its ID", grants[0])
+	if grants[0]["secretId"] != "sec_npm" || grants[0]["envVar"] != "NPM_TOKEN" || !slices.Equal(grantHostsOf(grants[0]), []string{"registry.npmjs.org"}) {
+		t.Fatalf("grant = %#v, want npm resolved to its ID", grants[0])
 	}
-	if grants[1]["secretId"] != "sec_npm" || grants[1]["envVar"] != "NPM_TOKEN" || !slices.Equal(grantHostsOf(grants[1]), []string{"registry.npmjs.org"}) {
-		t.Fatalf("second grant = %#v, want npm resolved to its ID", grants[1])
-	}
-	for i, grant := range grants {
-		if asked, _ := grant["policy"].(map[string]any); asked == nil || len(asked["statements"].([]any)) != 1 {
-			t.Fatalf("grant %d = %#v, want the policy its statements say", i, grant)
-		}
+	if posted["discoboxApi"] != true {
+		t.Fatalf("create = %#v, want --discobox-api carried", posted)
 	}
 	if !strings.Contains(out.String(), runJSONSandboxID) {
 		t.Fatalf("output = %q, want the created discobox", out.String())
@@ -130,7 +108,7 @@ func TestRunGivesItsGrants(t *testing.T) {
 }
 
 // `run --from-json` takes the request from stdin, with no shell between the caller
-// and the prompt or a use's sentence, and answers with the discobox as JSON.
+// and the prompt, and answers with the discobox as JSON.
 func TestRunTakesItsRequestAsJSON(t *testing.T) {
 	setHome(t, t.TempDir())
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
@@ -147,12 +125,9 @@ func TestRunTakesItsRequestAsJSON(t *testing.T) {
 		"harness": "",
 		"noSource": true,
 		"env": ["MODE=test"],
+		"discoboxApi": true,
 		"grants": [
-			{"id": "com.github.api", "uses": [{"description": "push a branch to org/repo"}, {"description": "open a PR"}],
-			 "statements": ["allow read on anything in repository \"org/repo\""], "definitions": {"repository": "a GitHub repository"}},
-			{"secret": "npm", "envVar": "NPM_TOKEN", "uses": [{"description": "publish @org/pkg"}],
-			 "statements": ["allow publish on package \"@org/pkg\" in registry \"registry.npmjs.org\""],
-			 "definitions": {"publish": "upload a new version of a package", "package": "an npm package", "registry": "an npm registry"}}
+			{"secret": "npm", "envVar": "NPM_TOKEN", "hosts": ["registry.npmjs.org"]}
 		]
 	}`))
 	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "--from-json"})
@@ -172,13 +147,12 @@ func TestRunTakesItsRequestAsJSON(t *testing.T) {
 		t.Fatalf("env = %#v, want MODE=test", config["env"])
 	}
 	grants := postedGrants(t, posted)
-	if len(grants) != 2 || grants[0]["wellKnownId"] != "com.github.api" ||
-		strings.Join(grantUses(grants[0]), "|") != "push a branch to org/repo|open a PR" ||
-		grants[1]["secretId"] != "sec_npm" || grants[1]["envVar"] != "NPM_TOKEN" {
-		t.Fatalf("grants = %#v, want both, the secret by its ID", posted["grants"])
+	if len(grants) != 1 || grants[0]["secretId"] != "sec_npm" || grants[0]["envVar"] != "NPM_TOKEN" ||
+		!slices.Equal(grantHostsOf(grants[0]), []string{"registry.npmjs.org"}) {
+		t.Fatalf("grants = %#v, want the secret by its ID", posted["grants"])
 	}
-	if asked, _ := grants[1]["policy"].(map[string]any); asked == nil || asked["definitions"].(map[string]any)["registry"] == nil {
-		t.Fatalf("grants = %#v, want each with its policy", posted["grants"])
+	if posted["discoboxApi"] != true {
+		t.Fatalf("create = %#v, want discoboxApi carried", posted)
 	}
 	var printed struct {
 		ID                 string `json:"id"`
@@ -204,9 +178,9 @@ func TestRunJSONRefusesWhatItCannotMean(t *testing.T) {
 		"a word beside it":     {[]string{"run", "--from-json", "fix"}, `{}`, `"prompt"`},
 		"an unknown field":     {[]string{"run", "--from-json"}, `{"promt": "x"}`, `unknown field "promt"`},
 		"two requests":         {[]string{"run", "--from-json"}, `{} {}`, "more than one request"},
-		"a grant with no use":  {[]string{"run", "--from-json"}, `{"grants": [{"id": "com.github.api"}]}`, "at least one use"},
-		"a grant naming both":  {[]string{"run", "--from-json"}, `{"grants": [{"id": "com.github.api", "secret": "gh", "envVar": "GH_TOKEN", "uses": [{"description": "x"}]}]}`, "not both"},
-		"a secret with no var": {[]string{"run", "--from-json"}, `{"grants": [{"secret": "gh", "uses": [{"description": "x"}]}]}`, `"envVar"`},
+		"a well-known ID":      {[]string{"run", "--from-json"}, `{"grants": [{"id": "com.github.api"}]}`, `unknown field "id"`},
+		"a secret with no var": {[]string{"run", "--from-json"}, `{"grants": [{"secret": "gh"}]}`, `"envVar"`},
+		"a variable twice":     {[]string{"run", "--from-json"}, `{"grants": [{"secret": "gh", "envVar": "T"}, {"secret": "npm", "envVar": "T"}]}`, "already given"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cmd := NewRootCommand()

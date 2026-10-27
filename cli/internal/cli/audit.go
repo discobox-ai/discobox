@@ -3,12 +3,10 @@ package cli
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -33,7 +31,6 @@ func (a *App) newAuditCommand() *cobra.Command {
 	}
 	cmd.AddCommand(a.newAuditListCommand())
 	cmd.AddCommand(a.newAuditGetCommand())
-	cmd.AddCommand(a.newAuditCredsCommand())
 	cmd.AddCommand(a.newAuditRefreshCommand())
 	cmd.AddCommand(a.newAuditHTTPCommand())
 	cmd.AddCommand(a.newAuditDNSCommand())
@@ -104,7 +101,7 @@ func httpAuditSource(client *apiclientgen.Client, query httpAuditQuery, unavaila
 }
 
 func (a *App) newAuditHTTPCommand() *cobra.Command {
-	var sandboxID, poolID, host, useID, status, part, body string
+	var sandboxID, poolID, host, status, part, body string
 	since := newSinceFlag()
 	var limit int
 	var blocked, follow bool
@@ -117,12 +114,8 @@ oldest first and keep printing requests as they are recorded.
 
 The proxy records these from what crossed the wire, so a discobox cannot alter
 them. SECRETS names every secret whose value the proxy swapped into a
-request, however it reached the discobox — a harness's own keys included.
-USES names the approved credential uses among them, which only a credential
-taken with discobox-access has: pass one to --use-id here and to "audit creds"
-to see the verdict that authorized a credential beside every request that
-spent it. A request recorded by a pool from before secrets were recorded names
-none.
+request, however it reached the discobox — a harness's own keys included. A
+request recorded by a pool from before secrets were recorded names none.
 
 --body ID prints what the proxy recorded beside the request with that ID: the
 response body, or with --part the request body or an upgraded connection's
@@ -142,7 +135,7 @@ with non-printing characters escaped.`,
   discobox admin audit http --discobox sbx_1 --body http_42 > response.json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if body != "" && (follow || status != "" || blocked || host != "" || useID != "" || since.given()) {
+			if body != "" && (follow || status != "" || blocked || host != "" || since.given()) {
 				return errors.New("--body reads one recorded request; it takes only --pool, --discobox and --part")
 			}
 			if body == "" && cmd.Flags().Changed("part") {
@@ -185,9 +178,6 @@ with non-printing characters escaped.`,
 			}
 			if host != "" {
 				query.params.Host = apiclientgen.NewOptString(host)
-			}
-			if useID != "" {
-				query.params.UseId = apiclientgen.NewOptString(useID)
 			}
 			if status != "" {
 				low, high, err := parseStatusFilter(status)
@@ -237,9 +227,8 @@ with non-printing characters escaped.`,
 	cmd.Flags().StringVar(&sandboxID, "discobox", "", "Only this discobox's requests; a deleted one needs its full ID")
 	cmd.Flags().StringVar(&poolID, "pool", "", "Only requests proxied by this pool")
 	cmd.Flags().StringVar(&host, "host", "", "Only requests to this host")
-	cmd.Flags().StringVar(&useID, "use-id", "", "Only requests that spent this approved credential use")
 	cmd.Flags().StringVar(&status, "status", "", "Only responses with this status: 404, a class such as 5xx, or a range such as 400-499")
-	cmd.Flags().BoolVar(&blocked, "blocked", false, "Only requests the proxy refused and never sent: by its host policy, the credential judge, the discobox API's gate, or a credential it could not resolve")
+	cmd.Flags().BoolVar(&blocked, "blocked", false, "Only requests the proxy refused and never sent: by its host policy, a credential's routes, the discobox API's gate, or a credential it could not resolve")
 	cmd.Flags().Var(since, "since", "Only requests from this long ago (e.g. 1h) or since this RFC 3339 time")
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of requests to return")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing requests as they are recorded")
@@ -256,7 +245,7 @@ func httpAuditTable(follow bool) auditTable[apimodel.HTTPAuditExchange] {
 		columns: []auditColumn{
 			{name: "TIME", width: 12}, {name: "POOL", width: 22}, {name: "ID", width: 12},
 			{name: "DISCOBOX", width: 22}, {name: "METHOD", width: 7}, {name: "STATUS", width: 7},
-			{name: "REFUSED BY", width: 10}, {name: "USES", width: 22}, {name: "SECRETS", width: 22}, {name: "URL"},
+			{name: "REFUSED BY", width: 10}, {name: "SECRETS", width: 22}, {name: "URL"},
 		},
 		row: func(e apimodel.HTTPAuditExchange) []string {
 			return []string{
@@ -267,7 +256,6 @@ func httpAuditTable(follow bool) auditTable[apimodel.HTTPAuditExchange] {
 				terminalSafe(e.Method),
 				httpAuditStatus(e),
 				httpAuditRefuser(e.Blocked, e.BlockedReason.Or("")),
-				terminalSafe(strings.Join(e.SwappedUseIds, ",")),
 				terminalSafe(strings.Join(e.SwappedSecretIds, ",")),
 				truncateTableValue(terminalSafe(e.URL), 100),
 			}
@@ -311,8 +299,8 @@ func httpAuditStatus(e apimodel.HTTPAuditExchange) string {
 }
 
 // httpAuditRefuser is what refused a request the proxy never sent, read from
-// the start of its reason: the destination policy ("host denied"), the
-// credential judge ("judge: …"), the discobox API's gate ("gate: …"), or a
+// the start of its reason: the destination policy ("host denied"), a
+// credential's routes ("route: …"), the discobox API's gate ("gate: …"), or a
 // credential the control plane could not resolve ("credential unavailable: …").
 // Empty for a request the proxy sent.
 func httpAuditRefuser(blocked bool, reason string) string {
@@ -321,8 +309,8 @@ func httpAuditRefuser(blocked bool, reason string) string {
 		return ""
 	case strings.HasPrefix(reason, "gate:"):
 		return "gate"
-	case strings.HasPrefix(reason, "judge:"):
-		return "judge"
+	case strings.HasPrefix(reason, "route:"):
+		return "route"
 	case strings.HasPrefix(reason, "credential unavailable:"):
 		return "credential"
 	case strings.HasPrefix(reason, "host"):
@@ -352,173 +340,6 @@ func writeUnavailableAuditPools(errOut io.Writer, pools []apimodel.UnavailableAu
 	for _, pool := range pools {
 		_, _ = fmt.Fprintf(errOut, "pool %s could not be read, so its %s are missing: %s\n",
 			terminalSafe(pool.PoolId), what, terminalSafe(pool.Reason))
-	}
-}
-
-func (a *App) newAuditCredsCommand() *cobra.Command {
-	var sandboxID, useID, grantID, ruleID, kind string
-	since := newSinceFlag()
-	var denied, allowed, showPrompt, showJevInput, follow bool
-	var limit int
-	cmd := &cobra.Command{
-		Use:   "creds",
-		Short: "List the judges' verdicts on agent credential uses",
-		Long: `List the judges' recorded verdicts on agent credential uses, newest first.
-With --follow, print the last --limit oldest first and keep printing verdicts as
-they are recorded.
-
-The project's judge decides about a command before a credential is issued for
-it, about each request the proxy sees carrying a credential when the server
-judges requests, about a discobox handing a credential on, and about an
-approval rule being tested against a credential request: whether the
-conditions of an allow it asked for are within those of the rule's (rule);
---rule-id picks one rule's. Which
-discoboxes a rule is for is compared by the server, and has no verdict. Its
-verdicts are recorded "judge": the server records every answer before giving it, whether it
-allowed, denied, or asked to be shown a request's body, which the proxy
-refuses. An ask with no answer, or whose use was revoked while it was judged,
-has no verdict; for a request, the proxy's blocked http row is its record. A
-verdict does not name the http row it was about: join them by --use-id and
-time. --kind picks one kind of verdict.
-
-Command verdicts recorded "use" or "report" predate that: a discobox's own
-judge decided them inside the discobox, "use" riding the call that took the
-value and "report" a denial the discobox chose to send afterwards.
-
-RTT is the round trip from asking a judge to its answer, timed by whoever
-asked it.
-
-On a server that judges with Jev, --jev-input prints each verdict in full with
-exactly what Jev was sent as well: the JSON body of the request to its API,
-with the evidence and the questions, and none of its key.
-
-The use ID, command, request, reason and prompt were written inside the
-discobox, and Jev's input carries the same evidence. Every field is shown as
-data: non-printing characters are escaped in the table, with --prompt and with
---jev-input, and written as \u escapes with -o json, which decode to the
-recorded value.
-
-Verdicts outlive their discobox. To read a deleted one's, pass its full ID.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if denied && allowed {
-				return errors.New("--denied and --allowed cannot be used together")
-			}
-			switch kind {
-			case "", string(apiclientgen.ListCredentialVerdictsKindCommand), string(apiclientgen.ListCredentialVerdictsKindRequest),
-				string(apiclientgen.ListCredentialVerdictsKindDelegation), string(apiclientgen.ListCredentialVerdictsKindRule):
-			default:
-				return fmt.Errorf("--kind %q: want command, request, delegation, or rule", kind)
-			}
-			projectID, err := a.projectIDValue()
-			if err != nil {
-				return err
-			}
-			client, err := a.apiClient()
-			if err != nil {
-				return err
-			}
-			params := apiclientgen.ListCredentialVerdictsParams{ProjectId: projectID}
-			if strings.TrimSpace(sandboxID) != "" {
-				resolved, err := a.resolveListedSandbox(cmd.Context(), client, projectID, sandboxID)
-				if err != nil {
-					return err
-				}
-				params.SandboxId = apiclientgen.NewOptString(resolved)
-			}
-			if useID != "" {
-				params.UseId = apiclientgen.NewOptString(useID)
-			}
-			if grantID != "" {
-				params.GrantId = apiclientgen.NewOptString(grantID)
-			}
-			if ruleID != "" {
-				params.RuleId = apiclientgen.NewOptString(ruleID)
-			}
-			if kind != "" {
-				params.Kind = apiclientgen.NewOptListCredentialVerdictsKind(apiclientgen.ListCredentialVerdictsKind(kind))
-			}
-			switch {
-			case denied:
-				params.Allow = apiclientgen.NewOptBool(false)
-			case allowed:
-				params.Allow = apiclientgen.NewOptBool(true)
-			}
-			sinceAt := since.from(time.Now())
-			source := credentialVerdictSource(client, params)
-			if a.output == "json" && !follow {
-				verdicts, err := readAuditAll(cmd.Context(), source, a.auditReadOptions(cmd, sinceAt, limit, false))
-				if err != nil {
-					return err
-				}
-				return writeTerminalSafeJSON(cmd.OutOrStdout(), &apimodel.ListCredentialVerdictsBody{CredentialVerdicts: verdicts})
-			}
-			table := credentialVerdictTable(follow)
-			header, printed := true, false
-			return readAudit(cmd.Context(), []auditSource[apimodel.CredentialVerdict]{source}, a.auditReadOptions(cmd, sinceAt, limit, follow), func(verdicts []apimodel.CredentialVerdict) error {
-				switch {
-				case a.output == "json":
-					return writeTerminalSafeJSONLines(cmd, verdicts)
-				case showPrompt || showJevInput:
-					if len(verdicts) > 0 && printed {
-						_, _ = fmt.Fprintln(cmd.OutOrStdout())
-					}
-					printed = printed || len(verdicts) > 0
-					return writeCredentialVerdictBlocks(cmd.OutOrStdout(), verdicts, showJevInput)
-				}
-				err := table.write(cmd.OutOrStdout(), verdicts, header, follow)
-				header = false
-				return err
-			})
-		},
-	}
-	cmd.Flags().StringVar(&sandboxID, "discobox", "", "Only this discobox's verdicts; a deleted one needs its full ID")
-	cmd.Flags().StringVar(&useID, "use-id", "", "Only verdicts on this approved use")
-	cmd.Flags().StringVar(&grantID, "grant-id", "", "Only verdicts on uses of this grant")
-	cmd.Flags().StringVar(&kind, "kind", "", "Only verdicts on a command, a request, a delegation (a discobox handing a credential on), or a rule (the conditions of an allow a request asked for read against an approval rule's)")
-	cmd.Flags().StringVar(&ruleID, "rule-id", "", "Only verdicts recorded while testing this approval rule")
-	cmd.Flags().BoolVar(&denied, "denied", false, "Only denied verdicts, including a judge asking to see a request's body")
-	cmd.Flags().BoolVar(&allowed, "allowed", false, "Only allowed verdicts")
-	cmd.Flags().Var(since, "since", "Only verdicts from this long ago (e.g. 1h) or since this RFC 3339 time")
-	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of verdicts to return")
-	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing verdicts as they are recorded")
-	cmd.Flags().BoolVar(&showPrompt, "prompt", false, "Print each verdict in full, including the prompt the judge was given")
-	cmd.Flags().BoolVar(&showJevInput, "jev-input", false, "Print each verdict in full, including exactly what Jev was sent when the server judges with Jev")
-	_ = cmd.RegisterFlagCompletionFunc("discobox", a.completeSandboxes)
-	return cmd
-}
-
-// credentialVerdictSource reads the verdict trail.
-func credentialVerdictSource(client *apiclientgen.Client, params apiclientgen.ListCredentialVerdictsParams) auditSource[apimodel.CredentialVerdict] {
-	return auditSource[apimodel.CredentialVerdict]{
-		read: func(ctx context.Context, cursor auditReadCursor, limit int) ([]apimodel.CredentialVerdict, error) {
-			params := params
-			params.Limit = apiclientgen.NewOptInt(limit)
-			if !cursor.Since.IsZero() {
-				params.Since = apiclientgen.NewOptDateTime(cursor.Since)
-			}
-			if !cursor.Until.IsZero() {
-				params.Until = apiclientgen.NewOptDateTime(cursor.Until)
-			}
-			if cursor.Forward {
-				params.Order = apiclientgen.NewOptListCredentialVerdictsOrder(apiclientgen.ListCredentialVerdictsOrderAsc)
-			}
-			res, err := client.ListCredentialVerdicts(ctx, params)
-			if err != nil {
-				return nil, err
-			}
-			body, err := expectResponse[apimodel.ListCredentialVerdictsBody](res)
-			if err != nil {
-				return nil, err
-			}
-			return body.GetCredentialVerdicts(), nil
-		},
-		key: func(v apimodel.CredentialVerdict) string { return v.ID },
-		at:  func(v apimodel.CredentialVerdict) time.Time { return v.CreatedAt },
-		// Verdict IDs are random, so the cursor is the time. The control plane
-		// writes each verdict on the call that mints a value and commits it
-		// there, so only two commits interleaving can reorder them.
-		lookback: auditWriterLookback,
 	}
 }
 
@@ -571,27 +392,6 @@ func (f *sinceFlag) from(now time.Time) time.Time {
 	return time.Time{}
 }
 
-func credentialVerdictTable(follow bool) auditTable[apimodel.CredentialVerdict] {
-	return auditTable[apimodel.CredentialVerdict]{
-		columns: []auditColumn{
-			{name: "TIME", width: 12}, {name: "DISCOBOX", width: 22}, {name: "VERDICT", width: 7},
-			{name: "RECORDED", width: 8}, {name: "USE", width: 22}, {name: "RTT", width: 7}, {name: "JUDGED", width: 30}, {name: "REASON"},
-		},
-		row: func(v apimodel.CredentialVerdict) []string {
-			return []string{
-				auditTime(v.CreatedAt, follow),
-				terminalSafe(v.SandboxId),
-				verdictWord(v),
-				verdictRecorded(v),
-				terminalSafe(v.UseId),
-				verdictRoundTrip(v),
-				truncateTableValue(verdictJudged(v), 60),
-				truncateTableValue(terminalSafe(v.Reason.Or("")), 80),
-			}
-		},
-	}
-}
-
 // auditReadOptions is how this invocation reads a trail. Pacing is for a
 // terminal only: a pipe, and -o json whatever it is written to, gets each
 // record as soon as it is read.
@@ -604,338 +404,11 @@ func (a *App) auditReadOptions(cmd *cobra.Command, since time.Time, limit int, f
 	}
 }
 
-// writeCredentialVerdictBlocks writes each verdict in full, with what Jev was
-// sent as well when jevInput is set and the verdict has it.
-func writeCredentialVerdictBlocks(out io.Writer, verdicts []apimodel.CredentialVerdict, jevInput bool) error {
-	for i, v := range verdicts {
-		if i > 0 {
-			if _, err := fmt.Fprintln(out); err != nil {
-				return err
-			}
-		}
-		lines := []string{
-			fmt.Sprintf("%s  %s  %s  %s", terminalSafe(v.ID), verdictWord(v), verdictRecorded(v), v.CreatedAt.Format(time.RFC3339)),
-			"discobox: " + terminalSafe(v.SandboxId),
-			"use:      " + terminalSafe(v.UseId),
-		}
-		if grant := v.GrantId.Or(""); grant != "" {
-			lines = append(lines, "grant:    "+terminalSafe(grant))
-		}
-		if request := v.SecretRequestId.Or(""); request != "" {
-			lines = append(lines, "request:  "+terminalSafe(request))
-		}
-		if to := v.ForSandboxId.Or(""); to != "" {
-			lines = append(lines, "for:      "+terminalSafe(to))
-		}
-		if isRequestVerdict(v) {
-			lines = append(lines, requestVerdictLines(v)...)
-		}
-		if judgedOnTrustedGround(v) {
-			lines = append(lines, judgeLines(v)...)
-		}
-		lines = append(lines,
-			"role:     "+terminalSafe(v.Role.Or("")),
-			"rtt:      "+verdictRoundTrip(v),
-		)
-		// A request is judged on what was observed, and the command the
-		// discobox declared is only context, which it need not have given.
-		if (!isRequestVerdict(v) && !isDelegationVerdict(v) && !isRuleVerdict(v)) || len(v.Command) > 0 {
-			lines = append(lines, "command:  "+displayArgv(v.Command))
-		}
-		lines = append(lines,
-			"reason:   "+terminalSafe(v.Reason.Or("")),
-			"prompt:",
-		)
-		for _, line := range strings.Split(terminalSafeMultiline(v.Prompt.Or("")), "\n") {
-			lines = append(lines, "  "+line)
-		}
-		if jevInput && len(v.JevInput) > 0 {
-			lines = append(lines, "jev input:")
-			for _, line := range strings.Split(terminalSafeMultiline(indentedJSON(v.JevInput)), "\n") {
-				lines = append(lines, "  "+line)
-			}
-		}
-		if _, err := fmt.Fprintln(out, strings.Join(lines, "\n")); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// indentedJSON is a recorded JSON value laid out to be read, which changes
-// only the whitespace between its tokens: every string in it is as recorded,
-// escapes included. A value that is not JSON is shown as it is.
-func indentedJSON(raw []byte) string {
-	var b bytes.Buffer
-	if err := json.Indent(&b, raw, "", "  "); err != nil {
-		return string(raw)
-	}
-	return b.String()
-}
-
-// requestVerdictLines are what a request verdict adds to its block: the
-// request the project's judge was shown, what it asked for if it did not
-// decide, and which judge answered, running what.
-func requestVerdictLines(v apimodel.CredentialVerdict) []string {
-	var lines []string
-	if request, ok := v.Request.Get(); ok {
-		lines = append(lines, "request:  "+verdictJudged(v))
-		if recognized := describeRecognized(request); recognized != "" {
-			lines = append(lines, "known as: "+recognized)
-		}
-		if body, ok := request.Body.Get(); ok {
-			lines = append(lines, "body:     "+describeJudgedBody(body))
-			if metadata, ok := body.Metadata.Get(); ok && len(metadata) > 0 {
-				lines = append(lines, "metadata: "+describeMetadata(metadata))
-			}
-		}
-	}
-	lines = append(lines, fmt.Sprintf("round:    %d", v.Round.Or(0)))
-	if route := v.StandingRoute.Or(""); route != "" {
-		stands := terminalSafe(route)
-		if until, ok := v.StandingUntil.Get(); ok {
-			stands += " until " + until.Format(time.RFC3339)
-		}
-		lines = append(lines, "stands:   "+stands)
-	}
-	if granted := v.StandingVerdictId.Or(""); granted != "" {
-		lines = append(lines, "standing: "+terminalSafe(granted))
-	}
-	if need, ok := v.Need.Get(); ok {
-		asked := "the body"
-		if bytes := need.Bytes.Or(0); bytes > 0 {
-			asked += fmt.Sprintf(", up to %d bytes", bytes)
-		}
-		lines = append(lines, "asked:    "+asked)
-	}
-	return lines
-}
-
-// judgeLines say which of the server's judges answered, running what.
-func judgeLines(v apimodel.CredentialVerdict) []string {
-	var lines []string
-	// A server that judges with Jev names the model that answered and what it
-	// said, where one with a judge discobox names the discobox.
-	//
-	// A server that puts what Jev is unsure of to its judge discobox names
-	// both on the verdict that discobox decided (ADR 26-10-12-669): the
-	// discobox decided, after Jev said what it said.
-	if model := v.Model.Or(""); model != "" {
-		judged := terminalSafe(model)
-		if decided := v.JudgeSandboxId.Or(""); decided != "" {
-			judged = terminalSafe(decided) + ", after " + judged
-		}
-		lines = append(lines, "judge:    "+judged)
-		if said := describeProbabilities(v.Probabilities.Or(nil)); said != "" {
-			lines = append(lines, "said:     "+said)
-		}
-	} else {
-		lines = append(lines, "judge:    "+terminalSafe(v.JudgeSandboxId.Or("")))
-	}
-	if harness := v.HarnessConfigId.Or(""); harness != "" {
-		lines = append(lines, "harness:  "+terminalSafe(harness))
-	}
-	if bundle := v.Bundle.Or(""); bundle != "" {
-		if digest := v.BundleDigest.Or(""); digest != "" {
-			bundle += "@" + digest
-		}
-		lines = append(lines, "bundle:   "+terminalSafe(bundle))
-	}
-	if image := v.Image.Or(""); image != "" {
-		if digest := v.ImageDigest.Or(""); digest != "" {
-			image += "@" + digest
-		}
-		lines = append(lines, "image:    "+terminalSafe(image))
-	}
-	if version := v.PromptVersion.Or(""); version != "" {
-		lines = append(lines, "version:  "+terminalSafe(version))
-	}
-	return lines
-}
-
-// describeProbabilities is what Jev said about each question, in question
-// order, as the probability of yes.
-func describeProbabilities(said map[string]float64) string {
-	ids := make([]string, 0, len(said))
-	for id := range said {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	parts := make([]string, 0, len(ids))
-	for _, id := range ids {
-		parts = append(parts, fmt.Sprintf("%s %.2f", terminalSafe(id), said[id]))
-	}
-	return strings.Join(parts, ", ")
-}
-
-// describeJudgedBody says what the judge was told of a request's body: what it
-// is and how long, what read it, and, once it asked, whether it was shown and
-// what was not.
-func describeJudgedBody(body apimodel.JudgeRequestBody) string {
-	parts := []string{fmt.Sprintf("%d bytes", body.Length.Or(0))}
-	if media := body.MediaType.Or(""); media != "" {
-		parts = append([]string{terminalSafe(media)}, parts...)
-	}
-	if parser, ok := body.Parser.Get(); ok {
-		parts = append(parts, "read as "+describeRecognition(parser))
-	}
-	if parseError := body.ParseError.Or(""); parseError != "" {
-		parts = append(parts, "unreadable: "+terminalSafe(parseError))
-	}
-	if body.Content.IsSet() {
-		parts = append(parts, "shown")
-	}
-	if missing := body.Missing.Or(""); missing != "" {
-		parts = append(parts, terminalSafe(missing))
-	}
-	return strings.Join(parts, ", ")
-}
-
-// describeRecognized is what a request was recognized as — its protocol, the
-// endpoint it called — which is what brought the judge its guidance.
-func describeRecognized(request apimodel.JudgeRequestEvidence) string {
-	var parts []string
-	for _, recognized := range []apiclientgen.OptJudgeRecognition{request.Protocol, request.Endpoint} {
-		if named, ok := recognized.Get(); ok {
-			parts = append(parts, describeRecognition(named))
-		}
-	}
-	return strings.Join(parts, ", ")
-}
-
-func describeRecognition(named apimodel.JudgeRecognition) string {
-	return fmt.Sprintf("%s v%d", terminalSafe(named.Name), named.Version)
-}
-
-// describeMetadata is what a parser found in the body, as the one JSON object
-// the judge read, with its keys in order.
-func describeMetadata(metadata apiclientgen.JudgeRequestBodyMetadata) string {
-	keys := make([]string, 0, len(metadata))
-	for key := range metadata {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, key := range keys {
-		parts = append(parts, strconv.Quote(key)+":"+string(metadata[key]))
-	}
-	return terminalSafe("{" + strings.Join(parts, ",") + "}")
-}
-
-// judgedOnTrustedGround reports whether one of the server's judges decided
-// this, rather than a discobox about itself. A server that predates origins
-// sends none, and every verdict it has is a discobox's own.
-func judgedOnTrustedGround(v apimodel.CredentialVerdict) bool {
-	return v.Origin.Or(apiclientgen.CredentialVerdictOriginSandbox) == apiclientgen.CredentialVerdictOriginJudge
-}
-
-// isRequestVerdict reports whether the project's judge decided this about a
-// request. A server that predates request verdicts sends no kind, and every
-// verdict it has is a command verdict.
-func isRequestVerdict(v apimodel.CredentialVerdict) bool {
-	return v.Kind.Or(apiclientgen.CredentialVerdictKindCommand) == apiclientgen.CredentialVerdictKindRequest
-}
-
-// isDelegationVerdict reports whether the project's judge decided whether a
-// discobox's handed-on uses fell within its delegation (ADR 26-09-30-782 §3).
-// Its grant is the delegation grant it was judged against, and what was
-// judged is in its prompt.
-func isDelegationVerdict(v apimodel.CredentialVerdict) bool {
-	return v.Kind.Or(apiclientgen.CredentialVerdictKindCommand) == apiclientgen.CredentialVerdictKindDelegation
-}
-
-// isRuleVerdict reports whether the judge decided an approval rule's reading
-// (ADR 26-10-12-330): whether what a request asked for is within its uses.
-// What was judged is in its prompt.
-func isRuleVerdict(v apimodel.CredentialVerdict) bool {
-	return v.Kind.Or(apiclientgen.CredentialVerdictKindCommand) == apiclientgen.CredentialVerdictKindRule
-}
-
-// verdictWord is what the judge answered. "ask" is a judge that asked to be
-// shown the body instead of deciding, which is not an allow.
-func verdictWord(v apimodel.CredentialVerdict) string {
-	switch {
-	case v.Need.IsSet():
-		return "ask"
-	case v.Allow:
-		return "allow"
-	default:
-		return "deny"
-	}
-}
-
-// verdictRecorded says where a verdict came from: "judge" is one of the
-// server's judges answering, recorded by the server; "standing" is a request
-// an allow the judge let stand covered, which no model read
-// (ADR 26-09-25-428); and from before commands were judged on trusted ground
-// (ADR 26-09-22-838 §3), "use" rode the call that took the value and "report"
-// is one the discobox sent on its own after a denial.
-func verdictRecorded(v apimodel.CredentialVerdict) string {
-	switch {
-	case v.StandingVerdictId.Or("") != "":
-		return "standing"
-	case judgedOnTrustedGround(v), isRequestVerdict(v), isDelegationVerdict(v), isRuleVerdict(v):
-		return "judge"
-	case v.Volunteered:
-		return "report"
-	default:
-		return "use"
-	}
-}
-
-// verdictJudged is what was judged: the argv of a command, the method and
-// destination of a request, the delegation grant a discobox handed a
-// credential on under, or the approval rule that was being tested.
-func verdictJudged(v apimodel.CredentialVerdict) string {
-	if request, ok := v.Request.Get(); ok && isRequestVerdict(v) {
-		return terminalSafe(request.Method + " " + request.URL)
-	}
-	if isDelegationVerdict(v) {
-		return "handed on under " + terminalSafe(v.GrantId.Or(""))
-	}
-	if isRuleVerdict(v) {
-		// A rule still being proposed has no ID yet, and names its request.
-		rule := terminalSafe(v.RuleId.Or(""))
-		if rule == "" {
-			rule = "a proposed rule"
-		}
-		return "request " + terminalSafe(v.SecretRequestId.Or("")) + " under " + rule
-	}
-	return displayArgv(v.Command)
-}
-
-// verdictRoundTrip is how long the judge took to answer, as whoever asked it
-// timed the round trip.
-func verdictRoundTrip(v apimodel.CredentialVerdict) string {
-	return (time.Duration(v.LatencyMs.Or(0)) * time.Millisecond).String()
-}
-
-// displayArgv renders an argv so each element stays distinct: an element that
-// is empty, holds whitespace or a quote, or holds anything non-printing is
-// Go-quoted, which also escapes what a terminal would otherwise act on.
-func displayArgv(argv []string) string {
-	parts := make([]string, 0, len(argv))
-	for _, arg := range argv {
-		if arg == "" || strings.ContainsFunc(arg, func(r rune) bool {
-			return unicode.IsSpace(r) || r == '"' || r == '\'' || r == '\\' || !unicode.IsPrint(r)
-		}) || !utf8.ValidString(arg) {
-			parts = append(parts, strconv.Quote(arg))
-			continue
-		}
-		parts = append(parts, arg)
-	}
-	return strings.Join(parts, " ")
-}
-
-// Every string a verdict row prints goes through terminalSafe, not only the
-// free-text fields: a denial's use ID is whatever the discobox reported, and
-// the server only trims it.
-//
 // terminalSafe escapes every rune a terminal would act on rather than show —
 // C0 and C1 controls, including ESC, and invisible format characters such as
 // bidirectional overrides — as its Go escape. Text composed inside a discobox
-// is display data (ADR 0130 §6): printed raw, an escape sequence in a judge's
-// reason could move the cursor and overwrite the row that said "deny".
+// is display data (ADR 0130 §6): printed raw, an escape sequence in a refusal's
+// reason could move the cursor and overwrite the row that said "blocked".
 func terminalSafe(value string) string {
 	return escapeNonPrinting(value, nil)
 }

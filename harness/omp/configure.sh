@@ -16,9 +16,8 @@
 #     below) is an `oauth` secret with its refresh material.
 #   - Any other OAuth login is a `token` secret holding the access token, and
 #     the script says when it expires, because nothing will renew it.
-# The default model is checked with a one-line `omp -p`, and the judge with a
-# one-line discobox-prompt; a failure is reported rather than refused (see
-# verify_default_model and verify_judge).
+# The default model is checked with a one-line `omp -p`; a failure is reported
+# rather than refused (see verify_default_model).
 #
 # No credential is exported as an environment variable. The script returns the
 # export document as a templated harness file with each credential's sentinel
@@ -26,7 +25,7 @@
 # launch.
 #
 # It also returns omp's settings as the user left them (config.yml: the default
-# model, theme and the rest), and Discobox's own settings for the harness.
+# model, theme and the rest).
 #
 # Reconfigure: /run/discobox/configure/harness-previous-config.json lists the
 # secrets a previous run stored, without their values. Each one's value is
@@ -45,10 +44,6 @@ OUTPUT=/run/discobox/configure/harness-configure.json
 # Home-relative, like every harness file.
 CREDENTIALS_PATH=".config/discobox/omp-credentials.json"
 OMP_SETTINGS_PATH=".omp/agent/config.yml"
-# Discobox's own settings for this harness: the judge model. The image declares
-# a baseline, and a configured harness delivers its own copy into this sandbox,
-# which is what a reconfigure starts from.
-SETTINGS_PATH=".config/discobox/omp-harness.json"
 AGENT_DIR="$HOME/.omp/agent"
 
 # The `expires` a delivered OAuth entry carries when the control plane renews
@@ -230,40 +225,6 @@ verify_default_model() {
 	return 1
 }
 
-# verify_judge asks the question a judged command would, through this image's
-# own discobox-prompt — the judge's model, with thinking off, in the judge's
-# isolated home, with the credentials just signed in to — so a judge model
-# that cannot answer is found here rather than as every judged command in a
-# sandbox refused (ADR 26-10-16-965). The judge's model is judgeModel, else
-# the default model role, so it differs from the model verify_default_model
-# checked when judgeModel names another, and the judge sees neither
-# models.yml nor an endpoint a credential names. Its home here holds what a
-# sandbox's would: the credentials file, omp's settings and Discobox's own.
-verify_judge() {
-	judge_home="$WORK/judge-home"
-	rm -rf "$judge_home"
-	mkdir -p "$judge_home/.config/discobox" "$judge_home/.omp/agent"
-	cp "$WORK/export.json" "$judge_home/$CREDENTIALS_PATH"
-	for rel in "$OMP_SETTINGS_PATH" "$SETTINGS_PATH"; do
-		if [ -f "$HOME/$rel" ]; then
-			cp "$HOME/$rel" "$judge_home/$rel"
-		fi
-	done
-	set +e
-	# TMPDIR inside $WORK: a judge the timeout kills runs no trap of its own,
-	# and the home it imported the credentials into goes with $WORK.
-	HOME="$judge_home" TMPDIR="$WORK" timeout 180 discobox-prompt --model judge --no-tools --prompt 'Reply with exactly: discobox-ok' \
-		</dev/null >"$WORK/judge.log" 2>&1
-	judge_status=$?
-	set -e
-	rm -rf "$judge_home"
-	if [ "$judge_status" -eq 0 ] && grep -qi 'discobox-ok' "$WORK/judge.log"; then
-		return 0
-	fi
-	tail -n 5 "$WORK/judge.log" >&2
-	return 1
-}
-
 # print_notices shows what the plan says about credentials nothing will renew.
 print_notices() {
 	OMP_CONFIGURE_PLAN="$WORK/plan.json" node -e '
@@ -311,8 +272,8 @@ confirm_retry() {
 }
 
 # write_output records the result: one secret per credential, the export
-# document that delivers them, omp's settings as the user left them, and
-# Discobox's settings for the harness. Secret shapes:
+# document that delivers them, and omp's settings as the user left them.
+# Secret shapes:
 #   - kept:          usePrevious marker, no value.
 #   - OAuth renewed: the access token plus refresh material, type oauth.
 #   - anything else: a plain token.
@@ -324,7 +285,6 @@ write_output() {
 		OMP_CONFIGURE_HOME="$HOME" \
 		OMP_CONFIGURE_CREDENTIALS_PATH="$CREDENTIALS_PATH" \
 		OMP_CONFIGURE_OMP_SETTINGS_PATH="$OMP_SETTINGS_PATH" \
-		OMP_CONFIGURE_SETTINGS_PATH="$SETTINGS_PATH" \
 		OMP_CONFIGURE_OUTPUT="$OUTPUT" node <<-'NODE_EOF'
 		const fs = require('fs');
 		const path = require('path');
@@ -357,17 +317,6 @@ write_output() {
 		} catch (err) {
 			// Nothing was set in this session or any before it; nothing to keep.
 		}
-		// Discobox's settings, as they arrived — a judge model someone set by
-		// editing the file is theirs.
-		const settingsPath = process.env.OMP_CONFIGURE_SETTINGS_PATH;
-		let settings = {};
-		try {
-			settings = JSON.parse(fs.readFileSync(path.join(home, settingsPath), 'utf8')) || {};
-		} catch (err) {
-			settings = {};
-		}
-		if (typeof settings.judgeModel !== 'string') settings.judgeModel = '';
-		files.push({ path: settingsPath, content: JSON.stringify(settings, null, 2) + '\n' });
 		fs.writeFileSync(process.env.OMP_CONFIGURE_OUTPUT, JSON.stringify({ files, secrets }));
 	NODE_EOF
 }
@@ -448,30 +397,8 @@ while :; do
 
 	echo "Signed in: $(plan_labels). Checking the default model…"
 	if verify_default_model; then
-		echo "The default model answered. Checking the judge, with thinking off…"
-		if verify_judge; then
-			echo "The judge answered."
-			break
-		fi
-		echo
-		# Thinking off is one reason a judge fails here; a credential or model
-		# its isolation cannot reach (models.yml, an endpoint a credential
-		# names) is another, so the message blames neither.
-		printf '%s\n' "${C_ERR}${C_BOLD}The judge did not answer.${C_RESET}" >&2
-		echo "Every command a sandbox's judge is asked about would be refused."
-		judge_model=$(jq -r '.judgeModel // "" | strings' "$HOME/$SETTINGS_PATH" 2>/dev/null) || judge_model=""
-		# judgeModel is Discobox's setting, not omp's, so no omp session can
-		# change it: it is edited after saving.
-		if [ -n "$judge_model" ]; then
-			echo "The judge runs on judgeModel, $judge_model, with thinking off and"
-			echo "without models.yml. Save, then point it at a model that answers so:"
-		else
-			echo "The judge runs on the default model, with thinking off and without"
-			echo "models.yml. Save, then give it a model of its own that answers so:"
-		fi
-		echo "  discobox admin harness edit omp $SETTINGS_PATH"
-		echo "Or start omp again to sign in with /login or pick another default with"
-		echo "/model. Your sign-ins are kept."
+		echo "The default model answered."
+		break
 	else
 		echo
 		printf '%s\n' "${C_ERR}${C_BOLD}omp's default model did not answer.${C_RESET}" >&2

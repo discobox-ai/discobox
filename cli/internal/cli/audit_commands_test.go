@@ -40,50 +40,6 @@ func runAudit(ctx context.Context, t *testing.T, handler http.HandlerFunc, args 
 	return stdout.String(), stderr.String(), err
 }
 
-// A follower reads the backlog newest first once, then forward from the newest
-// record it printed less the lookback, and prints each verdict once.
-func TestAuditCredsFollowReadsForwardFromTheLastVerdict(t *testing.T) {
-	interval := auditFollowInterval
-	auditFollowInterval = 5 * time.Millisecond
-	t.Cleanup(func() { auditFollowInterval = interval })
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	var mu sync.Mutex
-	var forwardSince []string
-	verdict := func(id, useID, at string) string {
-		return `{"id":"` + id + `","projectId":"project-1","sandboxId":"sbx_1","useId":"` + useID + `","allow":true,"volunteered":false,"createdAt":"` + at + `","command":["gh"]}`
-	}
-	stdout, _, err := runAudit(ctx, t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		mu.Lock()
-		defer mu.Unlock()
-		if r.URL.Query().Get("order") != "asc" {
-			_, _ = w.Write([]byte(`{"credentialVerdicts":[` + verdict("cv_2", "use_two", "2026-09-17T10:02:00Z") + `,` + verdict("cv_1", "use_one", "2026-09-17T10:01:00Z") + `]}`))
-			return
-		}
-		forwardSince = append(forwardSince, r.URL.Query().Get("since"))
-		// The newest printed verdict comes back, as an inclusive bound
-		// returns it, beside one that is new.
-		_, _ = w.Write([]byte(`{"credentialVerdicts":[` + verdict("cv_2", "use_two", "2026-09-17T10:02:00Z") + `,` + verdict("cv_3", "use_three", "2026-09-17T10:03:00Z") + `]}`))
-		if len(forwardSince) == 3 {
-			cancel()
-		}
-	}, "creds", "--follow")
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	one, two, three := strings.Index(stdout, "use_one"), strings.Index(stdout, "use_two"), strings.Index(stdout, "use_three")
-	if one < 0 || two < one || three < two || strings.Count(stdout, "use_two") != 1 || strings.Count(stdout, "use_three") != 1 {
-		t.Fatalf("stdout = %q, want each verdict once, oldest first", stdout)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	since, err := time.Parse(time.RFC3339, forwardSince[0])
-	if err != nil || !since.Equal(time.Date(2026, 9, 17, 10, 2, 0, 0, time.UTC).Add(-auditWriterLookback)) {
-		t.Fatalf("first forward read since %q, want the newest printed verdict less the lookback", forwardSince[0])
-	}
-}
-
 func TestAuditHTTPBodyReadsTheRecordingFromItsPool(t *testing.T) {
 	poolID, err := idpkg.New("pool")
 	if err != nil {
@@ -214,15 +170,10 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/audit/http"):
 			asked["http"] = true
-			_, _ = w.Write([]byte(`{"exchanges":[{"poolId":"pool-a","id":"http_7","createdAt":"2026-09-17T10:03:00Z","sandboxId":"` + sandboxID + `","method":"GET","url":"https://api.github.com/","host":"api.github.com","status":200,"blocked":false,"swappedUseIds":["use_1"]}],"unavailablePools":[]}`))
+			_, _ = w.Write([]byte(`{"exchanges":[{"poolId":"pool-a","id":"http_7","createdAt":"2026-09-17T10:03:00Z","sandboxId":"` + sandboxID + `","method":"GET","url":"https://api.github.com/","host":"api.github.com","status":200,"blocked":false,"swappedSecretIds":["sec_1"]}],"unavailablePools":[]}`))
 		case strings.HasSuffix(r.URL.Path, "/audit/dns"):
 			asked["dns"] = true
 			_, _ = w.Write([]byte(`{"queries":[{"poolId":"pool-a","id":"dns_3","createdAt":"2026-09-17T10:00:00Z","sandboxId":"` + sandboxID + `","name":"api.github.com","type":"A","rcode":"NOERROR","answers":["192.0.2.1"]}],"unavailablePools":[]}`))
-		case strings.HasSuffix(r.URL.Path, "/credential-verdicts"):
-			asked["creds"] = true
-			_, _ = w.Write([]byte(`{"credentialVerdicts":[
-				{"id":"cvd_1","projectId":"project-1","sandboxId":"` + sandboxID + `","useId":"use_1","allow":true,"volunteered":false,"createdAt":"2026-09-17T10:02:00Z","command":["gh"]},
-				{"id":"cvd_2","projectId":"project-1","sandboxId":"` + sandboxID + `","useId":"use_2","allow":false,"volunteered":true,"createdAt":"2026-09-17T10:01:00Z","command":["curl"]}]}`))
 		case strings.HasSuffix(r.URL.Path, "/secret-refreshes"):
 			asked["refresh"] = true
 			if r.URL.Query().Get("sandboxId") != sandboxID {
@@ -248,8 +199,8 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 		t.Fatalf("list: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	if len(lines) != 7 {
-		t.Fatalf("stdout = %q, want a header and six records", stdout)
+	if len(lines) != 5 {
+		t.Fatalf("stdout = %q, want a header and four records", stdout)
 	}
 	if asked["dns"] {
 		t.Fatal("list read the DNS trail without --source naming it")
@@ -261,9 +212,7 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 	// row number included.
 	for i, want := range [][]string{
 		{"hooks", "evt_hook1", "PreToolUse"},
-		{"http", "http_7", "uses=use_1"},
-		{"creds", "cvd_1", "allow use_1 (use)"},
-		{"creds", "cvd_2", "deny use_2 (report)"},
+		{"http", "http_7", "secrets=sec_1"},
 		{"refresh", "sreq_1", "answered github: ran gh auth token for the session by user-1 on host-a"},
 		{"refresh", "sreq_1", "asked github: stale"},
 	} {
@@ -300,7 +249,7 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list -q: %v", err)
 	}
-	if got, want := strings.Fields(stdout), []string{"evt_hook1", "http_7", "cvd_1", "cvd_2", "sreq_1", "sreq_1"}; !slices.Equal(got, want) {
+	if got, want := strings.Fields(stdout), []string{"evt_hook1", "http_7", "sreq_1", "sreq_1"}; !slices.Equal(got, want) {
 		t.Fatalf("-q = %q, want %q", got, want)
 	}
 
@@ -310,12 +259,12 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 	mu.Lock()
 	asked = map[string]bool{}
 	mu.Unlock()
-	stdout, _, err = runAudit(context.Background(), t, handler, "ls", sandboxID, "--source", "http,creds", "-o", "json")
+	stdout, _, err = runAudit(context.Background(), t, handler, "ls", sandboxID, "--source", "http,hooks", "-o", "json")
 	if err != nil {
 		t.Fatalf("list -o json: %v", err)
 	}
-	if asked["hooks"] || asked["execs"] || asked["dns"] || asked["refresh"] {
-		t.Fatalf("--source http,creds read other trails: %v", asked)
+	if asked["execs"] || asked["dns"] || asked["refresh"] {
+		t.Fatalf("--source http,hooks read other trails: %v", asked)
 	}
 	var got struct {
 		Records []struct {
@@ -326,15 +275,15 @@ func TestAuditListMergesTrailsAndLabelsTheirAttestors(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, stdout)
 	}
-	if len(got.Records) != 3 {
-		t.Fatalf("records = %+v, want the request and both verdicts", got.Records)
+	if len(got.Records) != 2 {
+		t.Fatalf("records = %+v, want the request and the hook", got.Records)
 	}
 	attestors := map[string]string{}
 	for _, record := range got.Records {
 		attestors[record.Attestor] = record.Source
 	}
-	if attestors["pool"] != "http" || attestors["control-plane"] != "creds" || attestors["sandbox"] != "creds" {
-		t.Fatalf("attestors = %v, want the pool's request and both kinds of verdict", attestors)
+	if attestors["pool"] != "http" || attestors["sandbox"] != "hooks" {
+		t.Fatalf("attestors = %v, want the pool's request and the discobox's hook", attestors)
 	}
 
 	// An answer's record is the client's account of how the value was made;
@@ -378,11 +327,11 @@ func TestAuditListFollowMergesEveryTrailAsItIsRecorded(t *testing.T) {
 	}
 	exchange := func(id int, second int) string {
 		return `{"poolId":"pool-a","id":"http_` + strconv.Itoa(id) + `","createdAt":"` + at(second) + `","sandboxId":"` + sandboxID +
-			`","method":"GET","url":"https://api.github.com/","host":"api.github.com","status":200,"blocked":false,"swappedUseIds":[]}`
+			`","method":"GET","url":"https://api.github.com/","host":"api.github.com","status":200,"blocked":false}`
 	}
-	verdict := func(id, useID string, second int) string {
-		return `{"id":"` + id + `","projectId":"project-1","sandboxId":"` + sandboxID + `","useId":"` + useID +
-			`","allow":true,"volunteered":false,"createdAt":"` + at(second) + `","command":["gh"]}`
+	asked := func(secretName string, second int) string {
+		return `{"id":"sreq_` + secretName + `","event":"asked","at":"` + at(second) + `","projectId":"project-1","secretId":"sec_1","secretName":"` + secretName +
+			`","sandboxId":"` + sandboxID + `","refreshCause":"stale"}`
 	}
 	hook := func(id, event string, second int) string {
 		return `{"id":"` + id + `","provider":"claude-code","event":"` + event + `","payload":{},"createdAt":"` + at(second) + `"}`
@@ -416,20 +365,15 @@ func TestAuditListFollowMergesEveryTrailAsItIsRecorded(t *testing.T) {
 				forward["dns"]++
 			}
 			_, _ = w.Write([]byte(`{"queries":[],"unavailablePools":[]}`))
-		case strings.HasSuffix(r.URL.Path, "/credential-verdicts"):
-			if asc {
-				forward["creds"]++
-			}
-			rows := []string{verdict("cv_1", "use_one", 2)}
-			if round >= 3 {
-				rows = append(rows, verdict("cv_2", "use_two", 4))
-			}
-			_, _ = w.Write([]byte(`{"credentialVerdicts":[` + strings.Join(rows, ",") + `]}`))
 		case strings.HasSuffix(r.URL.Path, "/secret-refreshes"):
 			if asc {
 				forward["refresh"]++
 			}
-			_, _ = w.Write([]byte(`{"secretRefreshEvents":[]}`))
+			rows := []string{asked("one", 2)}
+			if round >= 3 {
+				rows = append(rows, asked("two", 4))
+			}
+			_, _ = w.Write([]byte(`{"secretRefreshEvents":[` + strings.Join(rows, ",") + `]}`))
 		case strings.HasSuffix(r.URL.Path, "/harness-hooks"):
 			if asc {
 				forward["hooks"]++
@@ -460,7 +404,7 @@ func TestAuditListFollowMergesEveryTrailAsItIsRecorded(t *testing.T) {
 	if forward["dns"] != 0 {
 		t.Fatal("follow read the DNS trail without --source naming it")
 	}
-	for _, trail := range []string{"http", "creds", "refresh", "hooks", "execs"} {
+	for _, trail := range []string{"http", "refresh", "hooks", "execs"} {
 		if forward[trail] == 0 {
 			t.Fatalf("%s was never read forward: %v", trail, forward)
 		}
@@ -477,7 +421,7 @@ func TestAuditListFollowMergesEveryTrailAsItIsRecorded(t *testing.T) {
 	// was recorded — across trails.
 	var got []string
 	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
-		for _, want := range []string{"exec.started", "SessionStart", "use_one", "GET", "PreToolUse", "use_two"} {
+		for _, want := range []string{"exec.started", "SessionStart", "asked one", "GET", "PreToolUse", "asked two"} {
 			if strings.Contains(line, want) {
 				got = append(got, want)
 			}
@@ -486,10 +430,10 @@ func TestAuditListFollowMergesEveryTrailAsItIsRecorded(t *testing.T) {
 	if len(got) != 7 {
 		t.Fatalf("printed %v, want the four backlog records and the three that arrived:\n%s", got, stdout)
 	}
-	// Both records at 10:00:01 and the verdict at :02 are the backlog; the
-	// pool's :03, the verdict at :04 and the hook at :05 arrived while
+	// Both records at 10:00:01 and the ask at :02 are the backlog; the
+	// pool's :03, the ask at :04 and the hook at :05 arrived while
 	// following, and each is printed once, in time order.
-	if tail := got[4:]; !slices.Equal(tail, []string{"GET", "use_two", "PreToolUse"}) {
+	if tail := got[4:]; !slices.Equal(tail, []string{"GET", "asked two", "PreToolUse"}) {
 		t.Fatalf("records that arrived while following = %v, want them in the order recorded:\n%s", tail, stdout)
 	}
 }
@@ -504,7 +448,7 @@ func TestAuditHTTPJSONPagesBackPastOnePage(t *testing.T) {
 		return map[string]any{
 			"poolId": "pool-a", "id": "http_" + strconv.Itoa(i+1), "sandboxId": "sbx_1", "method": "GET",
 			"createdAt": base.Add(time.Duration(i) * time.Millisecond).Format(time.RFC3339Nano),
-			"url":       "https://example.com/", "host": "example.com", "status": 200, "blocked": false, "swappedUseIds": []string{},
+			"url":       "https://example.com/", "host": "example.com", "status": 200, "blocked": false,
 		}
 	}
 	var mu sync.Mutex

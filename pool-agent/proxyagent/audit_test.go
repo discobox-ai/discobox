@@ -14,9 +14,8 @@ import (
 	"github.com/discobox-ai/discobox/proxy"
 )
 
-// A sandbox reads back the request the proxy refused it, with the reason and
-// with no live sentinel of its own in it, and another sandbox on the same pool
-// reads none of it (ADR 26-10-02-678 §2).
+// A sandbox reads back the request the proxy refused it, with the reason, and
+// another sandbox on the same pool reads none of it (ADR 26-10-02-678 §2).
 func TestAuditHTTPReadsOnlyTheCallersRefusals(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -41,29 +40,21 @@ func TestAuditHTTPReadsOnlyTheCallersRefusals(t *testing.T) {
 	cfg.DatabaseDSN = filepath.Join(root.Dir(), testProjectID+"-audit.db")
 	cfg.Recording.StreamDir = t.TempDir()
 	cfg.Recording.BodyDir = t.TempDir()
-	live := newActivations()
-	server, err := proxy.NewServer(ctx, cfg, bundle, newSecretResolver(root, testProjectID, testPoolID, live))
+	server, err := proxy.NewServer(ctx, cfg, bundle, newSecretResolver(root, testProjectID, testPoolID))
 	if err != nil {
 		t.Fatalf("create proxy: %v", err)
 	}
 	t.Cleanup(func() { _ = server.Close() })
 	go func() { _ = server.ListenAndServe() }()
 
-	// A sentinel minted for a command, which the command put in a URL: the
-	// proxy records the URL as sent, and swaps nothing in one.
-	minted, err := live.mint("sb-1", "stable-sentinel", "use_1", nil, []string{"example.test"}, "", []string{"curl"})
-	if err != nil {
-		t.Fatalf("mint: %v", err)
-	}
-
 	// The origin's certificate chains to a CA nothing trusts, so the proxy
 	// refuses the request and records why.
 	client := sandboxClient(t, server, material)
-	if resp := mustGet(t, client, origin.URL+"/refused?token="+minted.Sentinel); resp.StatusCode != http.StatusBadGateway {
+	if resp := mustGet(t, client, origin.URL+"/refused?token=abc"); resp.StatusCode != http.StatusBadGateway {
 		t.Fatalf("status %d, want the proxy's 502", resp.StatusCode)
 	}
 
-	mine := &credentialBroker{sandboxID: "sb-1", proxy: server, activations: live}
+	mine := &credentialBroker{sandboxID: "sb-1", proxy: server}
 	blocked := true
 	var exchanges []agentcreds.AuditExchange
 	deadline := time.Now().Add(5 * time.Second)
@@ -80,11 +71,11 @@ func TestAuditHTTPReadsOnlyTheCallersRefusals(t *testing.T) {
 	if !got.Blocked || got.BlockedReason == "" || !strings.HasPrefix(got.ID, "http_") || got.Status != http.StatusBadGateway {
 		t.Fatalf("exchange %+v, want a blocked 502 with a reason and an http_ id", got)
 	}
-	if strings.Contains(got.URL, minted.Sentinel) || !strings.HasSuffix(got.URL, "token="+auditRedacted) {
-		t.Fatalf("url %q, want the sentinel redacted", got.URL)
+	if !strings.HasSuffix(got.URL, "/refused?token=abc") {
+		t.Fatalf("url %q, want the URL as the sandbox sent it", got.URL)
 	}
 
-	other := &credentialBroker{sandboxID: "sb-2", proxy: server, activations: live}
+	other := &credentialBroker{sandboxID: "sb-2", proxy: server}
 	if theirs, err := other.AuditHTTP(ctx, agentcreds.AuditQuery{Limit: agentcreds.MaxAuditLimit}); err != nil || len(theirs) != 0 {
 		t.Fatalf("another sandbox read %d exchanges (err %v), want none", len(theirs), err)
 	}
@@ -102,32 +93,5 @@ func TestTruncateAuditFieldCutsOnARune(t *testing.T) {
 	}
 	if short := "https://example.test/"; truncateAuditField(short) != short {
 		t.Fatalf("a short field was changed")
-	}
-}
-
-// A sentinel is redacted however a program encoded it into a URL, and a URL
-// with none in it is returned as recorded.
-func TestSentinelRedactorFindsEveryEncoding(t *testing.T) {
-	const sentinel = "ab+c/d"
-	redact := newSentinelRedactor([]string{sentinel})
-	for in, want := range map[string]string{
-		"https://h.test/p?token=ab+c/d":         "https://h.test/p?token=" + auditRedacted,
-		"https://h.test/p?token=ab%2Bc%2Fd":     "https://h.test/p?token=" + auditRedacted,
-		"https://h.test/p?token=ab%2bc%2fd&x=1": "https://h.test/p?token=" + auditRedacted + "&x=1",
-		"https://h.test/p?token=ab%2Bc%2fd":     "https://h.test/p?token=" + auditRedacted,
-		"https://h.test/keys/ab%2Bc%2Fd/info":   "https://h.test/keys/" + auditRedacted + "/info",
-		"https://h.test/p?ab%2Bc%2Fd":           "https://h.test/p?" + auditRedacted,
-		"https://user@h.test/a%20b?q=%7E#frag":  "https://user@h.test/a%20b?q=%7E#frag",
-		"h.test:443":                            "h.test:443",
-	} {
-		if got := redact.url(in); got != want {
-			t.Errorf("url(%q) = %q, want %q", in, got, want)
-		}
-	}
-	if got := redact.text("judge: refused ab%2bc%2fd"); got != "judge: refused "+auditRedacted {
-		t.Errorf("text = %q", got)
-	}
-	if got := newSentinelRedactor(nil).url("https://h.test/?t=ab+c/d"); got != "https://h.test/?t=ab+c/d" {
-		t.Errorf("no sentinels changed the url to %q", got)
 	}
 }

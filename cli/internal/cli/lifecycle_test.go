@@ -106,9 +106,8 @@ func TestLifecycleCommandCountsFailures(t *testing.T) {
 }
 
 // Full IDs name their discoboxes outright, so the command makes the one call
-// per argument and no listing: inside a discobox every call is judged against
-// the use it was approved for, and "start a discobox I created" says nothing
-// of listing them. The hyphenated hostname spelling is a full ID too.
+// per argument and no listing: "start a discobox I created" says nothing of
+// listing them. The hyphenated hostname spelling is a full ID too.
 func TestLifecycleCommandSkipsTheListingForFullIDs(t *testing.T) {
 	var posted []string
 	server := lifecycleTestServer(t, &posted)

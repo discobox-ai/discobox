@@ -1932,10 +1932,6 @@ func (s *Server) handlePoolListHTTPAuditRequest(args [2]string, argsEscaped bool
 					In:   "query",
 				}: params.Host,
 				{
-					Name: "useId",
-					In:   "query",
-				}: params.UseId,
-				{
 					Name: "since",
 					In:   "query",
 				}: params.Since,

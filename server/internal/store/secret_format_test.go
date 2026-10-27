@@ -8,6 +8,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/secretformat"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // Every value write records the shape its sentinels take, whichever writer
@@ -91,7 +92,7 @@ func TestValueWriteRecordsTheSentinelFormat(t *testing.T) {
 func TestSentinelFormatReadsARowWithoutOne(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStoreWithDB(t, nil)
-	createSecret(t, s, "sec-legacy", "legacy", "")
+	createSecret(t, s, "sec-legacy", "legacy")
 	if err := db.Write.WithContext(ctx).Model(&model.Secret{}).Where("id = ?", "sec-legacy").
 		Updates(map[string]any{"format": "", "encrypted_value": []byte(`{"token":"sk-ant-oat01-` + strings.Repeat("c", 95) + `"}`)}).Error; err != nil {
 		t.Fatalf("age row: %v", err)
@@ -121,8 +122,8 @@ func TestSentinelFormatReadsARowWithoutOne(t *testing.T) {
 func TestRefreshSecretFormatsBringsStoredShapesUpToDate(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStoreWithDB(t, nil)
-	createSecret(t, s, "sec-old", "old", "")
-	createSecret(t, s, "sec-set", "set", "")
+	createSecret(t, s, "sec-old", "old")
+	createSecret(t, s, "sec-set", "set")
 	apiKey := `{"token":"sk-ant-api03-` + strings.Repeat("a", 95) + `"}`
 	for id, cols := range map[string]map[string]any{
 		"sec-old": {"format": "sk-ant-{alnum:5}-{base64url:95}", "encrypted_value": []byte(apiKey)},
@@ -155,7 +156,7 @@ func TestRefreshSecretFormatsBringsStoredShapesUpToDate(t *testing.T) {
 func TestAnOAuthRefreshWritesTheFormat(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStoreWithDB(t, nil)
-	createSecret(t, s, "sec-oauth", "claude", "")
+	createSecret(t, s, "sec-oauth", "claude")
 	if err := db.Write.WithContext(ctx).Model(&model.Secret{}).Where("id = ?", "sec-oauth").
 		Updates(map[string]any{"type": model.SecretTypeOAuth, "format": ""}).Error; err != nil {
 		t.Fatalf("age row: %v", err)
@@ -169,4 +170,17 @@ func TestAnOAuthRefreshWritesTheFormat(t *testing.T) {
 	if !strings.HasPrefix(got.Format, "sk-ant-oat01-") {
 		t.Fatalf("format after a refresh = %q, want the access token's shape", got.Format)
 	}
+}
+
+// createSecret is one project secret.
+func createSecret(t *testing.T, s *store.Store, id, name string) *model.Secret {
+	t.Helper()
+	secret := &model.Secret{
+		ID: id, ProjectID: "project-1", Name: name, Type: model.SecretTypeToken,
+		EncryptedValue: []byte(`{"token":"x"}`),
+	}
+	if err := s.CreateSecret(context.Background(), secret); err != nil {
+		t.Fatalf("create %s: %v", id, err)
+	}
+	return secret
 }

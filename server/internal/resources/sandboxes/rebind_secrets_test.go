@@ -148,61 +148,6 @@ func TestRebindReMintsWhenFormatDiffers(t *testing.T) {
 	}
 }
 
-// An agent credential's binding may share its variable with the harness's
-// injected assignment. A harness rebind repoints only the harness's: the agent
-// binding keeps the secret it was granted and the sentinel its activations were
-// minted from.
-func TestRebindLeavesAnAgentBindingOfTheSameVariable(t *testing.T) {
-	ctx := context.Background()
-	svc, st, _, config, _ := newRebindFixture(t)
-	injected := onlyAssignment(t, st)
-
-	granted := &model.Secret{
-		ProjectID: "project-1", Name: "openai-agent", Type: model.SecretTypeToken,
-		UniqueKey: "agent-1", EncryptedValue: []byte(`{"token":"sk-bca"}`),
-	}
-	if err := st.CreateSecret(ctx, granted); err != nil {
-		t.Fatalf("create secret: %v", err)
-	}
-	agent := &model.SandboxSecret{
-		ProjectID: "project-1", SandboxID: "sb-1", SecretID: granted.ID,
-		EnvName: "OPENAI_API_KEY", Sentinel: "sk-agentsentinel", AgentRequested: true,
-	}
-	if err := st.CreateSandboxSecret(ctx, agent); err != nil {
-		t.Fatalf("create agent binding: %v", err)
-	}
-	replacement := &model.Secret{
-		ProjectID: "project-1", Name: "openai-2", Type: model.SecretTypeToken,
-		UniqueKey: "replacement-1", EncryptedValue: []byte(`{"token":"sk-cab"}`),
-	}
-	if err := st.CreateSecret(ctx, replacement); err != nil {
-		t.Fatalf("create secret: %v", err)
-	}
-	if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
-		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: replacement.ID,
-	}); err != nil {
-		t.Fatalf("rebind: %v", err)
-	}
-	if err := svc.RebindHarnessConfigSecrets(ctx, "project-1", config.ID); err != nil {
-		t.Fatalf("rebind secrets: %v", err)
-	}
-
-	after, err := st.FindAgentSandboxSecret(ctx, "project-1", "sb-1", "OPENAI_API_KEY")
-	if err != nil {
-		t.Fatalf("find agent binding: %v", err)
-	}
-	if after.SecretID != granted.ID || after.Sentinel != agent.Sentinel {
-		t.Fatalf("agent binding = %s/%s, want untouched %s/%s", after.SecretID, after.Sentinel, granted.ID, agent.Sentinel)
-	}
-	rows, err := st.ListInjectedSandboxSecrets(ctx, "project-1", "sb-1")
-	if err != nil {
-		t.Fatalf("list injected: %v", err)
-	}
-	if len(rows) != 1 || rows[0].ID != injected.ID || rows[0].SecretID != replacement.ID {
-		t.Fatalf("injected = %#v, want %s repointed at %s", rows, injected.ID, replacement.ID)
-	}
-}
-
 // An assignment already naming the bound secret is left completely alone, so a
 // rebind on an unrelated env does not churn sentinels.
 func TestRebindIsNoOpWhenAlreadyCurrent(t *testing.T) {

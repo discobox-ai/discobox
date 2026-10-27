@@ -11,7 +11,7 @@ ARG HARNESS_METADATA
 # server would ever say so. A FROM scratch stage has no shell to check it in,
 # so the expansion does.
 LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . harness/copilot/image.json)\"}"
-COPY harness/copilot/agent.conf harness/copilot/check-launcher.sh harness/copilot/configure.sh harness/copilot/hooks.json harness/copilot/install-cli.sh harness/copilot/launch.sh harness/copilot/prompt.sh harness/copilot/provision.yaml /features/copilot/
+COPY harness/copilot/agent.conf harness/copilot/check-launcher.sh harness/copilot/configure.sh harness/copilot/hooks.json harness/copilot/install-cli.sh harness/copilot/launch.sh harness/copilot/provision.yaml /features/copilot/
 COPY harness/copilot/capture.sh harness/copilot/image.json /features/copilot/
 COPY harness/copilot/copilot-normalize.cjs /features/copilot/
 # The exporter is owned by this harness; the generic platform has no JS runtime.

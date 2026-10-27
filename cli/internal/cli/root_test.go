@@ -299,7 +299,6 @@ func TestListSubcommandsUseLSWithListAlias(t *testing.T) {
 		{"secret", "ls"},
 		{"secret", "grant", "ls"},
 		{"secret", "request", "ls"},
-		{"secret", "rule", "ls"},
 		{"admin", "harness", "ls"},
 		{"admin", "harness", "secret", "ls"},
 	}
@@ -619,14 +618,14 @@ func TestSecretCreateCommandSendsSecretValue(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "create", "--name", "github", "--type", "token", "--host", "github.com", "--max-grant-ttl", "7200", "--token", "token-value",
-		"--route", "githubcopilot.com", "--route", "github.com/repos=reading public GitHub data"})
+		"--route", "githubcopilot.com", "--route", "github.com/repos=blocked"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret create: %v", err)
 	}
 	wantRoutes := []any{
 		map[string]any{"host": "githubcopilot.com"},
-		map[string]any{"host": "github.com", "path": "/repos", "use": "reading public GitHub data"},
+		map[string]any{"host": "github.com", "path": "/repos", "blocked": true},
 	}
 	if !reflect.DeepEqual(posted["routes"], wantRoutes) {
 		t.Fatalf("posted routes = %#v, want both --route values in order", posted["routes"])
@@ -740,8 +739,7 @@ func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
 
 // Said nothing about the lifetime, approve sends none and reads nothing first:
 // the server grants what the agent asked for, else an hour, within the
-// secret's limit — what the window opens on (ADR 26-09-30-782 §4). One call is
-// what lets a discobox approve under a use the judge can match to it.
+// secret's limit — what the window opens on (ADR 26-09-30-782 §4).
 // --grant-ttl still says one.
 func TestSecretRequestApproveLeavesTheLifetimeToTheServer(t *testing.T) {
 	const (
@@ -2288,7 +2286,7 @@ func TestSecretGrantCreateMakesADelegationGrant(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
 				t.Fatalf("decode grant body: %v", err)
 			}
-			_, _ = w.Write([]byte(`{"id":"grant-1","projectId":"project-1","secretId":"` + secretID + `","scope":"sandbox","scopeKey":"sbx-1","hosts":["github.com"],"envName":"GH_TOKEN","uses":[{"useId":"use_1","description":"push a branch"}],"purpose":"delegate","grantedAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"grant-1","projectId":"project-1","secretId":"` + secretID + `","scope":"sandbox","scopeKey":"sbx-1","hosts":["github.com"],"purpose":"delegate","grantedAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
 			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"github","type":"token","maxGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
 		default:
@@ -2301,104 +2299,15 @@ func TestSecretGrantCreateMakesADelegationGrant(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "grant", "create",
-		"--secret", secretID, "--scope", "sandbox", "--scope-key", "sbx-1", "--hosts", "github.com",
-		"--env-var", "GH_TOKEN", "--use", "push a branch", "--delegate",
-		"--statement", `allow push on branch "fix-*" in repository "org/repo"`,
-		"--define", "branch=a git branch", "--define", "repository=a GitHub repository", "--define", "push=add commits to a branch"})
+		"--secret", secretID, "--scope", "sandbox", "--scope-key", "sbx-1", "--hosts", "github.com", "--delegate"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret grant create: %v", err)
 	}
 	if created["purpose"] != "delegate" {
 		t.Fatalf("grant body = %#v, want a delegation grant asked for", created)
 	}
-	sent, _ := created["policy"].(map[string]any)
-	if statements, _ := sent["statements"].([]any); len(statements) != 1 {
-		t.Fatalf("grant body = %#v, want the policy its statements say", created)
-	}
-	if output := out.String(); !strings.Contains(output, "may delegate the credential to other discoboxes, and may not use it") {
+	if output := out.String(); !strings.Contains(output, "may give the credential to the discoboxes it creates, and may not use it") {
 		t.Fatalf("output = %q, want the grant to say what its holder may do", output)
-	}
-}
-
-// A grant taken through discobox-access carries a policy (#312): --use with
-// no --statement, and --statement with no --use, are refused before anything
-// is sent.
-func TestSecretGrantCreateHoldsUsesAndAPolicyTogether(t *testing.T) {
-	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets" {
-			_, _ = w.Write([]byte(`{"secrets":[{"id":"secret-1","projectId":"project-1","name":"github","type":"token","maxGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
-			return
-		}
-		t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
-	}))
-	t.Cleanup(server.Close)
-	for name, tc := range map[string]struct {
-		args []string
-		want string
-	}{
-		"uses alone":     {[]string{"--env-var", "GH_TOKEN", "--use", "push a branch"}, "carries a policy"},
-		"a policy alone": {[]string{"--statement", `allow read on anything in repository "org/repo"`, "--define", "repository=a GitHub repository"}, "only beside uses"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			cmd := NewRootCommand()
-			cmd.SetOut(&bytes.Buffer{})
-			cmd.SetErr(&bytes.Buffer{})
-			cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "secret", "grant", "create",
-				"--secret", "secret-1", "--scope", "sandbox", "--scope-key", "sbx-1", "--hosts", "github.com"}, tc.args...))
-			if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("error = %v, want it to say %q", err, tc.want)
-			}
-		})
-	}
-}
-
-// A request's policy prints in JSON with the sentence each statement reads
-// as beside its structure, as discobox-access prints one, so a lead compares
-// what a worker asked with what its skill asks for without parsing either.
-func TestSecretRequestJSONCarriesThePolicyAsSentences(t *testing.T) {
-	const listed = `{"secretRequests":[{"id":"sreq_1","projectId":"project-1","requestedBy":"sbx-1","type":"token","status":"pending",` +
-		`"uses":[{"description":"Triage issues in org/repo"}],` +
-		`"policy":{"statements":[{"effect":"allow","actions":["read"],"resourceType":"anything","scope":{"type":"repository","name":"org/repo"}}],"definitions":{"repository":"a GitHub repository"}},` +
-		`"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
-		`{"id":"sreq_2","projectId":"project-1","requestedBy":"user-1","type":"token","status":"pending","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`
-	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests" {
-			_, _ = w.Write([]byte(listed))
-			return
-		}
-		t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
-	}))
-	t.Cleanup(server.Close)
-
-	cmd := NewRootCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "ls", "-o", "json"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	var got struct {
-		SecretRequests []struct {
-			ID     string `json:"id"`
-			Policy *struct {
-				Statements  []map[string]any  `json:"statements"`
-				Definitions map[string]string `json:"definitions"`
-				Sentences   []string          `json:"sentences"`
-			} `json:"policy"`
-		} `json:"secretRequests"`
-	}
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-		t.Fatalf("decode %s: %v", out.String(), err)
-	}
-	if len(got.SecretRequests) != 2 || got.SecretRequests[1].Policy != nil {
-		t.Fatalf("requests = %+v, want both, the second with no policy", got.SecretRequests)
-	}
-	asked := got.SecretRequests[0].Policy
-	if asked == nil || len(asked.Statements) != 1 || asked.Definitions["repository"] == "" ||
-		!slices.Equal(asked.Sentences, []string{`allow read on anything in repository "org/repo"`}) {
-		t.Fatalf("policy = %+v, want its structure with its sentence beside it", asked)
 	}
 }
 

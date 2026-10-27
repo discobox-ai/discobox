@@ -11,7 +11,7 @@
     "files": [
       {
         "path": ".config/discobox/opencode-harness.json",
-        "content": "{\n  \"about\": \"Discobox's settings for the opencode harness. Edit with: discobox admin harness edit opencode .config/discobox/opencode-harness.json\",\n  \"judgeModel\": \"\",\n  \"webSearch\": null\n}\n"
+        "content": "{\n  \"about\": \"Discobox's settings for the opencode harness. Edit with: discobox admin harness edit opencode .config/discobox/opencode-harness.json\",\n  \"webSearch\": null\n}\n"
       }
     ],
     "config": {

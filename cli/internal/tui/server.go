@@ -98,8 +98,6 @@ func (m *Model) configServerChanged(was string) tea.Cmd {
 	}
 	m.harnesses.clear()
 	m.secrets.clear()
-	m.rules.clear()
-	m.leaveEmptyRules()
 	m.skills.clear()
 	m.syncRequestRows()
 	cmds := []tea.Cmd{m.loadHarnesses()}

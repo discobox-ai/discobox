@@ -50,12 +50,10 @@
   `discobox-installers` (stamps the install scripts a release uploads with that
   release and its binaries' digests), `discobox-installer-logo` (draws the console's
   mark into those scripts, from the console's own cell data), `discobox-winres` (the
-  Windows version resource a release executable links, and the check that it did),
-  `discobox-judge-eval` (asks a harness's judge about the recorded cases in
-  `test/judge-evals` and scores it).
+  Windows version resource a release executable links, and the check that it did).
 - `scripts`: shell and Node helpers the Taskfile and hooks run.
 - `docs`: user/developer documentation and ADRs (`docs/adr`).
-- `test`: Bats integration tests, the test-only harness stub image, terminal performance tests, and the judge evals.
+- `test`: Bats integration tests, the test-only harness stub image, and terminal performance tests.
 - `DESIGN.md` / `REVIEW.md`: package-local design and review notes. Read the closest files in the current package and its parents before making design-sensitive changes.
 
 ## Git Workflow

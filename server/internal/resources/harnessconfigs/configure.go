@@ -22,7 +22,6 @@ import (
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
-	"github.com/discobox-ai/discobox/server/internal/resources/judges"
 	"github.com/discobox-ai/discobox/server/internal/sandboxagentclient"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -149,19 +148,6 @@ func (s *Service) SetSandboxRuntime(runtime SandboxRuntime) { s.sandboxes = runt
 
 // SetDirtier installs durable capture delivery and configure cleanup scheduling.
 func (s *Service) SetDirtier(dirtier Dirtier) { s.dirtier = dirtier }
-
-// markJudge says the project's judge may no longer be the right one: its
-// harness is what it runs, and this package owns which harness that is
-// (ADR 26-09-22-838 §1). Failing to say so is not worth failing the change that
-// prompted it — the judge's own scan finds it either way — so it is logged.
-func (s *Service) markJudge(ctx context.Context, projectID string) {
-	if s.dirtier == nil || strings.TrimSpace(projectID) == "" {
-		return
-	}
-	if err := s.dirtier.MarkDirtyAt(ctx, judges.JudgeResourceType, projectID, time.Now().UTC()); err != nil {
-		slog.WarnContext(ctx, "failed to mark the project's judge for reconcile", "projectId", projectID, "error", err)
-	}
-}
 
 // ConfigureHarnessConfig launches the harness's configure sandbox and returns it.
 // The sandbox comes up idle: in config mode the sandbox-agent defers the primary
@@ -715,7 +701,7 @@ func declaredRoutesByEnv(config *model.HarnessConfig) map[string][]model.SecretR
 // secret's host. Only the harness-config-scoped grants this flow created are
 // touched.
 func (s *Service) updateConfiguredGrantHost(ctx context.Context, config *model.HarnessConfig, secretID, host string) error {
-	grants, err := s.store.ListSecretGrants(ctx, config.ProjectID, secretID, "")
+	grants, err := s.store.ListSecretGrants(ctx, config.ProjectID, secretID)
 	if err != nil {
 		return err
 	}
@@ -763,7 +749,7 @@ func (s *Service) previousSecretIDsByEnv(ctx context.Context, config *model.Harn
 // each stands for, so a command that passed one straight through (X=$PREV_X) is
 // understood as keeping that secret rather than storing a placeholder as one.
 func (s *Service) previousSentinels(ctx context.Context, projectID, sandboxID string) (map[string]string, error) {
-	assignments, err := s.store.ListInjectedSandboxSecrets(ctx, projectID, sandboxID)
+	assignments, err := s.store.ListSandboxSecrets(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, err
 	}

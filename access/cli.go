@@ -1,43 +1,32 @@
 // Package access implements the in-sandbox credential CLI: a thin client of
 // the agent credentials protocol.
 //
-// Its only dependencies are the protocol's packages, agentcreds and the policy
-// types it carries, both standard library only, so it can be lifted into
-// another repository without bringing a runtime with it.
+// Its only dependency is the protocol package, agentcreds, which is standard
+// library only, so it can be lifted into another repository without bringing
+// a runtime with it.
 //
 // # Interface shape
 //
-// The primary consumer is an LLM agent, and the three operations do not have the
+// The primary consumer is an LLM agent, and the operations do not have the
 // same shape, so they do not get the same interface:
 //
-//   - "run" wraps a command, so it takes argv. The security property is that
-//     the declared command *is* the argv executed; encoding it as JSON would
-//     put a translation step between what the model wrote and what runs, and
-//     lose the child's exit code as the wrapper's own.
-//   - "request" carries nested, free-text fields — a justification and a list
-//     of use descriptions — through a shell that treats quotes and apostrophes
-//     as syntax. That is the payload JSON is for, so --json reads it from stdin.
-//   - "list" takes nothing, and "audit" a few filters, where flags are
-//     already precise.
+//   - "request" and "trust" carry free text — a justification — through a
+//     shell that treats quotes and apostrophes as syntax. That is the payload
+//     JSON is for, so --json reads the ask from stdin.
+//   - "list", "trusts" and "audit" take nothing or a few filters, where flags
+//     are already precise.
 //
-// There is no "get" that hands back a bare value: every use this CLI supports
-// goes through "run", so it is always the judge's argv, never a value with no
-// command attached to it. See DESIGN.md's "What it must never do" for why. The
-// protocol's use call, which "run" makes, carries that command too, and a
-// caller that reaches it without this CLI has the command it declares judged
-// all the same: the judging happens on the service's side of the call.
+// The CLI never carries a credential's value. A granted credential is
+// delivered by the service — Discobox puts a sentinel in the variable the
+// request named, which its egress swaps for the value on the hosts the grant
+// covers (ADR 26-10-27-880) — so a granted credential is used by running the
+// command that needs it, with no wrapper. A process started before the grant
+// — a harness's tool shell inherits the harness's launch environment — takes
+// it up with "env", which prints what is delivered now for a shell to export.
 //
 // --json means "talk to me in JSON" for whichever direction the command has:
-// structured output everywhere, and a structured body on stdin for "request".
-//
-// # The judge
-//
-// "run" does not execute a command until the service has handed it a value,
-// and a service may judge the command first: Discobox's pool asks the
-// project's judge, on trusted ground, and mints nothing unless it allows the
-// command (ADR 26-09-22-838 §3). This CLI judges nothing itself. It sends the
-// argv, what the command will read on stdin, and where it runs, and runs the
-// command only once a value comes back.
+// structured output everywhere, and a structured body on stdin for "request"
+// and "trust".
 package access
 
 import (
@@ -52,15 +41,12 @@ import (
 	"syscall"
 
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
-	"github.com/discobox-ai/discobox/pkg/policy"
 )
 
 // Name is how the CLI refers to itself in help and diagnostics.
 const Name = "discobox-access"
 
-// Exit statuses. A wrapped command's own status passes through "run"
-// unchanged, exactly as env(1) and timeout(1) do, so these are what the CLI
-// itself reports when it never got as far as running anything.
+// Exit statuses.
 const (
 	exitOK    = 0
 	exitError = 1
@@ -83,8 +69,7 @@ func Run(args []string) int {
 	}
 	command, rest := args[0], args[1:]
 
-	// Signals reach the wrapped child through the same context, so Ctrl-C on a
-	// `run` interrupts the command rather than orphaning it.
+	// Ctrl-C ends a wait cleanly rather than mid-write.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -95,16 +80,14 @@ func Run(args []string) int {
 		return runRequest(ctx, rest)
 	case "wait":
 		return runWait(ctx, rest)
-	case "run":
-		return runWrapped(ctx, rest)
+	case "env":
+		return runEnv(ctx, rest)
 	case "trust":
 		return runTrust(ctx, rest)
 	case "trusts":
 		return runTrusts(ctx, rest)
 	case "audit":
 		return runAudit(ctx, rest)
-	case "facts":
-		return runFacts(ctx, rest)
 	case "help", "-h", "--help":
 		usage(os.Stdout)
 		return exitOK
@@ -130,76 +113,31 @@ func newClient() *agentcreds.Client {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintf(w, `%[1]s — ask for and use credentials you were not provisioned with.
+	fmt.Fprintf(w, `%[1]s — ask a human for a credential you were not provisioned with.
 
   %[1]s list [--json]
-      Show the credentials you may use and what each was approved for — its
-      uses, and its policy as sentences with what each variable resolved to
-      — after the primary source this discobox works on. --json carries a
-      policy's structure and its "sentences" both.
+      Show the credentials you hold: the variable each is in and the hosts it
+      may be sent to, and the ones you may give the discoboxes you create
+      (delegate). A credential you hold is already in its variable for every
+      command you start; use it as you would any token.
 
-  %[1]s facts [--json]
-      Show what this discobox was created with — its ID, who created it, its
-      sources with host, repository and ref — and what each variable a policy
-      may use resolves to here: "$primary.repo  discobox-ai/discobox". These
-      are the service's record, never this discobox's git config, and
-      the values a policy's variables resolve to when a person approves it.
-      A variable that resolves to nothing matches nothing.
+  %[1]s env [--json]
+      Print every credential variable and what is delivered in it now, as
+      export lines for a shell: eval "$(%[1]s env)". A credential granted
+      after your shell started reaches it this way. The values are
+      placeholders your egress exchanges, never the credential itself.
 
-  %[1]s run --use USE_ID -- COMMAND [ARGS ...]
-      Run COMMAND with the credential in its environment, and exit with
-      COMMAND's own status. Prefer this: the command it runs is the command it
-      declares, and the value never leaves that one child process.
-
-      COMMAND is judged against the use it was approved for, or against the
-      grant's policy when it carries one, before it runs, outside this
-      sandbox. A command broader than what was approved is
-      refused with code "denied" and the judge's reason, and never started.
-      What COMMAND reads on stdin, from a file or a pipe, is shown to the
-      judge too, up to 8 KiB; COMMAND still reads every byte.
-
-  %[1]s request [ID] [--json] [flags]
+  %[1]s request [--json] --name NAME --env-var VAR --hosts HOST[,HOST...] [flags]
       Ask a human for a credential. Returns a request id immediately unless
-      you wait for an answer.
+      you --wait for an answer. Once granted, the credential is in VAR for
+      every command started from then on, and is sent only to the hosts the
+      human approved; each covers the hosts beneath it.
 
-      Ask for a policy: statements, one per --statement (a "statements"
-      list in --json), that say exactly what the job may do and what it must
-      never do, and a definition for every word they use but read, create,
-      update, delete, manage, anything and anywhere (--define
-      WORD=DEFINITION, a "definitions" map in --json). The policy is what the
-      grant enforces: run's commands are judged against it, whichever use
-      they name. A request without one is refused.
-
-      Beside it, one use per job, in a line: the job and its target ("Fix
-      issue #43 in acme/web as a pull request from branch fix-43 into
-      main"). Its ID is what run takes; it names the job, and the person
-      approving reads it.
-
-        %[1]s request com.github.api --use "Fix issue #43 in acme/web as a pull request" \
-          --statement 'allow read on anything in repository $primary.repo' \
-          --statement 'allow push on branch "fix-43" in repository $primary.repo' \
-          --statement 'allow create, update on pull request in repository $primary.repo when "its base is main"' \
-          --statement 'deny delete on anything in anywhere' \
-          --define repository="a GitHub repository" --define branch="a git branch" \
-          --define "pull request=a GitHub pull request" \
-          --define push="update a branch's commits" --wait
-
-      A statement reads, as every refusal of one repeats:
-
-        %[5]s
-
-      facts lists the variables a name may be ($primary.repo). A statement
-      that does not parse, or a policy a person could not approve, is
-      refused here with what to fix, and nothing is sent.
-
-      ID names a well-known credential (com.github.api), which says its own
-      name, variable, and host; give only --use, the policy, and --why. --hosts may still
-      name the hosts beneath the ID's you will reach: com.github.api for
-      Copilot CLI is --hosts api.github.com,githubcopilot.com.
-
-      A credential sent to several sites is one request: --hosts takes them
-      comma-separated or repeated, and --json takes "hosts" as a list. Each
-      host covers the hosts beneath it.
+      --justification says why you need it, in the words the human reads:
+      the task and its target. --ttl asks how long to keep it (a Go duration
+      such as 30m or 4h, at most 720h); the human may choose otherwise, and
+      you cannot ask for forever. --delegate asks to give the credential to
+      the discoboxes you create rather than to use it yourself.
 
       With --json, the request is read from stdin, which keeps quotes and
       apostrophes in your justification out of the shell's hands:
@@ -208,67 +146,34 @@ func usage(w io.Writer) {
         {
           "name": "github",
           "envVar": "GITHUB_TOKEN",
-          "hosts": ["api.github.com"],
-          "justification": "the user's task asks me to open a PR",
-          "uses": [{"description": "Open a PR from fix-43 into main of acme/web"}],
-          "statements": [
-            "allow read on anything in repository \"acme/web\"",
-            "allow push on branch \"fix-43\" in repository \"acme/web\"",
-            "allow create on pull request in repository \"acme/web\" when \"its head is fix-43 and its base is main\"",
-            "deny force-push, delete on branch in anywhere",
-            "deny read on secret in anywhere"
-          ],
-          "definitions": {
-            "repository": "a GitHub repository",
-            "branch": "a git branch in a repository",
-            "pull request": "a GitHub pull request",
-            "secret": "an Actions, Dependabot or environment secret",
-            "push": "add commits to a branch",
-            "force-push": "move a branch with --force and no lease"
-          },
+          "hosts": ["github.com", "api.github.com"],
+          "justification": "the user's task asks me to open a PR into main of acme/web",
           "grantTTLSeconds": 14400,
           "wait": true,
           "timeoutSeconds": 3600
         }
         EOF
 
-      grantTTLSeconds is how long you ask to keep the credential, in seconds,
-      from 1 to 2592000 (thirty days). It is the answer the human sees already
-      chosen, and they may choose another; leave it out to let them pick. You
-      cannot ask for forever. timeoutSeconds is only how long --wait waits.
+      grantTTLSeconds runs from 1 to 2592000 (thirty days); purpose is "use"
+      (the default) or "delegate"; timeoutSeconds is only how long wait
+      waits.
 
-      "purpose": "delegate" (--delegate) asks to hand the credential on to
-      other sandboxes rather than to use it: the approval lets you hand on
-      policies within the one you ask for, and run nothing with it yourself. Leave it out to
-      ask to use the credential. Someone who needs both asks twice.
-
-      With flags: --name, --env-var, --hosts, --why, --use (repeatable),
-      --statement and --define (repeatable), --grant-ttl, --delegate,
-      --wait, --timeout. --grant-ttl takes a Go
-      duration -- "30m", "4h", "96h" for four days -- and the same thirty-day
-      ceiling.
-
-  %[1]s trust HOST[:PORT] --use "..." --why "..." [--ca-file CA.pem] [--wait]
+  %[1]s trust HOST[:PORT] --justification "..." [--ca-file CA.pem] [--ttl 4h] [--wait]
       Ask a human to trust a host whose certificate this sandbox's egress
       refuses — a Kubernetes API server, an internal service with its own CA.
       You meet that refusal as a 502 with an X-Discobox-Untrusted-Host
       header. The pool connects to HOST itself and shows the human the chain
       it was given; with --ca-file, the CA you already have from a source you
-      trust (e.g. gcloud container clusters describe) is offered as the pin,
-      and refused unless the chain verifies against it. A host that already
-      verifies answers "unneeded" at once.
-
-      The trust is this sandbox's alone, for exactly HOST:PORT, and every
-      request you then send there is judged against the uses you name —
-      write each as the job and its target, what it reads and writes, and
-      what it will never do. --json reads the same
-      fields from stdin: host, justification, uses, suppliedCA,
-      grantTTLSeconds, wait, timeoutSeconds.
+      trust is offered as the pin, and refused unless the chain verifies
+      against it. A host that already verifies answers "unneeded" at once.
+      The trust is this sandbox's alone, for exactly HOST:PORT, and makes that
+      certificate acceptable there and nowhere else. --json reads host,
+      justification, suppliedCA, grantTTLSeconds, wait and timeoutSeconds from
+      stdin.
 
   %[1]s wait [--json] [--timeout 1h] request|trust REQUEST_ID
       Wait for an existing credential or trust request by ID without creating
-      another request. Flags precede the request kind and ID. Returns the same
-      final status as request --wait or trust --wait; denial exits non-zero.
+      another. Flags precede the kind and ID. Denial exits non-zero.
 
       While waiting, keep monitoring the running execution even if your shell
       tool yields a session ID. Resume the authorized task after approval;
@@ -276,44 +181,33 @@ func usage(w io.Writer) {
       stderr (JSON with --json); stdout carries only the final result.
 
   %[1]s trusts [--json]
-      Show the hosts this sandbox trusts and what each was trusted for.
+      Show the hosts this sandbox trusts.
 
   %[1]s audit [--json] [--host HOST] [--blocked|--allowed] [--since 10m] [--limit 20]
       Show this sandbox's own outbound HTTP requests as the egress recorded
       them, newest first: the status each was answered with and, for one the
       egress refused, why. Read it when a request fails and the program that
       made it does not say why — the reason says whether to ask for a
-      credential (request), ask for a host to be trusted (trust), or narrow
-      what you sent. Only this sandbox's requests are shown, for as long as
-      the egress keeps its record.
+      credential (request), ask for a host to be trusted (trust), or send the
+      credential somewhere its routes allow.
 
   %[1]s --debug COMMAND ...
       Before any command, print every call it makes to the credentials
       service on stderr: the method and URL, the JSON request body, the
-      status, and the response body. A credential's value is printed as
-      <redacted>, and no header is printed. The lines are plain text even
-      with --json. Use it to see what a failure was answered with.
-
-There is no command that prints a credential's value on its own. "run" is the
-only way to use one — the value goes straight into the child it names and
-nowhere else, which is what lets a model judge the command before it runs.
+      status, and the response body. No header is printed. The lines are
+      plain text even with --json.
 
 --json also makes failures structured, on stderr:
 
     {"error":{"code":"denied","message":"..."}}
 
   invalid      the call was malformed; fix it and retry
-  denied       you may not use this; ask for it with request
+  denied       you may not do this; ask with request
   not_found    the id means nothing here
   unavailable  the service could not answer; retry
 
-The value you receive is opaque and short-lived. Do not log it, write it to a
-file, or reuse it after it expires — run the use again instead. A use lasts as
-long as list says, which is what the approver chose rather than what you asked;
-check list before asking for a use again.
-
 Configured by %[2]s (default %[3]s) and %[4]s.
-`, Name, agentcreds.URLEnv, agentcreds.DefaultBaseURL, agentcreds.TokenEnv, policy.Grammar)
+`, Name, agentcreds.URLEnv, agentcreds.DefaultBaseURL, agentcreds.TokenEnv)
 }
 
 // usageError reports a mistake in how the command was invoked, which is

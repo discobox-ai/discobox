@@ -42,8 +42,7 @@ func WithHTTPClient(client *http.Client) ClientOption {
 func NewClient(baseURL string, opts ...ClientOption) *Client {
 	c := &Client{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		// No client-wide timeout: each call is bounded by its own (do), since
-		// a use waits on a judge and nothing else should wait that long.
+		// No client-wide timeout: each call is bounded by its own (do).
 		http: &http.Client{},
 	}
 	for _, opt := range opts {
@@ -77,15 +76,16 @@ func (c *Client) RequestStatus(ctx context.Context, requestID string) (RequestSt
 	return out, err
 }
 
-// Get takes a value for one declared command. It waits up to UseTimeout,
-// since the implementation may judge the command first.
-func (c *Client) Get(ctx context.Context, body UseBody) (UseResponse, error) {
-	var out UseResponse
-	err := c.do(ctx, UseTimeout, http.MethodPost, PathUse, body, &out)
-	return out, err
+// Environment reads the variables credentials are delivered in now.
+func (c *Client) Environment(ctx context.Context) (map[string]string, error) {
+	var out EnvironmentResponse
+	if err := c.do(ctx, callTimeout, http.MethodGet, PathEnvironment, nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Variables, nil
 }
 
-// Trusts returns the host trusts the caller holds.
+// Trusts lists the host trusts the caller holds.
 func (c *Client) Trusts(ctx context.Context) ([]Trust, error) {
 	var out TrustListResponse
 	if err := c.do(ctx, callTimeout, http.MethodGet, PathTrusts, nil, &out); err != nil {
@@ -121,17 +121,6 @@ func (c *Client) AuditHTTP(ctx context.Context, query AuditQuery) ([]AuditExchan
 	return out.Exchanges, nil
 }
 
-// Facts reads what the service recorded about this caller and what each
-// policy variable resolves to for it. A service that predates the verb
-// answers ErrNotFound.
-func (c *Client) Facts(ctx context.Context) (FactsResponse, error) {
-	var out FactsResponse
-	err := c.do(ctx, callTimeout, http.MethodGet, PathFacts, nil, &out)
-	return out, err
-}
-
-// WaitForTrustRequest polls a trust request until it settles or ctx is done,
-// for the reason WaitForRequest polls.
 func (c *Client) WaitForTrustRequest(ctx context.Context, requestID string, interval time.Duration) (TrustRequestStatus, error) {
 	return waitFor(ctx, interval, func() (TrustRequestStatus, bool, error) {
 		status, err := c.TrustRequestStatus(ctx, requestID)

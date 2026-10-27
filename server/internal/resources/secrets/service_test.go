@@ -61,7 +61,7 @@ func TestApproveSecretRequestUsesSelectedSecretID(t *testing.T) {
 		t.Fatalf("create advisory request: %v", err)
 	}
 
-	approved, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
 		SecretId: serverapi.NewOptString(selected.ID),
 	})
 	if err != nil {
@@ -78,7 +78,7 @@ func TestApproveSecretRequestUsesSelectedSecretID(t *testing.T) {
 	}
 
 	// Approval mints a standing grant. A non-sandbox request defaults to project scope.
-	grants, err := svc.ListSecretGrants(ctx, "project-1", selected.ID, "")
+	grants, err := svc.ListSecretGrants(ctx, "project-1", selected.ID)
 	if err != nil {
 		t.Fatalf("list grants: %v", err)
 	}
@@ -384,205 +384,48 @@ func TestSecretsWithDifferentNamesCoexistUnbound(t *testing.T) {
 	}
 }
 
-// A pre-approval in the agent credentials shape: granted before anything asks,
-// and readable only through the in-sandbox CLI. The binding it mints is the
-// same one approving an agent's request mints — never injected into the
-// sandbox, so nothing in the box can read the credential (ADR 0031 §4).
-func TestAGrantWithUsesIsTakenOnlyThroughTheCLI(t *testing.T) {
+// A person's grant binds nothing of its own: it authorizes the sentinel a
+// discobox already holds, which is what the agent credentials protocol lists
+// for it — the variable a binding names, under the narrowest grant covering
+// it, and nothing for a grant with no binding.
+func TestAGrantAuthorizesTheSentinelADiscoboxHolds(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
 
-	grant, err := svc.CreateSecretGrant(ctx, "project-1", services.CreateSecretGrantBody{
-		SecretId: secret.ID,
-		Scope:    serverapi.CreateSecretGrantBodyScopeSandbox,
-		ScopeKey: serverapi.NewOptString(testSandboxID),
-		Hosts:    []string{"api.github.com"},
-		EnvVar:   serverapi.NewOptString("GH_TOKEN"),
-		Uses: serverapi.NewOptNilSecretUseArray([]serverapi.SecretUse{
-			{Description: "Open a pull request against the current repo"},
-		}),
-		Policy: policyAsked(t),
+	project, err := svc.CreateSecretGrant(ctx, "project-1", services.CreateSecretGrantBody{
+		SecretId: secret.ID, Scope: serverapi.CreateSecretGrantBodyScopeProject, Hosts: []string{"github.com"},
 	})
 	if err != nil {
-		t.Fatalf("grant: %v", err)
+		t.Fatalf("project grant: %v", err)
 	}
-	if len(grant.Uses) != 1 || !strings.HasPrefix(grant.Uses[0].UseID, "use_") {
-		t.Fatalf("uses = %#v, want one carrying a minted ID", grant.Uses)
+	if bindings, _ := st.ListSandboxSecrets(ctx, "project-1", testSandboxID); len(bindings) != 0 {
+		t.Fatalf("bindings = %#v, want none: a grant binds nothing", bindings)
 	}
-
-	// The binding exists for the pool agent to translate to, and reaches the
-	// sandbox through nothing.
-	all, err := st.ListSandboxSecrets(ctx, "project-1", testSandboxID)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(all) != 1 || !all[0].AgentRequested || all[0].EnvName != "GH_TOKEN" || all[0].Sentinel == "" {
-		t.Fatalf("bindings = %#v, want one agent-requested binding", all)
-	}
-	injected, err := st.ListInjectedSandboxSecrets(ctx, "project-1", testSandboxID)
-	if err != nil {
-		t.Fatalf("list injected: %v", err)
-	}
-	if len(injected) != 0 {
-		t.Fatalf("injected = %#v, want none: nothing in the sandbox may read it", injected)
+	if listed, _ := svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID); len(listed) != 0 {
+		t.Fatalf("listed = %#v, want nothing with nothing bound", listed)
 	}
 
-	// And it is what the CLI can take: the broker lists it with its uses.
-	credentials, err := svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID)
-	if err != nil {
-		t.Fatalf("list credentials: %v", err)
-	}
-	if len(credentials) != 1 || len(credentials[0].Grant.Uses) != 1 {
-		t.Fatalf("credentials = %#v, want the granted use offered to the agent", credentials)
-	}
-	if credentials[0].Assignment.Sentinel != all[0].Sentinel {
-		t.Fatal("the broker offers a different sentinel than the binding holds")
-	}
-}
-
-// The obligations that shape carries, refused rather than silently relaxed.
-func TestAGrantWithUsesRefusesTheWrongShape(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, _ := newAgentCredentialService(t)
-	secret := createBearerSecret(ctx, t, svc)
-	use := serverapi.NewOptNilSecretUseArray([]serverapi.SecretUse{{Description: "Open a PR"}})
-
-	for _, tc := range []struct {
-		name string
-		body services.CreateSecretGrantBody
-		want string
-	}{
-		{"no host", services.CreateSecretGrantBody{
-			SecretId: secret.ID, Scope: serverapi.CreateSecretGrantBodyScopeSandbox,
-			ScopeKey: serverapi.NewOptString(testSandboxID), Hosts: []string{},
-			EnvVar: serverapi.NewOptString("GH_TOKEN"), Uses: use,
-			Policy: policyAsked(t),
-		}, "requires a host"},
-		{"no environment variable", services.CreateSecretGrantBody{
-			SecretId: secret.ID, Scope: serverapi.CreateSecretGrantBodyScopeSandbox,
-			ScopeKey: serverapi.NewOptString(testSandboxID), Hosts: []string{"api.github.com"}, Uses: use,
-			Policy: policyAsked(t),
-		}, "environment variable"},
-		{"a variable with no uses", services.CreateSecretGrantBody{
-			SecretId: secret.ID, Scope: serverapi.CreateSecretGrantBodyScopeSandbox,
-			ScopeKey: serverapi.NewOptString(testSandboxID), Hosts: []string{"api.github.com"},
-			EnvVar: serverapi.NewOptString("GH_TOKEN"),
-		}, "only meaningful with uses"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := svc.CreateSecretGrant(ctx, "project-1", tc.body)
-			if err == nil {
-				t.Fatal("accepted")
-			}
-			if !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("error = %v, want it to say %q", err, tc.want)
-			}
-		})
-	}
-}
-
-// The same shape, granted wider than one discobox. The binding a credential
-// resolves through is per discobox and cannot be written in advance — the boxes
-// a project grant covers may not exist yet — so it is minted the first time
-// that discobox's agent asks what it may use.
-func TestAWiderGrantBindsWhenTheAgentFirstAsks(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, st := newAgentCredentialService(t)
-	secret := createBearerSecret(ctx, t, svc)
-
-	if _, err := svc.CreateSecretGrant(ctx, "project-1", services.CreateSecretGrantBody{
-		SecretId: secret.ID,
-		Scope:    serverapi.CreateSecretGrantBodyScopeProject,
-		Hosts:    []string{"api.github.com"},
-		EnvVar:   serverapi.NewOptString("GH_TOKEN"),
-		Uses: serverapi.NewOptNilSecretUseArray([]serverapi.SecretUse{
-			{Description: "Open a pull request against the current repo"},
-		}),
-		Policy: policyAsked(t),
+	if err := st.CreateSandboxSecret(ctx, &model.SandboxSecret{
+		ProjectID: "project-1", SandboxID: testSandboxID, SecretID: secret.ID, EnvName: "GH_TOKEN", Sentinel: "SENTINEL-GH",
 	}); err != nil {
-		t.Fatalf("grant: %v", err)
+		t.Fatalf("bind: %v", err)
+	}
+	listed, err := svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID)
+	if err != nil || len(listed) != 1 || listed[0].GrantID != project.ID || listed[0].EnvName != "GH_TOKEN" {
+		t.Fatalf("listed = %#v, %v; want GH_TOKEN under the project grant", listed, err)
 	}
 
-	// Nothing is bound yet: no agent has asked.
-	bindings, err := st.ListSandboxSecrets(ctx, "project-1", testSandboxID)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(bindings) != 0 {
-		t.Fatalf("bindings = %#v, want none before an agent asks", bindings)
-	}
-
-	credentials, err := svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID)
-	if err != nil {
-		t.Fatalf("list credentials: %v", err)
-	}
-	if len(credentials) != 1 || credentials[0].Assignment.Sentinel == "" {
-		t.Fatalf("credentials = %#v, want the project grant offered with a minted sentinel", credentials)
-	}
-	if !credentials[0].Assignment.AgentRequested {
-		t.Fatal("the binding is injectable; a credential granted this way is never in the sandbox")
-	}
-	if credentials[0].Assignment.EnvName != "GH_TOKEN" {
-		t.Fatalf("bound to %q, want the variable the grant names", credentials[0].Assignment.EnvName)
-	}
-
-	// Asking again is the same credential, not a second sentinel: a fresh one
-	// would strand every activation taken under the first.
-	again, err := svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID)
-	if err != nil {
-		t.Fatalf("list again: %v", err)
-	}
-	if len(again) != 1 || again[0].Assignment.Sentinel != credentials[0].Assignment.Sentinel {
-		t.Fatalf("second ask = %#v, want the binding it already had", again)
-	}
-	injected, err := st.ListInjectedSandboxSecrets(ctx, "project-1", testSandboxID)
-	if err != nil {
-		t.Fatalf("list injected: %v", err)
-	}
-	if len(injected) != 0 {
-		t.Fatalf("injected = %#v, want none", injected)
-	}
-}
-
-// Two grants naming one variable: the narrower one keeps it, and the wider is
-// passed over rather than swapping the credential underneath it.
-func TestTheNarrowerGrantKeepsTheVariable(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, _ := newAgentCredentialService(t)
-	mine := createBearerSecret(ctx, t, svc)
-	theirs, err := svc.CreateSecret(ctx, "project-1", services.CreateSecretBody{
-		Name:  "everyone's github",
-		Type:  serverapi.CreateSecretBodyTypeToken,
-		Host:  serverapi.NewOptString("api.github.com"),
-		Value: serverapi.SecretValue{Token: serverapi.NewOptString("ghp_projectwidevalue00000000000000000")},
+	sandbox, err := svc.CreateSecretGrant(ctx, "project-1", services.CreateSecretGrantBody{
+		SecretId: secret.ID, Scope: serverapi.CreateSecretGrantBodyScopeSandbox, ScopeKey: serverapi.NewOptString(testSandboxID),
+		Hosts: []string{"api.github.com"},
 	})
 	if err != nil {
-		t.Fatalf("create secret: %v", err)
+		t.Fatalf("sandbox grant: %v", err)
 	}
-	use := serverapi.NewOptNilSecretUseArray([]serverapi.SecretUse{{Description: "Open a PR"}})
-
-	for _, g := range []services.CreateSecretGrantBody{
-		{SecretId: theirs.ID, Scope: serverapi.CreateSecretGrantBodyScopeProject,
-			Hosts: []string{"api.github.com"}, EnvVar: serverapi.NewOptString("GH_TOKEN"), Uses: use, Policy: policyAsked(t)},
-		{SecretId: mine.ID, Scope: serverapi.CreateSecretGrantBodyScopeSandbox,
-			ScopeKey: serverapi.NewOptString(testSandboxID),
-			Hosts:    []string{"api.github.com"}, EnvVar: serverapi.NewOptString("GH_TOKEN"), Uses: use, Policy: policyAsked(t)},
-	} {
-		if _, err := svc.CreateSecretGrant(ctx, "project-1", g); err != nil {
-			t.Fatalf("grant: %v", err)
-		}
-	}
-
-	credentials, err := svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID)
-	if err != nil {
-		t.Fatalf("list credentials: %v", err)
-	}
-	if len(credentials) != 1 {
-		t.Fatalf("credentials = %#v, want one: two grants cannot share a variable", credentials)
-	}
-	if credentials[0].Assignment.SecretID != mine.ID {
-		t.Fatalf("offered %s, want the discobox's own grant to keep the variable", credentials[0].Assignment.SecretID)
+	listed, err = svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID)
+	if err != nil || len(listed) != 1 || listed[0].GrantID != sandbox.ID || !slices.Equal(listed[0].Hosts, []string{"api.github.com"}) {
+		t.Fatalf("listed = %#v, %v; want the narrower grant", listed, err)
 	}
 }
 
@@ -834,18 +677,18 @@ func TestApprovalTakesTheSecretsLimitAndIsBoundByIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create request: %v", err)
 	}
-	if _, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
 		SecretId:        serverapi.NewOptString(secret.ID),
 		GrantTTLSeconds: serverapi.NewOptInt64(86400),
 	}); err == nil {
 		t.Fatal("an approval outlived the secret's limit")
 	}
 
-	approved, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
-	grants, err := svc.ListSecretGrants(ctx, "project-1", secret.ID, "")
+	grants, err := svc.ListSecretGrants(ctx, "project-1", secret.ID)
 	if err != nil {
 		t.Fatalf("list grants: %v", err)
 	}

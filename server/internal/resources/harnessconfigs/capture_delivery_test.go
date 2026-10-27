@@ -138,7 +138,7 @@ func TestSavedCaptureAcknowledgmentConvergesAfterLostFirstDelivery(t *testing.T)
 	defer func() { _ = engine.Stop(context.Background()) }()
 	select {
 	case ack := <-received:
-		assignments, err := st.ListInjectedSandboxSecrets(ctx, cfg.ProjectID, "sbx-capture")
+		assignments, err := st.ListSandboxSecrets(ctx, cfg.ProjectID, "sbx-capture")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -240,14 +240,14 @@ func TestCaptureAddsOriginAccountWithoutReplacingBoxOverridesOrConsumerAssignmen
 			t.Fatal("additional account has no sentinel")
 		}
 	}
-	assignments, err := st.ListInjectedSandboxSecrets(ctx, cfg.ProjectID, "sbx-consumer")
+	assignments, err := st.ListSandboxSecrets(ctx, cfg.ProjectID, "sbx-consumer")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(assignments) != 0 {
 		t.Fatal("new credential unexpectedly injected into existing consumer")
 	}
-	origin, err := st.ListInjectedSandboxSecrets(ctx, cfg.ProjectID, "sbx-capture")
+	origin, err := st.ListSandboxSecrets(ctx, cfg.ProjectID, "sbx-capture")
 	if err != nil {
 		t.Fatal(err)
 	}

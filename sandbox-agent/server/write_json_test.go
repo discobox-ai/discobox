@@ -38,9 +38,9 @@ func TestWriteJSONEncodesOgenTypeWithUnsetOptionals(t *testing.T) {
 // package into a 500.
 func TestWriteJSONEncodesAnOgenValueAndNotOnlyAPointer(t *testing.T) {
 	rec := httptest.NewRecorder()
-	// JudgeAnswer's fields are all optional, so by value through encoding/json
+	// SandboxMeta's fields are all optional, so by value through encoding/json
 	// this cannot be encoded at all.
-	writeJSON(rec, http.StatusOK, sandboxapi.JudgeAnswer{Reason: "not that use"})
+	writeJSON(rec, http.StatusOK, sandboxapi.SandboxMeta{Name: sandboxapi.NewOptString("worker")})
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
@@ -49,10 +49,10 @@ func TestWriteJSONEncodesAnOgenValueAndNotOnlyAPointer(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatalf("response is not valid JSON: %v; body=%s", err, rec.Body.String())
 	}
-	if out["reason"] != "not that use" {
-		t.Fatalf("reason = %v; body=%s", out["reason"], rec.Body.String())
+	if out["name"] != "worker" {
+		t.Fatalf("name = %v; body=%s", out["name"], rec.Body.String())
 	}
-	if _, ok := out["allow"]; ok {
+	if _, ok := out["description"]; ok {
 		t.Fatalf("an unset optional field was written: %s", rec.Body.String())
 	}
 }

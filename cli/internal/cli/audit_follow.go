@@ -88,11 +88,11 @@ type auditSource[T any] struct {
 // where the trail has one, and otherwise the newest time it has printed with
 // the keys it printed around that time.
 //
-// One per trail, never one shared by a merged read. The four trails are stamped
-// by three different machines — the pool proxy, the control plane and the
+// One per trail, never one shared by a merged read. The trails are stamped by
+// three different machines — the pool proxy, the control plane and the
 // sandbox agent — so a shared time position applies the clock of whichever
 // trail is ahead to the ones behind it: a pool five minutes fast would leave
-// the verdict trail permanently unread, with nothing printed to say so.
+// the refresh trail permanently unread, with nothing printed to say so.
 type auditPosition struct {
 	lookback time.Duration
 	newest   time.Time

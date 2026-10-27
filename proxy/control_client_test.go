@@ -54,7 +54,7 @@ func controlClientFixture(t *testing.T) (string, ed25519.PrivateKey, string) {
 	t.Cleanup(func() { _ = server.Close() })
 
 	base := time.Now().UTC().Add(-time.Minute)
-	server.audit.RecordHTTP(audit.HTTPEvent{Time: base, ClientID: "sandbox-1", Method: "GET", URL: "https://api.github.com/user", Host: "api.github.com", Status: 200, SwappedUseIDs: []string{"use_abc"}})
+	server.audit.RecordHTTP(audit.HTTPEvent{Time: base, ClientID: "sandbox-1", Method: "GET", URL: "https://api.github.com/user", Host: "api.github.com", Status: 200, SwappedSecretIDs: []string{"sec_abc"}})
 	server.audit.RecordHTTP(audit.HTTPEvent{Time: base.Add(time.Second), ClientID: "sandbox-2", Method: "GET", URL: "https://example.com/", Host: "example.com", Status: 200})
 	server.audit.RecordHTTP(audit.HTTPEvent{Time: base.Add(2 * time.Second), ClientID: "sandbox-2", Method: "GET", URL: "https://evil.example/", Host: "evil.example", Status: 403, Blocked: true, BlockedReason: "host denied"})
 	waitForHTTPExchange(t, dbPath, "client_id = ?", "sandbox-1")
@@ -87,14 +87,6 @@ func TestControlClientReadsWhatTheProxyAudited(t *testing.T) {
 	}
 	if len(scoped) != 2 || scoped[0].ClientID != "sandbox-2" || scoped[1].ClientID != "sandbox-2" {
 		t.Fatalf("scoped read = %+v, want only sandbox-2's rows", scoped)
-	}
-
-	joined, err := client.ListHTTP(ctx, "", AuditQuery{UseID: "use_abc"})
-	if err != nil {
-		t.Fatalf("use_id ListHTTP() error = %v", err)
-	}
-	if len(joined) != 1 || joined[0].ClientID != "sandbox-1" || joined[0].SwappedUseIDs != "use_abc" {
-		t.Fatalf("use_id read = %+v, want the one row that spent use_abc", joined)
 	}
 
 	// Sent in a zone far from UTC: the proxy writes rows in UTC and compares
@@ -214,7 +206,7 @@ func TestControlClientGetHTTPReadsTheWholeRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if row.ID != rows[0].ID || row.URL != rows[0].URL || row.SwappedUseIDs != rows[0].SwappedUseIDs {
+	if row.ID != rows[0].ID || row.URL != rows[0].URL || row.SwappedSecretIDs != rows[0].SwappedSecretIDs {
 		t.Fatalf("row = %+v, want the exchange the list named", row)
 	}
 	// Fields a list does not carry, which is the point of reading one row.

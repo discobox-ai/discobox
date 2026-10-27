@@ -43,7 +43,7 @@ func TestAuditGetReadsAnExchangeInFull(t *testing.T) {
 			_, _ = w.Write([]byte(`{"poolId":"` + poolID + `","id":"http_10219","createdAt":"2026-09-17T10:00:00Z",
 				"writtenAt":"2026-09-17T10:00:02Z","sandboxId":"` + sandboxID + `","method":"POST",
 				"url":"https://api.github.com/x\u001b[1A","host":"api.github.com","status":201,"blocked":false,
-				"swappedUseIds":["use_x"],"swappedSecretIds":["sec_gh","sec_gone"],"durationMillis":340,
+				"swappedSecretIds":["sec_gh","sec_gone"],"durationMillis":340,
 				"requestHeaders":{"Authorization":["[REDACTED]"],"Accept":["application/json"]},
 				"responseHeaders":{"Content-Type":["application/json"]},
 				"appliedHeaders":["Authorization"],"appliedRuleId":"github","appliedPattern":"https://api.github.com",
@@ -63,7 +63,7 @@ func TestAuditGetReadsAnExchangeInFull(t *testing.T) {
 		t.Fatalf("read %s?sandboxId=%s", gotPath, gotSandbox)
 	}
 	for _, want := range []string{
-		"record:", "http_10219", "201", "340ms", "use_x",
+		"record:", "http_10219", "201", "340ms",
 		"github (https://api.github.com)", "forwarded to:    https://gw.example.com/github/x",
 		"gateway headers: Authorization", "stored, key key-1",
 		"2048 bytes, recorded as raw",
@@ -86,8 +86,8 @@ func TestAuditGetReadsAnExchangeInFull(t *testing.T) {
 	}
 }
 
-// The ID says which trail to read. A verdict and the two trails the discobox
-// keeps inside itself are all read by ID, and an ID in no trail says so.
+// The ID says which trail to read. The two trails the discobox keeps inside
+// itself are read by ID, and an ID in no trail says so.
 func TestAuditGetRoutesByRecordID(t *testing.T) {
 	sandboxID, err := idpkg.New("sbx")
 	if err != nil {
@@ -98,11 +98,6 @@ func TestAuditGetRoutesByRecordID(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		id := r.URL.Query().Get("id")
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/credential-verdicts"):
-			asked["creds"] = id
-			_, _ = w.Write([]byte(`{"credentialVerdicts":[{"id":"` + id + `","projectId":"project-1","sandboxId":"` + sandboxID +
-				`","useId":"use_1","allow":false,"volunteered":true,"createdAt":"2026-09-17T10:00:00Z","command":["gh","pr create"],
-				"reason":"denied\u001b[2K","role":"judge","prompt":"facts:\nline two"}]}`))
 		case strings.HasSuffix(r.URL.Path, "/harness-hooks"):
 			asked["hooks"] = id
 			if id == "evt_hook" {
@@ -122,18 +117,6 @@ func TestAuditGetRoutesByRecordID(t *testing.T) {
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
-	}
-
-	verdict, _, err := runAudit(context.Background(), t, handler, "get", sandboxID, "cvd_one")
-	if err != nil {
-		t.Fatalf("get verdict: %v", err)
-	}
-	if asked["creds"] != "cvd_one" || !strings.Contains(verdict, "deny") || !strings.Contains(verdict, "prompt:") ||
-		!strings.Contains(verdict, `gh "pr create"`) {
-		t.Fatalf("verdict = %q (asked %q)", verdict, asked["creds"])
-	}
-	if strings.ContainsRune(verdict, 0x1b) {
-		t.Fatalf("verdict is not terminal-safe:\n%s", verdict)
 	}
 
 	hook, _, err := runAudit(context.Background(), t, handler, "get", sandboxID, "evt_hook")
@@ -156,32 +139,10 @@ func TestAuditGetRoutesByRecordID(t *testing.T) {
 	if _, _, err := runAudit(context.Background(), t, handler, "get", sandboxID, "evt_missing"); err == nil {
 		t.Fatal("an ID in no trail was accepted")
 	}
-	for _, bad := range []string{"10219", "nonsense", "sbx_1"} {
+	for _, bad := range []string{"10219", "nonsense", "sbx_1", "cvd_one"} {
 		if _, _, err := runAudit(context.Background(), t, handler, "get", sandboxID, bad); err == nil {
 			t.Fatalf("%q was accepted as a record ID", bad)
 		}
-	}
-}
-
-// One verdict printed in full includes exactly what Jev was sent.
-func TestAuditGetPrintsWhatJevWasSent(t *testing.T) {
-	sandboxID, err := idpkg.New("sbx")
-	if err != nil {
-		t.Fatal(err)
-	}
-	handler := func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"credentialVerdicts":[{"id":"cvd_one","projectId":"project-1","sandboxId":"` + sandboxID +
-			`","useId":"use_1","allow":false,"volunteered":false,"createdAt":"2026-10-07T10:00:00Z","kind":"command","origin":"judge",
-			"command":["gh"],"model":"jev-1.13.0","jevInput":{"state":{"command":["gh","\u001b[2J"]},"model":"jev-1.13.0","questions":{}}}]}`))
-	}
-	stdout, _, err := runAudit(context.Background(), t, handler, "get", sandboxID, "cvd_one")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if !strings.Contains(stdout, "jev input:") || !strings.Contains(stdout, `"model": "jev-1.13.0"`) ||
-		!strings.Contains(stdout, `"\u001b[2J"`) || strings.ContainsRune(stdout, 0x1b) {
-		t.Fatalf("record = %s, want Jev's input in full, escaped", stdout)
 	}
 }
 
@@ -190,23 +151,26 @@ func TestAuditGetJSONIsTheRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := func(w http.ResponseWriter, _ *http.Request) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"credentialVerdicts":[{"id":"cvd_one","projectId":"project-1","sandboxId":"` + sandboxID +
-			`","useId":"use_1","allow":true,"volunteered":false,"createdAt":"2026-09-17T10:00:00Z","command":["gh"]}]}`))
+		if strings.HasSuffix(r.URL.Path, "/harness-hooks") {
+			_, _ = w.Write([]byte(`{"hooks":[{"id":"evt_hook","provider":"claude-code","event":"PreToolUse","payload":{},"createdAt":"2026-09-17T10:00:00Z"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"events":[]}`))
 	}
-	stdout, _, err := runAudit(context.Background(), t, handler, "get", sandboxID, "cvd_one", "-o", "json")
+	stdout, _, err := runAudit(context.Background(), t, handler, "get", sandboxID, "evt_hook", "-o", "json")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
 	var got struct {
-		ID      string   `json:"id"`
-		Command []string `json:"command"`
+		ID    string `json:"id"`
+		Event string `json:"event"`
 	}
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, stdout)
 	}
-	if got.ID != "cvd_one" || len(got.Command) != 1 {
+	if got.ID != "evt_hook" || got.Event != "PreToolUse" {
 		t.Fatalf("record = %+v", got)
 	}
 }

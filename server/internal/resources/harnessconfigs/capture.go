@@ -351,7 +351,7 @@ func (s *Service) applyCapturedCredential(ctx context.Context, tx *store.Store, 
 	secret.EncryptedValue = raw
 	routes := make([]model.SecretRoute, 0, len(provider.Routes))
 	for _, route := range provider.Routes {
-		routes = append(routes, model.SecretRoute{Host: route.Host, Path: route.Path, Use: route.Use})
+		routes = append(routes, model.SecretRoute{Host: route.Host, Path: route.Path, Blocked: route.Blocked})
 	}
 	if _, err := secret.ReplaceRoutes(routes); err != nil {
 		return apperrors.NewStatusError(http.StatusBadRequest, "invalid credential routes")

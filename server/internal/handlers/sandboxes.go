@@ -10,7 +10,6 @@ import (
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	services "github.com/discobox-ai/discobox/server/internal/services"
-	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 func (h *Handler) ListSandboxes(ctx context.Context, params serverapi.ListSandboxesParams) (serverapi.ListSandboxesRes, error) {
@@ -18,11 +17,7 @@ func (h *Handler) ListSandboxes(ctx context.Context, params serverapi.ListSandbo
 	if err != nil {
 		return apiError(apperrors.NewStatusError(http.StatusBadRequest, err.Error())), nil
 	}
-	var listOptions []store.SandboxListOption
-	if params.IncludeJudge.Or(false) {
-		listOptions = append(listOptions, store.IncludingJudges())
-	}
-	sandboxes, err := h.services.Sandboxes.ListSandboxes(ctx, params.ProjectId, strings.TrimSpace(params.SourceRoot.Or("")), originKeys(params.OriginKey), selectors, listOptions...)
+	sandboxes, err := h.services.Sandboxes.ListSandboxes(ctx, params.ProjectId, strings.TrimSpace(params.SourceRoot.Or("")), originKeys(params.OriginKey), selectors)
 	if err != nil {
 		return apiError(err), nil
 	}

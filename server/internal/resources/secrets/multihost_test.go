@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
-	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/pkg/wellknown"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -17,18 +15,16 @@ import (
 // share no parent short of a public suffix (ADR 26-10-02-393).
 var copilotHosts = []string{"api.github.com", "api.githubcopilot.com"}
 
-// One ask names both sites, one approval grants both, and one use is spent at
-// either — and nowhere else.
+// One ask names both sites, one approval grants both, and the grant resolves
+// at either — and nowhere else.
 func TestOneRequestAndGrantNameSeveralHosts(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
 
 	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
-		SandboxId: testSandboxID, Name: "github", EnvVar: "GH_TOKEN",
-		Hosts:  []string{"API.GitHub.com", "api.githubcopilot.com", "api.github.com"},
-		Uses:   []apimodel.SecretUse{{Description: "run copilot against org/repo"}},
-		Policy: policyAsked(t),
+		SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString("GH_TOKEN"),
+		Hosts: []string{"API.GitHub.com", "api.githubcopilot.com", "api.github.com"},
 	})
 	if err != nil {
 		t.Fatalf("create credential request: %v", err)
@@ -37,7 +33,7 @@ func TestOneRequestAndGrantNameSeveralHosts(t *testing.T) {
 		t.Fatalf("request hosts = %q, want %q: normalized and deduplicated, in the order given", req.Hosts, copilotHosts)
 	}
 
-	approved, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
@@ -50,27 +46,15 @@ func TestOneRequestAndGrantNameSeveralHosts(t *testing.T) {
 	}
 
 	scopes := []store.GrantScope{{Scope: model.SecretGrantScopeSandbox, ScopeKey: testSandboxID}}
-	useID := grant.Uses[0].UseID
 	for _, host := range []string{"api.github.com", "api.githubcopilot.com"} {
 		if _, err := st.FindLiveGrant(ctx, "project-1", secret.ID, host, scopes); err != nil {
 			t.Errorf("no live grant resolves at %s: %v", host, err)
 		}
-		use, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, useID, host)
-		if err != nil {
-			t.Errorf("ApprovedUse at %s: %v", host, err)
-			continue
-		}
-		// The judge is told where this request is approved for: the grant's
-		// host that covers it, not the list.
-		if use.Host != host {
-			t.Errorf("ApprovedUse at %s names %q", host, use.Host)
-		}
 	}
-	if _, err := st.FindLiveGrant(ctx, "project-1", secret.ID, "github.com", scopes); err == nil {
-		t.Error("a grant for api.github.com resolved at its parent")
-	}
-	if _, err := svc.ApprovedUse(ctx, testPoolID, testSandboxID, useID, "evil.example.com"); err == nil {
-		t.Error("ApprovedUse named a use at a host the grant does not cover")
+	for _, host := range []string{"github.com", "evil.example.com"} {
+		if _, err := st.FindLiveGrant(ctx, "project-1", secret.ID, host, scopes); err == nil {
+			t.Errorf("the grant resolved at %s, which it does not cover", host)
+		}
 	}
 }
 
@@ -83,9 +67,7 @@ func TestARetryNamingTheSameHostsInAnotherOrderIsTheSameRequest(t *testing.T) {
 	ask := func(hosts ...string) *model.SecretRequest {
 		t.Helper()
 		req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
-			SandboxId: testSandboxID, Name: "github", EnvVar: "GH_TOKEN", Hosts: hosts,
-			Uses:   []apimodel.SecretUse{{Description: "run copilot against org/repo"}},
-			Policy: policyAsked(t),
+			SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString("GH_TOKEN"), Hosts: hosts,
 		})
 		if err != nil {
 			t.Fatalf("create credential request: %v", err)
@@ -140,37 +122,5 @@ func TestEveryHostOfAGrantMustSitInsideTheSecretsBinding(t *testing.T) {
 	})
 	if err != nil || len(wildcard.Hosts) != 0 {
 		t.Fatalf("wildcard grant = %v, %v; want one with no hosts", wildcard, err)
-	}
-}
-
-// com.github.api may be sent to Copilot's site, but an ask by the ID that
-// names no host is for GitHub alone: listing a place a credential may go does
-// not widen every ask to it (ADR 26-10-02-393 §5).
-func TestAWellKnownAskNamesItsFirstHostUnlessItNamesMore(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, _ := newAgentCredentialService(t)
-	ask := func(hosts ...string) (*model.SecretRequest, error) {
-		return svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
-			SandboxId: testSandboxID, ID: serverapi.NewOptString(wellknown.GitHubAPI), Hosts: hosts,
-			Uses:   []apimodel.SecretUse{{Description: "run copilot against org/repo"}},
-			Policy: policyAsked(t),
-		})
-	}
-	plain, err := ask()
-	if err != nil {
-		t.Fatalf("ask by ID: %v", err)
-	}
-	if !slices.Equal(plain.Hosts, []string{"github.com"}) {
-		t.Fatalf("an ask by ID alone named %q, want github.com alone", plain.Hosts)
-	}
-	both, err := ask(copilotHosts...)
-	if err != nil {
-		t.Fatalf("ask by ID for GitHub and Copilot: %v", err)
-	}
-	if !slices.Equal(both.Hosts, copilotHosts) {
-		t.Fatalf("hosts = %q, want %q", both.Hosts, copilotHosts)
-	}
-	if _, err := ask("api.github.com", "gitlab.com"); err == nil || !strings.Contains(err.Error(), "gitlab.com") {
-		t.Fatalf("err = %v, want the host the ID is not sent to named", err)
 	}
 }

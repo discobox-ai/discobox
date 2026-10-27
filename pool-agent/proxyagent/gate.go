@@ -7,13 +7,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/pkg/hostscope"
 	"github.com/discobox-ai/discobox/pkg/poolauth"
-	"github.com/discobox-ai/discobox/pkg/wellknown"
 	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/proxy"
 )
@@ -26,12 +23,8 @@ import (
 // way to somewhere else.
 const gateHTTPTimeout = 2 * time.Minute
 
-// GateHost is the host a sandbox reaches the discobox API at. It is the
-// registry's, so the proxy, the credential, and the ask for it cannot disagree.
-func GateHost() string {
-	known, _ := wellknown.Lookup(wellknown.DiscoboxSandbox)
-	return known.Host()
-}
+// GateHost is the host a sandbox reaches the discobox API at.
+const GateHost = "api.discobox.internal"
 
 // gateForwardedHeaders are the headers a sandbox's call does not carry on to
 // the control plane: its own credential and hop-by-hop headers, and any claim
@@ -42,59 +35,22 @@ var gateForwardedHeaders = []string{
 	poolauth.ForwardedSandboxHeader, poolauth.ForwardingPoolHeader,
 }
 
-// Gate admits a sandbox's call to the discobox API and answers it from the
-// control plane. It admits only a call carrying the sentinel of a live use of
-// ai.discobox.sandbox, activated for this sandbox for this host, that the judge
-// allows. The sentinel is removed, not swapped: nothing stands behind it. The
-// call goes on with this pool's assertion, which is what the control plane
-// takes as the sandbox's identity (ADR 0140 §3).
+// Gate answers a sandbox's call to the discobox API from the control plane.
+// The pool forwards every call, and the control plane refuses one from a
+// sandbox without DiscoboxAPI (ADR 26-10-27-880 §9, as amended): a sandbox
+// without the flag reaches the control plane under this pool's
+// ScopeSandboxForward assertion naming it (ADR 0140 §3) and is refused there
+// by the sandbox role, so the pool is never sent the flag. Whatever credential
+// the sandbox sent is removed, never forwarded.
 func (r *secretResolver) Gate(ctx context.Context, req proxy.SecretGateRequest) (proxy.SecretGateAdmission, error) {
 	in := req.Request
 	rc, err := readResolveContext(r.contextPath)
 	if err != nil || rc.Token == "" || rc.ControlPlaneURL == "" || rc.PoolID == "" {
 		return proxy.SecretGateAdmission{}, &proxy.SecretGateRefusal{Reason: "this pool cannot reach the control plane yet"}
 	}
-	sentinel := strings.TrimSpace(strings.TrimPrefix(in.Header.Get("Authorization"), "Bearer "))
-	record, ok := r.gateActivation(req.ClientID, sentinel)
-	if !ok {
-		return proxy.SecretGateAdmission{}, &proxy.SecretGateRefusal{Reason: fmt.Sprintf(
-			"the call carries no live use of %s; run it under one: discobox-access run --use <id> -- discobox …", wellknown.DiscoboxSandbox)}
-	}
-	// Most of what the discobox API is asked to do is in the body — which
-	// discobox to create, with what, granted what — so the judge can ask to
-	// see it, and what is forwarded is the body it handed back.
-	body := proxy.NewSecretRequestBody(in.Body)
-	verdict, err := r.Authorize(ctx, proxy.SecretAuthorizeRequest{
-		ClientID:  req.ClientID,
-		Sentinels: []string{sentinel},
-		Method:    in.Method,
-		// The host without its port, which is what the contract says this
-		// field is and what the proxy's own caller states. The gate reaches
-		// Authorize directly rather than through the swapper, so the one
-		// normalization there is this one.
-		Host:   hostscope.Normalize(in.Host),
-		URL:    in.URL.String(),
-		Header: in.Header,
-		Body:   body,
-	})
-	in.Body = body.Reader()
-	if err != nil {
-		return proxy.SecretGateAdmission{}, &proxy.SecretGateRefusal{Reason: "the judge could not decide: " + err.Error(), UseID: record.UseID}
-	}
-	if !verdict.Allow {
-		// A verdict that refuses and says nothing still owes the caller a
-		// sentence: a refusal nobody can read is indistinguishable from a
-		// broken credential (ADR 26-09-22-838 §1).
-		reason := verdict.Reason
-		if reason == "" {
-			reason = "not an approved use of this credential"
-		}
-		return proxy.SecretGateAdmission{}, &proxy.SecretGateRefusal{Reason: reason, UseID: record.UseID}
-	}
-
 	target, err := gateTarget(rc.ControlPlaneURL, in.URL)
 	if err != nil {
-		return proxy.SecretGateAdmission{}, &proxy.SecretGateRefusal{Reason: err.Error(), UseID: record.UseID}
+		return proxy.SecretGateAdmission{}, &proxy.SecretGateRefusal{Reason: err.Error()}
 	}
 	out, err := http.NewRequestWithContext(ctx, in.Method, target, in.Body)
 	if err != nil {
@@ -112,10 +68,10 @@ func (r *secretResolver) Gate(ctx context.Context, req proxy.SecretGateRequest) 
 	resp, err := r.gateClient.Do(out)
 	if err != nil {
 		// Let in, and then the control plane did not answer: the request may
-		// have reached it, so the use it went under stays on the record.
-		return proxy.SecretGateAdmission{UseID: record.UseID}, err
+		// have reached it.
+		return proxy.SecretGateAdmission{}, err
 	}
-	return proxy.SecretGateAdmission{Response: resp, UseID: record.UseID}, nil
+	return proxy.SecretGateAdmission{Response: resp}, nil
 }
 
 // gateTarget is where a gate call goes on the control plane: its base URL, with
@@ -142,21 +98,6 @@ func gateTarget(controlPlaneURL string, in *url.URL) (string, error) {
 	target.RawQuery = in.RawQuery
 	target.Fragment = ""
 	return target.String(), nil
-}
-
-// gateActivation is the live activation a gate call carries: one this process
-// minted for this sandbox, for exactly the gate host. Only an ask by the
-// discobox credential's ID can produce one: the control plane refuses any
-// other ask for that host.
-func (r *secretResolver) gateActivation(sandboxID, sentinel string) (activation, bool) {
-	if r.activations == nil || sentinel == "" {
-		return activation{}, false
-	}
-	record, ok := r.activations.lookup(sentinel)
-	if !ok || record.SandboxID != sandboxID || !slices.Equal(record.Hosts, []string{GateHost()}) {
-		return activation{}, false
-	}
-	return record, true
 }
 
 // gateHTTPClient reaches the control plane the way the resolver does, with a

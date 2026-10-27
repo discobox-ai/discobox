@@ -252,13 +252,7 @@ var poolRuntimeActions = map[string]int{
 	"resolve-gateway-headers": 0,
 	// What an upstream made of a swapped credential (ADR 0132). One call
 	// reports one verdict, so it takes no trailing ID.
-	"sandbox-secret-rejections": 0,
-	// Putting a job to the project's judge (ADR 26-09-22-838 §2). One call is one
-	// job, so it takes no trailing ID.
-	"judge": 0,
-	// Judging a command before its credential is minted (ADR 26-09-22-838
-	// §3). One call is one command, so it takes no trailing ID.
-	"judge-commands":              0,
+	"sandbox-secret-rejections":   0,
 	"sandbox-agent-status-tokens": 0,
 	"sandbox-agent-status":        0,
 	// What each sandbox's list reads answer, posted when it changes
@@ -275,10 +269,6 @@ var poolRuntimeActions = map[string]int{
 	// The agent credentials broker (ADR 0031).
 	"sandbox-credentials":         0,
 	"sandbox-credential-requests": 1, // .../{requestId} polls one request
-	// A sandbox's policy facts, read for the protocol's facts verb (ADR
-	// 26-10-20-782 §4). The sandbox is a query parameter, so it takes no
-	// trailing ID.
-	"sandbox-policy-facts": 0,
 	// Host trust (ADR 0149): an agent's ask, polled by its ID, and the pool's
 	// read of every live trust its proxy enforces.
 	"sandbox-trust-requests": 1, // .../{requestId} polls one request

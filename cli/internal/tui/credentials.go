@@ -9,13 +9,9 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
-	"github.com/discobox-ai/discobox/cli/internal/policyview"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
-	"github.com/discobox-ai/discobox/cli/internal/uselines"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
-	"github.com/discobox-ai/discobox/pkg/policy"
-	"github.com/discobox-ai/discobox/pkg/wellknown"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
@@ -84,12 +80,6 @@ type credentialAnsweredMsg struct {
 	// silence. A change to an existing secret is never here: it goes with the
 	// approval, and the server writes the two together or not at all.
 	applied []string
-	// ruled is an approval that also made the rule it was approved under, and
-	// again is the card that rule was read on: a rule the server refuses is
-	// one to choose differently, so its refusal goes back there rather than
-	// nowhere.
-	ruled bool
-	again func() tea.Cmd
 }
 
 func (m *Model) loadCredentialRequests() tea.Cmd {
@@ -211,21 +201,10 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 	if req.Refresh != nil {
 		return m.askAboutRefresh(req, secrets)
 	}
-	if known, ok := wellknown.Lookup(req.WellKnownID); ok && known.Gate {
-		return m.askAboutGate(req, secrets, known)
-	}
 	items := secretRows(secrets, req)
 	// A new credential is the secrets screen's own form, filled from the
-	// request: a well-known one as that credential — its name, host, and the
-	// command that prints it, with how long a value lasts — so storing it from
-	// its command is the form's default rather than a row of its own.
+	// request: its name and the host it asks for.
 	items = append(items, action{key: "new", press: "n", label: "New credential…", detail: "store it as a project secret and approve with it", enabled: true})
-	if req.Ruleable() {
-		// A rule answers with a credential the project holds; with none
-		// stored yet, its first step offers to store one.
-		items = append(items, action{key: "auto", press: autoApproveKey, label: "Auto approve…",
-			detail: "approve this, and requests like it from now on, under a rule you read first", enabled: true})
-	}
 	items = append(items, action{key: "deny", press: "d", label: "Deny", detail: "answer no; the agent is waiting on one", enabled: true})
 	if req.Raw != "" {
 		items = append(items, action{key: "raw", press: "r", label: "Raw request…", detail: "the request as JSON, as the server sent it", enabled: true})
@@ -238,9 +217,6 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 			return m.showRawRequest(req, func() tea.Cmd { return m.askAboutCredential(req, secrets) })
 		case result == "deny":
 			return m.denyCredential(req)
-		case result == "auto":
-			a.auto = true
-			return m.askRuleSecret(a)
 		case result == "new":
 			a.fresh = true
 			return m.askLifetime(a, m.toRequest(a))
@@ -293,9 +269,6 @@ func secretRows(secrets []Secret, req CredentialRequest) []action {
 	items := make([]action, 0, len(secrets)+4)
 	for _, secret := range secretsForRequest(secrets, req) {
 		detail := secretDetail(secret, req.hosts())
-		if req.WellKnownID != "" && secret.WellKnownID == req.WellKnownID {
-			detail = "answers " + req.WellKnownID + " · " + detail
-		}
 		items = append(items, action{
 			key:      "secret:" + secret.ID,
 			label:    secret.Name,
@@ -305,62 +278,6 @@ func secretRows(secrets []Secret, req CredentialRequest) []action {
 		})
 	}
 	return items
-}
-
-// askAboutGate is the card for a credential with nothing behind it, such as the
-// discobox API (ADR 0140 §1): there is no secret to choose and no value to
-// type, only whether to let the discobox in, and for how long.
-func (m *Model) askAboutGate(req CredentialRequest, secrets []Secret, known wellknown.Credential) tea.Cmd {
-	items := []action{{key: "gate", press: "a", label: "Approve", detail: "let it in, then choose for how long", enabled: true}}
-	if req.Ruleable() {
-		items = append(items, action{key: "auto", press: autoApproveKey, label: "Auto approve…",
-			detail: "let it in, and discoboxes asking the same from now on, under a rule you read first", enabled: true})
-	}
-	items = append(items, action{key: "deny", press: "d", label: "Deny", detail: "answer no; the agent is waiting on one", enabled: true})
-	d := actionsDialog("Credential request", "", items, func(result string) tea.Cmd {
-		a := approval{req: req, secrets: secrets, gate: true}
-		switch result {
-		case "deny":
-			return m.denyCredential(req)
-		case "auto":
-			a.auto = true
-			return m.afterSecret(a, m.toRequest(a))
-		case "gate":
-			return m.afterSecret(a, m.toRequest(a))
-		}
-		return nil
-	})
-	// What approving hands over is the whole point of asking, and the request
-	// card cannot say it: an ordinary grant is one credential, and this one is
-	// the power to hand credentials onward (ADR 0140, Consequences) — on a
-	// create, and by answering its own discoboxes' requests within what it is
-	// separately delegated (ADR 26-09-30-782).
-	d.sections = append(credentialAsk(req, m.secrets.now()), section{label: "what approving gives it", lines: gateGives(known)})
-	d.answerLabel = "let it in?"
-	d.keys = []hint{pressing("enter chooses", "enter"), pressing("esc leaves it waiting", "esc")}
-	m.dialog = d
-	return nil
-}
-
-// gateGives is what being let through a gate hands a discobox, in the words
-// every card that offers it uses: the request's own, and the rule that would
-// answer such requests from now on.
-func gateGives(known wellknown.Credential) []line {
-	return []line{
-		{text: known.Description, tone: toneDim},
-		{text: "it may create discoboxes, and hand them credentials", tone: toneAlert},
-		{text: "but only within what you separately delegate to it", tone: toneAlert},
-	}
-}
-
-// afterSecret is the step after what answers the request is settled: how long,
-// or — when the answer is to make a rule as well — which rule, which is read
-// before its lifetime is (rules.go). back is the dialog before it.
-func (m *Model) afterSecret(a approval, back func() tea.Cmd) tea.Cmd {
-	if a.auto {
-		return m.proposeRules(a, back)
-	}
-	return m.askLifetime(a, back)
 }
 
 // lifetimeCustom is the lifetime menu's way out to one the presets do not
@@ -399,12 +316,6 @@ func (m *Model) askLifetime(a approval, back func() tea.Cmd) tea.Cmd {
 		opensOn:      opensOn,
 		detail:       func(d time.Duration) string { return lifetimeDetail(a.secret, asked, d) },
 	}
-	if a.auto {
-		// One answer for both: the server caps what the rule mints at the
-		// lifetime of the approval that made it.
-		ask.sections = append(ask.sections, ruleSections(a.asRule())...)
-		ask.footer = "this grant lives that long, and so does each one the rule approves after it"
-	}
 	return m.askDuration(ask, func(d time.Duration, _ bool, again func() tea.Cmd) tea.Cmd {
 		next := a
 		next.ttl = d
@@ -413,9 +324,9 @@ func (m *Model) askLifetime(a approval, back func() tea.Cmd) tea.Cmd {
 }
 
 // durationAsk is a lifetime chosen from the presets, or typed: how long a
-// grant lives, the longest one a rule may mint, when a rule lapses. What a
-// row is called and what it says beyond its name are the asker's, since
-// "forever" means something different in each.
+// grant lives, or the longest one a secret allows. What a row is called and
+// what it says beyond its name are the asker's, since "forever" means
+// something different in each.
 type durationAsk struct {
 	title, answerLabel, footer string
 	// customFooter is what the field for one the presets lack says it takes.
@@ -560,11 +471,8 @@ func (m *Model) askCustomDuration(ask durationAsk, chose func(d time.Duration, k
 // it may be sent.
 func grantSection(a approval) section {
 	answered := a.secret.Name
-	switch {
-	case a.fresh:
+	if a.fresh {
 		answered = "a new credential, filled in on the next card"
-	case a.gate:
-		answered = "no secret: its pool lets its uses in"
 	}
 	fields := []field{
 		{label: "credential", value: credentialName(a.req), tone: toneAccent},
@@ -580,8 +488,8 @@ func grantSection(a approval) section {
 }
 
 // delegationPurpose is what a grant to delegate is for, said the same way on
-// the grant and on a rule that mints such grants.
-const delegationPurpose = "delegation — may delegate it, never uses it"
+// the request and on the grant.
+const delegationPurpose = "delegation — may give it to the discoboxes it creates, never uses it"
 
 // lifetimeChosen is where the two kinds of answer part: a new credential still
 // needs its value, and an existing one may need its limit raised. back is the
@@ -615,8 +523,7 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 	// An ask to delegate is not the ask a reader assumes, so it says so before
 	// anything else about the credential.
 	if req.Delegate {
-		fields = append(fields, field{label: "purpose",
-			value: "delegation — to delegate it, never to use it", tone: toneAccent})
+		fields = append(fields, field{label: "purpose", value: delegationPurpose, tone: toneAccent})
 	}
 	if req.Type != "" {
 		fields = append(fields, field{label: "kind", value: req.Type})
@@ -639,123 +546,10 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 	}
 	sections := []section{{label: "asked for", fields: fields}}
 
-	if len(req.Uses) > 0 || req.Justification != "" {
-		what := section{label: "what for"}
-		if req.Delegate {
-			what.label = "uses it would delegate"
-		}
-		for _, use := range req.Uses {
-			what.lines = append(what.lines, useLines(use, tonePlain)...)
-		}
-		if req.Justification != "" {
-			if len(what.lines) > 0 {
-				what.lines = append(what.lines, line{})
-			}
-			what.lines = append(what.lines, line{text: req.Justification, tone: toneDim})
-		}
-		sections = append(sections, what)
-	}
-	// The policy is what approving grants (ADR 26-10-20-782 §3): the uses
-	// say what the agent means to do, and this is what it will be allowed.
-	if len(req.PolicyLines) > 0 {
-		sections = append(sections, section{label: "policy it asks for", lines: policyLines(req.PolicyLines)})
-	}
-	// Last on the card, under what was asked: it is why a person is reading
-	// this at all, and nothing the answer turns on.
-	if tested := ruleTestsSection(req); len(tested.lines) > 0 {
-		sections = append(sections, tested)
+	if req.Justification != "" {
+		sections = append(sections, section{label: "why", lines: []line{{text: req.Justification, tone: toneDim}}})
 	}
 	return sections
-}
-
-// useLines is one use as a card shows it: a bullet on its first line, and
-// the rest of it broken into its parts under that (uselines), so a use an
-// agent wrote as one long sentence reads as its job, what it reads and
-// writes, and its lines, with every word as it was written.
-func useLines(use string, t tone) []line {
-	var out []line
-	for i, part := range uselines.Split(use) {
-		next := line{text: part.Text, tone: t, indent: 1}
-		switch {
-		case i == 0:
-			next.bullet, next.indent = true, 0
-		case part.Hang:
-			next.indent = 2
-		}
-		out = append(out, next)
-	}
-	return out
-}
-
-// policyLines is a policy's rendering as a card draws it, highlighted as
-// syntax (policySpans): each scope it applies in a heading, its statements set
-// in under it and their conditions under those. A line too long for the card
-// wraps onto rows set in past the deepest line, a condition's, so a
-// statement's tail never reads as another statement, nor a heading's as one.
-func policyLines(rendered []policyview.Line) []line {
-	out := make([]line, 0, len(rendered))
-	for _, l := range rendered {
-		out = append(out, line{text: l.Text, indent: l.Indent, hang: 3 - l.Indent, spans: policySpans(l)})
-	}
-	return out
-}
-
-// policySpans highlights a line's tokens as syntax, in the syntax palette a
-// code block uses: the effect green for an allow and red for a deny,
-// keywords, types, quoted names and conditions, and variables each in their
-// kind's color, actions as plain words. A token's note — a variable's value,
-// a word's definition — follows it muted, in parentheses; a variable that
-// does not resolve is noted in the alert color, since it matches nothing.
-func policySpans(l policyview.Line) []span {
-	deny := len(l.Tokens) > 0 && l.Tokens[0].Kind == policy.TokenEffect && l.Tokens[0].Text == string(policy.Deny)
-	out := make([]span, 0, len(l.Tokens))
-	for _, t := range l.Tokens {
-		var style func(*styles) lipgloss.Style
-		switch t.Kind {
-		case policy.TokenEffect:
-			style = func(st *styles) lipgloss.Style { return st.synAllow }
-			if deny {
-				style = func(st *styles) lipgloss.Style { return st.synDeny }
-			}
-		case policy.TokenKeyword:
-			style = func(st *styles) lipgloss.Style { return st.synKeyword }
-		case policy.TokenType:
-			style = func(st *styles) lipgloss.Style { return st.synType }
-		case policy.TokenName, policy.TokenCondition:
-			style = func(st *styles) lipgloss.Style { return st.synString }
-		case policy.TokenVariable:
-			style = func(st *styles) lipgloss.Style { return st.synVariable }
-		default:
-			style = func(st *styles) lipgloss.Style { return st.name }
-		}
-		out = append(out, span{text: t.Text, style: style, glued: t.Glued})
-		if t.Note != "" {
-			note := func(st *styles) lipgloss.Style { return st.synValue }
-			if l.Kind == policyview.Unresolved && t.Kind == policy.TokenVariable {
-				note = func(st *styles) lipgloss.Style { return st.statusER }
-			}
-			out = append(out, span{text: "(" + t.Note + ")", style: note})
-		}
-	}
-	return out
-}
-
-// useFields is one use as the value of a field labeled label, broken up as
-// useLines breaks it: the rows after the first continue the field, set in
-// under its first line.
-func useFields(label, use string) []field {
-	var out []field
-	for i, part := range uselines.Split(use) {
-		next := field{value: "  " + part.Text}
-		switch {
-		case i == 0:
-			next = field{label: label, value: part.Text}
-		case part.Hang:
-			next.value = "    " + part.Text
-		}
-		out = append(out, next)
-	}
-	return out
 }
 
 func credentialName(req CredentialRequest) string {
@@ -819,21 +613,12 @@ func freeSecretName(secrets []Secret, name, kind, host string) string {
 }
 
 // secretsForRequest orders the secrets by how likely each is to be the answer:
-// the one marked as answering the well-known credential asked for, then the
-// host asked for, then a host of the same site, then the unbound ones, then the
-// rest. Order is the whole of the opinion here — every one of them can be
+// the host asked for, then a host of the same site, then the unbound ones, then
+// the rest. Order is the whole of the opinion here — every one of them can be
 // chosen.
 func secretsForRequest(secrets []Secret, req CredentialRequest) []Secret {
 	out := append([]Secret(nil), secrets...)
-	answers := func(secret Secret) bool {
-		return req.WellKnownID != "" && secret.WellKnownID == req.WellKnownID
-	}
 	sort.SliceStable(out, func(i, j int) bool {
-		// The secret marked as answering a well-known credential is the answer
-		// the last approval already gave.
-		if answers(out[i]) != answers(out[j]) {
-			return answers(out[i])
-		}
 		return hostRank(out[i].Host, req) < hostRank(out[j].Host, req)
 	})
 	return out
@@ -911,11 +696,11 @@ func (m *Model) askNewCredentialForm(a approval) tea.Cmd {
 }
 
 // newCredentialForm is the new-secret form filled from a request, with what
-// storing it then does: approve the request, or go on to make a rule with it.
-// about says so above the form, and back is where Esc goes, nothing stored.
+// storing it then does. about says so above the form, and back is where Esc
+// goes, nothing stored.
 func (m *Model) newCredentialForm(a approval, about section, store string, then func(*form, NewSecret) tea.Cmd, back func() tea.Cmd) tea.Cmd {
 	f := secretForm(nil)
-	unmarked := fillFromRequest(f, a.req, a.secrets)
+	fillFromRequest(f, a.req, a.secrets)
 	d := formDialog("New credential", f, func(f *form) tea.Cmd {
 		secret, ok := secretFromForm(f)
 		if !ok {
@@ -924,9 +709,6 @@ func (m *Model) newCredentialForm(a approval, about section, store string, then 
 		return then(f, secret)
 	})
 	d.sections = []section{about}
-	if unmarked != "" {
-		d.sections = append(d.sections, section{label: "why it is not marked", lines: []line{{text: unmarked, tone: toneAlert}}})
-	}
 	// Esc second: a key line is cut from its tail, and the way back — the
 	// request still waiting — is the one thing it must always say.
 	d.keys = []hint{pressing(store, "enter"), pressing("esc back, nothing stored", "esc"), says("↑↓ moves"), says("←→ chooses")}
@@ -935,41 +717,16 @@ func (m *Model) newCredentialForm(a approval, about section, store string, then 
 	return nil
 }
 
-// fillFromRequest fills the new-secret form from what a request asks for: a
-// well-known credential is chosen as its kind, which fills its name, host,
-// command and how long a value lasts (fillWellKnown); any other is named,
+// fillFromRequest fills the new-secret form from what a request asks for: named,
 // typed and bound as the request asks. A name the project already holds for
 // that kind and host is the first free one instead, which the server would
 // otherwise refuse the create for.
-//
-// A well-known ID the project already has a secret marked for is filled as a
-// plain token instead — the same name, host, command and how long a value
-// lasts — since the server refuses to mark a second one: stored that way it
-// answers only the request it is stored for. What it returns says so, for the
-// form to show; empty when the form is filled as asked.
-func fillFromRequest(f *form, req CredentialRequest, secrets []Secret) (unmarked string) {
-	known, ok := wellknown.Lookup(req.WellKnownID)
-	switch marked := markedFor(secrets, req.WellKnownID); {
-	case ok && !known.Gate && marked == nil:
-		f.pickOption("kind", wellKnownKind+known.ID)
-	case ok && !known.Gate:
-		f.set("name", known.Name)
-		f.set("host", known.Host())
-		if len(known.RefreshCommand) > 0 {
-			f.set("command", refreshcmd.Join(known.RefreshCommand))
-			f.choose("source", "command")
-		}
-		if known.RefreshTTL > 0 {
-			f.choose("lasts", itoa(int(known.RefreshTTL/time.Second)))
-		}
-		unmarked = known.ID + " is already answered by " + marked.Name + "; this one is stored without the ID, and answers only this request"
-	default:
-		if secretType(req) == "oauth" {
-			f.pickOption("kind", "oauth")
-		}
-		f.set("name", credentialName(req))
-		f.set("host", req.binding())
+func fillFromRequest(f *form, req CredentialRequest, secrets []Secret) {
+	if secretType(req) == "oauth" {
+		f.choose("kind", "oauth")
 	}
+	f.set("name", credentialName(req))
+	f.set("host", req.binding())
 	kind := "token"
 	if f.chosen("kind") == "oauth" {
 		kind = "oauth"
@@ -982,21 +739,6 @@ func fillFromRequest(f *form, req CredentialRequest, secrets []Secret) (unmarked
 		}
 		f.set("name", free)
 	}
-	return unmarked
-}
-
-// markedFor is the project secret marked as the answer to a well-known ID,
-// or nil when none is.
-func markedFor(secrets []Secret, id string) *Secret {
-	if id == "" {
-		return nil
-	}
-	for i := range secrets {
-		if secrets[i].WellKnownID == id {
-			return &secrets[i]
-		}
-	}
-	return nil
 }
 
 // createAndApprove stores the new credential and answers with it, for the
@@ -1019,7 +761,6 @@ func (m *Model) createAndApprove(a approval, secret NewSecret) tea.Cmd {
 			RequestID:  req.ID,
 			SecretID:   stored.ID,
 			TTLSeconds: lifetime.Seconds(ttl),
-			Policy:     req.Policy,
 		})
 		msg := credentialAnsweredMsg{request: req, approved: true, ttl: ttl, err: err}
 		if err != nil {
@@ -1044,30 +785,7 @@ type approval struct {
 	// secret is empty, and the new-secret form is filled in after the
 	// lifetime.
 	fresh bool
-	// gate is an answer that is no secret at all: the credential is a gate
-	// (wellknown.Credential.Gate), secret is empty, and the server answers it.
-	gate bool
-	// auto is an answer that also makes an approval rule, so that requests
-	// like this one are approved from now on without asking (rules.go).
-	// proposals is what the server offered to make it from, and rule what was
-	// chosen from them or written by hand, a part at a time.
-	auto      bool
-	proposals RuleProposals
-	rule      ApprovalRule
-	// heldPolicy and heldRepositories are the policy's lines and the
-	// repositories as they were left — half typed included — for when those
-	// steps open again. repositoriesShown and policyShown are the rule's
-	// repositories and policy made safe to draw, beside the server's text in
-	// rule, which is what is sent; rule.Policy is nil for the policy as
-	// asked, which is sent by leaving it out.
-	heldPolicy, heldRepositories lineList
-	repositoriesShown            []string
-	policyShown                  *policy.Policy
-	ttl                          time.Duration
-	// stored is the name of a secret this approval stored on its way — auto
-	// approve's new credential — which stays whatever comes of the rule, and
-	// is said whenever the flow is left without one.
-	stored string
+	ttl   time.Duration
 	// bindTo and limit are what the approver agreed to change on the secret so
 	// the grant fits it: its binding (empty releases it) and its grant limit.
 	// Nil leaves each alone. They go with the approval, which the server
@@ -1083,16 +801,6 @@ type approval struct {
 // step after it.
 func (m *Model) toRequest(a approval) func() tea.Cmd {
 	return func() tea.Cmd { return m.askAboutCredential(a.req, a.secrets) }
-}
-
-// backFromSecret is where Esc goes from the first step after a secret was
-// chosen: the card it was chosen on, which for an approval that makes a rule
-// is the one asking what the rule answers with.
-func (m *Model) backFromSecret(a approval) func() tea.Cmd {
-	if a.auto {
-		return func() tea.Cmd { return m.askRuleSecret(a) }
-	}
-	return m.toRequest(a)
 }
 
 // chooseSecret is the first step's answer: the secret, then whatever it raises
@@ -1120,7 +828,7 @@ func (m *Model) chooseSecret(a approval, secretID string) tea.Cmd {
 func (m *Model) confirmGrantHost(a approval) tea.Cmd {
 	bound := normalizeHostName(a.secret.Host)
 	if bound == "" || hostscope.CoversEvery([]string{bound}, a.req.hosts()) {
-		return m.afterSecret(a, m.backFromSecret(a))
+		return m.askLifetime(a, m.toRequest(a))
 	}
 	// The binding that would cover both, when there is one: a credential asked
 	// for at github.com and bound to api.github.com belongs to the site, and
@@ -1143,7 +851,7 @@ func (m *Model) confirmGrantHost(a approval) tea.Cmd {
 			what = "binding " + a.secret.Name + " to " + host
 		}
 		next.changes = append(slices.Clip(a.changes), what)
-		return m.afterSecret(next, func() tea.Cmd { return m.confirmGrantHost(a) })
+		return m.askLifetime(next, func() tea.Cmd { return m.confirmGrantHost(a) })
 	})
 	d.sections = []section{{
 		label: "the conflict",
@@ -1161,7 +869,7 @@ func (m *Model) confirmGrantHost(a approval) tea.Cmd {
 	// Saying no goes back to the question rather than nowhere. A dialog that
 	// closes onto the list, having done nothing and said nothing, is how a
 	// deliberate "not that one" reads as the window ignoring the keypress.
-	d.onCancel = m.backFromSecret(a)
+	d.onCancel = m.toRequest(a)
 	m.dialog = d
 	return nil
 }
@@ -1184,14 +892,14 @@ func commonParent(a, b string) string {
 func (m *Model) confirmGrantLimit(a approval, back func() tea.Cmd) tea.Cmd {
 	limit := a.secret.MaxTTL
 	if limit <= 0 || (a.ttl > 0 && a.ttl <= limit) {
-		return m.settleApproval(a, back)
+		return m.finishApproval(a)
 	}
 	d := confirmDialog("Longer than the credential allows", "", func(string) tea.Cmd {
 		next := a
 		seconds := lifetime.Seconds(a.ttl)
 		next.limit = &seconds
 		next.changes = append(slices.Clip(a.changes), "raising "+a.secret.Name+"'s limit to "+lifetime.Label(a.ttl))
-		return m.settleApproval(next, func() tea.Cmd { return m.confirmGrantLimit(a, back) })
+		return m.finishApproval(next)
 	})
 	d.sections = []section{{
 		label: "the conflict",
@@ -1212,16 +920,6 @@ func (m *Model) confirmGrantLimit(a approval, back func() tea.Cmd) tea.Cmd {
 	return nil
 }
 
-// settleApproval is what follows the last question: the approval itself, or,
-// for one that makes a rule, the card that rule is read on first (reviewRule).
-// back is the question before it.
-func (m *Model) settleApproval(a approval, back func() tea.Cmd) tea.Cmd {
-	if a.auto {
-		return m.reviewRule(a, back)
-	}
-	return m.finishApproval(a, nil)
-}
-
 // finishApproval mints the grant, with whatever the questions agreed to change
 // on the secret carried in the same approval: the server writes them together
 // or not at all, so a refused approval leaves the credential as it was.
@@ -1230,10 +928,7 @@ func (m *Model) settleApproval(a approval, back func() tea.Cmd) tea.Cmd {
 // server to default: the default is the secret's own ceiling, which most
 // credentials do not have, and a window that stayed quiet about it handed out
 // permanent credentials without ever saying the word.
-//
-// An approval that makes a rule carries it in the same write, and again is the
-// card it was read on, where a refusal of the rule goes back to.
-func (m *Model) finishApproval(a approval, again func() tea.Cmd) tea.Cmd {
+func (m *Model) finishApproval(a approval) tea.Cmd {
 	what := "approving for " + lifetime.Label(a.ttl) + "…"
 	if len(a.changes) > 0 {
 		what = strings.Join(a.changes, " and ") + ", approving…"
@@ -1244,21 +939,11 @@ func (m *Model) finishApproval(a approval, again func() tea.Cmd) tea.Cmd {
 		TTLSeconds:          lifetime.Seconds(a.ttl),
 		SecretHost:          a.bindTo,
 		SecretMaxTTLSeconds: a.limit,
-		Policy:              a.req.Policy,
-	}
-	if a.auto {
-		rule := a.rule
-		sent.Rule = &rule
-		what = "making the rule, and " + what
 	}
 	m.dialog = statusDialog("Credential request", what)
 	return func() tea.Msg {
 		err := m.ds.ApproveCredentialRequest(m.ctx, a.req.Server, sent)
-		msg := credentialAnsweredMsg{request: a.req, approved: true, ttl: a.ttl, err: err, ruled: a.auto, again: again}
-		if err != nil && a.stored != "" {
-			msg.applied = []string{storedNote(a.stored, a.req.WellKnownID)}
-		}
-		return msg
+		return credentialAnsweredMsg{request: a.req, approved: true, ttl: a.ttl, err: err}
 	}
 }
 
@@ -1301,29 +986,10 @@ func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 			done.lines = append(done.lines, line{}, line{text: "it was done for this approval; the secrets screen (F4) removes it if the grant is not coming", tone: toneDim})
 			d.sections = append(d.sections, done)
 		}
-		if msg.again != nil {
-			// A rule the server will not make is one to choose differently:
-			// its refusal says which half did not cover the request, and the
-			// way back to choosing is from here.
-			d.sections = append(d.sections, section{lines: []line{
-				{text: "no rule was made · esc goes back to it, to choose other discoboxes or other uses", tone: toneDim},
-			}})
-			d.onCancel = msg.again
-		}
 		m.dialog = d
 		return m.loadCredentialRequests()
 	}
 	m.dialog = nil
-	if msg.approved && msg.ruled {
-		// The rule just made belongs in the secrets screen's table, when that
-		// is what is behind the card.
-		reload := m.loadCredentialRequests()
-		if m.secretsOpen {
-			reload = tea.Batch(reload, m.loadSecrets())
-		}
-		return tea.Batch(reload,
-			m.report(false, "approved %s for %s, and made the rule that approves requests like it", credentialName(msg.request), lifetime.Label(msg.ttl)))
-	}
 	if msg.approved {
 		// The lifetime is in the report because it is the half of what was
 		// just handed out that nothing else on screen will say again.

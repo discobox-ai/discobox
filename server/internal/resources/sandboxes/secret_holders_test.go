@@ -23,9 +23,7 @@ func TestMarkSecretHoldersDirtyTxMarksTheSandboxesTheSecretIsInjectedInto(t *tes
 	for _, assignment := range []*model.SandboxSecret{
 		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: "sec-1", EnvName: "TOKEN", Sentinel: "sentinel-1"},
 		{ProjectID: "project-1", SandboxID: "sb-2", SecretID: "sec-1", EnvName: "TOKEN", Sentinel: "sentinel-2"},
-		// An agent's credential reaches its sandbox as an activation, not as a
-		// registered sentinel, so its holder has nothing to re-register.
-		{ProjectID: "project-1", SandboxID: "sb-3", SecretID: "sec-1", EnvName: "AGENT_TOKEN", Sentinel: "sentinel-3", AgentRequested: true},
+		{ProjectID: "project-1", SandboxID: "sb-3", SecretID: "sec-1", EnvName: "AGENT_TOKEN", Sentinel: "sentinel-3"},
 		{ProjectID: "project-1", SandboxID: "sb-4", SecretID: "sec-2", EnvName: "TOKEN", Sentinel: "sentinel-4"},
 	} {
 		if err := st.CreateSandboxSecret(ctx, assignment); err != nil {
@@ -48,7 +46,7 @@ func TestMarkSecretHoldersDirtyTxMarksTheSandboxesTheSecretIsInjectedInto(t *tes
 		got = append(got, row.ResourceID)
 	}
 	slices.Sort(got)
-	want := []string{SandboxDirtyID("project-1", "sb-1"), SandboxDirtyID("project-1", "sb-2")}
+	want := []string{SandboxDirtyID("project-1", "sb-1"), SandboxDirtyID("project-1", "sb-2"), SandboxDirtyID("project-1", "sb-3")}
 	if !slices.Equal(got, want) {
 		t.Fatalf("dirty = %v, want %v", got, want)
 	}

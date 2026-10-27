@@ -18,13 +18,11 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/endpoint"
 	"github.com/discobox-ai/discobox/pkg/imagecache"
-	"github.com/discobox-ai/discobox/pkg/judge/jev"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/auth/discobot"
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/resources/gateways"
-	"github.com/discobox-ai/discobox/server/internal/resources/judges"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
 	"github.com/discobox-ai/discobox/server/internal/service"
 	"github.com/discobox-ai/discobox/server/internal/services"
@@ -191,16 +189,6 @@ func Run(ctx context.Context) error {
 		}
 	}
 
-	// Jev is asked by this server itself, so its client is built here, from
-	// the key the configuration already insisted on (ADR 26-10-01-324 §1).
-	var judgeJev *jev.Client
-	if cfg.JudgeBackend == config.JudgeBackendJev {
-		judgeJev, err = jev.New(jev.Config{APIKey: cfg.JevAPIKey, Model: cfg.JevModel})
-		if err != nil {
-			return fmt.Errorf("initialize the Jev judge: %w", err)
-		}
-	}
-
 	// Resolved before the app is built: GET /ssh is an ordinary generated
 	// handler reading services.Services, so the discovery document has to
 	// exist by the time the router does.
@@ -239,9 +227,6 @@ func Run(ctx context.Context) error {
 		Harnesses:                      cfg.Harnesses,
 		ListenEndpoints:                cfg.Listen,
 		ArchiveRetention:               cfg.ArchiveRetention,
-		Judging:                        judges.Judging{Commands: cfg.JudgeCommands, Requests: cfg.JudgeCredentials},
-		JudgeJev:                       judgeJev,
-		JudgeJevFallback:               cfg.JevUnsure == config.JevUnsureHarness,
 		ConfiguredGateways:             gateways.Configured{Default: defaultGateways, ByProject: projectGateways},
 		ServerDefaults: dockerworker.ServerDefaults{
 			SandboxBaseImage: cfg.DockerSandboxBaseImage,

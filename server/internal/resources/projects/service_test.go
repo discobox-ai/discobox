@@ -289,7 +289,7 @@ func TestCreateProjectCopiesProvidersPoolsAndConfiguredHarnesses(t *testing.T) {
 	if len(bindings) != 1 || bindings[0].SecretID != secrets[0].ID {
 		t.Fatalf("bindings = %#v; want one pointing at the copied secret", bindings)
 	}
-	grants, err := st.ListSecretGrants(ctx, project.ID, secrets[0].ID, "")
+	grants, err := st.ListSecretGrants(ctx, project.ID, secrets[0].ID)
 	if err != nil {
 		t.Fatalf("list grants: %v", err)
 	}

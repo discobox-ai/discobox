@@ -130,8 +130,7 @@ func load(path string) (*agentcreds.Client, materialStamp, error) {
 	if err != nil {
 		return nil, materialStamp{}, fmt.Errorf("pool credentials endpoint: %w", err)
 	}
-	// No client-wide timeout: the protocol client bounds each call itself,
-	// and a use waits on the pool's judge for far longer than any other call.
+	// No client-wide timeout: the protocol client bounds each call itself.
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			// Never proxied: this call goes straight to the pool, and the
@@ -186,8 +185,8 @@ func (r *Relay) RequestStatus(ctx context.Context, requestID string) (agentcreds
 	return r.current().RequestStatus(ctx, requestID)
 }
 
-func (r *Relay) Get(ctx context.Context, body agentcreds.UseBody) (agentcreds.UseResponse, error) {
-	return r.current().Get(ctx, body)
+func (r *Relay) Environment(ctx context.Context) (map[string]string, error) {
+	return r.current().Environment(ctx)
 }
 
 func (r *Relay) Trusts(ctx context.Context) ([]agentcreds.Trust, error) {
@@ -204,10 +203,6 @@ func (r *Relay) TrustRequestStatus(ctx context.Context, requestID string) (agent
 
 func (r *Relay) AuditHTTP(ctx context.Context, query agentcreds.AuditQuery) ([]agentcreds.AuditExchange, error) {
 	return r.current().AuditHTTP(ctx, query)
-}
-
-func (r *Relay) Facts(ctx context.Context) (agentcreds.FactsResponse, error) {
-	return r.current().Facts(ctx)
 }
 
 // Serve runs the loopback protocol endpoint until ctx is done.
@@ -230,10 +225,10 @@ func Serve(ctx context.Context, logger *slog.Logger, relay *Relay, addr string) 
 		Handler:           agentcreds.NewHandler(relay),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		// Longer than the longest call the relay makes, a use waiting on the
-		// pool's judge, so a slow pool answer reaches the caller as the pool's
-		// error rather than as a truncated response.
-		WriteTimeout: agentcreds.UseTimeout + 30*time.Second,
+		// Longer than any call the relay makes to the pool, so a slow pool
+		// answer reaches the caller as the pool's error rather than as a
+		// truncated response.
+		WriteTimeout: 2 * time.Minute,
 		IdleTimeout:  120 * time.Second,
 		BaseContext:  func(net.Listener) context.Context { return ctx },
 	}

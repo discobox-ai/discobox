@@ -71,12 +71,7 @@ type requestMeta struct {
 	// already recorded as blocked. Its response is the proxy's own, so the
 	// response path neither records it again nor treats it as the upstream's
 	// word on a credential.
-	answered bool
-	// authorized is a request swapSecrets already put to the authorizer. A
-	// request to a trusted host that carried no sentinel was never asked
-	// about there, and is asked about on its own below; one that carried a
-	// sentinel was asked about against both, and must not be asked twice.
-	authorized bool
+	answered   bool
 	cacheKey   string
 	cacheError string
 	// gateway is the gateway the request falls under (ADR 26-10-16-470), and
@@ -96,20 +91,12 @@ type requestMeta struct {
 	requestBodyCloseOnce sync.Once
 	requestBodyBytes     int64
 	swappedHeaders       []string
-	// swappedUseIDs names the approved credential uses this request spent, for
-	// the audit row's join to the control plane's verdict trail (ADR 0130 §3).
-	//
-	// The unauthorized retry (ADR 0059) does not add to it. The retry re-swaps
-	// the same sentinels for the same client and host, which is the same
-	// activation and so the same uses, and the 401 and the retry are audited as
-	// two rows off this one meta — so writing the retry's result here would
-	// backdate it onto the 401's row, which is written after the retry is
-	// chosen.
-	swappedUseIDs []string
-	// swappedSecretIDs names the secrets this request carried, for every kind
-	// of sentinel (ADR 26-10-01-240). Like swappedUseIDs, the unauthorized
-	// retry does not add to it: it re-swaps the same sentinels, which stand for
-	// the same secrets.
+	// swappedSecretIDs names the secrets this request carried (ADR
+	// 26-10-01-240). The unauthorized retry (ADR 0059) does not add to it: it
+	// re-swaps the same sentinels, which stand for the same secrets, and the
+	// 401 and the retry are audited as two rows off this one meta — so
+	// writing the retry's result here would backdate it onto the 401's row,
+	// which is written after the retry is chosen.
 	swappedSecretIDs []string
 	// swappedSentinels is which sentinels this request carried, kept beside the
 	// header names they were found in because a rejection has to name the
@@ -135,8 +122,7 @@ type requestMeta struct {
 	retryable bool
 	retried   bool
 	// trust is the client's pin for this request's endpoint, when it holds
-	// one: the request goes out on the trust's own transport, and is judged
-	// against the uses the host was trusted for.
+	// one: the request goes out on the trust's own transport.
 	trust *pinnedTrust
 }
 
@@ -482,16 +468,6 @@ func (h *httpProxy) setupHandlers() {
 			span.End()
 			return req, refused
 		}
-		// A request to a trusted host is judged whether or not it carries a
-		// credential; one that carried a sentinel was judged against both in
-		// swapSecrets, which is what meta.authorized records.
-		if meta.trust != nil && !meta.authorized {
-			if refused := h.authorizeSwap(req, meta, client, requestURL(req), req.Header.Clone(), nil); refused != nil {
-				span.End()
-				return req, refused
-			}
-			meta.authorized = true
-		}
 		if viaGateway {
 			if refused := h.resolveGateway(req, meta, client, applied); refused != nil {
 				return req, refused
@@ -651,7 +627,6 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 		AppliedPattern:       meta.appliedPattern,
 		AppliedHeaders:       meta.appliedHeaders,
 		ForwardedURL:         meta.forwardedURL,
-		SwappedUseIDs:        meta.swappedUseIDs,
 		SwappedSecretIDs:     meta.swappedSecretIDs,
 		RedactRequestHeaders: meta.redactRequestHeaders(),
 		RequestHeaders:       req.Header,
@@ -668,11 +643,11 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 // resolved real values and records which header names and URL were affected so
 // the audit trail redacts them. The real value is never written to audit.
 //
-// A request carrying sentinels is authorized first, and one that is not
-// allowed is answered here, with the response swapSecrets returns, and never
-// sent. Authorizing before resolving is the point: a refused request decrypts
-// nothing, and a value already in the cache does not carry a new operation
-// through on the strength of an older one (ADR 26-09-22-838 §4).
+// A request carrying sentinels is authorized first — held to its secrets'
+// routes — and one that is not allowed is answered here, with the response
+// swapSecrets returns, and never sent. Authorizing before resolving is the
+// point: a refused request decrypts nothing, and a value already in the cache
+// does not carry a request its routes refuse.
 func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client clientIdentity) *http.Response {
 	swapper := h.swapper
 	if !swapper.Active(client.ID) {
@@ -692,7 +667,6 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 		return refused
 	}
 	span.SetAttributes(attribute.Bool("proxy.secret_swap.authorized", true))
-	meta.authorized = true
 	var preSwapQuery string
 	if req.URL != nil {
 		preSwapQuery = req.URL.RawQuery
@@ -714,7 +688,6 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 		return nil
 	}
 	meta.swappedHeaders = result.Headers
-	meta.swappedUseIDs = result.UseIDs
 	meta.swappedSecretIDs = result.SecretIDs
 	meta.swappedSentinels = result.Sentinels
 	meta.reportSentinels = result.Reportable
@@ -765,18 +738,11 @@ func (h *httpProxy) refuseUnresolved(req *http.Request, meta *requestMeta, clien
 // internet (ADR 0140 §2). What the resolver admits is answered by the upstream
 // behind the gate and recorded like any exchange, a 502 included when the gate
 // fails after letting it in; what it refuses is answered here with a 403 and
-// recorded once, as blocked. Nothing is swapped on
-// the way: the sentinel is the resolver's to recognize and remove.
+// recorded once, as blocked. Nothing is swapped on the way.
 func (h *httpProxy) serveGate(req *http.Request, meta *requestMeta, client clientIdentity, swapper *secrets.Swapper) *http.Response {
 	admitted, err := swapper.Gate(meta.ctx, secrets.GateRequest{ClientID: client.ID, Request: req})
 	var refusal *secrets.GateRefusal
 	if err == nil || !errors.As(err, &refusal) {
-		// Let in. The use it was let in under is recorded on its row, as a
-		// swapped credential's is: it is what joins the request to the
-		// approval that allowed it.
-		if admitted.UseID != "" {
-			meta.swappedUseIDs = []string{admitted.UseID}
-		}
 		if err == nil {
 			return admitted.Response
 		}
@@ -786,10 +752,6 @@ func (h *httpProxy) serveGate(req *http.Request, meta *requestMeta, client clien
 		// the upstream failed — a 502, by the response path, like any
 		// other — and never as a request the proxy refused and did not send.
 		return goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusBadGateway, "discobox API unreachable: "+err.Error())
-	}
-	var useIDs []string
-	if refusal.UseID != "" {
-		useIDs = []string{refusal.UseID}
 	}
 	status := http.StatusForbidden
 	meta.answered = true
@@ -806,7 +768,6 @@ func (h *httpProxy) serveGate(req *http.Request, meta *requestMeta, client clien
 		Status:         status,
 		Blocked:        true,
 		BlockedReason:  "gate: " + err.Error(),
-		SwappedUseIDs:  useIDs,
 		RequestHeaders: req.Header,
 	})
 	meta.span.End()
@@ -814,81 +775,53 @@ func (h *httpProxy) serveGate(req *http.Request, meta *requestMeta, client clien
 }
 
 // authorizeSwap asks whether a request may carry the credentials its sentinels
-// stand for, or go to a host the client trusts by a pin, and answers it here
-// when it may not. What is asked about is the request as the sandbox sent it —
-// nothing has been resolved yet, so it holds sentinels and never a credential
-// — and a refusal is audited the same way as one the judge returns. An
-// authorizer that cannot answer refuses: a credential is resolved only for a
-// request something agreed to.
+// stand for, and answers it here when it may not. What is asked about is the
+// request as the sandbox sent it — nothing has been resolved yet, so it holds
+// sentinels and never a credential. An authorizer that cannot answer refuses:
+// a credential is resolved only for a request something agreed to.
 func (h *httpProxy) authorizeSwap(req *http.Request, meta *requestMeta, client clientIdentity, preURL string, preSwapHeader http.Header, matched []string) *http.Response {
-	var trustUseIDs []string
-	if meta.trust != nil {
-		trustUseIDs = meta.trust.UseIDs
-	}
-	// The body goes with the request so the judge can ask to see it. Whether
-	// or not it did, what is sent on is the body the authorizer handed back.
-	body := secrets.NewRequestBody(req.Body)
 	verdict, err := h.swapper.Authorize(meta.ctx, secrets.AuthorizeRequest{
-		ClientID:    client.ID,
-		Sentinels:   matched,
-		TrustUseIDs: trustUseIDs,
-		Method:      req.Method,
-		Host:        req.Host,
-		URL:         preURL,
-		Header:      preSwapHeader,
-		Body:        body,
+		ClientID:  client.ID,
+		Sentinels: matched,
+		Method:    req.Method,
+		Host:      req.Host,
+		URL:       preURL,
+		Header:    preSwapHeader,
 	})
-	if body != nil {
-		req.Body = body.Reader()
-	}
 	if err == nil && verdict.Allow {
 		return nil
 	}
 	reason := refusalReason(verdict, err)
-	if verdict.Reason == "" && err == nil && len(matched) == 0 {
-		// Nothing here spends a credential, so the sentence about one would be
-		// the wrong one: this request was refused for where it is going.
-		reason = "not an approved use of this host"
-	}
-	said := "blocked by proxy: " + reason
-	answer := secrets.Refusal{Status: http.StatusForbidden, ContentType: goproxy.ContentTypeText, Body: []byte(said)}
-	if verdict.Refuse != nil && !verdict.Allow {
-		// The request's own protocol has a way to say no that its client
-		// shows, where a 403's body it would not (ADR 26-09-26-240 §5).
-		if own, ok := verdict.Refuse(meta.ctx, said); ok {
-			answer = own
-		}
-	}
+	status := http.StatusForbidden
 	meta.answered = true
-	meta.span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", answer.Status))
+	meta.span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", status))
 	h.recordRefusal(req, meta, client, refusalRecord{
 		url:    preURL,
 		header: preSwapHeader,
-		reason: "judge: " + reason,
-		useIDs: verdict.UseIDs,
-		status: answer.Status,
+		reason: "route: " + reason,
+		status: status,
 	})
-	return goproxy.NewResponse(req, answer.ContentType, answer.Status, string(answer.Body))
+	return goproxy.NewResponse(req, goproxy.ContentTypeText, status, "blocked by proxy: "+reason)
 }
 
 // refusalReason is what a refused request is answered with, whichever way the
 // ask ended. A verdict that refuses and says nothing still has to say
 // something: a refusal nobody can read is indistinguishable from a broken
-// credential (ADR 26-09-22-838 §1).
+// credential.
 func refusalReason(verdict secrets.Verdict, err error) string {
 	switch {
 	case err != nil:
-		return "the judge could not decide: " + err.Error()
+		return "the credential's routes could not be read: " + err.Error()
 	case verdict.Reason == "":
-		return "not an approved use of this credential"
+		return "not a route of this credential"
 	default:
 		return verdict.Reason
 	}
 }
 
 // refusalRecord is one refused request as the audit trail keeps it: the URL and
-// headers as the sandbox sent them, why it was refused, the uses it was refused
-// under, and the status the sandbox actually received.
+// headers as the sandbox sent them, why it was refused, and the status the
+// sandbox actually received.
 //
 // The status is the caller's because a refusal is not always the answer. A
 // first attempt refused before it is sent is answered 403 here; a refused
@@ -896,20 +829,17 @@ func refusalReason(verdict secrets.Verdict, err error) string {
 // already said, so claiming a 403 would put a response in the trail that
 // nobody received.
 //
-// The reason is the row's whole BlockedReason, led by what refused it: "judge:"
-// for a verdict, "credential unavailable:" for a sentinel nothing could
-// resolve.
+// The reason is the row's whole BlockedReason, led by what refused it: "route:"
+// for a credential's routes, "credential unavailable:" for a sentinel nothing
+// could resolve.
 type refusalRecord struct {
 	url    string
 	header http.Header
 	reason string
-	useIDs []string
 	status int
 }
 
-// recordRefusal writes the blocked row a refusal leaves behind. Nothing was
-// substituted, so the uses come from the verdict — a refusal is still recorded
-// against what it was about (ADR 26-09-22-838 §8).
+// recordRefusal writes the blocked row a refusal leaves behind.
 func (h *httpProxy) recordRefusal(req *http.Request, meta *requestMeta, client clientIdentity, rec refusalRecord) {
 	h.audit.RecordHTTP(audit.HTTPEvent{
 		Context:        meta.ctx,
@@ -923,7 +853,6 @@ func (h *httpProxy) recordRefusal(req *http.Request, meta *requestMeta, client c
 		Status:         rec.status,
 		Blocked:        true,
 		BlockedReason:  rec.reason,
-		SwappedUseIDs:  rec.useIDs,
 		RequestHeaders: rec.header,
 	})
 }
@@ -1077,9 +1006,9 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 	defer span.End()
 
 	// A retry carries a credential the first attempt did not, so it is
-	// authorized the way the first attempt was (ADR 26-09-22-838 §4): the same
-	// derivation, over the request about to be sent, because the grant behind
-	// it can have been revoked in the time the upstream took to refuse.
+	// authorized the way the first attempt was: the same derivation, over the
+	// request about to be sent, because what the pool holds for the sentinel
+	// can have changed in the time the upstream took to refuse.
 	//
 	// The set comes from Match and not from what the first attempt managed to
 	// resolve. The swaps below re-scan every sentinel from scratch, so a
@@ -1088,37 +1017,24 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 	// named it.
 	previous := h.rebuiltRequest(req, meta)
 	matched := swapper.Match(previous, meta.client.ID)
-	var retryTrustUseIDs []string
-	if meta.trust != nil {
-		retryTrustUseIDs = meta.trust.UseIDs
-	}
-	// The body the first attempt sent, which is held whole: a request is
-	// retried only when it was.
-	retryBody := io.ReadCloser(http.NoBody)
-	if len(meta.retryBody) > 0 {
-		retryBody = io.NopCloser(bytes.NewReader(meta.retryBody))
-	}
 	verdict, err := swapper.Authorize(meta.ctx, secrets.AuthorizeRequest{
-		ClientID:    meta.client.ID,
-		Sentinels:   matched,
-		TrustUseIDs: retryTrustUseIDs,
-		Method:      req.Method,
-		Host:        req.Host,
-		URL:         meta.url(req),
-		Header:      meta.preSwapHeader,
-		Body:        secrets.NewRequestBody(retryBody),
+		ClientID:  meta.client.ID,
+		Sentinels: matched,
+		Method:    req.Method,
+		Host:      req.Host,
+		URL:       meta.url(req),
+		Header:    meta.preSwapHeader,
 	})
 	if err != nil || !verdict.Allow {
 		// Not an answer to the sandbox: the request has already been sent and
 		// answered, so the upstream's own 401 stands. What the refusal owes is
 		// the trail — the retry is refused where the first attempt was allowed,
-		// and ADR 26-09-22-838 §8 wants that recorded rather than only traced.
+		// which is recorded rather than only traced.
 		span.SetAttributes(attribute.Bool("proxy.secret_swap.retry.authorized", false))
 		h.recordRefusal(req, meta, meta.client, refusalRecord{
 			url:    meta.url(req),
 			header: meta.preSwapHeader,
-			reason: "judge: " + refusalReason(verdict, err),
-			useIDs: verdict.UseIDs,
+			reason: "route: " + refusalReason(verdict, err),
 			// What the sandbox got is the upstream's own answer, which is
 			// going down the wire unchanged.
 			status: resp.StatusCode,
@@ -1379,7 +1295,6 @@ func (s *upgradedResponseStream) auditEvent(duration time.Duration) audit.HTTPEv
 		AppliedPattern:       s.meta.appliedPattern,
 		AppliedHeaders:       s.meta.appliedHeaders,
 		ForwardedURL:         s.meta.forwardedURL,
-		SwappedUseIDs:        s.meta.swappedUseIDs,
 		SwappedSecretIDs:     s.meta.swappedSecretIDs,
 		RedactRequestHeaders: s.meta.redactRequestHeaders(),
 		RequestHeaders:       s.req.Header,
@@ -1481,7 +1396,6 @@ func (s *responseStream) finish(aborted bool, readErr error) {
 			AppliedPattern:       s.meta.appliedPattern,
 			AppliedHeaders:       s.meta.appliedHeaders,
 			ForwardedURL:         s.meta.forwardedURL,
-			SwappedUseIDs:        s.meta.swappedUseIDs,
 			SwappedSecretIDs:     s.meta.swappedSecretIDs,
 			RedactRequestHeaders: s.meta.redactRequestHeaders(),
 			RequestHeaders:       s.req.Header,

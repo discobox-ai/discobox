@@ -7,26 +7,23 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-
-	"github.com/discobox-ai/discobox/pkg/policy"
 )
 
-// Service is the server half of the protocol. An implementation owns the four
-// decisions the protocol does not make: whose credentials these are, what Get
-// returns, how a request reaches a human, and whether a command is judged
-// before Get answers.
+// Service is the server half of the protocol. An implementation owns the
+// decisions the protocol does not make: whose credentials these are, how a
+// request reaches a human, and how a granted credential is delivered.
 type Service interface {
-	// List returns the credentials the caller may use and their approved uses.
-	// It never returns values.
+	// List returns the credentials the caller may use. It never returns
+	// values.
 	List(ctx context.Context) ([]Credential, error)
 	// Request records an ask and returns immediately with a pending status.
 	// Approval is human-latency, so this must not block on it.
 	Request(ctx context.Context, body RequestBody) (RequestStatus, error)
 	// RequestStatus reads a request's current status.
 	RequestStatus(ctx context.Context, requestID string) (RequestStatus, error)
-	// Get returns a value for one declared command, or ErrDenied when the
-	// implementation judged the command and refused it.
-	Get(ctx context.Context, body UseBody) (UseResponse, error)
+	// Environment returns every variable a credential is delivered in and
+	// what is delivered there now. It never returns a credential's value.
+	Environment(ctx context.Context) (map[string]string, error)
 	// Trusts returns the host trusts the caller holds (ADR 0149).
 	Trusts(ctx context.Context) ([]Trust, error)
 	// RequestTrust records an ask to trust a host and returns immediately:
@@ -39,11 +36,6 @@ type Service interface {
 	// (ADR 26-10-02-678). The query's limit is already settled. An
 	// implementation that keeps no egress record returns none.
 	AuditHTTP(ctx context.Context, query AuditQuery) ([]AuditExchange, error)
-	// Facts returns what the implementation recorded about the caller and
-	// what each policy variable resolves to for it (ADR 26-10-20-782 §4). An
-	// implementation that records nothing returns empty facts and the
-	// variables resolved against them.
-	Facts(ctx context.Context) (FactsResponse, error)
 }
 
 // ErrNotFound makes a handler answer 404. It is the "this id means nothing to
@@ -79,11 +71,8 @@ func NewHandler(svc Service) http.Handler {
 		// that predates hosts sends it on every ask, empty when it named none,
 		// which is an ask for nothing in particular and is read as one. A host
 		// it did name is refused rather than dropped (ADR 26-10-02-393 §4):
-		// dropped, a free-form ask would name no destination, and an ask by a
-		// well-known ID would widen from the host it named to the ID's whole
-		// site — wider than it meant, and what a person would be shown to
-		// approve. Such a client cannot send hosts, so the refusal says what
-		// it can do: be replaced.
+		// dropped, the ask would name no destination it meant. Such a client
+		// cannot send hosts, so the refusal says what it can do: be replaced.
 		var body struct {
 			RequestBody
 			Host *string `json:"host"`
@@ -114,17 +103,16 @@ func NewHandler(svc Service) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, status)
 	})
-	mux.HandleFunc("POST "+PathUse, func(w http.ResponseWriter, r *http.Request) {
-		var body UseBody
-		if !decode(w, r, &body) {
-			return
-		}
-		out, err := svc.Get(r.Context(), body)
+	mux.HandleFunc("GET "+PathEnvironment, func(w http.ResponseWriter, r *http.Request) {
+		variables, err := svc.Environment(r.Context())
 		if err != nil {
 			writeError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, out)
+		if variables == nil {
+			variables = map[string]string{}
+		}
+		writeJSON(w, http.StatusOK, EnvironmentResponse{Variables: variables})
 	})
 	mux.HandleFunc("GET "+PathTrusts, func(w http.ResponseWriter, r *http.Request) {
 		trusts, err := svc.Trusts(r.Context())
@@ -178,17 +166,6 @@ func NewHandler(svc Service) http.Handler {
 			exchanges = []AuditExchange{}
 		}
 		writeJSON(w, http.StatusOK, AuditHTTPResponse{Exchanges: exchanges})
-	})
-	mux.HandleFunc("GET "+PathFacts, func(w http.ResponseWriter, r *http.Request) {
-		facts, err := svc.Facts(r.Context())
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-		if facts.Variables == nil {
-			facts.Variables = []policy.Variable{}
-		}
-		writeJSON(w, http.StatusOK, facts)
 	})
 	return mux
 }

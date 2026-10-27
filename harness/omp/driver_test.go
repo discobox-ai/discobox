@@ -19,7 +19,6 @@ import (
 
 // The paths the image's pieces agree on, and only these tests hold them to it.
 const (
-	settingsPath     = ".config/discobox/omp-harness.json"
 	credentialsPath  = ".config/discobox/omp-credentials.json" //nolint:gosec // A file path, not a credential.
 	hookShimPath     = ".omp/agent/extensions/discobox-hooks.js"
 	installedHookExt = "/usr/local/libexec/discobox/omp-hook-extension.js"
@@ -118,26 +117,18 @@ func TestImageManifest(t *testing.T) {
 	}
 	files := map[string]harness.File{}
 	for _, file := range image.Harness.Files {
-		// Both are rewritten on every launch rather than kept from the first,
-		// or an image's new extension, or an edit to the settings, would never
-		// land; neither holds a sentinel.
+		// Rewritten on every launch rather than kept from the first, or an
+		// image's new extension would never land; it holds no sentinel.
 		if file.CreateOnly || file.Template {
 			t.Errorf("file %s is createOnly or templated, want plain", file.Path)
 		}
 		files[file.Path] = file
 	}
-	if len(files) != 2 {
-		t.Fatalf("manifest files = %v, want the hook extension and the settings", image.Harness.Files)
+	if len(files) != 1 {
+		t.Fatalf("manifest files = %v, want the hook extension alone", image.Harness.Files)
 	}
 	if _, ok := files[credentialsPath]; ok {
 		t.Fatal("manifest declares a baseline credentials file")
-	}
-	var settings map[string]any
-	if err := json.Unmarshal([]byte(files[settingsPath].Content), &settings); err != nil {
-		t.Fatalf("baseline settings are not JSON: %v", err)
-	}
-	if settings["judgeModel"] != "" {
-		t.Fatalf("baseline settings = %v, want the default judge", settings)
 	}
 	// The manifest names no command: the launcher is installed under the
 	// conventional name and the runtime types that (ADR 0086 §3).
@@ -223,7 +214,6 @@ func TestImagePolicy(t *testing.T) {
 		"discobox.yml": overlayPath,
 		"proxy-env.sh": "/etc/profile.d/omp-proxy.sh",
 		"launch.sh":    "/usr/local/bin/" + harness.RunCommand,
-		"prompt.sh":    "/usr/local/bin/discobox-prompt",
 		"configure.sh": image.Harness.Config.Command[0],
 		"agent.conf":   "/usr/local/libexec/discobox/agent.conf",
 	} {
@@ -360,7 +350,7 @@ func TestPIProxyFollowsHTTPSProxy(t *testing.T) {
 			}
 		})
 	}
-	for _, script := range []string{"launch.sh", "configure.sh", "prompt.sh"} {
+	for _, script := range []string{"launch.sh", "configure.sh"} {
 		if !strings.Contains(readFile(t, script), ". /etc/profile.d/omp-proxy.sh") {
 			t.Errorf("%s does not set PI_PROXY", script)
 		}

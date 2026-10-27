@@ -188,7 +188,7 @@ it. A lookup past either is dropped and counted apart (`dnsDropped` beside
 Normal HTTP request and response bodies are streamed to disk spool files. SQLite
 stores only relative spool paths, byte counts, format names, metadata, redacted
 headers, cache state, policy decisions, authenticated client identity, and the
-approved credential uses the request spent. Large
+secrets the request spent. Large
 response assets remain in the disk cache, not SQLite.
 
 A response the cache stores or serves is not spooled. Its row's body format is
@@ -393,9 +393,9 @@ never persisted by the proxy.
 flowchart LR
     req["outbound request\nAuthorization: Bearer <sentinel>"] --> scan["match against client's sentinel set"]
     scan -->|no match| fwd["forward unchanged"]
-    scan -->|match| judge["Resolver.Authorize(request as sent, sentinels)"]
-    judge -->|deny / error| refuse["refused by the proxy (403, or the protocol's own no), audited once as blocked"]
-    judge -->|allow| resolve["Resolver.Resolve(sentinel, host, clientID)\n(cache first)"]
+    scan -->|match| authorize["Resolver.Authorize(request as sent, sentinels)"]
+    authorize -->|deny / error| refuse["refused by the proxy (403), audited once as blocked"]
+    authorize -->|allow| resolve["Resolver.Resolve(sentinel, host, clientID)\n(cache first)"]
     resolve -->|approved| swap["substitute real value + redact from audit"]
     resolve -->|denied / pending| leave["leave sentinel in place → upstream 401"]
     resolve -->|error| retry["ask again, within ResolveRetrySeconds"]
@@ -437,47 +437,27 @@ Key properties:
   The window is per request, and one unresolved sentinel refuses the whole
   request, whatever else in it resolved. The real value is never leaked
   either way.
-- **A request carrying sentinels is authorized before any of them is resolved**,
-  as is every request to a host the client trusts by a pin
-  ([Host Trust](#host-trust))
-  (`Resolver.Authorize`, `Swapper.Match`; [ADR 26-09-22-838](../docs/adr/26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) §4).
-  Resolution decides whether a credential may go to a host and is cached; the
-  judge decides whether *this* request may carry it, so it runs per request —
-  and it runs first, because a refused request must not decrypt a credential
-  and a value already in the cache must not carry a new operation through on
-  the strength of an older one. What it is shown is the request as the sandbox
-  sent it, nothing yet substituted: sentinels and never credentials. The uses
-  come back with the verdict, since binding a sentinel to a use is the
-  resolver's to do and nothing the request says about one could be believed. A
-  request it does not allow, or cannot answer for, is refused by the proxy with
-  a 403, never sent, and audited once as blocked (`judge: <reason>`) against
-  the uses the verdict named. A verdict may say no in the request's own
-  protocol instead (`Verdict.Refuse`, ADR 26-09-26-240 §5), for a client that
-  never shows a 403's body — a git push answered with the rejection `git push`
-  prints — and the row records the status that was sent. `Match` reports every sentinel the request
+- **A request carrying sentinels is authorized before any of them is resolved**
+  (`Resolver.Authorize`, `Swapper.Match`). Resolution decides whether a
+  credential may go to a host and is cached; authorization decides whether
+  *this* request may carry it — in the pool agent, whether it falls on its
+  secrets' routes (ADR 26-10-02-924) — so it runs per request, and it runs
+  first, because a refused request must not decrypt a credential and a value
+  already in the cache must not carry a request its routes refuse. What it is
+  shown is the request as the sandbox sent it, nothing yet substituted:
+  sentinels and never credentials. A request it does not allow, or cannot
+  answer for, is refused by the proxy with a 403, never sent, and audited once
+  as blocked (`route: <reason>`). `Match` reports every sentinel the request
   carries, which is a superset of what `Apply` substitutes — an unresolvable
-  one is authorized and then left in place or refused — so nothing is substituted without
-  having been authorized, which is the direction that matters. The two share
-  one definition of the surface they walk (`eachValue`) but walk it twice, so a
-  request carrying a sentinel pays the base64 scan over its header values
-  twice; for a harness that is every call to its model API, and it is the price
-  of not resolving a credential before something agreed to the request. A
-  request to a trusted host is authorized against the uses the pin was granted
-  for, whether or not it carries a credential, and those come from the pin
-  rather than from anything the request said. The pool agent asks the project's
-  judge about every use a request spends — the ones bound from its sentinels
-  and the ones its destination was pinned for — and allows a request that
-  spends none; the destination host is held at resolve time either way.
-- **The authorizer can read the body, and reading it changes nothing sent**
-  (`AuthorizeRequest.Body`, `RequestBody`; ADR 26-09-22-838 §6). Nothing is
-  read unless the authorizer asks, since most requests are decided without
-  their body and reading one holds the request until it arrives. A capture
-  reads once, up to `MaxCapturedBody`, on its own goroutine, and the
-  authorizer's context bounds only its wait: the proxy cannot stop a read part
-  way without losing bytes. What is sent on is always `RequestBody.Reader()` —
-  what was read, then the rest, then the error the read stopped on — so the
-  upstream, the retry buffer, and the request-body spool see the bytes the
-  sandbox sent.
+  one is authorized and then left in place or refused — so nothing is
+  substituted without having been authorized, which is the direction that
+  matters. The two share one definition of the surface they walk
+  (`eachValue`) but walk it twice, so a request carrying a sentinel pays the
+  base64 scan over its header values twice; for a harness that is every call
+  to its model API, and it is the price of not resolving a credential before
+  something agreed to the request. A request to a host the client trusts by a
+  pin is authorized like any other: the pin decides which certificate is
+  believed, and nothing about what is sent (ADR 26-10-27-880 §10).
 - **The gate host never reaches the internet** (`Secrets.GateHost`,
   `Resolver.Gate`; [ADR 0140](../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md) §2).
   A CONNECT to it is intercepted whatever the allowlist says, and a request for
@@ -488,12 +468,8 @@ Key properties:
   (`gate: <reason>`): refused, never sent. A gate that fails after letting a
   call in — the control plane unreachable, or gone quiet after the request went
   out — is not a refusal: it is answered 502 and recorded as an ordinary
-  exchange, since the call may have been acted on. Every row carries the use
-  the call was let in or refused under, where there was one
-  (`GateAdmission.UseID`, `GateRefusal.UseID`), as a swapped request's does,
-  so `discobox admin audit http --use-id` finds a discobox's API calls by the
-  use it made them under. Every other host is sent the
-  placeholder when a credential does not resolve; this one fails closed.
+  exchange, since the call may have been acted on. Every other host is sent
+  the placeholder when a credential does not resolve; this one fails closed.
 - **The pool's own hosts never reach the internet either** (`Config.PoolHosts`,
   `poolhosts.go`): its Git origins
   ([ADR 26-10-08-561](../docs/adr/26-10-08-561-a-sandbox-reaches-its-origins-at-a-host-its-pool-proxy-answers.md))
@@ -557,8 +533,7 @@ Key properties:
   with no `ExpiresAt` is used once and not cached; denials are cached briefly
   (`NegativeTTLSeconds`, 10s by default); transient resolver errors are not
   cached. A resolver may shorten that bound by returning an earlier `ExpiresAt`
-  — which is how an ephemeral sentinel's use window is honored, since its grant
-  outlives it.
+  — which is how a renewing token's own expiry is honored.
 - **Stale-while-revalidate.** Past `RefreshIntervalSeconds` (30s by default) a
   cached value keeps serving while one deduplicated background refresh runs: a
   new value replaces it, a denial replaces it with a cached denial, and a
@@ -609,8 +584,7 @@ Key properties:
   believes it is logged out retries hard and every retry is the same fact. What
   it remembers having reported ages out after `reportMemory`, so the set is
   bounded by what has been refused lately rather than by everything ever
-  refused — the keys include one per ephemeral sentinel, and the case this
-  exists for is a credential that stays refused. The reporter lives on the proxy
+  refused, and the case this exists for is a credential that stays refused. The reporter lives on the proxy
   rather than on the `Swapper`: it is state about the response path, and the
   `Swapper` forgets a sentinel that leaves its client's set.
   See [ADR 0132](../docs/adr/0132-a-credential-rejected-after-its-retry-is-recorded-against-its-secret.md).
@@ -622,13 +596,8 @@ Key properties:
   that refuses it for what it may do, polled beside one that accepts it, would
   otherwise report it dead and alive in turn. No scope is every request. The
   scope rides the cache entry, since it is asked of every request, and is
-  judged once, at the first swap: a retry goes to the same URL. The retry
+  read once, at the first swap: a retry goes to the same URL. The retry
   itself is not scoped: a rotation shows at any endpoint. See [ADR 26-10-13-595](../docs/adr/26-10-13-595-a-harness-names-the-requests-whose-refusal-means-its-login-is-dead.md).
-- **Ephemeral sentinels are just sentinels here.** Pool-agent mints short-lived
-  sentinels per agent-credential use and registers them in the same per-client
-  set, so this package needs no concept of them: it matches a string and asks
-  the resolver, and the resolver decides what the string means. See
-  [ADR 0031](../docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md).
 
 Audit redaction covers every header whose value was swapped, in addition to
 the headers a gateway touches and credential-like header names.
@@ -789,37 +758,23 @@ flowchart LR
   `X-Should-Retry`. Either is audited blocked with a reason starting
   `gateway:`. It is never sent without its header, nor to the original host.
 
-A swapped request records which approved uses it spent. `secrets.ResolveResult`
-carries a `UseID` that the resolver fills from the activation behind an
-ephemeral sentinel, the `Swapper` carries it through its cache onto `Result`,
-and `HTTPExchange.SwappedUseIDs` holds the comma-joined set. That ID is the join
-to the control plane's `credential_verdicts` rows, so one identifier reaches
-both the verdict that authorized a command and every request that spent the
-credential. Reads filter on it with `use_id`, matching a whole element of the
-list rather than a substring.
-
-It also records which secrets it spent, for every kind of sentinel
+A swapped request records which secrets it spent
 ([ADR 26-10-01-240](../docs/adr/26-10-01-240-a-swapped-request-records-the-secrets-it-spent.md)).
 The control plane's resolve answer names the secret a value is, and
-`ResolveResult.SecretID` rides beside `UseID` through the cache, the value kept
-for the rotated-credential retry, and `Result` onto
-`HTTPExchange.SwappedSecretIDs`. An ordinary injected sentinel has no use, so
-its row names a secret and no use; one taken under an approved use names both.
-A request the judge refused names the uses from the verdict and no secret:
-nothing was resolved, so nothing was spent. The column was added by
-`AutoMigrate`, and rows written before it read it as empty.
-
-Both columns hold IDs and never a sentinel. An ephemeral sentinel is a live
-bearer token for the length of its activation window, and a stable one never
-expires; this trail is retained to be read afterwards, and an ID authorizes
-nothing and only names.
+`ResolveResult.SecretID` rides through the cache, the value kept for the
+rotated-credential retry, and `Result` onto `HTTPExchange.SwappedSecretIDs`.
+A refused request names no secret: nothing was resolved, so nothing was spent.
+The column holds IDs and never a sentinel: this trail is retained to be read
+afterwards, and an ID authorizes nothing and only names. Opening a database an
+earlier proxy wrote drops the `swapped_use_ids` column it may hold
+(`dropRetiredColumns`; the approved uses it named went with the credential
+judge, ADR 26-10-27-880).
 
 The control API (`ControlHandler`, served by `ListenAndServeControl` only when
 `Control.ListenAddress` is set) is read-only. It lists HTTP and SOCKS audit rows
 (`GET /audit/http`, `/audit/socks`, filtered by `client_id`, `host`, `since`
 and `until` (RFC 3339, both inclusive, compared in UTC because rows are written
-in UTC) and `limit` up to 1000; HTTP also takes `use_id`, which the SOCKS route rejects rather than
-ignores, because a tunnel the proxy never reads can have spent no credential)
+in UTC) and `limit` up to 1000)
 and DNS rows (`GET /audit/dns`, by `client_id`, `name`, `since`, `until`, `order`,
 `limit`, and a `dns_` `after_id` or exact `id`, refusing every exchange-only filter and an
 `http_` cursor),
@@ -895,7 +850,7 @@ the proxy rather than removing it.
 ```mermaid
 flowchart LR
     req["MITM'd request"] --> lookup{"client holds a pin\nfor host:port?"}
-    lookup -->|yes| judge["Authorize(TrustUseIDs)"] --> pinned["the trust's own transport\n(verifies the pin)"]
+    lookup -->|yes| pinned["the trust's own transport\n(verifies the pin)"]
     lookup -->|no| default["proxy transport\n(system roots)"]
     pinned --> refused{"certificate\nrefused?"}
     default --> refused
@@ -928,10 +883,10 @@ flowchart LR
   proxy and exemptions — per trust, keeps a trust's transport across
   `ApplyConfig` while its pin is unchanged, and closes the idle connections of
   one that is gone.
-- **A request to a trusted host is judged** against the trust's uses
-  (`AuthorizeRequest.TrustUseIDs`), whether or not it carries a credential; one
-  that does is judged against both, in the one ask that runs before anything is
-  resolved ([Sentinel Secret Swapping](#sentinel-secret-swapping)).
+- **A pin decides which certificate is believed, and nothing else**
+  (ADR 26-10-27-880 §10). A request to a trusted host is put to the
+  authorizer only when it carries a sentinel, as any request is
+  ([Sentinel Secret Swapping](#sentinel-secret-swapping)).
 - **`ProbeTLS`** connects to a host the way a client's traffic would, completes
   a handshake with verification off, and returns the chain and whether it
   verifies against the system roots, and which upstream proxy it went through

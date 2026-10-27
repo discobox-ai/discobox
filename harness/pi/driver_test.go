@@ -14,7 +14,6 @@ import (
 
 // The paths the image's pieces agree on, and only these tests hold them to it.
 const (
-	settingsPath     = ".config/discobox/pi-harness.json"
 	authPath         = ".pi/agent/auth.json"
 	piSettingsPath   = ".pi/agent/settings.json"
 	hookShimPath     = ".pi/agent/extensions/discobox-hooks.js"
@@ -120,26 +119,18 @@ func TestImageManifest(t *testing.T) {
 	}
 	files := map[string]harness.File{}
 	for _, file := range image.Harness.Files {
-		// Both are rewritten on every launch rather than kept from the first,
-		// or an image's new extension, or an edit to the settings, would never
-		// land; neither holds a sentinel.
+		// Rewritten on every launch rather than kept from the first, or an
+		// image's new extension would never land; it holds no sentinel.
 		if file.CreateOnly || file.Template {
 			t.Errorf("file %s is createOnly or templated, want plain", file.Path)
 		}
 		files[file.Path] = file
 	}
-	if len(files) != 2 {
-		t.Fatalf("manifest files = %v, want the hook extension and the settings", image.Harness.Files)
+	if len(files) != 1 {
+		t.Fatalf("manifest files = %v, want the hook extension alone", image.Harness.Files)
 	}
 	if _, ok := files[authPath]; ok {
 		t.Fatal("manifest declares a baseline auth.json")
-	}
-	var settings map[string]any
-	if err := json.Unmarshal([]byte(files[settingsPath].Content), &settings); err != nil {
-		t.Fatalf("baseline settings are not JSON: %v", err)
-	}
-	if settings["judgeModel"] != "" {
-		t.Fatalf("baseline settings = %v, want the default judge", settings)
 	}
 	// The manifest names no command: the launcher is installed under the
 	// conventional name and the runtime types that (ADR 0086 §3).
@@ -207,7 +198,6 @@ func TestImagePolicy(t *testing.T) {
 	feature := featuretest.Load(t, ".")
 	for source, want := range map[string]string{
 		"launch.sh":    "/usr/local/bin/" + harness.RunCommand,
-		"prompt.sh":    "/usr/local/bin/discobox-prompt",
 		"configure.sh": image.Harness.Config.Command[0],
 		"agent.conf":   "/usr/local/libexec/discobox/agent.conf",
 	} {

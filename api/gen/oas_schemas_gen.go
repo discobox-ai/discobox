@@ -11,324 +11,6 @@ import (
 	"github.com/go-faster/jx"
 )
 
-// What a credential grant authorizes (ADR 26-10-20-782 section 1) -- statements, a definition for
-// every word they use that is not a default, and, once approved, the value each variable resolved to
-// for the discobox the grant is for. A request is allowed when every part of it matches some allow
-// and no part matches any deny; order never matters.
-// Ref: #/components/schemas/AccessPolicy
-type AccessPolicy struct {
-	// The statements, in no meaningful order.
-	Statements []AccessPolicyStatement `json:"statements"`
-	// What each non-default word means -- an action, a resource type, a parent's or a scope's type. The
-	// defaults (read, create, update, delete, manage, anything, anywhere) carry none and cannot be given
-	// one.
-	Definitions OptAccessPolicyDefinitions `json:"definitions"`
-	// The value each variable the statements use resolved to at approval, for the discobox the grant is
-	// for -- on a request, what each resolves to now for the discobox that asked. A variable used but
-	// absent did not resolve and matches nothing. Set by the server; on input only an approval reads it,
-	// as the values the approver was shown.
-	Resolved OptAccessPolicyResolved `json:"resolved"`
-}
-
-// GetStatements returns the value of Statements.
-func (s *AccessPolicy) GetStatements() []AccessPolicyStatement {
-	return s.Statements
-}
-
-// GetDefinitions returns the value of Definitions.
-func (s *AccessPolicy) GetDefinitions() OptAccessPolicyDefinitions {
-	return s.Definitions
-}
-
-// GetResolved returns the value of Resolved.
-func (s *AccessPolicy) GetResolved() OptAccessPolicyResolved {
-	return s.Resolved
-}
-
-// SetStatements sets the value of Statements.
-func (s *AccessPolicy) SetStatements(val []AccessPolicyStatement) {
-	s.Statements = val
-}
-
-// SetDefinitions sets the value of Definitions.
-func (s *AccessPolicy) SetDefinitions(val OptAccessPolicyDefinitions) {
-	s.Definitions = val
-}
-
-// SetResolved sets the value of Resolved.
-func (s *AccessPolicy) SetResolved(val OptAccessPolicyResolved) {
-	s.Resolved = val
-}
-
-// What each non-default word means -- an action, a resource type, a parent's or a scope's type. The
-// defaults (read, create, update, delete, manage, anything, anywhere) carry none and cannot be given
-// one.
-type AccessPolicyDefinitions map[string]string
-
-func (s *AccessPolicyDefinitions) init() AccessPolicyDefinitions {
-	m := *s
-	if m == nil {
-		m = map[string]string{}
-		*s = m
-	}
-	return m
-}
-
-// The value each variable the statements use resolved to at approval, for the discobox the grant is
-// for -- on a request, what each resolves to now for the discobox that asked. A variable used but
-// absent did not resolve and matches nothing. Set by the server; on input only an approval reads it,
-// as the values the approver was shown.
-type AccessPolicyResolved map[string]string
-
-func (s *AccessPolicyResolved) init() AccessPolicyResolved {
-	m := *s
-	if m == nil {
-		m = map[string]string{}
-		*s = m
-	}
-	return m
-}
-
-// A resource a statement's resource or scope sits in.
-// Ref: #/components/schemas/AccessPolicyResource
-type AccessPolicyResource struct {
-	// The parent's type, a word as a statement's action is.
-	Type string `json:"type"`
-	// A literal, a glob, or a variable; null is any name.
-	Name OptNilString `json:"name"`
-	// $this, or empty.
-	CreatedBy OptString `json:"createdBy"`
-}
-
-// GetType returns the value of Type.
-func (s *AccessPolicyResource) GetType() string {
-	return s.Type
-}
-
-// GetName returns the value of Name.
-func (s *AccessPolicyResource) GetName() OptNilString {
-	return s.Name
-}
-
-// GetCreatedBy returns the value of CreatedBy.
-func (s *AccessPolicyResource) GetCreatedBy() OptString {
-	return s.CreatedBy
-}
-
-// SetType sets the value of Type.
-func (s *AccessPolicyResource) SetType(val string) {
-	s.Type = val
-}
-
-// SetName sets the value of Name.
-func (s *AccessPolicyResource) SetName(val OptNilString) {
-	s.Name = val
-}
-
-// SetCreatedBy sets the value of CreatedBy.
-func (s *AccessPolicyResource) SetCreatedBy(val OptString) {
-	s.CreatedBy = val
-}
-
-// Where a statement applies -- a typed name, which may be a variable ($this, $primary.repo, $primary.
-// host, $primary.branch, $primary.upstream, $primary.default_branch, $sources.<slug>.repo), or
-// anywhere, which only a deny may use.
-// Ref: #/components/schemas/AccessPolicyScope
-type AccessPolicyScope struct {
-	// The scope's type, a word as a statement's action is, or anywhere.
-	Type string `json:"type"`
-	// A literal, a glob, or a variable. Empty only for anywhere.
-	Name OptString `json:"name"`
-	// The scopes this one sits in, outermost first.
-	Within []AccessPolicyResource `json:"within"`
-}
-
-// GetType returns the value of Type.
-func (s *AccessPolicyScope) GetType() string {
-	return s.Type
-}
-
-// GetName returns the value of Name.
-func (s *AccessPolicyScope) GetName() OptString {
-	return s.Name
-}
-
-// GetWithin returns the value of Within.
-func (s *AccessPolicyScope) GetWithin() []AccessPolicyResource {
-	return s.Within
-}
-
-// SetType sets the value of Type.
-func (s *AccessPolicyScope) SetType(val string) {
-	s.Type = val
-}
-
-// SetName sets the value of Name.
-func (s *AccessPolicyScope) SetName(val OptString) {
-	s.Name = val
-}
-
-// SetWithin sets the value of Within.
-func (s *AccessPolicyScope) SetWithin(val []AccessPolicyResource) {
-	s.Within = val
-}
-
-// <allow|deny> <actions> on <resource type> [<name>] [within <parents>] in <scope> [when
-// <condition>] [unless <condition>].
-// Ref: #/components/schemas/AccessPolicyStatement
-type AccessPolicyStatement struct {
-	Effect AccessPolicyStatementEffect `json:"effect"`
-	// Action words. read, create, update, delete and manage (every action on the type) are defaults; any
-	// other word has a definition. A word is printable ASCII, its parts one space apart, and holds no
-	// quote, comma, $, or sentence keyword (on, within, in, of, when, unless, created), so every
-	// statement has a sentence form.
-	Actions []string `json:"actions"`
-	// The resource type, or anything for every type in the scope. A word as an action is.
-	ResourceType string `json:"resourceType"`
-	// A literal, a glob, or a variable; null is any name.
-	Name OptNilString `json:"name"`
-	// $this limits the statement to resources the discobox it is bound to created.
-	CreatedBy OptString `json:"createdBy"`
-	// The resources this one sits in, outermost first, short of the scope.
-	Within []AccessPolicyResource `json:"within"`
-	Scope  AccessPolicyScope      `json:"scope"`
-	// A condition a request can be checked against, which must hold. null is none.
-	When OptNilString `json:"when"`
-	// A condition a request can be checked against, which must not hold. null is none.
-	Unless OptNilString `json:"unless"`
-}
-
-// GetEffect returns the value of Effect.
-func (s *AccessPolicyStatement) GetEffect() AccessPolicyStatementEffect {
-	return s.Effect
-}
-
-// GetActions returns the value of Actions.
-func (s *AccessPolicyStatement) GetActions() []string {
-	return s.Actions
-}
-
-// GetResourceType returns the value of ResourceType.
-func (s *AccessPolicyStatement) GetResourceType() string {
-	return s.ResourceType
-}
-
-// GetName returns the value of Name.
-func (s *AccessPolicyStatement) GetName() OptNilString {
-	return s.Name
-}
-
-// GetCreatedBy returns the value of CreatedBy.
-func (s *AccessPolicyStatement) GetCreatedBy() OptString {
-	return s.CreatedBy
-}
-
-// GetWithin returns the value of Within.
-func (s *AccessPolicyStatement) GetWithin() []AccessPolicyResource {
-	return s.Within
-}
-
-// GetScope returns the value of Scope.
-func (s *AccessPolicyStatement) GetScope() AccessPolicyScope {
-	return s.Scope
-}
-
-// GetWhen returns the value of When.
-func (s *AccessPolicyStatement) GetWhen() OptNilString {
-	return s.When
-}
-
-// GetUnless returns the value of Unless.
-func (s *AccessPolicyStatement) GetUnless() OptNilString {
-	return s.Unless
-}
-
-// SetEffect sets the value of Effect.
-func (s *AccessPolicyStatement) SetEffect(val AccessPolicyStatementEffect) {
-	s.Effect = val
-}
-
-// SetActions sets the value of Actions.
-func (s *AccessPolicyStatement) SetActions(val []string) {
-	s.Actions = val
-}
-
-// SetResourceType sets the value of ResourceType.
-func (s *AccessPolicyStatement) SetResourceType(val string) {
-	s.ResourceType = val
-}
-
-// SetName sets the value of Name.
-func (s *AccessPolicyStatement) SetName(val OptNilString) {
-	s.Name = val
-}
-
-// SetCreatedBy sets the value of CreatedBy.
-func (s *AccessPolicyStatement) SetCreatedBy(val OptString) {
-	s.CreatedBy = val
-}
-
-// SetWithin sets the value of Within.
-func (s *AccessPolicyStatement) SetWithin(val []AccessPolicyResource) {
-	s.Within = val
-}
-
-// SetScope sets the value of Scope.
-func (s *AccessPolicyStatement) SetScope(val AccessPolicyScope) {
-	s.Scope = val
-}
-
-// SetWhen sets the value of When.
-func (s *AccessPolicyStatement) SetWhen(val OptNilString) {
-	s.When = val
-}
-
-// SetUnless sets the value of Unless.
-func (s *AccessPolicyStatement) SetUnless(val OptNilString) {
-	s.Unless = val
-}
-
-type AccessPolicyStatementEffect string
-
-const (
-	AccessPolicyStatementEffectAllow AccessPolicyStatementEffect = "allow"
-	AccessPolicyStatementEffectDeny  AccessPolicyStatementEffect = "deny"
-)
-
-// AllValues returns all AccessPolicyStatementEffect values.
-func (AccessPolicyStatementEffect) AllValues() []AccessPolicyStatementEffect {
-	return []AccessPolicyStatementEffect{
-		AccessPolicyStatementEffectAllow,
-		AccessPolicyStatementEffectDeny,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s AccessPolicyStatementEffect) MarshalText() ([]byte, error) {
-	switch s {
-	case AccessPolicyStatementEffectAllow:
-		return []byte(s), nil
-	case AccessPolicyStatementEffectDeny:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *AccessPolicyStatementEffect) UnmarshalText(data []byte) error {
-	switch AccessPolicyStatementEffect(data) {
-	case AccessPolicyStatementEffectAllow:
-		*s = AccessPolicyStatementEffectAllow
-		return nil
-	case AccessPolicyStatementEffectDeny:
-		*s = AccessPolicyStatementEffectDeny
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
 // Records one successful discobox apply of a source's commits into a host working tree.
 // Client-declared provenance, like Origin, since the server cannot observe host-side Git state.
 // Ref: #/components/schemas/AppliedSourceCommit
@@ -490,244 +172,6 @@ func (s *ApprovalRequestKind) UnmarshalText(data []byte) error {
 	}
 }
 
-// Ref: #/components/schemas/ApprovalRule
-type ApprovalRule struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Creation timestamp.
-	CreatedAt time.Time `json:"createdAt"`
-	// Principal ID of the person who made the rule.
-	CreatedBy OptString `json:"createdBy"`
-	// Whether the rule approves anything. A disabled rule mints nothing and revokes nothing.
-	Enabled bool `json:"enabled"`
-	// When the rule stops approving; empty never.
-	ExpiresAt OptDateTime `json:"expiresAt"`
-	// Hosts a grant minted under the rule may name. A request is covered only when every host it asks
-	// for is within them.
-	Hosts []string `json:"hosts"`
-	// Stable approval rule ID.
-	ID string `json:"id"`
-	// Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit.
-	MaxGrantTTLSeconds int64 `json:"maxGrantTTLSeconds"`
-	// Project ID.
-	ProjectId string `json:"projectId"`
-	// What the rule approves a credential for -- to use it, or to delegate it to other discoboxes. One
-	// or the other, as a grant has one.
-	Purpose ApprovalRulePurpose `json:"purpose"`
-	// The repositories the rule is for, each as host/path such as github.com/org/repo. The rule answers
-	// a discobox whose primary source is one of them, compared exactly by the server; a discobox's other
-	// sources never count. Absent on a rule for every discobox in the project, including ones that do
-	// not exist yet, which is a rule somebody made by saying so.
-	Repositories []string `json:"repositories"`
-	// The project secret the rule approves, when it names one.
-	SecretId OptString `json:"secretId"`
-	// Last update timestamp.
-	UpdatedAt time.Time `json:"updatedAt"`
-	// What may be approved. A request is covered when every allow of its policy falls within an allow of
-	// this one and it carries every deny of this one. Its variables bind to the discobox that asked; it
-	// carries no resolved values.
-	Policy AccessPolicy `json:"policy"`
-	// The well-known credential the rule approves, when it names one by ID.
-	WellKnownId OptString `json:"wellKnownId"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *ApprovalRule) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetCreatedAt returns the value of CreatedAt.
-func (s *ApprovalRule) GetCreatedAt() time.Time {
-	return s.CreatedAt
-}
-
-// GetCreatedBy returns the value of CreatedBy.
-func (s *ApprovalRule) GetCreatedBy() OptString {
-	return s.CreatedBy
-}
-
-// GetEnabled returns the value of Enabled.
-func (s *ApprovalRule) GetEnabled() bool {
-	return s.Enabled
-}
-
-// GetExpiresAt returns the value of ExpiresAt.
-func (s *ApprovalRule) GetExpiresAt() OptDateTime {
-	return s.ExpiresAt
-}
-
-// GetHosts returns the value of Hosts.
-func (s *ApprovalRule) GetHosts() []string {
-	return s.Hosts
-}
-
-// GetID returns the value of ID.
-func (s *ApprovalRule) GetID() string {
-	return s.ID
-}
-
-// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
-func (s *ApprovalRule) GetMaxGrantTTLSeconds() int64 {
-	return s.MaxGrantTTLSeconds
-}
-
-// GetProjectId returns the value of ProjectId.
-func (s *ApprovalRule) GetProjectId() string {
-	return s.ProjectId
-}
-
-// GetPurpose returns the value of Purpose.
-func (s *ApprovalRule) GetPurpose() ApprovalRulePurpose {
-	return s.Purpose
-}
-
-// GetRepositories returns the value of Repositories.
-func (s *ApprovalRule) GetRepositories() []string {
-	return s.Repositories
-}
-
-// GetSecretId returns the value of SecretId.
-func (s *ApprovalRule) GetSecretId() OptString {
-	return s.SecretId
-}
-
-// GetUpdatedAt returns the value of UpdatedAt.
-func (s *ApprovalRule) GetUpdatedAt() time.Time {
-	return s.UpdatedAt
-}
-
-// GetPolicy returns the value of Policy.
-func (s *ApprovalRule) GetPolicy() AccessPolicy {
-	return s.Policy
-}
-
-// GetWellKnownId returns the value of WellKnownId.
-func (s *ApprovalRule) GetWellKnownId() OptString {
-	return s.WellKnownId
-}
-
-// SetSchema sets the value of Schema.
-func (s *ApprovalRule) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetCreatedAt sets the value of CreatedAt.
-func (s *ApprovalRule) SetCreatedAt(val time.Time) {
-	s.CreatedAt = val
-}
-
-// SetCreatedBy sets the value of CreatedBy.
-func (s *ApprovalRule) SetCreatedBy(val OptString) {
-	s.CreatedBy = val
-}
-
-// SetEnabled sets the value of Enabled.
-func (s *ApprovalRule) SetEnabled(val bool) {
-	s.Enabled = val
-}
-
-// SetExpiresAt sets the value of ExpiresAt.
-func (s *ApprovalRule) SetExpiresAt(val OptDateTime) {
-	s.ExpiresAt = val
-}
-
-// SetHosts sets the value of Hosts.
-func (s *ApprovalRule) SetHosts(val []string) {
-	s.Hosts = val
-}
-
-// SetID sets the value of ID.
-func (s *ApprovalRule) SetID(val string) {
-	s.ID = val
-}
-
-// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
-func (s *ApprovalRule) SetMaxGrantTTLSeconds(val int64) {
-	s.MaxGrantTTLSeconds = val
-}
-
-// SetProjectId sets the value of ProjectId.
-func (s *ApprovalRule) SetProjectId(val string) {
-	s.ProjectId = val
-}
-
-// SetPurpose sets the value of Purpose.
-func (s *ApprovalRule) SetPurpose(val ApprovalRulePurpose) {
-	s.Purpose = val
-}
-
-// SetRepositories sets the value of Repositories.
-func (s *ApprovalRule) SetRepositories(val []string) {
-	s.Repositories = val
-}
-
-// SetSecretId sets the value of SecretId.
-func (s *ApprovalRule) SetSecretId(val OptString) {
-	s.SecretId = val
-}
-
-// SetUpdatedAt sets the value of UpdatedAt.
-func (s *ApprovalRule) SetUpdatedAt(val time.Time) {
-	s.UpdatedAt = val
-}
-
-// SetPolicy sets the value of Policy.
-func (s *ApprovalRule) SetPolicy(val AccessPolicy) {
-	s.Policy = val
-}
-
-// SetWellKnownId sets the value of WellKnownId.
-func (s *ApprovalRule) SetWellKnownId(val OptString) {
-	s.WellKnownId = val
-}
-
-func (*ApprovalRule) createApprovalRuleRes() {}
-func (*ApprovalRule) getApprovalRuleRes()    {}
-func (*ApprovalRule) updateApprovalRuleRes() {}
-
-// What the rule approves a credential for -- to use it, or to delegate it to other discoboxes. One
-// or the other, as a grant has one.
-type ApprovalRulePurpose string
-
-const (
-	ApprovalRulePurposeUse      ApprovalRulePurpose = "use"
-	ApprovalRulePurposeDelegate ApprovalRulePurpose = "delegate"
-)
-
-// AllValues returns all ApprovalRulePurpose values.
-func (ApprovalRulePurpose) AllValues() []ApprovalRulePurpose {
-	return []ApprovalRulePurpose{
-		ApprovalRulePurposeUse,
-		ApprovalRulePurposeDelegate,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ApprovalRulePurpose) MarshalText() ([]byte, error) {
-	switch s {
-	case ApprovalRulePurposeUse:
-		return []byte(s), nil
-	case ApprovalRulePurposeDelegate:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ApprovalRulePurpose) UnmarshalText(data []byte) error {
-	switch ApprovalRulePurpose(data) {
-	case ApprovalRulePurposeUse:
-		*s = ApprovalRulePurposeUse
-		return nil
-	case ApprovalRulePurposeDelegate:
-		*s = ApprovalRulePurposeDelegate
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
 // Ref: #/components/schemas/ApproveSecretRequestBody
 type ApproveSecretRequestBody struct {
 	// A URL to the JSON Schema for this object.
@@ -740,8 +184,7 @@ type ApproveSecretRequestBody struct {
 	// Hosts the minted grant is limited to (ADR 26-10-02-393). Left out, the hosts the request named; an
 	// empty list names none. Approving a protocol-originated request with no host at all is rejected; a
 	// wildcard grant stays an explicit administrative act.
-	Hosts []string           `json:"hosts"`
-	Rule  OptApproveWithRule `json:"rule"`
+	Hosts []string `json:"hosts"`
 	// How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests,
 	// otherwise project.
 	Scope OptApproveSecretRequestBodyScope `json:"scope"`
@@ -749,27 +192,13 @@ type ApproveSecretRequestBody struct {
 	// Applied only if the approval goes through, in the same write, so a refused approval leaves the
 	// secret as it was. Refused for a gate.
 	SecretHost OptString `json:"secretHost"`
-	// Secret ID selected by the approver. A person must name one unless the request names a well-known
-	// credential whose secret is already marked; naming one for it the first time marks it as the one
-	// that answers every later request for that ID. A discobox approver answers with the secret of a
-	// delegation grant it holds, and names one, by its full ID, only to choose among the secrets it was
-	// delegated.
+	// Secret ID selected by the approver. A person must name one. A discobox approver answers with the
+	// secret of a delegation grant it holds, and names one, by its full ID, only to choose among the
+	// secrets it was delegated.
 	SecretId OptString `json:"secretId"`
 	// Sets the answering secret's grant limit, in seconds, as part of the approval; 0 allows grants that
 	// never expire. Applied only if the approval goes through, in the same write.
 	SecretMaxGrantTTLSeconds OptInt64 `json:"secretMaxGrantTTLSeconds"`
-	// Approved uses for a protocol-originated request, replacing the ones the agent asked for. Omit to
-	// approve the requested uses as written. Use IDs are always minted here and any supplied ones are
-	// ignored.
-	Uses OptNilSecretUseArray `json:"uses"`
-	// The policy approved -- the one the request asked for, as read, or one in its place. An agent's
-	// request is refused an approval without one, so nothing is approved that was not sent. A discobox
-	// approving it must hand on a policy within one it was delegated (ADR 26-10-20-782 section 11). A
-	// person's resolved is the values they were shown, absent for none; each variable the approved
-	// policy uses, resolved for the requesting discobox, must resolve to exactly the value shown for it,
-	// or not resolve where none was shown, or the approval is refused with 409 and grants nothing. A
-	// value shown for a variable the approved policy does not use is ignored.
-	Policy OptAccessPolicy `json:"policy"`
 }
 
 // GetSchema returns the value of Schema.
@@ -785,11 +214,6 @@ func (s *ApproveSecretRequestBody) GetGrantTTLSeconds() OptInt64 {
 // GetHosts returns the value of Hosts.
 func (s *ApproveSecretRequestBody) GetHosts() []string {
 	return s.Hosts
-}
-
-// GetRule returns the value of Rule.
-func (s *ApproveSecretRequestBody) GetRule() OptApproveWithRule {
-	return s.Rule
 }
 
 // GetScope returns the value of Scope.
@@ -812,16 +236,6 @@ func (s *ApproveSecretRequestBody) GetSecretMaxGrantTTLSeconds() OptInt64 {
 	return s.SecretMaxGrantTTLSeconds
 }
 
-// GetUses returns the value of Uses.
-func (s *ApproveSecretRequestBody) GetUses() OptNilSecretUseArray {
-	return s.Uses
-}
-
-// GetPolicy returns the value of Policy.
-func (s *ApproveSecretRequestBody) GetPolicy() OptAccessPolicy {
-	return s.Policy
-}
-
 // SetSchema sets the value of Schema.
 func (s *ApproveSecretRequestBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -835,11 +249,6 @@ func (s *ApproveSecretRequestBody) SetGrantTTLSeconds(val OptInt64) {
 // SetHosts sets the value of Hosts.
 func (s *ApproveSecretRequestBody) SetHosts(val []string) {
 	s.Hosts = val
-}
-
-// SetRule sets the value of Rule.
-func (s *ApproveSecretRequestBody) SetRule(val OptApproveWithRule) {
-	s.Rule = val
 }
 
 // SetScope sets the value of Scope.
@@ -860,16 +269,6 @@ func (s *ApproveSecretRequestBody) SetSecretId(val OptString) {
 // SetSecretMaxGrantTTLSeconds sets the value of SecretMaxGrantTTLSeconds.
 func (s *ApproveSecretRequestBody) SetSecretMaxGrantTTLSeconds(val OptInt64) {
 	s.SecretMaxGrantTTLSeconds = val
-}
-
-// SetUses sets the value of Uses.
-func (s *ApproveSecretRequestBody) SetUses(val OptNilSecretUseArray) {
-	s.Uses = val
-}
-
-// SetPolicy sets the value of Policy.
-func (s *ApproveSecretRequestBody) SetPolicy(val OptAccessPolicy) {
-	s.Policy = val
 }
 
 // How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests,
@@ -930,9 +329,6 @@ type ApproveTrustRequestBody struct {
 	// asked for, or an hour when it asked for nothing in particular. A trust always lapses.
 	GrantTTLSeconds OptInt64    `json:"grantTTLSeconds"`
 	Pin             OptTrustPin `json:"pin"`
-	// Approved uses, replacing the ones the agent asked for. Omit to approve the requested uses as
-	// written. Use IDs are always minted here.
-	Uses OptNilSecretUseArray `json:"uses"`
 }
 
 // GetSchema returns the value of Schema.
@@ -950,11 +346,6 @@ func (s *ApproveTrustRequestBody) GetPin() OptTrustPin {
 	return s.Pin
 }
 
-// GetUses returns the value of Uses.
-func (s *ApproveTrustRequestBody) GetUses() OptNilSecretUseArray {
-	return s.Uses
-}
-
 // SetSchema sets the value of Schema.
 func (s *ApproveTrustRequestBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -968,92 +359,6 @@ func (s *ApproveTrustRequestBody) SetGrantTTLSeconds(val OptInt64) {
 // SetPin sets the value of Pin.
 func (s *ApproveTrustRequestBody) SetPin(val OptTrustPin) {
 	s.Pin = val
-}
-
-// SetUses sets the value of Uses.
-func (s *ApproveTrustRequestBody) SetUses(val OptNilSecretUseArray) {
-	s.Uses = val
-}
-
-// Answers a request with "auto approve" (ADR 26-10-12-330). An approval rule is made from the
-// request and the request is approved under it, in one write. The rule's credential, hosts and
-// purpose are the request's, copied by the server and never taken from here. Which discoboxes it is
-// for is a list of repositories, or every discobox in the project, which is said and never defaulted.
-//
-//	Its policy is what a person chose or wrote, and is held to covering the request's before anything
-//
-// is made -- by code, and by the judge for conditions code cannot compare -- so a rule that would
-// not cover this request is refused. Only a person approves this way.
-// Ref: #/components/schemas/ApproveWithRule
-type ApproveWithRule struct {
-	// When the rule stops approving. Left out, it does not lapse.
-	ExpiresAt OptDateTime `json:"expiresAt"`
-	// Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit.
-	// Left out, the lifetime this approval grants.
-	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
-	// True makes the rule for every discobox in the project, including ones that do not exist yet and
-	// ones a discobox creates. It is never the default, and cannot be said together with repositories.
-	EveryDiscobox OptBool `json:"everyDiscobox"`
-	// The repositories the rule is for. It answers a discobox whose primary source is one of them,
-	// compared exactly by the server. Each is a URL, git's scp-like form, or host/path such as github.
-	// com/org/repo, and is stored as host/path. Left out, the repository of the discobox that filed the
-	// request; one with no repository (a local source with no remote) is answered only by a rule for
-	// every discobox, which everyDiscobox says.
-	Repositories []string `json:"repositories"`
-	// What the rule approves, as a policy a request's policy must fall within. Its variables bind to
-	// whichever discobox asks. Left out, the request's policy as asked. Any resolved values sent are
-	// dropped.
-	Policy OptAccessPolicy `json:"policy"`
-}
-
-// GetExpiresAt returns the value of ExpiresAt.
-func (s *ApproveWithRule) GetExpiresAt() OptDateTime {
-	return s.ExpiresAt
-}
-
-// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
-func (s *ApproveWithRule) GetMaxGrantTTLSeconds() OptInt64 {
-	return s.MaxGrantTTLSeconds
-}
-
-// GetEveryDiscobox returns the value of EveryDiscobox.
-func (s *ApproveWithRule) GetEveryDiscobox() OptBool {
-	return s.EveryDiscobox
-}
-
-// GetRepositories returns the value of Repositories.
-func (s *ApproveWithRule) GetRepositories() []string {
-	return s.Repositories
-}
-
-// GetPolicy returns the value of Policy.
-func (s *ApproveWithRule) GetPolicy() OptAccessPolicy {
-	return s.Policy
-}
-
-// SetExpiresAt sets the value of ExpiresAt.
-func (s *ApproveWithRule) SetExpiresAt(val OptDateTime) {
-	s.ExpiresAt = val
-}
-
-// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
-func (s *ApproveWithRule) SetMaxGrantTTLSeconds(val OptInt64) {
-	s.MaxGrantTTLSeconds = val
-}
-
-// SetEveryDiscobox sets the value of EveryDiscobox.
-func (s *ApproveWithRule) SetEveryDiscobox(val OptBool) {
-	s.EveryDiscobox = val
-}
-
-// SetRepositories sets the value of Repositories.
-func (s *ApproveWithRule) SetRepositories(val []string) {
-	s.Repositories = val
-}
-
-// SetPolicy sets the value of Policy.
-func (s *ApproveWithRule) SetPolicy(val OptAccessPolicy) {
-	s.Policy = val
 }
 
 // Ref: #/components/schemas/AssignSandboxHarnessSecretsBody
@@ -1353,192 +658,6 @@ func (s *CompleteSandboxSourcePushBodySources) init() CompleteSandboxSourcePushB
 		*s = m
 	}
 	return m
-}
-
-// Ref: #/components/schemas/CreateApprovalRuleBody
-type CreateApprovalRuleBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Whether the rule approves anything. Left out, it does.
-	Enabled OptBool `json:"enabled"`
-	// When the rule stops approving. Left out, it does not lapse.
-	ExpiresAt OptDateTime `json:"expiresAt"`
-	// Hosts a grant minted under the rule may name. Left out, the well-known credential's own hosts, or
-	// the host the secret is bound to. A rule always names at least one concrete host.
-	Hosts []string `json:"hosts"`
-	// Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit.
-	// Left out, an hour.
-	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
-	// What the rule approves a credential for. Left out, to use it.
-	Purpose OptCreateApprovalRuleBodyPurpose `json:"purpose"`
-	// True makes the rule for every discobox in the project, including ones that do not exist yet and
-	// ones a discobox creates. It is never the default. A rule says which discoboxes it is for -- this,
-	// or repositories, and never both.
-	EveryDiscobox OptBool `json:"everyDiscobox"`
-	// The repositories the rule is for. Each is a URL, git's scp-like form, or host/path such as github.
-	// com/org/repo, and is stored as host/path; a bare org/repo names no host and is refused. A rule
-	// names at least one, or says everyDiscobox. Naming none and saying nothing is refused, never read
-	// as every discobox.
-	Repositories []string `json:"repositories"`
-	// The project secret the rule approves. A rule names one credential -- this or wellKnownId, not both.
-	SecretId OptString `json:"secretId"`
-	// What may be approved, as a policy with at least one allow. Its variables bind to whichever
-	// discobox asks. Any resolved values sent are dropped.
-	Policy AccessPolicy `json:"policy"`
-	// The well-known credential the rule approves, by its ID.
-	WellKnownId OptString `json:"wellKnownId"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *CreateApprovalRuleBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetEnabled returns the value of Enabled.
-func (s *CreateApprovalRuleBody) GetEnabled() OptBool {
-	return s.Enabled
-}
-
-// GetExpiresAt returns the value of ExpiresAt.
-func (s *CreateApprovalRuleBody) GetExpiresAt() OptDateTime {
-	return s.ExpiresAt
-}
-
-// GetHosts returns the value of Hosts.
-func (s *CreateApprovalRuleBody) GetHosts() []string {
-	return s.Hosts
-}
-
-// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
-func (s *CreateApprovalRuleBody) GetMaxGrantTTLSeconds() OptInt64 {
-	return s.MaxGrantTTLSeconds
-}
-
-// GetPurpose returns the value of Purpose.
-func (s *CreateApprovalRuleBody) GetPurpose() OptCreateApprovalRuleBodyPurpose {
-	return s.Purpose
-}
-
-// GetEveryDiscobox returns the value of EveryDiscobox.
-func (s *CreateApprovalRuleBody) GetEveryDiscobox() OptBool {
-	return s.EveryDiscobox
-}
-
-// GetRepositories returns the value of Repositories.
-func (s *CreateApprovalRuleBody) GetRepositories() []string {
-	return s.Repositories
-}
-
-// GetSecretId returns the value of SecretId.
-func (s *CreateApprovalRuleBody) GetSecretId() OptString {
-	return s.SecretId
-}
-
-// GetPolicy returns the value of Policy.
-func (s *CreateApprovalRuleBody) GetPolicy() AccessPolicy {
-	return s.Policy
-}
-
-// GetWellKnownId returns the value of WellKnownId.
-func (s *CreateApprovalRuleBody) GetWellKnownId() OptString {
-	return s.WellKnownId
-}
-
-// SetSchema sets the value of Schema.
-func (s *CreateApprovalRuleBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetEnabled sets the value of Enabled.
-func (s *CreateApprovalRuleBody) SetEnabled(val OptBool) {
-	s.Enabled = val
-}
-
-// SetExpiresAt sets the value of ExpiresAt.
-func (s *CreateApprovalRuleBody) SetExpiresAt(val OptDateTime) {
-	s.ExpiresAt = val
-}
-
-// SetHosts sets the value of Hosts.
-func (s *CreateApprovalRuleBody) SetHosts(val []string) {
-	s.Hosts = val
-}
-
-// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
-func (s *CreateApprovalRuleBody) SetMaxGrantTTLSeconds(val OptInt64) {
-	s.MaxGrantTTLSeconds = val
-}
-
-// SetPurpose sets the value of Purpose.
-func (s *CreateApprovalRuleBody) SetPurpose(val OptCreateApprovalRuleBodyPurpose) {
-	s.Purpose = val
-}
-
-// SetEveryDiscobox sets the value of EveryDiscobox.
-func (s *CreateApprovalRuleBody) SetEveryDiscobox(val OptBool) {
-	s.EveryDiscobox = val
-}
-
-// SetRepositories sets the value of Repositories.
-func (s *CreateApprovalRuleBody) SetRepositories(val []string) {
-	s.Repositories = val
-}
-
-// SetSecretId sets the value of SecretId.
-func (s *CreateApprovalRuleBody) SetSecretId(val OptString) {
-	s.SecretId = val
-}
-
-// SetPolicy sets the value of Policy.
-func (s *CreateApprovalRuleBody) SetPolicy(val AccessPolicy) {
-	s.Policy = val
-}
-
-// SetWellKnownId sets the value of WellKnownId.
-func (s *CreateApprovalRuleBody) SetWellKnownId(val OptString) {
-	s.WellKnownId = val
-}
-
-// What the rule approves a credential for. Left out, to use it.
-type CreateApprovalRuleBodyPurpose string
-
-const (
-	CreateApprovalRuleBodyPurposeUse      CreateApprovalRuleBodyPurpose = "use"
-	CreateApprovalRuleBodyPurposeDelegate CreateApprovalRuleBodyPurpose = "delegate"
-)
-
-// AllValues returns all CreateApprovalRuleBodyPurpose values.
-func (CreateApprovalRuleBodyPurpose) AllValues() []CreateApprovalRuleBodyPurpose {
-	return []CreateApprovalRuleBodyPurpose{
-		CreateApprovalRuleBodyPurposeUse,
-		CreateApprovalRuleBodyPurposeDelegate,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s CreateApprovalRuleBodyPurpose) MarshalText() ([]byte, error) {
-	switch s {
-	case CreateApprovalRuleBodyPurposeUse:
-		return []byte(s), nil
-	case CreateApprovalRuleBodyPurposeDelegate:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *CreateApprovalRuleBodyPurpose) UnmarshalText(data []byte) error {
-	switch CreateApprovalRuleBodyPurpose(data) {
-	case CreateApprovalRuleBodyPurposeUse:
-		*s = CreateApprovalRuleBodyPurposeUse
-		return nil
-	case CreateApprovalRuleBodyPurposeDelegate:
-		*s = CreateApprovalRuleBodyPurposeDelegate
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }
 
 // Ref: #/components/schemas/CreateHarnessConfigBody
@@ -1943,6 +1062,9 @@ func (s *CreateSSHKeyBody) SetPublicKey(val string) {
 type CreateSandboxBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Let the new discobox call the discobox API through its pool, acting only on the discoboxes it
+	// creates (ADR 26-10-27-880 §9). A discobox creating one may set it only when it has it itself.
+	DiscoboxApi OptBool `json:"discoboxApi"`
 	// Harness config to resolve at create time, by slug, name or ID.
 	HarnessName OptString `json:"harnessName"`
 	// Desired sandbox configuration.
@@ -1951,15 +1073,21 @@ type CreateSandboxBody struct {
 	Origin OptOrigin `json:"origin"`
 	// Pool to schedule the sandbox into. Defaults to the project's default pool.
 	PoolId OptString `json:"poolId"`
-	// Uses of project secrets to give the new discobox, minted as grants for it in the same transaction
-	// that creates it, so a create that cannot mint one creates nothing. Its agent takes each with
-	// discobox-access, one use at a time; nothing in the discobox can read the credential.
+	// Project secrets to give the new discobox, each minted as a sandbox grant with the variable it is
+	// delivered in, in the same transaction that creates it, so a create that cannot mint one creates
+	// nothing. The discobox receives a sentinel in each variable, which its pool swaps for the value on
+	// the hosts the grant covers.
 	Grants []SandboxGrant `json:"grants"`
 }
 
 // GetSchema returns the value of Schema.
 func (s *CreateSandboxBody) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetDiscoboxApi returns the value of DiscoboxApi.
+func (s *CreateSandboxBody) GetDiscoboxApi() OptBool {
+	return s.DiscoboxApi
 }
 
 // GetHarnessName returns the value of HarnessName.
@@ -1992,6 +1120,11 @@ func (s *CreateSandboxBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
+// SetDiscoboxApi sets the value of DiscoboxApi.
+func (s *CreateSandboxBody) SetDiscoboxApi(val OptBool) {
+	s.DiscoboxApi = val
+}
+
 // SetHarnessName sets the value of HarnessName.
 func (s *CreateSandboxBody) SetHarnessName(val OptString) {
 	s.HarnessName = val
@@ -2022,34 +1155,26 @@ func (s *CreateSandboxBody) SetGrants(val []SandboxGrant) {
 type CreateSandboxCredentialRequestBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Environment variable the credential is wanted in.
-	EnvVar string `json:"envVar"`
+	// Environment variable the credential is wanted in. Required to use it; a request to delegate it
+	// names none, since a delegation delivers nothing to the asking sandbox.
+	EnvVar OptString `json:"envVar"`
 	// How long the agent asks the grant to live, in seconds, up to thirty days. A suggestion the
 	// approver starts from, not a term. 0 or absent asks for nothing in particular; forever cannot be
 	// asked for, and neither can a span longer than the ceiling.
 	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
 	// Destination hosts the credential will be sent to (ADR 26-10-02-393). At least one is required,
-	// because approving this request may not mint a host-unscoped grant; a well-known credential's ID
-	// supplies its first when none is named.
+	// because approving this request may not mint a host-unscoped grant.
 	Hosts []string `json:"hosts"`
 	// What the agent asks the credential for, one or the other and never both. use (the default) asks to
 	// use it. delegate asks to delegate it to other discoboxes; approving it mints a delegation grant,
 	// which authorizes nothing the asking discobox sends itself.
 	Purpose OptCreateSandboxCredentialRequestBodyPurpose `json:"purpose"`
-	// The well-known credential asked for, such as com.github.api. The name, variable, and host must
-	// then be the ones the ID names.
-	ID OptString `json:"id"`
 	// Why the agent says it needs the credential.
 	Justification OptString `json:"justification"`
 	// Credential name the agent asked for.
 	Name string `json:"name"`
 	// Sandbox the agent is running in.
 	SandboxId string `json:"sandboxId"`
-	// Uses the agent asks for.
-	Uses []SecretUse `json:"uses"`
-	// The policy the agent asks for, beside its uses (ADR 26-10-20-782). Required; a request without one
-	// is refused as invalid, with how to write one.
-	Policy OptAccessPolicy `json:"policy"`
 }
 
 // GetSchema returns the value of Schema.
@@ -2058,7 +1183,7 @@ func (s *CreateSandboxCredentialRequestBody) GetSchema() OptURI {
 }
 
 // GetEnvVar returns the value of EnvVar.
-func (s *CreateSandboxCredentialRequestBody) GetEnvVar() string {
+func (s *CreateSandboxCredentialRequestBody) GetEnvVar() OptString {
 	return s.EnvVar
 }
 
@@ -2077,11 +1202,6 @@ func (s *CreateSandboxCredentialRequestBody) GetPurpose() OptCreateSandboxCreden
 	return s.Purpose
 }
 
-// GetID returns the value of ID.
-func (s *CreateSandboxCredentialRequestBody) GetID() OptString {
-	return s.ID
-}
-
 // GetJustification returns the value of Justification.
 func (s *CreateSandboxCredentialRequestBody) GetJustification() OptString {
 	return s.Justification
@@ -2097,23 +1217,13 @@ func (s *CreateSandboxCredentialRequestBody) GetSandboxId() string {
 	return s.SandboxId
 }
 
-// GetUses returns the value of Uses.
-func (s *CreateSandboxCredentialRequestBody) GetUses() []SecretUse {
-	return s.Uses
-}
-
-// GetPolicy returns the value of Policy.
-func (s *CreateSandboxCredentialRequestBody) GetPolicy() OptAccessPolicy {
-	return s.Policy
-}
-
 // SetSchema sets the value of Schema.
 func (s *CreateSandboxCredentialRequestBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
 // SetEnvVar sets the value of EnvVar.
-func (s *CreateSandboxCredentialRequestBody) SetEnvVar(val string) {
+func (s *CreateSandboxCredentialRequestBody) SetEnvVar(val OptString) {
 	s.EnvVar = val
 }
 
@@ -2132,11 +1242,6 @@ func (s *CreateSandboxCredentialRequestBody) SetPurpose(val OptCreateSandboxCred
 	s.Purpose = val
 }
 
-// SetID sets the value of ID.
-func (s *CreateSandboxCredentialRequestBody) SetID(val OptString) {
-	s.ID = val
-}
-
 // SetJustification sets the value of Justification.
 func (s *CreateSandboxCredentialRequestBody) SetJustification(val OptString) {
 	s.Justification = val
@@ -2150,16 +1255,6 @@ func (s *CreateSandboxCredentialRequestBody) SetName(val string) {
 // SetSandboxId sets the value of SandboxId.
 func (s *CreateSandboxCredentialRequestBody) SetSandboxId(val string) {
 	s.SandboxId = val
-}
-
-// SetUses sets the value of Uses.
-func (s *CreateSandboxCredentialRequestBody) SetUses(val []SecretUse) {
-	s.Uses = val
-}
-
-// SetPolicy sets the value of Policy.
-func (s *CreateSandboxCredentialRequestBody) SetPolicy(val OptAccessPolicy) {
-	s.Policy = val
 }
 
 // What the agent asks the credential for, one or the other and never both. use (the default) asks to
@@ -2506,8 +1601,6 @@ type CreateSandboxTrustRequestBody struct {
 	// Sandbox asking for the trust.
 	SandboxId  string                 `json:"sandboxId"`
 	SuppliedCA OptObservedCertificate `json:"suppliedCA"`
-	// What the agent says it will send the host.
-	Uses []SecretUse `json:"uses"`
 }
 
 // GetSchema returns the value of Schema.
@@ -2545,11 +1638,6 @@ func (s *CreateSandboxTrustRequestBody) GetSuppliedCA() OptObservedCertificate {
 	return s.SuppliedCA
 }
 
-// GetUses returns the value of Uses.
-func (s *CreateSandboxTrustRequestBody) GetUses() []SecretUse {
-	return s.Uses
-}
-
 // SetSchema sets the value of Schema.
 func (s *CreateSandboxTrustRequestBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -2585,11 +1673,6 @@ func (s *CreateSandboxTrustRequestBody) SetSuppliedCA(val OptObservedCertificate
 	s.SuppliedCA = val
 }
 
-// SetUses sets the value of Uses.
-func (s *CreateSandboxTrustRequestBody) SetUses(val []SecretUse) {
-	s.Uses = val
-}
-
 // Ref: #/components/schemas/CreateSecretBody
 type CreateSecretBody struct {
 	// A URL to the JSON Schema for this object.
@@ -2606,15 +1689,14 @@ type CreateSecretBody struct {
 	Host OptString `json:"host"`
 	// A command a person's client may run to produce a new value, as an argument vector run without a
 	// shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only;
-	// setting one without ttlSeconds gives the token the well-known credential's own lifetime when
-	// wellKnownId names one (a day for com.github.api), else 300s. An empty array removes it.
+	// setting one without ttlSeconds gives the token 300s. An empty array removes it.
 	RefreshCommand OptNilStringArray `json:"refreshCommand"`
 	// How long a value is good for after it is written, in seconds; 0 never goes stale. Token secrets
 	// only.
 	TtlSeconds OptInt64 `json:"ttlSeconds"`
 	// Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in
-	// must fall on one; the most specific route covering it decides, unjudged when it carries no use and
-	// judged against its use when it does. Omitted or empty leaves it to its grants.
+	// must fall on one; the most specific route covering it decides, and a blocked one refuses. Omitted
+	// or empty leaves it to its grants.
 	Routes OptNilSecretRouteInputArray `json:"routes"`
 	// When this value goes stale, for a value that knows its own lifetime; overrides ttlSeconds for this
 	// value only. Token secrets only, and only with a value.
@@ -2624,10 +1706,6 @@ type CreateSecretBody struct {
 	// Secret type.
 	Type  CreateSecretBodyType `json:"type"`
 	Value SecretValue          `json:"value"`
-	// The well-known credential this secret answers, such as com.github.api. A request for that ID then
-	// resolves to it without anyone being asked which secret answers it. A token only; a gate is refused,
-	//  and so is an ID another secret already answers.
-	WellKnownId OptString `json:"wellKnownId"`
 }
 
 // GetSchema returns the value of Schema.
@@ -2690,11 +1768,6 @@ func (s *CreateSecretBody) GetValue() SecretValue {
 	return s.Value
 }
 
-// GetWellKnownId returns the value of WellKnownId.
-func (s *CreateSecretBody) GetWellKnownId() OptString {
-	return s.WellKnownId
-}
-
 // SetSchema sets the value of Schema.
 func (s *CreateSecretBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -2753,11 +1826,6 @@ func (s *CreateSecretBody) SetType(val CreateSecretBodyType) {
 // SetValue sets the value of Value.
 func (s *CreateSecretBody) SetValue(val SecretValue) {
 	s.Value = val
-}
-
-// SetWellKnownId sets the value of WellKnownId.
-func (s *CreateSecretBody) SetWellKnownId(val OptString) {
-	s.WellKnownId = val
 }
 
 // Secret type.
@@ -2825,21 +1893,9 @@ type CreateSecretGrantBody struct {
 	ScopeKey OptString `json:"scopeKey"`
 	// Secret ID to grant.
 	SecretId string `json:"secretId"`
-	// Environment variable an agent receives the credential in, for a grant carrying uses. Required with
-	// uses, and meaningless without them -- the credential is never injected, so this names the variable
-	// only for the process the CLI wraps.
-	EnvVar OptString `json:"envVar"`
-	// Approved uses, making this a credential only the agent credentials CLI can take, one use at a time.
-	//  Sandbox scope only, a concrete host required, and use IDs are minted here -- a supplied one is
-	// ignored.
-	Uses OptNilSecretUseArray `json:"uses"`
-	// The policy the grant carries (ADR 26-10-20-782). Required with uses, and refused without them. Its
-	// variables resolve only for a grant scoped to one sandbox; a project or harness config grant may
-	// carry a policy that uses none.
-	Policy OptAccessPolicy `json:"policy"`
 	// What the grant authorizes its holder to do, one or the other and never both. use (the default)
-	// lets it use the credential. delegate lets it delegate the credential to other discoboxes and
-	// authorizes nothing it sends itself; sandbox scope, with uses, only.
+	// lets it use the credential. delegate lets it give the credential to the discoboxes it creates and
+	// authorizes nothing it sends itself; sandbox scope only.
 	Purpose OptCreateSecretGrantBodyPurpose `json:"purpose"`
 }
 
@@ -2871,21 +1927,6 @@ func (s *CreateSecretGrantBody) GetScopeKey() OptString {
 // GetSecretId returns the value of SecretId.
 func (s *CreateSecretGrantBody) GetSecretId() string {
 	return s.SecretId
-}
-
-// GetEnvVar returns the value of EnvVar.
-func (s *CreateSecretGrantBody) GetEnvVar() OptString {
-	return s.EnvVar
-}
-
-// GetUses returns the value of Uses.
-func (s *CreateSecretGrantBody) GetUses() OptNilSecretUseArray {
-	return s.Uses
-}
-
-// GetPolicy returns the value of Policy.
-func (s *CreateSecretGrantBody) GetPolicy() OptAccessPolicy {
-	return s.Policy
 }
 
 // GetPurpose returns the value of Purpose.
@@ -2923,29 +1964,14 @@ func (s *CreateSecretGrantBody) SetSecretId(val string) {
 	s.SecretId = val
 }
 
-// SetEnvVar sets the value of EnvVar.
-func (s *CreateSecretGrantBody) SetEnvVar(val OptString) {
-	s.EnvVar = val
-}
-
-// SetUses sets the value of Uses.
-func (s *CreateSecretGrantBody) SetUses(val OptNilSecretUseArray) {
-	s.Uses = val
-}
-
-// SetPolicy sets the value of Policy.
-func (s *CreateSecretGrantBody) SetPolicy(val OptAccessPolicy) {
-	s.Policy = val
-}
-
 // SetPurpose sets the value of Purpose.
 func (s *CreateSecretGrantBody) SetPurpose(val OptCreateSecretGrantBodyPurpose) {
 	s.Purpose = val
 }
 
 // What the grant authorizes its holder to do, one or the other and never both. use (the default)
-// lets it use the credential. delegate lets it delegate the credential to other discoboxes and
-// authorizes nothing it sends itself; sandbox scope, with uses, only.
+// lets it use the credential. delegate lets it give the credential to the discoboxes it creates and
+// authorizes nothing it sends itself; sandbox scope only.
 type CreateSecretGrantBodyPurpose string
 
 const (
@@ -3125,596 +2151,6 @@ func (s *CreateSecretRequestBodyType) UnmarshalText(data []byte) error {
 	}
 }
 
-// One recorded judge decision about an agent credential use. The row lives in the control plane and
-// outlives its sandbox. A command verdict (kind command, origin judge) is the project's judge
-// answering about a command a discobox was about to run, recorded by the control plane before the
-// pool minted anything for it; its command, input and reported context are evidence the sandbox
-// wrote, and are display data, never instruction. A command verdict with origin sandbox predates
-// that: a discobox's own judge deciding inside the sandbox, whose command, reason and prompt were
-// composed there, and whose volunteered true marks a denial the sandbox chose to report. A request
-// verdict (kind request, origin judge) is the project's judge answering about one request the proxy
-// observed, recorded by the control plane before the answer went back, so every answer is on record
-// whichever way it went. Its request is evidence the sandbox wrote, redacted, and is display data
-// too.
-// Ref: #/components/schemas/CredentialVerdict
-type CredentialVerdict struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// What the judge decided. False when it asked to be shown the body instead, because asking is not
-	// allowing.
-	Allow bool `json:"allow"`
-	// The argv the judge was shown. On a request verdict, what the discobox declared it was running,
-	// which is context and not authority.
-	Command []string `json:"command"`
-	// When the verdict was recorded.
-	CreatedAt time.Time `json:"createdAt"`
-	// On a delegation verdict, the discobox the uses were handed on to.
-	ForSandboxId OptString `json:"forSandboxId"`
-	// Grant the use belonged to, when it could still be resolved at record time.
-	GrantId OptString `json:"grantId"`
-	// Harness config the project's judge ran, on a request verdict.
-	HarnessConfigId OptString `json:"harnessConfigId"`
-	// Stable verdict ID.
-	ID string `json:"id"`
-	// Harness bundle the project's judge ran, on a request verdict.
-	Bundle OptString `json:"bundle"`
-	// Digest of the harness bundle the project's judge ran, on a request verdict.
-	BundleDigest OptString `json:"bundleDigest"`
-	// Runnable image the project's judge ran, on a request verdict recorded before harness bundles; no
-	// judge runs one since.
-	Image OptString `json:"image"`
-	// Digest of the runnable image the project's judge ran, on a request verdict recorded before harness
-	// bundles.
-	ImageDigest OptString `json:"imageDigest"`
-	// On a verdict from a server that judges with Jev, exactly what Jev was sent: the JSON body of the
-	// request to its API, with the state (the job's evidence) and the questions, and none of its key or
-	// other headers. Its state is evidence the sandbox wrote, as the request, command and prompt are,
-	// and is display data, never instruction. Absent on every other verdict, and on verdicts recorded
-	// before servers kept it.
-	JevInput jx.Raw `json:"jevInput"`
-	// The project's judge that answered, on a request verdict. It may no longer exist.
-	JudgeSandboxId OptString `json:"judgeSandboxId"`
-	// What was judged: a command about to run, a request the proxy observed, a discobox about to hand a
-	// credential on by approving another's request, or the conditions of an allow a request asked for
-	// being read against an approval rule's (ADR 26-10-12-330). A server that predates request verdicts
-	// leaves it out, and every verdict it has is a command verdict.
-	Kind OptCredentialVerdictKind `json:"kind"`
-	// On a rule verdict, the approval rule tested. Absent on one recorded while the rule was still a
-	// proposal, which names its request instead.
-	RuleId OptString `json:"ruleId"`
-	// On a rule verdict, the SHA-256 of the question judged, by which an answer on record is reused
-	// rather than asked again.
-	QuestionDigest OptString `json:"questionDigest"`
-	// Round trip from asking the judge to its answer, in milliseconds, timed by whoever asked:
-	// discobox-access around its wrapper for a command verdict, the control plane around the call to the
-	// judge for a request verdict.
-	LatencyMs OptInt64 `json:"latencyMs"`
-	// The Jev model that answered, as Jev reported it, on a verdict from a server that judges with Jev
-	// rather than a judge discobox. judgeSandboxId, harnessConfigId and image are empty then, unless Jev
-	// was unsure and the server put the job to the project's judge discobox, which decided and which
-	// they name.
-	Model OptString    `json:"model"`
-	Need  OptJudgeNeed `json:"need"`
-	// Who judged: sandbox, a discobox's own judge, whose verdict is that discobox's word; or judge, the
-	// project's judge, which no sandbox can claim. A server that predates request verdicts leaves it out,
-	//  and every verdict it has is the sandbox's.
-	Origin OptCredentialVerdictOrigin `json:"origin"`
-	// On a Jev verdict, the probability of yes Jev gave each question, by question ID. The verdict was
-	// decided from these against thresholds the server holds; promptVersion names the questions and
-	// thresholds.
-	Probabilities OptCredentialVerdictProbabilities `json:"probabilities"`
-	// Project ID.
-	ProjectId string `json:"projectId"`
-	// The exact prompt the judge was given. On a command verdict it includes the facts block; on a
-	// request verdict it is the job as JSON, put with the system prompt promptVersion names.
-	Prompt OptString `json:"prompt"`
-	// The version of the system prompt the project's judge was given, on a request verdict.
-	PromptVersion OptString `json:"promptVersion"`
-	// The judge's own sentence.
-	Reason  OptString               `json:"reason"`
-	Request OptJudgeRequestEvidence `json:"request"`
-	// The role discobox-prompt was asked for (e.g. judge), never a vendor model id.
-	Role OptString `json:"role"`
-	// Which ask about the request this answered, from 1, on a request verdict.
-	Round OptInt64 `json:"round"`
-	// Sandbox the command ran in, or the request came from. It may no longer exist.
-	SandboxId string `json:"sandboxId"`
-	// On a delegation verdict, the secret request the discobox was approving; the request names the
-	// grant the approval minted.
-	SecretRequestId OptString `json:"secretRequestId"`
-	// The route this allow was let stand for, on a request verdict whose judge asked for one and whose
-	// route the control plane admitted. Requests matching it from the same discobox, under the same use,
-	// to the same host, were allowed until standingUntil without asking the judge.
-	StandingRoute OptString `json:"standingRoute"`
-	// When the allow standing for standingRoute stops covering requests.
-	StandingUntil OptDateTime `json:"standingUntil"`
-	// The verdict whose standing allow decided this request, which no model read. Its judge, reason and
-	// prompt version are that verdict's.
-	StandingVerdictId OptString `json:"standingVerdictId"`
-	// Approved use that was judged against. Joins to the proxy audit trail's swapped use IDs.
-	UseId string `json:"useId"`
-	// True when the sandbox reported this after a denial the issuing call never saw.
-	Volunteered bool `json:"volunteered"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *CredentialVerdict) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetAllow returns the value of Allow.
-func (s *CredentialVerdict) GetAllow() bool {
-	return s.Allow
-}
-
-// GetCommand returns the value of Command.
-func (s *CredentialVerdict) GetCommand() []string {
-	return s.Command
-}
-
-// GetCreatedAt returns the value of CreatedAt.
-func (s *CredentialVerdict) GetCreatedAt() time.Time {
-	return s.CreatedAt
-}
-
-// GetForSandboxId returns the value of ForSandboxId.
-func (s *CredentialVerdict) GetForSandboxId() OptString {
-	return s.ForSandboxId
-}
-
-// GetGrantId returns the value of GrantId.
-func (s *CredentialVerdict) GetGrantId() OptString {
-	return s.GrantId
-}
-
-// GetHarnessConfigId returns the value of HarnessConfigId.
-func (s *CredentialVerdict) GetHarnessConfigId() OptString {
-	return s.HarnessConfigId
-}
-
-// GetID returns the value of ID.
-func (s *CredentialVerdict) GetID() string {
-	return s.ID
-}
-
-// GetBundle returns the value of Bundle.
-func (s *CredentialVerdict) GetBundle() OptString {
-	return s.Bundle
-}
-
-// GetBundleDigest returns the value of BundleDigest.
-func (s *CredentialVerdict) GetBundleDigest() OptString {
-	return s.BundleDigest
-}
-
-// GetImage returns the value of Image.
-func (s *CredentialVerdict) GetImage() OptString {
-	return s.Image
-}
-
-// GetImageDigest returns the value of ImageDigest.
-func (s *CredentialVerdict) GetImageDigest() OptString {
-	return s.ImageDigest
-}
-
-// GetJevInput returns the value of JevInput.
-func (s *CredentialVerdict) GetJevInput() jx.Raw {
-	return s.JevInput
-}
-
-// GetJudgeSandboxId returns the value of JudgeSandboxId.
-func (s *CredentialVerdict) GetJudgeSandboxId() OptString {
-	return s.JudgeSandboxId
-}
-
-// GetKind returns the value of Kind.
-func (s *CredentialVerdict) GetKind() OptCredentialVerdictKind {
-	return s.Kind
-}
-
-// GetRuleId returns the value of RuleId.
-func (s *CredentialVerdict) GetRuleId() OptString {
-	return s.RuleId
-}
-
-// GetQuestionDigest returns the value of QuestionDigest.
-func (s *CredentialVerdict) GetQuestionDigest() OptString {
-	return s.QuestionDigest
-}
-
-// GetLatencyMs returns the value of LatencyMs.
-func (s *CredentialVerdict) GetLatencyMs() OptInt64 {
-	return s.LatencyMs
-}
-
-// GetModel returns the value of Model.
-func (s *CredentialVerdict) GetModel() OptString {
-	return s.Model
-}
-
-// GetNeed returns the value of Need.
-func (s *CredentialVerdict) GetNeed() OptJudgeNeed {
-	return s.Need
-}
-
-// GetOrigin returns the value of Origin.
-func (s *CredentialVerdict) GetOrigin() OptCredentialVerdictOrigin {
-	return s.Origin
-}
-
-// GetProbabilities returns the value of Probabilities.
-func (s *CredentialVerdict) GetProbabilities() OptCredentialVerdictProbabilities {
-	return s.Probabilities
-}
-
-// GetProjectId returns the value of ProjectId.
-func (s *CredentialVerdict) GetProjectId() string {
-	return s.ProjectId
-}
-
-// GetPrompt returns the value of Prompt.
-func (s *CredentialVerdict) GetPrompt() OptString {
-	return s.Prompt
-}
-
-// GetPromptVersion returns the value of PromptVersion.
-func (s *CredentialVerdict) GetPromptVersion() OptString {
-	return s.PromptVersion
-}
-
-// GetReason returns the value of Reason.
-func (s *CredentialVerdict) GetReason() OptString {
-	return s.Reason
-}
-
-// GetRequest returns the value of Request.
-func (s *CredentialVerdict) GetRequest() OptJudgeRequestEvidence {
-	return s.Request
-}
-
-// GetRole returns the value of Role.
-func (s *CredentialVerdict) GetRole() OptString {
-	return s.Role
-}
-
-// GetRound returns the value of Round.
-func (s *CredentialVerdict) GetRound() OptInt64 {
-	return s.Round
-}
-
-// GetSandboxId returns the value of SandboxId.
-func (s *CredentialVerdict) GetSandboxId() string {
-	return s.SandboxId
-}
-
-// GetSecretRequestId returns the value of SecretRequestId.
-func (s *CredentialVerdict) GetSecretRequestId() OptString {
-	return s.SecretRequestId
-}
-
-// GetStandingRoute returns the value of StandingRoute.
-func (s *CredentialVerdict) GetStandingRoute() OptString {
-	return s.StandingRoute
-}
-
-// GetStandingUntil returns the value of StandingUntil.
-func (s *CredentialVerdict) GetStandingUntil() OptDateTime {
-	return s.StandingUntil
-}
-
-// GetStandingVerdictId returns the value of StandingVerdictId.
-func (s *CredentialVerdict) GetStandingVerdictId() OptString {
-	return s.StandingVerdictId
-}
-
-// GetUseId returns the value of UseId.
-func (s *CredentialVerdict) GetUseId() string {
-	return s.UseId
-}
-
-// GetVolunteered returns the value of Volunteered.
-func (s *CredentialVerdict) GetVolunteered() bool {
-	return s.Volunteered
-}
-
-// SetSchema sets the value of Schema.
-func (s *CredentialVerdict) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetAllow sets the value of Allow.
-func (s *CredentialVerdict) SetAllow(val bool) {
-	s.Allow = val
-}
-
-// SetCommand sets the value of Command.
-func (s *CredentialVerdict) SetCommand(val []string) {
-	s.Command = val
-}
-
-// SetCreatedAt sets the value of CreatedAt.
-func (s *CredentialVerdict) SetCreatedAt(val time.Time) {
-	s.CreatedAt = val
-}
-
-// SetForSandboxId sets the value of ForSandboxId.
-func (s *CredentialVerdict) SetForSandboxId(val OptString) {
-	s.ForSandboxId = val
-}
-
-// SetGrantId sets the value of GrantId.
-func (s *CredentialVerdict) SetGrantId(val OptString) {
-	s.GrantId = val
-}
-
-// SetHarnessConfigId sets the value of HarnessConfigId.
-func (s *CredentialVerdict) SetHarnessConfigId(val OptString) {
-	s.HarnessConfigId = val
-}
-
-// SetID sets the value of ID.
-func (s *CredentialVerdict) SetID(val string) {
-	s.ID = val
-}
-
-// SetBundle sets the value of Bundle.
-func (s *CredentialVerdict) SetBundle(val OptString) {
-	s.Bundle = val
-}
-
-// SetBundleDigest sets the value of BundleDigest.
-func (s *CredentialVerdict) SetBundleDigest(val OptString) {
-	s.BundleDigest = val
-}
-
-// SetImage sets the value of Image.
-func (s *CredentialVerdict) SetImage(val OptString) {
-	s.Image = val
-}
-
-// SetImageDigest sets the value of ImageDigest.
-func (s *CredentialVerdict) SetImageDigest(val OptString) {
-	s.ImageDigest = val
-}
-
-// SetJevInput sets the value of JevInput.
-func (s *CredentialVerdict) SetJevInput(val jx.Raw) {
-	s.JevInput = val
-}
-
-// SetJudgeSandboxId sets the value of JudgeSandboxId.
-func (s *CredentialVerdict) SetJudgeSandboxId(val OptString) {
-	s.JudgeSandboxId = val
-}
-
-// SetKind sets the value of Kind.
-func (s *CredentialVerdict) SetKind(val OptCredentialVerdictKind) {
-	s.Kind = val
-}
-
-// SetRuleId sets the value of RuleId.
-func (s *CredentialVerdict) SetRuleId(val OptString) {
-	s.RuleId = val
-}
-
-// SetQuestionDigest sets the value of QuestionDigest.
-func (s *CredentialVerdict) SetQuestionDigest(val OptString) {
-	s.QuestionDigest = val
-}
-
-// SetLatencyMs sets the value of LatencyMs.
-func (s *CredentialVerdict) SetLatencyMs(val OptInt64) {
-	s.LatencyMs = val
-}
-
-// SetModel sets the value of Model.
-func (s *CredentialVerdict) SetModel(val OptString) {
-	s.Model = val
-}
-
-// SetNeed sets the value of Need.
-func (s *CredentialVerdict) SetNeed(val OptJudgeNeed) {
-	s.Need = val
-}
-
-// SetOrigin sets the value of Origin.
-func (s *CredentialVerdict) SetOrigin(val OptCredentialVerdictOrigin) {
-	s.Origin = val
-}
-
-// SetProbabilities sets the value of Probabilities.
-func (s *CredentialVerdict) SetProbabilities(val OptCredentialVerdictProbabilities) {
-	s.Probabilities = val
-}
-
-// SetProjectId sets the value of ProjectId.
-func (s *CredentialVerdict) SetProjectId(val string) {
-	s.ProjectId = val
-}
-
-// SetPrompt sets the value of Prompt.
-func (s *CredentialVerdict) SetPrompt(val OptString) {
-	s.Prompt = val
-}
-
-// SetPromptVersion sets the value of PromptVersion.
-func (s *CredentialVerdict) SetPromptVersion(val OptString) {
-	s.PromptVersion = val
-}
-
-// SetReason sets the value of Reason.
-func (s *CredentialVerdict) SetReason(val OptString) {
-	s.Reason = val
-}
-
-// SetRequest sets the value of Request.
-func (s *CredentialVerdict) SetRequest(val OptJudgeRequestEvidence) {
-	s.Request = val
-}
-
-// SetRole sets the value of Role.
-func (s *CredentialVerdict) SetRole(val OptString) {
-	s.Role = val
-}
-
-// SetRound sets the value of Round.
-func (s *CredentialVerdict) SetRound(val OptInt64) {
-	s.Round = val
-}
-
-// SetSandboxId sets the value of SandboxId.
-func (s *CredentialVerdict) SetSandboxId(val string) {
-	s.SandboxId = val
-}
-
-// SetSecretRequestId sets the value of SecretRequestId.
-func (s *CredentialVerdict) SetSecretRequestId(val OptString) {
-	s.SecretRequestId = val
-}
-
-// SetStandingRoute sets the value of StandingRoute.
-func (s *CredentialVerdict) SetStandingRoute(val OptString) {
-	s.StandingRoute = val
-}
-
-// SetStandingUntil sets the value of StandingUntil.
-func (s *CredentialVerdict) SetStandingUntil(val OptDateTime) {
-	s.StandingUntil = val
-}
-
-// SetStandingVerdictId sets the value of StandingVerdictId.
-func (s *CredentialVerdict) SetStandingVerdictId(val OptString) {
-	s.StandingVerdictId = val
-}
-
-// SetUseId sets the value of UseId.
-func (s *CredentialVerdict) SetUseId(val string) {
-	s.UseId = val
-}
-
-// SetVolunteered sets the value of Volunteered.
-func (s *CredentialVerdict) SetVolunteered(val bool) {
-	s.Volunteered = val
-}
-
-// What was judged: a command about to run, a request the proxy observed, a discobox about to hand a
-// credential on by approving another's request, or the conditions of an allow a request asked for
-// being read against an approval rule's (ADR 26-10-12-330). A server that predates request verdicts
-// leaves it out, and every verdict it has is a command verdict.
-type CredentialVerdictKind string
-
-const (
-	CredentialVerdictKindCommand    CredentialVerdictKind = "command"
-	CredentialVerdictKindRequest    CredentialVerdictKind = "request"
-	CredentialVerdictKindDelegation CredentialVerdictKind = "delegation"
-	CredentialVerdictKindRule       CredentialVerdictKind = "rule"
-)
-
-// AllValues returns all CredentialVerdictKind values.
-func (CredentialVerdictKind) AllValues() []CredentialVerdictKind {
-	return []CredentialVerdictKind{
-		CredentialVerdictKindCommand,
-		CredentialVerdictKindRequest,
-		CredentialVerdictKindDelegation,
-		CredentialVerdictKindRule,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s CredentialVerdictKind) MarshalText() ([]byte, error) {
-	switch s {
-	case CredentialVerdictKindCommand:
-		return []byte(s), nil
-	case CredentialVerdictKindRequest:
-		return []byte(s), nil
-	case CredentialVerdictKindDelegation:
-		return []byte(s), nil
-	case CredentialVerdictKindRule:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *CredentialVerdictKind) UnmarshalText(data []byte) error {
-	switch CredentialVerdictKind(data) {
-	case CredentialVerdictKindCommand:
-		*s = CredentialVerdictKindCommand
-		return nil
-	case CredentialVerdictKindRequest:
-		*s = CredentialVerdictKindRequest
-		return nil
-	case CredentialVerdictKindDelegation:
-		*s = CredentialVerdictKindDelegation
-		return nil
-	case CredentialVerdictKindRule:
-		*s = CredentialVerdictKindRule
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Who judged: sandbox, a discobox's own judge, whose verdict is that discobox's word; or judge, the
-// project's judge, which no sandbox can claim. A server that predates request verdicts leaves it out,
-//
-//	and every verdict it has is the sandbox's.
-type CredentialVerdictOrigin string
-
-const (
-	CredentialVerdictOriginSandbox CredentialVerdictOrigin = "sandbox"
-	CredentialVerdictOriginJudge   CredentialVerdictOrigin = "judge"
-)
-
-// AllValues returns all CredentialVerdictOrigin values.
-func (CredentialVerdictOrigin) AllValues() []CredentialVerdictOrigin {
-	return []CredentialVerdictOrigin{
-		CredentialVerdictOriginSandbox,
-		CredentialVerdictOriginJudge,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s CredentialVerdictOrigin) MarshalText() ([]byte, error) {
-	switch s {
-	case CredentialVerdictOriginSandbox:
-		return []byte(s), nil
-	case CredentialVerdictOriginJudge:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *CredentialVerdictOrigin) UnmarshalText(data []byte) error {
-	switch CredentialVerdictOrigin(data) {
-	case CredentialVerdictOriginSandbox:
-		*s = CredentialVerdictOriginSandbox
-		return nil
-	case CredentialVerdictOriginJudge:
-		*s = CredentialVerdictOriginJudge
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// On a Jev verdict, the probability of yes Jev gave each question, by question ID. The verdict was
-// decided from these against thresholds the server holds; promptVersion names the questions and
-// thresholds.
-type CredentialVerdictProbabilities map[string]float64
-
-func (s *CredentialVerdictProbabilities) init() CredentialVerdictProbabilities {
-	m := *s
-	if m == nil {
-		m = map[string]float64{}
-		*s = m
-	}
-	return m
-}
-
 // One DNS query a sandbox asked of its pool, which answered it over the sandbox's mTLS channel and
 // audited it beside the sandbox's HTTP (ADR 0148). Recorded by the pool, so the sandbox cannot alter
 // the row; the name is what the sandbox asked and is display data.
@@ -3855,11 +2291,6 @@ func (s *DNSAuditQuery) SetSandboxId(val string) {
 func (s *DNSAuditQuery) SetType(val string) {
 	s.Type = val
 }
-
-// DeleteApprovalRuleNoContent is response for DeleteApprovalRule operation.
-type DeleteApprovalRuleNoContent struct{}
-
-func (*DeleteApprovalRuleNoContent) deleteApprovalRuleRes() {}
 
 // DeleteHarnessConfigNoContent is response for DeleteHarnessConfig operation.
 type DeleteHarnessConfigNoContent struct{}
@@ -4135,7 +2566,6 @@ func (*ErrorModelStatusCode) commitHarnessConfigConfigureRes()          {}
 func (*ErrorModelStatusCode) completeSandboxApplyRes()                  {}
 func (*ErrorModelStatusCode) completeSandboxSourcePushRes()             {}
 func (*ErrorModelStatusCode) configureHarnessConfigRes()                {}
-func (*ErrorModelStatusCode) createApprovalRuleRes()                    {}
 func (*ErrorModelStatusCode) createHarnessConfigRes()                   {}
 func (*ErrorModelStatusCode) createPeerRes()                            {}
 func (*ErrorModelStatusCode) createPoolRes()                            {}
@@ -4150,7 +2580,6 @@ func (*ErrorModelStatusCode) createSecretGrantRes()                     {}
 func (*ErrorModelStatusCode) createSecretRequestRes()                   {}
 func (*ErrorModelStatusCode) createSecretRes()                          {}
 func (*ErrorModelStatusCode) deconfigureHarnessConfigRes()              {}
-func (*ErrorModelStatusCode) deleteApprovalRuleRes()                    {}
 func (*ErrorModelStatusCode) deleteHarnessConfigRes()                   {}
 func (*ErrorModelStatusCode) deleteHarnessConfigSecretBindingRes()      {}
 func (*ErrorModelStatusCode) deletePeerRes()                            {}
@@ -4166,7 +2595,6 @@ func (*ErrorModelStatusCode) deleteSecretRes()                          {}
 func (*ErrorModelStatusCode) denySecretRequestRes()                     {}
 func (*ErrorModelStatusCode) denyTrustRequestRes()                      {}
 func (*ErrorModelStatusCode) forceJobRes()                              {}
-func (*ErrorModelStatusCode) getApprovalRuleRes()                       {}
 func (*ErrorModelStatusCode) getHTTPAuditRes()                          {}
 func (*ErrorModelStatusCode) getHarnessConfigRes()                      {}
 func (*ErrorModelStatusCode) getJobRes()                                {}
@@ -4177,7 +2605,6 @@ func (*ErrorModelStatusCode) getProjectGatewayRes()                     {}
 func (*ErrorModelStatusCode) getProjectRes()                            {}
 func (*ErrorModelStatusCode) getSSHIngressRes()                         {}
 func (*ErrorModelStatusCode) getSandboxCredentialRequestRes()           {}
-func (*ErrorModelStatusCode) getSandboxPolicyFactsRes()                 {}
 func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()            {}
 func (*ErrorModelStatusCode) getSandboxRes()                            {}
 func (*ErrorModelStatusCode) getSandboxTrustRequestRes()                {}
@@ -4186,11 +2613,7 @@ func (*ErrorModelStatusCode) getSecretRes()                             {}
 func (*ErrorModelStatusCode) getServerInfoRes()                         {}
 func (*ErrorModelStatusCode) getServerPeerRes()                         {}
 func (*ErrorModelStatusCode) getTrustRequestRes()                       {}
-func (*ErrorModelStatusCode) judgeCommandForPoolRes()                   {}
-func (*ErrorModelStatusCode) judgeForPoolRes()                          {}
 func (*ErrorModelStatusCode) listApprovalRequestsRes()                  {}
-func (*ErrorModelStatusCode) listApprovalRulesRes()                     {}
-func (*ErrorModelStatusCode) listCredentialVerdictsRes()                {}
 func (*ErrorModelStatusCode) listDNSAuditRes()                          {}
 func (*ErrorModelStatusCode) listHTTPAuditRes()                         {}
 func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()       {}
@@ -4216,8 +2639,6 @@ func (*ErrorModelStatusCode) listSecretRequestsRes()                    {}
 func (*ErrorModelStatusCode) listSecretsRes()                           {}
 func (*ErrorModelStatusCode) listTrustRequestsRes()                     {}
 func (*ErrorModelStatusCode) mintSandboxAgentStatusTokensRes()          {}
-func (*ErrorModelStatusCode) proposeApprovalRuleFromGrantRes()          {}
-func (*ErrorModelStatusCode) proposeApprovalRulesRes()                  {}
 func (*ErrorModelStatusCode) pullSandboxSourceRes()                     {}
 func (*ErrorModelStatusCode) purgeSandboxRes()                          {}
 func (*ErrorModelStatusCode) putProjectGatewayRes()                     {}
@@ -4248,7 +2669,6 @@ func (*ErrorModelStatusCode) suspendSandboxRes()                        {}
 func (*ErrorModelStatusCode) unarchiveSandboxRes()                      {}
 func (*ErrorModelStatusCode) unsetDefaultHarnessConfigRes()             {}
 func (*ErrorModelStatusCode) unsetDefaultPoolRes()                      {}
-func (*ErrorModelStatusCode) updateApprovalRuleRes()                    {}
 func (*ErrorModelStatusCode) updateHarnessConfigRes()                   {}
 func (*ErrorModelStatusCode) updatePoolRes()                            {}
 func (*ErrorModelStatusCode) updatePoolStatusRes()                      {}
@@ -4320,7 +2740,6 @@ func (*ErrorResponseStatusCode) getSandboxRuntimeConfigRes()            {}
 func (*ErrorResponseStatusCode) getSandboxServiceRes()                  {}
 func (*ErrorResponseStatusCode) getSandboxSourceProjectLayerRes()       {}
 func (*ErrorResponseStatusCode) getSandboxSourceStatesRes()             {}
-func (*ErrorResponseStatusCode) judgeSandboxRes()                       {}
 func (*ErrorResponseStatusCode) listExecEventsRes()                     {}
 func (*ErrorResponseStatusCode) listHarnessHooksRes()                   {}
 func (*ErrorResponseStatusCode) listSandboxExecEventsRes()              {}
@@ -4333,7 +2752,6 @@ func (*ErrorResponseStatusCode) listSandboxServicesRes()                {}
 func (*ErrorResponseStatusCode) listSandboxToolsRes()                   {}
 func (*ErrorResponseStatusCode) makeSandboxDirectoryRes()               {}
 func (*ErrorResponseStatusCode) moveSandboxFileRes()                    {}
-func (*ErrorResponseStatusCode) proposeSandboxRuleRes()                 {}
 func (*ErrorResponseStatusCode) putSandboxRuntimeConfigRes()            {}
 func (*ErrorResponseStatusCode) readSandboxFileRes()                    {}
 func (*ErrorResponseStatusCode) reconsiderSandboxHarnessConfigRes()     {}
@@ -5337,13 +3755,13 @@ type HTTPAuditExchange struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// True when the proxy refused the request itself and never sent it -- by its destination policy, by
-	// the credential judge, at the discobox API's gate, or because the control plane could not resolve a
-	// credential it carries. blockedReason says which, and why.
+	// a credential's routes, at the discobox API's gate, or because the control plane could not resolve
+	// a credential it carries. blockedReason says which, and why.
 	Blocked bool `json:"blocked"`
 	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
-	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential
-	// unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that
-	// could not set its headers -- then the reason.
+	// policy, "route:" for a credential whose routes do not allow the request, "gate:" for the discobox
+	// API's gate, "credential unavailable:" for a credential the control plane could not resolve,
+	// "gateway:" for a gateway that could not set its headers -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// True when the response came from the pool's response cache.
 	CacheHit OptBool `json:"cacheHit"`
@@ -5372,9 +3790,6 @@ type HTTPAuditExchange struct {
 	// them. It is optional because a pool agent older than ADR 26-10-01-240 does not send it, and absent
 	// means no secret was named.
 	SwappedSecretIds []string `json:"swappedSecretIds"`
-	// Approved credential uses whose sentinels were swapped into this request. Joins to credential
-	// verdicts by useId.
-	SwappedUseIds []string `json:"swappedUseIds"`
 	// True for an upgraded (e.g. WebSocket) connection.
 	Upgrade OptBool `json:"upgrade"`
 	// The upgrade protocol.
@@ -5456,11 +3871,6 @@ func (s *HTTPAuditExchange) GetStatus() int {
 // GetSwappedSecretIds returns the value of SwappedSecretIds.
 func (s *HTTPAuditExchange) GetSwappedSecretIds() []string {
 	return s.SwappedSecretIds
-}
-
-// GetSwappedUseIds returns the value of SwappedUseIds.
-func (s *HTTPAuditExchange) GetSwappedUseIds() []string {
-	return s.SwappedUseIds
 }
 
 // GetUpgrade returns the value of Upgrade.
@@ -5553,11 +3963,6 @@ func (s *HTTPAuditExchange) SetSwappedSecretIds(val []string) {
 	s.SwappedSecretIds = val
 }
 
-// SetSwappedUseIds sets the value of SwappedUseIds.
-func (s *HTTPAuditExchange) SetSwappedUseIds(val []string) {
-	s.SwappedUseIds = val
-}
-
 // SetUpgrade sets the value of Upgrade.
 func (s *HTTPAuditExchange) SetUpgrade(val OptBool) {
 	s.Upgrade = val
@@ -5590,13 +3995,13 @@ type HTTPAuditExchangeDetail struct {
 	// Where the gateway the request fell under sent it (ADR 26-10-16-470); absent when none did.
 	ForwardedUrl OptString `json:"forwardedUrl"`
 	// True when the proxy refused the request itself and never sent it -- by its destination policy, by
-	// the credential judge, at the discobox API's gate, or because the control plane could not resolve a
-	// credential it carries. blockedReason says which, and why.
+	// a credential's routes, at the discobox API's gate, or because the control plane could not resolve
+	// a credential it carries. blockedReason says which, and why.
 	Blocked bool `json:"blocked"`
 	// Why the request was refused. It starts with what refused it -- "host denied" for the destination
-	// policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential
-	// unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that
-	// could not set its headers -- then the reason.
+	// policy, "route:" for a credential whose routes do not allow the request, "gate:" for the discobox
+	// API's gate, "credential unavailable:" for a credential the control plane could not resolve,
+	// "gateway:" for a gateway that could not set its headers -- then the reason.
 	BlockedReason OptString `json:"blockedReason"`
 	// Why the response cache could not be used.
 	CacheError OptString `json:"cacheError"`
@@ -5658,9 +4063,6 @@ type HTTPAuditExchangeDetail struct {
 	// them. It is optional because a pool agent older than ADR 26-10-01-240 does not send it, and absent
 	// means no secret was named.
 	SwappedSecretIds []string `json:"swappedSecretIds"`
-	// Approved credential uses whose sentinels were swapped into this request. Joins to credential
-	// verdicts by useId.
-	SwappedUseIds []string `json:"swappedUseIds"`
 	// True for an upgraded (e.g. WebSocket) connection.
 	Upgrade OptBool `json:"upgrade"`
 	// Bytes the sandbox sent over the upgraded connection.
@@ -5853,11 +4255,6 @@ func (s *HTTPAuditExchangeDetail) GetStreamSessionId() OptString {
 // GetSwappedSecretIds returns the value of SwappedSecretIds.
 func (s *HTTPAuditExchangeDetail) GetSwappedSecretIds() []string {
 	return s.SwappedSecretIds
-}
-
-// GetSwappedUseIds returns the value of SwappedUseIds.
-func (s *HTTPAuditExchangeDetail) GetSwappedUseIds() []string {
-	return s.SwappedUseIds
 }
 
 // GetUpgrade returns the value of Upgrade.
@@ -6068,11 +4465,6 @@ func (s *HTTPAuditExchangeDetail) SetStreamSessionId(val OptString) {
 // SetSwappedSecretIds sets the value of SwappedSecretIds.
 func (s *HTTPAuditExchangeDetail) SetSwappedSecretIds(val []string) {
 	s.SwappedSecretIds = val
-}
-
-// SetSwappedUseIds sets the value of SwappedUseIds.
-func (s *HTTPAuditExchangeDetail) SetSwappedUseIds(val []string) {
-	s.SwappedUseIds = val
 }
 
 // SetUpgrade sets the value of Upgrade.
@@ -8259,8 +6651,8 @@ func (s *HarnessVolumeVolume) UnmarshalText(data []byte) error {
 	}
 }
 
-// A host one sandbox trusts by a pin (ADR 0149). Every request the sandbox sends the host is judged
-// against its uses.
+// A host one sandbox trusts by a pin (ADR 0149). The pin makes that certificate acceptable for this
+// endpoint alone; it decides nothing about the requests sent there (ADR 26-10-27-880 §10).
 // Ref: #/components/schemas/HostTrust
 type HostTrust struct {
 	// A URL to the JSON Schema for this object.
@@ -8284,8 +6676,6 @@ type HostTrust struct {
 	RequestId OptString `json:"requestId"`
 	// The one sandbox that trusts the host.
 	SandboxId string `json:"sandboxId"`
-	// Approved uses, with the IDs the judge is given.
-	Uses OptNilSecretUseArray `json:"uses"`
 }
 
 // GetSchema returns the value of Schema.
@@ -8343,11 +6733,6 @@ func (s *HostTrust) GetSandboxId() string {
 	return s.SandboxId
 }
 
-// GetUses returns the value of Uses.
-func (s *HostTrust) GetUses() OptNilSecretUseArray {
-	return s.Uses
-}
-
 // SetSchema sets the value of Schema.
 func (s *HostTrust) SetSchema(val OptURI) {
 	s.Schema = val
@@ -8403,11 +6788,6 @@ func (s *HostTrust) SetSandboxId(val string) {
 	s.SandboxId = val
 }
 
-// SetUses sets the value of Uses.
-func (s *HostTrust) SetUses(val OptNilSecretUseArray) {
-	s.Uses = val
-}
-
 // An agent's ask to trust a host whose certificate the pool's egress refuses, for its own sandbox
 // (ADR 0149).
 // Ref: #/components/schemas/HostTrustRequest
@@ -8439,8 +6819,6 @@ type HostTrustRequest struct {
 	TrustId OptString `json:"trustId"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
-	// What the agent says it will send the host.
-	Uses OptNilSecretUseArray `json:"uses"`
 }
 
 // GetSchema returns the value of Schema.
@@ -8513,11 +6891,6 @@ func (s *HostTrustRequest) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
 }
 
-// GetUses returns the value of Uses.
-func (s *HostTrustRequest) GetUses() OptNilSecretUseArray {
-	return s.Uses
-}
-
 // SetSchema sets the value of Schema.
 func (s *HostTrustRequest) SetSchema(val OptURI) {
 	s.Schema = val
@@ -8586,11 +6959,6 @@ func (s *HostTrustRequest) SetTrustId(val OptString) {
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *HostTrustRequest) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
-}
-
-// SetUses sets the value of Uses.
-func (s *HostTrustRequest) SetUses(val OptNilSecretUseArray) {
-	s.Uses = val
 }
 
 func (*HostTrustRequest) approveTrustRequestRes() {}
@@ -8985,768 +7353,6 @@ func (s *JobStatus) UnmarshalText(data []byte) error {
 	}
 }
 
-// What the judge answered about one job. It either decides — allow, or not — or asks to be shown
-// one more thing. Asking is not allowing.
-// Ref: #/components/schemas/JudgeAnswer
-type JudgeAnswer struct {
-	// The decision, meaningful only when need is absent.
-	Allow OptBool      `json:"allow"`
-	Need  OptJudgeNeed `json:"need"`
-	// Why, always said. It is what the discobox is told when its request is refused.
-	Reason   string           `json:"reason"`
-	Standing OptJudgeStanding `json:"standing"`
-}
-
-// GetAllow returns the value of Allow.
-func (s *JudgeAnswer) GetAllow() OptBool {
-	return s.Allow
-}
-
-// GetNeed returns the value of Need.
-func (s *JudgeAnswer) GetNeed() OptJudgeNeed {
-	return s.Need
-}
-
-// GetReason returns the value of Reason.
-func (s *JudgeAnswer) GetReason() string {
-	return s.Reason
-}
-
-// GetStanding returns the value of Standing.
-func (s *JudgeAnswer) GetStanding() OptJudgeStanding {
-	return s.Standing
-}
-
-// SetAllow sets the value of Allow.
-func (s *JudgeAnswer) SetAllow(val OptBool) {
-	s.Allow = val
-}
-
-// SetNeed sets the value of Need.
-func (s *JudgeAnswer) SetNeed(val OptJudgeNeed) {
-	s.Need = val
-}
-
-// SetReason sets the value of Reason.
-func (s *JudgeAnswer) SetReason(val string) {
-	s.Reason = val
-}
-
-// SetStanding sets the value of Standing.
-func (s *JudgeAnswer) SetStanding(val OptJudgeStanding) {
-	s.Standing = val
-}
-
-func (*JudgeAnswer) judgeCommandForPoolRes() {}
-func (*JudgeAnswer) judgeForPoolRes()        {}
-func (*JudgeAnswer) judgeSandboxRes()        {}
-
-// What a command will read on standard input, as much of it as the discobox showed (ADR
-// 26-09-27-905).
-// Ref: #/components/schemas/JudgeInput
-type JudgeInput struct {
-	// The input shown, which is text. Empty when none of it could be shown, and missing then says why.
-	Content string `json:"content"`
-	// Why content is not the whole input, in a sentence for the judge.
-	Missing OptString `json:"missing"`
-}
-
-// GetContent returns the value of Content.
-func (s *JudgeInput) GetContent() string {
-	return s.Content
-}
-
-// GetMissing returns the value of Missing.
-func (s *JudgeInput) GetMissing() OptString {
-	return s.Missing
-}
-
-// SetContent sets the value of Content.
-func (s *JudgeInput) SetContent(val string) {
-	s.Content = val
-}
-
-// SetMissing sets the value of Missing.
-func (s *JudgeInput) SetMissing(val OptString) {
-	s.Missing = val
-}
-
-// One question put to the judge, and everything it may see to answer it. Purpose (or purposes) and
-// host are the authorization; everything else is evidence, which is data to weigh and never
-// instructions to follow.
-// Ref: #/components/schemas/JudgeJob
-type JudgeJob struct {
-	// The argv, for a command job. For a request job it is what the discobox declared it was running,
-	// which is context and not authority.
-	Command []string `json:"command"`
-	// The credential in the words a person reads, never its value.
-	Credential OptString `json:"credential"`
-	// For a command or request job judged against a policy, what each word its statements use means,
-	// other than the defaults, as a person approved it.
-	Definitions OptJudgeJobDefinitions `json:"definitions"`
-	// What the control plane recorded about the discoboxes the job concerns when they were created, in
-	// its own words (ADR 26-10-14-691), set by the control plane and never by a pool. They explain what
-	// the purpose refers to; they never authorize.
-	Facts []string `json:"facts"`
-	// What Discobox knows about what the request was recognized as, set by the control plane from the
-	// judge package and never by a pool. It explains; it never authorizes.
-	Guidance []string `json:"guidance"`
-	// The host the use was approved for.
-	Host string `json:"host"`
-	// What is being judged: a command about to run, a request the proxy observed, a discobox about to
-	// hand a credential on by approving another's request, or whether the conditions of an allow a
-	// discobox asked for are within an approval rule's.
-	Kind JudgeJobKind `json:"kind"`
-	// The approved use, in the words it was approved in, for a command or request job.
-	Purpose OptString `json:"purpose"`
-	// What a job is judged against in place of purpose, one entry each — for a delegation job the one
-	// delegated allow that covers the allow handed on but for its conditions, as its sentence; for a
-	// rule job the one allow of the rule, as its sentence; for a command or request job under a grant
-	// that carries a policy, its statements as sentences, bound to the discobox asking.
-	Purposes []string                `json:"purposes"`
-	Reported OptJudgeReported        `json:"reported"`
-	Request  OptJudgeRequestEvidence `json:"request"`
-	// Which ask this is, from 1. A round after the first exists because the judge asked to be shown the
-	// body.
-	Round int64         `json:"round"`
-	Stdin OptJudgeInput `json:"stdin"`
-	// For a delegation job, the one allow the discobox is about to hand on, and for a rule job the one
-	// allow it asked for, as its sentence, judged against purposes.
-	Uses []string `json:"uses"`
-}
-
-// GetCommand returns the value of Command.
-func (s *JudgeJob) GetCommand() []string {
-	return s.Command
-}
-
-// GetCredential returns the value of Credential.
-func (s *JudgeJob) GetCredential() OptString {
-	return s.Credential
-}
-
-// GetDefinitions returns the value of Definitions.
-func (s *JudgeJob) GetDefinitions() OptJudgeJobDefinitions {
-	return s.Definitions
-}
-
-// GetFacts returns the value of Facts.
-func (s *JudgeJob) GetFacts() []string {
-	return s.Facts
-}
-
-// GetGuidance returns the value of Guidance.
-func (s *JudgeJob) GetGuidance() []string {
-	return s.Guidance
-}
-
-// GetHost returns the value of Host.
-func (s *JudgeJob) GetHost() string {
-	return s.Host
-}
-
-// GetKind returns the value of Kind.
-func (s *JudgeJob) GetKind() JudgeJobKind {
-	return s.Kind
-}
-
-// GetPurpose returns the value of Purpose.
-func (s *JudgeJob) GetPurpose() OptString {
-	return s.Purpose
-}
-
-// GetPurposes returns the value of Purposes.
-func (s *JudgeJob) GetPurposes() []string {
-	return s.Purposes
-}
-
-// GetReported returns the value of Reported.
-func (s *JudgeJob) GetReported() OptJudgeReported {
-	return s.Reported
-}
-
-// GetRequest returns the value of Request.
-func (s *JudgeJob) GetRequest() OptJudgeRequestEvidence {
-	return s.Request
-}
-
-// GetRound returns the value of Round.
-func (s *JudgeJob) GetRound() int64 {
-	return s.Round
-}
-
-// GetStdin returns the value of Stdin.
-func (s *JudgeJob) GetStdin() OptJudgeInput {
-	return s.Stdin
-}
-
-// GetUses returns the value of Uses.
-func (s *JudgeJob) GetUses() []string {
-	return s.Uses
-}
-
-// SetCommand sets the value of Command.
-func (s *JudgeJob) SetCommand(val []string) {
-	s.Command = val
-}
-
-// SetCredential sets the value of Credential.
-func (s *JudgeJob) SetCredential(val OptString) {
-	s.Credential = val
-}
-
-// SetDefinitions sets the value of Definitions.
-func (s *JudgeJob) SetDefinitions(val OptJudgeJobDefinitions) {
-	s.Definitions = val
-}
-
-// SetFacts sets the value of Facts.
-func (s *JudgeJob) SetFacts(val []string) {
-	s.Facts = val
-}
-
-// SetGuidance sets the value of Guidance.
-func (s *JudgeJob) SetGuidance(val []string) {
-	s.Guidance = val
-}
-
-// SetHost sets the value of Host.
-func (s *JudgeJob) SetHost(val string) {
-	s.Host = val
-}
-
-// SetKind sets the value of Kind.
-func (s *JudgeJob) SetKind(val JudgeJobKind) {
-	s.Kind = val
-}
-
-// SetPurpose sets the value of Purpose.
-func (s *JudgeJob) SetPurpose(val OptString) {
-	s.Purpose = val
-}
-
-// SetPurposes sets the value of Purposes.
-func (s *JudgeJob) SetPurposes(val []string) {
-	s.Purposes = val
-}
-
-// SetReported sets the value of Reported.
-func (s *JudgeJob) SetReported(val OptJudgeReported) {
-	s.Reported = val
-}
-
-// SetRequest sets the value of Request.
-func (s *JudgeJob) SetRequest(val OptJudgeRequestEvidence) {
-	s.Request = val
-}
-
-// SetRound sets the value of Round.
-func (s *JudgeJob) SetRound(val int64) {
-	s.Round = val
-}
-
-// SetStdin sets the value of Stdin.
-func (s *JudgeJob) SetStdin(val OptJudgeInput) {
-	s.Stdin = val
-}
-
-// SetUses sets the value of Uses.
-func (s *JudgeJob) SetUses(val []string) {
-	s.Uses = val
-}
-
-// For a command or request job judged against a policy, what each word its statements use means,
-// other than the defaults, as a person approved it.
-type JudgeJobDefinitions map[string]string
-
-func (s *JudgeJobDefinitions) init() JudgeJobDefinitions {
-	m := *s
-	if m == nil {
-		m = map[string]string{}
-		*s = m
-	}
-	return m
-}
-
-// What is being judged: a command about to run, a request the proxy observed, a discobox about to
-// hand a credential on by approving another's request, or whether the conditions of an allow a
-// discobox asked for are within an approval rule's.
-type JudgeJobKind string
-
-const (
-	JudgeJobKindCommand    JudgeJobKind = "command"
-	JudgeJobKindRequest    JudgeJobKind = "request"
-	JudgeJobKindDelegation JudgeJobKind = "delegation"
-	JudgeJobKindRule       JudgeJobKind = "rule"
-)
-
-// AllValues returns all JudgeJobKind values.
-func (JudgeJobKind) AllValues() []JudgeJobKind {
-	return []JudgeJobKind{
-		JudgeJobKindCommand,
-		JudgeJobKindRequest,
-		JudgeJobKindDelegation,
-		JudgeJobKindRule,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s JudgeJobKind) MarshalText() ([]byte, error) {
-	switch s {
-	case JudgeJobKindCommand:
-		return []byte(s), nil
-	case JudgeJobKindRequest:
-		return []byte(s), nil
-	case JudgeJobKindDelegation:
-		return []byte(s), nil
-	case JudgeJobKindRule:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *JudgeJobKind) UnmarshalText(data []byte) error {
-	switch JudgeJobKind(data) {
-	case JudgeJobKindCommand:
-		*s = JudgeJobKindCommand
-		return nil
-	case JudgeJobKindRequest:
-		*s = JudgeJobKindRequest
-		return nil
-	case JudgeJobKindDelegation:
-		*s = JudgeJobKindDelegation
-		return nil
-	case JudgeJobKindRule:
-		*s = JudgeJobKindRule
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// The judge asking to be shown a request's body, with a budget it may name and Discobox caps. It
-// names no form; the body is always shown in one shape (ADR 26-09-26-240).
-// Ref: #/components/schemas/JudgeNeed
-type JudgeNeed struct {
-	// Always true in an ask; it is what the ask is for.
-	Body  bool     `json:"body"`
-	Bytes OptInt64 `json:"bytes"`
-}
-
-// GetBody returns the value of Body.
-func (s *JudgeNeed) GetBody() bool {
-	return s.Body
-}
-
-// GetBytes returns the value of Bytes.
-func (s *JudgeNeed) GetBytes() OptInt64 {
-	return s.Bytes
-}
-
-// SetBody sets the value of Body.
-func (s *JudgeNeed) SetBody(val bool) {
-	s.Body = val
-}
-
-// SetBytes sets the value of Bytes.
-func (s *JudgeNeed) SetBytes(val OptInt64) {
-	s.Bytes = val
-}
-
-// The statements a model wrote for an approval rule from the policy a request asked for, as the same
-// work on any target of its kind, each as its sentence. They authorize nothing; the server parses
-// and checks them, and a person reads and edits them, before they become a rule.
-// Ref: #/components/schemas/JudgeProposal
-type JudgeProposal struct {
-	// The same work on any target of its kind, one statement's sentence each.
-	StatementsAnyTarget []string `json:"statementsAnyTarget"`
-}
-
-// GetStatementsAnyTarget returns the value of StatementsAnyTarget.
-func (s *JudgeProposal) GetStatementsAnyTarget() []string {
-	return s.StatementsAnyTarget
-}
-
-// SetStatementsAnyTarget sets the value of StatementsAnyTarget.
-func (s *JudgeProposal) SetStatementsAnyTarget(val []string) {
-	s.StatementsAnyTarget = val
-}
-
-func (*JudgeProposal) proposeSandboxRuleRes() {}
-
-// What the policy of an approval rule is proposed from (ADR 26-10-12-330, ADR 26-10-20-782). The
-// policy a discobox asked for, as its statements' sentences and the definitions of their words,
-// which are data. The system prompt, the schema and the tools restriction are the judge runtime's
-// own.
-// Ref: #/components/schemas/JudgeProposalJob
-type JudgeProposalJob struct {
-	// The credential asked for, in the words a person reads, never its value.
-	Credential OptString `json:"credential"`
-	// What each word of the statements that is not a default means, as the request defined it.
-	Definitions OptJudgeProposalJobDefinitions `json:"definitions"`
-	// The hosts the request asked to send the credential to.
-	Hosts []string `json:"hosts"`
-	// The statements the request asked for, each as its sentence, verbatim.
-	Statements []string `json:"statements"`
-}
-
-// GetCredential returns the value of Credential.
-func (s *JudgeProposalJob) GetCredential() OptString {
-	return s.Credential
-}
-
-// GetDefinitions returns the value of Definitions.
-func (s *JudgeProposalJob) GetDefinitions() OptJudgeProposalJobDefinitions {
-	return s.Definitions
-}
-
-// GetHosts returns the value of Hosts.
-func (s *JudgeProposalJob) GetHosts() []string {
-	return s.Hosts
-}
-
-// GetStatements returns the value of Statements.
-func (s *JudgeProposalJob) GetStatements() []string {
-	return s.Statements
-}
-
-// SetCredential sets the value of Credential.
-func (s *JudgeProposalJob) SetCredential(val OptString) {
-	s.Credential = val
-}
-
-// SetDefinitions sets the value of Definitions.
-func (s *JudgeProposalJob) SetDefinitions(val OptJudgeProposalJobDefinitions) {
-	s.Definitions = val
-}
-
-// SetHosts sets the value of Hosts.
-func (s *JudgeProposalJob) SetHosts(val []string) {
-	s.Hosts = val
-}
-
-// SetStatements sets the value of Statements.
-func (s *JudgeProposalJob) SetStatements(val []string) {
-	s.Statements = val
-}
-
-// What each word of the statements that is not a default means, as the request defined it.
-type JudgeProposalJobDefinitions map[string]string
-
-func (s *JudgeProposalJobDefinitions) init() JudgeProposalJobDefinitions {
-	m := *s
-	if m == nil {
-		m = map[string]string{}
-		*s = m
-	}
-	return m
-}
-
-// What trusted code recognized a request, or its body, as, and the version of that code (ADR
-// 26-09-26-240).
-// Ref: #/components/schemas/JudgeRecognition
-type JudgeRecognition struct {
-	Name    string `json:"name"`
-	Version int64  `json:"version"`
-}
-
-// GetName returns the value of Name.
-func (s *JudgeRecognition) GetName() string {
-	return s.Name
-}
-
-// GetVersion returns the value of Version.
-func (s *JudgeRecognition) GetVersion() int64 {
-	return s.Version
-}
-
-// SetName sets the value of Name.
-func (s *JudgeRecognition) SetName(val string) {
-	s.Name = val
-}
-
-// SetVersion sets the value of Version.
-func (s *JudgeRecognition) SetVersion(val int64) {
-	s.Version = val
-}
-
-// What a discobox said about where a command runs (ADR 0090). Every field is its claim, never a fact
-// the trusted side established.
-// Ref: #/components/schemas/JudgeReported
-type JudgeReported struct {
-	// The commit a git ref the command names resolves to.
-	RefCommit OptString `json:"refCommit"`
-	// That commit's subject line, the agent's own words about its work.
-	RefSubject OptString `json:"refSubject"`
-	// The root of the git checkout the command runs in.
-	RepositoryRoot OptString `json:"repositoryRoot"`
-	// The directory the command runs in.
-	WorkingDirectory OptString `json:"workingDirectory"`
-}
-
-// GetRefCommit returns the value of RefCommit.
-func (s *JudgeReported) GetRefCommit() OptString {
-	return s.RefCommit
-}
-
-// GetRefSubject returns the value of RefSubject.
-func (s *JudgeReported) GetRefSubject() OptString {
-	return s.RefSubject
-}
-
-// GetRepositoryRoot returns the value of RepositoryRoot.
-func (s *JudgeReported) GetRepositoryRoot() OptString {
-	return s.RepositoryRoot
-}
-
-// GetWorkingDirectory returns the value of WorkingDirectory.
-func (s *JudgeReported) GetWorkingDirectory() OptString {
-	return s.WorkingDirectory
-}
-
-// SetRefCommit sets the value of RefCommit.
-func (s *JudgeReported) SetRefCommit(val OptString) {
-	s.RefCommit = val
-}
-
-// SetRefSubject sets the value of RefSubject.
-func (s *JudgeReported) SetRefSubject(val OptString) {
-	s.RefSubject = val
-}
-
-// SetRepositoryRoot sets the value of RepositoryRoot.
-func (s *JudgeReported) SetRepositoryRoot(val OptString) {
-	s.RepositoryRoot = val
-}
-
-// SetWorkingDirectory sets the value of WorkingDirectory.
-func (s *JudgeReported) SetWorkingDirectory(val OptString) {
-	s.WorkingDirectory = val
-}
-
-// What the judge is told about a request's body, always in this one shape (ADR 26-09-26-240). The
-// first ask describes it, with what a parser found in it when one recognized it; the judge asks to
-// be shown the content when the operation lives in there.
-// Ref: #/components/schemas/JudgeRequestBody
-type JudgeRequestBody struct {
-	// The body, redacted and rendered the way its parser renders it. Absent until the judge asks to be
-	// shown the body; then as much of it as the budget allowed, which may be none of it.
-	Content OptString `json:"content"`
-	// How many bytes the body has, as far as that is known.
-	Length    OptInt64  `json:"length"`
-	MediaType OptString `json:"mediaType"`
-	// What the parser found worth knowing, redacted, from the first ask on.
-	Metadata OptJudgeRequestBodyMetadata `json:"metadata"`
-	// Why content is not the whole body, in a sentence for the judge. An answer to having been asked,
-	// never part of the first description.
-	Missing OptString `json:"missing"`
-	// Why the parser named could not read a body that claims to be what it reads.
-	ParseError OptString           `json:"parseError"`
-	Parser     OptJudgeRecognition `json:"parser"`
-}
-
-// GetContent returns the value of Content.
-func (s *JudgeRequestBody) GetContent() OptString {
-	return s.Content
-}
-
-// GetLength returns the value of Length.
-func (s *JudgeRequestBody) GetLength() OptInt64 {
-	return s.Length
-}
-
-// GetMediaType returns the value of MediaType.
-func (s *JudgeRequestBody) GetMediaType() OptString {
-	return s.MediaType
-}
-
-// GetMetadata returns the value of Metadata.
-func (s *JudgeRequestBody) GetMetadata() OptJudgeRequestBodyMetadata {
-	return s.Metadata
-}
-
-// GetMissing returns the value of Missing.
-func (s *JudgeRequestBody) GetMissing() OptString {
-	return s.Missing
-}
-
-// GetParseError returns the value of ParseError.
-func (s *JudgeRequestBody) GetParseError() OptString {
-	return s.ParseError
-}
-
-// GetParser returns the value of Parser.
-func (s *JudgeRequestBody) GetParser() OptJudgeRecognition {
-	return s.Parser
-}
-
-// SetContent sets the value of Content.
-func (s *JudgeRequestBody) SetContent(val OptString) {
-	s.Content = val
-}
-
-// SetLength sets the value of Length.
-func (s *JudgeRequestBody) SetLength(val OptInt64) {
-	s.Length = val
-}
-
-// SetMediaType sets the value of MediaType.
-func (s *JudgeRequestBody) SetMediaType(val OptString) {
-	s.MediaType = val
-}
-
-// SetMetadata sets the value of Metadata.
-func (s *JudgeRequestBody) SetMetadata(val OptJudgeRequestBodyMetadata) {
-	s.Metadata = val
-}
-
-// SetMissing sets the value of Missing.
-func (s *JudgeRequestBody) SetMissing(val OptString) {
-	s.Missing = val
-}
-
-// SetParseError sets the value of ParseError.
-func (s *JudgeRequestBody) SetParseError(val OptString) {
-	s.ParseError = val
-}
-
-// SetParser sets the value of Parser.
-func (s *JudgeRequestBody) SetParser(val OptJudgeRecognition) {
-	s.Parser = val
-}
-
-// What the parser found worth knowing, redacted, from the first ask on.
-type JudgeRequestBodyMetadata map[string]jx.Raw
-
-func (s *JudgeRequestBodyMetadata) init() JudgeRequestBodyMetadata {
-	m := *s
-	if m == nil {
-		m = map[string]jx.Raw{}
-		*s = m
-	}
-	return m
-}
-
-// A request as the proxy saw it, before any credential was substituted into it and with every
-// credential-bearing value redacted.
-// Ref: #/components/schemas/JudgeRequestEvidence
-type JudgeRequestEvidence struct {
-	Body     OptJudgeRequestBody `json:"body"`
-	Endpoint OptJudgeRecognition `json:"endpoint"`
-	// The headers worth weighing, redacted.
-	Headers  OptJudgeRequestEvidenceHeaders `json:"headers"`
-	Method   string                         `json:"method"`
-	Protocol OptJudgeRecognition            `json:"protocol"`
-	// The destination authority and port, path, and query.
-	URL string `json:"url"`
-}
-
-// GetBody returns the value of Body.
-func (s *JudgeRequestEvidence) GetBody() OptJudgeRequestBody {
-	return s.Body
-}
-
-// GetEndpoint returns the value of Endpoint.
-func (s *JudgeRequestEvidence) GetEndpoint() OptJudgeRecognition {
-	return s.Endpoint
-}
-
-// GetHeaders returns the value of Headers.
-func (s *JudgeRequestEvidence) GetHeaders() OptJudgeRequestEvidenceHeaders {
-	return s.Headers
-}
-
-// GetMethod returns the value of Method.
-func (s *JudgeRequestEvidence) GetMethod() string {
-	return s.Method
-}
-
-// GetProtocol returns the value of Protocol.
-func (s *JudgeRequestEvidence) GetProtocol() OptJudgeRecognition {
-	return s.Protocol
-}
-
-// GetURL returns the value of URL.
-func (s *JudgeRequestEvidence) GetURL() string {
-	return s.URL
-}
-
-// SetBody sets the value of Body.
-func (s *JudgeRequestEvidence) SetBody(val OptJudgeRequestBody) {
-	s.Body = val
-}
-
-// SetEndpoint sets the value of Endpoint.
-func (s *JudgeRequestEvidence) SetEndpoint(val OptJudgeRecognition) {
-	s.Endpoint = val
-}
-
-// SetHeaders sets the value of Headers.
-func (s *JudgeRequestEvidence) SetHeaders(val OptJudgeRequestEvidenceHeaders) {
-	s.Headers = val
-}
-
-// SetMethod sets the value of Method.
-func (s *JudgeRequestEvidence) SetMethod(val string) {
-	s.Method = val
-}
-
-// SetProtocol sets the value of Protocol.
-func (s *JudgeRequestEvidence) SetProtocol(val OptJudgeRecognition) {
-	s.Protocol = val
-}
-
-// SetURL sets the value of URL.
-func (s *JudgeRequestEvidence) SetURL(val string) {
-	s.URL = val
-}
-
-// The headers worth weighing, redacted.
-type JudgeRequestEvidenceHeaders map[string][]string
-
-func (s *JudgeRequestEvidenceHeaders) init() JudgeRequestEvidenceHeaders {
-	m := *s
-	if m == nil {
-		m = map[string][]string{}
-		*s = m
-	}
-	return m
-}
-
-// An allow the judge asked to let stand, so requests matching its route are not asked about again
-// (ADR 26-09-25-428). Only ever beside an allow; the control plane decides whether it stands, for
-// the same discobox, use and host, and caps how long.
-// Ref: #/components/schemas/JudgeStanding
-type JudgeStanding struct {
-	// One method, a space, and an absolute path, in net/http pattern syntax. {name} matches one segment
-	// and a final {name...} the rest of the path.
-	Route string `json:"route"`
-	// How long the judge asked for it to stand, in seconds.
-	Seconds int64 `json:"seconds"`
-}
-
-// GetRoute returns the value of Route.
-func (s *JudgeStanding) GetRoute() string {
-	return s.Route
-}
-
-// GetSeconds returns the value of Seconds.
-func (s *JudgeStanding) GetSeconds() int64 {
-	return s.Seconds
-}
-
-// SetRoute sets the value of Route.
-func (s *JudgeStanding) SetRoute(val string) {
-	s.Route = val
-}
-
-// SetSeconds sets the value of Seconds.
-func (s *JudgeStanding) SetSeconds(val int64) {
-	s.Seconds = val
-}
-
 // Ref: #/components/schemas/ListApprovalRequestsBody
 type ListApprovalRequestsBody struct {
 	// A URL to the JSON Schema for this object.
@@ -9819,164 +7425,6 @@ func (s *ListApprovalRequestsStatus) UnmarshalText(data []byte) error {
 		return nil
 	case ListApprovalRequestsStatusDenied:
 		*s = ListApprovalRequestsStatusDenied
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Ref: #/components/schemas/ListApprovalRulesBody
-type ListApprovalRulesBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema        OptURI         `json:"$schema"`
-	ApprovalRules []ApprovalRule `json:"approvalRules"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *ListApprovalRulesBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetApprovalRules returns the value of ApprovalRules.
-func (s *ListApprovalRulesBody) GetApprovalRules() []ApprovalRule {
-	return s.ApprovalRules
-}
-
-// SetSchema sets the value of Schema.
-func (s *ListApprovalRulesBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetApprovalRules sets the value of ApprovalRules.
-func (s *ListApprovalRulesBody) SetApprovalRules(val []ApprovalRule) {
-	s.ApprovalRules = val
-}
-
-func (*ListApprovalRulesBody) listApprovalRulesRes() {}
-
-// Ref: #/components/schemas/ListCredentialVerdictsBody
-type ListCredentialVerdictsBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Matching verdicts, newest first.
-	CredentialVerdicts []CredentialVerdict `json:"credentialVerdicts"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *ListCredentialVerdictsBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetCredentialVerdicts returns the value of CredentialVerdicts.
-func (s *ListCredentialVerdictsBody) GetCredentialVerdicts() []CredentialVerdict {
-	return s.CredentialVerdicts
-}
-
-// SetSchema sets the value of Schema.
-func (s *ListCredentialVerdictsBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetCredentialVerdicts sets the value of CredentialVerdicts.
-func (s *ListCredentialVerdictsBody) SetCredentialVerdicts(val []CredentialVerdict) {
-	s.CredentialVerdicts = val
-}
-
-func (*ListCredentialVerdictsBody) listCredentialVerdictsRes() {}
-
-// Only verdicts of this kind.
-type ListCredentialVerdictsKind string
-
-const (
-	ListCredentialVerdictsKindCommand    ListCredentialVerdictsKind = "command"
-	ListCredentialVerdictsKindRequest    ListCredentialVerdictsKind = "request"
-	ListCredentialVerdictsKindDelegation ListCredentialVerdictsKind = "delegation"
-	ListCredentialVerdictsKindRule       ListCredentialVerdictsKind = "rule"
-)
-
-// AllValues returns all ListCredentialVerdictsKind values.
-func (ListCredentialVerdictsKind) AllValues() []ListCredentialVerdictsKind {
-	return []ListCredentialVerdictsKind{
-		ListCredentialVerdictsKindCommand,
-		ListCredentialVerdictsKindRequest,
-		ListCredentialVerdictsKindDelegation,
-		ListCredentialVerdictsKindRule,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ListCredentialVerdictsKind) MarshalText() ([]byte, error) {
-	switch s {
-	case ListCredentialVerdictsKindCommand:
-		return []byte(s), nil
-	case ListCredentialVerdictsKindRequest:
-		return []byte(s), nil
-	case ListCredentialVerdictsKindDelegation:
-		return []byte(s), nil
-	case ListCredentialVerdictsKindRule:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ListCredentialVerdictsKind) UnmarshalText(data []byte) error {
-	switch ListCredentialVerdictsKind(data) {
-	case ListCredentialVerdictsKindCommand:
-		*s = ListCredentialVerdictsKindCommand
-		return nil
-	case ListCredentialVerdictsKindRequest:
-		*s = ListCredentialVerdictsKindRequest
-		return nil
-	case ListCredentialVerdictsKindDelegation:
-		*s = ListCredentialVerdictsKindDelegation
-		return nil
-	case ListCredentialVerdictsKindRule:
-		*s = ListCredentialVerdictsKindRule
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Asc returns the oldest matches first, for reading forward from a since bound; desc, the default,
-// the newest first.
-type ListCredentialVerdictsOrder string
-
-const (
-	ListCredentialVerdictsOrderAsc  ListCredentialVerdictsOrder = "asc"
-	ListCredentialVerdictsOrderDesc ListCredentialVerdictsOrder = "desc"
-)
-
-// AllValues returns all ListCredentialVerdictsOrder values.
-func (ListCredentialVerdictsOrder) AllValues() []ListCredentialVerdictsOrder {
-	return []ListCredentialVerdictsOrder{
-		ListCredentialVerdictsOrderAsc,
-		ListCredentialVerdictsOrderDesc,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ListCredentialVerdictsOrder) MarshalText() ([]byte, error) {
-	switch s {
-	case ListCredentialVerdictsOrderAsc:
-		return []byte(s), nil
-	case ListCredentialVerdictsOrderDesc:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ListCredentialVerdictsOrder) UnmarshalText(data []byte) error {
-	switch ListCredentialVerdictsOrder(data) {
-	case ListCredentialVerdictsOrderAsc:
-		*s = ListCredentialVerdictsOrderAsc
-		return nil
-	case ListCredentialVerdictsOrderDesc:
-		*s = ListCredentialVerdictsOrderDesc
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -11149,144 +8597,6 @@ func (s *ObservedCertificate) SetSubject(val string) {
 	s.Subject = val
 }
 
-// NewOptAccessPolicy returns new OptAccessPolicy with value set to v.
-func NewOptAccessPolicy(v AccessPolicy) OptAccessPolicy {
-	return OptAccessPolicy{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptAccessPolicy is optional AccessPolicy.
-type OptAccessPolicy struct {
-	Value AccessPolicy
-	Set   bool
-}
-
-// IsSet returns true if OptAccessPolicy was set.
-func (o OptAccessPolicy) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptAccessPolicy) Reset() {
-	var v AccessPolicy
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptAccessPolicy) SetTo(v AccessPolicy) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptAccessPolicy) Get() (v AccessPolicy, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptAccessPolicy) Or(d AccessPolicy) AccessPolicy {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptAccessPolicyDefinitions returns new OptAccessPolicyDefinitions with value set to v.
-func NewOptAccessPolicyDefinitions(v AccessPolicyDefinitions) OptAccessPolicyDefinitions {
-	return OptAccessPolicyDefinitions{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptAccessPolicyDefinitions is optional AccessPolicyDefinitions.
-type OptAccessPolicyDefinitions struct {
-	Value AccessPolicyDefinitions
-	Set   bool
-}
-
-// IsSet returns true if OptAccessPolicyDefinitions was set.
-func (o OptAccessPolicyDefinitions) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptAccessPolicyDefinitions) Reset() {
-	var v AccessPolicyDefinitions
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptAccessPolicyDefinitions) SetTo(v AccessPolicyDefinitions) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptAccessPolicyDefinitions) Get() (v AccessPolicyDefinitions, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptAccessPolicyDefinitions) Or(d AccessPolicyDefinitions) AccessPolicyDefinitions {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptAccessPolicyResolved returns new OptAccessPolicyResolved with value set to v.
-func NewOptAccessPolicyResolved(v AccessPolicyResolved) OptAccessPolicyResolved {
-	return OptAccessPolicyResolved{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptAccessPolicyResolved is optional AccessPolicyResolved.
-type OptAccessPolicyResolved struct {
-	Value AccessPolicyResolved
-	Set   bool
-}
-
-// IsSet returns true if OptAccessPolicyResolved was set.
-func (o OptAccessPolicyResolved) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptAccessPolicyResolved) Reset() {
-	var v AccessPolicyResolved
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptAccessPolicyResolved) SetTo(v AccessPolicyResolved) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptAccessPolicyResolved) Get() (v AccessPolicyResolved, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptAccessPolicyResolved) Or(d AccessPolicyResolved) AccessPolicyResolved {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptApproveSecretRequestBodyScope returns new OptApproveSecretRequestBodyScope with value set to v.
 func NewOptApproveSecretRequestBodyScope(v ApproveSecretRequestBodyScope) OptApproveSecretRequestBodyScope {
 	return OptApproveSecretRequestBodyScope{
@@ -11327,52 +8637,6 @@ func (o OptApproveSecretRequestBodyScope) Get() (v ApproveSecretRequestBodyScope
 
 // Or returns value if set, or given parameter if does not.
 func (o OptApproveSecretRequestBodyScope) Or(d ApproveSecretRequestBodyScope) ApproveSecretRequestBodyScope {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptApproveWithRule returns new OptApproveWithRule with value set to v.
-func NewOptApproveWithRule(v ApproveWithRule) OptApproveWithRule {
-	return OptApproveWithRule{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptApproveWithRule is optional ApproveWithRule.
-type OptApproveWithRule struct {
-	Value ApproveWithRule
-	Set   bool
-}
-
-// IsSet returns true if OptApproveWithRule was set.
-func (o OptApproveWithRule) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptApproveWithRule) Reset() {
-	var v ApproveWithRule
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptApproveWithRule) SetTo(v ApproveWithRule) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptApproveWithRule) Get() (v ApproveWithRule, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptApproveWithRule) Or(d ApproveWithRule) ApproveWithRule {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -11465,52 +8729,6 @@ func (o OptCloneProgressStage) Get() (v CloneProgressStage, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptCloneProgressStage) Or(d CloneProgressStage) CloneProgressStage {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptCreateApprovalRuleBodyPurpose returns new OptCreateApprovalRuleBodyPurpose with value set to v.
-func NewOptCreateApprovalRuleBodyPurpose(v CreateApprovalRuleBodyPurpose) OptCreateApprovalRuleBodyPurpose {
-	return OptCreateApprovalRuleBodyPurpose{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptCreateApprovalRuleBodyPurpose is optional CreateApprovalRuleBodyPurpose.
-type OptCreateApprovalRuleBodyPurpose struct {
-	Value CreateApprovalRuleBodyPurpose
-	Set   bool
-}
-
-// IsSet returns true if OptCreateApprovalRuleBodyPurpose was set.
-func (o OptCreateApprovalRuleBodyPurpose) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptCreateApprovalRuleBodyPurpose) Reset() {
-	var v CreateApprovalRuleBodyPurpose
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptCreateApprovalRuleBodyPurpose) SetTo(v CreateApprovalRuleBodyPurpose) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptCreateApprovalRuleBodyPurpose) Get() (v CreateApprovalRuleBodyPurpose, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptCreateApprovalRuleBodyPurpose) Or(d CreateApprovalRuleBodyPurpose) CreateApprovalRuleBodyPurpose {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -11741,144 +8959,6 @@ func (o OptCreateSecretGrantBodyPurpose) Get() (v CreateSecretGrantBodyPurpose, 
 
 // Or returns value if set, or given parameter if does not.
 func (o OptCreateSecretGrantBodyPurpose) Or(d CreateSecretGrantBodyPurpose) CreateSecretGrantBodyPurpose {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptCredentialVerdictKind returns new OptCredentialVerdictKind with value set to v.
-func NewOptCredentialVerdictKind(v CredentialVerdictKind) OptCredentialVerdictKind {
-	return OptCredentialVerdictKind{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptCredentialVerdictKind is optional CredentialVerdictKind.
-type OptCredentialVerdictKind struct {
-	Value CredentialVerdictKind
-	Set   bool
-}
-
-// IsSet returns true if OptCredentialVerdictKind was set.
-func (o OptCredentialVerdictKind) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptCredentialVerdictKind) Reset() {
-	var v CredentialVerdictKind
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptCredentialVerdictKind) SetTo(v CredentialVerdictKind) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptCredentialVerdictKind) Get() (v CredentialVerdictKind, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptCredentialVerdictKind) Or(d CredentialVerdictKind) CredentialVerdictKind {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptCredentialVerdictOrigin returns new OptCredentialVerdictOrigin with value set to v.
-func NewOptCredentialVerdictOrigin(v CredentialVerdictOrigin) OptCredentialVerdictOrigin {
-	return OptCredentialVerdictOrigin{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptCredentialVerdictOrigin is optional CredentialVerdictOrigin.
-type OptCredentialVerdictOrigin struct {
-	Value CredentialVerdictOrigin
-	Set   bool
-}
-
-// IsSet returns true if OptCredentialVerdictOrigin was set.
-func (o OptCredentialVerdictOrigin) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptCredentialVerdictOrigin) Reset() {
-	var v CredentialVerdictOrigin
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptCredentialVerdictOrigin) SetTo(v CredentialVerdictOrigin) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptCredentialVerdictOrigin) Get() (v CredentialVerdictOrigin, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptCredentialVerdictOrigin) Or(d CredentialVerdictOrigin) CredentialVerdictOrigin {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptCredentialVerdictProbabilities returns new OptCredentialVerdictProbabilities with value set to v.
-func NewOptCredentialVerdictProbabilities(v CredentialVerdictProbabilities) OptCredentialVerdictProbabilities {
-	return OptCredentialVerdictProbabilities{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptCredentialVerdictProbabilities is optional CredentialVerdictProbabilities.
-type OptCredentialVerdictProbabilities struct {
-	Value CredentialVerdictProbabilities
-	Set   bool
-}
-
-// IsSet returns true if OptCredentialVerdictProbabilities was set.
-func (o OptCredentialVerdictProbabilities) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptCredentialVerdictProbabilities) Reset() {
-	var v CredentialVerdictProbabilities
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptCredentialVerdictProbabilities) SetTo(v CredentialVerdictProbabilities) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptCredentialVerdictProbabilities) Get() (v CredentialVerdictProbabilities, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptCredentialVerdictProbabilities) Or(d CredentialVerdictProbabilities) CredentialVerdictProbabilities {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -13219,512 +10299,6 @@ func (o OptIrohListener) Or(d IrohListener) IrohListener {
 	return d
 }
 
-// NewOptJudgeInput returns new OptJudgeInput with value set to v.
-func NewOptJudgeInput(v JudgeInput) OptJudgeInput {
-	return OptJudgeInput{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptJudgeInput is optional JudgeInput.
-type OptJudgeInput struct {
-	Value JudgeInput
-	Set   bool
-}
-
-// IsSet returns true if OptJudgeInput was set.
-func (o OptJudgeInput) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptJudgeInput) Reset() {
-	var v JudgeInput
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptJudgeInput) SetTo(v JudgeInput) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptJudgeInput) Get() (v JudgeInput, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptJudgeInput) Or(d JudgeInput) JudgeInput {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptJudgeJobDefinitions returns new OptJudgeJobDefinitions with value set to v.
-func NewOptJudgeJobDefinitions(v JudgeJobDefinitions) OptJudgeJobDefinitions {
-	return OptJudgeJobDefinitions{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptJudgeJobDefinitions is optional JudgeJobDefinitions.
-type OptJudgeJobDefinitions struct {
-	Value JudgeJobDefinitions
-	Set   bool
-}
-
-// IsSet returns true if OptJudgeJobDefinitions was set.
-func (o OptJudgeJobDefinitions) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptJudgeJobDefinitions) Reset() {
-	var v JudgeJobDefinitions
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptJudgeJobDefinitions) SetTo(v JudgeJobDefinitions) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptJudgeJobDefinitions) Get() (v JudgeJobDefinitions, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptJudgeJobDefinitions) Or(d JudgeJobDefinitions) JudgeJobDefinitions {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptJudgeNeed returns new OptJudgeNeed with value set to v.
-func NewOptJudgeNeed(v JudgeNeed) OptJudgeNeed {
-	return OptJudgeNeed{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptJudgeNeed is optional JudgeNeed.
-type OptJudgeNeed struct {
-	Value JudgeNeed
-	Set   bool
-}
-
-// IsSet returns true if OptJudgeNeed was set.
-func (o OptJudgeNeed) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptJudgeNeed) Reset() {
-	var v JudgeNeed
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptJudgeNeed) SetTo(v JudgeNeed) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptJudgeNeed) Get() (v JudgeNeed, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptJudgeNeed) Or(d JudgeNeed) JudgeNeed {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptJudgeProposalJobDefinitions returns new OptJudgeProposalJobDefinitions with value set to v.
-func NewOptJudgeProposalJobDefinitions(v JudgeProposalJobDefinitions) OptJudgeProposalJobDefinitions {
-	return OptJudgeProposalJobDefinitions{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptJudgeProposalJobDefinitions is optional JudgeProposalJobDefinitions.
-type OptJudgeProposalJobDefinitions struct {
-	Value JudgeProposalJobDefinitions
-	Set   bool
-}
-
-// IsSet returns true if OptJudgeProposalJobDefinitions was set.
-func (o OptJudgeProposalJobDefinitions) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptJudgeProposalJobDefinitions) Reset() {
-	var v JudgeProposalJobDefinitions
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptJudgeProposalJobDefinitions) SetTo(v JudgeProposalJobDefinitions) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptJudgeProposalJobDefinitions) Get() (v JudgeProposalJobDefinitions, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptJudgeProposalJobDefinitions) Or(d JudgeProposalJobDefinitions) JudgeProposalJobDefinitions {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptJudgeRecognition returns new OptJudgeRecognition with value set to v.
-func NewOptJudgeRecognition(v JudgeRecognition) OptJudgeRecognition {
-	return OptJudgeRecognition{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptJudgeRecognition is optional JudgeRecognition.
-type OptJudgeRecognition struct {
-	Value JudgeRecognition
-	Set   bool
-}
-
-// IsSet returns true if OptJudgeRecognition was set.
-func (o OptJudgeRecognition) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptJudgeRecognition) Reset() {
-	var v JudgeRecognition
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptJudgeRecognition) SetTo(v JudgeRecognition) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptJudgeRecognition) Get() (v JudgeRecognition, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptJudgeRecognition) Or(d JudgeRecognition) JudgeRecognition {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptJudgeReported returns new OptJudgeReported with value set to v.
-func NewOptJudgeReported(v JudgeReported) OptJudgeReported {
-	return OptJudgeReported{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptJudgeReported is optional JudgeReported.
-type OptJudgeReported struct {
-	Value JudgeReported
-	Set   bool
-}
-
-// IsSet returns true if OptJudgeReported was set.
-func (o OptJudgeReported) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptJudgeReported) Reset() {
-	var v JudgeReported
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptJudgeReported) SetTo(v JudgeReported) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptJudgeReported) Get() (v JudgeReported, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptJudgeReported) Or(d JudgeReported) JudgeReported {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptJudgeRequestBody returns new OptJudgeRequestBody with value set to v.
-func NewOptJudgeRequestBody(v JudgeRequestBody) OptJudgeRequestBody {
-	return OptJudgeRequestBody{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptJudgeRequestBody is optional JudgeRequestBody.
-type OptJudgeRequestBody struct {
-	Value JudgeRequestBody
-	Set   bool
-}
-
-// IsSet returns true if OptJudgeRequestBody was set.
-func (o OptJudgeRequestBody) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptJudgeRequestBody) Reset() {
-	var v JudgeRequestBody
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptJudgeRequestBody) SetTo(v JudgeRequestBody) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptJudgeRequestBody) Get() (v JudgeRequestBody, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptJudgeRequestBody) Or(d JudgeRequestBody) JudgeRequestBody {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptJudgeRequestBodyMetadata returns new OptJudgeRequestBodyMetadata with value set to v.
-func NewOptJudgeRequestBodyMetadata(v JudgeRequestBodyMetadata) OptJudgeRequestBodyMetadata {
-	return OptJudgeRequestBodyMetadata{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptJudgeRequestBodyMetadata is optional JudgeRequestBodyMetadata.
-type OptJudgeRequestBodyMetadata struct {
-	Value JudgeRequestBodyMetadata
-	Set   bool
-}
-
-// IsSet returns true if OptJudgeRequestBodyMetadata was set.
-func (o OptJudgeRequestBodyMetadata) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptJudgeRequestBodyMetadata) Reset() {
-	var v JudgeRequestBodyMetadata
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptJudgeRequestBodyMetadata) SetTo(v JudgeRequestBodyMetadata) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptJudgeRequestBodyMetadata) Get() (v JudgeRequestBodyMetadata, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptJudgeRequestBodyMetadata) Or(d JudgeRequestBodyMetadata) JudgeRequestBodyMetadata {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptJudgeRequestEvidence returns new OptJudgeRequestEvidence with value set to v.
-func NewOptJudgeRequestEvidence(v JudgeRequestEvidence) OptJudgeRequestEvidence {
-	return OptJudgeRequestEvidence{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptJudgeRequestEvidence is optional JudgeRequestEvidence.
-type OptJudgeRequestEvidence struct {
-	Value JudgeRequestEvidence
-	Set   bool
-}
-
-// IsSet returns true if OptJudgeRequestEvidence was set.
-func (o OptJudgeRequestEvidence) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptJudgeRequestEvidence) Reset() {
-	var v JudgeRequestEvidence
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptJudgeRequestEvidence) SetTo(v JudgeRequestEvidence) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptJudgeRequestEvidence) Get() (v JudgeRequestEvidence, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptJudgeRequestEvidence) Or(d JudgeRequestEvidence) JudgeRequestEvidence {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptJudgeRequestEvidenceHeaders returns new OptJudgeRequestEvidenceHeaders with value set to v.
-func NewOptJudgeRequestEvidenceHeaders(v JudgeRequestEvidenceHeaders) OptJudgeRequestEvidenceHeaders {
-	return OptJudgeRequestEvidenceHeaders{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptJudgeRequestEvidenceHeaders is optional JudgeRequestEvidenceHeaders.
-type OptJudgeRequestEvidenceHeaders struct {
-	Value JudgeRequestEvidenceHeaders
-	Set   bool
-}
-
-// IsSet returns true if OptJudgeRequestEvidenceHeaders was set.
-func (o OptJudgeRequestEvidenceHeaders) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptJudgeRequestEvidenceHeaders) Reset() {
-	var v JudgeRequestEvidenceHeaders
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptJudgeRequestEvidenceHeaders) SetTo(v JudgeRequestEvidenceHeaders) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptJudgeRequestEvidenceHeaders) Get() (v JudgeRequestEvidenceHeaders, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptJudgeRequestEvidenceHeaders) Or(d JudgeRequestEvidenceHeaders) JudgeRequestEvidenceHeaders {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptJudgeStanding returns new OptJudgeStanding with value set to v.
-func NewOptJudgeStanding(v JudgeStanding) OptJudgeStanding {
-	return OptJudgeStanding{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptJudgeStanding is optional JudgeStanding.
-type OptJudgeStanding struct {
-	Value JudgeStanding
-	Set   bool
-}
-
-// IsSet returns true if OptJudgeStanding was set.
-func (o OptJudgeStanding) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptJudgeStanding) Reset() {
-	var v JudgeStanding
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptJudgeStanding) SetTo(v JudgeStanding) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptJudgeStanding) Get() (v JudgeStanding, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptJudgeStanding) Or(d JudgeStanding) JudgeStanding {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptListApprovalRequestsStatus returns new OptListApprovalRequestsStatus with value set to v.
 func NewOptListApprovalRequestsStatus(v ListApprovalRequestsStatus) OptListApprovalRequestsStatus {
 	return OptListApprovalRequestsStatus{
@@ -13765,98 +10339,6 @@ func (o OptListApprovalRequestsStatus) Get() (v ListApprovalRequestsStatus, ok b
 
 // Or returns value if set, or given parameter if does not.
 func (o OptListApprovalRequestsStatus) Or(d ListApprovalRequestsStatus) ListApprovalRequestsStatus {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptListCredentialVerdictsKind returns new OptListCredentialVerdictsKind with value set to v.
-func NewOptListCredentialVerdictsKind(v ListCredentialVerdictsKind) OptListCredentialVerdictsKind {
-	return OptListCredentialVerdictsKind{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptListCredentialVerdictsKind is optional ListCredentialVerdictsKind.
-type OptListCredentialVerdictsKind struct {
-	Value ListCredentialVerdictsKind
-	Set   bool
-}
-
-// IsSet returns true if OptListCredentialVerdictsKind was set.
-func (o OptListCredentialVerdictsKind) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptListCredentialVerdictsKind) Reset() {
-	var v ListCredentialVerdictsKind
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptListCredentialVerdictsKind) SetTo(v ListCredentialVerdictsKind) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptListCredentialVerdictsKind) Get() (v ListCredentialVerdictsKind, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptListCredentialVerdictsKind) Or(d ListCredentialVerdictsKind) ListCredentialVerdictsKind {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptListCredentialVerdictsOrder returns new OptListCredentialVerdictsOrder with value set to v.
-func NewOptListCredentialVerdictsOrder(v ListCredentialVerdictsOrder) OptListCredentialVerdictsOrder {
-	return OptListCredentialVerdictsOrder{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptListCredentialVerdictsOrder is optional ListCredentialVerdictsOrder.
-type OptListCredentialVerdictsOrder struct {
-	Value ListCredentialVerdictsOrder
-	Set   bool
-}
-
-// IsSet returns true if OptListCredentialVerdictsOrder was set.
-func (o OptListCredentialVerdictsOrder) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptListCredentialVerdictsOrder) Reset() {
-	var v ListCredentialVerdictsOrder
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptListCredentialVerdictsOrder) SetTo(v ListCredentialVerdictsOrder) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptListCredentialVerdictsOrder) Get() (v ListCredentialVerdictsOrder, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptListCredentialVerdictsOrder) Or(d ListCredentialVerdictsOrder) ListCredentialVerdictsOrder {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -15697,132 +12179,6 @@ func (o OptNilSecretRouteInputArray) Or(d []SecretRouteInput) []SecretRouteInput
 	return d
 }
 
-// NewOptNilSecretUseArray returns new OptNilSecretUseArray with value set to v.
-func NewOptNilSecretUseArray(v []SecretUse) OptNilSecretUseArray {
-	return OptNilSecretUseArray{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilSecretUseArray is optional nullable []SecretUse.
-type OptNilSecretUseArray struct {
-	Value []SecretUse
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilSecretUseArray was set.
-func (o OptNilSecretUseArray) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilSecretUseArray) Reset() {
-	var v []SecretUse
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilSecretUseArray) SetTo(v []SecretUse) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilSecretUseArray) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilSecretUseArray) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v []SecretUse
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilSecretUseArray) Get() (v []SecretUse, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilSecretUseArray) Or(d []SecretUse) []SecretUse {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptNilString returns new OptNilString with value set to v.
-func NewOptNilString(v string) OptNilString {
-	return OptNilString{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilString is optional nullable string.
-type OptNilString struct {
-	Value string
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilString was set.
-func (o OptNilString) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilString) Reset() {
-	var v string
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilString) SetTo(v string) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilString) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilString) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v string
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilString) Get() (v string, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilString) Or(d string) string {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptNilStringArray returns new OptNilStringArray with value set to v.
 func NewOptNilStringArray(v []string) OptNilStringArray {
 	return OptNilStringArray{
@@ -15972,98 +12328,6 @@ func (o OptOrigin) Get() (v Origin, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptOrigin) Or(d Origin) Origin {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptPolicyFactsRef returns new OptPolicyFactsRef with value set to v.
-func NewOptPolicyFactsRef(v PolicyFactsRef) OptPolicyFactsRef {
-	return OptPolicyFactsRef{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptPolicyFactsRef is optional PolicyFactsRef.
-type OptPolicyFactsRef struct {
-	Value PolicyFactsRef
-	Set   bool
-}
-
-// IsSet returns true if OptPolicyFactsRef was set.
-func (o OptPolicyFactsRef) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptPolicyFactsRef) Reset() {
-	var v PolicyFactsRef
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptPolicyFactsRef) SetTo(v PolicyFactsRef) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptPolicyFactsRef) Get() (v PolicyFactsRef, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptPolicyFactsRef) Or(d PolicyFactsRef) PolicyFactsRef {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptPolicyFactsRemote returns new OptPolicyFactsRemote with value set to v.
-func NewOptPolicyFactsRemote(v PolicyFactsRemote) OptPolicyFactsRemote {
-	return OptPolicyFactsRemote{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptPolicyFactsRemote is optional PolicyFactsRemote.
-type OptPolicyFactsRemote struct {
-	Value PolicyFactsRemote
-	Set   bool
-}
-
-// IsSet returns true if OptPolicyFactsRemote was set.
-func (o OptPolicyFactsRemote) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptPolicyFactsRemote) Reset() {
-	var v PolicyFactsRemote
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptPolicyFactsRemote) SetTo(v PolicyFactsRemote) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptPolicyFactsRemote) Get() (v PolicyFactsRemote, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptPolicyFactsRemote) Or(d PolicyFactsRemote) PolicyFactsRemote {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -16478,98 +12742,6 @@ func (o OptPutGatewayHeaderModifier) Get() (v PutGatewayHeaderModifier, ok bool)
 
 // Or returns value if set, or given parameter if does not.
 func (o OptPutGatewayHeaderModifier) Or(d PutGatewayHeaderModifier) PutGatewayHeaderModifier {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptRulePolicyProposal returns new OptRulePolicyProposal with value set to v.
-func NewOptRulePolicyProposal(v RulePolicyProposal) OptRulePolicyProposal {
-	return OptRulePolicyProposal{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptRulePolicyProposal is optional RulePolicyProposal.
-type OptRulePolicyProposal struct {
-	Value RulePolicyProposal
-	Set   bool
-}
-
-// IsSet returns true if OptRulePolicyProposal was set.
-func (o OptRulePolicyProposal) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptRulePolicyProposal) Reset() {
-	var v RulePolicyProposal
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptRulePolicyProposal) SetTo(v RulePolicyProposal) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptRulePolicyProposal) Get() (v RulePolicyProposal, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptRulePolicyProposal) Or(d RulePolicyProposal) RulePolicyProposal {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptRuleTestStage returns new OptRuleTestStage with value set to v.
-func NewOptRuleTestStage(v RuleTestStage) OptRuleTestStage {
-	return OptRuleTestStage{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptRuleTestStage is optional RuleTestStage.
-type OptRuleTestStage struct {
-	Value RuleTestStage
-	Set   bool
-}
-
-// IsSet returns true if OptRuleTestStage was set.
-func (o OptRuleTestStage) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptRuleTestStage) Reset() {
-	var v RuleTestStage
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptRuleTestStage) SetTo(v RuleTestStage) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptRuleTestStage) Get() (v RuleTestStage, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptRuleTestStage) Or(d RuleTestStage) RuleTestStage {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -17536,6 +13708,52 @@ func (o OptSandboxCreateConfigSourceCodeReferences) Get() (v SandboxCreateConfig
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxCreateConfigSourceCodeReferences) Or(d SandboxCreateConfigSourceCodeReferences) SandboxCreateConfigSourceCodeReferences {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxCredentialPurpose returns new OptSandboxCredentialPurpose with value set to v.
+func NewOptSandboxCredentialPurpose(v SandboxCredentialPurpose) OptSandboxCredentialPurpose {
+	return OptSandboxCredentialPurpose{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCredentialPurpose is optional SandboxCredentialPurpose.
+type OptSandboxCredentialPurpose struct {
+	Value SandboxCredentialPurpose
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCredentialPurpose was set.
+func (o OptSandboxCredentialPurpose) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCredentialPurpose) Reset() {
+	var v SandboxCredentialPurpose
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCredentialPurpose) SetTo(v SandboxCredentialPurpose) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCredentialPurpose) Get() (v SandboxCredentialPurpose, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCredentialPurpose) Or(d SandboxCredentialPurpose) SandboxCredentialPurpose {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -19584,240 +15802,6 @@ func (s *Peer) SetUpdatedAt(val time.Time) {
 
 func (*Peer) createPeerRes() {}
 
-// What the control plane recorded about a discobox when it was created, typed (ADR 26-10-20-782
-// section 4).
-// Ref: #/components/schemas/PolicyFacts
-type PolicyFacts struct {
-	Discobox PolicyFactsDiscobox `json:"discobox"`
-	// The sources it was created with, the primary first.
-	Sources []PolicyFactsSource `json:"sources"`
-}
-
-// GetDiscobox returns the value of Discobox.
-func (s *PolicyFacts) GetDiscobox() PolicyFactsDiscobox {
-	return s.Discobox
-}
-
-// GetSources returns the value of Sources.
-func (s *PolicyFacts) GetSources() []PolicyFactsSource {
-	return s.Sources
-}
-
-// SetDiscobox sets the value of Discobox.
-func (s *PolicyFacts) SetDiscobox(val PolicyFactsDiscobox) {
-	s.Discobox = val
-}
-
-// SetSources sets the value of Sources.
-func (s *PolicyFacts) SetSources(val []PolicyFactsSource) {
-	s.Sources = val
-}
-
-// Ref: #/components/schemas/PolicyFactsDiscobox
-type PolicyFactsDiscobox struct {
-	ID string `json:"id"`
-	// The discobox that created it; absent when a person did.
-	CreatedBy OptString `json:"createdBy"`
-	Project   OptString `json:"project"`
-}
-
-// GetID returns the value of ID.
-func (s *PolicyFactsDiscobox) GetID() string {
-	return s.ID
-}
-
-// GetCreatedBy returns the value of CreatedBy.
-func (s *PolicyFactsDiscobox) GetCreatedBy() OptString {
-	return s.CreatedBy
-}
-
-// GetProject returns the value of Project.
-func (s *PolicyFactsDiscobox) GetProject() OptString {
-	return s.Project
-}
-
-// SetID sets the value of ID.
-func (s *PolicyFactsDiscobox) SetID(val string) {
-	s.ID = val
-}
-
-// SetCreatedBy sets the value of CreatedBy.
-func (s *PolicyFactsDiscobox) SetCreatedBy(val OptString) {
-	s.CreatedBy = val
-}
-
-// SetProject sets the value of Project.
-func (s *PolicyFactsDiscobox) SetProject(val OptString) {
-	s.Project = val
-}
-
-// The ref a source was created from, as its creator named it.
-// Ref: #/components/schemas/PolicyFactsRef
-type PolicyFactsRef struct {
-	// Branch or tag, or absent when its creator did not say which.
-	Type OptString `json:"type"`
-	Name string    `json:"name"`
-}
-
-// GetType returns the value of Type.
-func (s *PolicyFactsRef) GetType() OptString {
-	return s.Type
-}
-
-// GetName returns the value of Name.
-func (s *PolicyFactsRef) GetName() string {
-	return s.Name
-}
-
-// SetType sets the value of Type.
-func (s *PolicyFactsRef) SetType(val OptString) {
-	s.Type = val
-}
-
-// SetName sets the value of Name.
-func (s *PolicyFactsRef) SetName(val string) {
-	s.Name = val
-}
-
-// A source's network remote, normalized; absent for a source with none.
-// Ref: #/components/schemas/PolicyFactsRemote
-type PolicyFactsRemote struct {
-	Host string `json:"host"`
-	// The repository's path on the host -- owner/name on GitHub.
-	Repo string `json:"repo"`
-	URL  string `json:"url"`
-}
-
-// GetHost returns the value of Host.
-func (s *PolicyFactsRemote) GetHost() string {
-	return s.Host
-}
-
-// GetRepo returns the value of Repo.
-func (s *PolicyFactsRemote) GetRepo() string {
-	return s.Repo
-}
-
-// GetURL returns the value of URL.
-func (s *PolicyFactsRemote) GetURL() string {
-	return s.URL
-}
-
-// SetHost sets the value of Host.
-func (s *PolicyFactsRemote) SetHost(val string) {
-	s.Host = val
-}
-
-// SetRepo sets the value of Repo.
-func (s *PolicyFactsRemote) SetRepo(val string) {
-	s.Repo = val
-}
-
-// SetURL sets the value of URL.
-func (s *PolicyFactsRemote) SetURL(val string) {
-	s.URL = val
-}
-
-// A source as it was recorded at create, never the branch or commits it has moved to since.
-// Ref: #/components/schemas/PolicyFactsSource
-type PolicyFactsSource struct {
-	Slug    string               `json:"slug"`
-	Primary OptBool              `json:"primary"`
-	Remote  OptPolicyFactsRemote `json:"remote"`
-	Ref     OptPolicyFactsRef    `json:"ref"`
-	Commit  OptString            `json:"commit"`
-}
-
-// GetSlug returns the value of Slug.
-func (s *PolicyFactsSource) GetSlug() string {
-	return s.Slug
-}
-
-// GetPrimary returns the value of Primary.
-func (s *PolicyFactsSource) GetPrimary() OptBool {
-	return s.Primary
-}
-
-// GetRemote returns the value of Remote.
-func (s *PolicyFactsSource) GetRemote() OptPolicyFactsRemote {
-	return s.Remote
-}
-
-// GetRef returns the value of Ref.
-func (s *PolicyFactsSource) GetRef() OptPolicyFactsRef {
-	return s.Ref
-}
-
-// GetCommit returns the value of Commit.
-func (s *PolicyFactsSource) GetCommit() OptString {
-	return s.Commit
-}
-
-// SetSlug sets the value of Slug.
-func (s *PolicyFactsSource) SetSlug(val string) {
-	s.Slug = val
-}
-
-// SetPrimary sets the value of Primary.
-func (s *PolicyFactsSource) SetPrimary(val OptBool) {
-	s.Primary = val
-}
-
-// SetRemote sets the value of Remote.
-func (s *PolicyFactsSource) SetRemote(val OptPolicyFactsRemote) {
-	s.Remote = val
-}
-
-// SetRef sets the value of Ref.
-func (s *PolicyFactsSource) SetRef(val OptPolicyFactsRef) {
-	s.Ref = val
-}
-
-// SetCommit sets the value of Commit.
-func (s *PolicyFactsSource) SetCommit(val OptString) {
-	s.Commit = val
-}
-
-// A variable a policy may use and what it resolves to.
-// Ref: #/components/schemas/PolicyVariable
-type PolicyVariable struct {
-	Name string `json:"name"`
-	// What it resolves to; absent when it does not.
-	Value OptString `json:"value"`
-	// False for a variable that resolves to nothing, and so matches nothing.
-	Resolved bool `json:"resolved"`
-}
-
-// GetName returns the value of Name.
-func (s *PolicyVariable) GetName() string {
-	return s.Name
-}
-
-// GetValue returns the value of Value.
-func (s *PolicyVariable) GetValue() OptString {
-	return s.Value
-}
-
-// GetResolved returns the value of Resolved.
-func (s *PolicyVariable) GetResolved() bool {
-	return s.Resolved
-}
-
-// SetName sets the value of Name.
-func (s *PolicyVariable) SetName(val string) {
-	s.Name = val
-}
-
-// SetValue sets the value of Value.
-func (s *PolicyVariable) SetValue(val OptString) {
-	s.Value = val
-}
-
-// SetResolved sets the value of Resolved.
-func (s *PolicyVariable) SetResolved(val bool) {
-	s.Resolved = val
-}
-
 // Ref: #/components/schemas/Pool
 type Pool struct {
 	// The pool's egress policy level (ADR 26-10-01-032). Its denyByDefault restricts every discobox in
@@ -20392,72 +16376,6 @@ func (s *PoolCPUUsageAdditional) init() PoolCPUUsageAdditional {
 	return m
 }
 
-// One command a pool's discobox is about to run under an approved use, asked about before the pool
-// mints anything for it (ADR 26-09-22-838 §3). A pool does not say what the use authorizes: the
-// control plane reads the sentence, the credential's name and its host from the live grant.
-// Everything here is the discobox's, and evidence.
-// Ref: #/components/schemas/PoolCommandAsk
-type PoolCommandAsk struct {
-	// The argv the discobox is about to run.
-	Command  []string         `json:"command"`
-	Reported OptJudgeReported `json:"reported"`
-	// The discobox about to run it. It must belong to the asking pool.
-	SandboxId string        `json:"sandboxId"`
-	Stdin     OptJudgeInput `json:"stdin"`
-	// The approved use the command would spend the credential under.
-	UseId string `json:"useId"`
-}
-
-// GetCommand returns the value of Command.
-func (s *PoolCommandAsk) GetCommand() []string {
-	return s.Command
-}
-
-// GetReported returns the value of Reported.
-func (s *PoolCommandAsk) GetReported() OptJudgeReported {
-	return s.Reported
-}
-
-// GetSandboxId returns the value of SandboxId.
-func (s *PoolCommandAsk) GetSandboxId() string {
-	return s.SandboxId
-}
-
-// GetStdin returns the value of Stdin.
-func (s *PoolCommandAsk) GetStdin() OptJudgeInput {
-	return s.Stdin
-}
-
-// GetUseId returns the value of UseId.
-func (s *PoolCommandAsk) GetUseId() string {
-	return s.UseId
-}
-
-// SetCommand sets the value of Command.
-func (s *PoolCommandAsk) SetCommand(val []string) {
-	s.Command = val
-}
-
-// SetReported sets the value of Reported.
-func (s *PoolCommandAsk) SetReported(val OptJudgeReported) {
-	s.Reported = val
-}
-
-// SetSandboxId sets the value of SandboxId.
-func (s *PoolCommandAsk) SetSandboxId(val string) {
-	s.SandboxId = val
-}
-
-// SetStdin sets the value of Stdin.
-func (s *PoolCommandAsk) SetStdin(val OptJudgeInput) {
-	s.Stdin = val
-}
-
-// SetUseId sets the value of UseId.
-func (s *PoolCommandAsk) SetUseId(val string) {
-	s.UseId = val
-}
-
 // Requested existence, the same vocabulary every orchestrated resource uses.
 type PoolDesiredState string
 
@@ -20652,90 +16570,6 @@ func (s *PoolHeldSandboxesBody) SetSandboxIds(val []string) {
 }
 
 func (*PoolHeldSandboxesBody) listPoolHeldSandboxesRes() {}
-
-// One ask from a pool: which discobox is spending which approved use, and the request its proxy
-// observed. A pool does not say what the use authorizes. The control plane reads the sentence, the
-// credential's name and the host from the live grant the use belongs to, so nothing a pool or a
-// sandbox sends can widen what its own request is judged against.
-// Ref: #/components/schemas/PoolJudgeAsk
-type PoolJudgeAsk struct {
-	// What the discobox declared it was running. It is context and not authority: a declaration cannot
-	// override the request observed.
-	Command []string             `json:"command"`
-	Request JudgeRequestEvidence `json:"request"`
-	// Which ask this is, from 1. A round after the first exists because the judge asked to be shown the
-	// body.
-	Round int64 `json:"round"`
-	// The discobox whose request this is. It must belong to the asking pool.
-	SandboxId string `json:"sandboxId"`
-	// How long the pool will wait for this answer, in milliseconds. Every round of one request shares
-	// one deadline, so a later round has less than the first; the control plane bounds the ask by this
-	// as well as by its own limit, and answers before it runs out rather than being cut off. Left out,
-	// only the control plane's own limit applies.
-	TimeoutMillis OptInt64 `json:"timeoutMillis"`
-	// The approved use the credential is being spent under.
-	UseId string `json:"useId"`
-}
-
-// GetCommand returns the value of Command.
-func (s *PoolJudgeAsk) GetCommand() []string {
-	return s.Command
-}
-
-// GetRequest returns the value of Request.
-func (s *PoolJudgeAsk) GetRequest() JudgeRequestEvidence {
-	return s.Request
-}
-
-// GetRound returns the value of Round.
-func (s *PoolJudgeAsk) GetRound() int64 {
-	return s.Round
-}
-
-// GetSandboxId returns the value of SandboxId.
-func (s *PoolJudgeAsk) GetSandboxId() string {
-	return s.SandboxId
-}
-
-// GetTimeoutMillis returns the value of TimeoutMillis.
-func (s *PoolJudgeAsk) GetTimeoutMillis() OptInt64 {
-	return s.TimeoutMillis
-}
-
-// GetUseId returns the value of UseId.
-func (s *PoolJudgeAsk) GetUseId() string {
-	return s.UseId
-}
-
-// SetCommand sets the value of Command.
-func (s *PoolJudgeAsk) SetCommand(val []string) {
-	s.Command = val
-}
-
-// SetRequest sets the value of Request.
-func (s *PoolJudgeAsk) SetRequest(val JudgeRequestEvidence) {
-	s.Request = val
-}
-
-// SetRound sets the value of Round.
-func (s *PoolJudgeAsk) SetRound(val int64) {
-	s.Round = val
-}
-
-// SetSandboxId sets the value of SandboxId.
-func (s *PoolJudgeAsk) SetSandboxId(val string) {
-	s.SandboxId = val
-}
-
-// SetTimeoutMillis sets the value of TimeoutMillis.
-func (s *PoolJudgeAsk) SetTimeoutMillis(val OptInt64) {
-	s.TimeoutMillis = val
-}
-
-// SetUseId sets the value of UseId.
-func (s *PoolJudgeAsk) SetUseId(val string) {
-	s.UseId = val
-}
 
 // What the pool's own services hold, from the pool container's own cgroup. Excludes the sandboxes,
 // which are charged to their own cgroups outside this subtree.
@@ -22176,7 +18010,7 @@ func (*Project) updateProjectRes()             {}
 
 // A gateway every discobox of the project is routed through (ADR 26-10-16-470). A request beneath
 // match goes to target instead, with match's path replaced by target's and the rest of the path and
-// the query kept, once every other policy has judged it as the discobox sent it. The pool proxy
+// the query kept, once every other policy has decided on it as the discobox sent it. The pool proxy
 // applies it; the discobox cannot see or bypass it.
 // Ref: #/components/schemas/ProjectGateway
 type ProjectGateway struct {
@@ -23287,8 +19121,6 @@ type ReportSandboxSecretRejectionBody struct {
 	// What happened. `rejected` is a 401 with nothing different to retry with; `rejected-after-retry` is
 	// a 401 on a second, different credential too; `accepted` retracts a rejection reported earlier.
 	Outcome ReportSandboxSecretRejectionBodyOutcome `json:"outcome"`
-	// Agent credential use the refused sentinel was minted for, when it was one.
-	UseId OptString `json:"useId"`
 }
 
 // GetSchema returns the value of Schema.
@@ -23316,11 +19148,6 @@ func (s *ReportSandboxSecretRejectionBody) GetOutcome() ReportSandboxSecretRejec
 	return s.Outcome
 }
 
-// GetUseId returns the value of UseId.
-func (s *ReportSandboxSecretRejectionBody) GetUseId() OptString {
-	return s.UseId
-}
-
 // SetSchema sets the value of Schema.
 func (s *ReportSandboxSecretRejectionBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -23344,11 +19171,6 @@ func (s *ReportSandboxSecretRejectionBody) SetHost(val string) {
 // SetOutcome sets the value of Outcome.
 func (s *ReportSandboxSecretRejectionBody) SetOutcome(val ReportSandboxSecretRejectionBodyOutcome) {
 	s.Outcome = val
-}
-
-// SetUseId sets the value of UseId.
-func (s *ReportSandboxSecretRejectionBody) SetUseId(val OptString) {
-	s.UseId = val
 }
 
 // What happened. `rejected` is a 401 with nothing different to retry with; `rejected-after-retry` is
@@ -24006,337 +19828,6 @@ type RevokeSecretGrantNoContent struct{}
 
 func (*RevokeSecretGrantNoContent) revokeSecretGrantRes() {}
 
-// The policy the project's judge wrote for an approval rule from the policy a request asked for --
-// the same work on any target of its kind -- already held to covering this request, as the rule
-// would later be. A person reads and may edit it before it becomes a rule; edited, it is held to
-// covering the request again on the approve.
-// Ref: #/components/schemas/RulePolicyProposal
-type RulePolicyProposal struct {
-	// Whether the request's policy falls within this one. False when it was not compared.
-	Covers bool `json:"covers"`
-	// The policy written. Absent when what was written is not a policy a rule may have, and refused says
-	// why.
-	Policy OptAccessPolicy `json:"policy"`
-	// Why it does or does not cover the request, as code or the judge found. Absent when it was not
-	// compared.
-	Reason OptString `json:"reason"`
-	// Why what was written could not be a rule's policy -- a statement that does not parse, a word with
-	// no definition -- so it was not compared. Absent when it was.
-	Refused OptString `json:"refused"`
-	// The statements as written, each its sentence, when they were refused.
-	Statements []string `json:"statements"`
-}
-
-// GetCovers returns the value of Covers.
-func (s *RulePolicyProposal) GetCovers() bool {
-	return s.Covers
-}
-
-// GetPolicy returns the value of Policy.
-func (s *RulePolicyProposal) GetPolicy() OptAccessPolicy {
-	return s.Policy
-}
-
-// GetReason returns the value of Reason.
-func (s *RulePolicyProposal) GetReason() OptString {
-	return s.Reason
-}
-
-// GetRefused returns the value of Refused.
-func (s *RulePolicyProposal) GetRefused() OptString {
-	return s.Refused
-}
-
-// GetStatements returns the value of Statements.
-func (s *RulePolicyProposal) GetStatements() []string {
-	return s.Statements
-}
-
-// SetCovers sets the value of Covers.
-func (s *RulePolicyProposal) SetCovers(val bool) {
-	s.Covers = val
-}
-
-// SetPolicy sets the value of Policy.
-func (s *RulePolicyProposal) SetPolicy(val OptAccessPolicy) {
-	s.Policy = val
-}
-
-// SetReason sets the value of Reason.
-func (s *RulePolicyProposal) SetReason(val OptString) {
-	s.Reason = val
-}
-
-// SetRefused sets the value of Refused.
-func (s *RulePolicyProposal) SetRefused(val OptString) {
-	s.Refused = val
-}
-
-// SetStatements sets the value of Statements.
-func (s *RulePolicyProposal) SetStatements(val []string) {
-	s.Statements = val
-}
-
-// Ref: #/components/schemas/RuleProposalsBody
-type RuleProposalsBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// The credential a rule made from this request would approve, copied from the request.
-	Credential OptString `json:"credential"`
-	// The hosts a rule made from this request would name, copied from the request.
-	Hosts []string `json:"hosts"`
-	// Why there is no policy written, when no model could write one.
-	Note OptString `json:"note"`
-	// What a rule made from this request would approve the credential for, copied from the request.
-	Purpose RuleProposalsBodyPurpose `json:"purpose"`
-	// The repository of the discobox that filed the request, as host/path, which a rule made from this
-	// request may be for. Absent when it has none (a local source with no remote), and then only a rule
-	// for every discobox answers it.
-	Repository OptString `json:"repository"`
-	// The well-known credential the request asked for by ID, when it named one. A rule made from this
-	// proposal is for that ID, and is answered with the secret marked for it; the policy was held to the
-	// request as a rule for it.
-	WellKnownId OptString             `json:"wellKnownId"`
-	Policy      OptRulePolicyProposal `json:"policy"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *RuleProposalsBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetCredential returns the value of Credential.
-func (s *RuleProposalsBody) GetCredential() OptString {
-	return s.Credential
-}
-
-// GetHosts returns the value of Hosts.
-func (s *RuleProposalsBody) GetHosts() []string {
-	return s.Hosts
-}
-
-// GetNote returns the value of Note.
-func (s *RuleProposalsBody) GetNote() OptString {
-	return s.Note
-}
-
-// GetPurpose returns the value of Purpose.
-func (s *RuleProposalsBody) GetPurpose() RuleProposalsBodyPurpose {
-	return s.Purpose
-}
-
-// GetRepository returns the value of Repository.
-func (s *RuleProposalsBody) GetRepository() OptString {
-	return s.Repository
-}
-
-// GetWellKnownId returns the value of WellKnownId.
-func (s *RuleProposalsBody) GetWellKnownId() OptString {
-	return s.WellKnownId
-}
-
-// GetPolicy returns the value of Policy.
-func (s *RuleProposalsBody) GetPolicy() OptRulePolicyProposal {
-	return s.Policy
-}
-
-// SetSchema sets the value of Schema.
-func (s *RuleProposalsBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetCredential sets the value of Credential.
-func (s *RuleProposalsBody) SetCredential(val OptString) {
-	s.Credential = val
-}
-
-// SetHosts sets the value of Hosts.
-func (s *RuleProposalsBody) SetHosts(val []string) {
-	s.Hosts = val
-}
-
-// SetNote sets the value of Note.
-func (s *RuleProposalsBody) SetNote(val OptString) {
-	s.Note = val
-}
-
-// SetPurpose sets the value of Purpose.
-func (s *RuleProposalsBody) SetPurpose(val RuleProposalsBodyPurpose) {
-	s.Purpose = val
-}
-
-// SetRepository sets the value of Repository.
-func (s *RuleProposalsBody) SetRepository(val OptString) {
-	s.Repository = val
-}
-
-// SetWellKnownId sets the value of WellKnownId.
-func (s *RuleProposalsBody) SetWellKnownId(val OptString) {
-	s.WellKnownId = val
-}
-
-// SetPolicy sets the value of Policy.
-func (s *RuleProposalsBody) SetPolicy(val OptRulePolicyProposal) {
-	s.Policy = val
-}
-
-func (*RuleProposalsBody) proposeApprovalRuleFromGrantRes() {}
-func (*RuleProposalsBody) proposeApprovalRulesRes()         {}
-
-// What a rule made from this request would approve the credential for, copied from the request.
-type RuleProposalsBodyPurpose string
-
-const (
-	RuleProposalsBodyPurposeUse      RuleProposalsBodyPurpose = "use"
-	RuleProposalsBodyPurposeDelegate RuleProposalsBodyPurpose = "delegate"
-)
-
-// AllValues returns all RuleProposalsBodyPurpose values.
-func (RuleProposalsBodyPurpose) AllValues() []RuleProposalsBodyPurpose {
-	return []RuleProposalsBodyPurpose{
-		RuleProposalsBodyPurposeUse,
-		RuleProposalsBodyPurposeDelegate,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s RuleProposalsBodyPurpose) MarshalText() ([]byte, error) {
-	switch s {
-	case RuleProposalsBodyPurposeUse:
-		return []byte(s), nil
-	case RuleProposalsBodyPurposeDelegate:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *RuleProposalsBodyPurpose) UnmarshalText(data []byte) error {
-	switch RuleProposalsBodyPurpose(data) {
-	case RuleProposalsBodyPurposeUse:
-		*s = RuleProposalsBodyPurposeUse
-		return nil
-	case RuleProposalsBodyPurposeDelegate:
-		*s = RuleProposalsBodyPurposeDelegate
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// What came of testing one approval rule against one request (ADR 26-10-12-330). A rule approves or
-// says nothing, so a rule that does not cover a request leaves it for a person, and this says why.
-// Ref: #/components/schemas/RuleTest
-type RuleTest struct {
-	// Whether the rule covers the request.
-	Covered bool `json:"covered"`
-	// True while a judge has still to be asked about the rule.
-	Pending OptBool `json:"pending"`
-	// Why the rule does not cover the request, or that it does.
-	Reason OptString `json:"reason"`
-	// The rule tested.
-	RuleId string `json:"ruleId"`
-	// The stage that decided: facts the server checked, the rule's repositories among them, or its
-	// content -- its policy against the request's, compared by code, with the judge reading conditions
-	// code cannot compare.
-	Stage OptRuleTestStage `json:"stage"`
-}
-
-// GetCovered returns the value of Covered.
-func (s *RuleTest) GetCovered() bool {
-	return s.Covered
-}
-
-// GetPending returns the value of Pending.
-func (s *RuleTest) GetPending() OptBool {
-	return s.Pending
-}
-
-// GetReason returns the value of Reason.
-func (s *RuleTest) GetReason() OptString {
-	return s.Reason
-}
-
-// GetRuleId returns the value of RuleId.
-func (s *RuleTest) GetRuleId() string {
-	return s.RuleId
-}
-
-// GetStage returns the value of Stage.
-func (s *RuleTest) GetStage() OptRuleTestStage {
-	return s.Stage
-}
-
-// SetCovered sets the value of Covered.
-func (s *RuleTest) SetCovered(val bool) {
-	s.Covered = val
-}
-
-// SetPending sets the value of Pending.
-func (s *RuleTest) SetPending(val OptBool) {
-	s.Pending = val
-}
-
-// SetReason sets the value of Reason.
-func (s *RuleTest) SetReason(val OptString) {
-	s.Reason = val
-}
-
-// SetRuleId sets the value of RuleId.
-func (s *RuleTest) SetRuleId(val string) {
-	s.RuleId = val
-}
-
-// SetStage sets the value of Stage.
-func (s *RuleTest) SetStage(val OptRuleTestStage) {
-	s.Stage = val
-}
-
-// The stage that decided: facts the server checked, the rule's repositories among them, or its
-// content -- its policy against the request's, compared by code, with the judge reading conditions
-// code cannot compare.
-type RuleTestStage string
-
-const (
-	RuleTestStageFacts   RuleTestStage = "facts"
-	RuleTestStageContent RuleTestStage = "content"
-)
-
-// AllValues returns all RuleTestStage values.
-func (RuleTestStage) AllValues() []RuleTestStage {
-	return []RuleTestStage{
-		RuleTestStageFacts,
-		RuleTestStageContent,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s RuleTestStage) MarshalText() ([]byte, error) {
-	switch s {
-	case RuleTestStageFacts:
-		return []byte(s), nil
-	case RuleTestStageContent:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *RuleTestStage) UnmarshalText(data []byte) error {
-	switch RuleTestStage(data) {
-	case RuleTestStageFacts:
-		*s = RuleTestStageFacts
-		return nil
-	case RuleTestStageContent:
-		*s = RuleTestStageContent
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
 // What an SSH client needs to verify this server. There is no address to discover; SSH reaches the
 // server over the same endpoint every other request uses, so the host key is the whole document.
 // Ref: #/components/schemas/SSHIngress
@@ -24498,6 +19989,9 @@ func (*SSHKey) createSSHKeyRes() {}
 
 // Ref: #/components/schemas/Sandbox
 type Sandbox struct {
+	// The discobox may call the discobox API through its pool, in the sandbox role, acting only on the
+	// discoboxes it created (ADR 26-10-27-880 §9).
+	DiscoboxApi OptBool `json:"discoboxApi"`
 	// The discobox's own egress policy level (ADR 26-10-01-032). It is restricted when this or its
 	// project, pool, or harness level sets denyByDefault, and then reaches the union of their allow
 	// lists.
@@ -24555,6 +20049,11 @@ type Sandbox struct {
 	MetaObservedAt OptDateTime `json:"metaObservedAt"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetDiscoboxApi returns the value of DiscoboxApi.
+func (s *Sandbox) GetDiscoboxApi() OptBool {
+	return s.DiscoboxApi
 }
 
 // GetEgress returns the value of Egress.
@@ -24655,6 +20154,11 @@ func (s *Sandbox) GetMetaObservedAt() OptDateTime {
 // GetUpdatedAt returns the value of UpdatedAt.
 func (s *Sandbox) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
+}
+
+// SetDiscoboxApi sets the value of DiscoboxApi.
+func (s *Sandbox) SetDiscoboxApi(val OptBool) {
+	s.DiscoboxApi = val
 }
 
 // SetEgress sets the value of Egress.
@@ -27327,8 +22831,7 @@ func (s *SandboxCloneProgress) SetBytes(val OptInt64) {
 type SandboxConfig struct {
 	// Harness config ID.
 	HarnessConfigId OptString `json:"harnessConfigId"`
-	// What this sandbox exists for: its normal run command, its interactive configure command, or
-	// judging, which the project's judge runs as and nothing else does.
+	// What this sandbox exists for: its normal run command, or its interactive configure command.
 	HarnessMode OptSandboxConfigHarnessMode `json:"harnessMode"`
 	// Model the harness should use.
 	Model OptString `json:"model"`
@@ -27627,14 +23130,12 @@ func (s *SandboxConfigFeatures) init() SandboxConfigFeatures {
 	return m
 }
 
-// What this sandbox exists for: its normal run command, its interactive configure command, or
-// judging, which the project's judge runs as and nothing else does.
+// What this sandbox exists for: its normal run command, or its interactive configure command.
 type SandboxConfigHarnessMode string
 
 const (
 	SandboxConfigHarnessModeRun    SandboxConfigHarnessMode = "run"
 	SandboxConfigHarnessModeConfig SandboxConfigHarnessMode = "config"
-	SandboxConfigHarnessModeJudge  SandboxConfigHarnessMode = "judge"
 )
 
 // AllValues returns all SandboxConfigHarnessMode values.
@@ -27642,7 +23143,6 @@ func (SandboxConfigHarnessMode) AllValues() []SandboxConfigHarnessMode {
 	return []SandboxConfigHarnessMode{
 		SandboxConfigHarnessModeRun,
 		SandboxConfigHarnessModeConfig,
-		SandboxConfigHarnessModeJudge,
 	}
 }
 
@@ -27652,8 +23152,6 @@ func (s SandboxConfigHarnessMode) MarshalText() ([]byte, error) {
 	case SandboxConfigHarnessModeRun:
 		return []byte(s), nil
 	case SandboxConfigHarnessModeConfig:
-		return []byte(s), nil
-	case SandboxConfigHarnessModeJudge:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -27668,9 +23166,6 @@ func (s *SandboxConfigHarnessMode) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxConfigHarnessModeConfig:
 		*s = SandboxConfigHarnessModeConfig
-		return nil
-	case SandboxConfigHarnessModeJudge:
-		*s = SandboxConfigHarnessModeJudge
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -27696,10 +23191,8 @@ type SandboxCreateConfig struct {
 	Egress OptEgressPolicy `json:"egress"`
 	// Harness config ID.
 	HarnessConfigId OptString `json:"harnessConfigId"`
-	// What the sandbox exists for: run works in it, config runs the image-owned interactive
-	// configuration command once, and judge answers judging asks and nothing else. A project's own judge
-	// is created and kept converged by Discobox; one created here is an ordinary discobox that happens
-	// to be in judge mode.
+	// What the sandbox exists for: run works in it, and config runs the image-owned interactive
+	// configuration command once.
 	HarnessMode OptSandboxCreateConfigHarnessMode `json:"harnessMode"`
 	// Model the harness should use.
 	Model OptString `json:"model"`
@@ -27950,16 +23443,13 @@ func (s *SandboxCreateConfigFeatures) init() SandboxCreateConfigFeatures {
 	return m
 }
 
-// What the sandbox exists for: run works in it, config runs the image-owned interactive
-// configuration command once, and judge answers judging asks and nothing else. A project's own judge
-// is created and kept converged by Discobox; one created here is an ordinary discobox that happens
-// to be in judge mode.
+// What the sandbox exists for: run works in it, and config runs the image-owned interactive
+// configuration command once.
 type SandboxCreateConfigHarnessMode string
 
 const (
 	SandboxCreateConfigHarnessModeRun    SandboxCreateConfigHarnessMode = "run"
 	SandboxCreateConfigHarnessModeConfig SandboxCreateConfigHarnessMode = "config"
-	SandboxCreateConfigHarnessModeJudge  SandboxCreateConfigHarnessMode = "judge"
 )
 
 // AllValues returns all SandboxCreateConfigHarnessMode values.
@@ -27967,7 +23457,6 @@ func (SandboxCreateConfigHarnessMode) AllValues() []SandboxCreateConfigHarnessMo
 	return []SandboxCreateConfigHarnessMode{
 		SandboxCreateConfigHarnessModeRun,
 		SandboxCreateConfigHarnessModeConfig,
-		SandboxCreateConfigHarnessModeJudge,
 	}
 }
 
@@ -27977,8 +23466,6 @@ func (s SandboxCreateConfigHarnessMode) MarshalText() ([]byte, error) {
 	case SandboxCreateConfigHarnessModeRun:
 		return []byte(s), nil
 	case SandboxCreateConfigHarnessModeConfig:
-		return []byte(s), nil
-	case SandboxCreateConfigHarnessModeJudge:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -27993,9 +23480,6 @@ func (s *SandboxCreateConfigHarnessMode) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxCreateConfigHarnessModeConfig:
 		*s = SandboxCreateConfigHarnessModeConfig
-		return nil
-	case SandboxCreateConfigHarnessModeJudge:
-		*s = SandboxCreateConfigHarnessModeJudge
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -28029,35 +23513,25 @@ func (s *SandboxCreateConfigSourceCodeReferences) init() SandboxCreateConfigSour
 	return m
 }
 
-// One agent-requested credential a sandbox may use, with the live grant's approved uses. Sentinel
-// and format are for the pool agent alone; they never reach the sandbox.
+// One credential a sandbox may use, from a live grant covering it, and the variable its sentinel is
+// delivered in.
 // Ref: #/components/schemas/SandboxCredential
 type SandboxCredential struct {
 	// Environment variable the value is delivered in.
 	EnvVar string `json:"envVar"`
-	// When the grant behind the uses lapses; empty never expires.
+	// When the grant lapses; empty never expires.
 	ExpiresAt OptDateTime `json:"expiresAt"`
-	// Generative format template the pool agent mints an ephemeral sentinel from, so the ephemeral value
-	// byte-mimics a real key.
-	Format OptString `json:"format"`
-	// Grant authorizing the uses.
+	// Grant authorizing the credential.
 	GrantId string `json:"grantId"`
 	// Hosts the credential may be sent to; a destination any of them covers (ADR 26-10-02-393).
 	Hosts []string `json:"hosts"`
 	// Credential name.
 	Name string `json:"name"`
+	// What the grant lets the sandbox do with the credential. use delivers it in envVar; delegate lets
+	// the sandbox give it to the discoboxes it creates and delivers nothing.
+	Purpose OptSandboxCredentialPurpose `json:"purpose"`
 	// Secret backing the credential.
 	SecretId string `json:"secretId"`
-	// Stable sentinel bound to the sandbox. The pool agent translates its own ephemeral sentinels back
-	// to this one before resolving; it is never injected into the sandbox.
-	Sentinel string `json:"sentinel"`
-	// Approved uses.
-	Uses OptNilSecretUseArray `json:"uses"`
-	// The policy the grant carries, with its variables as resolved for this sandbox.
-	Policy OptAccessPolicy `json:"policy"`
-	// Where the secret may be sent (ADR 26-10-02-924). A request an activation is sent in must fall on
-	// one of them, as well as within the activation's approved use.
-	SecretRoutes OptNilSecretRouteArray `json:"secretRoutes"`
 }
 
 // GetEnvVar returns the value of EnvVar.
@@ -28068,11 +23542,6 @@ func (s *SandboxCredential) GetEnvVar() string {
 // GetExpiresAt returns the value of ExpiresAt.
 func (s *SandboxCredential) GetExpiresAt() OptDateTime {
 	return s.ExpiresAt
-}
-
-// GetFormat returns the value of Format.
-func (s *SandboxCredential) GetFormat() OptString {
-	return s.Format
 }
 
 // GetGrantId returns the value of GrantId.
@@ -28090,29 +23559,14 @@ func (s *SandboxCredential) GetName() string {
 	return s.Name
 }
 
+// GetPurpose returns the value of Purpose.
+func (s *SandboxCredential) GetPurpose() OptSandboxCredentialPurpose {
+	return s.Purpose
+}
+
 // GetSecretId returns the value of SecretId.
 func (s *SandboxCredential) GetSecretId() string {
 	return s.SecretId
-}
-
-// GetSentinel returns the value of Sentinel.
-func (s *SandboxCredential) GetSentinel() string {
-	return s.Sentinel
-}
-
-// GetUses returns the value of Uses.
-func (s *SandboxCredential) GetUses() OptNilSecretUseArray {
-	return s.Uses
-}
-
-// GetPolicy returns the value of Policy.
-func (s *SandboxCredential) GetPolicy() OptAccessPolicy {
-	return s.Policy
-}
-
-// GetSecretRoutes returns the value of SecretRoutes.
-func (s *SandboxCredential) GetSecretRoutes() OptNilSecretRouteArray {
-	return s.SecretRoutes
 }
 
 // SetEnvVar sets the value of EnvVar.
@@ -28123,11 +23577,6 @@ func (s *SandboxCredential) SetEnvVar(val string) {
 // SetExpiresAt sets the value of ExpiresAt.
 func (s *SandboxCredential) SetExpiresAt(val OptDateTime) {
 	s.ExpiresAt = val
-}
-
-// SetFormat sets the value of Format.
-func (s *SandboxCredential) SetFormat(val OptString) {
-	s.Format = val
 }
 
 // SetGrantId sets the value of GrantId.
@@ -28145,49 +23594,79 @@ func (s *SandboxCredential) SetName(val string) {
 	s.Name = val
 }
 
+// SetPurpose sets the value of Purpose.
+func (s *SandboxCredential) SetPurpose(val OptSandboxCredentialPurpose) {
+	s.Purpose = val
+}
+
 // SetSecretId sets the value of SecretId.
 func (s *SandboxCredential) SetSecretId(val string) {
 	s.SecretId = val
 }
 
-// SetSentinel sets the value of Sentinel.
-func (s *SandboxCredential) SetSentinel(val string) {
-	s.Sentinel = val
+// What the grant lets the sandbox do with the credential. use delivers it in envVar; delegate lets
+// the sandbox give it to the discoboxes it creates and delivers nothing.
+type SandboxCredentialPurpose string
+
+const (
+	SandboxCredentialPurposeUse      SandboxCredentialPurpose = "use"
+	SandboxCredentialPurposeDelegate SandboxCredentialPurpose = "delegate"
+)
+
+// AllValues returns all SandboxCredentialPurpose values.
+func (SandboxCredentialPurpose) AllValues() []SandboxCredentialPurpose {
+	return []SandboxCredentialPurpose{
+		SandboxCredentialPurposeUse,
+		SandboxCredentialPurposeDelegate,
+	}
 }
 
-// SetUses sets the value of Uses.
-func (s *SandboxCredential) SetUses(val OptNilSecretUseArray) {
-	s.Uses = val
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxCredentialPurpose) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxCredentialPurposeUse:
+		return []byte(s), nil
+	case SandboxCredentialPurposeDelegate:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
 }
 
-// SetPolicy sets the value of Policy.
-func (s *SandboxCredential) SetPolicy(val OptAccessPolicy) {
-	s.Policy = val
-}
-
-// SetSecretRoutes sets the value of SecretRoutes.
-func (s *SandboxCredential) SetSecretRoutes(val OptNilSecretRouteArray) {
-	s.SecretRoutes = val
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxCredentialPurpose) UnmarshalText(data []byte) error {
+	switch SandboxCredentialPurpose(data) {
+	case SandboxCredentialPurposeUse:
+		*s = SandboxCredentialPurposeUse
+		return nil
+	case SandboxCredentialPurposeDelegate:
+		*s = SandboxCredentialPurposeDelegate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/SandboxCredentialRequestStatus
 type SandboxCredentialRequestStatus struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// When the grant behind the granted uses lapses, as the approver chose it rather than as it was
-	// asked. Absent on a pending or denied request, and on a granted one whose grant never lapses.
+	// The variable the granted credential is delivered in; absent for a delegation.
+	EnvVar OptString `json:"envVar"`
+	// When the grant lapses, as the approver chose it rather than as it was asked. Absent on a pending
+	// or denied request, and on a granted one whose grant never lapses.
 	ExpiresAt OptDateTime `json:"expiresAt"`
-	// What the request asks the credential for. For delegate, the granted uses are what the sandbox may
-	// delegate the credential for, and none of them takes a value.
+	// Where the granted credential may be sent, as the approver chose.
+	Hosts []string `json:"hosts"`
+	// The credential granted, once granted.
+	Name OptString `json:"name"`
+	// What the request asks the credential for. A delegate grant lets the sandbox give the credential to
+	// the discoboxes it creates, and delivers nothing to the sandbox itself.
 	Purpose SandboxCredentialRequestStatusPurpose `json:"purpose"`
 	// Request ID to poll.
 	RequestId string `json:"requestId"`
 	// Request status.
 	Status SandboxCredentialRequestStatusStatus `json:"status"`
-	// Approved uses; present once granted, and authoritative over the requested ones.
-	Uses OptNilSecretUseArray `json:"uses"`
-	// The approved policy, once granted, with its variables as resolved for this sandbox.
-	Policy OptAccessPolicy `json:"policy"`
 }
 
 // GetSchema returns the value of Schema.
@@ -28195,9 +23674,24 @@ func (s *SandboxCredentialRequestStatus) GetSchema() OptURI {
 	return s.Schema
 }
 
+// GetEnvVar returns the value of EnvVar.
+func (s *SandboxCredentialRequestStatus) GetEnvVar() OptString {
+	return s.EnvVar
+}
+
 // GetExpiresAt returns the value of ExpiresAt.
 func (s *SandboxCredentialRequestStatus) GetExpiresAt() OptDateTime {
 	return s.ExpiresAt
+}
+
+// GetHosts returns the value of Hosts.
+func (s *SandboxCredentialRequestStatus) GetHosts() []string {
+	return s.Hosts
+}
+
+// GetName returns the value of Name.
+func (s *SandboxCredentialRequestStatus) GetName() OptString {
+	return s.Name
 }
 
 // GetPurpose returns the value of Purpose.
@@ -28215,24 +23709,29 @@ func (s *SandboxCredentialRequestStatus) GetStatus() SandboxCredentialRequestSta
 	return s.Status
 }
 
-// GetUses returns the value of Uses.
-func (s *SandboxCredentialRequestStatus) GetUses() OptNilSecretUseArray {
-	return s.Uses
-}
-
-// GetPolicy returns the value of Policy.
-func (s *SandboxCredentialRequestStatus) GetPolicy() OptAccessPolicy {
-	return s.Policy
-}
-
 // SetSchema sets the value of Schema.
 func (s *SandboxCredentialRequestStatus) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
+// SetEnvVar sets the value of EnvVar.
+func (s *SandboxCredentialRequestStatus) SetEnvVar(val OptString) {
+	s.EnvVar = val
+}
+
 // SetExpiresAt sets the value of ExpiresAt.
 func (s *SandboxCredentialRequestStatus) SetExpiresAt(val OptDateTime) {
 	s.ExpiresAt = val
+}
+
+// SetHosts sets the value of Hosts.
+func (s *SandboxCredentialRequestStatus) SetHosts(val []string) {
+	s.Hosts = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxCredentialRequestStatus) SetName(val OptString) {
+	s.Name = val
 }
 
 // SetPurpose sets the value of Purpose.
@@ -28250,21 +23749,11 @@ func (s *SandboxCredentialRequestStatus) SetStatus(val SandboxCredentialRequestS
 	s.Status = val
 }
 
-// SetUses sets the value of Uses.
-func (s *SandboxCredentialRequestStatus) SetUses(val OptNilSecretUseArray) {
-	s.Uses = val
-}
-
-// SetPolicy sets the value of Policy.
-func (s *SandboxCredentialRequestStatus) SetPolicy(val OptAccessPolicy) {
-	s.Policy = val
-}
-
 func (*SandboxCredentialRequestStatus) createSandboxCredentialRequestRes() {}
 func (*SandboxCredentialRequestStatus) getSandboxCredentialRequestRes()    {}
 
-// What the request asks the credential for. For delegate, the granted uses are what the sandbox may
-// delegate the credential for, and none of them takes a value.
+// What the request asks the credential for. A delegate grant lets the sandbox give the credential to
+// the discoboxes it creates, and delivers nothing to the sandbox itself.
 type SandboxCredentialRequestStatusPurpose string
 
 const (
@@ -29713,35 +25202,18 @@ func (s *SandboxGitIdentity) SetUserName(val OptString) {
 	s.UserName = val
 }
 
-// Uses of one credential for a new discobox, named either by a well-known ID or by a secret and a
-// variable, never both.
+// One credential for a new discobox, named by a secret and the variable it is delivered in.
 // Ref: #/components/schemas/SandboxGrant
 type SandboxGrant struct {
-	// A well-known credential, such as com.github.api. Its secret is the project secret marked with the
-	// ID, its variable and host are the ID's, and host may only narrow it. A gate, such as ai.discobox.
-	// sandbox, is not given this way.
-	WellKnownId OptString `json:"wellKnownId"`
-	// The project secret the uses are of. Required without wellKnownId.
+	// The project secret given.
 	SecretId OptString `json:"secretId"`
-	// Environment variable the discobox's agent receives the credential in. Required without wellKnownId.
+	// Environment variable the discobox receives the credential's sentinel in.
 	EnvVar OptString `json:"envVar"`
-	// Hosts the credential may be sent to (ADR 26-10-02-393). Left out, the secret's host, or the
-	// well-known credential's first; one is required. Each must sit inside the secret's binding, or the
-	// well-known credential's hosts.
+	// Hosts the credential may be sent to (ADR 26-10-02-393). Left out, the secret's host; one is
+	// required. Each must sit inside the secret's binding.
 	Hosts []string `json:"hosts"`
-	// What the credential may be used for. Use IDs are minted here; a supplied one is ignored.
-	Uses []SecretUse `json:"uses"`
-	// The policy the grant carries (ADR 26-10-20-782), which every grant with uses must; it is what is
-	// enforced, and its uses name the job. Its variables resolve for the sandbox being created, not the
-	// discobox creating it.
-	Policy OptAccessPolicy `json:"policy"`
 	// How long the grant lives, in seconds. Defaults to the secret's grant limit, and may not exceed it.
 	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
-}
-
-// GetWellKnownId returns the value of WellKnownId.
-func (s *SandboxGrant) GetWellKnownId() OptString {
-	return s.WellKnownId
 }
 
 // GetSecretId returns the value of SecretId.
@@ -29759,24 +25231,9 @@ func (s *SandboxGrant) GetHosts() []string {
 	return s.Hosts
 }
 
-// GetUses returns the value of Uses.
-func (s *SandboxGrant) GetUses() []SecretUse {
-	return s.Uses
-}
-
-// GetPolicy returns the value of Policy.
-func (s *SandboxGrant) GetPolicy() OptAccessPolicy {
-	return s.Policy
-}
-
 // GetGrantTTLSeconds returns the value of GrantTTLSeconds.
 func (s *SandboxGrant) GetGrantTTLSeconds() OptInt64 {
 	return s.GrantTTLSeconds
-}
-
-// SetWellKnownId sets the value of WellKnownId.
-func (s *SandboxGrant) SetWellKnownId(val OptString) {
-	s.WellKnownId = val
 }
 
 // SetSecretId sets the value of SecretId.
@@ -29792,16 +25249,6 @@ func (s *SandboxGrant) SetEnvVar(val OptString) {
 // SetHosts sets the value of Hosts.
 func (s *SandboxGrant) SetHosts(val []string) {
 	s.Hosts = val
-}
-
-// SetUses sets the value of Uses.
-func (s *SandboxGrant) SetUses(val []SecretUse) {
-	s.Uses = val
-}
-
-// SetPolicy sets the value of Policy.
-func (s *SandboxGrant) SetPolicy(val OptAccessPolicy) {
-	s.Policy = val
 }
 
 // SetGrantTTLSeconds sets the value of GrantTTLSeconds.
@@ -30083,49 +25530,6 @@ func (s *SandboxMetaTags) init() SandboxMetaTags {
 	}
 	return m
 }
-
-// A sandbox's policy facts and every variable a policy may use, resolved against them.
-// Ref: #/components/schemas/SandboxPolicyFacts
-type SandboxPolicyFacts struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI      `json:"$schema"`
-	Facts  PolicyFacts `json:"facts"`
-	// Every variable a policy may use, resolved or not, in a fixed order -- $this, the $primary
-	// variables, then $sources.<slug>.repo for each source with a slug.
-	Variables []PolicyVariable `json:"variables"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *SandboxPolicyFacts) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetFacts returns the value of Facts.
-func (s *SandboxPolicyFacts) GetFacts() PolicyFacts {
-	return s.Facts
-}
-
-// GetVariables returns the value of Variables.
-func (s *SandboxPolicyFacts) GetVariables() []PolicyVariable {
-	return s.Variables
-}
-
-// SetSchema sets the value of Schema.
-func (s *SandboxPolicyFacts) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetFacts sets the value of Facts.
-func (s *SandboxPolicyFacts) SetFacts(val PolicyFacts) {
-	s.Facts = val
-}
-
-// SetVariables sets the value of Variables.
-func (s *SandboxPolicyFacts) SetVariables(val []PolicyVariable) {
-	s.Variables = val
-}
-
-func (*SandboxPolicyFacts) getSandboxPolicyFactsRes() {}
 
 // Ref: #/components/schemas/SandboxProviderCatalogItem
 type SandboxProviderCatalogItem struct {
@@ -32618,8 +28022,6 @@ type SandboxTrustRequestStatus struct {
 	RequestId string `json:"requestId"`
 	// Request status.
 	Status SandboxTrustRequestStatusStatus `json:"status"`
-	// Approved uses; present once granted, and authoritative over the requested ones.
-	Uses OptNilSecretUseArray `json:"uses"`
 }
 
 // GetSchema returns the value of Schema.
@@ -32647,11 +28049,6 @@ func (s *SandboxTrustRequestStatus) GetStatus() SandboxTrustRequestStatusStatus 
 	return s.Status
 }
 
-// GetUses returns the value of Uses.
-func (s *SandboxTrustRequestStatus) GetUses() OptNilSecretUseArray {
-	return s.Uses
-}
-
 // SetSchema sets the value of Schema.
 func (s *SandboxTrustRequestStatus) SetSchema(val OptURI) {
 	s.Schema = val
@@ -32675,11 +28072,6 @@ func (s *SandboxTrustRequestStatus) SetRequestId(val string) {
 // SetStatus sets the value of Status.
 func (s *SandboxTrustRequestStatus) SetStatus(val SandboxTrustRequestStatusStatus) {
 	s.Status = val
-}
-
-// SetUses sets the value of Uses.
-func (s *SandboxTrustRequestStatus) SetUses(val OptNilSecretUseArray) {
-	s.Uses = val
 }
 
 func (*SandboxTrustRequestStatus) createSandboxTrustRequestRes() {}
@@ -33130,9 +28522,6 @@ type Secret struct {
 	ProjectId string `json:"projectId"`
 	// Secret type.
 	Type SecretType `json:"type"`
-	// The well-known credential this secret fulfills, such as com.github.api. A request for that ID
-	// resolves to this secret. Absent on a secret nothing asks for by ID.
-	WellKnownId OptString `json:"wellKnownId"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
 	// Where the credential may be sent, whoever holds it (ADR 26-10-02-924); every request it is sent in
@@ -33223,11 +28612,6 @@ func (s *Secret) GetProjectId() string {
 // GetType returns the value of Type.
 func (s *Secret) GetType() SecretType {
 	return s.Type
-}
-
-// GetWellKnownId returns the value of WellKnownId.
-func (s *Secret) GetWellKnownId() OptString {
-	return s.WellKnownId
 }
 
 // GetUpdatedAt returns the value of UpdatedAt.
@@ -33325,11 +28709,6 @@ func (s *Secret) SetType(val SecretType) {
 	s.Type = val
 }
 
-// SetWellKnownId sets the value of WellKnownId.
-func (s *Secret) SetWellKnownId(val OptString) {
-	s.WellKnownId = val
-}
-
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *Secret) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
@@ -33378,21 +28757,9 @@ func (s *SecretExchange) SetTokenExpiresAt(val OptInt64) {
 type SecretGrant struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Environment variable an agent receives the credential in; set on a grant that carries uses.
-	EnvName OptString `json:"envName"`
-	// Approved uses, confirmed or edited at approval time. Present on grants minted through the agent
-	// credentials flow.
-	Uses OptNilSecretUseArray `json:"uses"`
-	// The approved policy, with the value each of its variables resolved to for the sandbox the grant is
-	// for (ADR 26-10-20-782). Every grant with uses carries one. A command or request under the grant is
-	// judged against it rather than against a use's sentence.
-	Policy OptAccessPolicy `json:"policy"`
 	// What the grant authorizes its holder to do -- use the credential, or delegate it to other
 	// discoboxes. Never both.
 	Purpose SecretGrantPurpose `json:"purpose"`
-	// The approval rule the grant was minted under, when a rule approved the request rather than a
-	// person or a discobox (ADR 26-10-12-330). The grant is independent of the rule once made.
-	RuleId OptString `json:"ruleId"`
 	// The delegation grant a discobox handed this grant on under, when a discobox approved the request
 	// or gave the grant on a create (ADR 26-10-20-782 section 11). It traces the grant to the delegation
 	// that allowed it; the grant is independent of it once made.
@@ -33427,29 +28794,9 @@ func (s *SecretGrant) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetEnvName returns the value of EnvName.
-func (s *SecretGrant) GetEnvName() OptString {
-	return s.EnvName
-}
-
-// GetUses returns the value of Uses.
-func (s *SecretGrant) GetUses() OptNilSecretUseArray {
-	return s.Uses
-}
-
-// GetPolicy returns the value of Policy.
-func (s *SecretGrant) GetPolicy() OptAccessPolicy {
-	return s.Policy
-}
-
 // GetPurpose returns the value of Purpose.
 func (s *SecretGrant) GetPurpose() SecretGrantPurpose {
 	return s.Purpose
-}
-
-// GetRuleId returns the value of RuleId.
-func (s *SecretGrant) GetRuleId() OptString {
-	return s.RuleId
 }
 
 // GetDelegationId returns the value of DelegationId.
@@ -33517,29 +28864,9 @@ func (s *SecretGrant) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetEnvName sets the value of EnvName.
-func (s *SecretGrant) SetEnvName(val OptString) {
-	s.EnvName = val
-}
-
-// SetUses sets the value of Uses.
-func (s *SecretGrant) SetUses(val OptNilSecretUseArray) {
-	s.Uses = val
-}
-
-// SetPolicy sets the value of Policy.
-func (s *SecretGrant) SetPolicy(val OptAccessPolicy) {
-	s.Policy = val
-}
-
 // SetPurpose sets the value of Purpose.
 func (s *SecretGrant) SetPurpose(val SecretGrantPurpose) {
 	s.Purpose = val
-}
-
-// SetRuleId sets the value of RuleId.
-func (s *SecretGrant) SetRuleId(val OptString) {
-	s.RuleId = val
 }
 
 // SetDelegationId sets the value of DelegationId.
@@ -34154,8 +29481,6 @@ type SecretRejection struct {
 	Reason SecretRejectionReason `json:"reason"`
 	// Sandbox that most recently saw the rejection.
 	SandboxId OptString `json:"sandboxId"`
-	// Agent credential use the refused sentinel was minted for, when it was one.
-	UseId OptString `json:"useId"`
 	// Environment variable the credential is delivered in, when one names it.
 	EnvName OptString `json:"envName"`
 	// Harness config whose configure flow owns this credential, when one does.
@@ -34208,11 +29533,6 @@ func (s *SecretRejection) GetReason() SecretRejectionReason {
 // GetSandboxId returns the value of SandboxId.
 func (s *SecretRejection) GetSandboxId() OptString {
 	return s.SandboxId
-}
-
-// GetUseId returns the value of UseId.
-func (s *SecretRejection) GetUseId() OptString {
-	return s.UseId
 }
 
 // GetEnvName returns the value of EnvName.
@@ -34283,11 +29603,6 @@ func (s *SecretRejection) SetReason(val SecretRejectionReason) {
 // SetSandboxId sets the value of SandboxId.
 func (s *SecretRejection) SetSandboxId(val OptString) {
 	s.SandboxId = val
-}
-
-// SetUseId sets the value of UseId.
-func (s *SecretRejection) SetUseId(val OptString) {
-	s.UseId = val
 }
 
 // SetEnvName sets the value of EnvName.
@@ -34469,13 +29784,6 @@ type SecretRequest struct {
 	Justification OptString `json:"justification"`
 	// Credential name the agent asked for, for protocol-originated requests.
 	Name OptString `json:"name"`
-	// Uses the agent asked for. Their presence is what marks a request as protocol-originated rather
-	// than one the proxy minted on hitting an unresolvable sentinel.
-	Uses OptNilSecretUseArray `json:"uses"`
-	// The policy the agent asked for, beside its uses (ADR 26-10-20-782). Read, its resolved holds what
-	// each variable resolves to now for the requesting discobox -- what the person approving it is shown,
-	//  and what approving it resolves onto the grant.
-	Policy OptAccessPolicy `json:"policy"`
 	// What the agent asked the credential for -- to use it, or to delegate it to other discoboxes.
 	// Approving the request mints a grant for that purpose.
 	Purpose OptSecretRequestPurpose `json:"purpose"`
@@ -34498,12 +29806,6 @@ type SecretRequest struct {
 	Status SecretRequestStatus `json:"status"`
 	// Secret type requested.
 	Type SecretRequestType `json:"type"`
-	// The approval rules tested against a pending request, and why each did not cover it (ADR
-	// 26-10-12-330). Shown to a person; never to a discobox.
-	RuleTests []RuleTest `json:"ruleTests"`
-	// The well-known credential the agent asked for by ID. Approving it binds the secret that fulfills
-	// that ID.
-	WellKnownId OptString `json:"wellKnownId"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -34551,16 +29853,6 @@ func (s *SecretRequest) GetJustification() OptString {
 // GetName returns the value of Name.
 func (s *SecretRequest) GetName() OptString {
 	return s.Name
-}
-
-// GetUses returns the value of Uses.
-func (s *SecretRequest) GetUses() OptNilSecretUseArray {
-	return s.Uses
-}
-
-// GetPolicy returns the value of Policy.
-func (s *SecretRequest) GetPolicy() OptAccessPolicy {
-	return s.Policy
 }
 
 // GetPurpose returns the value of Purpose.
@@ -34613,16 +29905,6 @@ func (s *SecretRequest) GetType() SecretRequestType {
 	return s.Type
 }
 
-// GetRuleTests returns the value of RuleTests.
-func (s *SecretRequest) GetRuleTests() []RuleTest {
-	return s.RuleTests
-}
-
-// GetWellKnownId returns the value of WellKnownId.
-func (s *SecretRequest) GetWellKnownId() OptString {
-	return s.WellKnownId
-}
-
 // GetUpdatedAt returns the value of UpdatedAt.
 func (s *SecretRequest) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
@@ -34673,16 +29955,6 @@ func (s *SecretRequest) SetName(val OptString) {
 	s.Name = val
 }
 
-// SetUses sets the value of Uses.
-func (s *SecretRequest) SetUses(val OptNilSecretUseArray) {
-	s.Uses = val
-}
-
-// SetPolicy sets the value of Policy.
-func (s *SecretRequest) SetPolicy(val OptAccessPolicy) {
-	s.Policy = val
-}
-
 // SetPurpose sets the value of Purpose.
 func (s *SecretRequest) SetPurpose(val OptSecretRequestPurpose) {
 	s.Purpose = val
@@ -34731,16 +30003,6 @@ func (s *SecretRequest) SetStatus(val SecretRequestStatus) {
 // SetType sets the value of Type.
 func (s *SecretRequest) SetType(val SecretRequestType) {
 	s.Type = val
-}
-
-// SetRuleTests sets the value of RuleTests.
-func (s *SecretRequest) SetRuleTests(val []RuleTest) {
-	s.RuleTests = val
-}
-
-// SetWellKnownId sets the value of WellKnownId.
-func (s *SecretRequest) SetWellKnownId(val OptString) {
-	s.WellKnownId = val
 }
 
 // SetUpdatedAt sets the value of UpdatedAt.
@@ -34975,14 +30237,18 @@ func (s *SecretRequestType) UnmarshalText(data []byte) error {
 // Where a secret may be sent. The most specific route covering a request decides it.
 // Ref: #/components/schemas/SecretRoute
 type SecretRoute struct {
+	// Refuse every request on this route; a more specific route still answers for the paths beneath it.
+	// A route a judge used to read became one, so removing the judge widened nothing (ADR 26-10-27-880).
+	Blocked OptBool `json:"blocked"`
 	// Host the route covers, and every host beneath it.
 	Host string `json:"host"`
 	// Path prefix matched on whole segments; empty is the whole host.
 	Path OptString `json:"path"`
-	// Sentence a request on this route is judged against; empty sends it unjudged.
-	Use OptString `json:"use"`
-	// Stable use ID of the route's use, minted when it was written; empty for a route without one.
-	UseId OptString `json:"useId"`
+}
+
+// GetBlocked returns the value of Blocked.
+func (s *SecretRoute) GetBlocked() OptBool {
+	return s.Blocked
 }
 
 // GetHost returns the value of Host.
@@ -34995,14 +30261,9 @@ func (s *SecretRoute) GetPath() OptString {
 	return s.Path
 }
 
-// GetUse returns the value of Use.
-func (s *SecretRoute) GetUse() OptString {
-	return s.Use
-}
-
-// GetUseId returns the value of UseId.
-func (s *SecretRoute) GetUseId() OptString {
-	return s.UseId
+// SetBlocked sets the value of Blocked.
+func (s *SecretRoute) SetBlocked(val OptBool) {
+	s.Blocked = val
 }
 
 // SetHost sets the value of Host.
@@ -35015,27 +30276,21 @@ func (s *SecretRoute) SetPath(val OptString) {
 	s.Path = val
 }
 
-// SetUse sets the value of Use.
-func (s *SecretRoute) SetUse(val OptString) {
-	s.Use = val
-}
-
-// SetUseId sets the value of UseId.
-func (s *SecretRoute) SetUseId(val OptString) {
-	s.UseId = val
-}
-
 // Where a secret may be sent, as written. A host covers itself and every host beneath it; a path is
 // a prefix matched on whole segments.
 // Ref: #/components/schemas/SecretRouteInput
 type SecretRouteInput struct {
+	// Refuse every request on this route; a more specific route still answers for the paths beneath it.
+	Blocked OptBool `json:"blocked"`
 	// Host the route covers, and every host beneath it.
 	Host string `json:"host"`
 	// Optional path prefix, starting with /, matched on whole segments; empty is the whole host.
 	Path OptString `json:"path"`
-	// Optional sentence a request on this route is judged against; without one a request on it is sent
-	// unjudged.
-	Use OptString `json:"use"`
+}
+
+// GetBlocked returns the value of Blocked.
+func (s *SecretRouteInput) GetBlocked() OptBool {
+	return s.Blocked
 }
 
 // GetHost returns the value of Host.
@@ -35048,9 +30303,9 @@ func (s *SecretRouteInput) GetPath() OptString {
 	return s.Path
 }
 
-// GetUse returns the value of Use.
-func (s *SecretRouteInput) GetUse() OptString {
-	return s.Use
+// SetBlocked sets the value of Blocked.
+func (s *SecretRouteInput) SetBlocked(val OptBool) {
+	s.Blocked = val
 }
 
 // SetHost sets the value of Host.
@@ -35061,11 +30316,6 @@ func (s *SecretRouteInput) SetHost(val string) {
 // SetPath sets the value of Path.
 func (s *SecretRouteInput) SetPath(val OptString) {
 	s.Path = val
-}
-
-// SetUse sets the value of Use.
-func (s *SecretRouteInput) SetUse(val OptString) {
-	s.Use = val
 }
 
 // Secret type.
@@ -35115,36 +30365,6 @@ func (s *SecretType) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
-}
-
-// One approved way a credential may be used. The ID is minted at approval, so a requesting agent
-// cannot name the use it will later present.
-// Ref: #/components/schemas/SecretUse
-type SecretUse struct {
-	// What the credential may be used for.
-	Description string `json:"description"`
-	// Stable use ID, minted at approval.
-	UseId OptString `json:"useId"`
-}
-
-// GetDescription returns the value of Description.
-func (s *SecretUse) GetDescription() string {
-	return s.Description
-}
-
-// GetUseId returns the value of UseId.
-func (s *SecretUse) GetUseId() OptString {
-	return s.UseId
-}
-
-// SetDescription sets the value of Description.
-func (s *SecretUse) SetDescription(val string) {
-	s.Description = val
-}
-
-// SetUseId sets the value of UseId.
-func (s *SecretUse) SetUseId(val OptString) {
-	s.UseId = val
 }
 
 // A credential value. One opaque string, plus what an OAuth credential needs to be refreshed.
@@ -35691,121 +30911,6 @@ func (s *UnavailableAuditPool) SetReason(val string) {
 	s.Reason = val
 }
 
-// Ref: #/components/schemas/UpdateApprovalRuleBody
-type UpdateApprovalRuleBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Whether the rule approves anything. Disabling a rule mints nothing more and revokes nothing.
-	Enabled OptBool `json:"enabled"`
-	// When the rule stops approving.
-	ExpiresAt OptDateTime `json:"expiresAt"`
-	// Hosts a grant minted under the rule may name.
-	Hosts []string `json:"hosts"`
-	// Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit.
-	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
-	// True removes the rule's repositories, making it a rule for every discobox in the project,
-	// including ones that do not exist yet. It cannot be said together with repositories.
-	EveryDiscobox OptBool `json:"everyDiscobox"`
-	// True clears the rule's expiry, so it does not lapse.
-	NeverExpires OptBool `json:"neverExpires"`
-	// Replaces the repositories the rule is for with these, at least one. An empty list is refused -- a
-	// rule for every discobox is said with everyDiscobox, never by naming nothing. Left out, they stay
-	// as they are. An edited rule is tested afresh against what is pending.
-	Repositories []string `json:"repositories"`
-	// Replaces what may be approved. An edited rule is tested afresh against what is pending.
-	Policy OptAccessPolicy `json:"policy"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *UpdateApprovalRuleBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetEnabled returns the value of Enabled.
-func (s *UpdateApprovalRuleBody) GetEnabled() OptBool {
-	return s.Enabled
-}
-
-// GetExpiresAt returns the value of ExpiresAt.
-func (s *UpdateApprovalRuleBody) GetExpiresAt() OptDateTime {
-	return s.ExpiresAt
-}
-
-// GetHosts returns the value of Hosts.
-func (s *UpdateApprovalRuleBody) GetHosts() []string {
-	return s.Hosts
-}
-
-// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
-func (s *UpdateApprovalRuleBody) GetMaxGrantTTLSeconds() OptInt64 {
-	return s.MaxGrantTTLSeconds
-}
-
-// GetEveryDiscobox returns the value of EveryDiscobox.
-func (s *UpdateApprovalRuleBody) GetEveryDiscobox() OptBool {
-	return s.EveryDiscobox
-}
-
-// GetNeverExpires returns the value of NeverExpires.
-func (s *UpdateApprovalRuleBody) GetNeverExpires() OptBool {
-	return s.NeverExpires
-}
-
-// GetRepositories returns the value of Repositories.
-func (s *UpdateApprovalRuleBody) GetRepositories() []string {
-	return s.Repositories
-}
-
-// GetPolicy returns the value of Policy.
-func (s *UpdateApprovalRuleBody) GetPolicy() OptAccessPolicy {
-	return s.Policy
-}
-
-// SetSchema sets the value of Schema.
-func (s *UpdateApprovalRuleBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetEnabled sets the value of Enabled.
-func (s *UpdateApprovalRuleBody) SetEnabled(val OptBool) {
-	s.Enabled = val
-}
-
-// SetExpiresAt sets the value of ExpiresAt.
-func (s *UpdateApprovalRuleBody) SetExpiresAt(val OptDateTime) {
-	s.ExpiresAt = val
-}
-
-// SetHosts sets the value of Hosts.
-func (s *UpdateApprovalRuleBody) SetHosts(val []string) {
-	s.Hosts = val
-}
-
-// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
-func (s *UpdateApprovalRuleBody) SetMaxGrantTTLSeconds(val OptInt64) {
-	s.MaxGrantTTLSeconds = val
-}
-
-// SetEveryDiscobox sets the value of EveryDiscobox.
-func (s *UpdateApprovalRuleBody) SetEveryDiscobox(val OptBool) {
-	s.EveryDiscobox = val
-}
-
-// SetNeverExpires sets the value of NeverExpires.
-func (s *UpdateApprovalRuleBody) SetNeverExpires(val OptBool) {
-	s.NeverExpires = val
-}
-
-// SetRepositories sets the value of Repositories.
-func (s *UpdateApprovalRuleBody) SetRepositories(val []string) {
-	s.Repositories = val
-}
-
-// SetPolicy sets the value of Policy.
-func (s *UpdateApprovalRuleBody) SetPolicy(val OptAccessPolicy) {
-	s.Policy = val
-}
-
 // Ref: #/components/schemas/UpdateHarnessConfigBody
 type UpdateHarnessConfigBody struct {
 	// Revision the caller read before editing. A stale revision returns 409.
@@ -36235,6 +31340,9 @@ type UpdateSandboxBody struct {
 	Schema OptURI `json:"$schema"`
 	// Desired sandbox configuration changes.
 	Config OptSandboxUpdateConfig `json:"config"`
+	// Set or clear whether the discobox may call the discobox API through its pool (ADR 26-10-27-880
+	// §9). A person's to change.
+	DiscoboxApi OptBool `json:"discoboxApi"`
 }
 
 // GetSchema returns the value of Schema.
@@ -36247,6 +31355,11 @@ func (s *UpdateSandboxBody) GetConfig() OptSandboxUpdateConfig {
 	return s.Config
 }
 
+// GetDiscoboxApi returns the value of DiscoboxApi.
+func (s *UpdateSandboxBody) GetDiscoboxApi() OptBool {
+	return s.DiscoboxApi
+}
+
 // SetSchema sets the value of Schema.
 func (s *UpdateSandboxBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -36255,6 +31368,11 @@ func (s *UpdateSandboxBody) SetSchema(val OptURI) {
 // SetConfig sets the value of Config.
 func (s *UpdateSandboxBody) SetConfig(val OptSandboxUpdateConfig) {
 	s.Config = val
+}
+
+// SetDiscoboxApi sets the value of DiscoboxApi.
+func (s *UpdateSandboxBody) SetDiscoboxApi(val OptBool) {
+	s.DiscoboxApi = val
 }
 
 // A change to a sandbox's meta, applied to the meta file in the sandbox. What the change does not
@@ -36397,16 +31515,14 @@ type UpdateSecretBody struct {
 	Host OptString `json:"host"`
 	// A command a person's client may run to produce a new value, as an argument vector run without a
 	// shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only;
-	// setting one without ttlSeconds gives the token the well-known credential's own lifetime when
-	// wellKnownId names one (a day for com.github.api), else 300s. An empty array removes it.
+	// setting one without ttlSeconds gives the token 300s. An empty array removes it.
 	RefreshCommand OptNilStringArray `json:"refreshCommand"`
 	// How long a value is good for after it is written, in seconds; 0 never goes stale. Token secrets
 	// only.
 	TtlSeconds OptInt64 `json:"ttlSeconds"`
 	// Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in
-	// must fall on one; the most specific route covering it decides, unjudged when it carries no use and
-	// judged against its use when it does. Set replaces them, keeping the use ID of an unchanged route;
-	// an empty array removes them.
+	// must fall on one; the most specific route covering it decides, and a blocked one refuses. Set
+	// replaces them; an empty array removes them.
 	Routes OptNilSecretRouteInputArray `json:"routes"`
 	// When this value goes stale, for a value that knows its own lifetime; overrides ttlSeconds for this
 	// value only. Token secrets only, and only with a value.

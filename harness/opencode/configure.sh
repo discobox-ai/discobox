@@ -28,7 +28,7 @@
 # (opencode-credentials sync).
 #
 # It asks whether opencode may search the web, and records the answer in
-# Discobox's settings for this harness, beside the judge model.
+# Discobox's settings for this harness.
 #
 # It also returns opencode's settings as the user left them — the global
 # opencode.json(c) and config.json, cli.json (theme, keybinds), and the model
@@ -56,7 +56,7 @@ CREDENTIALS_PATH=".config/discobox/opencode-credentials.json"
 LEGACY_AUTH_PATH=".local/share/opencode/auth.json"
 SETTINGS_PATHS=".config/opencode/opencode.json .config/opencode/opencode.jsonc .config/opencode/config.json .config/opencode/cli.json"
 MODEL_PREFERENCE_PATH=".local/state/opencode/model.json"
-# Discobox's own settings for this harness: the judge model and web search. The
+# Discobox's own settings for this harness: web search. The
 # image declares a baseline, and a configured harness delivers its own copy
 # into this sandbox, which is what a reconfigure starts from.
 SETTINGS_PATH=".config/discobox/opencode-harness.json"
@@ -381,7 +381,7 @@ write_output() {
 			// No model was ever picked.
 		}
 		// Discobox's settings: the answer just given, and everything else as it
-		// arrived — a judge model someone set by editing the file is theirs.
+		// arrived — a setting someone added by editing the file is theirs.
 		const settingsPath = process.env.OPENCODE_CONFIGURE_SETTINGS_PATH;
 		let settings = {};
 		try {
@@ -390,7 +390,7 @@ write_output() {
 			settings = {};
 		}
 		settings.webSearch = process.env.OPENCODE_CONFIGURE_WEB_SEARCH === 'true';
-		if (typeof settings.judgeModel !== 'string') settings.judgeModel = '';
+		delete settings.judgeModel;
 		files.push({ path: settingsPath, content: JSON.stringify(settings, null, 2) + '\n' });
 		fs.writeFileSync(process.env.OPENCODE_CONFIGURE_OUTPUT, JSON.stringify({ files, secrets }));
 	NODE_EOF

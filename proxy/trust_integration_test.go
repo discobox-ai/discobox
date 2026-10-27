@@ -29,7 +29,7 @@ type trustFixture struct {
 	origin  *httptest.Server
 	dsn     string
 	clients map[string]*http.Client
-	judged  *[]secrets.AuthorizeRequest
+	asked   *[]secrets.AuthorizeRequest
 	cfg     Config
 }
 
@@ -55,14 +55,14 @@ func newTrustFixture(t *testing.T, deny string) *trustFixture {
 	if err != nil {
 		t.Fatalf("PrepareCertificates() error = %v", err)
 	}
-	judged := &[]secrets.AuthorizeRequest{}
+	asked := &[]secrets.AuthorizeRequest{}
 	cfg := Config{
 		ListenAddress: "127.0.0.1:0",
 		CertDir:       prepared.Bundle.Dir,
 		DatabaseDSN:   filepath.Join(dir, "audit.db"),
 		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
 	}
-	server, err := NewServer(ctx, cfg, prepared.Bundle, stubResolver{judged: judged, deny: deny})
+	server, err := NewServer(ctx, cfg, prepared.Bundle, stubResolver{asked: asked, deny: deny})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -71,7 +71,7 @@ func newTrustFixture(t *testing.T, deny string) *trustFixture {
 	t.Cleanup(func() { _ = server.Close(); <-errCh })
 	addr := waitForAddr(t, server)
 
-	f := &trustFixture{server: server, origin: origin, dsn: cfg.DatabaseDSN, clients: map[string]*http.Client{}, judged: judged, cfg: cfg}
+	f := &trustFixture{server: server, origin: origin, dsn: cfg.DatabaseDSN, clients: map[string]*http.Client{}, asked: asked, cfg: cfg}
 	for _, id := range []string{"sandbox-1", "sandbox-2"} {
 		f.clients[id] = mitmClient(t, addr.String(), prepared.Clients[id])
 	}
@@ -179,7 +179,7 @@ func TestHTTPProxyUntrustedUpstreamIsA502NamingTheHost(t *testing.T) {
 // the case a transport shared across clients would get wrong.
 func TestHTTPProxyCAPinTrustsTheHostForOneClient(t *testing.T) {
 	f := newTrustFixture(t, "")
-	f.apply(t, HostTrust{ClientID: "sandbox-1", Host: f.endpoint(t), Pin: f.caPin(), UseIDs: []string{"use_kube"}})
+	f.apply(t, HostTrust{ClientID: "sandbox-1", Host: f.endpoint(t), Pin: f.caPin()})
 
 	resp, body := f.get(t, "sandbox-1")
 	if resp.StatusCode != http.StatusOK || body != "ok" {
@@ -211,28 +211,18 @@ func TestHTTPProxyLeafSPKIPin(t *testing.T) {
 	}
 }
 
-// Every request to a trusted host is judged against the uses the host was
-// trusted for, whether or not it carries a credential; one the judge refuses
-// is never sent.
-func TestHTTPProxyJudgesRequestsToATrustedHost(t *testing.T) {
-	f := newTrustFixture(t, "")
-	f.apply(t, HostTrust{ClientID: "sandbox-1", Host: f.endpoint(t), Pin: f.caPin(), UseIDs: []string{"use_kube"}})
-	if resp, _ := f.get(t, "sandbox-1"); resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d", resp.StatusCode)
-	}
-	if len(*f.judged) != 1 {
-		t.Fatalf("judged %d requests, want 1", len(*f.judged))
-	}
-	got := (*f.judged)[0]
-	if len(got.TrustUseIDs) != 1 || got.TrustUseIDs[0] != "use_kube" || len(got.Sentinels) != 0 || got.Method != http.MethodGet {
-		t.Fatalf("judge saw %+v", got)
-	}
-
-	refusing := newTrustFixture(t, "deletes are not read-only kubectl")
-	refusing.apply(t, HostTrust{ClientID: "sandbox-1", Host: refusing.endpoint(t), Pin: refusing.caPin(), UseIDs: []string{"use_kube"}})
-	resp, body := refusing.get(t, "sandbox-1")
-	if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "deletes are not read-only kubectl") {
+// A pin makes a certificate acceptable for one endpoint and decides nothing
+// about what is sent there (ADR 26-10-27-880 §10): a request to a trusted host
+// that carries no credential is never put to the authorizer, which here would
+// refuse it.
+func TestHTTPProxyDoesNotAuthorizeRequestsToATrustedHost(t *testing.T) {
+	f := newTrustFixture(t, "every request is refused")
+	f.apply(t, HostTrust{ClientID: "sandbox-1", Host: f.endpoint(t), Pin: f.caPin()})
+	if resp, body := f.get(t, "sandbox-1"); resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d, body %q", resp.StatusCode, body)
+	}
+	if len(*f.asked) != 0 {
+		t.Fatalf("asked about %d requests, want none", len(*f.asked))
 	}
 }
 

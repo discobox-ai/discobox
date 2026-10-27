@@ -104,7 +104,7 @@ func TestDeletingSecretRemovesGrants(t *testing.T) {
 	if err := s.DeleteSecret(ctx, "project-1", sec.ID); err != nil {
 		t.Fatalf("delete secret: %v", err)
 	}
-	grants, err := s.ListSecretGrants(ctx, "project-1", sec.ID, "")
+	grants, err := s.ListSecretGrants(ctx, "project-1", sec.ID)
 	if err != nil {
 		t.Fatalf("list grants: %v", err)
 	}

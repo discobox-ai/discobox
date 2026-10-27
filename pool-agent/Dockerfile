@@ -18,10 +18,8 @@ COPY pkg/harnesscapture ./pkg/harnesscapture
 COPY pkg/hostscope ./pkg/hostscope
 COPY pkg/imagecache ./pkg/imagecache
 COPY internal/filelock ./internal/filelock
-COPY pkg/judge ./pkg/judge
 COPY pkg/layout ./pkg/layout
 COPY pkg/platform ./pkg/platform
-COPY pkg/policy ./pkg/policy
 COPY pkg/poolassets ./pkg/poolassets
 COPY pkg/poolauth ./pkg/poolauth
 COPY proxy ./proxy
@@ -30,13 +28,11 @@ COPY pkg/sandboxconfig ./pkg/sandboxconfig
 COPY pkg/sandboxpath ./pkg/sandboxpath
 COPY pkg/sandboxtree ./pkg/sandboxtree
 COPY pkg/sandboxuser ./pkg/sandboxuser
-COPY pkg/secretformat ./pkg/secretformat
 COPY pkg/secretroute ./pkg/secretroute
 COPY pkg/sourcecache ./pkg/sourcecache
 COPY pkg/sourceref ./pkg/sourceref
 COPY pkg/tarsums ./pkg/tarsums
 COPY pkg/vsock ./pkg/vsock
-COPY pkg/wellknown ./pkg/wellknown
 COPY pkg/wire ./pkg/wire
 COPY pkg/wstunnel ./pkg/wstunnel
 COPY pool-agent/go.mod pool-agent/go.sum ./pool-agent/

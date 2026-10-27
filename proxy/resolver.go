@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"io"
 
 	"github.com/discobox-ai/discobox/proxy/internal/secrets"
 )
@@ -36,8 +35,7 @@ var ErrSecretResolveDenied = secrets.ErrDenied
 // answers it.
 type SecretGateRequest = secrets.GateRequest
 
-// SecretGateAdmission is a request a SecretResolver's gate let in, and the use
-// it was let in under.
+// SecretGateAdmission is a request a SecretResolver's gate let in.
 type SecretGateAdmission = secrets.GateAdmission
 
 // SecretGateRefusal is a SecretResolver's gate declining a request, and why.
@@ -47,26 +45,8 @@ type SecretGateRefusal = secrets.GateRefusal
 // authorizes it before resolving any of them.
 type SecretAuthorizeRequest = secrets.AuthorizeRequest
 
-// SecretRequestBody is a request's body as an authorizer may read it, without
-// changing what is sent.
-type SecretRequestBody = secrets.RequestBody
-
-// MaxCapturedSecretBody is the most of a request body a SecretRequestBody
-// captures.
-const MaxCapturedSecretBody = secrets.MaxCapturedBody
-
-// NewSecretRequestBody wraps a body for SecretAuthorizeRequest.Body. A request
-// with no body gets nil.
-func NewSecretRequestBody(body io.ReadCloser) *SecretRequestBody {
-	return secrets.NewRequestBody(body)
-}
-
 // SecretVerdict is a SecretResolver's answer to a SecretAuthorizeRequest.
 type SecretVerdict = secrets.Verdict
-
-// SecretRefusal is a refused request's answer in its own protocol, which a
-// SecretVerdict may supply.
-type SecretRefusal = secrets.Refusal
 
 // SecretReportScope names the requests that answer for a resolved credential;
 // SecretReportRule is one host of it, and the paths on that host.

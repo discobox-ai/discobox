@@ -45,8 +45,8 @@ Look for:
 - **Tokens and keys.** A token with no expiry, no audience, or no scope; one
   that outlives what it is for; a private key stored somewhere other than with
   its owner; a bootstrap or one-time value stored unhashed or usable twice.
-- **A judged or approved thing that changes after judging.** A command, request,
-  or grant that is checked in one form and run in another; a use, delegation,
+- **An approved thing that changes after approval.** A request or grant that
+  is checked in one form and acted on in another; a grant, route, delegation,
   or trust that can be widened by the party it constrains; an approval that
   does not name what it approved.
 - **Sandbox-controlled input used on the trusted side.** A path from the box
