@@ -19,3 +19,11 @@
 - Verify downloaded toolchain executables against committed digests before
   executing them. A version argument to a mutable installer does not pin the
   installer, and toolchain containers later receive publication credentials.
+- Native test coverage cannot be inferred from filenames alone. Shared files
+  can branch on the OS or call native dependencies: Windows host-key ACL repair
+  was omitted by a file-only selector. Keep the Windows workspace suite and
+  Darwin's explicit behavioral contract alongside file-based selection.
+- Do not pipe a producer into `grep -q` under `pipefail` for membership checks.
+  Its early exit can make a producer's SIGPIPE look like a missing value; the
+  Dockerfile import check reported an existing `pkg/hostscope` COPY as missing.
+  Feed finite captured output through a here-string instead.

@@ -63,7 +63,8 @@ for entry in pool-agent/Dockerfile:build:pool-agent sandbox-agent/Dockerfile:san
   for dep in $(cd "$module" && go list -deps ./... |
                  sed -n 's|^github.com/discobox-ai/discobox/||p' |
                  awk -F/ '{ print ($1 == "pkg" ? $1 "/" $2 : $1) }' | sort -u); do
-    if ! printf '%s\n' "$copied" | grep -qx "$dep"; then
+    # A here-string avoids grep -q closing a producer pipe under pipefail.
+    if ! grep -qx "$dep" <<<"$copied"; then
       missing="$missing$dockerfile: $module imports $dep, which nothing copies into the build context
 "
     fi
