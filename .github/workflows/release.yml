@@ -23,6 +23,12 @@ jobs:
   native-inputs:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DAGGER_ENGINE: cloud
+      DAGGER_CLOUD_TOKEN: oidc
     steps:
       - uses: actions/checkout@v6.0.2
         with:
@@ -70,6 +76,12 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.preview
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DAGGER_ENGINE: cloud
+      DAGGER_CLOUD_TOKEN: oidc
     steps:
       - uses: actions/checkout@v6.0.2
         with:
@@ -98,9 +110,12 @@ jobs:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 120
     permissions:
+      id-token: write
       contents: write
       packages: write
     env:
+      DAGGER_ENGINE: cloud
+      DAGGER_CLOUD_TOKEN: oidc
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}

@@ -52,6 +52,13 @@ after its SHA-256 matches the committed architecture-specific digest. No
 mutable remote installer is executed. Event adapters provide full Git history
 for the workspace Git importer.
 
+Engine selection belongs to the caller. Trusted Actions jobs select Dagger
+Cloud with GitHub OIDC (`DAGGER_CLOUD_TOKEN=oidc`, job-scoped `id-token: write`)
+so cache persists across ephemeral runners; fork and Dependabot PRs use local
+engines with Cloud authentication disabled. Native jobs do not
+receive the Cloud token. Local commands can select either backend without
+changing the pipeline. Actions retains event ownership; Cloud Checks are off.
+
 Build operations are cached by Dagger. API state reads and state-changing CLI
 operations use an invocation timestamp to avoid caching external state.
 Registry publishing uses Dagger's publication API. Versioned artifacts publish
