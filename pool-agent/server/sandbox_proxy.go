@@ -297,7 +297,13 @@ func sandboxProxy(dial sandboxruntime.Dialer, target *url.URL, downstreamAuth st
 			req.Out.URL.RawPath = ""
 			req.Out.URL.RawQuery = rawQuery
 			req.Out.Host = target.Host
+			// The token that authorized the hop to the pool is the control
+			// plane's, never the sandbox's: what the sandbox serves is told
+			// only the sandbox agent's own token, when it is the agent, and
+			// otherwise none, so code in the sandbox cannot replay it at the
+			// pool's URL.
 			req.Out.Header.Del(sandboxAgentAuthorizationHeader)
+			req.Out.Header.Del("Authorization")
 			if strings.TrimSpace(downstreamAuth) != "" {
 				req.Out.Header.Set("Authorization", downstreamAuth)
 			}

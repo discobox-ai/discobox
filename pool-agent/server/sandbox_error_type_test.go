@@ -179,3 +179,21 @@ func TestPowerDownNeedsSandboxWrite(t *testing.T) {
 		t.Fatalf("power-down scope = %q, want %q", got, ScopeSandboxWrite)
 	}
 }
+
+// Every power operation needs the scope stop needs: a restart scoped to
+// nothing could be asked for with any token the control plane minted for the
+// sandbox, such as the one its HTTP proxy carries.
+func TestEveryPowerOperationNeedsSandboxWrite(t *testing.T) {
+	for _, operation := range []workerapi.OperationName{
+		workerapi.PoolStartSandboxOperation,
+		workerapi.PoolStopSandboxOperation,
+		workerapi.PoolRestartSandboxOperation,
+		workerapi.PoolEnsureSandboxRunningOperation,
+		workerapi.PoolSuspendSandboxOperation,
+		workerapi.PoolPowerDownSandboxOperation,
+	} {
+		if got := requiredPoolOperationScope(operation); got != ScopeSandboxWrite {
+			t.Errorf("%s scope = %q, want %q", operation, got, ScopeSandboxWrite)
+		}
+	}
+}

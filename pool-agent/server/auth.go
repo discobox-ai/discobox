@@ -398,6 +398,7 @@ func requiredPoolOperationScope(operation workerapi.OperationName) string {
 		workerapi.PoolArchiveSandboxOperation,
 		workerapi.PoolDeleteSandboxOperation,
 		workerapi.PoolStartSandboxOperation,
+		workerapi.PoolRestartSandboxOperation,
 		workerapi.PoolEnsureSandboxRunningOperation,
 		workerapi.PoolStopSandboxOperation,
 		workerapi.PoolSuspendSandboxOperation,

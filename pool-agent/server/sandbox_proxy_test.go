@@ -580,6 +580,26 @@ func TestSandboxProxyReportsAnUnreachableSandbox(t *testing.T) {
 	}
 }
 
+// What a sandbox serves is never told the token that authorized the hop to
+// the pool: code in the sandbox could replay it at the pool's URL. The sandbox
+// agent is told its own token alone.
+func TestSandboxProxyDoesNotForwardThePoolToken(t *testing.T) {
+	seen := make(chan string, 2)
+	upstream := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		seen <- r.Header.Get("Authorization")
+	}))
+	t.Cleanup(upstream.Close)
+	for _, downstream := range []string{"", "Bearer sandbox-agent-token"} {
+		request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/sandbox", nil)
+		request.Header.Set("Authorization", "Bearer pool-agent-token")
+		request.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-agent-token")
+		sandboxProxy(dialAddress(upstream.Listener.Addr().String()), sandboxruntime.HTTPURL(8080, "/"), downstream).ServeHTTP(httptest.NewRecorder(), request)
+		if got := <-seen; got != downstream {
+			t.Errorf("downstream %q: the sandbox was told Authorization %q", downstream, got)
+		}
+	}
+}
+
 // The control plane cancels its request whenever its own client leaves. That
 // is not a failure, so nothing is logged for it.
 func TestSandboxProxyIgnoresAClientThatWentAway(t *testing.T) {
