@@ -1,0 +1,1 @@
+We make an overlay only if the target exists? Otherwise we just bind mount?  So is the fix here to look at the data dir source and see if this directory was previous mounted as bind or overlay and always respect the previous behavior?
