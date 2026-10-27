@@ -1,0 +1,1 @@
+oh, the ~/src/.stignore is supposed to be a symlink to a another file, can you edit that other file and exclude */.tmp folders?
