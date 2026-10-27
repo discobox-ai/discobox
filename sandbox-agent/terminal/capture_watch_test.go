@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -60,15 +61,20 @@ func TestCaptureNotificationsFollowAtomicWritesAndDirectoryReplacement(t *testin
 	wait("")
 	write("third")
 	wait("third")
-	// Moving a directory away leaves its inode alive. Drop descendant watches
-	// on that old tree and follow the replacement at the original pathname.
-	if err := os.Rename(filepath.Join(home, "config"), filepath.Join(home, "old-config")); err != nil {
-		t.Fatal(err)
+	// Windows rejects renaming a directory with watched descendants;
+	// fsnotify's rename-nested-watched-dir fixture excludes it too. Keep the
+	// creation, atomic replacement, deletion and cancellation checks above/below.
+	if runtime.GOOS != "windows" {
+		// Moving a directory away leaves its inode alive. Drop descendant watches
+		// on that old tree and follow the replacement at the original pathname.
+		if err := os.Rename(filepath.Join(home, "config"), filepath.Join(home, "old-config")); err != nil {
+			t.Fatal(err)
+		}
+		write("replacement")
+		wait("replacement")
+		write("replacement-edited")
+		wait("replacement-edited")
 	}
-	write("replacement")
-	wait("replacement")
-	write("replacement-edited")
-	wait("replacement-edited")
 	cancel()
 	select {
 	case <-done:
