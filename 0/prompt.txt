@@ -1,0 +1,10 @@
+<task-notification>
+<task-id>b0ytby1ln</task-id>
+<tool-use-id>toolu_014xjw7SjfUMDB2sbjPkCpcp</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/9ebd1b36-3747-4d18-8bd9-f1e64b3195d7/tasks/b0ytby1ln.output</output-file>
+<status>completed</status>
+<summary>Monitor "CI run 37138456033 job results" stream ended</summary>
+<event>windows: success
+run completed: failure</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
