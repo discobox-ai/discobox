@@ -1,0 +1,1 @@
+It makes sense to me if the mode is cache that the pool tries to pull, only if the pull fails it then sits in a state missing a cred/missing commit. Then the client can decide if it want to supply the cred for the pull or if the client wants to push the commit. I would say we would push prefer to push the commit if we have it locally, otherwise we supply the cred.
