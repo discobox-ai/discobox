@@ -1,0 +1,1 @@
+are you saying the newly booted sandbox has no workingDir? Is workingDir what made it so that we could match the directory when we do `discobox new -C .`?
