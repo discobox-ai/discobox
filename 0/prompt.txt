@@ -1,0 +1,1 @@
+in autoStart if we detect the not found error, can we just return a specific ErrNeedsRebuild wrapping the real error. And the the acquire out method can catch, repair, and retry. Would that work?
