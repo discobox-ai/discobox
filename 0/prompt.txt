@@ -1,0 +1,1 @@
+what is the difference between url and upstreamUrl. Are those two different fields in the API?
