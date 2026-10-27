@@ -227,3 +227,33 @@ func TestBindingEventsNameTheSecret(t *testing.T) {
 		}
 	}
 }
+
+// A binding's events read newest first even when the clock does not move
+// between them, as Windows' coarse clock often does not.
+func TestBindingEventsKeepTheirOrderWithinOneClockTick(t *testing.T) {
+	ctx := context.Background()
+	s, db := newTestStoreWithDB(t, nil)
+	createSecret(t, s, "sec-tick", "tick")
+	binding := &model.SecretBinding{ProjectID: "project-1", SecretID: "sec-tick", TargetKind: model.SecretBindingTargetProject, TargetID: "project-1", Use: true, EnvName: "TICK"}
+	if err := s.CreateSecretBinding(ctx, binding, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DeleteSecretBinding(ctx, "project-1", binding.ID, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatal(err)
+	}
+	// Both in one tick, as the clock would have it, and the delete's ID
+	// sorting below the create's, so neither the time nor the ID orders them.
+	tick := time.Now().UTC()
+	if err := db.Write.WithContext(ctx).Model(&model.SecretBindingEvent{}).Where("binding_id = ?", binding.ID).
+		Update("at", tick).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Write.WithContext(ctx).Model(&model.SecretBindingEvent{}).Where("binding_id = ? AND event = ?", binding.ID, model.SecretBindingEventDeleted).
+		Update("id", "bev_0").Error; err != nil {
+		t.Fatal(err)
+	}
+	events, err := s.ListSecretBindingEvents(ctx, "project-1", store.SecretBindingEventFilter{BindingID: binding.ID})
+	if err != nil || len(events) != 2 || events[0].Event != model.SecretBindingEventDeleted || !events[0].At.Equal(tick) {
+		t.Fatalf("events = %+v, %v; want the delete first, at the clock's own time", events, err)
+	}
+}

@@ -423,6 +423,19 @@ func recordBindingEventTx(tx *gorm.DB, binding *model.SecretBinding, event strin
 			snapshot.SecretName = names[0]
 		}
 	}
+	// Within a binding, a sequence orders its events where the clock does
+	// not: a coarse clock (Windows) stamps two changes in one tick alike.
+	// Every change to an existing binding writes or deletes its row in this
+	// transaction, which serializes them, so two cannot read the same last.
+	var last []model.SecretBindingEvent
+	if err := tx.Select("seq").Where("project_id = ? AND binding_id = ?", binding.ProjectID, binding.ID).
+		Order("seq DESC").Limit(1).Find(&last).Error; err != nil {
+		return err
+	}
+	seq := int64(1)
+	if len(last) == 1 {
+		seq = last[0].Seq + 1
+	}
 	return tx.Create(&model.SecretBindingEvent{
 		ProjectID: binding.ProjectID,
 		BindingID: binding.ID,
@@ -431,6 +444,7 @@ func recordBindingEventTx(tx *gorm.DB, binding *model.SecretBinding, event strin
 		Actor:     change.Actor,
 		Cause:     change.Cause,
 		Binding:   snapshot,
+		Seq:       seq,
 		At:        time.Now().UTC(),
 	}).Error
 }
@@ -464,7 +478,7 @@ func (s *Store) ListSecretBindingEvents(ctx context.Context, projectID string, f
 		limit = 1000
 	}
 	var out []model.SecretBindingEvent
-	err = query.Order("at DESC, id DESC").Limit(limit).Find(&out).Error
+	err = query.Order("at DESC, seq DESC, id DESC").Limit(limit).Find(&out).Error
 	return out, err
 }
 

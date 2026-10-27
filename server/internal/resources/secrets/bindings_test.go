@@ -134,8 +134,13 @@ func TestTheExpirySweepRemovesLapsedBindings(t *testing.T) {
 	if _, err := st.SecretBindingByExactID(ctx, "project-1", kept.ID); err != nil {
 		t.Fatalf("the live binding went: %v", err)
 	}
+	// Created and expired can share a clock tick (Windows), which leaves
+	// their order in the listing open: look for the expiry, not its place.
 	events, err := st.ListSecretBindingEvents(ctx, "project-1", store.SecretBindingEventFilter{BindingID: gone.ID})
-	if err != nil || len(events) != 2 || events[0].Event != model.SecretBindingEventExpired || events[0].Actor != model.SecretBindingActorSystem {
+	expired := slices.IndexFunc(events, func(e model.SecretBindingEvent) bool {
+		return e.Event == model.SecretBindingEventExpired && e.Actor == model.SecretBindingActorSystem
+	})
+	if err != nil || len(events) != 2 || expired < 0 {
 		t.Fatalf("events = %+v, %v; want the expiry recorded as the system's", events, err)
 	}
 	if len(marks.bindings) != 1 || marks.bindings[0].ID != gone.ID {
