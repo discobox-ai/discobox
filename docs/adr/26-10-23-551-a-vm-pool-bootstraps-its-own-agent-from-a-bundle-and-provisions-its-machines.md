@@ -1,6 +1,7 @@
 # 26-10-23-551 — A VM pool bootstraps its own pool agent from a bundle, and the pool agent provisions its machines
 
-- **Status**: Accepted
+- **Status**: Accepted (§3's agent listening where `guest.ServiceFile` says
+  narrowed by [26-10-27-345](26-10-27-345-a-machine-sandbox-is-made-again-in-place-and-its-bootstrap-names-where-its-agent-listens.md))
 - **Date**: 2026-10-23
 - **Supersedes**, for a remote driver (boxd now, disco-vm's
   `docker` driver and others later), and nothing of a local one (vz, hcs):

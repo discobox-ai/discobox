@@ -5,7 +5,9 @@
   bootstrap may and may not hold; §2 narrowed by
   [26-10-09-143](26-10-09-143-a-vm-sandbox-starts-its-agent-when-its-bootstrap-arrives.md) for backends with no PID-1 flow;
   §2's PID-1 flow narrowed by [26-10-10-767](26-10-10-767-a-container-sandbox-boots-systemd-and-a-unit-wires-its-volumes.md),
-  which wires from a unit of the container's systemd)
+  which wires from a unit of the container's systemd; §1's bootstrap "never
+  rewritten" narrowed, for a machine rebuilt in place, by
+  [26-10-27-345](26-10-27-345-a-machine-sandbox-is-made-again-in-place-and-its-bootstrap-names-where-its-agent-listens.md))
 - **Date**: 2026-10-08
 - **Relates to**: [0012](0012-sandbox-config-is-three-attribute-owned-layers.md),
   [0030](0030-pool-agent-polls-and-pushes-sandbox-agent-status.md),
