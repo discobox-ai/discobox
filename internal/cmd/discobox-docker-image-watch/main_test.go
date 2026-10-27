@@ -509,3 +509,31 @@ func TestBundleBuildArgsNameTheirBuilder(t *testing.T) {
 		}
 	}
 }
+
+func TestCaptureAssetsBelongToHarnessBundles(t *testing.T) {
+	specs, root := loadDockerImageSpecs(t)
+	for _, name := range []string{"claude-code", "codex", "copilot", "omp", "opencode", "pi", "shell"} {
+		spec, ok := specNamed(specs, "harness-"+name)
+		if !ok {
+			t.Fatalf("missing %s bundle", name)
+		}
+		if spec.contextDir != root || spec.dockerfile != filepath.Join("harness", harnessDir(name), "Dockerfile") || spec.buildArgs[len(spec.buildArgs)-1] != "." {
+			t.Errorf("%s does not build from repository root: %+v", name, spec)
+		}
+		for _, asset := range []string{"runtime.cjs", "settings.cjs", "settings-LICENSE.txt"} {
+			path := filepath.Join(root, "harness", "capture", asset)
+			if got := contains(spec.files, path); got != (name != "shell") {
+				t.Errorf("%s watches %s = %t", name, asset, got)
+			}
+		}
+	}
+	platform, ok := specNamed(specs, platformSpecName)
+	if !ok {
+		t.Fatal("missing platform")
+	}
+	for _, file := range platform.files {
+		if strings.HasPrefix(file, filepath.Join(root, "harness", "capture")+string(filepath.Separator)) {
+			t.Errorf("platform still owns harness exporter asset %s", file)
+		}
+	}
+}

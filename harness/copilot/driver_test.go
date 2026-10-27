@@ -122,7 +122,7 @@ func TestImagePolicy(t *testing.T) {
 		t.Fatalf("manifest overrides the harness-run convention: run=%v relaunch=%v",
 			image.Harness.RunCommand, image.Harness.RelaunchCommand)
 	}
-	feature := featuretest.Load(t)
+	feature := featuretest.Load(t, ".")
 	for source, want := range map[string]string{
 		"launch.sh":  "/usr/local/bin/" + harness.RunCommand,
 		"prompt.sh":  "/usr/local/bin/discobox-prompt",

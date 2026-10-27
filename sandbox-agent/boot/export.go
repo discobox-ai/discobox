@@ -96,7 +96,7 @@ func exportExclusions() (func(string) bool, error) {
 		return nil, fmt.Errorf("resolve volumes: %w", err)
 	}
 	excluded := exportExcludedNames(volumes, id.uid)
-	for name := range captureExportExclusions(volumes, id.uid, config.CaptureStateDir(effective.AgentRuntime.DatabasePath)) {
+	for name := range captureExportExclusions(volumes, id.uid, config.CaptureRecoveryDir(effective.AgentRuntime.DatabasePath)) {
 		excluded[name] = struct{}{}
 	}
 	if len(excluded) == 0 {

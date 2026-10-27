@@ -1033,11 +1033,14 @@ func (s *HarnessCaptureRoute) SetUse(val OptString) {
 
 // Ref: #/components/schemas/HarnessCaptureSetting
 type HarnessCaptureSetting struct {
-	TemplateSuffix OptString                   `json:"templateSuffix"`
-	CreateOnly     OptBool                     `json:"createOnly"`
-	Fields         HarnessCaptureSettingFields `json:"fields"`
-	Format         string                      `json:"format"`
-	Path           string                      `json:"path"`
+	TemplateSuffix OptString `json:"templateSuffix"`
+	CreateOnly     OptBool   `json:"createOnly"`
+	// Known credential and local paths omitted from ordinary settings; * matches one object path segment
+	// and ** any depth.
+	Exclude []string                       `json:"exclude"`
+	Fields  OptHarnessCaptureSettingFields `json:"fields"`
+	Format  string                         `json:"format"`
+	Path    string                         `json:"path"`
 }
 
 // GetTemplateSuffix returns the value of TemplateSuffix.
@@ -1050,8 +1053,13 @@ func (s *HarnessCaptureSetting) GetCreateOnly() OptBool {
 	return s.CreateOnly
 }
 
+// GetExclude returns the value of Exclude.
+func (s *HarnessCaptureSetting) GetExclude() []string {
+	return s.Exclude
+}
+
 // GetFields returns the value of Fields.
-func (s *HarnessCaptureSetting) GetFields() HarnessCaptureSettingFields {
+func (s *HarnessCaptureSetting) GetFields() OptHarnessCaptureSettingFields {
 	return s.Fields
 }
 
@@ -1075,8 +1083,13 @@ func (s *HarnessCaptureSetting) SetCreateOnly(val OptBool) {
 	s.CreateOnly = val
 }
 
+// SetExclude sets the value of Exclude.
+func (s *HarnessCaptureSetting) SetExclude(val []string) {
+	s.Exclude = val
+}
+
 // SetFields sets the value of Fields.
-func (s *HarnessCaptureSetting) SetFields(val HarnessCaptureSettingFields) {
+func (s *HarnessCaptureSetting) SetFields(val OptHarnessCaptureSettingFields) {
 	s.Fields = val
 }
 
@@ -2192,6 +2205,52 @@ func (o OptHarnessCaptureOAuth) Get() (v HarnessCaptureOAuth, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptHarnessCaptureOAuth) Or(d HarnessCaptureOAuth) HarnessCaptureOAuth {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptHarnessCaptureSettingFields returns new OptHarnessCaptureSettingFields with value set to v.
+func NewOptHarnessCaptureSettingFields(v HarnessCaptureSettingFields) OptHarnessCaptureSettingFields {
+	return OptHarnessCaptureSettingFields{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessCaptureSettingFields is optional HarnessCaptureSettingFields.
+type OptHarnessCaptureSettingFields struct {
+	Value HarnessCaptureSettingFields
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessCaptureSettingFields was set.
+func (o OptHarnessCaptureSettingFields) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessCaptureSettingFields) Reset() {
+	var v HarnessCaptureSettingFields
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessCaptureSettingFields) SetTo(v HarnessCaptureSettingFields) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessCaptureSettingFields) Get() (v HarnessCaptureSettingFields, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessCaptureSettingFields) Or(d HarnessCaptureSettingFields) HarnessCaptureSettingFields {
 	if v, ok := o.Get(); ok {
 		return v
 	}

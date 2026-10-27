@@ -173,7 +173,7 @@ func TestTheHomeFileLoadsTheInstalledExtension(t *testing.T) {
 	if !strings.Contains(shim, `export { default } from "`+installedHookExt+`";`) {
 		t.Fatalf("%s = %q, want it to re-export %s", hookShimPath, shim, installedHookExt)
 	}
-	if got := featuretest.Load(t).Installs("hook-extension.js"); got != installedHookExt {
+	if got := featuretest.Load(t, ".").Installs("hook-extension.js"); got != installedHookExt {
 		t.Errorf("the feature installs the extension at %q, want %s", got, installedHookExt)
 	}
 }
@@ -218,7 +218,7 @@ func TestImagePolicy(t *testing.T) {
 	if scalars["startup.setupWizard"] != false || scalars["startup.checkUpdate"] != false {
 		t.Fatalf("overlay = %v, want the setup wizard and the update check off", scalars)
 	}
-	feature := featuretest.Load(t)
+	feature := featuretest.Load(t, ".")
 	for source, want := range map[string]string{
 		"discobox.yml": overlayPath,
 		"proxy-env.sh": "/etc/profile.d/omp-proxy.sh",

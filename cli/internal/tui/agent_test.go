@@ -114,7 +114,7 @@ func TestCursorNotifiesPendingHarnessCapture(t *testing.T) {
 	l.width = 150
 	l.moveTo(1)
 	out := ansi.Strip(l.view(newStyles(true), &zones{}, true))
-	if !strings.Contains(out, "harness changes: discobox admin harness changes working-box") {
+	if !strings.Contains(out, "harness changes: H to review") {
 		t.Fatalf("missing capture notice: %s", out)
 	}
 	boxes[0].HarnessConfigPending = true

@@ -16,7 +16,7 @@ import (
 // Exercise Create, including ogen's request encoder, rather than only the
 // intermediate mapper: capture has to survive the real control-plane/pool hop.
 func TestCreateTransmitsHarnessCaptureDefinitionAndBaseline(t *testing.T) {
-	definition := harnesscapture.Definition{Version: 1, Watch: []string{"~/.settings.json"}, ExportCommand: []string{"/bin/export"}, HandoffCommand: []string{"/bin/handoff"}, Settings: []harnesscapture.Setting{{Path: "~/.settings.json", Format: "json", Fields: map[string]string{"model": "string"}}}, Providers: []harnesscapture.Provider{{ID: "vendor", EnvName: "API_TOKEN", Types: []string{"token"}, Host: "api.example.com"}}}
+	definition := harnesscapture.Definition{Version: 1, Watch: []string{"~/.settings.json"}, ExportCommand: []string{"/bin/export"}, HandoffCommand: []string{"/bin/handoff"}, Settings: []harnesscapture.Setting{{Path: "~/.settings.json", Format: "json", Exclude: []string{"apiKey", "env"}}}, Providers: []harnesscapture.Provider{{ID: "vendor", EnvName: "API_TOKEN", Types: []string{"token"}, Host: "api.example.com"}}}
 	baseline := harnesscapture.Baseline{HarnessConfigID: "harness-1", ConfigRevision: 7, ManifestDigest: "sha256:pinned", SecretRevisions: map[string]string{"API_TOKEN": "secret-id:revision"}, Files: []harnesscapture.File{{Path: "~/.settings.json", Content: `{"model":"configured"}`, CreateOnly: true}}}
 	var got struct {
 		ResolvedHarnessConfig struct {

@@ -72,11 +72,12 @@ type ServiceConfig struct {
 	// merged from the image and project layers by pool-agent's Effective() call.
 	// A zero-value Harness (empty ID) means the sandbox has no harness at all,
 	// which resolves to the shell fallback.
-	Harness         config.Harness
-	SandboxConfig   map[string]any
-	WorkingRoot     string
-	RuntimeDir      string
-	CaptureStateDir string
+	Harness            config.Harness
+	SandboxConfig      map[string]any
+	WorkingRoot        string
+	RuntimeDir         string
+	CaptureStateDir    string
+	CaptureRecoveryDir string
 	// SecretEnv returns the sandbox's current secret-bound
 	// envName->sentinel map, read live from the secrets file (ADR 0012 §3)
 	// for rendering harness files. Execution environments are owned by Execs.
@@ -200,9 +201,17 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		installing:     map[string]struct{}{},
 		launches:       map[string]*terminalLaunch{},
 	}
-	if (cfg.Harness.SaveBack == nil || cfg.HarnessMode == config.HarnessModeConfig) && cfg.CaptureStateDir != "" {
-		if err := invalidateCaptureState(cfg.CaptureStateDir); err != nil {
-			return nil, err
+	if cfg.Harness.SaveBack == nil || cfg.HarnessMode == config.HarnessModeConfig {
+		for _, dir := range []string{cfg.CaptureStateDir, cfg.CaptureRecoveryDir} {
+			if dir == "" {
+				continue
+			}
+			if err := invalidateCaptureState(dir); err != nil {
+				return nil, err
+			}
+			if err := os.Remove(filepath.Join(dir, "checkpoint.json")); err != nil && !os.IsNotExist(err) {
+				return nil, err
+			}
 		}
 	}
 	if cfg.Harness.SaveBack != nil && cfg.HarnessMode != config.HarnessModeConfig {

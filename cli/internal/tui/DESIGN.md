@@ -3532,7 +3532,13 @@ Credential consent during source delivery uses the operation's narration feed:
 a question waits for the dialog's answer, and Git's credential process runs via
 `tea.ExecProcess` with stdout captured by the delivery layer. A stale feed
 answers no; dismissing the question falls back to client fetch and push.
-A selected sandbox with a pending harness capture shows the `admin harness changes`
-command in its row. Agent errors, blocking questions, and provisioning still take
-precedence. The notification carries no credential material and never saves
-anything automatically.
+
+A selected sandbox with a pending harness capture offers `H` to review it; the
+same action is in its action menu and on the workspace leader plus `H`. Agent errors, blocking questions, and
+provisioning still take precedence in the row. The review card displays the
+server's validated settings and credential identities, never secret values.
+Long settings scroll with PgUp/PgDn while save/discard actions remain visible.
+Save and discard retain the exact displayed candidate ID. A diagnostic-only
+candidate cannot be saved; refresh explicitly reads a new preview. Conflicts
+remain explicit and direct the user to `admin harness reconsider` selections.
+Nothing saves automatically.

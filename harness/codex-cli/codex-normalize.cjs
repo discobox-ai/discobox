@@ -99,19 +99,3 @@ exports.oauthAuthFile = (tokens, envName = "CODEX_OAUTH_TOKEN") => {
       ) + "\n",
   };
 };
-
-// Local trust is state, not a portable preference. Configure and save-back
-// remove every local project section before adding the delivery-time stanza.
-exports.stripProjects = function (body) {
-  const kept = [];
-  let dropping = false;
-  for (const line of body.split("\n")) {
-    const header = line.match(/^\s*\[\[?\s*(.*?)\s*\]\]?\s*(?:#.*)?$/);
-    if (header) {
-      dropping = /^projects(?:\s*\.|\s*$)/.test(header[1]);
-      if (dropping) continue;
-    } else if (/^\s*projects\s*=/.test(line)) continue;
-    if (!dropping) kept.push(line);
-  }
-  return kept.join("\n").trimEnd();
-};

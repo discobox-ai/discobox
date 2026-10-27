@@ -55,14 +55,15 @@ type Route struct {
 	Use  string `json:"use,omitempty"`
 }
 
-// Setting lists the portable fields a harness understands. Fields are dotted
-// object paths and their scalar types (string, number, boolean, string-array).
-// Structured settings need an explicitly named leaf, not an arbitrary object.
+// Setting identifies a configuration document. Settings preserve all fields
+// except Exclude paths (segments support * and ** wildcards). Fields is used
+// only for credential-template schemas, whose leaves remain explicitly typed.
 type Setting struct {
 	TemplateSuffix string            `json:"templateSuffix,omitempty"`
 	Path           string            `json:"path"`
 	Format         string            `json:"format"`
-	Fields         map[string]string `json:"fields"`
+	Fields         map[string]string `json:"fields,omitempty"`
+	Exclude        []string          `json:"exclude,omitempty"`
 	CreateOnly     bool              `json:"createOnly,omitempty"`
 }
 
@@ -231,6 +232,11 @@ func (d Definition) Validate() error {
 			}
 		}
 	}
+	for _, setting := range d.Settings {
+		if len(setting.Fields) != 0 {
+			return errors.New("legacy settings allowlist: refresh the harness bundle metadata")
+		}
+	}
 	seen = map[string]bool{}
 	for _, f := range append(slices.Clone(d.Settings), d.CredentialSettings...) {
 		if !HomePath(f.Path) || seen[f.Path] {
@@ -239,6 +245,11 @@ func (d Definition) Validate() error {
 		seen[f.Path] = true
 		if f.Format != "json" && f.Format != "jsonc" && f.Format != "toml" && f.Format != "yaml" {
 			return errors.New("unsupported capture settings format")
+		}
+		for _, pattern := range f.Exclude {
+			if pattern == "" || strings.Contains(pattern, "..") || strings.HasPrefix(pattern, ".") || strings.HasSuffix(pattern, ".") {
+				return errors.New("invalid excluded settings path")
+			}
 		}
 		for field, t := range f.Fields {
 			if field == "" || strings.Contains(field, "..") {

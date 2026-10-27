@@ -5,6 +5,12 @@
 apiVersion: discobox.ai/provision/v1
 requires: [core, node]
 steps:
+  - name: capture-runtime
+    file: {path: /usr/local/libexec/discobox/harness-capture/runtime.cjs, source: harness-capture/runtime.cjs}
+  - name: capture-settings
+    file: {path: /usr/local/libexec/discobox/harness-capture/settings.cjs, source: harness-capture/settings.cjs}
+  - name: capture-licenses
+    file: {path: /usr/local/libexec/discobox/harness-capture/settings-LICENSE.txt, source: harness-capture/settings-LICENSE.txt}
   - name: cli
     run: install-cli.sh
   # Copilot loads every file here as a *policy* hook source: read beside the

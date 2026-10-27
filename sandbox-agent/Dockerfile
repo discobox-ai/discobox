@@ -184,7 +184,6 @@ COPY --link sandbox-agent/features/core /features/core
 # the harness wrappers it serves (harness/DESIGN.md), and the discobox-access
 # skill in the module whose flags it documents (ADR 0080 §3).
 COPY --link harness/prompt-answer.sh /features/core/prompt-answer.sh
-COPY --link harness/capture /features/core/harness-capture
 COPY --link access/skills/discobox-access /features/core/skills/discobox-access
 COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-access /features/core/discobox-access
 COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-review /features/review/discobox-review

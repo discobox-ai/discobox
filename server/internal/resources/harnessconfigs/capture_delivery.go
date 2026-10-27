@@ -69,6 +69,12 @@ func (s *Service) deliverCaptureAcknowledgment(ctx context.Context, r *model.Har
 	if err := s.sendCaptureRequest(ctx, r.ProjectID, r.SandboxID, http.MethodPost, "/harness-config-ack", ack, &preview, lease, leasedBox); err != nil {
 		return "", err
 	}
+	// Receiving an acknowledgment is not completing its handoff. Keep the
+	// server's durable receipt pending until the origin has applied it, so a
+	// reboot that clears ephemeral candidates cannot strand an accepted login.
+	if preview.State == "saved-handoff-pending" {
+		return preview.State, nil
+	}
 	if err := s.store.FinishHarnessCaptureReceipt(ctx, r, superseded); err != nil {
 		return "", err
 	}
@@ -97,8 +103,11 @@ func (s *Service) reconcileCaptureAcknowledgments(ctx context.Context, cfg *mode
 	}
 	var failures []error
 	for i := range pending {
-		if _, err := s.deliverCaptureAcknowledgment(ctx, &pending[i]); err != nil {
+		state, err := s.deliverCaptureAcknowledgment(ctx, &pending[i])
+		if err != nil {
 			failures = append(failures, err)
+		} else if state == "saved-handoff-pending" {
+			failures = append(failures, errors.New("harness credential handoff is still pending"))
 		}
 	}
 	return errors.Join(failures...)

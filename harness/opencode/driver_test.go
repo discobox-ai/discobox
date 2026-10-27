@@ -144,7 +144,7 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 	if !slices.Equal(ports, []int{1455, 1456}) {
 		t.Fatalf("config ports = %v, want [1455 1456]", ports)
 	}
-	feature := featuretest.Load(t)
+	feature := featuretest.Load(t, ".")
 	if !feature.Runs(t, "npm install -g @opencode/cli") {
 		t.Error("the feature does not install opencode's CLI")
 	}
@@ -1467,7 +1467,7 @@ func TestManagedConfigLoadsThePluginByAbsolutePath(t *testing.T) {
 	// The path the config names and the path the image installs are the same
 	// directory, and only the feature says so. Every directory a file step
 	// makes is 0755, so every user's opencode can read the plugin.
-	feature := featuretest.Load(t)
+	feature := featuretest.Load(t, ".")
 	for source, path := range map[string]string{
 		"hook-plugin/server.js":    want + "/server.js",
 		"hook-plugin/package.json": want + "/package.json",

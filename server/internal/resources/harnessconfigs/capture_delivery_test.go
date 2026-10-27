@@ -435,3 +435,45 @@ func TestCaptureTransportUsesResolvedSandboxIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDeferredCaptureHandoffKeepsServerReceiptPending(t *testing.T) {
+	svc, cfg, candidate := captureFixture(t)
+	ctx := t.Context()
+	receipt, err := svc.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &captureDeliveryRuntime{Service: sandboxes.NewService(svc.store, nil, "user-1", nil), store: svc.store}
+	svc.sandboxes = runtime
+	var complete atomic.Bool
+	runtime.endpoint = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		state := "saved-handoff-pending"
+		if complete.Load() {
+			state = "saved"
+		}
+		if err := json.NewEncoder(w).Encode(harnesscapture.Preview{State: state, HarnessConfigID: cfg.ID}); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer runtime.endpoint.Close()
+	state, err := svc.deliverCaptureAcknowledgment(ctx, receipt)
+	if err != nil || state != "saved-handoff-pending" {
+		t.Fatalf("delivery = %q, %v", state, err)
+	}
+	pending, err := svc.store.ListPendingHarnessCaptureReceipts(ctx, cfg.ProjectID, cfg.ID)
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("deferred receipt lost: %v %v", pending, err)
+	}
+	if err := svc.reconcileCaptureAcknowledgments(ctx, cfg); err == nil {
+		t.Fatal("deferred handoff did not schedule another reconciliation")
+	}
+	complete.Store(true)
+	if err := svc.reconcileCaptureAcknowledgments(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	pending, err = svc.store.ListPendingHarnessCaptureReceipts(ctx, cfg.ProjectID, cfg.ID)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("completed receipt still pending: %v %v", pending, err)
+	}
+}

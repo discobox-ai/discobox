@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"runtime"
 
 	api "github.com/discobox-ai/discobox/api/gen"
 	"github.com/spf13/cobra"
@@ -34,14 +35,34 @@ func (a *App) newHarnessChangesCommand() *cobra.Command {
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", action, terminalSafe(f.Path))
 			if content, ok := f.File.Get(); ok {
-				fmt.Fprintln(cmd.OutOrStdout(), terminalSafe(content.Content))
+				fmt.Fprintln(cmd.OutOrStdout(), terminalSafeMultiline(content.Content))
 			}
 		}
 		for _, c := range response.Credentials {
 			fmt.Fprintf(cmd.OutOrStdout(), "credential %s %s (%s)\n", terminalSafe(c.Provider), terminalSafe(c.EnvName), terminalSafe(c.Type))
 		}
+		if len(response.Files)+len(response.Credentials) == 0 {
+			fmt.Fprintln(cmd.OutOrStdout(), "No saveable settings or credentials.")
+		}
 		for _, d := range response.Diagnostics.Or(nil) {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", terminalSafe(d.Code), terminalSafe(d.Message))
+			label := d.Code
+			if path := d.Path.Or(""); path != "" {
+				label += " (" + path + ")"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", terminalSafe(label), terminalSafe(d.Message))
+		}
+		if candidate := response.CandidateId.Or(""); candidate != "" && response.State == "pending" {
+			prefix := "discobox"
+			if a.serverURL != "" {
+				prefix += " --server " + shellQuote(terminalSafe(a.serverURL), runtime.GOOS == "windows")
+			}
+			prefix += " --project " + shellQuote(terminalSafe(project), runtime.GOOS == "windows")
+			boxArg := shellQuote(terminalSafe(box), runtime.GOOS == "windows")
+			candidateArg := shellQuote(terminalSafe(candidate), runtime.GOOS == "windows")
+			if len(response.Files)+len(response.Credentials) > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "\nSave shared defaults: %s admin harness save %s %s\n", prefix, boxArg, candidateArg)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Discard candidate: %s admin harness discard %s %s\n", prefix, boxArg, candidateArg)
 		}
 		return nil
 	}}

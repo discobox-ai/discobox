@@ -138,6 +138,14 @@ Write these down before writing scripts; most become ADR sections.
 
 ## 3. Build `harness/<id>/`
 
+Built-in harness builds use the repository-root context (`docker build -f
+harness/<id>/Dockerfile .`), so COPY sources include `harness/<id>/`. A harness
+using the shared JavaScript exporter also copies `harness/capture/runtime.cjs`,
+`settings.cjs`, and `settings-LICENSE.txt` into its feature and installs all three
+through its own provision steps. Its feature requires Node; the platform does
+not carry these helpers or require an exporter language. Third-party exporters
+may use any executable that implements the JSON command contract.
+
 | File | Contract |
 | --- | --- |
 | `provision.yaml` | the harness's feature (`sandbox-agent/provision/DESIGN.md`): `requires` the platform features the CLI runs on (`node`; omp `bun` too); a `run: install-cli.sh` step; `file` steps for `agent.conf` → `/usr/local/libexec/discobox/agent.conf`, hook/system config, `configure.sh` → `/usr/local/libexec/discobox/configure-<id>` (`0755`), `launch.sh` → `/usr/local/bin/discobox-harness-run` (`0755`), `prompt.sh` → `/usr/local/bin/discobox-prompt` (`0755`) |

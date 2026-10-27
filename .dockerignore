@@ -9,3 +9,6 @@
 *.key
 build
 **/.DS_Store
+
+# Development-only parser/build dependencies never enter an image context.
+**/node_modules

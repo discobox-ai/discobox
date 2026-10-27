@@ -8,14 +8,17 @@ launchers, and configure scripts.
 ## Saving local configuration
 
 The six coding harnesses declare `harness.saveBack` (ADR 26-10-26-573): watched
-home-relative paths, installed export/handoff commands, portable settings fields,
-credential-file schemas, and authoritative provider metadata. The platform ships
-`capture/runtime.cjs` and `capture/settings.cjs`; each bundle installs its metadata
-and normalization module. Interactive configure and background capture share the
+home-relative paths, installed export/handoff commands, settings exclusions,
+credential-file schemas, and authoritative provider metadata. Each built-in coding
+harness bundle carries `capture/runtime.cjs`, `capture/settings.cjs`, and the parser
+licenses beside its metadata and normalization module. The generic platform
+ships none of these: export/handoff are arbitrary installed commands, not a Node
+API. These six built-ins use Node through their own feature dependency. Interactive configure and background capture share the
 normalizers. Configure still owns onboarding and verification.
 
-Export is noninteractive JSON over stdin/stdout. It projects only registered
-settings leaves and converts supported local logins to secret values plus safe
+Export is noninteractive JSON over stdin/stdout. It preserves ordinary settings,
+omits the harness-declared credential/local paths, and converts supported local
+logins to secret values plus safe
 credential templates. Unknown providers, credential commands, unsafe metadata,
 and malformed inputs produce value-free diagnostics and protect local credential
 files. Omission never revokes a login. `BaselineOnly` reads the delivered,
@@ -33,13 +36,27 @@ bindings remain. It never reads a newer local login. A shared credential documen
 is rebuilt together with its binding selection; portable file selection cannot
 separately select an auth template.
 
-Settings support is intentionally a strict projection, declared in each manifest.
-JSON/JSONC accepts comments and trailing commas where the CLI does; TOML/YAML
-accepts scalar settings and simple sections/maps. Unsupported grammar is diagnosed
-without exporting raw content. Trust maps, hook/command definitions, custom
-provider endpoints and arbitrary credential-bearing documents are excluded.
-Codex shares configure's local-project stripping, then appends its registered
-literal template suffix so each consuming sandbox trusts its own working directory.
+Settings preserve unknown preferences, nested objects, arrays, hooks and custom
+provider configuration rather than maintaining a second copy of each vendor's
+preference schema. Each manifest names known credential-bearing paths to exclude
+(including inline API keys and mixed environment/header maps), as well as local
+state such as trust and recent-model history. Exclusion patterns match actual
+object path segments, with `*` for one and `**` for any depth. This is known-shape
+normalization, not a scanner for secrets embedded in arbitrary strings.
+Credential files still use strict schemas and sentinel templates; they are never
+ordinary settings. Recognized exclusions do not themselves create diagnostics.
+JSON/JSONC accepts comments and trailing commas where the CLI does. TOML and YAML
+use the pinned `smol-toml` and `yaml` parsers, bundled into `settings.cjs` by
+`go tool task generate:harness-settings`; its source is `settings-source.cjs`.
+The checked-in parser bundle and `settings-LICENSE.txt` ship with each coding
+harness, so export
+requires no package installation. Parse failures retain prior state. Older
+settings allowlist definitions require a harness metadata refresh; they are not
+silently treated as unrestricted documents.
+Codex removes parsed local-project tables in configure and capture, then appends
+its registered literal template suffix so each consuming sandbox trusts its own
+working directory. Literal `{{` directives in the ordinary settings prefix are
+rejected rather than evaluated as delivery templates.
 The server permits only that exact suffix and validates the portable prefix.
 
 Handoff runs only after durable acceptance. A digest of the exact captured entry
@@ -71,6 +88,11 @@ all six actual exporter commands and validates their output using the server's
 shared protocol validator.
 
 ## Image Contract
+
+Built-in harness Dockerfiles use the repository root as their build context,
+including release and remote dev builds, so each can copy the shared capture
+implementation into its own feature. The watcher tracks those assets for all six
+coding harnesses; shell carries no capture implementation.
 
 - **A harness is a bundle** ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §2): a `FROM scratch` image of its features, `/features/<name>/`, applied

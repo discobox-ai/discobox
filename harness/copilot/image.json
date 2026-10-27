@@ -132,12 +132,16 @@
         {
           "path": ".copilot/settings.json",
           "format": "jsonc",
-          "fields": {
-            "model": "string",
-            "theme": "string",
-            "stream": "boolean",
-            "screenReader": "boolean"
-          }
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "authTokens",
+            "lastLoggedInUser",
+            "env",
+            "mcpServers.*.env",
+            "mcpServers.*.headers",
+            "storeTokenPlaintext"
+          ]
         }
       ],
       "credentialFiles": [
