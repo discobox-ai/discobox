@@ -1,6 +1,7 @@
 # 0011 — OAuth secrets refresh server-side, on resolve
 
-- **Status**: Accepted
+- **Status**: Accepted (§2 narrowed for an originating sandbox by
+  [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md))
 - **Date**: 2026-07-22
 
 ## Context

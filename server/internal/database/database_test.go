@@ -2349,3 +2349,39 @@ func TestHarnessBindingProvenanceUpgradePreservesAssignments(t *testing.T) {
 		t.Fatal("later explicit assignment was reclassified")
 	}
 }
+
+// A database from before save-back keeps its config rows and gains an initial
+// CAS revision; accepted capture receipts are a separate additive table.
+func TestHarnessCaptureMigrationPreservesConfig(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{DSN: ":memory:"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.Write.Exec(`CREATE TABLE harness_configs (id text PRIMARY KEY, project_id text NOT NULL, name text)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Write.Exec(`INSERT INTO harness_configs(id,project_id,name) VALUES ('hc-before','project-before','Before')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Write.AutoMigrate(&model.User{}, &model.Project{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Write.Create(&model.Project{ID: "project-before", OwnerUserID: "user-before", Name: "Before"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var cfg model.HarnessConfig
+	if err := db.Write.First(&cfg, "id = ?", "hc-before").Error; err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Revision != 1 || cfg.Name != "Before" {
+		t.Fatalf("migration changed existing config: revision=%d name=%q", cfg.Revision, cfg.Name)
+	}
+	if !db.Write.Migrator().HasTable(&model.HarnessCaptureReceipt{}) {
+		t.Fatal("missing receipt table")
+	}
+}

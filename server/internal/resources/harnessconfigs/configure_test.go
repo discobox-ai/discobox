@@ -874,6 +874,18 @@ func (s *stubSandboxRuntime) MarkSecretHoldersDirtyTx(_ context.Context, _ *stor
 	return nil
 }
 
+func (s *stubSandboxRuntime) AcquireSandboxHTTPClientForServer(ctx context.Context, p, b string, scopes []string, use services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error) {
+	return s.AcquireSandboxHTTPClient(ctx, p, b, scopes, use)
+}
+func (s *stubSandboxRuntime) EnsureCaptureOriginSecretsTx(context.Context, *store.Store, *gorm.DB, string, string, string, []string) error {
+	return nil
+}
+
+func (s *stubSandboxRuntime) RebindHarnessConfigSecretsTx(_ context.Context, _ *store.Store, _ *gorm.DB, _, configID string) error {
+	s.rebound = append(s.rebound, configID)
+	return nil
+}
+
 func (s *stubSandboxRuntime) RebindHarnessConfigSecrets(_ context.Context, _, harnessConfigID string) error {
 	s.rebound = append(s.rebound, harnessConfigID)
 	return nil
@@ -896,6 +908,8 @@ func (s *stubSandboxRuntime) AcquireSandboxHTTPClient(context.Context, string, s
 }
 
 type stubDirtier struct{}
+
+func (stubDirtier) MarkDirtyTx(context.Context, *gorm.DB, string, string) error { return nil }
 
 func (stubDirtier) MarkDirtyAt(context.Context, string, string, time.Time) error { return nil }
 

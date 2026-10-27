@@ -138,6 +138,14 @@ Write these down before writing scripts; most become ADR sections.
 
 ## 3. Build `harness/<id>/`
 
+Built-in harness builds use the repository-root context (`docker build -f
+harness/<id>/Dockerfile .`), so COPY sources include `harness/<id>/`. A harness
+using the shared JavaScript exporter also copies `harness/capture/runtime.cjs`,
+`settings.cjs`, and `settings-LICENSE.txt` into its feature and installs all three
+through its own provision steps. Its feature requires Node; the platform does
+not carry these helpers or require an exporter language. Third-party exporters
+may use any executable that implements the JSON command contract.
+
 | File | Contract |
 | --- | --- |
 | `provision.yaml` | the harness's feature (`sandbox-agent/provision/DESIGN.md`): `requires` the platform features the CLI runs on (`node`; omp `bun` too); a `run: install-cli.sh` step; `file` steps for `agent.conf` → `/usr/local/libexec/discobox/agent.conf`, hook/system config, `configure.sh` → `/usr/local/libexec/discobox/configure-<id>` (`0755`), `launch.sh` → `/usr/local/bin/discobox-harness-run` (`0755`), `prompt.sh` → `/usr/local/bin/discobox-prompt` (`0755`) |
@@ -339,3 +347,22 @@ end-to-end step in §6, a technique or pitfall in
 to do, and the one fact that makes it necessary. Correct anything here the
 new harness proved wrong; do not leave an exception beside it. Then name the
 harness among the precedents if it is now the clearest example of something.
+
+## Save-back changes
+
+- A harness with `saveBack` installs the same `image.json` that labels its bundle.
+  Configure and background export share normalization code and read refresh
+  provider metadata from this document; do not maintain a second client table.
+- Exercise exporter output against `harnesscapture.Definition.ValidateCandidate`,
+  not only JavaScript fixtures. In particular, native exports with a top-level
+  array and settings with literal dotted keys exercise different schema paths.
+- Database launcher imports take `~/.config/discobox/harness-capture.lock` and
+  check for a new local login first. The agent already holds this lock when
+  invoking export/handoff, so those commands must not acquire it recursively.
+- Process-based deferral must be scoped to the sandbox's HOME as well as the
+  CLI invocation: concurrently running harness test fixtures otherwise look
+  like a live writer in the target database. Verify real CLI argv at runtime.
+- A database handoff implemented as logout then import needs durable progress
+  before logout. Test an import failure after a successful logout, and another
+  account being promoted: retry must finish the accepted import and restore the
+  captured active choice without deleting or overriding unrelated/newer logins.

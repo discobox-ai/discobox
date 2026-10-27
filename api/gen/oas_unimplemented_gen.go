@@ -13,6 +13,15 @@ type UnimplementedHandler struct{}
 
 var _ Handler = UnimplementedHandler{}
 
+// AcknowledgeSandboxHarnessConfig implements acknowledge-sandbox-harness-config operation.
+//
+// Acknowledge sandbox harness config.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-ack
+func (UnimplementedHandler) AcknowledgeSandboxHarnessConfig(ctx context.Context, req *HarnessConfigAcknowledgment, params AcknowledgeSandboxHarnessConfigParams) (r AcknowledgeSandboxHarnessConfigRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ApproveSecretRequest implements approve-secret-request operation.
 //
 // Approve a secret request.
@@ -78,6 +87,15 @@ func (UnimplementedHandler) AttachSandboxExec(ctx context.Context, params Attach
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 func (UnimplementedHandler) AttachSandboxExecOnce(ctx context.Context, req AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (r AttachSandboxExecOnceRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// CaptureSandboxHarnessConfig implements capture-sandbox-harness-config operation.
+//
+// Capture sandbox harness config.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-capture
+func (UnimplementedHandler) CaptureSandboxHarnessConfig(ctx context.Context, req *HarnessConfigCandidateRequest, params CaptureSandboxHarnessConfigParams) (r CaptureSandboxHarnessConfigRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -458,6 +476,15 @@ func (UnimplementedHandler) DenyTrustRequest(ctx context.Context, params DenyTru
 	return r, ht.ErrNotImplemented
 }
 
+// DiscardSandboxHarnessConfigChanges implements discard-sandbox-harness-config-changes operation.
+//
+// Discard sandbox harness config changes.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
+func (UnimplementedHandler) DiscardSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params DiscardSandboxHarnessConfigChangesParams) (r DiscardSandboxHarnessConfigChangesRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ForceJob implements force-job operation.
 //
 // Force a pending, scheduled, or backoff job to run immediately.
@@ -629,6 +656,15 @@ func (UnimplementedHandler) GetSandboxExecResources(ctx context.Context, params 
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
 func (UnimplementedHandler) GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (r GetSandboxExecScreenRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetSandboxHarnessConfigChanges implements get-sandbox-harness-config-changes operation.
+//
+// Get sandbox harness config changes.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
+func (UnimplementedHandler) GetSandboxHarnessConfigChanges(ctx context.Context, params GetSandboxHarnessConfigChangesParams) (r GetSandboxHarnessConfigChangesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -1286,6 +1322,24 @@ func (UnimplementedHandler) ReconcileSandbox(ctx context.Context, params Reconci
 	return r, ht.ErrNotImplemented
 }
 
+// ReconsiderSandboxHarnessConfig implements reconsider-sandbox-harness-config operation.
+//
+// Reconsider sandbox harness config.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-reconsider
+func (UnimplementedHandler) ReconsiderSandboxHarnessConfig(ctx context.Context, req *HarnessConfigReconsideration, params ReconsiderSandboxHarnessConfigParams) (r ReconsiderSandboxHarnessConfigRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ReconsiderSandboxHarnessConfigChanges implements reconsider-sandbox-harness-config-changes operation.
+//
+// Reconsider sandbox harness config changes.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/reconsider
+func (UnimplementedHandler) ReconsiderSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigSelection, params ReconsiderSandboxHarnessConfigChangesParams) (r ReconsiderSandboxHarnessConfigChangesRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // RefreshHarnessConfigImage implements refresh-harness-config-image operation.
 //
 // Re-inspect the harness config's bundle, or its manifest file, and re-snapshot its label
@@ -1454,6 +1508,15 @@ func (UnimplementedHandler) ResumeSandboxAutostop(ctx context.Context, params Re
 //
 // DELETE /projects/{projectId}/secret-grants/{grantId}
 func (UnimplementedHandler) RevokeSecretGrant(ctx context.Context, params RevokeSecretGrantParams) (r RevokeSecretGrantRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// SaveSandboxHarnessConfigChanges implements save-sandbox-harness-config-changes operation.
+//
+// Save sandbox harness config changes.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
+func (UnimplementedHandler) SaveSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params SaveSandboxHarnessConfigChangesParams) (r SaveSandboxHarnessConfigChangesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

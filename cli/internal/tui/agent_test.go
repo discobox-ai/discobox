@@ -105,3 +105,23 @@ func TestTheCursorRowSaysWhatIsStillProvisioning(t *testing.T) {
 		t.Fatalf("provisioning displaced what the agent is blocked on:\n%s", out)
 	}
 }
+
+func TestCursorNotifiesPendingHarnessCapture(t *testing.T) {
+	boxes := agentBoxes()
+	boxes[1].Name = "dynamic program title"
+	boxes[1].HarnessConfigPending = true
+	l := listForTest(Session{}, boxes)
+	l.width = 150
+	l.moveTo(1)
+	out := ansi.Strip(l.view(newStyles(true), &zones{}, true))
+	if !strings.Contains(out, "harness changes: H to review") {
+		t.Fatalf("missing capture notice: %s", out)
+	}
+	boxes[0].HarnessConfigPending = true
+	l = listForTest(Session{}, boxes)
+	l.moveTo(0)
+	out = ansi.Strip(l.view(newStyles(true), &zones{}, true))
+	if !strings.Contains(out, "Allow rm") {
+		t.Fatalf("capture displaced blocking question: %s", out)
+	}
+}

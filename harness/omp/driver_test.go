@@ -64,7 +64,7 @@ func readFile(t *testing.T, path string) string {
 }
 
 func TestDefinitionConfigure(t *testing.T) {
-	script := readFile(t, "configure.sh")
+	script := readFile(t, "configure.sh") + readFile(t, "omp-normalize.cjs") + readFile(t, "image.json")
 	for _, required := range []string{
 		harness.ConfigureOutputPath,
 		harness.ConfigurePreviousConfigPath,
@@ -173,7 +173,7 @@ func TestTheHomeFileLoadsTheInstalledExtension(t *testing.T) {
 	if !strings.Contains(shim, `export { default } from "`+installedHookExt+`";`) {
 		t.Fatalf("%s = %q, want it to re-export %s", hookShimPath, shim, installedHookExt)
 	}
-	if got := featuretest.Load(t).Installs("hook-extension.js"); got != installedHookExt {
+	if got := featuretest.Load(t, ".").Installs("hook-extension.js"); got != installedHookExt {
 		t.Errorf("the feature installs the extension at %q, want %s", got, installedHookExt)
 	}
 }
@@ -218,7 +218,7 @@ func TestImagePolicy(t *testing.T) {
 	if scalars["startup.setupWizard"] != false || scalars["startup.checkUpdate"] != false {
 		t.Fatalf("overlay = %v, want the setup wizard and the update check off", scalars)
 	}
-	feature := featuretest.Load(t)
+	feature := featuretest.Load(t, ".")
 	for source, want := range map[string]string{
 		"discobox.yml": overlayPath,
 		"proxy-env.sh": "/etc/profile.d/omp-proxy.sh",
@@ -304,14 +304,16 @@ func TestLaunchImportsTheCredentials(t *testing.T) {
 				failure = `if [ "$1" = auth ]; then echo "bad export" >&2; exit 1; fi`
 			}
 			writeExecutable(t, filepath.Join(bin, "omp"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$LOG\"\n"+failure+"\n")
-			cmd := exec.CommandContext(t.Context(), "sh", "launch.sh") //nolint:gosec // The launcher under test.
+			launcher := filepath.Join(dir, "launch.sh")
+			writeExecutable(t, launcher, strings.ReplaceAll(readFile(t, "launch.sh"), "/usr/local/libexec/discobox/omp-capture", "true"))
+			cmd := exec.CommandContext(t.Context(), "sh", launcher) //nolint:gosec // The launcher under test.
 			log := filepath.Join(dir, "log")
 			cmd.Env = append(os.Environ(), "HOME="+home, "LOG="+log, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("launch.sh: %v\n%s", err, out)
 			}
-			if tc.importFails && !strings.Contains(string(out), "bad export") {
+			if tc.importFails && !strings.Contains(string(out), "could not import") {
 				t.Errorf("a failed import was not reported: %q", out)
 			}
 			got := strings.Split(strings.TrimSpace(strings.ReplaceAll(readFile(t, log), home, "HOME")), "\n")

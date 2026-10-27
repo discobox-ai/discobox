@@ -25,7 +25,11 @@ func TestUpdateHarnessConfigSetsTheEgressLevel(t *testing.T) {
 	runtime := &stubSandboxRuntime{}
 	svc := &Service{store: st, sandboxes: runtime}
 	level := func(allow ...string) services.UpdateHarnessConfigBody {
-		return services.UpdateHarnessConfigBody{Egress: serverapi.NewOptEgressPolicy(serverapi.EgressPolicy{
+		current, err := st.GetHarnessConfig(ctx, "project-1", config.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return services.UpdateHarnessConfigBody{Revision: current.Revision, Egress: serverapi.NewOptEgressPolicy(serverapi.EgressPolicy{
 			Allow: serverapi.NewOptNilStringArray(allow), DenyByDefault: serverapi.NewOptBool(true),
 		})}
 	}
@@ -42,7 +46,7 @@ func TestUpdateHarnessConfigSetsTheEgressLevel(t *testing.T) {
 		t.Fatalf("converged %v, want this config's discoboxes", runtime.egressChanged)
 	}
 
-	if _, err := svc.UpdateHarnessConfig(ctx, "project-1", config.ID, services.UpdateHarnessConfigBody{Name: serverapi.NewOptString("Renamed")}); err != nil {
+	if _, err := svc.UpdateHarnessConfig(ctx, "project-1", config.ID, services.UpdateHarnessConfigBody{Revision: updated.Revision, Name: serverapi.NewOptString("Renamed")}); err != nil {
 		t.Fatalf("rename: %v", err)
 	}
 	if len(runtime.egressChanged) != 1 {

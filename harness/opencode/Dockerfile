@@ -10,6 +10,9 @@ ARG HARNESS_METADATA
 # that forgot rather than as a bundle declaring nothing, and only a running
 # server would ever say so. A FROM scratch stage has no shell to check it in,
 # so the expansion does.
-LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
-COPY agent.conf check-launcher.sh configure.sh credentials.sh install-cli.sh launch.sh managed-config.json model.sh prompt.sh provision.yaml /features/opencode/
-COPY hook-plugin /features/opencode/hook-plugin
+LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . harness/opencode/image.json)\"}"
+COPY harness/opencode/agent.conf harness/opencode/check-launcher.sh harness/opencode/configure.sh harness/opencode/credentials.sh harness/opencode/install-cli.sh harness/opencode/launch.sh harness/opencode/managed-config.json harness/opencode/model.sh harness/opencode/prompt.sh harness/opencode/provision.yaml /features/opencode/
+COPY harness/opencode/hook-plugin /features/opencode/hook-plugin
+COPY harness/opencode/capture.sh harness/opencode/image.json harness/opencode/opencode-normalize.cjs /features/opencode/
+# The exporter is owned by this harness; the generic platform has no JS runtime.
+COPY harness/capture/runtime.cjs harness/capture/settings.cjs harness/capture/settings-LICENSE.txt /features/opencode/harness-capture/

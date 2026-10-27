@@ -5,21 +5,21 @@ set -euo pipefail
 set -eu
 missing=""
 # dockerfile:context. A COPY source is relative to the build context,
-# not to the Dockerfile, and the harness bundles are the ones built from
-# somewhere other than the repository root.
+# not to the Dockerfile. Harness bundles use the root context so they can
+# copy their shared settings exporter and parser licenses.
 for entry in \
   server/providers/dockerworker/sandbox-image/Dockerfile:server/providers/dockerworker/sandbox-image \
   pool-agent/Dockerfile:. \
   sandbox-agent/Dockerfile:. \
   vm-image/Dockerfile:. \
   vm-image/kernel/Dockerfile:. \
-  harness/claude-code/Dockerfile:harness/claude-code \
-  harness/codex-cli/Dockerfile:harness/codex-cli \
-  harness/opencode/Dockerfile:harness/opencode \
-  harness/copilot/Dockerfile:harness/copilot \
-  harness/omp/Dockerfile:harness/omp \
-  harness/pi/Dockerfile:harness/pi \
-  harness/shell/Dockerfile:harness/shell; do
+  harness/claude-code/Dockerfile:. \
+  harness/codex-cli/Dockerfile:. \
+  harness/opencode/Dockerfile:. \
+  harness/copilot/Dockerfile:. \
+  harness/omp/Dockerfile:. \
+  harness/pi/Dockerfile:. \
+  harness/shell/Dockerfile:.; do
   dockerfile="${entry%:*}"
   context="${entry##*:}"
   # All but the last token of a COPY are sources; --from copies from an

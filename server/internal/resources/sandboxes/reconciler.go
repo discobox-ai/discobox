@@ -694,7 +694,16 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			return CreateOptions{}, fmt.Errorf("resolve harness config %s for sandbox %s: %w", *sb.HarnessConfigID, sb.ID, err)
 		}
 		{
+			baseline, err := r.store.CaptureBaseline(ctx, sb.ProjectID, cfg.ID)
+			if err != nil {
+				return opts, err
+			}
+			if cfg.Revision != baseline.ConfigRevision {
+				return opts, store.ErrGenerationConflict
+			}
 			opts.ResolvedHarnessConfig = &ResolvedHarnessConfig{
+				SaveBack:         cfg.SaveBack,
+				CaptureBaseline:  &baseline,
 				ID:               cfg.ID,
 				Name:             cfg.Name,
 				RunCommand:       cfg.RunCommand,

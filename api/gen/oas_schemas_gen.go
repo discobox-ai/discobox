@@ -4126,136 +4126,138 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 	s.Response = val
 }
 
-func (*ErrorModelStatusCode) approveSecretRequestRes()             {}
-func (*ErrorModelStatusCode) approveTrustRequestRes()              {}
-func (*ErrorModelStatusCode) assignSandboxHarnessSecretsRes()      {}
-func (*ErrorModelStatusCode) attachHarnessConfigConfigureRes()     {}
-func (*ErrorModelStatusCode) clearPoolCacheRes()                   {}
-func (*ErrorModelStatusCode) commitHarnessConfigConfigureRes()     {}
-func (*ErrorModelStatusCode) completeSandboxApplyRes()             {}
-func (*ErrorModelStatusCode) completeSandboxSourcePushRes()        {}
-func (*ErrorModelStatusCode) configureHarnessConfigRes()           {}
-func (*ErrorModelStatusCode) createApprovalRuleRes()               {}
-func (*ErrorModelStatusCode) createHarnessConfigRes()              {}
-func (*ErrorModelStatusCode) createPeerRes()                       {}
-func (*ErrorModelStatusCode) createPoolRes()                       {}
-func (*ErrorModelStatusCode) createProjectRes()                    {}
-func (*ErrorModelStatusCode) createProjectSkillsSourceRes()        {}
-func (*ErrorModelStatusCode) createSSHKeyRes()                     {}
-func (*ErrorModelStatusCode) createSandboxCredentialRequestRes()   {}
-func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()    {}
-func (*ErrorModelStatusCode) createSandboxRes()                    {}
-func (*ErrorModelStatusCode) createSandboxTrustRequestRes()        {}
-func (*ErrorModelStatusCode) createSecretGrantRes()                {}
-func (*ErrorModelStatusCode) createSecretRequestRes()              {}
-func (*ErrorModelStatusCode) createSecretRes()                     {}
-func (*ErrorModelStatusCode) deconfigureHarnessConfigRes()         {}
-func (*ErrorModelStatusCode) deleteApprovalRuleRes()               {}
-func (*ErrorModelStatusCode) deleteHarnessConfigRes()              {}
-func (*ErrorModelStatusCode) deleteHarnessConfigSecretBindingRes() {}
-func (*ErrorModelStatusCode) deletePeerRes()                       {}
-func (*ErrorModelStatusCode) deletePoolRes()                       {}
-func (*ErrorModelStatusCode) deleteProjectGatewayRes()             {}
-func (*ErrorModelStatusCode) deleteProjectRes()                    {}
-func (*ErrorModelStatusCode) deleteProjectSkillsSourceRes()        {}
-func (*ErrorModelStatusCode) deleteSSHKeyRes()                     {}
-func (*ErrorModelStatusCode) deleteSandboxHostTrustRes()           {}
-func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()    {}
-func (*ErrorModelStatusCode) deleteSandboxRes()                    {}
-func (*ErrorModelStatusCode) deleteSecretRes()                     {}
-func (*ErrorModelStatusCode) denySecretRequestRes()                {}
-func (*ErrorModelStatusCode) denyTrustRequestRes()                 {}
-func (*ErrorModelStatusCode) forceJobRes()                         {}
-func (*ErrorModelStatusCode) getApprovalRuleRes()                  {}
-func (*ErrorModelStatusCode) getHTTPAuditRes()                     {}
-func (*ErrorModelStatusCode) getHarnessConfigRes()                 {}
-func (*ErrorModelStatusCode) getJobRes()                           {}
-func (*ErrorModelStatusCode) getPoolAssetBlobRes()                 {}
-func (*ErrorModelStatusCode) getPoolAssetManifestRes()             {}
-func (*ErrorModelStatusCode) getPoolRes()                          {}
-func (*ErrorModelStatusCode) getProjectGatewayRes()                {}
-func (*ErrorModelStatusCode) getProjectRes()                       {}
-func (*ErrorModelStatusCode) getSSHIngressRes()                    {}
-func (*ErrorModelStatusCode) getSandboxCredentialRequestRes()      {}
-func (*ErrorModelStatusCode) getSandboxPolicyFactsRes()            {}
-func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()       {}
-func (*ErrorModelStatusCode) getSandboxRes()                       {}
-func (*ErrorModelStatusCode) getSandboxTrustRequestRes()           {}
-func (*ErrorModelStatusCode) getSecretRequestRes()                 {}
-func (*ErrorModelStatusCode) getSecretRes()                        {}
-func (*ErrorModelStatusCode) getServerInfoRes()                    {}
-func (*ErrorModelStatusCode) getServerPeerRes()                    {}
-func (*ErrorModelStatusCode) getTrustRequestRes()                  {}
-func (*ErrorModelStatusCode) judgeCommandForPoolRes()              {}
-func (*ErrorModelStatusCode) judgeForPoolRes()                     {}
-func (*ErrorModelStatusCode) listApprovalRequestsRes()             {}
-func (*ErrorModelStatusCode) listApprovalRulesRes()                {}
-func (*ErrorModelStatusCode) listCredentialVerdictsRes()           {}
-func (*ErrorModelStatusCode) listDNSAuditRes()                     {}
-func (*ErrorModelStatusCode) listHTTPAuditRes()                    {}
-func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()  {}
-func (*ErrorModelStatusCode) listHarnessConfigsRes()               {}
-func (*ErrorModelStatusCode) listJobsRes()                         {}
-func (*ErrorModelStatusCode) listPeersRes()                        {}
-func (*ErrorModelStatusCode) listPoolHeldSandboxesRes()            {}
-func (*ErrorModelStatusCode) listPoolHostTrustsRes()               {}
-func (*ErrorModelStatusCode) listPoolsRes()                        {}
-func (*ErrorModelStatusCode) listProjectGatewaysRes()              {}
-func (*ErrorModelStatusCode) listProjectSkillsSourcesRes()         {}
-func (*ErrorModelStatusCode) listProjectsRes()                     {}
-func (*ErrorModelStatusCode) listSSHKeysRes()                      {}
-func (*ErrorModelStatusCode) listSandboxCredentialsRes()           {}
-func (*ErrorModelStatusCode) listSandboxHostTrustsRes()            {}
-func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()       {}
-func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()     {}
-func (*ErrorModelStatusCode) listSandboxesRes()                    {}
-func (*ErrorModelStatusCode) listSecretGrantsRes()                 {}
-func (*ErrorModelStatusCode) listSecretRefreshesRes()              {}
-func (*ErrorModelStatusCode) listSecretRejectionsRes()             {}
-func (*ErrorModelStatusCode) listSecretRequestsRes()               {}
-func (*ErrorModelStatusCode) listSecretsRes()                      {}
-func (*ErrorModelStatusCode) listTrustRequestsRes()                {}
-func (*ErrorModelStatusCode) mintSandboxAgentStatusTokensRes()     {}
-func (*ErrorModelStatusCode) proposeApprovalRuleFromGrantRes()     {}
-func (*ErrorModelStatusCode) proposeApprovalRulesRes()             {}
-func (*ErrorModelStatusCode) pullSandboxSourceRes()                {}
-func (*ErrorModelStatusCode) purgeSandboxRes()                     {}
-func (*ErrorModelStatusCode) putProjectGatewayRes()                {}
-func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
-func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
-func (*ErrorModelStatusCode) refreshHarnessConfigImageRes()        {}
-func (*ErrorModelStatusCode) refreshSecretRes()                    {}
-func (*ErrorModelStatusCode) repairSandboxRes()                    {}
-func (*ErrorModelStatusCode) reportPoolResourcesRes()              {}
-func (*ErrorModelStatusCode) reportPoolSandboxStatesRes()          {}
-func (*ErrorModelStatusCode) reportSandboxAgentStatusRes()         {}
-func (*ErrorModelStatusCode) reportSandboxInventoriesRes()         {}
-func (*ErrorModelStatusCode) reportSandboxSecretRejectionRes()     {}
-func (*ErrorModelStatusCode) resolveGatewayHeadersRes()            {}
-func (*ErrorModelStatusCode) resolvePoolAssetRes()                 {}
-func (*ErrorModelStatusCode) resolveSandboxSecretRes()             {}
-func (*ErrorModelStatusCode) restartSandboxRes()                   {}
-func (*ErrorModelStatusCode) revokeSecretGrantRes()                {}
-func (*ErrorModelStatusCode) setDefaultHarnessConfigRes()          {}
-func (*ErrorModelStatusCode) setDefaultPoolRes()                   {}
-func (*ErrorModelStatusCode) setDefaultProjectRes()                {}
-func (*ErrorModelStatusCode) setHarnessConfigSecretBindingRes()    {}
-func (*ErrorModelStatusCode) startSandboxRes()                     {}
-func (*ErrorModelStatusCode) stopSandboxRes()                      {}
-func (*ErrorModelStatusCode) suspendSandboxRes()                   {}
-func (*ErrorModelStatusCode) unarchiveSandboxRes()                 {}
-func (*ErrorModelStatusCode) unsetDefaultHarnessConfigRes()        {}
-func (*ErrorModelStatusCode) unsetDefaultPoolRes()                 {}
-func (*ErrorModelStatusCode) updateApprovalRuleRes()               {}
-func (*ErrorModelStatusCode) updateHarnessConfigRes()              {}
-func (*ErrorModelStatusCode) updatePoolRes()                       {}
-func (*ErrorModelStatusCode) updatePoolStatusRes()                 {}
-func (*ErrorModelStatusCode) updateProjectRes()                    {}
-func (*ErrorModelStatusCode) updateSandboxMetaRes()                {}
-func (*ErrorModelStatusCode) updateSandboxProviderInstanceRes()    {}
-func (*ErrorModelStatusCode) updateSandboxRes()                    {}
-func (*ErrorModelStatusCode) updateSecretRes()                     {}
-func (*ErrorModelStatusCode) upgradeSandboxRes()                   {}
+func (*ErrorModelStatusCode) approveSecretRequestRes()                  {}
+func (*ErrorModelStatusCode) approveTrustRequestRes()                   {}
+func (*ErrorModelStatusCode) assignSandboxHarnessSecretsRes()           {}
+func (*ErrorModelStatusCode) attachHarnessConfigConfigureRes()          {}
+func (*ErrorModelStatusCode) clearPoolCacheRes()                        {}
+func (*ErrorModelStatusCode) commitHarnessConfigConfigureRes()          {}
+func (*ErrorModelStatusCode) completeSandboxApplyRes()                  {}
+func (*ErrorModelStatusCode) completeSandboxSourcePushRes()             {}
+func (*ErrorModelStatusCode) configureHarnessConfigRes()                {}
+func (*ErrorModelStatusCode) createApprovalRuleRes()                    {}
+func (*ErrorModelStatusCode) createHarnessConfigRes()                   {}
+func (*ErrorModelStatusCode) createPeerRes()                            {}
+func (*ErrorModelStatusCode) createPoolRes()                            {}
+func (*ErrorModelStatusCode) createProjectRes()                         {}
+func (*ErrorModelStatusCode) createProjectSkillsSourceRes()             {}
+func (*ErrorModelStatusCode) createSSHKeyRes()                          {}
+func (*ErrorModelStatusCode) createSandboxCredentialRequestRes()        {}
+func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()         {}
+func (*ErrorModelStatusCode) createSandboxRes()                         {}
+func (*ErrorModelStatusCode) createSandboxTrustRequestRes()             {}
+func (*ErrorModelStatusCode) createSecretGrantRes()                     {}
+func (*ErrorModelStatusCode) createSecretRequestRes()                   {}
+func (*ErrorModelStatusCode) createSecretRes()                          {}
+func (*ErrorModelStatusCode) deconfigureHarnessConfigRes()              {}
+func (*ErrorModelStatusCode) deleteApprovalRuleRes()                    {}
+func (*ErrorModelStatusCode) deleteHarnessConfigRes()                   {}
+func (*ErrorModelStatusCode) deleteHarnessConfigSecretBindingRes()      {}
+func (*ErrorModelStatusCode) deletePeerRes()                            {}
+func (*ErrorModelStatusCode) deletePoolRes()                            {}
+func (*ErrorModelStatusCode) deleteProjectGatewayRes()                  {}
+func (*ErrorModelStatusCode) deleteProjectRes()                         {}
+func (*ErrorModelStatusCode) deleteProjectSkillsSourceRes()             {}
+func (*ErrorModelStatusCode) deleteSSHKeyRes()                          {}
+func (*ErrorModelStatusCode) deleteSandboxHostTrustRes()                {}
+func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()         {}
+func (*ErrorModelStatusCode) deleteSandboxRes()                         {}
+func (*ErrorModelStatusCode) deleteSecretRes()                          {}
+func (*ErrorModelStatusCode) denySecretRequestRes()                     {}
+func (*ErrorModelStatusCode) denyTrustRequestRes()                      {}
+func (*ErrorModelStatusCode) forceJobRes()                              {}
+func (*ErrorModelStatusCode) getApprovalRuleRes()                       {}
+func (*ErrorModelStatusCode) getHTTPAuditRes()                          {}
+func (*ErrorModelStatusCode) getHarnessConfigRes()                      {}
+func (*ErrorModelStatusCode) getJobRes()                                {}
+func (*ErrorModelStatusCode) getPoolAssetBlobRes()                      {}
+func (*ErrorModelStatusCode) getPoolAssetManifestRes()                  {}
+func (*ErrorModelStatusCode) getPoolRes()                               {}
+func (*ErrorModelStatusCode) getProjectGatewayRes()                     {}
+func (*ErrorModelStatusCode) getProjectRes()                            {}
+func (*ErrorModelStatusCode) getSSHIngressRes()                         {}
+func (*ErrorModelStatusCode) getSandboxCredentialRequestRes()           {}
+func (*ErrorModelStatusCode) getSandboxPolicyFactsRes()                 {}
+func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()            {}
+func (*ErrorModelStatusCode) getSandboxRes()                            {}
+func (*ErrorModelStatusCode) getSandboxTrustRequestRes()                {}
+func (*ErrorModelStatusCode) getSecretRequestRes()                      {}
+func (*ErrorModelStatusCode) getSecretRes()                             {}
+func (*ErrorModelStatusCode) getServerInfoRes()                         {}
+func (*ErrorModelStatusCode) getServerPeerRes()                         {}
+func (*ErrorModelStatusCode) getTrustRequestRes()                       {}
+func (*ErrorModelStatusCode) judgeCommandForPoolRes()                   {}
+func (*ErrorModelStatusCode) judgeForPoolRes()                          {}
+func (*ErrorModelStatusCode) listApprovalRequestsRes()                  {}
+func (*ErrorModelStatusCode) listApprovalRulesRes()                     {}
+func (*ErrorModelStatusCode) listCredentialVerdictsRes()                {}
+func (*ErrorModelStatusCode) listDNSAuditRes()                          {}
+func (*ErrorModelStatusCode) listHTTPAuditRes()                         {}
+func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()       {}
+func (*ErrorModelStatusCode) listHarnessConfigsRes()                    {}
+func (*ErrorModelStatusCode) listJobsRes()                              {}
+func (*ErrorModelStatusCode) listPeersRes()                             {}
+func (*ErrorModelStatusCode) listPoolHeldSandboxesRes()                 {}
+func (*ErrorModelStatusCode) listPoolHostTrustsRes()                    {}
+func (*ErrorModelStatusCode) listPoolsRes()                             {}
+func (*ErrorModelStatusCode) listProjectGatewaysRes()                   {}
+func (*ErrorModelStatusCode) listProjectSkillsSourcesRes()              {}
+func (*ErrorModelStatusCode) listProjectsRes()                          {}
+func (*ErrorModelStatusCode) listSSHKeysRes()                           {}
+func (*ErrorModelStatusCode) listSandboxCredentialsRes()                {}
+func (*ErrorModelStatusCode) listSandboxHostTrustsRes()                 {}
+func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()            {}
+func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()          {}
+func (*ErrorModelStatusCode) listSandboxesRes()                         {}
+func (*ErrorModelStatusCode) listSecretGrantsRes()                      {}
+func (*ErrorModelStatusCode) listSecretRefreshesRes()                   {}
+func (*ErrorModelStatusCode) listSecretRejectionsRes()                  {}
+func (*ErrorModelStatusCode) listSecretRequestsRes()                    {}
+func (*ErrorModelStatusCode) listSecretsRes()                           {}
+func (*ErrorModelStatusCode) listTrustRequestsRes()                     {}
+func (*ErrorModelStatusCode) mintSandboxAgentStatusTokensRes()          {}
+func (*ErrorModelStatusCode) proposeApprovalRuleFromGrantRes()          {}
+func (*ErrorModelStatusCode) proposeApprovalRulesRes()                  {}
+func (*ErrorModelStatusCode) pullSandboxSourceRes()                     {}
+func (*ErrorModelStatusCode) purgeSandboxRes()                          {}
+func (*ErrorModelStatusCode) putProjectGatewayRes()                     {}
+func (*ErrorModelStatusCode) reconcilePoolRes()                         {}
+func (*ErrorModelStatusCode) reconcileSandboxRes()                      {}
+func (*ErrorModelStatusCode) reconsiderSandboxHarnessConfigChangesRes() {}
+func (*ErrorModelStatusCode) refreshHarnessConfigImageRes()             {}
+func (*ErrorModelStatusCode) refreshSecretRes()                         {}
+func (*ErrorModelStatusCode) repairSandboxRes()                         {}
+func (*ErrorModelStatusCode) reportPoolResourcesRes()                   {}
+func (*ErrorModelStatusCode) reportPoolSandboxStatesRes()               {}
+func (*ErrorModelStatusCode) reportSandboxAgentStatusRes()              {}
+func (*ErrorModelStatusCode) reportSandboxInventoriesRes()              {}
+func (*ErrorModelStatusCode) reportSandboxSecretRejectionRes()          {}
+func (*ErrorModelStatusCode) resolveGatewayHeadersRes()                 {}
+func (*ErrorModelStatusCode) resolvePoolAssetRes()                      {}
+func (*ErrorModelStatusCode) resolveSandboxSecretRes()                  {}
+func (*ErrorModelStatusCode) restartSandboxRes()                        {}
+func (*ErrorModelStatusCode) revokeSecretGrantRes()                     {}
+func (*ErrorModelStatusCode) saveSandboxHarnessConfigChangesRes()       {}
+func (*ErrorModelStatusCode) setDefaultHarnessConfigRes()               {}
+func (*ErrorModelStatusCode) setDefaultPoolRes()                        {}
+func (*ErrorModelStatusCode) setDefaultProjectRes()                     {}
+func (*ErrorModelStatusCode) setHarnessConfigSecretBindingRes()         {}
+func (*ErrorModelStatusCode) startSandboxRes()                          {}
+func (*ErrorModelStatusCode) stopSandboxRes()                           {}
+func (*ErrorModelStatusCode) suspendSandboxRes()                        {}
+func (*ErrorModelStatusCode) unarchiveSandboxRes()                      {}
+func (*ErrorModelStatusCode) unsetDefaultHarnessConfigRes()             {}
+func (*ErrorModelStatusCode) unsetDefaultPoolRes()                      {}
+func (*ErrorModelStatusCode) updateApprovalRuleRes()                    {}
+func (*ErrorModelStatusCode) updateHarnessConfigRes()                   {}
+func (*ErrorModelStatusCode) updatePoolRes()                            {}
+func (*ErrorModelStatusCode) updatePoolStatusRes()                      {}
+func (*ErrorModelStatusCode) updateProjectRes()                         {}
+func (*ErrorModelStatusCode) updateSandboxMetaRes()                     {}
+func (*ErrorModelStatusCode) updateSandboxProviderInstanceRes()         {}
+func (*ErrorModelStatusCode) updateSandboxRes()                         {}
+func (*ErrorModelStatusCode) updateSecretRes()                          {}
+func (*ErrorModelStatusCode) upgradeSandboxRes()                        {}
 
 // Ref: #/components/schemas/ErrorResponse
 type ErrorResponse struct {
@@ -4299,49 +4301,54 @@ func (s *ErrorResponseStatusCode) SetResponse(val ErrorResponse) {
 	s.Response = val
 }
 
-func (*ErrorResponseStatusCode) attachSandboxExecOnceRes()          {}
-func (*ErrorResponseStatusCode) attachSandboxExecRes()              {}
-func (*ErrorResponseStatusCode) confirmSandboxAutostopRes()         {}
-func (*ErrorResponseStatusCode) copySandboxFileRes()                {}
-func (*ErrorResponseStatusCode) createSandboxExecRes()              {}
-func (*ErrorResponseStatusCode) deleteSandboxExecRes()              {}
-func (*ErrorResponseStatusCode) getSandboxAgentInventoryRes()       {}
-func (*ErrorResponseStatusCode) getSandboxAgentStatusRes()          {}
-func (*ErrorResponseStatusCode) getSandboxExecRes()                 {}
-func (*ErrorResponseStatusCode) getSandboxExecResourcesRes()        {}
-func (*ErrorResponseStatusCode) getSandboxExecScreenRes()           {}
-func (*ErrorResponseStatusCode) getSandboxRuntimeConfigRes()        {}
-func (*ErrorResponseStatusCode) getSandboxServiceRes()              {}
-func (*ErrorResponseStatusCode) getSandboxSourceProjectLayerRes()   {}
-func (*ErrorResponseStatusCode) getSandboxSourceStatesRes()         {}
-func (*ErrorResponseStatusCode) judgeSandboxRes()                   {}
-func (*ErrorResponseStatusCode) listExecEventsRes()                 {}
-func (*ErrorResponseStatusCode) listHarnessHooksRes()               {}
-func (*ErrorResponseStatusCode) listSandboxExecEventsRes()          {}
-func (*ErrorResponseStatusCode) listSandboxExecLogsRes()            {}
-func (*ErrorResponseStatusCode) listSandboxExecResourceHistoryRes() {}
-func (*ErrorResponseStatusCode) listSandboxExecsRes()               {}
-func (*ErrorResponseStatusCode) listSandboxFilesRes()               {}
-func (*ErrorResponseStatusCode) listSandboxServiceLogsRes()         {}
-func (*ErrorResponseStatusCode) listSandboxServicesRes()            {}
-func (*ErrorResponseStatusCode) listSandboxToolsRes()               {}
-func (*ErrorResponseStatusCode) makeSandboxDirectoryRes()           {}
-func (*ErrorResponseStatusCode) moveSandboxFileRes()                {}
-func (*ErrorResponseStatusCode) proposeSandboxRuleRes()             {}
-func (*ErrorResponseStatusCode) putSandboxRuntimeConfigRes()        {}
-func (*ErrorResponseStatusCode) readSandboxFileRes()                {}
-func (*ErrorResponseStatusCode) removeSandboxFileRes()              {}
-func (*ErrorResponseStatusCode) restartSandboxServiceRes()          {}
-func (*ErrorResponseStatusCode) resumeSandboxAutostopRes()          {}
-func (*ErrorResponseStatusCode) sendSandboxExecInputRes()           {}
-func (*ErrorResponseStatusCode) startSandboxExecRes()               {}
-func (*ErrorResponseStatusCode) startSandboxServiceRes()            {}
-func (*ErrorResponseStatusCode) statSandboxFileRes()                {}
-func (*ErrorResponseStatusCode) stopSandboxServiceRes()             {}
-func (*ErrorResponseStatusCode) streamSandboxExecResourcesRes()     {}
-func (*ErrorResponseStatusCode) updateSandboxAgentMetaRes()         {}
-func (*ErrorResponseStatusCode) waitSandboxExecRes()                {}
-func (*ErrorResponseStatusCode) writeSandboxFileRes()               {}
+func (*ErrorResponseStatusCode) acknowledgeSandboxHarnessConfigRes()    {}
+func (*ErrorResponseStatusCode) attachSandboxExecOnceRes()              {}
+func (*ErrorResponseStatusCode) attachSandboxExecRes()                  {}
+func (*ErrorResponseStatusCode) captureSandboxHarnessConfigRes()        {}
+func (*ErrorResponseStatusCode) confirmSandboxAutostopRes()             {}
+func (*ErrorResponseStatusCode) copySandboxFileRes()                    {}
+func (*ErrorResponseStatusCode) createSandboxExecRes()                  {}
+func (*ErrorResponseStatusCode) deleteSandboxExecRes()                  {}
+func (*ErrorResponseStatusCode) discardSandboxHarnessConfigChangesRes() {}
+func (*ErrorResponseStatusCode) getSandboxAgentInventoryRes()           {}
+func (*ErrorResponseStatusCode) getSandboxAgentStatusRes()              {}
+func (*ErrorResponseStatusCode) getSandboxExecRes()                     {}
+func (*ErrorResponseStatusCode) getSandboxExecResourcesRes()            {}
+func (*ErrorResponseStatusCode) getSandboxExecScreenRes()               {}
+func (*ErrorResponseStatusCode) getSandboxHarnessConfigChangesRes()     {}
+func (*ErrorResponseStatusCode) getSandboxRuntimeConfigRes()            {}
+func (*ErrorResponseStatusCode) getSandboxServiceRes()                  {}
+func (*ErrorResponseStatusCode) getSandboxSourceProjectLayerRes()       {}
+func (*ErrorResponseStatusCode) getSandboxSourceStatesRes()             {}
+func (*ErrorResponseStatusCode) judgeSandboxRes()                       {}
+func (*ErrorResponseStatusCode) listExecEventsRes()                     {}
+func (*ErrorResponseStatusCode) listHarnessHooksRes()                   {}
+func (*ErrorResponseStatusCode) listSandboxExecEventsRes()              {}
+func (*ErrorResponseStatusCode) listSandboxExecLogsRes()                {}
+func (*ErrorResponseStatusCode) listSandboxExecResourceHistoryRes()     {}
+func (*ErrorResponseStatusCode) listSandboxExecsRes()                   {}
+func (*ErrorResponseStatusCode) listSandboxFilesRes()                   {}
+func (*ErrorResponseStatusCode) listSandboxServiceLogsRes()             {}
+func (*ErrorResponseStatusCode) listSandboxServicesRes()                {}
+func (*ErrorResponseStatusCode) listSandboxToolsRes()                   {}
+func (*ErrorResponseStatusCode) makeSandboxDirectoryRes()               {}
+func (*ErrorResponseStatusCode) moveSandboxFileRes()                    {}
+func (*ErrorResponseStatusCode) proposeSandboxRuleRes()                 {}
+func (*ErrorResponseStatusCode) putSandboxRuntimeConfigRes()            {}
+func (*ErrorResponseStatusCode) readSandboxFileRes()                    {}
+func (*ErrorResponseStatusCode) reconsiderSandboxHarnessConfigRes()     {}
+func (*ErrorResponseStatusCode) removeSandboxFileRes()                  {}
+func (*ErrorResponseStatusCode) restartSandboxServiceRes()              {}
+func (*ErrorResponseStatusCode) resumeSandboxAutostopRes()              {}
+func (*ErrorResponseStatusCode) sendSandboxExecInputRes()               {}
+func (*ErrorResponseStatusCode) startSandboxExecRes()                   {}
+func (*ErrorResponseStatusCode) startSandboxServiceRes()                {}
+func (*ErrorResponseStatusCode) statSandboxFileRes()                    {}
+func (*ErrorResponseStatusCode) stopSandboxServiceRes()                 {}
+func (*ErrorResponseStatusCode) streamSandboxExecResourcesRes()         {}
+func (*ErrorResponseStatusCode) updateSandboxAgentMetaRes()             {}
+func (*ErrorResponseStatusCode) waitSandboxExecRes()                    {}
+func (*ErrorResponseStatusCode) writeSandboxFileRes()                   {}
 
 // How an exchange secret's stored fields are traded for a short-lived token (ADR 26-10-08-452). A
 // POST to url, its body and headers templated from the stored fields as {name}, and the token read
@@ -6124,8 +6131,602 @@ func (s *HTTPAuditExchangeDetailResponseHeaders) init() HTTPAuditExchangeDetailR
 	return m
 }
 
+// Ref: #/components/schemas/HarnessCaptureBaseline
+type HarnessCaptureBaseline struct {
+	ConfigRevision  int64                                    `json:"configRevision"`
+	Files           OptNilHarnessCaptureFileArray            `json:"files"`
+	HarnessConfigId string                                   `json:"harnessConfigId"`
+	ManifestDigest  string                                   `json:"manifestDigest"`
+	ProjectFiles    OptNilStringArray                        `json:"projectFiles"`
+	SecretRevisions OptHarnessCaptureBaselineSecretRevisions `json:"secretRevisions"`
+}
+
+// GetConfigRevision returns the value of ConfigRevision.
+func (s *HarnessCaptureBaseline) GetConfigRevision() int64 {
+	return s.ConfigRevision
+}
+
+// GetFiles returns the value of Files.
+func (s *HarnessCaptureBaseline) GetFiles() OptNilHarnessCaptureFileArray {
+	return s.Files
+}
+
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *HarnessCaptureBaseline) GetHarnessConfigId() string {
+	return s.HarnessConfigId
+}
+
+// GetManifestDigest returns the value of ManifestDigest.
+func (s *HarnessCaptureBaseline) GetManifestDigest() string {
+	return s.ManifestDigest
+}
+
+// GetProjectFiles returns the value of ProjectFiles.
+func (s *HarnessCaptureBaseline) GetProjectFiles() OptNilStringArray {
+	return s.ProjectFiles
+}
+
+// GetSecretRevisions returns the value of SecretRevisions.
+func (s *HarnessCaptureBaseline) GetSecretRevisions() OptHarnessCaptureBaselineSecretRevisions {
+	return s.SecretRevisions
+}
+
+// SetConfigRevision sets the value of ConfigRevision.
+func (s *HarnessCaptureBaseline) SetConfigRevision(val int64) {
+	s.ConfigRevision = val
+}
+
+// SetFiles sets the value of Files.
+func (s *HarnessCaptureBaseline) SetFiles(val OptNilHarnessCaptureFileArray) {
+	s.Files = val
+}
+
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *HarnessCaptureBaseline) SetHarnessConfigId(val string) {
+	s.HarnessConfigId = val
+}
+
+// SetManifestDigest sets the value of ManifestDigest.
+func (s *HarnessCaptureBaseline) SetManifestDigest(val string) {
+	s.ManifestDigest = val
+}
+
+// SetProjectFiles sets the value of ProjectFiles.
+func (s *HarnessCaptureBaseline) SetProjectFiles(val OptNilStringArray) {
+	s.ProjectFiles = val
+}
+
+// SetSecretRevisions sets the value of SecretRevisions.
+func (s *HarnessCaptureBaseline) SetSecretRevisions(val OptHarnessCaptureBaselineSecretRevisions) {
+	s.SecretRevisions = val
+}
+
+type HarnessCaptureBaselineSecretRevisions map[string]string
+
+func (s *HarnessCaptureBaselineSecretRevisions) init() HarnessCaptureBaselineSecretRevisions {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/HarnessCaptureCredential
+type HarnessCaptureCredential struct {
+	Account    OptString                        `json:"account"`
+	EnvName    string                           `json:"envName"`
+	Generation OptString                        `json:"generation"`
+	Keep       OptBool                          `json:"keep"`
+	LocalId    OptString                        `json:"localId"`
+	Provider   string                           `json:"provider"`
+	Type       string                           `json:"type"`
+	Value      OptHarnessCaptureCredentialValue `json:"value"`
+}
+
+// GetAccount returns the value of Account.
+func (s *HarnessCaptureCredential) GetAccount() OptString {
+	return s.Account
+}
+
+// GetEnvName returns the value of EnvName.
+func (s *HarnessCaptureCredential) GetEnvName() string {
+	return s.EnvName
+}
+
+// GetGeneration returns the value of Generation.
+func (s *HarnessCaptureCredential) GetGeneration() OptString {
+	return s.Generation
+}
+
+// GetKeep returns the value of Keep.
+func (s *HarnessCaptureCredential) GetKeep() OptBool {
+	return s.Keep
+}
+
+// GetLocalId returns the value of LocalId.
+func (s *HarnessCaptureCredential) GetLocalId() OptString {
+	return s.LocalId
+}
+
+// GetProvider returns the value of Provider.
+func (s *HarnessCaptureCredential) GetProvider() string {
+	return s.Provider
+}
+
+// GetType returns the value of Type.
+func (s *HarnessCaptureCredential) GetType() string {
+	return s.Type
+}
+
+// GetValue returns the value of Value.
+func (s *HarnessCaptureCredential) GetValue() OptHarnessCaptureCredentialValue {
+	return s.Value
+}
+
+// SetAccount sets the value of Account.
+func (s *HarnessCaptureCredential) SetAccount(val OptString) {
+	s.Account = val
+}
+
+// SetEnvName sets the value of EnvName.
+func (s *HarnessCaptureCredential) SetEnvName(val string) {
+	s.EnvName = val
+}
+
+// SetGeneration sets the value of Generation.
+func (s *HarnessCaptureCredential) SetGeneration(val OptString) {
+	s.Generation = val
+}
+
+// SetKeep sets the value of Keep.
+func (s *HarnessCaptureCredential) SetKeep(val OptBool) {
+	s.Keep = val
+}
+
+// SetLocalId sets the value of LocalId.
+func (s *HarnessCaptureCredential) SetLocalId(val OptString) {
+	s.LocalId = val
+}
+
+// SetProvider sets the value of Provider.
+func (s *HarnessCaptureCredential) SetProvider(val string) {
+	s.Provider = val
+}
+
+// SetType sets the value of Type.
+func (s *HarnessCaptureCredential) SetType(val string) {
+	s.Type = val
+}
+
+// SetValue sets the value of Value.
+func (s *HarnessCaptureCredential) SetValue(val OptHarnessCaptureCredentialValue) {
+	s.Value = val
+}
+
+// Ref: #/components/schemas/HarnessCaptureCredentialPreview
+type HarnessCaptureCredentialPreview struct {
+	Account  OptString `json:"account"`
+	EnvName  string    `json:"envName"`
+	Provider string    `json:"provider"`
+	Type     string    `json:"type"`
+}
+
+// GetAccount returns the value of Account.
+func (s *HarnessCaptureCredentialPreview) GetAccount() OptString {
+	return s.Account
+}
+
+// GetEnvName returns the value of EnvName.
+func (s *HarnessCaptureCredentialPreview) GetEnvName() string {
+	return s.EnvName
+}
+
+// GetProvider returns the value of Provider.
+func (s *HarnessCaptureCredentialPreview) GetProvider() string {
+	return s.Provider
+}
+
+// GetType returns the value of Type.
+func (s *HarnessCaptureCredentialPreview) GetType() string {
+	return s.Type
+}
+
+// SetAccount sets the value of Account.
+func (s *HarnessCaptureCredentialPreview) SetAccount(val OptString) {
+	s.Account = val
+}
+
+// SetEnvName sets the value of EnvName.
+func (s *HarnessCaptureCredentialPreview) SetEnvName(val string) {
+	s.EnvName = val
+}
+
+// SetProvider sets the value of Provider.
+func (s *HarnessCaptureCredentialPreview) SetProvider(val string) {
+	s.Provider = val
+}
+
+// SetType sets the value of Type.
+func (s *HarnessCaptureCredentialPreview) SetType(val string) {
+	s.Type = val
+}
+
+type HarnessCaptureCredentialValue map[string]jx.Raw
+
+func (s *HarnessCaptureCredentialValue) init() HarnessCaptureCredentialValue {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/HarnessCaptureDiagnostic
+type HarnessCaptureDiagnostic struct {
+	Code    string    `json:"code"`
+	Message string    `json:"message"`
+	Path    OptString `json:"path"`
+}
+
+// GetCode returns the value of Code.
+func (s *HarnessCaptureDiagnostic) GetCode() string {
+	return s.Code
+}
+
+// GetMessage returns the value of Message.
+func (s *HarnessCaptureDiagnostic) GetMessage() string {
+	return s.Message
+}
+
+// GetPath returns the value of Path.
+func (s *HarnessCaptureDiagnostic) GetPath() OptString {
+	return s.Path
+}
+
+// SetCode sets the value of Code.
+func (s *HarnessCaptureDiagnostic) SetCode(val string) {
+	s.Code = val
+}
+
+// SetMessage sets the value of Message.
+func (s *HarnessCaptureDiagnostic) SetMessage(val string) {
+	s.Message = val
+}
+
+// SetPath sets the value of Path.
+func (s *HarnessCaptureDiagnostic) SetPath(val OptString) {
+	s.Path = val
+}
+
+// Ref: #/components/schemas/HarnessCaptureFile
+type HarnessCaptureFile struct {
+	Content    string  `json:"content"`
+	CreateOnly OptBool `json:"createOnly"`
+	Path       string  `json:"path"`
+	Template   OptBool `json:"template"`
+}
+
+// GetContent returns the value of Content.
+func (s *HarnessCaptureFile) GetContent() string {
+	return s.Content
+}
+
+// GetCreateOnly returns the value of CreateOnly.
+func (s *HarnessCaptureFile) GetCreateOnly() OptBool {
+	return s.CreateOnly
+}
+
+// GetPath returns the value of Path.
+func (s *HarnessCaptureFile) GetPath() string {
+	return s.Path
+}
+
+// GetTemplate returns the value of Template.
+func (s *HarnessCaptureFile) GetTemplate() OptBool {
+	return s.Template
+}
+
+// SetContent sets the value of Content.
+func (s *HarnessCaptureFile) SetContent(val string) {
+	s.Content = val
+}
+
+// SetCreateOnly sets the value of CreateOnly.
+func (s *HarnessCaptureFile) SetCreateOnly(val OptBool) {
+	s.CreateOnly = val
+}
+
+// SetPath sets the value of Path.
+func (s *HarnessCaptureFile) SetPath(val string) {
+	s.Path = val
+}
+
+// SetTemplate sets the value of Template.
+func (s *HarnessCaptureFile) SetTemplate(val OptBool) {
+	s.Template = val
+}
+
+// Ref: #/components/schemas/HarnessCaptureFileChange
+type HarnessCaptureFileChange struct {
+	File   OptHarnessCaptureFile `json:"file"`
+	Path   string                `json:"path"`
+	Remove OptBool               `json:"remove"`
+}
+
+// GetFile returns the value of File.
+func (s *HarnessCaptureFileChange) GetFile() OptHarnessCaptureFile {
+	return s.File
+}
+
+// GetPath returns the value of Path.
+func (s *HarnessCaptureFileChange) GetPath() string {
+	return s.Path
+}
+
+// GetRemove returns the value of Remove.
+func (s *HarnessCaptureFileChange) GetRemove() OptBool {
+	return s.Remove
+}
+
+// SetFile sets the value of File.
+func (s *HarnessCaptureFileChange) SetFile(val OptHarnessCaptureFile) {
+	s.File = val
+}
+
+// SetPath sets the value of Path.
+func (s *HarnessCaptureFileChange) SetPath(val string) {
+	s.Path = val
+}
+
+// SetRemove sets the value of Remove.
+func (s *HarnessCaptureFileChange) SetRemove(val OptBool) {
+	s.Remove = val
+}
+
+// Ref: #/components/schemas/HarnessCaptureOAuth
+type HarnessCaptureOAuth struct {
+	ClientId string    `json:"clientId"`
+	Encoding OptString `json:"encoding"`
+	TokenUrl string    `json:"tokenUrl"`
+}
+
+// GetClientId returns the value of ClientId.
+func (s *HarnessCaptureOAuth) GetClientId() string {
+	return s.ClientId
+}
+
+// GetEncoding returns the value of Encoding.
+func (s *HarnessCaptureOAuth) GetEncoding() OptString {
+	return s.Encoding
+}
+
+// GetTokenUrl returns the value of TokenUrl.
+func (s *HarnessCaptureOAuth) GetTokenUrl() string {
+	return s.TokenUrl
+}
+
+// SetClientId sets the value of ClientId.
+func (s *HarnessCaptureOAuth) SetClientId(val string) {
+	s.ClientId = val
+}
+
+// SetEncoding sets the value of Encoding.
+func (s *HarnessCaptureOAuth) SetEncoding(val OptString) {
+	s.Encoding = val
+}
+
+// SetTokenUrl sets the value of TokenUrl.
+func (s *HarnessCaptureOAuth) SetTokenUrl(val string) {
+	s.TokenUrl = val
+}
+
+// Ref: #/components/schemas/HarnessCaptureProvider
+type HarnessCaptureProvider struct {
+	EnvName          string                         `json:"envName"`
+	Host             OptString                      `json:"host"`
+	ID               string                         `json:"id"`
+	MultipleAccounts OptBool                        `json:"multipleAccounts"`
+	OAuth            OptHarnessCaptureOAuth         `json:"oauth"`
+	Routes           OptNilHarnessCaptureRouteArray `json:"routes"`
+	Types            []string                       `json:"types"`
+}
+
+// GetEnvName returns the value of EnvName.
+func (s *HarnessCaptureProvider) GetEnvName() string {
+	return s.EnvName
+}
+
+// GetHost returns the value of Host.
+func (s *HarnessCaptureProvider) GetHost() OptString {
+	return s.Host
+}
+
+// GetID returns the value of ID.
+func (s *HarnessCaptureProvider) GetID() string {
+	return s.ID
+}
+
+// GetMultipleAccounts returns the value of MultipleAccounts.
+func (s *HarnessCaptureProvider) GetMultipleAccounts() OptBool {
+	return s.MultipleAccounts
+}
+
+// GetOAuth returns the value of OAuth.
+func (s *HarnessCaptureProvider) GetOAuth() OptHarnessCaptureOAuth {
+	return s.OAuth
+}
+
+// GetRoutes returns the value of Routes.
+func (s *HarnessCaptureProvider) GetRoutes() OptNilHarnessCaptureRouteArray {
+	return s.Routes
+}
+
+// GetTypes returns the value of Types.
+func (s *HarnessCaptureProvider) GetTypes() []string {
+	return s.Types
+}
+
+// SetEnvName sets the value of EnvName.
+func (s *HarnessCaptureProvider) SetEnvName(val string) {
+	s.EnvName = val
+}
+
+// SetHost sets the value of Host.
+func (s *HarnessCaptureProvider) SetHost(val OptString) {
+	s.Host = val
+}
+
+// SetID sets the value of ID.
+func (s *HarnessCaptureProvider) SetID(val string) {
+	s.ID = val
+}
+
+// SetMultipleAccounts sets the value of MultipleAccounts.
+func (s *HarnessCaptureProvider) SetMultipleAccounts(val OptBool) {
+	s.MultipleAccounts = val
+}
+
+// SetOAuth sets the value of OAuth.
+func (s *HarnessCaptureProvider) SetOAuth(val OptHarnessCaptureOAuth) {
+	s.OAuth = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *HarnessCaptureProvider) SetRoutes(val OptNilHarnessCaptureRouteArray) {
+	s.Routes = val
+}
+
+// SetTypes sets the value of Types.
+func (s *HarnessCaptureProvider) SetTypes(val []string) {
+	s.Types = val
+}
+
+// Ref: #/components/schemas/HarnessCaptureRoute
+type HarnessCaptureRoute struct {
+	Host string    `json:"host"`
+	Path OptString `json:"path"`
+	Use  OptString `json:"use"`
+}
+
+// GetHost returns the value of Host.
+func (s *HarnessCaptureRoute) GetHost() string {
+	return s.Host
+}
+
+// GetPath returns the value of Path.
+func (s *HarnessCaptureRoute) GetPath() OptString {
+	return s.Path
+}
+
+// GetUse returns the value of Use.
+func (s *HarnessCaptureRoute) GetUse() OptString {
+	return s.Use
+}
+
+// SetHost sets the value of Host.
+func (s *HarnessCaptureRoute) SetHost(val string) {
+	s.Host = val
+}
+
+// SetPath sets the value of Path.
+func (s *HarnessCaptureRoute) SetPath(val OptString) {
+	s.Path = val
+}
+
+// SetUse sets the value of Use.
+func (s *HarnessCaptureRoute) SetUse(val OptString) {
+	s.Use = val
+}
+
+// Ref: #/components/schemas/HarnessCaptureSetting
+type HarnessCaptureSetting struct {
+	TemplateSuffix OptString `json:"templateSuffix"`
+	CreateOnly     OptBool   `json:"createOnly"`
+	// Known credential and local paths omitted from ordinary settings; * matches one object path segment
+	// and ** any depth.
+	Exclude []string                       `json:"exclude"`
+	Fields  OptHarnessCaptureSettingFields `json:"fields"`
+	Format  string                         `json:"format"`
+	Path    string                         `json:"path"`
+}
+
+// GetTemplateSuffix returns the value of TemplateSuffix.
+func (s *HarnessCaptureSetting) GetTemplateSuffix() OptString {
+	return s.TemplateSuffix
+}
+
+// GetCreateOnly returns the value of CreateOnly.
+func (s *HarnessCaptureSetting) GetCreateOnly() OptBool {
+	return s.CreateOnly
+}
+
+// GetExclude returns the value of Exclude.
+func (s *HarnessCaptureSetting) GetExclude() []string {
+	return s.Exclude
+}
+
+// GetFields returns the value of Fields.
+func (s *HarnessCaptureSetting) GetFields() OptHarnessCaptureSettingFields {
+	return s.Fields
+}
+
+// GetFormat returns the value of Format.
+func (s *HarnessCaptureSetting) GetFormat() string {
+	return s.Format
+}
+
+// GetPath returns the value of Path.
+func (s *HarnessCaptureSetting) GetPath() string {
+	return s.Path
+}
+
+// SetTemplateSuffix sets the value of TemplateSuffix.
+func (s *HarnessCaptureSetting) SetTemplateSuffix(val OptString) {
+	s.TemplateSuffix = val
+}
+
+// SetCreateOnly sets the value of CreateOnly.
+func (s *HarnessCaptureSetting) SetCreateOnly(val OptBool) {
+	s.CreateOnly = val
+}
+
+// SetExclude sets the value of Exclude.
+func (s *HarnessCaptureSetting) SetExclude(val []string) {
+	s.Exclude = val
+}
+
+// SetFields sets the value of Fields.
+func (s *HarnessCaptureSetting) SetFields(val OptHarnessCaptureSettingFields) {
+	s.Fields = val
+}
+
+// SetFormat sets the value of Format.
+func (s *HarnessCaptureSetting) SetFormat(val string) {
+	s.Format = val
+}
+
+// SetPath sets the value of Path.
+func (s *HarnessCaptureSetting) SetPath(val string) {
+	s.Path = val
+}
+
+type HarnessCaptureSettingFields map[string]string
+
+func (s *HarnessCaptureSettingFields) init() HarnessCaptureSettingFields {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
 // Ref: #/components/schemas/HarnessConfig
 type HarnessConfig struct {
+	SaveBack OptHarnessConfigSaveBack `json:"saveBack"`
+	Revision OptInt64                 `json:"revision"`
 	// The harness config's egress policy level, as a person set it (ADR 26-10-01-032). Its denyByDefault
 	// restricts every discobox on the harness; its allow list, with imageEgressHosts, is added to each
 	// restricted one's.
@@ -6215,6 +6816,16 @@ type HarnessConfig struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	// Declarative volumes declared by the registered image label.
 	Volumes OptNilHarnessVolumeArray `json:"volumes"`
+}
+
+// GetSaveBack returns the value of SaveBack.
+func (s *HarnessConfig) GetSaveBack() OptHarnessConfigSaveBack {
+	return s.SaveBack
+}
+
+// GetRevision returns the value of Revision.
+func (s *HarnessConfig) GetRevision() OptInt64 {
+	return s.Revision
 }
 
 // GetEgress returns the value of Egress.
@@ -6375,6 +6986,16 @@ func (s *HarnessConfig) GetUpdatedAt() time.Time {
 // GetVolumes returns the value of Volumes.
 func (s *HarnessConfig) GetVolumes() OptNilHarnessVolumeArray {
 	return s.Volumes
+}
+
+// SetSaveBack sets the value of SaveBack.
+func (s *HarnessConfig) SetSaveBack(val OptHarnessConfigSaveBack) {
+	s.SaveBack = val
+}
+
+// SetRevision sets the value of Revision.
+func (s *HarnessConfig) SetRevision(val OptInt64) {
+	s.Revision = val
 }
 
 // SetEgress sets the value of Egress.
@@ -6544,6 +7165,272 @@ func (*HarnessConfig) getHarnessConfigRes()             {}
 func (*HarnessConfig) refreshHarnessConfigImageRes()    {}
 func (*HarnessConfig) updateHarnessConfigRes()          {}
 
+// Ref: #/components/schemas/HarnessConfigAcknowledgment
+type HarnessConfigAcknowledgment struct {
+	Superseded  OptBool                              `json:"superseded"`
+	Baseline    HarnessCaptureBaseline               `json:"baseline"`
+	CandidateId string                               `json:"candidateId"`
+	Files       []HarnessCaptureFile                 `json:"files"`
+	Sentinels   HarnessConfigAcknowledgmentSentinels `json:"sentinels"`
+}
+
+// GetSuperseded returns the value of Superseded.
+func (s *HarnessConfigAcknowledgment) GetSuperseded() OptBool {
+	return s.Superseded
+}
+
+// GetBaseline returns the value of Baseline.
+func (s *HarnessConfigAcknowledgment) GetBaseline() HarnessCaptureBaseline {
+	return s.Baseline
+}
+
+// GetCandidateId returns the value of CandidateId.
+func (s *HarnessConfigAcknowledgment) GetCandidateId() string {
+	return s.CandidateId
+}
+
+// GetFiles returns the value of Files.
+func (s *HarnessConfigAcknowledgment) GetFiles() []HarnessCaptureFile {
+	return s.Files
+}
+
+// GetSentinels returns the value of Sentinels.
+func (s *HarnessConfigAcknowledgment) GetSentinels() HarnessConfigAcknowledgmentSentinels {
+	return s.Sentinels
+}
+
+// SetSuperseded sets the value of Superseded.
+func (s *HarnessConfigAcknowledgment) SetSuperseded(val OptBool) {
+	s.Superseded = val
+}
+
+// SetBaseline sets the value of Baseline.
+func (s *HarnessConfigAcknowledgment) SetBaseline(val HarnessCaptureBaseline) {
+	s.Baseline = val
+}
+
+// SetCandidateId sets the value of CandidateId.
+func (s *HarnessConfigAcknowledgment) SetCandidateId(val string) {
+	s.CandidateId = val
+}
+
+// SetFiles sets the value of Files.
+func (s *HarnessConfigAcknowledgment) SetFiles(val []HarnessCaptureFile) {
+	s.Files = val
+}
+
+// SetSentinels sets the value of Sentinels.
+func (s *HarnessConfigAcknowledgment) SetSentinels(val HarnessConfigAcknowledgmentSentinels) {
+	s.Sentinels = val
+}
+
+type HarnessConfigAcknowledgmentSentinels map[string]string
+
+func (s *HarnessConfigAcknowledgmentSentinels) init() HarnessConfigAcknowledgmentSentinels {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/HarnessConfigCandidate
+type HarnessConfigCandidate struct {
+	Baseline        HarnessCaptureBaseline                   `json:"baseline"`
+	Credentials     []HarnessCaptureCredential               `json:"credentials"`
+	Diagnostics     OptNilHarnessCaptureDiagnosticArray      `json:"diagnostics"`
+	Files           []HarnessCaptureFileChange               `json:"files"`
+	ID              string                                   `json:"id"`
+	SecretRevisions OptHarnessConfigCandidateSecretRevisions `json:"secretRevisions"`
+	WriteRevision   int64                                    `json:"writeRevision"`
+}
+
+// GetBaseline returns the value of Baseline.
+func (s *HarnessConfigCandidate) GetBaseline() HarnessCaptureBaseline {
+	return s.Baseline
+}
+
+// GetCredentials returns the value of Credentials.
+func (s *HarnessConfigCandidate) GetCredentials() []HarnessCaptureCredential {
+	return s.Credentials
+}
+
+// GetDiagnostics returns the value of Diagnostics.
+func (s *HarnessConfigCandidate) GetDiagnostics() OptNilHarnessCaptureDiagnosticArray {
+	return s.Diagnostics
+}
+
+// GetFiles returns the value of Files.
+func (s *HarnessConfigCandidate) GetFiles() []HarnessCaptureFileChange {
+	return s.Files
+}
+
+// GetID returns the value of ID.
+func (s *HarnessConfigCandidate) GetID() string {
+	return s.ID
+}
+
+// GetSecretRevisions returns the value of SecretRevisions.
+func (s *HarnessConfigCandidate) GetSecretRevisions() OptHarnessConfigCandidateSecretRevisions {
+	return s.SecretRevisions
+}
+
+// GetWriteRevision returns the value of WriteRevision.
+func (s *HarnessConfigCandidate) GetWriteRevision() int64 {
+	return s.WriteRevision
+}
+
+// SetBaseline sets the value of Baseline.
+func (s *HarnessConfigCandidate) SetBaseline(val HarnessCaptureBaseline) {
+	s.Baseline = val
+}
+
+// SetCredentials sets the value of Credentials.
+func (s *HarnessConfigCandidate) SetCredentials(val []HarnessCaptureCredential) {
+	s.Credentials = val
+}
+
+// SetDiagnostics sets the value of Diagnostics.
+func (s *HarnessConfigCandidate) SetDiagnostics(val OptNilHarnessCaptureDiagnosticArray) {
+	s.Diagnostics = val
+}
+
+// SetFiles sets the value of Files.
+func (s *HarnessConfigCandidate) SetFiles(val []HarnessCaptureFileChange) {
+	s.Files = val
+}
+
+// SetID sets the value of ID.
+func (s *HarnessConfigCandidate) SetID(val string) {
+	s.ID = val
+}
+
+// SetSecretRevisions sets the value of SecretRevisions.
+func (s *HarnessConfigCandidate) SetSecretRevisions(val OptHarnessConfigCandidateSecretRevisions) {
+	s.SecretRevisions = val
+}
+
+// SetWriteRevision sets the value of WriteRevision.
+func (s *HarnessConfigCandidate) SetWriteRevision(val int64) {
+	s.WriteRevision = val
+}
+
+func (*HarnessConfigCandidate) captureSandboxHarnessConfigRes() {}
+
+// Ref: #/components/schemas/HarnessConfigCandidateRequest
+type HarnessConfigCandidateRequest struct {
+	CandidateId string `json:"candidateId"`
+}
+
+// GetCandidateId returns the value of CandidateId.
+func (s *HarnessConfigCandidateRequest) GetCandidateId() string {
+	return s.CandidateId
+}
+
+// SetCandidateId sets the value of CandidateId.
+func (s *HarnessConfigCandidateRequest) SetCandidateId(val string) {
+	s.CandidateId = val
+}
+
+type HarnessConfigCandidateSecretRevisions map[string]string
+
+func (s *HarnessConfigCandidateSecretRevisions) init() HarnessConfigCandidateSecretRevisions {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/HarnessConfigChanges
+type HarnessConfigChanges struct {
+	CandidateId     OptString                           `json:"candidateId"`
+	ConfigRevision  int64                               `json:"configRevision"`
+	Credentials     []HarnessCaptureCredentialPreview   `json:"credentials"`
+	Diagnostics     OptNilHarnessCaptureDiagnosticArray `json:"diagnostics"`
+	Files           []HarnessCaptureFileChange          `json:"files"`
+	HarnessConfigId string                              `json:"harnessConfigId"`
+	State           string                              `json:"state"`
+}
+
+// GetCandidateId returns the value of CandidateId.
+func (s *HarnessConfigChanges) GetCandidateId() OptString {
+	return s.CandidateId
+}
+
+// GetConfigRevision returns the value of ConfigRevision.
+func (s *HarnessConfigChanges) GetConfigRevision() int64 {
+	return s.ConfigRevision
+}
+
+// GetCredentials returns the value of Credentials.
+func (s *HarnessConfigChanges) GetCredentials() []HarnessCaptureCredentialPreview {
+	return s.Credentials
+}
+
+// GetDiagnostics returns the value of Diagnostics.
+func (s *HarnessConfigChanges) GetDiagnostics() OptNilHarnessCaptureDiagnosticArray {
+	return s.Diagnostics
+}
+
+// GetFiles returns the value of Files.
+func (s *HarnessConfigChanges) GetFiles() []HarnessCaptureFileChange {
+	return s.Files
+}
+
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *HarnessConfigChanges) GetHarnessConfigId() string {
+	return s.HarnessConfigId
+}
+
+// GetState returns the value of State.
+func (s *HarnessConfigChanges) GetState() string {
+	return s.State
+}
+
+// SetCandidateId sets the value of CandidateId.
+func (s *HarnessConfigChanges) SetCandidateId(val OptString) {
+	s.CandidateId = val
+}
+
+// SetConfigRevision sets the value of ConfigRevision.
+func (s *HarnessConfigChanges) SetConfigRevision(val int64) {
+	s.ConfigRevision = val
+}
+
+// SetCredentials sets the value of Credentials.
+func (s *HarnessConfigChanges) SetCredentials(val []HarnessCaptureCredentialPreview) {
+	s.Credentials = val
+}
+
+// SetDiagnostics sets the value of Diagnostics.
+func (s *HarnessConfigChanges) SetDiagnostics(val OptNilHarnessCaptureDiagnosticArray) {
+	s.Diagnostics = val
+}
+
+// SetFiles sets the value of Files.
+func (s *HarnessConfigChanges) SetFiles(val []HarnessCaptureFileChange) {
+	s.Files = val
+}
+
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *HarnessConfigChanges) SetHarnessConfigId(val string) {
+	s.HarnessConfigId = val
+}
+
+// SetState sets the value of State.
+func (s *HarnessConfigChanges) SetState(val string) {
+	s.State = val
+}
+
+func (*HarnessConfigChanges) acknowledgeSandboxHarnessConfigRes()       {}
+func (*HarnessConfigChanges) discardSandboxHarnessConfigChangesRes()    {}
+func (*HarnessConfigChanges) getSandboxHarnessConfigChangesRes()        {}
+func (*HarnessConfigChanges) reconsiderSandboxHarnessConfigChangesRes() {}
+func (*HarnessConfigChanges) reconsiderSandboxHarnessConfigRes()        {}
+
 // Default environment variables declared by the registered image label.
 type HarnessConfigEnv map[string]string
 
@@ -6655,6 +7542,174 @@ func (s *HarnessConfigPort) SetPort(val int64) {
 func (s *HarnessConfigPort) SetUnavailable(val OptString) {
 	s.Unavailable = val
 }
+
+// Ref: #/components/schemas/HarnessConfigReconsideration
+type HarnessConfigReconsideration struct {
+	Current   HarnessCaptureBaseline `json:"current"`
+	Selection HarnessConfigSelection `json:"selection"`
+}
+
+// GetCurrent returns the value of Current.
+func (s *HarnessConfigReconsideration) GetCurrent() HarnessCaptureBaseline {
+	return s.Current
+}
+
+// GetSelection returns the value of Selection.
+func (s *HarnessConfigReconsideration) GetSelection() HarnessConfigSelection {
+	return s.Selection
+}
+
+// SetCurrent sets the value of Current.
+func (s *HarnessConfigReconsideration) SetCurrent(val HarnessCaptureBaseline) {
+	s.Current = val
+}
+
+// SetSelection sets the value of Selection.
+func (s *HarnessConfigReconsideration) SetSelection(val HarnessConfigSelection) {
+	s.Selection = val
+}
+
+// Ref: #/components/schemas/HarnessConfigSaveBack
+type HarnessConfigSaveBack struct {
+	CredentialFiles    OptNilStringArray                `json:"credentialFiles"`
+	CredentialSettings OptNilHarnessCaptureSettingArray `json:"credentialSettings"`
+	ExportCommand      []string                         `json:"exportCommand"`
+	HandoffCommand     []string                         `json:"handoffCommand"`
+	Providers          []HarnessCaptureProvider         `json:"providers"`
+	Settings           []HarnessCaptureSetting          `json:"settings"`
+	Version            int64                            `json:"version"`
+	Watch              []string                         `json:"watch"`
+}
+
+// GetCredentialFiles returns the value of CredentialFiles.
+func (s *HarnessConfigSaveBack) GetCredentialFiles() OptNilStringArray {
+	return s.CredentialFiles
+}
+
+// GetCredentialSettings returns the value of CredentialSettings.
+func (s *HarnessConfigSaveBack) GetCredentialSettings() OptNilHarnessCaptureSettingArray {
+	return s.CredentialSettings
+}
+
+// GetExportCommand returns the value of ExportCommand.
+func (s *HarnessConfigSaveBack) GetExportCommand() []string {
+	return s.ExportCommand
+}
+
+// GetHandoffCommand returns the value of HandoffCommand.
+func (s *HarnessConfigSaveBack) GetHandoffCommand() []string {
+	return s.HandoffCommand
+}
+
+// GetProviders returns the value of Providers.
+func (s *HarnessConfigSaveBack) GetProviders() []HarnessCaptureProvider {
+	return s.Providers
+}
+
+// GetSettings returns the value of Settings.
+func (s *HarnessConfigSaveBack) GetSettings() []HarnessCaptureSetting {
+	return s.Settings
+}
+
+// GetVersion returns the value of Version.
+func (s *HarnessConfigSaveBack) GetVersion() int64 {
+	return s.Version
+}
+
+// GetWatch returns the value of Watch.
+func (s *HarnessConfigSaveBack) GetWatch() []string {
+	return s.Watch
+}
+
+// SetCredentialFiles sets the value of CredentialFiles.
+func (s *HarnessConfigSaveBack) SetCredentialFiles(val OptNilStringArray) {
+	s.CredentialFiles = val
+}
+
+// SetCredentialSettings sets the value of CredentialSettings.
+func (s *HarnessConfigSaveBack) SetCredentialSettings(val OptNilHarnessCaptureSettingArray) {
+	s.CredentialSettings = val
+}
+
+// SetExportCommand sets the value of ExportCommand.
+func (s *HarnessConfigSaveBack) SetExportCommand(val []string) {
+	s.ExportCommand = val
+}
+
+// SetHandoffCommand sets the value of HandoffCommand.
+func (s *HarnessConfigSaveBack) SetHandoffCommand(val []string) {
+	s.HandoffCommand = val
+}
+
+// SetProviders sets the value of Providers.
+func (s *HarnessConfigSaveBack) SetProviders(val []HarnessCaptureProvider) {
+	s.Providers = val
+}
+
+// SetSettings sets the value of Settings.
+func (s *HarnessConfigSaveBack) SetSettings(val []HarnessCaptureSetting) {
+	s.Settings = val
+}
+
+// SetVersion sets the value of Version.
+func (s *HarnessConfigSaveBack) SetVersion(val int64) {
+	s.Version = val
+}
+
+// SetWatch sets the value of Watch.
+func (s *HarnessConfigSaveBack) SetWatch(val []string) {
+	s.Watch = val
+}
+
+// Ref: #/components/schemas/HarnessConfigSaveResult
+type HarnessConfigSaveResult struct {
+	CandidateId     string `json:"candidateId"`
+	ConfigRevision  int64  `json:"configRevision"`
+	HarnessConfigId string `json:"harnessConfigId"`
+	State           string `json:"state"`
+}
+
+// GetCandidateId returns the value of CandidateId.
+func (s *HarnessConfigSaveResult) GetCandidateId() string {
+	return s.CandidateId
+}
+
+// GetConfigRevision returns the value of ConfigRevision.
+func (s *HarnessConfigSaveResult) GetConfigRevision() int64 {
+	return s.ConfigRevision
+}
+
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *HarnessConfigSaveResult) GetHarnessConfigId() string {
+	return s.HarnessConfigId
+}
+
+// GetState returns the value of State.
+func (s *HarnessConfigSaveResult) GetState() string {
+	return s.State
+}
+
+// SetCandidateId sets the value of CandidateId.
+func (s *HarnessConfigSaveResult) SetCandidateId(val string) {
+	s.CandidateId = val
+}
+
+// SetConfigRevision sets the value of ConfigRevision.
+func (s *HarnessConfigSaveResult) SetConfigRevision(val int64) {
+	s.ConfigRevision = val
+}
+
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *HarnessConfigSaveResult) SetHarnessConfigId(val string) {
+	s.HarnessConfigId = val
+}
+
+// SetState sets the value of State.
+func (s *HarnessConfigSaveResult) SetState(val string) {
+	s.State = val
+}
+
+func (*HarnessConfigSaveResult) saveSandboxHarnessConfigChangesRes() {}
 
 // Declares an environment variable the harness expects, and whether it is required.
 // Ref: #/components/schemas/HarnessConfigSecret
@@ -6884,6 +7939,43 @@ func (s *HarnessConfigSecretDelivery) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Ref: #/components/schemas/HarnessConfigSelection
+type HarnessConfigSelection struct {
+	CandidateId        string   `json:"candidateId"`
+	KeepFiles          []string `json:"keepFiles"`
+	ReplaceCredentials []string `json:"replaceCredentials"`
+}
+
+// GetCandidateId returns the value of CandidateId.
+func (s *HarnessConfigSelection) GetCandidateId() string {
+	return s.CandidateId
+}
+
+// GetKeepFiles returns the value of KeepFiles.
+func (s *HarnessConfigSelection) GetKeepFiles() []string {
+	return s.KeepFiles
+}
+
+// GetReplaceCredentials returns the value of ReplaceCredentials.
+func (s *HarnessConfigSelection) GetReplaceCredentials() []string {
+	return s.ReplaceCredentials
+}
+
+// SetCandidateId sets the value of CandidateId.
+func (s *HarnessConfigSelection) SetCandidateId(val string) {
+	s.CandidateId = val
+}
+
+// SetKeepFiles sets the value of KeepFiles.
+func (s *HarnessConfigSelection) SetKeepFiles(val []string) {
+	s.KeepFiles = val
+}
+
+// SetReplaceCredentials sets the value of ReplaceCredentials.
+func (s *HarnessConfigSelection) SetReplaceCredentials(val []string) {
+	s.ReplaceCredentials = val
 }
 
 // Ref: #/components/schemas/HarnessHookLog
@@ -11437,6 +12529,236 @@ func (o OptGitSourceWorkspaceMode) Or(d GitSourceWorkspaceMode) GitSourceWorkspa
 	return d
 }
 
+// NewOptHarnessCaptureBaselineSecretRevisions returns new OptHarnessCaptureBaselineSecretRevisions with value set to v.
+func NewOptHarnessCaptureBaselineSecretRevisions(v HarnessCaptureBaselineSecretRevisions) OptHarnessCaptureBaselineSecretRevisions {
+	return OptHarnessCaptureBaselineSecretRevisions{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessCaptureBaselineSecretRevisions is optional HarnessCaptureBaselineSecretRevisions.
+type OptHarnessCaptureBaselineSecretRevisions struct {
+	Value HarnessCaptureBaselineSecretRevisions
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessCaptureBaselineSecretRevisions was set.
+func (o OptHarnessCaptureBaselineSecretRevisions) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessCaptureBaselineSecretRevisions) Reset() {
+	var v HarnessCaptureBaselineSecretRevisions
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessCaptureBaselineSecretRevisions) SetTo(v HarnessCaptureBaselineSecretRevisions) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessCaptureBaselineSecretRevisions) Get() (v HarnessCaptureBaselineSecretRevisions, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessCaptureBaselineSecretRevisions) Or(d HarnessCaptureBaselineSecretRevisions) HarnessCaptureBaselineSecretRevisions {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptHarnessCaptureCredentialValue returns new OptHarnessCaptureCredentialValue with value set to v.
+func NewOptHarnessCaptureCredentialValue(v HarnessCaptureCredentialValue) OptHarnessCaptureCredentialValue {
+	return OptHarnessCaptureCredentialValue{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessCaptureCredentialValue is optional HarnessCaptureCredentialValue.
+type OptHarnessCaptureCredentialValue struct {
+	Value HarnessCaptureCredentialValue
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessCaptureCredentialValue was set.
+func (o OptHarnessCaptureCredentialValue) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessCaptureCredentialValue) Reset() {
+	var v HarnessCaptureCredentialValue
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessCaptureCredentialValue) SetTo(v HarnessCaptureCredentialValue) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessCaptureCredentialValue) Get() (v HarnessCaptureCredentialValue, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessCaptureCredentialValue) Or(d HarnessCaptureCredentialValue) HarnessCaptureCredentialValue {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptHarnessCaptureFile returns new OptHarnessCaptureFile with value set to v.
+func NewOptHarnessCaptureFile(v HarnessCaptureFile) OptHarnessCaptureFile {
+	return OptHarnessCaptureFile{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessCaptureFile is optional HarnessCaptureFile.
+type OptHarnessCaptureFile struct {
+	Value HarnessCaptureFile
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessCaptureFile was set.
+func (o OptHarnessCaptureFile) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessCaptureFile) Reset() {
+	var v HarnessCaptureFile
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessCaptureFile) SetTo(v HarnessCaptureFile) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessCaptureFile) Get() (v HarnessCaptureFile, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessCaptureFile) Or(d HarnessCaptureFile) HarnessCaptureFile {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptHarnessCaptureOAuth returns new OptHarnessCaptureOAuth with value set to v.
+func NewOptHarnessCaptureOAuth(v HarnessCaptureOAuth) OptHarnessCaptureOAuth {
+	return OptHarnessCaptureOAuth{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessCaptureOAuth is optional HarnessCaptureOAuth.
+type OptHarnessCaptureOAuth struct {
+	Value HarnessCaptureOAuth
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessCaptureOAuth was set.
+func (o OptHarnessCaptureOAuth) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessCaptureOAuth) Reset() {
+	var v HarnessCaptureOAuth
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessCaptureOAuth) SetTo(v HarnessCaptureOAuth) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessCaptureOAuth) Get() (v HarnessCaptureOAuth, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessCaptureOAuth) Or(d HarnessCaptureOAuth) HarnessCaptureOAuth {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptHarnessCaptureSettingFields returns new OptHarnessCaptureSettingFields with value set to v.
+func NewOptHarnessCaptureSettingFields(v HarnessCaptureSettingFields) OptHarnessCaptureSettingFields {
+	return OptHarnessCaptureSettingFields{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessCaptureSettingFields is optional HarnessCaptureSettingFields.
+type OptHarnessCaptureSettingFields struct {
+	Value HarnessCaptureSettingFields
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessCaptureSettingFields was set.
+func (o OptHarnessCaptureSettingFields) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessCaptureSettingFields) Reset() {
+	var v HarnessCaptureSettingFields
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessCaptureSettingFields) SetTo(v HarnessCaptureSettingFields) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessCaptureSettingFields) Get() (v HarnessCaptureSettingFields, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessCaptureSettingFields) Or(d HarnessCaptureSettingFields) HarnessCaptureSettingFields {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptHarnessConfig returns new OptHarnessConfig with value set to v.
 func NewOptHarnessConfig(v HarnessConfig) OptHarnessConfig {
 	return OptHarnessConfig{
@@ -11477,6 +12799,98 @@ func (o OptHarnessConfig) Get() (v HarnessConfig, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptHarnessConfig) Or(d HarnessConfig) HarnessConfig {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptHarnessConfigCandidateSecretRevisions returns new OptHarnessConfigCandidateSecretRevisions with value set to v.
+func NewOptHarnessConfigCandidateSecretRevisions(v HarnessConfigCandidateSecretRevisions) OptHarnessConfigCandidateSecretRevisions {
+	return OptHarnessConfigCandidateSecretRevisions{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessConfigCandidateSecretRevisions is optional HarnessConfigCandidateSecretRevisions.
+type OptHarnessConfigCandidateSecretRevisions struct {
+	Value HarnessConfigCandidateSecretRevisions
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessConfigCandidateSecretRevisions was set.
+func (o OptHarnessConfigCandidateSecretRevisions) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessConfigCandidateSecretRevisions) Reset() {
+	var v HarnessConfigCandidateSecretRevisions
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessConfigCandidateSecretRevisions) SetTo(v HarnessConfigCandidateSecretRevisions) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessConfigCandidateSecretRevisions) Get() (v HarnessConfigCandidateSecretRevisions, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessConfigCandidateSecretRevisions) Or(d HarnessConfigCandidateSecretRevisions) HarnessConfigCandidateSecretRevisions {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptHarnessConfigSaveBack returns new OptHarnessConfigSaveBack with value set to v.
+func NewOptHarnessConfigSaveBack(v HarnessConfigSaveBack) OptHarnessConfigSaveBack {
+	return OptHarnessConfigSaveBack{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessConfigSaveBack is optional HarnessConfigSaveBack.
+type OptHarnessConfigSaveBack struct {
+	Value HarnessConfigSaveBack
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessConfigSaveBack was set.
+func (o OptHarnessConfigSaveBack) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessConfigSaveBack) Reset() {
+	var v HarnessConfigSaveBack
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessConfigSaveBack) SetTo(v HarnessConfigSaveBack) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessConfigSaveBack) Get() (v HarnessConfigSaveBack, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessConfigSaveBack) Or(d HarnessConfigSaveBack) HarnessConfigSaveBack {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -12954,6 +14368,258 @@ func (o OptNilErrorDetailArray) Get() (v []ErrorDetail, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilErrorDetailArray) Or(d []ErrorDetail) []ErrorDetail {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessCaptureDiagnosticArray returns new OptNilHarnessCaptureDiagnosticArray with value set to v.
+func NewOptNilHarnessCaptureDiagnosticArray(v []HarnessCaptureDiagnostic) OptNilHarnessCaptureDiagnosticArray {
+	return OptNilHarnessCaptureDiagnosticArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessCaptureDiagnosticArray is optional nullable []HarnessCaptureDiagnostic.
+type OptNilHarnessCaptureDiagnosticArray struct {
+	Value []HarnessCaptureDiagnostic
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessCaptureDiagnosticArray was set.
+func (o OptNilHarnessCaptureDiagnosticArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessCaptureDiagnosticArray) Reset() {
+	var v []HarnessCaptureDiagnostic
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessCaptureDiagnosticArray) SetTo(v []HarnessCaptureDiagnostic) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessCaptureDiagnosticArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessCaptureDiagnosticArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessCaptureDiagnostic
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessCaptureDiagnosticArray) Get() (v []HarnessCaptureDiagnostic, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessCaptureDiagnosticArray) Or(d []HarnessCaptureDiagnostic) []HarnessCaptureDiagnostic {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessCaptureFileArray returns new OptNilHarnessCaptureFileArray with value set to v.
+func NewOptNilHarnessCaptureFileArray(v []HarnessCaptureFile) OptNilHarnessCaptureFileArray {
+	return OptNilHarnessCaptureFileArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessCaptureFileArray is optional nullable []HarnessCaptureFile.
+type OptNilHarnessCaptureFileArray struct {
+	Value []HarnessCaptureFile
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessCaptureFileArray was set.
+func (o OptNilHarnessCaptureFileArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessCaptureFileArray) Reset() {
+	var v []HarnessCaptureFile
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessCaptureFileArray) SetTo(v []HarnessCaptureFile) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessCaptureFileArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessCaptureFileArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessCaptureFile
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessCaptureFileArray) Get() (v []HarnessCaptureFile, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessCaptureFileArray) Or(d []HarnessCaptureFile) []HarnessCaptureFile {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessCaptureRouteArray returns new OptNilHarnessCaptureRouteArray with value set to v.
+func NewOptNilHarnessCaptureRouteArray(v []HarnessCaptureRoute) OptNilHarnessCaptureRouteArray {
+	return OptNilHarnessCaptureRouteArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessCaptureRouteArray is optional nullable []HarnessCaptureRoute.
+type OptNilHarnessCaptureRouteArray struct {
+	Value []HarnessCaptureRoute
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessCaptureRouteArray was set.
+func (o OptNilHarnessCaptureRouteArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessCaptureRouteArray) Reset() {
+	var v []HarnessCaptureRoute
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessCaptureRouteArray) SetTo(v []HarnessCaptureRoute) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessCaptureRouteArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessCaptureRouteArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessCaptureRoute
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessCaptureRouteArray) Get() (v []HarnessCaptureRoute, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessCaptureRouteArray) Or(d []HarnessCaptureRoute) []HarnessCaptureRoute {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessCaptureSettingArray returns new OptNilHarnessCaptureSettingArray with value set to v.
+func NewOptNilHarnessCaptureSettingArray(v []HarnessCaptureSetting) OptNilHarnessCaptureSettingArray {
+	return OptNilHarnessCaptureSettingArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessCaptureSettingArray is optional nullable []HarnessCaptureSetting.
+type OptNilHarnessCaptureSettingArray struct {
+	Value []HarnessCaptureSetting
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessCaptureSettingArray was set.
+func (o OptNilHarnessCaptureSettingArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessCaptureSettingArray) Reset() {
+	var v []HarnessCaptureSetting
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessCaptureSettingArray) SetTo(v []HarnessCaptureSetting) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessCaptureSettingArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessCaptureSettingArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessCaptureSetting
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessCaptureSettingArray) Get() (v []HarnessCaptureSetting, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessCaptureSettingArray) Or(d []HarnessCaptureSetting) []HarnessCaptureSetting {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -25098,7 +26764,9 @@ func (s *SandboxAgentStatusEntryStatus) init() SandboxAgentStatusEntryStatus {
 
 // Ref: #/components/schemas/SandboxAgentStatusResponse
 type SandboxAgentStatusResponse struct {
-	Sources []SandboxAgentGitSourceStatus `json:"sources"`
+	HarnessConfigCandidate OptString                     `json:"harnessConfigCandidate"`
+	HarnessConfigState     OptString                     `json:"harnessConfigState"`
+	Sources                []SandboxAgentGitSourceStatus `json:"sources"`
 	// Terminal sessions only, live and ended alike - every terminal a record still exists for, typically
 	// just the primary. One-shot execs are not sessions and never appear.
 	Sessions []SandboxAgentSessionStatus `json:"sessions"`
@@ -25129,6 +26797,16 @@ type SandboxAgentStatusResponse struct {
 	// Absent from a sandbox agent that predates it.
 	Provision  OptSandboxAgentProvisionStatus `json:"provision"`
 	ObservedAt time.Time                      `json:"observedAt"`
+}
+
+// GetHarnessConfigCandidate returns the value of HarnessConfigCandidate.
+func (s *SandboxAgentStatusResponse) GetHarnessConfigCandidate() OptString {
+	return s.HarnessConfigCandidate
+}
+
+// GetHarnessConfigState returns the value of HarnessConfigState.
+func (s *SandboxAgentStatusResponse) GetHarnessConfigState() OptString {
+	return s.HarnessConfigState
 }
 
 // GetSources returns the value of Sources.
@@ -25184,6 +26862,16 @@ func (s *SandboxAgentStatusResponse) GetProvision() OptSandboxAgentProvisionStat
 // GetObservedAt returns the value of ObservedAt.
 func (s *SandboxAgentStatusResponse) GetObservedAt() time.Time {
 	return s.ObservedAt
+}
+
+// SetHarnessConfigCandidate sets the value of HarnessConfigCandidate.
+func (s *SandboxAgentStatusResponse) SetHarnessConfigCandidate(val OptString) {
+	s.HarnessConfigCandidate = val
+}
+
+// SetHarnessConfigState sets the value of HarnessConfigState.
+func (s *SandboxAgentStatusResponse) SetHarnessConfigState(val OptString) {
+	s.HarnessConfigState = val
 }
 
 // SetSources sets the value of Sources.
@@ -34120,6 +35808,8 @@ func (s *UpdateApprovalRuleBody) SetPolicy(val OptAccessPolicy) {
 
 // Ref: #/components/schemas/UpdateHarnessConfigBody
 type UpdateHarnessConfigBody struct {
+	// Revision the caller read before editing. A stale revision returns 409.
+	Revision int64 `json:"revision"`
 	// Replaces the harness config's egress policy level. Every live discobox on the harness converges
 	// onto the result.
 	Egress OptEgressPolicy `json:"egress"`
@@ -34134,6 +35824,11 @@ type UpdateHarnessConfigBody struct {
 	Bundle OptString `json:"bundle"`
 	// Harness config name.
 	Name OptString `json:"name"`
+}
+
+// GetRevision returns the value of Revision.
+func (s *UpdateHarnessConfigBody) GetRevision() int64 {
+	return s.Revision
 }
 
 // GetEgress returns the value of Egress.
@@ -34164,6 +35859,11 @@ func (s *UpdateHarnessConfigBody) GetBundle() OptString {
 // GetName returns the value of Name.
 func (s *UpdateHarnessConfigBody) GetName() OptString {
 	return s.Name
+}
+
+// SetRevision sets the value of Revision.
+func (s *UpdateHarnessConfigBody) SetRevision(val int64) {
+	s.Revision = val
 }
 
 // SetEgress sets the value of Egress.

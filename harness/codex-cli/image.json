@@ -37,6 +37,82 @@
       "command": [
         "/usr/local/libexec/discobox/configure-codex"
       ]
+    },
+    "saveBack": {
+      "version": 1,
+      "watch": [
+        ".codex/config.toml",
+        ".codex/auth.json"
+      ],
+      "exportCommand": [
+        "/usr/local/libexec/discobox/codex-capture",
+        "export"
+      ],
+      "handoffCommand": [
+        "/usr/local/libexec/discobox/codex-capture",
+        "handoff"
+      ],
+      "providers": [
+        {
+          "id": "openai-key",
+          "envName": "OPENAI_API_KEY",
+          "types": [
+            "token"
+          ],
+          "host": "api.openai.com"
+        },
+        {
+          "id": "openai",
+          "envName": "CODEX_OAUTH_TOKEN",
+          "types": [
+            "oauth"
+          ],
+          "oauth": {
+            "tokenUrl": "https://auth.openai.com/oauth/token",
+            "clientId": "app_EMoamEEZ73f0CkXaXp7hrann"
+          }
+        }
+      ],
+      "settings": [
+        {
+          "path": ".codex/config.toml",
+          "format": "toml",
+          "templateSuffix": "[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n",
+          "exclude": [
+            "projects",
+            "api_key",
+            "model_providers.*.api_key",
+            "model_providers.*.experimental_bearer_token",
+            "model_providers.*.http_headers",
+            "mcp_servers.*.env",
+            "mcp_servers.*.http_headers",
+            "mcp_servers.*.bearer_token",
+            "shell_environment_policy.set",
+            "profiles.*.shell_environment_policy.set",
+            "mcp_servers.*.oauth.client_secret",
+            "profiles.*.mcp_servers.*.oauth.client_secret",
+            "model_providers.*.auth",
+            "profiles.*.model_providers.*.auth"
+          ]
+        }
+      ],
+      "credentialFiles": [
+        ".codex/auth.json"
+      ],
+      "credentialSettings": [
+        {
+          "path": ".codex/auth.json",
+          "format": "json",
+          "fields": {
+            "OPENAI_API_KEY": "secret-or-null",
+            "tokens.access_token": "secret",
+            "tokens.refresh_token": "placeholder",
+            "tokens.id_token": "id-token",
+            "tokens.account_id": "string",
+            "last_refresh": "string"
+          }
+        }
+      ]
     }
   }
 }

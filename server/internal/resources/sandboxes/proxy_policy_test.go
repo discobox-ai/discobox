@@ -426,8 +426,8 @@ func TestAStaleWholeRowSaveDoesNotRevertProjectOrHarnessEgress(t *testing.T) {
 	if err := st.SetHarnessConfigEgress(ctx, "project-1", config.ID, tightened); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.UpdateHarnessConfig(ctx, staleConfig); err != nil {
-		t.Fatal(err)
+	if err := st.UpdateHarnessConfig(ctx, staleConfig); !errors.Is(err, store.ErrGenerationConflict) {
+		t.Fatalf("stale harness write should conflict: %v", err)
 	}
 	if got, _ := st.GetHarnessConfig(ctx, "project-1", config.ID); !got.Egress.DenyByDefault {
 		t.Fatalf("harness egress after a stale save = %+v", got.Egress)

@@ -186,7 +186,7 @@ func TestUpdateHarnessConfigConfiguredFiles(t *testing.T) {
 		t.Fatalf("seed files: %v", err)
 	}
 
-	body := services.UpdateHarnessConfigBody{}
+	body := services.UpdateHarnessConfigBody{Revision: config.Revision}
 	body.SetConfiguredFiles(apigen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{
 		{Path: ".claude.json", Content: "edited", CreateOnly: apigen.NewOptBool(true)},
 	}))

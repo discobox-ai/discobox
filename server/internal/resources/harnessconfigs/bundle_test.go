@@ -252,7 +252,7 @@ func TestRefreshRefusesAHarnessRegisteredBeforeBundles(t *testing.T) {
 func TestUpdateRegistersABundleForAHarnessRegisteredBeforeBundles(t *testing.T) {
 	svc, _ := bundleService(t)
 	config := legacyConfig(t, svc)
-	var body services.UpdateHarnessConfigBody
+	body := services.UpdateHarnessConfigBody{Revision: config.Revision}
 	body.SetBundle(apigen.NewOptString("example.com/acme:v1"))
 	updated, err := svc.UpdateHarnessConfig(context.Background(), "project-1", config.ID, body)
 	if err != nil {
@@ -271,7 +271,7 @@ func TestUpdateWithAnUnreadableBundleChangesNothing(t *testing.T) {
 	svc, _ := bundleService(t)
 	config := legacyConfig(t, svc)
 	svc.inspector = platformUnavailable{svc.inspector}
-	var body services.UpdateHarnessConfigBody
+	body := services.UpdateHarnessConfigBody{Revision: config.Revision}
 	body.SetBundle(apigen.NewOptString("example.com/acme:v1"))
 	if _, err := svc.UpdateHarnessConfig(context.Background(), "project-1", config.ID, body); err == nil {
 		t.Fatal("update = nil, want an unreadable platform bundle refused")
@@ -291,7 +291,7 @@ func TestUpdateWithAnUnreadableBundleChangesNothing(t *testing.T) {
 func TestUpdateRefusesABundleBesideAnotherChange(t *testing.T) {
 	svc, _ := bundleService(t)
 	config := legacyConfig(t, svc)
-	var body services.UpdateHarnessConfigBody
+	body := services.UpdateHarnessConfigBody{Revision: config.Revision}
 	body.SetBundle(apigen.NewOptString("example.com/acme:v1"))
 	body.SetName(apigen.NewOptString("Renamed"))
 	if _, err := svc.UpdateHarnessConfig(context.Background(), "project-1", config.ID, body); err == nil || !strings.Contains(err.Error(), "on its own") {
@@ -313,7 +313,7 @@ func TestUpdateRefusesABundleForABuiltIn(t *testing.T) {
 	if err := svc.store.UpdateHarnessConfig(context.Background(), config); err != nil {
 		t.Fatal(err)
 	}
-	var body services.UpdateHarnessConfigBody
+	body := services.UpdateHarnessConfigBody{Revision: config.Revision}
 	body.SetBundle(apigen.NewOptString("example.com/acme:v1"))
 	if _, err := svc.UpdateHarnessConfig(context.Background(), "project-1", config.ID, body); err == nil || !strings.Contains(err.Error(), "built-in") {
 		t.Fatalf("err = %v, want a built-in's bundle left to its server", err)

@@ -25,13 +25,21 @@ func TestDefinitionConfigure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := string(scriptBytes)
+	normalizer, err := os.ReadFile("opencode-normalize.cjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := os.ReadFile("image.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(scriptBytes) + string(normalizer) + string(metadata)
 	for _, required := range []string{
 		harness.ConfigureOutputPath,
 		harness.ConfigurePreviousConfigPath,
 		// Reuse goes through the PREV_ sentinel and comes back as usePrevious,
 		// so no credential is read or re-emitted when the existing one is kept.
-		`process.env['PREV_' + envName]`,
+		`sentinels[envName]`,
 		"usePrevious",
 		// The credentials template is JSON, so a quote inside a template action
 		// arrives at the renderer backslash-escaped and the parser rejects it.
@@ -136,7 +144,7 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 	if !slices.Equal(ports, []int{1455, 1456}) {
 		t.Fatalf("config ports = %v, want [1455 1456]", ports)
 	}
-	feature := featuretest.Load(t)
+	feature := featuretest.Load(t, ".")
 	if !feature.Runs(t, "npm install -g @opencode/cli") {
 		t.Error("the feature does not install opencode's CLI")
 	}
@@ -459,7 +467,9 @@ func (e *syncEnv) attempt(t *testing.T, extra ...string) (string, error) {
 	t.Helper()
 	logPath := filepath.Join(e.home, "..", "calls")
 	_ = os.Remove(logPath)
-	cmd := exec.CommandContext(t.Context(), "sh", "credentials.sh", "sync")
+	helper := filepath.Join(t.TempDir(), "credentials.sh")
+	writeExecutable(t, helper, strings.ReplaceAll(readFile(t, "credentials.sh"), "/usr/local/libexec/discobox/opencode-capture", "true"))
+	cmd := exec.CommandContext(t.Context(), "sh", helper, "sync")
 	cmd.Env = append(os.Environ(), "HOME="+e.home, "PATH="+e.bin+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"STUB_LOG="+logPath, "XDG_DATA_HOME=", "XDG_CONFIG_HOME=", "XDG_STATE_HOME=")
 	cmd.Env = append(cmd.Env, extra...)
@@ -1120,6 +1130,8 @@ func newConfigureEnv(t *testing.T) *configureEnv {
 		t.Fatal(err)
 	}
 	writeExecutable(t, env.script, withHelpers(t, strings.ReplaceAll(string(raw), "/run/discobox/configure/", env.runDir)))
+	writeExecutable(t, filepath.Join(dir, "opencode-image.json"), readFile(t, "image.json"))
+	writeExecutable(t, filepath.Join(dir, "opencode-normalize.cjs"), readFile(t, "opencode-normalize.cjs"))
 	// `script -q -e -c CMD /dev/null` runs CMD with a terminal; here it just
 	// runs it.
 	writeExecutable(t, filepath.Join(env.bin, "script"), "#!/bin/sh\nexec sh -c \"$4\"\n")
@@ -1165,9 +1177,14 @@ func withHelpers(t *testing.T, script string) string {
 			t.Fatal(err)
 		}
 		wrapper := filepath.Join(dir, filepath.Base(path))
-		writeExecutable(t, wrapper, "#!/bin/sh\nexec sh "+abs+" \"$@\"\n")
+		raw, err := os.ReadFile(abs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeExecutable(t, wrapper, strings.ReplaceAll(string(raw), "/usr/local/libexec/discobox/opencode-capture", "true"))
 		script = strings.ReplaceAll(script, path, wrapper)
 	}
+	script = strings.ReplaceAll(script, "/usr/local/libexec/discobox/opencode-capture", "true")
 	return script
 }
 
@@ -1450,7 +1467,7 @@ func TestManagedConfigLoadsThePluginByAbsolutePath(t *testing.T) {
 	// The path the config names and the path the image installs are the same
 	// directory, and only the feature says so. Every directory a file step
 	// makes is 0755, so every user's opencode can read the plugin.
-	feature := featuretest.Load(t)
+	feature := featuretest.Load(t, ".")
 	for source, path := range map[string]string{
 		"hook-plugin/server.js":    want + "/server.js",
 		"hook-plugin/package.json": want + "/package.json",
@@ -1580,4 +1597,13 @@ func countOf(all []string, want string) int {
 		}
 	}
 	return n
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
 }

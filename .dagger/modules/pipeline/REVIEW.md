@@ -27,3 +27,9 @@
   Its early exit can make a producer's SIGPIPE look like a missing value; the
   Dockerfile import check reported an existing `pkg/hostscope` COPY as missing.
   Feed finite captured output through a here-string instead.
+- Generator Changesets must exclude installed dependency trees from the output
+  snapshot as well as the input source. Adding pnpm generation otherwise made
+  `node_modules` appear as a large source change on a clean checkout.
+- Resolve Taskfile migration conflicts by preserving its complete shortcut
+  inventory and moving new upstream build/generation behavior into Dagger.
+  Verify `task --list`; a conflict-marker replacement truncated the command tail.

@@ -5,6 +5,12 @@
 apiVersion: discobox.ai/provision/v1
 requires: [core, node]
 steps:
+  - name: capture-runtime
+    file: {path: /usr/local/libexec/discobox/harness-capture/runtime.cjs, source: harness-capture/runtime.cjs}
+  - name: capture-settings
+    file: {path: /usr/local/libexec/discobox/harness-capture/settings.cjs, source: harness-capture/settings.cjs}
+  - name: capture-licenses
+    file: {path: /usr/local/libexec/discobox/harness-capture/settings-LICENSE.txt, source: harness-capture/settings-LICENSE.txt}
   # pi looks for fd (or Debian's fdfind) and ripgrep on PATH, and downloads
   # whichever is missing from GitHub on its first interactive run, into the
   # home. The cli feature has ripgrep; fd-find is the other.
@@ -36,3 +42,9 @@ steps:
   # through (ADR 0079). On PATH: its callers resolve it by name.
   - name: prompt
     file: {path: /usr/local/bin/discobox-prompt, source: prompt.sh, mode: "0755"}
+  - name: capture
+    file: {path: /usr/local/libexec/discobox/pi-capture, source: capture.sh, mode: "0755"}
+  - name: capture-metadata
+    file: {path: /usr/local/libexec/discobox/pi-image.json, source: image.json}
+  - name: capture-normalizer
+    file: {path: /usr/local/libexec/discobox/pi-normalize.cjs, source: pi-normalize.cjs}

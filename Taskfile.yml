@@ -358,7 +358,7 @@ tasks:
         set -eu
         docker build -f harness/{{.HARNESS_DIR}}/Dockerfile \
           --build-arg "HARNESS_METADATA=$(jq -c . {{.IMAGE_CONFIG}})" \
-          -t {{.HARNESS_BUNDLE}} harness/{{.HARNESS_DIR}}
+          -t {{.HARNESS_BUNDLE}} .
 
   compile:
     desc: Alias for build
@@ -742,6 +742,11 @@ tasks:
     desc: Verify module files and repository consistency
     cmds:
       - dagger api call verify
+
+  generate:harness-settings:
+    desc: Rebuild bundled harness settings parsers and licenses through Dagger
+    cmds:
+      - dagger api call harness-settings -y
 
   generate:
     desc: Regenerate contracts through a Dagger changeset

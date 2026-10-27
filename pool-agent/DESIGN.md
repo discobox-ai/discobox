@@ -1278,6 +1278,11 @@ bundle. `bundle` names the files its maker places beside it.
   environment, CA and control key — and on a Docker pool the builder's and
   registry's configuration — are written; the proxy, builder, registry and
   mediator units `Requires=` and are `After=` it.
+- **Nested egress**: the agent's unit uses `PassEnvironment` for the upstream
+  proxy and CA variables injected into the container's systemd environment.
+  The agent forwards them into the proxy, builder and registry environment
+  files. The maker's explicit environment file takes precedence; a pool with
+  no inherited proxy needs no extra configuration.
 - **Across a reboot** systemd starts the enabled units; the agent loads its
   identity key from `/var/lib/discobox`.
 - **How a server names it**: see

@@ -44,6 +44,8 @@
 # returned opencode 1's auth.json instead, which is read the way the launcher
 # reads it.
 set -eu
+HARNESS_CAPTURE_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+export HARNESS_CAPTURE_DIR
 
 PREVIOUS_CONFIG=/run/discobox/configure/harness-previous-config.json
 OUTPUT=/run/discobox/configure/harness-configure.json
@@ -190,135 +192,18 @@ classify_credentials() {
 		OPENCODE_CONFIGURE_FAR_FUTURE_EXPIRY="$FAR_FUTURE_EXPIRY" \
 		OPENCODE_CONFIGURE_REFRESH_PLACEHOLDER="$REFRESH_PLACEHOLDER" node <<-'NODE_EOF'
 		const fs = require('fs');
-		let stored = [];
-		try {
-			stored = JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIGURE_EXPORT, 'utf8'));
-		} catch (err) {
-			stored = [];
-		}
-		if (!Array.isArray(stored)) stored = [];
-		let previous = {};
-		try {
-			previous = JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIGURE_PREVIOUS, 'utf8')) || {};
-		} catch (err) {
-			previous = {};
-		}
-		const farFuture = Number(process.env.OPENCODE_CONFIGURE_FAR_FUTURE_EXPIRY);
-		const placeholder = process.env.OPENCODE_CONFIGURE_REFRESH_PLACEHOLDER;
-
-		// The previous run's entries and secret types, by the env name each
-		// entry's template action names.
-		const action = /\{\{\s*\.secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/;
-		const previousEntries = new Map();
-		try {
-			for (const entry of JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIGURE_PREVIOUS_ENTRIES, 'utf8'))) {
-				const match = JSON.stringify(entry).match(action);
-				if (match) previousEntries.set(match[1], entry);
-			}
-		} catch (err) {
-			// A previous file that does not parse keeps nothing.
-		}
-		const previousTypes = new Map((previous.secrets || []).map((s) => [s && s.envName, s && s.type]));
-
-		// oauthRefresh: the providers whose OAuth sign-in the control plane can
-		// renew, and how. Each is a property of that provider's public OAuth
-		// client — its token endpoint, client id, and request encoding — not of
-		// any one sign-in, so they are fixed here rather than read from the
-		// store. opencode 2 signs in with the same clients opencode 1 did
-		// (measured on 2.0.29). A provider not listed is delivered as a plain
-		// token.
-		const oauthRefresh = {
-			// The same client and endpoint the codex image refreshes as JSON.
-			openai: { tokenUrl: 'https://auth.openai.com/oauth/token', clientId: 'app_EMoamEEZ73f0CkXaXp7hrann' },
-			// xAI's token endpoint takes the refresh request form-encoded.
-			xai: { tokenUrl: 'https://auth.x.ai/oauth2/token', clientId: 'b1a00492-073a-47ea-816f-4c329264a828', tokenRequestEncoding: 'form' },
-		};
-
-		const byIntegration = new Map();
-		for (const entry of stored) {
-			if (!entry || typeof entry.integrationID !== 'string' || !entry.value) continue;
-			if (!byIntegration.has(entry.integrationID)) byIntegration.set(entry.integrationID, []);
-			byIntegration.get(entry.integrationID).push(entry);
-		}
-		const materialOf = (value) => (value.type === 'key' ? value.key : value.access);
-
-		const envNames = new Set();
-		const envNameFor = (provider) => {
-			const base = 'OPENCODE_' + provider.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') + '_CREDENTIAL';
-			let name = base;
-			for (let n = 2; envNames.has(name); n++) name = `${base}_${n}`;
-			envNames.add(name);
-			return name;
-		};
-
-		const plan = [];
-		for (const provider of [...byIntegration.keys()].sort()) {
-			const envName = envNameFor(provider);
-			const sentinel = process.env['PREV_' + envName];
-			// One credential per provider: the one opencode uses, which is the
-			// active one when the user connected more than one account. A new
-			// sign-in beats the seeded sentinel if both read as active, since
-			// it is the one the user just made.
-			const rank = (entry) => (entry.active ? 2 : 0) + (sentinel && materialOf(entry.value) === sentinel ? 0 : 1);
-			const chosen = byIntegration.get(provider).reduce((best, entry) => (rank(entry) > rank(best) ? entry : best));
-			const value = chosen.value;
-			const material = materialOf(value);
-			if (typeof material !== 'string' || !material) {
-				envNames.delete(envName);
-				continue;
-			}
-			if (sentinel && material === sentinel && previousEntries.has(envName)) {
-				plan.push({ envName, provider, kept: true, type: previousTypes.get(envName) || 'token', entry: previousEntries.get(envName) });
-				continue;
-			}
-			// Dotted field access, never a quoted map key: this content is JSON,
-			// so a quote inside a template action is escaped into the file itself
-			// and Go's template parser rejects it — which breaks every sandbox
-			// launch while configure still reports success. An env name is
-			// always a valid template field name, so there is nothing to quote.
-			const template = `{{ .secrets.${envName} }}`;
-			const item = { envName, provider, kept: false };
-			let delivered;
-			if (value.type === 'key') {
-				item.type = 'token';
-				item.value = { token: value.key };
-				delivered = { ...value, key: template };
-			} else {
-				const spec = oauthRefresh[provider];
-				if (spec && value.refresh && value.refresh !== value.access) {
-					item.type = 'oauth';
-					item.value = { token: value.access, refreshToken: value.refresh, tokenUrl: spec.tokenUrl, clientId: spec.clientId };
-					if (spec.tokenRequestEncoding) item.value.tokenRequestEncoding = spec.tokenRequestEncoding;
-					if (Number(value.expires) > 0) item.value.accessTokenExpiresAt = Number(value.expires);
-					// The refresh token stays in the control plane, so a refresh
-					// from inside a sandbox could not succeed — and does not need
-					// to, since a sentinel does not go stale.
-					delivered = { ...value, access: template, refresh: placeholder, expires: farFuture };
-				} else {
-					item.type = 'token';
-					item.value = { token: value.access };
-					// A provider that authenticates with the refresh field itself
-					// (GitHub Copilot stored its token in both under opencode 1)
-					// gets the sentinel there too; a real refresh token becomes
-					// the placeholder.
-					delivered = {
-						...value,
-						access: template,
-						refresh: value.refresh === value.access ? template : (value.refresh ? placeholder : value.refresh),
-					};
-					const expires = Number(value.expires) || 0;
-					if (expires > 0 && expires < farFuture) {
-						item.notice = `${provider}'s sign-in expires ${new Date(expires).toISOString().slice(0, 10)}, and Discobox cannot renew it. Configure again after that, or connect it with an API key.`;
-					}
-				}
-			}
-			// Made the image's own entry, under the id that tells it from one
-			// the user connects by hand, by opencode-credentials own.
-			item.entry = { integrationID: provider, value: delivered };
-			plan.push(item);
-		}
-		fs.writeFileSync(process.env.OPENCODE_CONFIGURE_PLAN, JSON.stringify(plan));
-		process.stdout.write(String(plan.length));
+		const path = require('path');
+		const dir = process.env.HARNESS_CAPTURE_DIR;
+		const { normalize } = require(path.join(dir, 'opencode-normalize.cjs'));
+		const definition = require(path.join(dir, 'opencode-image.json')).harness.saveBack;
+		const read = (p, fallback) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return fallback; } };
+		const sentinels = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('PREV_')).map(([k,v]) => [k.slice(5),v]));
+		const previous = read(process.env.OPENCODE_CONFIGURE_PREVIOUS, {});
+		previous.files = (previous.files || []).filter(f => f.path !== '.config/discobox/opencode-credentials.json');
+		previous.files.push({ path: '.config/discobox/opencode-credentials.json', content: JSON.stringify(read(process.env.OPENCODE_CONFIGURE_PREVIOUS_ENTRIES, [])) });
+		const result = normalize(read(process.env.OPENCODE_CONFIGURE_EXPORT, []), previous, sentinels, definition);
+		fs.writeFileSync(process.env.OPENCODE_CONFIGURE_PLAN, JSON.stringify(result.plan));
+		process.stdout.write(String(result.plan.length));
 	NODE_EOF
 }
 

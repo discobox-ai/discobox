@@ -343,6 +343,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Pipeline).Generate(&parent), nil
+		case "HarnessSettings":
+			var parent Pipeline
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Pipeline).HarnessSettings(&parent), nil
 		case "Image":
 			var parent Pipeline
 			err = json.Unmarshal(parentJSON, &parent)
@@ -883,7 +890,12 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithFunction(
 						dag.Function("Generate",
 							dag.TypeDef().WithObject("Changeset")).
-							WithDescription("Regenerate application contracts and schemas and return an applicable diff.").
+							WithDescription("Regenerate application contracts, schemas and bundled harness parsers.").
+							WithSourceMap(dag.SourceMap("generate.go", 30, 1))).
+					WithFunction(
+						dag.Function("HarnessSettings",
+							dag.TypeDef().WithObject("Changeset")).
+							WithDescription("Regenerate bundled harness settings parsers and licenses.").
 							WithSourceMap(dag.SourceMap("generate.go", 18, 1))).
 					WithFunction(
 						dag.Function("Image",

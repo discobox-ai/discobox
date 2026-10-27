@@ -419,9 +419,16 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   watcher process predates the tree it watches (a `go run` does not rebuild
   itself) and so has never built the platform bundle. The dev loop's own server
   exits the same way then (`wnb-run-failed.txt`). Restarting the watcher
-  half alone fixes both: kill the `discobox-dev-lock docker-image-watch`
-  process group and run its Taskfile command (`dev:docker-image-watch`) in
-  the background from the repo root; it rebuilds, writes `.env`, and the
+  half alone fixes both: inspect the watcher, its ancestors and their process
+  groups with `ps -o pid,ppid,pgid,args`. The watcher can share a process group
+  with the entire `task dev` loop; do not kill that group. Terminate only the
+  compiled `discobox-docker-image-watch` leaf process, wait for its
+  `discobox-dev-lock docker-image-watch` wrapper to exit and release the lock,
+  then run its Taskfile command (`dev:docker-image-watch`) in a dedicated
+  background session from the repo root. The current `dev` dependencies do
+  not enable Task's `failfast`, so the server dependency remains running when
+  the old watcher exits; recheck that before using this procedure if the
+  Taskfile changes. The new watcher rebuilds, writes `.env`, and the
   server restarts onto it. Without restarting the
   user's loop: start from a copy of its database instead
   (`sqlite3 .tmp/discobox/discobox.db ".backup $S/data/discobox.db"`, then
@@ -466,10 +473,13 @@ resolves bundles itself and otherwise cannot reach ghcr.
   `admin exec create <id> -- discobox-provision wait <harness>`
   (it fails until the platform's core lands; retry).
 - If a nested box's `apt-get` hangs on `Connection failed [IP: 127.0.0.1
-  17008]`, its pool has no upstream proxy: the runc wrapper is injecting
-  nothing. `docker run --rm <any image> env | grep HTTPS_PROXY` prints nothing
-  then; `sudo systemctl restart containerd` brought it back (10-23), then
-  `docker restart` the pool container.
+  17008]`, check the bridge and the pool's upstream proxy separately. Compare
+  proxy variable names in the pool's `/proc/1/environ`, its agent's environment,
+  and `/etc/discobox/proxy.env`. If PID 1 has the settings but the agent does
+  not, check the agent unit's `PassEnvironment`: switching Docker pools from
+  an agent entrypoint to systemd lost this inheritance. If PID 1 also lacks
+  them, investigate the outer runc injection and bridge instead. CONNECT and
+  TLS success alone do not prove the pool can reach an upstream origin.
 
 ## The CLI's autolaunch, as a systemd user unit
 

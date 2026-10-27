@@ -11,6 +11,7 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/sandboxtree"
 	"github.com/discobox-ai/discobox/pkg/tarsums"
+	"github.com/discobox-ai/discobox/sandbox-agent/config"
 )
 
 // exportMountPaths are where the export mode reads each subtree it may be asked
@@ -95,6 +96,9 @@ func exportExclusions() (func(string) bool, error) {
 		return nil, fmt.Errorf("resolve volumes: %w", err)
 	}
 	excluded := exportExcludedNames(volumes, id.uid)
+	for name := range captureExportExclusions(volumes, id.uid, config.CaptureRecoveryDir(effective.AgentRuntime.DatabasePath)) {
+		excluded[name] = struct{}{}
+	}
 	if len(excluded) == 0 {
 		return nil, nil
 	}
@@ -145,4 +149,27 @@ func exportExcludedNames(volumes []harness.ResolvedVolume, uid int) map[string]s
 		}
 	}
 	return excluded
+}
+
+// A previous image's manifest may have only /var/lib/discobox. Explicitly
+// exclude private capture state in every ancestor backing tree, including an
+// overlay upper, as well as its dedicated volume when one is present.
+func captureExportExclusions(volumes []harness.ResolvedVolume, uid int, privatePath string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, v := range volumes {
+		if v.Kind != harness.VolumeData {
+			continue
+		}
+		parent := path.Clean(v.Path)
+		if privatePath != parent && !strings.HasPrefix(privatePath, parent+"/") {
+			continue
+		}
+		rel := strings.TrimPrefix(strings.TrimPrefix(privatePath, parent), "/")
+		base := path.Join(sandboxtree.Data, strings.TrimPrefix(volumeDir(v, uid), dataMountPath))
+		out[path.Join(base, rel)] = struct{}{}
+		if rel != "" {
+			out[path.Join(base, "upper", rel)] = struct{}{}
+		}
+	}
+	return out
 }

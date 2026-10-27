@@ -40,6 +40,8 @@
 # without ever being readable in this sandbox. Keeping it is reported back as
 # usePrevious, not as a value.
 set -eu
+HARNESS_CAPTURE_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+export HARNESS_CAPTURE_DIR
 
 PREVIOUS_CONFIG=/run/discobox/configure/harness-previous-config.json
 OUTPUT=/run/discobox/configure/harness-configure.json
@@ -59,8 +61,6 @@ OAUTH_ENV=CODEX_OAUTH_TOKEN
 # OAuth client, not of any one login, so they are baked into the harness rather
 # than read from auth.json. The control plane uses them to refresh the access
 # token via grant_type=refresh_token.
-OAUTH_TOKEN_URL="https://auth.openai.com/oauth/token"
-OAUTH_CLIENT_ID="app_EMoamEEZ73f0CkXaXp7hrann"
 
 # The last_refresh written into the delivered auth.json: far enough out that
 # codex never decides the credential is stale and rotates it itself. This is not
@@ -231,64 +231,18 @@ extract_api_key() {
 extract_oauth_capture() {
 	[ -f "$AUTH_FILE" ] || return 1
 	CODEX_CONFIGURE_AUTH_FILE="$AUTH_FILE" \
-		CODEX_CONFIGURE_TOKEN_URL="$OAUTH_TOKEN_URL" \
-		CODEX_CONFIGURE_CLIENT_ID="$OAUTH_CLIENT_ID" \
 		CODEX_CONFIGURE_CAPTURE_FILE="$OAUTH_CAPTURE_FILE" node <<-'NODE_EOF'
 		const fs = require('fs');
-		let auth = {};
-		try {
-			auth = JSON.parse(fs.readFileSync(process.env.CODEX_CONFIGURE_AUTH_FILE, 'utf8')) || {};
-		} catch (err) {
-			auth = {};
-		}
-		const tokens = auth.tokens || {};
-		const accessToken = tokens.access_token;
-		const refreshToken = tokens.refresh_token;
-		if (typeof accessToken !== 'string' || !accessToken ||
-			typeof refreshToken !== 'string' || !refreshToken) {
-			process.exit(3);
-		}
-		const decodeClaims = (jwt) => {
-			if (typeof jwt !== 'string') return null;
-			const parts = jwt.split('.');
-			if (parts.length !== 3 || !parts[1]) return null;
-			try {
-				return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-			} catch (err) {
-				return null;
-			}
-		};
-		const secret = {
-			token: accessToken,
-			refreshToken,
-			tokenUrl: process.env.CODEX_CONFIGURE_TOKEN_URL,
-			clientId: process.env.CODEX_CONFIGURE_CLIENT_ID,
-		};
-		// The access token is a JWT, so its own expiry is on hand. Recording it
-		// is what lets the control plane refresh just ahead of expiry instead of
-		// discovering it from a 401.
-		const accessClaims = decodeClaims(accessToken);
-		if (accessClaims && typeof accessClaims.exp === 'number') {
-			secret.accessTokenExpiresAt = accessClaims.exp * 1000;
-		}
-		const idClaims = decodeClaims(tokens.id_token) || {};
-		const authClaims = idClaims['https://api.openai.com/auth'] || {};
-		if (typeof authClaims.chatgpt_plan_type === 'string' && authClaims.chatgpt_plan_type) {
-			secret.subscriptionType = authClaims.chatgpt_plan_type;
-		}
-		const account = {};
-		const email = idClaims.email || (idClaims['https://api.openai.com/profile'] || {}).email;
-		if (typeof email === 'string' && email) account.email = email;
-		for (const claim of ['chatgpt_plan_type', 'chatgpt_user_id', 'chatgpt_account_id']) {
-			if (typeof authClaims[claim] === 'string' && authClaims[claim]) account[claim] = authClaims[claim];
-		}
-		if (authClaims.chatgpt_account_is_fedramp === true) account.chatgpt_account_is_fedramp = true;
-		const accountId = typeof tokens.account_id === 'string' && tokens.account_id
-			? tokens.account_id
-			: (account.chatgpt_account_id || null);
-		fs.writeFileSync(process.env.CODEX_CONFIGURE_CAPTURE_FILE,
-			JSON.stringify({ secret, tokens: { account, accountId } }));
-		process.stdout.write(accessToken);
+		const path = require('path');
+		const dir = process.env.HARNESS_CAPTURE_DIR;
+		const { oauth } = require(path.join(dir, 'codex-normalize.cjs'));
+		const definition = require(path.join(dir, 'codex-image.json')).harness.saveBack;
+		let auth;
+		try { auth = JSON.parse(fs.readFileSync(process.env.CODEX_CONFIGURE_AUTH_FILE, 'utf8')); } catch { process.exit(3); }
+		let result;
+		try { result = oauth(auth, definition.providers.find(p => p.id === 'openai')); } catch { process.exit(3); }
+		fs.writeFileSync(process.env.CODEX_CONFIGURE_CAPTURE_FILE, JSON.stringify(result));
+		process.stdout.write(result.secret.token);
 	NODE_EOF
 }
 
@@ -569,25 +523,10 @@ write_output() {
 			} catch (err) {
 				body = '';
 			}
-			// A line scanner, not a TOML parser: the only thing being removed is
-			// a table, and a table ends where the next header begins. A [projects]
-			// table written as a single-line inline value is dropped too; one
-			// spanning several lines is not, and codex does not write one.
-			const kept = [];
-			let dropping = false;
-			for (const line of body.split('\n')) {
-				const header = line.match(/^\s*\[\[?\s*([^\]]*?)\s*\]\]?\s*$/);
-				if (header) {
-					const name = header[1];
-					dropping = name === 'projects' || name.startsWith('projects.');
-					if (dropping) continue;
-				} else if (/^\s*projects\s*=/.test(line)) {
-					continue;
-				}
-				if (dropping) continue;
-				kept.push(line);
-			}
-			const settings = kept.join('\n').replace(/\s+$/, '');
+			const path = require('path');
+			const { project } = require(path.join(process.env.HARNESS_CAPTURE_DIR, 'harness-capture/settings.cjs'));
+			const definition = require(path.join(process.env.HARNESS_CAPTURE_DIR, 'codex-image.json')).harness.saveBack;
+			const settings = project(body, definition.settings.find(s => s.path === '.codex/config.toml')).content;
 			return {
 				path: process.env.CODEX_CONFIGURE_CONFIG_PATH,
 				template: true,
@@ -631,32 +570,7 @@ write_output() {
 		// sentinel does not expire, and the control plane keeps the real token
 		// fresh behind it. refresh_token is a placeholder for the same reason:
 		// the field must be present, and it is never reachable.
-		const oauthAuthFile = (tokens) => {
-			const b64url = (value) => Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
-			const claims = {};
-			if (tokens.account.email) claims.email = tokens.account.email;
-			const authClaims = {};
-			for (const claim of ['chatgpt_plan_type', 'chatgpt_user_id', 'chatgpt_account_id']) {
-				if (tokens.account[claim]) authClaims[claim] = tokens.account[claim];
-			}
-			if (tokens.account.chatgpt_account_is_fedramp) authClaims.chatgpt_account_is_fedramp = true;
-			claims['https://api.openai.com/auth'] = authClaims;
-			const idToken = `${b64url({ alg: 'none', typ: 'JWT' })}.${b64url(claims)}.discobox`;
-			return {
-				path: process.env.CODEX_CONFIGURE_AUTH_PATH,
-				template: true,
-				content: JSON.stringify({
-					OPENAI_API_KEY: null,
-					tokens: {
-						id_token: idToken,
-						access_token: `{{ .secrets.${process.env.CODEX_CONFIGURE_OAUTH_ENV} }}`,
-						refresh_token: 'discobox-refresh-happens-in-the-control-plane',
-						account_id: tokens.accountId,
-					},
-					last_refresh: process.env.CODEX_CONFIGURE_LAST_REFRESH,
-				}, null, 2) + '\n',
-			};
-		};
+		const { oauthAuthFile } = require(require('path').join(process.env.HARNESS_CAPTURE_DIR, 'codex-normalize.cjs'));
 
 		const files = [configFile()];
 		if (capture) {

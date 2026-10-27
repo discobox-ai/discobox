@@ -14,8 +14,20 @@ func (m *Pipeline) Tidy() *dagger.Changeset {
 	return ctr.Directory("/src/discobox").WithoutDirectory(".git").Changes(m.Source)
 }
 
-// Regenerate application contracts and schemas and return an applicable diff.
+// Regenerate bundled harness settings parsers and licenses.
+func (m *Pipeline) HarnessSettings() *dagger.Changeset {
+	ctr := m.harnessSettingsContainer()
+	return ctr.Directory("/src/discobox").WithoutDirectory(".git").WithoutDirectory("node_modules").Changes(m.Source)
+}
+
+func (m *Pipeline) harnessSettingsContainer() *dagger.Container {
+	return m.work().WithMountedCache("/root/.local/share/pnpm/store", dag.CacheVolume("discobox-pnpm")).
+		WithExec([]string{"pnpm", "install", "--frozen-lockfile"}).
+		WithExec([]string{"node", "scripts/build-harness-settings.mjs"})
+}
+
+// Regenerate application contracts, schemas and bundled harness parsers.
 func (m *Pipeline) Generate() *dagger.Changeset {
-	ctr := m.work().WithExec([]string{"bash", "-ec", `mapfile -t modules < <(go work edit -json | jq -r '.Use[].DiskPath'); for mod in "${modules[@]}"; do (cd "$mod" && go generate ./...); done`})
-	return ctr.Directory("/src/discobox").WithoutDirectory(".git").Changes(m.Source)
+	ctr := m.harnessSettingsContainer().WithExec([]string{"bash", "-ec", `mapfile -t modules < <(go work edit -json | jq -r '.Use[].DiskPath'); for mod in "${modules[@]}"; do (cd "$mod" && go generate ./...); done`})
+	return ctr.Directory("/src/discobox").WithoutDirectory(".git").WithoutDirectory("node_modules").Changes(m.Source)
 }

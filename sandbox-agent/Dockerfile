@@ -18,6 +18,7 @@ COPY pkg/gitbackend ./pkg/gitbackend
 COPY pkg/gitprogress ./pkg/gitprogress
 COPY harness ./harness
 COPY pkg/hostscope ./pkg/hostscope
+COPY pkg/harnesscapture ./pkg/harnesscapture
 COPY pkg/imagecache ./pkg/imagecache
 COPY internal/filelock ./internal/filelock
 COPY pkg/judge ./pkg/judge
@@ -105,6 +106,7 @@ COPY pkg/fsdurable ./pkg/fsdurable
 COPY harness ./harness
 COPY pkg/health ./pkg/health
 COPY pkg/hostscope ./pkg/hostscope
+COPY pkg/harnesscapture ./pkg/harnesscapture
 COPY pkg/imagecache ./pkg/imagecache
 COPY internal ./internal
 COPY pkg/platform ./pkg/platform

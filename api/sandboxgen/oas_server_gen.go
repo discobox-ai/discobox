@@ -8,6 +8,12 @@ import (
 
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
+	// AcknowledgeSandboxHarnessConfig implements acknowledge-sandbox-harness-config operation.
+	//
+	// Acknowledge sandbox harness config.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-ack
+	AcknowledgeSandboxHarnessConfig(ctx context.Context, req *HarnessConfigAcknowledgment, params AcknowledgeSandboxHarnessConfigParams) (*HarnessConfigChanges, error)
 	// AttachSandboxExec implements attach-sandbox-exec operation.
 	//
 	// Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input
@@ -30,6 +36,12 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 	AttachSandboxExecOnce(ctx context.Context, req AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (AttachSandboxExecOnceOK, error)
+	// CaptureSandboxHarnessConfig implements capture-sandbox-harness-config operation.
+	//
+	// Capture sandbox harness config.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-capture
+	CaptureSandboxHarnessConfig(ctx context.Context, req *HarnessConfigCandidateRequest, params CaptureSandboxHarnessConfigParams) (*HarnessConfigCandidate, error)
 	// ConfirmSandboxAutostop implements confirm-sandbox-autostop operation.
 	//
 	// Confirms, against what the sandbox sees now, a power-down its pool is about to carry out under its
@@ -59,6 +71,12 @@ type Handler interface {
 	//
 	// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
 	DeleteSandboxExec(ctx context.Context, params DeleteSandboxExecParams) error
+	// DiscardSandboxHarnessConfigChanges implements discard-sandbox-harness-config-changes operation.
+	//
+	// Discard sandbox harness config changes.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
+	DiscardSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params DiscardSandboxHarnessConfigChangesParams) (*HarnessConfigChanges, error)
 	// GetSandboxAgentInventory implements get-sandbox-agent-inventory operation.
 	//
 	// What the sandbox's exec, service and tool lists and its terminals' screens answer right now, in
@@ -94,6 +112,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/screen
 	GetSandboxExecScreen(ctx context.Context, params GetSandboxExecScreenParams) (*SandboxExecScreen, error)
+	// GetSandboxHarnessConfigChanges implements get-sandbox-harness-config-changes operation.
+	//
+	// Get sandbox harness config changes.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes
+	GetSandboxHarnessConfigChanges(ctx context.Context, params GetSandboxHarnessConfigChangesParams) (*HarnessConfigChanges, error)
 	// GetSandboxRuntimeConfig implements get-sandbox-runtime-config operation.
 	//
 	// Returns the runtime-config document the sandbox last applied - what the pool has told it it is
@@ -246,6 +270,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/files/content
 	ReadSandboxFile(ctx context.Context, params ReadSandboxFileParams) (ReadSandboxFileOK, error)
+	// ReconsiderSandboxHarnessConfig implements reconsider-sandbox-harness-config operation.
+	//
+	// Reconsider sandbox harness config.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-reconsider
+	ReconsiderSandboxHarnessConfig(ctx context.Context, req *HarnessConfigReconsideration, params ReconsiderSandboxHarnessConfigParams) (*HarnessConfigChanges, error)
 	// RemoveSandboxFile implements remove-sandbox-file operation.
 	//
 	// Removes a file, a link, or a directory. 404 for a path that does not exist, 409 for a directory

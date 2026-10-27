@@ -5,6 +5,12 @@
 apiVersion: discobox.ai/provision/v1
 requires: [core, node]
 steps:
+  - name: capture-runtime
+    file: {path: /usr/local/libexec/discobox/harness-capture/runtime.cjs, source: harness-capture/runtime.cjs}
+  - name: capture-settings
+    file: {path: /usr/local/libexec/discobox/harness-capture/settings.cjs, source: harness-capture/settings.cjs}
+  - name: capture-licenses
+    file: {path: /usr/local/libexec/discobox/harness-capture/settings-LICENSE.txt, source: harness-capture/settings-LICENSE.txt}
   - name: cli
     run: install-cli.sh
   # Copilot loads every file here as a *policy* hook source: read beside the
@@ -29,3 +35,9 @@ steps:
   # through (ADR 0079). On PATH: its callers resolve it by name.
   - name: prompt
     file: {path: /usr/local/bin/discobox-prompt, source: prompt.sh, mode: "0755"}
+  - name: capture
+    file: {path: /usr/local/libexec/discobox/copilot-capture, source: capture.sh, mode: "0755"}
+  - name: capture-metadata
+    file: {path: /usr/local/libexec/discobox/copilot-image.json, source: image.json}
+  - name: capture-normalizer
+    file: {path: /usr/local/libexec/discobox/copilot-normalize.cjs, source: copilot-normalize.cjs}

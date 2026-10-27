@@ -193,9 +193,19 @@ func (r *Pipeline) Format() *Changeset {
 	}
 }
 
-// Regenerate application contracts and schemas and return an applicable diff.
+// Regenerate application contracts, schemas and bundled harness parsers.
 func (r *Pipeline) Generate() *Changeset {
 	q := r.query.Select("generate")
+
+	return &Changeset{
+		query:     q,
+		refetchID: r.refetchID,
+	}
+}
+
+// Regenerate bundled harness settings parsers and licenses.
+func (r *Pipeline) HarnessSettings() *Changeset {
+	q := r.query.Select("harnessSettings")
 
 	return &Changeset{
 		query:     q,

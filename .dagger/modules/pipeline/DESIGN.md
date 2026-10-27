@@ -1,7 +1,7 @@
 # CI and release pipeline
 
 The module owns orchestration and release policy. Product-owned Dockerfiles,
-Go generators, and installer/formula generators remain canonical inputs.
+Go/Node generators, and installer/formula generators remain canonical inputs.
 There is no Task invocation, Actions API dispatch, host build dependency, or
 implicit credential lookup in the graph.
 
@@ -16,12 +16,15 @@ implicit credential lookup in the graph.
   digests, rootfs diff IDs, config and manifest references before import.
 - `publish.go`: publication gates and explicit credentials, direct Homebrew
   updates, stable promotion, manual winget submission, and local preview.
-- `generate.go`: source edits returned as Changesets; checks never mutate the
+- `generate.go`: source edits, including bundled harness settings parsers/licenses,
+  returned as Changesets; checks never mutate the
   developer's checkout. SDK generation is a separate `go-sdk` operation.
 - `trust.go`: inspects the base image's saved public roots and runs the actual
   core provisioning script from the platform bundle. Checks the exported store
   in a separate container, then exercises runtime CA addition and HTTPS using
   the application's `runcca.MaterializeTrustStore`. CI exports `trust.json`.
+- Harness Dockerfiles build from the repository root to include their shared
+  capture runtime and bundled settings parsers.
 - Shell files implement domain checks and package-manager interactions, never
   pipeline ordering. SDK-generated files are committed and checked for drift.
 

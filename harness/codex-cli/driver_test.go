@@ -20,7 +20,15 @@ func TestDefinitionConfigure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := string(scriptBytes)
+	normalizer, err := os.ReadFile("codex-normalize.cjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := os.ReadFile("image.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(scriptBytes) + string(normalizer) + string(metadata)
 	if !strings.Contains(script, harness.ConfigureOutputPath) {
 		t.Fatalf("configure script does not write the harness-configure.json contract: %s", script)
 	}
@@ -77,7 +85,7 @@ func TestDefinitionConfigure(t *testing.T) {
 	// stripped from what is captured and one templated stanza put back -- the
 	// same stanza the image declares, trusting the directory the sandbox's
 	// terminals start in whether or not the sandbox has a source.
-	if !strings.Contains(script, "startsWith('projects.')") {
+	if !strings.Contains(script, "project(body, definition.settings.find") {
 		t.Fatalf("configure script returns the configure sandbox's own trust map: %s", script)
 	}
 	if !strings.Contains(script, `[projects.{{ .workingDir | json }}]`) {
@@ -288,7 +296,7 @@ func TestImageLaunchesCodexWithSourceScopedMemory(t *testing.T) {
 		t.Fatalf("manifest overrides the harness-run convention: run=%v relaunch=%v",
 			image.Harness.RunCommand, image.Harness.RelaunchCommand)
 	}
-	if got, want := featuretest.Load(t).Installs("launch.sh"), "/usr/local/bin/"+harness.RunCommand; got != want {
+	if got, want := featuretest.Load(t, ".").Installs("launch.sh"), "/usr/local/bin/"+harness.RunCommand; got != want {
 		t.Fatalf("the feature installs the launcher at %q, want %q", got, want)
 	}
 	scriptBytes, err := os.ReadFile("launch.sh")

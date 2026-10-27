@@ -10,5 +10,8 @@ ARG HARNESS_METADATA
 # that forgot rather than as a bundle declaring nothing, and only a running
 # server would ever say so. A FROM scratch stage has no shell to check it in,
 # so the expansion does.
-LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
-COPY agent.conf check-launcher.sh configure.sh hook-extension.js install-cli.sh launch.sh prompt.sh provision.yaml /features/pi/
+LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . harness/pi/image.json)\"}"
+COPY harness/pi/agent.conf harness/pi/check-launcher.sh harness/pi/configure.sh harness/pi/hook-extension.js harness/pi/install-cli.sh harness/pi/launch.sh harness/pi/prompt.sh harness/pi/provision.yaml /features/pi/
+COPY harness/pi/capture.sh harness/pi/image.json harness/pi/pi-normalize.cjs /features/pi/
+# The exporter is owned by this harness; the generic platform has no JS runtime.
+COPY harness/capture/runtime.cjs harness/capture/settings.cjs harness/capture/settings-LICENSE.txt /features/pi/harness-capture/

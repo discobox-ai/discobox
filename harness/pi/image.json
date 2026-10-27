@@ -43,6 +43,271 @@
       "command": [
         "/usr/local/libexec/discobox/configure-pi"
       ]
+    },
+    "saveBack": {
+      "version": 1,
+      "watch": [
+        ".pi/agent/settings.json",
+        ".pi/agent/keybindings.json",
+        ".config/discobox/pi-harness.json",
+        ".pi/agent/auth.json"
+      ],
+      "exportCommand": [
+        "/usr/local/libexec/discobox/pi-capture",
+        "export"
+      ],
+      "handoffCommand": [
+        "/usr/local/libexec/discobox/pi-capture",
+        "handoff"
+      ],
+      "providers": [
+        {
+          "id": "anthropic",
+          "envName": "PI_ANTHROPIC_CREDENTIAL",
+          "types": [
+            "token",
+            "oauth"
+          ],
+          "oauth": {
+            "tokenUrl": "https://console.anthropic.com/v1/oauth/token",
+            "clientId": "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+          }
+        },
+        {
+          "id": "openai",
+          "envName": "PI_OPENAI_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "google",
+          "envName": "PI_GOOGLE_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "google-vertex",
+          "envName": "PI_GOOGLE_VERTEX_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "groq",
+          "envName": "PI_GROQ_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "mistral",
+          "envName": "PI_MISTRAL_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "openrouter",
+          "envName": "PI_OPENROUTER_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "xai",
+          "envName": "PI_XAI_CREDENTIAL",
+          "types": [
+            "token",
+            "oauth"
+          ],
+          "oauth": {
+            "tokenUrl": "https://auth.x.ai/oauth2/token",
+            "clientId": "b1a00492-073a-47ea-816f-4c329264a828",
+            "encoding": "form"
+          }
+        },
+        {
+          "id": "github-copilot",
+          "envName": "PI_GITHUB_COPILOT_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "host": "api.github.com"
+        },
+        {
+          "id": "deepseek",
+          "envName": "PI_DEEPSEEK_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "cerebras",
+          "envName": "PI_CEREBRAS_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "zai",
+          "envName": "PI_ZAI_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "kimi-coding",
+          "envName": "PI_KIMI_CODING_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "minimax",
+          "envName": "PI_MINIMAX_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "huggingface",
+          "envName": "PI_HUGGINGFACE_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "azure",
+          "envName": "PI_AZURE_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "amazon-bedrock",
+          "envName": "PI_AMAZON_BEDROCK_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "google-gemini-cli",
+          "envName": "PI_GOOGLE_GEMINI_CLI_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "google-antigravity",
+          "envName": "PI_GOOGLE_ANTIGRAVITY_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "openai-codex",
+          "envName": "PI_OPENAI_CODEX_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "xai-oauth",
+          "envName": "PI_XAI_OAUTH_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "alibaba",
+          "envName": "PI_ALIBABA_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "togetherai",
+          "envName": "PI_TOGETHERAI_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "fireworks-ai",
+          "envName": "PI_FIREWORKS_AI_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "perplexity",
+          "envName": "PI_PERPLEXITY_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "cohere",
+          "envName": "PI_COHERE_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "opencode",
+          "envName": "PI_OPENCODE_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        }
+      ],
+      "settings": [
+        {
+          "path": ".pi/agent/settings.json",
+          "format": "json",
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "providers.*.apiKey",
+            "providers.*.headers",
+            "lastChangelogVersion"
+          ]
+        },
+        {
+          "path": ".pi/agent/keybindings.json",
+          "format": "json",
+          "exclude": []
+        },
+        {
+          "path": ".config/discobox/pi-harness.json",
+          "format": "json",
+          "exclude": [
+            "about"
+          ]
+        }
+      ],
+      "credentialFiles": [
+        ".pi/agent/auth.json"
+      ],
+      "credentialSettings": [
+        {
+          "path": ".pi/agent/auth.json",
+          "format": "json",
+          "fields": {
+            "*.type": "string",
+            "*.key": "secret",
+            "*.access": "secret-or-placeholder",
+            "*.refresh": "secret-or-placeholder",
+            "*.expires": "number",
+            "*.accountId": "string",
+            "*.email": "string",
+            "*.projectId": "string",
+            "*.methodID": "string"
+          }
+        }
+      ]
     }
   }
 }

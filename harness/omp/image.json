@@ -46,6 +46,301 @@
       "command": [
         "/usr/local/libexec/discobox/configure-omp"
       ]
+    },
+    "saveBack": {
+      "version": 1,
+      "watch": [
+        ".omp/agent/config.yml",
+        ".config/discobox/omp-harness.json",
+        ".config/discobox/omp-credentials.json",
+        ".omp/agent/agent.db",
+        ".omp/agent/agent.db-wal"
+      ],
+      "exportCommand": [
+        "/usr/local/libexec/discobox/omp-capture",
+        "export"
+      ],
+      "handoffCommand": [
+        "/usr/local/libexec/discobox/omp-capture",
+        "handoff"
+      ],
+      "providers": [
+        {
+          "id": "anthropic",
+          "envName": "OMP_ANTHROPIC_CREDENTIAL",
+          "types": [
+            "token",
+            "oauth"
+          ],
+          "oauth": {
+            "tokenUrl": "https://console.anthropic.com/v1/oauth/token",
+            "clientId": "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+          },
+          "multipleAccounts": true
+        },
+        {
+          "id": "openai",
+          "envName": "OMP_OPENAI_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "google",
+          "envName": "OMP_GOOGLE_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "google-vertex",
+          "envName": "OMP_GOOGLE_VERTEX_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "groq",
+          "envName": "OMP_GROQ_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "mistral",
+          "envName": "OMP_MISTRAL_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "openrouter",
+          "envName": "OMP_OPENROUTER_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "xai",
+          "envName": "OMP_XAI_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "github-copilot",
+          "envName": "OMP_GITHUB_COPILOT_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "deepseek",
+          "envName": "OMP_DEEPSEEK_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "cerebras",
+          "envName": "OMP_CEREBRAS_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "zai",
+          "envName": "OMP_ZAI_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "kimi-coding",
+          "envName": "OMP_KIMI_CODING_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "minimax",
+          "envName": "OMP_MINIMAX_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "huggingface",
+          "envName": "OMP_HUGGINGFACE_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "azure",
+          "envName": "OMP_AZURE_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "amazon-bedrock",
+          "envName": "OMP_AMAZON_BEDROCK_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "google-gemini-cli",
+          "envName": "OMP_GOOGLE_GEMINI_CLI_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "google-antigravity",
+          "envName": "OMP_GOOGLE_ANTIGRAVITY_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "openai-codex",
+          "envName": "OMP_OPENAI_CODEX_CREDENTIAL",
+          "types": [
+            "token",
+            "oauth"
+          ],
+          "oauth": {
+            "tokenUrl": "https://auth.openai.com/oauth/token",
+            "clientId": "app_EMoamEEZ73f0CkXaXp7hrann"
+          },
+          "multipleAccounts": true
+        },
+        {
+          "id": "xai-oauth",
+          "envName": "OMP_XAI_OAUTH_CREDENTIAL",
+          "types": [
+            "token",
+            "oauth"
+          ],
+          "oauth": {
+            "tokenUrl": "https://auth.x.ai/oauth2/token",
+            "clientId": "b1a00492-073a-47ea-816f-4c329264a828",
+            "encoding": "form"
+          },
+          "multipleAccounts": true
+        },
+        {
+          "id": "alibaba",
+          "envName": "OMP_ALIBABA_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "togetherai",
+          "envName": "OMP_TOGETHERAI_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "fireworks-ai",
+          "envName": "OMP_FIREWORKS_AI_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "perplexity",
+          "envName": "OMP_PERPLEXITY_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "cohere",
+          "envName": "OMP_COHERE_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        },
+        {
+          "id": "opencode",
+          "envName": "OMP_OPENCODE_CREDENTIAL",
+          "types": [
+            "token"
+          ],
+          "multipleAccounts": true
+        }
+      ],
+      "settings": [
+        {
+          "path": ".omp/agent/config.yml",
+          "format": "yaml",
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "providers.*.apiKey",
+            "providers.*.headers",
+            "mcpServers.*.env",
+            "mcpServers.*.headers"
+          ]
+        },
+        {
+          "path": ".config/discobox/omp-harness.json",
+          "format": "json",
+          "exclude": [
+            "about"
+          ]
+        }
+      ],
+      "credentialFiles": [
+        ".config/discobox/omp-credentials.json"
+      ],
+      "credentialSettings": [
+        {
+          "path": ".config/discobox/omp-credentials.json",
+          "format": "json",
+          "fields": {
+            "version": "number",
+            "credentials.*.provider": "string",
+            "credentials.*.credential.type": "string",
+            "credentials.*.credential.key": "secret",
+            "credentials.*.credential.access": "secret-or-placeholder",
+            "credentials.*.credential.refresh": "secret-or-placeholder",
+            "credentials.*.credential.expires": "number",
+            "credentials.*.credential.accountId": "string",
+            "credentials.*.credential.email": "string",
+            "credentials.*.credential.projectId": "string",
+            "credentials.*.credential.methodID": "string"
+          }
+        }
+      ]
     }
   }
 }

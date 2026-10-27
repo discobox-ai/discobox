@@ -30,7 +30,7 @@ func productImages() []imageSpec {
 		if name == "codex" {
 			dir = "codex-cli"
 		}
-		images = append(images, imageSpec{Name: "harness-" + name, Context: "harness/" + dir, Dockerfile: "Dockerfile", Metadata: "harness/" + dir + "/image.json", MetadataArg: "HARNESS_METADATA", Bundle: true, Neutral: true})
+		images = append(images, imageSpec{Name: "harness-" + name, Context: ".", Dockerfile: "harness/" + dir + "/Dockerfile", Metadata: "harness/" + dir + "/image.json", MetadataArg: "HARNESS_METADATA", Bundle: true, Neutral: true})
 	}
 	return images
 }

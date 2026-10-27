@@ -9,8 +9,10 @@ import (
 	"strings"
 
 	"aidanwoods.dev/go-paseto"
+	"github.com/ogen-go/ogen/uri"
 
 	"github.com/discobox-ai/discobox/pkg/gitbackend"
+	hc "github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 )
 
@@ -82,7 +84,7 @@ func (c SignedTokenClaims) HasScope(scope string) bool {
 		case scope:
 			return true
 		case "*":
-			if !poolOnlyScopes[scope] {
+			if !poolOnlyScopes[scope] && scope != hc.ScopeCapture && scope != hc.ScopeWrite {
 				return true
 			}
 		case "sandbox:*":
@@ -318,6 +320,9 @@ func routeIdentity(path string) (string, string, bool) {
 }
 
 func requiredRequestScope(r *http.Request) string {
+	if scope := captureRequestScope(r); scope != "" {
+		return scope
+	}
 	// The Git route is told by its route segment, before any suffix test: a
 	// repository is named by its source's slug, and a slug like "execs" or
 	// "status" would otherwise be gated as something it is not. The segment is
@@ -475,4 +480,35 @@ func bearerToken(header string) (string, bool) {
 		return "", false
 	}
 	return strings.TrimSpace(token), true
+}
+
+func captureRequestScope(r *http.Request) string {
+	path := r.URL.Path
+	if raw := r.URL.RawPath; raw != "" {
+		if normalized, ok := uri.NormalizeEscapedPath(raw); ok {
+			path = normalized
+		}
+	}
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) < 6 || parts[0] != "api" || parts[1] != "projects" || parts[3] != "sandboxes" {
+		return ""
+	}
+	switch parts[5] {
+	case "harness-config-capture":
+		if len(parts) == 6 {
+			return hc.ScopeCapture
+		}
+	case "harness-config-ack", "harness-config-reconsider":
+		if len(parts) == 6 {
+			return hc.ScopeWrite
+		}
+	case "harness-config-changes":
+		if len(parts) == 6 && r.Method == http.MethodGet {
+			return hc.ScopeRead
+		}
+		if len(parts) == 7 && parts[6] == "discard" {
+			return hc.ScopeWrite
+		}
+	}
+	return ""
 }

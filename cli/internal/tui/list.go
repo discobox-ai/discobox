@@ -1190,6 +1190,8 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	} else if s.Provisioning != "" && atCursor {
 		// And to what the box is still provisioning, or failed to.
 		name = s.Provisioning
+	} else if s.HarnessConfigPending && atCursor {
+		name = "harness changes: H to review"
 	}
 
 	// A discobox created on another machine says so after its name, dim,

@@ -18,15 +18,31 @@ type Feature struct {
 	provisionspec.Feature
 }
 
-// Load loads the feature in the test's working directory, which is the
-// harness's own.
-func Load(t testing.TB) Feature {
+// Load assembles a harness feature as its Dockerfile does: its own directory
+// plus the shared exporter that each coding harness owns in its bundle.
+func Load(t testing.TB, source string) Feature {
 	t.Helper()
-	dir, err := os.Getwd()
+	dir, err := filepath.Abs(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	feature, err := provisionspec.LoadFeature(dir)
+	staged := filepath.Join(t.TempDir(), filepath.Base(dir))
+	if err := os.CopyFS(staged, os.DirFS(dir)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(staged, "harness-capture"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"runtime.cjs", "settings.cjs", "settings-LICENSE.txt"} {
+		data, err := os.ReadFile(filepath.Join(filepath.Dir(dir), "capture", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(staged, "harness-capture", name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	feature, err := provisionspec.LoadFeature(staged)
 	if err != nil {
 		t.Fatal(err)
 	}

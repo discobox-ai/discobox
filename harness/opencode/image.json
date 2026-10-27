@@ -29,6 +29,325 @@
       "command": [
         "/usr/local/libexec/discobox/configure-opencode"
       ]
+    },
+    "saveBack": {
+      "version": 1,
+      "watch": [
+        ".config/opencode/opencode.json",
+        ".config/opencode/opencode.jsonc",
+        ".config/opencode/config.json",
+        ".config/opencode/cli.json",
+        ".local/state/opencode/model.json",
+        ".config/discobox/opencode-harness.json",
+        ".config/discobox/opencode-credentials.json",
+        ".local/share/opencode/opencode.db",
+        ".local/share/opencode/opencode.db-wal"
+      ],
+      "exportCommand": [
+        "/usr/local/libexec/discobox/opencode-capture",
+        "export"
+      ],
+      "handoffCommand": [
+        "/usr/local/libexec/discobox/opencode-capture",
+        "handoff"
+      ],
+      "providers": [
+        {
+          "id": "anthropic",
+          "envName": "OPENCODE_ANTHROPIC_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "openai",
+          "envName": "OPENCODE_OPENAI_CREDENTIAL",
+          "types": [
+            "token",
+            "oauth"
+          ],
+          "oauth": {
+            "tokenUrl": "https://auth.openai.com/oauth/token",
+            "clientId": "app_EMoamEEZ73f0CkXaXp7hrann"
+          }
+        },
+        {
+          "id": "google",
+          "envName": "OPENCODE_GOOGLE_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "google-vertex",
+          "envName": "OPENCODE_GOOGLE_VERTEX_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "groq",
+          "envName": "OPENCODE_GROQ_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "mistral",
+          "envName": "OPENCODE_MISTRAL_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "openrouter",
+          "envName": "OPENCODE_OPENROUTER_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "xai",
+          "envName": "OPENCODE_XAI_CREDENTIAL",
+          "types": [
+            "token",
+            "oauth"
+          ],
+          "oauth": {
+            "tokenUrl": "https://auth.x.ai/oauth2/token",
+            "clientId": "b1a00492-073a-47ea-816f-4c329264a828",
+            "encoding": "form"
+          }
+        },
+        {
+          "id": "github-copilot",
+          "envName": "OPENCODE_GITHUB_COPILOT_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "deepseek",
+          "envName": "OPENCODE_DEEPSEEK_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "cerebras",
+          "envName": "OPENCODE_CEREBRAS_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "zai",
+          "envName": "OPENCODE_ZAI_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "kimi-coding",
+          "envName": "OPENCODE_KIMI_CODING_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "minimax",
+          "envName": "OPENCODE_MINIMAX_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "huggingface",
+          "envName": "OPENCODE_HUGGINGFACE_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "azure",
+          "envName": "OPENCODE_AZURE_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "amazon-bedrock",
+          "envName": "OPENCODE_AMAZON_BEDROCK_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "google-gemini-cli",
+          "envName": "OPENCODE_GOOGLE_GEMINI_CLI_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "google-antigravity",
+          "envName": "OPENCODE_GOOGLE_ANTIGRAVITY_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "openai-codex",
+          "envName": "OPENCODE_OPENAI_CODEX_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "xai-oauth",
+          "envName": "OPENCODE_XAI_OAUTH_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "alibaba",
+          "envName": "OPENCODE_ALIBABA_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "togetherai",
+          "envName": "OPENCODE_TOGETHERAI_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "fireworks-ai",
+          "envName": "OPENCODE_FIREWORKS_AI_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "perplexity",
+          "envName": "OPENCODE_PERPLEXITY_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "cohere",
+          "envName": "OPENCODE_COHERE_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        },
+        {
+          "id": "opencode",
+          "envName": "OPENCODE_OPENCODE_CREDENTIAL",
+          "types": [
+            "token"
+          ]
+        }
+      ],
+      "settings": [
+        {
+          "path": ".config/opencode/opencode.json",
+          "format": "jsonc",
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "provider.*.options.apiKey",
+            "provider.*.options.headers",
+            "mcp.*.environment",
+            "mcp.*.headers",
+            "mcp.*.oauth.clientSecret"
+          ]
+        },
+        {
+          "path": ".config/opencode/opencode.jsonc",
+          "format": "jsonc",
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "provider.*.options.apiKey",
+            "provider.*.options.headers",
+            "mcp.*.environment",
+            "mcp.*.headers",
+            "mcp.*.oauth.clientSecret"
+          ]
+        },
+        {
+          "path": ".config/opencode/config.json",
+          "format": "jsonc",
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "provider.*.options.apiKey",
+            "provider.*.options.headers",
+            "mcp.*.environment",
+            "mcp.*.headers",
+            "mcp.*.oauth.clientSecret"
+          ]
+        },
+        {
+          "path": ".config/opencode/cli.json",
+          "format": "jsonc",
+          "exclude": [
+            "apiKey",
+            "api_key",
+            "provider.*.options.apiKey",
+            "provider.*.options.headers",
+            "mcp.*.environment",
+            "mcp.*.headers",
+            "mcp.*.oauth.clientSecret"
+          ]
+        },
+        {
+          "path": ".local/state/opencode/model.json",
+          "format": "json",
+          "createOnly": true,
+          "exclude": [
+            "recent"
+          ]
+        },
+        {
+          "path": ".config/discobox/opencode-harness.json",
+          "format": "json",
+          "exclude": [
+            "about"
+          ]
+        }
+      ],
+      "credentialFiles": [
+        ".config/discobox/opencode-credentials.json"
+      ],
+      "credentialSettings": [
+        {
+          "path": ".config/discobox/opencode-credentials.json",
+          "format": "json",
+          "fields": {
+            "*.id": "string",
+            "*.integrationID": "string",
+            "*.active": "boolean",
+            "*.label": "string",
+            "*.value.type": "string",
+            "*.value.key": "secret",
+            "*.value.access": "secret-or-placeholder",
+            "*.value.refresh": "secret-or-placeholder",
+            "*.value.expires": "number",
+            "*.value.accountId": "string",
+            "*.value.email": "string",
+            "*.value.projectId": "string",
+            "*.value.methodID": "string",
+            "*.value.metadata.accountID": "string",
+            "*.value.metadata.email": "string"
+          }
+        }
+      ]
     }
   }
 }

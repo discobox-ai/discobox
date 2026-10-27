@@ -143,7 +143,7 @@ func (a *App) editHarnessFile(ctx context.Context, client *apiclientgen.Client, 
 	copy(updated, files)
 	updated[index].Content = edited
 
-	body := &apimodel.UpdateHarnessConfigBody{}
+	body := &apimodel.UpdateHarnessConfigBody{Revision: cfg.Revision.Or(0)}
 	if ref.Bucket == harnessFileBucketConfigured {
 		body.SetConfiguredFiles(apiclientgen.NewOptNilHarnessConfigFileArray(updated))
 	} else {

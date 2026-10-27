@@ -66,13 +66,13 @@ func writeExecutable(t *testing.T, path, content string) {
 }
 
 func TestDefinitionConfigure(t *testing.T) {
-	script := readFile(t, "configure.sh")
+	script := readFile(t, "configure.sh") + readFile(t, "pi-normalize.cjs") + readFile(t, "image.json")
 	for _, required := range []string{
 		harness.ConfigureOutputPath,
 		harness.ConfigurePreviousConfigPath,
 		// Reuse goes through the PREV_ sentinel and comes back as usePrevious,
 		// so no credential is read or re-emitted when the existing one is kept.
-		`process.env['PREV_' + envName]`,
+		`sentinels[envName]`,
 		"usePrevious",
 		// auth.json is JSON, so a quote inside a template action arrives at
 		// the renderer backslash-escaped and the parser rejects it.
@@ -182,7 +182,7 @@ func TestTheHomeFileLoadsTheInstalledExtension(t *testing.T) {
 	if !strings.Contains(shim, `export { default } from "`+installedHookExt+`";`) {
 		t.Fatalf("%s = %q, want it to re-export %s", hookShimPath, shim, installedHookExt)
 	}
-	if got := featuretest.Load(t).Installs("hook-extension.js"); got != installedHookExt {
+	if got := featuretest.Load(t, ".").Installs("hook-extension.js"); got != installedHookExt {
 		t.Errorf("the feature installs the extension at %q, want %s", got, installedHookExt)
 	}
 }
@@ -204,7 +204,7 @@ func TestImagePolicy(t *testing.T) {
 	if v, ok := image.Env["PI_PROXY"]; ok {
 		t.Errorf("manifest sets PI_PROXY=%q, which pi does not read", v)
 	}
-	feature := featuretest.Load(t)
+	feature := featuretest.Load(t, ".")
 	for source, want := range map[string]string{
 		"launch.sh":    "/usr/local/bin/" + harness.RunCommand,
 		"prompt.sh":    "/usr/local/bin/discobox-prompt",

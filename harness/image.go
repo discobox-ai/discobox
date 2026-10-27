@@ -94,6 +94,11 @@ type Features struct {
 // to and no group to put an account in. Each is refused rather than ignored,
 // so a manifest never claims something its sandbox will not have.
 func (m ImageMetadata) ValidateFor(goos string) error {
+	if m.Harness != nil && m.Harness.SaveBack != nil {
+		if err := m.Harness.SaveBack.Validate(); err != nil {
+			return fmt.Errorf("harness save-back: %w", err)
+		}
+	}
 	account, shell := strings.TrimSpace(m.Account), strings.TrimSpace(m.Shell)
 	if sandboxuser.HasPOSIXIDs(goos) {
 		if account != "" {

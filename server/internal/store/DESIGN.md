@@ -201,3 +201,13 @@ manifest only. Neither can overwrite a newer heartbeat, registration, or
 telemetry report.
 Placement uses `Pool.IsReady`, not a persisted lifecycle verdict. API projections
 use the same health derivation; see [pools](../resources/pools/DESIGN.md).
+
+## Harness configuration revisions
+
+`UpdateHarnessConfig` compares the caller's `Revision`, advances it on success,
+and returns `ErrGenerationConflict` on a stale snapshot; it never inserts a row
+as a fallback. `CaptureBaseline` records config revision and the identity plus
+`UpdatedAt` of every bound secret. Save-back checks it under row locks, so both
+binding replacement and an OAuth refresh invalidate an earlier candidate.
+`HarnessCaptureReceipt` records the accepted baseline under project, sandbox,
+config and opaque candidate ID; it retains no exported credential material.

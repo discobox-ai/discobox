@@ -10,5 +10,9 @@ ARG HARNESS_METADATA
 # that forgot rather than as a bundle declaring nothing, and only a running
 # server would ever say so. A FROM scratch stage has no shell to check it in,
 # so the expansion does.
-LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
-COPY agent.conf check-launcher.sh configure.sh install-cli.sh launch.sh managed-settings.json prompt.sh provision.yaml /features/claude-code/
+LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . harness/claude-code/image.json)\"}"
+COPY harness/claude-code/agent.conf harness/claude-code/check-launcher.sh harness/claude-code/configure.sh harness/claude-code/install-cli.sh harness/claude-code/launch.sh harness/claude-code/managed-settings.json harness/claude-code/prompt.sh harness/claude-code/provision.yaml /features/claude-code/
+COPY harness/claude-code/capture.sh harness/claude-code/image.json /features/claude-code/
+COPY harness/claude-code/claude-code-normalize.cjs /features/claude-code/
+# The exporter is owned by this harness; the generic platform has no JS runtime.
+COPY harness/capture/runtime.cjs harness/capture/settings.cjs harness/capture/settings-LICENSE.txt /features/claude-code/harness-capture/

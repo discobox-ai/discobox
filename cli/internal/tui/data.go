@@ -393,6 +393,8 @@ type Sandbox struct {
 	// ones that failed (ADR 26-10-16-423 §6). Empty once all are ready. It
 	// was written by the box and made displayable already.
 	Provisioning string
+	// HarnessConfigPending reports a captured local settings or credential change.
+	HarnessConfigPending bool
 
 	// Repaired is the last automatic repair of this box, once it is over. It is
 	// carried because a repair that works clears the failure it answered, and
@@ -2434,6 +2436,11 @@ type DataSource interface {
 	// be pushed reports on its own SourcePush instead, because the others
 	// still can be.
 	PushSources(ctx context.Context, sandboxID string, held map[string]string) ([]SourcePush, error)
+
+	// Harness changes are safe previews; writes always name the reviewed candidate.
+	HarnessChanges(ctx context.Context, sandboxID string) (HarnessChanges, error)
+	SaveHarnessChanges(ctx context.Context, sandboxID, candidateID string) (string, error)
+	DiscardHarnessChanges(ctx context.Context, sandboxID, candidateID string) (string, error)
 
 	// Harnesses is one server's harnesses, oldest first, which is the order
 	// they were registered in. It is read at startup as well as by the harnesses

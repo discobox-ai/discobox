@@ -609,3 +609,58 @@ func captureProxyLog(t *testing.T) *bytes.Buffer {
 	t.Cleanup(func() { log.SetOutput(previous) })
 	return &buf
 }
+
+func TestHarnessCaptureRoutesForwardWithExplicitScopes(t *testing.T) {
+	for _, tc := range []struct{ method, suffix, scope string }{
+		{http.MethodGet, "/harness-config-changes", "harness-config:read"},
+		{http.MethodPost, "/harness-config-capture", "harness-config:capture"},
+		{http.MethodPost, "/harness-config-ack", "harness-config:write"},
+		{http.MethodPost, "/harness-config-reconsider", "harness-config:write"},
+		{http.MethodPost, "/harness-config-changes/discard", "harness-config:write"},
+	} {
+		t.Run(tc.suffix, func(t *testing.T) {
+			calls := 0
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.Method != tc.method || r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1"+tc.suffix {
+					t.Errorf("forwarded request = %s %s", r.Method, r.URL.Path)
+				}
+				if r.Header.Get("Authorization") != "Bearer sandbox-token" {
+					t.Error("missing downstream authorization")
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer upstream.Close()
+			baseURL, err := url.Parse(upstream.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			publicKey, sign := testPoolTokenSigner(t)
+			router, err := NewRouter(Config{
+				Identity:              Identity{ProjectID: "project-1", PoolID: "pool-1"},
+				Runtime:               newProxyTestRuntime(t, baseURL),
+				ControlPlanePublicKey: publicKey,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, scope := range []string{ScopeExecWrite, tc.scope} {
+				req := httptest.NewRequestWithContext(context.Background(), tc.method, "/api/project/project-1/pool/pool-1/sandboxes/sandbox-1"+tc.suffix, nil)
+				req.Header.Set("Authorization", "Bearer "+sign("project-1", "pool-1", "sandbox-1", scope))
+				req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
+				resp := httptest.NewRecorder()
+				router.ServeHTTP(resp, req)
+				want := http.StatusForbidden
+				if scope == tc.scope {
+					want = http.StatusNoContent
+				}
+				if resp.Code != want {
+					t.Fatalf("scope %s: status %d: %s", scope, resp.Code, resp.Body.String())
+				}
+			}
+			if calls != 1 {
+				t.Fatalf("upstream calls = %d", calls)
+			}
+		})
+	}
+}

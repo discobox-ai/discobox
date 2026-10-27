@@ -212,3 +212,19 @@ func TestRunOnceReceivesLiveSecretEnvironment(t *testing.T) {
 		}
 	}
 }
+
+func TestRunOncePrivateInputDoesNotCreateExecRecord(t *testing.T) {
+	dir := t.TempDir()
+	writeProgram(t, dir, "input", "#!/bin/sh\ncat\n")
+	manager := oneShotManager(t, systemPath(dir))
+	output, err := manager.RunOnce(context.Background(), OnceRequest{Command: []string{"input"}, Stdin: []byte("private-credential"), MaxOutput: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(output) != "private-credential" {
+		t.Fatal("private input was not delivered")
+	}
+	if len(manager.List()) != 0 {
+		t.Fatal("private helper entered exec history")
+	}
+}

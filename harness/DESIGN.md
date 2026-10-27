@@ -5,7 +5,94 @@ their layering, volume and env resolution, the configure-flow paths) and the
 built-in harness bundles: their manifests, harness-owned hook definitions,
 launchers, and configure scripts.
 
+## Saving local configuration
+
+The six coding harnesses declare `harness.saveBack` (ADR 26-10-26-573): watched
+home-relative paths, installed export/handoff commands, settings exclusions,
+credential-file schemas, and authoritative provider metadata. Each built-in coding
+harness bundle carries `capture/runtime.cjs`, `capture/settings.cjs`, and the parser
+licenses beside its metadata and normalization module. The generic platform
+ships none of these: export/handoff are arbitrary installed commands, not a Node
+API. These six built-ins use Node through their own feature dependency. Interactive configure and background capture share the
+normalizers. Configure still owns onboarding and verification.
+
+Export is noninteractive JSON over stdin/stdout. It preserves ordinary settings,
+omits the harness-declared credential/local paths, and converts supported local
+logins to secret values plus safe
+credential templates. Unknown providers, credential commands, unsafe metadata,
+and malformed inputs produce value-free diagnostics and protect local credential
+files. Omission never revokes a login. `BaselineOnly` reads the delivered,
+rendered baseline, not current disk settings. Current sentinels and privately supplied prior aliases become `keep`
+bindings. An old delivered alias remains a reference while runtime reminting
+converges; its exported template names the binding, so ordinary repair can install
+the current sentinel. A sentinel belonging to another provider is never new
+secret material.
+Sentinels have vendor-compatible shapes, so only exact membership can identify
+them; the server also rejects values matching its assignments.
+
+Reconsideration is a pure projection of the immutable candidate and the current
+server templates: only selected credentials replace entries, while other current
+bindings remain. It never reads a newer local login. A shared credential document
+is rebuilt together with its binding selection; portable file selection cannot
+separately select an auth template.
+
+Settings preserve unknown preferences, nested objects, arrays, hooks and custom
+provider configuration rather than maintaining a second copy of each vendor's
+preference schema. Each manifest names known credential-bearing paths to exclude
+(including inline API keys and mixed environment/header maps), as well as local
+state such as trust and recent-model history. Exclusion patterns match actual
+object path segments, with `*` for one and `**` for any depth. This is known-shape
+normalization, not a scanner for secrets embedded in arbitrary strings.
+Credential files still use strict schemas and sentinel templates; they are never
+ordinary settings. Recognized exclusions do not themselves create diagnostics.
+JSON/JSONC accepts comments and trailing commas where the CLI does. TOML and YAML
+use the pinned `smol-toml` and `yaml` parsers, bundled into `settings.cjs` by
+`go tool task generate:harness-settings`; its source is `settings-source.cjs`.
+The checked-in parser bundle and `settings-LICENSE.txt` ship with each coding
+harness, so export
+requires no package installation. Parse failures retain prior state. Older
+settings allowlist definitions require a harness metadata refresh; they are not
+silently treated as unrestricted documents.
+Codex removes parsed local-project tables in configure and capture, then appends
+its registered literal template suffix so each consuming sandbox trusts its own
+working directory. Literal `{{` directives in the ordinary settings prefix are
+rejected rather than evaluated as delivery templates.
+The server permits only that exact suffix and validates the portable prefix.
+
+Handoff runs only after durable acceptance. A digest of the exact captured entry
+prevents overwriting a newer login; already-applied entries are idempotent. File
+stores replace only acknowledged entries and retain other local accounts.
+Copilot removes the acknowledged plaintext login while its environment sentinel
+is delivered on restart. Pi's derived Copilot access token is not the GitHub
+credential: an unchanged refresh sentinel means `keep`, even after an exchange.
+
+OpenCode and omp read/write through their native auth export/import commands,
+never SQL. OpenCode journals the acknowledged entry's digest and active choice
+before retiring its native ID. The journal contains no credentials; it lets a
+retry resume after logout succeeded but import failed. After import, the saved
+account is switched active only when it was active at capture and the other
+accounts have not changed. omp preserves account identity. Live database harness processes defer handoff
+until they stop. Both launch import paths take the same
+`~/.config/discobox/harness-capture.lock` as the agent, then check current exports
+before importing: a new or unsupported local login blocks an older delivery.
+The launcher guard also reads the agent's local `harness-sentinels.json` context
+under that lock to recognize older DB aliases after reminting. This user-readable
+context is never consulted by a server-bound capture export, which takes aliases
+only from the private agent input. Malformed guard context fails closed.
+The lock coordinates Discobox operations; it cannot serialize a vendor CLI's
+OAuth refresh against the control plane, the accepted race in the ADR.
+
+`capture/runtime.test.cjs` tests normalization, sentinel handling, generation
+conflicts and native-command DB handoff. `TestBuiltInCaptureProtocol` also runs
+all six actual exporter commands and validates their output using the server's
+shared protocol validator.
+
 ## Image Contract
+
+Built-in harness Dockerfiles use the repository root as their build context,
+including release and remote dev builds, so each can copy the shared capture
+implementation into its own feature. The watcher tracks those assets for all six
+coding harnesses; shell carries no capture implementation.
 
 - **A harness is a bundle** ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §2): a `FROM scratch` image of its features, `/features/<name>/`, applied
@@ -22,10 +109,10 @@ launchers, and configure scripts.
   destinations it needs to reach (`harness.egressHosts`, joining the harness's
   egress level and never restricting anything themselves, ADR 26-10-01-032 §3),
   and any command overrides are published in the bundle's OCI labels (`harness.ImageMetadata`) for
-  server-side registration. There is no baked-in
-  file inside the bundle carrying this data — `image.json` is the build-time
-  authoring source a label is compacted from (see `Taskfile.yml`), not a
-  runtime artifact.
+  server-side registration. `image.json` is the authoring source a label is
+  compacted from (see `Taskfile.yml`). Save-back bundles also install that same
+  document beside their capture command; configure and capture read its
+  provider definitions, so refresh clients and route policy have one source.
 - **A template with no image ships the same manifest as a file** (ADR 0145 §3).
   A non-Linux sandbox is a VM template assembled from a vendor's base and
   Discobox's overlay, and the overlay carries the manifest as one JSON object

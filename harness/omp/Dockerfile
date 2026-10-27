@@ -10,5 +10,8 @@ ARG HARNESS_METADATA
 # that forgot rather than as a bundle declaring nothing, and only a running
 # server would ever say so. A FROM scratch stage has no shell to check it in,
 # so the expansion does.
-LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"}"
-COPY agent.conf check-launcher.sh configure.sh discobox.yml hook-extension.js install-cli.sh launch.sh prompt.sh provision.yaml proxy-env.sh /features/omp/
+LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . harness/omp/image.json)\"}"
+COPY harness/omp/agent.conf harness/omp/check-launcher.sh harness/omp/configure.sh harness/omp/discobox.yml harness/omp/hook-extension.js harness/omp/install-cli.sh harness/omp/launch.sh harness/omp/prompt.sh harness/omp/provision.yaml harness/omp/proxy-env.sh /features/omp/
+COPY harness/omp/capture.sh harness/omp/image.json harness/omp/omp-normalize.cjs /features/omp/
+# The exporter is owned by this harness; the generic platform has no JS runtime.
+COPY harness/capture/runtime.cjs harness/capture/settings.cjs harness/capture/settings-LICENSE.txt /features/omp/harness-capture/

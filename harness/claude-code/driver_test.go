@@ -39,7 +39,7 @@ func TestImageLaunchesClaudeWithSourceScopedMemory(t *testing.T) {
 		t.Fatalf("manifest overrides the harness-run convention: run=%v relaunch=%v",
 			image.Harness.RunCommand, image.Harness.RelaunchCommand)
 	}
-	if got, want := featuretest.Load(t).Installs("launch.sh"), "/usr/local/bin/"+harness.RunCommand; got != want {
+	if got, want := featuretest.Load(t, ".").Installs("launch.sh"), "/usr/local/bin/"+harness.RunCommand; got != want {
 		t.Fatalf("the feature installs the launcher at %q, want %q", got, want)
 	}
 	for _, command := range []string{"/login", "/model", "/config", "/exit"} {
@@ -152,7 +152,11 @@ func TestDefinitionConfigure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := string(scriptBytes)
+	normalizer, err := os.ReadFile("claude-code-normalize.cjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(scriptBytes) + string(normalizer)
 	if !strings.Contains(script, harness.ConfigureOutputPath) {
 		t.Fatalf("configure script does not write the harness-configure.json contract: %s", script)
 	}

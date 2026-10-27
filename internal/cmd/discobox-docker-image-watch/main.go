@@ -564,6 +564,12 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 		if err := addTree(filepath.Join(repoRoot, harnessDir), bundleSeen); err != nil {
 			return nil, err
 		}
+		addFile(repoRoot, ".dockerignore", bundleSeen)
+		if harnessImage.name != "shell" {
+			for _, name := range []string{"runtime.cjs", "settings.cjs", "settings-LICENSE.txt"} {
+				addFile(repoRoot, filepath.Join("harness", "capture", name), bundleSeen)
+			}
+		}
 		// Every harness has one, `shell` included: a bundle names the platform
 		// API version it runs on (ADR 26-10-16-423 §2).
 		metadataFile := filepath.Join(repoRoot, harnessDir, "image.json")
@@ -571,8 +577,8 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 			return nil, fmt.Errorf("harness %s: %w", harnessImage.name, err)
 		}
 		bundleRef := "discobox-harness-" + harnessImage.name
-		// The bundle: FROM scratch, so the harness directory is all it is
-		// built from.
+		// The bundle is FROM scratch, built from its feature and the shared
+		// exporter files using the repository-root context.
 		specs = append(specs, imageSpec{
 			name:      "harness-" + harnessImage.name,
 			devPrefix: bundleRef + ":dev-", buildDir: repoRoot,
@@ -580,17 +586,15 @@ func dockerImageSpecs(ctx context.Context, repoRoot, builder string) ([]imageSpe
 			// The metadata argument is filled in from image.json by buildImage
 			// at build time; the placeholder marks where it lands.
 			buildArgs: bundleBuildArgs(builder, bundleLayoutDirOf(repoRoot, bundleRef), "-f", filepath.Join(harnessDir, "Dockerfile"), "--target", "bundle",
-				"--build-arg", harness.MetadataBuildArg+"=", harnessDir),
+				"--build-arg", harness.MetadataBuildArg+"=", "."),
 			metadataFile: metadataFile,
 			metadataArg:  harness.MetadataBuildArg,
-			// The harness build context is the harness directory itself, so its
-			// Dockerfile is at the context root.
-			contextDir: filepath.Join(repoRoot, harnessDir),
-			dockerfile: "Dockerfile",
-			target:     "bundle",
-			bundle:     true,
-			layoutDir:  bundleLayoutDirOf(repoRoot, bundleRef),
-			files:      sortedFiles(bundleSeen),
+			contextDir:   repoRoot,
+			dockerfile:   filepath.Join(harnessDir, "Dockerfile"),
+			target:       "bundle",
+			bundle:       true,
+			layoutDir:    bundleLayoutDirOf(repoRoot, bundleRef),
+			files:        sortedFiles(bundleSeen),
 		})
 	}
 	return specs, nil

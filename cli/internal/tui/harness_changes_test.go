@@ -1,0 +1,114 @@
+package tui
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestHarnessChangesReviewSavesDisplayedCandidate(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.harnessChanges = HarnessChanges{CandidateID: "reviewed", State: "pending", Files: []HarnessChangedFile{{Path: ".claude/settings.json", Content: `{"theme":"light"}`}}, Credentials: []string{"anthropic ANTHROPIC_API_KEY (oauth)"}}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("tab"), keyPress("H"))
+	if m.dialog == nil || !strings.Contains(m.dialog.body, `"theme":"light"`) || !strings.Contains(m.dialog.body, "ANTHROPIC_API_KEY") {
+		t.Fatalf("review did not show settings and credential identities: %#v", m.dialog)
+	}
+	ds.mu.Lock()
+	ds.harnessChanges.CandidateID = "new-login"
+	ds.mu.Unlock()
+	send(t, m, keyPress("s"))
+	if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesWrites[0] != "save sbx_one reviewed" {
+		t.Fatalf("writes=%v", ds.harnessChangesWrites)
+	}
+}
+
+func TestHarnessDiagnosticOnlyCanBeDiscardedButNotSaved(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.harnessChanges = HarnessChanges{CandidateID: "diagnostic", State: "pending", Diagnostics: []string{"unsupported local configuration"}}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("tab"), keyPress("H"))
+	if m.dialog == nil || !strings.Contains(m.dialog.body, "No saveable") {
+		t.Fatal("missing diagnostic-only explanation")
+	}
+	send(t, m, keyPress("s"))
+	if len(ds.harnessChangesWrites) != 0 {
+		t.Fatal("saved diagnostic-only candidate")
+	}
+	send(t, m, keyPress("d"))
+	if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesWrites[0] != "discard sbx_one diagnostic" {
+		t.Fatalf("writes=%v", ds.harnessChangesWrites)
+	}
+}
+
+func TestHarnessChangesRefreshIsExplicit(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.harnessChanges = HarnessChanges{CandidateID: "old", State: "pending", Files: []HarnessChangedFile{{Path: "old.json", Content: "old"}}}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("tab"), keyPress("H"))
+	ds.mu.Lock()
+	ds.harnessChanges = HarnessChanges{CandidateID: "new", State: "pending", Files: []HarnessChangedFile{{Path: "new.json", Content: "new"}}}
+	ds.mu.Unlock()
+	send(t, m, keyPress("r"))
+	if m.dialog == nil || !strings.Contains(m.dialog.body, "new.json") {
+		t.Fatal("refresh did not show new candidate")
+	}
+	send(t, m, keyPress("s"))
+	if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesWrites[0] != "save sbx_one new" {
+		t.Fatalf("writes=%v", ds.harnessChangesWrites)
+	}
+}
+
+func TestWorkspaceLeaderOpensHarnessReview(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.harnessChanges = HarnessChanges{CandidateID: "workspace-review", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Content: "{}"}}}
+	d, m, term := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key("H")
+	d.wait("harness review", func() bool { return m.dialog != nil && strings.Contains(m.dialog.title, "Harness changes") })
+	if got := term.typed("H"); strings.Contains(got, "H") {
+		t.Fatalf("review key reached harness: %q", got)
+	}
+	d.key("d")
+	d.wait("discarded candidate", func() bool { ds.mu.Lock(); defer ds.mu.Unlock(); return len(ds.harnessChangesWrites) == 1 })
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	if ds.harnessChangesWrites[0] != "discard sbx_one workspace-review" {
+		t.Fatalf("writes=%v", ds.harnessChangesWrites)
+	}
+}
+
+// Every settings field remains reachable above the fixed save/discard actions.
+// Reading a long candidate must not silently truncate what the user will save.
+func TestHarnessReviewScrollsEverySettingsField(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	var content strings.Builder
+	for n := 0; n < 100; n++ {
+		content.WriteString("field-" + itoa(n) + ": value\n")
+	}
+	ds.harnessChanges = HarnessChanges{CandidateID: "long-review", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Content: content.String()}}}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("tab"), keyPress("H"))
+	var seen strings.Builder
+	for n := 0; n < 100; n++ {
+		frame := draw(m.dialog)
+		seen.WriteString(frame)
+		if !strings.Contains(frame, "Save reviewed changes") || !strings.Contains(frame, "Discard candidate") {
+			t.Fatalf("actions not visible:\n%s", frame)
+		}
+		if !strings.Contains(frame, "PgUp/PgDn to scroll") {
+			t.Fatalf("scroll keys not advertised:\n%s", frame)
+		}
+		if _, closed := m.dialog.update(keyPress("pgdown")); closed {
+			t.Fatal("paging closed review")
+		}
+	}
+	for n := 0; n < 100; n++ {
+		if !strings.Contains(seen.String(), "field-"+itoa(n)+": value") {
+			t.Errorf("field %d was never visible", n)
+		}
+	}
+	send(t, m, keyPress("s"))
+	if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesWrites[0] != "save sbx_one long-review" {
+		t.Fatalf("writes=%v", ds.harnessChangesWrites)
+	}
+}
