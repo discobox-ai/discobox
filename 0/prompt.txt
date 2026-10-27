@@ -1,0 +1,1 @@
+file an issue for the -C status line bug, and then write up all this information about timing and behavior a file as a different issues
