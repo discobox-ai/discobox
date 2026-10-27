@@ -1,6 +1,6 @@
 # 26-10-27-880 — Access to a secret is a binding held to static routes, and no judge decides it
 
-- **Status**: Accepted
+- **Status**: Accepted (§4's hosts, and §8's migration of a secret's host, of an uncovered harness binding and of several grants on one variable, narrowed by [26-10-27-939](26-10-27-939-a-route-may-name-any-host.md); §2's levels narrowed by [26-10-27-172](26-10-27-172-a-harness-config-attached-to-a-discobox-binds-it-for-use.md))
 - **Date**: 2026-10-27
 - **Supersedes**:
   - Wholly, every decision whose authority is a judge, Jev, an approved-use
