@@ -1,0 +1,1 @@
+when we do a discobox admin box transfer and we stream the box between servers, where do we stream the content to?
