@@ -36,7 +36,7 @@ import (
 // reached from inside the gate.
 
 // sandboxLock returns the mutex guarding power operations for one sandbox.
-func (r *DockerSandboxRuntime) sandboxLock(sandboxID string) *sync.Mutex {
+func (r *sandboxCore) sandboxLock(sandboxID string) *sync.Mutex {
 	actual, _ := r.powerLocks.LoadOrStore(sandboxID, &sync.Mutex{})
 	lock, _ := actual.(*sync.Mutex)
 	return lock
@@ -181,7 +181,7 @@ func (r *DockerSandboxRuntime) PowerDownSandbox(ctx context.Context, sandboxID s
 
 // confirmPowerDown asks the sandbox agent to confirm reason, with a token the
 // pool signs for that alone.
-func (r *DockerSandboxRuntime) confirmPowerDown(ctx context.Context, sandboxID string, reason PowerDownReason) (Wake, error) {
+func (r *sandboxCore) confirmPowerDown(ctx context.Context, sandboxID string, reason PowerDownReason) (Wake, error) {
 	status, data, err := r.callAutostop(ctx, sandboxID, "confirm", map[string]string{"reason": string(reason)})
 	if err != nil {
 		return Wake{}, fmt.Errorf("confirm power-down with sandbox %s: %w", sandboxID, err)
@@ -208,7 +208,7 @@ func (r *DockerSandboxRuntime) confirmPowerDown(ctx context.Context, sandboxID s
 
 // tellResumed tells the sandbox agent its sandbox was thawed. An agent from
 // before the route answers 404, and has nothing to do on a resume.
-func (r *DockerSandboxRuntime) tellResumed(ctx context.Context, sandboxID string) error {
+func (r *sandboxCore) tellResumed(ctx context.Context, sandboxID string) error {
 	status, data, err := r.callAutostop(ctx, sandboxID, "resumed", struct{}{})
 	if err != nil {
 		return err
@@ -222,14 +222,14 @@ func (r *DockerSandboxRuntime) tellResumed(ctx context.Context, sandboxID string
 // callAutostop posts body to one of the sandbox agent's pool-only autostop
 // routes, with a token the pool signs for that scope alone, and returns the
 // answer's status and body.
-func (r *DockerSandboxRuntime) callAutostop(ctx context.Context, sandboxID, route string, body any) (int, []byte, error) {
+func (r *sandboxCore) callAutostop(ctx context.Context, sandboxID, route string, body any) (int, []byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, runtimeConfigCallTimeout)
 	defer cancel()
 	token, err := r.poolToken(sandboxID, sandboxconfig.AutostopConfirmScope)
 	if err != nil {
 		return 0, nil, err
 	}
-	dial, err := r.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
+	dial, err := r.boxes.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -429,13 +429,13 @@ type sandboxBoot struct {
 // A sandbox deleted or archived mid-boot reads as booting until the wait gives
 // up, at most sandboxAgentReadyTimeout. Nothing routes on the mark for a
 // sandbox that is gone.
-func (r *DockerSandboxRuntime) beginBoot(sandboxID string) *sandboxBoot {
+func (r *sandboxCore) beginBoot(sandboxID string) *sandboxBoot {
 	boot := &sandboxBoot{done: make(chan struct{})}
 	r.booting.Store(sandboxID, boot)
 	return boot
 }
 
-func (r *DockerSandboxRuntime) endBoot(sandboxID string, boot *sandboxBoot, err error) {
+func (r *sandboxCore) endBoot(sandboxID string, boot *sandboxBoot, err error) {
 	boot.err = err
 	r.booting.CompareAndDelete(sandboxID, boot)
 	close(boot.done)
@@ -525,10 +525,10 @@ func (r *DockerSandboxRuntime) removeForRebuild(ctx context.Context, sb *Sandbox
 // behind it would be proxied into a 502. So the wait runs detached, bounded by
 // its own sandboxAgentReadyTimeout, and the caller only waits on it for as long
 // as its own context allows.
-func (r *DockerSandboxRuntime) finishBoot(ctx context.Context, sandboxID string, boot *sandboxBoot) error {
+func (r *sandboxCore) finishBoot(ctx context.Context, sandboxID string, boot *sandboxBoot) error {
 	go func() {
 		detached := context.WithoutCancel(ctx)
-		err := r.waitForSandboxAgent(detached, sandboxID)
+		err := r.boxes.waitForSandboxAgent(detached, sandboxID)
 		if err == nil {
 			err = logRuntimeConfigFailure(detached, sandboxID, r.deliverRuntimeConfig(detached, sandboxID, nil))
 			if err != nil {
@@ -536,7 +536,7 @@ func (r *DockerSandboxRuntime) finishBoot(ctx context.Context, sandboxID string,
 				// the container would read as a healthy sandbox to the next
 				// request once this boot's mark is gone; stopped, every start
 				// meets the refusal again and says so.
-				r.stopRefusedSandbox(detached, sandboxID, err)
+				r.boxes.stopRefusedSandbox(detached, sandboxID, err)
 			}
 		}
 		r.endBoot(sandboxID, boot, err)
@@ -552,7 +552,7 @@ func (r *DockerSandboxRuntime) finishBoot(ctx context.Context, sandboxID string,
 // awaitBoot waits out a boot of the sandbox under way, and reports whether
 // there was one. How that boot ended is its starter's to report; a caller that
 // waited looks at the sandbox again.
-func (r *DockerSandboxRuntime) awaitBoot(ctx context.Context, sandboxID string) (bool, error) {
+func (r *sandboxCore) awaitBoot(ctx context.Context, sandboxID string) (bool, error) {
 	value, ok := r.booting.Load(sandboxID)
 	if !ok {
 		return false, nil
@@ -572,14 +572,14 @@ func (r *DockerSandboxRuntime) awaitBoot(ctx context.Context, sandboxID string) 
 // AwaitSandboxBoot waits out a boot of the sandbox under way, for a caller
 // that must not start it (requireRunning). How the boot ended is its
 // starter's to report.
-func (r *DockerSandboxRuntime) AwaitSandboxBoot(ctx context.Context, sandboxID string) error {
+func (r *sandboxCore) AwaitSandboxBoot(ctx context.Context, sandboxID string) error {
 	_, err := r.awaitBoot(ctx, sandboxID)
 	return err
 }
 
 // SandboxBooting reports whether the sandbox's container is up but its sandbox
 // agent has not answered yet.
-func (r *DockerSandboxRuntime) SandboxBooting(sandboxID string) bool {
+func (r *sandboxCore) SandboxBooting(sandboxID string) bool {
 	_, ok := r.booting.Load(sandboxID)
 	return ok
 }

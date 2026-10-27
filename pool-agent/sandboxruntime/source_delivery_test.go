@@ -21,7 +21,7 @@ const deliveryTestSandboxID = "sandbox-1"
 func deliveryTestRuntime(t *testing.T) *DockerSandboxRuntime {
 	t.Helper()
 	state := withTestRoot(t)
-	return &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a", gitCache: gitcache.New(state.PoolGitCache("proj_a", "pool_a"))}
+	return testDockerRuntime(&DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a", gitCache: gitcache.New(state.PoolGitCache("proj_a", "pool_a"))})
 }
 
 // deliveryTestRequest is a sandbox with one push-delivered primary source.

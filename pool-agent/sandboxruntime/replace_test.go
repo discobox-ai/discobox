@@ -55,7 +55,7 @@ func TestASpecChangeThatCannotGetItsImageKeepsTheContainer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox/sandbox-base:gone"}
+	r := testDockerRuntime(&DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox/sandbox-base:gone"})
 
 	_, err = r.CreateSandbox(context.Background(), &workerapimodel.PoolSandboxCreateRequest{
 		SandboxId: "sbx_1",
@@ -133,7 +133,7 @@ func TestACreateAskedToStartFinishesOneThatNeverStartedItsContainer(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			r := &DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"}
+			r := testDockerRuntime(&DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"})
 
 			sb, err := r.CreateSandbox(context.Background(), &workerapimodel.PoolSandboxCreateRequest{
 				SandboxId: "sbx_1",
@@ -203,7 +203,7 @@ func TestContainerSpecDriftedComparesTheRecordedFingerprint(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			r := &DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1"}
+			r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1"})
 			req := &workerapimodel.PoolSandboxCreateRequest{SandboxId: "sbx_1"}
 			if tc.fingerprint != "" {
 				req.Config.SpecFingerprint = workerclient.NewOptString(tc.fingerprint)
@@ -251,7 +251,7 @@ func TestAnUndeliveredSpecChangeKeepsTheContainer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"}
+	r := testDockerRuntime(&DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"})
 
 	_, err = r.CreateSandbox(context.Background(), &workerapimodel.PoolSandboxCreateRequest{
 		SandboxId:             "sbx_1",

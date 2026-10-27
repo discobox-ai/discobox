@@ -406,6 +406,9 @@ func mapRuntimeError(err error) error {
 	if errors.Is(err, sandboxruntime.ErrImageUnavailable) {
 		return newTypedStatusError(http.StatusUnprocessableEntity, err.Error(), workerapimodel.ErrorTypeSandboxImageUnavailable)
 	}
+	if errors.Is(err, sandboxruntime.ErrUnsupported) {
+		return newStatusError(http.StatusNotImplemented, err.Error())
+	}
 	return newStatusError(http.StatusInternalServerError, err.Error())
 }
 

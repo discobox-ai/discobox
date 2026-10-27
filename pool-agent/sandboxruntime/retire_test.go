@@ -43,7 +43,7 @@ func labelDaemon(t *testing.T, labels map[string]string) (*DockerSandboxRuntime,
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &DockerSandboxRuntime{client: cli, identityKey: key}, &removed
+	return testDockerRuntime(&DockerSandboxRuntime{client: cli, identityKey: key}), &removed
 }
 
 // A container from before the bootstrap named the pool's key cannot take a

@@ -11,7 +11,7 @@ import (
 // whole delivery — and keeps what was recorded until the poll has reached it
 // since this agent started (ADR 26-10-16-337 §8).
 func TestHandsOverPowerOnlyWhatTheSandboxAdvertised(t *testing.T) {
-	r := &DockerSandboxRuntime{}
+	r := testDockerRuntime(&DockerSandboxRuntime{})
 	handed := sandboxconfig.RuntimeConfig{Agent: sandboxconfig.RuntimeAgent{ControlPlanePower: true}}
 	if !r.handsOverPower("sbx_1", handed) {
 		t.Fatal("dropped the recorded handover before the poll reached the sandbox")

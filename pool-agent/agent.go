@@ -17,14 +17,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/x/id"
 
 	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/poolassets"
 	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/pool-agent/assetcache"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
+	poolbundle "github.com/discobox-ai/discobox/pool-agent/bundle"
 	"github.com/discobox-ai/discobox/pool-agent/childproc"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
@@ -129,25 +132,27 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	}
 	logger.Info("pool identity ready", "poolID", bootstrap.PoolID, "runtime", runtimeKind)
 
+	// A machine pool's sandboxes are machines of its own engine (ADR
+	// 26-10-23-551 §3), opened before the first report: the pool's status is
+	// its driver's.
+	status := dockerPoolStatus()
+	var machines *engine.Engine
+	if runtimeKind == RuntimeMachine {
+		if machines, err = openMachineEngine(root, bootstrap, poolbundle.ProvisioningKeyFile); err != nil {
+			return err
+		}
+		status = machinePoolStatus(bootstrap.Driver, machines.Driver.Capabilities())
+	}
+
 	// A first report the control plane refuses is a pool whose key it does
 	// not hold — a restored database, a recreated pool row — which the
 	// pool's maker mends by enrolling the box again, as a repair does; this
 	// agent fails its start and systemd tries it again.
-	status := poolStatusFor(bootstrap)
 	if err := startStatusReporter(ctx, logger, root, bootstrap, identity, client, status, statusReportInterval); err != nil {
 		return err
 	}
 
 	startResolveTokenRefresher(ctx, logger, root, bootstrap, identity)
-
-	if runtimeKind == RuntimeMachine {
-		// The machine runtime is not composed yet (ADR 26-10-23-551 §3): the
-		// pool reports itself, unschedulable and saying why, and serves nothing
-		// until it is.
-		logger.Warn("this agent has no machine runtime yet; the pool reports itself and schedules nothing", "poolID", bootstrap.PoolID, "driver", bootstrap.Driver)
-		<-ctx.Done()
-		return ctx.Err()
-	}
 
 	// The bundles its sandboxes are pinned to, fetched from the control plane
 	// as this pool and over the transport its URL names (ADR 26-10-16-423 §13).
@@ -164,6 +169,13 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		Snapshots: root.PoolSnapshots(bootstrap.ProjectID, bootstrap.PoolID),
 		Fetch:     assetClient.Fetch,
 	})
+	if machines != nil {
+		runtime, err := newMachineSandboxRuntime(root, bootstrap, machines, identity.PrivateKey, assets)
+		if err != nil {
+			return err
+		}
+		return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets)
+	}
 	runtime, err := newDockerSandboxRuntime(root, bootstrap, identity.PrivateKey, assets)
 	if err != nil {
 		return err
@@ -221,26 +233,24 @@ const (
 )
 
 // poolStatus is what a pool's composition says of itself on every status
-// report: whether it can be scheduled, and when it cannot, the runtime
-// condition saying why.
+// report: whether it can be scheduled, the kind of image it runs, the runtime
+// condition saying what runs its sandboxes, and whether its own host's CPU and
+// memory are its capacity.
 type poolStatus struct {
 	schedulable bool
+	imageKind   platform.ImageKind
 	runtime     map[string]any
+	// hostCapacity reports the agent's own CPU and memory as the pool's: its
+	// sandboxes are containers on this host. A machine pool's run on its
+	// driver, and reports none of the pool machine's.
+	hostCapacity bool
 }
 
-// poolStatusFor is the status of a pool composed from bootstrap. A machine
-// pool has no runtime to schedule onto until the machine runtime is composed
-// (ADR 26-10-23-551 §3), and says so rather than reporting itself absent.
-func poolStatusFor(bootstrap Bootstrap) poolStatus {
-	if bootstrap.EffectiveRuntime() == RuntimeMachine {
-		return poolStatus{runtime: map[string]any{
-			"kind":    string(RuntimeMachine),
-			"driver":  bootstrap.Driver,
-			"status":  "unavailable",
-			"message": "this pool agent cannot run machine sandboxes yet",
-		}}
-	}
-	return poolStatus{schedulable: true}
+// dockerPoolStatus is a Docker pool's: its sandboxes are containers on the
+// agent's own host, so it runs OCI images (ADR 26-10-09-106 §4) and its
+// capacity is the host's.
+func dockerPoolStatus() poolStatus {
+	return poolStatus{schedulable: true, imageKind: platform.OCI, hostCapacity: true}
 }
 
 // startStatusReporter reports this pool's scheduling status and capacity to the
@@ -273,18 +283,23 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, root layout.R
 	report := func(ctx context.Context) error {
 		ctx, cancel := context.WithTimeout(ctx, statusReportTimeout)
 		defer cancel()
+		var cpus float64
+		var memory int64
+		if status.hostCapacity {
+			cpus, memory = availableCPUVCPUs(), availableMemoryBytes()
+		}
 		return client.UpdatePoolStatus(ctx, StatusRequest{
 			ControlPlaneURL:      bootstrap.ControlPlaneURL,
 			ProjectID:            bootstrap.ProjectID,
 			PoolID:               bootstrap.PoolID,
 			PrivateKey:           identity.PrivateKey,
 			Platform:             hostedPlatform(),
-			ImageKind:            hostedImageKind(),
+			ImageKind:            status.imageKind,
 			Ready:                true,
 			Schedulable:          status.schedulable,
 			Degraded:             false,
-			AvailableCPUVCPUs:    availableCPUVCPUs(),
-			AvailableMemoryBytes: availableMemoryBytes(),
+			AvailableCPUVCPUs:    cpus,
+			AvailableMemoryBytes: memory,
 			// Stat this project's own data tree. Its parent belongs to the pool
 			// container's root filesystem and would report the wrong backing
 			// filesystem.

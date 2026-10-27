@@ -342,12 +342,12 @@ func TestNormalizeSandboxConfigPublishesPrimaryBindRoot(t *testing.T) {
 func TestDockerSandboxRuntimeDaemonPathTranslatesOnlyRelocatedState(t *testing.T) {
 	const containerPath = "/var/lib/discobox/projects/prj_default/sandboxes/sandbox-1/volumes/home"
 
-	same := &DockerSandboxRuntime{}
+	same := testDockerRuntime(&DockerSandboxRuntime{})
 	if got := same.daemonPath(containerPath); got != containerPath {
 		t.Fatalf("daemon path = %q, want the container path unchanged", got)
 	}
 
-	relocated := &DockerSandboxRuntime{hostStateRoot: "/var/lib/docker/discobox"}
+	relocated := testDockerRuntime(&DockerSandboxRuntime{hostStateRoot: "/var/lib/docker/discobox"})
 	want := "/var/lib/docker/discobox/projects/prj_default/sandboxes/sandbox-1/volumes/home"
 	if got := relocated.daemonPath(containerPath); got != want {
 		t.Fatalf("daemon path = %q, want %q", got, want)
@@ -401,7 +401,7 @@ func TestDocumentVolumesKeepExcludeFromExport(t *testing.T) {
 }
 
 func TestDockerSandboxRuntimePoolCacheUsesIndependentRoot(t *testing.T) {
-	runtime := &DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a"}
+	runtime := testDockerRuntime(&DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a"})
 
 	got := runtime.poolCacheRoot()
 	want := "/var/lib/discobox/cache/projects/proj_a/pools/pool_a/cache"
@@ -781,7 +781,7 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 func TestInitGitOriginIsBareAndRefusesDeletes(t *testing.T) {
 	requirePOSIXHost(t)
 	ctx := context.Background()
-	runtime := &DockerSandboxRuntime{}
+	runtime := testDockerRuntime(&DockerSandboxRuntime{})
 	origin := filepath.Join(t.TempDir(), "primary.git")
 
 	// Twice: create is retried, and the second call must leave the repository
@@ -973,4 +973,11 @@ func idOf(v *int64) int64 {
 		return -1
 	}
 	return *v
+}
+
+// testDockerRuntime finishes a runtime a test builds by hand the way
+// NewDockerSandboxRuntime does: its core asks it for what only it knows.
+func testDockerRuntime(r *DockerSandboxRuntime) *DockerSandboxRuntime {
+	r.boxes = r
+	return r
 }

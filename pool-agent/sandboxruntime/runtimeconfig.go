@@ -81,13 +81,13 @@ type runtimeConfigRecord struct {
 	Document sandboxconfig.RuntimeConfig `json:"document"`
 }
 
-func (r *DockerSandboxRuntime) runtimeConfigRecordPath(sandboxID string) string {
+func (r *sandboxCore) runtimeConfigRecordPath(sandboxID string) string {
 	return filepath.Join(r.sandboxRoot(sandboxID), runtimeConfigRecordName)
 }
 
 // runtimeConfigLock serializes deciding and delivering one sandbox's document,
 // so two deliveries cannot each take the other's revision.
-func (r *DockerSandboxRuntime) runtimeConfigLock(sandboxID string) *sync.Mutex {
+func (r *sandboxCore) runtimeConfigLock(sandboxID string) *sync.Mutex {
 	actual, _ := r.runtimeConfigLocks.LoadOrStore(sandboxID, &sync.Mutex{})
 	lock, _ := actual.(*sync.Mutex)
 	return lock
@@ -95,7 +95,7 @@ func (r *DockerSandboxRuntime) runtimeConfigLock(sandboxID string) *sync.Mutex {
 
 // readRuntimeConfig is the decided document, and false when nothing has been
 // decided for the sandbox yet.
-func (r *DockerSandboxRuntime) readRuntimeConfig(sandboxID string) (sandboxconfig.RuntimeConfig, bool, error) {
+func (r *sandboxCore) readRuntimeConfig(sandboxID string) (sandboxconfig.RuntimeConfig, bool, error) {
 	data, err := os.ReadFile(r.runtimeConfigRecordPath(sandboxID))
 	if errors.Is(err, fs.ErrNotExist) {
 		return sandboxconfig.RuntimeConfig{}, false, nil
@@ -110,7 +110,7 @@ func (r *DockerSandboxRuntime) readRuntimeConfig(sandboxID string) (sandboxconfi
 	return record.Document, true, nil
 }
 
-func (r *DockerSandboxRuntime) writeRuntimeConfig(sandboxID string, doc sandboxconfig.RuntimeConfig) error {
+func (r *sandboxCore) writeRuntimeConfig(sandboxID string, doc sandboxconfig.RuntimeConfig) error {
 	data, err := json.MarshalIndent(runtimeConfigRecord{Document: withoutClientKey(doc)}, "", "  ")
 	if err != nil {
 		return err
@@ -140,7 +140,7 @@ func (r *DockerSandboxRuntime) writeRuntimeConfig(sandboxID string, doc sandboxc
 // Deciding issues the sandbox's proxy material and writes the record, so it is
 // refused for a sandbox whose tree this pool does not hold or holds archived: a
 // late caller must not put back what a delete or an archive just took away.
-func (r *DockerSandboxRuntime) decideRuntimeConfig(sandboxID string, change func(*sandboxconfig.RuntimeConfig)) (sandboxconfig.RuntimeConfig, error) {
+func (r *sandboxCore) decideRuntimeConfig(sandboxID string, change func(*sandboxconfig.RuntimeConfig)) (sandboxconfig.RuntimeConfig, error) {
 	switch {
 	case !r.hostsSandbox(sandboxID):
 		return sandboxconfig.RuntimeConfig{}, ErrNotFound
@@ -188,7 +188,7 @@ func (r *DockerSandboxRuntime) decideRuntimeConfig(sandboxID string, change func
 // reached it since this agent started, what the recorded document already
 // said — so a pool agent's restart does not take the power back and give it
 // again (ADR 26-10-16-337 §8).
-func (r *DockerSandboxRuntime) handsOverPower(sandboxID string, recorded sandboxconfig.RuntimeConfig) bool {
+func (r *sandboxCore) handsOverPower(sandboxID string, recorded sandboxconfig.RuntimeConfig) bool {
 	if advertised, ok := r.powerHandover.Load(sandboxID); ok {
 		if handed, ok := advertised.(bool); ok {
 			return handed
@@ -200,7 +200,7 @@ func (r *DockerSandboxRuntime) handsOverPower(sandboxID string, recorded sandbox
 // recordRuntimeConfig settles a change to the sandbox's document without
 // delivering it, for a sandbox whose agent is not up to take it: the next
 // start delivers what is recorded.
-func (r *DockerSandboxRuntime) recordRuntimeConfig(sandboxID string, change func(*sandboxconfig.RuntimeConfig)) error {
+func (r *sandboxCore) recordRuntimeConfig(sandboxID string, change func(*sandboxconfig.RuntimeConfig)) error {
 	lock := r.runtimeConfigLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -211,7 +211,7 @@ func (r *DockerSandboxRuntime) recordRuntimeConfig(sandboxID string, change func
 // deliverRuntimeConfig settles the sandbox's document, change applied, and
 // delivers it to the sandbox agent. A container from before the bootstrap named
 // the pool's key is left as it is (sandboxLabelRuntimeConfig).
-func (r *DockerSandboxRuntime) deliverRuntimeConfig(ctx context.Context, sandboxID string, change func(*sandboxconfig.RuntimeConfig)) error {
+func (r *sandboxCore) deliverRuntimeConfig(ctx context.Context, sandboxID string, change func(*sandboxconfig.RuntimeConfig)) error {
 	lock := r.runtimeConfigLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -235,14 +235,14 @@ func (r *DockerSandboxRuntime) deliverRuntimeConfig(ctx context.Context, sandbox
 // It steps aside for anything holding the sandbox's power lock — a create, a
 // start, an archive, a delete — rather than waiting on it or racing it: the
 // boot that work ends in delivers for itself, and the next poll looks again.
-func (r *DockerSandboxRuntime) ConvergeRuntimeConfig(ctx context.Context, sandboxID string, applied int64, controlPlanePower bool) error {
+func (r *sandboxCore) ConvergeRuntimeConfig(ctx context.Context, sandboxID string, applied int64, controlPlanePower bool) error {
 	r.powerHandover.Store(sandboxID, controlPlanePower)
 	power := r.sandboxLock(sandboxID)
 	if !power.TryLock() {
 		return nil
 	}
 	defer power.Unlock()
-	takes, err := r.takesRuntimeConfig(ctx, sandboxID)
+	takes, err := r.boxes.takesRuntimeConfig(ctx, sandboxID)
 	if err != nil || !takes {
 		return err
 	}
@@ -255,7 +255,7 @@ func (r *DockerSandboxRuntime) ConvergeRuntimeConfig(ctx context.Context, sandbo
 	if doc.SourcesDelivered() {
 		return nil
 	}
-	sb, err := r.GetSandbox(ctx, sandboxID)
+	sb, err := r.boxes.GetSandbox(ctx, sandboxID)
 	if err != nil || sb.Status != StatusRunning {
 		return err
 	}
@@ -265,7 +265,7 @@ func (r *DockerSandboxRuntime) ConvergeRuntimeConfig(ctx context.Context, sandbo
 // convergeDocument decides the sandbox's document again and delivers it when
 // the revision the sandbox reports applying is not the one decided, and
 // returns the document decided.
-func (r *DockerSandboxRuntime) convergeDocument(ctx context.Context, sandboxID string, applied int64) (sandboxconfig.RuntimeConfig, error) {
+func (r *sandboxCore) convergeDocument(ctx context.Context, sandboxID string, applied int64) (sandboxconfig.RuntimeConfig, error) {
 	lock := r.runtimeConfigLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -280,7 +280,7 @@ func (r *DockerSandboxRuntime) convergeDocument(ctx context.Context, sandboxID s
 	if applied == doc.Revision {
 		return doc, nil
 	}
-	dial, err := r.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
+	dial, err := r.boxes.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
 	if err != nil {
 		return sandboxconfig.RuntimeConfig{}, err
 	}
@@ -291,8 +291,8 @@ func (r *DockerSandboxRuntime) convergeDocument(ctx context.Context, sandboxID s
 // config. One that does not is from before the bootstrap named the pool's key:
 // what was decided is recorded, and reaches it when its next start rebuilds it
 // (retireContainerWithoutRuntimeConfig).
-func (r *DockerSandboxRuntime) sendToTakingSandbox(ctx context.Context, sandboxID string, doc sandboxconfig.RuntimeConfig) error {
-	takes, err := r.takesRuntimeConfig(ctx, sandboxID)
+func (r *sandboxCore) sendToTakingSandbox(ctx context.Context, sandboxID string, doc sandboxconfig.RuntimeConfig) error {
+	takes, err := r.boxes.takesRuntimeConfig(ctx, sandboxID)
 	if err != nil {
 		return err
 	}
@@ -300,7 +300,7 @@ func (r *DockerSandboxRuntime) sendToTakingSandbox(ctx context.Context, sandboxI
 		slog.InfoContext(ctx, "sandbox container predates runtime-config delivery; the change reaches it when its next start rebuilds it", "sandboxId", sandboxID, "revision", doc.Revision)
 		return nil
 	}
-	dial, err := r.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
+	dial, err := r.boxes.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
 	if err != nil {
 		return err
 	}
@@ -337,7 +337,7 @@ func (r *DockerSandboxRuntime) containerTakesRuntimeConfig(ctx context.Context, 
 // with its kept document. A conflict is the same thing seen from the other
 // side, a revision already spent on another document. Either way the record
 // moves past the sandbox's and the document goes again, once.
-func (r *DockerSandboxRuntime) putRuntimeConfig(ctx context.Context, dial Dialer, sandboxID string, doc sandboxconfig.RuntimeConfig) error {
+func (r *sandboxCore) putRuntimeConfig(ctx context.Context, dial Dialer, sandboxID string, doc sandboxconfig.RuntimeConfig) error {
 	for attempt := 0; ; attempt++ {
 		held, conflict, err := r.sendRuntimeConfig(ctx, dial, sandboxID, doc)
 		if err != nil {
@@ -358,7 +358,7 @@ func (r *DockerSandboxRuntime) putRuntimeConfig(ctx context.Context, dial Dialer
 
 // sendRuntimeConfig makes one PUT. It returns the document the sandbox holds,
 // or reports a conflict.
-func (r *DockerSandboxRuntime) sendRuntimeConfig(ctx context.Context, dial Dialer, sandboxID string, doc sandboxconfig.RuntimeConfig) (sandboxconfig.RuntimeConfig, bool, error) {
+func (r *sandboxCore) sendRuntimeConfig(ctx context.Context, dial Dialer, sandboxID string, doc sandboxconfig.RuntimeConfig) (sandboxconfig.RuntimeConfig, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, runtimeConfigCallTimeout)
 	defer cancel()
 	token, err := r.poolToken(sandboxID, sandboxconfig.RuntimeConfigScope)
@@ -420,7 +420,7 @@ func (r *DockerSandboxRuntime) sendRuntimeConfig(ctx context.Context, dial Diale
 // bootstrap names: one pool-only scope and nothing else, for this sandbox and
 // pool — runtime-config for a delivery (ADR 26-10-08-127 §3), autostop-confirm
 // for the confirmation a power-down asks for (ADR 26-10-16-337 §5).
-func (r *DockerSandboxRuntime) poolToken(sandboxID, scope string) (string, error) {
+func (r *sandboxCore) poolToken(sandboxID, scope string) (string, error) {
 	if len(r.identityKey) != ed25519.PrivateKeySize {
 		return "", errors.New("the pool has no identity key to sign a sandbox-agent token with")
 	}
@@ -445,7 +445,7 @@ func (r *DockerSandboxRuntime) poolToken(sandboxID, scope string) (string, error
 
 // poolPublicKey is the public half of the pool's identity key, as the
 // bootstrap carries it; empty when the runtime has no key.
-func (r *DockerSandboxRuntime) poolPublicKey() string {
+func (r *sandboxCore) poolPublicKey() string {
 	if len(r.identityKey) != ed25519.PrivateKeySize {
 		return ""
 	}

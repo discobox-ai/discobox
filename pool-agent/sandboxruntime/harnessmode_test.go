@@ -18,7 +18,7 @@ import (
 // Only a sandbox created in a mode other than run carries the harness-mode
 // label, so a run sandbox is never found by the configure cadence.
 func TestLabelsNameOnlyANonRunHarnessMode(t *testing.T) {
-	r := &DockerSandboxRuntime{projectID: "prj", poolID: "pool"}
+	r := testDockerRuntime(&DockerSandboxRuntime{projectID: "prj", poolID: "pool"})
 	if got := r.labels("sbx", "", "", sandboxconfig.HarnessModeConfig)[sandboxLabelHarnessMode]; got != sandboxconfig.HarnessModeConfig {
 		t.Fatalf("configure sandbox label = %q, want %q", got, sandboxconfig.HarnessModeConfig)
 	}
@@ -56,7 +56,7 @@ func TestDockerRunningSandboxIDsInModeListsLabelledRunningContainers(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &DockerSandboxRuntime{client: cli, projectID: "prj", poolID: "pool"}
+	r := testDockerRuntime(&DockerSandboxRuntime{client: cli, projectID: "prj", poolID: "pool"})
 
 	ids, err := r.RunningSandboxIDsInMode(context.Background(), sandboxconfig.HarnessModeConfig)
 	if err != nil {

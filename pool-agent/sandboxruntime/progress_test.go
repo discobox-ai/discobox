@@ -34,7 +34,7 @@ func watchProgress(t *testing.T, runtime *DockerSandboxRuntime) (<-chan SandboxP
 // "creating the container" is not looking at a hang, which is the whole point
 // of naming the phases the pull is only one of (ADR 0060).
 func TestPublishSandboxPhaseNamesTheWork(t *testing.T) {
-	runtime := &DockerSandboxRuntime{}
+	runtime := testDockerRuntime(&DockerSandboxRuntime{})
 	observed, stop := watchProgress(t, runtime)
 	defer stop()
 
@@ -57,7 +57,7 @@ func TestPublishSandboxPhaseNamesTheWork(t *testing.T) {
 // refinement of the phase rather than a report of their own, so a client reads
 // the phase first and never has to infer one from which fields are set.
 func TestPublishSandboxPullProgressCarriesItsPhase(t *testing.T) {
-	runtime := &DockerSandboxRuntime{}
+	runtime := testDockerRuntime(&DockerSandboxRuntime{})
 	observed, stop := watchProgress(t, runtime)
 	defer stop()
 
@@ -80,7 +80,7 @@ func TestPublishSandboxPullProgressCarriesItsPhase(t *testing.T) {
 // would land on the sandbox record and leave a client rendering an empty line
 // where its last known phase used to be.
 func TestPublishSandboxProgressRefusesAPhaselessReport(t *testing.T) {
-	runtime := &DockerSandboxRuntime{}
+	runtime := testDockerRuntime(&DockerSandboxRuntime{})
 	observed, stop := watchProgress(t, runtime)
 	defer stop()
 

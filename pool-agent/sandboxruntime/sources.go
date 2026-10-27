@@ -106,7 +106,7 @@ type sourceCloneProgress struct {
 // has been delivered, and its origin token, are carried over from prior, the
 // document as recorded: a source is delivered once, and a token is the
 // decision's to renew (refreshOriginTokens).
-func (r *DockerSandboxRuntime) runtimeSources(sandboxID string, sources []sandboxSource, prior []sandboxconfig.RuntimeSource) []sandboxconfig.RuntimeSource {
+func (r *sandboxCore) runtimeSources(sandboxID string, sources []sandboxSource, prior []sandboxconfig.RuntimeSource) []sandboxconfig.RuntimeSource {
 	before := make(map[string]sandboxconfig.RuntimeSource, len(prior))
 	for _, source := range prior {
 		before[source.Slug] = source
@@ -134,7 +134,7 @@ func (r *DockerSandboxRuntime) runtimeSources(sandboxID string, sources []sandbo
 // a client delivers — into this pool's cache, or into the bare repository an
 // earlier pool made for the sandbox — and the remote itself for a remote-URL
 // source created before a pool cached Git, which the sandbox cloned directly.
-func (r *DockerSandboxRuntime) sourceOriginURL(sandboxID string, source sandboxSource) string {
+func (r *sandboxCore) sourceOriginURL(sandboxID string, source sandboxSource) string {
 	if poolServesOrigin(source.git) {
 		return proxyagent.OriginURL(r.projectID, r.poolID, sandboxID, source.slug)
 	}
@@ -154,7 +154,7 @@ func poolServesOrigin(source workerapimodel.GitSource) bool {
 // that fetches it, keeping the one the document holds until it is near its
 // end. The token is this pool's sandbox token, scope origin:fetch, which reads
 // this sandbox's origins and nothing else (sandboxtoken).
-func (r *DockerSandboxRuntime) refreshOriginTokens(sandboxID string, doc *sandboxconfig.RuntimeConfig) error {
+func (r *sandboxCore) refreshOriginTokens(sandboxID string, doc *sandboxconfig.RuntimeConfig) error {
 	if len(r.identityKey) == 0 {
 		return nil
 	}
@@ -204,7 +204,7 @@ func (r *DockerSandboxRuntime) refreshOriginTokens(sandboxID string, doc *sandbo
 // the sandbox parks, and the resume create after the client's push settles it.
 // A sandbox that is not running is left to the convergence after its next
 // start (settleConverged), since only a running sandbox can answer.
-func (r *DockerSandboxRuntime) settleSources(ctx context.Context, sb *Sandbox, req *workerapimodel.PoolSandboxCreateRequest) (bool, error) {
+func (r *sandboxCore) settleSources(ctx context.Context, sb *Sandbox, req *workerapimodel.PoolSandboxCreateRequest) (bool, error) {
 	sandboxID := sb.SandboxID
 	doc, ok, err := r.readRuntimeConfig(sandboxID)
 	if err != nil || !ok || doc.SourcesDelivered() || sb.Status != StatusRunning {
@@ -224,7 +224,7 @@ func (r *DockerSandboxRuntime) settleSources(ctx context.Context, sb *Sandbox, r
 		}
 		slog.WarnContext(ctx, "deliver sandbox runtime config before settling its sources", "sandboxId", sandboxID, "error", err)
 	}
-	dial, err := r.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
+	dial, err := r.boxes.SandboxDialer(ctx, sandboxID, SandboxAgentPort)
 	if err != nil {
 		return false, err
 	}
@@ -235,7 +235,7 @@ func (r *DockerSandboxRuntime) settleSources(ctx context.Context, sb *Sandbox, r
 	if err := r.awaitSourcesMaterialized(ctx, dial, sandboxID, doc.Sources, labels); err != nil {
 		return false, err
 	}
-	built, err := r.containerProjectLayerDigest(ctx, sb.ID)
+	built, err := r.boxes.builtProjectLayer(ctx, sb)
 	if err != nil {
 		return false, err
 	}
@@ -257,16 +257,18 @@ func (r *DockerSandboxRuntime) settleSources(ctx context.Context, sb *Sandbox, r
 // sandbox, or a sandbox whose create stopped short of settling. The status
 // poll calls it through ConvergeRuntimeConfig while the record names a source
 // not yet delivered. It does not wait: a source the sandbox has not
-// materialized yet is looked at again on the next poll. With no create
-// request in hand it cannot rebuild the container itself, so a project layer
-// that needs one removes the container for the control plane to recreate,
-// on the bootstrap the recorded layer now gives it.
-func (r *DockerSandboxRuntime) settleConverged(ctx context.Context, sb *Sandbox) error {
+// materialized yet is looked at again on the next poll. A project layer that
+// needs the box made again is the runtime's (rebuildForProjectLayer): a
+// container pool, with no create request in hand, removes the container for
+// the control plane to recreate on the bootstrap the recorded layer now gives
+// it; a machine pool makes the machine again in place from the bootstrap it
+// kept.
+func (r *sandboxCore) settleConverged(ctx context.Context, sb *Sandbox) error {
 	doc, ok, err := r.readRuntimeConfig(sb.SandboxID)
 	if err != nil || !ok || doc.SourcesDelivered() {
 		return err
 	}
-	dial, err := r.SandboxDialer(ctx, sb.SandboxID, SandboxAgentPort)
+	dial, err := r.boxes.SandboxDialer(ctx, sb.SandboxID, SandboxAgentPort)
 	if err != nil {
 		return err
 	}
@@ -290,7 +292,7 @@ func (r *DockerSandboxRuntime) settleConverged(ctx context.Context, sb *Sandbox)
 	if err := r.headPushedOrigins(ctx, sb.SandboxID, doc.Sources); err != nil {
 		return err
 	}
-	built, err := r.containerProjectLayerDigest(ctx, sb.ID)
+	built, err := r.boxes.builtProjectLayer(ctx, sb)
 	if err != nil {
 		return err
 	}
@@ -305,8 +307,7 @@ func (r *DockerSandboxRuntime) settleConverged(ctx context.Context, sb *Sandbox)
 	if !rebuild {
 		return r.markSourcesDelivered(ctx, sb.SandboxID)
 	}
-	slog.InfoContext(ctx, "removing a sandbox container whose delivered source declares project configuration it was not built with; the control plane rebuilds it", "sandboxId", sb.SandboxID)
-	return r.removeForRebuild(ctx, sb)
+	return r.boxes.rebuildForProjectLayer(ctx, sb)
 }
 
 // settleProjectLayer reads the primary source's project layer from a sandbox
@@ -314,7 +315,7 @@ func (r *DockerSandboxRuntime) settleConverged(ctx context.Context, sb *Sandbox)
 // — and reports whether the container, built with the layer whose digest is
 // built, has to be rebuilt for it. A layer that calls for a rebuild is
 // recorded, so the rebuild's bootstrap carries it.
-func (r *DockerSandboxRuntime) settleProjectLayer(ctx context.Context, dial Dialer, sandboxID, primary, built string) (bool, error) {
+func (r *sandboxCore) settleProjectLayer(ctx context.Context, dial Dialer, sandboxID, primary, built string) (bool, error) {
 	var layer *sandboxconfig.ProjectLayer
 	if primary != "" {
 		var err error
@@ -330,7 +331,7 @@ func (r *DockerSandboxRuntime) settleProjectLayer(ctx context.Context, dial Dial
 
 // markSourcesDelivered tells the sandbox its spec is final and its sources
 // delivered, which is what clears its readiness gate (ADR 0055).
-func (r *DockerSandboxRuntime) markSourcesDelivered(ctx context.Context, sandboxID string) error {
+func (r *sandboxCore) markSourcesDelivered(ctx context.Context, sandboxID string) error {
 	return logRuntimeConfigFailure(ctx, sandboxID, r.deliverRuntimeConfig(ctx, sandboxID, func(doc *sandboxconfig.RuntimeConfig) {
 		for i := range doc.Sources {
 			doc.Sources[i].Delivered = true
@@ -348,7 +349,7 @@ func (r *DockerSandboxRuntime) markSourcesDelivered(ctx context.Context, sandbox
 // 26-10-10-545 §8). One the sandbox has not materialized waits for that push
 // as a pushed source does; one it has is not asked about, because a sandbox
 // whose sources are delivered never reaches this.
-func (r *DockerSandboxRuntime) pushedSourcesLanded(ctx context.Context, sandboxID string, sources []sandboxSource, user sandboxuser.User) (bool, error) {
+func (r *sandboxCore) pushedSourcesLanded(ctx context.Context, sandboxID string, sources []sandboxSource, user sandboxuser.User) (bool, error) {
 	for _, source := range sources {
 		if key := gitSourceCacheKey(source.git); key != "" {
 			landed, err := r.cachedSourceLanded(ctx, key, sandboxID, source)
@@ -376,7 +377,7 @@ func (r *DockerSandboxRuntime) pushedSourcesLanded(ctx context.Context, sandboxI
 
 // cachedSourceLanded reports whether a cache-delivered source's namespace
 // holds a branch, and points the namespace's HEAD at the source's own.
-func (r *DockerSandboxRuntime) cachedSourceLanded(ctx context.Context, key, sandboxID string, source sandboxSource) (bool, error) {
+func (r *sandboxCore) cachedSourceLanded(ctx context.Context, key, sandboxID string, source sandboxSource) (bool, error) {
 	path, release, err := r.gitCache.Use(ctx, key)
 	if err != nil {
 		return false, fmt.Errorf("source %q cache: %w", source.slug, err)
@@ -399,7 +400,7 @@ func (r *DockerSandboxRuntime) cachedSourceLanded(ctx context.Context, key, sand
 // received a delivery at what arrived: a bare origin's as its owner
 // (headOriginAtWhatArrived), and a cache namespace's in the cache. A source
 // with neither is not delivered by a client.
-func (r *DockerSandboxRuntime) headPushedOrigins(ctx context.Context, sandboxID string, sources []sandboxconfig.RuntimeSource) error {
+func (r *sandboxCore) headPushedOrigins(ctx context.Context, sandboxID string, sources []sandboxconfig.RuntimeSource) error {
 	caches, err := r.readSourceCaches(sandboxID)
 	if err != nil {
 		return err
@@ -447,7 +448,7 @@ var ErrSourceStatesUnsupported = errors.New("the sandbox's image predates clonin
 // got. A clone of a large remote is minutes, and the phase published once
 // as the wait began would age out of what a client counts as current long
 // before it ends (#138).
-func (r *DockerSandboxRuntime) awaitSourcesMaterialized(ctx context.Context, dial Dialer, sandboxID string, sources []sandboxconfig.RuntimeSource, labels map[string]string) error {
+func (r *sandboxCore) awaitSourcesMaterialized(ctx context.Context, dial Dialer, sandboxID string, sources []sandboxconfig.RuntimeSource, labels map[string]string) error {
 	// The record is the last report and is never cleared, so the wait ends
 	// on the bare phase: a CLI that predates clone progress fails to decode a
 	// record carrying it (ADR 0118), and only a create still waiting should.
@@ -561,7 +562,7 @@ func sourceLabel(source sandboxSource) string {
 }
 
 // readSourceStates asks the sandbox how far each source has converged.
-func (r *DockerSandboxRuntime) readSourceStates(ctx context.Context, dial Dialer, sandboxID string) (map[string]sourceState, error) {
+func (r *sandboxCore) readSourceStates(ctx context.Context, dial Dialer, sandboxID string) (map[string]sourceState, error) {
 	var body struct {
 		Sources []sourceState `json:"sources"`
 	}
@@ -577,7 +578,7 @@ func (r *DockerSandboxRuntime) readSourceStates(ctx context.Context, dial Dialer
 
 // readSourceProjectLayer asks the sandbox for a materialized source's project
 // layer, nil when the source has none (ADR 0012 §7).
-func (r *DockerSandboxRuntime) readSourceProjectLayer(ctx context.Context, dial Dialer, sandboxID, slug string) (*sandboxconfig.ProjectLayer, error) {
+func (r *sandboxCore) readSourceProjectLayer(ctx context.Context, dial Dialer, sandboxID, slug string) (*sandboxconfig.ProjectLayer, error) {
 	var body struct {
 		ProjectLayer json.RawMessage `json:"projectLayer"`
 	}
@@ -596,7 +597,7 @@ func (r *DockerSandboxRuntime) readSourceProjectLayer(ctx context.Context, dial 
 
 // getFromSandboxAgent reads one of the sandbox agent's runtime-config routes,
 // with the token the pool signs for them (poolToken).
-func (r *DockerSandboxRuntime) getFromSandboxAgent(ctx context.Context, dial Dialer, sandboxID, route string, out any) error {
+func (r *sandboxCore) getFromSandboxAgent(ctx context.Context, dial Dialer, sandboxID, route string, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, runtimeConfigCallTimeout)
 	defer cancel()
 	token, err := r.poolToken(sandboxID, sandboxconfig.RuntimeConfigScope)
@@ -645,6 +646,20 @@ func projectLayerDigest(layer *sandboxconfig.ProjectLayer) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// builtProjectLayer is the project layer digest the sandbox's container was
+// built with.
+func (r *DockerSandboxRuntime) builtProjectLayer(ctx context.Context, sb *Sandbox) (string, error) {
+	return r.containerProjectLayerDigest(ctx, sb.ID)
+}
+
+// rebuildForProjectLayer removes a container whose delivered source declares
+// project configuration it was not built with, for the control plane to
+// recreate on the bootstrap the recorded layer now gives it.
+func (r *DockerSandboxRuntime) rebuildForProjectLayer(ctx context.Context, sb *Sandbox) error {
+	slog.InfoContext(ctx, "removing a sandbox container whose delivered source declares project configuration it was not built with; the control plane rebuilds it", "sandboxId", sb.SandboxID)
+	return r.removeForRebuild(ctx, sb)
+}
+
 // containerProjectLayerDigest is the project layer digest a container was
 // built with.
 func (r *DockerSandboxRuntime) containerProjectLayerDigest(ctx context.Context, containerID string) (string, error) {
@@ -676,7 +691,7 @@ type projectLayerRecord struct {
 	Source *string `json:"source"`
 }
 
-func (r *DockerSandboxRuntime) projectLayerRecordPath(sandboxID string) string {
+func (r *sandboxCore) projectLayerRecordPath(sandboxID string) string {
 	return filepath.Join(r.sandboxRoot(sandboxID), projectLayerRecordName)
 }
 
@@ -684,7 +699,7 @@ func (r *DockerSandboxRuntime) projectLayerRecordPath(sandboxID string) string {
 // zero record. It is the pool's own, never sandbox.json's _provenance read
 // back: that file is the sandbox's once it boots, and nothing the pool
 // decides is read from what a sandbox can write (ADR 26-10-08-127).
-func (r *DockerSandboxRuntime) readProjectLayerRecord(sandboxID string) (projectLayerRecord, error) {
+func (r *sandboxCore) readProjectLayerRecord(sandboxID string) (projectLayerRecord, error) {
 	data, err := os.ReadFile(r.projectLayerRecordPath(sandboxID))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -699,7 +714,7 @@ func (r *DockerSandboxRuntime) readProjectLayerRecord(sandboxID string) (project
 	return record, nil
 }
 
-func (r *DockerSandboxRuntime) writeProjectLayerRecord(sandboxID string, record projectLayerRecord) error {
+func (r *sandboxCore) writeProjectLayerRecord(sandboxID string, record projectLayerRecord) error {
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return err

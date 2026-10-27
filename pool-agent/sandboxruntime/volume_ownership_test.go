@@ -25,7 +25,7 @@ func TestPrepareSandboxVolumesLeavesSandboxHomeAlone(t *testing.T) {
 		t.Skip("giving a file away requires root")
 	}
 	state := withTestRoot(t)
-	runtime := &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"}
+	runtime := testDockerRuntime(&DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"})
 	const sandboxID = "sandbox-1"
 	const uid, gid = 1000, 1000
 
@@ -69,7 +69,7 @@ func TestPrepareSandboxVolumesOwnsWhatItWrites(t *testing.T) {
 		t.Skip("giving a file away requires root")
 	}
 	state := withTestRoot(t)
-	runtime := &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"}
+	runtime := testDockerRuntime(&DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"})
 	const sandboxID = "sandbox-1"
 
 	planted := map[string]string{
@@ -108,7 +108,7 @@ func TestPrepareSandboxVolumesGivesASourcelessSandboxPrivateSourceData(t *testin
 		t.Skip("giving a file away requires root")
 	}
 	state := withTestRoot(t)
-	runtime := &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"}
+	runtime := testDockerRuntime(&DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"})
 	const sandboxID = "sandbox-1"
 	const uid, gid = 1000, 1000
 	userUID, userGID := int64(uid), int64(gid)
@@ -159,7 +159,7 @@ func TestPrepareSandboxVolumesLeavesSourceCheckoutsToTheSandbox(t *testing.T) {
 		t.Skip("giving a file away requires root")
 	}
 	state := withTestRoot(t)
-	runtime := &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a", paths: linuxPaths}
+	runtime := testDockerRuntime(&DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a", paths: linuxPaths})
 	const sandboxID = "sandbox-1"
 	const uid, gid = 1000, 1000
 	userUID, userGID := int64(uid), int64(gid)

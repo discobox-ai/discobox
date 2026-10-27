@@ -56,7 +56,7 @@ func TestEveryCreateRecordsTheSandboxsBundles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"}
+	r := testDockerRuntime(&DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"})
 
 	platform := "sha256:" + strings.Repeat("a", 64)
 	harness := "sha256:" + strings.Repeat("b", 64)
@@ -135,7 +135,7 @@ func TestASandboxIsBuiltFromTheSandboxBaseImageOrNotAtAll(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			r := &DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"}
+			r := testDockerRuntime(&DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"})
 			req := &workerapimodel.PoolSandboxCreateRequest{
 				SandboxId:             "sbx_1",
 				Config:                workerapimodel.SandboxConfig{SpecFingerprint: workerclient.NewOptString("spec-1")},

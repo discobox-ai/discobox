@@ -19,11 +19,11 @@ type harnessChangeFence struct {
 	Applied bool
 }
 
-func (r *DockerSandboxRuntime) harnessFencePath(id string) string {
+func (r *sandboxCore) harnessFencePath(id string) string {
 	return filepath.Join(r.sandboxRoot(id), "harness-change.json")
 }
 
-func (r *DockerSandboxRuntime) readHarnessFence(id string) (harnessChangeFence, error) {
+func (r *sandboxCore) readHarnessFence(id string) (harnessChangeFence, error) {
 	var f harnessChangeFence
 	data, err := os.ReadFile(r.harnessFencePath(id))
 	if errors.Is(err, os.ErrNotExist) {
@@ -36,7 +36,7 @@ func (r *DockerSandboxRuntime) readHarnessFence(id string) (harnessChangeFence, 
 	return f, err
 }
 
-func (r *DockerSandboxRuntime) writeHarnessFence(id string, f harnessChangeFence) error {
+func (r *sandboxCore) writeHarnessFence(id string, f harnessChangeFence) error {
 	data, err := json.Marshal(f)
 	if err != nil {
 		return err
@@ -51,7 +51,7 @@ func (r *DockerSandboxRuntime) writeHarnessFence(id string, f harnessChangeFence
 
 // reserveHarnessChange holds the same lock as every power transition. Retrying
 // the same ID is safe after the replacement has landed, even if it has started.
-func (r *DockerSandboxRuntime) reserveHarnessChange(ctx context.Context, id, change string) (*Sandbox, error) {
+func (r *sandboxCore) reserveHarnessChange(ctx context.Context, id, change string) (*Sandbox, error) {
 	lock := r.sandboxLock(id)
 	lock.Lock()
 	defer lock.Unlock()
@@ -62,7 +62,7 @@ func (r *DockerSandboxRuntime) reserveHarnessChange(ctx context.Context, id, cha
 	if err != nil {
 		return nil, err
 	}
-	sb, err := r.GetSandbox(ctx, id)
+	sb, err := r.boxes.GetSandbox(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func (r *DockerSandboxRuntime) reserveHarnessChange(ctx context.Context, id, cha
 	return sb, nil
 }
 
-func (r *DockerSandboxRuntime) harnessStartAllowed(id string) error {
+func (r *sandboxCore) harnessStartAllowed(id string) error {
 	f, err := r.readHarnessFence(id)
 	if err != nil {
 		return err
@@ -94,7 +94,7 @@ func (r *DockerSandboxRuntime) harnessStartAllowed(id string) error {
 
 // Called under the power lock before any side effects of a create. Retaining
 // the applied ID fences late creates from an older server generation too.
-func (r *DockerSandboxRuntime) harnessCreateAllowed(id, change string) error {
+func (r *sandboxCore) harnessCreateAllowed(id, change string) error {
 	f, err := r.readHarnessFence(id)
 	if err != nil {
 		return err
@@ -105,7 +105,7 @@ func (r *DockerSandboxRuntime) harnessCreateAllowed(id, change string) error {
 	return nil
 }
 
-func (r *DockerSandboxRuntime) finishHarnessChange(id, change string) error {
+func (r *sandboxCore) finishHarnessChange(id, change string) error {
 	if change == "" {
 		return nil
 	}

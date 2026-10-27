@@ -83,6 +83,7 @@ func TestLoadReadsTheBootstrapFileUnderTheEnvironment(t *testing.T) {
 		PoolID:          "pool-1",
 		Runtime:         poolagent.RuntimeMachine,
 		Driver:          "boxd",
+		MachineProject:  "pool-1",
 	})
 	t.Setenv(poolagent.EnvBootstrapFile, path)
 	t.Setenv(poolagent.EnvControlPlaneURL, "")
@@ -139,18 +140,22 @@ func TestBootstrapValidatesItsRuntime(t *testing.T) {
 		name    string
 		runtime poolagent.Runtime
 		driver  string
+		project string
 		wantErr string
 	}{
 		{name: "none is docker", runtime: ""},
 		{name: "docker", runtime: poolagent.RuntimeDocker},
 		{name: "docker with a driver", runtime: poolagent.RuntimeDocker, driver: "boxd", wantErr: "driver"},
-		{name: "machine", runtime: poolagent.RuntimeMachine, driver: "boxd"},
-		{name: "machine without a driver", runtime: poolagent.RuntimeMachine, wantErr: "needs a driver"},
+		{name: "machine", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1"},
+		{name: "machine without a driver", runtime: poolagent.RuntimeMachine, project: "pool-1", wantErr: "needs a driver"},
+		{name: "machine without a project", runtime: poolagent.RuntimeMachine, driver: "boxd", wantErr: "machine project"},
+		{name: "machine in a project disco-vm refuses", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool_1", wantErr: "machine project"},
+		{name: "docker with a machine project", runtime: poolagent.RuntimeDocker, project: "pool-1", wantErr: "machine project"},
 		{name: "unknown", runtime: "podman", wantErr: "unknown pool runtime"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bootstrap := base
-			bootstrap.Runtime, bootstrap.Driver = tc.runtime, tc.driver
+			bootstrap.Runtime, bootstrap.Driver, bootstrap.MachineProject = tc.runtime, tc.driver, tc.project
 			err := bootstrap.Validate()
 			if tc.wantErr == "" {
 				if err != nil {

@@ -74,7 +74,7 @@ func newPausingRuntime(t *testing.T, status string) (*DockerSandboxRuntime, *pau
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1"}, daemon
+	return testDockerRuntime(&DockerSandboxRuntime{root: state, client: cli, projectID: "proj_1", poolID: "pool_1"}), daemon
 }
 
 // A suspend pauses a running container and nothing else; one already paused

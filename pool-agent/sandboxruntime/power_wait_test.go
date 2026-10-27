@@ -21,7 +21,7 @@ import (
 // out, while an id this pool has never seen is not found.
 func TestHostsSandboxTellsARebuildFromAnUnknownID(t *testing.T) {
 	state := withTestRoot(t)
-	runtime := &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"}
+	runtime := testDockerRuntime(&DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"})
 
 	if runtime.hostsSandbox("sbx_elsewhere") {
 		t.Fatal("a sandbox with no tree on this pool reads as hosted here")
@@ -71,7 +71,7 @@ func sandboxDaemon(t *testing.T, sandboxID string, running func() bool) *DockerS
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &DockerSandboxRuntime{client: cli, projectID: "proj_a", poolID: "pool_a"}
+	return testDockerRuntime(&DockerSandboxRuntime{client: cli, projectID: "proj_a", poolID: "pool_a"})
 }
 
 // Docker reports a container running as soon as it starts, before the sandbox

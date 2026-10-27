@@ -154,6 +154,8 @@ func statusCodeForTreeError(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, sandboxruntime.ErrImageUnavailable):
 		return http.StatusUnprocessableEntity
+	case errors.Is(err, sandboxruntime.ErrUnsupported):
+		return http.StatusNotImplemented
 	}
 	return http.StatusInternalServerError
 }

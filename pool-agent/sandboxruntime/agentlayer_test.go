@@ -133,7 +133,7 @@ func placementFixture(t *testing.T, layers AgentLayers) (*DockerSandboxRuntime, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1", agentLayers: layers}
+	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1", agentLayers: layers})
 	return r, daemon
 }
 
@@ -288,7 +288,7 @@ func TestDeliveredMovedComparesWhatTheContainerBootedOn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"}
+	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1", sandboxBaseImage: "discobox-sandbox-base:test"})
 	pin := func(hex string) workerapimodel.BundlePin {
 		return workerapimodel.BundlePin{Name: "discobox-platform", Digest: "sha256:" + strings.Repeat(hex, 64)}
 	}
@@ -336,7 +336,7 @@ var testRecordAgent = assetcache.Pin{Name: testAgentPin.Name, Digest: testAgentP
 // what that pool placed, so a delivered sandbox's next create compares
 // against it rather than failing on it until someone deletes the record.
 func TestAPlacedRecordFromBeforePinsWereAListReads(t *testing.T) {
-	r := &DockerSandboxRuntime{root: withTestRoot(t)}
+	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t)})
 	if err := os.MkdirAll(r.sandboxRoot("sbx_1"), 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -57,13 +57,13 @@ type agentExtract struct {
 
 // agentsDir holds each agent layer's agent, by layer digest, in the pool's
 // build area: never bound into a box (ADR 0050).
-func (r *DockerSandboxRuntime) agentsDir() string {
+func (r *sandboxCore) agentsDir() string {
 	return filepath.Join(r.root.PoolBuild(r.projectID, r.poolID), "agents")
 }
 
 // deliveredPins is the sandbox's recorded bundles as the box applies them,
 // and false when the sandbox is delivered nothing.
-func (r *DockerSandboxRuntime) deliveredPins(sandboxID string) (agentlayer.Pins, bool, error) {
+func (r *sandboxCore) deliveredPins(sandboxID string) (agentlayer.Pins, bool, error) {
 	d, err := assetcache.ReadRecord(r.sandboxRoot(sandboxID))
 	if err != nil {
 		return nil, false, err
@@ -88,7 +88,7 @@ func applied(d assetcache.Delivery) (agentlayer.Pins, bool, error) {
 
 // sandboxAgent is the sandbox's agent layer, extracted on this side, and
 // false for a sandbox delivered no platform.
-func (r *DockerSandboxRuntime) sandboxAgent(ctx context.Context, sandboxID string) (agentlayer.Agent, bool, error) {
+func (r *sandboxCore) sandboxAgent(ctx context.Context, sandboxID string) (agentlayer.Agent, bool, error) {
 	if r.agentLayers == nil {
 		return agentlayer.Agent{}, false, nil
 	}
@@ -120,7 +120,7 @@ func (r *DockerSandboxRuntime) sandboxAgent(ctx context.Context, sandboxID strin
 
 // extractAgent reads the layer digest and writes its agent to path,
 // refusing a layer that is not the agent's alone (agentlayer.ExtractAgent).
-func (r *DockerSandboxRuntime) extractAgent(ctx context.Context, sandboxID, digest, path string) error {
+func (r *sandboxCore) extractAgent(ctx context.Context, sandboxID, digest, path string) error {
 	layer, err := r.agentLayers.OpenAgentLayer(ctx, sandboxID, digest)
 	if err != nil {
 		return err
@@ -179,7 +179,7 @@ func (r *DockerSandboxRuntime) placeAgent(ctx context.Context, sandboxID, contai
 // sweep began is kept. A sandbox whose layer cannot be named now keeps every
 // agent, since any could be its; agentSweepGrace keeps one extracted too
 // recently for its sandbox's record to say so.
-func (r *DockerSandboxRuntime) sweepAgents(ctx context.Context, sandboxIDs []string) error {
+func (r *sandboxCore) sweepAgents(ctx context.Context, sandboxIDs []string) error {
 	if r.agentLayers == nil {
 		return nil
 	}
@@ -230,18 +230,23 @@ const EnvSandboxBaseImage = "DISCOBOX_SANDBOX_BASE_IMAGE"
 // it restarts the box (pool-agent/REVIEW.md).
 const placedRecordName = "agent-placed.json"
 
-// placedRecord is what placeAgent last copied into a container.
+// placedRecord is what the pool last copied into a sandbox's box: a
+// container (placeAgent) or a machine (MachineSandboxRuntime.place).
 type placedRecord struct {
+	// Container is the box's own ID: a container's, or a machine's instance.
 	Container string          `json:"container"`
 	Layer     string          `json:"layer"`
 	Pins      agentlayer.Pins `json:"pins"`
+	// Bootstrap is the digest of the sandbox.json placed beside them, which
+	// only a machine is placed: a container's is in its config volume.
+	Bootstrap string `json:"bootstrap,omitempty"`
 }
 
-func (r *DockerSandboxRuntime) placedRecordPath(sandboxID string) string {
+func (r *sandboxCore) placedRecordPath(sandboxID string) string {
 	return filepath.Join(r.sandboxRoot(sandboxID), placedRecordName)
 }
 
-func (r *DockerSandboxRuntime) readPlaced(sandboxID string) (placedRecord, bool, error) {
+func (r *sandboxCore) readPlaced(sandboxID string) (placedRecord, bool, error) {
 	data, err := os.ReadFile(r.placedRecordPath(sandboxID))
 	if errors.Is(err, os.ErrNotExist) {
 		return placedRecord{}, false, nil
@@ -256,7 +261,7 @@ func (r *DockerSandboxRuntime) readPlaced(sandboxID string) (placedRecord, bool,
 	return record, true, nil
 }
 
-func (r *DockerSandboxRuntime) writePlaced(sandboxID string, record placedRecord) error {
+func (r *sandboxCore) writePlaced(sandboxID string, record placedRecord) error {
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return err

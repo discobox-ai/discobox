@@ -41,7 +41,7 @@ func TestReapUnheldSandboxVolumesKeepsAHeldTreeWithNoContainer(t *testing.T) {
 	now := time.Now()
 
 	for _, at := range []time.Time{now, now.Add(48 * time.Hour), now.Add(90 * 24 * time.Hour)} {
-		reapUnheldSandboxVolumes(context.Background(), root, heldSet("sbx_failed"), 24*time.Hour, at, quietLogger())
+		reapUnheldSandboxVolumes(context.Background(), root, heldSet("sbx_failed"), 24*time.Hour, at, quietLogger(), nil)
 	}
 
 	if _, err := os.Stat(filepath.Join(failed, "data")); err != nil {
@@ -59,7 +59,7 @@ func TestReapUnheldSandboxVolumesReapsAfterRetention(t *testing.T) {
 	now := time.Now()
 
 	// First pass outside the set: the clock starts, nothing is removed.
-	reapUnheldSandboxVolumes(context.Background(), root, heldSet(), retention, now, quietLogger())
+	reapUnheldSandboxVolumes(context.Background(), root, heldSet(), retention, now, quietLogger(), nil)
 	if _, err := os.Stat(unheld); err != nil {
 		t.Fatalf("unheld tree removed on first sight: %v", err)
 	}
@@ -67,12 +67,12 @@ func TestReapUnheldSandboxVolumesReapsAfterRetention(t *testing.T) {
 		t.Fatalf("unheld marker not written on first pass")
 	}
 
-	reapUnheldSandboxVolumes(context.Background(), root, heldSet(), retention, now.Add(retention-time.Minute), quietLogger())
+	reapUnheldSandboxVolumes(context.Background(), root, heldSet(), retention, now.Add(retention-time.Minute), quietLogger(), nil)
 	if _, err := os.Stat(unheld); err != nil {
 		t.Fatalf("unheld tree removed within retention: %v", err)
 	}
 
-	reapUnheldSandboxVolumes(context.Background(), root, heldSet(), retention, now.Add(retention+time.Minute), quietLogger())
+	reapUnheldSandboxVolumes(context.Background(), root, heldSet(), retention, now.Add(retention+time.Minute), quietLogger(), nil)
 	if _, err := os.Stat(unheld); !os.IsNotExist(err) {
 		t.Fatalf("unheld tree not reaped past retention: err=%v", err)
 	}
@@ -88,7 +88,7 @@ func TestReapUnheldSandboxVolumesReapsNothingWithoutAnAnswer(t *testing.T) {
 	now := time.Now()
 
 	for _, at := range []time.Time{now, now.Add(48 * time.Hour), now.Add(90 * 24 * time.Hour)} {
-		reapUnheldSandboxVolumes(context.Background(), root, noAnswer, 24*time.Hour, at, quietLogger())
+		reapUnheldSandboxVolumes(context.Background(), root, noAnswer, 24*time.Hour, at, quietLogger(), nil)
 	}
 
 	if _, err := os.Stat(dir); err != nil {
@@ -107,7 +107,7 @@ func TestReapUnheldSandboxVolumesClearsTheClockWhenHeldAgain(t *testing.T) {
 	dir := mkSandboxDir(t, root, "sbx_back")
 	writeSandboxTombstone(filepath.Join(dir, sandboxVolumeUnheldMarker), time.Now().Add(-48*time.Hour), quietLogger())
 
-	reapUnheldSandboxVolumes(context.Background(), root, heldSet("sbx_back"), 24*time.Hour, time.Now(), quietLogger())
+	reapUnheldSandboxVolumes(context.Background(), root, heldSet("sbx_back"), 24*time.Hour, time.Now(), quietLogger(), nil)
 
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatalf("a held tree with a stale clock was reaped: %v", err)
@@ -126,7 +126,7 @@ func TestReapUnheldSandboxVolumesIgnoresTheContainerAbsenceTombstone(t *testing.
 	dir := mkSandboxDir(t, root, "sbx_legacy")
 	writeSandboxTombstone(filepath.Join(dir, legacySandboxVolumeTombstone), time.Now().Add(-48*time.Hour), quietLogger())
 
-	reapUnheldSandboxVolumes(context.Background(), root, heldSet(), 24*time.Hour, time.Now(), quietLogger())
+	reapUnheldSandboxVolumes(context.Background(), root, heldSet(), 24*time.Hour, time.Now(), quietLogger(), nil)
 
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatalf("a tree was reaped on a container-absence clock: %v", err)
@@ -148,7 +148,7 @@ func TestReapUnheldSandboxVolumesJudgesOnlyTreesListedBeforeTheAnswer(t *testing
 		return []string{"sbx_held"}, nil
 	}
 
-	reapUnheldSandboxVolumes(context.Background(), root, held, 24*time.Hour, time.Now(), quietLogger())
+	reapUnheldSandboxVolumes(context.Background(), root, held, 24*time.Hour, time.Now(), quietLogger(), nil)
 
 	if _, err := os.Stat(filepath.Join(late, sandboxVolumeUnheldMarker)); !os.IsNotExist(err) {
 		t.Fatalf("a tree created after the trees were listed was judged by the answer")
@@ -166,8 +166,8 @@ func TestReapUnheldSandboxVolumesIsScopedToItsRoot(t *testing.T) {
 	treeB := mkSandboxDir(t, poolB, "sbx_b")
 
 	now := time.Now()
-	reapUnheldSandboxVolumes(context.Background(), poolA, heldSet(), time.Hour, now, quietLogger())
-	reapUnheldSandboxVolumes(context.Background(), poolA, heldSet(), time.Hour, now.Add(48*time.Hour), quietLogger())
+	reapUnheldSandboxVolumes(context.Background(), poolA, heldSet(), time.Hour, now, quietLogger(), nil)
+	reapUnheldSandboxVolumes(context.Background(), poolA, heldSet(), time.Hour, now.Add(48*time.Hour), quietLogger(), nil)
 
 	if _, err := os.Stat(unheldA); !os.IsNotExist(err) {
 		t.Fatalf("pool A did not reap its own unheld tree: err=%v", err)
@@ -245,8 +245,8 @@ func TestReapUnknownPoolsReapsProxyOnlyLeftoverImmediately(t *testing.T) {
 // from under its running sandboxes, breaking egress with no log line.
 func TestReapUnknownPoolsLeavesAnotherProjectsLivePoolAlone(t *testing.T) {
 	state := withTestRoot(t)
-	agentA := &DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"}
-	agentB := &DockerSandboxRuntime{root: state, projectID: "proj_b", poolID: "pool_b"}
+	agentA := testDockerRuntime(&DockerSandboxRuntime{root: state, projectID: "proj_a", poolID: "pool_a"})
+	agentB := testDockerRuntime(&DockerSandboxRuntime{root: state, projectID: "proj_b", poolID: "pool_b"})
 
 	// Project B has a live pool with staged proxy material and a data subtree.
 	liveProxyB := proxyagent.PoolSandboxMaterialRoot(state, "proj_b", "pool_b")
