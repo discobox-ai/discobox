@@ -220,10 +220,12 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	// Ready/Schedulable/Degraded and RegisteredAt are agent-reported fields,
 	// written by the agent's UpdatePoolStatus over its own HTTP calls, which
 	// can land concurrently with EnsurePool/RepairPool waiting on container
-	// health. Only RuntimeState is safe to copy from the pre-call local object;
-	// copying the others would stomp a registration that already landed in the
-	// DB with the stale pre-call value.
+	// health. Only what the provider writes — RuntimeState and HostCredential —
+	// is safe to copy from the pre-call local object; copying the others would
+	// stomp a registration that already landed in the DB with the stale
+	// pre-call value.
 	current.RuntimeState = pool.RuntimeState
+	current.HostCredential = pool.HostCredential
 	current.ObservedGeneration = generation
 	settledAt := time.Now().UTC()
 	current.ReconciledAt = &settledAt
@@ -325,6 +327,7 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 	now := time.Now().UTC()
 	pool.RevokedAt = &now
 	pool.RuntimeState = nil
+	pool.HostCredential = nil
 	pool.ObservedGeneration = generation
 	pool.SetState(model.PoolStateDeleted)
 	pool.ClearFailure()

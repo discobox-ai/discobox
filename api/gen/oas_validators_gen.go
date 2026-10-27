@@ -3990,6 +3990,24 @@ func (s *Pool) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.HostCredential.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "hostCredential",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.ProvisionProgress.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -4159,6 +4177,47 @@ func (s *PoolHeldSandboxesBody) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s *PoolHostCredential) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Key.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "key",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s PoolHostCredentialKey) Validate() error {
+	switch s {
+	case "issued":
+		return nil
+	case "provider":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s PoolProvisionPhase) Validate() error {

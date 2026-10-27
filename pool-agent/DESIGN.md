@@ -1327,16 +1327,17 @@ bundle. `bundle` names the files its maker places beside it.
 
 - **What it is**: `pool-agent/Dockerfile`'s `bundle` target, `FROM scratch`,
   holding two features (`bundle/features`):
-  - `pool-agent`: `discobox-pool-agent`, `git` where absent, and the units `discobox-pool-agent.service`
-    and `discobox-proxy.service`;
+  - `pool-agent`: `discobox-pool-agent`, `git` where absent, the units `discobox-pool-agent.service`
+    and `discobox-proxy.service`, and a journald drop-in keeping the
+    journal on disk, bounded at 256M: it is what says why the agent did not
+    come up, and a boxd base keeps none;
   - `pool-builder`, which requires it: the pool-shared builder of ADR 0044 —
     BuildKit's binaries and the registry's from their upstream images,
     `discobox-pool-runc` as `/opt/discobox/bin/runc`, `registry.yml`, the
     builder's, registry's and mediator's units. It runs no `dockerd`: the
     pool's container has its daemon's socket bound in, which its sandboxes
-    run on. `apply` applies both: no pool whose sandboxes are machines runs
-    an agent yet, and turning `pool-builder` off for one is deferred (ADR
-    26-10-24-953, Deferred).
+    run on. `apply` applies both on every pool, a machine pool's included:
+    what a pool runs does not follow from its host (ADR 26-10-27-767).
 
   Each runs its binaries from its feature's directory under the bundle's
   stable link (`agentlayer.BundleTree`), and restarts its units from a step
@@ -1883,9 +1884,15 @@ other
 
 ## Pool-Shared Builds
 
-`docker build` in any sandbox runs on one BuildKit daemon here, so the pool's
-sandboxes share a solver cache
-([ADR 0044](../docs/adr/0044-builds-run-on-a-pool-shared-buildkit.md)).
+`docker build` in a Docker pool's sandbox runs on one BuildKit daemon here, so
+the pool's sandboxes share a solver cache
+([ADR 0044](../docs/adr/0044-builds-run-on-a-pool-shared-buildkit.md)). A
+machine pool's sandboxes do not: its builder runs on the pool's machine,
+beside the provisioning key and the driver's machine token, so its mediator
+serves no builds (`mediatorServes`, from the bootstrap's runtime) and a machine
+sandbox is given no BuildKit endpoint (`machinePoolEndpoints`); a machine
+sandbox builds on its own machine
+([ADR 26-10-27-767](../docs/adr/26-10-27-767-a-machine-pool-runs-what-every-pool-runs.md)).
 `docker run` stays in the sandbox: a nested run's bind mounts name sandbox
 paths that do not exist out here.
 

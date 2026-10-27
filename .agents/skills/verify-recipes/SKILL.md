@@ -1057,10 +1057,13 @@ agent, runs `provision identity`, enrolls the key, and runs `provision apply`.
 
 # Verifying a machine pool (`MachineSandboxRuntime`, the `vm` provider)
 
-- A machine pool cannot run here: its runtime needs a remote driver (boxd and a
-  key) and a provider that places its bootstrap and provisioning key (#127).
-  Its lifecycle is driven on disco-vm's fake driver in
-  `pool-agent/sandboxruntime/machine_test.go`. What reaches a dev box is the
+- A machine pool needs a remote driver: boxd and a key in the `vm`
+  provider's `apiKey`, and a `controlPlaneUrl` boxd's machines can reach,
+  which the dev loop is not; no credential a box can be given works as that
+  key (below). Its pool's lifecycle — create, key issue, renewal and
+  revocation, re-adoption, the blocked and opt-in paths — is driven on
+  disco-vm's fake driver in `server/providers/discovm/poolmachine_test.go`,
+  its sandboxes' in `pool-agent/sandboxruntime/machine_test.go`. What reaches a dev box is the
   sandbox agent's pool-only `POST .../cache/clear`, signed with a
   `cache-clear` token from the pool's identity key (above) and `curl`ed on
   `127.0.0.1:3003` from `d shell`. **On a dev box it empties the whole pool's
@@ -1073,9 +1076,38 @@ agent, runs `provision identity`, enrolls the key, and runs `provision apply`.
   create`, recipe above) or the isolated server's. Otherwise the unit test
   `sandbox-agent/boot/clearcache_test.go` and the router test
   `sandbox-agent/server/cache_clear_test.go` cover it.
+- A boxd credential through discobox-access does not work as the
+  provider's `apiKey`: egress swaps a placeholder in headers only, and
+  disco-vm exchanges a `bxd_` key for a JWT in a POST body (and sends a key
+  without that prefix as the JWT), so boxd answers `invalid token`. Do not
+  ask for the real key to get around it: a real secret in a box bypasses
+  the placeholder model — anything the box runs can read it, nothing records
+  or revokes its use, and the isolated server's provider config and a
+  `deliverProviderKey` pool's machine hold it too. Verify on the fake driver
+  instead. A live boxd run is the user's call alone: it takes a key of a
+  throwaway boxd org, which the user revokes, with that org's machines,
+  when the run ends, and say so in the report. Read it into the config with
+  `jq --rawfile`, never on a command line (`/proc/<pid>/cmdline` is
+  readable). An API key cannot issue keys, so such a run drives only the
+  blocked and `deliverProviderKey` paths.
+- On an isolated server (above) with `controlPlaneUrl` a host boxd cannot
+  reach, a pool gets as far as `provision apply`'s bundle fetch: the machine
+  is made, keyed, placed and enrolled, which the console shows (`admin pool
+  console <pool>` with `script -qec`, files under `/etc/discobox/pool-agent`).
+  What boxd holds is read with a scratch `go run` (from `server/`) of
+  `boxd.New(machine.Config{Project: "prov-…", Keys: …}).Instances`, which
+  shows each machine's `Isolated` and `Networks`, and that delete left none.
+- After `admin provider update`, a pool's reconcile can fail every pass with
+  `a reconciler cannot mark its own resource dirty`: a pre-existing server
+  bug, not a quirk of the loop. `poolruntime.Provider.Initialize` schedules
+  every pool of the provider, and the provider's first resolve after the
+  update runs inside one pool's own reconcile, which the engine refuses as
+  a self-mark. A server restart resolves the provider at startup instead;
+  report it rather than work around it unremarked.
 - Do not create a `vm` provider with `{"driver":"boxd"}` in the dev loop
-  without `BOXD_API_KEY` in the server's environment: its pool fails with
-  `boxd: no credentials`, and so does deleting it, since the stateless engine
-  asks boxd whether the pool's machine exists. The pool stays `failed` in the
-  loop's database. Use an isolated server (above) for it.
+  without a working `apiKey` in its configuration: its pool fails naming
+  `apiKey`, and so does deleting it, since the stateless engine asks boxd
+  whether the pool's machine exists, and its keys are revoked by name. The
+  pool stays `failed` in the loop's database. Use an isolated server (above)
+  for it.
 

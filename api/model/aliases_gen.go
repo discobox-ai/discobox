@@ -108,6 +108,7 @@ type Pool = apigen.Pool
 type PoolCPUUsage = apigen.PoolCPUUsage
 type PoolFilesystemUsage = apigen.PoolFilesystemUsage
 type PoolHeldSandboxesBody = apigen.PoolHeldSandboxesBody
+type PoolHostCredential = apigen.PoolHostCredential
 type PoolMemoryUsage = apigen.PoolMemoryUsage
 type PoolProvisionPhase = apigen.PoolProvisionPhase
 type PoolProvisionProgress = apigen.PoolProvisionProgress

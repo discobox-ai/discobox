@@ -338,3 +338,23 @@ and no held sandbox names, is removed only if its name is a sandbox's
 so (`machine-orphans`). A pool's project is the provider's naming convention,
 not a fence (ADR 26-10-23-551 §4), so a machine of any other name in it is
 never this runtime's to remove.
+
+## The API on a public URL
+
+- The agent's API can be on a public URL (a boxd pool machine's, ADR
+  26-10-09-106 §3). Only `/healthz`, `/readyz` and `/metadata` answer without
+  a token, and they change nothing and say nothing secret; every operation of
+  the generated API has a scope in `requiredPoolOperationScope`, and an
+  operation added without one is reachable with any token minted for the
+  pool. A request proxied into a sandbox never carries the token that
+  authorized the hop (`sandboxProxy` drops `Authorization` but the sandbox
+  agent's own). Why: code in a sandbox could otherwise replay the control
+  plane's token at the pool's URL.
+- A machine pool's mediator serves no builds (`mediatorServes`, from the
+  bootstrap's runtime): the refusal is the pool's, and giving a machine
+  sandbox no BuildKit endpoint (`machinePoolEndpoints`) is only what follows
+  from it. Why: the pool's builder runs on the pool's machine, beside the
+  provisioning key and the driver's machine token, which reach the
+  provider's org; a build's steps are the sandbox's code; and every sandbox
+  of the pool holds a certificate the mediator would accept, at an address
+  that is no secret (ADR 26-10-23-551 §4, ADR 26-10-27-767).

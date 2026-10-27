@@ -2,12 +2,17 @@ package discovm
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
+	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,8 +21,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/discobox-ai/discobox/pkg/imagecache"
+	poolagent "github.com/discobox-ai/discobox/pool-agent"
+	"github.com/discobox-ai/discobox/pool-agent/bundle"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/transport"
+	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
 const (
@@ -29,19 +39,28 @@ const (
 	poolStopTimeout = time.Minute
 )
 
-// poolMachine hosts a pool in a disco-vm machine of its own, named by its pool
-// ID so a create that was lost is found rather than duplicated. It is a remote
-// driver's shape (ADR 26-10-09-106 §1): the machine boots a driver base, on
-// which the pool agent's bundle is placed (ADR 26-10-23-551 §1).
+// poolMachine hosts a pool in a disco-vm machine of its own, in the provider's
+// project, named for its pool so a create that was lost is found rather than
+// duplicated. It is a remote driver's shape (ADR 26-10-09-106 §1): the machine
+// boots a driver base, and is made the pool's box as a Docker pool's container
+// is (poolruntime.ProvisionBox, ADR 26-10-24-953 §2), with its bootstrap
+// naming its own engine (ADR 26-10-23-551 §§1, 3) and the provisioning key it
+// calls that engine with (poolkey.go) placed beside it.
 //
 // An operator reaches the host through the driver's guest operations, never
 // through the pool agent: the console and the log are what is asked for when
 // the pool agent is what refuses to come up.
 type poolMachine struct {
 	engine *engine.Engine
-	// base is the driver's base the machine is created from (Config.Base);
-	// empty is the first the driver lists.
+	// base is the driver's base the machine, and its sandboxes' machines, are
+	// created from (Config.Base); empty is the first the driver lists.
 	base string
+	// controlPlaneURL is where the machine reaches this server
+	// (Config.ControlPlaneURL).
+	controlPlaneURL string
+	// policy is what the pool agent reads from its environment.
+	policy map[string]string
+	keys   poolKeys
 	// shell is the console's command in the machine.
 	shell []string
 	// logs is the command that prints the machine's log, and logSource names
@@ -50,13 +69,16 @@ type poolMachine struct {
 	logSource string
 }
 
-func newPoolMachine(e *engine.Engine, base string) *poolMachine {
+func newPoolMachine(e *engine.Engine, cfg Config) *poolMachine {
 	return &poolMachine{
-		engine:    e,
-		base:      base,
-		shell:     []string{"/bin/bash", "-l"},
-		logs:      journalCommand,
-		logSource: "pool machine journal",
+		engine:          e,
+		base:            strings.TrimSpace(cfg.Base),
+		controlPlaneURL: strings.TrimSpace(cfg.ControlPlaneURL),
+		policy:          cfg.Env(),
+		keys:            newPoolKeys(e.Driver, cfg),
+		shell:           []string{"/bin/bash", "-l"},
+		logs:            journalCommand,
+		logSource:       "pool machine journal",
 	}
 }
 
@@ -76,58 +98,350 @@ func journalCommand(opts sandbox.PoolLogOptions) []string {
 	return args
 }
 
-// poolRuntimeState is what a pool row records of its machine.
+// poolRuntimeState is the provider's record of a pool's machine, kept on the
+// pool's row (ADR 26-10-23-551 §1), since the machine outlives the server's
+// process: what it placed there, which is compared with what it now wants on
+// every reconcile, never with anything the machine reports.
 type poolRuntimeState struct {
+	// Instance is the machine's ID at the driver.
 	Instance string `json:"instance"`
+	// Project is the disco-vm project the pool makes its sandboxes' machines
+	// in, which is also the network the pool's machine and theirs share.
+	Project string `json:"project,omitempty"`
+	// Box is the agent and the bundles placed.
+	Box poolruntime.BoxRecord `json:"box,omitzero"`
+	// Placement fingerprints the bootstrap and environment placed: what the
+	// provider's configuration says of the pool (its control plane URL, its
+	// base, its policy), which a box made before the configuration moved is
+	// provisioned again for.
+	Placement string `json:"placement,omitempty"`
+	// Key is the provisioning key placed, without its secret.
+	Key *poolKeyRecord `json:"key,omitempty"`
 }
 
-func poolMachineName(poolID string) string { return "discobox-pool-" + poolID }
+func decodeRuntimeState(pool *model.Pool) poolRuntimeState {
+	var state poolRuntimeState
+	if len(pool.RuntimeState) > 0 {
+		// A record that does not read is a record lost: it costs a placement,
+		// not a key, since the pool's keys are found by name.
+		_ = json.Unmarshal(pool.RuntimeState, &state)
+	}
+	return state
+}
+
+// poolProject is the pool's own disco-vm project, derived from its ID within
+// disco-vm's project rule (ADR 26-10-23-551 §3: pool_x becomes pool-x). It is
+// the project the pool agent makes its sandboxes' machines in, the network
+// the pool's machine and theirs share, and the name of the pool's machine in
+// the provider's project, which it never equals (prov-…).
+func poolProject(poolID string) (string, error) {
+	project := strings.ReplaceAll(strings.ToLower(poolID), "_", "-")
+	if err := machine.ValidateProject(project); err != nil {
+		return "", fmt.Errorf("pool %q has no disco-vm project: %w", poolID, err)
+	}
+	return project, nil
+}
+
+// poolMachineName is the pool's machine in the provider's project.
+func poolMachineName(poolID string) (string, error) { return poolProject(poolID) }
 
 // errNoPoolMachine is a pool whose machine was never created, or was removed.
 var errNoPoolMachine = errors.New("the pool has no machine")
 
 // instance finds the pool's machine, or reports errNoPoolMachine.
 func (h *poolMachine) instance(ctx context.Context, pool *model.Pool) (engine.Instance, error) {
-	inst, err := h.engine.Get(ctx, poolMachineName(pool.ID))
+	name, err := poolMachineName(pool.ID)
+	if err != nil {
+		return engine.Instance{}, err
+	}
+	inst, err := h.engine.Get(ctx, name)
 	if errors.Is(err, engine.ErrNotFound) {
 		return engine.Instance{}, fmt.Errorf("pool %s: %w: it is created when the pool reconciles", pool.ID, errNoPoolMachine)
 	}
 	return inst, err
 }
 
-func (h *poolMachine) ensurePoolHost(ctx context.Context, pool *model.Pool, begin func(context.Context) error) error {
+// onceBegin calls begin the first time it is called, and nothing after: a
+// pass closes placement once, before the first thing that starts or replaces
+// an agent.
+func onceBegin(begin func(context.Context) error) func(context.Context) error {
+	begun := false
+	return func(ctx context.Context) error {
+		if begun || begin == nil {
+			return nil
+		}
+		begun = true
+		return begin(ctx)
+	}
+}
+
+func (h *poolMachine) ensurePoolHost(ctx context.Context, pool *model.Pool, maker poolruntime.PoolMaker, begin func(context.Context) error) error {
+	return h.converge(ctx, pool, maker, onceBegin(begin), false)
+}
+
+// repairPoolHost restarts the pool's machine in place, on the same disk, and
+// provisions and enrolls it again whatever the record says, so a server that
+// lost the pool's key is mended by the provider (ADR 26-10-24-953 §4). A pool
+// with no machine is made one.
+func (h *poolMachine) repairPoolHost(ctx context.Context, pool *model.Pool, maker poolruntime.PoolMaker, begin func(context.Context) error) error {
+	gate := onceBegin(begin)
+	inst, err := h.instance(ctx, pool)
+	if errors.Is(err, errNoPoolMachine) {
+		return h.converge(ctx, pool, maker, gate, true)
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := h.state(ctx, pool, inst); err != nil {
+		return err
+	}
+	if err := gate(ctx); err != nil {
+		return err
+	}
+	// Forced off is still off, and off is what a restart needs.
+	if err := h.engine.Stop(ctx, inst, poolStopTimeout); err != nil && h.engine.State(ctx, inst) != engine.Stopped {
+		return fmt.Errorf("stop pool %s's machine: %w", pool.ID, err)
+	}
+	return h.converge(ctx, pool, maker, gate, true)
+}
+
+// converge brings the pool's machine to what the provider wants (ADR
+// 26-10-23-551 §1): made from the base on the pool's network when there is
+// none, started when it is stopped, given a provisioning key that is not due
+// for renewal, and provisioned when what it was placed with moved — its
+// bundles, or its bootstrap and environment, which the provider's
+// configuration decides — or always when force. Its record is written to the pool as it goes, so a pass that
+// fails part way still says what it placed, a key above all.
+func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker poolruntime.PoolMaker, gate func(context.Context) error, force bool) error {
+	if maker == nil {
+		return errors.New("a pool maker is required")
+	}
+	if err := h.keys.check(); err != nil {
+		return err
+	}
+	project, err := poolProject(pool.ID)
+	if err != nil {
+		return err
+	}
+	if !h.engine.Driver.Capabilities().Isolation {
+		// A pool machine is on a network of the pool's own, and its
+		// sandboxes' machines isolated on it; a driver that cannot is not
+		// enabled (ADR 26-10-23-551 §4).
+		return fmt.Errorf("the %s driver cannot isolate machines or place them on networks, which a pool's machine and its sandboxes' need", h.engine.Driver.Name())
+	}
+	record := decodeRuntimeState(pool)
 	inst, err := h.instance(ctx, pool)
 	if err != nil && !errors.Is(err, errNoPoolMachine) {
 		return err
 	}
-	found := err == nil
-	if found {
-		state, err := h.state(ctx, pool, inst)
-		if err != nil {
+	made, started := false, false
+	if err != nil {
+		if err := gate(ctx); err != nil {
 			return err
 		}
-		if state == engine.Running {
-			return recordPoolMachine(pool, inst, false)
-		}
-	}
-	if begin != nil {
-		if err := begin(ctx); err != nil {
+		// A machine lost outside discobox is made again, and registers anew
+		// (ADR 26-10-23-551 §1); the keys it was given go with it (§4). A
+		// record that was lost costs a placement, not a key: they are found
+		// by name.
+		if err := h.keys.revokeAll(ctx, pool, record.Key); err != nil {
 			return err
 		}
-	}
-	if !found {
-		base, err := h.baseRef(ctx)
-		if err != nil {
+		record = poolRuntimeState{}
+		if inst, err = h.create(ctx, pool, project); err != nil {
 			return err
 		}
-		if inst, err = h.engine.Create(ctx, base, engine.CreateOptions{Name: poolMachineName(pool.ID)}); err != nil {
-			return fmt.Errorf("create pool %s's machine from %s: %w", pool.ID, base, err)
+		made = true
+	}
+	record.Instance, record.Project = inst.ID, project
+	if err := h.writeState(pool, record); err != nil {
+		return err
+	}
+	state, err := h.state(ctx, pool, inst)
+	if err != nil {
+		return err
+	}
+	if state != engine.Running {
+		if err := gate(ctx); err != nil {
+			return err
+		}
+		if err := h.engine.Start(ctx, inst, engine.StartOptions{Timeout: poolStartTimeout}); err != nil {
+			return fmt.Errorf("start pool %s's machine: %w", pool.ID, err)
+		}
+		started = true
+	}
+	if made || started {
+		markStarted(pool)
+	}
+	guest, err := h.engine.Guest(ctx, inst)
+	if err != nil {
+		return fmt.Errorf("reach pool %s's machine: %w", pool.ID, err)
+	}
+	// The key is placed before anything the agent runs on, and recorded the
+	// moment it is: an issued key whose record is lost would be one nobody
+	// renews.
+	key, err := h.keys.ensure(ctx, pool, guest, record.Key)
+	record.Key = key
+	if werr := h.writeState(pool, record); werr != nil && err == nil {
+		err = werr
+	}
+	if err != nil {
+		return err
+	}
+	provisioned := record.Box.Agent != ""
+	placement, err := h.placement(ctx, pool, inst, guest, maker, project)
+	if err != nil {
+		if provisioned && !force {
+			slog.WarnContext(ctx, "keeping the pool's machine as it is: what it is made of does not resolve", "pool", pool.ID, "error", err)
+			return nil
+		}
+		return err
+	}
+	fingerprint, err := placementFingerprint(placement)
+	if err != nil {
+		return err
+	}
+	if !force && record.Box.SameBundles(placement.Box) && record.Placement == fingerprint {
+		return nil
+	}
+	// The apply restarts the agent the moved bundles carry, so placement is
+	// closed first, as it is before any agent is replaced.
+	if err := gate(ctx); err != nil {
+		return err
+	}
+	box, err := poolruntime.ProvisionBox(ctx, guest, maker, placement)
+	if err != nil {
+		if provisioned && !force && !made && !started {
+			// A running pool is never taken down over its bundles (ADR
+			// 26-10-24-953 §5): it keeps what it last provisioned, and the
+			// next reconcile tries again.
+			slog.WarnContext(ctx, "keeping the pool's machine as it is: its moved bundles did not apply", "pool", pool.ID, "error", err)
+			return nil
+		}
+		return fmt.Errorf("provision pool %s's machine: %w", pool.ID, err)
+	}
+	if provisioned && record.Placement != fingerprint {
+		// The units read the bootstrap and environment once, at start, and
+		// apply restarts only what moved bundles move: a moved placement
+		// reaches the running agent and its proxy by restarting them.
+		if err := restartPoolUnits(ctx, guest); err != nil {
+			return fmt.Errorf("restart pool %s's agent on its new placement: %w", pool.ID, err)
 		}
 	}
-	if err := h.engine.Start(ctx, inst, engine.StartOptions{Timeout: poolStartTimeout}); err != nil {
-		return fmt.Errorf("start pool %s's machine: %w", pool.ID, err)
+	record.Box, record.Placement = box, fingerprint
+	return h.writeState(pool, record)
+}
+
+// restartPoolUnits restarts the pool's agent and its proxy, where they run.
+func restartPoolUnits(ctx context.Context, guest machine.Guest) error {
+	var stderr strings.Builder
+	code, err := machine.Run(ctx, guest, machine.ExecRequest{Argv: append([]string{"systemctl", "try-restart"}, bundle.BootstrapUnits...)}, nil, io.Discard, &stderr)
+	if err == nil && code != 0 {
+		err = fmt.Errorf("systemctl exited with status %d: %s", code, strings.TrimSpace(stderr.String()))
 	}
-	return recordPoolMachine(pool, inst, true)
+	return err
+}
+
+// placementFingerprint is what of a placement is not its bundles: the
+// bootstrap and the agent's environment, which move with the provider's
+// configuration rather than with a release.
+func placementFingerprint(placement poolruntime.BoxPlacement) (string, error) {
+	data, err := json.Marshal(struct {
+		Bootstrap poolagent.Bootstrap `json:"bootstrap"`
+		Env       map[string]string   `json:"env"`
+	}{placement.Bootstrap, placement.Env})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// create makes the pool's machine from the base, on the pool's network alone,
+// off the org's default one, so no other machine of the provider's reaches it
+// (ADR 26-10-23-551 §4). It is not isolated: boxd peers an isolated machine
+// only with machines that are not, so the pool's machine keeps what the
+// driver gives a machine (the pool's HostCredential says so).
+func (h *poolMachine) create(ctx context.Context, pool *model.Pool, project string) (engine.Instance, error) {
+	base, err := h.baseRef(ctx)
+	if err != nil {
+		return engine.Instance{}, err
+	}
+	inst, err := h.engine.Create(ctx, base, engine.CreateOptions{Name: project, Networks: []string{project}})
+	if err != nil {
+		return engine.Instance{}, fmt.Errorf("create pool %s's machine from %s: %w", pool.ID, base, err)
+	}
+	return inst, nil
+}
+
+// placement is what the pool's machine is made the pool's box with: its
+// bootstrap, naming its own engine, the network its sandboxes' machines are
+// made on, and where its agent listens; and the agent and bundles for the
+// machine's platform.
+func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engine.Instance, guest machine.Guest, maker poolruntime.PoolMaker, project string) (poolruntime.BoxPlacement, error) {
+	bootstrap, err := maker.Bootstrap(ctx)
+	if err != nil {
+		return poolruntime.BoxPlacement{}, err
+	}
+	listen, err := h.agentListenURL(ctx, inst)
+	if err != nil {
+		return poolruntime.BoxPlacement{}, err
+	}
+	bootstrap.ControlPlaneURL = h.controlPlaneURL
+	bootstrap.ProjectID = firstNonEmpty(bootstrap.ProjectID, pool.ProjectID)
+	bootstrap.PoolID = firstNonEmpty(bootstrap.PoolID, pool.ID)
+	bootstrap.AgentListenURL = listen
+	bootstrap.Runtime = poolagent.RuntimeMachine
+	bootstrap.Driver = h.engine.Driver.Name()
+	bootstrap.MachineProject = project
+	bootstrap.MachineBase = h.base
+	bootstrap.MachineNetwork = project
+	if err := bootstrap.Validate(); err != nil {
+		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's bootstrap: %w", pool.ID, err)
+	}
+	info, err := guest.Info(ctx)
+	if err != nil {
+		return poolruntime.BoxPlacement{}, fmt.Errorf("read pool %s's machine's platform: %w", pool.ID, err)
+	}
+	box, err := maker.Box(ctx, imagecache.Platform{OS: info.OS, Architecture: info.Arch})
+	if err != nil {
+		return poolruntime.BoxPlacement{}, err
+	}
+	return poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: h.policy}, nil
+}
+
+// agentListenURL is where the pool agent listens in its machine: where the
+// driver's service for the machine listens (Service.Listen), which its one
+// URL reaches, as a machine sandbox's agent does (ADR 26-10-27-345 §2). Only
+// TCP is taken: no remote driver serves an instance on anything else.
+func (h *poolMachine) agentListenURL(ctx context.Context, inst engine.Instance) (string, error) {
+	service, err := h.engine.Driver.Service(ctx, inst)
+	if err != nil {
+		return "", fmt.Errorf("the %s driver's service of machine %s: %w", h.engine.Driver.Name(), inst.Name, err)
+	}
+	address, ok := strings.CutPrefix(service.Listen, "tcp:")
+	if !ok || address == "" {
+		return "", fmt.Errorf("the %s driver gives machine %s's service %q, and the pool agent listens on TCP alone", h.engine.Driver.Name(), inst.Name, service.Listen)
+	}
+	return "http://" + address, nil
+}
+
+// acquireAgentClient reaches the pool agent at its machine's one URL (ADR
+// 26-10-09-106 §3): boxd's public HTTPS URL, the same across stop and start.
+// The URL needs no credential of the driver's; the agent authenticates every
+// caller but its health and metadata.
+func (h *poolMachine) acquireAgentClient(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error) {
+	inst, err := h.instance(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+	url, err := h.engine.URL(ctx, inst)
+	if err != nil {
+		if unreachable(err) {
+			return nil, fmt.Errorf("pool %s's machine: %w: %w", pool.ID, err, sandbox.ErrPoolNotReachable)
+		}
+		return nil, fmt.Errorf("pool %s's machine: %w", pool.ID, err)
+	}
+	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, strings.TrimRight(url, "/"), nil), nil
 }
 
 // baseRef is the ID of the driver's base a new pool machine is created from:
@@ -153,30 +467,50 @@ func (h *poolMachine) baseRef(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("the %s driver has no base with ID %q, which the provider's base names", name, h.base)
 }
 
-func (h *poolMachine) repairPoolHost(ctx context.Context, pool *model.Pool, begin func(context.Context) error) error {
+func (h *poolMachine) removePoolHost(ctx context.Context, pool *model.Pool) error {
 	inst, err := h.instance(ctx, pool)
-	if errors.Is(err, errNoPoolMachine) {
-		return h.ensurePoolHost(ctx, pool, begin)
-	}
-	if err != nil {
+	switch {
+	case errors.Is(err, errNoPoolMachine):
+	case err != nil:
 		return err
-	}
-	if _, err := h.state(ctx, pool, inst); err != nil {
-		return err
-	}
-	if begin != nil {
-		if err := begin(ctx); err != nil {
+	default:
+		if err := h.engine.Remove(ctx, inst, true); err != nil {
 			return err
 		}
 	}
-	// Forced off is still off, and off is what a restart needs.
-	if err := h.engine.Stop(ctx, inst, poolStopTimeout); err != nil && h.engine.State(ctx, inst) != engine.Stopped {
-		return fmt.Errorf("stop pool %s's machine: %w", pool.ID, err)
+	// Every key of the pool is revoked once the machine that held them is
+	// gone (ADR 26-10-23-551 §4).
+	return h.keys.revokeAll(ctx, pool, decodeRuntimeState(pool).Key)
+}
+
+// writeState records the machine on the pool row, and the credential its
+// host holds.
+func (h *poolMachine) writeState(pool *model.Pool, record poolRuntimeState) error {
+	state, err := json.Marshal(record)
+	if err != nil {
+		return err
 	}
-	if err := h.engine.Start(ctx, inst, engine.StartOptions{Timeout: poolStartTimeout}); err != nil {
-		return fmt.Errorf("start pool %s's machine: %w", pool.ID, err)
+	pool.RuntimeState = state
+	pool.HostCredential = h.keys.hostCredential(record.Key)
+	return nil
+}
+
+// markStarted is a pool whose machine was just made or started: its agent has
+// not reported since.
+func markStarted(pool *model.Pool) {
+	pool.Ready = false
+	pool.Schedulable = false
+	pool.Degraded = false
+	pool.SetState(model.PoolStateRegistering)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
 	}
-	return recordPoolMachine(pool, inst, true)
+	return ""
 }
 
 // state is the machine's power state, as far as anyone can tell. A remote
@@ -224,34 +558,6 @@ func unreachable(err error) bool {
 		return true
 	}
 	return false
-}
-
-func (h *poolMachine) removePoolHost(ctx context.Context, pool *model.Pool) error {
-	inst, err := h.instance(ctx, pool)
-	if errors.Is(err, errNoPoolMachine) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return h.engine.Remove(ctx, inst, true)
-}
-
-// recordPoolMachine stores the machine on the pool row. A machine that was just
-// started has an agent that has not registered yet.
-func recordPoolMachine(pool *model.Pool, inst engine.Instance, started bool) error {
-	state, err := json.Marshal(poolRuntimeState{Instance: inst.ID})
-	if err != nil {
-		return err
-	}
-	pool.RuntimeState = state
-	if started {
-		pool.Ready = false
-		pool.Schedulable = false
-		pool.Degraded = false
-		pool.SetState(model.PoolStateRegistering)
-	}
-	return nil
 }
 
 // running finds the pool's machine and requires it to be running: the console

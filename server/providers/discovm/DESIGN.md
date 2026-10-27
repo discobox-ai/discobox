@@ -3,13 +3,14 @@
 The `vm` provider (package `discovm`) is the `poolruntime.RuntimeProvider`
 for pools whose sandboxes are disco-vm machines ([github.com/discobox-ai/vm](https://github.com/discobox-ai/vm)),
 beside `dockerworker.Engine` rather than under it: a vm pool has no
-pool-agent container, BuildKit, registry or sandbox network of the engine's
+pool-agent container, Docker daemon or sandbox network of the engine's
 (ADR 26-10-09-106 §1). This package holds the provider kind, the embedded
-engine and its shim, and pool hosting with its console and log. The driver is
-configuration it passes to disco-vm; how a pool is hosted follows from the
-driver's kind: whether it is disco-vm's local driver, whose provider is this
-host's disk. It starts no pool agent: `EnsurePool` mints no
-bootstrap, and `AcquirePoolAgentClient` answers that the pool runs none.
+engine and its shim, and pool hosting: a remote driver's pool machine, made
+the pool's box and given its provisioning key, with its console and log. The
+driver is configuration it passes to disco-vm; how a pool is hosted follows
+from the driver's kind: whether it is disco-vm's local driver, whose provider
+is this host's disk. A local driver's host pool agent is not staged yet
+(#64): its `EnsurePool` and `AcquirePoolAgentClient` answer so.
 
 ```mermaid
 flowchart TD
@@ -17,7 +18,7 @@ flowchart TD
     runtime["discovm.Runtime\nengine"]
     engine["disco-vm pkg/engine\non machine.New(config driver)"]
     host{"driver is a *local.Driver?"}
-    machine["poolMachine\na Linux machine from a driver base"]
+    machine["poolMachine\na Linux machine from a driver base\nmade the pool's box · provisioning key"]
     agent["hostAgent\npool agent on this host"]
 
     pool --> runtime
@@ -33,7 +34,8 @@ flowchart TD
   project and its state, and every image and instance is read from it.
   `driverConfig` is the one `machine.Config` the server and its shims make a
   driver with: the state root as `Dir`, this binary's shim as `ShimCommand`,
-  and `machine.KeyFromEnv` as `Keys`.
+  and as `Keys` the provider's `apiKey` for a remote driver (`providerKeys`),
+  none for a local one.
 - One state root per driver per host (`stateRoot`, under the platform's data
   directory), shared by every provider instance on that driver; it is not
   configurable. Only a local driver keeps anything in it. Each provider
@@ -53,16 +55,17 @@ flowchart TD
 - Which project follows from the driver's kind, so the driver is made in
   `localProject` first and made again in the provider's when it is not a
   `*local.Driver`; construction touches no hypervisor or service.
-- Nothing is kept in the server's database or in a database of the engine's;
-  `Runtime.Close` releases nothing, and exists for `poolruntime.RuntimeProvider`.
+- The engine keeps no database. What the provider placed on a pool's machine
+  is its record on the pool's row (below); `Runtime.Close` releases nothing,
+  and exists for `poolruntime.RuntimeProvider`.
 - The module is imported by commit (a pseudo-version), never a tag.
 - **Upgrading from an engine with a database** (disco-vm before c88c4006,
   ADR 26-10-23-417 there): its root and database are not read. Nothing of
   value was in them: a local driver's pool never ran (its host agent is not
   staged, #64), and a boxd pool machine carried nothing placed on it. A boxd
-  machine that engine made is named by its old instance ID, not by
-  `discobox-pool-<pool>`, so it is not found: the pool's next reconcile makes
-  its machine again, and the old one is the operator's to remove from the
+  machine that engine made is named by its old instance ID, not by its
+  pool's project, so it is not found: the pool's next reconcile makes its
+  machine again, and the old one is the operator's to remove from the
   account (`dvm-<project>--<id>`).
 - A local machine's shim is this binary re-executed as `__vm-shim`
   (`RunShimIfInvoked`, called from `server.RunVMLauncherIfInvoked` before
@@ -97,7 +100,7 @@ as ADR 26-10-09-106 §1 places it:
 
 | driver | pool host | console | log |
 | --- | --- | --- | --- |
-| remote (boxd) | `poolMachine`: a Linux machine named `discobox-pool-<pool>`, booted from a driver base | `bash -l` in it, through the driver's guest exec | its journal for this boot, through the same exec |
+| remote (boxd) | `poolMachine`: a Linux machine named for the pool's project (`pool_x` → `pool-x`), booted from a driver base | `bash -l` in it, through the driver's guest exec | its journal for this boot, through the same exec |
 | local (vz, hcs) | `hostAgent`: a pool agent process under `<driver Dir>/pools/<pool>` (the state root) | refused, `sandbox.ErrPoolConsoleUnsupported`: the host is the user's own machine | the agent's `pool-agent.log` |
 
 - `poolMachine` reaches the host through the driver's guest operations
@@ -109,13 +112,17 @@ as ADR 26-10-09-106 §1 places it:
   image when the account has one, and otherwise the account's oldest
   snapshot, so an account with no default image names an ID. A name is never taken for a base, because a name can be
   given to another base (a boxd snapshot's) after an operator chose it. A
-  driver with no base answers that the provider must name one. The machine
-  is started and recorded on the pool row as registering, with nothing placed
-  on it. Repair stops and starts the same machine, keeping its disk; remove
-  deletes it.
-- On boxd the machine is created as disco-vm creates any: neither isolated
-  nor under a network policy of the pool's own, since disco-vm's create offers
-  neither. See [REVIEW.md](REVIEW.md).
+  driver with no base answers that the provider must name one. Repair stops
+  and starts the same machine, keeping its disk, and provisions it again;
+  remove deletes it and revokes the pool's keys.
+- The pool's machine is created on a network of the pool's own (its project's
+  name) and no other, off the account's default one, so no other machine of
+  the provider's reaches it; it is not isolated, since boxd peers an isolated
+  machine only with machines that are not, so it keeps what the driver gives
+  a machine (its machine token, shown on the pool). The pool agent makes
+  every sandbox's machine isolated on that network (ADR 26-10-23-551 §4). A
+  driver that cannot isolate (`Capabilities.Isolation`) makes no pool
+  machine.
 - A remote machine whose service does not answer reads `Unknown`, which is
   neither running nor stopped. The engine reads `Unknown` for any failure to
   ask, so the machine is asked again through `Engine.Guest`, which makes the
@@ -129,9 +136,85 @@ as ADR 26-10-09-106 §1 places it:
   (`fake.BasesEnv`; a local driver, so they build that `poolMachine`
   themselves), which runs the engine, its shim, and the guest operations as a
   real machine does.
-- boxd authenticates with `BOXD_API_KEY` from the server's environment,
-  passed as `Config.Keys` (`machine.KeyFromEnv`), since disco-vm reads no key
-  of its own accord; the provider's configuration holds no key.
+- A remote driver authenticates with the provider's `apiKey`, passed as
+  `Config.Keys` (`providerKeys`); disco-vm reads no key of its own accord,
+  and the server's environment is not read. A provider made before it held
+  one fails each call to the service, naming `apiKey`. A remote driver also
+  needs `controlPlaneUrl`, where its pool machines reach this server: a
+  server they cannot reach cannot run their pools. `Validate` requires both
+  for a remote driver and refuses them for a local one.
+
+## The Pool's Box
+
+A remote driver's pool machine is made the pool's box as a Docker pool's
+container is, with `poolruntime.ProvisionBox` over the machine's guest
+operations (ADR 26-10-24-953 §2), every feature of the pool bundle applied
+(ADR 26-10-27-767). Its bootstrap names its own engine (ADR 26-10-23-551 §3):
+the machine runtime, the driver, the pool's project as the project and
+network its sandboxes' machines are made in, the provider's base, the
+provider's `controlPlaneUrl`, and where the agent listens: the driver's
+`Service.Listen` for the machine, which its one URL reaches (ADR
+26-10-27-345 §2's rule, for the pool agent). The pool agent is reached at that
+URL (`acquireAgentClient`, `Engine.URL`): boxd's public HTTPS URL, the same
+across stop and start.
+
+`converge` runs on every reconcile, against the provider's own record on the
+pool's row (`poolRuntimeState` in `RuntimeState`: the machine, the pool's
+project, the agent and bundles placed, and the key without its secret),
+never against anything the machine reports (551 §1):
+
+- no machine: the pool's keys are revoked by name (a machine lost outside
+  discobox, or a record lost), and one is made, keyed and provisioned; it
+  registers anew;
+- a stopped machine is started on the disk it kept; the agent starts from the
+  units `apply` enabled, on the key it holds;
+- a key due for renewal is replaced (below);
+- moved bundles, or a moved bootstrap or policy (`Placement`, a fingerprint
+  of what the provider's configuration says of the pool: its
+  `controlPlaneUrl`, its base, its policy), are applied again in the running
+  machine. `apply` restarts what moved bundles move; a moved placement
+  restarts the agent and proxy, which read it once at start
+  (`restartPoolUnits`). A running pool whose moved bundles do not resolve or apply
+  keeps what it last provisioned and is tried again, as a Docker pool is
+  (953 §5); a new or restarted machine's failure fails the reconcile.
+
+The record is written as each step lands, so a reconcile that fails part way
+still records a key it placed. The bundle's `pool-agent` feature lays a
+journald drop-in (`journald.conf`): persistent and bounded at 256M, since
+boxd's image keeps no journal and the journal is what says why an agent did
+not come up, across a stop and start as often as not.
+
+## The Provisioning Key
+
+A pool's machine is given the key its engine calls the driver with
+(`poolkey.go`, ADR 26-10-23-551 §4), as `bundle.ProvisioningKeyFile`, a
+`machine.Key` root's alone, placed before the agent is provisioned or alone
+when it is renewed: the agent's engine reads it on every call, so a renewed
+key restarts nothing.
+
+- **Issued** (`Driver.IssueKey`): named `<pool project>-<time>`, so every key
+  of a pool is found by name, lasting `poolKeyTTL` (seven days), replaced by
+  half its life. The old key is left to expire, not revoked, so no call in
+  flight meets a revoked key; expired keys of the pool are swept at each
+  renewal. A renewal that fails in any way — not issued, not issuable, not
+  placed — leaves the pool on its key until it expires, so a working pool is
+  never failed, and repaired, over a key it does not need yet.
+- **The provider's own**, only with `deliverProviderKey`, and only when the
+  driver cannot issue one (`ErrCannotIssue`, `ErrNoKey`; boxd issues none
+  from an API key). Placed again when the configured key changes (its
+  fingerprint is recorded), and replaced by an issued key when the driver
+  issues one, which it is asked daily (`providerKeyRecheck`). Without the
+  opt-in, such a pool is blocked with that reason; withdrawing the opt-in
+  takes the provider's key off the machine. An issue that fails for any other reason is retried, never
+  answered with the provider's key.
+- **Revoked**: every key of the pool, by name, when the pool is deleted or its
+  machine replaced. A record that says a key was issued makes a refused
+  listing an error to retry rather than a key left behind.
+- **Shown**: the pool's `HostCredential` says which key its host holds, its
+  scope, ID and expiry, and that the machine carries the driver's own token
+  (`MachineToken`: a driver that isolates gives a machine that is not
+  isolated what isolation strips). `admin pool get` prints it. Neither the
+  record nor the credential holds a secret.
 
 ## Images
 

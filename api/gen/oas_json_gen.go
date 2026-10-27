@@ -20926,6 +20926,72 @@ func (s *OptPoolHealth) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes PoolHostCredential as json.
+func (o OptPoolHostCredential) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes PoolHostCredential from json.
+func (o *OptPoolHostCredential) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptPoolHostCredential to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptPoolHostCredential) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptPoolHostCredential) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes PoolHostCredentialKey as json.
+func (o OptPoolHostCredentialKey) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes PoolHostCredentialKey from json.
+func (o *OptPoolHostCredentialKey) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptPoolHostCredentialKey to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptPoolHostCredentialKey) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptPoolHostCredentialKey) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes PoolProvisionProgress as json.
 func (o OptPoolProvisionProgress) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -23575,6 +23641,12 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 		e.Bool(s.Degraded)
 	}
 	{
+		if s.HostCredential.Set {
+			e.FieldStart("hostCredential")
+			s.HostCredential.Encode(e)
+		}
+	}
+	{
 		if s.ProvisionProgress.Set {
 			e.FieldStart("provisionProgress")
 			s.ProvisionProgress.Encode(e)
@@ -23680,7 +23752,7 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPool = [37]string{
+var jsonFieldsNameOfPool = [38]string{
 	0:  "egress",
 	1:  "$schema",
 	2:  "cpuVcpus",
@@ -23698,26 +23770,27 @@ var jsonFieldsNameOfPool = [37]string{
 	14: "ready",
 	15: "schedulable",
 	16: "degraded",
-	17: "provisionProgress",
-	18: "provisionProgressAt",
-	19: "availableCpuVcpus",
-	20: "availableMemoryBytes",
-	21: "availableStorageBytes",
-	22: "conditions",
-	23: "resources",
-	24: "resourcesReportedAt",
-	25: "desiredState",
-	26: "state",
-	27: "stateChangedAt",
-	28: "generation",
-	29: "observedGeneration",
-	30: "errorMessage",
-	31: "keyType",
-	32: "publicKey",
-	33: "registeredAt",
-	34: "lastSeenAt",
-	35: "revokedAt",
-	36: "updatedAt",
+	17: "hostCredential",
+	18: "provisionProgress",
+	19: "provisionProgressAt",
+	20: "availableCpuVcpus",
+	21: "availableMemoryBytes",
+	22: "availableStorageBytes",
+	23: "conditions",
+	24: "resources",
+	25: "resourcesReportedAt",
+	26: "desiredState",
+	27: "state",
+	28: "stateChangedAt",
+	29: "generation",
+	30: "observedGeneration",
+	31: "errorMessage",
+	32: "keyType",
+	33: "publicKey",
+	34: "registeredAt",
+	35: "lastSeenAt",
+	36: "revokedAt",
+	37: "updatedAt",
 }
 
 // Decode decodes Pool from json.
@@ -23922,6 +23995,16 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"degraded\"")
 			}
+		case "hostCredential":
+			if err := func() error {
+				s.HostCredential.Reset()
+				if err := s.HostCredential.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"hostCredential\"")
+			}
 		case "provisionProgress":
 			if err := func() error {
 				s.ProvisionProgress.Reset()
@@ -23943,7 +24026,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"provisionProgressAt\"")
 			}
 		case "availableCpuVcpus":
-			requiredBitSet[2] |= 1 << 3
+			requiredBitSet[2] |= 1 << 4
 			if err := func() error {
 				v, err := d.Float64()
 				s.AvailableCpuVcpus = float64(v)
@@ -23955,7 +24038,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableCpuVcpus\"")
 			}
 		case "availableMemoryBytes":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableMemoryBytes = int64(v)
@@ -23967,7 +24050,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableMemoryBytes\"")
 			}
 		case "availableStorageBytes":
-			requiredBitSet[2] |= 1 << 5
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableStorageBytes = int64(v)
@@ -24010,7 +24093,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resourcesReportedAt\"")
 			}
 		case "desiredState":
-			requiredBitSet[3] |= 1 << 1
+			requiredBitSet[3] |= 1 << 2
 			if err := func() error {
 				if err := s.DesiredState.Decode(d); err != nil {
 					return err
@@ -24020,7 +24103,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"desiredState\"")
 			}
 		case "state":
-			requiredBitSet[3] |= 1 << 2
+			requiredBitSet[3] |= 1 << 3
 			if err := func() error {
 				if err := s.State.Decode(d); err != nil {
 					return err
@@ -24040,7 +24123,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"stateChangedAt\"")
 			}
 		case "generation":
-			requiredBitSet[3] |= 1 << 4
+			requiredBitSet[3] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.Generation = int64(v)
@@ -24052,7 +24135,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"generation\"")
 			}
 		case "observedGeneration":
-			requiredBitSet[3] |= 1 << 5
+			requiredBitSet[3] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.ObservedGeneration = int64(v)
@@ -24124,7 +24207,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"revokedAt\"")
 			}
 		case "updatedAt":
-			requiredBitSet[4] |= 1 << 4
+			requiredBitSet[4] |= 1 << 5
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -24147,9 +24230,9 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 	for i, mask := range [5]uint8{
 		0b11011100,
 		0b11011010,
-		0b00111001,
-		0b00110110,
-		0b00010000,
+		0b01110001,
+		0b01101100,
+		0b00100000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -24865,6 +24948,177 @@ func (s *PoolHeldSandboxesBody) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PoolHeldSandboxesBody) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *PoolHostCredential) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *PoolHostCredential) encodeFields(e *jx.Encoder) {
+	{
+		if s.Key.Set {
+			e.FieldStart("key")
+			s.Key.Encode(e)
+		}
+	}
+	{
+		if s.Scope.Set {
+			e.FieldStart("scope")
+			s.Scope.Encode(e)
+		}
+	}
+	{
+		if s.KeyId.Set {
+			e.FieldStart("keyId")
+			s.KeyId.Encode(e)
+		}
+	}
+	{
+		if s.ExpiresAt.Set {
+			e.FieldStart("expiresAt")
+			s.ExpiresAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.MachineToken.Set {
+			e.FieldStart("machineToken")
+			s.MachineToken.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfPoolHostCredential = [5]string{
+	0: "key",
+	1: "scope",
+	2: "keyId",
+	3: "expiresAt",
+	4: "machineToken",
+}
+
+// Decode decodes PoolHostCredential from json.
+func (s *PoolHostCredential) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolHostCredential to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "key":
+			if err := func() error {
+				s.Key.Reset()
+				if err := s.Key.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"key\"")
+			}
+		case "scope":
+			if err := func() error {
+				s.Scope.Reset()
+				if err := s.Scope.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"scope\"")
+			}
+		case "keyId":
+			if err := func() error {
+				s.KeyId.Reset()
+				if err := s.KeyId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"keyId\"")
+			}
+		case "expiresAt":
+			if err := func() error {
+				s.ExpiresAt.Reset()
+				if err := s.ExpiresAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"expiresAt\"")
+			}
+		case "machineToken":
+			if err := func() error {
+				s.MachineToken.Reset()
+				if err := s.MachineToken.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"machineToken\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolHostCredential")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *PoolHostCredential) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolHostCredential) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes PoolHostCredentialKey as json.
+func (s PoolHostCredentialKey) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes PoolHostCredentialKey from json.
+func (s *PoolHostCredentialKey) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolHostCredentialKey to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch PoolHostCredentialKey(v) {
+	case PoolHostCredentialKeyIssued:
+		*s = PoolHostCredentialKeyIssued
+	case PoolHostCredentialKeyProvider:
+		*s = PoolHostCredentialKeyProvider
+	default:
+		*s = PoolHostCredentialKey(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s PoolHostCredentialKey) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolHostCredentialKey) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

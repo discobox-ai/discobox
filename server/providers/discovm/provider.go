@@ -14,12 +14,14 @@ package discovm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/adrg/xdg"
 
+	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
@@ -40,15 +42,29 @@ type Config struct {
 	// because the limits the engine enforces — vz's two running macOS guests —
 	// are the host's (ADR 26-10-09-106 §4).
 	Driver string `json:"driver,omitempty"`
-	// Base is the ID of the driver's base a remote driver's pool machine
-	// boots from (machine.Driver.Bases): a pool machine is a driver base the
-	// pool agent is placed on, never an image of discobox's (ADR 26-10-23-551
-	// §1). It is an ID, never a name, because a name can be given to another
-	// base after an operator chose it (a boxd snapshot's). Empty is the first
-	// base the driver lists: on boxd its default image when the account has
-	// one, and otherwise its oldest snapshot. A local driver's pool agent runs
-	// on this host, and boots no base.
+	// Base is the ID of the driver's base a remote driver's pool machine, and
+	// its sandboxes' machines, boot from (machine.Driver.Bases): a machine is a
+	// driver base the agent is placed on, never an image of discobox's (ADR
+	// 26-10-23-551 §§1, 3). It is an ID, never a name, because a name can be
+	// given to another base after an operator chose it (a boxd snapshot's).
+	// Empty is the first base the driver lists: on boxd its default image when
+	// the account has one, and otherwise its oldest snapshot. A local driver's
+	// pool agent runs on this host, and boots no base.
 	Base string `json:"base,omitempty"`
+	// APIKey is a remote driver's key for its service (boxd's), which the
+	// engine calls with. A local driver has none.
+	APIKey string `json:"apiKey,omitempty"`
+	// ControlPlaneURL is where a remote driver's pool machine reaches this
+	// server. It is said, never guessed: a server no machine of the driver's
+	// can reach cannot run its pools.
+	ControlPlaneURL string `json:"controlPlaneUrl,omitempty"`
+	// DeliverProviderKey opts in to placing APIKey itself on a pool's machine
+	// when the driver cannot issue the pool a narrower key that expires (ADR
+	// 26-10-23-551 §4). It reaches everything APIKey reaches, nothing discobox
+	// does expires, renews or revokes it, and whoever reads it on a pool's
+	// machine keeps it after the pool is gone. Without it, such a pool is
+	// blocked, and a failed issue is retried, never answered with this key.
+	DeliverProviderKey bool `json:"deliverProviderKey,omitempty"`
 }
 
 func Decode(data json.RawMessage) (Config, error) {
@@ -61,9 +77,38 @@ func Validate(data json.RawMessage) error {
 		return err
 	}
 	// The provider instance's project is not known here, and the driver's
-	// name is all there is to check.
-	_, err = newDriver(cfg.Driver, localProject)
-	return err
+	// kind is all there is to check the rest against.
+	driver, err := newDriver(cfg.Driver, localProject, nil)
+	if err != nil {
+		return err
+	}
+	return validateFor(cfg, isLocal(driver))
+}
+
+// validateFor checks what a driver of the kind needs: a remote driver its key
+// and the URL its pool machines reach this server at, a local one neither.
+func validateFor(cfg Config, local bool) error {
+	key, url := strings.TrimSpace(cfg.APIKey), strings.TrimSpace(cfg.ControlPlaneURL)
+	if local {
+		if key != "" || url != "" || cfg.DeliverProviderKey {
+			return fmt.Errorf("the %s driver runs its pools on this host: it takes no API key, control plane URL or key delivery", cfg.Driver)
+		}
+		return nil
+	}
+	if key == "" {
+		return fmt.Errorf("the %s driver needs its API key (apiKey)", cfg.Driver)
+	}
+	if url == "" {
+		return fmt.Errorf("the %s driver needs the URL its pool machines reach this server at (controlPlaneUrl)", cfg.Driver)
+	}
+	endpoint, err := wire.Parse(url)
+	if err != nil {
+		return fmt.Errorf("controlPlaneUrl: %w", err)
+	}
+	if !endpoint.IsIP() {
+		return fmt.Errorf("controlPlaneUrl %q: a pool machine reaches this server over http or https", url)
+	}
+	return nil
 }
 
 func FactoryWithPoolManager(poolManager poolruntime.PoolManager) sandbox.ProviderFactory {
@@ -89,8 +134,11 @@ func Definition() sandbox.ProviderDefinition {
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			// Immutable: a pool's host was made through the driver, and only
 			// that driver can reach it to remove it.
-			{Key: "driver", Label: "Driver", Type: "string", Required: true, Immutable: true, Description: "The VM driver to run machines on: vz on macOS, or boxd from any host (it authenticates with BOXD_API_KEY in the server's environment)."},
-			{Key: "base", Label: "Base", Type: "string", Description: "On a remote driver such as boxd, the ID of the driver's base a pool's machine boots from. Empty is the first base the driver lists: boxd's default image, or its oldest snapshot when the account has no default image, so name one there.", Advanced: true},
+			{Key: "driver", Label: "Driver", Type: "string", Required: true, Immutable: true, Description: "The VM driver to run machines on: vz on macOS, or boxd from any host."},
+			{Key: "apiKey", Label: "API Key", Type: "password", Description: "On a remote driver such as boxd, the key the server calls the driver's service with. Give discobox an org or account of its own: every pool of this provider can reach what the key reaches."},
+			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "https://discobox.example.com", Description: "On a remote driver such as boxd, where its pool machines reach this server. A server they cannot reach cannot run their pools."},
+			{Key: "deliverProviderKey", Label: "Deliver Provider Key", Type: "boolean", Advanced: true, Description: "When the driver cannot issue a pool a narrower key that expires (boxd issues none from an API key), place this provider's own API key on the pool's machine instead. It reaches everything the key reaches, discobox never expires, renews or revokes it, and whoever reads it there keeps it: rotate it when a pool machine is lost or suspected. Without it such a pool is blocked."},
+			{Key: "base", Label: "Base", Type: "string", Description: "On a remote driver such as boxd, the ID of the driver's base a pool's machine and its sandboxes' machines boot from. Empty is the first base the driver lists: boxd's default image, or its oldest snapshot when the account has no default image, so name one there.", Advanced: true},
 		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }

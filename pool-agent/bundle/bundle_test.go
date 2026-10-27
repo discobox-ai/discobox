@@ -83,3 +83,17 @@ func TestPoolAgentInheritsUpstreamEnvironment(t *testing.T) {
 		t.Errorf("pool agent inherits unrelated environment variables: %v", passed)
 	}
 }
+
+// The units a maker restarts on a new bootstrap are the pool-agent feature's
+// own, and the agent's is the one that reads the bootstrap.
+func TestBootstrapUnitsAreTheFeaturesUnits(t *testing.T) {
+	for _, unit := range BootstrapUnits {
+		data, err := os.ReadFile(filepath.Join("features", "pool-agent", "systemd", unit))
+		if err != nil {
+			t.Fatalf("bootstrap unit %s is not the pool-agent feature's: %v", unit, err)
+		}
+		if unit == "discobox-pool-agent.service" && !strings.Contains(string(data), BootstrapFile) {
+			t.Fatalf("%s does not read %s", unit, BootstrapFile)
+		}
+	}
+}

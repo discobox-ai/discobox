@@ -629,6 +629,17 @@ func RunBuildkitMediator(ctx context.Context, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	serves, err := mediatorServes(poolbundle.BootstrapFile)
+	if err != nil {
+		return err
+	}
+	if !serves {
+		// The unit runs, as every pool's does (ADR 26-10-27-767), and binds
+		// nothing a sandbox could dial.
+		logger.Info("buildkit mediator serving no builds: a machine pool's sandboxes build on their own machines")
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	projectID := strings.TrimSpace(os.Getenv("DISCOBOX_PROJECT_ID"))
 	poolID := strings.TrimSpace(os.Getenv("DISCOBOX_POOL_ID"))
 	if projectID == "" || poolID == "" {
@@ -655,6 +666,25 @@ func RunBuildkitMediator(ctx context.Context, logger *slog.Logger) error {
 	}
 	logger.Info("buildkit mediator serving", "addr", buildkitagent.MediatorListen)
 	return mediator.Serve(ctx, listener, tlsConfig)
+}
+
+// mediatorServes reports whether the pool whose bootstrap is at path serves
+// its sandboxes' builds. A machine pool does not: its builder runs on the
+// pool's machine, beside the provisioning key and the driver's machine token,
+// and a build's steps are a sandbox's code (ADR 26-10-23-551 §4, ADR
+// 26-10-27-767). Every sandbox of it holds a certificate the mediator would
+// accept, and the mediator's address is no secret, so the pool refuses rather
+// than relying on a sandbox not being told it. A box with no bootstrap file is
+// a Docker pool from before one was placed.
+func mediatorServes(path string) (bool, error) {
+	bootstrap, err := readBootstrapFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return bootstrap.EffectiveRuntime() != RuntimeMachine, nil
 }
 
 // listenAssets binds the asset cache's socket, replacing one an earlier agent

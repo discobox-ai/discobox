@@ -13,6 +13,8 @@ steps:
       debian: [git]
   - name: link
     run: link.sh
+  - name: journal
+    file: {path: /etc/systemd/journald.conf.d/discobox-pool.conf, source: journald.conf, restart: [systemd-journald.service]}
 
   - name: unit-agent
     file: {path: /etc/systemd/system/discobox-pool-agent.service, source: systemd/discobox-pool-agent.service, restart: [discobox-pool-agent.service]}

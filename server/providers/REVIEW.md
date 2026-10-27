@@ -72,7 +72,9 @@
   running pool only *might* need — its moved bundles, a release that does not
   resolve right now — is logged and retried (`applyMovedPoolBundles`), and
   what a replacement needs is resolved before the container it replaces is
-  removed.
+  removed. The same holds for anything a running pool's host holds that
+  merely ages, such as the `vm` provider's provisioning key: a renewal that
+  fails leaves the pool on what it holds while that still works.
 - Do not reintroduce VM adoption. `vz`, `wslc`, and `libkrun` all end their VMs
   with the server process (see [VM Lifetime](DESIGN.md#vm-lifetime)); a runtime
   lock, a recorded PID, or an "is that launcher still mine" check is the
