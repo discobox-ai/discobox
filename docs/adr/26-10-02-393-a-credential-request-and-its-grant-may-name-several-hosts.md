@@ -1,7 +1,6 @@
 # 26-10-02-393 — A credential request and its grant may name several hosts
 
-- **Status**: Proposed (supersedes [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md)
-  §1's one `host` per request and §5's one concrete host per grant)
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) (implemented without having been marked Accepted)
 - **Date**: 2026-10-02
 - **Relates to**: [ADR 0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md)
   §§1, 5, which gave a request and its grant one host;

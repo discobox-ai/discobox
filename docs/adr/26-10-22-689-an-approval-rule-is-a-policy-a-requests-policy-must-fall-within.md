@@ -1,6 +1,6 @@
 # 26-10-22-689 — An approval rule is a policy a request's policy must fall within
 
-- **Status**: Accepted (supersedes in part [26-10-12-330](26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md) §§1, 3, 4, 5, 7, 8 and 9, and [26-10-14-223](26-10-14-223-a-use-that-drops-a-limit-of-its-line-is-wider.md) for a rule's job; settles [26-10-20-782](26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md)'s Deferred "approval rules over policies", and amends its §11, which had not shipped; its Deferred "a rule that delegates" amended in issue #312)
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-10-22
 - **Relates to**: [26-10-20-782](26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md)
   §§1–4 (the policy, its words and variables) and §11 (a delegation's policy,

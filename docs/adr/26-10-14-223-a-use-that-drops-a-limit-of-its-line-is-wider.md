@@ -1,6 +1,6 @@
 # 26-10-14-223 — A use that drops a limit of its line is wider
 
-- **Status**: Accepted (superseded for a rule's job by [26-10-22-689](26-10-22-689-an-approval-rule-is-a-policy-a-requests-policy-must-fall-within.md), which asks no limits question of a statement)
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-10-14
 - **Supersedes**: in [26-10-01-324](26-10-01-324-a-server-may-judge-with-jev-instead-of-a-judge-discobox.md)
   §3: a delegation job as one noul per use and the hazard; each use now has a

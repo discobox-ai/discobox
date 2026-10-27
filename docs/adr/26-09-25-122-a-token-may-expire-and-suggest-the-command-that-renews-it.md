@@ -1,6 +1,6 @@
 # 26-09-25-122 — A token may expire, and suggest the command that renews it
 
-- **Status**: Accepted
+- **Status**: Accepted (§2 and the well-known RefreshTTL superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md))
 - **Date**: 2026-09-25
 - **§2 amended**: 2026-09-25, before anything shipped against it — a
   well-known credential also carries the lifetime its value really has, and a

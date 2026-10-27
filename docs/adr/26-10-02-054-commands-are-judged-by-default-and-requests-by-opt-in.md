@@ -1,6 +1,6 @@
 # 26-10-02-054 — Commands are judged by default, and requests by opt-in
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **§§1–3 superseded for commands by**: [26-10-20-782](26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md) — `judgeCommands` goes; judging a delegation stays
 - **Date**: 2026-10-02
 - **Relates to**: [ADR 26-09-22-838](26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md)

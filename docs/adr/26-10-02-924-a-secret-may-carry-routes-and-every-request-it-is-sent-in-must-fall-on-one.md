@@ -1,8 +1,6 @@
 # 26-10-02-924 — A secret may carry routes, and every request it is sent in must fall on one
 
-- **Status**: Accepted (narrows [26-09-22-838](26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md)
-  §4: an injected credential whose secret carries routes is held to them,
-  with no activation)
+- **Status**: Accepted (narrows [26-09-22-838](26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) §4: an injected credential whose secret carries routes is held to them, with no activation; a route's use and judged routes superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md))
 - **Date**: 2026-10-02
 - **Depends on**: [26-09-22-838](26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md)
   §1, §2, §4 and §6, which are built. The project judge, request

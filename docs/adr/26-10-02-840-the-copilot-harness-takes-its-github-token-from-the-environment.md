@@ -1,6 +1,6 @@
 # 26-10-02-840 — The Copilot harness takes its GitHub token from the environment
 
-- **Status**: Accepted
+- **Status**: Accepted (§5 superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md))
 - **Date**: 2026-10-02
 
 ## Context

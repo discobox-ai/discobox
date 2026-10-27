@@ -1,6 +1,6 @@
 # 0079 — A local judge gates every wrapped credential use
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-08-28
 
 ## Context

@@ -1,6 +1,6 @@
 # 0092 — The CLI has no unjudged way to take a value
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-09-03
 
 ## Context

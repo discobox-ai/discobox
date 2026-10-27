@@ -1,6 +1,6 @@
 # 26-09-25-428 — The judge may let its allow stand for a route
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-09-25
 - **Supersedes**: [26-09-22-838](26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md)
   §7's rule that only an endpoint rule may let an allow stand. The rest of §7,

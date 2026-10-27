@@ -1,6 +1,6 @@
 # 0031 — Agent credentials are a portable list/request/get protocol with pool-agent-minted ephemeral sentinels
 
-- **Status**: Accepted
+- **Status**: Accepted (§5 superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md))
 - **§5 superseded in part by**: [26-10-20-782](26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md) — a grant's approved uses as sentences; a grant carries one policy instead
 - **Date**: 2026-08-11
 

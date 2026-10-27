@@ -1,7 +1,6 @@
 # 26-10-01-240 — A swapped request records the secrets it spent
 
-- **Status**: Accepted (supersedes [0130](0130-an-audit-record-is-read-where-it-was-written-and-names-its-attestor.md)
-  §3's empty field for an ordinary injected sentinel)
+- **Status**: Accepted (supersedes [0130](0130-an-audit-record-is-read-where-it-was-written-and-names-its-attestor.md) §3's empty field for an ordinary injected sentinel; use IDs superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md))
 - **Date**: 2026-10-01
 - **Relates to**: [ADR 0130](0130-an-audit-record-is-read-where-it-was-written-and-names-its-attestor.md)
   §3, which put the use ID on the proxy's http row and decided an ordinary

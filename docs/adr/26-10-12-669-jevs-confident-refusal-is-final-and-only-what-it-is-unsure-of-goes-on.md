@@ -1,6 +1,6 @@
 # 26-10-12-669 — Jev's confident refusal is final, and only what it is unsure of goes on
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-10-12
 - **Supersedes**: in [26-10-07-937](26-10-07-937-every-jev-refusal-goes-to-the-judge-discobox.md):
   §1's "Every Jev answer that is not an allow and not an ask for the body goes

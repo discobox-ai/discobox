@@ -1,6 +1,6 @@
 # 26-09-30-854 — A request is judged against the command its sentinel was minted for
 
-- **Status**: Proposed
+- **Status**: Rejected by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-09-30
 - **Supersedes in part**: [26-09-22-838](26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md)
   §5's "the declared command is optional context and explicitly untrusted";

@@ -2,7 +2,9 @@
 
 - **Status**: Accepted (narrows 0011 §2 for a credential's
   originating sandbox, 26-10-14-718 §2 for pending local credentials, and
-  26-10-15-848 §3 for pending and accepted local credentials)
+  26-10-15-848 §3 for pending and accepted local credentials; §3's
+  harness-config grant superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md), where a grant is a
+  harness-config binding)
 - **Date**: 2026-10-26
 
 ## Context
