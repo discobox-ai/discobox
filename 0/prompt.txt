@@ -1,0 +1,6 @@
+<pasted_content id="2a98">
+Set up Dagger CI on this repo. Run my checks locally, then run them again
+so I can see the cache. Once that works, configure Dagger Cloud to run them
+automatically after I push. Then explain to me how this can "accelerate my
+feedback loop at scale, without wasting compute or tokens", and how to use it.
+</pasted_content id="2a98">
