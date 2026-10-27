@@ -1,0 +1,5 @@
+if you look at the local audit record for ``` record:        http_4035784
+ pool:          pool_0hvb5fjmk5dygmt6
+ discobox:      sbx_h1hgcs0rexz4d19w``` you can see that we got a 401 but no secret was attached to that request. And then also ``` record:        http_4032247
+ pool:          pool_0hvb5fjmk5dygmt6
+ discobox:      sbx_h1hgcs0rexz4d19w``` previously worked and had a secret attached. I suspect the pool,  proxy or server restarted and the restart caused this issue. So my question is what happened and how can this be avoid. I fear what is happening is that on restart we start with a blank or stale config and the window causes things to fail. I'm fine if during a restart with get some error responses, but not a secret issue. Do we need to do something to ensure that config is insync before proceeding and handling requests?
