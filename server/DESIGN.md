@@ -305,7 +305,7 @@ such as `/api/pools/{poolId}/status`; the actions a pool principal may reach
 under `/api/pools/{poolId}/` are an allowlist in `internal/auth`.
 
 Enrollment happens each time a pool's maker makes its box, at create and at
-repair (`provisionPoolBox`), not at an agent start. The box keeps its identity
+repair (`poolruntime.ProvisionBox`), not at an agent start. The box keeps its identity
 key on the pool's durable storage, so a remade box prints the same key and
 enrolls it again, and a restarted agent signs with it as before; the agent
 never makes one.

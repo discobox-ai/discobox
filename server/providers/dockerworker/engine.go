@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"net/netip"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -414,7 +413,7 @@ func (e *Engine) AcquirePoolAgentClient(ctx context.Context, pool *model.Pool) (
 	return e.driver.AcquirePoolAgentClient(ctx, pool.ID)
 }
 
-func (e *Engine) recordPoolRuntime(pool *model.Pool, vmInfo *VMInfo, inst *container.InspectResponse, box poolBoxRecord, recreated bool) error {
+func (e *Engine) recordPoolRuntime(pool *model.Pool, vmInfo *VMInfo, inst *container.InspectResponse, box poolruntime.BoxRecord, recreated bool) error {
 	instanceID := ""
 	if vmInfo != nil {
 		instanceID = vmInfo.ID
@@ -496,7 +495,7 @@ func (e *Engine) acquireDockerReady(ctx context.Context, poolID string, timeout 
 // A box is enrolled each time it is provisioned: its key is made in it on
 // first ask, and the same one answered after, so enrolling again changes
 // nothing and mends a server that lost the key.
-func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLease, provider *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, forceRecreate bool, begin func(context.Context) error) (*container.InspectResponse, poolBoxRecord, bool, error) {
+func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLease, provider *model.SandboxProviderInstance, pool *model.Pool, maker poolruntime.PoolMaker, forceRecreate bool, begin func(context.Context) error) (*container.InspectResponse, poolruntime.BoxRecord, bool, error) {
 	cli := lease.Client
 	name := ContainerName(pool.ID)
 	labels := e.containerLabels(provider, pool)
@@ -584,13 +583,13 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 // failed the reconcile would repair the pool — remove a working container and
 // the sandboxes' host with it — over bundles it did not need. Only begin's
 // error is returned: newer intent supersedes this pass.
-func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, containerID string, pool *model.Pool, maker poolruntime.PoolMaker, recorded poolBoxRecord, begin func(context.Context) error) (poolBoxRecord, error) {
+func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, containerID string, pool *model.Pool, maker poolruntime.PoolMaker, recorded poolruntime.BoxRecord, begin func(context.Context) error) (poolruntime.BoxRecord, error) {
 	bootstrap, box, err := e.poolBox(ctx, cli, pool, maker)
 	if err != nil {
 		slog.WarnContext(ctx, "keeping the pool's box as it is: what it is made of does not resolve", "pool", pool.ID, "error", err)
 		return recorded, nil
 	}
-	if recorded.sameBundles(box) {
+	if recorded.SameBundles(box) {
 		return recorded, nil
 	}
 	// The apply restarts the agent the moved bundles carry, so placement is
@@ -598,7 +597,7 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 	if err := begin(ctx); err != nil {
 		return recorded, err
 	}
-	record, err := e.provisionPoolBox(ctx, cli, containerID, maker, bootstrap, box)
+	record, err := poolruntime.ProvisionBox(ctx, containerGuest{cli: cli, container: containerID}, maker, poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv()})
 	if err != nil {
 		slog.WarnContext(ctx, "keeping the pool's box as it is: its moved bundles did not apply", "pool", pool.ID, "error", err)
 		return recorded, nil
@@ -608,10 +607,10 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 
 // recordedBox is what the pool's runtime state says the engine last placed
 // in its box; none for a pool from before, or with no state.
-func recordedBox(pool *model.Pool) poolBoxRecord {
+func recordedBox(pool *model.Pool) poolruntime.BoxRecord {
 	state, err := DecodeRuntimeState(pool.RuntimeState)
 	if err != nil {
-		return poolBoxRecord{}
+		return poolruntime.BoxRecord{}
 	}
 	return state.Box
 }
@@ -678,9 +677,9 @@ func (e *Engine) poolBox(ctx context.Context, cli *client.Client, pool *model.Po
 // createPoolContainer creates the pool's container from image, which the
 // caller has already resolved and made present — that pull is the longest step
 // in bringing a pool up — starts it, systemd as PID 1, and provisions it as
-// the pool's box (provisionPoolBox) before it waits for the agent the box's
+// the pool's box (poolruntime.ProvisionBox) before it waits for the agent the box's
 // bundles start.
-func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, maker poolruntime.PoolMaker, image string, bootstrap poolagent.Bootstrap, box sandbox.PoolBox) (*container.InspectResponse, poolBoxRecord, error) {
+func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, maker poolruntime.PoolMaker, image string, bootstrap poolagent.Bootstrap, box sandbox.PoolBox) (*container.InspectResponse, poolruntime.BoxRecord, error) {
 	releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
 	defer releaseStart()
 	config := &container.Config{
@@ -698,13 +697,13 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	// Only an IP listener has a port Docker can publish or curl can probe.
 	listen, err := wire.Parse(e.cfg.AgentListenURL)
 	if err != nil {
-		return nil, poolBoxRecord{}, fmt.Errorf("agent listen URL: %w", err)
+		return nil, poolruntime.BoxRecord{}, fmt.Errorf("agent listen URL: %w", err)
 	}
 	waitForHealth := true
 	if listen.IsIP() {
 		exposedPort, ok := agentNetworkPort(e.cfg.AgentPort)
 		if !ok {
-			return nil, poolBoxRecord{}, fmt.Errorf("invalid harness port %d", e.cfg.AgentPort)
+			return nil, poolruntime.BoxRecord{}, fmt.Errorf("invalid harness port %d", e.cfg.AgentPort)
 		}
 		config.ExposedPorts = network.PortSet{exposedPort: struct{}{}}
 		hostConfig.PortBindings = network.PortMap{exposedPort: []network.PortBinding{e.agentPortBinding()}}
@@ -756,31 +755,31 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	// aliased as the proxy server name on it and sandboxes can reach only the
 	// proxy.
 	if err := e.ensureSandboxNetwork(ctx, cli, pool.ID); err != nil {
-		return nil, poolBoxRecord{}, err
+		return nil, poolruntime.BoxRecord{}, err
 	}
 	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{Config: config, HostConfig: hostConfig, NetworkingConfig: networkConfig, Name: name})
 	if err != nil {
-		return nil, poolBoxRecord{}, err
+		return nil, poolruntime.BoxRecord{}, err
 	}
 	if _, err := cli.NetworkConnect(ctx, proxyagent.SandboxNetworkName(pool.ID), client.NetworkConnectOptions{
 		Container:      created.ID,
 		EndpointConfig: &network.EndpointSettings{Aliases: []string{proxyagent.ServerName}},
 	}); err != nil {
-		return nil, poolBoxRecord{}, fmt.Errorf("connect worker to sandbox network: %w", err)
+		return nil, poolruntime.BoxRecord{}, fmt.Errorf("connect worker to sandbox network: %w", err)
 	}
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
-		return nil, poolBoxRecord{}, err
+		return nil, poolruntime.BoxRecord{}, err
 	}
-	record, err := e.provisionPoolBox(ctx, cli, created.ID, maker, bootstrap, box)
+	record, err := poolruntime.ProvisionBox(ctx, containerGuest{cli: cli, container: created.ID}, maker, poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv()})
 	if err != nil {
-		return nil, poolBoxRecord{}, err
+		return nil, poolruntime.BoxRecord{}, err
 	}
 	releaseStart()
 	releaseAgent := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForPoolAgent)
 	defer releaseAgent()
 	if waitForHealth {
 		if err := e.waitAgentAfterApply(ctx, cli, created.ID); err != nil {
-			return nil, poolBoxRecord{}, err
+			return nil, poolruntime.BoxRecord{}, err
 		}
 	}
 	inst, err := e.waitContainerReady(ctx, cli, created.ID, waitForHealth)
@@ -1142,15 +1141,6 @@ func scopedVolumeName(scope, id, suffix string) string {
 		name = "unknown"
 	}
 	return "discobox-" + scope + "-" + name + "-" + suffix
-}
-
-func envList(values map[string]string) []string {
-	env := make([]string, 0, len(values))
-	for key, value := range values {
-		env = append(env, key+"="+value)
-	}
-	sort.Strings(env)
-	return env
 }
 
 func firstNonEmpty(values ...string) string {

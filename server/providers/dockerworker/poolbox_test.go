@@ -11,6 +11,7 @@ import (
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
 // fakeMaker is a PoolMaker whose Box answers what the test says, and which
@@ -63,7 +64,7 @@ func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 	defer cli.Close()
 	engine := newTestEngine(t, Config{})
 	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1"}
-	recorded := poolBoxRecord{Agent: "discobox-agent@sha256:a", Bundles: []string{"discobox-pool-agent-bundle@sha256:b"}}
+	recorded := poolruntime.BoxRecord{Agent: "discobox-agent@sha256:a", Bundles: []string{"discobox-pool-agent-bundle@sha256:b"}}
 
 	began := false
 	begin := func(context.Context) error { began = true; return nil }

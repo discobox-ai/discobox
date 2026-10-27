@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
 // RuntimeState is the engine-owned pool runtime state persisted on the
@@ -13,9 +14,9 @@ import (
 // daemon; Box is what the engine placed in it, the server's own record of it
 // (ADR 26-10-24-953 §5), which outlives this process with the pool's row.
 type RuntimeState struct {
-	InstanceID  string        `json:"instanceId,omitempty"`
-	ContainerID string        `json:"containerId,omitempty"`
-	Box         poolBoxRecord `json:"box,omitzero"`
+	InstanceID  string                `json:"instanceId,omitempty"`
+	ContainerID string                `json:"containerId,omitempty"`
+	Box         poolruntime.BoxRecord `json:"box,omitzero"`
 }
 
 // DecodeRuntimeState parses persisted pool runtime state. It returns
