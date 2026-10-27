@@ -1,0 +1,1 @@
+can you just run `discobox new` passing in a description of the issue you found and the fix, I would to do both 1 and 2, but just fix it in a discobox, not locally on the host here.
