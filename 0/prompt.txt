@@ -1,0 +1,1 @@
+i revert the changes and put then in a different branch where I'm working on them, but I want to discuss (and no changes) on how we can safely auto repair. I feel like attach is an intent. So on start or attach we can schedule one compensating action, not something that will get stuck in a loop and auto recover on failure
