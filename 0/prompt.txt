@@ -1,0 +1,1 @@
+is a start idempotent any how? But does this mean we should move the autoStart behavior up a couple layers, not do it in the lower layers?
