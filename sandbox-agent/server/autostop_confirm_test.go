@@ -41,6 +41,14 @@ func TestAutostopConfirmIsThePoolsAlone(t *testing.T) {
 			t.Errorf("confirm with %s = %d, want refused", name, resp.Code)
 		}
 	}
+	escaped := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/projects/project-1/sandboxes/sandbox-1/autostop/%63onfirm", bytes.NewBufferString(`{"reason":"sleep"}`))
+	escaped.Header.Set("Content-Type", "application/json")
+	escaped.Header.Set("Authorization", "Bearer "+token("*"))
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, escaped)
+	if !refused(resp.Code) {
+		t.Errorf("confirm at an escaped path with a wildcard = %d, want refused", resp.Code)
+	}
 	if resp := serveRuntimeConfig(t, router, http.MethodPut, poolToken("worker-1", ScopeAutostopConfirm), plainRuntimeConfig(1, "s")); !refused(resp.Code) {
 		t.Fatalf("runtime config with the autostop scope = %d, want refused", resp.Code)
 	}

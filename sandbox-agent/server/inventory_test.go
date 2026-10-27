@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
@@ -42,6 +43,11 @@ func TestInventoryIsReadWithItsOwnScopeOnly(t *testing.T) {
 		if resp := getInventory(t, router, inventoryTestPath, token(scopes...)); resp.Code != http.StatusForbidden {
 			t.Errorf("GET inventory with %s = %d, want 403", name, resp.Code)
 		}
+	}
+	// Told as the generated router reads it: an escaped letter needs the
+	// scope as well (sandbox-agent/REVIEW.md).
+	if resp := getInventory(t, router, strings.Replace(inventoryTestPath, "/inventory", "/%69nventory", 1), token(ScopeStatusRead)); resp.Code != http.StatusForbidden {
+		t.Errorf("GET an escaped inventory path with status:read = %d, want 403", resp.Code)
 	}
 	base := "/api/projects/project-1/sandboxes/sandbox-1"
 	for _, path := range []string{"/execs", "/services", "/tools", "/status", "/execs/inventory", "/services/inventory", "/execs/inventory/screen"} {

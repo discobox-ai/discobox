@@ -1065,6 +1065,16 @@ components:
                         type: string
                     type: array
             type: object
+        SandboxCacheClearance:
+            additionalProperties: false
+            description: What the sandbox emptied on its pool's word.
+            properties:
+                paths:
+                    description: The cache paths whose contents were removed, each kept as an empty directory.
+                    items:
+                        type: string
+                    type: array
+            type: object
         SandboxExec:
             additionalProperties: false
             properties:
@@ -1954,6 +1964,39 @@ paths:
             summary: Tell the sandbox its pool thawed it.
             tags:
                 - Sandbox Autostop
+    /api/projects/{projectId}/sandboxes/{sandboxId}/cache/clear:
+        post:
+            description: Empties every cache path the sandbox's bootstrap declares, in place, keeping each directory. A machine sandbox's cache is on its own disk, so its pool clears it through its agent rather than emptying a cache of its own (ADR 26-10-23-551 §3). Only a token carrying the pool-only cache-clear scope may call it.
+            operationId: clear-sandbox-cache
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxCacheClearance'
+                    description: The caches are empty.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Empty the sandbox's caches.
+            tags:
+                - Sandbox Runtime Config
     /api/projects/{projectId}/sandboxes/{sandboxId}/exec-events:
         get:
             description: Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed), recorded by the sandbox agent inside the sandbox. They are sandbox-attested and read only from a running sandbox; the read never starts one.

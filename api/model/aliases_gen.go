@@ -170,6 +170,7 @@ type SandboxAutostopConfirmRequest = apigen.SandboxAutostopConfirmRequest
 type SandboxAutostopConfirmation = apigen.SandboxAutostopConfirmation
 type SandboxAutostopResumption = apigen.SandboxAutostopResumption
 type SandboxCPUConsumption = apigen.SandboxCPUConsumption
+type SandboxCacheClearance = apigen.SandboxCacheClearance
 type SandboxCloneProgress = apigen.SandboxCloneProgress
 type SandboxConfig = apigen.SandboxConfig
 type SandboxCreateConfig = apigen.SandboxCreateConfig

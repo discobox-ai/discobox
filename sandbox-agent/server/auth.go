@@ -56,6 +56,10 @@ const (
 	// sleep consumes the sandbox's requests and a resume moves its wakes, and
 	// only the party that holds its power may ask.
 	ScopeAutostopConfirm = sandboxconfig.AutostopConfirmScope
+	// ScopeCacheClear gates emptying the sandbox's caches in place, which a
+	// machine pool asks of every running sandbox when its caches are cleared
+	// (ADR 26-10-23-551 §3). It is the pool's alone, like the two above.
+	ScopeCacheClear = sandboxconfig.CacheClearScope
 	// ScopeSandboxRead and ScopeSandboxWrite gate the sandbox's own Git
 	// repositories, as the pool's worktree route always has: a fetch reads,
 	// a push writes (ADR 0126 §4).
@@ -64,7 +68,7 @@ const (
 )
 
 // poolOnlyScopes are the scopes a "*" token does not carry.
-var poolOnlyScopes = map[string]bool{ScopeRuntimeConfig: true, ScopeAutostopConfirm: true}
+var poolOnlyScopes = map[string]bool{ScopeRuntimeConfig: true, ScopeAutostopConfirm: true, ScopeCacheClear: true}
 
 type SignedTokenClaims struct {
 	ProjectID string
@@ -201,12 +205,13 @@ func (a *SignedTokenAuthenticator) parseToken(tokenText string) (*paseto.Token, 
 }
 
 // authorizePoolToken confines a pool-signed token to what the pool may sign
-// for: exactly one pool-only scope — runtime-config or autostop-confirm — on a
-// route whose required scope is that one, naming this sandbox's pool. Those
-// routes are the pool's: the document itself and a source's project layer,
-// which the pool reads to settle the spec, and the confirmation it asks for
-// before a power-down. A route added under either scope is reachable by the
-// pool too, so putting one there is deciding that. The scope list is checked
+// for: exactly one pool-only scope — runtime-config, autostop-confirm or
+// cache-clear — on a route whose required scope is that one, naming this
+// sandbox's pool. Those routes are the pool's: the document itself and a
+// source's project layer, which the pool reads to settle the spec, the
+// confirmation it asks for before a power-down, and the clearing of the
+// sandbox's caches. A route added under any of these scopes is reachable by
+// the pool too, so putting one there is deciding that. The scope list is checked
 // whole, so a pool token can never carry a wildcard or a second scope that a
 // later check would honor.
 func (a *SignedTokenAuthenticator) authorizePoolToken(r *http.Request, claims SignedTokenClaims) error {
@@ -285,6 +290,26 @@ func autostopPoolRoute(path string) bool {
 		(segments[6] == "confirm" || segments[6] == "resumed")
 }
 
+// cacheClearRoute is the cache-clear route, told by its whole route like the
+// autostop routes: its scope is the pool's alone.
+func cacheClearRoute(path string) bool {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	return len(segments) == 7 && segments[0] == "api" && segments[1] == "projects" && segments[3] == "sandboxes" && segments[5] == "cache" && segments[6] == "clear"
+}
+
+// routedPath is the path as ogen's router reads it: escapes decoded but an
+// escaped slash's, so `cache/%63lear` is `cache/clear`, as the generated
+// router dispatches it. A route the generated router serves is told by this,
+// never by its raw escaped spelling.
+func routedPath(r *http.Request) string {
+	if raw := r.URL.RawPath; raw != "" {
+		if normalized, ok := uri.NormalizeEscapedPath(raw); ok {
+			return normalized
+		}
+	}
+	return r.URL.Path
+}
+
 // filesRoute reports the operation of a files API route, told by its whole
 // route like the inventory: an exec or a service named "files" is not one.
 func filesRoute(path string) (string, bool) {
@@ -321,9 +346,10 @@ func requiredRequestScope(r *http.Request) string {
 	// The Git route is told by its route segment, before any suffix test: a
 	// repository is named by its source's slug, and a slug like "execs" or
 	// "status" would otherwise be gated as something it is not. The segment is
-	// read from the escaped path the router matched, so no escaped slash can
-	// make this miss a request the router hands the Git route.
-	if gitRepositoryRoute(r.URL.EscapedPath()) {
+	// read from the path as the router reads it (routedPath), which keeps an
+	// escaped slash escaped, so none can make this miss a request the router
+	// hands the Git route, and decodes every other escape, so none can either.
+	if gitRepositoryRoute(routedPath(r)) {
 		if gitbackend.IsReceivePack(r) {
 			return ScopeSandboxWrite
 		}
@@ -334,14 +360,17 @@ func requiredRequestScope(r *http.Request) string {
 	// names the source. Told by their route segments, like the Git route above
 	// and for the same reason: the slug is a path segment and can spell what
 	// the tests below look for — a source named "execs" is not an exec.
-	if sourcesRoute(r.URL.EscapedPath()) {
+	if sourcesRoute(routedPath(r)) {
 		return ScopeRuntimeConfig
 	}
-	if op, ok := filesRoute(r.URL.EscapedPath()); ok {
+	if op, ok := filesRoute(routedPath(r)); ok {
 		return filesScope(r.Method, op)
 	}
-	if r.Method == http.MethodPost && autostopPoolRoute(r.URL.EscapedPath()) {
+	if r.Method == http.MethodPost && autostopPoolRoute(routedPath(r)) {
 		return ScopeAutostopConfirm
+	}
+	if r.Method == http.MethodPost && cacheClearRoute(routedPath(r)) {
+		return ScopeCacheClear
 	}
 	// The status route reports git/session/connection telemetry and nothing
 	// else, so it is gated on its own narrow scope rather than exec:read.
@@ -351,7 +380,7 @@ func requiredRequestScope(r *http.Request) string {
 	// The inventory is told by its whole route, never by a suffix: it is read
 	// with a scope of its own, and an exec or a service named "inventory" must
 	// not be readable with it.
-	if inventoryRoute(r.URL.EscapedPath()) {
+	if inventoryRoute(routedPath(r)) {
 		if r.Method == http.MethodGet {
 			return ScopeInventoryRead
 		}
@@ -469,13 +498,7 @@ func bearerToken(header string) (string, bool) {
 }
 
 func captureRequestScope(r *http.Request) string {
-	path := r.URL.Path
-	if raw := r.URL.RawPath; raw != "" {
-		if normalized, ok := uri.NormalizeEscapedPath(raw); ok {
-			path = normalized
-		}
-	}
-	parts := strings.Split(strings.Trim(path, "/"), "/")
+	parts := strings.Split(strings.Trim(routedPath(r), "/"), "/")
 	if len(parts) < 6 || parts[0] != "api" || parts[1] != "projects" || parts[3] != "sandboxes" {
 		return ""
 	}

@@ -108,6 +108,18 @@ func (UnimplementedHandler) ClearPoolCache(ctx context.Context, params ClearPool
 	return r, ht.ErrNotImplemented
 }
 
+// ClearSandboxCache implements clear-sandbox-cache operation.
+//
+// Empties every cache path the sandbox's bootstrap declares, in place, keeping each directory. A
+// machine sandbox's cache is on its own disk, so its pool clears it through its agent rather than
+// emptying a cache of its own (ADR 26-10-23-551 §3). Only a token carrying the pool-only
+// cache-clear scope may call it.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/cache/clear
+func (UnimplementedHandler) ClearSandboxCache(ctx context.Context, params ClearSandboxCacheParams) (r ClearSandboxCacheRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CommitHarnessConfigConfigure implements commit-harness-config-configure operation.
 //
 // Finish the in-flight configure flow. The server verifies the configure command exited 0, reads the

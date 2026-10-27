@@ -452,14 +452,17 @@ func (s *AttachSandboxExecSwitchingProtocols) SetUpgrade(val OptString) {
 
 func (*AttachSandboxExecSwitchingProtocols) attachSandboxExecRes() {}
 
-// The outcome of clearing a pool's caches (its sandbox cache, build cache, registry, proxy response
-// cache, and unused images). The pool agent answers only once they are empty.
+// The outcome of clearing a pool's caches. A container pool stops its running sandboxes and empties
+// the caches they share (its sandbox cache, build cache, registry, proxy response cache, and unused
+// images); a machine pool, whose sandboxes share no cache, empties its proxy response cache and has
+// each running sandbox's agent empty that sandbox's own caches, stopping nothing. The pool agent
+// answers only once they are empty.
 // Ref: #/components/schemas/ClearPoolCacheBody
 type ClearPoolCacheBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Sandboxes that were running and were stopped so the caches could be cleared. Nothing is started
-	// again afterwards; a stopped sandbox starts on its next use.
+	// Sandboxes that were running and were stopped so the caches could be cleared; none on a machine
+	// pool. Nothing is started again afterwards; a stopped sandbox starts on its next use.
 	StoppedSandboxIds []string `json:"stoppedSandboxIds"`
 }
 
@@ -2725,6 +2728,7 @@ func (*ErrorResponseStatusCode) acknowledgeSandboxHarnessConfigRes()    {}
 func (*ErrorResponseStatusCode) attachSandboxExecOnceRes()              {}
 func (*ErrorResponseStatusCode) attachSandboxExecRes()                  {}
 func (*ErrorResponseStatusCode) captureSandboxHarnessConfigRes()        {}
+func (*ErrorResponseStatusCode) clearSandboxCacheRes()                  {}
 func (*ErrorResponseStatusCode) confirmSandboxAutostopRes()             {}
 func (*ErrorResponseStatusCode) copySandboxFileRes()                    {}
 func (*ErrorResponseStatusCode) createSandboxExecRes()                  {}
@@ -22758,6 +22762,25 @@ func (s *SandboxCPUConsumptionAdditional) init() SandboxCPUConsumptionAdditional
 	}
 	return m
 }
+
+// What the sandbox emptied on its pool's word.
+// Ref: #/components/schemas/SandboxCacheClearance
+type SandboxCacheClearance struct {
+	// The cache paths whose contents were removed, each kept as an empty directory.
+	Paths []string `json:"paths"`
+}
+
+// GetPaths returns the value of Paths.
+func (s *SandboxCacheClearance) GetPaths() []string {
+	return s.Paths
+}
+
+// SetPaths sets the value of Paths.
+func (s *SandboxCacheClearance) SetPaths(val []string) {
+	s.Paths = val
+}
+
+func (*SandboxCacheClearance) clearSandboxCacheRes() {}
 
 // Git transfer progress: fetching_source carries the pool fetch counts, while
 // materializing_source carries the sandbox clone counts read by the pool.

@@ -30,6 +30,13 @@ func runtimeConfigRouter(t *testing.T) (http.Handler, func(scopes ...string) str
 // bootstrap, and returns a signer for it beside the control plane's.
 func runtimeConfigRouterWithPool(t *testing.T) (http.Handler, func(scopes ...string) string, func(poolID string, scopes ...string) string) {
 	t.Helper()
+	return runtimeConfigRouterWithPoolConfig(t, nil)
+}
+
+// runtimeConfigRouterWithPoolConfig is runtimeConfigRouterWithPool with its
+// configuration changed by configure before the router is built.
+func runtimeConfigRouterWithPoolConfig(t *testing.T, configure func(*Config)) (http.Handler, func(scopes ...string) string, func(poolID string, scopes ...string) string) {
+	t.Helper()
 	publicKey, signToken := sandboxAgentTestSigner(t)
 	poolKey, signPoolToken := sandboxAgentTestSigner(t)
 	root := t.TempDir()
@@ -51,6 +58,9 @@ func runtimeConfigRouterWithPool(t *testing.T) (http.Handler, func(scopes ...str
 	cfg := testConfig(publicKey)
 	cfg.PoolPublicKey = poolKey
 	cfg.RuntimeConfig = in
+	if configure != nil {
+		configure(&cfg)
+	}
 	router, err := NewRouter(cfg)
 	if err != nil {
 		t.Fatalf("new router: %v", err)

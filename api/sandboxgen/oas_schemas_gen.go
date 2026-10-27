@@ -5395,6 +5395,23 @@ func (s *SandboxAutostopResumption) SetWakes(val []string) {
 	s.Wakes = val
 }
 
+// What the sandbox emptied on its pool's word.
+// Ref: #/components/schemas/SandboxCacheClearance
+type SandboxCacheClearance struct {
+	// The cache paths whose contents were removed, each kept as an empty directory.
+	Paths []string `json:"paths"`
+}
+
+// GetPaths returns the value of Paths.
+func (s *SandboxCacheClearance) GetPaths() []string {
+	return s.Paths
+}
+
+// SetPaths sets the value of Paths.
+func (s *SandboxCacheClearance) SetPaths(val []string) {
+	s.Paths = val
+}
+
 // Ref: #/components/schemas/SandboxExec
 type SandboxExec struct {
 	// Command argv executed in the sandbox.

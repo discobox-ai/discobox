@@ -61,6 +61,8 @@ type handler struct {
 	// files is the files API (ADR 26-10-22-499), nil when its helper cannot
 	// be found.
 	files *files.Service
+	// clearCaches empties the sandbox's caches (Config.ClearCaches).
+	clearCaches func() ([]string, error)
 	// runtimeConfigMu makes applying a delivered document and setting the
 	// idle timeout it carries one step (PutSandboxRuntimeConfig).
 	runtimeConfigMu sync.Mutex
@@ -715,6 +717,19 @@ func (h *handler) ConfirmSandboxAutostop(_ context.Context, req *sandboxapi.Sand
 		out.Wake = sandboxapi.NewOptString(wake.Name)
 	}
 	return out, nil
+}
+
+// ClearSandboxCache empties the sandbox's caches on its pool's word (ADR
+// 26-10-23-551 §3).
+func (h *handler) ClearSandboxCache(context.Context, sandboxapi.ClearSandboxCacheParams) (*sandboxapi.SandboxCacheClearance, error) {
+	if h.clearCaches == nil {
+		return nil, statusError{status: http.StatusNotImplemented, message: "this sandbox agent clears no caches"}
+	}
+	paths, err := h.clearCaches()
+	if err != nil {
+		return nil, err
+	}
+	return &sandboxapi.SandboxCacheClearance{Paths: paths}, nil
 }
 
 // ResumeSandboxAutostop is the pool telling the sandbox it thawed it from a

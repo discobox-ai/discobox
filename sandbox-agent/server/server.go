@@ -98,6 +98,10 @@ type Config struct {
 	// declared services wait for their provisioning dependencies, and the status report
 	// carries its document. nil waits for nothing and reports none.
 	Provision *provision.Tracker
+	// ClearCaches empties the sandbox's declared cache paths in place and
+	// returns them (boot.ClearCaches). nil answers the cache-clear route that
+	// the agent clears nothing.
+	ClearCaches func() ([]string, error)
 }
 
 func ConfigFromHarnessConfig(cfg config.Config) Config {
@@ -340,6 +344,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		sourceConverger:   sourceConverger,
 		provision:         cfg.Provision,
 		files:             fileService,
+		clearCaches:       cfg.ClearCaches,
 	}
 	generated, err := sandboxapi.NewServer(handler)
 	if err != nil {

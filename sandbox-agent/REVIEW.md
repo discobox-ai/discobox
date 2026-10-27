@@ -544,6 +544,9 @@ user waits on every single start.
 - Match capture scopes using ogen's `uri.NormalizeEscapedPath` convention,
   preserving encoded slashes. Comparing raw escaped literals misses routes such
   as `%68arness-config-capture` that ogen dispatches as `harness-config-capture`.
+  This holds for every route a scope is told by its whole path (`routedPath`):
+  the autostop and cache-clear routes were matched on the raw escaped path, so
+  `cache/%63lear` reached the handler with no scope required at all.
   Exercise the authenticator and generated router together when changing these
   scopes; helper-only tests cannot detect disagreement between the two.
 
@@ -556,3 +559,12 @@ user waits on every single start.
   delivered files. Otherwise every omitted baseline file becomes a false local
   change, even after the exporter recovers. Cover restart with a persisted
   version-1/partial baseline and an already-created false candidate.
+
+## Clearing caches
+
+- `boot.ClearCaches` empties declared cache paths, and a data volume may be
+  declared inside one: `/nix` is a cache whose profiles, gcroots and daemon
+  socket are data. Keep every non-cache volume path, and what leads to it,
+  when emptying a cache. Why: the Docker clear empties `/.discobox/cache`,
+  where no data lives, so a machine's clear is the first to walk a cache that
+  holds data.
