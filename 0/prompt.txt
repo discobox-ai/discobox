@@ -1,0 +1,1 @@
+I suspect discobox client has a memory leak, if you look at the running discobox process they are using a lot of memory, hundreds of mb. Can you see why?
