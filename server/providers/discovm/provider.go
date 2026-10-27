@@ -8,7 +8,7 @@
 // whatever its driver runs a machine as. Its driver is
 // disco-vm's, named in the provider's configuration and passed to disco-vm as
 // it is. Nothing here is written per driver: where a pool's agent runs follows
-// from what the driver reports it can do.
+// from whether the driver's provider is this host's disk.
 package discovm
 
 import (
@@ -33,7 +33,7 @@ type Config struct {
 
 	// Driver is the disco-vm driver the provider's pools run on, by
 	// disco-vm's name for it. It is passed to disco-vm as it is: what a pool
-	// on it looks like follows from what the driver reports it can do.
+	// on it looks like follows from whether it is a local driver.
 	//
 	// There is no state directory to configure. Every provider instance of a
 	// driver on a host shares that driver's disco-vm state root (stateRoot),
@@ -60,7 +60,9 @@ func Validate(data json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	_, err = newDriver(cfg.Driver)
+	// The provider instance's project is not known here, and the driver's
+	// name is all there is to check.
+	_, err = newDriver(cfg.Driver, localProject)
 	return err
 }
 

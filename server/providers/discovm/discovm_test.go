@@ -71,9 +71,8 @@ func withFakeBases(t *testing.T, bases []machine.Base) {
 	t.Setenv(fake.BasesEnv, string(data))
 }
 
-// openRuntime is newRuntime, closed when the test ends: its engine holds a
-// database in the state root, which a test's directory must be free of before
-// it is removed.
+// openRuntime is newRuntime for the provider instance prov_test, closed when
+// the test ends as the server closes it.
 func openRuntime(t *testing.T, cfg Config) *Runtime {
 	t.Helper()
 	r, err := newRuntime(cfg, "prov_test")
@@ -118,15 +117,15 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 	if err := r.EnsurePool(ctx, nil, nil, pool, nil, begin); err != nil {
 		t.Fatalf("EnsurePool() error = %v", err)
 	}
-	inst, err := r.engine.Get(poolMachineName(pool.ID))
+	inst, err := r.engine.Get(ctx, poolMachineName(pool.ID))
 	if err != nil {
 		t.Fatalf("no machine named for the pool: %v", err)
 	}
 	if state := r.engine.State(ctx, inst); state != engine.Running {
 		t.Fatalf("pool machine is %s, want running", state)
 	}
-	if inst.Base == nil || inst.Base.ID != fakeBases[0].ID || inst.Layer != "" {
-		t.Fatalf("pool machine runs from base %+v, layer %q, want the driver's first base and no image", inst.Base, inst.Layer)
+	if inst.Base == nil || inst.Base.ID != fakeBases[0].ID || inst.ImageID != "" {
+		t.Fatalf("pool machine runs from base %+v, image %q, want the driver's first base and no image", inst.Base, inst.ImageID)
 	}
 	if begun != 1 || pool.State != model.PoolStateRegistering || pool.Ready || pool.Schedulable {
 		t.Fatalf("after create: begun=%d state=%q ready=%v schedulable=%v, want 1 registering false false", begun, pool.State, pool.Ready, pool.Schedulable)
@@ -173,7 +172,7 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 	if err := provider.RemovePool(ctx, nil, nil, instance, pool); err != nil {
 		t.Fatalf("RemovePool() error = %v", err)
 	}
-	if _, err := r.engine.Get(poolMachineName(pool.ID)); !errors.Is(err, engine.ErrNotFound) {
+	if _, err := r.engine.Get(ctx, poolMachineName(pool.ID)); !errors.Is(err, engine.ErrNotFound) {
 		t.Fatalf("pool machine still exists after RemovePool: %v", err)
 	}
 	if pool.RuntimeState != nil {
@@ -194,7 +193,7 @@ func TestFakePoolMachineRepairKeepsTheMachine(t *testing.T) {
 	if err := r.EnsurePool(ctx, nil, nil, pool, nil, nil); err != nil {
 		t.Fatalf("EnsurePool() error = %v", err)
 	}
-	before, err := r.engine.Get(poolMachineName(pool.ID))
+	before, err := r.engine.Get(ctx, poolMachineName(pool.ID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +201,7 @@ func TestFakePoolMachineRepairKeepsTheMachine(t *testing.T) {
 	if err := r.RepairPool(ctx, nil, nil, pool, nil, "test", nil); err != nil {
 		t.Fatalf("RepairPool() error = %v", err)
 	}
-	after, err := r.engine.Get(poolMachineName(pool.ID))
+	after, err := r.engine.Get(ctx, poolMachineName(pool.ID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +223,7 @@ func TestFakePoolMachineBootsTheConfiguredBase(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "no base with ID") {
 		t.Fatalf("EnsurePool() with a base named, not identified = %v, want a refusal", err)
 	}
-	if _, err := byName.engine.Get(poolMachineName("pool-13")); !errors.Is(err, engine.ErrNotFound) {
+	if _, err := byName.engine.Get(context.Background(), poolMachineName("pool-13")); !errors.Is(err, engine.ErrNotFound) {
 		t.Fatalf("a machine was made from a base named, not identified: %v", err)
 	}
 
@@ -235,7 +234,7 @@ func TestFakePoolMachineBootsTheConfiguredBase(t *testing.T) {
 	if err := r.EnsurePool(ctx, nil, nil, pool, nil, nil); err != nil {
 		t.Fatalf("EnsurePool() error = %v", err)
 	}
-	inst, err := r.engine.Get(poolMachineName(pool.ID))
+	inst, err := r.engine.Get(ctx, poolMachineName(pool.ID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +250,7 @@ func TestFakePoolMachineBootsTheConfiguredBase(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "no base") || !strings.Contains(err.Error(), "provider's base") {
 		t.Fatalf("EnsurePool() on a driver with no base = %v, want a refusal naming the provider's base", err)
 	}
-	if _, err := bare.engine.Get(poolMachineName("pool-11")); !errors.Is(err, engine.ErrNotFound) {
+	if _, err := bare.engine.Get(ctx, poolMachineName("pool-11")); !errors.Is(err, engine.ErrNotFound) {
 		t.Fatalf("a machine was made with no base: %v", err)
 	}
 }
@@ -262,8 +261,8 @@ func TestFakePoolMachineBootsTheConfiguredBase(t *testing.T) {
 func TestBuildGuestImageIsUnsupported(t *testing.T) {
 	isolateStateRoot(t)
 	r := openRuntime(t, Config{Driver: "boxd"})
-	if !r.engine.Driver.Capabilities().Remote {
-		t.Fatal("boxd is not a remote driver")
+	if isLocal(r.engine.Driver) {
+		t.Fatal("boxd is a local driver")
 	}
 	for _, opts := range []sandbox.GuestImageBuildOptions{{}, {SourceDir: t.TempDir(), RestartHost: true}} {
 		_, err := r.BuildGuestImage(context.Background(), nil, &model.Pool{ID: "pool-12"}, opts)
@@ -362,21 +361,50 @@ func TestFactoryBuildsAPoolProvider(t *testing.T) {
 		t.Fatalf("Definition().Name = %q", provider.Definition().Name)
 	}
 	isolateStateRoot(t)
-	r := openRuntime(t, fakeConfig(t))
-	exe, _ := os.Executable()
-	if want := shimCommand(exe, r.engine.Root, "fake", localProject); strings.Join(r.engine.ShimCommand, " ") != strings.Join(want, " ") {
-		t.Fatalf("ShimCommand = %q, want %q", r.engine.ShimCommand, want)
-	}
-}
-
-// Where a pool's agent runs follows from what the driver reports, not from its
-// name: a remote driver's pool is a machine, a local one's is a host agent.
-func TestPoolHostFollowsTheDriversCapabilities(t *testing.T) {
-	remote, err := engine.Open(t.TempDir(), boxd.New(), nil, "prov-test")
+	cfg, err := driverConfig("fake", localProject, stateRoot("fake"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer remote.Close()
+	exe, _ := os.Executable()
+	if want := shimCommand(exe, stateRoot("fake"), "fake", localProject); strings.Join(cfg.ShimCommand, " ") != strings.Join(want, " ") {
+		t.Fatalf("ShimCommand = %q, want %q", cfg.ShimCommand, want)
+	}
+	if cfg.Project != localProject || cfg.Dir != stateRoot("fake") {
+		t.Fatalf("driver config project %q dir %q, want %q in the state root", cfg.Project, cfg.Dir, localProject)
+	}
+}
+
+// boxd authenticates with BOXD_API_KEY from the server's environment, as the
+// provider's configuration holds no key; disco-vm reads none of its own
+// accord.
+func TestDriverKeyIsTheServersEnvironment(t *testing.T) {
+	t.Setenv(boxd.APIKeyEnv, "")
+	t.Setenv(boxd.TokenEnv, "")
+	cfg, err := driverConfig("boxd", "prov-test", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Keys != nil {
+		t.Fatal("boxd was given a key with none in the environment")
+	}
+	t.Setenv(boxd.APIKeyEnv, "secret")
+	if cfg, err = driverConfig("boxd", "prov-test", t.TempDir()); err != nil || cfg.Keys == nil {
+		t.Fatalf("boxd was given no key with %s set (%v)", boxd.APIKeyEnv, err)
+	}
+	key, err := cfg.Keys(context.Background())
+	if err != nil || key.Secret != "secret" {
+		t.Fatalf("boxd's key = %v, %v, want the environment's", key, err)
+	}
+}
+
+// Where a pool's agent runs follows from what the driver is, not from its
+// name: a remote driver's pool is a machine, a local one's is a host agent in
+// the driver's own state directory.
+func TestPoolHostFollowsTheDriversKind(t *testing.T) {
+	remote, err := engine.Open(boxd.New(machine.Config{Project: "prov-test"}), "prov-test")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if host, ok := newPoolHost(remote, "").(*poolMachine); !ok {
 		t.Fatalf("a remote driver's pool host is %T, want a pool machine", newPoolHost(remote, ""))
 	} else if host.shell[0] != "/bin/bash" || host.logs(sandbox.PoolLogOptions{})[0] != "journalctl" {
@@ -384,8 +412,10 @@ func TestPoolHostFollowsTheDriversCapabilities(t *testing.T) {
 	}
 	isolateStateRoot(t)
 	local := openRuntime(t, fakeConfig(t))
-	if _, ok := local.host.(*hostAgent); !ok {
+	if host, ok := local.host.(*hostAgent); !ok {
 		t.Fatalf("a local driver's pool host is %T, want a host agent", local.host)
+	} else if host.root != stateRoot("fake") {
+		t.Fatalf("host agent root = %q, want the driver's state root %q", host.root, stateRoot("fake"))
 	}
 }
 
@@ -394,12 +424,12 @@ func TestPoolHostFollowsTheDriversCapabilities(t *testing.T) {
 // take each other's machines for their own. A local driver's is one for every
 // provider, so the host's running-guest cap is counted over all of them.
 func TestEngineProjectIsTheProvidersOnARemoteDriver(t *testing.T) {
-	project, err := engineProject(boxd.New(), "prov_0123456789abcdef")
+	project, err := remoteProject("prov_0123456789abcdef")
 	if err != nil || project != "prov-0123456789abcdef" {
-		t.Fatalf("engineProject(boxd, prov_…) = %q, %v, want prov-0123456789abcdef", project, err)
+		t.Fatalf("remoteProject(prov_…) = %q, %v, want prov-0123456789abcdef", project, err)
 	}
-	if _, err := engineProject(boxd.New(), "Not A Project!"); err == nil {
-		t.Fatal("engineProject accepted an ID outside disco-vm's project rule")
+	if _, _, err := openDriver("boxd", "Not A Project!"); err == nil {
+		t.Fatal("openDriver accepted an ID outside disco-vm's project rule")
 	}
 	isolateStateRoot(t)
 	remote := openRuntime(t, Config{Driver: "boxd"})
@@ -407,8 +437,8 @@ func TestEngineProjectIsTheProvidersOnARemoteDriver(t *testing.T) {
 		t.Fatalf("boxd engine project = %q, want the provider's", remote.engine.Project)
 	}
 	local := openRuntime(t, fakeConfig(t))
-	if project, _ := engineProject(local.engine.Driver, "prov_other"); project != localProject || local.engine.Project != localProject {
-		t.Fatalf("a local driver's project = %q (engine %q), want %q for every provider", project, local.engine.Project, localProject)
+	if _, project, err := openDriver("fake", "Not A Project!"); err != nil || project != localProject || local.engine.Project != localProject {
+		t.Fatalf("a local driver's project = %q, %v (engine %q), want %q for every provider", project, err, local.engine.Project, localProject)
 	}
 }
 
@@ -439,8 +469,6 @@ func TestFactoryProviderOnALocalDriverRefusesAConsole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("factory error = %v", err)
 	}
-	// Closed before the test's directory is removed: its engine's database is
-	// in it, and Windows refuses to delete an open file.
 	t.Cleanup(func() { _ = built.Close() })
 	provider, ok := built.(sandbox.PoolRuntime)
 	if !ok {
