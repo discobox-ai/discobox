@@ -642,6 +642,35 @@ type PoolManifest struct {
 	StorageBytes int64   `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today; zero is unset."`
 }
 
+// PoolHostCredential is a credential of its provider's that a pool's host
+// holds, as the pool shows it: never its secret.
+type PoolHostCredential struct {
+	// Key is the provisioning key the host holds: PoolHostKeyIssued, or
+	// PoolHostKeyProvider. Empty is none.
+	Key string `json:"key,omitempty" enum:"issued,provider"`
+	// Scope is what the key reaches, as the driver says (account, org,
+	// project); empty where it cannot tell.
+	Scope string `json:"scope,omitempty"`
+	// KeyID is the driver's ID for an issued key.
+	KeyID     string     `json:"keyId,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	// MachineToken is the host also carrying a credential its driver gives
+	// every machine that is not isolated (boxd's in-VM token, which acts on
+	// the org as the provider's user). discobox sets no expiry on it and
+	// never renews or revokes it.
+	MachineToken bool `json:"machineToken,omitempty"`
+}
+
+const (
+	// PoolHostKeyIssued is a key the provider's driver issued for the pool,
+	// which expires and is renewed and revoked by discobox.
+	PoolHostKeyIssued = "issued"
+	// PoolHostKeyProvider is the provider's own key, delivered because its
+	// configuration opts in: it has no expiry discobox sets, and is never
+	// renewed or revoked by discobox.
+	PoolHostKeyProvider = "provider"
+)
+
 // Pool is the user-visible sharing boundary sandboxes are scheduled into,
 // and its own runtime host (ADR-0006).
 //
@@ -705,9 +734,14 @@ type Pool struct {
 	Resources           json.RawMessage `gorm:"column:resources;type:text" json:"resources,omitempty" doc:"Latest pool-wide CPU, memory and disk consumption reported by the pool agent. Telemetry, not a scheduling input."`
 	ResourcesReportedAt *time.Time      `gorm:"column:resources_reported_at" json:"resourcesReportedAt,omitempty" doc:"When Resources was reported" format:"date-time"`
 	RuntimeState        json.RawMessage `gorm:"column:runtime_state;type:text" json:"-" doc:"Internal provider runtime state; may contain boot material and must not be serialized"`
-	ResourceLifecycle   `gorm:"embedded"`
-	RegisteredAt        *time.Time `gorm:"column:registered_at" json:"registeredAt,omitempty" doc:"Registration timestamp" format:"date-time"`
-	LastSeenAt          *time.Time `gorm:"column:last_seen_at;index" json:"lastSeenAt,omitempty" doc:"Last heartbeat timestamp" format:"date-time"`
+	// HostCredential is the provider credential the pool's host holds, which
+	// its provider writes when it places one (ADR 26-10-23-551 §4, 0126's
+	// Consequence): a pool whose host can reach the provider's account says
+	// so, and how far. Nil is a host that holds none.
+	HostCredential    *PoolHostCredential `gorm:"column:host_credential;type:text;serializer:json" json:"hostCredential,omitempty" doc:"The provider credential the pool's host holds, and what it reaches. Absent when it holds none."`
+	ResourceLifecycle `gorm:"embedded"`
+	RegisteredAt      *time.Time `gorm:"column:registered_at" json:"registeredAt,omitempty" doc:"Registration timestamp" format:"date-time"`
+	LastSeenAt        *time.Time `gorm:"column:last_seen_at;index" json:"lastSeenAt,omitempty" doc:"Last heartbeat timestamp" format:"date-time"`
 
 	// Startup invalidates health without discarding identity or the last report.
 	HealthCheckStartedAt *time.Time `gorm:"column:health_check_started_at" json:"-"`

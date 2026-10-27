@@ -383,6 +383,9 @@ func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
 	fmt.Fprintf(tw, "READY\t%t\n", pool.Ready)
 	fmt.Fprintf(tw, "SCHEDULABLE\t%t\n", pool.Schedulable)
 	fmt.Fprintf(tw, "CAPACITY\t%s\n", formatPoolCapacity(*pool))
+	if credential, ok := pool.HostCredential.Get(); ok {
+		fmt.Fprintf(tw, "HOST CREDENTIAL\t%s\n", formatPoolHostCredential(credential, time.Now()))
+	}
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(pool.UpdatedAt))
 	if message := poolMessage(*pool); message != "" {
 		fmt.Fprintf(tw, "MESSAGE\t%s\n", truncateTableValue(message, 120))
@@ -421,6 +424,40 @@ func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool, defaultPoolI
 		)
 	}
 	return tw.Flush()
+}
+
+// formatPoolHostCredential says which provider credential a pool's host
+// holds and how far it reaches (ADR 26-10-23-551 §4): an issued key, which
+// expires and discobox renews, or the provider's own, which it never does; and
+// the driver's machine token beside either.
+func formatPoolHostCredential(credential apimodel.PoolHostCredential, now time.Time) string {
+	var parts []string
+	switch credential.Key.Or("") {
+	case apiclientgen.PoolHostCredentialKeyIssued:
+		what := "an issued key"
+		if id := credential.KeyId.Or(""); id != "" {
+			what += " " + id
+		}
+		if expires, ok := credential.ExpiresAt.Get(); ok {
+			if in := formatFutureTime(now, expires); in != "" {
+				what += ", expiring " + in
+			} else {
+				what += ", expired"
+			}
+		}
+		parts = append(parts, what)
+	case apiclientgen.PoolHostCredentialKeyProvider:
+		parts = append(parts, "the provider's own key, which discobox never expires, renews or revokes")
+	}
+	if len(parts) > 0 {
+		if scope := credential.Scope.Or(""); scope != "" {
+			parts[0] += ", reaching the " + scope
+		}
+	}
+	if credential.MachineToken.Or(false) {
+		parts = append(parts, "the driver's machine token, which reaches the org")
+	}
+	return strings.Join(parts, "; and ")
 }
 
 // formatPoolCPU renders a pool's CPU size, where zero means it is left to the

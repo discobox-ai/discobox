@@ -9,7 +9,9 @@ import (
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
 // hostAgent hosts a pool as a pool agent process on this machine, under
@@ -24,12 +26,16 @@ func (h *hostAgent) poolDir(poolID string) string {
 
 var errHostAgentNotStaged = errors.New("a local driver's host pool agent is not staged yet (#64)")
 
-func (h *hostAgent) ensurePoolHost(context.Context, *model.Pool, func(context.Context) error) error {
+func (h *hostAgent) ensurePoolHost(context.Context, *model.Pool, poolruntime.PoolMaker, func(context.Context) error) error {
 	return errHostAgentNotStaged
 }
 
-func (h *hostAgent) repairPoolHost(context.Context, *model.Pool, func(context.Context) error) error {
+func (h *hostAgent) repairPoolHost(context.Context, *model.Pool, poolruntime.PoolMaker, func(context.Context) error) error {
 	return errHostAgentNotStaged
+}
+
+func (h *hostAgent) acquireAgentClient(context.Context, *model.Pool) (*transport.HTTPClientLease, error) {
+	return nil, errHostAgentNotStaged
 }
 
 func (h *hostAgent) removePoolHost(_ context.Context, pool *model.Pool) error {

@@ -12544,6 +12544,98 @@ func (o OptPoolHealth) Or(d PoolHealth) PoolHealth {
 	return d
 }
 
+// NewOptPoolHostCredential returns new OptPoolHostCredential with value set to v.
+func NewOptPoolHostCredential(v PoolHostCredential) OptPoolHostCredential {
+	return OptPoolHostCredential{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolHostCredential is optional PoolHostCredential.
+type OptPoolHostCredential struct {
+	Value PoolHostCredential
+	Set   bool
+}
+
+// IsSet returns true if OptPoolHostCredential was set.
+func (o OptPoolHostCredential) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolHostCredential) Reset() {
+	var v PoolHostCredential
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolHostCredential) SetTo(v PoolHostCredential) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolHostCredential) Get() (v PoolHostCredential, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolHostCredential) Or(d PoolHostCredential) PoolHostCredential {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPoolHostCredentialKey returns new OptPoolHostCredentialKey with value set to v.
+func NewOptPoolHostCredentialKey(v PoolHostCredentialKey) OptPoolHostCredentialKey {
+	return OptPoolHostCredentialKey{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolHostCredentialKey is optional PoolHostCredentialKey.
+type OptPoolHostCredentialKey struct {
+	Value PoolHostCredentialKey
+	Set   bool
+}
+
+// IsSet returns true if OptPoolHostCredentialKey was set.
+func (o OptPoolHostCredentialKey) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolHostCredentialKey) Reset() {
+	var v PoolHostCredentialKey
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolHostCredentialKey) SetTo(v PoolHostCredentialKey) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolHostCredentialKey) Get() (v PoolHostCredentialKey, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolHostCredentialKey) Or(d PoolHostCredentialKey) PoolHostCredentialKey {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptPoolProvisionProgress returns new OptPoolProvisionProgress with value set to v.
 func NewOptPoolProvisionProgress(v PoolProvisionProgress) OptPoolProvisionProgress {
 	return OptPoolProvisionProgress{
@@ -15917,6 +16009,7 @@ type Pool struct {
 	Schedulable bool `json:"schedulable"`
 	// Whether the pool should be used only as fallback capacity.
 	Degraded          bool                     `json:"degraded"`
+	HostCredential    OptPoolHostCredential    `json:"hostCredential"`
 	ProvisionProgress OptPoolProvisionProgress `json:"provisionProgress"`
 	// When provisionProgress was observed.
 	ProvisionProgressAt OptDateTime `json:"provisionProgressAt"`
@@ -16049,6 +16142,11 @@ func (s *Pool) GetSchedulable() bool {
 // GetDegraded returns the value of Degraded.
 func (s *Pool) GetDegraded() bool {
 	return s.Degraded
+}
+
+// GetHostCredential returns the value of HostCredential.
+func (s *Pool) GetHostCredential() OptPoolHostCredential {
+	return s.HostCredential
 }
 
 // GetProvisionProgress returns the value of ProvisionProgress.
@@ -16234,6 +16332,11 @@ func (s *Pool) SetSchedulable(val bool) {
 // SetDegraded sets the value of Degraded.
 func (s *Pool) SetDegraded(val bool) {
 	s.Degraded = val
+}
+
+// SetHostCredential sets the value of HostCredential.
+func (s *Pool) SetHostCredential(val OptPoolHostCredential) {
+	s.HostCredential = val
 }
 
 // SetProvisionProgress sets the value of ProvisionProgress.
@@ -16642,6 +16745,122 @@ func (s *PoolHeldSandboxesBody) SetSandboxIds(val []string) {
 }
 
 func (*PoolHeldSandboxesBody) listPoolHeldSandboxesRes() {}
+
+// A credential of its provider's that the pool's host holds (ADR 26-10-23-551 §4), shown so a pool
+// whose host can reach the provider's account says how far. Never its secret.
+// Ref: #/components/schemas/PoolHostCredential
+type PoolHostCredential struct {
+	// The provisioning key the host holds: issued, a key the provider's driver issued for this pool,
+	// which expires and is renewed and revoked by discobox; or provider, the provider's own key,
+	// delivered because its configuration opts in, which discobox never expires, renews or revokes.
+	// Absent when it holds none.
+	Key OptPoolHostCredentialKey `json:"key"`
+	// What the key reaches, as the driver says (account, org, project). Absent where it cannot tell.
+	Scope OptString `json:"scope"`
+	// The driver's ID for an issued key.
+	KeyId OptString `json:"keyId"`
+	// When an issued key expires. discobox places a new one by half its life.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+	// The host also carries a credential its driver gives every machine that is not isolated (boxd's
+	// in-VM token, which acts on the org as the provider's user). discobox sets no expiry on it and
+	// never renews or revokes it.
+	MachineToken OptBool `json:"machineToken"`
+}
+
+// GetKey returns the value of Key.
+func (s *PoolHostCredential) GetKey() OptPoolHostCredentialKey {
+	return s.Key
+}
+
+// GetScope returns the value of Scope.
+func (s *PoolHostCredential) GetScope() OptString {
+	return s.Scope
+}
+
+// GetKeyId returns the value of KeyId.
+func (s *PoolHostCredential) GetKeyId() OptString {
+	return s.KeyId
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *PoolHostCredential) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetMachineToken returns the value of MachineToken.
+func (s *PoolHostCredential) GetMachineToken() OptBool {
+	return s.MachineToken
+}
+
+// SetKey sets the value of Key.
+func (s *PoolHostCredential) SetKey(val OptPoolHostCredentialKey) {
+	s.Key = val
+}
+
+// SetScope sets the value of Scope.
+func (s *PoolHostCredential) SetScope(val OptString) {
+	s.Scope = val
+}
+
+// SetKeyId sets the value of KeyId.
+func (s *PoolHostCredential) SetKeyId(val OptString) {
+	s.KeyId = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *PoolHostCredential) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetMachineToken sets the value of MachineToken.
+func (s *PoolHostCredential) SetMachineToken(val OptBool) {
+	s.MachineToken = val
+}
+
+// The provisioning key the host holds: issued, a key the provider's driver issued for this pool,
+// which expires and is renewed and revoked by discobox; or provider, the provider's own key,
+// delivered because its configuration opts in, which discobox never expires, renews or revokes.
+// Absent when it holds none.
+type PoolHostCredentialKey string
+
+const (
+	PoolHostCredentialKeyIssued   PoolHostCredentialKey = "issued"
+	PoolHostCredentialKeyProvider PoolHostCredentialKey = "provider"
+)
+
+// AllValues returns all PoolHostCredentialKey values.
+func (PoolHostCredentialKey) AllValues() []PoolHostCredentialKey {
+	return []PoolHostCredentialKey{
+		PoolHostCredentialKeyIssued,
+		PoolHostCredentialKeyProvider,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolHostCredentialKey) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolHostCredentialKeyIssued:
+		return []byte(s), nil
+	case PoolHostCredentialKeyProvider:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolHostCredentialKey) UnmarshalText(data []byte) error {
+	switch PoolHostCredentialKey(data) {
+	case PoolHostCredentialKeyIssued:
+		*s = PoolHostCredentialKeyIssued
+		return nil
+	case PoolHostCredentialKeyProvider:
+		*s = PoolHostCredentialKeyProvider
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // What the pool's own services hold, from the pool container's own cgroup. Excludes the sandboxes,
 // which are charged to their own cgroups outside this subtree.

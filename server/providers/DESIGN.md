@@ -280,18 +280,21 @@ service answers what a pool's box is placed with (`PoolBox`: the agent's layer
 for the box's platform and the pool's pins), and a release that moves either
 reconciles every pool.
 
-The Docker engine makes the box (`dockerworker/poolbox.go`) through
-`pool-agent/provisioner`, over the container as a `machine.Guest`: it places
-the agent, runs `discobox-provision identity` and enrolls the public key it
-prints (`PoolMaker.Enroll`), places the bootstrap and the agent's environment
+Both pool providers make the box with `poolruntime.ProvisionBox`
+(`poolruntime/box.go`), through `pool-agent/provisioner`, over the box as a
+`machine.Guest` — the Docker engine's container (`dockerworker/poolbox.go`),
+or the `vm` provider's machine: it places the agent, runs
+`discobox-provision identity` and enrolls the public key it prints
+(`PoolMaker.Enroll`), places the bootstrap and the agent's environment
 (`bundle.BootstrapFile`, `bundle.EnvironmentFile`), and runs
 `discobox-provision apply` as the pool, which fetches the pins from the asset
-API with the box's key and applies them. It records what it placed with the
-pool's runtime state (`RuntimeState.Box`); a pool whose pins moved since is
-provisioned again in its running box, and the agent alone moving provisions
-nothing (§5). The `vm` provider boots its remote pool machine with nothing on
-it until that machine is fenced (see [discovm](discovm/DESIGN.md) and its
-`REVIEW.md`).
+API with the box's key and applies every feature of them: a machine pool runs
+what a Docker pool runs (ADR 26-10-27-767). Each provider records what it
+placed with the pool's runtime state (`poolruntime.BoxRecord`); a pool whose
+pins moved since is provisioned again in its running box, and the agent alone
+moving provisions nothing (§5). What else a provider places for its agent
+— the `vm` provider's provisioning key — goes in first
+(`poolruntime.PlaceBoxFiles`); see [discovm](discovm/DESIGN.md).
 
 ## Development Image Convergence
 
@@ -677,7 +680,7 @@ opt-in (see [server](../DESIGN.md#listen-endpoints)):
 | `wslc` | `unix://` socket served by the in-guest relay |
 | `docker`, local daemon | `unix://` the control plane's own socket, bind-mounted into the pool container at the same path (`Config.RelaySocketDir`) |
 | `docker`, remote daemon | the configured HTTP listener, rewritten to the container-resolvable host-gateway address |
-| `digitalocean`, `execvm` | explicit `controlPlaneUrl`, required at config time |
+| `digitalocean`, `execvm`, `vm` on a remote driver (boxd) | explicit `controlPlaneUrl`, required at config time |
 
 The Docker provider prefers the socket whenever its daemon is local, which is
 what lets a default install open no TCP port at all. A remote daemon cannot see
@@ -708,7 +711,8 @@ it holds — its own disk, the sandboxes it hosts — belongs here; anything abo
 — image, region, socket, disk sizes — stays in the provider's own `Config`.
 
 Values reach the pool beside its bootstrap, as the agent's environment file
-(`bundle.EnvironmentFile`) the engine renders (`poolPolicyEnv`). An unset policy field
+(`bundle.EnvironmentFile`) the provider renders (`PoolPolicy.Env`, which the
+Docker engine's `poolPolicyEnv` adds its own to). An unset policy field
 must serialize away entirely: `Config` is hashed into `configRevision`, so
 materializing a default would recreate every pool already running at upgrade
 for a policy nobody asked for. `ProxyAuditRetention` follows that rule, and so

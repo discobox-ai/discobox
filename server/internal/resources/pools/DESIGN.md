@@ -266,6 +266,7 @@ Every pool status field has exactly one writer, and writers must not overlap:
 | `Resources`, `ResourcesReportedAt` | pool agent | `ReportPoolResources` |
 | `ProvisionProgress`, `ProvisionProgressAt` | provider driver | `ControlPlane.ReportPoolProvisionProgress` |
 | `State`, `ErrorMessage`, `ObservedGeneration`, `RuntimeState`, `ReconciledAt` | reconciler | `PoolReconciler`, and nothing else |
+| `HostCredential` | provider, through the reconciler | the runtime provider sets it beside `RuntimeState` when it places a credential of its own on the pool's host (the `vm` provider's provisioning key); `PoolReconciler` persists both |
 
 Health answers "can this host take work right now"; `State`/`ErrorMessage` are
 the reconciler's verdict on whether the runtime converged, and

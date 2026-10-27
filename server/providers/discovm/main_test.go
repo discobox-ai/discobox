@@ -12,6 +12,9 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
+// testControlPlaneURL is where test pool machines are told the server is.
+const testControlPlaneURL = "http://127.0.0.1:8080"
+
 // fakePoolMachine hosts a pool in a machine of disco-vm's fake driver, booted
 // from one of its bases, the way a remote driver's pool is hosted, so the
 // engine, its shim, and the guest operations run here as they do against a
@@ -20,15 +23,13 @@ import (
 // processes with no journal, so its log is a command that honors the tail it
 // is asked for.
 func fakePoolMachine(e *engine.Engine, base string) *poolMachine {
-	return &poolMachine{
-		engine: e,
-		base:   base,
-		shell:  []string{"/bin/sh"},
-		logs: func(opts sandbox.PoolLogOptions) []string {
-			return []string{"sh", "-c", fmt.Sprintf("seq 1 5 | tail -n %d", opts.Tail)}
-		},
-		logSource: "fake machine log",
+	h := newPoolMachine(e, Config{Driver: e.Driver.Name(), Base: base, ControlPlaneURL: testControlPlaneURL})
+	h.shell = []string{"/bin/sh"}
+	h.logs = func(opts sandbox.PoolLogOptions) []string {
+		return []string{"sh", "-c", fmt.Sprintf("seq 1 5 | tail -n %d", opts.Tail)}
 	}
+	h.logSource = "fake machine log"
+	return h
 }
 
 // TestMain lets this binary be the two processes the engine starts: a shim, as

@@ -22,3 +22,9 @@ const (
 	// is a new file and nothing more.
 	ProvisioningKeyFile = "/etc/discobox/pool-agent/provisioning-key.json"
 )
+
+// BootstrapUnits are the pool-agent feature's units that read the bootstrap
+// and the environment beside it, once, at start: a maker that places either
+// again in a running box restarts them, since apply restarts only what moved
+// bundles move.
+var BootstrapUnits = []string{"discobox-pool-agent.service", "discobox-proxy.service"}

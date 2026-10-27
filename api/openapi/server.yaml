@@ -3718,6 +3718,8 @@ components:
                 degraded:
                     description: Whether the pool should be used only as fallback capacity
                     type: boolean
+                hostCredential:
+                    $ref: '#/components/schemas/PoolHostCredential'
                 provisionProgress:
                     $ref: '#/components/schemas/PoolProvisionProgress'
                 provisionProgressAt:
@@ -6653,6 +6655,27 @@ components:
                 - waiting_for_pool_agent
                 - preloading_images
             type: string
+        PoolHostCredential:
+            description: A credential of its provider's that the pool's host holds (ADR 26-10-23-551 §4), shown so a pool whose host can reach the provider's account says how far. Never its secret.
+            properties:
+                key:
+                    description: "The provisioning key the host holds: issued, a key the provider's driver issued for this pool, which expires and is renewed and revoked by discobox; or provider, the provider's own key, delivered because its configuration opts in, which discobox never expires, renews or revokes. Absent when it holds none."
+                    enum: [issued, provider]
+                    type: string
+                scope:
+                    description: What the key reaches, as the driver says (account, org, project). Absent where it cannot tell.
+                    type: string
+                keyId:
+                    description: The driver's ID for an issued key.
+                    type: string
+                expiresAt:
+                    description: When an issued key expires. discobox places a new one by half its life.
+                    format: date-time
+                    type: string
+                machineToken:
+                    description: The host also carries a credential its driver gives every machine that is not isolated (boxd's in-VM token, which acts on the org as the provider's user). discobox sets no expiry on it and never renews or revokes it.
+                    type: boolean
+            type: object
         PoolProvisionProgress:
             additionalProperties: false
             description: |-

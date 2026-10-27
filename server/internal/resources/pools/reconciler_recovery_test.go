@@ -729,3 +729,56 @@ func (p *supersededAtBeginProvider) RepairPool(context.Context, sandbox.PoolMana
 func (stubPoolProvider) PullSource(context.Context, sandbox.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
 	panic("unexpected source pull")
 }
+
+// credentialPoolProvider converges a pool whose host it gives a credential of
+// its own, as the vm provider places a provisioning key.
+type credentialPoolProvider struct {
+	stubPoolProvider
+	credential *model.PoolHostCredential
+}
+
+func (p *credentialPoolProvider) ReconcilePool(_ context.Context, _ sandbox.PoolManager, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool, _ func(context.Context) error) error {
+	pool.RuntimeState = []byte(`{"instance":"machine-1"}`)
+	pool.HostCredential = p.credential
+	return nil
+}
+
+// What a provider writes of a pool's host — its runtime state and the
+// credential the host holds — is what a successful reconcile persists, and a
+// provider that takes the credential back clears it.
+func TestReconcilePersistsTheHostCredential(t *testing.T) {
+	ctx := context.Background()
+	appStore, _ := newPoolReconcilerTestStore(t)
+	expires := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	runtime := &credentialPoolProvider{credential: &model.PoolHostCredential{Key: model.PoolHostKeyIssued, Scope: "org", KeyID: "key-1", ExpiresAt: &expires, MachineToken: true}}
+	manager := sandbox.NewProviderManager()
+	manager.RegisterProvider("stub", runtime)
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: provider.ID}}
+	pool.DesiredState = model.DesiredStatePresent
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	got, err := appStore.GetPool(ctx, pool.ProjectID, pool.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HostCredential == nil || *got.HostCredential.ExpiresAt != expires || got.HostCredential.KeyID != "key-1" || !got.HostCredential.MachineToken {
+		t.Fatalf("host credential = %+v, want the provider's", got.HostCredential)
+	}
+
+	runtime.credential = nil
+	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if got, _ = appStore.GetPool(ctx, pool.ProjectID, pool.ID); got.HostCredential != nil {
+		t.Fatalf("host credential = %+v, want it cleared", got.HostCredential)
+	}
+}

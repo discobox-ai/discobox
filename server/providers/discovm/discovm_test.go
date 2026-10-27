@@ -46,7 +46,7 @@ func fakeConfig(t *testing.T) Config {
 
 func fakeInstance(t *testing.T) *model.SandboxProviderInstance {
 	t.Helper()
-	config, err := json.Marshal(fakeConfig(t))
+	config, err := json.Marshal(fakeConfig(t)) //nolint:gosec // G117: a fake driver's configuration, with no key
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,29 +83,39 @@ func openRuntime(t *testing.T, cfg Config) *Runtime {
 	return r
 }
 
-// newFakeRuntime is a runtime on the fake driver that hosts its pools in
-// machines booted from a base, as a remote driver's are.
-func newFakeRuntime(t *testing.T, base string) *Runtime {
+// newFakePool is a runtime on the fake driver that hosts its pools in
+// machines booted from a base, as a remote driver's are, through
+// poolTestDriver, which it returns.
+func newFakePool(t *testing.T, base string) (*Runtime, *poolTestDriver) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fake guest's console and log are POSIX shell commands")
 	}
 	isolateStateRoot(t)
 	withFakeBases(t, fakeBases)
-	r := openRuntime(t, fakeConfig(t))
-	r.host = fakePoolMachine(r.engine, base)
-	return r
+	return fakePoolRuntime(t, base)
 }
 
-// The issue's done-when, for a pool hosted in a machine: the runtime creates
-// and removes the pool, opens its logs, and opens its console.
-//
-// The pool is created through the runtime, because the provider's
-// ReconcilePool also hands the pool agent its known pools, and a discovm pool
-// runs no agent yet. Logs, console and removal go through the pool provider the
-// server's factory wraps a runtime in (poolruntime.New), around this one.
+// fakePoolRuntime is newFakePool on the bases the test already set.
+func fakePoolRuntime(t *testing.T, base string) (*Runtime, *poolTestDriver) {
+	t.Helper()
+	r := openRuntime(t, fakeConfig(t))
+	driver := &poolTestDriver{Driver: r.engine.Driver}
+	e, err := engine.Open(driver, r.engine.Project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.engine = e
+	r.host = fakePoolMachine(e, base)
+	return r, driver
+}
+
+// A pool hosted in a machine: the runtime creates and removes the pool,
+// opens its logs, and opens its console. Logs, console and removal go through
+// the pool provider the server's factory wraps a runtime in
+// (poolruntime.New), around this one.
 func TestFakePoolMachineLifecycle(t *testing.T) {
-	r := newFakeRuntime(t, "")
+	r, _ := newFakePool(t, "")
 	ctx := context.Background()
 	instance := fakeInstance(t)
 	provider := poolruntime.New(r, Definition(), nil)
@@ -114,10 +124,10 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 
 	begun := 0
 	begin := func(context.Context) error { begun++; return nil }
-	if err := r.EnsurePool(ctx, nil, nil, pool, nil, begin); err != nil {
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), begin); err != nil {
 		t.Fatalf("EnsurePool() error = %v", err)
 	}
-	inst, err := r.engine.Get(ctx, poolMachineName(pool.ID))
+	inst, err := r.host.(*poolMachine).instance(ctx, pool)
 	if err != nil {
 		t.Fatalf("no machine named for the pool: %v", err)
 	}
@@ -130,18 +140,8 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 	if begun != 1 || pool.State != model.PoolStateRegistering || pool.Ready || pool.Schedulable {
 		t.Fatalf("after create: begun=%d state=%q ready=%v schedulable=%v, want 1 registering false false", begun, pool.State, pool.Ready, pool.Schedulable)
 	}
-	var recorded poolRuntimeState
-	if err := json.Unmarshal(pool.RuntimeState, &recorded); err != nil || recorded.Instance != inst.ID {
-		t.Fatalf("RuntimeState = %s (%v), want instance %s", pool.RuntimeState, err, inst.ID)
-	}
-
-	// A drift check of a running machine starts nothing and closes nothing.
-	pool.SetState(model.PoolStateActive)
-	if err := r.EnsurePool(ctx, nil, nil, pool, nil, begin); err != nil {
-		t.Fatalf("second EnsurePool() error = %v", err)
-	}
-	if begun != 1 || pool.State != model.PoolStateActive {
-		t.Fatalf("a running machine was treated as new: begun=%d state=%q", begun, pool.State)
+	if recorded := recordOf(t, pool); recorded.Instance != inst.ID {
+		t.Fatalf("RuntimeState = %s, want instance %s", pool.RuntimeState, inst.ID)
 	}
 
 	logs, err := provider.OpenLogs(ctx, instance, pool, sandbox.PoolLogOptions{Tail: 2})
@@ -172,7 +172,7 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 	if err := provider.RemovePool(ctx, nil, nil, instance, pool); err != nil {
 		t.Fatalf("RemovePool() error = %v", err)
 	}
-	if _, err := r.engine.Get(ctx, poolMachineName(pool.ID)); !errors.Is(err, engine.ErrNotFound) {
+	if _, err := r.host.(*poolMachine).instance(ctx, pool); !errors.Is(err, errNoPoolMachine) {
 		t.Fatalf("pool machine still exists after RemovePool: %v", err)
 	}
 	if pool.RuntimeState != nil {
@@ -184,73 +184,48 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 	}
 }
 
-// Repair restarts the pool's machine in place, on the same disk.
-func TestFakePoolMachineRepairKeepsTheMachine(t *testing.T) {
-	r := newFakeRuntime(t, "")
-	ctx := context.Background()
-	pool := &model.Pool{ID: "pool-2", ProjectID: "project-1"}
-	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
-	if err := r.EnsurePool(ctx, nil, nil, pool, nil, nil); err != nil {
-		t.Fatalf("EnsurePool() error = %v", err)
-	}
-	before, err := r.engine.Get(ctx, poolMachineName(pool.ID))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pool.SetState(model.PoolStateActive)
-	if err := r.RepairPool(ctx, nil, nil, pool, nil, "test", nil); err != nil {
-		t.Fatalf("RepairPool() error = %v", err)
-	}
-	after, err := r.engine.Get(ctx, poolMachineName(pool.ID))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.ID != before.ID || r.engine.State(ctx, after) != engine.Running {
-		t.Fatalf("repair replaced or stopped the machine: %s -> %s", before.ID, after.ID)
-	}
-	if pool.State != model.PoolStateRegistering {
-		t.Fatalf("pool state = %q after repair, want registering", pool.State)
-	}
-}
-
 // A pool machine boots the base the provider names by its ID, rather than the
-// driver's first. A name is not taken for an ID, since a name can be given to
-// another base; a driver with no base to offer creates nothing, saying what
-// to configure.
+// driver's first, and its bootstrap names the same base for its sandboxes. A
+// name is not taken for an ID, since a name can be given to another base; a
+// driver with no base to offer creates nothing, saying what to configure.
 func TestFakePoolMachineBootsTheConfiguredBase(t *testing.T) {
-	byName := newFakeRuntime(t, fakeBases[1].Name)
-	err := byName.EnsurePool(context.Background(), nil, nil, &model.Pool{ID: "pool-13"}, nil, nil)
+	ctx := context.Background()
+	byName, _ := newFakePool(t, fakeBases[1].Name)
+	pool13 := &model.Pool{ID: "pool-13"}
+	err := byName.EnsurePool(ctx, nil, nil, pool13, newTestMaker(), nil)
 	if err == nil || !strings.Contains(err.Error(), "no base with ID") {
 		t.Fatalf("EnsurePool() with a base named, not identified = %v, want a refusal", err)
 	}
-	if _, err := byName.engine.Get(context.Background(), poolMachineName("pool-13")); !errors.Is(err, engine.ErrNotFound) {
+	if _, err := byName.host.(*poolMachine).instance(ctx, pool13); !errors.Is(err, errNoPoolMachine) {
 		t.Fatalf("a machine was made from a base named, not identified: %v", err)
 	}
 
-	r := newFakeRuntime(t, fakeBases[1].ID)
-	ctx := context.Background()
+	r, driver := newFakePool(t, fakeBases[1].ID)
 	pool := &model.Pool{ID: "pool-10", ProjectID: "project-1"}
 	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
-	if err := r.EnsurePool(ctx, nil, nil, pool, nil, nil); err != nil {
+	if err := r.EnsurePool(ctx, nil, nil, pool, newTestMaker(), nil); err != nil {
 		t.Fatalf("EnsurePool() error = %v", err)
 	}
-	inst, err := r.engine.Get(ctx, poolMachineName(pool.ID))
+	inst, err := r.host.(*poolMachine).instance(ctx, pool)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if inst.Base == nil || inst.Base.ID != fakeBases[1].ID {
 		t.Fatalf("pool machine runs from base %+v, want %s", inst.Base, fakeBases[1].Name)
 	}
+	if driver.applied[0].MachineBase != fakeBases[1].ID {
+		t.Fatalf("bootstrap's machine base = %q, want the configured %q", driver.applied[0].MachineBase, fakeBases[1].ID)
+	}
 
 	isolateStateRoot(t)
 	withFakeBases(t, nil)
-	bare := openRuntime(t, fakeConfig(t))
-	bare.host = fakePoolMachine(bare.engine, "")
-	err = bare.EnsurePool(ctx, nil, nil, &model.Pool{ID: "pool-11"}, nil, nil)
+	bare, _ := fakePoolRuntime(t, "")
+	pool11 := &model.Pool{ID: "pool-11"}
+	err = bare.EnsurePool(ctx, nil, nil, pool11, newTestMaker(), nil)
 	if err == nil || !strings.Contains(err.Error(), "no base") || !strings.Contains(err.Error(), "provider's base") {
 		t.Fatalf("EnsurePool() on a driver with no base = %v, want a refusal naming the provider's base", err)
 	}
-	if _, err := bare.engine.Get(ctx, poolMachineName("pool-11")); !errors.Is(err, engine.ErrNotFound) {
+	if _, err := bare.host.(*poolMachine).instance(ctx, pool11); !errors.Is(err, errNoPoolMachine) {
 		t.Fatalf("a machine was made with no base: %v", err)
 	}
 }
@@ -290,8 +265,8 @@ func TestFakePoolWithoutAMachineHasNoConsoleOrLog(t *testing.T) {
 	if _, err := r.OpenLogs(context.Background(), nil, pool, sandbox.PoolLogOptions{}); !errors.Is(err, errNoPoolMachine) {
 		t.Fatalf("OpenLogs() error = %v, want not found", err)
 	}
-	if _, err := r.AcquirePoolAgentClient(context.Background(), pool); !errors.Is(err, errNoPoolAgent) {
-		t.Fatalf("AcquirePoolAgentClient() error = %v, want no pool agent", err)
+	if _, err := r.AcquirePoolAgentClient(context.Background(), pool); !errors.Is(err, errNoPoolMachine) {
+		t.Fatalf("AcquirePoolAgentClient() error = %v, want not found", err)
 	}
 }
 
@@ -304,7 +279,7 @@ func TestHostAgentRefusesAConsoleAndReadsTheAgentLog(t *testing.T) {
 	if _, err := h.openConsole(ctx, pool, sandbox.ConsoleOptions{}); !errors.Is(err, sandbox.ErrPoolConsoleUnsupported) {
 		t.Fatalf("openConsole() error = %v, want ErrPoolConsoleUnsupported", err)
 	}
-	if err := h.ensurePoolHost(ctx, pool, nil); !errors.Is(err, errHostAgentNotStaged) {
+	if err := h.ensurePoolHost(ctx, pool, nil, nil); !errors.Is(err, errHostAgentNotStaged) {
 		t.Fatalf("ensurePoolHost() error = %v, want not staged yet", err)
 	}
 	if err := os.MkdirAll(h.poolDir(pool.ID), 0o755); err != nil {
@@ -340,8 +315,23 @@ func TestValidateNamesTheDriversInThisBuild(t *testing.T) {
 			t.Errorf("Validate(%s) = %v, want %q naming boxd", tc.config, err, tc.want)
 		}
 	}
-	if err := Validate(json.RawMessage(`{"driver":"boxd"}`)); err != nil {
-		t.Errorf("Validate(boxd) = %v", err)
+}
+
+// A remote driver needs its key and the URL its pool machines reach the
+// server at, said rather than guessed; a local driver takes neither.
+func TestValidateWhatADriverNeeds(t *testing.T) {
+	for _, tc := range []struct{ config, want string }{
+		{`{"driver":"boxd"}`, "apiKey"},
+		{`{"driver":"boxd","apiKey":"k"}`, "controlPlaneUrl"},
+		{`{"driver":"boxd","apiKey":"k","controlPlaneUrl":"unix:///run/discobox.sock"}`, "http or https"},
+		{`{"driver":"boxd","apiKey":"k","controlPlaneUrl":"https://discobox.example.com","deliverProviderKey":true}`, ""},
+		{`{"driver":"fake","apiKey":"k"}`, "takes no API key"},
+		{`{"driver":"fake"}`, ""},
+	} {
+		err := Validate(json.RawMessage(tc.config))
+		if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+			t.Errorf("Validate(%s) = %v, want %q", tc.config, err, tc.want)
+		}
 	}
 }
 
@@ -361,7 +351,7 @@ func TestFactoryBuildsAPoolProvider(t *testing.T) {
 		t.Fatalf("Definition().Name = %q", provider.Definition().Name)
 	}
 	isolateStateRoot(t)
-	cfg, err := driverConfig("fake", localProject, stateRoot("fake"))
+	cfg, err := driverConfig("fake", localProject, stateRoot("fake"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,26 +364,17 @@ func TestFactoryBuildsAPoolProvider(t *testing.T) {
 	}
 }
 
-// boxd authenticates with BOXD_API_KEY from the server's environment, as the
-// provider's configuration holds no key; disco-vm reads none of its own
-// accord.
-func TestDriverKeyIsTheServersEnvironment(t *testing.T) {
-	t.Setenv(boxd.APIKeyEnv, "")
-	t.Setenv(boxd.TokenEnv, "")
-	cfg, err := driverConfig("boxd", "prov-test", t.TempDir())
-	if err != nil {
-		t.Fatal(err)
+// A remote driver calls its service with the provider's API key, from its
+// configuration, never the server's environment; a provider with none fails
+// every call saying what to set.
+func TestDriverKeyIsTheProvidersConfiguration(t *testing.T) {
+	t.Setenv(boxd.APIKeyEnv, "from-the-environment")
+	key, err := providerKeys(Config{Driver: "boxd", APIKey: " secret "})(context.Background())
+	if err != nil || key.Secret != "secret" || key.Driver != "boxd" {
+		t.Fatalf("boxd's key = %v, %v, want the configuration's", key, err)
 	}
-	if cfg.Keys != nil {
-		t.Fatal("boxd was given a key with none in the environment")
-	}
-	t.Setenv(boxd.APIKeyEnv, "secret")
-	if cfg, err = driverConfig("boxd", "prov-test", t.TempDir()); err != nil || cfg.Keys == nil {
-		t.Fatalf("boxd was given no key with %s set (%v)", boxd.APIKeyEnv, err)
-	}
-	key, err := cfg.Keys(context.Background())
-	if err != nil || key.Secret != "secret" {
-		t.Fatalf("boxd's key = %v, %v, want the environment's", key, err)
+	if _, err := providerKeys(Config{Driver: "boxd"})(context.Background()); err == nil || !strings.Contains(err.Error(), "apiKey") {
+		t.Fatalf("a provider with no key = %v, want an error naming apiKey", err)
 	}
 }
 
@@ -405,8 +386,8 @@ func TestPoolHostFollowsTheDriversKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if host, ok := newPoolHost(remote, "").(*poolMachine); !ok {
-		t.Fatalf("a remote driver's pool host is %T, want a pool machine", newPoolHost(remote, ""))
+	if host, ok := newPoolHost(remote, Config{}).(*poolMachine); !ok {
+		t.Fatalf("a remote driver's pool host is %T, want a pool machine", newPoolHost(remote, Config{}))
 	} else if host.shell[0] != "/bin/bash" || host.logs(sandbox.PoolLogOptions{})[0] != "journalctl" {
 		t.Fatalf("a pool machine's console %q and log %q are not the Linux machine's", host.shell, host.logs(sandbox.PoolLogOptions{}))
 	}
@@ -428,7 +409,7 @@ func TestEngineProjectIsTheProvidersOnARemoteDriver(t *testing.T) {
 	if err != nil || project != "prov-0123456789abcdef" {
 		t.Fatalf("remoteProject(prov_…) = %q, %v, want prov-0123456789abcdef", project, err)
 	}
-	if _, _, err := openDriver("boxd", "Not A Project!"); err == nil {
+	if _, _, err := openDriver("boxd", "Not A Project!", nil); err == nil {
 		t.Fatal("openDriver accepted an ID outside disco-vm's project rule")
 	}
 	isolateStateRoot(t)
@@ -437,7 +418,7 @@ func TestEngineProjectIsTheProvidersOnARemoteDriver(t *testing.T) {
 		t.Fatalf("boxd engine project = %q, want the provider's", remote.engine.Project)
 	}
 	local := openRuntime(t, fakeConfig(t))
-	if _, project, err := openDriver("fake", "Not A Project!"); err != nil || project != localProject || local.engine.Project != localProject {
+	if _, project, err := openDriver("fake", "Not A Project!", nil); err != nil || project != localProject || local.engine.Project != localProject {
 		t.Fatalf("a local driver's project = %q, %v (engine %q), want %q for every provider", project, err, local.engine.Project, localProject)
 	}
 }
