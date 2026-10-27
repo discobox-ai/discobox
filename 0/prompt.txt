@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bhqkm5205</task-id>
+<tool-use-id>toolu_01KciMEJo62K9NADeUYjnFe1</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/98dcf5a1-157d-48e4-b153-caaa0fe8292b/tasks/bhqkm5205.output</output-file>
+<status>completed</status>
+<summary>Background command "gh run watch 36943682517 --repo discobox-ai/discobox --exit-status --interval 30 &gt; /dev/null 2&gt;&amp;1; echo exit=$?; gh run view 36943682517 --repo discobox-ai/discobox | head -30; gh run list --repo discobox-ai/discobox --commit eb2867055907fa71a06d4fbd8fa4199bf30168ec" completed (exit code 0)</summary>
+</task-notification>
