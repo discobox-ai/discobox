@@ -1,0 +1,1 @@
+can you trouble shoot why sbx_2b09q6x14hkmc5kp session can not seem to connect to claude. other sessions for the same harness/secret are working.
