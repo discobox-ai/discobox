@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/platform"
-	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -229,7 +228,7 @@ func TestAServerActionWaitsForAPoolHeartbeat(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		lease, _, err := service.AcquireSandboxHTTPClientForServer(ctx, "project-1", "sb-1", []string{poolagentauth.ScopeJudgeRun}, services.SandboxAction("judge"))
+		lease, _, err := service.AcquireSandboxHTTPClient(ctx, "project-1", "sb-1", nil, services.SandboxAction("start"))
 		if lease != nil {
 			lease.Release()
 		}
@@ -256,9 +255,8 @@ func TestAServerActionWaitsForAPoolHeartbeat(t *testing.T) {
 }
 
 // A caller's deadline ends the wait with the refusal that never cleared, the
-// same answer the stall budget and the host ceiling give. For the judge it is
-// all a discobox learns about why its credential did not go out, and "context
-// deadline exceeded" would tell it nothing.
+// same answer the stall budget and the host ceiling give: "context deadline
+// exceeded" would tell its caller nothing.
 func TestAnActionAnswersADeadlineWithTheRefusal(t *testing.T) {
 	service, provider := attachWaitFixture(t)
 	provider.ready.Store(true)
@@ -278,7 +276,7 @@ func TestAnActionAnswersADeadlineWithTheRefusal(t *testing.T) {
 
 	waitCtx, cancel := context.WithTimeout(ctx, 2*sandboxReachablePollInterval)
 	defer cancel()
-	_, _, err = service.AcquireSandboxHTTPClientForServer(waitCtx, "project-1", "sb-1", []string{poolagentauth.ScopeJudgeRun}, services.SandboxAction("judge"))
+	_, _, err = service.AcquireSandboxHTTPClient(waitCtx, "project-1", "sb-1", nil, services.SandboxAction("start"))
 	if !errors.Is(err, sandbox.ErrPoolNotReachable) {
 		t.Fatalf("await past its deadline = %v, want the pool's refusal (%v)", err, sandbox.ErrPoolNotReachable)
 	}
@@ -286,7 +284,7 @@ func TestAnActionAnswersADeadlineWithTheRefusal(t *testing.T) {
 	// A cancel is the caller leaving, and is told so.
 	cancelCtx, cancelNow := context.WithCancel(ctx)
 	cancelNow()
-	_, _, err = service.AcquireSandboxHTTPClientForServer(cancelCtx, "project-1", "sb-1", []string{poolagentauth.ScopeJudgeRun}, services.SandboxAction("judge"))
+	_, _, err = service.AcquireSandboxHTTPClient(cancelCtx, "project-1", "sb-1", nil, services.SandboxAction("start"))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("await after a cancel = %v, want %v", err, context.Canceled)
 	}

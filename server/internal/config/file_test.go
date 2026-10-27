@@ -402,3 +402,23 @@ func TestRetiredDockerPoolImageIsIgnoredWithAWarning(t *testing.T) {
 		t.Fatalf("Warnings = %q, want one for the retired key", cfg.Warnings)
 	}
 }
+
+// server.yaml's judging keys are retired (ADR 26-10-27-880): nothing judges
+// credential use, so for one release a file that sets them still loads, with
+// a warning for each, and none of them means anything.
+func TestRetiredJudgeKeysAreIgnoredWithAWarning(t *testing.T) {
+	clearConfigEnv(t)
+	writeConfigFile(t, "judgeCommands: true\njudgeCredentials: false\njudgeBackend: jev\njevApiKey: ts-key\njevModel: jev-1.13.0\njevUnsure: refuse\n")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(cfg.Warnings) != 6 {
+		t.Fatalf("Warnings = %q, want one for each retired key", cfg.Warnings)
+	}
+	for i, key := range []string{"judgeCommands", "judgeCredentials", "judgeBackend", "jevApiKey", "jevModel", "jevUnsure"} {
+		if !strings.Contains(cfg.Warnings[i], key+" is retired") {
+			t.Fatalf("Warnings = %q, want %s retired", cfg.Warnings, key)
+		}
+	}
+}

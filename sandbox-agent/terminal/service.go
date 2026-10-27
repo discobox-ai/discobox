@@ -19,7 +19,6 @@ import (
 	"strings"
 	"sync"
 	"text/template"
-	"time"
 
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
@@ -123,15 +122,8 @@ type Service struct {
 	primaryState   PrimaryStateStore
 	// homeDirectory is the manifest's explicit home, when it carries one. The
 	// run user's own home stands in for it everywhere else (resolveHomeDir).
-	homeDirectory string
-	harnessMode   string
-	// judging holds a slot per judging run under way, up to maxJudgingRuns
-	// (judge.go). It is made whatever the mode is; in every other mode nothing
-	// takes it.
-	judging chan struct{}
-	// judgingWait bounds how long an ask waits for a slot in judging
-	// (judgeQueueWait).
-	judgingWait    time.Duration
+	homeDirectory  string
+	harnessMode    string
 	bootPrompt     []string
 	skills         sandboxconfig.Skills
 	skillsSources  []sandboxconfig.SkillsSource
@@ -191,8 +183,6 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		primaryState:   cfg.PrimaryState,
 		homeDirectory:  strings.TrimSpace(cfg.ExecDefaults.HomeDirectory),
 		harnessMode:    strings.TrimSpace(cfg.HarnessMode),
-		judging:        make(chan struct{}, maxJudgingRuns),
-		judgingWait:    judgeQueueWait,
 		bootPrompt:     append([]string(nil), cfg.Prompt...),
 		skills:         cfg.Skills,
 		skillsSources:  append([]sandboxconfig.SkillsSource(nil), cfg.SkillsSources...),
@@ -268,13 +258,6 @@ func (s *Service) Logs(ctx context.Context, id string) ([]execs.LogEntry, error)
 // record exists and the mapper projects it as the "installing" phase. The unit
 // is only launched later by Start, so the record sits idle during install.
 func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, error) {
-	// A judge has no terminal, and starting the harness in one would run the
-	// project's agent — with the judge's own credential — in the sandbox whose
-	// whole purpose is to have no work in it (ADR 26-09-22-838 §1). Nothing in the
-	// agent asks for one, and this is what keeps an attach from asking.
-	if s.harnessMode == config.HarnessModeJudge {
-		return execs.Exec{}, errors.New("a judge runs no terminal")
-	}
 	if err := s.awaitProvisioned(ctx); err != nil {
 		return execs.Exec{}, err
 	}
@@ -1213,9 +1196,8 @@ func writeHarnessFile(path, content string, createOnly bool, uid, gid *int64) er
 		}
 	}
 	// Written beside the file and renamed over it, so whatever reads it sees
-	// the old file or the new one and never half of one. A harness reads these
-	// as it starts, and a judge starts one harness run per ask, in parallel —
-	// each of which installs these files again first.
+	// the old file or the new one and never half of one: a harness reads these
+	// as it starts.
 	temp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
 	if err != nil {
 		return err

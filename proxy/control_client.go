@@ -81,9 +81,6 @@ func (c *ControlClient) ListHTTP(ctx context.Context, sandboxID string, query Au
 	if query.Host != "" {
 		params.Set("host", query.Host)
 	}
-	if query.UseID != "" {
-		params.Set("use_id", query.UseID)
-	}
 	if !query.Since.IsZero() {
 		params.Set("since", query.Since.UTC().Format(time.RFC3339Nano))
 	}

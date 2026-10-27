@@ -36,23 +36,16 @@ type stubResolver struct {
 	noGatewayHeaders
 	value string
 	host  string
-	useID string
 	// secretID is the secret every value is, as the control plane names it.
 	secretID string
 	// reports is where this resolver is told what the upstream made of its
 	// value, for the tests that assert on it. Nil discards.
 	reports *reportLog
 	// deny, when set, is the reason every request is refused with; empty
-	// allows them all. judged, when set, collects what the authorizer was
+	// allows them all. asked, when set, collects what the authorizer was
 	// shown.
-	deny   string
-	judged *[]secrets.AuthorizeRequest
-	// refuse, when set, is how a refusal says no in the request's own
-	// protocol.
-	refuse func(context.Context, string) (secrets.Refusal, bool)
-	// captured, when set, is where the authorizer puts the body it read, the
-	// way a judge that asked to see it does.
-	captured *[]byte
+	deny  string
+	asked *[]secrets.AuthorizeRequest
 	// resolved, when set, counts the sentinels this resolver was asked to
 	// resolve. A refused request must leave it at zero.
 	resolved *atomic.Int64
@@ -84,25 +77,11 @@ func (stubResolver) Gate(context.Context, secrets.GateRequest) (secrets.GateAdmi
 	return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "no gate here"}
 }
 
-func (r stubResolver) Authorize(ctx context.Context, req secrets.AuthorizeRequest) (secrets.Verdict, error) {
-	if r.judged != nil {
-		*r.judged = append(*r.judged, req)
+func (r stubResolver) Authorize(_ context.Context, req secrets.AuthorizeRequest) (secrets.Verdict, error) {
+	if r.asked != nil {
+		*r.asked = append(*r.asked, req)
 	}
-	if r.captured != nil {
-		data, _, err := req.Body.Capture(ctx)
-		if err != nil {
-			return secrets.Verdict{}, err
-		}
-		*r.captured = append([]byte(nil), data...)
-	}
-	verdict := secrets.Verdict{Allow: r.deny == "", Reason: r.deny}
-	if !verdict.Allow {
-		verdict.Refuse = r.refuse
-	}
-	if r.useID != "" {
-		verdict.UseIDs = []string{r.useID}
-	}
-	return verdict, nil
+	return secrets.Verdict{Allow: r.deny == "", Reason: r.deny}, nil
 }
 
 func (r stubResolver) Resolve(_ context.Context, req secrets.ResolveRequest) (secrets.ResolveResult, error) {
@@ -112,18 +91,12 @@ func (r stubResolver) Resolve(_ context.Context, req secrets.ResolveRequest) (se
 	if r.host != "" && req.Host != r.host {
 		return secrets.ResolveResult{}, secrets.ErrDenied
 	}
-	return secrets.ResolveResult{Value: r.value, UseID: r.useID, SecretID: r.secretID, ExpiresAt: time.Now().Add(time.Hour)}, nil
+	return secrets.ResolveResult{Value: r.value, SecretID: r.secretID, ExpiresAt: time.Now().Add(time.Hour)}, nil
 }
 
-// A swapped request's row names the secret it spent whatever stood in for it:
-// an ordinary injected sentinel, which has no approved use (ADR 26-10-01-240),
-// and one taken under a use, which names the use as well (ADR 0130 §3).
+// A swapped request's row names the secret it spent (ADR 26-10-01-240), and
+// never the credential.
 func TestHTTPProxySecretSentinelSwapAndAudit(t *testing.T) {
-	t.Run("ordinary sentinel", func(t *testing.T) { testSentinelSwapAndAudit(t, "") })
-	t.Run("approved use", func(t *testing.T) { testSentinelSwapAndAudit(t, "use_abc") })
-}
-
-func testSentinelSwapAndAudit(t *testing.T, useID string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -169,7 +142,7 @@ func testSentinelSwapAndAudit(t *testing.T, useID string) {
 				Sentinels: []string{sentinel},
 			}},
 		},
-	}, prepared.Bundle, stubResolver{value: realValue, host: originHost, useID: useID, secretID: "sec_abc"})
+	}, prepared.Bundle, stubResolver{value: realValue, host: originHost, secretID: "sec_abc"})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -233,119 +206,27 @@ func testSentinelSwapAndAudit(t *testing.T, useID string) {
 	if values := headers["Authorization"]; len(values) != 1 || values[0] != "[REDACTED]" {
 		t.Fatalf("Authorization audit values = %#v, want [REDACTED]", values)
 	}
-	// The join to the control plane's verdict trail (ADR 0130 §3): the row
-	// names the approved use the request spent, and never the sentinel.
-	if exchange.SwappedUseIDs != useID {
-		t.Fatalf("SwappedUseIDs = %q, want %q", exchange.SwappedUseIDs, useID)
-	}
-	if strings.Contains(exchange.SwappedUseIDs, sentinel) {
-		t.Fatalf("audit recorded a sentinel in the use ID column: %s", exchange.SwappedUseIDs)
-	}
-	// And the secret it spent, whether or not there was a use to name.
+	// And the secret it spent, never the sentinel.
 	if exchange.SwappedSecretIDs != "sec_abc" {
 		t.Fatalf("SwappedSecretIDs = %q, want sec_abc", exchange.SwappedSecretIDs)
 	}
 }
 
-// A judge that reads the body changes nothing about what is sent: the upstream
-// receives every byte the sandbox sent, in order, including the part past what
-// the judge could be shown (ADR 26-09-22-838 §6).
-func TestHTTPProxySendsTheBodyTheJudgeRead(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	const sentinel = "sk-ant-oat01-SENTINELVALUE00000000000000000000"
-	const realValue = "sk-ant-oat01-REALSECRETVALUE1234567890abcdefgh"
-	sent := bytes.Repeat([]byte(`{"title":"a pull request","body":"words"},`), 2*secrets.MaxCapturedBody/40)
-
-	var arrived []byte
-	var sawAuthorization string
-	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
-		sawAuthorization = r.Header.Get("Authorization")
-		arrived, _ = io.ReadAll(r.Body)
-		_, _ = io.WriteString(w, "ok")
-	})
-	defer origin.Close()
-	originURL, err := url.Parse(origin.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dir := t.TempDir()
-	prepared, err := PrepareCertificates(PrepareOptions{
-		Dir:         filepath.Join(dir, "certs"),
-		ProxyURL:    "https://127.0.0.1:0",
-		ServerHosts: []string{"127.0.0.1", "localhost"},
-		ClientIDs:   []string{"sandbox-1"},
-	})
-	if err != nil {
-		t.Fatalf("PrepareCertificates() error = %v", err)
-	}
-	var captured []byte
-	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   filepath.Join(dir, "audit.db"),
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
-		Secrets: SecretsConfig{Clients: []SecretClient{{
-			ClientID:  "sandbox-1",
-			Sentinels: []string{sentinel},
-		}}},
-	}, prepared.Bundle, stubResolver{value: realValue, host: originURL.Hostname(), useID: "use_abc", captured: &captured})
-	if err != nil {
-		t.Fatalf("NewServer() error = %v", err)
-	}
-	errCh := make(chan error, 1)
-	go func() { errCh <- server.ListenAndServe() }()
-	t.Cleanup(func() {
-		if err := server.Close(); err != nil {
-			t.Errorf("Close() error = %v", err)
-		}
-		<-errCh
-	})
-	addr := waitForAddr(t, server)
-
-	client := mtlsHTTPClient(t, addr.String(), prepared.Clients["sandbox-1"])
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin.URL+"/repos/org/repo/pulls", bytes.NewReader(sent))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Authorization", "Bearer "+sentinel)
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("client.Do() error = %v", err)
-	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want the upstream's 200", resp.StatusCode)
-	}
-	if !bytes.Equal(captured, sent[:secrets.MaxCapturedBody]) {
-		t.Fatalf("the judge read %d bytes, want the first %d of the body", len(captured), secrets.MaxCapturedBody)
-	}
-	if !bytes.Equal(arrived, sent) {
-		t.Fatalf("the upstream received %d bytes, want the %d the sandbox sent", len(arrived), len(sent))
-	}
-	if sawAuthorization != "Bearer "+realValue {
-		t.Fatalf("upstream Authorization = %q, want the credential swapped in", sawAuthorization)
-	}
-}
-
-// A request the judge does not allow is answered by the proxy and never sent,
-// with the credential it would have carried going nowhere: not upstream, not
-// into the judge's view of the request, and not into the audit row that
-// records the refusal.
+// A request its credential's routes do not allow is answered by the proxy and
+// never sent, with the credential it would have carried going nowhere: not
+// upstream, not into what the authorizer is shown, and not into the audit row
+// that records the refusal.
 //
-// It is also never fetched. Authorization runs before resolution (ADR 26-09-22-838
-// §4), so a refusal is a credential that stayed where it was rather than one
-// that was retrieved and then withheld.
-func TestHTTPProxyJudgeRefusesASwappedRequest(t *testing.T) {
+// It is also never fetched. Authorization runs before resolution, so a
+// refusal is a credential that stayed where it was rather than one that was
+// retrieved and then withheld.
+func TestHTTPProxyRouteRefusesASwappedRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	const sentinel = "sk-ant-oat01-SENTINELVALUE00000000000000000000"
 	const realValue = "sk-ant-oat01-REALSECRETVALUE1234567890abcdefgh"
-	const reason = "deleting a repository is not what use_abc was approved for"
+	const reason = "this credential has no route to example.com/repos"
 
 	reached := false
 	origin := newOrigin(func(w http.ResponseWriter, _ *http.Request) {
@@ -368,7 +249,7 @@ func TestHTTPProxyJudgeRefusesASwappedRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareCertificates() error = %v", err)
 	}
-	var judged []secrets.AuthorizeRequest
+	var asked []secrets.AuthorizeRequest
 	var resolved atomic.Int64
 	dbPath := filepath.Join(dir, "audit.db")
 	server, err := NewServer(ctx, Config{
@@ -380,7 +261,7 @@ func TestHTTPProxyJudgeRefusesASwappedRequest(t *testing.T) {
 			ClientID:  "sandbox-1",
 			Sentinels: []string{sentinel},
 		}}},
-	}, prepared.Bundle, stubResolver{value: realValue, host: originURL.Hostname(), useID: "use_abc", deny: reason, judged: &judged, resolved: &resolved})
+	}, prepared.Bundle, stubResolver{value: realValue, host: originURL.Hostname(), deny: reason, asked: &asked, resolved: &resolved})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -418,22 +299,22 @@ func TestHTTPProxyJudgeRefusesASwappedRequest(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden || !strings.Contains(string(body), reason) {
-		t.Fatalf("response = %d %q, want 403 carrying the judge's reason", resp.StatusCode, body)
+		t.Fatalf("response = %d %q, want 403 carrying the refusal's reason", resp.StatusCode, body)
 	}
 	if reached {
-		t.Fatal("a request the judge refused reached the upstream")
+		t.Fatal("a refused request reached the upstream")
 	}
 
-	if len(judged) != 1 {
-		t.Fatalf("judged %d requests, want 1", len(judged))
+	if len(asked) != 1 {
+		t.Fatalf("asked about %d requests, want 1", len(asked))
 	}
-	shown := judged[0]
+	shown := asked[0]
 	if shown.ClientID != "sandbox-1" || shown.Method != http.MethodDelete ||
 		len(shown.Sentinels) != 1 || shown.Sentinels[0] != sentinel {
-		t.Fatalf("judge was shown %+v, want the sandbox, the method, and the sentinel it carried", shown)
+		t.Fatalf("the authorizer was shown %+v, want the sandbox, the method, and the sentinel it carried", shown)
 	}
 	if got := shown.Header.Get("Authorization"); got != "Bearer "+sentinel {
-		t.Fatalf("judge saw Authorization %q, want the sentinel and never the credential", got)
+		t.Fatalf("the authorizer saw Authorization %q, want the sentinel and never the credential", got)
 	}
 	if got := resolved.Load(); got != 0 {
 		t.Fatalf("a refused request resolved %d credentials, want none fetched at all", got)
@@ -460,109 +341,13 @@ func TestHTTPProxyJudgeRefusesASwappedRequest(t *testing.T) {
 		}
 		if exchange.Blocked {
 			blocked++
-			if exchange.BlockedReason != "judge: "+reason || exchange.Status != http.StatusForbidden {
-				t.Fatalf("blocked row = %+v, want the judge's reason and a 403", exchange)
-			}
-			// A refusal names the use it was about, though this assertion
-			// alone does not say where the name came from: the row carried the
-			// use before this change too, off the swap rather than off the
-			// verdict. What proves the new path is resolved.Load() above.
-			if exchange.SwappedUseIDs != "use_abc" {
-				t.Fatalf("blocked row named use %q, want the use the request was refused under", exchange.SwappedUseIDs)
+			if exchange.BlockedReason != "route: "+reason || exchange.Status != http.StatusForbidden {
+				t.Fatalf("blocked row = %+v, want the route's reason and a 403", exchange)
 			}
 		}
 	}
 	if len(exchanges) != 1 || blocked != 1 {
 		t.Fatalf("audit rows = %d (%d blocked), want the refusal recorded once", len(exchanges), blocked)
-	}
-}
-
-// A refusal the request's own protocol has a way to say is said that way, so a
-// client that never shows a 403's body shows why (ADR 26-09-26-240 §5). It is
-// the same refusal, recorded as blocked, with the status that was sent.
-func TestHTTPProxyAnswersARefusalInTheRequestsOwnProtocol(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	const sentinel = "sk-ant-oat01-SENTINELVALUE00000000000000000000"
-	const reason = "the use is for another branch"
-	origin := newOrigin(func(http.ResponseWriter, *http.Request) {
-		t.Error("a refused request reached the upstream")
-	})
-	defer origin.Close()
-	originURL, err := url.Parse(origin.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	prepared, err := PrepareCertificates(PrepareOptions{
-		Dir:         filepath.Join(dir, "certs"),
-		ProxyURL:    "https://127.0.0.1:0",
-		ServerHosts: []string{"127.0.0.1", "localhost"},
-		ClientIDs:   []string{"sandbox-1"},
-	})
-	if err != nil {
-		t.Fatalf("PrepareCertificates() error = %v", err)
-	}
-	var said string
-	dbPath := filepath.Join(dir, "audit.db")
-	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   dbPath,
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
-		Secrets: SecretsConfig{Clients: []SecretClient{{
-			ClientID:  "sandbox-1",
-			Sentinels: []string{sentinel},
-		}}},
-	}, prepared.Bundle, stubResolver{value: "real", host: originURL.Hostname(), useID: "use_abc", deny: reason,
-		refuse: func(_ context.Context, sentence string) (secrets.Refusal, bool) {
-			said = sentence
-			return secrets.Refusal{Status: http.StatusOK, ContentType: "application/x-git-receive-pack-result", Body: []byte("0000")}, true
-		}})
-	if err != nil {
-		t.Fatalf("NewServer() error = %v", err)
-	}
-	errCh := make(chan error, 1)
-	go func() { errCh <- server.ListenAndServe() }()
-	addr := waitForAddr(t, server)
-
-	client := mtlsHTTPClient(t, addr.String(), prepared.Clients["sandbox-1"])
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin.URL+"/org/repo.git/git-receive-pack", strings.NewReader("push"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Authorization", "Bearer "+sentinel)
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("client.Do() error = %v", err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "application/x-git-receive-pack-result" || string(body) != "0000" {
-		t.Fatalf("response = %d %q %q, want the protocol's own refusal", resp.StatusCode, resp.Header.Get("Content-Type"), body)
-	}
-	if said != "blocked by proxy: "+reason {
-		t.Fatalf("the refusal was written from %q, want the proxy's own sentence", said)
-	}
-
-	if err := server.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-	if err := <-errCh; err != nil {
-		t.Fatalf("ListenAndServe() error = %v", err)
-	}
-	pools, err := gormdb.Open(gormdb.Config{DSN: dbPath})
-	if err != nil {
-		t.Fatalf("open audit db: %v", err)
-	}
-	t.Cleanup(func() { _ = pools.Close() })
-	var exchanges []audit.HTTPExchange
-	if err := pools.Read.Where("client_id = ?", "sandbox-1").Find(&exchanges).Error; err != nil {
-		t.Fatalf("read audit exchanges: %v", err)
-	}
-	if len(exchanges) != 1 || !exchanges[0].Blocked || exchanges[0].BlockedReason != "judge: "+reason || exchanges[0].Status != http.StatusOK {
-		t.Fatalf("audit rows = %+v, want one blocked row with the judge's reason and the status sent", exchanges)
 	}
 }
 

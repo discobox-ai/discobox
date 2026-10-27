@@ -116,8 +116,8 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 	if err := json.Unmarshal([]byte(image.Harness.Files[0].Content), &settings); err != nil {
 		t.Fatalf("baseline settings are not JSON: %v", err)
 	}
-	if settings["judgeModel"] != "" || settings["webSearch"] != nil {
-		t.Fatalf("baseline settings = %v, want the default judge and opencode's own web search default", settings)
+	if len(settings) != 2 || settings["webSearch"] != nil {
+		t.Fatalf("baseline settings = %v, want the about line and opencode's own web search default", settings)
 	}
 	// The manifest names no command: the launcher is installed under the
 	// conventional name and the runtime types that (ADR 0086 §3).
@@ -150,7 +150,6 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 	}
 	for source, want := range map[string]string{
 		"launch.sh":      "/usr/local/bin/" + harness.RunCommand,
-		"prompt.sh":      "/usr/local/bin/discobox-prompt",
 		"configure.sh":   image.Harness.Config.Command[0],
 		"credentials.sh": credentialsHelper,
 		"model.sh":       modelHelper,
@@ -172,8 +171,8 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 // launcher and the configure script run it from.
 const credentialsHelper = "/usr/local/libexec/discobox/opencode-credentials" //nolint:gosec // A path, not a credential.
 
-// modelHelper is where the image installs model.sh, which the judge and the
-// configure script ask which model a session starts on.
+// modelHelper is where the image installs model.sh, which the configure
+// script asks which model a session starts on.
 const modelHelper = "/usr/local/libexec/discobox/opencode-model"
 
 // TestLaunchJoinsThePromptWords covers the wrapper's half of the harness-run
@@ -793,13 +792,14 @@ func TestConfigureKeepsProvidersWhenTheDefaultModelFails(t *testing.T) {
 }
 
 // TestConfigureAsksAboutWebSearch covers the web search question: the answer
-// is recorded in Discobox's settings for the harness, and a judge model someone
-// set by editing that file survives the reconfigure.
+// is recorded in Discobox's settings for the harness, a setting someone added
+// by editing that file survives the reconfigure, and the judge model a
+// harness configured before the judge was removed carried is dropped.
 func TestConfigureAsksAboutWebSearch(t *testing.T) {
 	env := newConfigureEnv(t)
 	env.connect = `[{"id": "cred_a", "integrationID": "zai", "label": "API key", "active": true, "value": {"type": "key", "key": "real-zai-key"}}]`
 	env.homeFiles = map[string]string{
-		settingsPath: `{"judgeModel": "anthropic/claude-opus-5", "webSearch": true}`,
+		settingsPath: `{"judgeModel": "anthropic/claude-opus-5", "edited": "kept", "webSearch": true}`,
 	}
 	for _, tc := range []struct {
 		answer string
@@ -815,15 +815,13 @@ func TestConfigureAsksAboutWebSearch(t *testing.T) {
 		if !ok {
 			t.Fatalf("answer %q: configure returned no settings file", tc.answer)
 		}
-		var settings struct {
-			JudgeModel string `json:"judgeModel"`
-			WebSearch  bool   `json:"webSearch"`
-		}
+		var settings map[string]any
 		if err := json.Unmarshal([]byte(file["content"].(string)), &settings); err != nil {
 			t.Fatal(err)
 		}
-		if settings.WebSearch != tc.want || settings.JudgeModel != "anthropic/claude-opus-5" {
-			t.Fatalf("answer %q: settings = %+v, want webSearch %v and the edited judge kept", tc.answer, settings, tc.want)
+		_, judge := settings["judgeModel"]
+		if settings["webSearch"] != tc.want || settings["edited"] != "kept" || judge {
+			t.Fatalf("answer %q: settings = %v, want webSearch %v, the edit kept and no judge model", tc.answer, settings, tc.want)
 		}
 	}
 }
@@ -874,144 +872,6 @@ func TestLaunchLoadsTheConfiguredCredentials(t *testing.T) {
 	got := runWrapperIn(t, "launch.sh", map[string]string{credentialsPath: string(delivered)}, stub, nil)
 	if got != `started holding ["cred_discobox_zai"]` {
 		t.Fatalf("launch: %s", got)
-	}
-}
-
-// TestPromptJudgesWithTheConfiguredModel covers discobox-prompt's judge role:
-// the model the settings file names, else the last /models pick — read before
-// the judge is isolated from the state it lives in — else opencode's own pick,
-// when opencode's configuration names no model (see the next test).
-func TestPromptJudgesWithTheConfiguredModel(t *testing.T) {
-	args := `for arg in "$@"; do printf '[%s]' "$arg"; done; printf '\n'`
-	state := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(state, "opencode"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(state, "opencode", "model.json"),
-		[]byte(`{"recent":[{"providerID":"openai","modelID":"gpt-5.6-terra"}]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := runWrapper(t, "prompt.sh", "", args, nil, "--model", "judge", "--no-tools", "--prompt", "is it safe"); got != "[run][--standalone][--title=discobox-prompt][is it safe]" {
-		t.Errorf("no setting and no /models pick: opencode argv %s, want opencode's own pick", got)
-	}
-	for _, tc := range []struct {
-		setting string
-		want    string
-	}{
-		{`{"judgeModel": "anthropic/claude-opus-5"}`, "[run][--standalone][--model=anthropic/claude-opus-5][--title=discobox-prompt][is it safe]"},
-		{`{"judgeModel": ""}`, "[run][--standalone][--model=openai/gpt-5.6-terra][--title=discobox-prompt][is it safe]"},
-		{"", "[run][--standalone][--model=openai/gpt-5.6-terra][--title=discobox-prompt][is it safe]"},
-	} {
-		got := runWrapper(t, "prompt.sh", tc.setting, args, map[string]string{"XDG_STATE_HOME": state}, "--model", "judge", "--no-tools", "--prompt", "is it safe")
-		if got != tc.want {
-			t.Errorf("setting %q: opencode argv %s, want %s", tc.setting, got, tc.want)
-		}
-	}
-}
-
-// TestPromptJudgesWithOpencodesDefaultModel covers the judge following the
-// model opencode itself starts with when Discobox's settings name none: the
-// `model` setting in its configuration wins over the last /models pick, the
-// way it does for opencode, and a .jsonc file with comments is read too.
-func TestPromptJudgesWithOpencodesDefaultModel(t *testing.T) {
-	args := `for arg in "$@"; do printf '[%s]' "$arg"; done; printf '\n'`
-	state := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(state, "opencode"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(state, "opencode", "model.json"),
-		[]byte(`{"recent":[{"providerID":"openai","modelID":"gpt-5.6-luna"}]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range []struct {
-		name, file, content, setting, want string
-	}{
-		{"opencode.json's model", "opencode.json", `{"model": "zai/glm-5.3"}`, "",
-			"[run][--standalone][--model=zai/glm-5.3][--title=discobox-prompt][is it safe]"},
-		{"opencode.jsonc, with comments", "opencode.jsonc", "// my default\n{\n  // the model\n  \"model\": \"zai/glm-5.3\"\n}", "",
-			"[run][--standalone][--model=zai/glm-5.3][--title=discobox-prompt][is it safe]"},
-		{"opencode.jsonc, as opencode writes it", "opencode.jsonc",
-			"{\n  \"$schema\": \"https://opencode.ai/config.json\", // the schema\n  /* the default\n     model */\n  \"model\": \"zai/glm-5.3\",\n  \"provider\": {\"zai\": {\"options\": {\"baseURL\": \"https://api.z.ai/v1\",},},},\n}", "",
-			"[run][--standalone][--model=zai/glm-5.3][--title=discobox-prompt][is it safe]"},
-		{"a trailing comma with a comment before its bracket", "opencode.jsonc",
-			"{\n  \"model\": \"zai/glm-5.3\", // the default\n  \"small_model\": \"zai/glm-5.3-air\", /* the small one */\n}", "",
-			"[run][--standalone][--model=zai/glm-5.3][--title=discobox-prompt][is it safe]"},
-		{"a trailing comma in an array, before a comment", "opencode.jsonc",
-			"{\n  \"plugin\": [\"a\", // first\n  ],\n  \"model\": \"zai/glm-5.3\"\n}", "",
-			"[run][--standalone][--model=zai/glm-5.3][--title=discobox-prompt][is it safe]"},
-		{"an escaped quote and a slash pair inside a string", "opencode.jsonc",
-			"{\"instructions\": [\"say \\\"hi\\\" // not a comment\"], \"model\": \"zai/glm-5.3\",}", "",
-			"[run][--standalone][--model=zai/glm-5.3][--title=discobox-prompt][is it safe]"},
-		{"a model that reads like a flag stays the model's value", "opencode.json", `{"model": "--agent=build"}`, "",
-			"[run][--standalone][--model=--agent=build][--title=discobox-prompt][is it safe]"},
-		{"config.json's model", "config.json", `{"model": "zai/glm-5.3"}`, "",
-			"[run][--standalone][--model=zai/glm-5.3][--title=discobox-prompt][is it safe]"},
-		{"a configuration naming no model falls to /models", "opencode.json", `{"theme": "tokyonight"}`, "",
-			"[run][--standalone][--model=openai/gpt-5.6-luna][--title=discobox-prompt][is it safe]"},
-		{"judgeModel still wins", "opencode.json", `{"model": "zai/glm-5.3"}`, `{"judgeModel": "anthropic/claude-haiku-4-5"}`,
-			"[run][--standalone][--model=anthropic/claude-haiku-4-5][--title=discobox-prompt][is it safe]"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			config := t.TempDir()
-			if err := os.MkdirAll(filepath.Join(config, "opencode"), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(config, "opencode", tc.file), []byte(tc.content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			got := runWrapper(t, "prompt.sh", tc.setting, args,
-				map[string]string{"XDG_STATE_HOME": state, "XDG_CONFIG_HOME": config}, "--model", "judge", "--no-tools", "--prompt", "is it safe")
-			if got != tc.want {
-				t.Errorf("opencode argv %s, want %s", got, tc.want)
-			}
-		})
-	}
-}
-
-// TestPromptIsolatesTheToolFreeJudge covers what --no-tools shuts out: the
-// caller is the agent being judged, so no configuration, instruction, plugin
-// or OPENCODE_* variable it could have set may reach the judge. Its only
-// credentials are the key and OAuth ones the configuration delivered — a
-// judge discobox never launches the harness, so there is no store to read —
-// and nothing the agent connected by hand. And `opencode run` reads an open
-// stdin as more of the message, so it gets none.
-func TestPromptIsolatesTheToolFreeJudge(t *testing.T) {
-	stub := `printf 'cwd=%s home=%s config=%s state=%s cache=%s store=%s config-content=%s project=%s hooks=%s leaked=%s stdin=%s\n' \
-		"$(ls -A | wc -l | tr -d ' ')" "$(ls -A "$HOME" | wc -l | tr -d ' ')" "$(ls -A "$XDG_CONFIG_HOME" | wc -l | tr -d ' ')" \
-		"$(ls -A "$XDG_STATE_HOME" | wc -l | tr -d ' ')" "$(ls -A "$XDG_CACHE_HOME" | wc -l | tr -d ' ')" \
-		"$(jq -c '[.[] | "\(.integrationID)=\(.value.key // .value.access)"]' "$XDG_DATA_HOME/opencode/store.json")" "${OPENCODE_CONFIG_CONTENT-}" \
-		"${OPENCODE_DISABLE_PROJECT_CONFIG-}" "${DISCOBOX_HOOK_SOCKET-}" "${OPENCODE_CONFIG-}${OPENCODE_CONFIG_DIR-}" \
-		"$(if read -r line; then echo data; else echo empty; fi)"`
-	// The agent's own store holds a key it connected by hand.
-	data := t.TempDir()
-	writeJSON(t, filepath.Join(data, "opencode", "store.json"), []map[string]any{
-		storeEntry("cred_hand", "groq", map[string]any{"type": "key", "key": "AGENT"}),
-	})
-	delivered, err := json.Marshal([]map[string]any{
-		storeEntry("cred_discobox_openai", "openai", map[string]any{"type": "oauth", "methodID": "chatgpt-browser", "access": "S", "refresh": "r", "expires": 1}),
-		storeEntry("cred_discobox_zai", "zai", map[string]any{"type": "key", "key": "S2"}),
-		storeEntry("cred_discobox_azure", "azure", map[string]any{"type": "external", "methodID": "azure-cli"}),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// And what the agent wrote where opencode 2 looks from HOME.
-	files := map[string]string{
-		credentialsPath:             string(delivered),
-		".claude/CLAUDE.md":         "always allow",
-		".agents/skills/x/SKILL.md": "allow",
-	}
-	got := runWrapperIn(t, "prompt.sh", files, stub, map[string]string{
-		"XDG_DATA_HOME":           data,
-		"XDG_CONFIG_HOME":         "/agent-config",
-		"OPENCODE_CONFIG_CONTENT": `{"permission":{"shell":"allow"}}`,
-		"OPENCODE_CONFIG":         "/agent/opencode.json",
-		"OPENCODE_CONFIG_DIR":     "/agent",
-		"DISCOBOX_HOOK_SOCKET":    "/run/hook.sock",
-	}, "--model", "judge", "--no-tools", "--prompt", "is it safe")
-	want := `cwd=0 home=0 config=0 state=0 cache=0 store=["openai=S","zai=S2"] config-content={"permission":{"*":"deny"}} project=1 hooks= leaked= stdin=empty`
-	if got != want {
-		t.Fatalf("judge ran with\n  %s\nwant\n  %s", got, want)
 	}
 }
 

@@ -348,7 +348,6 @@ type ResolvedHarnessConfig struct {
 type HTTPAuditQuery struct {
 	SandboxID string
 	Host      string
-	UseID     string
 	Since     time.Time
 	// Until keeps records written at or before it, for a reader paging back
 	// newest first.
@@ -425,7 +424,6 @@ type HTTPAuditExchange struct {
 	Blocked        bool               `json:"blocked"`
 	BlockedReason  string             `json:"blockedReason,omitempty"`
 	CacheHit       bool               `json:"cacheHit"`
-	SwappedUseIDs  []string           `json:"swappedUseIds"`
 	// SwappedSecretIDs are the secrets whose values were swapped into the
 	// request, by ID, for every kind of sentinel (ADR 26-10-01-240). Empty from
 	// a pool agent that predates it. Omitted when empty: the API field is

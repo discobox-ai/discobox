@@ -32,24 +32,19 @@ const (
 	// client certificates, so the sandbox needs no new material and no new
 	// trust: its identity here is exactly its identity for egress.
 	CredentialsURL = "https://" + ServerName + ":17083"
-
-	// activationSweepInterval bounds how long an expired activation lingers in
-	// the proxy's match set. Expiry is enforced at resolve time regardless; this
-	// only keeps the set from growing with dead entries on an idle sandbox.
-	activationSweepInterval = time.Minute
 )
 
 // serveCredentials runs the sandbox-facing agent credentials endpoint until ctx
 // is done. Every request is served for the sandbox named by the verified client
 // certificate, so a sandbox cannot ask about another sandbox's credentials by
 // saying so in a body (ADR 0031 §2).
-func serveCredentials(ctx context.Context, logger *slog.Logger, bundle *proxy.CertificateBundle, controlPlane *controlPlaneCredentials, live *activations, trusts *hostTrusts, proxyServer *proxy.Server) error {
+func serveCredentials(ctx context.Context, logger *slog.Logger, bundle *proxy.CertificateBundle, controlPlane *controlPlaneCredentials, secretsPath string, trusts *hostTrusts, proxyServer *proxy.Server) error {
 	var listenConfig net.ListenConfig
 	tcp, err := listenConfig.Listen(ctx, "tcp", CredentialsListenAddress)
 	if err != nil {
 		return err
 	}
-	return serveCredentialsOn(ctx, logger, tcp, bundle, controlPlane, live, trusts, proxyServer)
+	return serveCredentialsOn(ctx, logger, tcp, bundle, controlPlane, secretsPath, trusts, proxyServer)
 }
 
 // newControlPlaneCredentials is the broker's client of the control plane for
@@ -65,15 +60,12 @@ func newControlPlaneCredentials(root layout.Root, projectID, poolID string) *con
 // test can drive the real mTLS stack on an ephemeral port — the certificate
 // handling and identity derivation are the parts worth testing, and they are
 // exactly what a fake listener would skip.
-func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listener, bundle *proxy.CertificateBundle, controlPlane *controlPlaneCredentials, live *activations, trusts *hostTrusts, proxyServer *proxy.Server) error {
+func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listener, bundle *proxy.CertificateBundle, controlPlane *controlPlaneCredentials, secretsPath string, trusts *hostTrusts, proxyServer *proxy.Server) error {
 	handler := &credentialsHandler{
 		controlPlane: controlPlane,
-		// Its own client: a verdict takes as long as a model takes, which is
-		// nothing like the time the broker's other calls take.
-		judge:       &controlPlaneCredentials{contextPath: controlPlane.contextPath, client: judgeHTTPClient()},
-		activations: live,
-		trusts:      trusts,
-		proxy:       proxyServer,
+		secretsPath:  secretsPath,
+		trusts:       trusts,
+		proxy:        proxyServer,
 	}
 
 	listener := tls.NewListener(tcp, sandboxTLSConfig(bundle))
@@ -82,10 +74,8 @@ func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listen
 		ReadHeaderTimeout: 10 * time.Second,
 		// A request here is one control-plane round trip, never a stream, so
 		// bounded deadlines are safe and a stuck sandbox cannot pin a connection.
-		// The longest is a use waiting on the judge, and the write deadline
-		// outlasts it so its refusal is written rather than cut off.
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: credentialUseTimeout + 30*time.Second,
+		WriteTimeout: credentialBrokerTimeout + 30*time.Second,
 		IdleTimeout:  120 * time.Second,
 		BaseContext:  func(net.Listener) context.Context { return ctx },
 	}
@@ -94,7 +84,6 @@ func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listen
 		_ = listener.Close()
 		_ = server.Close()
 	}()
-	go sweepActivations(ctx, live)
 
 	logger.Info("pool credentials endpoint serving", "addr", tcp.Addr())
 	err := server.Serve(listener)
@@ -104,27 +93,13 @@ func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listen
 	return err
 }
 
-func sweepActivations(ctx context.Context, live *activations) {
-	ticker := time.NewTicker(activationSweepInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			live.sweep()
-		}
-	}
-}
-
 // credentialsHandler binds each request to the sandbox its client certificate
 // names, then hands it to the protocol handler. Building the service per
 // request rather than once is what makes the identity structural: there is no
 // shared handler a caller could reach that is not already scoped to it.
 type credentialsHandler struct {
 	controlPlane *controlPlaneCredentials
-	judge        *controlPlaneCredentials
-	activations  *activations
+	secretsPath  string
 	trusts       *hostTrusts
 	proxy        *proxy.Server
 }
@@ -135,17 +110,12 @@ func (h *credentialsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "client certificate does not identify a sandbox", http.StatusUnauthorized)
 		return
 	}
-	timeout := credentialBrokerTimeout
-	if r.URL.Path == agentcreds.PathUse {
-		timeout = credentialUseTimeout
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	ctx, cancel := context.WithTimeout(r.Context(), credentialBrokerTimeout)
 	defer cancel()
 	agentcreds.NewHandler(&credentialBroker{
 		sandboxID:   sandboxID,
 		controlPlan: h.controlPlane,
-		judge:       h.judge,
-		activations: h.activations,
+		secretsPath: h.secretsPath,
 		trusts:      h.trusts,
 		proxy:       h.proxy,
 	}).ServeHTTP(w, r.WithContext(ctx))

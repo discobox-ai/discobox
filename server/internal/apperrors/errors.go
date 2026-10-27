@@ -67,13 +67,6 @@ func NotFound(err error, message string) error {
 // page at it forever.
 type Kind string
 
-// KindJudgingDisabled is a server that does not judge credential use answering
-// a pool that asked it to. It is not a judge that failed, and a pool reads it
-// as "stop asking for a while" rather than as a verdict — which is why it is
-// worth telling apart from every other way an ask can come back with no
-// answer.
-const KindJudgingDisabled Kind = "urn:discobox:problem:judging-disabled"
-
 // KindOf returns the problem kind err carries, if it carries one.
 func KindOf(err error) (Kind, bool) {
 	var carrier interface{ ProblemKind() Kind }

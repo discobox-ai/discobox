@@ -15,9 +15,9 @@ import (
 type SecretRefreshFilter struct {
 	// ID reads the events of the one refresh request it names.
 	ID string
-	// SandboxID is matched against the recorded ID, for the reason
-	// CredentialVerdictFilter's is: the trail outlives the discobox. It is the
-	// discobox that most recently needed the value.
+	// SandboxID is matched against the recorded ID and never requires the
+	// discobox to exist: the trail outlives it. It is the discobox that most
+	// recently needed the value.
 	SandboxID string
 	SecretID  string
 	// Since and Until bound the events, not the requests: a request asked

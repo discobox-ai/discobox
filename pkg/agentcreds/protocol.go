@@ -1,26 +1,22 @@
 // Package agentcreds is the agent credentials protocol: the portable
-// list/request/get contract an agent inside a sandbox uses to ask a human for a
-// credential it was not provisioned with, and then to use it.
+// list/request contract an agent inside a sandbox uses to ask a human for a
+// credential it was not provisioned with, and to learn when it has it.
 //
 // The package knows nothing about Discobox. It carries the wire types, a
 // client, and an http.Handler over a Service interface, so the same in-sandbox
 // CLI works against Discobox's sandbox-agent and against any other
 // implementation of Service.
 //
-// The value Get returns is deliberately unspecified: an implementation may
-// return the real credential, and Discobox returns an ephemeral sentinel its
-// egress proxy exchanges for the real value on the way out. Callers must treat
-// it as opaque and stop using it after ExpiresAt.
+// A granted credential is delivered by the implementation, not through the
+// protocol: Discobox puts a sentinel in the variable the request named, which
+// its egress proxy exchanges for the real value on the hosts the grant covers
+// (ADR 26-10-27-880). Nothing here ever carries a value.
 //
 // See docs/agent-credentials-protocol.md and
 // docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md.
 package agentcreds
 
-import (
-	"time"
-
-	"github.com/discobox-ai/discobox/pkg/policy"
-)
+import "time"
 
 // Version is the protocol version every route is served under.
 const Version = "v1"
@@ -67,26 +63,14 @@ const (
 // Route paths, relative to the configured base URL. They are named here rather
 // than spelled at each call site so client and handler cannot drift.
 const (
-	// PathCredentials lists granted credentials and their approved uses.
+	// PathCredentials lists granted credentials.
 	PathCredentials = "/" + Version + "/credentials"
 	// PathRequests creates a credential request; a request ID appended to it
 	// reads that request's status.
 	PathRequests = "/" + Version + "/credentials/requests"
-	// PathUse takes a value for one declared command.
-	PathUse = "/" + Version + "/credentials/use"
+	// PathEnvironment reads the variables credentials are delivered in now.
+	PathEnvironment = "/" + Version + "/credentials/environment"
 )
-
-// MaxReportedBytes is the most any one field of Reported may be. An
-// implementation may refuse a use whose report has a longer one. It is small
-// because JSON may write a byte as six, and the four fields share one body
-// (MaxBodyBytes) with the most of stdin a caller shows.
-const MaxReportedBytes = 256
-
-// UseTimeout is how long a use call may take. An implementation may judge the
-// command before it hands out a value, and a judge that has to be brought up
-// first takes minutes rather than seconds, so a client waits this long for
-// the answer rather than the few seconds every other call gets.
-const UseTimeout = 4 * time.Minute
 
 // Request status values. A request settles from Pending to exactly one of
 // Granted or Denied and never moves again.
@@ -96,35 +80,22 @@ const (
 	StatusDenied  = "denied"
 )
 
-// Use is one approved way to use a credential. UseID is what Get accepts;
-// Description is the human-approved sentence the use was granted for.
-type Use struct {
-	UseID       string     `json:"useId"`
-	Description string     `json:"description"`
-	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
-}
-
 // Credential is one credential the caller may use, as reported by list. It
-// never carries a value. Hosts are where it may be sent (ADR 26-10-02-393).
+// never carries a value: EnvVar is the variable its sentinel is delivered in,
+// and Hosts are where it may be sent (ADR 26-10-02-393). Purpose is
+// PurposeDelegate for one the caller may give the sandboxes it creates, which
+// it is not delivered itself.
 type Credential struct {
-	Name   string   `json:"name"`
-	EnvVar string   `json:"envVar"`
-	Hosts  []string `json:"hosts,omitempty"`
-	Uses   []Use    `json:"uses,omitempty"`
-	// Policy is what the grant authorizes, as approved, when it carries one
-	// (ADR 26-10-20-782 §1).
-	Policy *policy.Policy `json:"policy,omitempty"`
+	Name      string     `json:"name"`
+	EnvVar    string     `json:"envVar,omitempty"`
+	Hosts     []string   `json:"hosts,omitempty"`
+	Purpose   string     `json:"purpose,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
 // ListResponse is the list operation's body.
 type ListResponse struct {
 	Credentials []Credential `json:"credentials"`
-}
-
-// RequestedUse is one use an agent asks for. It has no ID: IDs are minted by
-// the approval, so an agent cannot name the use it will later present.
-type RequestedUse struct {
-	Description string `json:"description"`
 }
 
 // MaxGrantTTLSeconds is the longest lifetime an agent may ask for: thirty days.
@@ -170,12 +141,11 @@ func AskedGrantTTL(seconds int64) time.Duration {
 // What a request asks the credential for. A grant is one or the other, never
 // both, so a person approving one agrees to one thing.
 const (
-	// PurposeUse asks to use the credential: the approval carries uses the
-	// caller runs commands under. It is what a request naming no purpose asks.
+	// PurposeUse asks to use the credential: the approval delivers it in the
+	// variable asked for. It is what a request naming no purpose asks.
 	PurposeUse = "use"
-	// PurposeDelegate asks to hand the credential on to other sandboxes. The
-	// approval authorizes nothing the caller sends itself; its uses say what
-	// the caller may delegate the credential for.
+	// PurposeDelegate asks to give the credential to the sandboxes the caller
+	// creates. The approval authorizes nothing the caller sends itself.
 	PurposeDelegate = "delegate"
 )
 
@@ -192,51 +162,26 @@ const (
 //
 // Hosts are where the credential will be sent, one or several
 // (ADR 26-10-02-393).
+//
+// Justification is shown to the person answering; nothing evaluates it.
 type RequestBody struct {
-	// ID names a well-known credential — a reverse-DNS ID such as
-	// "com.github.api" — in place of Name, EnvVar, and the hosts, which an
-	// implementation fills from what it knows the ID to mean. An
-	// implementation that knows no such ID refuses the request as invalid.
-	ID              string         `json:"id,omitempty"`
-	Name            string         `json:"name"`
-	EnvVar          string         `json:"envVar"`
-	Hosts           []string       `json:"hosts,omitempty"`
-	Justification   string         `json:"justification,omitempty"`
-	Uses            []RequestedUse `json:"uses,omitempty"`
-	GrantTTLSeconds int64          `json:"grantTTLSeconds,omitempty"`
-	Purpose         string         `json:"purpose,omitempty"`
-	// Policy is what the agent asks the credential to authorize, as
-	// statements, beside its uses (ADR 26-10-20-782 §1). Every ask carries
-	// one: it is what the grant enforces, and the uses name the job. An
-	// implementation refuses an ask without one, or with one that does not
-	// validate, as invalid; without one, with NoPolicyAsked.
-	Policy *policy.Policy `json:"policy,omitempty"`
+	Name            string   `json:"name"`
+	EnvVar          string   `json:"envVar,omitempty"`
+	Hosts           []string `json:"hosts"`
+	Justification   string   `json:"justification,omitempty"`
+	GrantTTLSeconds int64    `json:"grantTTLSeconds,omitempty"`
+	Purpose         string   `json:"purpose,omitempty"`
 }
 
-// NoPolicyAsked is the refusal of an ask that carries no policy, in the
-// protocol's own words: what a policy is and what it is made of. An
-// implementation and a client each add how their caller writes one.
-const NoPolicyAsked = "a credential request asks for a policy beside its uses: statements of exactly what the job may do and must never do, " +
-	"each allow or deny of actions on a resource in a scope, which are what its grant enforces; the uses only name the job. " +
-	"Every word a statement uses but read, create, update, delete, manage, anything and anywhere carries a definition"
-
-// RequestStatus is what request and its poll both answer with. Uses is
-// populated once granted, and is authoritative over the requested uses: the
-// approver may have edited the descriptions.
-//
-// Purpose is what the request asks the credential for, as the implementation
-// recorded it. For PurposeUse the granted uses carry the IDs the use operation
-// accepts; for PurposeDelegate they say what the caller may delegate the
-// credential for, and none of them takes a value. Empty is an implementation
-// that predates purposes, which only ever records an ask to use.
+// RequestStatus is what request and its poll both answer with. Once granted,
+// Credential is what the caller now holds, as the approver chose it: the
+// hosts and lifetime may differ from the ones asked for. A credential granted
+// for PurposeUse is in its variable for every command started from then on.
 type RequestStatus struct {
-	RequestID string `json:"requestId"`
-	Status    string `json:"status"`
-	Purpose   string `json:"purpose,omitempty"`
-	Uses      []Use  `json:"uses,omitempty"`
-	// Policy is the approved policy once granted, authoritative over the one
-	// asked for as Uses is over the requested uses.
-	Policy *policy.Policy `json:"policy,omitempty"`
+	RequestID  string      `json:"requestId"`
+	Status     string      `json:"status"`
+	Purpose    string      `json:"purpose,omitempty"`
+	Credential *Credential `json:"credential,omitempty"`
 }
 
 // Settled reports whether a request has reached a terminal status, which is
@@ -245,51 +190,14 @@ func (s RequestStatus) Settled() bool {
 	return s.Status == StatusGranted || s.Status == StatusDenied
 }
 
-// UseBody takes a value for one command. Command is the argv the caller is
-// about to run, declared before the value is handed out; Stdin and Reported
-// are what that command will read on standard input and where the caller says
-// it runs.
-//
-// An implementation may judge the command before it hands out anything, and
-// Discobox does: a value is handed out only when its judge allows the command
-// for the use, and a refusal is CodeDenied with the judge's reason (ADR
-// 26-09-22-838 §3). Everything here is the caller's word, so it is evidence
-// for that judgement and never authority; the use is what was approved.
-type UseBody struct {
-	UseID    string    `json:"useId"`
-	Command  []string  `json:"command,omitempty"`
-	Stdin    *Stdin    `json:"stdin,omitempty"`
-	Reported *Reported `json:"reported,omitempty"`
-}
-
-// Stdin is what a command will read on standard input, as much of it as the
-// caller shows: text, and a sentence for whatever of it is not shown.
-type Stdin struct {
-	// Content is the input shown, which is text. Empty when none of it is
-	// shown, and Missing then says why.
-	Content string `json:"content"`
-	// Missing says why Content is not the whole input: longer than the caller
-	// shows, still arriving, not text, or a read that failed.
-	Missing string `json:"missing,omitempty"`
-}
-
-// Reported is what the caller says about where a command runs. Every field is
-// optional, and at most MaxReportedBytes: they are a path or a line.
-type Reported struct {
-	WorkingDirectory string `json:"workingDirectory,omitempty"`
-	RepositoryRoot   string `json:"repositoryRoot,omitempty"`
-	// RefCommit and RefSubject are the commit a git ref the command names
-	// resolves to, and that commit's subject line.
-	RefCommit  string `json:"refCommit,omitempty"`
-	RefSubject string `json:"refSubject,omitempty"`
-}
-
-// UseResponse carries the value to place in EnvVar for that one command, and
-// the end of its window.
-type UseResponse struct {
-	EnvVar    string     `json:"envVar"`
-	Value     string     `json:"value"`
-	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+// EnvironmentResponse is what the environment read answers with: every
+// variable a credential is delivered in, and what is delivered there now, for
+// a process that started before a grant to take it up — a harness's tool
+// shell inherits the harness's launch environment, never a later one. In
+// Discobox each value is the credential's sentinel, a placeholder only this
+// sandbox's egress exchanges, never the credential itself.
+type EnvironmentResponse struct {
+	Variables map[string]string `json:"variables"`
 }
 
 // ErrorResponse is the body of every non-2xx response. Code is one of the

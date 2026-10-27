@@ -144,17 +144,17 @@ func TestPoolListHTTPAuditPassesFiltersAndMapsRows(t *testing.T) {
 	//nolint:gosec // G101: secret IDs, which name a credential and are not one.
 	reader := &recordingAuditReader{rows: []proxy.AuditHTTPExchange{{
 		ID: 7, CreatedAt: createdAt, ClientID: "sandbox-1", Method: "GET", URL: "https://api.github.com/user",
-		Host: "api.github.com", Status: 200, DurationMillis: 42, SwappedUseIDs: "use_a,use_b",
+		Host: "api.github.com", Status: 200, DurationMillis: 42,
 		SwappedSecretIDs: "sec_a,sec_b",
 	}}}
 	router, sign := newAuditRouter(t, reader)
-	resp := auditRequest(router, "?host=api.github.com&useId=use_a&since=2026-09-17T09:00:00%2B09:00&limit=5&order=asc&minStatus=400&maxStatus=499&blocked=true",
+	resp := auditRequest(router, "?host=api.github.com&since=2026-09-17T09:00:00%2B09:00&limit=5&order=asc&minStatus=400&maxStatus=499&blocked=true",
 		sign("project-1", "pool-1", "", ScopeAuditRead))
 	if resp.Code != http.StatusOK {
 		t.Fatalf("status = %d; body = %s", resp.Code, resp.Body.String())
 	}
 	wantSince := time.Date(2026, 9, 17, 0, 0, 0, 0, time.UTC)
-	if reader.query.Host != "api.github.com" || reader.query.UseID != "use_a" || reader.query.Limit != 5 || !reader.query.Since.Equal(wantSince) ||
+	if reader.query.Host != "api.github.com" || reader.query.Limit != 5 || !reader.query.Since.Equal(wantSince) ||
 		!reader.query.Ascending || reader.query.MinStatus != 400 || reader.query.MaxStatus != 499 || reader.query.Blocked == nil || !*reader.query.Blocked {
 		t.Fatalf("proxy query = %+v, want the request's filters", reader.query)
 	}
@@ -164,7 +164,6 @@ func TestPoolListHTTPAuditPassesFiltersAndMapsRows(t *testing.T) {
 			CreatedAt        time.Time `json:"createdAt"`
 			SandboxID        string    `json:"sandboxId"`
 			Status           int       `json:"status"`
-			SwappedUseIDs    []string  `json:"swappedUseIds"`
 			SwappedSecretIDs []string  `json:"swappedSecretIds"`
 		} `json:"exchanges"`
 	}
@@ -176,23 +175,22 @@ func TestPoolListHTTPAuditPassesFiltersAndMapsRows(t *testing.T) {
 	}
 	got := body.Exchanges[0]
 	if got.ID != "http_7" || got.SandboxID != "sandbox-1" || got.Status != 200 || !got.CreatedAt.Equal(createdAt) ||
-		!reflect.DeepEqual(got.SwappedUseIDs, []string{"use_a", "use_b"}) ||
 		!reflect.DeepEqual(got.SwappedSecretIDs, []string{"sec_a", "sec_b"}) {
-		t.Fatalf("exchange = %+v, want the row with its uses and secrets split", got)
+		t.Fatalf("exchange = %+v, want the row with its secrets split", got)
 	}
 }
 
-// A row with no swapped use is an empty list, not null: the response requires
-// the array, and a reader should not have to tell the two apart.
-func TestPoolListHTTPAuditNoUsesIsAnEmptyList(t *testing.T) {
+// A row that swapped no secret is an empty list, not null: a reader should not
+// have to tell the two apart.
+func TestPoolListHTTPAuditNoSecretsIsAnEmptyList(t *testing.T) {
 	reader := &recordingAuditReader{rows: []proxy.AuditHTTPExchange{{ID: 1, ClientID: "sandbox-1", Method: "GET", Host: "example.com"}}}
 	router, sign := newAuditRouter(t, reader)
 	resp := auditRequest(router, "", sign("project-1", "pool-1", "", ScopeAuditRead))
 	if resp.Code != http.StatusOK {
 		t.Fatalf("status = %d; body = %s", resp.Code, resp.Body.String())
 	}
-	if !json.Valid(resp.Body.Bytes()) || !strings.Contains(resp.Body.String(), `"swappedUseIds":[]`) {
-		t.Fatalf("body = %s, want an empty swappedUseIds list", resp.Body.String())
+	if !json.Valid(resp.Body.Bytes()) || !strings.Contains(resp.Body.String(), `"swappedSecretIds":[]`) {
+		t.Fatalf("body = %s, want an empty swappedSecretIds list", resp.Body.String())
 	}
 }
 
@@ -382,7 +380,6 @@ func TestPoolGetHTTPAuditRelaysTheWholeRow(t *testing.T) {
 		ClientID: "sandbox-1", Method: "POST", URL: "https://api.github.com/x", Host: "api.github.com", Status: 201,
 		RequestHeaders:   `{"Authorization":["[REDACTED]"],"Accept":["application/json"]}`,
 		ResponseHeaders:  `{"Content-Type":["application/json"]}`,
-		SwappedUseIDs:    "use_a",
 		SwappedSecretIDs: "sec_a",
 		AppliedHeaders:   "Authorization",
 		AppliedRuleID:    "rule-1",

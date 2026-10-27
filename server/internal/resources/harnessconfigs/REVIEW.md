@@ -9,9 +9,9 @@
   moving either is a manifest edit that reaches no existing sandbox — the
   platform layer moved off the runnable image's digest once, and nothing
   failed. The same holds for every consumer that decides by a pin, not only
-  the sandbox fingerprint: the project's judge was matched on `BundleDigest`
-  alone and kept a judge composed on the old platform layer, the second time
-  this mistake was made.
+  the sandbox fingerprint: a consumer once matched on `BundleDigest` alone and
+  kept a box composed on the old platform layer, the second time this mistake
+  was made.
 - **Tell a bundle from an image by `ReclaimLabel`, never by a manifest
   label.** A release from before bundles shipped runnable images carrying the
   manifest labels too, so a check that a bundle carries `10-platform` or

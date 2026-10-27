@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/time/rate"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/discobox-ai/discobox/pkg/auditid"
 )
@@ -49,7 +50,6 @@ type HTTPEvent struct {
 	AppliedPattern       string
 	AppliedHeaders       []string
 	ForwardedURL         string
-	SwappedUseIDs        []string
 	SwappedSecretIDs     []string
 	RedactRequestHeaders []string
 	RequestHeaders       http.Header
@@ -138,26 +138,9 @@ type HTTPExchange struct {
 	// URL stays what the sandbox sent. AppliedRuleID is the gateway's name,
 	// AppliedPattern its match, and AppliedHeaders the headers it touched.
 	ForwardedURL string
-	// SwappedUseIDs names the approved credential uses this request spent, as
-	// a comma-joined list (ADR 0130 §3). It is the join to the control plane's
-	// credential_verdicts rows: one ID reaches both the verdict that authorized
-	// a command and every request that actually spent the credential.
-	//
-	// Empty means no use was named, which is either an ordinary injected
-	// sentinel or no swap at all. It never holds a sentinel — an ephemeral one
-	// is a live bearer token, and this trail is kept to be read later.
-	//
-	// Deliberately unindexed. The only query that reads it matches one element
-	// of the list, which is an expression with a leading wildcard and so cannot
-	// use a B-tree index on the column; an index here would be write cost on
-	// the highest-volume table in the schema and nothing else. The scan it
-	// implies is bounded in practice by client_id, which is indexed and which
-	// every real caller sends.
-	SwappedUseIDs string
 	// SwappedSecretIDs names the secrets whose values this request carried,
-	// comma-joined, for every kind of sentinel — an ordinary injected one too,
-	// which has no use to name (ADR 26-10-01-240). An ID, never a sentinel,
-	// for the reason SwappedUseIDs gives. Unindexed for that reason too.
+	// comma-joined (ADR 26-10-01-240). It never holds a sentinel: this trail
+	// is kept to be read later. Unindexed: nothing queries it.
 	//
 	// AutoMigrate adds it to a database written before it, where those rows
 	// read it as empty: nothing was recorded about their secrets.
@@ -273,10 +256,6 @@ type QueryOptions struct {
 	// keeps that host at any port: a CONNECT the policy refused is recorded
 	// by its authority, host:443, and a reader asking about a host means it.
 	Host string
-	// UseID narrows to the requests that spent one approved credential use.
-	// It applies to HTTP reads only: a SOCKS connect tunnels bytes the proxy
-	// never inspects, so no sentinel is ever swapped in one.
-	UseID string
 	// Since keeps rows written at or after it. Rows are written in UTC
 	// (nonZeroTime), and SQLite compares times as text carrying their offset,
 	// so the bound is compared in UTC too.
@@ -401,6 +380,10 @@ func Open(ctx context.Context, dsn string, queueSize int, enabled bool) (*Record
 		return nil, err
 	}
 	if err := pools.Write.WithContext(ctx).AutoMigrate(&HTTPExchange{}, &SOCKSConnect{}, &DNSQuery{}); err != nil {
+		_ = pools.Close()
+		return nil, err
+	}
+	if err := dropRetiredColumns(pools.Write.WithContext(ctx)); err != nil {
 		_ = pools.Close()
 		return nil, err
 	}
@@ -711,7 +694,6 @@ func (r *Recorder) write(event any) {
 			AppliedPattern:      e.AppliedPattern,
 			AppliedHeaders:      strings.Join(e.AppliedHeaders, ","),
 			ForwardedURL:        e.ForwardedURL,
-			SwappedUseIDs:       strings.Join(e.SwappedUseIDs, ","),
 			SwappedSecretIDs:    strings.Join(e.SwappedSecretIDs, ","),
 			RequestHeaders:      marshalHeaders(e.RequestHeaders, e.RedactRequestHeaders),
 			ResponseHeaders:     marshalHeaders(e.ResponseHeaders, nil),
@@ -855,22 +837,11 @@ func applyHTTPQueryOptions(query *gorm.DB, opts QueryOptions) *gorm.DB {
 	if opts.Blocked != nil {
 		query = query.Where("blocked = ?", *opts.Blocked)
 	}
-	if opts.UseID != "" {
-		// Match a whole element of the comma-joined list rather than a
-		// substring: padding both sides with the delimiter is what keeps one
-		// use ID from matching another that merely contains it.
-		// ESCAPE is named explicitly: SQLite has no default escape character,
-		// so without it the escaping below would match a literal backslash.
-		query = query.Where(`',' || swapped_use_ids || ',' LIKE ? ESCAPE '\'`, "%,"+escapeLike(opts.UseID)+",%")
-	}
 	return query.Limit(queryLimit(opts.Limit))
 }
 
-// escapeLike neutralizes the LIKE wildcards in a value matched literally.
-//
-// This is load-bearing rather than defensive: a use ID is id.New("use"), which
-// is "use_" plus random text, so every single one of them contains the
-// single-character wildcard. Unescaped, use_abc would also match usexabc.
+// escapeLike neutralizes the LIKE wildcards in a value matched literally: a
+// host may hold "_", the single-character wildcard.
 func escapeLike(value string) string {
 	replacer := strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
 	return replacer.Replace(value)
@@ -962,4 +933,35 @@ func openRelativeSpoolFile(root, relativePath, label string) (*os.File, error) {
 		return nil, fmt.Errorf("%s path escapes spool dir", label)
 	}
 	return os.Open(fullAbs)
+}
+
+// retiredColumns are columns a database written by an earlier proxy may hold
+// and this one never reads or writes, by table. AutoMigrate adds columns and
+// never removes one, so each is dropped here, once, where it exists, with
+// ALTER TABLE ... DROP COLUMN. That is not cheap: SQLite rewrites every row of
+// the table to purge the column, and this is the largest table the pool keeps.
+// It is a one-time rewrite, on the first start after the upgrade, before the
+// proxy serves, and it takes time in proportion to the audit retained
+// (Recording.Retention); every later start finds the column gone and does
+// nothing.
+//
+// swapped_use_ids named the approved credential uses a request spent; uses
+// went with the credential judge (ADR 26-10-27-880).
+var retiredColumns = map[string][]string{
+	"http_exchanges": {"swapped_use_ids"},
+}
+
+func dropRetiredColumns(db *gorm.DB) error {
+	migrator := db.Migrator()
+	for table, columns := range retiredColumns {
+		for _, column := range columns {
+			if !migrator.HasColumn(table, column) {
+				continue
+			}
+			if err := db.Exec("ALTER TABLE ? DROP COLUMN ?", clause.Table{Name: table}, clause.Column{Name: column}).Error; err != nil {
+				return fmt.Errorf("drop retired audit column %s.%s: %w", table, column, err)
+			}
+		}
+	}
+	return nil
 }

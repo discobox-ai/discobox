@@ -924,13 +924,10 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		// on GitHub.
 		if row.SourceRemote {
 			row.Repository = sourceref.GitHubURL(row.Source)
-			row.RepositoryIdentity = sourceref.NormalizeRemote(row.Source)
 		} else {
 			row.Repository = sourceref.GitHubURL(source.UpstreamUrl.Or(""))
-			row.RepositoryIdentity = sourceref.NormalizeRemote(source.UpstreamUrl.Or(""))
 		}
 		row.RepositoryKey = sourceref.GitHubKey(row.Repository)
-		row.RepositoryShown = terminalSafe(row.RepositoryIdentity)
 		if checkout, ok := source.Checkout.Get(); ok {
 			row.Branch = strings.TrimSpace(checkout.RefName.Or(""))
 			row.Commit = shortCommit(strings.TrimSpace(checkout.Commit.Or("")))
@@ -1241,9 +1238,10 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
-	if opts.Grants, err = sandboxcreate.ParseGrants(req.Grant, req.GrantStatement, req.GrantDefine); err != nil {
+	if opts.Grants, err = sandboxcreate.ParseGrants(req.Grant); err != nil {
 		return tui.Sandbox{}, err
 	}
+	opts.DiscoboxAPI = req.DiscoboxAPI
 	if err := d.app.resolveGrantSecrets(ctx, d.client, d.projectID, opts.Grants); err != nil {
 		return tui.Sandbox{}, err
 	}

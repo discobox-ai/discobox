@@ -293,7 +293,7 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 	cfg.Control = proxyControlConfig(root, projectID, poolID, logger)
 	// The discobox API's host, which this proxy never sends to the internet:
 	// the resolver's gate answers it from the control plane (ADR 0140 §2).
-	cfg.Secrets.GateHost = GateHost()
+	cfg.Secrets.GateHost = GateHost
 	// The sandboxes' Git origins and their bundle assets, which this proxy
 	// never sends to the internet either: it forwards each to the agent's
 	// listener for it as the sandbox the client certificate names (ADR
@@ -304,20 +304,14 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 		{Host: AssetsHost, Upstream: wire.UnixURL(root.ProxyAssetsSocket(projectID, poolID)), ReadOnly: true},
 	}
 
-	// Agent-credential activations live in this process, alongside the sentinel
-	// registry and the resolver they act on (ADR 0031 §3). The resolver
-	// translates an ephemeral sentinel to its stable one; the sandbox-facing
-	// credentials endpoint mints them.
-	live := newActivations()
-
 	// The resolver fetches real secret values from the control plane using the
 	// scoped token the pool-agent process writes for this pool.
-	resolver := newSecretResolver(root, projectID, poolID, live)
+	resolver := newSecretResolver(root, projectID, poolID)
 	server, err := proxy.NewServer(ctx, cfg, bundle, resolver)
 	if err != nil {
 		return fmt.Errorf("create proxy server: %w", err)
 	}
-	policy := newPolicyPublisher(server, cfg, live, func(err error) {
+	policy := newPolicyPublisher(server, cfg, func(err error) {
 		logger.Warn("apply proxy policy", "error", err)
 	})
 	// Before the listener starts: until it is applied, a restricted sandbox's
@@ -350,7 +344,7 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 		}()
 	}
 	go func() {
-		errCh <- serveCredentials(ctx, logger, bundle, controlPlane, live, trusts, server)
+		errCh <- serveCredentials(ctx, logger, bundle, controlPlane, root.ProxySecretsFile(projectID, poolID), trusts, server)
 	}()
 	go func() {
 		// Logged, not sent to errCh, for the control API's reason: a sandbox
@@ -653,10 +647,11 @@ func EnsureSandboxMaterial(root layout.Root, projectID, poolID, sandboxID string
 		"NODE_USE_ENV_PROXY": "1",
 		// The discobox API, at the host this pool's proxy answers for itself
 		// (ADR 0140 §2). The discobox CLI in the image reads DISCOBOX_SERVER;
-		// DISCOBOX_API_URL is the same address for anything else. Reaching it
-		// still takes a live use of ai.discobox.sandbox.
-		"DISCOBOX_API_URL": "https://" + GateHost(),
-		"DISCOBOX_SERVER":  "https://" + GateHost(),
+		// DISCOBOX_API_URL is the same address for anything else. Whether a
+		// call there is answered is the control plane's: only a sandbox it
+		// lets call the API is (ADR 26-10-27-880 §9).
+		"DISCOBOX_API_URL": "https://" + GateHost,
+		"DISCOBOX_SERVER":  "https://" + GateHost,
 	}
 	// curl, git, wget, and the OpenSSL CLI read the system bundle directly, so
 	// the boot-time update-ca-certificates step covers them without env vars

@@ -20,25 +20,25 @@ var (
 	rn9AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn56AllowedHeaders = map[string]string{
+	rn54AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn66AllowedHeaders = map[string]string{
+	rn64AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn49AllowedHeaders = map[string]string{
+	rn47AllowedHeaders = map[string]string{
 		"PUT": "Content-Type",
 	}
 	rn13AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn44AllowedHeaders = map[string]string{
+	rn43AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn46AllowedHeaders = map[string]string{
+	rn45AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn51AllowedHeaders = map[string]string{
+	rn49AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn5AllowedHeaders = map[string]string{
@@ -50,16 +50,10 @@ var (
 	rn16AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn50AllowedHeaders = map[string]string{
+	rn48AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn31AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-	rn47AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-	rn65AllowedHeaders = map[string]string{
+	rn63AllowedHeaders = map[string]string{
 		"PATCH": "Content-Type",
 	}
 	rn23AllowedHeaders = map[string]string{
@@ -441,7 +435,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: rn56AllowedHeaders,
+													allowedHeaders: rn54AllowedHeaders,
 													acceptPost:     "application/json",
 													acceptPatch:    "",
 												})
@@ -673,7 +667,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: rn66AllowedHeaders,
+													allowedHeaders: rn64AllowedHeaders,
 													acceptPost:     "application/json",
 													acceptPatch:    "",
 												})
@@ -738,7 +732,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "GET,PUT",
-											allowedHeaders: rn49AllowedHeaders,
+											allowedHeaders: rn47AllowedHeaders,
 											acceptPost:     "",
 											acceptPatch:    "",
 										})
@@ -836,7 +830,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "POST",
-											allowedHeaders: rn44AllowedHeaders,
+											allowedHeaders: rn43AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -864,7 +858,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "POST",
-											allowedHeaders: rn46AllowedHeaders,
+											allowedHeaders: rn45AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -894,7 +888,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								default:
 									s.notAllowed(w, r, notAllowedParams{
 										allowedMethods: "POST",
-										allowedHeaders: rn51AllowedHeaders,
+										allowedHeaders: rn49AllowedHeaders,
 										acceptPost:     "application/json",
 										acceptPatch:    "",
 									})
@@ -1103,7 +1097,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "POST",
-											allowedHeaders: rn50AllowedHeaders,
+											allowedHeaders: rn48AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -1172,63 +1166,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							return
 						}
 
-					case 'j': // Prefix: "judge"
-
-						if l := len("judge"); len(elem) >= l && elem[0:l] == "judge" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						if len(elem) == 0 {
-							switch r.Method {
-							case "POST":
-								s.handleJudgeSandboxRequest([2]string{
-									args[0],
-									args[1],
-								}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, notAllowedParams{
-									allowedMethods: "POST",
-									allowedHeaders: rn31AllowedHeaders,
-									acceptPost:     "application/json",
-									acceptPatch:    "",
-								})
-							}
-
-							return
-						}
-						switch elem[0] {
-						case '/': // Prefix: "/proposal"
-
-							if l := len("/proposal"); len(elem) >= l && elem[0:l] == "/proposal" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								// Leaf node.
-								switch r.Method {
-								case "POST":
-									s.handleProposeSandboxRuleRequest([2]string{
-										args[0],
-										args[1],
-									}, elemIsEscaped, w, r)
-								default:
-									s.notAllowed(w, r, notAllowedParams{
-										allowedMethods: "POST",
-										allowedHeaders: rn47AllowedHeaders,
-										acceptPost:     "application/json",
-										acceptPatch:    "",
-									})
-								}
-
-								return
-							}
-
-						}
-
 					case 'm': // Prefix: "meta"
 
 						if l := len("meta"); len(elem) >= l && elem[0:l] == "meta" {
@@ -1248,7 +1185,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "PATCH",
-									allowedHeaders: rn65AllowedHeaders,
+									allowedHeaders: rn63AllowedHeaders,
 									acceptPost:     "",
 									acceptPatch:    "application/json",
 								})
@@ -2725,57 +2662,6 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							default:
 								return
 							}
-						}
-
-					case 'j': // Prefix: "judge"
-
-						if l := len("judge"); len(elem) >= l && elem[0:l] == "judge" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						if len(elem) == 0 {
-							switch method {
-							case "POST":
-								r.name = JudgeSandboxOperation
-								r.summary = "Put one judging job to this discobox's harness."
-								r.operationID = "judge-sandbox"
-								r.operationGroup = ""
-								r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/judge"
-								r.args = args
-								r.count = 2
-								return r, true
-							default:
-								return
-							}
-						}
-						switch elem[0] {
-						case '/': // Prefix: "/proposal"
-
-							if l := len("/proposal"); len(elem) >= l && elem[0:l] == "/proposal" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								// Leaf node.
-								switch method {
-								case "POST":
-									r.name = ProposeSandboxRuleOperation
-									r.summary = "Have this discobox's harness propose an approval rule's wording."
-									r.operationID = "propose-sandbox-rule"
-									r.operationGroup = ""
-									r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal"
-									r.args = args
-									r.count = 2
-									return r, true
-								default:
-									return
-								}
-							}
-
 						}
 
 					case 'm': // Prefix: "meta"

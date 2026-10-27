@@ -299,7 +299,7 @@ func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sa
 	if err != nil {
 		return nil, err
 	}
-	existing, err := s.store.ListInjectedSandboxSecrets(ctx, projectID, sandboxID)
+	existing, err := s.store.ListSandboxSecrets(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +367,7 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 	if s.sandboxProviders == nil {
 		return fmt.Errorf("sandbox provider manager is required")
 	}
-	assignments, err := s.store.ListInjectedSandboxSecrets(ctx, sandboxModel.ProjectID, sandboxModel.ID)
+	assignments, err := s.store.ListSandboxSecrets(ctx, sandboxModel.ProjectID, sandboxModel.ID)
 	if err != nil {
 		return err
 	}
@@ -392,12 +392,8 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 }
 
 // sandboxSentinelRoutes are the routes a pool holds a discobox's injected
-// sentinels to: those of the secrets they stand for, or none for a discobox
-// whose injected secrets are not held to routes (a judge's).
+// sentinels to: those of the secrets they stand for.
 func sandboxSentinelRoutes(ctx context.Context, st *store.Store, sandboxModel *model.Sandbox, assignments []model.SandboxSecret) (map[string][]secretroute.Route, error) {
-	if !sandboxModel.HoldsInjectedSecretsToRoutes() {
-		return nil, nil
-	}
 	return st.SecretSentinelRoutes(ctx, sandboxModel.ProjectID, assignments)
 }
 
@@ -417,6 +413,14 @@ func (s *Service) MarkSecretHoldersDirtyTx(ctx context.Context, txStore *store.S
 		}
 	}
 	return nil
+}
+
+// MarkSandboxSentinelsDirtyTx marks one sandbox's sentinel delivery for
+// reconcile, in the transaction that bound a variable on it — an approved
+// agent request (ADR 26-10-27-880) — so the new binding reaches it while it
+// runs.
+func (s *Service) MarkSandboxSentinelsDirtyTx(ctx context.Context, txDB *gorm.DB, projectID, sandboxID string) error {
+	return s.engine.MarkDirtyTx(ctx, txDB, SentinelsResourceType, SandboxDirtyID(projectID, sandboxID))
 }
 
 // RebindHarnessConfigSecrets brings every live sandbox running a harness config
@@ -511,11 +515,7 @@ func rebindSandboxSecretRows(ctx context.Context, st *store.Store, projectID str
 	if len(bindings) == 0 {
 		return false, nil
 	}
-	// Only the injected assignments are the harness's. An agent credential's
-	// binding may share a variable with one (the env-name index includes
-	// AgentRequested), and repointing it at the harness's secret would hand
-	// the agent a credential nobody granted it.
-	assignments, err := st.ListInjectedSandboxSecrets(ctx, projectID, sandboxModel.ID)
+	assignments, err := st.ListSandboxSecrets(ctx, projectID, sandboxModel.ID)
 	if err != nil {
 		return false, err
 	}
@@ -598,7 +598,7 @@ func (s *Service) EnsureCaptureOriginSecretsTx(ctx context.Context, st *store.St
 	if box.HarnessConfigID == nil || *box.HarnessConfigID != configID {
 		return store.ErrGenerationConflict
 	}
-	assignments, err := st.ListInjectedSandboxSecrets(ctx, projectID, sandboxID)
+	assignments, err := st.ListSandboxSecrets(ctx, projectID, sandboxID)
 	if err != nil {
 		return err
 	}

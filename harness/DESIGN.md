@@ -360,77 +360,6 @@ coding harnesses; shell carries no capture implementation.
   the variable too, ahead of asking whether it writes to a terminal, and may
   put OSC 8 into a pipe. That cost is kept to the one image whose agent needs
   the hint, rather than made every exec's default.
-- Every harness bundle that runs a model provides
-  **`/usr/local/bin/discobox-prompt`**, a one-shot prompting interface a
-  process in the discobox asks for a model through
-  ([ADR 0079](../docs/adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)):
-  `discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON [--no-tools]`,
-  answering on stdout and exiting 0 only when the model answered. `--model`
-  names a *role* (`judge`, which pins a named model — except in the opencode,
-  omp and pi images, whose providers are the user's choice; see
-  [OpenCode](#opencode), [omp](#omp) and [pi](#pi) — or `fast`), never a model id — the caller does not know
-  what the image installed, so mapping the role is the wrapper's job, and it is
-  version-coupled to a CLI the image pins the way the hook and launch wrappers
-  are. `--no-tools` means the model answers from its prompt and executes
-  nothing — no command, no file read, no network fetch
-  ([ADR 0090](../docs/adr/0090-the-judge-is-handed-facts-and-given-no-tools.md))
-  — and mapping it onto whatever the image's CLI calls the same thing is the
-  wrapper's job too; a CLI with no tools-off switch maps it onto the strictest
-  sandboxing it has instead. Under `--no-tools` the CLI also runs in a state
-  home of the run's own, made under `TMPDIR` and seeded with the account,
-  because the project's judge runs one wrapper per ask in parallel and a CLI
-  rewrites its state files as it goes. The wrapper removes it on exit; a run
-  killed on cancellation runs no trap, and its caller removes that `TMPDIR`
-  (the sandbox agent gives each judging run its own and removes it,
-  `execs.RunOnce`). It goes on PATH rather than in `libexec` because
-  its callers resolve it by name. Its consumer is the project's judge: the
-  sandbox agent of a discobox in judge mode, running the project's default
-  harness, which answers every command, request and delegation job with it
-  ([ADR 26-09-22-838](../docs/adr/26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md))
-  and never omits `--no-tools`.
-
-  **With `--output-schema`, stdout is one JSON document and nothing else.** The
-  answer is decoded strictly ([`judge`](../pkg/judge/DESIGN.md)): prose around it,
-  a code fence, or a transcript with the answer somewhere inside is an answer
-  that cannot be read, and a wrapper that cannot be told to say only the answer
-  normalizes its own output — `discobox-prompt-answer`, which the platform's
-  core feature installs on every box, prints the one
-  JSON document in what it is given — the last one that starts a line, so that
-  prose mentioning a brace cannot swallow the answer. `codex-cli`
-  prints the agent's last message alone (`--output-last-message`) and puts it
-  through the helper; `opencode`, which has no such flag, puts its whole
-  transcript through it; `claude-code`, `copilot`, `omp` and `pi` print only what
-  the model said and put that through it too, since a model asked for JSON may fence it
-  anyway. Each
-  captures its CLI's output rather than piping it, so a failed run is a failed
-  wrapper rather than a successful print of nothing. The `shell`
-  image runs no model and provides no wrapper: a project whose default harness
-  is `shell` has no judge discobox
-  ([ADR 26-10-02-054](../docs/adr/26-10-02-054-commands-are-judged-by-default-and-requests-by-opt-in.md)).
-
-  **The `judge` role answers without extended reasoning, and a one-shot run
-  does nothing beside the model call.** The judge holds a request open, and
-  its verdict is a few dozen tokens. Measured on `claude-code`, default
-  thinking added 500 to 5,700 output tokens (5 to 50 seconds) and a fresh
-  session's background traffic about two more. The wrapper sets both off
-  itself, overriding the environment, so the judge's speed and depth are not
-  the judged agent's to choose. `opencode` has no reasoning switch that holds
-  across the providers a user may pick, so its judge reasons as its model
-  does; what its wrapper removes is the session title opencode would
-  otherwise generate with a second call to the same model (`--title`).
-  `copilot` checks an effort level against each model, so its judge too
-  reasons as its model does until an eval measures the alternative
-  ([ADR 26-10-02-840](../docs/adr/26-10-02-840-the-copilot-harness-takes-its-github-token-from-the-environment.md) §5).
-  `omp`'s judge passes `--thinking=off`, which omp raises to the lowest level
-  a model that must reason offers, and its configure command asks that judge
-  one question before it saves, so a model that still refuses is found there;
-  its wrapper also turns off the session and title omp would otherwise keep
-  and generate (`--no-session --no-title`)
-  ([ADR 26-10-16-965](../docs/adr/26-10-16-965-the-omp-judge-answers-with-thinking-off-and-configure-proves-it-can.md)).
-  `pi` clamps a thinking level to what the model offers, but its judge is
-  still left at pi's default, as copilot's is, with the session off
-  (`--no-session`)
-  ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harness-delivers-auth-json-and-exchanges-copilot-in-the-sandbox.md) §5).
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
 - **A config command may declare the ports its sign-in needs** (`config.ports`,
@@ -543,8 +472,8 @@ subject to repo trust prompts or user/project override:
   and nothing else — so `hook-plugin/` (an opencode 2 plugin: a directory whose
   `server.js` default-exports `{id, setup}`; a single file is refused) is what
   claude-code, codex-cli and copilot declare as commands, and it invokes the same generic
-  publisher. It publishes only when `DISCOBOX_HOOK_SOCKET` is set, which is
-  also what keeps it silent in the tool-free judge. It hears the lifecycle
+  publisher. It publishes only when `DISCOBOX_HOOK_SOCKET` is set, which keeps
+  it silent in a configure sandbox and outside a Discobox terminal. It hears the lifecycle
   through the bus, which a plugin subscribes to after opencode starts: the
   TUI, which is how the launcher runs a session, creates its session later and
   published every event in each run measured, while `opencode run` can create
@@ -768,14 +697,14 @@ force a re-login, and should verify it first — it may have been revoked since.
 **A secret may declare routes** (`Secret.Routes`,
 [ADR 26-10-02-924](../docs/adr/26-10-02-924-a-secret-may-carry-routes-and-every-request-it-is-sent-in-must-fall-on-one.md)):
 where the harness itself sends the credential, the image's alone. Each route
-is a host, an optional path prefix, and an optional use. Configure writes the
-routes onto the secret it creates. An image declaring different ones
-re-syncs them, while a secret a person bound is theirs to route. Every request
-carrying the secret's sentinel must fall on one, and the most specific
-decides. A route with no use is sent unjudged. One with a use is judged where
-the server judges requests. Anything else is refused. Name the harness's own
-endpoints without a use, and judge only the routes that reach what the account
-owns. A judge discobox's own are exempt.
+is a host, an optional path prefix, and whether it is blocked. Configure
+writes the routes onto the secret it creates. An image declaring different
+ones re-syncs them, while a secret a person bound is theirs to route. Every
+request carrying the secret's sentinel must fall on one, and the most specific
+decides: a blocked one refuses, and anything no route covers is refused. Name
+the harness's own endpoints, and block the paths beneath them that reach what
+the account owns rather than what the harness needs. A route a judge used to
+read is a blocked one (ADR 26-10-27-880).
 
 The CLI applies returned files and encrypted secret bindings only after the
 configure terminal exits successfully. No configure flow stores credentials in a
@@ -1016,7 +945,7 @@ that declares none. See
 [ADR 26-10-15-848](../docs/adr/26-10-15-848-the-opencode-harness-runs-opencode-2.md).
 
 - **Every opencode command runs `--standalone`**: the launcher, the configure
-  script, `discobox-prompt` and the credentials helper. Without it opencode
+  script and the credentials helper. Without it opencode
   talks to a per-user background service, which outlives the terminal that
   started it and would run the hook plugin in that terminal's environment for
   every terminal after it.
@@ -1061,13 +990,12 @@ that declares none. See
   and on a sandbox that ran opencode 1 the switch keeps it active over
   opencode's own import of the same file. The helper is the one place the
   image's entries are made (`own`) and the one reader of what was delivered
-  (`delivered`), for the launcher, configure and the judge.
+  (`delivered`), for the launcher and configure.
 - **The default model is checked, and a failure only warns.** The check runs
   on the model a sandbox starts on — the `model` setting, else the last
   `/models` pick, else opencode's own choice — named with `--model` from
   `opencode-model` (`model.sh`), since `opencode run` alone does not read the
-  `/models` pick; the judge resolves its fallback through the same helper.
-  Only that model is
+  `/models` pick. Only that model is
   checked: whether a request succeeds depends on the model as much as the
   credential (a plan that excludes it, a region that needs opting in to), which
   opencode's model list does not show, so checking each provider on a model
@@ -1092,47 +1020,17 @@ that declares none. See
   config is replaced by the captured settings — so neither is the place for it.
 - **Discobox's own settings for the harness** live in
   `.config/discobox/opencode-harness.json`, a plain harness file the image
-  declares and configure returns: `judgeModel` and `webSearch`. It is edited
+  declares and configure returns: `webSearch`. It is edited
   with `discobox admin harness edit opencode .config/discobox/opencode-harness.json`,
-  and a reconfigure keeps whatever was edited into it.
+  and a reconfigure keeps whatever was edited into it, but for the
+  `judgeModel` a harness configured before the judge was removed carried,
+  which it drops.
 - **Web search is asked during configure.** opencode 2 searches with every
   provider by default, through a keyless search service. The launcher reads
   `webSearch`: `false` denies the `websearch` permission through
   `OPENCODE_CONFIG_CONTENT`, which takes the tool away from the model; `true`
   and `null` — the image's baseline, before anyone configured — leave
   opencode's default.
-- `discobox-prompt` runs `opencode run` with stdin closed, since `run` reads
-  an open one as more of the message. **Tools-off is isolation**, not a
-  permission rule layered over whatever is there: the caller may be the agent
-  being judged, running as the same user in the same directory, so every source
-  opencode would read is one it could have written — a config file's permission
-  rules, a plugin (code in the process, whatever the permissions say), an
-  `AGENTS.md` found from the working directory, `~/.claude` and `~/.agents`
-  found from the home, a cached model catalog, any `OPENCODE_*` variable. With
-  `--no-tools` the wrapper runs opencode from an empty directory under an empty
-  home, with empty config, state and cache directories, project configuration
-  off, no inherited `OPENCODE_*` variable or hook socket, and one rule denying
-  every permission (a denied tool is not offered at all). Its data directory is
-  its own, holding the key and OAuth credentials the configuration delivered:
-  a judge discobox never launches the harness, so it has no store to read,
-  and a credential the agent connected by hand does not reach it. claude-code's wrapper
-  reaches the same place with `--restricted`. As there, this keeps the judge out
-  of configuration the agent wrote; it is not a boundary against an agent that
-  sets out to defeat it, which has sudo (ADR 0090).
-- **`judge` is not pinned.** It is `judgeModel` from the settings file, else the
-  model opencode itself starts with: the `model` setting in its configuration
-  (`opencode.jsonc`, `opencode.json`, then `config.json`), else the last
-  `/models` pick, else opencode's own pick among the connected providers. The
-  configuration is read as JSONC, as opencode reads it (comments and trailing
-  commas, walked rather than pattern-matched). The named ones are read before
-  isolation and passed as one `--model=NAME` word, so only the model's name
-  crosses into the isolated run, and no value can become a flag of its own. The user chooses the providers
-  here, so no fixed model is one the harness can be sure to reach, and a judge
-  that cannot answer refuses every command — which is also why it follows
-  opencode's default rather than a `/models` pick the default overrides. The
-  named sources are files the judged agent can write, and so is the delivered
-  credentials file, so an agent that set out to could move the judge to another
-  model, or to a provider it added a key for. That trade is recorded in ADR 0127 §4.
 - The configure image declares config ports 1455 (ChatGPT's browser sign-in)
   and 1456 (DigitalOcean's). A browser sign-in on a random port cannot be
   forwarded; those providers connect with a key.
@@ -1186,10 +1084,10 @@ Either way Copilot stores the token, and the script reads it back:
   verification stops being offered.
 - **The token is held to Copilot's own traffic.** `COPILOT_GITHUB_TOKEN`
   declares routes (ADR 26-10-02-924), which configure writes onto the secret:
-  Copilot's own endpoints under `githubcopilot.com` and `api.github.com` go
-  unjudged; its MCP server, its agents and the rest of `github.com` are judged
-  against read-only uses where requests are judged; anything else is refused.
-  The agent needs a grant of its own to do more on GitHub.
+  Copilot's own endpoints under `githubcopilot.com` and `api.github.com` are
+  sent; its MCP server, its agents and the rest of `github.com` are blocked
+  routes, which a judge used to read (ADR 26-10-27-880); anything else is
+  refused. The agent needs a grant of its own to do more on GitHub.
 - Every path ends in a tool-free `copilot -p` with only the chosen token, in a
   `COPILOT_HOME` of its own so the stored login cannot stand in for it.
 - It returns `~/.copilot/settings.json` as the user left it (`/config model`,
@@ -1201,13 +1099,6 @@ Either way Copilot stores the token, and the script reads it back:
   leaves an interactive session on manual approval. A launch prompt goes to
   `--interactive=`, whose `=` keeps a prompt starting with a dash a prompt;
   resume is `--continue`, which opens a new session when there is none.
-- `discobox-prompt` runs `copilot -p --silent`. **Tools-off is an allowlist
-  naming no tool** (`--available-tools=discobox-no-tools`): an empty one is
-  read as no filter and offers every tool. With `--no-tools` it also runs in an
-  empty `COPILOT_HOME` and directory of its own, without custom instructions,
-  built-in MCP servers or `COPILOT_ALLOW_ALL`; the token needs no seeding since
-  it is in the environment. `judge` is pinned to `claude-sonnet-5.5`; an
-  account whose plan or policy does not offer it refuses every judged command.
 - Copilot unpacks itself under `~/.cache/copilot/pkg` on first run (about
   185 MB per version), which the base layer's `%HOME%/.cache` volume already
   makes per-user pool cache.
@@ -1242,8 +1133,8 @@ The image declares no secrets.
   refreshed. omp reads ChatGPT's `chatgpt-account-id` from the access token's
   claims, which a sentinel does not carry.
 - **`PI_PROXY` follows `HTTPS_PROXY`** (`proxy-env.sh`, installed as
-  `/etc/profile.d/omp-proxy.sh` and sourced by the launcher, configure command
-  and `discobox-prompt`). omp's Anthropic transport is its own client that
+  `/etc/profile.d/omp-proxy.sh` and sourced by the launcher and configure
+  command). omp's Anthropic transport is its own client that
   reads only `PI_PROXY`, and without it connects direct, which a sandbox's
   egress does not allow: every Anthropic request hangs into "Connection
   error.". It is derived rather than written into the manifest, where a build
@@ -1259,12 +1150,8 @@ The image declares no secrets.
   verbatim.
 - The session runs **without the image's overlay**, so a first configure gets
   omp's own setup wizard (sign-in, default model, theme), and the default
-  model is then checked with a tool-free `omp -p`, and the judge with the
-  image's own `discobox-prompt --model judge --no-tools` in a home holding
-  the exported credentials and both settings files; a failure of either only
-  warns. It returns `.omp/agent/config.yml` as omp wrote it, and Discobox's
-  `.config/discobox/omp-harness.json` (`judgeModel`) as it arrived; not
-  `models.yml`, which holds literal keys and `!` commands, as pi's
+  model is then checked with a tool-free `omp -p`; a failure only warns. It
+  returns `.omp/agent/config.yml` as omp wrote it; not `models.yml`, which holds literal keys and `!` commands, as pi's
   `models.json` does, so custom providers are configured in the sandbox.
 - **The policy baseline** is `PI_CONFIG_FILES=/etc/omp/discobox.yml` in the
   image's env — `startup.setupWizard: false`, whose wizard otherwise stalls an
@@ -1273,25 +1160,6 @@ The image declares no secrets.
   argument: omp sends each positional argument as its own message and reads
   an `@`-led one as a file. Resume is `--continue`, which opens a new session
   when there is none.
-- `discobox-prompt` runs `omp -p --no-session --no-title` with stdin from
-  `/dev/null` (given another stdin, `-p` waits for it). **`judge` is not
-  pinned**: `judgeModel`, else omp's `default` model role followed through its
-  `@` aliases (`omp config get modelRoles`), else omp's own pick, always with
-  `--thinking=off`, which outranks a `:level` on the name; `fast` is the
-  `smol` role, at omp's own level. **Tools-off is isolation**: `--no-tools` and discovery off,
-  in a `HOME` of its own holding only the harness's credentials, from an
-  empty directory with an empty `.git` — omp collects context files from the
-  working directory up to a repository root, or `/` without one — with no
-  inherited `PI_*`, `OMP_*`, `XDG_*` or `*_BASE_URL` variable (`PI_PROXY`
-  is set again from `HTTPS_PROXY`). The credentials
-  are rebuilt from the delivered file with each one's tokens, expiry, account,
-  email and project and nothing else, and no API key that is itself a JSON
-  document: an omp credential can name its endpoint (github-copilot's
-  `apiEndpoint`, `enterpriseUrl`, alibaba-token-plan's key), and the agent can
-  write that file. Custom providers in `models.yml` are out of the judge's
-  reach for the same reason, and so are providers that need an endpoint from
-  their credential. System text carries a newline, since omp
-  reads a one-line system prompt as a file path when such a file exists.
 - The configure image declares config ports 1455 (ChatGPT), 54545
   (Anthropic), 8085 (Gemini CLI), 51121 (Antigravity) and 54549 (OpenRouter).
   Every omp browser sign-in also takes the redirect URL pasted back, which is
@@ -1331,9 +1199,8 @@ read of what it stored ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harne
   token or (for Copilot) refresh token is still that sentinel was not
   replaced, and comes back as `usePrevious` with its previous entry verbatim.
   The default model is checked with a tool-free `pi -p`; a failure only warns.
-  It returns `settings.json` and `keybindings.json` as pi wrote them, and
-  Discobox's `.config/discobox/pi-harness.json` (`judgeModel`) as it arrived;
-  not `models.json` or `mcp.json`, which hold literal keys and commands.
+  It returns `settings.json` and `keybindings.json` as pi wrote them; not
+  `models.json` or `mcp.json`, which hold literal keys and commands.
 - **The policy baseline** is the image's env — `PI_SKIP_VERSION_CHECK=1`,
   `PI_TELEMETRY=0`, since pi otherwise reports an install on a first run and
   after each upgrade and adds attribution headers to some providers'
@@ -1347,23 +1214,6 @@ read of what it stored ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harne
   argument as its own message, and reads an `@`-led one as a file to attach
   even after `--`. Resume is `--continue`, which opens a new session when
   there is none.
-- `discobox-prompt` runs `pi -p --no-session` with stdin from `/dev/null`.
-  **`judge` is not pinned**, and pi has no roles, so `judge` and `fast` are
-  one: `judgeModel`, else `defaultProvider`/`defaultModel` from pi's settings,
-  else pi's own pick. pi has no `--flag=value` form, and takes the word after
-  `--model` or `--system-prompt` as its value whatever it starts with.
-  **Tools-off is isolation**: `--no-tools`, discovery and project trust off,
-  `--no-context-files` (pi collects `AGENTS.md` from the working directory up
-  to `/`, a repository root or not) and `--offline`, in a `HOME` of its own
-  from an empty directory, with no inherited `PI_*`, `XDG_*` or `*_BASE_URL`
-  variable. Its `auth.json` is rebuilt from the delivered one with each
-  entry's key, or its access token, refresh token and expiry, each of token
-  characters (or an empty refresh token, as OpenRouter's login stores), and
-  nothing else: no `env`, no `enterpriseUrl`, no `!` command.
-  A Copilot entry keeps its refresh token alone, so the judge exchanges for a
-  Copilot token of its own — the access token names its endpoint
-  (`proxy-ep`). System text carries a newline, since pi reads a system prompt
-  as a file when one by that name exists.
 - The configure image declares config ports 53692 (Anthropic), 1455 (OpenAI),
   1456 (Radius) and an ephemeral one for OpenRouter. Each browser sign-in also
   takes the redirect URL pasted back; Copilot, xAI, Kimi and Meta sign in by

@@ -49,7 +49,7 @@ func TestSandboxEgressRestrictsOnlyThatSandbox(t *testing.T) {
 		t.Fatalf("create proxy: %v", err)
 	}
 	t.Cleanup(func() { _ = server.Close() })
-	policy := newPolicyPublisher(server, cfg, newActivations(), func(err error) { t.Errorf("apply proxy config: %v", err) })
+	policy := newPolicyPublisher(server, cfg, func(err error) { t.Errorf("apply proxy config: %v", err) })
 	go func() { _ = server.ListenAndServe() }()
 	restrictedClient := sandboxClient(t, server, restricted)
 	openClient := sandboxClient(t, server, open)
@@ -122,7 +122,7 @@ func TestPolicyFileIsLoadedBeforeServing(t *testing.T) {
 		t.Fatalf("create proxy: %v", err)
 	}
 	t.Cleanup(func() { _ = server.Close() })
-	policy := newPolicyPublisher(server, cfg, newActivations(), nil)
+	policy := newPolicyPublisher(server, cfg, nil)
 	path := root.ProxySecretsFile(testProjectID, testPoolID)
 
 	if err := policy.loadFile(path, nil); err != nil {

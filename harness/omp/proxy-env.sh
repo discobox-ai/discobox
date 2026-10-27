@@ -1,7 +1,6 @@
 # shellcheck shell=sh # Sourced by /etc/profile and the image's scripts, never run.
 # Installed as /etc/profile.d/omp-proxy.sh, and sourced by the image's
-# launcher, configure command and discobox-prompt, which do not all run from a
-# login shell.
+# launcher and configure command, which do not all run from a login shell.
 #
 # omp's Anthropic transport is its own HTTP client, and takes a proxy from
 # PI_PROXY (or PI_PROXY_<PROVIDER>) alone: given only HTTPS_PROXY it connects

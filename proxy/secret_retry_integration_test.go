@@ -457,7 +457,7 @@ func (r *revokingResolver) Authorize(context.Context, secrets.AuthorizeRequest) 
 	defer r.mu.Unlock()
 	r.asks++
 	if r.asks > 1 {
-		return secrets.Verdict{Reason: "that use was revoked"}, nil
+		return secrets.Verdict{Reason: "this credential has no route to it any more"}, nil
 	}
 	return secrets.Verdict{Allow: true}, nil
 }
@@ -476,8 +476,8 @@ func (r *revokingResolver) counts() (asks, resolves int) {
 }
 
 // A retry carries a credential the first attempt did not, so it is authorized
-// the way the first attempt was (ADR 26-09-22-838 §4). A grant revoked while the
-// upstream was refusing means there is no second attempt: the upstream's own
+// the way the first attempt was. Routes changed while the upstream was refusing
+// means there is no second attempt: the upstream's own
 // 401 is what the sandbox gets, and no further credential is resolved.
 func TestHTTPProxyDoesNotRetryWhatIsNoLongerAuthorized(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -531,13 +531,12 @@ func TestHTTPProxyDoesNotRetryWhatIsNoLongerAuthorized(t *testing.T) {
 	}
 
 	// And the trail has to show a verdict refused the retry, rather than
-	// leaving it indistinguishable from having had nothing new to send
-	// (ADR 26-09-22-838 §8).
+	// leaving it indistinguishable from having had nothing new to send.
 	blocked := waitForBlockedRows(t, dsn, 1)
 	if len(blocked) != 1 {
 		t.Fatalf("blocked rows = %d, want the refused retry recorded once", len(blocked))
 	}
-	if blocked[0].BlockedReason != "judge: that use was revoked" {
+	if blocked[0].BlockedReason != "route: this credential has no route to it any more" {
 		t.Fatalf("blocked row reason = %q, want the verdict's own words", blocked[0].BlockedReason)
 	}
 	// The refusal was not the answer: the sandbox got the upstream's 401, so
@@ -627,7 +626,7 @@ func (r *flakyResolver) authorized() [][]string {
 }
 
 // The retry is authorized over what the request carries, not over what the
-// first attempt happened to resolve (ADR 26-09-22-838 §4). A sentinel whose resolve
+// first attempt happened to resolve. A sentinel whose resolve
 // was denied is still in the request, resolves on the retry, and so must be
 // named in the verdict that lets the retry go.
 func TestHTTPProxyAuthorizesEverySentinelTheRetryCarries(t *testing.T) {

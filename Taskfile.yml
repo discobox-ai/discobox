@@ -682,47 +682,6 @@ tasks:
     cmds:
       - test/performance/terminal-latency/run.sh
 
-  eval:judge:
-    desc: "Ask a harness's judge about the recorded cases in test/judge-evals and score it (WRAPPER=harness/codex-cli/prompt.sh, RUNS=5; extra flags after --)"
-    cmds:
-      # It calls a real model through the harness's own wrapper, with this
-      # environment's CLI and credentials, so it is never part of test:all.
-      - go run ./internal/cmd/discobox-judge-eval -wrapper '{{.WRAPPER | default "harness/claude-code/prompt.sh"}}' -runs {{.RUNS | default "5"}} {{.CLI_ARGS}} test/judge-evals/cases
-
-  eval:judge:jev:
-    desc: "Ask Jev about the recorded cases in test/judge-evals the way a server that judges with it does, and score it (needs DISCOBOX_JEV_API_KEY; RUNS=1; extra flags after --)"
-    cmds:
-      # Jev is calibrated and near-deterministic, so one run per case is the
-      # default rather than the five a sampled LLM needs.
-      - go run ./internal/cmd/discobox-judge-eval -jev -runs {{.RUNS | default "1"}} {{.CLI_ARGS}} test/judge-evals/cases
-
-  eval:judge:use-cases:
-    desc: "Judge the same work under command-list uses and use-case uses, and compare friction and leaks (WRAPPER=, RUNS=3, OUT=build/use-case-evals; extra flags after --)"
-    vars:
-      OUT: '{{.OUT | default "build/use-case-evals"}}'
-    cmds:
-      # Like eval:judge it calls a real model. A style's cases failing is the
-      # measurement, not an error, so each run is let fail and score.mjs says
-      # what it cost.
-      - node test/judge-evals/use-cases/generate.mjs {{.OUT}}
-      - for: [command, use-case, no-never]
-        cmd: go run ./internal/cmd/discobox-judge-eval -wrapper '{{.WRAPPER | default "harness/claude-code/prompt.sh"}}' -runs {{.RUNS | default "3"}} -json {{.OUT}}/{{.ITEM}}.report.json {{.CLI_ARGS}} {{.OUT}}/{{.ITEM}} > {{.OUT}}/{{.ITEM}}.txt || true
-      - node test/judge-evals/use-cases/score.mjs {{.OUT}}
-
-  eval:judge:use-cases:authored:
-    desc: "Have a headless Claude Code write the uses and policy for each use-case scenario's task with the discobox-access skill, then judge the scenario's work under them (AUTHOR_MODEL=sonnet, RUNS=3, OUT=build/use-case-evals)"
-    vars:
-      OUT: '{{.OUT | default "build/use-case-evals"}}'
-    env:
-      # author.sh reads its model from the environment; a task variable is
-      # not one until it is mapped here.
-      AUTHOR_MODEL: '{{.AUTHOR_MODEL | default "sonnet"}}'
-    cmds:
-      - test/judge-evals/use-cases/author.sh {{.OUT}}
-      - node test/judge-evals/use-cases/generate.mjs {{.OUT}} --authored {{.OUT}}/authored.json
-      - go run ./internal/cmd/discobox-judge-eval -wrapper '{{.WRAPPER | default "harness/claude-code/prompt.sh"}}' -runs {{.RUNS | default "3"}} -json {{.OUT}}/authored.report.json {{.CLI_ARGS}} {{.OUT}}/authored > {{.OUT}}/authored.txt || true
-      - node test/judge-evals/use-cases/score.mjs {{.OUT}}
-
   test:e2e:wslc:
     desc: "Run the wslc (Windows) provider e2e tests. Requires: Windows with WSL Containers"
     cmds:

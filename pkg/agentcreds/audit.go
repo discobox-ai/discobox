@@ -59,9 +59,6 @@ type AuditExchange struct {
 	Blocked       bool   `json:"blocked"`
 	BlockedReason string `json:"blockedReason,omitempty"`
 	DurationMS    int64  `json:"durationMs,omitempty"`
-	// UseIDs are the approved credential uses whose sentinels the request
-	// carried: spent when it was let through, refused under when Blocked.
-	UseIDs []string `json:"useIds,omitempty"`
 }
 
 // AuditHTTPResponse is the HTTP audit read's body.

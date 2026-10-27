@@ -58,7 +58,7 @@ func TestDeletingAGrantsScopeDeletesTheGrant(t *testing.T) {
 		t.Fatalf("delete harness config: %v", err)
 	}
 
-	grants, err := s.ListSecretGrants(ctx, "project-1", "", "")
+	grants, err := s.ListSecretGrants(ctx, "project-1", "")
 	if err != nil {
 		t.Fatalf("list grants: %v", err)
 	}

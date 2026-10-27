@@ -80,7 +80,7 @@ func markSentinelsIfStale(ctx context.Context, st *store.Store, engine *reconcil
 	if engine == nil {
 		return nil
 	}
-	assignments, err := st.ListInjectedSandboxSecrets(ctx, sb.ProjectID, sb.ID)
+	assignments, err := st.ListSandboxSecrets(ctx, sb.ProjectID, sb.ID)
 	if err != nil {
 		return err
 	}

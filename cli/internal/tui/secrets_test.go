@@ -8,8 +8,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-
-	"github.com/discobox-ai/discobox/pkg/wellknown"
 )
 
 // The secrets screen is the operator's side of the credential inbox: what the
@@ -36,8 +34,7 @@ func secretsFixture(t *testing.T) (*Model, *fakeSource) {
 	}
 	ds.projectGrants = []Grant{
 		{ID: "grant_1", SecretID: "sec_gh", Scope: "sandbox", ScopeKey: "sbx_one", Host: "api.github.com",
-			Uses: []GrantUse{{ID: "use_7f3c", Description: "Open a PR"}}, Granted: time.Now().Add(-time.Minute),
-			Approved: askedPolicy(), ApprovedShown: askedPolicy()},
+			GrantedBy: "user:alice", Granted: time.Now().Add(-time.Minute)},
 		{ID: "grant_2", SecretID: "sec_gh", Scope: "project", ScopeKey: "project-1", Host: "github.com"},
 	}
 	m := newTestModel(t, ds)
@@ -91,7 +88,7 @@ func TestGrantsAreListedAndRevoked(t *testing.T) {
 	}
 	// A grant says what it covers before it offers to be withdrawn.
 	joined := m.dialog.items[1].label + " " + m.dialog.items[1].detail
-	for _, want := range []string{"api.github.com", "sandbox", "sbx_one", "approved use"} {
+	for _, want := range []string{"api.github.com", "sandbox", "sbx_one"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("row = %q, want it to carry %q", joined, want)
 		}
@@ -102,7 +99,7 @@ func TestGrantsAreListedAndRevoked(t *testing.T) {
 	if m.dialog == nil || m.dialog.title != "Grant" {
 		t.Fatalf("enter did not read the grant: %s", describe(m.dialog))
 	}
-	for _, want := range []string{"api.github.com", "sandbox", "Open a PR", "use_7f3c", "discobox-access run --use"} {
+	for _, want := range []string{"api.github.com", "sandbox", "user:alice"} {
 		if !strings.Contains(dialogText(m), want) {
 			t.Fatalf("review = %q, want it to carry %q", dialogText(m), want)
 		}
@@ -189,12 +186,12 @@ func TestADelegationGrantSaysWhatItIs(t *testing.T) {
 	}
 
 	drain(t, m, m.dialog.action("grant_1"), 0)
-	for _, want := range []string{"held by", "never uses it", "uses it may delegate", "cannot run with them"} {
+	for _, want := range []string{"held by", "never uses it"} {
 		if !strings.Contains(dialogText(m), want) {
 			t.Fatalf("review = %q, want it to carry %q", dialogText(m), want)
 		}
 	}
-	for _, wrong := range []string{"usable by", "discobox-access run"} {
+	for _, wrong := range []string{"usable by"} {
 		if strings.Contains(dialogText(m), wrong) {
 			t.Fatalf("review = %q, want no claim that its discobox may use it (%q)", dialogText(m), wrong)
 		}
@@ -608,13 +605,10 @@ func TestAPreApprovalIsOneFormWithEveryAnswerOnIt(t *testing.T) {
 		t.Fatalf("picker = %q, want the project's discoboxes", got)
 	}
 
-	// The form opens on the ordinary kind: a credential the discobox is
-	// provisioned with, which has no variable and no declared use.
-	if got := m.dialog.form.chosenLabel("taken"); got != "anything in the discobox" {
-		t.Fatalf("taken = %q, want the ordinary kind by default", got)
-	}
-	if rowShown(m, "envVar") || rowShown(m, "use") {
-		t.Fatal("an injected credential is being asked what command it is for")
+	// The form opens on a grant to use it: what a discobox holding the
+	// sentinel needs.
+	if got := m.dialog.form.chosen("purpose"); got != "use" {
+		t.Fatalf("purpose = %q, want a grant to use it by default", got)
 	}
 
 	// The host opens on the secret's own binding, which is the common answer
@@ -641,96 +635,34 @@ func TestAPreApprovalIsOneFormWithEveryAnswerOnIt(t *testing.T) {
 	if got.Host != "api.github.com" || got.TTLSeconds != 900 {
 		t.Fatalf("grant = %#v, want the host and lifetime that were answered", got)
 	}
-	if got.EnvVar != "" || len(got.Uses) != 0 {
-		t.Fatalf("grant = %#v, want no declared uses on an injected credential", got)
+	if got.Delegate {
+		t.Fatalf("grant = %#v, want a grant to use it", got)
 	}
 }
 
-// A credential taken through discobox-access is the other half: it is never
-// injected, so it alone is asked for a variable and a use, and neither may be
-// left empty (ADR 0031 §4).
-func TestAnAccessGrantAsksForTheVariableAndTheUse(t *testing.T) {
+// A delegation is one discobox's: only a grant scoped to one discobox is asked
+// what it is for, and choosing to give it on mints a delegation grant.
+func TestADelegationGrantIsOneDiscoboxs(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress(grantCreateKey))
-	onRow(t, m, "taken")
+	if rowShown(m, "purpose") {
+		t.Fatal("a project grant is asked whether it delegates")
+	}
+	onRow(t, m, "scope")
+	for m.dialog.form.chosen("scope") != "sandbox" {
+		send(t, m, keyPress("right"))
+	}
+	if !rowShown(m, "purpose") {
+		t.Fatal("a discobox grant is not asked what it is for")
+	}
+	onRow(t, m, "purpose")
 	send(t, m, keyPress("right"))
-	if !rowShown(m, "envVar") || !rowShown(m, "use") {
-		t.Fatal("the form does not ask what the credential is for")
-	}
 	send(t, m, keyPress("ctrl+s"))
-	if m.dialog == nil || m.dialog.kind != dlgForm {
-		t.Fatalf("the form went away with nothing answered: %s", describe(m.dialog))
-	}
-	if !strings.Contains(dialogText(m), "needs a variable to arrive in") {
-		t.Fatalf("the form does not say what it is waiting for:\n%s", dialogText(m))
-	}
 
-	typeInto(t, m, "envVar", "GH_TOKEN")
-	typeInto(t, m, "use", "Open a pull request")
-	send(t, m, keyPress("enter"))
-	writeGrantPolicy(t, m, ds)
-
-	if len(ds.createdGrants) != 1 {
-		t.Fatalf("created = %#v, want one grant", ds.createdGrants)
-	}
-	got := ds.createdGrants[0]
-	if got.EnvVar != "GH_TOKEN" || len(got.Uses) != 1 || got.Uses[0] != "Open a pull request" {
-		t.Fatalf("grant = %#v, want the variable and the use that were typed", got)
-	}
-	if got.Policy == nil || len(got.Policy.Statements) != 1 || got.Policy.Definitions["repository"] == "" {
-		t.Fatalf("grant policy = %#v, want the statement and definition written", got.Policy)
-	}
-}
-
-// writeGrantPolicy writes the policy a grant taken through discobox-access
-// carries (#312), on the step after the form, as a rule's is written: nothing
-// is minted before it, finishing with no statement is refused, and a word
-// left undefined is said.
-func writeGrantPolicy(t *testing.T, m *Model, ds *fakeSource) {
-	t.Helper()
-	if m.dialog == nil || m.dialog.kind != dlgInput || !strings.Contains(m.dialog.title, "what it may do") {
-		t.Fatalf("dialog = %s, want the step asking what the grant may do", describe(m.dialog))
-	}
-	if len(ds.createdGrants) != 0 {
-		t.Fatalf("created = %#v, want nothing minted before its policy", ds.createdGrants)
-	}
-	drain(t, m, m.dialog.action(""), 0)
-	if m.dialog == nil || m.dialog.kind != dlgInput || len(ds.createdGrants) != 0 {
-		t.Fatalf("dialog = %s, created = %#v; want a grant with no statement refused", describe(m.dialog), ds.createdGrants)
-	}
-	drain(t, m, m.dialog.action(`allow read on anything in repository "org/repo"`), 0)
-	if !strings.Contains(cardWords(m), "not a policy yet") {
-		t.Fatalf("card = %q, want the undefined word said", cardWords(m))
-	}
-	drain(t, m, m.dialog.action("repository = a GitHub repository"), 0)
-	drain(t, m, m.dialog.action(""), 0)
-}
-
-// Stepping back from the policy keeps both the form's answers and the lines
-// written, and nothing is minted.
-func TestAGrantPolicyStepGoesBackToTheForm(t *testing.T) {
-	t.Parallel()
-	m, ds := secretsFixture(t)
-
-	send(t, m, keyPress(grantCreateKey))
-	onRow(t, m, "taken")
-	send(t, m, keyPress("right"))
-	typeInto(t, m, "envVar", "GH_TOKEN")
-	typeInto(t, m, "use", "Open a pull request")
-	send(t, m, keyPress("ctrl+s"))
-	drain(t, m, m.dialog.action(`allow read on anything in repository "org/repo"`), 0)
-	send(t, m, keyPress("esc"))
-	if m.dialog == nil || m.dialog.kind != dlgForm || formValue(t, m, "use") != "Open a pull request" {
-		t.Fatalf("dialog = %s, want the form back as it was answered", describe(m.dialog))
-	}
-	send(t, m, keyPress("ctrl+s"))
-	if m.dialog == nil || !strings.Contains(wholeCard(m), "allow read on anything") {
-		t.Fatalf("card = %q, want the line written before kept", wholeCard(m))
-	}
-	if len(ds.createdGrants) != 0 {
-		t.Fatalf("created = %#v, want nothing minted", ds.createdGrants)
+	if len(ds.createdGrants) != 1 || !ds.createdGrants[0].Delegate || ds.createdGrants[0].Scope != "sandbox" {
+		t.Fatalf("created = %#v, want one delegation grant for the discobox", ds.createdGrants)
 	}
 }
 
@@ -983,8 +915,8 @@ func TestARequestRowSaysWhatItIsAbout(t *testing.T) {
 		req  CredentialRequest
 		want string
 	}{
-		{"an agent names the credential", CredentialRequest{Name: "github", SandboxID: "sbx_1", Uses: []string{"x"}}, "github"},
-		{"an ask to delegate says so", CredentialRequest{Name: "github", SandboxID: "sbx_1", Uses: []string{"x"}, Delegate: true}, "github · to delegate"},
+		{"an agent names the credential", CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", SandboxID: "sbx_1"}, "github"},
+		{"an ask to delegate says so", CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", SandboxID: "sbx_1", Delegate: true}, "github · to delegate"},
 		{"failing that, the variable", CredentialRequest{EnvVar: "GH_TOKEN", SandboxID: "sbx_1"}, "GH_TOKEN"},
 		{"the proxy saw a sentinel", CredentialRequest{SandboxID: "sbx_1", Type: "token"}, "an unresolvable sentinel"},
 		{"a person asked for a credential", CredentialRequest{Type: "token"}, "a token credential"},
@@ -998,45 +930,6 @@ func TestARequestRowSaysWhatItIsAbout(t *testing.T) {
 	}
 	if got := requesterLabel(CredentialRequest{SandboxID: "sbx_abcdefghij"}); got != "proxy · abcdefgh" {
 		t.Errorf("requester = %q, want the proxy and a short id", got)
-	}
-}
-
-// The scope decides which rows the form asks, and the kind decides the rest: a
-// credential taken through discobox-access is never injected, so it alone
-// carries a variable and a use, whatever scope it is granted at.
-//
-// It is asked at every scope on purpose. The binding a credential resolves
-// through is per discobox, but the grant is minted when that discobox's agent
-// first asks, so a project grant can carry uses without knowing which boxes it
-// will cover.
-func TestAProjectGrantCanBeAccessOnlyToo(t *testing.T) {
-	t.Parallel()
-	m, ds := secretsFixture(t)
-
-	send(t, m, keyPress(grantCreateKey))
-	if got := m.dialog.form.chosen("scope"); got != grantScopeProject {
-		t.Fatalf("scope = %q, want the form to open on the widest", got)
-	}
-	onRow(t, m, "taken")
-	send(t, m, keyPress("right"))
-	if !rowShown(m, "envVar") || !rowShown(m, "use") {
-		t.Fatal("a project grant is not offered the agent credentials shape")
-	}
-	typeInto(t, m, "envVar", "GH_TOKEN")
-	typeInto(t, m, "use", "Open a PR")
-	chooseTTL(t, m, "ttl", ttlNever)
-	send(t, m, keyPress("ctrl+s"))
-	writeGrantPolicy(t, m, ds)
-
-	if len(ds.createdGrants) != 1 {
-		t.Fatalf("created = %#v, want one grant", ds.createdGrants)
-	}
-	got := ds.createdGrants[0]
-	if got.Scope != "project" || got.ScopeKey != "" {
-		t.Fatalf("grant = %#v, want a project grant with no key", got)
-	}
-	if got.EnvVar != "GH_TOKEN" || len(got.Uses) != 1 || got.TTLSeconds != 0 {
-		t.Fatalf("grant = %#v, want the agent credentials shape, living forever", got)
 	}
 }
 
@@ -1433,20 +1326,6 @@ func submitForm(t *testing.T, m *Model) tea.Cmd {
 		t.Fatalf("the form refused: %s", why)
 	}
 	return m.dialog.submit(m.dialog.form)
-}
-
-// The gate to the discobox API is a secret only because grants are always of
-// one; its row says what it is instead of a host, so nobody reads it as a
-// token to rotate.
-func TestTheGateSaysWhatItIsOnTheSecretsScreen(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	ds.projectSecrets = []Secret{{ID: "sec_gate", Name: "ai.discobox.sandbox", Type: "token", Host: "api.discobox.internal", WellKnownID: wellknown.DiscoboxSandbox}}
-	m := newTestModel(t, ds)
-	send(t, m, keyPress(secretsKey))
-	if body := strings.Join(frame(m), "\n"); !strings.Contains(body, "gate: discobox API") || strings.Contains(body, "api.discobox.internal") {
-		t.Fatalf("frame does not mark the gate:\n%s", body)
-	}
 }
 
 // Requests that arrive while the secrets screen is open are drawn: the table

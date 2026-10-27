@@ -11,7 +11,7 @@ ARG HARNESS_METADATA
 # server would ever say so. A FROM scratch stage has no shell to check it in,
 # so the expansion does.
 LABEL io.discobox.image.v1="${HARNESS_METADATA:?HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . harness/codex-cli/image.json)\"}"
-COPY harness/codex-cli/agent.conf harness/codex-cli/check-launcher.sh harness/codex-cli/configure.sh harness/codex-cli/hooks.json harness/codex-cli/install-cli.sh harness/codex-cli/launch.sh harness/codex-cli/prompt.sh harness/codex-cli/provision.yaml harness/codex-cli/system-config.toml /features/codex-cli/
+COPY harness/codex-cli/agent.conf harness/codex-cli/check-launcher.sh harness/codex-cli/configure.sh harness/codex-cli/hooks.json harness/codex-cli/install-cli.sh harness/codex-cli/launch.sh harness/codex-cli/provision.yaml harness/codex-cli/system-config.toml /features/codex-cli/
 COPY harness/codex-cli/capture.sh harness/codex-cli/image.json /features/codex-cli/
 COPY harness/codex-cli/codex-normalize.cjs /features/codex-cli/
 # The exporter is owned by this harness; the generic platform has no JS runtime.

@@ -306,7 +306,6 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		{name: "poll interval", key: "DISPATCHER_POLL_INTERVAL", val: "-1s"},
 		{name: "sandbox concurrency", key: "SANDBOX_RECONCILE_JOB_CONCURRENCY", val: "0"},
 		{name: "otel metric export interval", key: "OTEL_METRIC_EXPORT_INTERVAL", val: "0s"},
-		{name: "judge backend", key: "DISCOBOX_JUDGE_BACKEND", val: "llm"},
 	}
 
 	for _, tt := range tests {
@@ -363,55 +362,6 @@ func clearConfigEnv(t *testing.T) {
 		"DISCOBOX_JEV_UNSURE",
 	} {
 		t.Setenv(key, "")
-	}
-}
-
-// The judge is the judge discobox unless the server says Jev, and a server
-// that says Jev must say with which key: one with none would start and then
-// refuse every credential once judging is on (ADR 26-10-01-324 §1).
-func TestLoadJudgeBackend(t *testing.T) {
-	clearConfigEnv(t)
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.JudgeBackend != JudgeBackendHarness || cfg.JevModel != "jev-1.13.0" || cfg.JevUnsure != JevUnsureHarness {
-		t.Fatalf("JudgeBackend, JevModel, JevUnsure = %q, %q, %q, want auto to choose the judge discobox with no key",
-			cfg.JudgeBackend, cfg.JevModel, cfg.JevUnsure)
-	}
-
-	// auto, with a key to ask Jev with, is Jev, and what Jev is unsure of
-	// goes to the judge discobox unless the server says to refuse it.
-	t.Setenv("DISCOBOX_JEV_API_KEY", "ts-key")
-	if cfg, err = Load(); err != nil || cfg.JudgeBackend != JudgeBackendJev || cfg.JevUnsure != JevUnsureHarness {
-		t.Fatalf("Load() = %+v, %v, want auto to choose Jev given a key", cfg, err)
-	}
-	t.Setenv("DISCOBOX_JUDGE_BACKEND", "harness")
-	if cfg, err = Load(); err != nil || cfg.JudgeBackend != JudgeBackendHarness {
-		t.Fatalf("Load() = %+v, %v, want harness kept when asked for, key or not", cfg, err)
-	}
-
-	t.Setenv("DISCOBOX_JEV_API_KEY", "")
-	t.Setenv("DISCOBOX_JUDGE_BACKEND", "jev")
-	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "jevApiKey") {
-		t.Fatalf("Load() error = %v, want jevApiKey required", err)
-	}
-
-	t.Setenv("DISCOBOX_JEV_API_KEY", "ts-key")
-	t.Setenv("DISCOBOX_JEV_MODEL", "jev-preview")
-	t.Setenv("DISCOBOX_JEV_UNSURE", "refuse")
-	cfg, err = Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.JudgeBackend != JudgeBackendJev || cfg.JevAPIKey != "ts-key" || cfg.JevModel != "jev-preview" || cfg.JevUnsure != JevUnsureRefuse {
-		t.Fatalf("cfg = %q, %q, %q, %q, want Jev with its key and model, refusing what it is unsure of",
-			cfg.JudgeBackend, cfg.JevAPIKey, cfg.JevModel, cfg.JevUnsure)
-	}
-
-	t.Setenv("DISCOBOX_JEV_UNSURE", "llm")
-	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "jevUnsure") {
-		t.Fatalf("Load() error = %v, want jevUnsure refused", err)
 	}
 }
 

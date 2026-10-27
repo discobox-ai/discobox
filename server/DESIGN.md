@@ -984,7 +984,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/resources/sandboxes` | Sandbox API service behavior, intent writes, the sandbox reconciler, agent observation ingest, and sandbox provider catalog helpers. |
 | `internal/resources/pools` | Pool resource API, the pool-agent surface (status, observation and resource reports), the pool and pool-image reconcilers, and the trusted control plane provider drivers call. |
 | `internal/resources/providers` | Provider-instance API service behavior (backend identity only) and startup reconciliation. |
-| `internal/resources/secrets` | Secret CRUD, the request/grant approval lifecycle, approval rules and the reconciler that tests them against pending requests (ADR 26-10-12-330), sentinel resolution for the proxy, and the agent credentials broker (ADR 0031). |
+| `internal/resources/secrets` | Secret CRUD, the request/grant approval lifecycle and static delegation (ADR 26-10-27-880), sentinel resolution for the proxy, and the agent credentials broker (ADR 0031). |
 | `internal/resources/peers` | Enrolled iroh peers (ADR 0095): the managed half of peer admission. |
 | `internal/resources/skillssources` | A project's skills repositories, which the creating client copies into every create; the server validates and keeps the list and never adds it to a create itself (ADR 26-10-14-894). |
 | `internal/resources/sshkeys` | Project-scoped SSH keys authorizing SSH to a project's sandboxes (ADR 0024 §5). |

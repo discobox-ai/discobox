@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/cli/internal/policyview"
-	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/discobox-ai/discobox/termpane"
@@ -329,14 +327,6 @@ type Sandbox struct {
 	// SourceRemote marks a Source that is a repository URL rather than a
 	// directory on a client.
 	SourceRemote bool
-	// RepositoryIdentity is the repository an approval rule names to be for
-	// this discobox: its source's URL, else the remote a local source tracks,
-	// as host/path (sourceref.NormalizeRemote, as the server reduces it).
-	// Empty for a local source with no remote, which no rule names. It is
-	// what a rule sends, in the text the source gave; RepositoryShown is it
-	// made safe to draw, since a source's remote is whatever whoever created
-	// the discobox — a lead discobox among them — said it was.
-	RepositoryIdentity, RepositoryShown string
 	// SourceOriginKey is where a discobox cut from Source on this machine is
 	// filed: what the list follows the Source row to when it is set to this
 	// one. It is OriginKey itself for a discobox created here.
@@ -1210,14 +1200,12 @@ type RunRequest struct {
 	// `discobox run`'s own request (WithRun).
 	Include []string
 
-	// Grant is `--grant`, as given: the uses of credentials the new discobox
-	// is given. The window offers no way to name one; it carries them because
-	// `discobox run` opens the window on its own request and that request is
-	// the whole command (WithRun). GrantStatement and GrantDefine are
-	// `--grant-statement` and `--grant-define`, the policy each carries.
-	Grant          []string
-	GrantStatement []string
-	GrantDefine    []string
+	// Grant is `--grant`, as given: the credentials the new discobox is
+	// given, and DiscoboxAPI `--discobox-api`. The window offers no way to
+	// name either; it carries them because `discobox run` opens the window on
+	// its own request and that request is the whole command (WithRun).
+	Grant       []string
+	DiscoboxAPI bool
 
 	// SkillDirs and UserSkills are `--skills` and `--user-skills`, from the run
 	// options' rows of those names or `discobox run`'s own request; nil for
@@ -1479,8 +1467,9 @@ type AuditUpdate struct {
 // CredentialRequest is one ask for a credential, waiting on a person. An agent
 // makes them through the in-sandbox CLI (ADR 0031); the proxy makes bare ones
 // when it meets a sentinel it cannot resolve. What separates them here is
-// Uses: only an agent that asked can say what it wants the credential for, and
-// only those requests carry a name, an env var, and a justification.
+// Name: only an agent that asked names the credential it wants, as the server
+// reads it (model.SecretRequest.FromProtocol). An ask to use it also names
+// the variable it wants it in; an ask to delegate it names none.
 type CredentialRequest struct {
 	ID        string
 	SandboxID string
@@ -1499,18 +1488,6 @@ type CredentialRequest struct {
 	Hosts         []string
 	Type          string
 	Justification string
-	Uses          []string
-	// Policy is what the agent asked the credential to authorize, beside its
-	// uses (ADR 26-10-20-782), as the server sent it; nil on a request that
-	// asked with uses alone. An approval sends it back as read: what is
-	// approved is the policy, not its lines. PolicyLines is it rendered for
-	// the person approving it (policyview), its variables as they resolve
-	// for this discobox, made safe to draw by the data source. PolicyShown is
-	// the policy itself made safe to draw, which a rule made from the request
-	// starts from: what is sent for a line left as it was is Policy's.
-	Policy      *policy.Policy
-	PolicyLines []policyview.Line
-	PolicyShown *policy.Policy
 	// Raw is the request as the server sent it, as indented JSON.
 	Raw string
 	// GrantTTL is how long the agent asked to keep the credential, and the
@@ -1519,10 +1496,7 @@ type CredentialRequest struct {
 	// Delegate is an ask to delegate the credential to other discoboxes rather
 	// than to use it; approving it mints a delegation grant.
 	Delegate bool
-	// WellKnownID is the well-known credential asked for by ID, which knows
-	// which secret answers it once one is marked.
-	WellKnownID string
-	Created     time.Time
+	Created  time.Time
 	// Refresh is set on an item that asks for a new value of a token the
 	// project already holds, because it went stale or was refused
 	// (ADR 26-09-25-122 §4). Name is then the secret's name; the answer is a
@@ -1530,176 +1504,9 @@ type CredentialRequest struct {
 	Refresh *RefreshAsk
 	// Trust is set on an item that asks to trust a host for its discobox
 	// rather than for a credential (ADR 0149). Host is then the endpoint,
-	// Uses and Justification are what the agent said it will send there, and
-	// Name, EnvVar, and Type are empty: the answer is not a secret but which
-	// certificate to pin.
+	// Justification is why the agent says it needs it, and Name, EnvVar, and
+	// Type are empty: the answer is not a secret but which certificate to pin.
 	Trust *TrustAsk
-	// RuleTests is each of the project's approval rules tested against this
-	// request and why it did not answer it (ADR 26-10-12-330 §4): a request
-	// still waiting on a person is one no rule covered, and the card says
-	// which were tried.
-	RuleTests []RuleTest
-}
-
-// RuleTest is one approval rule held against one request.
-type RuleTest struct {
-	RuleID string
-	// Covered is the rule answering the request; one that is still on the
-	// card is about to be approved under it.
-	Covered bool
-	// Pending is a rule the judge has still to be asked about.
-	Pending bool
-	// Stage is what decided, as the server names it: "facts" the server
-	// checked, the rule's repositories among them, or its "content", which
-	// the judge read.
-	Stage  string
-	Reason string
-}
-
-// ApprovalRule is the part of an approval rule a person chooses when they
-// answer a request with "auto approve": which discoboxes it is for, and what
-// it approves for them. Its credential, hosts and purpose are the request's,
-// copied by the server.
-type ApprovalRule struct {
-	// Repositories are the repositories the rule is for, each as host/path:
-	// it answers a discobox whose primary source is one of them, compared by
-	// the server.
-	Repositories []string
-	// EveryDiscobox is a rule for every discobox in the project, including
-	// ones that do not exist yet. It is its own answer, set only by the row
-	// that says so or read off a rule the server holds, and never inferred
-	// from Repositories being empty: a rule with neither has not been said
-	// to be for anything, and a data source sends it as that.
-	EveryDiscobox bool
-	// Policy is what the rule approves: a request is covered when the policy
-	// it asks for falls within this one. Its variables bind to whichever
-	// discobox asks, so it carries no resolved values.
-	Policy *policy.Policy
-}
-
-// Rule is an approval rule a project holds: what a person chose, and around
-// it what the server copied from the request it was made from or was told
-// when it was made (ADR 26-10-12-330 §1). Its policy may have been written by
-// a model from an agent's ask, so a data source makes it safe to draw.
-type Rule struct {
-	ID string
-	ApprovalRule
-	// Stored is the rule's repositories and policy in the server's own text.
-	// ApprovalRule's are made safe to draw, and can differ; an edit sends
-	// these for every line the person did not change, so it never rewrites
-	// one they did not touch.
-	Stored ApprovalRule
-	// The one credential it answers for: a well-known ID, or a project
-	// secret's ID.
-	WellKnownID string
-	SecretID    string
-	// Hosts are the hosts a grant it mints may name.
-	Hosts []string
-	// Delegate is a rule that approves asks to delegate the credential, never
-	// to use it. A rule has one purpose, as a grant has.
-	Delegate bool
-	// MaxGrantTTL caps the life of each grant it mints; zero leaves the
-	// secret's own limit.
-	MaxGrantTTL time.Duration
-	// Expires is when the rule itself lapses; zero never does.
-	Expires   time.Time
-	CreatedBy string
-	Created   time.Time
-	// Enabled is whether it is tested at all. Disabling one mints nothing
-	// more and revokes nothing.
-	Enabled bool
-}
-
-// NewRule is an approval rule a person makes from the secrets screen: one
-// credential — a well-known ID, answered by the project secret marked for it,
-// or a project secret — which discoboxes it is for, what it approves, the
-// longest a grant it mints may live and when it lapses. The hosts and the
-// purpose are the server's to default when unsaid: the credential's own
-// hosts, and to use.
-type NewRule struct {
-	WellKnownID string
-	SecretID    string
-	// Hosts are where its grants may go, sent as the card that made it read
-	// them, so the rule stored is the rule that was read.
-	Hosts []string
-	// Delegate is a rule that approves asks to delegate the credential: one
-	// made of a delegation grant. Every other is a rule to use it.
-	Delegate bool
-	ApprovalRule
-	// MaxGrantTTL caps each grant it mints; zero leaves the secret's own
-	// limit, and is sent as that.
-	MaxGrantTTL time.Duration
-	// Expires is when it lapses; zero never does.
-	Expires time.Time
-}
-
-// RuleChange is an edit to a rule: only what is set is sent, so what the
-// person did not touch is never the server's to read again.
-type RuleChange struct {
-	// Repositories, when set, replace the rule's; EveryDiscobox makes it a
-	// rule for every discobox instead. At most one of them is set, and every
-	// discobox is never what an empty Repositories means.
-	Repositories  []string
-	EveryDiscobox bool
-	// Policy, when set, replaces what it approves.
-	Policy *policy.Policy
-	// MaxGrantTTL, when set, is the new cap; zero is the secret's own limit.
-	MaxGrantTTL *time.Duration
-	// Expires, when set, is when it now lapses; NeverExpires clears that.
-	Expires      *time.Time
-	NeverExpires bool
-}
-
-// Empty reports whether the change changes nothing.
-func (c RuleChange) Empty() bool {
-	return c.Repositories == nil && !c.EveryDiscobox && c.Policy == nil && c.MaxGrantTTL == nil && c.Expires == nil && !c.NeverExpires
-}
-
-// RuleProposals is what a person who chose "auto approve" starts a rule from:
-// the repository of the discobox that asked, and the policy the project's
-// judge wrote from the request's, already held to covering this request as
-// the rule later would be (ADR 26-10-12-330 §§7–8).
-type RuleProposals struct {
-	// Repository is the asking discobox's, as host/path, made safe to draw:
-	// what a rule for "discoboxes of this repository" names. Empty when it
-	// has none — a local source with no remote — and then only a rule for
-	// every discobox, or for repositories named, answers it. RepositoryStored
-	// is it in the server's own text, which is what is sent.
-	Repository, RepositoryStored string
-	// Written is the policy written, nil when no model wrote one.
-	Written *WrittenPolicy
-	// Credential, Hosts and Delegate are what a rule made from the request
-	// will say, as the server copies them from it.
-	Credential string
-	Hosts      []string
-	Delegate   bool
-	// WellKnownID is the well-known credential the request asked for by ID,
-	// empty when it named none. A rule made from the proposal is for it —
-	// answered with the secret marked for it — because that is the rule the
-	// policy was held to the request as.
-	WellKnownID string
-	// Note says why there is no policy written, when no model could write
-	// one.
-	Note string
-}
-
-// WrittenPolicy is the policy the project's judge wrote from a request's —
-// the same work on any target of its kind — with what holding it to the
-// request found.
-type WrittenPolicy struct {
-	// Policy is drawn, made safe; Stored is it in the server's own text, sent
-	// for every line the person leaves as written. Both are nil when what was
-	// written is not a policy a rule may have, and Statements are then the
-	// sentences as written, made safe, for reading only.
-	Policy, Stored *policy.Policy
-	Statements     []string
-	// Covers is the request's policy found to fall within this one — by
-	// code, or by the judge for conditions code cannot compare — and Reason
-	// why it does or does not. Refused is the server's reason what was
-	// written could not be a rule's policy — a statement that does not
-	// parse, a word with no definition — in which case it was not compared.
-	Covers          bool
-	Reason, Refused string
 }
 
 // RefreshAsk is which token a refresh request wants a new value of, and why.
@@ -1775,16 +1582,8 @@ type TrustApproval struct {
 
 // FromAgent reports whether a person is being asked a question with reasons
 // attached, rather than being told the proxy hit an unresolvable sentinel.
-func (r CredentialRequest) FromAgent() bool { return len(r.Uses) > 0 }
-
-// Ruleable reports whether a request can be answered with a rule: an agent's
-// own ask to use a credential, carrying a policy. A rule's content is a policy
-// the request's is held to, so a request the proxy opened, a refresh, a
-// trust, and an ask of uses alone stay a person's to answer each time, and so
-// does an ask to delegate, which no rule approves yet (ADR 26-10-22-689). The
-// server's ruleProposable says the same; the two change together.
-func (r CredentialRequest) Ruleable() bool {
-	return r.FromAgent() && r.SandboxID != "" && r.Refresh == nil && r.Trust == nil && r.Policy != nil && !r.Delegate
+func (r CredentialRequest) FromAgent() bool {
+	return r.Name != "" && r.Refresh == nil && r.Trust == nil
 }
 
 // Secret is a project secret as the window needs it: enough to choose between
@@ -1804,12 +1603,9 @@ type Secret struct {
 	// Routes are where it may be sent, whoever holds it (ADR 26-10-02-924):
 	// every request it is sent in must fall on one, the most specific
 	// deciding. Empty leaves where it goes to its grants.
-	Routes []SecretRoute
-	// WellKnownID is the well-known credential this secret answers, empty for
-	// one nothing asks for by ID.
-	WellKnownID string
-	Created     time.Time
-	Updated     time.Time
+	Routes  []SecretRoute
+	Created time.Time
+	Updated time.Time
 
 	// OAuth is what an oauth credential is, without being it. Nil for a token,
 	// and never the tokens themselves.
@@ -1853,12 +1649,6 @@ type SecretExchange struct {
 	TokenExpiresAt time.Time
 }
 
-// GrantUse is one approved way to use a credential, as the window shows it.
-type GrantUse struct {
-	ID          string
-	Description string
-}
-
 // NewGrant is a standing authorization somebody is creating by hand: a
 // pre-approval, minted without a request to answer.
 type NewGrant struct {
@@ -1869,15 +1659,9 @@ type NewGrant struct {
 	// TTLSeconds is how long it lives. Zero asks for a grant that never
 	// expires, which a secret carrying a limit refuses.
 	TTLSeconds int64
-	// EnvVar and Uses make it the agent credentials shape: a credential
-	// nothing in the discobox can read, which the in-sandbox CLI takes one use
-	// at a time. Empty leaves the ordinary standing grant, which authorizes
-	// the sentinel the discobox already holds.
-	EnvVar string
-	Uses   []string
-	// Policy is what a grant with uses is held to (#312); nil on a standing
-	// grant.
-	Policy *policy.Policy
+	// Delegate mints a delegation grant: its discobox may give the credential
+	// to the discoboxes it creates, and may not use it. Sandbox scope only.
+	Delegate bool
 }
 
 // Grant is a standing authorization on a secret: who may use it, where it may
@@ -1888,19 +1672,6 @@ type Grant struct {
 	Scope    string
 	ScopeKey string
 	Host     string
-	// Uses are the approved uses an agent credential grant carries, empty on a
-	// plain standing grant. The ID travels with the description because it is
-	// what an agent presents to `discobox-access run --use`, and reviewing a
-	// grant is where somebody reads it.
-	Uses []GrantUse
-	// Policy is what the grant authorizes, as approved, rendered with the
-	// value each of its variables resolved to (policyview) and made safe to
-	// draw; empty on a grant that carries none. Approved is that policy in
-	// the server's own text, and ApprovedShown it made safe to draw: what a
-	// rule made from the grant starts from when the judge's does not cover
-	// it. Both are nil on a grant that carries none.
-	Policy                  []policyview.Line
-	Approved, ApprovedShown *policy.Policy
 	// Delegate is a delegation grant: its discobox may hand the credential to
 	// other discoboxes and may not use it. A grant is one or the other, so
 	// false is a grant its discobox uses.
@@ -1909,10 +1680,6 @@ type Grant struct {
 	Granted   time.Time
 	// Expires is when the authorization lapses; zero never does.
 	Expires time.Time
-	// RuleID is the approval rule that minted it, empty for one a person
-	// granted. The grant stands on its own once made: the rule going does not
-	// take it.
-	RuleID string
 }
 
 // GrantFilter narrows a listing of grants. Empty is every grant the server
@@ -1920,8 +1687,6 @@ type Grant struct {
 type GrantFilter struct {
 	// SecretID is the grants standing on one secret.
 	SecretID string
-	// RuleID is the grants one approval rule minted.
-	RuleID string
 }
 
 // SkillsListing is what the skills screen lists.
@@ -1984,10 +1749,6 @@ type NewSecret struct {
 	// default for a token with a command, and zero never goes stale.
 	ValueTTLSeconds *int64
 
-	// WellKnownID is the well-known credential the secret answers from the
-	// start, so the first request for the ID binds it without asking.
-	WellKnownID string
-
 	// Format is the template its sentinels are minted from; empty reads it
 	// from the value.
 	Format string
@@ -2043,19 +1804,18 @@ type SecretUpdate struct {
 }
 
 // SecretRoute is one place a secret may be sent: a host and everything
-// beneath it, narrowed to a path prefix when Path is set. A route with a Use
-// has every request on it judged against that sentence; one without sends
-// them unjudged.
+// beneath it, narrowed to a path prefix when Path is set. A blocked route
+// refuses every request it is the most specific route for.
 type SecretRoute struct {
-	Host string
-	Path string
-	Use  string
+	Host    string
+	Path    string
+	Blocked bool
 }
 
 // Approval is what a person decided about a request: which secret answers it,
 // how long the grant it mints lives, and what they agreed to change on that
-// secret so the grant fits it. Everything else — scope, the approved uses, the
-// host — follows the request, which is what the approver read.
+// secret so the grant fits it. Everything else — scope, the variable, the
+// hosts — follows the request, which is what the approver read.
 type Approval struct {
 	RequestID string
 	SecretID  string
@@ -2072,14 +1832,6 @@ type Approval struct {
 	// secret as it was.
 	SecretHost          *string
 	SecretMaxTTLSeconds *int64
-	// Rule, when set, also makes an approval rule from the request and
-	// approves it under that rule, in the same write: the answer "auto
-	// approve". The server refuses a rule that would not cover the request it
-	// is made from, and then approves nothing.
-	Rule *ApprovalRule
-	// Policy is the policy approved: the request's own, as the card rendered
-	// it. A request that asks for one is refused an approval without it.
-	Policy *policy.Policy
 }
 
 // SourcePush is what one of a discobox's push-delivered sources did when the
@@ -2682,9 +2434,8 @@ type DataSource interface {
 	// second one failed, and would report two things where a person did one.
 	UpdateSecret(ctx context.Context, server, secretID string, update SecretUpdate) error
 
-	// Grants lists the standing grants the filter names: on one secret, minted
-	// by one approval rule, or — with an empty filter — every one the server
-	// holds for the project.
+	// Grants lists the standing grants the filter names: on one secret, or —
+	// with an empty filter — every one the server holds for the project.
 	Grants(ctx context.Context, server string, filter GrantFilter) ([]Grant, error)
 
 	// CreateGrant mints a standing grant without a request behind it: the
@@ -2699,40 +2450,9 @@ type DataSource interface {
 	DeleteSecret(ctx context.Context, server, secretID string) error
 
 	// ApproveCredentialRequest answers a request yes, minting the grant that
-	// authorizes it. The server decides the scope and the approved uses from
-	// the request itself.
+	// authorizes it. The server decides the scope and the variable from the
+	// request itself.
 	ApproveCredentialRequest(ctx context.Context, server string, approval Approval) error
-
-	// RuleProposals asks a request's server which approval rule could answer
-	// it and requests like it. It is slow — a model writes the policy, and the
-	// judge may be asked about its conditions — so it is asked only when a
-	// person chooses "auto approve".
-	RuleProposals(ctx context.Context, server, requestID string) (RuleProposals, error)
-	// GrantRuleProposals is the same proposal from a grant a request was
-	// approved with: the rule that request's auto approve would have made,
-	// written from the policy the grant approved. A grant carrying no
-	// policy, or whose request is no longer on record, has none.
-	GrantRuleProposals(ctx context.Context, server, grantID string) (RuleProposals, error)
-
-	// Rules lists the approval rules the server holds for the project, newest
-	// first. Only a person may read or change them.
-	Rules(ctx context.Context, server string) ([]Rule, error)
-
-	// CreateRule makes an approval rule, and returns it as the server holds
-	// it. The server refuses one it could not make — a repository that names
-	// no host, a policy with no allow — and says why.
-	CreateRule(ctx context.Context, server string, rule NewRule) (Rule, error)
-
-	// UpdateRule changes what the change sets and nothing else.
-	UpdateRule(ctx context.Context, server, ruleID string, change RuleChange) error
-
-	// SetRuleEnabled turns one rule off or on, and changes nothing else about
-	// it. A disabled rule is tested for nothing; the grants it minted stand.
-	SetRuleEnabled(ctx context.Context, server, ruleID string, enabled bool) error
-
-	// DeleteRule removes one rule. The grants it minted stay, to be revoked
-	// one by one.
-	DeleteRule(ctx context.Context, server, ruleID string) error
 
 	// DenyCredentialRequest answers a request no. It is a complete answer, not
 	// a dismissal: the asking agent is waiting on one.

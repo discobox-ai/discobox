@@ -43,11 +43,6 @@ const (
 	// ScopeUDPConnect gates the UDP tunnel endpoint, its datagram twin
 	// (ADR 0109 §4).
 	ScopeUDPConnect = "udp:connect"
-	// ScopeJudgeRun gates putting a job to the judge, and nothing else
-	// (ADR 26-09-22-838 §2). It is its own scope because it is its own authority: a
-	// token that may ask the judge may read and write nothing in the sandbox,
-	// and a token for a discobox's own work cannot ask.
-	ScopeJudgeRun = "judge:run"
 	// ScopeRuntimeConfig gates the runtime-config intake, reading and
 	// delivering alike (ADR 0126 §3). It is the pool's alone: what a sandbox
 	// is told to be is not something its users may tell it, so no wildcard
@@ -433,15 +428,6 @@ func requiredRequestScope(r *http.Request) string {
 	// serve must not be the one that needs no token scope at all.
 	if strings.HasSuffix(r.URL.Path, "/runtime-config") {
 		return ScopeRuntimeConfig
-	}
-	// Judging is asked for on its own scope. A judge runtime answers nobody
-	// else, so nothing else about it is reachable with this token either.
-	// Proposing an approval rule's wording is the same runtime's other job.
-	if strings.HasSuffix(r.URL.Path, "/judge") || strings.HasSuffix(r.URL.Path, "/judge/proposal") {
-		if r.Method == http.MethodPost {
-			return ScopeJudgeRun
-		}
-		return ""
 	}
 	if strings.Contains(r.URL.Path, "/tcp/attach") {
 		if r.Method == http.MethodGet {

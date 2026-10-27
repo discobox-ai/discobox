@@ -12,17 +12,17 @@ import (
 )
 
 // A request that still names a destination as "host" is refused, not read with
-// the field dropped: dropped, an ask by ID would widen from the host it named
-// to the ID's whole site (ADR 26-10-02-393 §4). An empty host — what a client
+// the field dropped: dropped, the ask would name no destination it meant
+// (ADR 26-10-02-393 §4). An empty host — what a client
 // that predates hosts sends when it named none — is no destination, and the
 // ask goes through.
 func TestARequestNamingHostIsRefused(t *testing.T) {
 	server := httptest.NewServer(agentcreds.NewHandler(&fakeService{}))
 	t.Cleanup(server.Close)
 	for body, want := range map[string]int{
-		`{"id":"com.github.api","host":"api.github.com","uses":[{"description":"open a PR"}]}`:                  http.StatusBadRequest,
-		`{"id":"com.github.api","host":"","uses":[{"description":"open a PR"}]}`:                                http.StatusAccepted,
-		`{"name":"github","envVar":"GH_TOKEN","hosts":["api.github.com"],"uses":[{"description":"open a PR"}]}`: http.StatusAccepted,
+		`{"name":"github","envVar":"GH_TOKEN","host":"api.github.com"}`:          http.StatusBadRequest,
+		`{"name":"github","envVar":"GH_TOKEN","host":"","hosts":["github.com"]}`: http.StatusAccepted,
+		`{"name":"github","envVar":"GH_TOKEN","hosts":["api.github.com"]}`:       http.StatusAccepted,
 	} {
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+agentcreds.PathRequests, strings.NewReader(body))
 		if err != nil {

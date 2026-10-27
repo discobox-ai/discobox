@@ -6,8 +6,8 @@
 // and every place that compares one of those against the destination the
 // proxy actually observed goes through this package: the control plane's
 // grant lookup and its secret match, the check that a resolved secret's host
-// covers the destination, the pool agent's activation check, and the check
-// that a grant may not point a secret at a host it does not belong to. They
+// covers the destination, the host a secret route covers, and the check that
+// a grant may not point a secret at a host it does not belong to. They
 // must agree. A rule that is subtly different in one of them is either a
 // credential that stops working for no visible reason or one that travels
 // somewhere nobody approved.

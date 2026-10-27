@@ -43,13 +43,12 @@ type runCommandOptions struct {
 	// raw attaches this terminal to the discobox's terminal directly, instead
 	// of opening the window on it.
 	raw bool
-	// grant is --grant as given, with the policies --grant-statement and
-	// --grant-define give it, and grants what the create is given: parsed
-	// from them, or read from a --from-json request.
-	grant          []string
-	grantStatement []string
-	grantDefine    []string
-	grants         []apimodel.SandboxGrant
+	// grant is --grant as given, and grants what the create is given: parsed
+	// from it, or read from a --from-json request. discoboxAPI is
+	// --discobox-api, or the request's "discoboxApi".
+	grant       []string
+	grants      []apimodel.SandboxGrant
+	discoboxAPI bool
 	// pool is --pool as given: the pool the discobox is placed on, by ID,
 	// short ID, or name. Empty is the project's default pool.
 	pool string
@@ -209,18 +208,21 @@ the client writes client.example.yaml there, listing every setting. --skills
 given replaces run.skills rather than adding to it, and --user-skills=false
 turns run.userSkills off.
 
---grant gives the new discobox a use of a credential: a well-known one by its
-ID, ID[@HOST]=USE, or a project secret, SECRET[@HOST]:ENV_VAR=USE. Its agent
-takes it with discobox-access, one use at a time, and nothing in the discobox
-can read it. Repeat a credential to give it several uses. HOST may be several,
-joined by commas, for a credential sent to more than one site, as Copilot CLI
-sends a GitHub token: com.github.api@api.github.com,githubcopilot.com=USE. In
---from-json, "hosts" lists them.
+--grant gives the new discobox a project secret, SECRET[@HOST]:ENV_VAR: the
+discobox receives a sentinel in ENV_VAR, which its pool swaps for the value on
+the hosts the grant covers. HOST may be several, joined by commas, for a
+credential sent to more than one site, as Copilot CLI sends a GitHub token:
+github@api.github.com,githubcopilot.com:COPILOT_GITHUB_TOKEN. In --from-json,
+"hosts" lists them. A discobox creating one gives only what it may delegate.
+
+--discobox-api lets the new discobox call the discobox API through its pool,
+acting only on the discoboxes it creates. A discobox creating one may set it
+only when it has it itself.
 
 --from-json reads the whole request from stdin as one JSON object instead,
 creates the discobox without attaching, and prints it as JSON. It is for a
-caller that would rather not quote a prompt and each use's sentence through a
-shell — an agent in a discobox making another, above all. "source" is SOURCE, required
+caller that would rather not quote a prompt through a shell — an agent in a
+discobox making another, above all. "source" is SOURCE, required
 unless "noSource" is set; every other field is optional, and each means what
 its flag does. No argument or other run flag may be given beside it:
 
@@ -229,10 +231,9 @@ its flag does. No argument or other run flag may be given beside it:
     "prompt": "fix the failing tests in pkg/foo",
     "harness": "codex",
     "grants": [
-      {"id": "com.github.api", "uses": [{"description": "push a branch to org/repo"}]},
-      {"secret": "npm", "envVar": "NPM_TOKEN", "hosts": ["registry.npmjs.org"],
-       "uses": [{"description": "publish @org/pkg"}]}
+      {"secret": "npm", "envVar": "NPM_TOKEN", "hosts": ["registry.npmjs.org"]}
     ],
+    "discoboxApi": false,
     "env": ["MODE=test"],
     "secrets": ["OPENAI_API_KEY=<sec_123>"],
     "include": ["../foo"],
@@ -256,7 +257,7 @@ const runCommandExample = `  discobox run . 'fix the failing tests'
   discobox run -e GITHUB_TOKEN -e MODE=test . 'fix the failing tests'
   discobox run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> . 'fix the failing tests'
   discobox run --pool mac-mini . 'fix the failing tests'
-  discobox run -d --grant 'com.github.api=push a branch to org/repo' . 'fix issue 42'
+  discobox run -d --grant 'github@github.com:GH_TOKEN' . 'fix issue 42'
   echo '{"source": ".", "prompt": "fix the failing tests"}' | discobox run --from-json
   discobox run --raw . 'fix the failing tests'
   discobox run . fix the failing tests
@@ -288,7 +289,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 		if opts.includeDirty {
 			opts.prompt.IncludeDirty = sandboxcreate.IncludeDirtyAlways
 		}
-		grants, err := sandboxcreate.ParseGrants(opts.grant, opts.grantStatement, opts.grantDefine)
+		grants, err := sandboxcreate.ParseGrants(opts.grant)
 		if err != nil {
 			return err
 		}
@@ -404,6 +405,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 		return err
 	}
 	parsedOpts.Grants = opts.grants
+	parsedOpts.DiscoboxAPI = opts.discoboxAPI
 	if parsedOpts.PoolID, parsedOpts.Platform, err = a.newSandboxPlacement(cmd.Context(), client, projectID, opts.pool); err != nil {
 		return err
 	}
@@ -473,9 +475,8 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.BoolVar(&opts.noSource, "no-source", false, "Create the discobox with nothing checked out in it, in place of SOURCE, so every argument is the prompt; the directory you run in still decides where it is filed and what Git authorship it commits under")
 	flags.BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/settings.json, using a local checkout beside the source directory when there is one")
 	flags.BoolVar(&opts.includeDirty, "include-dirty", false, "Carry the uncommitted changes in each local source into the discobox, as a snapshot on top of its checked-out commit; without it only committed history goes in. A directory in no Git repository has no commit to start from, and is copied whatever this says")
-	flags.StringArrayVar(&opts.grant, "grant", nil, "A use of a credential to give the new discobox, as SECRET[@HOST[,HOST...]]:ENV_VAR=USE, or ID[@HOST[,HOST...]]=USE for a well-known credential such as com.github.api; repeat for more, and repeat a credential to give it several uses. Its agent takes the credential with discobox-access, one use at a time, under the policy --grant-statement gives it, and nothing in the discobox can read it")
-	flags.StringArrayVar(&opts.grantStatement, "grant-statement", nil, "A sentence of the policy a --grant carries, as CREDENTIAL=SENTENCE, CREDENTIAL being what the --grant names before its \"=\" (com.github.api, or github@github.com:GH_TOKEN); repeat for each statement. Every --grant carries a policy, which is what is enforced; its uses name the job")
-	flags.StringArrayVar(&opts.grantDefine, "grant-define", nil, "A word a --grant's statements use that is not a default (read, create, update, delete, manage, anything, anywhere), as CREDENTIAL=WORD=DEFINITION; repeat for each")
+	flags.StringArrayVar(&opts.grant, "grant", nil, "A credential to give the new discobox, as SECRET[@HOST[,HOST...]]:ENV_VAR: the project secret, and the variable the discobox receives its sentinel in, which its pool swaps for the value on the hosts the grant covers; repeat for more. HOST defaults to the secret's host. A discobox creating one gives only what it may delegate")
+	flags.BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the new discobox call the discobox API through its pool, acting only on the discoboxes it creates. A discobox creating one may set it only when it has it itself")
 	flags.BoolVar(&opts.fromJSON, "from-json", false, "Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON")
 	cmd.Flags().AddFlagSet(flags)
 	opts.flags = flags
@@ -745,8 +746,7 @@ func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.Run
 		Env:                 opts.prompt.Env,
 		Secret:              opts.prompt.Secret,
 		Grant:               opts.grant,
-		GrantStatement:      opts.grantStatement,
-		GrantDefine:         opts.grantDefine,
+		DiscoboxAPI:         opts.discoboxAPI,
 		Include:             opts.prompt.Include,
 		SkillDirs:           opts.skillDirs,
 		UserSkills:          opts.userSkills,

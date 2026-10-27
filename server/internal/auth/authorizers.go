@@ -74,12 +74,11 @@ func (a ProjectAuthorizer) Authorize(r *http.Request) (bool, error) {
 
 // SandboxRoleAuthorizer authorizes a sandbox's own calls against the sandbox
 // role (ADR 0140 §4): a fixed list of routes, in the sandbox's own project, and
-// nothing else. It is decided by the route, and for some routes by what the
-// route names: a discobox, which may be any in the project but its judge (ADR
-// 26-10-14-320 §§1, 4), and a secret request, only when a discobox the caller
-// created filed it (ADR 26-09-30-782 §2). No use's text is read here: what a
-// call is for, and which discobox it may act on, is the judge's question, asked
-// in the pool.
+// nothing else, for a sandbox that may call the discobox API at all
+// (Sandbox.DiscoboxAPI, ADR 26-10-27-880 §9). It is decided by the route, and
+// for some routes by what the route names: a discobox, only one the caller
+// created, and a secret request, only when a discobox the caller created filed
+// it (ADR 26-09-30-782 §2).
 //
 // It answers every request a sandbox principal makes, refusing what the role
 // does not list, rather than stepping aside. The authorizers after it answer
@@ -114,30 +113,34 @@ type named int
 const (
 	// The zero value asks nothing of what a route names.
 	_ named = iota
-	// projectDiscobox: the path names a discobox in the caller's project that
-	// is not the project's judge (ADR 26-10-14-320 §§1, 4).
-	projectDiscobox
+	// createdDiscobox: the path names a discobox the caller created
+	// (ADR 26-10-27-880 §9).
+	createdDiscobox
 	// ownedRequest: the path names a secret request filed by a discobox the
 	// caller created — the request's owner (ADR 26-09-30-782 §2).
 	ownedRequest
-	// withinCaller: the path names a project discobox, as projectDiscobox does,
-	// that reaches nothing the caller cannot (ADR 26-10-01-032 §4). It marks
+	// withinCaller: the path names a discobox the caller created, as
+	// createdDiscobox does, that reaches nothing the caller cannot
+	// (ADR 26-10-01-032 §4). It marks
 	// every route that writes to a discobox or sends into it — typing into its
 	// terminals, HTTP to its ports, powering it, running its services, writing
 	// its meta, delivering its source — since each would let a restricted
 	// discobox reach the world through a wider one. A read brings data to the
-	// caller, never out of it, and stays projectDiscobox.
+	// caller, never out of it, and stays createdDiscobox.
 	withinCaller
 )
 
 // sandboxRole is the sandbox role. Adding a route here is widening what every
-// sandbox holding the discobox credential may do; ADR 0140 §4 lists it, ADR
-// 26-10-14-320 §3 widens it, and the Deferred sections of both say what is
-// left out and when to revisit it.
+// sandbox that may call the discobox API may do. ADR 0140 §4 lists it; the
+// routes ADR 26-10-14-320 §3 added stay, and ADR 26-10-27-880 §9 keeps them
+// while holding every route that names a discobox to the ones the caller
+// created. The pool forwards every sandbox's call to the API, so this role,
+// behind authorizeDiscoboxAPI, is where a sandbox without DiscoboxAPI is
+// refused.
 var sandboxRole = []sandboxRoleRoute{
 	{method: http.MethodGet, path: "sandboxes"},
 	{method: http.MethodPost, path: "sandboxes"},
-	{method: http.MethodGet, path: "sandboxes/*", names: projectDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*", names: createdDiscobox},
 	// Delivering a source into a discobox: the push into its origin, and the
 	// report that ends its wait (ADR 26-09-24-630 §2). Fetching from an origin
 	// is not delivery, and is not here.
@@ -149,20 +152,18 @@ var sandboxRole = []sandboxRoleRoute{
 	// member's to fetch, and is not here.
 	{method: http.MethodPost, path: "sandboxes/*/git-origins/*/pin", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/complete-source-push", names: withinCaller},
-	// Reading and typing into a discobox's terminals, one judged call at a
-	// time (ADR 26-10-01-397 §1), and reading one's record, transcript, and
-	// events (ADR 26-10-14-320 §3). Attaching, and creating, starting or
+	// Reading and typing into a discobox's terminals (ADR 26-10-01-397 §1),
+	// and reading one's record, transcript, and events. Attaching, and creating, starting or
 	// ending an exec, are not here (ADR 26-10-01-397 §2).
-	{method: http.MethodGet, path: "sandboxes/*/execs", names: projectDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/execs/*", names: projectDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/execs/*/logs", names: projectDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/execs/*/events", names: projectDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/execs/*/screen", names: projectDiscobox},
-	{method: http.MethodPost, path: "sandboxes/*/execs/*/wait", names: projectDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/execs", names: createdDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/execs/*", names: createdDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/execs/*/logs", names: createdDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/execs/*/events", names: createdDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/execs/*/screen", names: createdDiscobox},
+	{method: http.MethodPost, path: "sandboxes/*/execs/*/wait", names: createdDiscobox},
 	{method: http.MethodPost, path: "sandboxes/*/execs/*/input", names: withinCaller},
 	// Starting, stopping, and restarting a discobox (ADR 26-10-02-478 §1), and
-	// repairing or upgrading it onto the image its harness config resolves to
-	// (ADR 26-10-14-320 §3). Archive and purge change what exists, not whether
+	// repairing or upgrading it onto the image its harness config resolves to. Archive and purge change what exists, not whether
 	// it runs, and are not here.
 	{method: http.MethodPost, path: "sandboxes/*/start", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/stop", names: withinCaller},
@@ -172,14 +173,14 @@ var sandboxRole = []sandboxRoleRoute{
 	// Changing a discobox's name, description and tags (ADR 26-10-08-447 §1).
 	{method: http.MethodPatch, path: "sandboxes/*/meta", names: withinCaller},
 	// A discobox's services: reading them and their logs, and starting,
-	// stopping, and restarting the commands it declares (ADR 26-10-14-320 §3).
-	{method: http.MethodGet, path: "sandboxes/*/services", names: projectDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/services/*", names: projectDiscobox},
-	{method: http.MethodGet, path: "sandboxes/*/services/*/logs", names: projectDiscobox},
+	// stopping, and restarting the commands it declares.
+	{method: http.MethodGet, path: "sandboxes/*/services", names: createdDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/services/*", names: createdDiscobox},
+	{method: http.MethodGet, path: "sandboxes/*/services/*/logs", names: createdDiscobox},
 	{method: http.MethodPost, path: "sandboxes/*/services/*/start", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/services/*/stop", names: withinCaller},
 	{method: http.MethodPost, path: "sandboxes/*/services/*/restart", names: withinCaller},
-	// HTTP to any port of a discobox, with any method (ADR 26-10-14-320 §3).
+	// HTTP to any port of a discobox, with any method.
 	{method: anyMethod, path: "sandboxes/*/http/*", names: withinCaller},
 	{method: anyMethod, path: "sandboxes/*/http/*/**", names: withinCaller},
 	// The secrets it was delegated, and no others (ADR 26-09-30-782 §3): the
@@ -218,6 +219,9 @@ func (a SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {
 	default:
 		return false, authorizationError{status: http.StatusForbidden, err: errors.New("a sandbox may only act in its own project")}
 	}
+	if ok, err := a.authorizeDiscoboxAPI(r, principal); !ok || err != nil {
+		return ok, err
+	}
 	for _, route := range sandboxRole {
 		if (route.method != anyMethod && route.method != r.Method) || !matchRolePath(route.path, rest) {
 			continue
@@ -227,8 +231,8 @@ func (a SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {
 		}
 		segment := strings.Split(rest, "/")[1:]
 		switch route.names {
-		case projectDiscobox:
-			return a.authorizeProjectDiscobox(r, principal, segment[0])
+		case createdDiscobox:
+			return a.authorizeCreatedDiscobox(r, principal, segment[0])
 		case withinCaller:
 			return a.authorizeWithinCaller(r, principal, segment[0])
 		case ownedRequest:
@@ -239,11 +243,27 @@ func (a SandboxRoleAuthorizer) Authorize(r *http.Request) (bool, error) {
 	return false, denied
 }
 
-// authorizeProjectDiscobox allows a route on any discobox in the caller's
-// project but the project's judge (ADR 26-10-14-320 §4). The judge's terminals
-// and logs hold every job it judged, and acting on it acts on what decides
-// whether a call is allowed, so no sandbox reaches it whatever the judge says.
-func (a SandboxRoleAuthorizer) authorizeProjectDiscobox(r *http.Request, principal Principal, sandboxID string) (bool, error) {
+// authorizeDiscoboxAPI refuses every call from a sandbox that may not call
+// the discobox API (ADR 26-10-27-880 §9). The pool forwards any sandbox's call
+// to the API's host; this is where one without the flag is turned away.
+func (a SandboxRoleAuthorizer) authorizeDiscoboxAPI(r *http.Request, principal Principal) (bool, error) {
+	caller, err := a.Store.GetSandbox(r.Context(), principal.ProjectID, principal.SandboxID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return false, authorizationError{status: http.StatusForbidden, err: errors.New("the calling discobox no longer exists")}
+		}
+		return false, authorizationError{status: http.StatusInternalServerError, err: err}
+	}
+	if !caller.DiscoboxAPI {
+		return false, authorizationError{status: http.StatusForbidden,
+			err: errors.New("this discobox may not call the discobox API; a person allows it by setting discoboxApi on it")}
+	}
+	return true, nil
+}
+
+// authorizeCreatedDiscobox allows a route on a discobox the caller created
+// (ADR 26-10-27-880 §9), and no other.
+func (a SandboxRoleAuthorizer) authorizeCreatedDiscobox(r *http.Request, principal Principal, sandboxID string) (bool, error) {
 	target, err := a.Store.GetSandbox(r.Context(), principal.ProjectID, sandboxID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -251,24 +271,20 @@ func (a SandboxRoleAuthorizer) authorizeProjectDiscobox(r *http.Request, princip
 		}
 		return false, authorizationError{status: http.StatusInternalServerError, err: err}
 	}
-	project, err := a.Store.GetProject(r.Context(), principal.ProjectID)
-	if err != nil {
-		return false, authorizationError{status: http.StatusInternalServerError, err: err}
-	}
-	if project.JudgeSandboxID != "" && target.ID == project.JudgeSandboxID {
-		return false, authorizationError{status: http.StatusForbidden, err: errors.New("no discobox acts on the project's judge")}
+	if target.CreatedBySandboxID == nil || *target.CreatedBySandboxID != principal.SandboxID {
+		return false, authorizationError{status: http.StatusForbidden, err: errors.New("a discobox acts only on the discoboxes it created")}
 	}
 	return true, nil
 }
 
-// authorizeWithinCaller allows a route on a project discobox, as
-// authorizeProjectDiscobox does, only when the target's effective egress policy
+// authorizeWithinCaller allows a route on a discobox the caller created, as
+// authorizeCreatedDiscobox does, only when the target's effective egress policy
 // is covered by the caller's (ADR 26-10-01-032 §4): an unrestricted caller
 // acts on any, and a restricted one only on discoboxes restricted at least as
 // tightly. The policies are read as they stand, so a level loosened on the
 // target after this call is the person's who loosened it.
 func (a SandboxRoleAuthorizer) authorizeWithinCaller(r *http.Request, principal Principal, sandboxID string) (bool, error) {
-	if ok, err := a.authorizeProjectDiscobox(r, principal, sandboxID); !ok || err != nil {
+	if ok, err := a.authorizeCreatedDiscobox(r, principal, sandboxID); !ok || err != nil {
 		return ok, err
 	}
 	caller, err := a.Store.GetSandbox(r.Context(), principal.ProjectID, principal.SandboxID)

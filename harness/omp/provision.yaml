@@ -25,7 +25,7 @@ steps:
     file: {path: /etc/omp/discobox.yml, source: discobox.yml}
   # PI_PROXY from HTTPS_PROXY, for omp's Anthropic transport, which reads no
   # other proxy variable (ADR 26-10-14-718 §4). A login shell sources it; the
-  # launcher, configure command and discobox-prompt source it themselves.
+  # launcher and configure command source it themselves.
   - name: proxy-env
     file: {path: /etc/profile.d/omp-proxy.sh, source: proxy-env.sh}
   # The agent this harness installs, for the pool-cached version store
@@ -41,10 +41,6 @@ steps:
   - name: harness-run
     check: check-launcher.sh
     file: {path: /usr/local/bin/discobox-harness-run, source: launch.sh, mode: "0755"}
-  # The one-shot prompting interface in-sandbox tools ask for a model
-  # through (ADR 0079). On PATH: its callers resolve it by name.
-  - name: prompt
-    file: {path: /usr/local/bin/discobox-prompt, source: prompt.sh, mode: "0755"}
   - name: capture
     file: {path: /usr/local/libexec/discobox/omp-capture, source: capture.sh, mode: "0755"}
   - name: capture-metadata

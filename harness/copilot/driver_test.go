@@ -125,7 +125,6 @@ func TestImagePolicy(t *testing.T) {
 	feature := featuretest.Load(t, ".")
 	for source, want := range map[string]string{
 		"launch.sh":  "/usr/local/bin/" + harness.RunCommand,
-		"prompt.sh":  "/usr/local/bin/discobox-prompt",
 		"agent.conf": "/usr/local/libexec/discobox/agent.conf",
 	} {
 		if got := feature.Installs(source); got != want {
@@ -248,10 +247,11 @@ type imageManifest struct {
 	} `json:"harness"`
 }
 
-// The token's routes send Copilot's own traffic unjudged, judge its MCP and
-// agent calls and GitHub beyond Copilot, and send it nowhere else (ADR
-// 26-10-02-924).
-func TestTheTokensRoutesSendCopilotsOwnTrafficUnjudged(t *testing.T) {
+// The token's routes send Copilot's own traffic, refuse its MCP and agent
+// calls and GitHub beyond Copilot — the routes a judge used to read, blocked
+// so removing it widened nothing (ADR 26-10-27-880) — and send it nowhere
+// else (ADR 26-10-02-924).
+func TestTheTokensRoutesSendCopilotsOwnTrafficAndBlockTheRest(t *testing.T) {
 	image := readImage(t)
 	var routes []secretroute.Route
 	for _, secret := range image.Harness.Secrets {
@@ -263,34 +263,28 @@ func TestTheTokensRoutesSendCopilotsOwnTrafficUnjudged(t *testing.T) {
 			if err != nil {
 				t.Fatalf("route %d: %v", i, err)
 			}
-			// The sentence stands in for the use ID it would be minted.
-			routes = append(routes, secretroute.Route{Host: host, Path: path, UseID: route.Use})
+			routes = append(routes, secretroute.Route{Host: host, Path: path, Blocked: route.Blocked})
 		}
 	}
 	for _, tc := range []struct {
-		url    string
-		judged bool
+		url     string
+		allowed bool
 	}{
-		{"https://api.individual.githubcopilot.com/v1/messages", false},
-		{"https://api.individual.githubcopilot.com/chat/completions", false},
-		{"https://telemetry.individual.githubcopilot.com/telemetry", false},
-		{"https://api.individual.githubcopilot.com/mcp/readonly", false},
-		{"https://api.individual.githubcopilot.com/agents/swe/internal/memory/x", false},
-		{"https://api.github.com/copilot_internal/user", false},
-		{"https://api.github.com/repos/github/copilot-cli/releases/latest", false},
-		{"https://api.individual.githubcopilot.com/mcp", true},
-		{"https://api.individual.githubcopilot.com/agents/swe/v1/jobs", true},
-		{"https://api.github.com/repos/org/repo/pulls", true},
-		{"https://github.com/org/repo", true},
+		{"https://api.individual.githubcopilot.com/v1/messages", true},
+		{"https://api.individual.githubcopilot.com/chat/completions", true},
+		{"https://telemetry.individual.githubcopilot.com/telemetry", true},
+		{"https://api.individual.githubcopilot.com/mcp/readonly", true},
+		{"https://api.individual.githubcopilot.com/agents/swe/internal/memory/x", true},
+		{"https://api.github.com/copilot_internal/user", true},
+		{"https://api.github.com/repos/github/copilot-cli/releases/latest", true},
+		{"https://api.individual.githubcopilot.com/mcp", false},
+		{"https://api.individual.githubcopilot.com/agents/swe/v1/jobs", false},
+		{"https://api.github.com/repos/org/repo/pulls", false},
+		{"https://github.com/org/repo", false},
 	} {
-		u := strings.SplitN(strings.TrimPrefix(tc.url, "https://"), "/", 2)
-		matched := secretroute.Match(routes, u[0], secretroute.RequestPaths(tc.url)[0])
-		if len(matched) == 0 {
-			t.Fatalf("%s: no route covers it", tc.url)
-		}
-		judged := !slices.ContainsFunc(matched, func(r secretroute.Route) bool { return r.UseID == "" })
-		if judged != tc.judged {
-			t.Fatalf("%s: judged = %v, want %v (matched %+v)", tc.url, judged, tc.judged, matched)
+		host := strings.SplitN(strings.TrimPrefix(tc.url, "https://"), "/", 2)[0]
+		if allowed, reason := secretroute.Decide(routes, host, tc.url); allowed != tc.allowed {
+			t.Fatalf("%s: allowed = %v (%s), want %v", tc.url, allowed, reason, tc.allowed)
 		}
 	}
 	if matched := secretroute.Match(routes, "example.com", "/"); len(matched) != 0 {

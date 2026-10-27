@@ -93,14 +93,7 @@ func (a *App) resolveSandboxID(ctx context.Context, client *apiclientgen.Client,
 	if err != nil || !isResolvableShortID(id) {
 		return id, err
 	}
-	// Judges included: they are left out of a listing because they are not
-	// what somebody asking what is in their project means, but a discobox you
-	// can see the ID of is one you can name — to open a shell in it, to take
-	// it away, to ask what state it is in (ADR 26-09-22-838 §1).
-	res, err := client.ListSandboxes(ctx, apiclientgen.ListSandboxesParams{
-		ProjectId:    projectID,
-		IncludeJudge: apiclientgen.NewOptBool(true),
-	})
+	res, err := client.ListSandboxes(ctx, apiclientgen.ListSandboxesParams{ProjectId: projectID})
 	if err != nil {
 		return "", err
 	}
@@ -157,7 +150,7 @@ func (a *App) resolveListedSandbox(ctx context.Context, client *apiclientgen.Cli
 	var sandboxes []apimodel.Sandbox
 	if !allFullSandboxIDs([]string{reference}) {
 		var err error
-		sandboxes, err = a.listProjectSandboxes(ctx, client, projectID, sandboxFilter{judges: true})
+		sandboxes, err = a.listProjectSandboxes(ctx, client, projectID, sandboxFilter{})
 		if err != nil {
 			return "", err
 		}

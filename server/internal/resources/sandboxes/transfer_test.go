@@ -471,7 +471,7 @@ func TestExportCarriesNoSecretValuesAndNamesItsHarness(t *testing.T) {
 	for _, assignment := range []*model.SandboxSecret{
 		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: secret.ID, EnvName: "GITHUB_TOKEN", Sentinel: "sentinel-a"},
 		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: anonymous.ID, EnvName: "INLINE", Sentinel: "sentinel-b"},
-		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: secret.ID, EnvName: "ASKED", Sentinel: "sentinel-c", AgentRequested: true},
+		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: secret.ID, EnvName: "ASKED", Sentinel: "sentinel-c"},
 	} {
 		if err := st.CreateSandboxSecret(ctx, assignment); err != nil {
 			t.Fatal(err)
@@ -504,15 +504,12 @@ func TestExportCarriesNoSecretValuesAndNamesItsHarness(t *testing.T) {
 	for _, binding := range manifest.Sandbox.Secrets {
 		bindings[binding.Env] = binding.Secret
 	}
-	if bindings["GITHUB_TOKEN"] != "github" {
-		t.Errorf("bindings = %v, want GITHUB_TOKEN bound to github by name", bindings)
+	if bindings["GITHUB_TOKEN"] != "github" || bindings["ASKED"] != "github" {
+		t.Errorf("bindings = %v, want GITHUB_TOKEN and ASKED bound to github by name", bindings)
 	}
-	// An anonymous secret has no name to resolve on the other side, and an
-	// agent-requested one belongs to that sandbox on that server.
-	for _, env := range []string{"INLINE", "ASKED"} {
-		if _, ok := bindings[env]; ok {
-			t.Errorf("binding %q traveled", env)
-		}
+	// An anonymous secret has no name to resolve on the other side.
+	if _, ok := bindings["INLINE"]; ok {
+		t.Error("binding INLINE traveled")
 	}
 	// Belt and braces: no sentinel, and nothing that looks like a token, is
 	// anywhere in the file.

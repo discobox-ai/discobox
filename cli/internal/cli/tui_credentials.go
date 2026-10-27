@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -11,7 +10,6 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/apipolicy"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
@@ -190,7 +188,6 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 		Justification: strings.TrimSpace(r.Justification.Or("")),
 		GrantTTL:      agentcreds.AskedGrantTTL(r.GrantTTLSeconds.Or(0)),
 		Delegate:      r.Purpose.Or("") == apiclientgen.SecretRequestPurposeDelegate,
-		WellKnownID:   strings.TrimSpace(r.WellKnownId.Or("")),
 		Created:       r.CreatedAt,
 	}
 	req.Hosts = r.Hosts
@@ -205,31 +202,6 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 			SecretID: strings.TrimSpace(r.SecretId.Or("")),
 			Cause:    string(r.RefreshCause.Or("")),
 		}
-	}
-	if uses, ok := r.Uses.Get(); ok {
-		for _, use := range uses {
-			if description := strings.TrimSpace(use.Description); description != "" {
-				req.Uses = append(req.Uses, description)
-			}
-		}
-	}
-	if asked, ok := r.Policy.Get(); ok {
-		// A policy that does not convert is left off: the approval then
-		// sends none, and the server refuses it rather than grant one unread.
-		if read, err := apipolicy.From(asked); err == nil {
-			shown := safePolicy(read)
-			req.Policy, req.PolicyLines, req.PolicyShown = &read, safePolicyLines(read), &shown
-		}
-	}
-	for _, test := range r.RuleTests {
-		req.RuleTests = append(req.RuleTests, tui.RuleTest{
-			RuleID:  test.RuleId,
-			Covered: test.Covered,
-			Pending: test.Pending.Or(false),
-			Stage:   string(test.Stage.Or("")),
-			// A judge's reason can quote the uses an agent wrote.
-			Reason: terminalSafe(strings.TrimSpace(test.Reason.Or(""))),
-		})
 	}
 	return req
 }
@@ -254,11 +226,6 @@ func toTUITrustRequest(r apimodel.HostTrustRequest) tui.CredentialRequest {
 		GrantTTL:      agentcreds.AskedGrantTTL(r.GrantTTLSeconds.Or(0)),
 		Created:       r.CreatedAt,
 		Trust:         ask,
-	}
-	for _, use := range r.Uses.Or(nil) {
-		if description := strings.TrimSpace(use.Description); description != "" {
-			req.Uses = append(req.Uses, description)
-		}
 	}
 	return req
 }
@@ -360,14 +327,13 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 	out := make([]tui.Secret, 0, len(secrets))
 	for _, s := range secrets {
 		row := tui.Secret{
-			ID:          s.ID,
-			Name:        s.Name,
-			Type:        string(s.Type),
-			Host:        strings.TrimSpace(s.Host.Or("")),
-			MaxTTL:      time.Duration(s.MaxGrantTTLSeconds) * time.Second,
-			WellKnownID: strings.TrimSpace(s.WellKnownId.Or("")),
-			Created:     s.CreatedAt,
-			Updated:     s.UpdatedAt,
+			ID:      s.ID,
+			Name:    s.Name,
+			Type:    string(s.Type),
+			Host:    strings.TrimSpace(s.Host.Or("")),
+			MaxTTL:  time.Duration(s.MaxGrantTTLSeconds) * time.Second,
+			Created: s.CreatedAt,
+			Updated: s.UpdatedAt,
 		}
 		if oauth, ok := s.OAuth.Get(); ok {
 			row.OAuth = &tui.SecretOAuth{
@@ -393,7 +359,7 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 			}
 		}
 		for _, route := range s.Routes.Or(nil) {
-			row.Routes = append(row.Routes, tui.SecretRoute{Host: route.Host, Path: route.Path.Or(""), Use: route.Use.Or("")})
+			row.Routes = append(row.Routes, tui.SecretRoute{Host: route.Host, Path: route.Path.Or(""), Blocked: route.Blocked.Or(false)})
 		}
 		row.Format = s.Format.Or("")
 		row.FormatSet = s.FormatSet.Or(false)
@@ -434,9 +400,6 @@ func (d *apiDataSource) CreateSecret(ctx context.Context, server string, secret 
 	}
 	if len(secret.Routes) > 0 {
 		body.SetRoutes(apiclientgen.NewOptNilSecretRouteInputArray(secretRouteInputs(secret.Routes)))
-	}
-	if id := strings.TrimSpace(secret.WellKnownID); id != "" {
-		body.SetWellKnownId(apiclientgen.NewOptString(id))
 	}
 	if format := strings.TrimSpace(secret.Format); format != "" {
 		body.SetFormat(apiclientgen.NewOptString(format))
@@ -559,37 +522,6 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	if approval.SecretMaxTTLSeconds != nil {
 		body.SetSecretMaxGrantTTLSeconds(apiclientgen.NewOptInt64(*approval.SecretMaxTTLSeconds))
 	}
-	// "Auto approve": the rule is made and the request approved under it in
-	// this one write. Its lifetime cap and expiry are left unsaid, so the
-	// server caps it at the lifetime this approval grants. Every discobox is
-	// passed on only as the answer a person gave, never worked out from a
-	// rule that names no repository: one that says neither is sent saying
-	// neither, and the server names the asking discobox's repository or
-	// refuses, and never assumes the wider rule.
-	// The rule's policy is sent only when the person changed it: left out, it
-	// is the request's as asked, which the approval below names as read.
-	if rule := approval.Rule; rule != nil {
-		with := apimodel.ApproveWithRule{Repositories: rule.Repositories}
-		if rule.EveryDiscobox {
-			with.SetEveryDiscobox(apiclientgen.NewOptBool(true))
-		}
-		if rule.Policy != nil {
-			approves, err := apipolicy.To(*rule.Policy)
-			if err != nil {
-				return err
-			}
-			with.SetPolicy(apiclientgen.NewOptAccessPolicy(approves))
-		}
-		body.SetRule(apiclientgen.NewOptApproveWithRule(with))
-	}
-	// The policy the card rendered, as the server sent it.
-	if approval.Policy != nil {
-		sent, err := apipolicy.To(*approval.Policy)
-		if err != nil {
-			return err
-		}
-		body.SetPolicy(apiclientgen.NewOptAccessPolicy(sent))
-	}
 	res, err := d.client.ApproveSecretRequest(ctx, body, apiclientgen.ApproveSecretRequestParams{
 		ProjectId: d.projectID,
 		RequestId: approval.RequestID,
@@ -602,273 +534,6 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	}
 	window.answered(server, approval.RequestID)
 	return nil
-}
-
-// RuleProposals asks the request's server for the rule "auto approve" starts
-// from (ADR 26-10-12-330 §7). The server writes its policy with a model and
-// holds it to covering the request before answering, so this is on no leash
-// of its own: the window shows that it is waiting, and its context ends the
-// call when the person stops.
-//
-// A proposal is a model's policy written from an agent's ask, and a reason
-// can quote that ask, so each is made safe to draw on the way, as an issue's
-// text is: an escape sequence in one is shown, not obeyed. The server's own
-// text is kept beside it, and sent for every line left as it was, so the
-// rule is the text that was read.
-func (d *apiDataSource) RuleProposals(ctx context.Context, server, requestID string) (tui.RuleProposals, error) {
-	d, err := d.on(ctx, server)
-	if err != nil {
-		return tui.RuleProposals{}, err
-	}
-	res, err := d.client.ProposeApprovalRules(ctx, apiclientgen.ProposeApprovalRulesParams{
-		ProjectId: d.projectID,
-		RequestId: requestID,
-	})
-	if err != nil {
-		return tui.RuleProposals{}, err
-	}
-	body, err := expectResponse[apimodel.RuleProposalsBody](res)
-	if err != nil {
-		return tui.RuleProposals{}, err
-	}
-	return ruleProposals(body)
-}
-
-// GrantRuleProposals asks the grant's server for the rule auto approve would
-// have proposed from the request the grant answered, written from the policy
-// the grant approved. Slow for the same reason, and drawn safe the same way.
-func (d *apiDataSource) GrantRuleProposals(ctx context.Context, server, grantID string) (tui.RuleProposals, error) {
-	d, err := d.on(ctx, server)
-	if err != nil {
-		return tui.RuleProposals{}, err
-	}
-	res, err := d.client.ProposeApprovalRuleFromGrant(ctx, apiclientgen.ProposeApprovalRuleFromGrantParams{
-		ProjectId: d.projectID,
-		GrantId:   grantID,
-	})
-	if err != nil {
-		return tui.RuleProposals{}, err
-	}
-	body, err := expectResponse[apimodel.RuleProposalsBody](res)
-	if err != nil {
-		return tui.RuleProposals{}, err
-	}
-	return ruleProposals(body)
-}
-
-// ruleProposals is a proposal as the window draws it, every sentence made
-// safe to draw. A written policy that does not convert is shown as none
-// written, with the reason, rather than guessed at.
-func ruleProposals(body *apimodel.RuleProposalsBody) (tui.RuleProposals, error) {
-	hosts := make([]string, 0, len(body.Hosts))
-	for _, host := range body.Hosts {
-		hosts = append(hosts, terminalSafe(host))
-	}
-	out := tui.RuleProposals{
-		// The name an agent asked under, for an ask that names no ID.
-		Credential: terminalSafe(strings.TrimSpace(body.Credential.Or(""))),
-		// An ID, compared with the secrets' marks and sent back; never drawn
-		// unchecked, since the well-known registry names what is drawn.
-		WellKnownID: strings.TrimSpace(body.WellKnownId.Or("")),
-		Hosts:       hosts,
-		Delegate:    body.Purpose == apiclientgen.RuleProposalsBodyPurposeDelegate,
-		Note:        terminalSafe(strings.TrimSpace(body.Note.Or(""))),
-		// Derived from a source URL a client reported when the discobox was
-		// created, so it is drawn as text like the rest.
-		Repository:       terminalSafe(strings.TrimSpace(body.Repository.Or(""))),
-		RepositoryStored: strings.TrimSpace(body.Repository.Or("")),
-	}
-	if written, ok := body.Policy.Get(); ok {
-		out.Written = &tui.WrittenPolicy{
-			Covers:  written.Covers,
-			Reason:  terminalSafe(strings.TrimSpace(written.Reason.Or(""))),
-			Refused: terminalSafe(strings.TrimSpace(written.Refused.Or(""))),
-		}
-		if proposed, ok := written.Policy.Get(); ok {
-			stored, err := apipolicy.From(proposed)
-			if err != nil {
-				return tui.RuleProposals{}, err
-			}
-			shown := safePolicy(stored)
-			out.Written.Policy, out.Written.Stored = &shown, &stored
-		}
-		for _, statement := range written.Statements {
-			out.Written.Statements = append(out.Written.Statements, terminalSafe(strings.TrimSpace(statement)))
-		}
-	}
-	return out, nil
-}
-
-// Rules lists the project's approval rules, newest first (ADR 26-10-12-330
-// §1). A rule's policy may be a model's, written from an agent's ask,
-// and its repositories and who made it are whatever the server recorded, so
-// each is made safe to draw on the way, as a proposal is.
-func (d *apiDataSource) Rules(ctx context.Context, server string) ([]tui.Rule, error) {
-	d, err := d.on(ctx, server)
-	if err != nil {
-		return nil, err
-	}
-	res, err := d.client.ListApprovalRules(ctx, apiclientgen.ListApprovalRulesParams{ProjectId: d.projectID})
-	if err != nil {
-		return nil, err
-	}
-	body, err := expectResponse[apimodel.ListApprovalRulesBody](res)
-	if err != nil {
-		return nil, err
-	}
-	rules := sortedByRecency(body.GetApprovalRules(), func(rule apimodel.ApprovalRule) time.Time { return rule.CreatedAt })
-	out := make([]tui.Rule, 0, len(rules))
-	for _, r := range rules {
-		rule := tui.Rule{
-			ID:          r.ID,
-			WellKnownID: terminalSafe(strings.TrimSpace(r.WellKnownId.Or(""))),
-			SecretID:    strings.TrimSpace(r.SecretId.Or("")),
-			Delegate:    r.Purpose == apiclientgen.ApprovalRulePurposeDelegate,
-			MaxGrantTTL: time.Duration(r.MaxGrantTTLSeconds) * time.Second,
-			CreatedBy:   terminalSafe(strings.TrimSpace(r.CreatedBy.Or(""))),
-			Created:     r.CreatedAt,
-			Enabled:     r.Enabled,
-		}
-		for _, repository := range r.Repositories {
-			rule.Repositories = append(rule.Repositories, terminalSafe(strings.TrimSpace(repository)))
-		}
-		// A rule the server holds with no repository is one somebody made
-		// for every discobox: no route stores one any other way.
-		rule.EveryDiscobox = len(r.Repositories) == 0
-		approves, err := apipolicy.From(r.Policy)
-		if err != nil {
-			return nil, err
-		}
-		shown := safePolicy(approves)
-		rule.Policy = &shown
-		// The server's own text, sent back for every line an edit leaves
-		// alone.
-		rule.Stored = tui.ApprovalRule{Repositories: r.Repositories, Policy: &approves, EveryDiscobox: rule.EveryDiscobox}
-		for _, host := range r.Hosts {
-			rule.Hosts = append(rule.Hosts, terminalSafe(host))
-		}
-		if expires, ok := r.ExpiresAt.Get(); ok {
-			rule.Expires = expires
-		}
-		out = append(out, rule)
-	}
-	return out, nil
-}
-
-// CreateRule makes a rule from the secrets screen. Which discoboxes it is for
-// is sent as the person said it — the repositories named, or every discobox
-// in so many words — and the purpose is left to the server, which takes
-// "use". The hosts are sent as the card that made the rule read them.
-func (d *apiDataSource) CreateRule(ctx context.Context, server string, rule tui.NewRule) (tui.Rule, error) {
-	d, err := d.on(ctx, server)
-	if err != nil {
-		return tui.Rule{}, err
-	}
-	if rule.Policy == nil {
-		return tui.Rule{}, errors.New("a rule says what it approves: a policy")
-	}
-	approves, err := apipolicy.To(*rule.Policy)
-	if err != nil {
-		return tui.Rule{}, err
-	}
-	body := &apimodel.CreateApprovalRuleBody{Repositories: rule.Repositories, Policy: approves, Hosts: rule.Hosts}
-	if id := strings.TrimSpace(rule.WellKnownID); id != "" {
-		body.SetWellKnownId(apiclientgen.NewOptString(id))
-	} else {
-		body.SetSecretId(apiclientgen.NewOptString(strings.TrimSpace(rule.SecretID)))
-	}
-	if rule.EveryDiscobox {
-		body.SetEveryDiscobox(apiclientgen.NewOptBool(true))
-	}
-	if rule.Delegate {
-		body.SetPurpose(apiclientgen.NewOptCreateApprovalRuleBodyPurpose(apiclientgen.CreateApprovalRuleBodyPurposeDelegate))
-	}
-	// Always said, zero included: zero is the secret's own limit, where
-	// leaving it out would be the server's hour.
-	body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(int64(rule.MaxGrantTTL / time.Second)))
-	if !rule.Expires.IsZero() {
-		body.SetExpiresAt(apiclientgen.NewOptDateTime(rule.Expires.UTC()))
-	}
-	res, err := d.client.CreateApprovalRule(ctx, body, apiclientgen.CreateApprovalRuleParams{ProjectId: d.projectID})
-	if err != nil {
-		return tui.Rule{}, err
-	}
-	made, err := expectResponse[apimodel.ApprovalRule](res)
-	if err != nil {
-		return tui.Rule{}, err
-	}
-	return tui.Rule{ID: made.ID}, nil
-}
-
-// UpdateRule sends what the change sets and nothing else: a field the person
-// did not touch is not the server's to read again.
-func (d *apiDataSource) UpdateRule(ctx context.Context, server, ruleID string, change tui.RuleChange) error {
-	d, err := d.on(ctx, server)
-	if err != nil {
-		return err
-	}
-	body := &apimodel.UpdateApprovalRuleBody{Repositories: change.Repositories}
-	if change.Policy != nil {
-		approves, err := apipolicy.To(*change.Policy)
-		if err != nil {
-			return err
-		}
-		body.SetPolicy(apiclientgen.NewOptAccessPolicy(approves))
-	}
-	if change.EveryDiscobox {
-		body.SetEveryDiscobox(apiclientgen.NewOptBool(true))
-	}
-	if change.MaxGrantTTL != nil {
-		body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(int64(*change.MaxGrantTTL / time.Second)))
-	}
-	switch {
-	case change.NeverExpires:
-		body.SetNeverExpires(apiclientgen.NewOptBool(true))
-	case change.Expires != nil:
-		body.SetExpiresAt(apiclientgen.NewOptDateTime(change.Expires.UTC()))
-	}
-	res, err := d.client.UpdateApprovalRule(ctx, body, apiclientgen.UpdateApprovalRuleParams{ProjectId: d.projectID, RuleId: ruleID})
-	if err != nil {
-		return err
-	}
-	_, err = expectResponse[apimodel.ApprovalRule](res)
-	return err
-}
-
-// SetRuleEnabled turns one rule off or on. Only that is sent: the route takes
-// what changes, and everything else a rule says stays as a person read it.
-func (d *apiDataSource) SetRuleEnabled(ctx context.Context, server, ruleID string, enabled bool) error {
-	d, err := d.on(ctx, server)
-	if err != nil {
-		return err
-	}
-	body := &apimodel.UpdateApprovalRuleBody{}
-	body.SetEnabled(apiclientgen.NewOptBool(enabled))
-	res, err := d.client.UpdateApprovalRule(ctx, body, apiclientgen.UpdateApprovalRuleParams{
-		ProjectId: d.projectID,
-		RuleId:    ruleID,
-	})
-	if err != nil {
-		return err
-	}
-	_, err = expectResponse[apimodel.ApprovalRule](res)
-	return err
-}
-
-// DeleteRule removes one rule; the grants it minted stay.
-func (d *apiDataSource) DeleteRule(ctx context.Context, server, ruleID string) error {
-	d, err := d.on(ctx, server)
-	if err != nil {
-		return err
-	}
-	res, err := d.client.DeleteApprovalRule(ctx, apiclientgen.DeleteApprovalRuleParams{
-		ProjectId: d.projectID,
-		RuleId:    ruleID,
-	})
-	if err != nil {
-		return err
-	}
-	return expectNoContent[apiclientgen.DeleteApprovalRuleNoContent](res)
 }
 
 // RefreshSecret answers a refresh request with a new value: the output of the
@@ -952,9 +617,6 @@ func (d *apiDataSource) Grants(ctx context.Context, server string, filter tui.Gr
 	if secretID := strings.TrimSpace(filter.SecretID); secretID != "" {
 		params.SecretId = apiclientgen.NewOptString(secretID)
 	}
-	if ruleID := strings.TrimSpace(filter.RuleID); ruleID != "" {
-		params.RuleId = apiclientgen.NewOptString(ruleID)
-	}
 	res, err := d.client.ListSecretGrants(ctx, params)
 	if err != nil {
 		return nil, err
@@ -975,28 +637,9 @@ func (d *apiDataSource) Grants(ctx context.Context, server string, filter tui.Gr
 			Delegate:  g.Purpose == apiclientgen.SecretGrantPurposeDelegate,
 			GrantedBy: strings.TrimSpace(g.GrantedBy.Or("")),
 			Granted:   g.GrantedAt,
-			RuleID:    strings.TrimSpace(g.RuleId.Or("")),
 		}
 		if expires, ok := g.ExpiresAt.Get(); ok {
 			grant.Expires = expires
-		}
-		if approved, ok := g.Policy.Get(); ok {
-			read, err := apipolicy.From(approved)
-			if err != nil {
-				return nil, err
-			}
-			shown := safePolicy(read)
-			grant.Policy, grant.Approved, grant.ApprovedShown = safePolicyLines(read), &read, &shown
-		}
-		if uses, ok := g.Uses.Get(); ok {
-			for _, use := range uses {
-				if description := strings.TrimSpace(use.Description); description != "" {
-					grant.Uses = append(grant.Uses, tui.GrantUse{
-						ID:          strings.TrimSpace(use.UseId.Or("")),
-						Description: description,
-					})
-				}
-			}
 		}
 		out = append(out, grant)
 	}
@@ -1027,20 +670,8 @@ func (d *apiDataSource) CreateGrant(ctx context.Context, server string, grant tu
 	// and zero is the answer "never expires" — dropping it would quietly
 	// substitute the secret's limit for what the person typed.
 	body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(grant.TTLSeconds))
-	if len(grant.Uses) > 0 {
-		declared := make([]apimodel.SecretUse, 0, len(grant.Uses))
-		for _, use := range grant.Uses {
-			declared = append(declared, apimodel.SecretUse{Description: use})
-		}
-		body.SetUses(apiclientgen.NewOptNilSecretUseArray(declared))
-		body.SetEnvVar(apiclientgen.NewOptString(grant.EnvVar))
-	}
-	if grant.Policy != nil {
-		sent, err := apipolicy.To(*grant.Policy)
-		if err != nil {
-			return tui.Grant{}, err
-		}
-		body.SetPolicy(apiclientgen.NewOptAccessPolicy(sent))
+	if grant.Delegate {
+		body.SetPurpose(apiclientgen.NewOptCreateSecretGrantBodyPurpose(apiclientgen.CreateSecretGrantBodyPurposeDelegate))
 	}
 	res, err := d.client.CreateSecretGrant(ctx, body, apiclientgen.CreateSecretGrantParams{ProjectId: d.projectID})
 	if err != nil {
@@ -1100,8 +731,8 @@ func secretRouteInputs(routes []tui.SecretRoute) []apimodel.SecretRouteInput {
 		if route.Path != "" {
 			input.SetPath(apiclientgen.NewOptString(route.Path))
 		}
-		if route.Use != "" {
-			input.SetUse(apiclientgen.NewOptString(route.Use))
+		if route.Blocked {
+			input.SetBlocked(apiclientgen.NewOptBool(true))
 		}
 		inputs = append(inputs, input)
 	}

@@ -95,7 +95,7 @@ func (f *fakeUnits) Watch(ctx context.Context) (<-chan string, error) {
 }
 
 type noopInstaller struct {
-	// mu guards calls: a judge installs before each of its parallel runs.
+	// mu guards calls, which concurrent launches may make.
 	mu    sync.Mutex
 	calls []config.Harness
 }

@@ -29,72 +29,36 @@ Inside a discobox there is no `gh` login. `origin` is the host checkout's own
 remote — possibly a mirror — and `discobox` is the pool; in a discobox created
 before ADR 26-10-10-545, `origin` is the pool and `upstream` is that remote.
 Check `git remote -v`, and do not push to any of them by name: every GitHub call
-goes through `discobox-access`, with the URL spelled out. `deliver-issue` and
+goes through a GitHub credential, with the URL spelled out. `deliver-issue` and
 `develop` ask for their own up front; check `discobox-access list` and
-request only what is missing, in one request:
+request one only when no credential in `GH_TOKEN` covers `github.com`:
 
 ```bash
 discobox-access request --json <<'EOF'
 {
-  "id": "com.github.api",
-  "justification": "the user asked me to open a pull request for my local commits in discobox-ai/discobox and get its CI green",
-  "uses": [
-    {"description": "Open a pull request from branch <branch> into main of discobox-ai/discobox and get its CI green"}
-  ],
-  "statements": [
-    "allow read on anything in repository \"discobox-ai/discobox\"",
-    "allow push on branch \"<branch>\" in repository \"discobox-ai/discobox\"",
-    "allow create, update on pull request in repository \"discobox-ai/discobox\" when \"its head is <branch> and its base is main\"",
-    "allow create on comment within pull request in repository \"discobox-ai/discobox\" when \"the pull request's head is <branch>\"",
-    "allow rerun on workflow run in repository \"discobox-ai/discobox\" when \"it ran for branch <branch>\"",
-    "deny force-push, delete on branch in anywhere",
-    "deny merge, close on pull request in anywhere",
-    "deny close, assign, retitle on issue in anywhere",
-    "deny delete, update on label in anywhere",
-    "deny delete on comment in anywhere",
-    "deny cancel, delete on workflow run in anywhere",
-    "deny dispatch on workflow in anywhere",
-    "deny read on secret in anywhere"
-  ],
-  "definitions": {
-    "repository": "a GitHub repository",
-    "branch": "a git branch in a repository",
-    "pull request": "a GitHub pull request",
-    "issue": "a GitHub issue",
-    "label": "a label a repository defines, which its issues and pull requests carry",
-    "comment": "a comment on an issue or pull request, a review on a pull request, or a reply to one",
-    "workflow": "a GitHub Actions workflow",
-    "workflow run": "a run of a GitHub Actions workflow",
-    "secret": "an Actions, Dependabot or environment secret",
-    "push": "create a branch or add commits to it, or move it with --force-with-lease",
-    "force-push": "move a branch with --force and no lease",
-    "merge": "merge a pull request into its base",
-    "close": "close an issue or pull request without merging it",
-    "assign": "set or change who an issue is assigned to",
-    "retitle": "change an issue's title",
-    "rerun": "re-run a workflow run's failed jobs",
-    "cancel": "stop a workflow run in progress",
-    "dispatch": "start a workflow run by hand"
-  },
+  "name": "github",
+  "envVar": "GH_TOKEN",
+  "hosts": ["github.com"],
+  "justification": "the user asked me to open a pull request for my local commits in discobox-ai/discobox from branch <branch> into main and get its CI green. I will push only that branch, never force-push without a lease, merge or close anything, or touch labels, issues, workflows or secrets.",
   "grantTTLSeconds": 14400,
   "wait": true
 }
 EOF
 ```
 
-Name the branch in the statements (§1 picks it): it is the policy's target,
-and a push to any other branch is refused.
-Git takes the token through a one-shot credential helper:
+Name the branch in the justification (§1 picks it): the person approving reads
+it, and the grant is the whole token, so pushing anything else is this run
+breaking its word. `GH_TOKEN` holds the credential's sentinel in every command
+started after the grant; a shell started before it takes it up with
+`eval "$(discobox-access env)"`. `gh` reads it as it is. Git takes it through a
+one-shot credential helper:
 
 ```bash
 GH_URL=https://github.com/discobox-ai/discobox
-discobox-access run --use <id> -- sh -c 'git -c credential.helper= \
-  -c credential.helper="!f() { echo username=x-access-token; echo password=\$GH_TOKEN; }; f" \
-  push '"$GH_URL"' HEAD:refs/heads/<branch>'
+git -c credential.helper= \
+  -c credential.helper='!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f' \
+  push "$GH_URL" HEAD:refs/heads/<branch>
 ```
-
-The injected token lives only minutes, so a long `gh run watch` dies with a
-401. Make each check a separate short `discobox-access run`.
 
 ## 1. What goes in the PR
 
@@ -120,7 +84,7 @@ this rewrites nothing anyone has — and re-run the tests the conflict touched.
 
 **Branch name:** `issue-<N>` when it fixes an issue; otherwise `<type>/<slug>`
 from the first commit's subject (`fix/rm-stopped-box`). Check it is free:
-`git ls-remote "$GH_URL" refs/heads/<branch>` (through `discobox-access`)
+`git ls-remote "$GH_URL" refs/heads/<branch>` (with the helper)
 returns nothing, or a commit that is an ancestor of `HEAD` — that is this
 work's earlier push. Anything else is someone's branch: pick another name.
 
@@ -195,8 +159,7 @@ gh pr view <pr> --repo discobox-ai/discobox --json headRefOid -q .headRefOid
 gh pr checks <pr> --repo discobox-ai/discobox --json name,state,bucket,link
 ```
 
-Arm a Monitor that polls `gh pr checks` (one `discobox-access run` per poll,
-every 60s) and exits when no check is in bucket `pending`, and keep working
+Arm a Monitor that polls `gh pr checks` (every 60s) and exits when no check is in bucket `pending`, and keep working
 while it runs. CI takes about seven minutes.
 
 - **Green** — every check is `pass` or `skipping`, and CI's six jobs (`check`,

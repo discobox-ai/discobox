@@ -171,9 +171,8 @@ const DefaultSentinelFormat = "{alnum:48}"
 
 // MintSentinel generates one sentinel placeholder from a secret's format,
 // falling back to DefaultSentinelFormat when the format is empty or
-// unparseable. Every sentinel in the system — the stable one bound to a sandbox
-// env var, and the ephemeral one a pool agent mints per use — comes from here,
-// so the two can never be shaped by different rules.
+// unparseable. Every sentinel in the system — each one bound to a sandbox env
+// var — comes from here, so none is shaped by a rule another does not share.
 func MintSentinel(format string) (string, error) {
 	tmpl, err := Parse(strings.TrimSpace(format))
 	if err != nil {

@@ -33,19 +33,19 @@ func TestListHTTPAuditReturnsEveryFieldAndBothLists(t *testing.T) {
 	h := New(svcapi.Services{Pools: httpAuditPools{filter: &filter, result: &svcapi.HTTPAuditResult{
 		Exchanges: []svcapi.PoolHTTPAuditExchange{{PoolID: "pool-a", HTTPAuditExchange: sandbox.HTTPAuditExchange{
 			ID: 7, CreatedAt: createdAt, SandboxID: "sbx_gone", Method: "POST", URL: "https://api.github.com/repos/o/r/pulls",
-			Host: "api.github.com", Status: 201, DurationMillis: 340, SwappedUseIDs: []string{"use_x"},
+			Host: "api.github.com", Status: 201, DurationMillis: 340, SwappedSecretIDs: []string{"sec_x"},
 			RequestBodyBytes: 90, ResponseBytes: 2048,
 		}}},
 		UnavailablePools: []svcapi.UnavailableAuditPool{{PoolID: "pool-c", Reason: "its pool agent predates the audit read"}},
 	}}})
 
 	res, err := h.ListHTTPAudit(context.Background(), serverapi.ListHTTPAuditParams{
-		ProjectId: "project-1", SandboxId: serverapi.NewOptString("sbx_gone"), UseId: serverapi.NewOptString("use_x"),
+		ProjectId: "project-1", SandboxId: serverapi.NewOptString("sbx_gone"),
 	})
 	if err != nil {
 		t.Fatalf("ListHTTPAudit() error = %v", err)
 	}
-	if filter.SandboxID != "sbx_gone" || filter.UseID != "use_x" || filter.Limit != 100 {
+	if filter.SandboxID != "sbx_gone" || filter.Limit != 100 {
 		t.Fatalf("filter = %+v, want the request's with the default limit", filter)
 	}
 	body, ok := res.(*serverapi.ListHTTPAuditBody)
@@ -57,8 +57,8 @@ func TestListHTTPAuditReturnsEveryFieldAndBothLists(t *testing.T) {
 	}
 	e := body.Exchanges[0]
 	if e.PoolId != "pool-a" || e.ID != "http_7" || !e.CreatedAt.Equal(createdAt) || e.SandboxId != "sbx_gone" || e.Method != "POST" ||
-		e.Host != "api.github.com" || e.Status != 201 || e.DurationMillis.Or(0) != 340 || len(e.SwappedUseIds) != 1 ||
-		e.SwappedUseIds[0] != "use_x" || e.RequestBodyBytes.Or(0) != 90 || e.ResponseBytes.Or(0) != 2048 {
+		e.Host != "api.github.com" || e.Status != 201 || e.DurationMillis.Or(0) != 340 || len(e.SwappedSecretIds) != 1 ||
+		e.SwappedSecretIds[0] != "sec_x" || e.RequestBodyBytes.Or(0) != 90 || e.ResponseBytes.Or(0) != 2048 {
 		t.Fatalf("exchange lost a field on the way out: %+v", e)
 	}
 	if body.UnavailablePools[0].PoolId != "pool-c" || body.UnavailablePools[0].Reason == "" {
@@ -129,7 +129,6 @@ func (p httpAuditPools) GetHTTPAudit(_ context.Context, _, poolID, _ string, id 
 			HTTPAuditExchange: sandbox.HTTPAuditExchange{
 				ID: id, CreatedAt: time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC), SandboxID: "sbx_1",
 				Method: "GET", URL: "https://api.github.com/", Host: "api.github.com", Status: 200,
-				SwappedUseIDs: []string{},
 			},
 			WrittenAt:       time.Date(2026, 9, 17, 10, 0, 2, 0, time.UTC),
 			RequestHeaders:  map[string][]string{"Authorization": {"[REDACTED]"}},

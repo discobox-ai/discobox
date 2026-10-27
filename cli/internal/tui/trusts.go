@@ -58,7 +58,7 @@ func (m *Model) askAboutTrust(req CredentialRequest) tea.Cmd {
 	})
 	d.sections = trustAskSections(req, m.secrets.now())
 	d.answerLabel = "trust " + req.Host + " by which certificate?"
-	d.footer = "every request this discobox then sends " + req.Host + " is judged against the uses above"
+	d.footer = "the pin makes this certificate acceptable for " + req.Host + " alone, for this discobox"
 	d.keys = []hint{pressing("enter chooses the highlighted pin", "enter"), pressing("esc leaves it waiting", "esc")}
 	m.dialog = d
 	return nil
@@ -199,18 +199,8 @@ func trustAskSections(req CredentialRequest, now time.Time) []section {
 	}
 	sections := []section{{label: "asked for", fields: fields}}
 
-	what := section{label: "what it will send there"}
-	for _, use := range req.Uses {
-		what.lines = append(what.lines, useLines(use, tonePlain)...)
-	}
 	if req.Justification != "" {
-		if len(what.lines) > 0 {
-			what.lines = append(what.lines, line{})
-		}
-		what.lines = append(what.lines, line{text: req.Justification, tone: toneDim})
-	}
-	if len(what.lines) > 0 {
-		sections = append(sections, what)
+		sections = append(sections, section{label: "why", lines: []line{{text: req.Justification, tone: toneDim}}})
 	}
 
 	shown := section{label: "what the pool was shown"}

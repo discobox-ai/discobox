@@ -691,17 +691,6 @@ func (s *PoolHTTPAuditExchange) Validate() error {
 			Error: err,
 		})
 	}
-	if err := func() error {
-		if s.SwappedUseIds == nil {
-			return errors.New("nil is invalid value")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "swappedUseIds",
-			Error: err,
-		})
-	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -767,17 +756,6 @@ func (s *PoolHTTPAuditExchangeDetail) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "responseHeaders",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if s.SwappedUseIds == nil {
-			return errors.New("nil is invalid value")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "swappedUseIds",
 			Error: err,
 		})
 	}
@@ -1705,8 +1683,6 @@ func (s SandboxConfigHarnessMode) Validate() error {
 	case "run":
 		return nil
 	case "config":
-		return nil
-	case "judge":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

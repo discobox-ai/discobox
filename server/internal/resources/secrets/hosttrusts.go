@@ -22,7 +22,9 @@ import (
 // person pins one certificate from the chain the pool observed; the pool's
 // proxy enforces the pin on that sandbox's traffic alone. It lives beside the
 // credential broker because it is the same act — an agent's ask, a person's
-// approval, uses the judge reads — about a different thing.
+// approval — about a different thing: the pin makes one certificate
+// acceptable for one endpoint, and decides nothing about what is sent there
+// (ADR 26-10-27-880 §10).
 
 // CreateSandboxTrustRequest records a pool's relay of an agent's ask. The
 // chain is the pool's observation, never the sandbox's word: the pool
@@ -35,10 +37,6 @@ func (s *Service) CreateSandboxTrustRequest(ctx context.Context, poolID string, 
 	host := agentcreds.TrustHost(input.Host)
 	if host == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "a trust request names one host, as host or host:port")
-	}
-	uses, err := requestedUses(input.Uses)
-	if err != nil {
-		return nil, err
 	}
 	grantTTL := input.GrantTTLSeconds.Or(0)
 	if grantTTL < 0 || grantTTL > model.MaxHostTrustTTLSeconds {
@@ -62,7 +60,6 @@ func (s *Service) CreateSandboxTrustRequest(ctx context.Context, poolID string, 
 		RequestedBy:   agentRequesterID(sandbox.ID),
 		Host:          host,
 		Justification: strings.TrimSpace(input.Justification.Or("")),
-		Uses:          uses,
 		GrantTTL:      grantTTL,
 		ObservedChain: observedChain(input.ObservedChain),
 		Status:        model.HostTrustRequestStatusPending,
@@ -159,19 +156,6 @@ func (s *Service) ApproveTrustRequest(ctx context.Context, projectID, requestID 
 	if err != nil {
 		return nil, err
 	}
-	uses := req.Uses
-	if edited, ok := input.Uses.Get(); ok && edited != nil {
-		if uses, err = convertAPIUses(edited); err != nil {
-			return nil, err
-		}
-		if len(uses) == 0 {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, "an approved trust needs at least one use")
-		}
-	}
-	uses, err = mintUseIDs(uses)
-	if err != nil {
-		return nil, err
-	}
 	ttl := req.GrantTTL
 	if chosen, ok := input.GrantTTLSeconds.Get(); ok {
 		ttl = chosen
@@ -189,7 +173,6 @@ func (s *Service) ApproveTrustRequest(ctx context.Context, projectID, requestID 
 		Host:      req.Host,
 		Pin:       pin,
 		PinPEM:    pinPEM,
-		Uses:      uses,
 		ExpiresAt: time.Now().UTC().Add(time.Duration(ttl) * time.Second),
 		GrantedBy: grantedByOf(principal),
 		RequestID: req.ID,

@@ -151,16 +151,6 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/sources
 	GetSandboxSourceStates(ctx context.Context, params GetSandboxSourceStatesParams) (*SandboxSourceStates, error)
-	// JudgeSandbox implements judge-sandbox operation.
-	//
-	// Puts one judging job to this discobox's harness and returns what it answered. Only a discobox in
-	// judge mode answers, and only a token carrying judge:run may ask. The caller supplies evidence and
-	// the approved use; the prompt, the schema, the model role and the tools restriction are the judge
-	// runtime's own. Each ask is a fresh run with nothing carried over from the last, and one is
-	// answered at a time.
-	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge
-	JudgeSandbox(ctx context.Context, req *JudgeJob, params JudgeSandboxParams) (*JudgeAnswer, error)
 	// ListExecEvents implements list-exec-events operation.
 	//
 	// Lifecycle events for every exec in a sandbox (created, started, stopped, attach opened and closed),
@@ -242,16 +232,6 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/files/move
 	MoveSandboxFile(ctx context.Context, req *SandboxFileTransferRequest, params MoveSandboxFileParams) (*SandboxFileStat, error)
-	// ProposeSandboxRule implements propose-sandbox-rule operation.
-	//
-	// Has this discobox's harness write the policy a person starts an approval rule from (ADR
-	// 26-10-12-330) — the policy a request asked for, as the same work on any target of its kind. Only
-	// a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies
-	// the statements a request asked for; the prompt, the schema, the model role and the tools
-	// restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
-	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal
-	ProposeSandboxRule(ctx context.Context, req *JudgeProposalJob, params ProposeSandboxRuleParams) (*JudgeProposal, error)
 	// PutSandboxRuntimeConfig implements put-sandbox-runtime-config operation.
 	//
 	// Delivers the pool's whole view of the sandbox as one revisioned document, which the sandbox

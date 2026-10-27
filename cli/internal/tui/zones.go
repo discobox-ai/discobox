@@ -47,7 +47,6 @@ const (
 	hitSecretRow
 	hitSkillsRow
 	hitRequestRow
-	hitRuleRow
 	hitAuditRow
 
 	// hitOptionRow is a row of the run options panel; hitOptionCycle is one of

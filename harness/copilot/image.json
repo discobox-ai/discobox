@@ -40,16 +40,16 @@
           {
             "host": "githubcopilot.com",
             "path": "/mcp",
-            "use": "GitHub's MCP server used only for light read-only GitHub queries (reading files, issues, pull requests, searching code); nothing that creates, changes or deletes anything on GitHub"
+            "blocked": true
           },
           {
             "host": "githubcopilot.com",
             "path": "/agents",
-            "use": "reading Copilot's own agent tasks and sessions; nothing that starts a cloud agent task or session or otherwise creates, changes or deletes anything"
+            "blocked": true
           },
           {
             "host": "github.com",
-            "use": "light read-only GitHub queries such as reading a file, an issue or a pull request, or searching code; nothing that creates, changes or deletes anything on GitHub"
+            "blocked": true
           }
         ]
       }
@@ -114,16 +114,16 @@
             {
               "host": "githubcopilot.com",
               "path": "/mcp",
-              "use": "GitHub's MCP server used only for light read-only GitHub queries (reading files, issues, pull requests, searching code); nothing that creates, changes or deletes anything on GitHub"
+              "blocked": true
             },
             {
               "host": "githubcopilot.com",
               "path": "/agents",
-              "use": "reading Copilot's own agent tasks and sessions; nothing that starts a cloud agent task or session or otherwise creates, changes or deletes anything"
+              "blocked": true
             },
             {
               "host": "github.com",
-              "use": "light read-only GitHub queries such as reading a file, an issue or a pull request, or searching code; nothing that creates, changes or deletes anything on GitHub"
+              "blocked": true
             }
           ]
         }

@@ -6239,14 +6239,6 @@ func (s *PoolHTTPAuditExchange) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("swappedUseIds")
-		e.ArrStart()
-		for _, elem := range s.SwappedUseIds {
-			e.Str(elem)
-		}
-		e.ArrEnd()
-	}
-	{
 		if s.Upgrade.Set {
 			e.FieldStart("upgrade")
 			s.Upgrade.Encode(e)
@@ -6264,7 +6256,7 @@ func (s *PoolHTTPAuditExchange) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolHTTPAuditExchange = [18]string{
+var jsonFieldsNameOfPoolHTTPAuditExchange = [17]string{
 	0:  "$schema",
 	1:  "blocked",
 	2:  "blockedReason",
@@ -6279,10 +6271,9 @@ var jsonFieldsNameOfPoolHTTPAuditExchange = [18]string{
 	11: "sandboxId",
 	12: "status",
 	13: "swappedSecretIds",
-	14: "swappedUseIds",
-	15: "upgrade",
-	16: "upgradeType",
-	17: "url",
+	14: "upgrade",
+	15: "upgradeType",
+	16: "url",
 }
 
 // Decode decodes PoolHTTPAuditExchange from json.
@@ -6457,26 +6448,6 @@ func (s *PoolHTTPAuditExchange) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"swappedSecretIds\"")
 			}
-		case "swappedUseIds":
-			requiredBitSet[1] |= 1 << 6
-			if err := func() error {
-				s.SwappedUseIds = make([]string, 0)
-				if err := d.Arr(func(d *jx.Decoder) error {
-					var elem string
-					v, err := d.Str()
-					elem = string(v)
-					if err != nil {
-						return err
-					}
-					s.SwappedUseIds = append(s.SwappedUseIds, elem)
-					return nil
-				}); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"swappedUseIds\"")
-			}
 		case "upgrade":
 			if err := func() error {
 				s.Upgrade.Reset()
@@ -6498,7 +6469,7 @@ func (s *PoolHTTPAuditExchange) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"upgradeType\"")
 			}
 		case "url":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.URL = string(v)
@@ -6520,8 +6491,8 @@ func (s *PoolHTTPAuditExchange) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b11010010,
-		0b01011001,
-		0b00000010,
+		0b00011001,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -6775,14 +6746,6 @@ func (s *PoolHTTPAuditExchangeDetail) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("swappedUseIds")
-		e.ArrStart()
-		for _, elem := range s.SwappedUseIds {
-			e.Str(elem)
-		}
-		e.ArrEnd()
-	}
-	{
 		if s.Upgrade.Set {
 			e.FieldStart("upgrade")
 			s.Upgrade.Encode(e)
@@ -6818,7 +6781,7 @@ func (s *PoolHTTPAuditExchangeDetail) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolHTTPAuditExchangeDetail = [42]string{
+var jsonFieldsNameOfPoolHTTPAuditExchangeDetail = [41]string{
 	0:  "$schema",
 	1:  "appliedHeaders",
 	2:  "appliedPattern",
@@ -6854,13 +6817,12 @@ var jsonFieldsNameOfPoolHTTPAuditExchangeDetail = [42]string{
 	32: "streamRecorded",
 	33: "streamSessionId",
 	34: "swappedSecretIds",
-	35: "swappedUseIds",
-	36: "upgrade",
-	37: "upgradeC2sBytes",
-	38: "upgradeS2cBytes",
-	39: "upgradeType",
-	40: "url",
-	41: "writtenAt",
+	35: "upgrade",
+	36: "upgradeC2sBytes",
+	37: "upgradeS2cBytes",
+	38: "upgradeType",
+	39: "url",
+	40: "writtenAt",
 }
 
 // Decode decodes PoolHTTPAuditExchangeDetail from json.
@@ -7255,26 +7217,6 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"swappedSecretIds\"")
 			}
-		case "swappedUseIds":
-			requiredBitSet[4] |= 1 << 3
-			if err := func() error {
-				s.SwappedUseIds = make([]string, 0)
-				if err := d.Arr(func(d *jx.Decoder) error {
-					var elem string
-					v, err := d.Str()
-					elem = string(v)
-					if err != nil {
-						return err
-					}
-					s.SwappedUseIds = append(s.SwappedUseIds, elem)
-					return nil
-				}); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"swappedUseIds\"")
-			}
 		case "upgrade":
 			if err := func() error {
 				s.Upgrade.Reset()
@@ -7316,7 +7258,7 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"upgradeType\"")
 			}
 		case "url":
-			requiredBitSet[5] |= 1 << 0
+			requiredBitSet[4] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.URL = string(v)
@@ -7351,8 +7293,8 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 		0b11001000,
 		0b00100001,
 		0b00011100,
-		0b00001000,
-		0b00000001,
+		0b10000000,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -11009,8 +10951,6 @@ func (s *SandboxConfigHarnessMode) Decode(d *jx.Decoder) error {
 		*s = SandboxConfigHarnessModeRun
 	case SandboxConfigHarnessModeConfig:
 		*s = SandboxConfigHarnessModeConfig
-	case SandboxConfigHarnessModeJudge:
-		*s = SandboxConfigHarnessModeJudge
 	default:
 		*s = SandboxConfigHarnessMode(v)
 	}
@@ -11989,6 +11929,12 @@ func (s *SentinelRoute) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *SentinelRoute) encodeFields(e *jx.Encoder) {
 	{
+		if s.Blocked.Set {
+			e.FieldStart("blocked")
+			s.Blocked.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("host")
 		e.Str(s.Host)
 	}
@@ -11998,18 +11944,12 @@ func (s *SentinelRoute) encodeFields(e *jx.Encoder) {
 			s.Path.Encode(e)
 		}
 	}
-	{
-		if s.UseId.Set {
-			e.FieldStart("useId")
-			s.UseId.Encode(e)
-		}
-	}
 }
 
 var jsonFieldsNameOfSentinelRoute = [3]string{
-	0: "host",
-	1: "path",
-	2: "useId",
+	0: "blocked",
+	1: "host",
+	2: "path",
 }
 
 // Decode decodes SentinelRoute from json.
@@ -12021,8 +11961,18 @@ func (s *SentinelRoute) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "blocked":
+			if err := func() error {
+				s.Blocked.Reset()
+				if err := s.Blocked.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"blocked\"")
+			}
 		case "host":
-			requiredBitSet[0] |= 1 << 0
+			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Host = string(v)
@@ -12043,16 +11993,6 @@ func (s *SentinelRoute) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"path\"")
 			}
-		case "useId":
-			if err := func() error {
-				s.UseId.Reset()
-				if err := s.UseId.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"useId\"")
-			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -12063,7 +12003,7 @@ func (s *SentinelRoute) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000001,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

@@ -18,26 +18,25 @@ import (
 // TrustRequestBody plus how the CLI should wait, as requestInput is for a
 // credential.
 type trustInput struct {
-	Host            string                    `json:"host"`
-	Justification   string                    `json:"justification,omitempty"`
-	Uses            []agentcreds.RequestedUse `json:"uses"`
-	SuppliedCA      string                    `json:"suppliedCA,omitempty"`
-	GrantTTLSeconds int64                     `json:"grantTTLSeconds,omitempty"`
-	Wait            bool                      `json:"wait,omitempty"`
-	TimeoutSeconds  int                       `json:"timeoutSeconds,omitempty"`
+	Host            string `json:"host"`
+	Justification   string `json:"justification,omitempty"`
+	SuppliedCA      string `json:"suppliedCA,omitempty"`
+	GrantTTLSeconds int64  `json:"grantTTLSeconds,omitempty"`
+	Wait            bool   `json:"wait,omitempty"`
+	TimeoutSeconds  int    `json:"timeoutSeconds,omitempty"`
 }
 
 // runTrust asks for a host whose certificate the egress does not trust to be
-// trusted for this sandbox (ADR 0149). The host is an argument, as a
-// well-known credential's ID is for request, wherever it falls among the
-// flags.
+// trusted for this sandbox (ADR 0149). The host is an argument, wherever it
+// falls among the flags. The trust only pins a certificate for that one
+// endpoint; what may be sent there is not its question (ADR 26-10-27-880
+// §10).
 func runTrust(ctx context.Context, args []string) int {
 	var (
 		input      trustInput
-		uses       stringList
 		structured bool
 		timeout    time.Duration
-		grantTTL   time.Duration
+		ttl        time.Duration
 		caFile     string
 	)
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -45,10 +44,9 @@ func runTrust(ctx context.Context, args []string) int {
 	}
 	flags := flag.NewFlagSet(Name+" trust", flag.ContinueOnError)
 	flags.BoolVar(&structured, "json", false, "read the request as JSON on stdin and emit JSON")
-	flags.StringVar(&input.Justification, "why", "", "why you need to reach the host")
-	flags.Var(&uses, "use", "what you will send to the host (repeatable)")
+	flags.StringVar(&input.Justification, "justification", "", "why you need to reach the host")
 	flags.StringVar(&caFile, "ca-file", "", "PEM CA certificate you already have for the host, from a source you trust")
-	flags.DurationVar(&grantTTL, "grant-ttl", 0, "how long you ask the trust to last (e.g. 4h); the approver may choose otherwise")
+	flags.DurationVar(&ttl, "ttl", 0, "how long you ask the trust to last (e.g. 4h); the approver may choose otherwise")
 	flags.BoolVar(&input.Wait, "wait", false, "block until the request is granted or denied")
 	flags.DurationVar(&timeout, "timeout", time.Hour, "how long --wait waits before giving up")
 	if !parse(flags, args) {
@@ -81,13 +79,10 @@ func runTrust(ctx context.Context, args []string) int {
 			timeout = time.Duration(input.TimeoutSeconds) * time.Second
 		}
 	} else {
-		for _, use := range uses {
-			input.Uses = append(input.Uses, agentcreds.RequestedUse{Description: use})
+		if ttl < 0 || ttl%time.Second != 0 {
+			return usageError(out, "--ttl %s is not a lifetime: give a positive whole number of seconds, such as 30m or 96h", ttl)
 		}
-		if grantTTL < 0 || grantTTL%time.Second != 0 {
-			return usageError(out, "--grant-ttl %s is not a lifetime: give a positive whole number of seconds, such as 30m or 96h", grantTTL)
-		}
-		input.GrantTTLSeconds = int64(grantTTL / time.Second)
+		input.GrantTTLSeconds = int64(ttl / time.Second)
 		if caFile != "" {
 			pem, err := os.ReadFile(caFile)
 			if err != nil {
@@ -107,7 +102,6 @@ func runTrust(ctx context.Context, args []string) int {
 	status, err := client.RequestTrust(ctx, agentcreds.TrustRequestBody{
 		Host:            input.Host,
 		Justification:   input.Justification,
-		Uses:            input.Uses,
 		SuppliedCA:      input.SuppliedCA,
 		GrantTTLSeconds: input.GrantTTLSeconds,
 	})
@@ -147,9 +141,6 @@ func (out *emitter) trustStatus(status agentcreds.TrustRequestStatus) int {
 		if status.Pin != nil {
 			fmt.Fprintf(w, "  pinned %s %s\n", status.Pin.Kind, status.Pin.SHA256)
 		}
-		for _, use := range status.Uses {
-			fmt.Fprintf(w, "  %s  %s\n", use.UseID, use.Description)
-		}
 	})
 	if status.Status == agentcreds.StatusPending {
 		out.pending("trust", status.RequestID, false)
@@ -178,7 +169,7 @@ func runTrusts(ctx context.Context, args []string) int {
 	out.emit(agentcreds.TrustListResponse{Trusts: trusts}, func(w io.Writer) {
 		if len(trusts) == 0 {
 			fmt.Fprintln(w, "This sandbox trusts no host beyond the usual certificate authorities.")
-			fmt.Fprintf(w, "Ask for one with: %s trust HOST[:PORT] --use \"what you will send it\" --why \"...\"\n", Name)
+			fmt.Fprintf(w, "Ask for one with: %s trust HOST[:PORT] --justification \"...\"\n", Name)
 			return
 		}
 		for _, trust := range trusts {
@@ -187,9 +178,6 @@ func runTrusts(ctx context.Context, args []string) int {
 				expiry = fmt.Sprintf(" [expires %s]", trust.ExpiresAt.Format(time.RFC3339))
 			}
 			fmt.Fprintf(w, "%s (%s %s)%s\n", trust.Host, trust.Pin.Kind, trust.Pin.SHA256, expiry)
-			for _, use := range trust.Uses {
-				fmt.Fprintf(w, "  %s  %s\n", use.UseID, use.Description)
-			}
 		}
 	})
 	return exitOK

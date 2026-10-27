@@ -45,9 +45,9 @@ const (
 	// It is longer than the cooldown because the two answer different
 	// questions — how often to repeat a rejection, against how long a
 	// clearance is worth sending — and bounded because the keys are not a small
-	// set: a pool agent mints an ephemeral sentinel per credential use, and
-	// each of those is a key. Nothing else would ever remove one, since the
-	// case this feature is about is a credential that stays refused.
+	// set: one per client, sentinel and host a rejection was reported for,
+	// across every sandbox on the pool. Nothing else would ever remove one,
+	// since the case this feature is about is a credential that stays refused.
 	reportMemory = 15 * time.Minute
 )
 

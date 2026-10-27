@@ -205,9 +205,6 @@ func (p *poolAgentClient) ListHTTPAudit(ctx context.Context, projectID string, q
 	if query.Host != "" {
 		params.Host = poolclient.NewOptString(query.Host)
 	}
-	if query.UseID != "" {
-		params.UseId = poolclient.NewOptString(query.UseID)
-	}
 	if !query.Since.IsZero() {
 		params.Since = poolclient.NewOptDateTime(query.Since)
 	}
@@ -254,7 +251,6 @@ func (p *poolAgentClient) ListHTTPAudit(ctx context.Context, projectID string, q
 			Blocked:          e.Blocked,
 			BlockedReason:    e.BlockedReason.Or(""),
 			CacheHit:         e.CacheHit.Or(false),
-			SwappedUseIDs:    append([]string{}, e.SwappedUseIds...),
 			SwappedSecretIDs: append([]string{}, e.SwappedSecretIds...),
 			RequestBodyBytes: e.RequestBodyBytes.Or(0),
 			ResponseBytes:    e.ResponseBytes.Or(0),
@@ -304,7 +300,6 @@ func httpAuditExchangeDetail(res *poolapimodel.PoolHTTPAuditExchangeDetail) (*sa
 			Blocked:          res.Blocked,
 			BlockedReason:    res.BlockedReason.Or(""),
 			CacheHit:         res.CacheHit.Or(false),
-			SwappedUseIDs:    append([]string{}, res.SwappedUseIds...),
 			SwappedSecretIDs: append([]string{}, res.SwappedSecretIds...),
 			RequestBodyBytes: res.RequestBodyBytes.Or(0),
 			ResponseBytes:    res.ResponseBytes.Or(0),
@@ -635,7 +630,7 @@ func requiresSandboxAgentToken(scopes []string) bool {
 		case harnesscapture.ScopeRead, harnesscapture.ScopeCapture, harnesscapture.ScopeWrite,
 			poolagentauth.ScopeTerminalRead, poolagentauth.ScopeTerminalWrite, poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite,
 			poolagentauth.ScopeFilesRead, poolagentauth.ScopeFilesWrite,
-			poolagentauth.ScopeTCPConnect, poolagentauth.ScopeUDPConnect, poolagentauth.ScopeJudgeRun,
+			poolagentauth.ScopeTCPConnect, poolagentauth.ScopeUDPConnect,
 			// The worktree's Git route is served by the sandbox agent, which
 			// checks these itself (ADR 0126 §4).
 			poolagentauth.ScopeSandboxRead, poolagentauth.ScopeSandboxWrite,
@@ -1208,8 +1203,8 @@ func poolSentinelRoutes(in map[string][]secretroute.Route) map[string][]poolclie
 			if route.Path != "" {
 				item.Path = poolclient.NewOptString(route.Path)
 			}
-			if route.UseID != "" {
-				item.UseId = poolclient.NewOptString(route.UseID)
+			if route.Blocked {
+				item.Blocked = poolclient.NewOptBool(true)
 			}
 			out[sentinel] = append(out[sentinel], item)
 		}

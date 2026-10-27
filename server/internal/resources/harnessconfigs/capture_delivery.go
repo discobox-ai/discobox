@@ -40,7 +40,7 @@ func (s *Service) deliverCaptureAcknowledgment(ctx context.Context, r *model.Har
 		if err != nil {
 			return err
 		}
-		assignments, err = tx.ListInjectedSandboxSecrets(ctx, r.ProjectID, r.SandboxID)
+		assignments, err = tx.ListSandboxSecrets(ctx, r.ProjectID, r.SandboxID)
 		return err
 	})
 	if err != nil {

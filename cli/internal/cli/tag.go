@@ -18,9 +18,8 @@ import (
 // already prints the raw record, meta included.
 //
 // Its argument is resolved the way `start` and `stop` resolve theirs, and for
-// the same reason a full ID skips the listing: a discobox tagging the ones it
-// created (ADR 26-10-08-447) has every call judged against its use, and
-// "tag a discobox I created" says nothing of listing them.
+// the same reason a full ID skips the listing: "tag a discobox I created"
+// (ADR 26-10-08-447) says nothing of listing them.
 func (a *App) newTagCommand() *cobra.Command {
 	var removed []string
 	var description string

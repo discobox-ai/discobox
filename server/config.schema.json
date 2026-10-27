@@ -238,44 +238,61 @@
       ]
     },
     "jevApiKey": {
-      "description": "TypeSafe API key the server asks Jev with. Setting it makes judgeBackend auto choose jev; judgeBackend jev requires it. Environment: DISCOBOX_JEV_API_KEY (takes precedence over this file).",
+      "description": "Retired, and ignored: nothing asks Jev any more. Read with a warning, and refused from the next release. No example: it was a credential.",
       "type": [
         "string",
         "null"
       ]
     },
     "jevModel": {
-      "default": "jev-1.13.0",
-      "description": "The Jev model asked when judgeBackend is jev. A version rather than the jev-latest alias, which moves when TypeSafe ships a new one. Environment: DISCOBOX_JEV_MODEL (takes precedence over this file).",
-      "type": "string"
+      "description": "Retired, and ignored: nothing asks Jev any more. Read with a warning, and refused from the next release.",
+      "examples": [
+        "jev-1.13.0"
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "jevUnsure": {
-      "default": "harness",
-      "description": "What a jev judge does with a command, request or delegation it is unsure about, being neither sure enough to allow it nor sure enough to refuse it: harness, ask the project's judge discobox (as judgeBackend harness runs one), which then decides, so every project keeps a judge discobox for them; or refuse it, and run no judge discobox. Jev's allows and the refusals it is sure of are final either way, and an ask to be shown a request's body goes back to be answered; with harness, the rounds after the judge discobox asked for a body are its to decide too. Environment: DISCOBOX_JEV_UNSURE (takes precedence over this file).",
-      "enum": [
-        "harness",
-        "refuse"
+      "description": "Retired, and ignored: nothing asks Jev any more. Read with a warning, and refused from the next release.",
+      "examples": [
+        "harness"
       ],
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "judgeBackend": {
-      "default": "auto",
-      "description": "What judges credential use when judgeCommands or judgeCredentials is on: auto, jev when jevApiKey is set and harness otherwise; harness, a judge discobox per project running the project's default harness; or jev, TypeSafe's Jev, asked by this server directly, which requires jevApiKey. Environment: DISCOBOX_JUDGE_BACKEND (takes precedence over this file).",
-      "enum": [
-        "auto",
-        "harness",
-        "jev"
+      "description": "Retired, and ignored: no judge decides credential use any more. Read with a warning, and refused from the next release.",
+      "examples": [
+        "harness"
       ],
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "judgeCommands": {
-      "default": true,
-      "description": "Have each project's judge decide whether a command discobox-access runs carries out the approved use it names, before a credential is issued for it, and whether a discobox may hand a credential on. On by default. A project whose default harness runs no model then runs no credentialed command unless the server judges with Jev. Off, credentials are issued for whatever command asks, with no verdict on record, and no discobox hands one on. Environment: DISCOBOX_JUDGE_COMMANDS (takes precedence over this file).",
-      "type": "boolean"
+      "description": "Retired, and ignored: no judge decides credential use any more. Read with a warning, and refused from the next release.",
+      "examples": [
+        true
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "judgeCredentials": {
-      "description": "Have each project's judge decide whether each credential-bearing request is part of what the credential's approved use allows. Off by default. While it is off credentials are resolved for whatever request carries them, held only to the host and grant they were approved for. Commands are judged by judgeCommands. Environment: DISCOBOX_JUDGE_CREDENTIALS (takes precedence over this file).",
-      "type": "boolean"
+      "description": "Retired, and ignored: no judge decides credential use any more. Read with a warning, and refused from the next release.",
+      "examples": [
+        false
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "listen": {
       "description": "Endpoints to listen on, from unix:// (npipe:// on Windows), http://\u003chost\u003e:\u003cport\u003e and iroh://. Bare unix://, npipe:// and iroh:// mean this machine's default socket, pipe and iroh identity; an iroh listener logs the discobox:// address clients use. Local IPC is added when none is named, so the CLI can always reach the server. The environment variable takes a comma-separated list. Environment: DISCOBOX_SERVER_LISTEN (takes precedence over this file).",

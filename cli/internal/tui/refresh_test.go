@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/discobox-ai/discobox/pkg/wellknown"
 )
 
 // A refresh request asks for a new value of a token the project holds
@@ -240,49 +238,6 @@ func TestAValueLifetimeCanBeChosenAndChanged(t *testing.T) {
 	}
 }
 
-// A well-known credential is a kind of its own on F4: choosing it fills in
-// its name, host, and command, and the secret is stored as the one that
-// answers the ID.
-func TestTheNewSecretFormOffersAWellKnownKind(t *testing.T) {
-	t.Parallel()
-	m, ds := secretsFixture(t)
-
-	send(t, m, keyPress("n"))
-	send(t, m, keyPress("down"))                     // onto the kind
-	send(t, m, keyPress("right"), keyPress("right")) // past oauth, to com.github.api
-	f := m.dialog.form
-	if f.chosen("kind") != wellKnownKind+wellknown.GitHubAPI {
-		t.Fatalf("kind = %q, want com.github.api after token and oauth", f.chosen("kind"))
-	}
-	if f.value("name") != "github" || f.value("host") != "github.com" || f.value("command") != "gh auth token" || f.chosen("source") != "command" {
-		t.Fatalf("filled = name %q host %q command %q source %q", f.value("name"), f.value("host"), f.value("command"), f.chosen("source"))
-	}
-	send(t, m, keyPress("ctrl+s"))
-
-	if len(ds.createdSecrets) != 1 {
-		t.Fatalf("created = %#v, want one", ds.createdSecrets)
-	}
-	got := ds.createdSecrets[0]
-	if got.Type != "token" || got.WellKnownID != wellknown.GitHubAPI || !slices.Equal(got.RefreshCommand, ghCommand) || got.Host != "github.com" {
-		t.Fatalf("stored = %#v, want a token for com.github.api got from gh", got)
-	}
-	// gh's token lasts until revoked: its value is re-checked daily, not every
-	// five minutes.
-	if got.ValueTTLSeconds == nil || *got.ValueTTLSeconds != 86400 {
-		t.Fatalf("value lifetime = %v, want GitHub's day", got.ValueTTLSeconds)
-	}
-
-	// Back to a plain token, what the choice filled in goes with it.
-	send(t, m, keyPress("n"), keyPress("down"))
-	for range len(f.rows[1].choices) { // every kind once round, back to token
-		send(t, m, keyPress("right"))
-	}
-	f = m.dialog.form
-	if f.chosen("kind") != "token" || f.value("name") != "" || f.value("command") != "" || f.chosen("lasts") != "300" {
-		t.Fatalf("after wrapping back: kind %q name %q command %q", f.chosen("kind"), f.value("name"), f.value("command"))
-	}
-}
-
 // An exchange credential is never a kind the new card offers — its recipe is
 // given with `secret create --exchange-recipe` — but one that exists opens on
 // its fields, masked, and its key is replaced whole (ADR 26-10-08-452).
@@ -328,10 +283,8 @@ func TestASecretFromACommandIsNamedByItAndNotOfferedTwice(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.mu.Lock()
-	ds.requests[0].WellKnownID = wellknown.GitHubAPI
 	ds.projectSecrets = append(ds.projectSecrets, Secret{
-		ID: "sec_ghcmd", Name: "github", Type: "token", Host: "github.com",
-		WellKnownID: wellknown.GitHubAPI, RefreshCommand: ghCommand,
+		ID: "sec_ghcmd", Name: "github", Type: "token", Host: "github.com", RefreshCommand: ghCommand,
 	})
 	ds.mu.Unlock()
 	send(t, m, credentialsLoadedMsg{requests: ds.requests})
@@ -339,7 +292,7 @@ func TestASecretFromACommandIsNamedByItAndNotOfferedTwice(t *testing.T) {
 
 	for _, item := range m.dialog.items {
 		if item.key == "command" {
-			t.Fatal("offered to run the command for an ID a secret already answers")
+			t.Fatal("offered to run the command beside the secret that has it")
 		}
 		if item.key == "secret:sec_ghcmd" {
 			if !strings.Contains(item.detail, "from gh auth token") || strings.Contains(item.detail, "· token ·") || item.emphasis != "gh auth token" {

@@ -156,14 +156,10 @@ through a proxy with a separate mTLS identity for each box, destination policy,
 and request auditing.
 
 Managed credentials remain outside the box. Agents receive placeholders called
-sentinels; the proxy substitutes the real credential only for its bound domain.
-An agent can request additional access, which a human grants with a host scope
-and an expiry.
-
-An LLM judge checks privileged credential use against grants written in English.
-It runs outside the box: every command an agent runs with a credential is judged
-before the credential is issued (on by default), and each request that carries
-one can be judged as it leaves (opt-in).
+sentinels; the proxy substitutes the real credential only for the hosts and
+routes it is granted for, and refuses a request on a route it is not. An agent
+can request additional access, which a human grants with a host scope and an
+expiry.
 
 See [discobox.ai](https://discobox.ai) for the full overview and
 [architecture](https://discobox.ai/architecture).

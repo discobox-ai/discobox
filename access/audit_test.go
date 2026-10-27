@@ -18,8 +18,7 @@ func TestAuditShowsWhyARequestWasRefused(t *testing.T) {
 		Host:          "api.github.com",
 		Status:        403,
 		Blocked:       true,
-		BlockedReason: "judge: opening a PR is not the approved use",
-		UseIDs:        []string{"use_1"},
+		BlockedReason: "route: this credential has no route to api.github.com/repos/o/r/pulls",
 	}}}
 	serve(t, svc)
 	stdout, _, code := capture(t, "", func() int {
@@ -28,7 +27,7 @@ func TestAuditShowsWhyARequestWasRefused(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit %d", code)
 	}
-	for _, want := range []string{"403 BLOCKED  POST https://api.github.com/repos/o/r/pulls", "reason: judge: opening a PR is not the approved use", "uses: use_1"} {
+	for _, want := range []string{"403 BLOCKED  POST https://api.github.com/repos/o/r/pulls", "reason: route: this credential has no route to api.github.com/repos/o/r/pulls"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout lacks %q:\n%s", want, stdout)
 		}

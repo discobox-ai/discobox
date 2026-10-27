@@ -289,7 +289,7 @@ func TestARefusedExchangedTokenIsRenewedThenRecorded(t *testing.T) {
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-BX")
 
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-BX", "127.0.0.1", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-BX", "127.0.0.1", resourcesecrets.SecretRejectedOutcome); err != nil {
 		t.Fatalf("record: %v", err)
 	}
 	if ts.calls.Load() != 2 {
@@ -318,7 +318,7 @@ func TestARevokedExchangeKeyIsRecordedAsARenewalThatFailed(t *testing.T) {
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-BX")
 
 	ts.setKey("bxd_rotated")
-	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-BX", "127.0.0.1", resourcesecrets.SecretRejectedOutcome, ""); err != nil {
+	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-BX", "127.0.0.1", resourcesecrets.SecretRejectedOutcome); err != nil {
 		t.Fatalf("record: %v", err)
 	}
 	rejections, err := svc.ListSecretRejections(testPrincipalContext(), "project-1")
@@ -413,7 +413,7 @@ func TestApprovingCannotMoveAnExchangeSecretOffItsRecipe(t *testing.T) {
 	}
 	req := createAgentRequest(ctx, t, svc)
 	for _, host := range []string{"api.github.com", ""} {
-		_, err := approveAsAsked(ctx, t, svc, "project-1", req.ID, services.ApproveSecretRequestBody{
+		_, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
 			SecretId:   apigen.NewOptString(sec.ID),
 			SecretHost: apigen.NewOptString(host),
 		})

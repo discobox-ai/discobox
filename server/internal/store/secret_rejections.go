@@ -46,7 +46,6 @@ func (s *Store) RecordSecretRejection(ctx context.Context, rejection *model.Secr
 			// answer to "how long has this been broken".
 			"reason":       rejection.Reason,
 			"sandbox_id":   rejection.SandboxID,
-			"use_id":       rejection.UseID,
 			"last_seen_at": rejection.LastSeenAt,
 			"count":        gorm.Expr("secret_rejections.count + 1"),
 		}),

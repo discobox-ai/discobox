@@ -168,13 +168,16 @@ and that the process started after the build (no `ps` in the image: walk
   discobox's proxy — older code, HTTP/1.1-only MITM — so a public endpoint
   cannot show what the dev pool proxy sends upstream.
 - A self-signed TLS origin is refused (`502`, audited `blocked / policy`) until
-  trusted: `discobox-access trust -use ... -why ... HOST:PORT` in the box, then
+  trusted: `discobox-access trust HOST:PORT --justification "..."` in the box, then
   `d trust request approve <treq>`.
 - What the proxy saw: `d admin audit http --discobox <id> --since 10m`;
   bodies with `--discobox <id> --body http_N --part request|response`
   (`--body` alone errors). `--host 172.17.0.1` matched nothing.
-- A swapped credential needs `discobox-access run`, which the dev server
-  refuses without a judge (no default harness) unless `judgeCommands: false`.
+- A swapped credential needs a grant and a sentinel in the box: `d secret
+  create`, then a request from the box approved from outside (below), and a
+  command started after the grant carries it in its variable. Nothing judges
+  it; its routes (`d secret update --route HOST[/PATH][=blocked]`) are what
+  refuse it.
 - A harness credential's 401 (the refused-credential band, a harness secret's
   `rejectionScope`) needs a box of a harness that declares secrets, which is
   refused until the harness is configured, and configuring needs a real
@@ -298,9 +301,8 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_
   `Read .claude/skills/<name>/SKILL.md and do ONLY <step> for <state>`, with
   the state seeded in `$H/.discobox/meta.json`, and read the file afterwards.
 - `orchestrate-issues/orchestrate.sh` runs against the dev server with a
-  stub `discobox-access` first on `PATH` (`list` prints a use whose
-  description matches the script's regex; `run … -- cmd` execs `cmd`), a
-  `discobox` link to `./build/discobox`, and `ORCH_DIR` in the scratchpad
+  `discobox` link to `./build/discobox` first on `PATH`, any `GH_TOKEN` and a
+  stub `gh` there too for its GitHub reads, and `ORCH_DIR` in the scratchpad
   holding a `workers.tsv` row for a box made with `./build/discobox run -d
   -H shell <dir>` (the dev project has no default harness). `rm` only
   archives it; `discobox admin box purge <id>` removes it.
@@ -319,22 +321,30 @@ server, but its in-image `discobox-access` can lag the checkout: `grep -c
 `CGO_ENABLED=0 go build ./access/cmd/discobox-access` and `d cp` it to
 `<box>:/tmp/`.
 
+- A `-H shell` box whose provisioning failed (`/run/discobox/provision.json`
+  `"state": "failed"`, as on 10-27: `read features of
+  …/discobox-harness-shell: … no such file or directory`) has no
+  `discobox-access`, no `discobox`, and no SFTP, so `d cp` fails with
+  `subsystem request failed`. Stream a static build in through an exec's
+  stdin: `base64 -w0 BIN | d admin exec create -i <box> -- sh -c 'base64 -d >
+  /tmp/BIN && chmod +x /tmp/BIN'`. Build the CLI with `CGO_ENABLED=0 go build
+  ./cli/cmd/discobox`: `build/discobox` links a Nix interpreter the box lacks.
 - Approving needs a secret: `d secret create --name N --host H --token fake
   --max-grant-ttl forever` (the default cap is 1h, so a longer `--grant-ttl`
   is refused without it), then `d secret request approve <sreq> --secret
   N [--grant-ttl 2w|forever]`.
-- `request`, `wait`, and `list` need no judge; only `run` does (see the lead
-  section below).
+- A granted request binds the credential's variable in the box: a command
+  started after the grant has it (`echo ${N:+set}`), one already running does
+  not.
 - Clean up: `d rm <id>`, `d admin box purge <id>`, `d secret rm N`.
 
-## A request carrying a policy, and its approval forms
+## A request from a box, and its approval forms
 
 - A pool provisioned from the released pool bundle
   (`ghcr.io/discobox-ai/discobox-pool-agent-bundle:latest`, an isolated
-  server's default) drops any protocol field newer than the release — a
-  request's `policy` arrives as `null`. Use the isolated server below with the
-  dev loop's `DISCOBOX_POOL_AGENT_BUNDLE`, `DISCOBOX_AGENT_BUNDLE` and
-  `DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE` from `.env`.
+  server's default) drops any protocol field newer than the release. Use the
+  isolated server below with the dev loop's `DISCOBOX_POOL_AGENT_BUNDLE`,
+  `DISCOBOX_AGENT_BUNDLE` and `DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE` from `.env`.
 - With no `shell` harness bundle, `go tool task build:harness-stub-bundle`,
   then `admin harness create --bundle discobox-harness-stub:local` and
   `admin harness configure stub`; `new -d -H stub`. A bundle only the host's
@@ -342,15 +352,12 @@ server, but its in-image `discobox-access` can lag the checkout: `grep -c
   manifest's layouts, or a registry), so point the server at a dev manifest
   whose `bundles` list the stub's exported layout. Configuring it stores a
   `stub-token` secret: delete it with the harness.
-- File one from inside the box with `discobox-access request --statement …`
-  (the box's `discobox-access` is the platform bundle's, so a rebuilt
-  platform bundle carries a change to it, at the box's next start). A sentence that
-  does not parse, or a policy that does not validate, never leaves the box;
-  to send the server one anyway, post the agentcreds `RequestBody` with
-  `curl --data @/tmp/req.json $DISCOBOX_CREDENTIALS_URL/v1/credentials/requests`
-  after `d cp req.json <box>:/tmp/`. A box from a local
-  checkout records its `origin`, so `$primary.repo` resolves; `$primary.upstream`
-  never does yet, for the "matches nothing" form.
+- File one from inside the box with `discobox-access request` (the box's
+  `discobox-access` is the platform bundle's, so a rebuilt platform bundle
+  carries a change to it, at the box's next start). To send the server a body
+  the CLI would refuse, post the agentcreds `RequestBody` with `curl --data
+  @/tmp/req.json $DISCOBOX_CREDENTIALS_URL/v1/credentials/requests` after
+  `d cp req.json <box>:/tmp/`.
 - A shell function `d` does not reach `timeout`; zsh does not split `$D`
   either. Put the CLI and its `--server` in a two-line script.
 
@@ -435,9 +442,8 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   `DATABASE_DSN=sqlite3://$S/data/discobox.db`), whose harnesses are already
   seeded. Delete from `pools`, `sandbox_provider_instances`,
   and `reconcile_dirty`, clear the projects'
-  `default_pool_id`/`judge_pool_id`/`judge_sandbox_id`, and set
-  `DISCOBOX_JUDGE_COMMANDS=false`: the copy then never touches Docker, and
-  never collides with the loop's pools, which share its IDs.
+  `default_pool_id`: the copy then never touches Docker, and never collides
+  with the loop's pools, which share its IDs.
 - A pool route on that server, with no real pool: see the no-Docker case
   under [Verifying a pool route as the dev pool](#verifying-a-pool-route-as-the-dev-pool-the-asset-api-any-apipoolspoolid).
 - To race new intent against a pool's first reconcile (supersede paths):
@@ -521,27 +527,22 @@ server's output is `$DISCOBOX_STATE_DIR/*.log`; `systemctl --user list-units
 
 ## A lead discobox's calls (the sandbox role)
 
-The dev loop judges every `discobox-access run` with the project's default
-harness, which has no model credential here, so a lead's call never gets a
-verdict. Use the isolated server above with `DISCOBOX_JUDGE_COMMANDS=false`
-in its env file. Then: `new -d -H shell` a lead; inside it,
-`discobox-access request --json` for `ai.discobox.sandbox` with the uses to
-drive and a policy (no `wait`); approve it from outside with `discobox secret
-request approve <id> --policy-as-asked`; read the use IDs with `discobox-access list --json` in the
-lead; and run `discobox-access run --use <id> -- discobox …` there.
+`new -d -H shell` a lead, and turn its discobox API on from outside — it is the
+sandbox's `discoboxApi` setting, a person's to set (`PATCH
+/projects/<p>/sandboxes/<id>` with `{"discoboxApi": true}`, or
+`discobox admin box update <lead> --discobox-api`). Then run `discobox …` inside the lead: the pool's gate
+forwards it, and the server answers in the sandbox role. Without the setting
+every call is a `403` saying this discobox may not call the discobox API.
 
-- Ask for `ai.discobox.sandbox` with `--json` (`{"id":"ai.discobox.sandbox",
-  "justification":…,"uses":[…],"statements":[…],"definitions":{…}}`, as
-  orchestrate-issues §1 writes one): by flags it is refused for want of an
-  env var and a host.
+- The role reaches only the discoboxes the lead created: have it `discobox
+  run` a worker, then act on that one. Another discobox in the project is a
+  `403`.
 - A lead answers only the requests of discoboxes it created (`403 … only the
-  requests of discoboxes it created`): have it `discobox run` the worker, then
-  approve the worker's request under a `secret grant create --delegate` grant
-  given to the lead. Approving under a delegation needs a judge: the stub
-  judge below, whose image also serves as the boxes' harness when
-  `harness-shell:local` is not built yet. Full-precision expiries are in the
-  isolated server's `data/discobox.db` (`secret_grants.expires_at`); the API
-  prints whole seconds.
+  requests of discoboxes it created`), and only under a `secret grant create
+  --delegate` grant given to the lead of the same secret, whose hosts cover the
+  request's. Full-precision expiries are in the isolated server's
+  `data/discobox.db` (`secret_grants.expires_at`); the API prints whole
+  seconds.
 
 # Verifying the iroh transport (`pkg/endpoint`: admission, peer certificates)
 
@@ -614,7 +615,7 @@ jq --arg pm "$PM" --arg hm "$HM" --arg root "$PWD" '{version:1, images:.images, 
 # server env: DISCOBOX_DEV_DOCKER_IMAGE_SYNC=true DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST=$S/bm.json
 # DISCOBOX_DOCKER_SANDBOX_BASE_IMAGE, DISCOBOX_AGENT_BUNDLE and DISCOBOX_POOL_AGENT_BUNDLE from .env,
 # DISCOBOX_PLATFORM_BUNDLE=discobox-platform:verify-bm1
-# DISCOBOX_HARNESS_SHELL_BUNDLE=discobox-harness-shell:verify-bm1 DISCOBOX_JUDGE_COMMANDS=false
+# DISCOBOX_HARNESS_SHELL_BUNDLE=discobox-harness-shell:verify-bm1
 ```
 
 - Before the pool builds them, `shell`'s `bundleDigest` is its reference and
@@ -935,73 +936,6 @@ docker inspect vfail --format '{{.State.ExitCode}}'; docker logs vfail | tail -2
   with `--entrypoint /opt/discobox/current/features/core/discobox-sandbox-agent ... export data`,
   config and data mounted read-only, and `DISCOBOX_USER_{NAME,UID,GID,HOME}`
   set; stdout is the tar.
-
-# Verifying what the judge is asked (judge jobs, facts)
-
-To see the job a judge discobox is handed, without a model: on the isolated
-server above, register a stub harness whose `discobox-prompt` logs `--prompt`
-and allows, and make it the project's default, which brings up a judge.
-
-```bash
-# Bundle discobox-harness-judgestub:local: FROM discobox-harness-stub:local (task
-# build:harness-stub-bundle), LABEL io.discobox.image.v1 from
-# test/harness-stub/image.json with a new harness.id.
-# Its feature also installs a /usr/local/bin/discobox-prompt that appends its
-# --prompt to /var/tmp/judge-prompts.jsonl and prints {"allow": true, "reason": "stub"};
-# export it as a layout the isolated server's dev manifest lists.
-e() { ./build/discobox --server http://127.0.0.1:18471 "$@"; }   # the isolated server, never the dev loop's
-e admin harness create --bundle discobox-harness-judgestub:local
-e admin harness configure judgestub && e admin harness set-default judgestub
-docker exec discobox-sandbox-<pool>-<judge sbx> cat /var/tmp/judge-prompts.jsonl
-```
-
-- A bundle registered with `admin harness create --bundle` is never served
-  to a pool: the asset API reads layouts only for the references the release
-  names (the platform and built-in harnesses), so its configure box fails
-  with `fetch the box's bundles … 502`. Stand the stub in for a built-in
-  instead: build it with that harness's own `harness/<id>/image.json` label
-  and the prompt feature under `/features/<id>/`, export it with `docker
-  buildx build --builder default --provenance=false --sbom=false --output
-  type=oci,dest=<tar>`, add `{reference, digest, layout}` (digest from the
-  tar's `index.json`) to a copy of `.tmp/discobox-dev-images.json` named by
-  `DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST`, and point that harness's
-  `DISCOBOX_HARNESS_<ID>_BUNDLE` at it. Not `shell`: the server never makes
-  a judge of it ("runs no model"); `pi` works, and is configured with no
-  credential.
-- Every judged command's verdict records the job as the judge read it:
-  `sqlite3 -json $S/data/discobox.db "select command, prompt from
-  credential_verdicts"`, `.prompt | fromjson | .facts`. Wrapped as
-  `{name, why, expect, job}` cases, those jobs go to a real model with
-  `discobox-judge-eval -wrapper harness/claude-code/prompt.sh` (the box's
-  `claude` is logged in); to compare against `main`, run the same cases from
-  `git archive origin/main` extracted to a scratch dir.
-- The judge discobox comes up on the judges' scan, up to a minute after
-  `set-default`; its ID is `projects.judge_sandbox_id` in
-  `$S/data/discobox.db` (the API does not show it, and `admin box ls` hides it).
-- A lead's calls to the discobox API (the gate) are request jobs, judged only
-  with `DISCOBOX_JUDGE_CREDENTIALS=true` in the env file; with the stub judge
-  as the default harness, commands can stay judged too. The job's `facts` name
-  the discobox a call targets (ADR 26-10-14-320 §5).
-- `discobox-access run` in a box triggers a command job. A delegation job is
-  asked only for a condition code cannot compare: have a box create a child
-  with `--grant` and a `--grant-statement` whose allow words its `when`
-  otherwise than the `purpose: delegate` grant's (`secret grant create
-  --delegate --statement …`).
-- Approving `com.github.api` with a secret bound only to `api.github.com`
-  needs `--hosts api.github.com`: the well-known credential's default hosts
-  include `github.com`. Do the same with `--grant com.github.api@api.github.com=…`.
-- A grant that carries a policy: ask for it from the box with
-  `discobox-access request --statement … --define WORD=DEFINITION` (or
-  `statements`/`definitions` in `--json`), from a box on an image built with
-  your `discobox-access`, and approve it with `secret request approve <id>
-  --secret N --policy-as-asked`. Create the box from SOURCE
-  `https://github.com/octocat/Hello-World` so `$primary.repo` has a value.
-  The grant's `.policy.resolved` (`GET /projects/<p>/secret-grants`) shows
-  what bound; `discobox-access wait request <id>` shows it as sentences.
-- To see what a real judge does with a captured job, wrap it as a
-  `test/judge-evals` case (`{name, why, expect, job}`) in a scratch directory,
-  and run `go run ./internal/cmd/discobox-judge-eval -wrapper
-  harness/claude-code/prompt.sh <dir>`.
 
 # Verifying the exec lifecycle (sandbox-agent/execs: shims, runtime files)
 

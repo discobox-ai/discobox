@@ -1020,7 +1020,7 @@ func TestConfigureCreatedSecretsHaveNoGrantLimit(t *testing.T) {
 	}
 
 	// And the grant it stands on says the same thing from the other side.
-	grants, err := st.ListSecretGrants(ctx, "project-1", secret.ID, "")
+	grants, err := st.ListSecretGrants(ctx, "project-1", secret.ID)
 	if err != nil {
 		t.Fatalf("list grants: %v", err)
 	}
@@ -1212,7 +1212,7 @@ func TestApplyConfigureOutputWritesDeclaredRoutesOntoTheSecret(t *testing.T) {
 		Image: "img:1", RunCommand: []string{"copilot"},
 		Secrets: []model.HarnessConfigSecret{{Name: "COPILOT_GITHUB_TOKEN", Routes: []model.SecretRoute{
 			{Host: "githubcopilot.com"},
-			{Host: "github.com", Use: "reading GitHub"},
+			{Host: "github.com", Blocked: true},
 		}}},
 	}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
@@ -1235,15 +1235,15 @@ func TestApplyConfigureOutputWritesDeclaredRoutesOntoTheSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(secret.Routes) != 2 || secret.Routes[0] != (model.SecretRoute{Host: "githubcopilot.com"}) ||
-		secret.Routes[1].Use != "reading GitHub" || secret.Routes[1].UseID == "" {
-		t.Fatalf("routes = %+v, want the declared ones, the judged one with a minted use ID", secret.Routes)
+		secret.Routes[1] != (model.SecretRoute{Host: "github.com", Blocked: true}) {
+		t.Fatalf("routes = %+v, want the declared ones, the blocked one blocked", secret.Routes)
 	}
 	kept := secret.Routes[1]
 	if got := runtime.marked; len(got) != 0 {
 		t.Fatalf("marked = %v, want none: the secret was minted with its routes, before anything held it", got)
 	}
 
-	config.Secrets[0].Routes = append(config.Secrets[0].Routes, model.SecretRoute{Host: "githubcopilot.com", Path: "/mcp", Use: "read-only MCP"})
+	config.Secrets[0].Routes = append(config.Secrets[0].Routes, model.SecretRoute{Host: "githubcopilot.com", Path: "/mcp", Blocked: true})
 	if err := st.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		return svc.syncConfiguredSecretRoutes(ctx, txStore, txDB, config)
 	}); err != nil {

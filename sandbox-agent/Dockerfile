@@ -21,9 +21,7 @@ COPY pkg/hostscope ./pkg/hostscope
 COPY pkg/harnesscapture ./pkg/harnesscapture
 COPY pkg/imagecache ./pkg/imagecache
 COPY internal/filelock ./internal/filelock
-COPY pkg/judge ./pkg/judge
 COPY pkg/platform ./pkg/platform
-COPY pkg/policy ./pkg/policy
 COPY pkg/poolassets ./pkg/poolassets
 COPY pkg/poolauth ./pkg/poolauth
 COPY pkg/programstatus ./pkg/programstatus
@@ -110,7 +108,6 @@ COPY pkg/harnesscapture ./pkg/harnesscapture
 COPY pkg/imagecache ./pkg/imagecache
 COPY internal ./internal
 COPY pkg/platform ./pkg/platform
-COPY pkg/policy ./pkg/policy
 COPY pkg/programstatus ./pkg/programstatus
 COPY pkg/randomname ./pkg/randomname
 COPY pkg/releasemanifest ./pkg/releasemanifest
@@ -127,7 +124,6 @@ COPY pkg/sourcecache ./pkg/sourcecache
 COPY pkg/sourceref ./pkg/sourceref
 COPY pkg/tools ./pkg/tools
 COPY pkg/version ./pkg/version
-COPY pkg/wellknown ./pkg/wellknown
 COPY termpane ./termpane
 COPY cli ./cli
 
@@ -180,10 +176,8 @@ COPY --link sandbox-agent/features/docker /features/docker
 COPY --link sandbox-agent/features/review /features/review
 COPY --link sandbox-agent/features/discobox-cli /features/discobox-cli
 COPY --link sandbox-agent/features/core /features/core
-# Core's files that live with what they describe: the prompt helper beside
-# the harness wrappers it serves (harness/DESIGN.md), and the discobox-access
-# skill in the module whose flags it documents (ADR 0080 §3).
-COPY --link harness/prompt-answer.sh /features/core/prompt-answer.sh
+# Core's file that lives with what it describes: the discobox-access skill in
+# the module whose flags it documents (ADR 0080 §3).
 COPY --link access/skills/discobox-access /features/core/skills/discobox-access
 COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-access /features/core/discobox-access
 COPY --link --from=sandbox-agent-builder --chmod=0755 /out/discobox-review /features/review/discobox-review

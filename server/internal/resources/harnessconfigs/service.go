@@ -320,8 +320,6 @@ func (s *Service) SetDefaultHarnessConfig(ctx context.Context, projectID, config
 	if err := s.store.UpsertProject(ctx, project); err != nil {
 		return nil, err
 	}
-	// The project's judge follows its default harness (ADR 26-09-22-838 §1).
-	s.markJudge(ctx, projectID)
 	return s.store.GetProject(ctx, projectID)
 }
 
@@ -347,8 +345,6 @@ func (s *Service) UnsetDefaultHarnessConfig(ctx context.Context, projectID, conf
 	if err := s.store.UpsertProject(ctx, project); err != nil {
 		return nil, err
 	}
-	// A project with no default harness has no judge (ADR 26-09-22-838 §1).
-	s.markJudge(ctx, projectID)
 	return s.store.GetProject(ctx, projectID)
 }
 
@@ -935,7 +931,7 @@ func rejectionScope(rules []harness.RejectionRule) []model.HarnessSecretRejectio
 func declaredRoutes(routes []harness.SecretRoute) []model.SecretRoute {
 	var out []model.SecretRoute
 	for _, route := range routes {
-		out = append(out, model.SecretRoute{Host: route.Host, Path: route.Path, Use: route.Use})
+		out = append(out, model.SecretRoute{Host: route.Host, Path: route.Path, Blocked: route.Blocked})
 	}
 	return out
 }

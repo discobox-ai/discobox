@@ -117,19 +117,18 @@ readily as GitHub, and `discobox` is the pool's
 remote the host's branch tracks. Point `upstream` at GitHub whether or not it
 exists. `discobox-ai/discobox` is public, so `git fetch` and
 `git ls-remote` need no credential; every push and every `gh` call runs under
-the token asked for once, up front (below). A push needs the token named
-explicitly and the URL spelled out, or the access judge will refuse it:
+the token asked for once, up front (below), which arrives in `GH_TOKEN`. A
+push needs the token named explicitly and the URL spelled out:
 
 ```bash
 git remote add upstream https://github.com/discobox-ai/discobox.git 2>/dev/null ||
   git remote set-url upstream https://github.com/discobox-ai/discobox.git
-discobox-access run --use <id> -- git -c credential.helper= \
+git -c credential.helper= \
   -c 'credential.helper=!f() { if test "$1" = get; then echo username=x-access-token; echo "password=$GH_TOKEN"; fi; }; f' \
   push https://github.com/discobox-ai/discobox.git HEAD:main
 ```
 
-The tag goes the same way, under the same use, with `refs/tags/vX.Y.Z` in
-place of `HEAD:main`.
+The tag goes the same way, with `refs/tags/vX.Y.Z` in place of `HEAD:main`.
 
 One consequence: `Taskfile.yml`'s `RELEASE_REPO` reads `GITHUB_REPOSITORY` and
 otherwise only `origin`, matching only github.com URLs, so it resolves empty here and
@@ -144,7 +143,7 @@ Every GitHub step in this skill runs on one `GH_TOKEN` with host `github.com`:
 is covered by the same grant. Ask for all of it in one request, so the human
 answers once and the release then runs without them.
 
-1. **Settle the version first.** The tag's statement names it, and a version
+1. **Settle the version first.** The justification names it, and a version
    changed after the grant is a second request. If the user did not name one and it is
    not a plain patch bump, ask the patch-or-minor question now, not at the tag.
 2. **Request before anything else, in the background**, and run the local
@@ -156,30 +155,8 @@ discobox-access request --json <<'EOF'
   "name": "github",
   "envVar": "GH_TOKEN",
   "hosts": ["github.com"],
-  "justification": "Cutting discobox release vX.Y.Z with the /release skill: push main, watch CI until it is green, tag the green commit, then check the release and the dev Homebrew formula. git uses the token over https to github.com and gh uses it against api.github.com. Needed for about two hours, since CI can take several rounds.",
-  "uses": [
-    {"description": "Release vX.Y.Z of discobox-ai/discobox"}
-  ],
-  "statements": [
-    "allow read on anything in repository \"discobox-ai/discobox\"",
-    "allow read on anything in repository \"discobox-ai/homebrew-tap\"",
-    "allow push on branch \"main\" in repository \"discobox-ai/discobox\"",
-    "allow create on tag \"vX.Y.Z\" in repository \"discobox-ai/discobox\"",
-    "deny force-push, delete on branch in anywhere",
-    "deny update, delete on tag in anywhere",
-    "deny update, delete on release in anywhere",
-    "deny create, update, delete, push on anything in repository \"discobox-ai/homebrew-tap\"",
-    "deny read on secret in anywhere"
-  ],
-  "definitions": {
-    "repository": "a GitHub repository",
-    "branch": "a git branch in a repository",
-    "secret": "an Actions, Dependabot or environment secret",
-    "push": "create a branch or add commits to it, or move it with --force-with-lease",
-    "force-push": "move a branch with --force and no lease",
-    "tag": "a git tag in a repository",
-    "release": "a GitHub release, its notes and its assets"
-  },
+  "justification": "Cutting discobox release vX.Y.Z with the /release skill: push main of discobox-ai/discobox, watch CI until it is green, create tag vX.Y.Z on the green commit, then read the release and the dev Homebrew formula in discobox-ai/homebrew-tap. git uses the token over https to github.com and gh uses it against api.github.com. I will not force-push, delete or move a branch or tag, change a release, write to the tap, or read secrets. Needed for about two hours, since CI can take several rounds.",
+  "grantTTLSeconds": 7200,
   "wait": true,
   "timeoutSeconds": 3600
 }
@@ -189,17 +166,17 @@ EOF
 Each of these is shaped by something that went wrong on the release that wrote
 it down:
 
-- **The tag's statement names a version, never a commit.** The release commit
+- **The justification names a version, never a commit.** The release commit
   moves whenever CI needs a fix or `main` moves under you — one release went through
   three candidate commits — and an approval naming one commit cannot honestly
   be stretched to another. §3's gate is what picks the commit.
-- **The justification says how long.** The approver picks the grant's lifetime
-  and the request has no field for it. One grant lasted an hour, less than a
+- **Ask for how long it takes.** The approver picks the grant's lifetime, from
+  `grantTTLSeconds` as the default. One grant lasted an hour, less than a
   release with a CI fix in it takes.
 - **Never two requests in flight.** One filed while another is still pending
-  comes back as that one — same request ID, same policy — and what it asked
-  for is never shown to anyone. If a statement turns out to be missing, wait
-  until nothing is pending, then ask.
+  comes back as that one — same request ID — and what it asked for is never
+  shown to anyone. If something turns out to be missing, wait until nothing is
+  pending, then ask.
 - **`unavailable` with a control-plane 503 is a restart, not an answer.** The
   human never saw the request. Retry once before telling them to approve
   anything.

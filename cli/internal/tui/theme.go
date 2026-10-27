@@ -94,9 +94,6 @@ func detectColor() bool {
 }
 
 type styles struct {
-	// The colors a policy's sentence is highlighted in (policyLines), from
-	// the syntax palette a code block uses.
-	synKeyword, synType, synString, synVariable, synValue, synAllow, synDeny lipgloss.Style
 	// color is the one thing every other decision in the package reads: which
 	// glyphs are drawn, whether the mark is drawn at all, and whether a row can
 	// carry a background.
@@ -186,13 +183,6 @@ func newStyles(color bool) *styles {
 	}
 
 	s := &styles{color: color}
-	s.synKeyword = paint(colSynKeyword)
-	s.synType = paint(colSynType)
-	s.synString = paint(colSynString)
-	s.synVariable = paint(colSynFunc)
-	s.synValue = paint(colSynComment)
-	s.synAllow = paint(colOK).Bold(true)
-	s.synDeny = paint(colErr).Bold(true)
 	s.headerBar = lipgloss.NewStyle().Bold(true)
 	s.headerLabel = paint(colGrey)
 

@@ -49,18 +49,27 @@ by what it is looking for and is idempotent:
    a codex harness's captured `config.toml`),
    moving a secret request's and grant's one `host` into its `hosts` list and
    dropping the column (`moveSecretHostsToLists`, ADR 26-10-02-393 §6),
-   deleting every approval rule with no policy, one logged line each, on
-   every start, so one an older server wrote is gone at the next, and
-   dropping the `uses` column with the older `scope` and `sandbox_id` and
-   the `scope` verdicts while any of those columns is still there
-   (`retireApprovalRuleUses`, ADR 26-10-22-689 §5: a rule now carries a
-   policy, and no code reads a sentence as one; its grants stand, as when a
-   person deletes a rule; a rule with a policy is never touched),
-   deleting every agent grant — one with uses, or a delegation — and every
-   pending agent request that carries no policy, one logged line each, on
-   every start (`retireAgentGrantsWithoutPolicy`, #312: a grant an agent takes
-   now carries one; standing grants with no uses, which harnesses resolve
-   their secrets through, are never touched),
+   retiring the credential judge (`retireCredentialJudge`,
+   [ADR 26-10-27-880](../../../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
+   §8), which widens nothing: a secret's or a harness config's route whose use
+   a judge read becomes blocked — a blocked carve-out of the route model, ADR
+   26-10-27-880 §4 — in the same transaction that marks every holder's
+   `sandboxSentinels` dirty, so running sandboxes take the narrower routes;
+   every grant that carried uses or a policy, delegations included, is taken
+   back in one transaction per grant — one held by a sandbox that still exists
+   becomes a pending request from it, naming the secret, variable, hosts and
+   purpose it had, and any other is deleted — with its agent binding; a live
+   host trust that carried uses is deleted, since only the judge read them; a
+   judge discobox gets the `run` harness mode, is marked for deletion and its
+   `sandbox` reconcile marked dirty, so no response names the retired `judge`
+   mode whether or not its pool is online; the discobox API's gate secret goes
+   with its grants and bindings, and no sandbox is given the `discobox_api`
+   flag that replaces it; the remaining agent bindings go, and the
+   `agent_requested` column with the variable's uniqueness index, which is made
+   again over the sandbox and variable alone; then the `judge` and
+   `ruleRequest` reconcile marks, the `credential_verdicts` and
+   `approval_rules` tables, and the columns only the judge read are dropped.
+   Each step is logged per row and finds nothing once done,
    dropping retired tables and columns (including the pool prepull condition and
    its `poolImages` dirty rows, and the pool bootstrap token table,
    `dropPoolBootstrapTokens`, ADR 26-10-24-953 §4), moving pending `sandboxEgress` reconcile

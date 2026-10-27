@@ -54,15 +54,6 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/history", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
 
-	// The judge answers from a discobox that is meant to be ready, but a pool
-	// restart leaves it stopped, and the first ask is what starts it. A judge
-	// that cannot come up refuses now rather than holding the request that is
-	// waiting on it (ADR 26-09-22-838 §1).
-	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/judge", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
-	// The same runtime writes the wording of an approval rule a person asked
-	// to be proposed (ADR 26-10-12-330 §7), on the same scope.
-	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/judge/proposal", service.onUse(needsSandbox, service.sandboxAgentProxyHandler()))
-
 	// A service is an exec (ADR 0070), reached the same way and gated by the
 	// same scopes. It needs its own registrations because this router names
 	// every sandbox-agent path it forwards rather than forwarding a prefix.
@@ -259,17 +250,6 @@ func sandboxAgentRequiredScope(r *http.Request) string {
 		default:
 			return ""
 		}
-	}
-	// Judging is its own authority and shares none: a token that may ask the
-	// judge may neither read nor write anything in the sandbox (ADR 26-09-22-838 §2).
-	// Below the exec block, as the sandbox agent has it: an exec called
-	// "judge" is an exec, and the two tables answering differently is how one
-	// hop ends up checking a scope the other does not.
-	if strings.HasSuffix(r.URL.Path, "/judge") || strings.HasSuffix(r.URL.Path, "/judge/proposal") {
-		if r.Method == http.MethodPost {
-			return ScopeJudgeRun
-		}
-		return ""
 	}
 	return ""
 }

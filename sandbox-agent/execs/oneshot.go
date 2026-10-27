@@ -171,8 +171,8 @@ func lookPath(program, path string) (string, error) {
 // OnceFailure is a command that did not succeed.
 //
 // What it printed on stderr is kept out of the message on purpose. A one-shot
-// runs with whatever is in the sandbox's environment, which for the judge is
-// the project's own harness credential, and a CLI that fails to authenticate
+// runs with whatever is in the sandbox's environment, which may hold a
+// harness credential's sentinel, and a CLI that fails to authenticate
 // prints back what it tried. The message names the command and how it failed;
 // a caller that has somewhere safe to put the detail reads Stderr itself.
 type OnceFailure struct {
@@ -191,7 +191,7 @@ const oneShotMaxStderr = 4 << 10
 
 // oneShotWaitDelay is how long a killed command's output is still read before
 // this process stops waiting on it. Long enough for the kill to land, short
-// enough that a wedged wrapper cannot hold the judge open.
+// enough that a wedged helper cannot hold its caller open.
 const oneShotWaitDelay = 2 * time.Second
 
 // oneLine flattens a command's complaint into something an error can carry.

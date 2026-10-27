@@ -14,10 +14,6 @@
       {
         "path": ".pi/agent/extensions/discobox-hooks.js",
         "content": "// Discobox's hooks for pi, installed with the image. Removing this file stops them.\nexport { default } from \"/usr/local/libexec/discobox/pi-hook-extension.js\";\n"
-      },
-      {
-        "path": ".config/discobox/pi-harness.json",
-        "content": "{\n  \"about\": \"Discobox's settings for the pi harness. Edit with: discobox admin harness edit pi .config/discobox/pi-harness.json\",\n  \"judgeModel\": \"\"\n}\n"
       }
     ],
     "config": {

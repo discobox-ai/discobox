@@ -1,58 +1,100 @@
 package secrets
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
-	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
-	"github.com/discobox-ai/discobox/pkg/hostscope"
-	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
-	"github.com/discobox-ai/x/id"
 )
 
-// The agent credentials broker: the control-plane half of ADR 0031. A pool
-// agent calls it on behalf of one of its own sandboxes, and every entry point
+// The agent credentials broker: the control-plane half of the agent
+// credentials protocol (ADR 0031, as ADR 26-10-27-880 leaves it). A pool agent
+// calls it on behalf of one of its own sandboxes, and every entry point
 // re-derives the sandbox from the calling pool rather than trusting the caller
 // about which sandbox it is speaking for.
 //
-// Nothing here hands out a value. The broker records asks, reports approvals,
-// and publishes the stable sentinel binding that the pool agent's ephemeral
-// sentinels translate back to; cleartext leaves only through
-// ResolveSandboxSecret, which is unchanged by this flow.
+// Nothing here hands out a value. The broker records asks and reports what a
+// sandbox holds; an approved use is delivered as every credential is, a
+// sentinel in the variable it named, and cleartext leaves only through
+// ResolveSandboxSecret.
 
-// ListSandboxCredentials returns the sandbox's agent-requested bindings whose
-// grants are still live, with their approved uses.
-func (s *Service) ListSandboxCredentials(ctx context.Context, poolID, sandboxID string) ([]store.AgentCredential, error) {
+// ListSandboxCredentials returns what a sandbox holds: each variable bound on
+// it whose secret a live use grant covering it authorizes, and each live
+// delegation grant it holds, which delivers nothing to it.
+func (s *Service) ListSandboxCredentials(ctx context.Context, poolID, sandboxID string) ([]services.SandboxCredential, error) {
 	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, sandboxID)
 	if err != nil {
 		return nil, err
 	}
 	// The same scopes a resolve is matched against: what this discobox is, what
 	// harness it runs, and the project it belongs to.
-	return s.store.ListLiveAgentCredentials(ctx, sandbox.ProjectID, sandbox.ID, store.SandboxGrantScopes(sandbox))
+	grants, err := s.store.ListLiveGrantsCovering(ctx, sandbox.ProjectID, store.SandboxGrantScopes(sandbox))
+	if err != nil {
+		return nil, err
+	}
+	bindings, err := s.store.ListSandboxSecrets(ctx, sandbox.ProjectID, sandbox.ID)
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]string{}
+	secretName := func(secretID string) (string, bool) {
+		if name, ok := names[secretID]; ok {
+			return name, name != ""
+		}
+		secret, err := s.store.GetSecret(ctx, sandbox.ProjectID, secretID)
+		if err != nil {
+			names[secretID] = ""
+			return "", false
+		}
+		names[secretID] = secret.Name
+		return secret.Name, true
+	}
+	var out []services.SandboxCredential
+	for _, binding := range bindings {
+		// The narrowest live use grant of the secret is the one a resolve
+		// would find.
+		for i := range grants {
+			grant := &grants[i]
+			if grant.SecretID != binding.SecretID || !grant.MayUse() {
+				continue
+			}
+			name, ok := secretName(grant.SecretID)
+			if !ok {
+				break
+			}
+			out = append(out, sandboxCredential(name, binding.EnvName, grant))
+			break
+		}
+	}
+	for i := range grants {
+		grant := &grants[i]
+		if grant.MayUse() || grant.Scope != model.SecretGrantScopeSandbox || grant.ScopeKey != sandbox.ID {
+			continue
+		}
+		if name, ok := secretName(grant.SecretID); ok {
+			out = append(out, sandboxCredential(name, "", grant))
+		}
+	}
+	return out, nil
 }
 
-// SandboxPolicyFacts is the record of the sandbox a policy written for it
-// resolves against (ADR 26-10-20-782 §4): the same Sandbox.PolicyFacts that
-// approval resolves its variables from and the judge is told, so the agent
-// writing a policy, the policy and the judge all read one value.
-func (s *Service) SandboxPolicyFacts(ctx context.Context, poolID, sandboxID string) (policy.Facts, error) {
-	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, sandboxID)
-	if err != nil {
-		return policy.Facts{}, err
+func sandboxCredential(name, envName string, grant *model.SecretGrant) services.SandboxCredential {
+	return services.SandboxCredential{
+		Name:      name,
+		EnvName:   envName,
+		SecretID:  grant.SecretID,
+		GrantID:   grant.ID,
+		Hosts:     grant.Hosts,
+		Purpose:   grant.Purpose,
+		ExpiresAt: grant.ExpiresAt,
 	}
-	return sandbox.PolicyFacts(), nil
 }
 
 // CreateSandboxCredentialRequest records an agent's ask as a pending
@@ -61,31 +103,35 @@ func (s *Service) SandboxPolicyFacts(ctx context.Context, poolID, sandboxID stri
 // GetSandboxCredentialRequest.
 //
 // An identical pending ask is reused rather than duplicated, so an agent that
-// retries — or a wrapper that asks again on each attempt — produces one inbox
-// item instead of a pile. Identical means approving either would grant the
-// same thing (asksTheSame): an ask for other uses of the same credential is a
-// new request, never folded into the open one, where its uses would be
-// dropped while the agent was told it had asked for them.
+// retries produces one inbox item instead of a pile. Identical means approving
+// either would grant the same thing: the same variable, hosts, purpose and
+// lifetime. The justification is left out; it argues for a grant and does not
+// change which one approval mints, so a retry reworded is still a retry.
 func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID string, input services.CreateSandboxCredentialRequestBody) (*model.SecretRequest, error) {
 	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, strings.TrimSpace(input.SandboxId))
 	if err != nil {
 		return nil, err
 	}
-	name := strings.TrimSpace(input.Name)
-	envName := strings.TrimSpace(input.EnvVar)
-	hosts, _ := askedHosts(input.Hosts)
-	// A well-known credential names its own name, variable, and hosts, which an
-	// ask must agree with (see wellknown.go).
-	wellKnownID := strings.TrimSpace(input.ID.Or(""))
-	if wellKnownID != "" {
-		if name, envName, hosts, err = wellKnownAsk(wellKnownID, name, envName, hosts); err != nil {
-			return nil, err
-		}
+	// What the credential is asked for is the grant's purpose once approved,
+	// so it is read the way a grant's is.
+	purpose, err := grantPurpose(string(input.Purpose.Or("")))
+	if err != nil {
+		return nil, err
 	}
+	name := strings.TrimSpace(input.Name)
+	envName := strings.TrimSpace(input.EnvVar.Or(""))
+	hosts, _ := askedHosts(input.Hosts)
 	if name == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential name is required")
 	}
-	if envName == "" || strings.ContainsAny(envName, "=\x00") {
+	// A use is delivered in the variable it names; a delegation delivers
+	// nothing to the discobox that asks, so naming one is a mistake about
+	// what it asks for.
+	switch {
+	case purpose == model.SecretGrantPurposeDelegate && envName != "":
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			"a request to delegate names no environment variable: a delegation delivers nothing to the discobox that asks")
+	case purpose == model.SecretGrantPurposeUse && (envName == "" || strings.ContainsAny(envName, "=\x00")):
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a valid environment variable name")
 	}
 	// A host is mandatory here and nowhere else: approving this request mints
@@ -95,64 +141,35 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	if len(hosts) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a destination host")
 	}
-	for _, host := range hosts {
-		if err := reservedHostAsk(wellKnownID, host); err != nil {
-			return nil, err
-		}
-	}
-	uses, err := requestedUses(input.Uses)
-	if err != nil {
-		return nil, err
-	}
-	// A request asks for a policy beside its uses (ADR 26-10-20-782 §1): the
-	// policy is what its grant enforces, and the uses only name the job
-	// (#312). It is validated now so that one a person could not approve is
-	// refused before anyone is asked, and one left out is refused with how to
-	// write it.
-	askedPolicy, err := services.PolicyFromAPI(input.Policy)
-	if err != nil {
-		return nil, err
-	}
-	if askedPolicy == nil {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, agentcreds.NoPolicyAsked+"; `discobox-access request --help` shows how to write one, and `discobox-access facts` the variables a statement may name")
-	}
 	// The lifetime asked for is recorded, not checked against any secret: which
 	// secret answers the request is the approval's choice, and so is whether
 	// its limit is raised to meet the ask.
 	//
 	// It is bounded on both sides all the same, because an ask becomes the
-	// answer a human is shown already chosen (ADR 0031 §5's approval is one
-	// keystroke). Unbounded, "forever" arrives under another name — a ten-year
-	// ask, or one large enough to overflow the duration a window converts it to
-	// and land back near zero. The ceiling is the protocol's own
-	// (agentcreds.MaxGrantTTLSeconds), so the sandbox-side CLI refuses the same
-	// asks this does rather than each end guessing.
+	// answer a human is shown already chosen. Unbounded, "forever" arrives
+	// under another name — a ten-year ask, or one large enough to overflow the
+	// duration a window converts it to and land back near zero. The ceiling is
+	// the protocol's own (agentcreds.MaxGrantTTLSeconds), so the sandbox-side
+	// CLI refuses the same asks this does rather than each end guessing.
 	grantTTL := input.GrantTTLSeconds.Or(0)
 	if grantTTL < 0 || grantTTL > agentcreds.MaxGrantTTLSeconds {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
 			fmt.Sprintf("a requested grant lifetime runs from 1 second to %d (thirty days); leave it out to ask for nothing in particular", int64(agentcreds.MaxGrantTTLSeconds)))
 	}
-	// What the credential is asked for is the grant's purpose once approved,
-	// so it is read the way a grant's is.
-	purpose, err := grantPurpose(string(input.Purpose.Or("")))
-	if err != nil {
-		return nil, err
-	}
 
-	requestedBy := agentRequesterID(sandbox.ID)
-	pending, err := s.store.FindPendingAgentCredentialRequests(ctx, sandbox.ProjectID, sandbox.ID, envName, hosts, wellKnownID, purpose)
+	pending, err := s.store.FindPendingAgentCredentialRequests(ctx, sandbox.ProjectID, sandbox.ID, envName, hosts, purpose)
 	if err != nil {
 		return nil, err
 	}
 	for i := range pending {
-		if asksTheSame(pending[i], uses, askedPolicy, grantTTL) {
+		if pending[i].GrantTTL == grantTTL && pending[i].Name == name {
 			return &pending[i], nil
 		}
 	}
 
 	req := &model.SecretRequest{
 		ProjectID:   sandbox.ProjectID,
-		RequestedBy: requestedBy,
+		RequestedBy: agentRequesterID(sandbox.ID),
 		SandboxID:   sandbox.ID,
 		// Every secret is a token, and a token is what the swap carries:
 		// ResolveSandboxSecret emits Value.Token, so nothing a request can name
@@ -162,52 +179,18 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 		Name:          name,
 		EnvName:       envName,
 		Justification: strings.TrimSpace(input.Justification.Or("")),
-		Uses:          uses,
-		Policy:        askedPolicy,
 		GrantTTL:      grantTTL,
 		Purpose:       purpose,
-		WellKnownID:   wellKnownID,
 		Status:        model.SecretRequestStatusPending,
 	}
 	if err := s.store.CreateSecretRequest(ctx, req); err != nil {
 		return nil, err
 	}
-	// Filing returns at once; the project's approval rules are tested against
-	// the request off this path (ADR 26-10-12-330 §4).
-	s.requestFiled(ctx, req)
 	return req, nil
 }
 
-// asksTheSame reports whether an open request asks for what a new ask does:
-// the same uses, in the same order, and the same policy, for the same
-// lifetime. The justification
-// is left out; it argues for a grant and does not change which one approval
-// mints, so a retry reworded is still a retry.
-func asksTheSame(open model.SecretRequest, uses []model.SecretUse, asked *policy.Policy, grantTTL int64) bool {
-	if open.GrantTTL != grantTTL || len(open.Uses) != len(uses) || !samePolicy(open.Policy, asked) {
-		return false
-	}
-	for i := range uses {
-		if open.Uses[i].Description != uses[i].Description {
-			return false
-		}
-	}
-	return true
-}
-
-// samePolicy reports whether two policies say the same thing, as their JSON:
-// a list sent empty and one left out are one policy.
-func samePolicy(a, b *policy.Policy) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	left, errA := json.Marshal(a)
-	right, errB := json.Marshal(b)
-	return errA == nil && errB == nil && bytes.Equal(left, right)
-}
-
 // GetSandboxCredentialRequest reads one of a sandbox's own credential requests
-// and, once approved, the grant carrying the use IDs it may present.
+// and, once approved, the grant it was answered with.
 func (s *Service) GetSandboxCredentialRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.SecretRequest, *model.SecretGrant, error) {
 	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, sandboxID)
 	if err != nil {
@@ -238,77 +221,6 @@ func (s *Service) GetSandboxCredentialRequest(ctx context.Context, poolID, sandb
 	return req, grant, nil
 }
 
-// ListCredentialVerdicts returns the project's recorded verdicts matching
-// filter, newest first. It deliberately does not look the sandbox up: a
-// verdict is kept past its sandbox's purge (ADR 0091), so requiring the
-// sandbox to exist would hide exactly the trails most worth reading.
-func (s *Service) ListCredentialVerdicts(ctx context.Context, projectID string, filter store.CredentialVerdictFilter) ([]model.CredentialVerdict, error) {
-	return s.store.ListCredentialVerdicts(ctx, projectID, filter)
-}
-
-// requestedUses validates and normalizes the uses an agent asked for. Supplied
-// IDs are dropped: a use ID is minted by the approval, so an agent cannot name
-// the use it will later present (ADR 0031 §5).
-func requestedUses(input []apimodel.SecretUse) ([]model.SecretUse, error) {
-	if len(input) == 0 {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires at least one declared use")
-	}
-	uses := make([]model.SecretUse, 0, len(input))
-	for _, use := range input {
-		description := strings.TrimSpace(use.Description)
-		if description == "" {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, "each declared use requires a description")
-		}
-		if strings.ContainsAny(description, "\r\n") {
-			return nil, errUseOverLines
-		}
-		uses = append(uses, model.SecretUse{Description: description})
-	}
-	return uses, nil
-}
-
-// errUseOverLines refuses a use written over several lines, wherever a use
-// enters: an agent's ask, an approver's edit, a grant made by a person or
-// handed to a discobox a discobox creates. A use is one line, as a rule's
-// uses are, so any approved use can become a rule's and be edited where a
-// person writes them one to a line; a person reads a long one broken up by
-// whatever shows it. One stored before this was refused is still judged
-// whole: the judge is given uses as a list, never as lines.
-var errUseOverLines = apperrors.NewStatusError(http.StatusBadRequest, "each use is written on one line")
-
-// convertAPIUses maps uses an approver edited, or a grant names, onto the
-// model, dropping blank ones. IDs are dropped here too: mintUseIDs is the only
-// thing that ever sets one.
-func convertAPIUses(input []apimodel.SecretUse) ([]model.SecretUse, error) {
-	uses := make([]model.SecretUse, 0, len(input))
-	for _, use := range input {
-		description := strings.TrimSpace(use.Description)
-		if description == "" {
-			continue
-		}
-		if strings.ContainsAny(description, "\r\n") {
-			return nil, errUseOverLines
-		}
-		uses = append(uses, model.SecretUse{Description: description})
-	}
-	return uses, nil
-}
-
-// mintUseIDs stamps a fresh ID onto every approved use. It runs at approval for
-// both the confirmed and the edited case, so no path can produce a grant use
-// whose ID came from outside.
-func mintUseIDs(uses []model.SecretUse) ([]model.SecretUse, error) {
-	out := make([]model.SecretUse, 0, len(uses))
-	for _, use := range uses {
-		useID, err := id.New(model.PrefixSecretUse)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, model.SecretUse{UseID: useID, Description: strings.TrimSpace(use.Description)})
-	}
-	return out, nil
-}
-
 // agentRequesterID is the principal recorded on a protocol-originated request.
 // It is distinct from the reactive path's "sandbox:<id>" so the two species stay
 // legible in the approval inbox and in FindPendingSecretRequest's dedup domain.
@@ -330,176 +242,4 @@ func (s *Service) sandboxOwnedByPool(ctx context.Context, poolID, sandboxID stri
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "sandbox not found")
 	}
 	return sandbox, nil
-}
-
-// ApprovedUse names what a request carrying this use may be judged against:
-// the sentence a person approved, the credential in the words they read it as,
-// and the one of the grant's hosts this request falls under (ADR 26-10-02-393
-// §2) — where it is approved for, not a list the judge must match itself.
-//
-// It is the control plane's to answer and not the pool's to assert (ADR 26-09-22-838
-// §4). It refuses unless the use, the credential, the discobox and the
-// destination all still belong to one live grant — the same listing a resolve
-// is matched against, so a use that can be judged is a use that could be
-// spent. Everything it reads is current: a grant edited or revoked since the
-// activation was minted is read as it is now, which is what makes asking again
-// after a verdict worth anything.
-func (s *Service) ApprovedUse(ctx context.Context, poolID, sandboxID, useID, host string) (services.ApprovedUse, error) {
-	useID = strings.TrimSpace(useID)
-	if useID == "" {
-		return services.ApprovedUse{}, apperrors.NewStatusError(http.StatusBadRequest, "use ID is required")
-	}
-	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, sandboxID)
-	if err != nil {
-		return services.ApprovedUse{}, err
-	}
-	credentials, err := s.store.ListLiveAgentCredentials(ctx, sandbox.ProjectID, sandbox.ID, store.SandboxGrantScopes(sandbox))
-	if err != nil {
-		return services.ApprovedUse{}, err
-	}
-	host = normalizeHost(host)
-	for _, credential := range credentials {
-		use, ok := credential.Grant.FindUse(useID)
-		if !ok {
-			continue
-		}
-		// The use is live. Whether it covers where this request is going is a
-		// separate question, and the answer is no rather than a different use:
-		// an approved use is approved for somewhere.
-		approvedFor, covered := hostscope.Covering(credential.Grant.Hosts, host)
-		if !covered {
-			return services.ApprovedUse{}, apperrors.NewStatusError(http.StatusForbidden,
-				fmt.Sprintf("that use is not approved for %s", host))
-		}
-		if approvedFor == "" {
-			// A grant naming no hosts covers every destination; the one this
-			// request is going to is where it is approved for.
-			approvedFor = host
-		}
-		return approvedCredentialUse(credential, use, approvedFor), nil
-	}
-	// Not a grant's use. It may be a secret's route's, which a swap of it on
-	// that route is judged against whoever holds it (ADR 26-10-02-924).
-	if use, ok, err := s.secretOwnUse(ctx, sandbox, credentials, useID, host); err != nil || ok {
-		return use, err
-	}
-	// Not a credential's use. It may still be a host trust's: a person who
-	// pins a host approves uses for it the same way, and every request to that
-	// host is judged against them whether or not it carries a credential
-	// (ADR 0149 §5). Those uses live on the trust rather than on a grant,
-	// which is why this is a second lookup rather than a wider first one.
-	if use, ok, err := s.trustedUse(ctx, sandbox, useID, host); err != nil || ok {
-		return use, err
-	}
-	// Revoked, expired, edited away, or never this discobox's. They are one
-	// answer here on purpose: which it was is the approval trail's to say, and
-	// saying it back to a pool would describe grants it is not party to.
-	return services.ApprovedUse{}, apperrors.NewStatusError(http.StatusForbidden, "no live approved use by that ID")
-}
-
-// ApprovedCredentialUse names what a command run under this use may be judged
-// against (ADR 26-09-22-838 §3): ApprovedUse for a command rather than a
-// request. There is no destination to check yet, since nothing has been sent;
-// the hosts are the grant's, every one of them, and the request that follows
-// is held to them. Only a
-// credential's use takes a value, so a host trust's is not one.
-func (s *Service) ApprovedCredentialUse(ctx context.Context, poolID, sandboxID, useID string) (services.ApprovedUse, error) {
-	useID = strings.TrimSpace(useID)
-	if useID == "" {
-		return services.ApprovedUse{}, apperrors.NewStatusError(http.StatusBadRequest, "use ID is required")
-	}
-	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, sandboxID)
-	if err != nil {
-		return services.ApprovedUse{}, err
-	}
-	credentials, err := s.store.ListLiveAgentCredentials(ctx, sandbox.ProjectID, sandbox.ID, store.SandboxGrantScopes(sandbox))
-	if err != nil {
-		return services.ApprovedUse{}, err
-	}
-	for _, credential := range credentials {
-		if use, ok := credential.Grant.FindUse(useID); ok {
-			return approvedCredentialUse(credential, use, strings.Join(credential.Grant.Hosts, ", ")), nil
-		}
-	}
-	return services.ApprovedUse{}, apperrors.NewStatusError(http.StatusForbidden, "no live approved use by that ID")
-}
-
-// secretOwnUse finds useID among the routes of the secrets this discobox
-// holds: the ones injected into it and the ones its agent may ask for (ADR
-// 26-10-02-924). The use is the route's sentence, approved for the route's
-// host. A judge discobox's injected secrets are held to none.
-func (s *Service) secretOwnUse(ctx context.Context, sandbox *model.Sandbox, credentials []store.AgentCredential, useID, host string) (services.ApprovedUse, bool, error) {
-	found := func(name, grantID string, route model.SecretRoute) (services.ApprovedUse, bool, error) {
-		if !hostscope.Covers(route.Host, host) {
-			return services.ApprovedUse{}, false, apperrors.NewStatusError(http.StatusForbidden,
-				fmt.Sprintf("that use is not approved for %s", host))
-		}
-		return services.ApprovedUse{Purpose: route.Use, Credential: name, Host: route.Host, GrantID: grantID}, true, nil
-	}
-	for _, credential := range credentials {
-		for _, route := range credential.SecretRoutes {
-			if route.UseID != "" && route.UseID == useID {
-				return found(credential.Name, credential.Grant.ID, route)
-			}
-		}
-	}
-	if !sandbox.HoldsInjectedSecretsToRoutes() {
-		return services.ApprovedUse{}, false, nil
-	}
-	injected, err := s.store.ListInjectedSandboxSecrets(ctx, sandbox.ProjectID, sandbox.ID)
-	if err != nil {
-		return services.ApprovedUse{}, false, err
-	}
-	for _, assignment := range injected {
-		secret, err := s.store.GetSecret(ctx, sandbox.ProjectID, assignment.SecretID)
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				continue
-			}
-			return services.ApprovedUse{}, false, err
-		}
-		for _, route := range secret.Routes {
-			if route.UseID != "" && route.UseID == useID {
-				return found(secret.Name, "", route)
-			}
-		}
-	}
-	return services.ApprovedUse{}, false, nil
-}
-
-func approvedCredentialUse(credential store.AgentCredential, use model.SecretUse, host string) services.ApprovedUse {
-	return services.ApprovedUse{
-		Purpose:    use.Description,
-		Policy:     credential.Grant.Policy,
-		Credential: credential.Name,
-		Host:       host,
-		GrantID:    credential.Grant.ID,
-	}
-}
-
-// trustedUse names a use a host trust was granted for. It reports ok only for
-// a use of a live trust of this discobox, for the host the request is going
-// to; a trust is pinned to one endpoint, so the host must be that endpoint's
-// and not merely beneath it the way a credential's grant allows.
-//
-// There is no credential to name: what was approved is reaching the host at
-// all, so the judge is asked about the use and the destination alone.
-func (s *Service) trustedUse(ctx context.Context, sandbox *model.Sandbox, useID, host string) (services.ApprovedUse, bool, error) {
-	trusts, err := s.store.ListLiveSandboxHostTrusts(ctx, sandbox.ProjectID, sandbox.ID, time.Now().UTC())
-	if err != nil {
-		return services.ApprovedUse{}, false, err
-	}
-	for _, trust := range trusts {
-		for _, use := range trust.Uses {
-			if use.UseID != useID || useID == "" {
-				continue
-			}
-			if trusted := hostscope.Normalize(trust.Host); trusted != host {
-				return services.ApprovedUse{}, false, apperrors.NewStatusError(http.StatusForbidden,
-					fmt.Sprintf("that use is not approved for %s", host))
-			}
-			return services.ApprovedUse{Purpose: use.Description, Host: hostscope.Normalize(trust.Host)}, true, nil
-		}
-	}
-	return services.ApprovedUse{}, false, nil
 }

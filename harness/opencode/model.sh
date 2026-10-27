@@ -1,7 +1,6 @@
 #!/bin/sh
 # opencode-model: prints the model an opencode session starts on, or nothing
-# when opencode would pick one itself. discobox-prompt's judge follows it when
-# Discobox's settings name no judge, and configure checks it, because that is
+# when opencode would pick one itself. Configure checks it, because that is
 # the model a sandbox's first session runs on.
 #
 # The TUI starts on opencode's `model` setting, else the last model picked

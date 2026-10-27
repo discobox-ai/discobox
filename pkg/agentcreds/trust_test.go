@@ -22,7 +22,6 @@ func TestTrustRequestRoundTrips(t *testing.T) {
 	client := newTestClient(t, svc)
 	status, err := client.RequestTrust(context.Background(), agentcreds.TrustRequestBody{
 		Host: "34.70.64.109",
-		Uses: []agentcreds.RequestedUse{{Description: "read-only kubectl"}},
 	})
 	if err != nil {
 		t.Fatalf("request trust: %v", err)
@@ -30,7 +29,7 @@ func TestTrustRequestRoundTrips(t *testing.T) {
 	if status.RequestID != "treq-1" || len(status.ObservedChain) != 1 {
 		t.Fatalf("status = %#v", status)
 	}
-	if svc.gotTrust.Host != "34.70.64.109" || len(svc.gotTrust.Uses) != 1 {
+	if svc.gotTrust.Host != "34.70.64.109" {
 		t.Fatalf("service saw %#v", svc.gotTrust)
 	}
 }
@@ -70,9 +69,9 @@ func TestTrustRequestStatusCode(t *testing.T) {
 func TestTrustsList(t *testing.T) {
 	expiry := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
 	svc := &fakeService{trusts: []agentcreds.Trust{{
-		Host: "34.70.64.109:443",
-		Pin:  agentcreds.Pin{Kind: agentcreds.PinCA, SHA256: "ab"},
-		Uses: []agentcreds.Use{{UseID: "use-1", Description: "read-only kubectl", ExpiresAt: &expiry}},
+		Host:      "34.70.64.109:443",
+		Pin:       agentcreds.Pin{Kind: agentcreds.PinCA, SHA256: "ab"},
+		ExpiresAt: &expiry,
 	}}}
 	trusts, err := newTestClient(t, svc).Trusts(context.Background())
 	if err != nil {

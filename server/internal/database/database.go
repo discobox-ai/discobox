@@ -72,13 +72,7 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := prepareSandboxStateSplit(write); err != nil {
 		return err
 	}
-	// And again pre-AutoMigrate: AutoMigrate creates a missing index but never
-	// alters one that already exists under the same name, so an index whose
-	// column set changed has to be dropped first and recreated by it.
-	if err := dropNarrowSandboxSecretEnvIndex(write); err != nil {
-		return err
-	}
-	// Pre-AutoMigrate as well, and for the sharpest reason of the four: this is
+	// Pre-AutoMigrate as well, and for the sharpest reason of the three: this is
 	// a rename, and AutoMigrate cannot tell one from an addition. Left to it,
 	// it would add max_grant_ttl_seconds at its default and leave every
 	// configured limit behind in the old column — every secret silently reset
@@ -151,13 +145,7 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := migrateSandboxStateSplit(write); err != nil {
 		return err
 	}
-	if err := normalizeCredentialVerdictTimes(write); err != nil {
-		return err
-	}
 	if err := backfillSecretValueUpdatedAt(write); err != nil {
-		return err
-	}
-	if err := migrateCredentialVerdictNeeds(write); err != nil {
 		return err
 	}
 	if err := deleteOrphanedSecretGrants(write); err != nil {
@@ -166,10 +154,7 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := denyOrphanedSecretRequests(write); err != nil {
 		return err
 	}
-	if err := retireApprovalRuleUses(write); err != nil {
-		return err
-	}
-	if err := retireAgentGrantsWithoutPolicy(write); err != nil {
+	if err := retireCredentialJudge(write); err != nil {
 		return err
 	}
 	if err := retireHarnessImages(write); err != nil {
@@ -213,130 +198,6 @@ func retireHarnessImages(db *gorm.DB) error {
 	// updated_at as it was.
 	return db.Model(&model.HarnessConfig{}).Where("image <> ? AND image NOT LIKE ?", "", "file://%").
 		UpdateColumns(map[string]any{"image": "", "image_digest": "", "platforms": nil}).Error
-}
-
-// retireApprovalRuleUses takes the approval rules no code can read out of the
-// database (ADR 26-10-22-689 §5): a rule now carries a policy a request's
-// policy is held to, and no code reads a sentence as one. Every rule with no
-// policy is deleted, as DeleteApprovalRule deletes one: the grants it minted
-// stand, and they and its verdicts go on naming it by ID. Each is logged with
-// what it said, which is the only record left of it; people make the ones
-// they want again as policies. A rule with a policy is never touched, so an
-// older server that adds a uses column back — a rollback, a rolling deploy —
-// costs no rule made since, and a rule it writes with no policy is deleted by
-// the next start of this one.
-//
-// The rules' older columns go once their rules have: the uses, and the scope
-// sentence and pinned discobox (ADR 26-10-12-330 §2) from a branch that never
-// reached a release, with the scope verdicts, which read the scope sentences
-// and are of a kind the API no longer names.
-//
-// A step interrupted before the drops and run again finds the same rows gone
-// and finishes. Once there is nothing to delete and no column to drop, it
-// does one read.
-func retireApprovalRuleUses(db *gorm.DB) error {
-	migrator := db.Migrator()
-	if !migrator.HasTable(&model.ApprovalRule{}) {
-		return nil
-	}
-	var retired []string
-	for _, column := range []string{"uses", "scope", "sandbox_id"} {
-		if migrator.HasColumn(&model.ApprovalRule{}, column) {
-			retired = append(retired, column)
-		}
-	}
-	var rules []map[string]any
-	if err := db.Table("approval_rules").
-		Select(append([]string{"id", "project_id", "well_known_id", "secret_id"}, retired...)).
-		Where("policy IS NULL OR policy = '' OR policy = 'null'").Order("id").Find(&rules).Error; err != nil {
-		return err
-	}
-	for _, rule := range rules {
-		credential := columnText(rule["well_known_id"])
-		if credential == "" {
-			credential = "secret " + columnText(rule["secret_id"])
-		}
-		said := make([]string, 0, len(retired))
-		for _, column := range retired {
-			// %q: each is what a person or a model wrote.
-			said = append(said, fmt.Sprintf("%s %q", column, columnText(rule[column])))
-		}
-		log.Printf("deleted approval rule %s of project %s for %s (%s): a rule now carries a policy, and is made anew as one; its grants stand",
-			columnText(rule["id"]), columnText(rule["project_id"]), credential, strings.Join(said, ", "))
-		if err := db.Exec("DELETE FROM approval_rules WHERE id = ?", rule["id"]).Error; err != nil {
-			return err
-		}
-	}
-	if len(retired) == 0 {
-		return nil
-	}
-	// Before the columns go: they are what says this step has work left, so
-	// a start interrupted after them would leave the verdicts for good.
-	if migrator.HasTable(&model.CredentialVerdict{}) {
-		if err := db.Exec("DELETE FROM credential_verdicts WHERE kind = 'scope'").Error; err != nil {
-			return err
-		}
-	}
-	for _, column := range retired {
-		if err := dropRetiredColumn(db, &model.ApprovalRule{}, "approval_rules", column); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// retireAgentGrantsWithoutPolicy takes out what was approved, or asked for,
-// as uses alone (#312, ADR 26-10-20-782 §11): every grant an agent takes
-// through discobox-access, and every delegation, now carries a policy, and a
-// hand-off is bound by its delegation's. An agent grant — one with uses, or a
-// delegation — with no policy is deleted, as revoking it deletes it: its
-// request stays approved and reads as denied, and its verdicts go on naming
-// it. A pending agent request with no policy is deleted too, since nothing can
-// approve it; the agent waiting on it is told it is gone and asks again with
-// a policy. Each is logged with what it said.
-//
-// Standing grants, with no uses, are never touched: the harness-config grants
-// `discobox configure` writes and a person's `secret grant create` without
-// uses authorize a sentinel the discobox already holds, which no policy
-// narrows, and a harness resolves its secrets only through them.
-//
-// It runs on every start, and finds nothing once nothing writes such a row.
-func retireAgentGrantsWithoutPolicy(db *gorm.DB) error {
-	migrator := db.Migrator()
-	const noPolicy = "(policy IS NULL OR policy = '' OR policy = 'null')"
-	const hasUses = "(uses IS NOT NULL AND uses NOT IN ('', 'null', '[]'))"
-	if migrator.HasTable(&model.SecretGrant{}) {
-		var grants []map[string]any
-		if err := db.Table("secret_grants").Select("id", "project_id", "secret_id", "scope", "scope_key", "purpose", "uses").
-			Where(noPolicy+" AND ("+hasUses+" OR purpose = ?)", model.SecretGrantPurposeDelegate).
-			Order("id").Find(&grants).Error; err != nil {
-			return err
-		}
-		for _, grant := range grants {
-			log.Printf("deleted %s grant %s of project %s (secret %s, %s %s, uses %q): a grant an agent takes now carries a policy, and is asked for anew with one",
-				columnText(grant["purpose"]), columnText(grant["id"]), columnText(grant["project_id"]), columnText(grant["secret_id"]),
-				columnText(grant["scope"]), columnText(grant["scope_key"]), columnText(grant["uses"]))
-			if err := db.Exec("DELETE FROM secret_grants WHERE id = ?", grant["id"]).Error; err != nil {
-				return err
-			}
-		}
-	}
-	if migrator.HasTable(&model.SecretRequest{}) {
-		var requests []map[string]any
-		if err := db.Table("secret_requests").Select("id", "project_id", "sandbox_id", "uses").
-			Where(noPolicy+" AND "+hasUses+" AND status = ?", model.SecretRequestStatusPending).
-			Order("id").Find(&requests).Error; err != nil {
-			return err
-		}
-		for _, req := range requests {
-			log.Printf("deleted pending request %s of project %s from %s (uses %q): a request now carries a policy, and is asked anew with one",
-				columnText(req["id"]), columnText(req["project_id"]), columnText(req["sandbox_id"]), columnText(req["uses"]))
-			if err := db.Exec("DELETE FROM secret_requests WHERE id = ?", req["id"]).Error; err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 // columnText is a text column read into a map, as a driver hands it back,
@@ -458,7 +319,7 @@ func deleteOrphanedSecretGrants(db *gorm.DB) error {
 // It is copied through Go rather than in SQL, and written in UTC: SQLite
 // compares times as text, updated_at on older rows carries the server's local
 // offset, and value_updated_at is compared against UTC times in SQL
-// (MarkSecretValueStale), as normalizeCredentialVerdictTimes found for verdicts.
+// (MarkSecretValueStale).
 func backfillSecretValueUpdatedAt(db *gorm.DB) error {
 	var rows []struct {
 		ID        string
@@ -478,69 +339,6 @@ func backfillSecretValueUpdatedAt(db *gorm.DB) error {
 		}
 	}
 	return nil
-}
-
-// normalizeCredentialVerdictTimes rewrites into UTC any credential verdict
-// created_at written before CredentialVerdict stamped it in UTC itself.
-//
-// Until then GORM's autoCreateTime wrote it in the server's local zone. SQLite
-// keeps a time as text carrying that offset and orders and compares it as text,
-// so on a server outside UTC every such row sorts, and answers a `since` bound,
-// as if it were off by its offset. A rewritten row is the same instant, so this
-// changes no row's meaning, only whether a text comparison can read it.
-//
-// SQLite only: Postgres stores timestamptz and compares instants. The rows to
-// rewrite are chosen in SQL by the offset their text ends in, because the
-// migration runs on every start and the table only grows: after the first run
-// this matches nothing and reads nothing, rather than loading every verdict to
-// find it has no work.
-func normalizeCredentialVerdictTimes(db *gorm.DB) error {
-	if db.Name() != "sqlite" {
-		return nil
-	}
-	var rows []struct {
-		ID        string
-		CreatedAt time.Time
-	}
-	if err := db.Model(&model.CredentialVerdict{}).
-		Select("id", "created_at").
-		Where("created_at NOT LIKE ?", "%+00:00").
-		Find(&rows).Error; err != nil {
-		return err
-	}
-	for _, row := range rows {
-		if _, offset := row.CreatedAt.Zone(); offset == 0 {
-			continue
-		}
-		if err := db.Model(&model.CredentialVerdict{}).
-			Where("id = ?", row.ID).
-			UpdateColumn("created_at", row.CreatedAt.UTC()).Error; err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// migrateCredentialVerdictNeeds rewrites the ask a request verdict recorded
-// in the form it now takes (ADR 26-09-26-240 §2). A judge used to ask for a
-// body "as text" or "as JSON", and a verdict stored that ask as
-// {"body":"text"} or {"body":"json"}; it now asks for the body, as
-// {"body":true}, and a stored string would not read as one — failing not the
-// row but every listing it is in. What the old ask said beyond wanting the
-// body was which form, and the body is no longer shown in forms, so nothing
-// the row meant is lost.
-//
-// The column holds JSON as encoding/json writes it, with no spaces, so the
-// rewrite is a string replacement both SQLite and Postgres run the same way.
-// The rows are chosen by what they still say, so after the first run this
-// matches nothing.
-func migrateCredentialVerdictNeeds(db *gorm.DB) error {
-	if !db.Migrator().HasTable(&model.CredentialVerdict{}) {
-		return nil
-	}
-	return db.Exec(`UPDATE credential_verdicts
-		SET need = REPLACE(REPLACE(need, '"body":"text"', '"body":true'), '"body":"json"', '"body":true')
-		WHERE need LIKE '%"body":"text"%' OR need LIKE '%"body":"json"%'`).Error
 }
 
 // prepareSandboxStateSplit makes the sandboxes table safe for AutoMigrate to
@@ -625,31 +423,6 @@ const (
 	//nolint:gosec // An index name, not a credential.
 	secretUniquenessIndex = "idx_secret_project_type_host"
 )
-
-// dropNarrowSandboxSecretEnvIndex removes the pre-ADR-0031 two-column
-// (sandbox_id, env_name) uniqueness index on sandbox_secrets so AutoMigrate can
-// recreate it over the three columns it now covers. Agent-requested bindings
-// are a separate channel that is never injected into the sandbox, so a sandbox
-// may hold one injected and one agent-requested binding for the same
-// environment variable; under the narrow index the second one fails to insert.
-//
-// "The column is absent" is the exact test for "this database predates the
-// change", because the column and the widened index arrive together — and it
-// needs no dialect-specific index introspection. The check is cheap and
-// idempotent, so it stays as a permanent step rather than a one-shot.
-func dropNarrowSandboxSecretEnvIndex(db *gorm.DB) error {
-	migrator := db.Migrator()
-	if !migrator.HasTable(&model.SandboxSecret{}) {
-		return nil
-	}
-	if migrator.HasColumn(&model.SandboxSecret{}, "agent_requested") {
-		return nil
-	}
-	if !migrator.HasIndex(&model.SandboxSecret{}, sandboxSecretEnvIndex) {
-		return nil
-	}
-	return migrator.DropIndex(&model.SandboxSecret{}, sandboxSecretEnvIndex)
-}
 
 // renameSecretGrantTTLColumn carries a secret's grant lifetime from
 // default_grant_ttl_seconds to max_grant_ttl_seconds, which is the same number

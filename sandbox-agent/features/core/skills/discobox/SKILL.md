@@ -516,34 +516,30 @@ Do not invent flags for them. Name the command and say to check `--help`.
 ### Driving other discoboxes from here
 
 The `discobox` CLI is installed in this box too, pointed at the discobox API
-through this box's pool (`DISCOBOX_SERVER`). It reaches the API only under an
-approved use of the well-known credential `ai.discobox.sandbox`, which you ask
-a person for with `discobox-access` — the `discobox-access` skill says how —
-and run under: `discobox-access run --use <id> -- discobox …`. Without one,
-every call is refused by the pool.
+through this box's pool (`DISCOBOX_SERVER`). It works only in a box a person
+has given API access; without it every call is refused, and only a person can
+turn it on — ask the user in chat (ADR 26-10-27-880 §9).
 
 With it, you may create discoboxes with `discobox run`, cut from the SOURCE
-you give it — `.` for this box's own checkout; list and read them (`admin box ls`, `admin box get`). On any
-discobox in this project but its judge, you may read and type into its
-terminals and read their logs (`admin terminal screen`, `input`, `wait`,
-`logs`); start, stop, and restart it (`discobox start`, `stop`, `restart`);
-repair and upgrade it (`admin box repair`, `upgrade`); list, start, stop, and
-restart its services and read their logs (`admin service`); reach its ports
-over HTTP, at `https://api.discobox.internal/projects/default/sandboxes/<id>/http/<port>/`;
-and tag and name it (`discobox tag`, `discobox rename`). Which of them a use
-reaches is what the judge reads from its words, told which discobox created
-the one a call names. You list and answer the credential requests only of the
-boxes you created (`discobox secret request ls`, `approve`, `deny`). Nothing else: the
-user's other commands above need their machine or reach further than a box
-may, and are refused. A box you create is the user's,
-and cannot be given `ai.discobox.sandbox` by you — a person approves that when
-it asks.
+you give it — `.` for this box's own checkout; list and read them (`admin box
+ls`, `admin box get`). On the discoboxes **you created**, and no others, you
+may read and type into their terminals and read their logs (`admin terminal
+screen`, `input`, `wait`, `logs`); start, stop, and restart them (`discobox
+start`, `stop`, `restart`); repair and upgrade them (`admin box repair`,
+`upgrade`); list, start, stop, and restart their services and read their logs
+(`admin service`); reach their ports over HTTP, at
+`https://api.discobox.internal/projects/default/sandboxes/<id>/http/<port>/`;
+and tag and name them (`discobox tag`, `discobox rename`). You list and answer
+the credential requests only of the boxes you created (`discobox secret
+request ls`, `approve`, `deny`), and approve only under a credential you were
+given to delegate. Nothing else: the user's other commands above need their
+machine or reach further than a box may, and are refused. A box you create is
+the user's, and gets API access from you only if you have it yourself.
 
 Launch a box with no credentials and a prompt that states its task and nothing
-else, then approve only what it asks for, and only for the boxes you created.
-Do not pass `--grant` or `"grants"` at create. The `discobox-access` skill's
-"Launching other discoboxes" section says how, including the access to ask for
-up front so you can run the boxes on your own.
+else, then approve only what it asks for. The `discobox-access` skill's
+"Launching other discoboxes" section says how, including the delegation to ask
+for up front so you can answer the boxes on your own.
 
 For the threat model and what discobox does not defend against, point at
 https://discobox.ai and https://discobox.ai/security. Parts of the security

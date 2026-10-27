@@ -61,10 +61,6 @@ type CopySandboxFileRes interface {
 	copySandboxFileRes()
 }
 
-type CreateApprovalRuleRes interface {
-	createApprovalRuleRes()
-}
-
 type CreateHarnessConfigRes interface {
 	createHarnessConfigRes()
 }
@@ -123,10 +119,6 @@ type CreateSecretRes interface {
 
 type DeconfigureHarnessConfigRes interface {
 	deconfigureHarnessConfigRes()
-}
-
-type DeleteApprovalRuleRes interface {
-	deleteApprovalRuleRes()
 }
 
 type DeleteHarnessConfigRes interface {
@@ -197,10 +189,6 @@ type ForceJobRes interface {
 	forceJobRes()
 }
 
-type GetApprovalRuleRes interface {
-	getApprovalRuleRes()
-}
-
 type GetHTTPAuditRes interface {
 	getHTTPAuditRes()
 }
@@ -265,10 +253,6 @@ type GetSandboxHarnessConfigChangesRes interface {
 	getSandboxHarnessConfigChangesRes()
 }
 
-type GetSandboxPolicyFactsRes interface {
-	getSandboxPolicyFactsRes()
-}
-
 type GetSandboxProviderInstanceRes interface {
 	getSandboxProviderInstanceRes()
 }
@@ -317,28 +301,8 @@ type GetTrustRequestRes interface {
 	getTrustRequestRes()
 }
 
-type JudgeCommandForPoolRes interface {
-	judgeCommandForPoolRes()
-}
-
-type JudgeForPoolRes interface {
-	judgeForPoolRes()
-}
-
-type JudgeSandboxRes interface {
-	judgeSandboxRes()
-}
-
 type ListApprovalRequestsRes interface {
 	listApprovalRequestsRes()
-}
-
-type ListApprovalRulesRes interface {
-	listApprovalRulesRes()
-}
-
-type ListCredentialVerdictsRes interface {
-	listCredentialVerdictsRes()
 }
 
 type ListDNSAuditRes interface {
@@ -487,18 +451,6 @@ type MintSandboxAgentStatusTokensRes interface {
 
 type MoveSandboxFileRes interface {
 	moveSandboxFileRes()
-}
-
-type ProposeApprovalRuleFromGrantRes interface {
-	proposeApprovalRuleFromGrantRes()
-}
-
-type ProposeApprovalRulesRes interface {
-	proposeApprovalRulesRes()
-}
-
-type ProposeSandboxRuleRes interface {
-	proposeSandboxRuleRes()
 }
 
 type PullSandboxSourceRes interface {
@@ -667,10 +619,6 @@ type UnsetDefaultHarnessConfigRes interface {
 
 type UnsetDefaultPoolRes interface {
 	unsetDefaultPoolRes()
-}
-
-type UpdateApprovalRuleRes interface {
-	updateApprovalRuleRes()
 }
 
 type UpdateHarnessConfigRes interface {

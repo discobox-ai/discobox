@@ -15,7 +15,6 @@ import (
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
-	"github.com/discobox-ai/discobox/pkg/wellknown"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -96,10 +95,6 @@ func (l secretLifetime) apply(sec *model.Secret, hasValue bool) error {
 		return apperrors.NewStatusError(http.StatusBadRequest,
 			"a lifetime and a refresh command are for token secrets; an oauth secret renews itself")
 	}
-	if isGateSecret(sec) {
-		return apperrors.NewStatusError(http.StatusBadRequest,
-			fmt.Sprintf("%s is a gate, with no value to renew", sec.WellKnownID))
-	}
 	if l.ttl != nil {
 		if *l.ttl < 0 {
 			return apperrors.NewStatusError(http.StatusBadRequest, "a lifetime is a number of seconds; 0 never goes stale")
@@ -115,7 +110,7 @@ func (l secretLifetime) apply(sec *model.Secret, hasValue bool) error {
 		// A value worth fetching by command is short-lived by assumption; a
 		// person who wants longer says so.
 		if len(command) > 0 && l.ttl == nil && sec.TTL == 0 {
-			sec.TTL = defaultRefreshTTL(sec)
+			sec.TTL = model.DefaultRefreshTTL
 		}
 	}
 	if l.expiresAt != nil {
@@ -126,16 +121,6 @@ func (l secretLifetime) apply(sec *model.Secret, hasValue bool) error {
 		sec.ValueWritten(time.Now().UTC(), &expires)
 	}
 	return nil
-}
-
-// defaultRefreshTTL is the lifetime a token with a command takes when nobody
-// names one: its well-known credential's, which knows how long the credential
-// really lives, else the short default any command gets.
-func defaultRefreshTTL(sec *model.Secret) int64 {
-	if known, ok := wellknown.Lookup(sec.WellKnownID); ok && known.RefreshTTL > 0 {
-		return int64(known.RefreshTTL / time.Second)
-	}
-	return model.DefaultRefreshTTL
 }
 
 // normalizeRefreshCommand checks a refresh command: an argument vector, run
@@ -326,7 +311,7 @@ func (s *Service) RefreshSecret(ctx context.Context, projectID, secretID string,
 		if err != nil {
 			return apperrors.NotFound(err, "secret not found")
 		}
-		if sec.Type != model.SecretTypeToken || isGateSecret(sec) {
+		if sec.Type != model.SecretTypeToken {
 			return apperrors.NewStatusError(http.StatusBadRequest, "only a token secret is refreshed with a new value")
 		}
 		if requestID != "" {

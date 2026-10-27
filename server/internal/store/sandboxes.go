@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -213,34 +212,12 @@ func (s *Store) ListAgentlessSandboxes(ctx context.Context) ([]model.Sandbox, er
 	return sandboxes, err
 }
 
-// SandboxListOption narrows or widens what a listing answers with.
-type SandboxListOption func(*sandboxListOptions)
-
-type sandboxListOptions struct {
-	judges bool
-}
-
-// IncludingJudges lists the project's judge alongside its discoboxes. It is
-// left out otherwise (ADR 26-09-22-838 §1): a judge runs no terminal and holds no
-// work, so it is not what somebody asking what is in their project means.
-func IncludingJudges() SandboxListOption {
-	return func(options *sandboxListOptions) { options.judges = true }
-}
-
 // ListSandboxes lists a project's sandboxes. A non-empty sourceRoot restricts
 // the result to sandboxes whose primary source resolves to that repository root.
 // Non-empty originKeys restrict it to sandboxes filed under any one of those
 // origin keys (ADR 0111). The two filters are independent: sourceRoot asks what
 // a sandbox runs against, originKeys ask where on which client it belongs.
-//
-// A judge is left out unless IncludingJudges asks for it (ADR 26-09-22-838 §1).
-func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string, listOptions ...SandboxListOption) ([]model.Sandbox, error) {
-	var options sandboxListOptions
-	for _, option := range listOptions {
-		if option != nil {
-			option(&options)
-		}
-	}
+func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string, originKeys []string) ([]model.Sandbox, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
@@ -251,12 +228,6 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string,
 		Preload("Pool.ProviderInstance").
 		Preload("HarnessConfig", withBoundSecrets).
 		Where("project_id = ?", projectID)
-	if !options.judges {
-		// A judge is not what somebody asking what is in their project means
-		// (ADR 26-09-22-838 §1): it runs no terminal, holds no work, and is answering
-		// asks rather than being worked in. Asking for it says so.
-		query = query.Where("harness_mode <> ?", sandboxconfig.HarnessModeJudge)
-	}
 	if sourceRoot != "" {
 		query = query.Where("source_root = ?", sourceRoot)
 	}
@@ -434,8 +405,14 @@ var sandboxEgressColumns = []string{egressColumn}
 // put back a wake a stop had canceled.
 var sandboxWakeColumns = []string{"wake_at", "wake_epoch"}
 
+// sandboxDiscoboxAPIColumn is whether the sandbox may call the discobox API
+// (ADR 26-10-27-880 §9), which create and SetSandboxDiscoboxAPI alone write: a
+// person changes it while a reconcile holds a copy of the row, and a
+// whole-row save of that copy would put the old answer back.
+const sandboxDiscoboxAPIColumn = "discobox_api"
+
 // sandboxOmittedColumns is what UpdateSandbox never writes.
-var sandboxOmittedColumns = append(append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...), sandboxWakeColumns...)
+var sandboxOmittedColumns = append(append(append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...), sandboxWakeColumns...), sandboxDiscoboxAPIColumn)
 
 // CancelSandboxWakeTx is what every power instruction from outside writes: no
 // scheduled start, and a new epoch, whether or not a wake was set — the race
@@ -469,6 +446,25 @@ func (s *Store) SetSandboxWakeIfEpoch(ctx context.Context, projectID, sandboxID 
 // SetSandboxEgress writes a sandbox's own egress level, and nothing else.
 func (s *Store) SetSandboxEgress(ctx context.Context, projectID, sandboxID string, level egress.Policy) error {
 	return s.setEgress(ctx, &model.Sandbox{}, projectID, sandboxID, level)
+}
+
+// SetSandboxDiscoboxAPI writes whether a sandbox may call the discobox API,
+// and nothing else.
+func (s *Store) SetSandboxDiscoboxAPI(ctx context.Context, projectID, sandboxID string, allowed bool) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	result := write.WithContext(ctx).Model(&model.Sandbox{}).
+		Where("project_id = ? AND id = ?", projectID, sandboxID).
+		Update(sandboxDiscoboxAPIColumn, allowed)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, options ...SandboxGetOption) error {

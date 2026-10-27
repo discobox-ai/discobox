@@ -76,19 +76,17 @@ type Pin struct {
 // GrantTTLSeconds is read as a credential request's is: the approver's
 // default, never a term, from 1 to MaxGrantTTLSeconds.
 type TrustRequestBody struct {
-	Host            string         `json:"host"`
-	Justification   string         `json:"justification,omitempty"`
-	Uses            []RequestedUse `json:"uses,omitempty"`
-	SuppliedCA      string         `json:"suppliedCA,omitempty"`
-	GrantTTLSeconds int64          `json:"grantTTLSeconds,omitempty"`
+	Host            string `json:"host"`
+	Justification   string `json:"justification,omitempty"`
+	SuppliedCA      string `json:"suppliedCA,omitempty"`
+	GrantTTLSeconds int64  `json:"grantTTLSeconds,omitempty"`
 }
 
 // TrustRequestStatus is what a trust request and its poll both answer with.
 //
 // ObservedChain is the chain the implementation's egress was shown, leaf
 // first. Reason says why a request settled without a human (StatusUnneeded).
-// Pin and Uses are present once granted; the granted uses are authoritative
-// over the requested ones.
+// Pin is present once granted.
 type TrustRequestStatus struct {
 	RequestID     string        `json:"requestId"`
 	Status        string        `json:"status"`
@@ -96,7 +94,6 @@ type TrustRequestStatus struct {
 	Reason        string        `json:"reason,omitempty"`
 	ObservedChain []Certificate `json:"observedChain,omitempty"`
 	Pin           *Pin          `json:"pin,omitempty"`
-	Uses          []Use         `json:"uses,omitempty"`
 }
 
 // Settled reports whether a trust request has reached a terminal status.
@@ -104,12 +101,12 @@ func (s TrustRequestStatus) Settled() bool {
 	return s.Status == StatusGranted || s.Status == StatusDenied || s.Status == StatusUnneeded
 }
 
-// Trust is one host the caller's sandbox trusts, and the uses it was trusted
-// for. Every request the sandbox sends to Host is judged against them.
+// Trust is one endpoint the caller's sandbox trusts by a pin. The pin makes
+// that certificate acceptable for Host alone, and decides nothing about what
+// is sent there (ADR 26-10-27-880 §10).
 type Trust struct {
 	Host      string     `json:"host"`
 	Pin       Pin        `json:"pin"`
-	Uses      []Use      `json:"uses,omitempty"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 

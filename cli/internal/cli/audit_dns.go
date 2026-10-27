@@ -223,8 +223,7 @@ func dnsAuditRecord(q apimodel.DNSAuditQuery) auditRecord {
 }
 
 // printDNSAuditRecord reads one lookup from the pool that answered it, through
-// the list filtered to its ID, the way a credential verdict is read: a row has
-// nothing the list does not carry. The ID is only unique on its pool, and the
+// the list filtered to its ID: a row has nothing the list does not carry. The ID is only unique on its pool, and the
 // discobox is what names the pool.
 func (a *App) printDNSAuditRecord(ctx context.Context, out io.Writer, asJSON bool, client *apiclientgen.Client, projectID, poolID, sandboxID, recordID string) error {
 	id, err := auditid.ParseDNSQuery(recordID)

@@ -31,7 +31,7 @@ flowchart LR
     WS -->|leader S0| SvcMenu["services menu → DoService"]
     WS -->|open| Fwd["port forward → DataSource.Forward"]
     WS -->|beat| Push["automatic push → PushSources"]
-    L -->|C| Cred["credential dialog → Secrets / CreateSecret / RuleProposals / ApproveCredentialRequest / DenyCredentialRequest"]
+    L -->|C| Cred["credential dialog → Secrets / CreateSecret / ApproveCredentialRequest / DenyCredentialRequest"]
     M --> S["secretList (F4)"]
     S -->|n e d enter p| SVerb["Secrets / Grants / CreateSecret / UpdateSecret / CreateGrant / RevokeGrant / DeleteSecret"]
     S -->|C| Cred
@@ -94,12 +94,11 @@ key, one letter per action, and every action the same API call the `discobox
 secret` commands make. A window that could approve something the CLI could not
 would be a second policy. See `secrets.go`.
 
-**Three tables, read downwards.** The secrets on top, what is waiting on a
-person underneath, and under that the approval rules (below). The first two
-belong on one screen because they are one question: which of these credentials
+**Two tables, read downwards.** The secrets on top, and what is waiting on a
+person underneath. They belong on one screen because they are one question: which of these credentials
 answers this request. Off the bottom of the secrets is the requests table and
 off the top of that is the secrets again, the way the discobox list and the
-prompt hand focus to each other; Tab goes down through the tables and round,
+prompt hand focus to each other; Tab goes down to the requests and round,
 and Esc — not Tab — leaves. The requests table takes only the rows it needs, up to
 a third of the screen, so "nothing is waiting" costs one line rather than half
 the window, and the secrets take only the rows they have, so the two tables sit
@@ -135,170 +134,6 @@ rather than a dead end naming another command. `n` stores a new credential and
 many live grants go with it and defaulting to No. `C` answers the oldest
 request waiting anywhere in the project — including one no discobox owns, which
 the list's row mark cannot carry and which would otherwise have no home.
-
-**The rules are a third table, under the requests** (`projectrules.go`,
-`ruleList`,
-[ADR 26-10-12-330](../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)
-§§1, 4): a rule answers requests nobody is shown, so what the project holds is
-on the screen, not behind a key. They are read with the screen's own load
-(`loadSecrets`, `DataSource.Rules`) and cleared with it on a change of server.
-A rules read that fails alone — a server that predates the route — does not
-take the screen down: the secrets and requests load, and the table says
-`cannot read rules: <error>` on one dim line (`ruleList.fail`), holding no rows
-and taking no cursor until the next load reads them.
-
-- **focus** (`Model.table`, `tableBelow`/`tableAbove`/`nextTable`): ↓ off the
-  bottom of a table reaches the next one down that has a row, ↑ off the top
-  the one above, Tab goes down the screen and round to the secrets, and a
-  press says which table it landed in (`hitRuleRow`). An empty table is a line
-  and takes no cursor — except the rules read and found empty, whose line is
-  where `n` makes the first one (`rulesReachable`) — in a window too short to
-  draw it too, since moving into the rules swaps them in; a rules listing not
-  read, or failed, takes none.
-- **a row**: credential (a secret by name), state (`enabled`/`disabled`/
-  `lapsed`), which discoboxes — its repositories cut to the column, or
-  `every discobox`, led by `delegates` for a rule to delegate, which only an
-  older server made — its policy's
-  statements as one line (`ruleRowPolicy`), and expiry. The credential and
-  repositories columns are as wide as the table's widest, within bounds, and
-  the policy takes the rest of the row and is cut to it; in a narrow row the
-  repositories give up room to the policy first. Expiry drops first as the
-  window narrows, then the policy, then
-  the repositories; the credential and state stay. No rules is a line saying
-  `n` makes one, and that auto approve does too.
-- **height** (`layout`): the rules take their rows up to a quarter of the
-  screen, as the requests take a third. A window too short for a row of each
-  table leaves one of the lower two out — the rules unless they have the keys,
-  then the requests (`rulesHidden`, `requestsHidden`); one left out is neither
-  drawn nor marked.
-- **keys on a rule row** (`ruleHints`): `n` makes a rule, Enter reads it, `e`
-  edits it, `s` disables or enables it (the key line says which), `d` deletes
-  it behind a question. On the empty table the key line is `n` alone.
-- **the card** (`openRule`, `showRule`): read fresh, with the grants the rule
-  minted by rule (`GrantFilter.RuleID`). The review card's own sections, drawn
-  from the same `Rule` value (`ruleFactsSection`, `ruleSections`,
-  `ruleHandsOut`; `approval.asRule` is the rule a review is of), with state,
-  the cap on each grant, expiry, and who made it and when (`ruleText` is the
-  rule's whole text on every card that shows one; its policy is drawn as the
-  request card draws one, by `policyview.Unbound`, each variable bare since a
-  rule binds it to whichever discobox asks). Its rows are `e`, `s`,
-  `d`, and the grants still standing, named by their discobox: Enter reads one
-  and `x` revokes it, through the secret's own cards (`reviewGrant`,
-  `confirmRevokeGrant`). Esc is back on the rule's row.
-- **making and editing** (`ruleedit.go`): see below.
-
-**A rule is made and edited a step at a time** (`ruleDraft`, `ruleStep`),
-on the cards auto approve uses, generalised so both flows share them: the
-discoboxes step (`askDiscoboxes`), a list typed a line at a time
-(`askLines`), a lifetime menu (`askDuration`), and the rule's whole text
-(`ruleText`) on a last card that asks, defaulting to No.
-
-- **the steps**, in order: the credential (a new rule only: a well-known ID a
-  project secret answers, or a project secret; one bound to no host is
-  disabled and says why), which discoboxes (repositories chosen and named on
-  one card, below, or every discobox, its own row), what it approves (its
-  policy, a line each: below), its longest grant (presets, `the secret's
-  own limit`, custom; it opens on an hour, the server's default), when it
-  lapses (opens on `never lapses`; an edit of a rule that lapses has `as it
-  is` first), and the rule.
-- **back and forth**: each step opens on what the draft holds now, and Esc is
-  the step before, so nothing chosen is lost walking back. Esc never changes
-  a word: a list step hands back its list as it stands, half-typed text and an
-  edit not yet confirmed included, and the draft keeps it (`ruleDraft.policy`,
-  `ruleDraft.repositories`). Leaving the first step closes the flow, or goes
-  back to the card an edit was begun on.
-- **a list** (`askLines`, `lines.go`): the lines written, then the new line,
-  as the input card's rows — `viewItems`, marked as a menu's are, answered by
-  `dialog.itemPress` rather than the field's action, and drawn in the normal
-  text colour (`dialog.inlineRows`). The line under the cursor is its own
-  editor, in its place (`dialog.editor`, a `textarea` sized by
-  `layoutEditor`): every row of it wrapped and the cursor in it, so a
-  sentence is never echoed in a second field, cut, or scrolled sideways; only
-  the `❯` and the cursor say which line it is. Every line wraps by the
-  editor's own rule at the editor's width (`editorLines`, the column it keeps
-  for the cursor included), so selecting a line never moves where it breaks.
-  A wrapped row is drawn whole
-  while the card has room for it, and one row, scrolling under the cursor,
-  when it does not. The section title holds still ("what it approves",
-  "repositories"). A rule's policy lines are numbered `1.`, `2.`… right-aligned past
-  nine, the new line the next number, a wrapped line set in under its text
-  (`linesAsk.numbered`, drawn in the menu's key column); repositories are
-  not, since ticks and names are not an order. ↑ and ↓ move between lines,
-  keeping what was typed on the one left; a press on a line takes it up as ↑
-  would, and the wheel walks the list as the keys do (`dialog.keyFirst`).
-  Enter on a line keeps the edit in its place, and on one emptied removes it
-  — the key line says so. Moving off a line never removes it. Enter on the
-  new line, empty, finishes the list, refused when it must have one. Each
-  line carries what it draws and what it sends (`listLine`): a line the
-  server holds is drawn made safe and sent in the server's own text
-  (`Rule.Stored`) until the person changes it, so an edit never rewrites a
-  line nobody touched — for a policy, what is compared and sent is the policy
-  read back from the lines as sent. The key line puts Esc second, after the one key the
-  position needs most, and is short enough to stay whole at 90 columns: a key
-  line is cut from its tail, and the way out must survive.
-- **the repositories** are one list with picks above its lines
-  (`newPickList`, `repositoryList`): every repository the console knows for
-  the project — an edited rule's own first, chosen, then those of the
-  project's discoboxes on the rule's server (`Sandbox.RepositoryIdentity`,
-  their primary source reduced by `sourceref.NormalizeRemote` as the server
-  reduces it, and drawn through `terminalSafe` as `Sandbox.RepositoryShown`
-  while the raw identity is what is sent) and of its other rules, each once,
-  sorted. The picks are rows too: a press ticks or clears one. ↑ from the
-  first line reaches them; Space or Enter ticks or clears the one under the
-  cursor, and on a pick the field takes no keys — a paste there is refused on
-  the card (`dialog.pasteRefused`), not dropped. An entry typed that is one
-  of the picks, however spelled (`repositoryIdentity`), chooses that pick
-  instead of being a second line. Finishing needs one chosen or named.
-- **the policy** (`rulepolicy.go`) is written as discobox-access writes one:
-  each statement its sentence (`policy.Format`), then each word that is not a
-  default as `word = what it means` (`policyText`; a line opening with
-  `allow` or `deny` is always a statement). The list is read back
-  (`parsedPolicy`: `policy.Parse` a line at a time, then `Policy.Validate`,
-  and at least one allow) as it is written, and what keeps it from being a
-  rule's policy is a section under the steps' own, a line each, with
-  `policy.Grammar` once (`policyProblemsSection`); finishing it then is
-  refused where it was typed (`notAPolicyYet`). The draft draws the policy
-  read from the lines as drawn and sends the one read from them as sent
-  (`listPolicy`).
-- **an edit** starts on which discoboxes — the credential is what a rule is —
-  with every step prefilled from the rule. The last card says what changes,
-  before → after, with the policy it approved before drawn whole, and sends
-  only those (`RuleChange`, `DataSource.UpdateRule`); one that changes
-  nothing sends nothing. A policy is a change when it says something else
-  (`samePolicy`), not when its lines were only reordered.
-- **a new rule** sends what was chosen (`NewRule`, `DataSource.CreateRule`):
-  a well-known ID alone, which the server answers with the secret marked for
-  it; the cap always, zero being the secret's own limit; every discobox in so
-  many words; and the hosts the last card reads — the well-known
-  credential's, or the secret's binding — so the rule stored is the rule
-  read. The purpose is the server's default, to use, except for a rule made
-  of a delegation grant.
-- **a rule made of a grant** (`reviewGrant`'s `n` row, `proposeGrantRule`,
-  `grantRuleProposed`): the grant card offers it when the grant carries a
-  policy (`Grant.Approved`),
-  stands on a secret, and no rule minted it (otherwise the row says why).
-  `DataSource.GrantRuleProposals` is waited on as auto approve's proposal is,
-  Esc stopping it. The draft (`ruleDraft.from`) is a new rule whose
-  credential, hosts and purpose are the grant's — for the well-known ID when
-  its secret answers one — so it starts on which discoboxes, Esc there going
-  back to the grant: the asking discobox's repository ticked, the judge's
-  policy when it covers the grant's and the grant's own otherwise, said on
-  the policy step as auto approve says it (`policySections` with
-  `grantOrigin`), and each grant as long as this one was given. A
-  delegation grant is offered no rule: none approves a delegation yet (ADR
-  26-10-22-689 §4).
-- **a refusal** comes back whole on a card whose Esc is the step it is about
-  (`refusedStep`, read from the server's own words: repositories, the policy, the
-  cap, the expiry, the credential; anything else is the last card), opened on
-  what was chosen.
-
-Disabling sends only `enabled` (`DataSource.SetRuleEnabled`) and asks nothing:
-it mints nothing more and revokes nothing, and the same key undoes it. Deleting
-asks, defaulting to No, and says the grants it minted stay to be revoked one by
-one. Each change re-reads the screen, which keeps the cursor on the rule or, for
-one deleted, on the row that took its place, and one made from the card comes
-back to the card (`ruleActed`); a revoke comes back the same way
-(`secretActionMsg.after`). A refusal is an error card.
 
 **A decision is one card, not a run of questions** (`form.go`, `dlgForm`). A
 pre-approval or a new secret has seven or eight parts, and a sequence of
@@ -342,11 +177,11 @@ every grant standing on it along with it. The value rows say
 
 **A secret's routes are one row each** (`secretRouteRows`), under their own
 rule at the foot of the card, with one empty row after them for another. Each
-is typed as the CLI's `--route` takes it, `HOST[/PATH][=USE]`. A use is a
-sentence that may hold any punctuation, so no separator could share a row
-between two. A row that is not a route is refused on the card. Emptying a row
+is typed as the CLI's `--route` takes it, `HOST[/PATH][=blocked]`, through
+`secretroute.Parse`. A row that is not a route is refused on the card,
+including one that still carries the use a route once had. Emptying a row
 drops that route, and emptying them all clears them (ADR 26-10-02-924). The
-detail card lists each route as `allowed` or `judged: <use>`.
+detail card lists each route as `allowed` or `blocked` (ADR 26-10-27-880).
 
 The **kind** is the one row an existing credential locks: a token and an oauth
 credential are stored and renewed differently, and the server has no answer for
@@ -405,11 +240,8 @@ and the cursor on the row; closing the card and reporting onto the screen behind
 it would throw away everything already entered.
 
 **Reading a grant is not the same key as ending one.** In the grants list
-`Enter` reads — scope, where it may go, when it lapses, and for a grant minted
-by approving an agent's request, every approved use with the ID an agent
-presents to `discobox-access run --use`, and the approved policy, rendered as
-the request card renders one, its variables as they resolved at approval.
-`x` withdraws, behind a confirm.
+`Enter` reads — scope, where it may go, who granted it, whether it delegates,
+and when it lapses. `x` withdraws, behind a confirm.
 Revoking on `Enter` put ending a credential one keystroke from looking at one,
 on the key that means "open this" everywhere else in the window.
 
@@ -428,26 +260,6 @@ harness config and the API's scope value is `harnessConfig`; a person calls it
 the harness, and one `scopeLabel` turns the first into the second everywhere it
 is drawn. A window that used both would be teaching two names for one thing.
 
-**A grant is asked how it may be used.** An injected credential is an
-environment variable, and everything in the box shares the environment; one with
-declared uses is not in the box at all — `discobox-access` takes it one use at a
-time, for one command, and the value dies minutes later. So the form asks, and
-the narrow answer brings out the variable the wrapped command receives it in and
-the job it is granted for. It opens on the ordinary kind: a pre-approval is
-usually a credential somebody wants the box simply to have, and the narrow kind
-is mostly what an agent's own request mints. The job is what the agent names to
-take a value. The narrow kind carries a policy too (#312), which is what `run`'s
-judge holds the command up against: Enter on the form opens a second step
-(`askGrantPolicy`), the line list a rule's policy is written in — a statement
-a line, then `word = what it means` — read as it is written (`parsedPolicy`,
-`policyProblemsSection`), and the grant is minted only once the lines are a
-policy that allows something. Esc goes back to the form as it was answered,
-and the lines are kept for the way forward again. It is asked at every
-scope: the binding it needs is per discobox, but the grant is minted when that
-discobox's agent first asks, so a project grant can carry uses without knowing
-which boxes it will cover — and then only a policy that names no variable,
-which only a discobox resolves.
-
 **`p` grants a secret before anything asks for it** — the pre-approval an
 operator makes because they already know the answer. Scope first, since it
 decides whether there is a key to ask for next: a project grant needs none, and
@@ -456,7 +268,11 @@ rather than typed as an ID that has to be right. Then the host, opening on the
 secret's own binding, and the lifetime, opening on the secret's limit. That
 question says the limit rather than leaving the server to refuse what is over
 it: a capped credential cannot be granted forever, and learning that from a
-rejection teaches the rule one rejection at a time.
+rejection teaches the rule one rejection at a time. A grant to one discobox is
+also asked what it is for: to use the credential, or to give it on — a
+delegation grant, whose discobox may give it to the discoboxes it creates and
+may not use it (ADR 26-10-27-880 §3). Wider grants are never delegations, so
+the row is stepped over for them.
 
 **`e` edits what a secret says about itself** — the two statements of the same
 kind: which hosts it may reach, and how long a grant on it may live. Neither
@@ -490,14 +306,10 @@ in the window's memory, keyed by server, token, and the exact command
 (`sessionKey`): the poll answers that pair's next asks unprompted
 (`renewBySession`), an edited command asks a person again, and a failure drops
 the permission. A request's "New credential…" is F4's own new-secret form,
-filled from the request (see below), so a well-known credential that suggests
-a command is stored from it by default there; F4's new token picks between
-entering a value and getting it from a command, with how long a value lasts
-(5m unless chosen, or the lifetime a well-known credential says its value really has — a day for GitHub; minutes to a day, not a grant's weeks and months), which the
-edit card changes for any token. F4's kind offers every
-well-known credential with a value after token and OAuth: choosing one fills in
-its name, host, and command (`fillWellKnown`, leaving alone what was typed) and
-stores a token that answers that ID from the start.
+filled from the request (see below); F4's new token picks between entering a
+value and getting it from a command, with how long a value lasts (5m unless
+chosen; minutes to a day, not a grant's weeks and months), which the edit card
+changes for any token.
 
 **It is polled, not pushed.** The requests are read on the same 5s tick as the
 listing; there is no client-facing event stream to subscribe to
@@ -540,20 +352,14 @@ There is no list in the workspace for `g` to be the top of, so it is free, and
 it is the letter of the thing it does.
 
 **The dialog decides nothing.** It shows what was asked — the credential, the
-env var, the host, the justification, the uses the agent declared, and the
-policy it asks for (ADR 26-10-20-782 §3; `policyLines`, drawn from the
-`policyview` rendering the data source made safe, and highlighted as syntax
-by its tokens' kinds in the code-block palette, `policySpans`) — and collects
-two answers,
+env var, the hosts, and why the agent says it needs it — and collects two
+answers,
 one per step: which secret answers it (a project secret, a credential typed in
 on the spot, or a denial), then how long the grant lives. Everything else
 follows the request on the server, which is what keeps this and `discobox
-secret request approve` the same act. A policy is the one thing an approval
-sends back: the request's own, as the card read it, resolved values and all,
-which the server holds the grant to — what `approve --policy-as-asked` sends.
-Only a request with a policy, asking to use a credential, is offered auto
-approve (`Ruleable`): a rule holds a request's policy to its own, and
-approves no delegation (ADR 26-10-22-689). `r` shows the request as the server sent it, as JSON
+secret request approve` the same act: approving an ask to use mints a grant
+for the discobox and delivers the credential's sentinel in the variable it
+asked for (ADR 26-10-27-880). `r` shows the request as the server sent it, as JSON
 highlighted as a code block is (`showRawRequest`), for when the rendering is
 not enough; Esc goes back to the card. Every secret is offered,
 including one bound to another host: greying those out left the one secret that
@@ -565,7 +371,7 @@ is bound to the site they share — or to nothing, when they share none
 (`CredentialRequest.binding`).
 
 **How long is a required second step** (`askLifetime`, through
-`askDuration`, which the rule flows share). Choosing a secret opens
+`askDuration`). Choosing a secret opens
 a card of its own — 1 hour, 1 day, 1 week, 1 month, forever, and `custom…` for a
 typed one — with the cursor on the lifetime the agent asked for
 (`CredentialRequest.GrantTTL`, shown on the request card as "wanted for"), else
@@ -594,37 +400,19 @@ elsewhere → lifetime → limit question, only when the lifetime is over the
 secret's cap → approve; for a new credential, request → lifetime → the
 new-secret form → store and approve. A new credential takes its lifetime
 *before* its token, so going back never has to hold a token that was already
-typed. "Auto approve" adds its own
-between the binding question and the lifetime, and one before the approve; see
-below.
-
-**A gate is let in, not answered** (`askAboutGate`). A request for a
-credential with nothing behind it — the discobox API, `ai.discobox.sandbox` —
-has no secret to choose and no value to type, so its card offers Approve and
-Deny alone, then the lifetime, and the approval names no secret. It says what
-approving gives the discobox — the power to create discoboxes and hand them
-credentials, on a create or by answering their requests, but only within what
-it is separately delegated — because the ordinary card describes one
-credential, and this is every one it is delegated.
+typed.
 
 **A new credential is the secrets screen's form, filled from the request**
 (`askNewCredentialForm`, `fillFromRequest`, `secretForm`, `secretFromForm`).
-A well-known ID is chosen as the form's kind, so `fillWellKnown` fills its
-name, host, the command that prints it — with "get it from a command" chosen
-— and how long a value lasts; any other ask fills the name, kind and host it
-asks for. A name the project already holds for that kind and host is the
+The form is filled with the name, kind and host the request asks for. A name the project already holds for that kind and host is the
 first free one instead (`freeSecretName`, "github-2"), which the server would
 otherwise refuse the create for. Every field stays editable. Saving stores it
 and approves the request with it for the lifetime chosen (`createAndApprove`:
 a command is run by the data source, and a refusal after the store says what
 was already done); a grant limit shorter than that lifetime is refused on the
 form, before anything is stored. Esc from the form is the request, still
-waiting. A well-known ID the project already has a secret marked for is
-filled as a plain token instead — the same name, host and command — since
-the server marks no second one; the form says why, and stored that way it
-answers only this request. The request card has no separate "From a
-command…" row: the form stores from the command by default, so nothing is
-lost. **Esc, or No,
+waiting. The request card has no separate "From a command…" row: the form's
+source row takes one. **Esc, or No,
 goes back exactly one step**: from the lifetime to the binding question if one
 was asked, else to the request; from a typed lifetime to the presets; from the
 limit question to wherever the lifetime was chosen; from the new-credential
@@ -643,89 +431,6 @@ agrees to is applied until the last step. Then the binding and the limit ride on
 the approval itself (`finishApproval`), and the server writes them with the
 grant or not at all. A refused approval leaves the credential as it was, and a
 failure never has a changed secret to report.
-
-**"Auto approve" answers a request with the rule that answers the next one**
-(`rules.go`, [ADR 26-10-12-330](../../../docs/adr/26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md) §§7–9).
-`A` on the request card and on a gate's — capitalized for the reason `C` is, and
-on a gate a shift away from the `a` that approves once — is offered only on an
-agent's own ask carrying a policy (`CredentialRequest.Ruleable`, as the
-server's `ruleProposable`): a request the proxy opened, an ask of uses alone,
-a refresh, and a trust stay a person's each time. It is the same
-`approval` value with `auto` set, on the same chain, with four steps added:
-
-- **what answers** (`askRuleSecret`): the project's secrets, and "New
-  credential…" — the request card's own new-credential form
-  (`newCredentialForm`), filled from the request. It is stored when the form
-  is saved, and the form says so, rather than deferred to the rule's `y`: the
-  steps after it — the binding and limit questions, and the server holding
-  the rule to the secret marked for a well-known ID, which storing one of
-  that kind marks — are then about a secret that exists (`ruleSecretStored`
-  goes on with it chosen). The form says both consequences: it is stored on
-  save, and for a well-known ID it answers every request for that ID from
-  then on, even if the rule is declined. Leaving the flow without a rule after
-  storing it — back to this step, or a refusal — says what was stored and that
-  `d` on the secrets table removes it (`storedNote`, `approval.stored`). For
-  an ID the project already has a secret marked for, the row is disabled and
-  says why: a rule for the ID answers with that secret, edited on F4. Esc from
-  the form is this step, nothing stored.
-  Auto approve is offered with no secret stored; this row is then its only
-  one. A gate skips the step.
-- **the wait** (`proposeRules`): `DataSource.RuleProposals` takes a minute or
-  two, so a status card is up; Esc cancels the call and goes back, and an
-  answer landing after that is dropped (`ruleProposalsMsg.wait`) rather than
-  raising a dialog on its own.
-- **which discoboxes** (`askAutoDiscoboxes`, through `askDiscoboxes`): three
-  rows and no sentence. "Discoboxes of `<repository>`" — the asking
-  discobox's (`RuleProposals.Repository`), first and under the cursor;
-  "Discoboxes of repositories you choose or name…", the new/edit rule flow's
-  known-repositories list (`knownRepositories`) with the asker's ticked; and
-  "Every discobox in this project", whose detail says what that does. A
-  discobox with no repository (a local source with no remote) gets the other
-  two and a section saying why. No model wrote anything: the server compares
-  repositories, which are sent in the server's text (`RepositoryStored`,
-  `approval.repositoriesShown` for drawing). Every discobox is its own value
-  (`ApprovalRule.EveryDiscobox`), set by that row alone and passed on by the
-  data source only from it; a rule with no repository that did not say it is
-  drawn as `not chosen` and sent saying neither.
-- **its policy** (`askRuleContent`): one list (`askLines`), the policy a
-  line each as a rule is edited (above). It opens on the policy the
-  project's judge wrote (`RuleProposals.Written`, the same work on any target
-  of its kind) when it was found to cover this request, each line drawn whole
-  and wrapped, sent in the server's text until edited; otherwise on the
-  policy as asked (`CredentialRequest.PolicyShown`, sent as `Policy`), so
-  there is always something to edit. A section says which
-  (`policySections`): the model's, with what holding it to the request found
-  and why; changed, that the finding was on it as written and the server
-  holds this one to the request when the rule is made; or why the list
-  starts from the ask — the model's did not cover it (drawn, with the
-  reason), could not be a rule's (its statements as written, with the
-  server's refusal), or no model wrote one (the server's `Note`). A policy
-  left as asked is not sent with the rule (`approval.rule.Policy` nil): the
-  server takes the request's. The approval itself names the request's policy
-  as read, as every approval of one does (`Approval.Policy`). The steps after the
-  proposals hand the step before them the approval as it now stands
-  (`askAutoDiscoboxes`, `askRuleContent`), so what was written — half-typed
-  included — rides every step back and forward.
-- **the rule** (`reviewRule`), after the lifetime and its limit question: the
-  full text — credential, hosts, purpose, what answers it, the repositories it
-  is for, its whole policy, the lifetime, and any change to the secret — as a y/n
-  defaulting to No. A rule that names no repository says it `approves for
-  discoboxes that do not exist yet, including ones a discobox creates`
-  (`everyDiscobox`); one for a gate says what it hands out in the request
-  card's own words (`gateGives`). It is never for a delegation, which no
-  rule approves yet (`Ruleable`, ADR 26-10-22-689 §4).
-
-The rule rides on the approval (`Approval.Rule`), one write; its cap is left
-for the server, which takes the lifetime chosen. A refusal — the server holds
-a hand-written policy to the request and makes no rule that would not cover
-it — keeps the server's sentence on the failure card, and Esc there goes back
-to the rule so other discoboxes or another policy can be chosen
-(`credentialAnsweredMsg.again`).
-
-**The request card lists the rules that were tried** (`ruleTestsSection`,
-`CredentialRequest.RuleTests`): each rule's ID, the stage that decided, and the
-reason, or that it is still being judged — a request is in front of a person
-because none covered it.
 
 ## The attention band
 
@@ -2611,9 +2316,9 @@ cannot be answered.
 `viewFoot`). What is under the body — the question, what answers it, the caveat
 and the key line — is measured first, and the body takes the rows the allowance
 has left, scrolling when it has more. A body drawn whole pushed the answers off
-the bottom of any window shorter than the card, which a lead discobox's request
-for the discobox API is in an ordinary one: ten uses, and `Approve` and `Deny`
-below the last row, answerable only by someone who already knew their keys.
+the bottom of any window shorter than the card, which a request with a long
+justification is in an ordinary one: the secrets and `Deny` below the last row,
+answerable only by someone who already knew their keys.
 This is one rule for every kind of card rather than a property of the two that
 are read, so a new kind of card cannot be the one that runs off the screen.
 The wheel over the body scrolls it on all of them; the keys are `↑↓` on a card that is
@@ -3470,8 +3175,6 @@ the newest one where the busy line goes.
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
 | `banner.go` | the workspace's attention band: which one is up, where it landed, and what a press on it does |
 | `credentials.go` | the credential inbox: the marks, the band's sentence, and the dialog that answers — which secret, and for how long |
-| `rules.go` | "auto approve": the proposals, the two choices, and the rule read whole before it is made |
-| `projectrules.go` | the secrets screen's third table, the project's approval rules, and a rule's card: the rule whole with the grants it minted, and disabling, deleting and revoking |
 | `trusts.go` | a trust request's dialog: which certificate to pin, and for how long |
 | `refresh.go` | a refresh request's dialog, and the session permission that answers the next one unprompted |
 | `apply.go` | apply: its key, and what is offered when it succeeds |

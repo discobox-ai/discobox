@@ -18,8 +18,7 @@
 #       Print the import entries the configuration delivered into HOME (this
 #       user's when omitted): the export when there is one, else what a
 #       configuration made under ADR 0127 — opencode 1's auth.json — becomes.
-#       The judge imports these, and configure reads a previous run's files
-#       through it.
+#       Configure reads a previous run's files through it.
 #   opencode-credentials own
 #       Read [{integrationID, value}] on stdin and print them as the image's
 #       own import entries.

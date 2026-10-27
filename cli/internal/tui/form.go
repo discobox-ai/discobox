@@ -70,10 +70,6 @@ type formRow struct {
 	why string
 	// required refuses an empty typed row on submit, saying why.
 	required string
-	// chose, on a picker, is told each time its option changes, so a choice
-	// can fill in the rows it implies — a well-known credential its name,
-	// host, and command.
-	chose func(f *form)
 }
 
 // form is the rows and where the cursor is in them.
@@ -247,9 +243,6 @@ func (f *form) pick(at int) {
 	}
 	f.listing = false
 	row.at = at
-	if row.chose != nil {
-		row.chose(f)
-	}
 	f.cursor = f.next(f.cursor, 1)
 	f.focus()
 }
@@ -277,17 +270,6 @@ func (f *form) choose(key, option string) {
 	}
 }
 
-// pickOption chooses an option as a person choosing it would: the row moves
-// to it, and whatever the row fills in on a choice follows.
-func (f *form) pickOption(key, option string) {
-	f.choose(key, option)
-	for i := range f.rows {
-		if f.rows[i].key == key && f.rows[i].chose != nil {
-			f.rows[i].chose(f)
-		}
-	}
-}
-
 // chosenLabel is that option as it is said to a person, for the report after
 // the form is answered.
 func (f *form) chosenLabel(key string) string {
@@ -306,9 +288,6 @@ func (f *form) cycle(delta int) {
 		return
 	}
 	row.at = ((row.at+delta)%len(row.choices) + len(row.choices)) % len(row.choices)
-	if row.chose != nil {
-		row.chose(f)
-	}
 	// A choice can take rows away or bring them back, and the cursor may be
 	// standing on one that has just gone.
 	f.cursor = f.next(f.cursor, 1)

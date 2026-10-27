@@ -67,11 +67,14 @@ type PromptOptions struct {
 	// skills sources of SkillDirs so a person's own win on a skill's name (ADR
 	// 26-10-14-894 §2). The frontend reads them from the server.
 	ProjectSkills []SkillsRepository
-	// Grants are the uses of credentials the new discobox is given, already
-	// resolved to what the server takes: a secret by its ID, or a well-known
-	// credential by its own. ParseGrants reads them from --grant.
-	Grants  []apimodel.SandboxGrant
-	Harness string
+	// Grants are the credentials the new discobox is given, already resolved
+	// to what the server takes: a secret by its ID. ParseGrants reads them
+	// from --grant.
+	Grants []apimodel.SandboxGrant
+	// DiscoboxAPI lets the new discobox call the discobox API through its
+	// pool (ADR 26-10-27-880 §9).
+	DiscoboxAPI bool
+	Harness     string
 	// IncludeDirty decides what happens to uncommitted work on top of a
 	// local source's checked-out commit. Asking is the frontend's, before it
 	// gets here: `discobox run` settles it from --include-dirty, and the
@@ -155,6 +158,9 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		body.Config.SetSecrets(secrets)
 	}
 	body.Grants = opts.Grants
+	if opts.DiscoboxAPI {
+		body.SetDiscoboxApi(apiclientgen.NewOptBool(true))
+	}
 	skillsArgs, err := SplitSkills(opts.SkillDirs)
 	if err != nil {
 		return nil, nil, err

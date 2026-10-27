@@ -47,7 +47,6 @@ func (s *sandboxService) PoolListHTTPAudit(ctx context.Context, params workerapi
 	}
 	query := proxy.AuditQuery{
 		Host:      params.Host.Or(""),
-		UseID:     params.UseId.Or(""),
 		Since:     params.Since.Or(time.Time{}),
 		Until:     params.Until.Or(time.Time{}),
 		MinStatus: params.MinStatus.Or(0),
@@ -177,7 +176,6 @@ func poolHTTPAuditExchangeDetail(row proxy.AuditHTTPExchange) workerapimodel.Poo
 		Host:                 row.Host,
 		Status:               row.Status,
 		Blocked:              row.Blocked,
-		SwappedUseIds:        splitAuditList(row.SwappedUseIDs),
 		SwappedSecretIds:     splitAuditList(row.SwappedSecretIDs),
 		AppliedHeaders:       splitAuditList(row.AppliedHeaders),
 		RequestHeaders:       unmarshalAuditHeaders(row.RequestHeaders),
@@ -319,10 +317,6 @@ func (s *sandboxService) httpAuditArtifactHandler() http.Handler {
 const AuditArtifactFormatHeader = "X-Discobox-Audit-Format"
 
 func poolHTTPAuditExchange(row proxy.AuditHTTPExchange) workerapimodel.PoolHTTPAuditExchange {
-	uses := []string{}
-	if row.SwappedUseIDs != "" {
-		uses = strings.Split(row.SwappedUseIDs, ",")
-	}
 	exchange := workerapimodel.PoolHTTPAuditExchange{
 		ID:               row.ID.String(),
 		CreatedAt:        row.CreatedAt,
@@ -332,7 +326,6 @@ func poolHTTPAuditExchange(row proxy.AuditHTTPExchange) workerapimodel.PoolHTTPA
 		Host:             row.Host,
 		Status:           row.Status,
 		Blocked:          row.Blocked,
-		SwappedUseIds:    uses,
 		SwappedSecretIds: splitAuditList(row.SwappedSecretIDs),
 		DurationMillis:   workerapi.NewOptInt64(row.DurationMillis),
 		CacheHit:         workerapi.NewOptBool(row.CacheHit),

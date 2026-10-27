@@ -106,7 +106,7 @@ func discoboxArg(args []string) string {
 func (a *App) selectSandboxOnEveryServer(ctx context.Context, set []*server, reference string) (*App, string, string, *apiclientgen.Client, error) {
 	full := allFullSandboxIDs([]string{reference})
 	if !full {
-		listed, unreachable, err := a.listEveryServer(ctx, sandboxFilter{judges: true})
+		listed, unreachable, err := a.listEveryServer(ctx, sandboxFilter{})
 		if err != nil {
 			return nil, "", "", nil, err
 		}

@@ -21,7 +21,6 @@ import (
 const (
 	auditSourceHTTP    = "http"
 	auditSourceDNS     = "dns"
-	auditSourceCreds   = "creds"
 	auditSourceRefresh = "refresh"
 	auditSourceHooks   = "hooks"
 	auditSourceExecs   = "execs"
@@ -35,13 +34,13 @@ const (
 	auditAttestorClient = "client"
 )
 
-var auditSources = []string{auditSourceHTTP, auditSourceDNS, auditSourceCreds, auditSourceRefresh, auditSourceHooks, auditSourceExecs}
+var auditSources = []string{auditSourceHTTP, auditSourceDNS, auditSourceRefresh, auditSourceHooks, auditSourceExecs}
 
 // auditDefaultSources are the trails `audit ls` reads when --source names
 // none. DNS is left out: a discobox looks up an A and an AAAA for every name its
 // tools touch, and on the timeline they would crowd out everything else. It is
 // read when --source names it.
-var auditDefaultSources = []string{auditSourceHTTP, auditSourceCreds, auditSourceRefresh, auditSourceHooks, auditSourceExecs}
+var auditDefaultSources = []string{auditSourceHTTP, auditSourceRefresh, auditSourceHooks, auditSourceExecs}
 
 // auditRecord is one record from any trail, labeled with where it came from and
 // who vouches for it. Record is the trail's own record, unchanged.
@@ -110,10 +109,6 @@ it is worth:
   dns    the pool recorded a name the discobox looked up, and what came back.
          The discobox cannot alter it. Read only when --source names it:
          lookups outnumber everything else.
-  creds  the server recorded that a credential was issued with this verdict.
-         A record marked "report" instead of "use" is one the discobox sent
-         after a denial, on its own; the verdict's words are its account
-         either way.
   refresh
          the server asked for a new value of a token this discobox needed,
          and recorded who answered and when. How the value was made is the
@@ -126,7 +121,7 @@ in it can rewrite them, and can be read only while it runs. A trail that could
 not be read is named on stderr (and under unavailable with -o json); its records
 are missing from the timeline.`,
 		Example: `  discobox admin audit ls sbx_1 --since 1h
-  discobox admin audit ls sbx_1 --source http,creds --follow`,
+  discobox admin audit ls sbx_1 --source http,refresh --follow`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -219,7 +214,7 @@ are missing from the timeline.`,
 			})
 		},
 	}
-	cmd.Flags().StringSliceVar(&sources, "source", nil, "Only these trails: http, dns, creds, refresh, hooks, execs (default all but dns)")
+	cmd.Flags().StringSliceVar(&sources, "source", nil, "Only these trails: http, dns, refresh, hooks, execs (default all but dns)")
 	cmd.Flags().Var(since, "since", "Only records from this long ago (e.g. 1h) or since this RFC 3339 time")
 	cmd.Flags().IntVar(&limit, "limit", defaultAuditLimit, "Maximum number of records to read")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Keep printing records as they are recorded")
@@ -251,13 +246,6 @@ func auditTimelineTrails(client *apiclientgen.Client, projectID, sandboxID strin
 				missing(auditUnavailable{Source: auditSourceDNS, Pool: pool.PoolId, Reason: pool.Reason})
 			}
 		}), auditSourceDNS, dnsAuditRecord))
-	}
-	if wantSource[auditSourceCreds] {
-		params := apiclientgen.ListCredentialVerdictsParams{
-			ProjectId: projectID,
-			SandboxId: apiclientgen.NewOptString(sandboxID),
-		}
-		trails = append(trails, auditRecords(credentialVerdictSource(client, params), auditSourceCreds, credentialVerdictRecord))
 	}
 	if wantSource[auditSourceRefresh] {
 		params := apiclientgen.ListSecretRefreshesParams{
@@ -328,13 +316,10 @@ func auditRecords[T any](source auditSource[T], name string, label func(T) audit
 
 func httpAuditRecord(e apimodel.HTTPAuditExchange) auditRecord {
 	summary := fmt.Sprintf("%s %s %s", terminalSafe(e.Method), httpAuditStatus(e), terminalSafe(e.URL))
-	// The secrets a request carried, whatever stood in for them; the uses only
-	// a credential taken through discobox-access has (ADR 26-10-01-240).
+	// The secrets a request carried, whatever stood in for them
+	// (ADR 26-10-01-240).
 	if len(e.SwappedSecretIds) > 0 {
 		summary += " secrets=" + terminalSafe(strings.Join(e.SwappedSecretIds, ","))
-	}
-	if len(e.SwappedUseIds) > 0 {
-		summary += " uses=" + terminalSafe(strings.Join(e.SwappedUseIds, ","))
 	}
 	if e.Blocked {
 		// What refused it, and why: a timeline that says only "blocked" leaves
@@ -359,22 +344,6 @@ func httpAuditOrigin(e apimodel.HTTPAuditExchange) string {
 		return u.Scheme + "://" + u.Host
 	}
 	return e.Host
-}
-
-// credentialVerdictRecord labels a verdict by how it arrived: one recorded at
-// use is the control plane's record of an issue, one the project's judge gave
-// about a request is the control plane's record of that answer, and one
-// reported after a denial is the discobox's word alone.
-func credentialVerdictRecord(v apimodel.CredentialVerdict) auditRecord {
-	attestor := auditAttestorControlPlane
-	if v.Volunteered {
-		attestor = auditAttestorSandbox
-	}
-	summary := fmt.Sprintf("%s %s (%s): %s", verdictWord(v), terminalSafe(v.UseId), verdictRecorded(v), verdictJudged(v))
-	if reason := v.Reason.Or(""); reason != "" {
-		summary += " — " + terminalSafe(reason)
-	}
-	return auditRecord{ID: v.ID, Attestor: attestor, DiscoboxID: v.SandboxId, Record: &v, summary: summary}
 }
 
 func harnessHookRecord(sandboxID string) func(apimodel.HarnessHookLog) auditRecord {
@@ -548,9 +517,8 @@ func execEventRecord(sandboxID string) func(apimodel.SandboxExecEvent) auditReco
 // the rest of a record, so an ID that is never shown is a detail view nobody
 // can reach.
 //
-// The attestor is not a column either: SOURCE carries it (ADR 0130 §2), a
-// verdict says "use" or "report" in its own record, and `-o json` keeps the
-// attestor as a field.
+// The attestor is not a column either: SOURCE carries it (ADR 0130 §2), and
+// `-o json` keeps the attestor as a field.
 func auditRecordTable(follow bool) auditTable[auditRecord] {
 	return auditTable[auditRecord]{
 		columns: []auditColumn{

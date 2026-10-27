@@ -51,16 +51,8 @@ func (f *fakeTrustControlPlane) ServeHTTP(w http.ResponseWriter, r *http.Request
 		if f.approved != nil {
 			status.Status = "granted"
 			status.Pin = &f.approved.Pin
-			status.Uses = f.approved.Uses
 		}
 		f.write(w, status)
-	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/judge"):
-		// A request to a trusted host is judged against the trust's uses
-		// (ADR 0149 §5), which this branch asks before resolving anything
-		// (ADR 26-09-22-838 §4), so the control plane this fixture stands in for has
-		// to answer one. What the judge decides is its own test; here it
-		// allows, so this stays a test about the pin taking effect.
-		f.write(w, map[string]any{"allow": true, "reason": "that is the approved use"})
 	case r.Method == http.MethodGet && r.URL.Path == prefix+"sandbox-host-trusts":
 		body := listHostTrustsDoc{HostTrusts: []hostTrustDoc{}}
 		if f.approved != nil {
@@ -91,7 +83,6 @@ func (f *fakeTrustControlPlane) approve() {
 		Host:      f.asked.Host,
 		Pin:       trustPinDoc{Kind: agentcreds.PinCA, SHA256: ca.SHA256},
 		PinPEM:    ca.PEM,
-		Uses:      []credentialUseDoc{{UseID: "use_kube", Description: "read-only kubectl"}},
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 }
@@ -126,22 +117,21 @@ func TestTrustRequestProbesThenGrantedPinTakesEffect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue client certificate: %v", err)
 	}
-	live := newActivations()
 	cfg := proxy.DefaultConfig()
 	cfg.ListenAddress = "127.0.0.1:0"
 	cfg.CertDir = bundle.Dir
 	cfg.DatabaseDSN = filepath.Join(root.Dir(), testProjectID+"-audit.db")
 	cfg.Recording.Enabled = false
-	server, err := proxy.NewServer(ctx, cfg, bundle, newSecretResolver(root, testProjectID, testPoolID, live))
+	server, err := proxy.NewServer(ctx, cfg, bundle, newSecretResolver(root, testProjectID, testPoolID))
 	if err != nil {
 		t.Fatalf("create proxy: %v", err)
 	}
 	t.Cleanup(func() { _ = server.Close() })
-	policy := newPolicyPublisher(server, cfg, live, func(err error) { t.Errorf("apply proxy config: %v", err) })
+	policy := newPolicyPublisher(server, cfg, func(err error) { t.Errorf("apply proxy config: %v", err) })
 	go func() { _ = server.ListenAndServe() }()
 	controlPlane := newControlPlaneCredentials(root, testProjectID, testPoolID)
 	trusts := newHostTrusts(server, controlPlane, policy, func(err error) { t.Errorf("host trusts: %v", err) })
-	broker := &credentialBroker{sandboxID: "sb-1", controlPlan: controlPlane, activations: live, trusts: trusts}
+	broker := &credentialBroker{sandboxID: "sb-1", controlPlan: controlPlane, trusts: trusts}
 
 	client := sandboxClient(t, server, material)
 	if resp := mustGet(t, client, origin.URL); resp.StatusCode != http.StatusBadGateway || resp.Header.Get(proxy.UntrustedHostHeader) != endpoint {
@@ -149,8 +139,8 @@ func TestTrustRequestProbesThenGrantedPinTakesEffect(t *testing.T) {
 	}
 
 	status, err := broker.RequestTrust(ctx, agentcreds.TrustRequestBody{
-		Host: endpoint,
-		Uses: []agentcreds.RequestedUse{{Description: "read-only kubectl"}},
+		Host:          endpoint,
+		Justification: "read-only kubectl",
 	})
 	if err != nil {
 		t.Fatalf("request trust: %v", err)
@@ -176,7 +166,7 @@ func TestTrustRequestProbesThenGrantedPinTakesEffect(t *testing.T) {
 		t.Fatalf("after the trust: status %d", resp.StatusCode)
 	}
 	listed, err := broker.Trusts(ctx)
-	if err != nil || len(listed) != 1 || listed[0].Host != endpoint || listed[0].Uses[0].UseID != "use_kube" {
+	if err != nil || len(listed) != 1 || listed[0].Host != endpoint || listed[0].Pin.Kind != agentcreds.PinCA {
 		t.Fatalf("trusts = %+v, %v", listed, err)
 	}
 }
@@ -224,7 +214,6 @@ func TestTrustRequestRefusesASuppliedCAThatDoesNotMatch(t *testing.T) {
 	stranger := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: bundle.MITMCA.Certificate[0]})
 	_, err = broker.RequestTrust(ctx, agentcreds.TrustRequestBody{
 		Host:       strings.TrimPrefix(origin.URL, "https://"),
-		Uses:       []agentcreds.RequestedUse{{Description: "x"}},
 		SuppliedCA: string(stranger),
 	})
 	if !errors.Is(err, agentcreds.ErrInvalid) {

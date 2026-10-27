@@ -299,9 +299,6 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 	case hitRequestRow:
 		return m.pressRequestRow(what.idx, clicks), clicks > 1 && what.idx >= 0
 
-	case hitRuleRow:
-		return m.pressRuleRow(what.idx, clicks), clicks > 1 && what.idx >= 0
-
 	case hitAuditRow:
 		return m.pressAuditRow(what.idx, clicks), clicks > 1 && what.idx >= 0
 
@@ -554,24 +551,6 @@ func (m *Model) pressRequestRow(idx, clicks int) tea.Cmd {
 	return nil
 }
 
-func (m *Model) pressRuleRow(idx, clicks int) tea.Cmd {
-	// A table not read, or one that failed, has nothing to put the keys on,
-	// and a press in it leaves them where they were. An empty one read takes
-	// them: its line makes the first rule.
-	if !m.rulesReachable() {
-		return nil
-	}
-	m.table = tableRules
-	if idx < 0 || idx >= len(m.rules.all) {
-		return nil
-	}
-	m.rules.moveTo(idx)
-	if clicks > 1 {
-		return m.updateKey(keyPress("enter"))
-	}
-	return nil
-}
-
 // pressDialogItem runs the action a menu row names, the way Enter on it does.
 // A row that cannot be taken is left alone: its reason is already written
 // beside it, which is the whole of what pressing it would say.
@@ -579,10 +558,6 @@ func (m *Model) pressDialogItem(idx int) tea.Cmd {
 	d := m.dialog
 	if d == nil || idx < 0 || idx >= len(d.items) {
 		return nil
-	}
-	if d.itemPress != nil {
-		// An input card's rows are its list's, answered by the list.
-		return d.itemPress(idx, d.typed())
 	}
 	if !d.items[idx].enabled {
 		d.cursor = idx
@@ -762,8 +737,6 @@ func (m *Model) wheelAt(ev tea.MouseWheelMsg) tea.Cmd {
 		m.skills.move(-lines)
 	case hitRequestRow:
 		m.requestRows.move(-lines)
-	case hitRuleRow:
-		m.rules.move(-lines)
 	case hitAuditRow:
 		if m.audit != nil {
 			m.audit.move(-lines)
@@ -786,16 +759,6 @@ func (m *Model) wheelAt(ev tea.MouseWheelMsg) tea.Cmd {
 			d.create.moveSource(-sign(lines))
 		}
 	case hitDialogItem:
-		if d := m.dialog; d != nil && d.keyFirst != nil {
-			// A list the field edits is walked the way its keys walk it, so
-			// the wheel and the keys never disagree about where it is.
-			key := "down"
-			if lines > 0 {
-				key = "up"
-			}
-			cmd, _ := d.keyFirst(keyPress(key), d.typed())
-			return cmd
-		}
 		if d := m.dialog; d != nil {
 			at := min(max(d.cursor-lines, 0), len(d.items)-1)
 			d.cursor = d.nextEnabled(at, sign(-lines))

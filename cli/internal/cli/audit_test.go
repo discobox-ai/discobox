@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -14,364 +13,6 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	idpkg "github.com/discobox-ai/x/id"
 )
-
-// runAuditCreds runs `admin audit creds` against a server that answers with
-// body and records the query the command sent.
-func runAuditCreds(t *testing.T, body string, args ...string) (url.Values, string, error) {
-	t.Helper()
-	var query url.Values
-	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/projects/project-1/credential-verdicts" {
-			t.Errorf("unexpected path %s", r.URL.Path)
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		query = r.URL.Query()
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(body))
-	}))
-	defer server.Close()
-
-	out := new(strings.Builder)
-	cmd := NewRootCommand()
-	cmd.SetOut(out)
-	cmd.SetErr(new(strings.Builder))
-	cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "admin", "audit", "creds"}, args...))
-	err := cmd.Execute()
-	return query, out.String(), err
-}
-
-func TestAuditCredsSendsItsFilters(t *testing.T) {
-	// A real generated ID, not a lookalike: only the exact generated shape
-	// skips the short-ID lookup against the live discobox list.
-	fullID, err := idpkg.New("sbx")
-	if err != nil {
-		t.Fatalf("new id: %v", err)
-	}
-	before := time.Now()
-	query, _, err := runAuditCreds(t, `{"credentialVerdicts":[]}`,
-		"--discobox", fullID,
-		"--use-id", "use_1", "--grant-id", "grant_1", "--denied", "--since", "1h", "--limit", "5")
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	// A full ID is sent as-is, with no lookup: the discobox may be long gone,
-	// and its trail is still there.
-	if got := query.Get("sandboxId"); got != fullID {
-		t.Fatalf("sandboxId = %q", got)
-	}
-	if query.Get("useId") != "use_1" || query.Get("grantId") != "grant_1" || query.Get("limit") != "5" {
-		t.Fatalf("filters = %v", query)
-	}
-	// --denied is allow=false, not an absent allow: the server reads absent as
-	// every verdict.
-	if got := query.Get("allow"); got != "false" {
-		t.Fatalf("allow = %q, want false", got)
-	}
-	since, err := time.Parse(time.RFC3339, query.Get("since"))
-	if err != nil {
-		t.Fatalf("since %q: %v", query.Get("since"), err)
-	}
-	if want := before.Add(-time.Hour); since.Before(want.Add(-time.Minute)) || since.After(time.Now().Add(-time.Hour).Add(time.Second)) {
-		t.Fatalf("since = %s, want about an hour ago (%s)", since, want)
-	}
-}
-
-func TestAuditCredsSendsNoAllowUnlessAsked(t *testing.T) {
-	query, _, err := runAuditCreds(t, `{"credentialVerdicts":[]}`)
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	if query.Has("allow") {
-		t.Fatalf("allow = %q sent without --denied or --allowed", query.Get("allow"))
-	}
-}
-
-func TestAuditCredsRefusesDeniedAndAllowedTogether(t *testing.T) {
-	if _, _, err := runAuditCreds(t, `{"credentialVerdicts":[]}`, "--denied", "--allowed"); err == nil {
-		t.Fatal("expected --denied with --allowed to be refused")
-	}
-}
-
-// The reason, the argv and the prompt were written inside the discobox. A
-// terminal escape in any of them must reach the screen as text, not as an
-// instruction to the terminal — the case here moves the cursor up a row and
-// overwrites it, which is how a denial is dressed up as an allow.
-const hostileVerdicts = `{"credentialVerdicts":[{
-	"id":"cv_1","projectId":"project-1","sandboxId":"sbx_gone","useId":"use_1\u001b[1A\u009b2K",
-	"allow":false,"volunteered":true,"createdAt":"2026-09-02T10:00:00Z",
-	"command":["gh","pr create","\u202eetaerc"],
-	"reason":"denied\u001b[1A\u001b[2Kallow",
-	"role":"judge","prompt":"facts:\n\u001b]52;c;cGF3bmVk\u0007line two"
-}]}`
-
-func TestAuditCredsEscapesWhatTheDiscoboxWrote(t *testing.T) {
-	for _, args := range [][]string{nil, {"--prompt"}} {
-		_, out, err := runAuditCreds(t, hostileVerdicts, args...)
-		if err != nil {
-			t.Fatalf("execute %v: %v", args, err)
-		}
-		// \u009b is the one-rune C1 form of ESC [, and it sits in the use ID:
-		// a reported denial's use ID is the discobox's own text.
-		for _, raw := range []string{"\x1b", "\a", "\u202e", "\u009b"} {
-			if strings.Contains(out, raw) {
-				t.Fatalf("%v: output carries raw %q:\n%s", args, raw, out)
-			}
-		}
-		if !strings.Contains(out, `\x1b[1A`) {
-			t.Fatalf("%v: escape sequence not shown as text:\n%s", args, out)
-		}
-		if !strings.Contains(out, `\u202e`) {
-			t.Fatalf("%v: bidi override not shown as text:\n%s", args, out)
-		}
-		// Provenance survives rendering: this row is a report, not a use.
-		if !strings.Contains(out, "deny") || !strings.Contains(out, "report") {
-			t.Fatalf("%v: verdict or provenance missing:\n%s", args, out)
-		}
-	}
-}
-
-// JSON carries the recorded values exactly, but a C1 control or a bidi
-// override inside a string is written as a \u escape rather than raw — Go's
-// encoder escapes only C0 — so printing it to a terminal is as safe as the
-// table. The decoded document must still be the one the server sent.
-func TestAuditCredsJSONIsTerminalSafeAndExact(t *testing.T) {
-	_, out, err := runAuditCreds(t, hostileVerdicts, "-o", "json")
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	for _, raw := range []string{"\x1b", "\a", "\u202e", "\u009b"} {
-		if strings.Contains(out, raw) {
-			t.Fatalf("json output carries raw %q:\n%s", raw, out)
-		}
-	}
-	var got, want struct {
-		CredentialVerdicts []struct {
-			UseID   string   `json:"useId"`
-			Reason  string   `json:"reason"`
-			Prompt  string   `json:"prompt"`
-			Command []string `json:"command"`
-		} `json:"credentialVerdicts"`
-	}
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("output is not JSON: %v\n%s", err, out)
-	}
-	if err := json.Unmarshal([]byte(hostileVerdicts), &want); err != nil {
-		t.Fatalf("fixture: %v", err)
-	}
-	if len(got.CredentialVerdicts) != 1 || !reflect.DeepEqual(got.CredentialVerdicts, want.CredentialVerdicts) {
-		t.Fatalf("decoded json = %+v, want the recorded values %+v", got.CredentialVerdicts, want.CredentialVerdicts)
-	}
-}
-
-// With --prompt the prompt keeps its line breaks — it is a block, not a cell —
-// while everything else in it is still escaped.
-func TestAuditCredsPromptKeepsItsLines(t *testing.T) {
-	_, out, err := runAuditCreds(t, hostileVerdicts, "--prompt")
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	if !strings.Contains(out, "\n  facts:\n") || !strings.Contains(out, `line two`) {
-		t.Fatalf("prompt lost its layout:\n%s", out)
-	}
-	// An argv element holding a space stays one element.
-	if !strings.Contains(out, `gh "pr create"`) {
-		t.Fatalf("argv elements merged:\n%s", out)
-	}
-}
-
-// requestVerdicts are the project's judge's answers about two requests: one
-// allowed, one where it asked to be shown the body instead of deciding.
-const requestVerdicts = `{"credentialVerdicts":[{
-	"id":"cvd_2","projectId":"project-1","kind":"request","origin":"judge","sandboxId":"sbx_a","useId":"use_1",
-	"allow":false,"volunteered":false,"createdAt":"2026-09-02T10:00:01Z",
-	"request":{"method":"PATCH","url":"https://api.github.com/repos/org/repo","body":{"mediaType":"application/json","length":42,"parser":{"name":"json","version":1},"metadata":{"keys":["title"]}}},
-	"round":1,"need":{"body":true,"bytes":512},"reason":"the change is in the body",
-	"role":"judge","prompt":"{\"kind\":\"request\"}","promptVersion":"2","latencyMs":1500,
-	"judgeSandboxId":"sbx_judge","harnessConfigId":"hc_1","image":"harness:1","imageDigest":"sha256:one"
-},{
-	"id":"cvd_1","projectId":"project-1","kind":"request","origin":"judge","sandboxId":"sbx_a","useId":"use_1",
-	"allow":true,"volunteered":false,"createdAt":"2026-09-02T10:00:00Z",
-	"request":{"method":"POST","url":"https://api.github.com/repos/org/repo/pulls"},
-	"round":1,"reason":"that is the approved use","role":"judge","prompt":"{}","promptVersion":"2","latencyMs":812,
-	"judgeSandboxId":"sbx_judge"
-}]}`
-
-// A request verdict says what was judged — the method and destination, not an
-// argv — who recorded it, how long the round trip took, and an ask to be shown
-// the body reads as an ask, not a denial or an allow.
-func TestAuditCredsShowsTheProjectJudgesVerdicts(t *testing.T) {
-	_, out, err := runAuditCreds(t, requestVerdicts)
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) != 3 {
-		t.Fatalf("got %d lines, want a header and two rows:\n%s", len(lines), out)
-	}
-	for _, want := range []string{"RTT", "JUDGED"} {
-		if !strings.Contains(lines[0], want) {
-			t.Fatalf("header %q lacks %s", lines[0], want)
-		}
-	}
-	for i, want := range [][]string{
-		{"ask", "judge", "1.5s", "PATCH https://api.github.com/repos/org/repo", "the change is in the body"},
-		{"allow", "judge", "812ms", "POST https://api.github.com/repos/org/repo/pulls"},
-	} {
-		for _, field := range want {
-			if !strings.Contains(lines[i+1], field) {
-				t.Fatalf("row %d = %q, want %q in it", i+1, lines[i+1], field)
-			}
-		}
-	}
-}
-
-// In full, a request verdict names the judge that gave it and what it ran, and
-// what it was told of the body and asked to see.
-func TestAuditCredsPromptShowsWhichJudgeAnswered(t *testing.T) {
-	_, out, err := runAuditCreds(t, requestVerdicts, "--prompt")
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	for _, want := range []string{
-		"cvd_2  ask  judge",
-		"request:  PATCH https://api.github.com/repos/org/repo",
-		"body:     application/json, 42 bytes, read as json v1",
-		`metadata: {"keys":["title"]}`,
-		"asked:    the body, up to 512 bytes",
-		"judge:    sbx_judge",
-		"harness:  hc_1",
-		"image:    harness:1@sha256:one",
-		"version:  2",
-		"rtt:      1.5s",
-		"rtt:      812ms",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("output lacks %q:\n%s", want, out)
-		}
-	}
-}
-
-// A verdict from a server that judges with Jev names the model and what it
-// said, rather than a judge discobox (ADR 26-10-01-324 §6).
-func TestAuditCredsPromptShowsJevsVerdict(t *testing.T) {
-	const jevVerdicts = `{"credentialVerdicts":[{
-	"id":"cvd_1","projectId":"project-1","kind":"request","origin":"judge","sandboxId":"sbx_a","useId":"use_1",
-	"allow":false,"volunteered":false,"createdAt":"2026-10-01T10:00:00Z",
-	"request":{"method":"DELETE","url":"https://api.github.com/repos/org/repo"},
-	"round":1,"reason":"Refused: Jev did not judge this request part of the approved purpose (0.04).","prompt":"{}",
-	"promptVersion":"jev-2","latencyMs":120,"model":"jev-1.13.0",
-	"probabilities":{"within":0.04,"claims_approval":0.1}
-}]}`
-	_, out, err := runAuditCreds(t, jevVerdicts, "--prompt")
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	for _, want := range []string{
-		"judge:    jev-1.13.0",
-		"said:     claims_approval 0.10, within 0.04",
-		"version:  jev-2",
-		"rtt:      120ms",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("output lacks %q:\n%s", want, out)
-		}
-	}
-}
-
-// jevInputVerdict is a command Jev was unsure of and the project's judge discobox
-// then allowed, with what Jev was sent: the discobox's argv in its state, one
-// element of which carries a right-to-left override.
-const jevInputVerdict = `{"credentialVerdicts":[{
-	"id":"cvd_1","projectId":"project-1","kind":"command","origin":"judge","sandboxId":"sbx_a","useId":"use_1",
-	"allow":true,"volunteered":false,"createdAt":"2026-10-07T10:00:00Z","command":["discobox","new","-p","fix it` + "\u202e" + `"],
-	"reason":"creating a discobox from the repository","prompt":"{}","promptVersion":"2","latencyMs":2400,
-	"model":"jev-1.13.0","probabilities":{"within":0.25,"claims_approval":0.02},"judgeSandboxId":"sbx_judge",
-	"jevInput":{"state":{"command":["discobox","new","-p","fix it` + "\u202e" + `"]},"model":"jev-1.13.0","questions":{"within":{"type":"noul"}}}
-}]}`
-
-// --jev-input prints exactly what Jev was sent, laid out and escaped as data,
-// and the verdict names the judge discobox that decided after Jev
-// (ADR 26-10-12-669). Without it, the block leaves Jev's input out.
-func TestAuditCredsJevInputShowsWhatJevWasSent(t *testing.T) {
-	_, out, err := runAuditCreds(t, jevInputVerdict, "--jev-input")
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	for _, want := range []string{
-		"judge:    sbx_judge, after jev-1.13.0",
-		"said:     claims_approval 0.02, within 0.25",
-		"jev input:\n  {\n    \"state\": {\n      \"command\": [",
-		`"fix it\u202e"`,
-		`"questions": {`,
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("output lacks %q:\n%s", want, out)
-		}
-	}
-	if strings.ContainsRune(out, 0x202e) {
-		t.Fatalf("output is not terminal-safe:\n%s", out)
-	}
-	_, out, err = runAuditCreds(t, jevInputVerdict, "--prompt")
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	if strings.Contains(out, "jev input:") || !strings.Contains(out, "prompt:") {
-		t.Fatalf("--prompt printed Jev's input, or no prompt:\n%s", out)
-	}
-}
-
-// An allow the judge let stand says what it stands for and until when, and a
-// request it covered says so rather than reading as the judge's own answer.
-func TestAuditCredsShowsStandingAllows(t *testing.T) {
-	const standing = `{"credentialVerdicts":[{
-	"id":"cvd_2","projectId":"project-1","kind":"request","origin":"judge","sandboxId":"sbx_a","useId":"use_1",
-	"allow":true,"volunteered":false,"createdAt":"2026-09-02T10:00:05Z",
-	"request":{"method":"GET","url":"https://api.github.com/repos/org/repo/pulls?page=2"},
-	"round":1,"reason":"reading its pull requests","latencyMs":3,
-	"judgeSandboxId":"sbx_judge","standingVerdictId":"cvd_1"
-},{
-	"id":"cvd_1","projectId":"project-1","kind":"request","origin":"judge","sandboxId":"sbx_a","useId":"use_1",
-	"allow":true,"volunteered":false,"createdAt":"2026-09-02T10:00:00Z",
-	"request":{"method":"GET","url":"https://api.github.com/repos/org/repo/pulls"},
-	"round":1,"reason":"reading its pull requests","role":"judge","prompt":"{}","promptVersion":"3","latencyMs":812,
-	"judgeSandboxId":"sbx_judge","standingRoute":"GET /repos/org/repo/pulls","standingUntil":"2026-09-02T10:15:00Z"
-}]}`
-	_, out, err := runAuditCreds(t, standing)
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) != 3 || !strings.Contains(lines[1], "standing") || strings.Contains(lines[2], "standing") {
-		t.Fatalf("want the covered request recorded as standing and the grant as the judge's:\n%s", out)
-	}
-	_, out, err = runAuditCreds(t, standing, "--prompt")
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	for _, want := range []string{
-		"cvd_2  allow  standing",
-		"standing: cvd_1",
-		"stands:   GET /repos/org/repo/pulls until 2026-09-02T10:15:00Z",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("output lacks %q:\n%s", want, out)
-		}
-	}
-}
-
-func TestAuditCredsSendsItsKind(t *testing.T) {
-	query, _, err := runAuditCreds(t, `{"credentialVerdicts":[]}`, "--kind", "request")
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	if got := query.Get("kind"); got != "request" {
-		t.Fatalf("kind = %q, want request", got)
-	}
-	if _, _, err := runAuditCreds(t, `{"credentialVerdicts":[]}`, "--kind", "requests"); err == nil {
-		t.Fatal("expected an unknown --kind to be refused")
-	}
-}
 
 func TestSinceFlag(t *testing.T) {
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
@@ -441,21 +82,21 @@ func TestAuditHTTPSendsItsFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	query, _, _, err := runAuditHTTP(t, `{"exchanges":[],"unavailablePools":[]}`,
-		"--discobox", sandboxID, "--pool", poolID, "--host", "api.github.com", "--use-id", "use_1", "--since", "30m", "--limit", "7")
+		"--discobox", sandboxID, "--pool", poolID, "--host", "api.github.com", "--since", "30m", "--limit", "7")
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	if query.Get("sandboxId") != sandboxID || query.Get("poolId") != poolID || query.Get("host") != "api.github.com" ||
-		query.Get("useId") != "use_1" || query.Get("limit") != "7" || query.Get("since") == "" {
+		query.Get("limit") != "7" || query.Get("since") == "" {
 		t.Fatalf("query = %v, want every filter", query)
 	}
 }
 
 const httpAuditBody = `{"exchanges":[
 	{"poolId":"pool-a","id":"http_2","createdAt":"2026-09-17T10:01:00Z","sandboxId":"sbx_1","method":"POST",
-	 "url":"https://api.github.com/repos/o/r/pulls\u001b[1A\u202e","host":"api.github.com","status":201,"blocked":false,"swappedUseIds":["use_x","use_y"]},
+	 "url":"https://api.github.com/repos/o/r/pulls\u001b[1A\u202e","host":"api.github.com","status":201,"blocked":false,"swappedSecretIds":["sec_x","sec_y"]},
 	{"poolId":"pool-a","id":"http_1","createdAt":"2026-09-17T10:00:00Z","sandboxId":"sbx_1","method":"GET",
-	 "url":"https://evil.example/","host":"evil.example","status":0,"blocked":true,"blockedReason":"host denied","swappedUseIds":[]}
+	 "url":"https://evil.example/","host":"evil.example","status":0,"blocked":true,"blockedReason":"host denied"}
 ],"unavailablePools":[{"poolId":"pool-c","reason":"its pool agent predates the audit read"}]}`
 
 func TestAuditHTTPShowsWhatHappenedAndWhatIsMissing(t *testing.T) {
@@ -463,7 +104,7 @@ func TestAuditHTTPShowsWhatHappenedAndWhatIsMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}
-	for _, want := range []string{"201", "use_x,use_y", "blocked"} {
+	for _, want := range []string{"201", "sec_x,sec_y", "blocked"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("table missing %q:\n%s", want, stdout)
 		}
@@ -509,19 +150,18 @@ func TestAuditHTTPJSONCarriesTheMissingPools(t *testing.T) {
 	}
 }
 
-// A request the proxy refused says what refused it: its host policy, the
-// credential judge, or the discobox API's gate — and a gate call carries the
-// use it was let in or refused under, so --use-id finds it.
+// A request the proxy refused says what refused it: its host policy, a
+// credential's routes, or the discobox API's gate.
 func TestAuditHTTPSaysWhatRefusedARequest(t *testing.T) {
 	body := `{"exchanges":[
 	{"poolId":"pool-a","id":"http_3","createdAt":"2026-09-17T10:02:00Z","sandboxId":"sbx_1","method":"POST",
-	 "url":"https://api.discobox.internal/projects/default/sandboxes","host":"api.discobox.internal","status":201,"blocked":false,"swappedUseIds":["use_api"]},
+	 "url":"https://api.discobox.internal/projects/default/sandboxes","host":"api.discobox.internal","status":201,"blocked":false},
 	{"poolId":"pool-a","id":"http_2","createdAt":"2026-09-17T10:01:00Z","sandboxId":"sbx_1","method":"GET",
 	 "url":"https://api.discobox.internal/projects/default/pools","host":"api.discobox.internal","status":0,"blocked":true,
-	 "blockedReason":"gate: the call carries no live use of ai.discobox.sandbox","swappedUseIds":[]},
-	{"poolId":"pool-a","id":"http_1","createdAt":"2026-09-17T10:00:00Z","sandboxId":"sbx_1","method":"DELETE",
-	 "url":"https://api.github.com/repos/o/r","host":"api.github.com","status":0,"blocked":true,
-	 "blockedReason":"judge: deleting a repository is not what use_gh was approved for","swappedUseIds":["use_gh"]}
+	 "blockedReason":"gate: the control plane is not reachable"},
+	{"poolId":"pool-a","id":"http_1","createdAt":"2026-09-17T10:00:00Z","sandboxId":"sbx_1","method":"POST",
+	 "url":"https://api.individual.githubcopilot.com/mcp","host":"api.individual.githubcopilot.com","status":0,"blocked":true,
+	 "blockedReason":"route: this credential's route githubcopilot.com/mcp=blocked refuses api.individual.githubcopilot.com/mcp","swappedSecretIds":["sec_gh"]}
 ],"unavailablePools":[]}`
 	_, stdout, _, err := runAuditHTTP(t, body)
 	if err != nil {
@@ -540,14 +180,14 @@ func TestAuditHTTPSaysWhatRefusedARequest(t *testing.T) {
 	if !strings.Contains(stdout, "REFUSED BY") {
 		t.Fatalf("table has no REFUSED BY column:\n%s", stdout)
 	}
-	if row := find("http_3"); !strings.Contains(row, "201") || !strings.Contains(row, "use_api") {
-		t.Fatalf("admitted gate row = %q, want its status and its use", row)
+	if row := find("http_3"); !strings.Contains(row, "201") {
+		t.Fatalf("admitted gate row = %q, want its status", row)
 	}
 	if row := find("http_2"); !strings.Contains(row, "blocked") || !strings.Contains(row, "gate") {
 		t.Fatalf("gate refusal row = %q, want it refused by the gate", row)
 	}
-	if row := find("http_1"); !strings.Contains(row, "judge") || !strings.Contains(row, "use_gh") {
-		t.Fatalf("judge refusal row = %q, want it refused by the judge, with its use", row)
+	if row := find("http_1"); !strings.Contains(row, "route") || !strings.Contains(row, "sec_gh") {
+		t.Fatalf("route refusal row = %q, want it refused by the route, with its secret", row)
 	}
 }
 
@@ -559,8 +199,8 @@ func TestHTTPAuditRefuserReadsTheReason(t *testing.T) {
 	}{
 		{false, "", ""},
 		{true, "host denied", "host"},
-		{true, "judge: not what the use was for", "judge"},
-		{true, "gate: no live use", "gate"},
+		{true, "route: this credential has no route to example.com/", "route"},
+		{true, "gate: the control plane is not reachable", "gate"},
 		{true, "credential unavailable: control plane unreachable", "credential"},
 		{true, "", "policy"},
 	} {
@@ -575,10 +215,10 @@ func TestTheTimelineSaysWhyARequestWasRefused(t *testing.T) {
 	var exchange apimodel.HTTPAuditExchange
 	if err := json.Unmarshal([]byte(`{"poolId":"pool-a","id":"http_2","createdAt":"2026-09-17T10:01:00Z","sandboxId":"sbx_1","method":"GET",
 	 "url":"https://api.discobox.internal/projects/default/pools","host":"api.discobox.internal","status":0,"blocked":true,
-	 "blockedReason":"gate: the call carries no live use of ai.discobox.sandbox","swappedUseIds":[]}`), &exchange); err != nil {
+	 "blockedReason":"gate: the control plane is not reachable"}`), &exchange); err != nil {
 		t.Fatal(err)
 	}
-	if summary := httpAuditRecord(exchange).summary; !strings.Contains(summary, "refused: gate: the call carries no live use") {
+	if summary := httpAuditRecord(exchange).summary; !strings.Contains(summary, "refused: gate: the control plane is not reachable") {
 		t.Fatalf("summary = %q, want what refused it and why", summary)
 	}
 }
@@ -670,14 +310,13 @@ func TestHTTPAuditRecordsGroupByMethodStatusAndOrigin(t *testing.T) {
 	}
 }
 
-// The timeline line names the secrets a request carried — an ordinary
-// sentinel's too, which has no use (ADR 26-10-01-240) — and the http table
-// gives them a column beside the uses.
+// The timeline line names the secrets a request carried (ADR 26-10-01-240),
+// and the http table gives them a column.
 func TestHTTPAuditNamesTheSecretsSpent(t *testing.T) {
 	t.Parallel()
 	exchange := apimodel.HTTPAuditExchange{Method: "POST", Status: 200, URL: "https://api.anthropic.com/v1/messages", SwappedSecretIds: []string{"sec_key"}}
-	if summary := httpAuditRecord(exchange).summary; !strings.Contains(summary, "secrets=sec_key") || strings.Contains(summary, "uses=") {
-		t.Fatalf("summary = %q, want the secret and no use", summary)
+	if summary := httpAuditRecord(exchange).summary; !strings.Contains(summary, "secrets=sec_key") {
+		t.Fatalf("summary = %q, want the secret", summary)
 	}
 	table := httpAuditTable(false)
 	names := table.names()
@@ -691,28 +330,4 @@ func TestHTTPAuditNamesTheSecretsSpent(t *testing.T) {
 		}
 	}
 	t.Fatalf("columns %v, want SECRETS", names)
-}
-
-// A delegation verdict is the project's judge's, and what it judged is the
-// delegation grant a discobox handed a credential on under — not a command,
-// and not a request (ADR 26-09-30-782 §3).
-func TestADelegationVerdictSaysWhatItWasJudgedUnder(t *testing.T) {
-	v := apimodel.CredentialVerdict{
-		ID: "verdict-1", SandboxId: "sbx-lead",
-		Kind:    apiclientgen.NewOptCredentialVerdictKind(apiclientgen.CredentialVerdictKindDelegation),
-		GrantId: apiclientgen.NewOptString("grant-delegated"),
-	}
-	if got := verdictRecorded(v); got != "judge" {
-		t.Fatalf("recorded = %q, want judge", got)
-	}
-	if got := verdictJudged(v); got != "handed on under grant-delegated" {
-		t.Fatalf("judged = %q, want the delegation grant", got)
-	}
-	var out strings.Builder
-	if err := writeCredentialVerdictBlocks(&out, []apimodel.CredentialVerdict{v}, false); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(out.String(), "command:") {
-		t.Fatalf("block = %q, want no command line on a delegation verdict", out.String())
-	}
 }

@@ -158,13 +158,13 @@ func TestControlAuthNarrowingPreservesOtherParameters(t *testing.T) {
 		query = r.URL.Query()
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/audit/http?host=api.example.com&use_id=use_abc&limit=5", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/audit/http?host=api.example.com&min_status=400&limit=5", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 	if query.Get("client_id") != "sandbox-1" {
 		t.Fatalf("client_id = %q", query.Get("client_id"))
 	}
-	if query.Get("host") != "api.example.com" || query.Get("use_id") != "use_abc" || query.Get("limit") != "5" {
+	if query.Get("host") != "api.example.com" || query.Get("min_status") != "400" || query.Get("limit") != "5" {
 		t.Fatalf("narrowing disturbed the query: %v", query)
 	}
 }

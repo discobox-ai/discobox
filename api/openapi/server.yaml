@@ -871,6 +871,9 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                discoboxApi:
+                    description: Let the new discobox call the discobox API through its pool, acting only on the discoboxes it creates (ADR 26-10-27-880 §9). A discobox creating one may set it only when it has it itself.
+                    type: boolean
                 harnessName:
                     description: Harness config to resolve at create time, by slug, name or ID
                     type: string
@@ -884,7 +887,7 @@ components:
                     description: Pool to schedule the sandbox into. Defaults to the project's default pool.
                     type: string
                 grants:
-                    description: Uses of project secrets to give the new discobox, minted as grants for it in the same transaction that creates it, so a create that cannot mint one creates nothing. Its agent takes each with discobox-access, one use at a time; nothing in the discobox can read the credential.
+                    description: Project secrets to give the new discobox, each minted as a sandbox grant with the variable it is delivered in, in the same transaction that creates it, so a create that cannot mint one creates nothing. The discobox receives a sentinel in each variable, which its pool swaps for the value on the hosts the grant covers.
                     items:
                         $ref: '#/components/schemas/SandboxGrant'
                     type: array
@@ -893,36 +896,23 @@ components:
             type: object
         SandboxGrant:
             additionalProperties: false
-            description: Uses of one credential for a new discobox, named either by a well-known ID or by a secret and a variable, never both.
+            description: One credential for a new discobox, named by a secret and the variable it is delivered in.
             properties:
-                wellKnownId:
-                    description: A well-known credential, such as com.github.api. Its secret is the project secret marked with the ID, its variable and host are the ID's, and host may only narrow it. A gate, such as ai.discobox.sandbox, is not given this way.
-                    type: string
                 secretId:
-                    description: The project secret the uses are of. Required without wellKnownId.
+                    description: The project secret given.
                     type: string
                 envVar:
-                    description: Environment variable the discobox's agent receives the credential in. Required without wellKnownId.
+                    description: Environment variable the discobox receives the credential's sentinel in.
                     type: string
                 hosts:
-                    description: Hosts the credential may be sent to (ADR 26-10-02-393). Left out, the secret's host, or the well-known credential's first; one is required. Each must sit inside the secret's binding, or the well-known credential's hosts.
+                    description: Hosts the credential may be sent to (ADR 26-10-02-393). Left out, the secret's host; one is required. Each must sit inside the secret's binding.
                     items:
                         type: string
                     type: array
-                uses:
-                    description: What the credential may be used for. Use IDs are minted here; a supplied one is ignored.
-                    items:
-                        $ref: '#/components/schemas/SecretUse'
-                    type: array
-                policy:
-                    $ref: '#/components/schemas/AccessPolicy'
-                    description: The policy the grant carries (ADR 26-10-20-782), which every grant with uses must; it is what is enforced, and its uses name the job. Its variables resolve for the sandbox being created, not the discobox creating it.
                 grantTTLSeconds:
                     description: How long the grant lives, in seconds. Defaults to the secret's grant limit, and may not exceed it.
                     format: int64
                     type: integer
-            required:
-                - uses
             type: object
         CreateSandboxProviderInstanceBody:
             additionalProperties: false
@@ -3885,11 +3875,10 @@ components:
                     description: Harness config ID
                     type: string
                 harnessMode:
-                    description: 'What this sandbox exists for: its normal run command, its interactive configure command, or judging, which the project''s judge runs as and nothing else does.'
+                    description: 'What this sandbox exists for: its normal run command, or its interactive configure command.'
                     enum:
                         - run
                         - config
-                        - judge
                     type: string
                 model:
                     description: Model the harness should use
@@ -3977,11 +3966,10 @@ components:
                     description: Harness config ID
                     type: string
                 harnessMode:
-                    description: 'What the sandbox exists for: run works in it, config runs the image-owned interactive configuration command once, and judge answers judging asks and nothing else. A project''s own judge is created and kept converged by Discobox; one created here is an ordinary discobox that happens to be in judge mode.'
+                    description: 'What the sandbox exists for: run works in it, and config runs the image-owned interactive configuration command once.'
                     enum:
                         - run
                         - config
-                        - judge
                     type: string
                 model:
                     description: Model the harness should use
@@ -4091,9 +4079,6 @@ components:
                         - rejected-after-retry
                         - accepted
                     type: string
-                useId:
-                    description: Agent credential use the refused sentinel was minted for, when it was one.
-                    type: string
             required:
                 - sandboxId
                 - sentinel
@@ -4126,20 +4111,17 @@ components:
             type: object
         SandboxCredential:
             additionalProperties: false
-            description: One agent-requested credential a sandbox may use, with the live grant's approved uses. Sentinel and format are for the pool agent alone; they never reach the sandbox.
+            description: One credential a sandbox may use, from a live grant covering it, and the variable its sentinel is delivered in.
             properties:
                 envVar:
                     description: Environment variable the value is delivered in
                     type: string
                 expiresAt:
-                    description: When the grant behind the uses lapses; empty never expires
+                    description: When the grant lapses; empty never expires
                     format: date-time
                     type: string
-                format:
-                    description: Generative format template the pool agent mints an ephemeral sentinel from, so the ephemeral value byte-mimics a real key
-                    type: string
                 grantId:
-                    description: Grant authorizing the uses
+                    description: Grant authorizing the credential
                     type: string
                 hosts:
                     description: Hosts the credential may be sent to; a destination any of them covers (ADR 26-10-02-393)
@@ -4149,34 +4131,21 @@ components:
                 name:
                     description: Credential name
                     type: string
+                purpose:
+                    description: What the grant lets the sandbox do with the credential. use delivers it in envVar; delegate lets the sandbox give it to the discoboxes it creates and delivers nothing.
+                    enum:
+                        - use
+                        - delegate
+                    type: string
                 secretId:
                     description: Secret backing the credential
                     type: string
-                sentinel:
-                    description: Stable sentinel bound to the sandbox. The pool agent translates its own ephemeral sentinels back to this one before resolving; it is never injected into the sandbox.
-                    type: string
-                uses:
-                    description: Approved uses
-                    items:
-                        $ref: '#/components/schemas/SecretUse'
-                    nullable: true
-                    type: array
-                policy:
-                    $ref: '#/components/schemas/AccessPolicy'
-                    description: The policy the grant carries, with its variables as resolved for this sandbox.
-                secretRoutes:
-                    description: Where the secret may be sent (ADR 26-10-02-924). A request an activation is sent in must fall on one of them, as well as within the activation's approved use.
-                    items:
-                        $ref: '#/components/schemas/SecretRoute'
-                    nullable: true
-                    type: array
             required:
                 - name
                 - envVar
                 - hosts
                 - secretId
                 - grantId
-                - sentinel
             type: object
         ListSandboxCredentialsResponse:
             additionalProperties: false
@@ -4205,7 +4174,7 @@ components:
                     readOnly: true
                     type: string
                 envVar:
-                    description: Environment variable the credential is wanted in
+                    description: Environment variable the credential is wanted in. Required to use it; a request to delegate it names none, since a delegation delivers nothing to the asking sandbox.
                     type: string
                 grantTTLSeconds:
                     description: How long the agent asks the grant to live, in seconds, up to thirty days. A suggestion the approver starts from, not a term. 0 or absent asks for nothing in particular; forever cannot be asked for, and neither can a span longer than the ceiling.
@@ -4214,7 +4183,7 @@ components:
                     minimum: 0
                     type: integer
                 hosts:
-                    description: Destination hosts the credential will be sent to (ADR 26-10-02-393). At least one is required, because approving this request may not mint a host-unscoped grant; a well-known credential's ID supplies its first when none is named.
+                    description: Destination hosts the credential will be sent to (ADR 26-10-02-393). At least one is required, because approving this request may not mint a host-unscoped grant.
                     items:
                         type: string
                     type: array
@@ -4223,9 +4192,6 @@ components:
                     enum:
                         - use
                         - delegate
-                    type: string
-                id:
-                    description: The well-known credential asked for, such as com.github.api. The name, variable, and host must then be the ones the ID names.
                     type: string
                 justification:
                     description: Why the agent says it needs the credential
@@ -4236,19 +4202,10 @@ components:
                 sandboxId:
                     description: Sandbox the agent is running in
                     type: string
-                uses:
-                    description: Uses the agent asks for
-                    items:
-                        $ref: '#/components/schemas/SecretUse'
-                    type: array
-                policy:
-                    $ref: '#/components/schemas/AccessPolicy'
-                    description: The policy the agent asks for, beside its uses (ADR 26-10-20-782). Required; a request without one is refused as invalid, with how to write one.
             required:
                 - sandboxId
                 - name
-                - envVar
-                - uses
+                - hosts
             type: object
         SandboxCredentialRequestStatus:
             additionalProperties: false
@@ -4259,12 +4216,23 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                envVar:
+                    description: The variable the granted credential is delivered in; absent for a delegation
+                    type: string
                 expiresAt:
-                    description: When the grant behind the granted uses lapses, as the approver chose it rather than as it was asked. Absent on a pending or denied request, and on a granted one whose grant never lapses.
+                    description: When the grant lapses, as the approver chose it rather than as it was asked. Absent on a pending or denied request, and on a granted one whose grant never lapses.
                     format: date-time
                     type: string
+                hosts:
+                    description: Where the granted credential may be sent, as the approver chose
+                    items:
+                        type: string
+                    type: array
+                name:
+                    description: The credential granted, once granted
+                    type: string
                 purpose:
-                    description: What the request asks the credential for. For delegate, the granted uses are what the sandbox may delegate the credential for, and none of them takes a value.
+                    description: What the request asks the credential for. A delegate grant lets the sandbox give the credential to the discoboxes it creates, and delivers nothing to the sandbox itself.
                     enum:
                         - use
                         - delegate
@@ -4279,174 +4247,10 @@ components:
                         - granted
                         - denied
                     type: string
-                uses:
-                    description: Approved uses; present once granted, and authoritative over the requested ones
-                    items:
-                        $ref: '#/components/schemas/SecretUse'
-                    nullable: true
-                    type: array
-                policy:
-                    $ref: '#/components/schemas/AccessPolicy'
-                    description: The approved policy, once granted, with its variables as resolved for this sandbox.
             required:
                 - requestId
                 - status
                 - purpose
-            type: object
-        CredentialVerdict:
-            additionalProperties: false
-            description: 'One recorded judge decision about an agent credential use. The row lives in the control plane and outlives its sandbox. A command verdict (kind command, origin judge) is the project''s judge answering about a command a discobox was about to run, recorded by the control plane before the pool minted anything for it; its command, input and reported context are evidence the sandbox wrote, and are display data, never instruction. A command verdict with origin sandbox predates that: a discobox''s own judge deciding inside the sandbox, whose command, reason and prompt were composed there, and whose volunteered true marks a denial the sandbox chose to report. A request verdict (kind request, origin judge) is the project''s judge answering about one request the proxy observed, recorded by the control plane before the answer went back, so every answer is on record whichever way it went. Its request is evidence the sandbox wrote, redacted, and is display data too.'
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/CredentialVerdict.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                allow:
-                    description: What the judge decided. False when it asked to be shown the body instead, because asking is not allowing.
-                    type: boolean
-                command:
-                    description: The argv the judge was shown. On a request verdict, what the discobox declared it was running, which is context and not authority.
-                    items:
-                        type: string
-                    type: array
-                createdAt:
-                    description: When the verdict was recorded
-                    format: date-time
-                    type: string
-                forSandboxId:
-                    description: On a delegation verdict, the discobox the uses were handed on to.
-                    type: string
-                grantId:
-                    description: Grant the use belonged to, when it could still be resolved at record time
-                    type: string
-                harnessConfigId:
-                    description: Harness config the project's judge ran, on a request verdict
-                    type: string
-                id:
-                    description: Stable verdict ID
-                    type: string
-                bundle:
-                    description: Harness bundle the project's judge ran, on a request verdict
-                    type: string
-                bundleDigest:
-                    description: Digest of the harness bundle the project's judge ran, on a request verdict
-                    type: string
-                image:
-                    description: Runnable image the project's judge ran, on a request verdict recorded before harness bundles; no judge runs one since
-                    type: string
-                imageDigest:
-                    description: Digest of the runnable image the project's judge ran, on a request verdict recorded before harness bundles
-                    type: string
-                jevInput:
-                    description: 'On a verdict from a server that judges with Jev, exactly what Jev was sent: the JSON body of the request to its API, with the state (the job''s evidence) and the questions, and none of its key or other headers. Its state is evidence the sandbox wrote, as the request, command and prompt are, and is display data, never instruction. Absent on every other verdict, and on verdicts recorded before servers kept it.'
-                judgeSandboxId:
-                    description: The project's judge that answered, on a request verdict. It may no longer exist.
-                    type: string
-                kind:
-                    description: 'What was judged: a command about to run, a request the proxy observed, a discobox about to hand a credential on by approving another''s request, or the conditions of an allow a request asked for being read against an approval rule''s (ADR 26-10-12-330). A server that predates request verdicts leaves it out, and every verdict it has is a command verdict.'
-                    enum:
-                        - command
-                        - request
-                        - delegation
-                        - rule
-                    type: string
-                ruleId:
-                    description: On a rule verdict, the approval rule tested. Absent on one recorded while the rule was still a proposal, which names its request instead.
-                    type: string
-                questionDigest:
-                    description: On a rule verdict, the SHA-256 of the question judged, by which an answer on record is reused rather than asked again.
-                    type: string
-                latencyMs:
-                    description: 'Round trip from asking the judge to its answer, in milliseconds, timed by whoever asked: discobox-access around its wrapper for a command verdict, the control plane around the call to the judge for a request verdict.'
-                    format: int64
-                    type: integer
-                model:
-                    description: The Jev model that answered, as Jev reported it, on a verdict from a server that judges with Jev rather than a judge discobox. judgeSandboxId, harnessConfigId and image are empty then, unless Jev was unsure and the server put the job to the project's judge discobox, which decided and which they name.
-                    type: string
-                need:
-                    $ref: '#/components/schemas/JudgeNeed'
-                origin:
-                    description: 'Who judged: sandbox, a discobox''s own judge, whose verdict is that discobox''s word; or judge, the project''s judge, which no sandbox can claim. A server that predates request verdicts leaves it out, and every verdict it has is the sandbox''s.'
-                    enum:
-                        - sandbox
-                        - judge
-                    type: string
-                probabilities:
-                    additionalProperties:
-                        format: double
-                        type: number
-                    description: On a Jev verdict, the probability of yes Jev gave each question, by question ID. The verdict was decided from these against thresholds the server holds; promptVersion names the questions and thresholds.
-                    type: object
-                projectId:
-                    description: Project ID
-                    type: string
-                prompt:
-                    description: The exact prompt the judge was given. On a command verdict it includes the facts block; on a request verdict it is the job as JSON, put with the system prompt promptVersion names.
-                    type: string
-                promptVersion:
-                    description: The version of the system prompt the project's judge was given, on a request verdict
-                    type: string
-                reason:
-                    description: The judge's own sentence
-                    type: string
-                request:
-                    $ref: '#/components/schemas/JudgeRequestEvidence'
-                role:
-                    description: The role discobox-prompt was asked for (e.g. judge), never a vendor model id
-                    type: string
-                round:
-                    description: Which ask about the request this answered, from 1, on a request verdict
-                    format: int64
-                    type: integer
-                sandboxId:
-                    description: Sandbox the command ran in, or the request came from. It may no longer exist.
-                    type: string
-                secretRequestId:
-                    description: On a delegation verdict, the secret request the discobox was approving; the request names the grant the approval minted.
-                    type: string
-                standingRoute:
-                    description: The route this allow was let stand for, on a request verdict whose judge asked for one and whose route the control plane admitted. Requests matching it from the same discobox, under the same use, to the same host, were allowed until standingUntil without asking the judge.
-                    type: string
-                standingUntil:
-                    description: When the allow standing for standingRoute stops covering requests
-                    format: date-time
-                    type: string
-                standingVerdictId:
-                    description: The verdict whose standing allow decided this request, which no model read. Its judge, reason and prompt version are that verdict's.
-                    type: string
-                useId:
-                    description: Approved use that was judged against. Joins to the proxy audit trail's swapped use IDs.
-                    type: string
-                volunteered:
-                    description: True when the sandbox reported this after a denial the issuing call never saw
-                    type: boolean
-            required:
-                - id
-                - projectId
-                - sandboxId
-                - useId
-                - allow
-                - volunteered
-                - createdAt
-            type: object
-        ListCredentialVerdictsBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/ListCredentialVerdictsBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                credentialVerdicts:
-                    description: Matching verdicts, newest first
-                    items:
-                        $ref: '#/components/schemas/CredentialVerdict'
-                    type: array
-            required:
-                - credentialVerdicts
             type: object
         HTTPAuditExchange:
             additionalProperties: false
@@ -4459,10 +4263,10 @@ components:
                     readOnly: true
                     type: string
                 blocked:
-                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, at the discobox API's gate, or because the control plane could not resolve a credential it carries. blockedReason says which, and why.
+                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by a credential's routes, at the discobox API's gate, or because the control plane could not resolve a credential it carries. blockedReason says which, and why.
                     type: boolean
                 blockedReason:
-                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that could not set its headers -- then the reason.
+                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "route:" for a credential whose routes do not allow the request, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that could not set its headers -- then the reason.
                     type: string
                 cacheHit:
                     description: True when the response came from the pool's response cache
@@ -4507,11 +4311,6 @@ components:
                     items:
                         type: string
                     type: array
-                swappedUseIds:
-                    description: Approved credential uses whose sentinels were swapped into this request. Joins to credential verdicts by useId.
-                    items:
-                        type: string
-                    type: array
                 upgrade:
                     description: True for an upgraded (e.g. WebSocket) connection
                     type: boolean
@@ -4531,7 +4330,6 @@ components:
                 - host
                 - status
                 - blocked
-                - swappedUseIds
             type: object
         HTTPAuditExchangeDetail:
             additionalProperties: false
@@ -4558,10 +4356,10 @@ components:
                     description: Where the gateway the request fell under sent it (ADR 26-10-16-470); absent when none did
                     type: string
                 blocked:
-                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by the credential judge, at the discobox API's gate, or because the control plane could not resolve a credential it carries. blockedReason says which, and why.
+                    description: True when the proxy refused the request itself and never sent it -- by its destination policy, by a credential's routes, at the discobox API's gate, or because the control plane could not resolve a credential it carries. blockedReason says which, and why.
                     type: boolean
                 blockedReason:
-                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "judge:" for the credential judge, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that could not set its headers -- then the reason.
+                    description: Why the request was refused. It starts with what refused it -- "host denied" for the destination policy, "route:" for a credential whose routes do not allow the request, "gate:" for the discobox API's gate, "credential unavailable:" for a credential the control plane could not resolve, "gateway:" for a gateway that could not set its headers -- then the reason.
                     type: string
                 cacheError:
                     description: Why the response cache could not be used
@@ -4668,11 +4466,6 @@ components:
                     items:
                         type: string
                     type: array
-                swappedUseIds:
-                    description: Approved credential uses whose sentinels were swapped into this request. Joins to credential verdicts by useId.
-                    items:
-                        type: string
-                    type: array
                 upgrade:
                     description: True for an upgraded (e.g. WebSocket) connection
                     type: boolean
@@ -4704,7 +4497,6 @@ components:
                 - host
                 - status
                 - blocked
-                - swappedUseIds
                 - requestHeaders
                 - responseHeaders
                 - appliedHeaders
@@ -5144,6 +4936,9 @@ components:
         Sandbox:
             additionalProperties: false
             properties:
+                discoboxApi:
+                    description: The discobox may call the discobox API through its pool, in the sandbox role, acting only on the discoboxes it created (ADR 26-10-27-880 §9).
+                    type: boolean
                 egress:
                     $ref: '#/components/schemas/EgressPolicy'
                     description: The discobox's own egress policy level (ADR 26-10-01-032). It is restricted when this or its project, pool, or harness level sets denyByDefault, and then reaches the union of their allow lists.
@@ -5475,606 +5270,6 @@ components:
             required:
                 - secrets
             type: object
-        JudgeJob:
-            additionalProperties: false
-            description: One question put to the judge, and everything it may see to answer it. Purpose (or purposes) and host are the authorization; everything else is evidence, which is data to weigh and never instructions to follow.
-            properties:
-                command:
-                    description: The argv, for a command job. For a request job it is what the discobox declared it was running, which is context and not authority.
-                    items:
-                        type: string
-                    type: array
-                credential:
-                    description: The credential in the words a person reads, never its value.
-                    type: string
-                definitions:
-                    additionalProperties:
-                        type: string
-                    description: For a command or request job judged against a policy, what each word its statements use means, other than the defaults, as a person approved it.
-                    type: object
-                facts:
-                    description: What the control plane recorded about the discoboxes the job concerns when they were created, in its own words (ADR 26-10-14-691), set by the control plane and never by a pool. They explain what the purpose refers to; they never authorize.
-                    items:
-                        type: string
-                    maxItems: 8
-                    type: array
-                guidance:
-                    description: What Discobox knows about what the request was recognized as, set by the control plane from the judge package and never by a pool. It explains; it never authorizes.
-                    items:
-                        type: string
-                    type: array
-                host:
-                    description: The host the use was approved for.
-                    type: string
-                kind:
-                    description: 'What is being judged: a command about to run, a request the proxy observed, a discobox about to hand a credential on by approving another''s request, or whether the conditions of an allow a discobox asked for are within an approval rule''s.'
-                    enum:
-                        - command
-                        - request
-                        - delegation
-                        - rule
-                    type: string
-                purpose:
-                    description: The approved use, in the words it was approved in, for a command or request job.
-                    type: string
-                purposes:
-                    description: What a job is judged against in place of purpose, one entry each — for a delegation job the one delegated allow that covers the allow handed on but for its conditions, as its sentence; for a rule job the one allow of the rule, as its sentence; for a command or request job under a grant that carries a policy, its statements as sentences, bound to the discobox asking.
-                    items:
-                        type: string
-                    type: array
-                reported:
-                    $ref: '#/components/schemas/JudgeReported'
-                request:
-                    $ref: '#/components/schemas/JudgeRequestEvidence'
-                round:
-                    description: Which ask this is, from 1. A round after the first exists because the judge asked to be shown the body.
-                    format: int64
-                    type: integer
-                stdin:
-                    $ref: '#/components/schemas/JudgeInput'
-                uses:
-                    description: For a delegation job, the one allow the discobox is about to hand on, and for a rule job the one allow it asked for, as its sentence, judged against purposes.
-                    items:
-                        type: string
-                    type: array
-            required:
-                - kind
-                - host
-                - round
-            type: object
-            x-sandbox-agent-component: true
-        PoolJudgeAsk:
-            additionalProperties: false
-            description: 'One ask from a pool: which discobox is spending which approved use, and the request its proxy observed. A pool does not say what the use authorizes. The control plane reads the sentence, the credential''s name and the host from the live grant the use belongs to, so nothing a pool or a sandbox sends can widen what its own request is judged against.'
-            properties:
-                command:
-                    description: 'What the discobox declared it was running. It is context and not authority: a declaration cannot override the request observed.'
-                    items:
-                        type: string
-                    type: array
-                request:
-                    $ref: '#/components/schemas/JudgeRequestEvidence'
-                round:
-                    description: Which ask this is, from 1. A round after the first exists because the judge asked to be shown the body.
-                    format: int64
-                    type: integer
-                sandboxId:
-                    description: The discobox whose request this is. It must belong to the asking pool.
-                    type: string
-                timeoutMillis:
-                    description: How long the pool will wait for this answer, in milliseconds. Every round of one request shares one deadline, so a later round has less than the first; the control plane bounds the ask by this as well as by its own limit, and answers before it runs out rather than being cut off. Left out, only the control plane's own limit applies.
-                    format: int64
-                    type: integer
-                useId:
-                    description: The approved use the credential is being spent under.
-                    type: string
-            required:
-                - sandboxId
-                - useId
-                - round
-                - request
-            type: object
-        PoolCommandAsk:
-            additionalProperties: false
-            description: 'One command a pool''s discobox is about to run under an approved use, asked about before the pool mints anything for it (ADR 26-09-22-838 §3). A pool does not say what the use authorizes: the control plane reads the sentence, the credential''s name and its host from the live grant. Everything here is the discobox''s, and evidence.'
-            properties:
-                command:
-                    description: The argv the discobox is about to run.
-                    items:
-                        type: string
-                    type: array
-                reported:
-                    $ref: '#/components/schemas/JudgeReported'
-                sandboxId:
-                    description: The discobox about to run it. It must belong to the asking pool.
-                    type: string
-                stdin:
-                    $ref: '#/components/schemas/JudgeInput'
-                useId:
-                    description: The approved use the command would spend the credential under.
-                    type: string
-            required:
-                - sandboxId
-                - useId
-                - command
-            type: object
-        JudgeProposalJob:
-            additionalProperties: false
-            description: What the policy of an approval rule is proposed from (ADR 26-10-12-330, ADR 26-10-20-782). The policy a discobox asked for, as its statements' sentences and the definitions of their words, which are data. The system prompt, the schema and the tools restriction are the judge runtime's own.
-            properties:
-                credential:
-                    description: The credential asked for, in the words a person reads, never its value.
-                    type: string
-                definitions:
-                    additionalProperties:
-                        type: string
-                    description: What each word of the statements that is not a default means, as the request defined it.
-                    type: object
-                hosts:
-                    description: The hosts the request asked to send the credential to.
-                    items:
-                        type: string
-                    type: array
-                statements:
-                    description: The statements the request asked for, each as its sentence, verbatim.
-                    items:
-                        type: string
-                    type: array
-            required:
-                - statements
-            type: object
-        JudgeProposal:
-            additionalProperties: false
-            description: The statements a model wrote for an approval rule from the policy a request asked for, as the same work on any target of its kind, each as its sentence. They authorize nothing; the server parses and checks them, and a person reads and edits them, before they become a rule.
-            properties:
-                statementsAnyTarget:
-                    description: The same work on any target of its kind, one statement's sentence each.
-                    items:
-                        type: string
-                    type: array
-            required:
-                - statementsAnyTarget
-            type: object
-        JudgeInput:
-            additionalProperties: false
-            description: What a command will read on standard input, as much of it as the discobox showed (ADR 26-09-27-905).
-            properties:
-                content:
-                    description: The input shown, which is text. Empty when none of it could be shown, and missing then says why.
-                    type: string
-                missing:
-                    description: Why content is not the whole input, in a sentence for the judge.
-                    type: string
-            required:
-                - content
-            type: object
-            x-sandbox-agent-component: true
-        JudgeReported:
-            additionalProperties: false
-            description: What a discobox said about where a command runs (ADR 0090). Every field is its claim, never a fact the trusted side established.
-            properties:
-                refCommit:
-                    description: The commit a git ref the command names resolves to.
-                    type: string
-                refSubject:
-                    description: That commit's subject line, the agent's own words about its work.
-                    type: string
-                repositoryRoot:
-                    description: The root of the git checkout the command runs in.
-                    type: string
-                workingDirectory:
-                    description: The directory the command runs in.
-                    type: string
-            type: object
-            x-sandbox-agent-component: true
-        JudgeRecognition:
-            additionalProperties: false
-            description: What trusted code recognized a request, or its body, as, and the version of that code (ADR 26-09-26-240).
-            properties:
-                name:
-                    type: string
-                version:
-                    format: int64
-                    type: integer
-            required:
-                - name
-                - version
-            type: object
-            x-sandbox-agent-component: true
-        JudgeRequestEvidence:
-            additionalProperties: false
-            description: A request as the proxy saw it, before any credential was substituted into it and with every credential-bearing value redacted.
-            properties:
-                body:
-                    $ref: '#/components/schemas/JudgeRequestBody'
-                endpoint:
-                    $ref: '#/components/schemas/JudgeRecognition'
-                headers:
-                    additionalProperties:
-                        items:
-                            type: string
-                        type: array
-                    description: The headers worth weighing, redacted.
-                    type: object
-                method:
-                    type: string
-                protocol:
-                    $ref: '#/components/schemas/JudgeRecognition'
-                url:
-                    description: The destination authority and port, path, and query.
-                    type: string
-            required:
-                - method
-                - url
-            type: object
-            x-sandbox-agent-component: true
-        JudgeRequestBody:
-            additionalProperties: false
-            description: What the judge is told about a request's body, always in this one shape (ADR 26-09-26-240). The first ask describes it, with what a parser found in it when one recognized it; the judge asks to be shown the content when the operation lives in there.
-            properties:
-                content:
-                    description: The body, redacted and rendered the way its parser renders it. Absent until the judge asks to be shown the body; then as much of it as the budget allowed, which may be none of it.
-                    type: string
-                length:
-                    description: How many bytes the body has, as far as that is known.
-                    format: int64
-                    type: integer
-                mediaType:
-                    type: string
-                metadata:
-                    additionalProperties: true
-                    description: What the parser found worth knowing, redacted, from the first ask on.
-                    type: object
-                missing:
-                    description: Why content is not the whole body, in a sentence for the judge. An answer to having been asked, never part of the first description.
-                    type: string
-                parseError:
-                    description: Why the parser named could not read a body that claims to be what it reads.
-                    type: string
-                parser:
-                    $ref: '#/components/schemas/JudgeRecognition'
-            type: object
-            x-sandbox-agent-component: true
-        JudgeAnswer:
-            additionalProperties: false
-            description: What the judge answered about one job. It either decides — allow, or not — or asks to be shown one more thing. Asking is not allowing.
-            properties:
-                allow:
-                    description: The decision, meaningful only when need is absent.
-                    type: boolean
-                need:
-                    $ref: '#/components/schemas/JudgeNeed'
-                reason:
-                    description: Why, always said. It is what the discobox is told when its request is refused.
-                    type: string
-                standing:
-                    $ref: '#/components/schemas/JudgeStanding'
-            required:
-                - reason
-            type: object
-            x-sandbox-agent-component: true
-        JudgeNeed:
-            additionalProperties: false
-            description: The judge asking to be shown a request's body, with a budget it may name and Discobox caps. It names no form; the body is always shown in one shape (ADR 26-09-26-240).
-            properties:
-                body:
-                    description: Always true in an ask; it is what the ask is for.
-                    type: boolean
-                bytes:
-                    format: int64
-                    type: integer
-            required:
-                - body
-            type: object
-            x-sandbox-agent-component: true
-        JudgeStanding:
-            additionalProperties: false
-            description: An allow the judge asked to let stand, so requests matching its route are not asked about again (ADR 26-09-25-428). Only ever beside an allow; the control plane decides whether it stands, for the same discobox, use and host, and caps how long.
-            properties:
-                route:
-                    description: One method, a space, and an absolute path, in net/http pattern syntax. {name} matches one segment and a final {name...} the rest of the path.
-                    type: string
-                seconds:
-                    description: How long the judge asked for it to stand, in seconds.
-                    format: int64
-                    type: integer
-            required:
-                - route
-                - seconds
-            type: object
-            x-sandbox-agent-component: true
-        ApproveWithRule:
-            additionalProperties: false
-            description: Answers a request with "auto approve" (ADR 26-10-12-330). An approval rule is made from the request and the request is approved under it, in one write. The rule's credential, hosts and purpose are the request's, copied by the server and never taken from here. Which discoboxes it is for is a list of repositories, or every discobox in the project, which is said and never defaulted. Its policy is what a person chose or wrote, and is held to covering the request's before anything is made -- by code, and by the judge for conditions code cannot compare -- so a rule that would not cover this request is refused. Only a person approves this way.
-            properties:
-                expiresAt:
-                    description: When the rule stops approving. Left out, it does not lapse.
-                    format: date-time
-                    type: string
-                maxGrantTTLSeconds:
-                    description: Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit. Left out, the lifetime this approval grants.
-                    format: int64
-                    type: integer
-                everyDiscobox:
-                    description: True makes the rule for every discobox in the project, including ones that do not exist yet and ones a discobox creates. It is never the default, and cannot be said together with repositories.
-                    type: boolean
-                repositories:
-                    description: The repositories the rule is for. It answers a discobox whose primary source is one of them, compared exactly by the server. Each is a URL, git's scp-like form, or host/path such as github.com/org/repo, and is stored as host/path. Left out, the repository of the discobox that filed the request; one with no repository (a local source with no remote) is answered only by a rule for every discobox, which everyDiscobox says.
-                    items:
-                        type: string
-                    type: array
-                policy:
-                    $ref: '#/components/schemas/AccessPolicy'
-                    description: What the rule approves, as a policy a request's policy must fall within. Its variables bind to whichever discobox asks. Left out, the request's policy as asked. Any resolved values sent are dropped.
-            type: object
-        ApprovalRule:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/ApprovalRule.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                createdAt:
-                    description: Creation timestamp
-                    format: date-time
-                    type: string
-                createdBy:
-                    description: Principal ID of the person who made the rule
-                    type: string
-                enabled:
-                    description: Whether the rule approves anything. A disabled rule mints nothing and revokes nothing.
-                    type: boolean
-                expiresAt:
-                    description: When the rule stops approving; empty never
-                    format: date-time
-                    type: string
-                hosts:
-                    description: Hosts a grant minted under the rule may name. A request is covered only when every host it asks for is within them.
-                    items:
-                        type: string
-                    type: array
-                id:
-                    description: Stable approval rule ID
-                    type: string
-                maxGrantTTLSeconds:
-                    description: Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit
-                    format: int64
-                    type: integer
-                projectId:
-                    description: Project ID
-                    type: string
-                purpose:
-                    description: What the rule approves a credential for -- to use it, or to delegate it to other discoboxes. One or the other, as a grant has one.
-                    enum:
-                        - use
-                        - delegate
-                    type: string
-                repositories:
-                    description: The repositories the rule is for, each as host/path such as github.com/org/repo. The rule answers a discobox whose primary source is one of them, compared exactly by the server; a discobox's other sources never count. Absent on a rule for every discobox in the project, including ones that do not exist yet, which is a rule somebody made by saying so.
-                    items:
-                        type: string
-                    type: array
-                secretId:
-                    description: The project secret the rule approves, when it names one
-                    type: string
-                updatedAt:
-                    description: Last update timestamp
-                    format: date-time
-                    type: string
-                policy:
-                    $ref: '#/components/schemas/AccessPolicy'
-                    description: What may be approved. A request is covered when every allow of its policy falls within an allow of this one and it carries every deny of this one. Its variables bind to the discobox that asked; it carries no resolved values.
-                wellKnownId:
-                    description: The well-known credential the rule approves, when it names one by ID
-                    type: string
-            required:
-                - id
-                - projectId
-                - hosts
-                - purpose
-                - policy
-                - maxGrantTTLSeconds
-                - enabled
-                - createdAt
-                - updatedAt
-            type: object
-        ListApprovalRulesBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/ListApprovalRulesBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                approvalRules:
-                    items:
-                        $ref: '#/components/schemas/ApprovalRule'
-                    type: array
-            required:
-                - approvalRules
-            type: object
-        CreateApprovalRuleBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/CreateApprovalRuleBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                enabled:
-                    description: Whether the rule approves anything. Left out, it does.
-                    type: boolean
-                expiresAt:
-                    description: When the rule stops approving. Left out, it does not lapse.
-                    format: date-time
-                    type: string
-                hosts:
-                    description: Hosts a grant minted under the rule may name. Left out, the well-known credential's own hosts, or the host the secret is bound to. A rule always names at least one concrete host.
-                    items:
-                        type: string
-                    type: array
-                maxGrantTTLSeconds:
-                    description: Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit. Left out, an hour.
-                    format: int64
-                    type: integer
-                purpose:
-                    description: What the rule approves a credential for. Left out, to use it.
-                    enum:
-                        - use
-                        - delegate
-                    type: string
-                everyDiscobox:
-                    description: True makes the rule for every discobox in the project, including ones that do not exist yet and ones a discobox creates. It is never the default. A rule says which discoboxes it is for -- this, or repositories, and never both.
-                    type: boolean
-                repositories:
-                    description: The repositories the rule is for. Each is a URL, git's scp-like form, or host/path such as github.com/org/repo, and is stored as host/path; a bare org/repo names no host and is refused. A rule names at least one, or says everyDiscobox. Naming none and saying nothing is refused, never read as every discobox.
-                    items:
-                        type: string
-                    type: array
-                secretId:
-                    description: The project secret the rule approves. A rule names one credential -- this or wellKnownId, not both.
-                    type: string
-                policy:
-                    $ref: '#/components/schemas/AccessPolicy'
-                    description: What may be approved, as a policy with at least one allow. Its variables bind to whichever discobox asks. Any resolved values sent are dropped.
-                wellKnownId:
-                    description: The well-known credential the rule approves, by its ID
-                    type: string
-            required:
-                - policy
-            type: object
-        UpdateApprovalRuleBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/UpdateApprovalRuleBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                enabled:
-                    description: Whether the rule approves anything. Disabling a rule mints nothing more and revokes nothing.
-                    type: boolean
-                expiresAt:
-                    description: When the rule stops approving
-                    format: date-time
-                    type: string
-                hosts:
-                    description: Hosts a grant minted under the rule may name
-                    items:
-                        type: string
-                    type: array
-                maxGrantTTLSeconds:
-                    description: Longest a grant minted under the rule may live, in seconds; 0 leaves it to the secret's own limit
-                    format: int64
-                    type: integer
-                everyDiscobox:
-                    description: True removes the rule's repositories, making it a rule for every discobox in the project, including ones that do not exist yet. It cannot be said together with repositories.
-                    type: boolean
-                neverExpires:
-                    description: True clears the rule's expiry, so it does not lapse
-                    type: boolean
-                repositories:
-                    description: Replaces the repositories the rule is for with these, at least one. An empty list is refused -- a rule for every discobox is said with everyDiscobox, never by naming nothing. Left out, they stay as they are. An edited rule is tested afresh against what is pending.
-                    items:
-                        type: string
-                    type: array
-                policy:
-                    $ref: '#/components/schemas/AccessPolicy'
-                    description: Replaces what may be approved. An edited rule is tested afresh against what is pending.
-            type: object
-        RuleTest:
-            additionalProperties: false
-            description: What came of testing one approval rule against one request (ADR 26-10-12-330). A rule approves or says nothing, so a rule that does not cover a request leaves it for a person, and this says why.
-            properties:
-                covered:
-                    description: Whether the rule covers the request
-                    type: boolean
-                pending:
-                    description: True while a judge has still to be asked about the rule
-                    type: boolean
-                reason:
-                    description: Why the rule does not cover the request, or that it does
-                    type: string
-                ruleId:
-                    description: The rule tested
-                    type: string
-                stage:
-                    description: 'The stage that decided: facts the server checked, the rule''s repositories among them, or its content -- its policy against the request''s, compared by code, with the judge reading conditions code cannot compare'
-                    enum:
-                        - facts
-                        - content
-                    type: string
-            required:
-                - ruleId
-                - covered
-            type: object
-        RulePolicyProposal:
-            additionalProperties: false
-            description: The policy the project's judge wrote for an approval rule from the policy a request asked for -- the same work on any target of its kind -- already held to covering this request, as the rule would later be. A person reads and may edit it before it becomes a rule; edited, it is held to covering the request again on the approve.
-            properties:
-                covers:
-                    description: Whether the request's policy falls within this one. False when it was not compared.
-                    type: boolean
-                policy:
-                    $ref: '#/components/schemas/AccessPolicy'
-                    description: The policy written. Absent when what was written is not a policy a rule may have, and refused says why.
-                reason:
-                    description: Why it does or does not cover the request, as code or the judge found. Absent when it was not compared.
-                    type: string
-                refused:
-                    description: Why what was written could not be a rule's policy -- a statement that does not parse, a word with no definition -- so it was not compared. Absent when it was.
-                    type: string
-                statements:
-                    description: The statements as written, each its sentence, when they were refused.
-                    items:
-                        type: string
-                    type: array
-            required:
-                - covers
-            type: object
-        RuleProposalsBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/RuleProposalsBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                credential:
-                    description: The credential a rule made from this request would approve, copied from the request
-                    type: string
-                hosts:
-                    description: The hosts a rule made from this request would name, copied from the request
-                    items:
-                        type: string
-                    type: array
-                note:
-                    description: Why there is no policy written, when no model could write one
-                    type: string
-                purpose:
-                    description: What a rule made from this request would approve the credential for, copied from the request
-                    enum:
-                        - use
-                        - delegate
-                    type: string
-                repository:
-                    description: The repository of the discobox that filed the request, as host/path, which a rule made from this request may be for. Absent when it has none (a local source with no remote), and then only a rule for every discobox answers it.
-                    type: string
-                wellKnownId:
-                    description: The well-known credential the request asked for by ID, when it named one. A rule made from this proposal is for that ID, and is answered with the secret marked for it; the policy was held to the request as a rule for it.
-                    type: string
-                policy:
-                    $ref: '#/components/schemas/RulePolicyProposal'
-            required:
-                - hosts
-                - purpose
-            type: object
         ApproveSecretRequestBody:
             additionalProperties: false
             properties:
@@ -6093,8 +5288,6 @@ components:
                     items:
                         type: string
                     type: array
-                rule:
-                    $ref: '#/components/schemas/ApproveWithRule'
                 scope:
                     description: How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests, otherwise project.
                     enum:
@@ -6106,21 +5299,12 @@ components:
                     description: Rebinds the answering secret to this host as part of the approval; empty releases its binding. Applied only if the approval goes through, in the same write, so a refused approval leaves the secret as it was. Refused for a gate.
                     type: string
                 secretId:
-                    description: Secret ID selected by the approver. A person must name one unless the request names a well-known credential whose secret is already marked; naming one for it the first time marks it as the one that answers every later request for that ID. A discobox approver answers with the secret of a delegation grant it holds, and names one, by its full ID, only to choose among the secrets it was delegated.
+                    description: Secret ID selected by the approver. A person must name one. A discobox approver answers with the secret of a delegation grant it holds, and names one, by its full ID, only to choose among the secrets it was delegated.
                     type: string
                 secretMaxGrantTTLSeconds:
                     description: Sets the answering secret's grant limit, in seconds, as part of the approval; 0 allows grants that never expire. Applied only if the approval goes through, in the same write.
                     format: int64
                     type: integer
-                uses:
-                    description: Approved uses for a protocol-originated request, replacing the ones the agent asked for. Omit to approve the requested uses as written. Use IDs are always minted here and any supplied ones are ignored.
-                    items:
-                        $ref: '#/components/schemas/SecretUse'
-                    nullable: true
-                    type: array
-                policy:
-                    $ref: '#/components/schemas/AccessPolicy'
-                    description: The policy approved -- the one the request asked for, as read, or one in its place. An agent's request is refused an approval without one, so nothing is approved that was not sent. A discobox approving it must hand on a policy within one it was delegated (ADR 26-10-20-782 section 11). A person's resolved is the values they were shown, absent for none; each variable the approved policy uses, resolved for the requesting discobox, must resolve to exactly the value shown for it, or not resolve where none was shown, or the approval is refused with 409 and grants nothing. A value shown for a variable the approved policy does not use is ignored.
             type: object
         CreateSecretBody:
             additionalProperties: false
@@ -6144,7 +5328,7 @@ components:
                     description: Optional host used to match requests (e.g. github.com)
                     type: string
                 refreshCommand:
-                    description: A command a person's client may run to produce a new value, as an argument vector run without a shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only; setting one without ttlSeconds gives the token the well-known credential's own lifetime when wellKnownId names one (a day for com.github.api), else 300s. An empty array removes it.
+                    description: A command a person's client may run to produce a new value, as an argument vector run without a shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only; setting one without ttlSeconds gives the token 300s. An empty array removes it.
                     items:
                         type: string
                     nullable: true
@@ -6154,7 +5338,7 @@ components:
                     format: int64
                     type: integer
                 routes:
-                    description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in must fall on one; the most specific route covering it decides, unjudged when it carries no use and judged against its use when it does. Omitted or empty leaves it to its grants.
+                    description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in must fall on one; the most specific route covering it decides, and a blocked one refuses. Omitted or empty leaves it to its grants.
                     items:
                         $ref: '#/components/schemas/SecretRouteInput'
                     nullable: true
@@ -6176,9 +5360,6 @@ components:
                     type: string
                 value:
                     $ref: '#/components/schemas/SecretValue'
-                wellKnownId:
-                    description: The well-known credential this secret answers, such as com.github.api. A request for that ID then resolves to it without anyone being asked which secret answers it. A token only; a gate is refused, and so is an ID another secret already answers.
-                    type: string
             required:
                 - name
                 - type
@@ -6215,20 +5396,8 @@ components:
                 secretId:
                     description: Secret ID to grant
                     type: string
-                envVar:
-                    description: Environment variable an agent receives the credential in, for a grant carrying uses. Required with uses, and meaningless without them -- the credential is never injected, so this names the variable only for the process the CLI wraps.
-                    type: string
-                uses:
-                    description: Approved uses, making this a credential only the agent credentials CLI can take, one use at a time. Sandbox scope only, a concrete host required, and use IDs are minted here -- a supplied one is ignored.
-                    items:
-                        $ref: '#/components/schemas/SecretUse'
-                    nullable: true
-                    type: array
-                policy:
-                    $ref: '#/components/schemas/AccessPolicy'
-                    description: The policy the grant carries (ADR 26-10-20-782). Required with uses, and refused without them. Its variables resolve only for a grant scoped to one sandbox; a project or harness config grant may carry a policy that uses none.
                 purpose:
-                    description: What the grant authorizes its holder to do, one or the other and never both. use (the default) lets it use the credential. delegate lets it delegate the credential to other discoboxes and authorizes nothing it sends itself; sandbox scope, with uses, only.
+                    description: What the grant authorizes its holder to do, one or the other and never both. use (the default) lets it use the credential. delegate lets it give the credential to the discoboxes it creates and authorizes nothing it sends itself; sandbox scope only.
                     enum:
                         - use
                         - delegate
@@ -6313,9 +5482,6 @@ components:
                     type: string
                 sandboxId:
                     description: Sandbox that most recently saw the rejection
-                    type: string
-                useId:
-                    description: Agent credential use the refused sentinel was minted for, when it was one
                     type: string
                 envName:
                     description: Environment variable the credential is delivered in, when one names it
@@ -6447,10 +5613,6 @@ components:
                         - oauth
                         - exchange
                     type: string
-                wellKnownId:
-                    description: The well-known credential this secret fulfills, such as com.github.api. A request for that ID resolves to this secret. Absent on a secret nothing asks for by ID.
-                    readOnly: true
-                    type: string
                 updatedAt:
                     description: Last update timestamp
                     format: date-time
@@ -6474,14 +5636,14 @@ components:
             additionalProperties: false
             description: Where a secret may be sent, as written. A host covers itself and every host beneath it; a path is a prefix matched on whole segments.
             properties:
+                blocked:
+                    description: Refuse every request on this route; a more specific route still answers for the paths beneath it
+                    type: boolean
                 host:
                     description: Host the route covers, and every host beneath it
                     type: string
                 path:
                     description: Optional path prefix, starting with /, matched on whole segments; empty is the whole host
-                    type: string
-                use:
-                    description: Optional sentence a request on this route is judged against; without one a request on it is sent unjudged
                     type: string
             required:
                 - host
@@ -6490,244 +5652,17 @@ components:
             additionalProperties: false
             description: Where a secret may be sent. The most specific route covering a request decides it.
             properties:
+                blocked:
+                    description: Refuse every request on this route; a more specific route still answers for the paths beneath it. A route a judge used to read became one, so removing the judge widened nothing (ADR 26-10-27-880).
+                    type: boolean
                 host:
                     description: Host the route covers, and every host beneath it
                     type: string
                 path:
                     description: Path prefix matched on whole segments; empty is the whole host
                     type: string
-                use:
-                    description: Sentence a request on this route is judged against; empty sends it unjudged
-                    type: string
-                useId:
-                    description: Stable use ID of the route's use, minted when it was written; empty for a route without one
-                    type: string
             required:
                 - host
-            type: object
-        SecretUse:
-            additionalProperties: false
-            description: One approved way a credential may be used. The ID is minted at approval, so a requesting agent cannot name the use it will later present.
-            properties:
-                description:
-                    description: What the credential may be used for
-                    type: string
-                useId:
-                    description: Stable use ID, minted at approval
-                    type: string
-            required:
-                - description
-            type: object
-        AccessPolicy:
-            additionalProperties: false
-            description: What a credential grant authorizes (ADR 26-10-20-782 section 1) -- statements, a definition for every word they use that is not a default, and, once approved, the value each variable resolved to for the discobox the grant is for. A request is allowed when every part of it matches some allow and no part matches any deny; order never matters.
-            properties:
-                statements:
-                    description: The statements, in no meaningful order.
-                    items:
-                        $ref: '#/components/schemas/AccessPolicyStatement'
-                    type: array
-                definitions:
-                    additionalProperties:
-                        type: string
-                    description: What each non-default word means -- an action, a resource type, a parent's or a scope's type. The defaults (read, create, update, delete, manage, anything, anywhere) carry none and cannot be given one.
-                    type: object
-                resolved:
-                    additionalProperties:
-                        type: string
-                    description: The value each variable the statements use resolved to at approval, for the discobox the grant is for -- on a request, what each resolves to now for the discobox that asked. A variable used but absent did not resolve and matches nothing. Set by the server; on input only an approval reads it, as the values the approver was shown.
-                    type: object
-            required:
-                - statements
-            type: object
-        AccessPolicyStatement:
-            additionalProperties: false
-            description: '<allow|deny> <actions> on <resource type> [<name>] [within <parents>] in <scope> [when <condition>] [unless <condition>].'
-            properties:
-                effect:
-                    enum:
-                        - allow
-                        - deny
-                    type: string
-                actions:
-                    description: Action words. read, create, update, delete and manage (every action on the type) are defaults; any other word has a definition. A word is printable ASCII, its parts one space apart, and holds no quote, comma, $, or sentence keyword (on, within, in, of, when, unless, created), so every statement has a sentence form.
-                    items:
-                        type: string
-                    type: array
-                resourceType:
-                    description: The resource type, or anything for every type in the scope. A word as an action is.
-                    type: string
-                name:
-                    description: A literal, a glob, or a variable; null is any name.
-                    nullable: true
-                    type: string
-                createdBy:
-                    description: $this limits the statement to resources the discobox it is bound to created.
-                    type: string
-                within:
-                    description: The resources this one sits in, outermost first, short of the scope.
-                    items:
-                        $ref: '#/components/schemas/AccessPolicyResource'
-                    type: array
-                scope:
-                    $ref: '#/components/schemas/AccessPolicyScope'
-                when:
-                    description: A condition a request can be checked against, which must hold. null is none.
-                    nullable: true
-                    type: string
-                unless:
-                    description: A condition a request can be checked against, which must not hold. null is none.
-                    nullable: true
-                    type: string
-            required:
-                - effect
-                - actions
-                - resourceType
-                - scope
-            type: object
-        AccessPolicyResource:
-            additionalProperties: false
-            description: A resource a statement's resource or scope sits in.
-            properties:
-                type:
-                    description: The parent's type, a word as a statement's action is.
-                    type: string
-                name:
-                    description: A literal, a glob, or a variable; null is any name.
-                    nullable: true
-                    type: string
-                createdBy:
-                    description: $this, or empty.
-                    type: string
-            required:
-                - type
-            type: object
-        AccessPolicyScope:
-            additionalProperties: false
-            description: Where a statement applies -- a typed name, which may be a variable ($this, $primary.repo, $primary.host, $primary.branch, $primary.upstream, $primary.default_branch, $sources.<slug>.repo), or anywhere, which only a deny may use.
-            properties:
-                type:
-                    description: The scope's type, a word as a statement's action is, or anywhere.
-                    type: string
-                name:
-                    description: A literal, a glob, or a variable. Empty only for anywhere.
-                    type: string
-                within:
-                    description: The scopes this one sits in, outermost first.
-                    items:
-                        $ref: '#/components/schemas/AccessPolicyResource'
-                    type: array
-            required:
-                - type
-            type: object
-        SandboxPolicyFacts:
-            additionalProperties: false
-            description: A sandbox's policy facts and every variable a policy may use, resolved against them.
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/SandboxPolicyFacts.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                facts:
-                    $ref: '#/components/schemas/PolicyFacts'
-                variables:
-                    description: Every variable a policy may use, resolved or not, in a fixed order -- $this, the $primary variables, then $sources.<slug>.repo for each source with a slug.
-                    items:
-                        $ref: '#/components/schemas/PolicyVariable'
-                    type: array
-            required:
-                - facts
-                - variables
-            type: object
-        PolicyFacts:
-            additionalProperties: false
-            description: What the control plane recorded about a discobox when it was created, typed (ADR 26-10-20-782 section 4).
-            properties:
-                discobox:
-                    $ref: '#/components/schemas/PolicyFactsDiscobox'
-                sources:
-                    description: The sources it was created with, the primary first.
-                    items:
-                        $ref: '#/components/schemas/PolicyFactsSource'
-                    type: array
-            required:
-                - discobox
-            type: object
-        PolicyFactsDiscobox:
-            additionalProperties: false
-            properties:
-                id:
-                    type: string
-                createdBy:
-                    description: The discobox that created it; absent when a person did.
-                    type: string
-                project:
-                    type: string
-            required:
-                - id
-            type: object
-        PolicyFactsSource:
-            additionalProperties: false
-            description: A source as it was recorded at create, never the branch or commits it has moved to since.
-            properties:
-                slug:
-                    type: string
-                primary:
-                    type: boolean
-                remote:
-                    $ref: '#/components/schemas/PolicyFactsRemote'
-                ref:
-                    $ref: '#/components/schemas/PolicyFactsRef'
-                commit:
-                    type: string
-            required:
-                - slug
-            type: object
-        PolicyFactsRemote:
-            additionalProperties: false
-            description: A source's network remote, normalized; absent for a source with none.
-            properties:
-                host:
-                    type: string
-                repo:
-                    description: The repository's path on the host -- owner/name on GitHub.
-                    type: string
-                url:
-                    type: string
-            required:
-                - host
-                - repo
-                - url
-            type: object
-        PolicyFactsRef:
-            additionalProperties: false
-            description: The ref a source was created from, as its creator named it.
-            properties:
-                type:
-                    description: branch or tag, or absent when its creator did not say which.
-                    type: string
-                name:
-                    type: string
-            required:
-                - name
-            type: object
-        PolicyVariable:
-            additionalProperties: false
-            description: A variable a policy may use and what it resolves to.
-            properties:
-                name:
-                    type: string
-                value:
-                    description: What it resolves to; absent when it does not.
-                    type: string
-                resolved:
-                    description: False for a variable that resolves to nothing, and so matches nothing.
-                    type: boolean
-            required:
-                - name
-                - resolved
             type: object
         SecretGrant:
             additionalProperties: false
@@ -6738,26 +5673,11 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                envName:
-                    description: Environment variable an agent receives the credential in; set on a grant that carries uses.
-                    type: string
-                uses:
-                    description: Approved uses, confirmed or edited at approval time. Present on grants minted through the agent credentials flow.
-                    items:
-                        $ref: '#/components/schemas/SecretUse'
-                    nullable: true
-                    type: array
-                policy:
-                    $ref: '#/components/schemas/AccessPolicy'
-                    description: The approved policy, with the value each of its variables resolved to for the sandbox the grant is for (ADR 26-10-20-782). Every grant with uses carries one. A command or request under the grant is judged against it rather than against a use's sentence.
                 purpose:
                     description: What the grant authorizes its holder to do -- use the credential, or delegate it to other discoboxes. Never both.
                     enum:
                         - use
                         - delegate
-                    type: string
-                ruleId:
-                    description: The approval rule the grant was minted under, when a rule approved the request rather than a person or a discobox (ADR 26-10-12-330). The grant is independent of the rule once made.
                     type: string
                 delegationId:
                     description: The delegation grant a discobox handed this grant on under, when a discobox approved the request or gave the grant on a create (ADR 26-10-20-782 section 11). It traces the grant to the delegation that allowed it; the grant is independent of it once made.
@@ -7014,15 +5934,6 @@ components:
                 name:
                     description: Credential name the agent asked for, for protocol-originated requests
                     type: string
-                uses:
-                    description: Uses the agent asked for. Their presence is what marks a request as protocol-originated rather than one the proxy minted on hitting an unresolvable sentinel.
-                    items:
-                        $ref: '#/components/schemas/SecretUse'
-                    nullable: true
-                    type: array
-                policy:
-                    $ref: '#/components/schemas/AccessPolicy'
-                    description: The policy the agent asked for, beside its uses (ADR 26-10-20-782). Read, its resolved holds what each variable resolves to now for the requesting discobox -- what the person approving it is shown, and what approving it resolves onto the grant.
                 purpose:
                     description: What the agent asked the credential for -- to use it, or to delegate it to other discoboxes. Approving the request mints a grant for that purpose.
                     enum:
@@ -7067,15 +5978,6 @@ components:
                         - token
                         - oauth
                         - exchange
-                    type: string
-                ruleTests:
-                    description: The approval rules tested against a pending request, and why each did not cover it (ADR 26-10-12-330). Shown to a person; never to a discobox.
-                    items:
-                        $ref: '#/components/schemas/RuleTest'
-                    type: array
-                wellKnownId:
-                    description: The well-known credential the agent asked for by ID. Approving it binds the secret that fulfills that ID.
-                    readOnly: true
                     type: string
                 updatedAt:
                     description: Last update timestamp
@@ -7232,7 +6134,7 @@ components:
                     description: Optional host used to match requests (e.g. github.com)
                     type: string
                 refreshCommand:
-                    description: A command a person's client may run to produce a new value, as an argument vector run without a shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only; setting one without ttlSeconds gives the token the well-known credential's own lifetime when wellKnownId names one (a day for com.github.api), else 300s. An empty array removes it.
+                    description: A command a person's client may run to produce a new value, as an argument vector run without a shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only; setting one without ttlSeconds gives the token 300s. An empty array removes it.
                     items:
                         type: string
                     nullable: true
@@ -7242,7 +6144,7 @@ components:
                     format: int64
                     type: integer
                 routes:
-                    description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in must fall on one; the most specific route covering it decides, unjudged when it carries no use and judged against its use when it does. Set replaces them, keeping the use ID of an unchanged route; an empty array removes them.
+                    description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in must fall on one; the most specific route covering it decides, and a blocked one refuses. Set replaces them; an empty array removes them.
                     items:
                         $ref: '#/components/schemas/SecretRouteInput'
                     nullable: true
@@ -7357,6 +6259,9 @@ components:
                 config:
                     $ref: '#/components/schemas/SandboxUpdateConfig'
                     description: Desired sandbox configuration changes.
+                discoboxApi:
+                    description: Set or clear whether the discobox may call the discobox API through its pool (ADR 26-10-27-880 §9). A person's to change.
+                    type: boolean
             type: object
         SandboxUpdateConfig:
             additionalProperties: false
@@ -7979,7 +6884,7 @@ components:
             type: object
         ProjectGateway:
             additionalProperties: false
-            description: A gateway every discobox of the project is routed through (ADR 26-10-16-470). A request beneath match goes to target instead, with match's path replaced by target's and the rest of the path and the query kept, once every other policy has judged it as the discobox sent it. The pool proxy applies it; the discobox cannot see or bypass it.
+            description: A gateway every discobox of the project is routed through (ADR 26-10-16-470). A request beneath match goes to target instead, with match's path replaced by target's and the rest of the path and the query kept, once every other policy has decided on it as the discobox sent it. The pool proxy applies it; the discobox cannot see or bypass it.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -8612,12 +7517,6 @@ components:
                     description: Last update timestamp
                     format: date-time
                     type: string
-                uses:
-                    description: What the agent says it will send the host
-                    items:
-                        $ref: '#/components/schemas/SecretUse'
-                    nullable: true
-                    type: array
             required:
                 - id
                 - projectId
@@ -8659,16 +7558,10 @@ components:
                     type: integer
                 pin:
                     $ref: '#/components/schemas/TrustPin'
-                uses:
-                    description: Approved uses, replacing the ones the agent asked for. Omit to approve the requested uses as written. Use IDs are always minted here.
-                    items:
-                        $ref: '#/components/schemas/SecretUse'
-                    nullable: true
-                    type: array
             type: object
         HostTrust:
             additionalProperties: false
-            description: A host one sandbox trusts by a pin (ADR 0149). Every request the sandbox sends the host is judged against its uses.
+            description: A host one sandbox trusts by a pin (ADR 0149). The pin makes that certificate acceptable for this endpoint alone; it decides nothing about the requests sent there (ADR 26-10-27-880 §10).
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -8707,12 +7600,6 @@ components:
                 sandboxId:
                     description: The one sandbox that trusts the host
                     type: string
-                uses:
-                    description: Approved uses, with the IDs the judge is given
-                    items:
-                        $ref: '#/components/schemas/SecretUse'
-                    nullable: true
-                    type: array
             required:
                 - id
                 - projectId
@@ -8768,16 +7655,10 @@ components:
                     type: string
                 suppliedCA:
                     $ref: '#/components/schemas/ObservedCertificate'
-                uses:
-                    description: What the agent says it will send the host
-                    items:
-                        $ref: '#/components/schemas/SecretUse'
-                    type: array
             required:
                 - sandboxId
                 - host
                 - observedChain
-                - uses
             type: object
         SandboxTrustRequestStatus:
             additionalProperties: false
@@ -8803,12 +7684,6 @@ components:
                         - granted
                         - denied
                     type: string
-                uses:
-                    description: Approved uses; present once granted, and authoritative over the requested ones
-                    items:
-                        $ref: '#/components/schemas/SecretUse'
-                    nullable: true
-                    type: array
             required:
                 - requestId
                 - status
@@ -9609,12 +8484,12 @@ paths:
                   schema:
                     description: Pool ID
                     type: string
-                - description: Sandbox whose agent-requested credentials to list
+                - description: Sandbox whose credentials to list (each variable a live grant covers, and its delegation grants)
                   in: query
                   name: sandboxId
                   required: true
                   schema:
-                    description: Sandbox whose agent-requested credentials to list
+                    description: Sandbox whose credentials to list (each variable a live grant covers, and its delegation grants)
                     type: string
                 - description: Bearer pool assertion with the credential:broker scope
                   in: header
@@ -9722,127 +8597,6 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Poll an agent credential request
-            tags:
-                - Pools
-    /api/pools/{poolId}/sandbox-policy-facts:
-        get:
-            description: What the control plane recorded about a sandbox when it was created, typed, and what each variable a policy may use resolves to for it (ADR 26-10-20-782 section 4) -- the record a policy written for this sandbox resolves against at approval, never what the sandbox reports about itself.
-            operationId: get-sandbox-policy-facts
-            parameters:
-                - description: Pool ID
-                  in: path
-                  name: poolId
-                  required: true
-                  schema:
-                    description: Pool ID
-                    type: string
-                - description: Sandbox whose facts to read
-                  in: query
-                  name: sandboxId
-                  required: true
-                  schema:
-                    description: Sandbox whose facts to read
-                    type: string
-                - description: Bearer pool assertion with the credential:broker scope
-                  in: header
-                  name: Authorization
-                  schema:
-                    description: Bearer pool assertion with the credential:broker scope
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/SandboxPolicyFacts'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Read a sandbox's policy facts and variables
-            tags:
-                - Pools
-    /api/pools/{poolId}/judge:
-        post:
-            description: Puts one judging job to the judge of the project that owns this pool. The control plane forwards it to the pool hosting that judge, which is how a pool whose own discoboxes cannot run one still judges. Anything that is not an explicit answer is no verdict — a project with no judge, a judge that will not come up, a pool that cannot be reached.
-            operationId: judge-for-pool
-            parameters:
-                - description: Pool ID
-                  in: path
-                  name: poolId
-                  required: true
-                  schema:
-                    description: Pool ID
-                    type: string
-                - description: Bearer pool assertion with the credential:broker scope
-                  in: header
-                  name: Authorization
-                  schema:
-                    description: Bearer pool assertion with the credential:broker scope
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/PoolJudgeAsk'
-                required: true
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/JudgeAnswer'
-                    description: What the judge answered.
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Put a judging job to the project's judge
-            tags:
-                - Pools
-    /api/pools/{poolId}/judge-commands:
-        post:
-            description: Asks the judge of the project that owns this pool whether a command one of its discoboxes is about to run carries out the use it names, before the pool mints a credential for it (ADR 26-09-22-838 §3). The verdict is recorded before the answer goes back. A server that does not judge commands says so with the judging-disabled problem type, and the pool then mints without a verdict (ADR 26-10-02-054); anything else that is not an explicit allow mints nothing.
-            operationId: judge-command-for-pool
-            parameters:
-                - description: Pool ID
-                  in: path
-                  name: poolId
-                  required: true
-                  schema:
-                    description: Pool ID
-                    type: string
-                - description: Bearer pool assertion with the credential:broker scope
-                  in: header
-                  name: Authorization
-                  schema:
-                    description: Bearer pool assertion with the credential:broker scope
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/PoolCommandAsk'
-                required: true
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/JudgeAnswer'
-                    description: What the judge answered.
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Judge a command a discobox is about to run under an approved use
             tags:
                 - Pools
     /api/pools/{poolId}/sandbox-secret-rejections:
@@ -11177,13 +9931,6 @@ paths:
                     items:
                         type: string
                     type: array
-                - description: Also list sandboxes in judge mode, which are left out otherwise - a judge runs no terminal and holds no work, so it is not what asking what is in a project means
-                  in: query
-                  name: includeJudge
-                  required: false
-                  schema:
-                    description: Also list sandboxes in judge mode, which are left out otherwise
-                    type: boolean
             responses:
                 200:
                     content:
@@ -12367,86 +11114,6 @@ paths:
             summary: Read a materialized source's project layer.
             tags:
                 - Sandbox Runtime Config
-            x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/judge:
-        post:
-            description: Puts one judging job to this discobox's harness and returns what it answered. Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies evidence and the approved use; the prompt, the schema, the model role and the tools restriction are the judge runtime's own. Each ask is a fresh run with nothing carried over from the last, and one is answered at a time.
-            operationId: judge-sandbox
-            parameters:
-                - description: Project that owns the sandbox.
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    type: string
-                - description: Sandbox resource ID.
-                  in: path
-                  name: sandboxId
-                  required: true
-                  schema:
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/JudgeJob'
-                required: true
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/JudgeAnswer'
-                    description: 'What the judge answered: a decision, or what it needs to be shown.'
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Error response.
-            summary: Put one judging job to this discobox's harness.
-            tags:
-                - Sandbox Judge
-            x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal:
-        post:
-            description: Has this discobox's harness write the policy a person starts an approval rule from (ADR 26-10-12-330) — the policy a request asked for, as the same work on any target of its kind. Only a discobox in judge mode answers, and only a token carrying judge:run may ask. The caller supplies the statements a request asked for; the prompt, the schema, the model role and the tools restriction are the judge runtime's own, as for a judging job. What comes back authorizes nothing.
-            operationId: propose-sandbox-rule
-            parameters:
-                - description: Project that owns the sandbox.
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    type: string
-                - description: Sandbox resource ID.
-                  in: path
-                  name: sandboxId
-                  required: true
-                  schema:
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/JudgeProposalJob'
-                required: true
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/JudgeProposal'
-                    description: The proposed wording.
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Error response.
-            summary: Have this discobox's harness propose an approval rule's wording.
-            tags:
-                - Sandbox Judge
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/meta:
         patch:
@@ -14202,12 +12869,6 @@ paths:
                   schema:
                     description: Filter by granted secret ID
                     type: string
-                - description: Only grants minted under this approval rule
-                  in: query
-                  name: ruleId
-                  schema:
-                    description: Only grants minted under this approval rule
-                    type: string
             responses:
                 200:
                     content:
@@ -14286,248 +12947,6 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Revoke a secret grant
-            tags:
-                - Secrets
-    /projects/{projectId}/approval-rules:
-        get:
-            description: A project's approval rules (ADR 26-10-12-330), oldest first. A rule is a standing answer to a credential request, made only by a person. A discobox never lists, reads, makes or edits one.
-            operationId: list-approval-rules
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ListApprovalRulesBody'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: List approval rules
-            tags:
-                - Secrets
-        post:
-            description: Makes an approval rule directly, as a pre-approval is made. The rule is then tested against every request pending in the project.
-            operationId: create-approval-rule
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/CreateApprovalRuleBody'
-                required: true
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ApprovalRule'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Create an approval rule
-            tags:
-                - Secrets
-    /projects/{projectId}/approval-rules/{ruleId}:
-        delete:
-            description: Deletes an approval rule. It mints nothing more; the grants it minted stay, and are listed by rule to be revoked deliberately.
-            operationId: delete-approval-rule
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Approval rule ID
-                  in: path
-                  name: ruleId
-                  required: true
-                  schema:
-                    description: Approval rule ID
-                    type: string
-            responses:
-                204:
-                    description: No Content
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Delete an approval rule
-            tags:
-                - Secrets
-        get:
-            operationId: get-approval-rule
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Approval rule ID
-                  in: path
-                  name: ruleId
-                  required: true
-                  schema:
-                    description: Approval rule ID
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ApprovalRule'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Get an approval rule
-            tags:
-                - Secrets
-        patch:
-            description: Edits an approval rule. Only the fields sent change. A rule whose repositories or policy changed is tested afresh against what is pending; grants it already minted are untouched.
-            operationId: update-approval-rule
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Approval rule ID
-                  in: path
-                  name: ruleId
-                  required: true
-                  schema:
-                    description: Approval rule ID
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/UpdateApprovalRuleBody'
-                required: true
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ApprovalRule'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Update an approval rule
-            tags:
-                - Secrets
-    /projects/{projectId}/secret-grants/{grantId}/rule-proposals:
-        post:
-            description: Proposes an approval rule from a grant a request was approved with (ADR 26-10-12-330) — the same proposal auto approve makes from that request, but written from the policy the grant approved and for the grant's hosts and purpose, and held to covering that grant's policy as the rule would have been. A grant that carries no policy, or whose request is not on record, has nothing to propose from. Only a person may ask.
-            operationId: propose-approval-rule-from-grant
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Secret grant ID
-                  in: path
-                  name: grantId
-                  required: true
-                  schema:
-                    description: Secret grant ID
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/RuleProposalsBody'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Propose an approval rule from a secret grant
-            tags:
-                - Secrets
-    /projects/{projectId}/secret-requests/{requestId}/rule-proposals:
-        post:
-            description: Proposes an approval rule for a pending agent credential request (ADR 26-10-12-330) — the repository of the discobox that asked, which the rule may be for, and a policy the project's judge wrote from the request's — the same work on any target of its kind — held to covering the request as a rule later would be, with what that found. Where no model can write, there is no policy and a note says why. Only a person may ask.
-            operationId: propose-approval-rules
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Secret request ID
-                  in: path
-                  name: requestId
-                  required: true
-                  schema:
-                    description: Secret request ID
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/RuleProposalsBody'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Propose approval rules for a secret request
             tags:
                 - Secrets
     /projects/{projectId}/audit/dns:
@@ -14659,12 +13078,6 @@ paths:
                   name: host
                   schema:
                     description: Only exchanges to this host
-                    type: string
-                - description: Only exchanges that spent this approved credential use
-                  in: query
-                  name: useId
-                  schema:
-                    description: Only exchanges that spent this approved credential use
                     type: string
                 - description: Only exchanges recorded at or after this time
                   in: query
@@ -14800,7 +13213,7 @@ paths:
                 - Pools
     /projects/{projectId}/secret-refreshes:
         get:
-            description: The refresh audit trail (ADR 26-09-25-122 §6) -- every time the control plane asked for a new value of a token, and how each ask was answered or dismissed -- newest first. Project-scoped, like the verdict trail, because it outlives the discoboxes it names. An answer's principal and time are the control plane's record; how the value was produced is the answering client's own account.
+            description: The refresh audit trail (ADR 26-09-25-122 §6) -- every time the control plane asked for a new value of a token, and how each ask was answered or dismissed -- newest first. Project-scoped because it outlives the discoboxes it names. An answer's principal and time are the control plane's record; how the value was produced is the answering client's own account.
             operationId: list-secret-refreshes
             parameters:
                 - description: Project ID
@@ -14877,116 +13290,6 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: List the refresh audit trail
-            tags:
-                - Secrets
-    /projects/{projectId}/credential-verdicts:
-        get:
-            description: The recorded judge verdicts for agent credential uses in a project, newest first. Project-scoped rather than under a sandbox because the trail outlives the sandbox it describes, and the sandboxes most worth asking about are often the ones already gone; filter by sandboxId instead.
-            operationId: list-credential-verdicts
-            parameters:
-                - description: Only the verdict with this ID, which is how one record is read in full
-                  in: query
-                  name: id
-                  schema:
-                    description: Only the verdict with this ID, which is how one record is read in full
-                    type: string
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Only verdicts of this kind
-                  in: query
-                  name: kind
-                  schema:
-                    description: Only verdicts of this kind
-                    enum:
-                        - command
-                        - request
-                        - delegation
-                        - rule
-                    type: string
-                - description: Only verdicts recorded while testing this approval rule
-                  in: query
-                  name: ruleId
-                  schema:
-                    description: Only verdicts recorded while testing this approval rule
-                    type: string
-                - description: Only verdicts recorded for this sandbox, which need not still exist
-                  in: query
-                  name: sandboxId
-                  schema:
-                    description: Only verdicts recorded for this sandbox, which need not still exist
-                    type: string
-                - description: Only verdicts judged against this approved use
-                  in: query
-                  name: useId
-                  schema:
-                    description: Only verdicts judged against this approved use
-                    type: string
-                - description: Only verdicts for uses of this grant
-                  in: query
-                  name: grantId
-                  schema:
-                    description: Only verdicts for uses of this grant
-                    type: string
-                - description: Only allowed verdicts when true, only denied ones when false
-                  in: query
-                  name: allow
-                  schema:
-                    description: Only allowed verdicts when true, only denied ones when false
-                    type: boolean
-                - description: Only verdicts recorded at or after this time
-                  in: query
-                  name: since
-                  schema:
-                    description: Only verdicts recorded at or after this time
-                    format: date-time
-                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
-                    type: string
-                - description: Only verdicts recorded at or before this time, for paging back newest first
-                  in: query
-                  name: until
-                  schema:
-                    description: Only verdicts recorded at or before this time, for paging back newest first
-                    format: date-time
-                    x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
-                    type: string
-                - description: Maximum number of verdicts to return.
-                  in: query
-                  name: limit
-                  schema:
-                    default: 100
-                    maximum: 1000
-                    minimum: 1
-                    type: integer
-                - description: asc returns the oldest matches first, for reading forward from a since bound; desc, the default, the newest first
-                  in: query
-                  name: order
-                  schema:
-                    default: desc
-                    description: asc returns the oldest matches first, for reading forward from a since bound; desc, the default, the newest first
-                    enum:
-                        - asc
-                        - desc
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ListCredentialVerdictsBody'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: List recorded credential verdicts
             tags:
                 - Secrets
     /ssh:

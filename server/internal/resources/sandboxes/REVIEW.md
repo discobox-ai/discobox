@@ -1,5 +1,13 @@
 # Sandboxes Review Notes
 
+## What a created discobox inherits
+
+- **What a child inherits from its harness config is part of what its creator
+  gives it.** A discobox with `DiscoboxAPI` may create one on any harness config
+  in the project, and the child runs with that config's credentials (ADR
+  26-10-27-880 §9). A change that lets a create pick up more from a harness
+  config widens what every `DiscoboxAPI` discobox may hand on; weigh it as such.
+
 ## Values the client hands to host tools
 
 - **A stored path the client hands to a host tool is checked where it is

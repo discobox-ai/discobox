@@ -2,12 +2,10 @@ package access
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 )
@@ -16,14 +14,10 @@ import (
 // call this CLI makes to the credentials service.
 const debugFlag = "--debug"
 
-// redacted is what a credential's value is printed as.
-const redacted = "<redacted>"
-
 // debugTransport prints each call it carries to stderr: the method and URL,
 // the JSON request body, the status, and the response body. It prints no
-// header, so a bearer token never reaches it, and a credential value in a
-// response is printed as redacted: printing one would be the unjudged way to
-// take a value that ADR 0092 says this CLI does not have.
+// header, so a bearer token never reaches it. No call of the protocol carries
+// a credential's value, so a body is printed as it is.
 type debugTransport struct {
 	next http.RoundTripper
 }
@@ -58,7 +52,7 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	resp.Body = readCloser{io.MultiReader(bytes.NewReader(body), resp.Body), resp.Body}
 	if len(body) > 0 {
-		fmt.Fprintf(out, "%s: debug: response body: %s\n", Name, redactValue(req.URL.Path, body))
+		fmt.Fprintf(out, "%s: debug: response body: %s\n", Name, bytes.TrimSpace(body))
 	}
 	return resp, nil
 }
@@ -66,33 +60,4 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 type readCloser struct {
 	io.Reader
 	io.Closer
-}
-
-// redactValue is a response body with any credential value in it replaced.
-// The protocol carries a value in one place, the top-level "value" of a use
-// response, and that key is redacted in any response that has it. A use
-// response that cannot be read as a JSON object is not shown at all: what it
-// holds cannot be told apart from a value.
-func redactValue(path string, body []byte) string {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(body, &fields); err != nil {
-		if strings.HasSuffix(path, agentcreds.PathUse) {
-			return redacted
-		}
-		return string(bytes.TrimSpace(body))
-	}
-	value, ok := fields["value"]
-	if !ok {
-		return string(bytes.TrimSpace(body))
-	}
-	if string(value) != `""` && string(value) != "null" {
-		fields["value"] = json.RawMessage(`"` + redacted + `"`)
-	}
-	var shown bytes.Buffer
-	encoder := json.NewEncoder(&shown)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(fields); err != nil {
-		return redacted
-	}
-	return strings.TrimSpace(shown.String())
 }

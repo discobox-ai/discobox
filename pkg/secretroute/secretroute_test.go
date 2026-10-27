@@ -34,26 +34,30 @@ func TestNormalize(t *testing.T) {
 
 func TestParse(t *testing.T) {
 	for _, tc := range []struct {
-		text, host, path, use string
-		wantErr               bool
+		text    string
+		want    Route
+		wantErr bool
 	}{
-		{text: "githubcopilot.com", host: "githubcopilot.com"},
-		{text: "githubcopilot.com/mcp/readonly", host: "githubcopilot.com", path: "/mcp/readonly"},
-		{text: "github.com= read-only queries, a=b ", host: "github.com", use: "read-only queries, a=b"},
-		{text: "githubcopilot.com/mcp=GitHub's MCP server", host: "githubcopilot.com", path: "/mcp", use: "GitHub's MCP server"},
-		{text: "=a use", wantErr: true},
+		{text: "githubcopilot.com", want: Route{Host: "githubcopilot.com"}},
+		{text: "githubcopilot.com/mcp/readonly", want: Route{Host: "githubcopilot.com", Path: "/mcp/readonly"}},
+		{text: "githubcopilot.com/mcp=blocked", want: Route{Host: "githubcopilot.com", Path: "/mcp", Blocked: true}},
+		{text: " github.com = blocked ", want: Route{Host: "github.com", Blocked: true}},
+		// What a route once carried after its "=" is refused, not read as
+		// blocked or dropped: either would change what the person meant.
+		{text: "github.com=read-only queries", wantErr: true},
+		{text: "=blocked", wantErr: true},
 		{text: "", wantErr: true},
 	} {
-		host, path, use, err := Parse(tc.text)
+		got, err := Parse(tc.text)
 		if (err != nil) != tc.wantErr {
 			t.Fatalf("Parse(%q) error = %v, want error %v", tc.text, err, tc.wantErr)
 		}
-		if host != tc.host || path != tc.path || use != tc.use {
-			t.Fatalf("Parse(%q) = %q, %q, %q", tc.text, host, path, use)
+		if got != tc.want {
+			t.Fatalf("Parse(%q) = %+v, want %+v", tc.text, got, tc.want)
 		}
 		if !tc.wantErr {
-			if again, _, _, _ := Parse(Format(host, path, use)); again != host {
-				t.Fatalf("Format did not round-trip %q", tc.text)
+			if again, err := Parse(Format(got)); err != nil || again != got {
+				t.Fatalf("Format did not round-trip %q: %+v, %v", tc.text, again, err)
 			}
 		}
 	}
@@ -102,16 +106,16 @@ func TestRequestPathsResolveDotSegments(t *testing.T) {
 func TestMatchPicksTheMostSpecificRoute(t *testing.T) {
 	routes := []Route{
 		{Host: "githubcopilot.com"},
-		{Host: "githubcopilot.com", Path: "/mcp", UseID: "use_mcp"},
+		{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
 		{Host: "githubcopilot.com", Path: "/mcp/readonly"},
-		{Host: "github.com", UseID: "use_gh"},
+		{Host: "github.com", Blocked: true},
 		{Host: "api.github.com", Path: "/copilot_internal"},
-		{Host: "api.github.com", Path: "/copilot_internal", UseID: "use_tie"},
+		{Host: "api.github.com", Path: "/copilot_internal", Blocked: true},
 	}
 	ids := func(got []Route) []string {
 		var out []string
 		for _, route := range got {
-			out = append(out, route.Host+route.Path+"#"+route.UseID)
+			out = append(out, Format(route))
 		}
 		return out
 	}
@@ -119,14 +123,14 @@ func TestMatchPicksTheMostSpecificRoute(t *testing.T) {
 		host, path string
 		want       []string
 	}{
-		{"api.individual.githubcopilot.com", "/v1/messages", []string{"githubcopilot.com#"}},
-		{"api.individual.githubcopilot.com", "/mcp", []string{"githubcopilot.com/mcp#use_mcp"}},
-		{"api.individual.githubcopilot.com", "/mcp/readonly", []string{"githubcopilot.com/mcp/readonly#"}},
-		{"api.individual.githubcopilot.com", "/mcpx", []string{"githubcopilot.com#"}},
+		{"api.individual.githubcopilot.com", "/v1/messages", []string{"githubcopilot.com"}},
+		{"api.individual.githubcopilot.com", "/mcp", []string{"githubcopilot.com/mcp=blocked"}},
+		{"api.individual.githubcopilot.com", "/mcp/readonly", []string{"githubcopilot.com/mcp/readonly"}},
+		{"api.individual.githubcopilot.com", "/mcpx", []string{"githubcopilot.com"}},
 		// The host's labels decide before the path does: api.github.com's
 		// route is closer than github.com's, whatever their paths.
-		{"api.github.com", "/copilot_internal/user", []string{"api.github.com/copilot_internal#", "api.github.com/copilot_internal#use_tie"}},
-		{"api.github.com", "/repos/x/y", []string{"github.com#use_gh"}},
+		{"api.github.com", "/copilot_internal/user", []string{"api.github.com/copilot_internal", "api.github.com/copilot_internal=blocked"}},
+		{"api.github.com", "/repos/x/y", []string{"github.com=blocked"}},
 		{"example.com", "/", nil},
 		{"github.com.evil.test", "/", nil},
 	} {
@@ -138,11 +142,48 @@ func TestMatchPicksTheMostSpecificRoute(t *testing.T) {
 
 func TestAHostRouteBeatsAShorterHostWithALongerPath(t *testing.T) {
 	routes := []Route{
-		{Host: "github.com", Path: "/a/b/c", UseID: "long"},
-		{Host: "api.github.com", UseID: "close"},
+		{Host: "github.com", Path: "/a/b/c", Blocked: true},
+		{Host: "api.github.com"},
 	}
 	got := Match(routes, "api.github.com", "/a/b/c")
-	if len(got) != 1 || got[0].UseID != "close" {
+	if len(got) != 1 || got[0].Host != "api.github.com" {
 		t.Fatalf("Match = %v, want the api.github.com route", got)
+	}
+}
+
+func TestDecide(t *testing.T) {
+	routes := []Route{
+		{Host: "githubcopilot.com"},
+		{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
+		{Host: "githubcopilot.com", Path: "/mcp/readonly"},
+		{Host: "api.github.com", Path: "/copilot_internal"},
+		{Host: "api.github.com", Path: "/copilot_internal", Blocked: true},
+	}
+	for _, tc := range []struct {
+		host, url string
+		allowed   bool
+	}{
+		{"api.individual.githubcopilot.com", "https://api.individual.githubcopilot.com/v1/messages", true},
+		{"api.individual.githubcopilot.com", "https://api.individual.githubcopilot.com/mcp", false},
+		{"api.individual.githubcopilot.com", "https://api.individual.githubcopilot.com/mcp/readonly/x", true},
+		// A path that steps out of the open prefix lands on the blocked one.
+		{"api.individual.githubcopilot.com", "https://api.individual.githubcopilot.com/mcp/readonly/../write", false},
+		// Read as sent, the encoded slash keeps it inside /mcp/readonly;
+		// decoded, it is /mcp, which is blocked. Both readings must pass.
+		{"api.individual.githubcopilot.com", "https://api.individual.githubcopilot.com/mcp/readonly%2F..%2F..%2Fmcp", false},
+		// A tie with a blocked route refuses.
+		{"api.github.com", "https://api.github.com/copilot_internal/user", false},
+		{"example.com", "https://example.com/", false},
+	} {
+		allowed, reason := Decide(routes, tc.host, tc.url)
+		if allowed != tc.allowed {
+			t.Fatalf("Decide(%s) = %v (%s), want %v", tc.url, allowed, reason, tc.allowed)
+		}
+		if !allowed && reason == "" {
+			t.Fatalf("Decide(%s) refused without a reason", tc.url)
+		}
+	}
+	if allowed, _ := Decide(nil, "example.com", "https://example.com/"); !allowed {
+		t.Fatal("a secret with no routes is held to none")
 	}
 }

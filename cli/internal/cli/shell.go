@@ -240,9 +240,6 @@ func sandboxIDs(sandboxes []apimodel.Sandbox) []string {
 // Every ID that answers to arg comes back, not the first: a caller that cannot
 // tell which discobox was meant must say so rather than act on one of them.
 //
-// A judge answers to no name (ADR 26-09-22-838 §1 leaves it out of listings);
-// its ID still resolves, through the short-ID step and the shadow check.
-//
 // An empty arg names nothing. It would otherwise answer to any discobox whose
 // own name is empty, which is a match on the absence of a name rather than on a
 // name.
@@ -252,11 +249,6 @@ func sandboxesNamed(arg string, sandboxes []apimodel.Sandbox, match nameMatch) [
 	}
 	var ids []string
 	for _, sandbox := range sandboxes {
-		// A judge is named by its ID alone: it is in the candidates so a name
-		// cannot shadow its short ID, and is not one `discobox ls` prints.
-		if sandbox.Config.HarnessMode.Value == apiclientgen.SandboxConfigHarnessModeJudge {
-			continue
-		}
 		if sandbox.Config.Name == arg || (match == listedName && sandboxListedAs(sandbox, arg)) {
 			ids = append(ids, sandbox.ID)
 		}

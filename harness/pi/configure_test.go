@@ -334,9 +334,6 @@ func TestConfigureCapturesEverySignIn(t *testing.T) {
 	if file, ok := out.file(piSettingsPath); !ok || !strings.Contains(file["content"].(string), `"defaultModel":"claude-sonnet-5-5"`) {
 		t.Fatalf("configure did not return pi's settings: %v", out.Files)
 	}
-	if _, ok := out.file(settingsPath); !ok {
-		t.Fatal("configure did not return Discobox's settings for the harness")
-	}
 	// The check is of pi's default model — what a sandbox starts on — so it
 	// names none, and it uses no tools.
 	calls := readFile(t, filepath.Join(env.dir, "pi-calls"))
@@ -516,24 +513,6 @@ func TestConfigureFailsAtTheEndOfInput(t *testing.T) {
 		if _, statErr := os.Stat(env.runDir + "harness-configure.json"); statErr == nil {
 			t.Fatalf("input %q: configure wrote an output", input)
 		}
-	}
-}
-
-// Discobox's settings come back as they arrived: a judge model someone set by
-// editing the file is theirs.
-func TestConfigureKeepsTheEditedJudgeModel(t *testing.T) {
-	env := newConfigureEnv(t)
-	env.homeFiles = map[string]string{settingsPath: `{"judgeModel": "anthropic/claude-opus-5-5"}`}
-	out := env.run(t, "\n", signIns, nil, nil)
-	file, _ := out.file(settingsPath)
-	var settings struct {
-		JudgeModel string `json:"judgeModel"`
-	}
-	if err := json.Unmarshal([]byte(file["content"].(string)), &settings); err != nil {
-		t.Fatal(err)
-	}
-	if settings.JudgeModel != "anthropic/claude-opus-5-5" {
-		t.Fatalf("judgeModel = %q, want the edited one kept", settings.JudgeModel)
 	}
 }
 

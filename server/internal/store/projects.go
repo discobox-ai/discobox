@@ -164,23 +164,6 @@ func (s *Store) CountSandboxesForProject(ctx context.Context, projectID string) 
 	return s.countForProject(ctx, projectID, &model.Sandbox{})
 }
 
-// CountWorkSandboxesForProject counts what somebody would lose with the
-// project: its discoboxes, except its own judge, which Discobox made and would
-// make again (ADR 26-09-22-838 §1). A project holding nothing but its judge is a
-// project with nothing in it.
-func (s *Store) CountWorkSandboxesForProject(ctx context.Context, projectID string) (int64, error) {
-	read, err := s.getRead(ctx)
-	if err != nil {
-		return 0, err
-	}
-	var count int64
-	err = read.Model(&model.Sandbox{}).
-		Where("project_id = ?", projectID).
-		Where("id <> coalesce((select judge_sandbox_id from projects where id = ?), '')", projectID).
-		Count(&count).Error
-	return count, err
-}
-
 func (s *Store) CountPoolsForProject(ctx context.Context, projectID string) (int64, error) {
 	return s.countForProject(ctx, projectID, &model.Pool{})
 }
@@ -213,16 +196,10 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 			return err
 		}
 		for _, scoped := range []any{
-			// Verdicts outlive their sandbox (ADR 0091), not their project:
-			// they reference it, so a project with any recorded verdict could
-			// not otherwise be deleted at all.
-			&model.CredentialVerdict{},
 			&model.HarnessConfigSecretBinding{},
 			&model.HarnessConfig{},
 			&model.SecretGrant{},
 			&model.SecretRequest{},
-			// Rules are a project's, and name its secrets.
-			&model.ApprovalRule{},
 			&model.Secret{},
 			&model.SandboxProviderInstance{},
 			&model.SandboxAccessIssuerKey{},

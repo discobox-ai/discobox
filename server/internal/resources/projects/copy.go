@@ -201,18 +201,10 @@ func (s *Service) copyPools(ctx context.Context, source *model.Project, project 
 		if err := s.store.SetPoolEgress(ctx, project.ID, created.ID, sourcePool.Egress); err != nil {
 			return fmt.Errorf("%s: %w", sourcePool.Name, err)
 		}
-		// The copy's judge runs in the copy's own pool, not the one it was
-		// copied from (ADR 26-09-22-838 §1).
-		changed := false
+		// The copy's default pool is the copy's own, not the one it was
+		// copied from.
 		if source.DefaultPoolID == sourcePool.ID {
 			project.DefaultPoolID = created.ID
-			changed = true
-		}
-		if source.JudgePoolID == sourcePool.ID {
-			project.JudgePoolID = created.ID
-			changed = true
-		}
-		if changed {
 			if err := s.store.UpsertProject(ctx, project); err != nil {
 				return err
 			}
@@ -385,7 +377,7 @@ func (s *Service) copySecret(ctx context.Context, sourceProjectID, projectID, so
 // authorized to resolve, and every sandbox would raise a fresh approval.
 // Sandbox-scoped grants are not copied: the new project has no sandboxes.
 func (s *Service) copyGrants(ctx context.Context, sourceConfig *model.HarnessConfig, config *model.HarnessConfig, projectID string, secretIDs map[string]string) error {
-	grants, err := s.store.ListSecretGrants(ctx, sourceConfig.ProjectID, "", "")
+	grants, err := s.store.ListSecretGrants(ctx, sourceConfig.ProjectID, "")
 	if err != nil {
 		return err
 	}

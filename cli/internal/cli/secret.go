@@ -2,7 +2,6 @@ package cli
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -14,9 +13,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
-	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
-	"github.com/discobox-ai/discobox/pkg/wellknown"
 )
 
 // secretRenewalOptions is how a token is renewed: how long a value lasts, and
@@ -78,7 +75,6 @@ func (a *App) newSecretCommand() *cobra.Command {
 	cmd.AddCommand(a.newSecretRefreshCommand())
 	cmd.AddCommand(a.newSecretRequestCommand())
 	cmd.AddCommand(a.newSecretGrantCommand())
-	cmd.AddCommand(a.newSecretRuleCommand())
 	return cmd
 }
 
@@ -91,7 +87,7 @@ func (a *App) newSecretGrantCommand() *cobra.Command {
 }
 
 func (a *App) newSecretGrantListCommand() *cobra.Command {
-	var secretRef, ruleRef string
+	var secretRef string
 	cmd := &cobra.Command{Use: "ls", Aliases: []string{"list"}, Short: "List secret grants", RunE: func(cmd *cobra.Command, _ []string) error {
 		client, err := a.apiClient()
 		if err != nil {
@@ -109,12 +105,6 @@ func (a *App) newSecretGrantListCommand() *cobra.Command {
 			}
 			params.SecretId = apiclientgen.NewOptString(secretID)
 		}
-		// The grants one approval rule minted, which outlive it: this is how
-		// they are found to be revoked deliberately. The ID is passed as
-		// given, since the rule may already be deleted.
-		if ruleRef = strings.TrimSpace(ruleRef); ruleRef != "" {
-			params.RuleId = apiclientgen.NewOptString(ruleRef)
-		}
 		res, err := client.ListSecretGrants(cmd.Context(), params)
 		if err != nil {
 			return err
@@ -126,36 +116,24 @@ func (a *App) newSecretGrantListCommand() *cobra.Command {
 		return a.writeSecretGrants(cmd, body.GetSecretGrants())
 	}}
 	cmd.Flags().StringVar(&secretRef, "secret", "", "Filter by granted secret ID")
-	cmd.Flags().StringVar(&ruleRef, "rule", "", "Only grants minted under this approval rule, by its full ID; a deleted rule's grants are still listed")
 	a.addQuietFlag(cmd)
 	return cmd
 }
 
 func (a *App) newSecretGrantCreateCommand() *cobra.Command {
-	var secretRef, scope, scopeKey, envVar string
+	var secretRef, scope, scopeKey string
 	ttl := lifetime.NewFlag()
-	var uses, hosts, statements []string
-	definitions := policy.Definitions{}
+	var hosts []string
 	var delegate bool
 	cmd := &cobra.Command{Use: "create --secret SECRET --scope SCOPE", Short: "Create a standing grant (pre-approval)", Long: `Creates a grant directly, without a request to approve.
 
-With no --use, it is a standing grant: it authorizes the sentinel the
-discobox, harness config or project is already provisioned with.
+A grant authorizes the sentinel the discobox, harness config or project is
+already provisioned with, for the hosts it names.
 
-With --use, it is a grant an agent takes through discobox-access, one use at
-a time, which nothing in the discobox can read. It carries a policy, written
-as discobox-access writes one: a --statement for each sentence, and a --define
-for each word a statement uses that is not a default (read, create, update,
-delete, manage, anything, anywhere). The policy is what is enforced; the use
-names the job.
-
-  --use "Triage issues in org/repo" \
-  --statement 'allow read on anything in repository "org/repo"' \
-  --statement 'deny delete on anything in anywhere' \
-  --define 'repository=a GitHub repository'
-
-A grant wider than one discobox may carry only a policy that uses no
-variable. The policy is parsed and checked before it is sent.`, RunE: func(cmd *cobra.Command, _ []string) error {
+With --delegate it is a delegation grant instead: the discobox may give the
+credential to the discoboxes it creates, approving their requests or giving it
+when it creates them, and may not use it itself. A delegation is one
+discobox's, so it takes sandbox scope.`, RunE: func(cmd *cobra.Command, _ []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -180,33 +158,6 @@ variable. The policy is parsed and checked before it is sent.`, RunE: func(cmd *
 		if seconds, given := ttl.Seconds(); given {
 			body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(seconds))
 		}
-		// Uses make it the agent credentials shape: nothing in the sandbox can
-		// read the credential, and the in-sandbox CLI takes it one use at a
-		// time.
-		if len(uses) > 0 {
-			declared := make([]apimodel.SecretUse, 0, len(uses))
-			for _, use := range uses {
-				declared = append(declared, apimodel.SecretUse{Description: use})
-			}
-			body.SetUses(apiclientgen.NewOptNilSecretUseArray(declared))
-		}
-		// A grant an agent takes carries the policy it is held to (#312); the
-		// server refuses uses without one, and one without uses.
-		written, err := writtenPolicy(statements, definitions, "--statement", "--define")
-		if err != nil {
-			return err
-		}
-		switch {
-		case written != nil && len(uses) == 0:
-			return errors.New("a policy is granted only beside uses: give --use with --statement")
-		case written == nil && len(uses) > 0:
-			return errors.New("a grant with --use carries a policy: give each sentence of what it may do with --statement, and each word that is not a default with --define WORD=DEFINITION")
-		case written != nil:
-			body.SetPolicy(apiclientgen.NewOptAccessPolicy(*written))
-		}
-		if strings.TrimSpace(envVar) != "" {
-			body.SetEnvVar(apiclientgen.NewOptString(strings.TrimSpace(envVar)))
-		}
 		if delegate {
 			body.SetPurpose(apiclientgen.NewOptCreateSecretGrantBodyPurpose(apiclientgen.CreateSecretGrantBodyPurposeDelegate))
 		}
@@ -225,11 +176,7 @@ variable. The policy is parsed and checked before it is sent.`, RunE: func(cmd *
 	cmd.Flags().StringVar(&scopeKey, "scope-key", "", "Discobox ID or harness config ID the scope resolves against (defaults to project ID for project scope)")
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Limit the grant to these hosts, comma-separated or repeated; defaults to the secret's host")
 	cmd.Flags().Var(ttl, "grant-ttl", grantTTLCreateFlagUsage)
-	cmd.Flags().StringArrayVar(&uses, "use", nil, "The job the credential is taken for (repeatable). With uses the credential is never injected into the discobox: only `discobox-access` can take it, one use at a time, under the policy --statement gives. A host is required")
-	cmd.Flags().StringVar(&envVar, "env-var", "", "Environment variable an agent receives the credential in; required with --use")
-	cmd.Flags().StringArrayVar(&statements, "statement", nil, "A statement of the policy the grant carries, as a sentence (repeatable); required with --use")
-	cmd.Flags().Var(definitions, "define", "WORD=DEFINITION for a word a statement uses that is not a default (repeatable)")
-	cmd.Flags().BoolVar(&delegate, "delegate", false, "Make this a delegation grant: the discobox may hand on policies within this one's to other discoboxes, and may not use the credential itself. Sandbox scope, --use and --statement are required")
+	cmd.Flags().BoolVar(&delegate, "delegate", false, "Make this a delegation grant: the discobox may give the credential to the discoboxes it creates, within these hosts and this lifetime, and may not use it itself. Sandbox scope only")
 	return cmd
 }
 
@@ -324,7 +271,7 @@ func (a *App) newSecretGetCommand() *cobra.Command {
 const secretFormatFlagUsage = `Shape of the sentinels that stand in for this secret: literal text with {charset:length} tokens, such as 'sk-ant-oat01-{base64url:95}'. Charsets: digits, hex, HEX, lower, upper, alnum, base62, base32, base64url, base64. Default: read from the value` //nolint:gosec // A template for sentinels, not a credential.
 
 func (a *App) newSecretCreateCommand() *cobra.Command {
-	var name, secretType, host, wellKnownID, format string
+	var name, secretType, host, format string
 	ttl := lifetime.NewFlag()
 	var value secretValueOptions
 	var renewal secretRenewalOptions
@@ -346,10 +293,7 @@ discobox is only ever handed the short-lived token.
 
 A token can be given as a value (--token) or got from a command on this
 machine (--refresh-command), which is run now for the first value and offered
-to whoever renews the token when it goes stale. --well-known fills in the name,
-host, and command a well-known credential suggests, such as com.github.api's
-'gh auth token', and makes the secret the one that answers requests for that
-ID; --token instead stores the value given and no command.
+to whoever renews the token when it goes stale.
 
 A sentinel stands in for the secret inside a discobox, shaped like the value so
 a client that checks a key's prefix accepts it. --format sets that shape when
@@ -362,9 +306,6 @@ reading it from the value gets it wrong, and is kept when the value changes.`, R
 		if err != nil {
 			return err
 		}
-		if err := applyWellKnownDefaults(cmd.Flags(), wellKnownID, &name, &host, &renewal); err != nil {
-			return err
-		}
 		value.stdin = cmd.InOrStdin()
 		body, err := createSecretBody(cmd.Flags(), name, secretType, host, ttl, value)
 		if err != nil {
@@ -372,9 +313,6 @@ reading it from the value gets it wrong, and is kept when the value changes.`, R
 		}
 		if f := strings.TrimSpace(format); f != "" {
 			body.SetFormat(apiclientgen.NewOptString(f))
-		}
-		if id := strings.TrimSpace(wellKnownID); id != "" {
-			body.SetWellKnownId(apiclientgen.NewOptString(id))
 		}
 		if err := renewal.apply(cmd.Flags(), func(command []string) {
 			body.SetRefreshCommand(apiclientgen.NewOptNilStringArray(command))
@@ -409,41 +347,10 @@ reading it from the value gets it wrong, and is kept when the value changes.`, R
 	cmd.Flags().StringVar(&host, "host", "", "Optional host hint, such as github.com")
 	cmd.Flags().Var(ttl, "max-grant-ttl", maxGrantTTLCreateFlagUsage)
 	cmd.Flags().StringVar(&format, "format", "", secretFormatFlagUsage)
-	cmd.Flags().StringVar(&wellKnownID, "well-known", "", "Well-known credential the secret answers, such as com.github.api; fills in the name, host, and refresh command it suggests")
 	cmd.Flags().StringArray("route", nil, secretRouteFlagUsage)
 	addSecretValueFlags(cmd.Flags(), &value)
 	addSecretRenewalFlags(cmd.Flags(), &renewal)
 	return cmd
-}
-
-// applyWellKnownDefaults fills in what a well-known credential suggests for
-// whatever the flags left out. A value typed with --token is the "enter a
-// value" answer, and takes no command (ADR 26-09-25-122 §2).
-func applyWellKnownDefaults(flags *pflag.FlagSet, id string, name, host *string, renewal *secretRenewalOptions) error {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return nil
-	}
-	known, ok := wellknown.Lookup(id)
-	if !ok {
-		return fmt.Errorf("%s is not a well-known credential", id)
-	}
-	if known.Gate {
-		return fmt.Errorf("%s is a gate, with no value: it is given by approving a request for it", id)
-	}
-	if strings.TrimSpace(*name) == "" {
-		*name = known.Name
-	}
-	if !flags.Changed("host") {
-		*host = known.Host()
-	}
-	if !flags.Changed("refresh-command") && !secretValueFlagsChanged(flags) && len(known.RefreshCommand) > 0 {
-		renewal.refreshCommand = refreshcmd.Join(known.RefreshCommand)
-		if err := flags.Set("refresh-command", renewal.refreshCommand); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (a *App) newSecretUpdateCommand() *cobra.Command {
@@ -532,7 +439,6 @@ func (a *App) newSecretRequestCommand() *cobra.Command {
 	cmd.AddCommand(a.newSecretRequestListCommand())
 	cmd.AddCommand(a.newSecretRequestGetCommand())
 	cmd.AddCommand(a.newSecretRequestCreateCommand())
-	cmd.AddCommand(a.newSecretRequestProposeCommand())
 	cmd.AddCommand(a.newSecretRequestApproveCommand())
 	cmd.AddCommand(a.newSecretRequestDenyCommand())
 	return cmd
@@ -627,10 +533,8 @@ func (a *App) newSecretRequestCreateCommand() *cobra.Command {
 func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	var secretRef, scope string
 	ttl := lifetime.NewFlag()
-	var uses, hosts []string
-	var policyAsAsked bool
-	var auto autoApproval
-	cmd := &cobra.Command{Use: "approve REQUEST_ID [--secret SECRET] [--auto]", Short: "Approve a secret request, optionally making an approval rule of it", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var hosts []string
+	cmd := &cobra.Command{Use: "approve REQUEST_ID --secret SECRET", Short: "Approve a secret request", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -644,9 +548,8 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 			return err
 		}
 		body := &apimodel.ApproveSecretRequestBody{}
-		// A request for a well-known credential whose secret is marked knows
-		// which secret answers it, so the secret is named only when there is a
-		// choice to make.
+		// A discobox approving answers with the secret it was delegated, so
+		// the secret is named only when there is a choice to make.
 		if strings.TrimSpace(secretRef) != "" {
 			selectedSecretID, err := a.resolveSecretID(cmd.Context(), client, projectID, secretRef)
 			if err != nil {
@@ -669,47 +572,6 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 			body.SetScope(apiclientgen.NewOptApproveSecretRequestBodyScope(typedScope))
 		}
 		body.Hosts = grantHosts(hosts)
-		// Uses are only ever narrowed here. Omitting --use approves what the
-		// agent asked for as written, which is the common case: the approver read
-		// the request and said yes to it.
-		if len(uses) > 0 {
-			approved := make([]apimodel.SecretUse, 0, len(uses))
-			for _, use := range uses {
-				approved = append(approved, apimodel.SecretUse{Description: use})
-			}
-			body.SetUses(apiclientgen.NewOptNilSecretUseArray(approved))
-		}
-		// A request that asks for a policy is approved by sending the policy
-		// approved (ADR 26-10-20-782 §3), so the person says they approve the
-		// request's own, as `discobox secret request get` renders it: a
-		// request never changes what it asks, so it is the policy that was
-		// read. Only then is it read first; otherwise approving is one call.
-		// An auto approval approves the policy as asked too: its rule is made
-		// from that policy and held to covering it, and only a request that
-		// asks for one can have a rule (ADR 26-10-12-330).
-		if policyAsAsked || auto.auto {
-			read, err := client.GetSecretRequest(cmd.Context(), apiclientgen.GetSecretRequestParams{ProjectId: projectID, RequestId: requestID})
-			if err != nil {
-				return err
-			}
-			pending, err := expectResponse[apimodel.SecretRequest](read)
-			if err != nil {
-				return err
-			}
-			asked, ok := pending.Policy.Get()
-			switch {
-			case !ok && auto.auto:
-				return fmt.Errorf("request %s asks for uses alone, and an approval rule answers a request's policy; approve it without --auto", requestID)
-			case !ok:
-				return fmt.Errorf("request %s asks for no policy; approve it without --policy-as-asked", requestID)
-			}
-			body.SetPolicy(apiclientgen.NewOptAccessPolicy(asked))
-		}
-		// --auto makes an approval rule from the request and approves it
-		// under that rule, in one write (ADR 26-10-12-330).
-		if body.Rule, err = auto.rule(cmd); err != nil {
-			return err
-		}
 		res, err := client.ApproveSecretRequest(cmd.Context(), body, apiclientgen.ApproveSecretRequestParams{ProjectId: projectID, RequestId: requestID})
 		if err != nil {
 			return err
@@ -718,51 +580,13 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if err := a.writeSecretRequest(cmd, request); err != nil || !auto.auto || a.output == "json" {
-			return err
-		}
-		// The rule's text is what was approved, so it is read back whole.
-		return a.writeRuleMadeBy(cmd, client, projectID, request)
+		return a.writeSecretRequest(cmd, request)
 	}}
 	cmd.Flags().StringVar(&secretRef, "secret", "", "Secret to grant, by name or ID")
 	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, harnessConfig, or project (defaults to sandbox for sandbox requests, else project)")
 	cmd.Flags().StringSliceVar(&hosts, "hosts", nil, "Hosts the grant is limited to, comma-separated or repeated; defaults to the hosts the request named")
-	cmd.Flags().StringArrayVar(&uses, "use", nil, "Replace an agent's declared uses with these (repeatable); omit to approve them as asked")
 	cmd.Flags().Var(ttl, "grant-ttl", grantTTLApproveFlagUsage)
-	cmd.Flags().BoolVar(&policyAsAsked, "policy-as-asked", false, "Approve the policy the request asks for, as 'discobox secret request get' shows it; required for a request that asks for one, and implied by --auto")
-	auto.addFlags(cmd)
 	return cmd
-}
-
-// writeRuleMadeBy prints the approval rule an auto approval made, found
-// through the grant it minted, which records it.
-func (a *App) writeRuleMadeBy(cmd *cobra.Command, client *apiclientgen.Client, projectID string, request *apimodel.SecretRequest) error {
-	grantID := request.GrantId.Or("")
-	res, err := client.ListSecretGrants(cmd.Context(), apiclientgen.ListSecretGrantsParams{ProjectId: projectID, SecretId: request.SecretId})
-	if err != nil {
-		return err
-	}
-	grants, err := expectResponse[apimodel.ListSecretGrantsBody](res)
-	if err != nil {
-		return err
-	}
-	for _, grant := range grants.GetSecretGrants() {
-		ruleID := grant.RuleId.Or("")
-		if grant.ID != grantID || ruleID == "" {
-			continue
-		}
-		made, err := client.GetApprovalRule(cmd.Context(), apiclientgen.GetApprovalRuleParams{ProjectId: projectID, RuleId: ruleID})
-		if err != nil {
-			return err
-		}
-		rule, err := expectResponse[apimodel.ApprovalRule](made)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), "\nApproval rule made:")
-		return a.writeApprovalRule(cmd, rule)
-	}
-	return nil
 }
 
 // grantHosts are the --hosts values as a body takes them: trimmed, with empty
@@ -884,7 +708,7 @@ func createSecretBody(flags *pflag.FlagSet, name, secretType, host string, ttl *
 	return body, nil
 }
 
-const secretRouteFlagUsage = "Where the secret may be sent, whoever holds it, as HOST[/PATH][=USE]: a host covers itself and every host beneath it, a path is a prefix on whole segments, and a use judges every request on the route against it, while a route without one sends them unjudged. Every request it is sent in must fall on one; the most specific decides (repeatable)"
+const secretRouteFlagUsage = "Where the secret may be sent, whoever holds it, as HOST[/PATH][=blocked]: a host covers itself and every host beneath it, a path is a prefix on whole segments, and a blocked route refuses every request it is the most specific route for. Every request it is sent in must fall on one; the most specific decides (repeatable)"
 
 // secretRoutesFlags reads --route, and --clear-route where the command has
 // it. ok reports whether either was given; --clear-route is an empty list,
@@ -901,16 +725,16 @@ func secretRoutesFlags(flags *pflag.FlagSet) (routes []apimodel.SecretRouteInput
 		return nil, false, err
 	}
 	for _, value := range values {
-		host, path, use, err := secretroute.Parse(value)
+		parsed, err := secretroute.Parse(value)
 		if err != nil {
 			return nil, false, fmt.Errorf("--route %q: %w", value, err)
 		}
-		route := apimodel.SecretRouteInput{Host: host}
-		if path != "" {
-			route.SetPath(apiclientgen.NewOptString(path))
+		route := apimodel.SecretRouteInput{Host: parsed.Host}
+		if parsed.Path != "" {
+			route.SetPath(apiclientgen.NewOptString(parsed.Path))
 		}
-		if use != "" {
-			route.SetUse(apiclientgen.NewOptString(use))
+		if parsed.Blocked {
+			route.SetBlocked(apiclientgen.NewOptBool(true))
 		}
 		routes = append(routes, route)
 	}

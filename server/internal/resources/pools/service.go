@@ -211,7 +211,7 @@ func (s *Service) DeletePool(ctx context.Context, projectID, poolID string) erro
 	if project.DefaultPoolID == pool.ID {
 		return apperrors.NewStatusError(http.StatusConflict, "pool is the project default; set a different default or unset it before deleting")
 	}
-	sandboxCount, err := s.store.CountWorkSandboxesForPool(ctx, projectID, pool.ID)
+	sandboxCount, err := s.store.CountSandboxesForPool(ctx, projectID, pool.ID)
 	if err != nil {
 		return err
 	}
@@ -297,7 +297,6 @@ func (s *Service) ListHTTPAudit(ctx context.Context, projectID string, filter se
 	query := sandbox.HTTPAuditQuery{
 		SandboxID: filter.SandboxID,
 		Host:      filter.Host,
-		UseID:     filter.UseID,
 		Since:     filter.Since,
 		Until:     filter.Until,
 		MinStatus: filter.MinStatus,

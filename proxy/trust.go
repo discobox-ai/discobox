@@ -53,9 +53,6 @@ type HostTrust struct {
 	// Host is host:port, exactly the endpoint the trust covers.
 	Host string
 	Pin  TrustPin
-	// UseIDs are the approved uses the trust was granted for. Every request
-	// the client sends to Host is judged against them.
-	UseIDs []string
 	// ExpiresAt ends the trust; zero means it does not lapse on its own.
 	ExpiresAt time.Time
 }
@@ -396,7 +393,6 @@ func (h *httpProxy) refuseUntrusted(req, outbound *http.Request, meta *requestMe
 		AppliedPattern:       meta.appliedPattern,
 		AppliedHeaders:       meta.appliedHeaders,
 		ForwardedURL:         meta.forwardedURL,
-		SwappedUseIDs:        meta.swappedUseIDs,
 		SwappedSecretIDs:     meta.swappedSecretIDs,
 		RedactRequestHeaders: meta.redactRequestHeaders(),
 		RequestHeaders:       req.Header,
@@ -404,7 +400,7 @@ func (h *httpProxy) refuseUntrusted(req, outbound *http.Request, meta *requestMe
 	meta.span.End()
 	body := fmt.Sprintf("blocked by proxy: %s for %s (%v).\n"+
 		"If this sandbox should reach %s, ask for it to be trusted:\n"+
-		"  discobox-access trust %s --use \"what you will send it\" --why \"...\"\n",
+		"  discobox-access trust %s --justification \"...\"\n",
 		reason, endpoint, cause, endpoint, endpoint)
 	resp := goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusBadGateway, body)
 	resp.Header.Set(UntrustedHostHeader, endpoint)

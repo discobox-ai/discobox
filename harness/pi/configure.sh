@@ -31,9 +31,9 @@
 # of its secret — the same delivery the codex image uses for its own.
 #
 # It also returns pi's settings as the user left them (settings.json: the
-# default model, theme and the rest; keybindings.json), and Discobox's own
-# settings for the harness. models.json and mcp.json are not returned: pi keeps
-# literal keys and commands in both, which would become plaintext files.
+# default model, theme and the rest; keybindings.json). models.json and
+# mcp.json are not returned: pi keeps literal keys and commands in both,
+# which would become plaintext files.
 #
 # Reconfigure: /run/discobox/configure/harness-previous-config.json lists the
 # secrets a previous run stored, without their values. Each one's value is
@@ -53,10 +53,6 @@ OUTPUT=/run/discobox/configure/harness-configure.json
 AUTH_PATH=".pi/agent/auth.json"
 PI_SETTINGS_PATHS=".pi/agent/settings.json .pi/agent/keybindings.json"
 AUTH_FILE="$HOME/$AUTH_PATH"
-# Discobox's own settings for this harness: the judge model. The image declares
-# a baseline, and a configured harness delivers its own copy into this sandbox,
-# which is what a reconfigure starts from.
-SETTINGS_PATH=".config/discobox/pi-harness.json"
 
 # The `expires` a delivered OAuth entry carries when the control plane renews
 # its token: far enough out that pi never decides the credential is stale and
@@ -278,8 +274,7 @@ confirm_retry() {
 }
 
 # write_output records the result: one secret per provider, the auth.json that
-# delivers them, pi's settings as the user left them, and Discobox's settings
-# for the harness. Secret shapes:
+# delivers them, and pi's settings as the user left them. Secret shapes:
 #   - kept:          usePrevious marker, no value.
 #   - OAuth renewed: the access token plus refresh material, type oauth.
 #   - anything else: a plain token, bound to a host when it is a Copilot
@@ -292,7 +287,6 @@ write_output() {
 		PI_CONFIGURE_HOME="$HOME" \
 		PI_CONFIGURE_AUTH_PATH="$AUTH_PATH" \
 		PI_CONFIGURE_PI_SETTINGS_PATHS="$PI_SETTINGS_PATHS" \
-		PI_CONFIGURE_SETTINGS_PATH="$SETTINGS_PATH" \
 		PI_CONFIGURE_OUTPUT="$OUTPUT" node <<-'NODE_EOF'
 		const fs = require('fs');
 		const path = require('path');
@@ -329,17 +323,6 @@ write_output() {
 				// Not written in this session or any before it; nothing to keep.
 			}
 		}
-		// Discobox's settings, as they arrived — a judge model someone set by
-		// editing the file is theirs.
-		const settingsPath = process.env.PI_CONFIGURE_SETTINGS_PATH;
-		let settings = {};
-		try {
-			settings = JSON.parse(fs.readFileSync(path.join(home, settingsPath), 'utf8')) || {};
-		} catch (err) {
-			settings = {};
-		}
-		if (typeof settings.judgeModel !== 'string') settings.judgeModel = '';
-		files.push({ path: settingsPath, content: JSON.stringify(settings, null, 2) + '\n' });
 		fs.writeFileSync(process.env.PI_CONFIGURE_OUTPUT, JSON.stringify({ files, secrets }));
 	NODE_EOF
 }

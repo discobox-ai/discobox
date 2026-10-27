@@ -1,0 +1,6 @@
+# database review notes
+
+- Retiring an enum value needs a data step for every row still carrying it. A row left on the retired value reaches API responses and readers that no longer know it, and nothing rewrites it later; the step goes in `Migrate` with the retirement, not after the first report.
+- A value persisted as an interim state needs its forward migration decided before it is written. Whatever the next change does with it is then a known step, not a guess at what old rows meant: the judge's routes became `blocked` routes, and blocked routes carry forward as blocked carve-outs of the route model (ADR 26-10-27-880 §4).
+- A migration step that narrows what a running sandbox may do marks the reconcile that pushes it dirty in the same transaction, so the narrowing reaches the sandbox and not only the row.
+- A migration marks reconciles through `reconcile.MarkTx`, never an upsert of its own into `reconcile_dirty`. The mark has one implementation, and a copy drifts: the first copy here set `not_before` unconditionally, pushing a queued mark later where the engine only ever pulls one forward. The types and IDs a step marks are spelled by packages above this one, so its test checks them against their owners (`sandboxes.SandboxDirtyID`, the resource type constants).

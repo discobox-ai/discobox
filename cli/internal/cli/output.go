@@ -17,15 +17,11 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/cli/internal/apipolicy"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
-	"github.com/discobox-ai/discobox/cli/internal/uselines"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
-	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
-	"github.com/discobox-ai/discobox/pkg/wellknown"
 )
 
 func writeJSON(w io.Writer, value any) error {
@@ -537,33 +533,18 @@ func (a *App) writeSecrets(cmd *cobra.Command, secrets []apimodel.Secret) error 
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"secrets": secrets})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tHOST\tANSWERS\tMAX GRANT TTL\tUPDATED")
+	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tHOST\tMAX GRANT TTL\tUPDATED")
 	for _, secret := range secrets {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			secret.ID,
 			secret.Name,
 			secret.Type,
 			secret.Host.Or(""),
-			secretAnswers(secret.WellKnownId.Or("")),
 			formatGrantLimit(secret.MaxGrantTTLSeconds),
 			formatTime(secret.UpdatedAt),
 		)
 	}
 	return tw.Flush()
-}
-
-// secretAnswers says which well-known credential a secret answers, if any, and
-// for a gate that it is one: a secret with no credential behind it, which
-// stands for access to the discobox API and is not edited.
-func secretAnswers(wellKnownID string) string {
-	known, ok := wellknown.Lookup(wellKnownID)
-	switch {
-	case !ok:
-		return "-"
-	case known.Gate:
-		return wellKnownID + " (gate, no value)"
-	}
-	return wellKnownID
 }
 
 func (a *App) writeSSHKey(cmd *cobra.Command, key *apimodel.SSHKey) error {
@@ -646,26 +627,9 @@ func (a *App) writeSecretGrant(cmd *cobra.Command, grant *apimodel.SecretGrant) 
 	fmt.Fprintf(tw, "SCOPE\t%s\n", grant.Scope)
 	fmt.Fprintf(tw, "SCOPE KEY\t%s\n", grant.ScopeKey)
 	fmt.Fprintf(tw, "HOSTS\t%s\n", grantHostsText(grant.Hosts))
-	// A grant with uses came from an agent's request, and the uses are what an
-	// operator needs to see to decide whether it should still exist.
-	if uses, ok := grant.Uses.Get(); ok {
-		for i, use := range uses {
-			label := "USES"
-			if i > 0 {
-				label = ""
-			}
-			useRows(tw, label, use.Description, " ("+use.UseId.Or("")+")")
-		}
-	}
-	if approved, ok := grant.Policy.Get(); ok {
-		if err := policyRows(tw, "POLICY", approved); err != nil {
-			return err
-		}
-	}
 	fmt.Fprintf(tw, "PURPOSE\t%s\n", grantPurposeText(grant.Purpose))
-	// A grant an approval rule minted names it; nobody read this ask.
-	if ruleID := grant.RuleId.Or(""); ruleID != "" {
-		fmt.Fprintf(tw, "APPROVED BY RULE\t%s\n", ruleID)
+	if delegation := grant.DelegationId.Or(""); delegation != "" {
+		fmt.Fprintf(tw, "GIVEN UNDER\t%s\n", delegation)
 	}
 	fmt.Fprintf(tw, "EXPIRES\t%s\n", formatGrantExpiry(grant))
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(grant.CreatedAt))
@@ -676,7 +640,7 @@ func (a *App) writeSecretGrant(cmd *cobra.Command, grant *apimodel.SecretGrant) 
 // which for a delegation grant is not the thing a reader would assume.
 func grantPurposeText(purpose apiclientgen.SecretGrantPurpose) string {
 	if purpose == apiclientgen.SecretGrantPurposeDelegate {
-		return "delegate: may delegate the credential to other discoboxes, and may not use it"
+		return "delegate: may give the credential to the discoboxes it creates, and may not use it"
 	}
 	return string(purpose)
 }
@@ -702,26 +666,7 @@ func (a *App) writeSecretGrants(cmd *cobra.Command, grants []apimodel.SecretGran
 			formatGrantExpiry(&grant),
 		)
 	}
-	if err := tw.Flush(); err != nil {
-		return err
-	}
-	// A policy is too much for a cell, and is what a grant authorizes: each
-	// one follows the table, under the grant it is on.
-	for _, grant := range grants {
-		approved, ok := grant.Policy.Get()
-		if !ok {
-			continue
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "\nPOLICY OF %s\n", grant.ID)
-		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		if err := policyRows(tw, "", approved); err != nil {
-			return err
-		}
-		if err := tw.Flush(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return tw.Flush()
 }
 
 func formatGrantExpiry(grant *apimodel.SecretGrant) string {
@@ -736,11 +681,7 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 		return nil
 	}
 	if a.output == "json" {
-		out, err := requestJSON(*request)
-		if err != nil {
-			return err
-		}
-		return writeTerminalSafeJSON(cmd.OutOrStdout(), out)
+		return writeTerminalSafeJSON(cmd.OutOrStdout(), request)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "FIELD\tVALUE")
@@ -760,23 +701,6 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	if justification, ok := request.Justification.Get(); ok && justification != "" {
 		fmt.Fprintf(tw, "WHY\t%s\n", justification)
 	}
-	if uses, ok := request.Uses.Get(); ok {
-		for i, use := range uses {
-			label := "USES"
-			if i > 0 {
-				label = ""
-			}
-			useRows(tw, label, use.Description, "")
-		}
-	}
-	// The policy is what an approval grants (ADR 26-10-20-782 §3), so it is
-	// rendered whole, its variables as they resolve for the discobox that
-	// asked.
-	if asked, ok := request.Policy.Get(); ok {
-		if err := policyRows(tw, "POLICY", asked); err != nil {
-			return err
-		}
-	}
 	if asked := agentcreds.AskedGrantTTL(request.GrantTTLSeconds.Or(0)); asked > 0 {
 		fmt.Fprintf(tw, "WANTED FOR\t%s\n", lifetime.Label(asked))
 	}
@@ -789,52 +713,9 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	if grantID, ok := request.GrantId.Get(); ok && grantID != "" {
 		fmt.Fprintf(tw, "GRANT\t%s\n", grantID)
 	}
-	// Why each approval rule tested against a pending request did not cover
-	// it, which is why it is waiting for a person.
-	for i, test := range request.RuleTests {
-		label := "RULES"
-		if i > 0 {
-			label = ""
-		}
-		fmt.Fprintf(tw, "%s\t%s\n", label, ruleTestText(test))
-	}
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(request.CreatedAt))
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(request.UpdatedAt))
 	return tw.Flush()
-}
-
-// requestJSON is a request as -o json prints it: as the API carries it, with
-// the sentence each statement of its policy reads as beside the policy's
-// structure ("sentences"), as discobox-access prints one, so a reader compares
-// what was asked with what a skill asks for without parsing either.
-func requestJSON(request apimodel.SecretRequest) (json.RawMessage, error) {
-	data, err := request.MarshalJSON()
-	if err != nil {
-		return nil, fmt.Errorf("encode request: %w", err)
-	}
-	asked, ok := request.Policy.Get()
-	if !ok {
-		return data, nil
-	}
-	read, err := apipolicy.From(asked)
-	if err != nil {
-		return nil, err
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return nil, fmt.Errorf("decode request: %w", err)
-	}
-	var policyFields map[string]json.RawMessage
-	if err := json.Unmarshal(fields["policy"], &policyFields); err != nil {
-		return nil, fmt.Errorf("decode policy: %w", err)
-	}
-	if policyFields["sentences"], err = json.Marshal(policy.FormatStatements(read.Statements)); err != nil {
-		return nil, err
-	}
-	if fields["policy"], err = json.Marshal(policyFields); err != nil {
-		return nil, err
-	}
-	return json.Marshal(fields)
 }
 
 // requestPurposeText says what approving a request lets its discobox do with
@@ -842,7 +723,7 @@ func requestJSON(request apimodel.SecretRequest) (json.RawMessage, error) {
 // assume.
 func requestPurposeText(purpose apiclientgen.SecretRequestPurpose) string {
 	if purpose == apiclientgen.SecretRequestPurposeDelegate {
-		return "delegate: asks to delegate the credential to other discoboxes, not to use it"
+		return "delegate: asks to give the credential to the discoboxes it creates, not to use it"
 	}
 	return string(purpose)
 }
@@ -855,15 +736,7 @@ func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.Secret
 		return writeResourceIDs(cmd.OutOrStdout(), requests, func(request apimodel.SecretRequest) string { return request.ID })
 	}
 	if a.output == "json" {
-		out := make([]json.RawMessage, 0, len(requests))
-		for _, request := range requests {
-			one, err := requestJSON(request)
-			if err != nil {
-				return err
-			}
-			out = append(out, one)
-		}
-		return writeTerminalSafeJSON(cmd.OutOrStdout(), map[string]any{"secretRequests": out})
+		return writeTerminalSafeJSON(cmd.OutOrStdout(), map[string]any{"secretRequests": requests})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tTYPE\tHOSTS\tPURPOSE\tSTATUS\tSECRET\tDISCOBOX\tREQUESTED BY\tUPDATED")
@@ -1375,26 +1248,4 @@ func grantHostsText(hosts []string) string {
 		return strings.Join(hosts, ",")
 	}
 	return "(any)"
-}
-
-// useRows writes one use as rows of a label/value table, broken up as the
-// console breaks it (uselines): its first line beside label, the rest set in
-// under it, and suffix after its last word. A use is an agent's words, so
-// each row is escaped on its way to the terminal.
-func useRows(w io.Writer, label, use, suffix string) {
-	parts := uselines.Split(use)
-	for i, part := range parts {
-		text := terminalSafe(part.Text)
-		switch {
-		case i == 0:
-		case part.Hang:
-			label, text = "", "    "+text
-		default:
-			label, text = "", "  "+text
-		}
-		if i == len(parts)-1 {
-			text += suffix
-		}
-		fmt.Fprintf(w, "%s\t%s\n", label, text)
-	}
 }

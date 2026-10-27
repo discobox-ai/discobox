@@ -11,7 +11,6 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/pkg/secretformat"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
-	"github.com/discobox-ai/discobox/pkg/wellknown"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -247,12 +246,7 @@ func (l *secretList) row(st *styles, s Secret, i int, focused bool) string {
 	// reads as "not loaded", and this is a fact about the secret.
 	host := s.Host
 	hostStyle := st.name
-	switch known, ok := wellknown.Lookup(s.WellKnownID); {
-	case ok && known.Gate:
-		// Not a credential: the gate to the discobox API, which is taken
-		// back by revoking its grants, never edited.
-		host, hostStyle = "gate: "+known.Name+" API", st.dimText
-	case host == "":
+	if host == "" {
 		host, hostStyle = "any host", st.dimText
 	}
 	addCol(hostStyle.Render(pad(host, 22)), 23)
@@ -325,12 +319,7 @@ type secretsLoadedListMsg struct {
 	server  string
 	secrets []Secret
 	grants  []Grant
-	rules   []Rule
 	err     error
-	// rulesErr is the rules alone failing to be read: a server that predates
-	// them still has secrets and requests to show, so it is said in the rules
-	// table rather than taking the screen down.
-	rulesErr error
 }
 
 // secretsTable is which of the screen's tables has the keys: they are one
@@ -340,7 +329,6 @@ type secretsTable int
 const (
 	tableSecrets secretsTable = iota
 	tableRequests
-	tableRules
 )
 
 // secretActionMsg carries a completed action back into the update loop, so the
@@ -349,8 +337,7 @@ type secretActionMsg struct {
 	did string
 	err error
 	// after is where a finished action goes on to, for one started from a
-	// card that should come back: a grant revoked from the rule that minted
-	// it. Nil leaves the screen.
+	// card that should come back. Nil leaves the screen.
 	after func() tea.Cmd
 }
 
@@ -365,8 +352,7 @@ func (m *Model) loadSecrets() tea.Cmd {
 		if err != nil {
 			return secretsLoadedListMsg{server: server, err: err}
 		}
-		rules, rulesErr := m.ds.Rules(m.ctx, server)
-		return secretsLoadedListMsg{server: server, secrets: secrets, grants: grants, rules: rules, rulesErr: rulesErr}
+		return secretsLoadedListMsg{server: server, secrets: secrets, grants: grants}
 	}
 }
 
@@ -395,24 +381,8 @@ func (m *Model) secretsLoaded(msg secretsLoadedListMsg) tea.Cmd {
 	}
 	m.secrets.setAll(msg.secrets)
 	m.secrets.setGrants(msg.grants)
-	if msg.rulesErr != nil {
-		m.rules.fail(msg.rulesErr)
-	} else {
-		m.rules.setAll(msg.rules)
-	}
-	m.leaveEmptyRules()
 	m.layout()
 	return nil
-}
-
-// leaveEmptyRules moves the keys to the secrets when the rules table they
-// were in has no row left: a table with no row takes no cursor, so its key
-// line would offer keys that do nothing. Everything that sets or clears the
-// rules calls it.
-func (m *Model) leaveEmptyRules() {
-	if !m.rulesReachable() && m.table == tableRules {
-		m.table = tableSecrets
-	}
 }
 
 // updateSecrets handles the screen. A letter is a command here, the way it is
@@ -440,8 +410,6 @@ func (m *Model) updateSecrets(msg tea.KeyPressMsg) tea.Cmd {
 	switch m.table {
 	case tableRequests:
 		return m.updateRequestTable(msg)
-	case tableRules:
-		return m.updateRuleTable(msg)
 	}
 	switch keyName(msg) {
 	case "down", "j":
@@ -492,11 +460,6 @@ func (m *Model) updateRequestTable(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		m.requestRows.move(-1)
 	case "down", "j":
-		// Off the bottom of the requests are the rules, the same way.
-		if below := m.tableBelow(tableRequests); m.requestRows.cursor >= len(m.requestRows.all)-1 && below != tableRequests {
-			m.table = below
-			return nil
-		}
 		m.requestRows.move(1)
 	case "pgup":
 		m.requestRows.move(-m.requestRows.height)
@@ -514,38 +477,18 @@ func (m *Model) updateRequestTable(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// tableBelow is the table ↓ leaves from's last row for: the next one down
-// that has a row to land on, or from itself when there is none. An empty
-// table says so in a line and has nothing to put a cursor on.
+// tableBelow is the table ↓ leaves from's last row for: the requests when
+// there is one to land on, or from itself when there is none. An empty table
+// says so in a line and has nothing to put a cursor on.
 func (m *Model) tableBelow(from secretsTable) secretsTable {
 	if from == tableSecrets && len(m.requestRows.all) > 0 {
 		return tableRequests
 	}
-	if from != tableRules && m.rulesReachable() {
-		return tableRules
-	}
 	return from
 }
 
-// rulesReachable is whether the cursor may land in the rules table: one with
-// rows, or one read and found empty, whose line makes the first rule —
-// whether or not a short window has it drawn, since moving into it is what
-// swaps it in. A listing not read yet, or one that failed, has nothing to act
-// on.
-func (m *Model) rulesReachable() bool {
-	return len(m.rules.all) > 0 || (m.rules.loaded && m.rules.failed == "")
-}
-
-// tableAbove is the same going up; the secrets are always there to land in.
-func (m *Model) tableAbove(from secretsTable) secretsTable {
-	if from == tableRules && len(m.requestRows.all) > 0 {
-		return tableRequests
-	}
-	return tableSecrets
-}
-
-// nextTable is where Tab goes: down the screen through the tables that have
-// rows, and round to the secrets.
+// nextTable is where Tab goes: down to the requests when there are any, and
+// round to the secrets.
 func (m *Model) nextTable() secretsTable {
 	if below := m.tableBelow(m.table); below != m.table {
 		return below
@@ -555,11 +498,8 @@ func (m *Model) nextTable() secretsTable {
 
 // tableName is a table as the key line names it.
 func tableName(t secretsTable) string {
-	switch t {
-	case tableRequests:
+	if t == tableRequests {
 		return "requests"
-	case tableRules:
-		return "rules"
 	}
 	return "secrets"
 }
@@ -569,15 +509,10 @@ func tableName(t secretsTable) string {
 // than waiting for an agent to ask and answering then.
 const grantCreateKey = "p"
 
-// askForGrantScope opens the pre-approval as one form.
-//
-// It was seven dialogs in a row, and a run of modals is the wrong shape for a
-// decision whose parts are read against each other: a scope of "one harness"
-// and a use of "open a pull request" mean something together, and answering
-// them a card at a time hides each behind the next. Everything is on one card,
-// and the rows a given answer makes irrelevant are taken away rather than asked
-// (ADR 0031 §4: a credential taken through discobox-access is never injected,
-// so it alone has a variable and a use).
+// askForGrantScope opens the pre-approval as one form: who may use it, what
+// for, where it may be sent, and for how long, read against each other on one
+// card. The rows a given answer makes irrelevant are taken away rather than
+// asked.
 func (m *Model) askForGrantScope() tea.Cmd {
 	secret := m.secrets.current()
 	if secret == nil {
@@ -607,7 +542,7 @@ func (m *Model) askForGrantScope() tea.Cmd {
 		harnesses = append(harnesses, choice{key: h.ID, label: h.Name, hint: h.ID})
 	}
 
-	const who, how, where = "who may use it", "how it may be used", "where, and for how long"
+	const who, what, where = "who may use it", "what it is for", "where, and for how long"
 	rows := []formRow{
 		withSection(who, pickRow("scope", "scope", scopes...)),
 		unless(withSection(who, pickRow("harness", "harness", harnesses...)),
@@ -616,29 +551,14 @@ func (m *Model) askForGrantScope() tea.Cmd {
 		unless(withSection(who, pickRow("sandbox", "discobox", boxes...)),
 			func(f *form) bool { return f.chosen("scope") == "sandbox" },
 			"only when the grant is scoped to one discobox"),
-
-		// The ordinary kind first, and so the one the form opens on: a
-		// pre-approval is usually a credential somebody wants the box simply to
-		// have. The narrow kind is what an agent's own request mints, and
-		// choosing it here brings out the two rows it needs.
-		withSection(how, pickRow("taken", "taken",
-			choice{key: "any", label: "anything in the discobox",
-				hint: "an environment variable, so everything in the box can read it"},
-			choice{key: "access", label: "only through discobox-access",
-				hint: "never injected: the CLI takes it one declared use at a time, and the value dies minutes later"})),
+		// A delegation is one discobox's: a grant wider than that has nobody
+		// in particular to give the credential on.
+		unless(withSection(what, pickRow("purpose", "purpose",
+			choice{key: "use", label: "to use it", hint: "the discobox sends it, in the sentinel it already holds"},
+			choice{key: "delegate", label: "to give it on", hint: "the discobox may give it to the discoboxes it creates, and never uses it itself"})),
+			func(f *form) bool { return f.chosen("scope") == "sandbox" },
+			"only one discobox may hold a delegation"),
 	}
-
-	deliveredAs := textRow("envVar", "delivered as", "e.g. GH_TOKEN", "")
-	deliveredAs.section = how
-	deliveredAs.hint = "the variable `discobox-access run` puts it in, for the one command it wraps"
-	deliveredAs.required = "a credential taken by the CLI needs a variable to arrive in"
-	deliveredAs.when, deliveredAs.why = takenThroughAccess, injectedNote
-
-	use := textRow("use", "the job", "e.g. Triage issues in org/repo", "")
-	use.section = how
-	use.hint = "names what it is taken for; the policy written next is what every command is held to"
-	use.required = "a use names the job the credential is granted for"
-	use.when, use.why = takenThroughAccess, injectedNote
 
 	host := textRow("host", "may be sent to", "e.g. github.com", secret.Host)
 	host.section = where
@@ -651,14 +571,10 @@ func (m *Model) askForGrantScope() tea.Cmd {
 	}
 	ttl[0].hint, ttl[1].hint = lifetime, lifetime
 
-	rows = append(rows, deliveredAs, use, host)
+	rows = append(rows, host)
 	rows = append(rows, ttl...)
 
-	secretID, secretName := secret.ID, secret.Name
-	// written is the policy as it was last left, kept for a step back to the
-	// form and forward again.
-	var written lineList
-	var card *dialog
+	secretID := secret.ID
 	d := formDialog("Grant "+secret.Name, newForm(rows...), func(f *form) tea.Cmd {
 		seconds, ok := ttlSeconds(f, "ttl")
 		if !ok {
@@ -676,63 +592,17 @@ func (m *Model) askForGrantScope() tea.Cmd {
 			grant.ScopeKey = f.chosen("harness")
 		case "sandbox":
 			grant.ScopeKey = f.chosen("sandbox")
+			grant.Delegate = f.chosen("purpose") == "delegate"
 		}
-		if f.chosen("taken") != "access" {
-			return m.mintGrant(grant)
-		}
-		// A grant taken through discobox-access carries the policy it is held
-		// to (#312), written next as a rule's is, and minted once it is one.
-		grant.EnvVar, grant.Uses = f.value("envVar"), []string{f.value("use")}
-		return m.askGrantPolicy(secretName, grant, written, func(lines lineList) tea.Cmd {
-			written = lines
-			m.dialog = card
-			return nil
-		})
+		return m.mintGrant(grant)
 	})
 	d.sections = []section{{lines: []line{
 		{text: "a standing grant authorizes this credential before anything asks for it", tone: toneDim},
 	}}}
 	d.keys = []hint{says("↑↓ moves"), says("←→ chooses"), pressing("enter grants", "enter"), pressing("esc leaves the secret alone", "esc")}
-	card = d
 	m.dialog = d
 	return nil
 }
-
-// askGrantPolicy asks for the policy a grant taken through discobox-access
-// carries, in the lines a rule's is written in (rulepolicy.go): every
-// statement as its sentence, then every word that is not a default as
-// `word = what it means`. What keeps the lines from being a policy is said
-// under them as they are written, and the grant is minted only once they are
-// one. back returns to the form with the lines as they were left.
-func (m *Model) askGrantPolicy(secretName string, grant NewGrant, lines lineList, back func(lineList) tea.Cmd) tea.Cmd {
-	ask := linesAsk{
-		title:       "Grant " + secretName + ": what it may do",
-		answerLabel: "a line: a statement, or word = what it means",
-		placeholder: `e.g. allow read on anything in repository "org/repo"`,
-		written:     "its policy",
-		footer:      "every command taken under this grant is held to this policy",
-		numbered:    true,
-		required:    "a grant taken through discobox-access says what it may do: write at least one statement",
-		sectionsFor: policyProblemsSection,
-	}
-	var done func(lineList) tea.Cmd
-	done = func(lines lineList) tea.Cmd {
-		sent, _, problems := listPolicy(lines)
-		if len(problems) > 0 {
-			return m.askLines(ask, lines, notAPolicyYet, done, back)
-		}
-		grant.Policy = sent
-		return m.mintGrant(grant)
-	}
-	return m.askLines(ask, lines, "", done, back)
-}
-
-// takenThroughAccess is the answer the variable and the use hang off: a
-// credential the discobox is simply provisioned with has neither.
-func takenThroughAccess(f *form) bool { return f.chosen("taken") == "access" }
-
-// injectedNote is what those two rows say while that is the answer.
-const injectedNote = "only for a credential taken through discobox-access"
 
 // withSection and withWhen keep the picker rows above readable as a list.
 func withSection(label string, row formRow) formRow {
@@ -857,7 +727,7 @@ func (m *Model) showGrants() tea.Cmd {
 		if !ok {
 			return m.report(true, "that grant is no longer there")
 		}
-		return m.reviewGrant(m.configServer(), secret.Name, grant, m.showGrants)
+		return m.reviewGrant(secret.Name, grant, m.showGrants)
 	})
 	d.titleRight = secretAge(*secret, m.secrets.now())
 	d.sections = describeSecret(*secret, m.secrets.now())
@@ -896,17 +766,16 @@ func describeSecret(secret Secret, now time.Time) []section {
 		{label: "may be sent to", value: where, tone: tone},
 		{label: "grant limit", value: limit},
 	}}
-	// Where it may be sent, whoever holds it, and whether a request there is
-	// judged (ADR 26-10-02-924).
+	// Where it may be sent, whoever holds it (ADR 26-10-02-924).
 	for i, route := range secret.Routes {
 		label := "route"
 		if i > 0 {
 			label = "or route"
 		}
-		where := secretroute.Format(route.Host, route.Path, "")
+		where := route.Host + route.Path
 		value, tone := where+" · allowed", toneDim
-		if route.Use != "" {
-			value, tone = where+" · judged: "+route.Use, toneAccent
+		if route.Blocked {
+			value, tone = where+" · blocked", toneAccent
 		}
 		credential.fields = append(credential.fields, field{label: label, value: value, tone: tone})
 	}
@@ -1002,16 +871,9 @@ const (
 // grantRevokeKey withdraws the highlighted grant from the review list.
 const grantRevokeKey = "x"
 
-// grantRuleItem is the grant card's row that makes a rule of the grant.
-const grantRuleItem = "grant:rule"
-
-// reviewGrant is the grant read in full: what it covers, how long it lives,
-// and — for one minted by approving an agent's request — every use it was
-// approved for, with the ID an agent presents to take a value under it; and
-// the one thing to do from it, make a rule that approves requests like it.
-// server is where the grant was read, and back the list it was opened from:
-// a secret's grants, or the ones a rule minted.
-func (m *Model) reviewGrant(server, secretName string, grant Grant, back func() tea.Cmd) tea.Cmd {
+// reviewGrant is the grant read in full: what it covers, who granted it, and
+// how long it lives. back is the list it was opened from.
+func (m *Model) reviewGrant(secretName string, grant Grant, back func() tea.Cmd) tea.Cmd {
 	where := grant.Host
 	tone := toneAccent
 	if where == "" {
@@ -1029,68 +891,18 @@ func (m *Model) reviewGrant(server, secretName string, grant Grant, back func() 
 		{label: "may go to", value: where, tone: tone},
 	}}
 	if grant.Delegate {
-		covers.fields = append(covers.fields, field{label: "purpose",
-			value: "delegation — may delegate it, never uses it", tone: toneAccent})
+		covers.fields = append(covers.fields, field{label: "purpose", value: delegationPurpose, tone: toneAccent})
 	}
 	if grant.GrantedBy != "" {
 		covers.fields = append(covers.fields, field{label: "granted by", value: grant.GrantedBy})
 	}
-	if grant.RuleID != "" {
-		// Nobody read the request this one answers: a rule did.
-		covers.fields = append(covers.fields, field{label: "minted by", value: "approval rule " + grant.RuleID})
-	}
 	covers.fields = append(covers.fields, field{label: "expires", value: grantLifeLeft(grant, m.secrets.now())})
 
-	uses := section{label: "approved uses"}
-	if len(grant.Uses) == 0 {
-		uses.lines = []line{{text: "none — a standing grant authorizes the credential without enumerating what it is for", tone: toneDim}}
-	}
-	for _, use := range grant.Uses {
-		uses.fields = append(uses.fields, useFields(use.ID, use.Description)...)
-	}
-	switch {
-	case len(grant.Uses) > 0 && grant.Delegate:
-		uses.label = "uses it may delegate"
-		uses.lines = append(uses.lines, line{
-			text: "the discobox holding this grant may delegate these; it cannot run with them itself",
-			tone: toneDim,
-		})
-	case len(grant.Uses) > 0:
-		uses.lines = append(uses.lines, line{
-			text: "an agent takes a value under one of those IDs: discobox-access run --use <id> -- <command>",
-			tone: toneDim,
-		})
-	}
-
-	sections := []section{covers, uses}
-	if len(grant.Policy) > 0 {
-		sections = append(sections, section{label: "approved policy", lines: policyLines(grant.Policy)})
-	}
-
-	makeRule := action{key: grantRuleItem, press: ruleNewKey, label: "Make a rule from this grant…",
-		detail:  "the project's judge writes its policy from this grant's, as auto approve would have; you choose its discoboxes and read it whole before it is made",
-		enabled: true}
-	switch {
-	case grant.RuleID != "":
-		makeRule.enabled, makeRule.why = false, "approval rule "+grant.RuleID+" minted it, and approves requests like it already"
-	case grant.Approved == nil:
-		makeRule.enabled, makeRule.why = false, "a rule approves a policy, and this grant carries none"
-	case grant.Delegate:
-		makeRule.enabled, makeRule.why = false, "it delegates, and no rule approves a delegation yet"
-	case grant.SecretID == "":
-		makeRule.enabled, makeRule.why = false, "it stands on no secret for a rule to answer with"
-	}
-	again := func() tea.Cmd { return m.reviewGrant(server, secretName, grant, back) }
-	d := actionsDialog("Grant", "", []action{makeRule}, func(string) tea.Cmd {
-		return m.proposeGrantRule(server, grant, again)
-	})
+	d := actionsDialog("Grant", "", nil, func(string) tea.Cmd { return back() })
 	d.titleRight = grant.ID
-	d.sections = sections
+	d.sections = []section{covers}
 	d.wrapDetails = true
 	d.keys = []hint{pressing("esc goes back", "esc")}
-	if makeRule.enabled {
-		d.keys = []hint{pressing("enter makes a rule of it", "enter"), pressing("esc goes back", "esc")}
-	}
 	// Back to the grants you were reading, not to the list behind them. The
 	// common next move after reading one is reading the next, or withdrawing
 	// this one, and both are in the list this came from.
@@ -1163,9 +975,6 @@ func grantDetail(g Grant, now time.Time) string {
 	parts := []string{who}
 	if g.Delegate {
 		parts = []string{"delegates", who}
-	}
-	if len(g.Uses) > 0 {
-		parts = append(parts, plural(len(g.Uses), "approved use", "approved uses"))
 	}
 	return strings.Join(append(parts, grantExpiry(g, now)), " · ")
 }
@@ -1274,11 +1083,6 @@ func ttlRows(key, label, section, forever string, presets []time.Duration, secon
 	return []formRow{pick, custom}
 }
 
-func mustAtoi(s string) int {
-	n, _ := strconv.Atoi(s)
-	return n
-}
-
 // defaultValueLifetime is what a value got from a command lasts when nobody
 // chooses otherwise, as the server gives one (model.DefaultRefreshTTL).
 const defaultValueLifetime = 5 * time.Minute
@@ -1327,7 +1131,6 @@ func secretForm(existing *Secret) *form {
 	// It is only ever opened here, never chosen: its recipe says where a key
 	// is sent, and is given with `discobox secret create --exchange-recipe`.
 	exchanged := func(f *form) bool { return f.chosen("kind") == "exchange" }
-	// A well-known credential is a token the project stores for that ID.
 	token := func(f *form) bool { return !oauth(f) && !exchanged(f) }
 
 	name := textRow("name", "name", "e.g. github", "")
@@ -1345,18 +1148,6 @@ func secretForm(existing *Secret) *form {
 		choice{key: "token", label: "a token", hint: "one opaque string, however it is presented"},
 		choice{key: "oauth", label: "an OAuth credential", hint: "renews itself: an access token, a refresh token, and where to spend it"})
 	kind.section = what
-	// Then every well-known credential with a value behind it: a token stored
-	// for that ID answers requests for it from the start, and the choice fills
-	// in the name, host, and command it suggests (ADR 26-09-25-122 §2).
-	for _, known := range wellknown.All() {
-		if known.Gate {
-			continue
-		}
-		kind.choices = append(kind.choices, choice{key: wellKnownKind + known.ID, label: known.ID, hint: known.Description})
-	}
-	if !editing {
-		kind.chose = fillWellKnown()
-	}
 
 	host := textRow("host", "may be sent to", "any host a grant allows", "")
 	host.section = what
@@ -1480,11 +1271,6 @@ func secretForm(existing *Secret) *form {
 			kind.choices = append(kind.choices, choice{key: "exchange", label: "an exchange credential", hint: "fields the control plane trades for a short-lived token"})
 			kind.at = len(kind.choices) - 1
 		}
-		for i, c := range kind.choices {
-			if existing.WellKnownID != "" && c.key == wellKnownKind+existing.WellKnownID {
-				kind.at = i
-			}
-		}
 		host.input = valued(host.input, existing.Host)
 		// Only a chosen shape opens filled in: one read from the value is
 		// shown as what empty gives, so saving the card untouched does not
@@ -1552,9 +1338,8 @@ func secretForm(existing *Secret) *form {
 }
 
 // secretRouteRows are the rows a secret's routes are typed in: one per route
-// it has, and one empty for another. A route is HOST[/PATH][=USE], and a use
-// is a sentence that may hold any punctuation, so each has its own row rather
-// than sharing one behind a separator; emptying a row removes that route.
+// it has, and one empty for another. A route is HOST[/PATH][=blocked], each on
+// its own row; emptying a row removes that route.
 func secretRouteRows(section string, routes []SecretRoute) []formRow {
 	rows := make([]formRow, 0, len(routes)+1)
 	for i, route := range append(append([]SecretRoute(nil), routes...), SecretRoute{}) {
@@ -1564,11 +1349,11 @@ func secretRouteRows(section string, routes []SecretRoute) []formRow {
 		}
 		value := ""
 		if route.Host != "" {
-			value = secretroute.Format(route.Host, route.Path, route.Use)
+			value = secretroute.Format(secretroute.Route{Host: route.Host, Path: route.Path, Blocked: route.Blocked})
 		}
-		row := textRow(secretRouteKey+strconv.Itoa(i), label, "e.g. github.com/repos=Read-only GitHub queries", value)
+		row := textRow(secretRouteKey+strconv.Itoa(i), label, "e.g. githubcopilot.com/mcp=blocked", value)
 		row.section = section
-		row.hint = "HOST[/PATH][=USE]: every request it is sent in must fall on one, the most specific deciding; with a use it is judged, without one it is sent unjudged · empty for none"
+		row.hint = "HOST[/PATH][=blocked]: every request it is sent in must fall on one, the most specific deciding; a blocked one refuses · empty for none"
 		if i == len(routes) && i > 0 {
 			row.input.Placeholder = "another route (optional)"
 		}
@@ -1591,11 +1376,11 @@ func formRoutes(f *form) (routes []SecretRoute, why string) {
 		if text == "" {
 			continue
 		}
-		host, path, use, err := secretroute.Parse(text)
+		route, err := secretroute.Parse(text)
 		if err != nil {
 			return nil, fmt.Sprintf("route %q: %v", text, err)
 		}
-		routes = append(routes, SecretRoute{Host: host, Path: path, Use: use})
+		routes = append(routes, SecretRoute{Host: route.Host, Path: route.Path, Blocked: route.Blocked})
 	}
 	return routes, ""
 }
@@ -1621,59 +1406,6 @@ func exchangeFieldRows(section string, fields []string, when func(*form) bool) [
 // exchangeFieldPrefix prefixes the key of a row an exchange field is typed
 // into.
 const exchangeFieldPrefix = "exchange:"
-
-// wellKnownKind prefixes the kind a well-known credential is chosen by.
-const wellKnownKind = "known:"
-
-// chosenWellKnown is the well-known credential the kind names, if it names
-// one.
-func chosenWellKnown(f *form) (wellknown.Credential, bool) {
-	id, ok := strings.CutPrefix(f.chosen("kind"), wellKnownKind)
-	if !ok {
-		return wellknown.Credential{}, false
-	}
-	return wellknown.Lookup(id)
-}
-
-// fillWellKnown fills in what a well-known credential suggests as it is
-// chosen: its name, its host, and getting it from its command. A field
-// somebody typed into is theirs and is left alone; one this filled in follows
-// the next choice.
-func fillWellKnown() func(f *form) {
-	var filled map[string]string
-	return func(f *form) {
-		ours := func(key string) bool { return f.value(key) == "" || f.value(key) == filled[key] }
-		known, ok := chosenWellKnown(f)
-		next := map[string]string{}
-		if ok {
-			next["name"], next["host"] = known.Name, known.Host()
-			if len(known.RefreshCommand) > 0 {
-				next["command"] = refreshcmd.Join(known.RefreshCommand)
-			}
-		}
-		for _, key := range []string{"name", "host", "command"} {
-			if ours(key) {
-				f.set(key, next[key])
-			}
-		}
-		if next["command"] != "" && f.value("token") == "" {
-			f.choose("source", "command")
-		}
-		// How long its value lasts follows the credential chosen — a day for
-		// a token that lasts until revoked — unless somebody moved it off
-		// what was filled in.
-		lasts := itoa(int(defaultValueLifetime / time.Second))
-		if ok && known.RefreshTTL > 0 {
-			lasts = itoa(int(known.RefreshTTL / time.Second))
-		}
-		if f.chosen("lasts") == filled["lasts"] || filled["lasts"] == "" {
-			f.choose("lasts", lasts)
-			f.set("lastsCustom", lifetime.Label(time.Duration(mustAtoi(lasts))*time.Second))
-		}
-		next["lasts"] = f.chosen("lasts")
-		filled = next
-	}
-}
 
 // keepStored is what an untouched value row says on an existing credential: a
 // value nobody can read back, and one nothing has to be typed to keep.
@@ -1725,9 +1457,6 @@ func secretFromForm(f *form) (NewSecret, bool) {
 		Routes:        routes,
 		Format:        format,
 		Value:         formSecretValue(f),
-	}
-	if known, ok := chosenWellKnown(f); ok {
-		secret.Type, secret.WellKnownID = "token", known.ID
 	}
 	if secret.Type == "token" && f.chosen("source") == "command" {
 		command, err := refreshcmd.Split(f.value("command"))
@@ -2077,20 +1806,14 @@ func (m *Model) viewSecrets() string {
 	body := m.secrets.view(m.st, &m.zones, m.table == tableSecrets)
 	// Each lower table is pushed past everything drawn above it and the two
 	// blank rows between, so its rows are marked where they are actually
-	// drawn. One the window has no room for is neither drawn nor marked
-	// (layout).
+	// drawn.
 	under := func(view func() string) {
 		m.zones.push(0, lipgloss.Height(body)+2)
 		table := view()
 		m.zones.pop()
 		body = lipgloss.JoinVertical(lipgloss.Left, body, "", "", table)
 	}
-	if !m.requestsHidden {
-		under(func() string { return m.requestRows.view(m.st, &m.zones, m.table == tableRequests) })
-	}
-	if !m.rulesHidden {
-		under(func() string { return m.rules.view(m.st, &m.zones, m.table == tableRules, m.ruleRowCredential) })
-	}
+	under(func() string { return m.requestRows.view(m.st, &m.zones, m.table == tableRequests) })
 	m.zones.pop()
 	// The secrets take only the rows they have, so what is left over falls
 	// below the lower table rather than between the two: the window keeps its
@@ -2122,12 +1845,8 @@ func (m *Model) viewSecrets() string {
 const secretsChrome = 8
 
 // requestsChrome is what the lower table costs beside its rows: its title, and
-// the two blank rows between the tables. rulesChrome is the same for the
-// table under it.
-const (
-	requestsChrome = 3
-	rulesChrome    = 3
-)
+// the two blank rows between the tables.
+const requestsChrome = 3
 
 // secretHints is the bottom line here: what the secret under the cursor can
 // take, most reached-for first.
@@ -2141,8 +1860,6 @@ func (m *Model) secretHints() []hint {
 			tab,
 			keyed("esc", "esc", "back"),
 		}
-	case tableRules:
-		return m.ruleHints(tab)
 	}
 	hints := []hint{
 		says("↑↓ move"),

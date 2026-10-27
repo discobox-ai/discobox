@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -18,10 +17,7 @@ import (
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
-	"github.com/discobox-ai/discobox/pkg/judge"
-	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/pkg/secretformat"
-	"github.com/discobox-ai/discobox/pkg/wellknown"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -45,13 +41,6 @@ type Service struct {
 	// See renewedRecently.
 	renewalsMu sync.Mutex
 	renewals   map[string]time.Time
-	// judge is asked whether the uses a discobox hands on fall within what it
-	// was delegated (ADR 26-09-30-782 §3). Without one, a discobox approves
-	// nothing: anything but an explicit yes refuses.
-	judge services.JudgeService
-	// dirtier has approval rules tested against what is pending when a
-	// request is filed or a rule changes (ADR 26-10-12-330 §4).
-	dirtier Dirtier
 	// holders marks the sentinel delivery of the discoboxes holding a secret,
 	// in the transaction that changes its routes, so each is sent them.
 	holders SecretHolders
@@ -62,16 +51,14 @@ type Service struct {
 // is set after construction because it is built from this service.
 type SecretHolders interface {
 	MarkSecretHoldersDirtyTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, secretID string) error
+	// MarkSandboxSentinelsDirtyTx marks one sandbox's sentinel delivery, in
+	// the transaction that bound a variable on it, so the binding reaches it
+	// while it runs.
+	MarkSandboxSentinelsDirtyTx(ctx context.Context, txDB *gorm.DB, projectID, sandboxID string) error
 }
 
 func NewService(store *store.Store) *Service {
 	return &Service{store: store}
-}
-
-// SetJudge gives the service the project's judge to ask about delegation. The
-// judges service is built from this one (SetUses), so it is wired after.
-func (s *Service) SetJudge(judge services.JudgeService) {
-	s.judge = judge
 }
 
 // SetSecretHolders gives the service what marks a secret's holders for
@@ -86,7 +73,7 @@ func (s *Service) SetSecretHolders(holders SecretHolders) {
 func replaceRoutes(sec *model.Secret, input []apigen.SecretRouteInput) (bool, error) {
 	routes := make([]model.SecretRoute, 0, len(input))
 	for _, route := range input {
-		routes = append(routes, model.SecretRoute{Host: route.Host, Path: route.Path.Or(""), Use: route.Use.Or("")})
+		routes = append(routes, model.SecretRoute{Host: route.Host, Path: route.Path.Or(""), Blocked: route.Blocked.Or(false)})
 	}
 	changed, err := sec.ReplaceRoutes(routes)
 	if err != nil {
@@ -213,13 +200,6 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 		EncryptedValue: valueBytes,
 	}
 	sec.ValueWritten(time.Now().UTC(), nil)
-	// The ID first: a well-known credential says how long its value lasts
-	// when nobody says otherwise.
-	if id := strings.TrimSpace(input.WellKnownId.Or("")); id != "" {
-		if err := s.answersWellKnown(ctx, sec, id); err != nil {
-			return nil, err
-		}
-	}
 	if sec.ExchangeRecipe, err = exchangeRecipe(ctx, secretType, sec.Host, input.Exchange); err != nil {
 		return nil, err
 	}
@@ -262,13 +242,6 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	sec, err := s.store.GetSecret(ctx, projectID, secretID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "secret not found")
-	}
-	// A gate's secret stands for access, not a credential: there is no value
-	// to replace, and its host is where the pool admits the discobox API.
-	// Revoking its grants, or deleting it, is how a person takes access back.
-	if isGateSecret(sec) && (input.Value.IsSet() || input.Host.IsSet() || input.Format.IsSet()) {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest,
-			fmt.Sprintf("%s is a gate, with no value: revoke its grants, or delete it, to take access back", sec.WellKnownID))
 	}
 	if nameVal, ok := input.Name.Get(); ok {
 		name := strings.TrimSpace(nameVal)
@@ -382,48 +355,10 @@ func (s *Service) ListSecretRequests(ctx context.Context, projectID, status stri
 	if err != nil {
 		return nil, err
 	}
-	describeRuleTests := s.ruleTestDescriber(ctx, projectID)
-	resolvePolicy := s.requestPolicyResolver(ctx, projectID)
 	for i := range requests {
 		withholdAnswerFromSandbox(ctx, &requests[i])
-		describeRuleTests(&requests[i])
-		if err := resolvePolicy(&requests[i]); err != nil {
-			return nil, err
-		}
 	}
 	return requests, nil
-}
-
-// requestPolicyResolver returns what fills in, on a request read, the value
-// each variable of the policy it asks for resolves to for the discobox that
-// asked (ADR 26-10-20-782 §4): the values the person approving it is shown,
-// and the ones an approval resolves onto the grant from the same record. A
-// request stores its policy unresolved; nothing read here is written back.
-//
-// Each discobox's record is read once per call, since a listing can hold many
-// requests from one. A discobox that is gone resolves nothing, so every
-// variable shows as matching nothing, which is what it would grant.
-func (s *Service) requestPolicyResolver(ctx context.Context, projectID string) func(*model.SecretRequest) error {
-	facts := map[string]policy.Facts{}
-	return func(req *model.SecretRequest) error {
-		if req.Policy == nil || req.SandboxID == "" {
-			return nil
-		}
-		f, ok := facts[req.SandboxID]
-		if !ok {
-			sandbox, err := s.store.GetSandbox(ctx, projectID, req.SandboxID)
-			switch {
-			case err == nil:
-				f = sandbox.PolicyFacts()
-			case !errors.Is(err, store.ErrNotFound):
-				return err
-			}
-			facts[req.SandboxID] = f
-		}
-		resolved := req.Policy.Resolve(f)
-		req.Policy = &resolved
-		return nil
-	}
 }
 
 func (s *Service) CreateSecretRequest(ctx context.Context, projectID string, input services.CreateSecretRequestBody) (*model.SecretRequest, error) {
@@ -486,12 +421,11 @@ func (s *Service) GetSecretRequest(ctx context.Context, projectID, requestID str
 		return nil, apperrors.NotFound(err, "secret request not found")
 	}
 	withholdAnswerFromSandbox(ctx, req)
-	s.ruleTestDescriber(ctx, projectID)(req)
-	if err := s.requestPolicyResolver(ctx, projectID)(req); err != nil {
-		return nil, err
-	}
 	return req, nil
 }
+
+// errRequestAnswered is an approval that found its request no longer pending.
+var errRequestAnswered = errors.New("the request was answered concurrently")
 
 // ApproveSecretRequest approves a pending request by minting a SecretGrant at the
 // chosen scope and linking it to the request. The grant is the durable
@@ -514,7 +448,7 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	}
 
 	// A discobox answering the inbox may hand on only what it was delegated
-	// (ADR 26-09-30-782 §3), so the secret is the one a delegation grant it
+	// (ADR 26-10-27-880 §3), so the secret is the one a delegation grant it
 	// holds is of, not any the project has.
 	principal, _ := auth.PrincipalFromContext(ctx)
 	approverIsSandbox := principal.Type == auth.PrincipalTypeSandbox
@@ -525,24 +459,20 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	}
 	secretID := strings.TrimSpace(input.SecretId.Or(""))
 	var secret *model.Secret
-	// The delegations a discobox's approval may be made under, found here; the
-	// one it is made under is the judge's to settle, is held to again in the
-	// transaction, and is what the approval is traced to.
-	var delegations []*model.SecretGrant
+	// The delegation a discobox's approval is made under: the longest-lived
+	// of those that hold it, held to again in the transaction, and what the
+	// grant is traced to.
 	var delegation *model.SecretGrant
 	if approverIsSandbox {
 		if err := refuseDelegatedApproval(req); err != nil {
 			return nil, err
 		}
 		named, namedTTL := input.GrantTTLSeconds.IsSet(), input.GrantTTLSeconds.Or(0)
-		if delegations, secret, err = s.delegationsFor(ctx, projectID, principal.SandboxID, req, secretID, hosts, namedTTL, named); err != nil {
+		var delegations []*model.SecretGrant
+		if delegations, secret, err = s.delegationsFor(ctx, projectID, principal.SandboxID, secretID, hosts, namedTTL, named); err != nil {
 			return nil, err
 		}
-	} else if req.WellKnownID != "" {
-		// A well-known credential knows which secret answers it.
-		if secret, err = s.wellKnownSecret(ctx, projectID, req.WellKnownID, secretID); err != nil {
-			return nil, err
-		}
+		delegation = delegations[0]
 	} else {
 		if secretID == "" {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, "secret ID is required")
@@ -550,11 +480,6 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		if secret, err = s.store.GetSecret(ctx, projectID, secretID); err != nil {
 			return nil, apperrors.NotFound(err, "secret not found")
 		}
-	}
-
-	// The discobox API itself is granted only by a person.
-	if approverIsSandbox && isGateSecret(secret) {
-		return nil, gateGivenOnlyByAPerson(secret.WellKnownID)
 	}
 
 	// What the approver agreed to change on the secret so this grant fits it:
@@ -575,12 +500,6 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		limit = &seconds
 	}
 	if bindTo != nil || limit != nil {
-		// A gate's host is where the pool admits the discobox API, as
-		// UpdateSecret holds; its limit is a limit like any other.
-		if bindTo != nil && isGateSecret(secret) {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest,
-				fmt.Sprintf("%s is a gate, and its host is where the pool admits the discobox API", secret.WellKnownID))
-		}
 		// An exchange secret's binding is where its key may be sent, which
 		// UpdateSecret holds to the recipe; an approval is no way around it.
 		if bindTo != nil && secret.ExchangeRecipe != nil {
@@ -607,21 +526,16 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		}
 	}
 
-	// A protocol-originated request is a different species from one the proxy
-	// minted on hitting an unresolvable sentinel, and the two are handled apart
-	// rather than merged (ADR 0031 §5). Approving one carries obligations a
-	// reactive approval does not have: it must be scoped to a concrete host and
-	// to the asking sandbox, it mints approved uses, and it binds a stable
-	// sentinel the agent never sees.
-	var approvedUses []model.SecretUse
-	var approvedPolicy *policy.Policy
-	var shownResolved map[string]string
 	// The grant is for what the agent asked: to use the credential, or to
 	// delegate it. A reactive request asked for nothing but use.
 	purpose, err := grantPurpose(req.Purpose)
 	if err != nil {
 		return nil, err
 	}
+	// A protocol-originated request is a different species from one the proxy
+	// minted on hitting an unresolvable sentinel (ADR 0031 §5). Approving one
+	// is scoped to a concrete host and to the asking sandbox, and a use binds
+	// the variable it named there.
 	if req.FromProtocol() {
 		if len(hosts) == 0 {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest,
@@ -631,45 +545,6 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 			return nil, apperrors.NewStatusError(http.StatusBadRequest,
 				"an agent credential request can only be approved at sandbox scope")
 		}
-		requested := req.Uses
-		if edited, ok := input.Uses.Get(); ok && len(edited) > 0 {
-			if requested, err = convertAPIUses(edited); err != nil {
-				return nil, err
-			}
-		}
-		approvedUses, err = mintUseIDs(requested)
-		if err != nil {
-			return nil, err
-		}
-		if len(approvedUses) == 0 {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, "approving an agent credential request requires at least one use")
-		}
-		// The approver approves the policy they send (ADR 26-10-20-782 §3):
-		// the one asked for, or an edit of it. A request that asks for one is
-		// approved only by an approval naming the policy approved, so nothing
-		// is recorded as approved that the approver did not send. A discobox
-		// approves one only within a policy it was delegated (§11), which is
-		// held to below with the uses.
-		if approvedPolicy, err = services.PolicyFromAPI(input.Policy); err != nil {
-			return nil, err
-		}
-		// What the approver was shown each variable resolves to, which the
-		// grant is held to below (§§3–4). PolicyFromAPI drops it: on the
-		// policy it is the server's to set, and here it is only compared.
-		if sent, ok := input.Policy.Get(); ok {
-			shownResolved = sent.Resolved.Or(nil)
-		}
-		// Every grant an agent takes carries a policy (#312); a request that
-		// asks for none was written by a server from before, and is answered
-		// by being denied, so the agent asks again with one.
-		if req.Policy == nil {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest,
-				"this request asks for uses alone, and a grant an agent takes carries a policy; deny it, and the agent asks again with one")
-		}
-		if approvedPolicy == nil {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest,
-				"this request asks for a policy; approve it by sending the policy you approve (read it with `discobox secret request get`, then `discobox secret request approve --policy-as-asked`)")
-		}
 	}
 
 	scopeKey, err := s.grantScopeKey(ctx, projectID, req.SandboxID, scope)
@@ -677,27 +552,9 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		return nil, err
 	}
 
-	// Answering with "auto approve" makes an approval rule from the request
-	// and approves the request under it, in one write (ADR 26-10-12-330 §1).
-	// The rule is held to the judge's word here, before the transaction, like
-	// a delegation: a rule that would not cover this very request is refused
-	// rather than made.
-	var rule *model.ApprovalRule
-	if chosen, ok := input.Rule.Get(); ok {
-		if rule, err = s.ruleFromApproval(ctx, req, chosen, secret, bindTo, limit, hosts, purpose, input.GrantTTLSeconds, principal); err != nil {
-			return nil, err
-		}
-	}
-
-	// Whether the policy a discobox hands on falls within what it was
-	// delegated is code's comparison, with the judge's reading of conditions,
-	// asked before the transaction because a judge takes a while; it settles
-	// which delegation the approval is made under, and that one is held to
-	// again inside the transaction. It
-	// is asked last, once every check that can refuse the approval without it
-	// has passed — a discobox cannot change the secret, so its binding and
-	// limit are what the transaction will find — so a verdict is the decision
-	// about an approval that would otherwise go through.
+	// A discobox cannot change the secret, so its binding and limit are what
+	// the transaction will find: the grant is held to them here as well, so a
+	// refusal says so before anything is written.
 	if approverIsSandbox {
 		if err := guardGrantHosts(secret, hosts); err != nil {
 			return nil, err
@@ -707,51 +564,22 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 				return nil, err
 			}
 		}
-		credential := secret.Name
-		if req.WellKnownID != "" {
-			credential = req.WellKnownID
-		}
-		// The policy resolves for the discobox it goes to, and the judge is
-		// told what that discobox was created with, beside the one handing
-		// it on (ADR 26-10-14-691).
-		requester, err := s.store.GetSandbox(ctx, projectID, req.SandboxID)
-		if err != nil {
-			return nil, apperrors.NotFound(err, "the discobox that asked was not found")
-		}
-		// A policy is handed on only under a delegation whose own policy it
-		// is within (ADR 26-10-20-782 §11), under one bound: the gate holds
-		// the call open for one.
-		judgeCtx, cancel := context.WithTimeout(ctx, services.DelegationBound)
-		defer cancel()
-		if delegation, err = s.delegationCovering(judgeCtx, projectID, principal.SandboxID, delegations, approvedPolicy, requester, req.ID, credential, hosts); err != nil {
-			return nil, err
-		}
 	}
 
 	write := &approvalWrite{
-		req:      req,
-		secret:   secret,
-		bindTo:   bindTo,
-		limit:    limit,
-		scope:    scope,
-		scopeKey: scopeKey,
-		hosts:    hosts,
-		uses:     approvedUses,
-		policy:   approvedPolicy,
-		shown:    shownResolved,
-		purpose:  purpose,
-		rule:     rule,
+		req:        req,
+		secret:     secret,
+		bindTo:     bindTo,
+		limit:      limit,
+		scope:      scope,
+		scopeKey:   scopeKey,
+		hosts:      hosts,
+		purpose:    purpose,
+		delegation: delegation,
 	}
 	write.ttl, write.ttlNamed = input.GrantTTLSeconds.Get()
 	if approverIsSandbox {
-		write.approverID, write.delegated, write.delegation = principal.SandboxID, true, delegation
-	}
-	// The answer shows the request's policy resolved, read now: a read that
-	// fails after the write would report as failed an approval that was
-	// made. A copy, so the request is written with its policy as asked.
-	answered := *req
-	if err := s.requestPolicyResolver(ctx, projectID)(&answered); err != nil {
-		return nil, err
+		write.approverID, write.delegated = principal.SandboxID, true
 	}
 	if err := s.commitApproval(ctx, write); err != nil {
 		if errors.Is(err, errRequestAnswered) {
@@ -759,53 +587,17 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		}
 		return nil, err
 	}
-	secret = write.secret
-	// The first approval of a well-known credential marks the secret it bound
-	// as the one that answers the ID, so nobody is asked again. Only now, once
-	// the approval has gone through: a secret whose approval failed (a host
-	// binding that cannot cover the ask, say) must not become what every later
-	// approval falls back on. A project that already has a mark keeps it; a
-	// later approval naming another secret answers its one request.
-	//
-	// Failing to write it does not fail the approval, which has already
-	// happened: the grant is live and the agent holds its credential. The next
-	// approval asks which secret answers the ID and marks it then.
 	if delegation != nil {
 		slog.InfoContext(ctx, "a discobox approved a request under its delegation",
 			"projectId", projectID, "requestId", req.ID, "grantId", req.GrantID,
 			"approver", principal.SandboxID, "delegationGrantId", delegation.ID)
 	}
-	if req.WellKnownID != "" {
-		if err := s.store.MarkSecretWellKnown(ctx, projectID, secret.ID, req.WellKnownID); err != nil {
-			slog.WarnContext(ctx, "failed to mark the secret fulfilling a well-known credential",
-				"projectId", projectID, "secretId", secret.ID, "wellKnownId", req.WellKnownID, "error", err)
-		}
-	}
-	if rule != nil {
-		slog.InfoContext(ctx, "a request was approved with a new approval rule",
-			"projectId", projectID, "requestId", req.ID, "grantId", req.GrantID, "ruleId", rule.ID)
-		// The rule was held to the request before it existed, so any verdict
-		// on its conditions names no rule. Compared once more now that it has
-		// an ID: the judges service answers from the record and records the
-		// answer under the rule, so the grant just minted is traced to
-		// verdicts that name it (§5). Nobody is asked again, and a failure
-		// here changes nothing made.
-		if _, err := s.rulePolicyCovers(ctx, rule, req, req.Policy, false); err != nil {
-			slog.WarnContext(ctx, "a new approval rule's verdict could not be recorded under it",
-				"projectId", projectID, "ruleId", rule.ID, "error", err)
-		}
-		// The rule answers what else is pending, and is a reason for the
-		// project to keep a judge. After the mark: a rule for a well-known
-		// credential answers with the secret marked for it.
-		s.ruleChanged(ctx, projectID)
-	}
-	req.Policy = answered.Policy
 	return req, nil
 }
 
 // approvalWrite is one approval of a request, as its transaction makes it:
-// whoever approved — a person, a discobox under a delegation, or an approval
-// rule — it is the same write, so a grant is the same grant whoever said yes.
+// whoever approved — a person, or a discobox under a delegation — it is the
+// same write, so a grant is the same grant whoever said yes.
 type approvalWrite struct {
 	req *model.SecretRequest
 	// secret is the secret the grant is of. commitApproval replaces it with
@@ -817,38 +609,28 @@ type approvalWrite struct {
 
 	scope, scopeKey string
 	hosts           []string
-	uses            []model.SecretUse
-	// policy is the policy approved, before its variables are resolved for
-	// the sandbox the grant is for. shown is what the approver was shown
-	// they resolve to; the grant's must be the same, or nothing is written.
-	policy  *policy.Policy
-	shown   map[string]string
-	purpose string
+	purpose         string
 	// ttl is the lifetime the approver named, read only when ttlNamed.
 	ttl      int64
 	ttlNamed bool
 
-	// delegated is a discobox's approval, made under delegation and by
+	// delegated is a discobox's approval, made under delegation by
 	// approverID; it is refused rather than minted unbounded if no delegation
 	// was chosen.
 	delegated  bool
 	approverID string
 	delegation *model.SecretGrant
-	// rule is the approval rule the request is approved under. One with no
-	// ID is made in this write, by the person answering with "auto approve";
-	// one that exists is read again here, and must still say what the judge
-	// read.
-	rule *model.ApprovalRule
 }
 
 // commitApproval makes every write an approval makes as one act: the secret's
-// change, the rule when the approval makes one, the grant, the binding that
-// delivers it, and the request marked approved. A refusal anywhere — a
-// binding already taken, the request answered concurrently — leaves none of
-// them behind. A request no longer pending is errRequestAnswered.
+// change, the grant, the binding that delivers it, the mark that sends that
+// binding to the sandbox, and the request marked approved. A refusal anywhere
+// — a variable already holding another credential, the request answered
+// concurrently — leaves none of them behind. A request no longer pending is
+// errRequestAnswered.
 func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 	req, projectID := a.req, a.req.ProjectID
-	err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+	err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		tx := &Service{store: txStore}
 		// The grant is checked against the secret as it stands now, with the
 		// agreed change on top: a copy read before this could put back a
@@ -869,9 +651,9 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 		}
 		// An approval that names no lifetime grants what the agent asked for,
 		// else agentcreds.DefaultGrantTTL — what the window opens on — within
-		// the secret's limit, so approving needs nothing read first (ADR
-		// 26-09-30-782 §4). An explicit value is checked against the limit in
-		// mintGrantAs, along with every other path that mints one.
+		// the secret's limit, so approving needs nothing read first. An
+		// explicit value is checked against the limit in mintGrantAs, along
+		// with every other path that mints one.
 		ttl := a.ttl
 		if !a.ttlNamed {
 			ttl = defaultApprovalTTL(req, secret)
@@ -880,6 +662,7 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 		// fitted against and stamped from, so a grant fitted to a delegation
 		// ends no later than it does.
 		now := time.Now().UTC()
+		delegationID := ""
 		// A discobox's grant is always made under a delegation: it is refused
 		// rather than minted unbounded if none was chosen.
 		if a.delegated {
@@ -890,57 +673,24 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 			if ttl, err = delegatedTTL(ctx, txStore, projectID, a.approverID, a.delegation, secret.ID, a.hosts, ttl, a.ttlNamed, now); err != nil {
 				return err
 			}
-		}
-		ruleID, delegationID := "", ""
-		if a.delegation != nil {
 			delegationID = a.delegation.ID
 		}
-		if a.rule != nil {
-			if ttl, err = heldRule(ctx, txStore, a, secret, ttl); err != nil {
-				return err
-			}
-			ruleID = a.rule.ID
-		}
-		grant, err := tx.mintGrantAs(ctx, now, projectID, secret, a.scope, a.scopeKey, a.hosts, req.EnvName, ttl, a.uses, a.policy, a.purpose, ruleID, delegationID)
+		grant, err := tx.mintGrantAs(ctx, now, projectID, secret, a.scope, a.scopeKey, a.hosts, ttl, a.purpose, delegationID)
 		if err != nil {
 			return err
 		}
-		// A person approves the policy as the form showed it (ADR 26-10-20-782
-		// §3), variables' values included: a value that resolves otherwise
-		// now, or resolves where the form said it matched nothing, is not
-		// what they approved. Only the variables the approved policy uses
-		// count: one an edit dropped was shown, and grants nothing.
-		// A discobox handing a policy on is shown nothing: it is held to its
-		// delegation's policy instead (§11).
-		if a.policy != nil && !a.delegated {
-			shown := map[string]string{}
-			for _, variable := range a.policy.Variables() {
-				if value, ok := a.shown[variable]; ok {
-					shown[variable] = value
-				}
-			}
-			if !maps.Equal(grant.Policy.Resolved, shown) {
-				return errPolicyResolvedOtherwise
-			}
-		}
-		// A grant a rule minted with nobody at the keyboard is the doing of
-		// the person who made the rule: a rule is that person's approval given
-		// in advance (ADR 26-10-12-330 §9).
-		if a.rule != nil && grant.GrantedBy == "" {
-			grant.GrantedBy = a.rule.CreatedBy
-			if err := txStore.UpdateSecretGrant(ctx, grant); err != nil {
-				return err
-			}
-		}
-		// A delegation grant binds nothing: there is nothing for its holder
-		// to take.
+		// An agent's use is delivered the way every other credential is: a
+		// sentinel in the variable it named, injected into its sandbox and
+		// sent to its pool (ADR 26-10-27-880). A delegation grant binds
+		// nothing: there is nothing for its holder to send.
 		if req.FromProtocol() && grant.MayUse() {
-			// The binding is deliberately not the harness-secret shape: it is
-			// never written into the sandbox, and the only value that reaches
-			// it is an ephemeral sentinel the pool agent mints per use and
-			// translates back to this one (ADR 0031 §4).
-			if _, err := txStore.BindAgentSecret(ctx, req.ProjectID, req.SandboxID, req.EnvName, secret); err != nil {
+			if err := bindApprovedVariable(ctx, txStore, req, secret); err != nil {
 				return err
+			}
+			if s.holders != nil {
+				if err := s.holders.MarkSandboxSentinelsDirtyTx(ctx, txDB, req.ProjectID, req.SandboxID); err != nil {
+					return err
+				}
 			}
 		}
 		req.SecretID = secret.ID
@@ -954,152 +704,27 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 	return err
 }
 
-// heldRule holds an approval to its rule inside the approval's transaction,
-// and returns the grant's lifetime within the rule's cap. A rule the approval
-// makes is stored here. One that exists is read again: still enabled,
-// unexpired, and with the text the judge read (ADR 26-10-12-330 §4) — a rule
-// disabled or edited since is not one this grant is made under. A lifetime
-// nobody named is fitted to the cap, for a new rule as for one that stands;
-// one a person named beside the rule they are making is theirs to have chosen.
-func heldRule(ctx context.Context, txStore *store.Store, a *approvalWrite, secret *model.Secret, ttl int64) (int64, error) {
-	if a.rule.ID == "" {
-		if a.rule.SecretID != "" {
-			a.rule.SecretID = secret.ID
-		}
-		if err := txStore.CreateApprovalRule(ctx, a.rule); err != nil {
-			return 0, err
-		}
-		if !a.ttlNamed {
-			ttl = ruleTTL(a.rule, a.req, secret)
-		}
-		return ttl, nil
+// bindApprovedVariable binds the variable an approved agent request named to
+// the secret approved, on the sandbox that asked. A variable already bound to
+// that secret keeps its binding and sentinel; one bound to another secret is
+// refused rather than taken over, since swapping the credential under a
+// variable something already uses is the surprise this must not spring.
+func bindApprovedVariable(ctx context.Context, txStore *store.Store, req *model.SecretRequest, secret *model.Secret) error {
+	existing, err := txStore.FindSandboxSecretByEnv(ctx, req.ProjectID, req.SandboxID, req.EnvName)
+	switch {
+	case err == nil && existing.SecretID == secret.ID:
+		return nil
+	case err == nil:
+		return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
+			"%s already holds another credential in this discobox; approve the request with that secret, or ask for another variable", req.EnvName))
+	case !errors.Is(err, store.ErrNotFound):
+		return err
 	}
-	current, err := txStore.GetApprovalRule(ctx, a.rule.ProjectID, a.rule.ID)
-	if err != nil || !current.Live(time.Now()) || !sameRuleText(a.rule, current) {
-		return 0, errRuleChanged
-	}
-	return ruleTTL(current, a.req, secret), nil
-}
-
-// ruleFromApproval is the approval rule a person answering a request with
-// "auto approve" makes (ADR 26-10-12-330 §§1, 7–8), checked and not yet
-// stored. Its credential, hosts and purpose are the approval's own — copied
-// here by code, never taken from what was proposed — and its repositories and
-// policy are what the person chose or wrote.
-//
-// Which discoboxes it is for is said, never defaulted wide: the repositories
-// named, else the repository of the discobox that asked, and every discobox
-// only when the approval says so in those words.
-//
-// The rule must cover the request it is made from. The facts are held here,
-// the asking discobox's repository among them, and the request's policy is
-// held to the rule's as a later test would hold it: a candidate chosen from a
-// proposal is answered from the verdicts already on record, and an edited one
-// is compared, and its conditions judged, again before it is accepted.
-func (s *Service) ruleFromApproval(ctx context.Context, req *model.SecretRequest, chosen apigen.ApproveWithRule, secret *model.Secret,
-	bindTo *string, limit *int64, hosts []string, purpose string, namedTTL apigen.OptInt64, principal auth.Principal) (*model.ApprovalRule, error) {
-	if principal.Type == auth.PrincipalTypeSandbox {
-		return nil, apperrors.NewStatusError(http.StatusForbidden,
-			"an approval rule is a person's: a discobox approves each request it may, and makes no rule")
-	}
-	if err := ruleProposable(req); err != nil {
-		return nil, err
-	}
-	// The secret as the approval will leave it, which is what later requests
-	// are held to.
-	answering := *secret
-	if bindTo != nil {
-		answering.Host = *bindTo
-	}
-	if limit != nil {
-		answering.MaxGrantTTL = *limit
-	}
-	repository, found, err := s.requesterRepository(ctx, req)
+	binding, err := txStore.NewSandboxBinding(ctx, req.ProjectID, req.SandboxID, req.EnvName, secret)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if !found {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "the discobox that filed the request was not found")
-	}
-	repositories := chosen.Repositories
-	switch every := chosen.EveryDiscobox.Or(false); {
-	case every && len(repositories) > 0:
-		return nil, errRepositoriesAndEvery
-	case every:
-	case len(repositories) > 0:
-	case repository == "":
-		return nil, apperrors.NewStatusError(http.StatusBadRequest,
-			"the discobox that asked has no repository a rule could name: its source is a local one with no remote. Only a rule for every discobox in the project answers it, and that is said (everyDiscobox), never assumed")
-	default:
-		repositories = []string{repository}
-	}
-	rule := &model.ApprovalRule{
-		ProjectID:    req.ProjectID,
-		Repositories: repositories,
-		WellKnownID:  req.WellKnownID,
-		Hosts:        hosts,
-		Purpose:      purpose,
-		CreatedBy:    grantedByOf(principal),
-		Enabled:      true,
-	}
-	if rule.WellKnownID == "" {
-		rule.SecretID = secret.ID
-	} else if known, ok := wellknown.Lookup(rule.WellKnownID); ok && !known.Gate {
-		// A rule for a well-known credential answers with the secret marked
-		// for it, so this approval must be made with that one — or with the
-		// one it is about to mark. Made with another, the rule would hand
-		// later discoboxes a credential nobody chose for them.
-		marked, err := s.store.FindSecretByWellKnownID(ctx, req.ProjectID, rule.WellKnownID)
-		switch {
-		case err != nil && !errors.Is(err, store.ErrNotFound):
-			return nil, err
-		case err == nil && marked.ID != secret.ID:
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-				"a rule for %s answers with %s, the secret that answers that ID in this project; approve with it, or approve this one request with %s and no rule",
-				rule.WellKnownID, marked.Name, secret.Name))
-		}
-	}
-	// The policy as asked, when the person chose none: checkRule drops the
-	// values it resolved to, which a rule binds afresh for each discobox.
-	if rule.Policy, err = services.PolicyFromAPI(chosen.Policy); err != nil {
-		return nil, err
-	}
-	if rule.Policy == nil {
-		asked := *req.Policy
-		rule.Policy = &asked
-	}
-	// The cap a person named, else the lifetime this approval grants: a rule
-	// made by saying yes once approves for as long as that yes did.
-	if seconds, ok := chosen.MaxGrantTTLSeconds.Get(); ok {
-		rule.MaxGrantTTL = seconds
-	} else if ttl, named := namedTTL.Get(); named {
-		rule.MaxGrantTTL = ttl
-	} else {
-		rule.MaxGrantTTL = defaultApprovalTTL(req, &answering)
-	}
-	if expires, ok := chosen.ExpiresAt.Get(); ok {
-		expires = expires.UTC()
-		rule.ExpiresAt = &expires
-	}
-	if _, err := s.checkRule(ctx, rule, true); err != nil {
-		return nil, err
-	}
-	if _, _, reason, err := s.ruleFacts(ctx, rule, req, repository, &answering, false); err != nil {
-		return nil, err
-	} else if reason != "" {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-			"this rule would not cover the request it is made from: %s", plainSentence(reason)))
-	}
-	coverage, err := s.rulePolicyCovers(ctx, rule, req, req.Policy, false)
-	if err != nil {
-		return nil, err
-	}
-	if !coverage.covered {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-			"this rule would not cover the request it is made from, so it is not made: the policy asked for is not within the rule's (%s); choose a proposal found to cover it, or approve without a rule",
-			plainSentence(coverage.reason)))
-	}
-	return rule, nil
+	return txStore.CreateSandboxSecret(ctx, binding)
 }
 
 func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID string) error {
@@ -1155,11 +780,6 @@ func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, s
 	// the hosts beneath it and nowhere else — which has to hold for grants that
 	// already exist too: one written before the binding, or before this check,
 	// is exactly the grant nobody would write today.
-	// A gate's secret stands for no credential, and is never handed out: the
-	// pool admits a use of it at its host instead (ADR 0140 §2).
-	if isGateSecret(secret) {
-		return &model.SandboxSecretResolution{Status: model.SecretRequestStatusDenied}, nil
-	}
 	if !hostscope.Covers(secret.Host, host) {
 		return &model.SandboxSecretResolution{Status: model.SecretRequestStatusDenied}, nil
 	}
@@ -1217,8 +837,8 @@ func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, s
 }
 
 // ListSecretGrants returns a project's grants, optionally filtered to one
-// secret, or to those one approval rule minted.
-func (s *Service) ListSecretGrants(ctx context.Context, projectID, secretID, ruleID string) ([]model.SecretGrant, error) {
+// secret.
+func (s *Service) ListSecretGrants(ctx context.Context, projectID, secretID string) ([]model.SecretGrant, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
 	}
@@ -1228,7 +848,7 @@ func (s *Service) ListSecretGrants(ctx context.Context, projectID, secretID, rul
 			return nil, apperrors.NotFound(err, "secret not found")
 		}
 	}
-	return s.store.ListSecretGrants(ctx, projectID, secretID, strings.TrimSpace(ruleID))
+	return s.store.ListSecretGrants(ctx, projectID, secretID)
 }
 
 // CreateSecretGrant mints a standing grant directly (pre-approval), without a
@@ -1264,66 +884,14 @@ func (s *Service) CreateSecretGrant(ctx context.Context, projectID string, input
 		ttl = v
 	}
 
-	// Uses make this the agent credentials shape: a credential nothing in the
-	// sandbox can read, which the in-sandbox CLI takes one use at a time. It
-	// carries the obligations approving an agent's request carries, for the
-	// same reasons (ADR 0031 §§4–5), and it is the same binding underneath.
-	envVar := strings.TrimSpace(input.EnvVar.Or(""))
-	var uses []model.SecretUse
-	if declared, ok := input.Uses.Get(); ok && len(declared) > 0 {
-		if len(hosts) == 0 {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest,
-				"a grant with uses requires a host; a wildcard grant stays an explicit administrative act")
-		}
-		if envVar == "" || strings.ContainsAny(envVar, "=\x00") {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest,
-				"a grant with uses requires the environment variable the agent receives it in")
-		}
-		declaredUses, err := convertAPIUses(declared)
-		if err != nil {
-			return nil, err
-		}
-		uses, err = mintUseIDs(declaredUses)
-		if err != nil {
-			return nil, err
-		}
-		if len(uses) == 0 {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, "each declared use requires a description")
-		}
-	} else if envVar != "" {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest,
-			"an environment variable is only meaningful with uses: without them the grant authorizes the sentinel the sandbox already holds")
-	}
-
-	// A policy rides beside uses, and uses beside a policy (guardPolicy, in
-	// mintGrantAs).
-	granted, err := services.PolicyFromAPI(input.Policy)
-	if err != nil {
-		return nil, err
-	}
-
 	purpose, err := grantPurpose(string(input.Purpose.Or("")))
 	if err != nil {
 		return nil, err
 	}
-	grant, err := s.mintGrantAs(ctx, time.Now().UTC(), projectID, secret, scope, scopeKey, hosts, envVar, ttl, uses, granted, purpose, "", "")
-	if err != nil {
-		return nil, err
-	}
-	// A grant on one discobox binds now, because there is a discobox to bind
-	// to and a failure is worth reporting to whoever is granting it. A wider
-	// one binds per discobox the first time that discobox's agent asks: the
-	// boxes it covers may not exist yet. A delegation grant binds nothing:
-	// there is nothing for its holder to take.
-	if len(uses) > 0 && scope == model.SecretGrantScopeSandbox && grant.MayUse() {
-		if _, err := s.store.BindAgentSecret(ctx, projectID, scopeKey, envVar, secret); err != nil {
-			// Leave no live authorization behind for a binding that never
-			// happened, exactly as approving one does.
-			_ = s.store.DeleteSecretGrant(ctx, projectID, grant.ID)
-			return nil, err
-		}
-	}
-	return grant, nil
+	// A grant authorizes the sentinel a discobox is already given — by its
+	// harness config, its create, or an approved request — and binds none of
+	// its own.
+	return s.mintGrantAs(ctx, time.Now().UTC(), projectID, secret, scope, scopeKey, hosts, ttl, purpose, "")
 }
 
 // RevokeSecretGrant deletes a standing grant.
@@ -1457,26 +1025,20 @@ func formatTTL(seconds int64) string {
 	return (time.Duration(seconds) * time.Second).String()
 }
 
-// mintGrantAs creates the standing authorization. uses is non-empty only for a
-// grant minted by approving an agent credentials protocol request; a plain
-// grant authorizes the credential without enumerating what it is for.
-//
-// envName is the environment variable a grant carrying uses delivers in. It is
-// on the grant because a grant wider than one discobox has no binding yet, and
-// the binding is what the name would otherwise live on.
+// mintGrantAs creates the standing authorization.
 //
 // It takes the secret rather than its ID because it is the one place every
 // grant passes through, which makes it the place to check the grant against the
 // credential it hands out.
 //
 // purpose is what the grant authorizes — using the credential, or delegating
-// it — and is checked here with the rest. ruleID is the approval rule the
-// grant is minted under, empty unless a rule approved the request.
+// it — and is checked here with the rest. delegationID is the delegation grant
+// a discobox handed this one on under, empty when a person made it.
 //
 // now is the instant the grant's lifetime runs from: its expiry is now plus
 // ttlSeconds, and never a later reading of the clock, so a lifetime a caller
 // fitted at now ends where it was fitted to.
-func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID string, secret *model.Secret, scope, scopeKey string, hosts []string, envName string, ttlSeconds int64, uses []model.SecretUse, asked *policy.Policy, purpose, ruleID, delegationID string) (*model.SecretGrant, error) {
+func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID string, secret *model.Secret, scope, scopeKey string, hosts []string, ttlSeconds int64, purpose, delegationID string) (*model.SecretGrant, error) {
 	hosts = hostscope.List(hosts...)
 	if err := guardGrantHosts(secret, hosts); err != nil {
 		return nil, err
@@ -1484,30 +1046,18 @@ func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID stri
 	if err := guardGrantTTL(secret, ttlSeconds); err != nil {
 		return nil, err
 	}
-	if err := s.guardPurpose(ctx, projectID, scope, scopeKey, uses, purpose); err != nil {
-		return nil, err
-	}
-	if err := guardPolicy(uses, asked); err != nil {
-		return nil, err
-	}
-	approved, err := s.resolveGrantPolicy(ctx, projectID, scope, scopeKey, asked)
-	if err != nil {
+	if err := s.guardPurpose(ctx, projectID, scope, scopeKey, purpose); err != nil {
 		return nil, err
 	}
 	principal, _ := auth.PrincipalFromContext(ctx)
-	grantedBy := grantedByOf(principal)
 	grant := &model.SecretGrant{
 		ProjectID:    projectID,
 		SecretID:     secret.ID,
 		Scope:        scope,
 		ScopeKey:     scopeKey,
 		Hosts:        hosts,
-		GrantedBy:    grantedBy,
-		Uses:         uses,
-		Policy:       approved,
-		EnvName:      strings.TrimSpace(envName),
+		GrantedBy:    grantedByOf(principal),
 		Purpose:      purpose,
-		RuleID:       ruleID,
 		DelegationID: delegationID,
 	}
 	if ttlSeconds > 0 {
@@ -1518,38 +1068,6 @@ func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID stri
 		return nil, apperrors.NotFound(err, fmt.Sprintf("%s %s does not exist, so nothing can be granted to it", scope, scopeKey))
 	}
 	return grant, nil
-}
-
-// resolveGrantPolicy is asked as approved for the grant it will be on: each
-// variable it uses resolved from the control plane's record of the sandbox the
-// grant is for (ADR 26-10-20-782 §4): the discobox that holds it, never the
-// one that approved it. A grant wider than one sandbox has no discobox to
-// resolve against, and may carry a policy only if it uses no variable.
-func (s *Service) resolveGrantPolicy(ctx context.Context, projectID, scope, scopeKey string, asked *policy.Policy) (*policy.Policy, error) {
-	if asked == nil {
-		return nil, nil
-	}
-	if scope != model.SecretGrantScopeSandbox {
-		if variables := asked.Variables(); len(variables) > 0 {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-				"a policy that uses variables (%s) can only be granted to one sandbox, which they resolve against", strings.Join(variables, ", ")))
-		}
-		approved := asked.Resolve(policy.Facts{})
-		return &approved, nil
-	}
-	sandbox, err := s.store.GetSandbox(ctx, projectID, scopeKey)
-	if err != nil {
-		return nil, apperrors.NotFound(err, fmt.Sprintf("sandbox %s does not exist, so nothing can be granted to it", scopeKey))
-	}
-	facts := sandbox.PolicyFacts()
-	approved := asked.Resolve(facts)
-	// Bound, a value can be longer than its variable, and escaped longer
-	// still: what a judge is shown is held to what a judge job can carry, so
-	// a grant every job under it would refuse is never minted.
-	if err := judge.PolicyFits(approved.Bound(facts)); err != nil {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "policy: "+err.Error())
-	}
-	return &approved, nil
 }
 
 // grantedByOf is who a grant records as having made it. A sandbox acts as the

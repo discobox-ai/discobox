@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
@@ -95,8 +94,5 @@ func writeExchange(w io.Writer, exchange agentcreds.AuditExchange) {
 	fmt.Fprintln(w)
 	if exchange.BlockedReason != "" {
 		fmt.Fprintf(w, "    reason: %s\n", exchange.BlockedReason)
-	}
-	if len(exchange.UseIDs) > 0 {
-		fmt.Fprintf(w, "    uses: %s\n", strings.Join(exchange.UseIDs, ", "))
 	}
 }

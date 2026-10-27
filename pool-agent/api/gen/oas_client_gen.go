@@ -1771,23 +1771,6 @@ func (c *Client) sendPoolListHTTPAudit(ctx context.Context, params PoolListHTTPA
 		}
 	}
 	{
-		// Encode "useId" parameter.
-		cfg := uri.QueryParameterEncodingConfig{
-			Name:    "useId",
-			Style:   uri.QueryStyleForm,
-			Explode: true,
-		}
-
-		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
-			if val, ok := params.UseId.Get(); ok {
-				return e.EncodeValue(conv.StringToString(val))
-			}
-			return nil
-		}); err != nil {
-			return res, errors.Wrap(err, "encode query")
-		}
-	}
-	{
 		// Encode "since" parameter.
 		cfg := uri.QueryParameterEncodingConfig{
 			Name:    "since",

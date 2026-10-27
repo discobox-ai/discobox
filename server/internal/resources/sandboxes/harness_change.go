@@ -73,7 +73,7 @@ func (s *Service) prepareHarnessChange(ctx context.Context, sb *model.Sandbox, c
 	services.SandboxPinTarget{Harness: pins}.Apply(&candidate)
 	candidate.HarnessConfigID = &target.ID
 	candidate.Prompt = nil
-	existing, err := s.store.ListInjectedSandboxSecrets(ctx, sb.ProjectID, sb.ID)
+	existing, err := s.store.ListSandboxSecrets(ctx, sb.ProjectID, sb.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func (r *SandboxReconciler) applyHarnessChange(ctx context.Context, sb *model.Sa
 		current.PendingHarnessChange = nil
 		current.PendingHarnessConfigID = nil
 		current.HarnessChangeError = ""
-		existing, err := st.ListInjectedSandboxSecrets(ctx, current.ProjectID, current.ID)
+		existing, err := st.ListSandboxSecrets(ctx, current.ProjectID, current.ID)
 		if err != nil {
 			return err
 		}

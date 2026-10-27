@@ -16,7 +16,7 @@ import (
 
 // runJSONRequest is `discobox run --from-json`: the command's request as one JSON
 // object on stdin, for a caller — an agent, above all — that would otherwise
-// have to quote a prompt and each use's sentence through a shell (ADR 26-09-24-630 §4).
+// have to quote a prompt through a shell (ADR 26-09-24-630 §4).
 // Its fields are the run flags', and mean what they mean; -d and --raw have
 // none, because a JSON run creates, prints, and returns.
 type runJSONRequest struct {
@@ -25,9 +25,11 @@ type runJSONRequest struct {
 	Prompt  string         `json:"prompt"`
 	Harness string         `json:"harness"`
 	Grants  []runJSONGrant `json:"grants"`
-	Env     []string       `json:"env"`
-	Secrets []string       `json:"secrets"`
-	Include []string       `json:"include"`
+	// DiscoboxAPI is --discobox-api.
+	DiscoboxAPI bool     `json:"discoboxApi"`
+	Env         []string `json:"env"`
+	Secrets     []string `json:"secrets"`
+	Include     []string `json:"include"`
 	// Skills and UserSkills are --skills and --user-skills. Left out, each
 	// takes what client.yaml says; "skills": [] is none.
 	Skills     *[]string `json:"skills"`
@@ -44,22 +46,12 @@ type runJSONRequest struct {
 	DeclaredSources *bool `json:"declaredSources"`
 }
 
-// runJSONGrant is one --grant, spelled the way `discobox-access request --json`
-// asks for a credential: a well-known credential by its ID, or a project secret
-// and the variable its agent receives it in, with the jobs it is for and the
-// policy it carries, as sentences and the definitions of their words.
+// runJSONGrant is one --grant: a project secret, the variable the new
+// discobox receives its sentinel in, and the hosts it may be sent to.
 type runJSONGrant struct {
-	ID          string            `json:"id"`
-	Secret      string            `json:"secret"`
-	EnvVar      string            `json:"envVar"`
-	Hosts       []string          `json:"hosts"`
-	Uses        []runJSONUse      `json:"uses"`
-	Statements  []string          `json:"statements"`
-	Definitions map[string]string `json:"definitions"`
-}
-
-type runJSONUse struct {
-	Description string `json:"description"`
+	Secret string   `json:"secret"`
+	EnvVar string   `json:"envVar"`
+	Hosts  []string `json:"hosts"`
 }
 
 // readJSONRequest settles opts from the request on stdin. The command line may
@@ -93,6 +85,7 @@ func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string
 		return err
 	}
 	opts.grants = grants
+	opts.discoboxAPI = req.DiscoboxAPI
 	if req.Prompt != "" {
 		opts.promptFlag = []string{req.Prompt}
 	}
@@ -132,37 +125,20 @@ func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string
 // the shape --grant would have refused.
 func (req runJSONRequest) grants() ([]apimodel.SandboxGrant, error) {
 	grants := make([]apimodel.SandboxGrant, 0, len(req.Grants))
+	seen := map[string]bool{}
 	for i, in := range req.Grants {
-		id, secret, envVar := strings.TrimSpace(in.ID), strings.TrimSpace(in.Secret), strings.TrimSpace(in.EnvVar)
+		secret, envVar := strings.TrimSpace(in.Secret), strings.TrimSpace(in.EnvVar)
+		if secret == "" || envVar == "" {
+			return nil, fmt.Errorf(`--from-json: grants[%d]: want {"secret": SECRET, "envVar": ENV_VAR}, with "hosts" to narrow where it may be sent`, i)
+		}
+		if seen[envVar] {
+			return nil, fmt.Errorf("--from-json: grants[%d]: %s is already given; a variable holds one credential", i, envVar)
+		}
+		seen[envVar] = true
 		var grant apimodel.SandboxGrant
-		switch {
-		case id != "" && secret == "" && envVar == "":
-			grant.SetWellKnownId(apiclientgen.NewOptString(id))
-		case id == "" && secret != "" && envVar != "":
-			grant.SetSecretId(apiclientgen.NewOptString(secret))
-			grant.SetEnvVar(apiclientgen.NewOptString(envVar))
-		default:
-			return nil, fmt.Errorf(`--from-json: grants[%d]: want {"id": ID} for a well-known credential, such as com.github.api, or {"secret": SECRET, "envVar": ENV_VAR}, not both`, i)
-		}
+		grant.SetSecretId(apiclientgen.NewOptString(secret))
+		grant.SetEnvVar(apiclientgen.NewOptString(envVar))
 		grant.SetHosts(in.Hosts)
-		for _, use := range in.Uses {
-			if description := strings.TrimSpace(use.Description); description != "" {
-				grant.Uses = append(grant.Uses, apimodel.SecretUse{Description: description})
-			}
-		}
-		if len(grant.Uses) == 0 {
-			return nil, fmt.Errorf(`--from-json: grants[%d]: want at least one use, as "uses": [{"description": "what it is for"}]`, i)
-		}
-		// Every grant carries the policy it is held to (#312), checked here
-		// as discobox-access checks a request's.
-		asked, err := writtenPolicy(in.Statements, in.Definitions, `"statements"`, `"definitions"`)
-		if err != nil {
-			return nil, fmt.Errorf("--from-json: grants[%d]: %w", i, err)
-		}
-		if asked == nil {
-			return nil, fmt.Errorf(`--from-json: grants[%d]: want the policy it carries, as "statements": ["allow read on anything in repository \"org/repo\""], with "definitions" for every word that is not a default`, i)
-		}
-		grant.SetPolicy(apiclientgen.NewOptAccessPolicy(*asked))
 		grants = append(grants, grant)
 	}
 	return grants, nil

@@ -29,7 +29,7 @@ from the in-sandbox `sandbox-agent` API.
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
 | `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the base image the sandbox's container runs, with the agent it is pinned to bound read-only ([Delivering the Agent](#delivering-the-agent)) — the pins the control plane sends with the export, recorded as a create's are, since an archived sandbox may have been pinned since its last create — as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). It starts a delivered sandbox from a snapshot of its plan when it has one, and builds one when it does not ([Snapshots](#snapshots)). In-sandbox path wiring for the primary volumes is delegated to the sandbox agent's `discobox-wire.service` (ADR 0007, ADR 26-10-10-767); the per-source data mount already lands at its final runtime-owned path. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
-| `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031) and a sandbox's read of its own egress audit (ADR 26-10-02-678), the origins and assets hosts the proxy forwards to the agent (`origins.go`, ADR 26-10-08-561; `assets.go`, ADR 26-10-16-423 §13), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
+| `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint (ADR 0031) with a sandbox's credential environment and its read of its own egress audit (ADR 26-10-02-678), route checking for every sentinel the proxy swaps (ADR 26-10-02-924), the discobox API gate (ADR 0140), the origins and assets hosts the proxy forwards to the agent (`origins.go`, ADR 26-10-08-561; `assets.go`, ADR 26-10-16-423 §13), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
 | `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs, and `NotifyReady` (`sd_notify` for a Type=notify unit). |
@@ -1087,9 +1087,9 @@ flowchart TD
   branch it holds, and for a project member's delivery the namespace's
   `refs/remotes/origin/*` and tags are copied to `refs/cache/heads/` and
   `refs/cache/tags/` (`Delivered`).
-- **A sandbox delivering to a discobox in its project**
+- **A sandbox delivering to a discobox it created**
   ([ADR 26-09-24-630](../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md),
-  [ADR 26-10-14-320](../docs/adr/26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md))
+  [ADR 26-10-27-880](../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §9)
   is named by the control plane in `X-Discobox-Git-Cache-Caller` and held to
   what it sends and what its own namespaces reach (§7). Its pin holds an
   object only where a namespace recorded as its own reaches it. Its push is
@@ -1647,159 +1647,49 @@ flowchart LR
   handed over: a `401` the proxy's retry could not save, and the clearance when
   one starts working again
   ([ADR 0132](../docs/adr/0132-a-credential-rejected-after-its-retry-is-recorded-against-its-secret.md)).
-  A rejection is translated the way a resolve is — the stable sentinel, plus the
-  use ID an ephemeral one was minted for — and goes to
+  A rejection names the sentinel and goes to
   `POST /api/pools/{pool}/sandbox-secret-rejections` under the same
-  `secret:resolve` scope. A *lapsed* activation is still translated here, where
-  a resolve would refuse it: the use window is an authorization, and a rejection
-  is a fact about the credential behind it that the window's ending does not
-  change. A resolve answer's `reportScope` is handed to the proxy unread: which
-  requests answer for a credential is the control plane's to say and the
-  proxy's to apply
+  `secret:resolve` scope. A resolve answer's `reportScope` is handed to the
+  proxy unread: which requests answer for a credential is the control plane's
+  to say and the proxy's to apply
   ([ADR 26-10-13-595](../docs/adr/26-10-13-595-a-harness-names-the-requests-whose-refusal-means-its-login-is-dead.md)).
 - The same resolver is the proxy's gate (`Gate`, `gate.go`) for the discobox
-  API's host, `api.discobox.internal`, which it names to the proxy as
-  `Secrets.GateHost`
+  API's host, `api.discobox.internal` (`GateHost`), which it names to the proxy
+  as `Secrets.GateHost`
   ([ADR 0140](../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md) §2).
-  It admits a call carrying the sentinel of a live activation of
-  `ai.discobox.sandbox` minted for the calling sandbox for exactly that host,
-  that the judge allows; removes the sentinel and any identity the sandbox
-  claimed; and forwards the call to the control plane with this pool's
-  assertion — which carries `poolauth.ScopeSandboxForward` — and the sandbox's
-  ID, which is what the control plane takes as the caller. Every sandbox is
-  given `DISCOBOX_API_URL` and `DISCOBOX_SERVER` for that host with its proxy
-  environment, so the `discobox` CLI in the image calls it.
+  The pool forwards every call, and the control plane refuses one from a
+  sandbox without `DiscoboxAPI`
+  ([ADR 26-10-27-880](../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
+  §9, as amended): the gate removes whatever credential and identity the
+  sandbox sent, and forwards the call with this pool's assertion — which
+  carries `poolauth.ScopeSandboxForward` — and the sandbox's ID, which is what
+  the control plane takes as the caller. So a sandbox without the flag still
+  reaches the control plane, under that assertion, and is refused there by
+  the sandbox role (`SandboxRoleAuthorizer`); the pool is never sent the flag
+  and keeps nothing in step with it. A pool with no control-plane credential
+  yet refuses the call rather than forwarding it unasserted. Every sandbox is given `DISCOBOX_API_URL` and
+  `DISCOBOX_SERVER` for that host with its proxy environment, so the
+  `discobox` CLI in the image calls it.
 - The same resolver authorizes the proxy's requests (`Authorize`): asked, per
   request and before anything in it is resolved, whether the request may carry
   what its sentinels stand for
-  (see [`proxy/DESIGN.md`](../proxy/DESIGN.md#sentinel-secret-swapping)). It
-  binds each sentinel the proxy matched to a live activation of the sending
-  sandbox — the same binding `Resolve` makes — and answers with the uses those
-  activations name, so a refusal is recorded against the use it was about. A
-  sentinel with no live activation and no routes is spending no approved use
-  and keeps the policy it already has: an injected static sentinel is held to
-  its grant and host by the control plane at resolve time, while one this process minted
-  whose activation has lapsed — or whose host the use does not cover — never
-  reaches the control plane at all, because `Resolve` refuses it here.
+  (see [`proxy/DESIGN.md`](../proxy/DESIGN.md#sentinel-secret-swapping)). The
+  answer is the sentinels' routes and nothing else; no control-plane call is
+  made. A sentinel whose secret carries no routes passes here and is held to
+  its grant and host by the control plane at resolve time.
 - **A secret may carry routes** (ADR 26-10-02-924): where every swap of it
-  may go. For an injected sentinel, the control plane sends them with the
-  sentinel set (`sentinelRoutes`, kept in SecretsFile) on every create and
-  update; a route change reaches a sandbox as an update. The watcher stages the new routes beside
-  those of any sentinel leaving before it moves the sentinel set, so no
-  sentinel is ever swappable without its routes. For an agent-requested
-  credential, the listing carries them (`secretRoutes`) and the activation
-  records them. `uses` matches the request's host and every reading of its
+  may go. The control plane sends them with the sentinel set
+  (`sentinelRoutes`, kept in SecretsFile) on every create and update; a route
+  change reaches a sandbox as an update. The watcher stages the new routes
+  beside those of any sentinel leaving before it moves the sentinel set, so no
+  sentinel is ever swappable without its routes. `Authorize` holds the request
+  to every sentinel's routes with `secretroute.Decide`: every reading of its
   path (`secretroute.RequestPaths`: decoded, and with an encoded `/` kept in
-  its segment) with `secretroute.Match`, and the most specific routes win.
-  - A route there with no use allows the request unjudged.
-  - Otherwise the routes' uses are one group, and any one allowing is enough.
-  - If no route covers the request, `authorize` refuses it without asking the
-    judge.
-  - A grant's or trust's use is a group of one, and every group must pass.
-- **A use-scoped request is put to the project's judge** (`judge.go`), one ask
-  per approved use it spends, and every one of them has to allow before
-  anything is substituted. The ask is synchronous on the proxy's request path:
-  the discobox's request waits for a model to answer, which is why only a
-  request spending an approved use is asked about: a grant's, or a judged
-  route's, and an injected sentinel off every judged route never is. The pool
-  sends which discobox and which use, never what the use allows; the control
-  plane reads that from the live grant, or from the secret's route. Only an
-  explicit allow allows. This also covers a sandbox's own calls to the discobox
-  API, which the gate admits through the same contract — and whose operation is
-  usually in the body.
-- **A request is recognized before it is judged** (`recognize.go`; ADR
-  26-09-26-240 §1): its protocol (`protocols`: a git push) from its method,
-  path and media type, and its endpoint (`endpoints`: GitHub's fork, the
-  discobox API's create through the gate, and the calls `discobox run` makes
-  after it to finish the discobox — the poll, the source push into its
-  origin, and the report that the push is done) from its host, method and
-  path. Both are built-in, ordered registries — a new protocol
-  or API is one entry and its tests — and the names go to the control plane,
-  which adds the guidance the judge package keeps for them; a pool never sends
-  guidance of its own.
-- **A body is always shown in one shape** (`judgebody.go`; ADR 26-09-26-240
-  §2–3). A `bodyParser` is chosen by the protocol, or else by media type
-  (JSON, form, multipart, text), and says what it found in the same terms. The
-  first ask carries the parser's metadata — a push's ref updates, read the way
-  git's `receive-pack` reads them (`gitpush.go`), a JSON object's keys and
-  what its endpoint lifts out of it (`endpoints.go`: where a fork lands; the
-  grants and their count (said when none, so a clipped prompt is not read as
-  hidden grants), assigned secrets, set variable names, prompt start and
-  sources of a discobox create, whose grants sit last behind a prompt of
-  kilobytes), a
-  form's field names, a multipart body's parts —
-  redacted and held to `judge.MaxMetadataBytes`: every string clipped and every
-  list capped first, so a body shaped to be expensive costs a fixed amount,
-  then the longest list cut (`boundMetadata`). A body its parser cannot read —
-  not what it claims, not arrived, an encoding the proxy does not decode — has
-  `ParseError` saying so rather than nothing said. An endpoint names the parser
-  its API reads the body with (a fork's JSON), which outranks the media type
-  the sandbox labeled it. A parser with nothing to
-  say ahead of being asked (text) spares the first ask a read. When the judge
-  asks, the next round shows the body the way its parser renders it — JSON
-  written back compacted from the token stream so a key said twice is shown
-  twice, anything else as sent — cut to the judge's budget, with `Missing`
-  saying what was cut or why nothing could be shown: not text, an encoding
-  other than gzip, too large, or not arrived within `bodyArrivalWait`. A judge
-  still asking on round `judge.MaxRounds`, or asking again for what
-  `Body.Answers` says it was already shown, has decided nothing, and that
-  refuses. The rounds for one use share one deadline, `judgeHTTPTimeout`, and
-  each ask carries what is left of it (`timeoutMillis`), which the control
-  plane bounds that ask by — so a slow later round is refused with a sentence,
-  not cut off here as a silence.
-- **A refused request is told no in its own protocol when it has a way**
-  (`Verdict.Refuse`; ADR 26-09-26-240 §5). A git push is answered as a git
-  server rejects one — report-status `ng` for every ref, the sentence on the
-  progress band — so `git push` prints the reason where a 403 it prints as
-  `HTTP 403` and nothing else.
-- **What the judge is shown is not what was sent.** Every sentinel is taken out
-  through the proxy's own scan (`proxy.RedactSentinels`), so the base64 form
-  goes too. Headers are an allowlist: the ones that say what an operation is
-  keep their values, and every other header is reported by name with its value
-  replaced — a denylist would only ever cover the credential headers somebody
-  thought of. The query string cannot be treated that way, since it is half of
-  what identifies an operation, so its credential-ish names are a denylist
-  (`credentialName`: folded, so `access_token` and `accessToken` are one name;
-  anything ending in `token`, `secret`, `password` and the like; and a bracketed
-  `user[password]` when any part of it is one) and the rest is shown. A
-  form-encoded body is redacted the same way, a multipart body part by part (a
-  part named as a credential in its disposition, whatever the disposition, has
-  its content replaced; every other part is redacted as its own media type — a
-  JSON or form part loses what that body would — or, if it is not text,
-  described by its length; multipart is shown two bodies deep,
-  `maxMultipartDepth`, and described past that; and part headers other than the
-  ones that say what a part is are reduced to their names), and a JSON body
-  loses every value under those names in either form: which redaction applies is
-  decided by the body, never by the form the judge asked for. Shown as text,
-  JSON keeps its spacing and is followed only as far as it is JSON — nothing
-  past that point is shown, since nothing there says which part is a value. The
-  first ask describes the body only when the request declared a length: the
-  contract counts bytes and cannot say "unknown", so a chunked upload is not
-  described at all rather than described as empty. Every sentinel is taken out
-  of a shown body before it is cut, so no cut can leave part of one behind.
-- **A server that does not judge requests is not a refusal.** Request
-  judging is a server's opt-in (`judgeCredentials`). It says so with a problem
-  type a program can recognize, and the pool remembers that for a few minutes
-  and allows in the meantime, so an opted-out server does not put a
-  control-plane call in front of every credential its discoboxes spend. That
-  one answer is the only thing that claims judging is off; a status on its own
-  claims nothing, because most of the ones a pool sees are written by something
-  between it and the handler.
-- **Only this server's own refusal refuses.** A 4xx carrying a problem document
-  from the control plane is it declining the ask, and the request goes nowhere.
-  A 4xx from an ingress, a gateway's 502, a proxy's plain-text 404: nobody has
-  said whether this server judges, so those fall to the rule below rather than
-  refusing every discobox on a server that never turned judging on.
-- **An ask that gets no answer refuses only once this pool knows the server
-  judges.** The two look identical at the moment of asking — a server that does
-  not judge and one that does and cannot be reached — and they call for
-  opposite behavior. A pool that has never had an answer has no reason to
-  believe judging is on, so it allows and waits a moment before asking again;
-  a server that never turned judging on cannot break its discoboxes through a
-  feature it is not using. The first answer from a server that judges flips
-  that for good, and from then on no answer means no credential. The gap is a
-  pool that restarts while its control plane is unreachable, which allows until
-  its first answered ask.
+  its segment) must fall on a route, and the most specific routes it falls on
+  must not be blocked. A blocked route is what a route a judge used to read
+  became, so removing the judge sent nothing on it unjudged
+  ([ADR 26-10-27-880](../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)).
+  A refusal says which, and the proxy records it as `route: <reason>`.
 
 ## Agent Credentials
 
@@ -1824,50 +1714,40 @@ flowchart LR
     cli["discobox-access"] -->|"loopback :17010"| relay["sandbox-agent relay"]
     relay -->|"mTLS client cert = sandbox ID"| broker["proxy unit :17083"]
     broker -->|"scoped pool token"| cp["control plane"]
-    broker -->|"mint + register"| live["activations"]
     broker -->|"probe host, apply pins, read own audit"| proxy["pool proxy"]
-    live --> swap["resolver: ephemeral → stable"]
-    swap --> cp
+    broker -->|"read the sandbox's credential environment"| file["SecretsFile"]
 ```
 
-It lives in the proxy unit rather than the agent process because minting an
-ephemeral sentinel, registering it in the proxy's match set, and translating it
-back at swap time are one act. Splitting them across processes would put a file
-and a race between the moment a sandbox is handed a sentinel and the moment the
-proxy would recognize it.
+It lives in the proxy unit rather than the agent process because what it
+reads besides the control plane — the proxy's audit trail, its pins, and the
+policy file the proxy watches — is that unit's. It hands out no values: a
+credential granted to a sandbox is delivered as an injected sentinel like any
+other
+([ADR 26-10-27-880](../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)).
 
-- `list` and `request` are relayed to the control plane unchanged. `get` puts
-  the declared command — argv, stdin evidence and what the sandbox reported
-  about where it runs — to the project's judge
-  (`POST /api/pools/{poolId}/judge-commands`,
-  [ADR 26-09-22-838](../docs/adr/26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md) §3)
-  and mints only on an explicit allow. The control plane records the verdict
-  before it answers, so nothing is minted without one on record
-  ([ADR 0091](../docs/adr/0091-a-credential-is-not-issued-without-a-verdict-on-record.md)).
-  Unlike a request, a command fails closed on every non-answer: a refusal, an
-  unreachable judge, an unreadable answer. The one exception is the server's
-  own judging-disabled problem (`judgeCommands: false`,
-  [ADR 26-10-02-054](../docs/adr/26-10-02-054-commands-are-judged-by-default-and-requests-by-opt-in.md)),
-  which mints with no verdict. A use waits up to `credentialUseTimeout`, the
-  judge's whole deadline plus the calls around it.
-- **Activations** (`activations.go`) are in-memory and pool-local: ephemeral
-  sentinel → `{stable sentinel, useId, hosts, declared command, expiry}`. They are
-  disposable by design — a restart costs a dead sentinel and one fresh `get`,
-  which fails closed. `activationTTL` is the *use* clock; the grant's expiry on
-  the control plane is the *consent* clock, and a value dies at whichever comes
-  first.
-- **The resolver checks activations first.** A sentinel it minted is refused
-  unless the activation is live, belongs to the calling sandbox, and the
-  destination is covered by one of the hosts its use was approved for
-  ([ADR 26-10-02-393](../docs/adr/26-10-02-393-a-credential-request-and-its-grant-may-name-several-hosts.md)).
-  An activation with no host covers nothing rather than everything; only then
-  is it
-  translated to the stable sentinel and resolved normally. The control plane
-  never learns ephemeral sentinels exist.
-- **`policyPublisher` owns the proxy's per-client policy**, merging the stable
+- `list`, `request`, and a request's status are relayed to the control plane
+  for the certificate's sandbox (`/api/pools/{poolId}/sandbox-credentials`,
+  `/sandbox-credential-requests`). A granted status says what the sandbox now
+  holds — name, variable, hosts, lifetime — as the approver chose it. A
+  delegate request names no variable, and the broker passes on what was sent.
+- **The environment verb** (`Environment`) answers with every variable a
+  credential is delivered in for the certificate's sandbox, and the sentinel
+  in each, so a process started before a grant takes up the new variable
+  (`discobox-access env`). It reads SecretsFile's `environment`, which
+  `sandboxruntime` writes (`SetSandboxEnvironment`, by
+  `publishCredentialEnvironment`) whenever it records a sandbox's secret
+  environment — on create and on every update that carries one — less the
+  harness secrets read from a file (`harness.SecretDeliveryFile`), whose
+  sentinel must not be put back into a process's environment. Which those are
+  is the pool's own record, `file-secrets.json` beside the sandbox's tree,
+  written at create from the harness secrets the control plane sent — never
+  `sandbox.json`, which the box can write. Archive and delete remove the
+  environment with the rest of the sandbox's policy. A sandbox created by a
+  pool agent that predates the record is published none until a create writes
+  one.
+- **`policyPublisher` owns the proxy's per-client policy**, merging the
   sentinels, the restricted sandboxes' egress allow lists, and each sandbox's
-  gateways from SecretsFile,
-  live ephemeral sentinels, and the pool's host trusts.
+  gateways from SecretsFile, and the pool's host trusts.
   They have to be applied together because `ApplyConfig` replaces the whole of
   it, and each publish is one read-and-apply so two that race cannot land an
   older reading over a newer one.
@@ -1910,18 +1790,11 @@ proxy would recognize it.
   reads the caller's own HTTP exchanges from the proxy's trail in process
   (`proxy.Server.ClientHTTPAudit`), narrowed to the certificate's sandbox — not
   through the loopback control API, which is the agent process's and needs a
-  token. It returns a summary (status, block and reason, the uses carried),
-  never headers or bodies. The URL is recorded before any swap, so the
-  sandbox's live ephemeral sentinels are redacted from it and the reason
-  (ADR 0092: no value leaves except to the command it was minted for). Each
-  text field is cut to 2 KiB, and the page stops, newest first, before it
-  outgrows `agentcreds.MaxResponseBytes`.
-- **The facts verb** (`credentials.go`, ADR 26-10-20-782 §4) relays the
-  control plane's record of the certificate's sandbox
-  (`GET /api/pools/{poolId}/sandbox-policy-facts`) as it is answered: the
-  control plane resolves the variables, and the pool adds and resolves
-  nothing, so the values an agent writes a policy against are the ones its
-  approval records.
+  token. It returns a summary (status, block and reason), never headers or
+  bodies. The URL is recorded before any swap, so a sentinel in it is the
+  sandbox's own, which it already holds. Each text field is cut to 2 KiB, and
+  the page stops, newest first, before it outgrows
+  `agentcreds.MaxResponseBytes`.
 - The token in the resolve-context file carries `secret:resolve` and
   `credential:broker`. They stay separate scopes so splitting these roles across
   processes later is a change of who holds which token, not of what one means.

@@ -15,8 +15,7 @@ import (
 const refreshTestSecretJSON = `{"id":"secret-1","projectId":"project-1","name":"github","type":"token","host":"github.com","maxGrantTTLSeconds":3600,"ttlSeconds":300,"refreshCommand":["printf","gho_fresh"],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
 
 // A token got from a command starts with a value: create runs the command
-// here for the first one, and a well-known ID supplies the command, name, and
-// host nobody typed.
+// here for the first one.
 func TestSecretCreateRunsTheRefreshCommandForTheFirstValue(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("runs printf")
@@ -37,7 +36,7 @@ func TestSecretCreateRunsTheRefreshCommandForTheFirstValue(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "create", "--well-known", "com.github.api", "--refresh-command", "printf 'gho_first'", "--ttl", "10m"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "create", "--name", "github", "--host", "github.com", "--refresh-command", "printf 'gho_first'", "--ttl", "10m"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -49,32 +48,8 @@ func TestSecretCreateRunsTheRefreshCommandForTheFirstValue(t *testing.T) {
 	if len(command) != 2 || command[0] != "printf" || command[1] != "gho_first" {
 		t.Fatalf("refreshCommand = %#v, want the argument vector as split", posted["refreshCommand"])
 	}
-	if posted["ttlSeconds"] != float64(600) || posted["name"] != "github" || posted["host"] != "github.com" || posted["wellKnownId"] != "com.github.api" {
-		t.Fatalf("posted = %#v, want the lifetime and the well-known name and host", posted)
-	}
-}
-
-// Entering a value for a well-known credential stores the value and no
-// command: the two answers the window offers, from a shell.
-func TestSecretCreateWellKnownWithATokenTakesNoCommand(t *testing.T) {
-	var posted map[string]any
-	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
-			t.Fatal(err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(refreshTestSecretJSON))
-	}))
-	t.Cleanup(server.Close)
-
-	cmd := NewRootCommand()
-	cmd.SetOut(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "create", "--well-known", "com.github.api", "--token", "ghp_typed"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	if _, ok := posted["refreshCommand"]; ok {
-		t.Fatalf("posted = %#v, want no command with a typed value", posted)
+	if posted["ttlSeconds"] != float64(600) || posted["name"] != "github" || posted["host"] != "github.com" {
+		t.Fatalf("posted = %#v, want the lifetime, the name and the host", posted)
 	}
 }
 

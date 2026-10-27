@@ -133,7 +133,7 @@ func startGRPCProxy(ctx context.Context, t *testing.T, origin net.Addr) (net.Add
 		DatabaseDSN:   filepath.Join(dir, "audit.db"),
 		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
 		Secrets:       SecretsConfig{Clients: []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{grpcSentinel}}}},
-	}, prepared.Bundle, stubResolver{value: grpcRealValue, useID: "use_grpc"})
+	}, prepared.Bundle, stubResolver{value: grpcRealValue})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}

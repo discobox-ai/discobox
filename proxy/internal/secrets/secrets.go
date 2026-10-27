@@ -41,19 +41,10 @@ type ResolveRequest struct {
 type ResolveResult struct {
 	Value     string
 	ExpiresAt time.Time
-	// UseID names the approved use this value was taken under, when the
-	// sentinel was one minted by the agent credentials protocol (ADR 0130 §3).
-	// It is the join between a request that spent a credential and the verdict
-	// that authorized it. A resolver with no use to name leaves it empty, which
-	// is the ordinary injected-sentinel case rather than a failure.
-	//
-	// It is an identifier, never a sentinel: it authorizes nothing, so it is
-	// safe in a trail kept to be read later.
-	UseID string
-	// SecretID is the secret the value is, for every kind of sentinel: the
-	// audit row names what a request spent even where no use was approved
-	// (ADR 26-10-01-240). An identifier like UseID, and empty from a control
-	// plane that predates it.
+	// SecretID is the secret the value is: the audit row names what a request
+	// spent (ADR 26-10-01-240). It is an identifier, never a sentinel, so it is
+	// safe in a trail kept to be read later; empty from a control plane that
+	// predates it.
 	SecretID string
 	// ReportScope names the requests that answer for this credential: only an
 	// upstream's verdict on one of them is reported (ADR 26-10-13-595). Empty
@@ -142,35 +133,21 @@ type ReportRequest struct {
 	Outcome  Outcome
 }
 
-// AuthorizeRequest is a request carrying sentinels, or one bound for a host
-// the client trusts by a pin, as it is authorized before anything in it is
-// resolved. Everything in it is what the sandbox sent — nothing has been
-// substituted yet — so it holds sentinels and never a credential
-// (ADR 26-09-22-838 §4).
+// AuthorizeRequest is a request carrying sentinels, as it is authorized
+// before anything in it is resolved. Everything in it is what the sandbox
+// sent — nothing has been substituted yet — so it holds sentinels and never a
+// credential.
 type AuthorizeRequest struct {
 	ClientID string
 	// Sentinels are the client's sentinels found in this request, literally or
-	// inside a base64 token. They are what the resolver binds to the uses the
-	// request is authorized against; the request itself says nothing about
-	// which use it is spending, and could not be believed if it did.
+	// inside a base64 token.
 	Sentinels []string
-	// TrustUseIDs are the uses the destination was trusted for, when the
-	// client reaches it by a pin (ADR 0149 §5). A request to a trusted host is
-	// authorized against them whether or not it carries a credential, and they
-	// come from the pin rather than from anything the request said.
-	TrustUseIDs []string
-	Method      string
+	Method    string
 	// Host is the destination without its port, stated the way Resolve states
-	// it, so that a use bound here is the use the value is taken under. The
-	// port, where there was one, is still in URL.
+	// it. The port, where there was one, is still in URL.
 	Host   string
 	URL    string
 	Header http.Header
-	// Body is the request's body, read only if the authorizer asks to see it,
-	// and nil for a request with none. Whoever built the request sends
-	// Body.Reader() on, never the body it wrapped: what Capture read comes
-	// back from there, in front of the rest.
-	Body *RequestBody
 }
 
 // Verdict is an authorizer's answer. A request it does not allow is never
@@ -178,27 +155,6 @@ type AuthorizeRequest struct {
 type Verdict struct {
 	Allow  bool
 	Reason string
-	// UseIDs are the approved uses the resolver bound this request's sentinels
-	// to, empty for sentinels that carry no use. They name what the request
-	// was authorized — or refused — under, so a refusal that resolved nothing
-	// is still recorded against the use it was about.
-	UseIDs []string
-	// Refuse answers a request this verdict refuses the way the request's own
-	// protocol says no, given the sentence the proxy would have sent, so a
-	// client that never shows a 403's body still shows why (ADR 26-09-26-240
-	// §5). It reports false when it cannot, and nil is the proxy's own answer:
-	// a 403 with the sentence as text. It is never called for an allow. ctx
-	// is the request's, so a refusal still being written for a client that
-	// has gone stops.
-	Refuse func(ctx context.Context, reason string) (Refusal, bool)
-}
-
-// Refusal is a refused request's answer in the request's own protocol. It is
-// the same refusal, audited the same way; only how it is said changes.
-type Refusal struct {
-	Status      int
-	ContentType string
-	Body        []byte
 }
 
 // Resolver resolves a sentinel to its real credential value, and hears back
@@ -215,45 +171,37 @@ type Resolver interface {
 	// failed, which is the state ADR 0132 exists to end.
 	Report(ctx context.Context, req ReportRequest) error
 	// Authorize decides whether a request may carry the credentials its
-	// sentinels stand for: whether sending it is what their uses were approved
-	// for. It runs for every request that matched a sentinel, and it runs
-	// before Resolve, so a refused request never decrypts a credential and a
-	// cached value never authorizes a new operation (ADR 26-09-22-838 §4). A resolver
-	// that cannot answer returns an error, and nothing is resolved or sent.
+	// sentinels stand for: whether it falls on their secrets' routes (ADR
+	// 26-10-02-924). It runs for every request that matched a sentinel, and it
+	// runs before Resolve, so a refused request never decrypts a credential
+	// and a cached value never carries a request its routes refuse. A
+	// resolver that cannot answer returns an error, and nothing is resolved
+	// or sent.
 	Authorize(ctx context.Context, req AuthorizeRequest) (Verdict, error)
 	// Gate answers a request for the gate host, which never goes to the
-	// internet (Config.GateHost). It admits the request only when it carries
-	// a live use of the credential that opens the gate and the judge allows
-	// it, and answers it from the upstream behind the gate. One it does not
-	// admit is refused with a *GateRefusal saying why, and never sent. Any
-	// other error is the gate failing after it let the request in — the
-	// upstream unreachable, or gone quiet after the request went out — and
-	// the admission returned with it still names the use, since the request
-	// may have been acted on.
+	// internet (Config.GateHost), from the upstream behind the gate. One it
+	// cannot forward is refused with a *GateRefusal saying why, and never
+	// sent. Any other error is the gate failing after it let the request in —
+	// the upstream unreachable, or gone quiet after the request went out —
+	// since the request may have been acted on.
 	Gate(ctx context.Context, req GateRequest) (GateAdmission, error)
 }
 
-// GateAdmission is a request the gate let in: the upstream's answer, and the
-// approved use it was let in under. The use is what joins the audited request
-// to the approval that allowed it, as a swapped credential's use does.
+// GateAdmission is a request the gate let in: the upstream's answer.
 type GateAdmission struct {
 	Response *http.Response
-	UseID    string
 }
 
 // GateRefusal is a gate declining a request, and why. Its text is the reason
 // alone, which is what the sandbox is shown: it is an answer, not a failure
-// of anything. UseID is the use the request carried, when it carried one the
-// gate recognized and still refused — the judge's refusal, say.
+// of anything.
 type GateRefusal struct {
 	Reason string
-	UseID  string
 }
 
 func (r *GateRefusal) Error() string { return r.Reason }
 
-// GateRequest is a request for the gate host, from ClientID, with the
-// sentinel it carries still in it.
+// GateRequest is a request for the gate host, from ClientID.
 type GateRequest struct {
 	ClientID string
 	Request  *http.Request
@@ -367,19 +315,15 @@ type cacheKey struct {
 
 type previousValue struct {
 	value    string
-	useID    string
 	secretID string
 	until    time.Time
 }
 
 type cacheEntry struct {
 	value string
-	// useID rides the cached value because the audit row needs it on every
-	// request, not only the one that resolved. The cache key includes the
-	// sentinel, and an ephemeral sentinel belongs to exactly one activation, so
-	// an entry can never be shared by two uses. secretID rides it for the same
-	// reason, and a sentinel stands for one secret.
-	useID    string
+	// secretID rides the cached value because the audit row needs it on every
+	// request, not only the one that resolved, and a sentinel stands for one
+	// secret.
 	secretID string
 	// reportScope rides it too: whether a request answers for the credential
 	// is asked of every request that carries it.
@@ -488,7 +432,7 @@ type Result struct {
 	// whose resolver named no report scope, or named one that covers this
 	// request (ADR 26-10-13-595). What the upstream makes of the request is
 	// reported for these and for no others. Apply fills it; ApplyPrevious does
-	// not, since a retry goes to the URL the first attempt was judged at.
+	// not, since a retry goes to the URL the first attempt was reported for.
 	Reportable []string
 	// Errors holds the transient resolution failures that outlasted the retry
 	// window: a sentinel left in place for no reason but the resolver being
@@ -500,13 +444,10 @@ type Result struct {
 	// Encoded reports that at least one substitution happened inside a
 	// base64-encoded token rather than in a value's own text.
 	Encoded bool
-	// UseIDs are the approved uses the substituted values were taken under.
-	// It is plural because one request can carry more than one sentinel: Git
-	// sends a username and a password in a single Authorization: Basic token,
-	// and each half resolves on its own.
-	UseIDs []string
-	// SecretIDs are the secrets the substituted values were, for every kind
-	// of sentinel, plural for the same reason (ADR 26-10-01-240).
+	// SecretIDs are the secrets the substituted values were (ADR
+	// 26-10-01-240). It is plural because one request can carry more than one
+	// sentinel: Git sends a username and a password in a single
+	// Authorization: Basic token, and each half resolves on its own.
 	SecretIDs []string
 }
 
@@ -544,7 +485,6 @@ func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string)
 
 	dedupe(&res.Headers)
 	dedupe(&res.QueryParams)
-	dedupe(&res.UseIDs)
 	dedupe(&res.SecretIDs)
 	dedupe(&res.Sentinels)
 	dedupe(&res.Reportable)
@@ -582,9 +522,8 @@ func Redact(value string, sentinels []string, marker string) string {
 // Match reports which of clientID's sentinels req carries, literally or inside
 // a base64 token, and resolves none of them.
 //
-// It is what lets a request be authorized before anything in it is resolved
-// (ADR 26-09-22-838 §4). It walks exactly the surface Apply swaps, through the same
-// scan, because the two drifting apart would be a credential going out on a
+// It is what lets a request be authorized before anything in it is resolved.
+// It walks exactly the surface Apply swaps, through the same scan, because the two drifting apart would be a credential going out on a
 // request nothing authorized.
 func (s *Swapper) Match(req *http.Request, clientID string) []string {
 	if req == nil || !s.Active(clientID) {
@@ -718,7 +657,7 @@ func (s *Swapper) resolve(ctx context.Context, st *settings, clientID, sentinel 
 		if !entry.refreshAt.IsZero() && !now.Before(entry.refreshAt) {
 			s.triggerRefresh(key)
 		}
-		noteSwap(res, entry.useID, entry.secretID)
+		noteSwap(res, entry.secretID)
 		noteSentinel(res, sentinel, entry.reportScope, at)
 		return entry.value, true
 	}
@@ -739,7 +678,7 @@ func (s *Swapper) resolve(ctx context.Context, st *settings, clientID, sentinel 
 	if cacheable {
 		s.store(key, entry)
 	}
-	noteSwap(res, result.UseID, result.SecretID)
+	noteSwap(res, result.SecretID)
 	noteSentinel(res, sentinel, result.ReportScope, at)
 	return result.Value, true
 }
@@ -814,14 +753,9 @@ func noteSentinel(res *Result, sentinel string, scope ReportScope, at destinatio
 	}
 }
 
-// noteSwap records what one substituted value was on a swap result: the
-// approved use it was taken under, which a sentinel outside the agent
-// credentials protocol has none of, and the secret it is, which an older
-// control plane does not say. An empty ID is not recorded.
-func noteSwap(res *Result, useID, secretID string) {
-	if useID != "" {
-		res.UseIDs = append(res.UseIDs, useID)
-	}
+// noteSwap records the secret one substituted value is on a swap result. An
+// older control plane does not say, and an empty ID is not recorded.
+func noteSwap(res *Result, secretID string) {
 	if secretID != "" {
 		res.SecretIDs = append(res.SecretIDs, secretID)
 	}
@@ -846,7 +780,7 @@ func entryFor(st *settings, result ResolveResult, now time.Time) (cacheEntry, bo
 		// refresh, it will resolve synchronously once expired.
 		refreshAt = time.Time{}
 	}
-	return cacheEntry{value: result.Value, useID: result.UseID, secretID: result.SecretID, reportScope: result.ReportScope, expiresAt: expiresAt, refreshAt: refreshAt}, true
+	return cacheEntry{value: result.Value, secretID: result.SecretID, reportScope: result.ReportScope, expiresAt: expiresAt, refreshAt: refreshAt}, true
 }
 
 // triggerRefresh refreshes a soft-expired entry in the background, deduplicated
@@ -904,7 +838,7 @@ func (s *Swapper) store(key cacheKey, entry cacheEntry) {
 		return
 	}
 	if old, ok := s.cache[key]; ok && !old.denied && old.value != "" && old.value != entry.value {
-		s.previous[key] = previousValue{value: old.value, useID: old.useID, secretID: old.secretID, until: s.now().Add(previousValueGrace)}
+		s.previous[key] = previousValue{value: old.value, secretID: old.secretID, until: s.now().Add(previousValueGrace)}
 	}
 	s.cache[key] = entry
 	s.mu.Unlock()
@@ -947,9 +881,9 @@ func (s *Swapper) ApplyPrevious(req *http.Request, clientID string) Result {
 				if !ok {
 					return "", false
 				}
-				// The retry spends the same approved use and the same secret
-				// the rejected attempt did, so its audit row names them too.
-				noteSwap(&res, prev.useID, prev.secretID)
+				// The retry spends the same secret the rejected attempt did, so
+				// its audit row names it too.
+				noteSwap(&res, prev.secretID)
 				res.Sentinels = append(res.Sentinels, sentinel)
 				return prev.value, true
 			})
@@ -960,7 +894,6 @@ func (s *Swapper) ApplyPrevious(req *http.Request, clientID string) Result {
 		}
 	}
 	dedupe(&res.Headers)
-	dedupe(&res.UseIDs)
 	dedupe(&res.SecretIDs)
 	dedupe(&res.Sentinels)
 	return res
@@ -1027,8 +960,7 @@ func (s *Swapper) Authorize(ctx context.Context, req AuthorizeRequest) (Verdict,
 	if s == nil || s.resolver == nil {
 		return Verdict{Allow: true}, nil
 	}
-	// The destination as Resolve will state it, so that a sentinel bound to a
-	// use here is bound to the same one when its value is fetched.
+	// The destination as Resolve will state it.
 	req.Host = extractHost(req.Host)
 	return s.resolver.Authorize(ctx, req)
 }

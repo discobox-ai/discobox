@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"testing"
 	"text/template"
@@ -20,8 +19,7 @@ import (
 // API key, an OAuth login replacing the same account's. A bare interactive
 // launch "signs in" by importing $OMP_STUB_LOGIN and writes config.yml,
 // `config get modelRoles` reads the default role back from it, and `-p`
-// answers the default-model and judge checks. The variables the judge must
-// see are named STUB_OMP_*, since discobox-prompt clears every OMP_* one.
+// answers the default-model check.
 const stubOmp = `#!/usr/bin/env node
 const fs = require("fs");
 const path = require("path");
@@ -49,7 +47,6 @@ if (args.join(" ") === "config get modelRoles --json") {
 }
 if (args[0] === "-p") {
   if (process.env.OMP_STUB_RUN_FAILS) { console.error("Error: this model needs an opt-in"); process.exit(1); }
-  if (process.env.STUB_OMP_JUDGE_FAILS && args.includes("--thinking=off")) { console.error("Error: reasoning is mandatory for this model"); process.exit(1); }
   console.log("discobox-ok"); process.exit(0);
 }
 if (args[0] === "--allow-home") {
@@ -113,8 +110,6 @@ func newConfigureEnv(t *testing.T) *configureEnv {
 	// runs it.
 	writeExecutable(t, filepath.Join(env.bin, "script"), "#!/bin/sh\nexec sh -c \"$4\"\n")
 	writeExecutable(t, filepath.Join(env.bin, "omp"), stubOmp)
-	// The judge check runs the image's own discobox-prompt.
-	writeExecutable(t, filepath.Join(env.bin, "discobox-prompt"), readFile(t, "prompt.sh"))
 	return env
 }
 
@@ -366,12 +361,8 @@ func TestConfigureCapturesEverySignIn(t *testing.T) {
 	if file, ok := out.file(".omp/agent/config.yml"); !ok || !strings.Contains(file["content"].(string), "default: anthropic/claude-sonnet-5-5") {
 		t.Fatalf("configure did not return omp's settings: %v", out.Files)
 	}
-	if _, ok := out.file(settingsPath); !ok {
-		t.Fatal("configure did not return Discobox's settings for the harness")
-	}
-	// The first check is of omp's default model — what a sandbox starts on —
-	// so it names none, and it uses no tools. (The judge's check, which does
-	// name one, has a test of its own.)
+	// The check is of omp's default model — what a sandbox starts on — so it
+	// names none, and it uses no tools.
 	calls := readFile(t, filepath.Join(env.dir, "omp-calls"))
 	if !strings.Contains(calls, "\n-p --no-tools --no-session --no-title -- ") {
 		t.Fatalf("configure did not check the default model tool-free: %s", calls)
@@ -444,72 +435,6 @@ func TestConfigureKeepsSignInsWhenTheDefaultModelFails(t *testing.T) {
 	}
 }
 
-// The judge is checked as a sandbox would ask it: through discobox-prompt,
-// tool-free, with thinking off, on judgeModel when one is set and the default
-// model role when not (ADR 26-10-16-965).
-func TestConfigureChecksTheJudgeWithThinkingOff(t *testing.T) {
-	for _, tc := range []struct {
-		name, settings, model string
-	}{
-		{"the default model", "", "--model=anthropic/claude-sonnet-5-5"},
-		{"judgeModel", `{"judgeModel": "openai/o3"}`, "--model=openai/o3"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			env := newConfigureEnv(t)
-			if tc.settings != "" {
-				env.homeFiles = map[string]string{settingsPath: tc.settings}
-			}
-			out := env.run(t, "\n", signIns, nil, nil)
-			if !strings.Contains(out.Printed, "The judge answered.") {
-				t.Errorf("the judge was not reported answering:\n%s", out.Printed)
-			}
-			var judged bool
-			for _, call := range strings.Split(readFile(t, filepath.Join(env.dir, "omp-calls")), "\n") {
-				fields := strings.Fields(call)
-				judged = judged || (slices.Contains(fields, "-p") && slices.Contains(fields, "--thinking=off") &&
-					slices.Contains(fields, "--no-tools") && slices.Contains(fields, tc.model))
-			}
-			if !judged {
-				t.Errorf("no tool-free -p with --thinking=off and %s among omp's calls:\n%s", tc.model, readFile(t, filepath.Join(env.dir, "omp-calls")))
-			}
-		})
-	}
-}
-
-// A judge model that will not answer with thinking off is reported with the
-// model it ran on and where judgeModel is changed, and declining to start omp
-// again saves every sign-in.
-func TestConfigureKeepsSignInsWhenTheJudgeFails(t *testing.T) {
-	for _, tc := range []struct {
-		name, settings, says string
-	}{
-		{"on the default model", "", "The judge runs on the default model, with thinking off"},
-		{"on judgeModel", `{"judgeModel": "openai/o3"}`, "The judge runs on judgeModel, openai/o3, with thinking off"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			env := newConfigureEnv(t)
-			if tc.settings != "" {
-				env.homeFiles = map[string]string{settingsPath: tc.settings}
-			}
-			out := env.run(t, "\nn\n", signIns, nil, map[string]string{"STUB_OMP_JUDGE_FAILS": "1"})
-			if len(out.Secrets) != len(signInSentinels) {
-				t.Fatalf("secrets = %v, want every sign-in kept", out.Secrets)
-			}
-			for _, want := range []string{
-				"The default model answered.",
-				"The judge did not answer.",
-				"reasoning is mandatory for this model",
-				tc.says,
-				"discobox admin harness edit omp " + settingsPath,
-			} {
-				if !strings.Contains(out.Printed, want) {
-					t.Errorf("the judge's failure did not say %q:\n%s", want, out.Printed)
-				}
-			}
-		})
-	}
-}
-
 // Starting omp again is a person's choice, and the round's sign-ins carry into
 // the next one.
 func TestConfigureRetriesOnlyWhenAsked(t *testing.T) {
@@ -550,24 +475,6 @@ func TestConfigureFailsAtTheEndOfInput(t *testing.T) {
 		if _, statErr := os.Stat(env.runDir + "harness-configure.json"); statErr == nil {
 			t.Fatalf("input %q: configure wrote an output", input)
 		}
-	}
-}
-
-// Discobox's settings come back as they arrived: a judge model someone set by
-// editing the file is theirs.
-func TestConfigureKeepsTheEditedJudgeModel(t *testing.T) {
-	env := newConfigureEnv(t)
-	env.homeFiles = map[string]string{settingsPath: `{"judgeModel": "anthropic/claude-opus-5-5"}`}
-	out := env.run(t, "\n", signIns, nil, nil)
-	file, _ := out.file(settingsPath)
-	var settings struct {
-		JudgeModel string `json:"judgeModel"`
-	}
-	if err := json.Unmarshal([]byte(file["content"].(string)), &settings); err != nil {
-		t.Fatal(err)
-	}
-	if settings.JudgeModel != "anthropic/claude-opus-5-5" {
-		t.Fatalf("judgeModel = %q, want the edited one kept", settings.JudgeModel)
 	}
 }
 

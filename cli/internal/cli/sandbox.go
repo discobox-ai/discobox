@@ -28,8 +28,7 @@ type sandboxCreateOptions struct {
 	env                  []string
 	secret               []string
 	grant                []string
-	grantStatement       []string
-	grantDefine          []string
+	discoboxAPI          bool
 	sourceURL            string
 	sourceRef            string
 	sourceRefType        string
@@ -59,9 +58,10 @@ type sandboxCreateOptions struct {
 }
 
 type sandboxUpdateOptions struct {
-	harness string
-	name    string
-	egress  egressFlags
+	harness     string
+	name        string
+	egress      egressFlags
+	discoboxAPI bool
 }
 
 func (a *App) newSandboxCommand() *cobra.Command {
@@ -91,7 +91,6 @@ func (a *App) newSandboxCommand() *cobra.Command {
 }
 
 func (a *App) newSandboxListCommand() *cobra.Command {
-	var includeJudge bool
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
@@ -105,11 +104,7 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			params := apiclientgen.ListSandboxesParams{ProjectId: projectID}
-			if includeJudge {
-				params.IncludeJudge = apiclientgen.NewOptBool(true)
-			}
-			bodyRes, err := client.ListSandboxes(cmd.Context(), params)
+			bodyRes, err := client.ListSandboxes(cmd.Context(), apiclientgen.ListSandboxesParams{ProjectId: projectID})
 			if err != nil {
 				return err
 			}
@@ -120,8 +115,6 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 			return a.writeSandboxes(cmd, body.GetSandboxes(), nil)
 		},
 	}
-	cmd.Flags().BoolVar(&includeJudge, "include-judge", false,
-		"Also list the project's judge, which is left out otherwise: it runs no terminal and holds none of your work")
 	a.addQuietFlag(cmd)
 	return cmd
 }
@@ -232,6 +225,10 @@ Conversation state is not transferred between harnesses.
 
 --egress-allow and --egress-deny-by-default set the discobox's own egress level,
 which it converges onto while running.
+
+--discobox-api lets the discobox call the discobox API through its pool, in the
+sandbox role, acting only on the discoboxes it created; --discobox-api=false
+takes that away. It is a person's to change.
 
 ` + egressHelp,
 		Args:              cobra.ExactArgs(1),
@@ -619,9 +616,8 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.modelReasoningLevel, "model-reasoning-level", "", "Model reasoning level the harness should use")
 	cmd.Flags().StringArrayVar(&opts.prompt, "prompt", nil, "Prompt argument the harness should run; repeat to pass multiple argv tokens, preserving the caller's exact tokens")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
-	cmd.Flags().StringArrayVar(&opts.grant, "grant", nil, "A use of a credential to give the new discobox, as SECRET[@HOST[,HOST...]]:ENV_VAR=USE, or ID[@HOST[,HOST...]]=USE for a well-known credential such as com.github.api, which answers with the secret marked for it and its own variable; repeat for more, and repeat a credential to give it several uses. Its agent takes the credential with discobox-access, one use at a time, under the policy --grant-statement gives it, and nothing in the discobox can read it. HOST defaults to the secret's host, or the ID's, and may only narrow the ID's")
-	cmd.Flags().StringArrayVar(&opts.grantStatement, "grant-statement", nil, "A sentence of the policy a --grant carries, as CREDENTIAL=SENTENCE, CREDENTIAL being what the --grant names before its \"=\" (com.github.api, or github@github.com:GH_TOKEN); repeat for each statement. Every --grant carries a policy, which is what is enforced; its uses name the job")
-	cmd.Flags().StringArrayVar(&opts.grantDefine, "grant-define", nil, "A word a --grant's statements use that is not a default (read, create, update, delete, manage, anything, anywhere), as CREDENTIAL=WORD=DEFINITION; repeat for each")
+	cmd.Flags().StringArrayVar(&opts.grant, "grant", nil, "A credential to give the new discobox, as SECRET[@HOST[,HOST...]]:ENV_VAR: the project secret, and the variable the discobox receives its sentinel in, which its pool swaps for the value on the hosts the grant covers; repeat for more. HOST defaults to the secret's host. A discobox creating one gives only what it may delegate")
+	cmd.Flags().BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the new discobox call the discobox API through its pool, acting only on the discoboxes it creates. A discobox creating one may set it only when it has it itself")
 	cmd.Flags().StringArrayVarP(&opts.secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	cmd.Flags().StringVar(&opts.sourceURL, "source-url", "", "Source repository or archive URL")
 	cmd.Flags().StringVar(&opts.sourceRef, "source-ref", "", "Source branch, tag, or commit")
@@ -643,9 +639,8 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 }
 
 // resolveGrantSecrets turns the secrets grants name by name into their IDs, in
-// place, which is what the server takes. A grant naming a well-known ID is left
-// alone: the server knows which secret answers it. Every create that gives
-// grants resolves them here — `admin box create`, and both frontends of `run`.
+// place, which is what the server takes. Every create that gives grants
+// resolves them here — `admin box create`, and both frontends of `run`.
 func (a *App) resolveGrantSecrets(ctx context.Context, client *apiclientgen.Client, projectID string, grants []apimodel.SandboxGrant) error {
 	for i := range grants {
 		ref, named := grants[i].SecretId.Get()
@@ -664,6 +659,7 @@ func (a *App) resolveGrantSecrets(ctx context.Context, client *apiclientgen.Clie
 func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
 	cmd.Flags().StringVarP(&opts.harness, "harness", "H", "", "Harness `HARNESS` (slug, name or ID); requires a stopped discobox")
 	cmd.Flags().StringVar(&opts.name, "name", "", "Discobox name")
+	cmd.Flags().BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the discobox call the discobox API through its pool, acting only on the discoboxes it created; --discobox-api=false takes it away")
 	addEgressUpdateFlags(cmd, &opts.egress, "the discobox")
 }
 
@@ -689,11 +685,14 @@ func createSandboxBody(ctx context.Context, opts sandboxCreateOptions) (*apimode
 	if len(secrets) > 0 {
 		config.SetSecrets(secrets)
 	}
-	grants, err := sandboxcreate.ParseGrants(opts.grant, opts.grantStatement, opts.grantDefine)
+	grants, err := sandboxcreate.ParseGrants(opts.grant)
 	if err != nil {
 		return nil, err
 	}
 	body.Grants = grants
+	if opts.discoboxAPI {
+		body.SetDiscoboxApi(apiclientgen.NewOptBool(true))
+	}
 	source, err := gitSourceFromCreateOptions(opts)
 	if err != nil {
 		return nil, err
@@ -821,7 +820,9 @@ func updateSandboxBody(cmd *cobra.Command, opts sandboxUpdateOptions) (*apimodel
 		config.Harness = apiclientgen.NewOptString(opts.harness)
 		body.SetConfig(apiclientgen.NewOptSandboxUpdateConfig(config))
 	}
-
+	if cmd.Flags().Changed("discobox-api") {
+		body.SetDiscoboxApi(apiclientgen.NewOptBool(opts.discoboxAPI))
+	}
 	return body, nil
 }
 

@@ -130,9 +130,8 @@ func (s *Store) RefreshSecretFormats(ctx context.Context) error {
 // SentinelFormat is the template a sentinel for secret is minted from: the
 // format stored with its value, or, for a row written before every value
 // write recorded one, the shape read from the value itself. Every minter —
-// a sandbox's stable sentinel, an agent credential's binding, the format a
-// pool agent mints ephemeral ones from — asks here, so a secret's sentinels
-// cannot differ by which path minted them.
+// a person's or harness config's binding, an approved agent use's binding —
+// asks here, so a secret's sentinels cannot differ by which path minted them.
 func (s *Store) SentinelFormat(ctx context.Context, secret *model.Secret) string {
 	if format := strings.TrimSpace(secret.Format); format != "" {
 		return format
@@ -167,49 +166,6 @@ func (s *Store) GetSecret(ctx context.Context, projectID, secretID string) (*mod
 		return nil, err
 	}
 	return firstByID[model.Secret](read.Where("project_id = ?", projectID), "id", secretID)
-}
-
-// FindSecretByWellKnownID returns the project's secret marked as fulfilling a
-// well-known credential, or ErrNotFound.
-func (s *Store) FindSecretByWellKnownID(ctx context.Context, projectID, wellKnownID string) (*model.Secret, error) {
-	read, err := s.getRead(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var out []model.Secret
-	if err := read.Where("project_id = ? AND well_known_id = ?", projectID, wellKnownID).Limit(1).Find(&out).Error; err != nil {
-		return nil, err
-	}
-	if len(out) == 0 {
-		return nil, ErrNotFound
-	}
-	return &out[0], nil
-}
-
-// MarkSecretWellKnown marks a secret as fulfilling a well-known credential
-// unless the project already has a secret marked with it, or the secret
-// carries another ID; either way it leaves the marks as they are. It writes that one column and nothing else: the row a
-// caller read may already be stale (an OAuth refresh rotates the value), and
-// the mark is not a change to the credential (ADR 0132 §4).
-func (s *Store) MarkSecretWellKnown(ctx context.Context, projectID, secretID, wellKnownID string) error {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
-	taken := write.Model(&model.Secret{}).Select("1").Where("project_id = ? AND well_known_id = ?", projectID, wellKnownID)
-	res := write.Model(&model.Secret{}).
-		Where("project_id = ? AND id = ? AND well_known_id = ''", projectID, secretID).
-		Where("NOT EXISTS (?)", taken).
-		UpdateColumn("well_known_id", wellKnownID)
-	if res.Error != nil {
-		// Two first approvals racing past NOT EXISTS: the partial unique
-		// index refuses the second, and the first one's mark stands.
-		if _, findErr := s.FindSecretByWellKnownID(ctx, projectID, wellKnownID); findErr == nil {
-			return nil
-		}
-		return res.Error
-	}
-	return nil
 }
 
 // SetSecretLimits writes a secret's host binding, its grant limit, or both,
@@ -508,11 +464,6 @@ func (s *Store) DeleteSecret(ctx context.Context, projectID, secretID string) er
 		if err := s.deleteSecretGrantsBySecret(tx, secretID); err != nil {
 			return err
 		}
-		// A rule that names the secret could never approve again, and would
-		// go on counting as a reason for the project to keep a judge.
-		if err := tx.Where("project_id = ? AND secret_id = ?", projectID, secretID).Delete(&model.ApprovalRule{}).Error; err != nil {
-			return err
-		}
 		if err := s.deleteSandboxSecretsBySecret(tx, secretID); err != nil {
 			return err
 		}
@@ -608,10 +559,10 @@ func (s *Store) FindPendingSecretRequest(ctx context.Context, projectID, secretI
 }
 
 // FindPendingAgentCredentialRequests returns the open protocol-originated
-// requests for a sandbox's environment variable, destination hosts, well-known
-// ID (empty for an ask that names none), and purpose, newest first. The ID and
-// the purpose are part of the key because each changes what approving the
-// request mints: an ask to delegate is not a retry of an ask to use. The hosts
+// requests for a sandbox's environment variable, destination hosts, and
+// purpose, newest first. The purpose is part of the key because it changes
+// what approving the request mints: an ask to delegate is not a retry of an
+// ask to use. The hosts
 // are compared as a set (ADR 26-10-02-393 §3): approving either of two asks
 // listing them in another order grants the same thing.
 //
@@ -619,14 +570,14 @@ func (s *Store) FindPendingSecretRequest(ctx context.Context, projectID, secretI
 // reactive path does, because a protocol request names no secret: choosing one
 // is part of the approval. Which of them, if any, a new ask repeats is the
 // caller's to decide from what each asks for.
-func (s *Store) FindPendingAgentCredentialRequests(ctx context.Context, projectID, sandboxID, envName string, hosts []string, wellKnownID, purpose string) ([]model.SecretRequest, error) {
+func (s *Store) FindPendingAgentCredentialRequests(ctx context.Context, projectID, sandboxID, envName string, hosts []string, purpose string) ([]model.SecretRequest, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var found []model.SecretRequest
-	err = read.Where("project_id = ? AND sandbox_id = ? AND env_name = ? AND well_known_id = ? AND purpose = ? AND status = ?",
-		projectID, sandboxID, envName, wellKnownID, purpose, model.SecretRequestStatusPending).
+	err = read.Where("project_id = ? AND sandbox_id = ? AND env_name = ? AND purpose = ? AND status = ?",
+		projectID, sandboxID, envName, purpose, model.SecretRequestStatusPending).
 		Order("created_at DESC").Find(&found).Error
 	if err != nil {
 		return nil, err

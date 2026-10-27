@@ -159,10 +159,8 @@ func (s *Service) exportManifest(ctx context.Context, sb *model.Sandbox) (*sandb
 // exportSecretBindings records which environment variable was bound to which
 // named secret, and never a value (ADR 0123 §1).
 //
-// Two kinds of binding are left out. An agent-requested one is a credential a
-// running agent asked for and a human approved, for that sandbox on that server;
-// it is not part of what the sandbox is. An anonymous secret has no name to
-// resolve on the other side -- it was minted from a value typed at create time
+// An anonymous secret's binding is left out: it has no name to resolve on the
+// other side -- it was minted from a value typed at create time
 // and is referenced only by ID -- so there is nothing to carry but the value,
 // which is the one thing that must not travel.
 func (s *Service) exportSecretBindings(ctx context.Context, sb *model.Sandbox) ([]sandboxexport.SecretBinding, error) {
@@ -173,9 +171,6 @@ func (s *Service) exportSecretBindings(ctx context.Context, sb *model.Sandbox) (
 	out := make([]sandboxexport.SecretBinding, 0, len(assignments))
 	for i := range assignments {
 		assignment := &assignments[i]
-		if assignment.AgentRequested {
-			continue
-		}
 		secret, err := s.store.GetSecret(ctx, sb.ProjectID, assignment.SecretID)
 		if errors.Is(err, store.ErrNotFound) {
 			// A binding whose secret is gone is already not working here; it

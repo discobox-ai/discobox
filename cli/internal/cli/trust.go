@@ -151,7 +151,6 @@ func (a *App) newTrustRequestGetCommand() *cobra.Command {
 func (a *App) newTrustRequestApproveCommand() *cobra.Command {
 	var pin string
 	ttl := lifetime.NewLapsingFlag()
-	var uses []string
 	cmd := &cobra.Command{Use: "approve REQUEST_ID", Short: "Trust the host for the asking discobox", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
@@ -178,13 +177,6 @@ func (a *App) newTrustRequestApproveCommand() *cobra.Command {
 		if seconds, given := ttl.Seconds(); given {
 			body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(seconds))
 		}
-		if len(uses) > 0 {
-			approved := make([]apimodel.SecretUse, 0, len(uses))
-			for _, use := range uses {
-				approved = append(approved, apimodel.SecretUse{Description: use})
-			}
-			body.SetUses(apiclientgen.NewOptNilSecretUseArray(approved))
-		}
 		res, err := client.ApproveTrustRequest(cmd.Context(), body, apiclientgen.ApproveTrustRequestParams{ProjectId: projectID, RequestId: requestID})
 		if err != nil {
 			return err
@@ -197,7 +189,6 @@ func (a *App) newTrustRequestApproveCommand() *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&pin, "pin", "", "Certificate to pin, as ca:SHA256 or leaf-spki:SHA256 from `discobox trust request get`; omit for the server's default (a supplied CA, else the chain's CA, else the host's key)")
 	cmd.Flags().Var(ttl, "ttl", "How long the trust lasts, up to 30d (defaults to what the agent asked for, or 1h)")
-	cmd.Flags().StringArrayVar(&uses, "use", nil, "Replace the agent's declared uses with these (repeatable); omit to approve them as asked")
 	return cmd
 }
 
@@ -303,9 +294,6 @@ func (a *App) writeTrustRequest(cmd *cobra.Command, request *apimodel.HostTrustR
 	if justification := request.Justification.Or(""); justification != "" {
 		fmt.Fprintf(tw, "WHY\t%s\n", justification)
 	}
-	for _, use := range request.Uses.Or(nil) {
-		useRows(tw, "USE", use.Description, "")
-	}
 	if asked := agentcreds.AskedGrantTTL(request.GrantTTLSeconds.Or(0)); asked > 0 {
 		fmt.Fprintf(tw, "WANTED FOR\t%s\n", lifetime.Label(asked))
 	}
@@ -348,14 +336,10 @@ func (a *App) writeHostTrusts(cmd *cobra.Command, trusts []apimodel.HostTrust) e
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"hostTrusts": trusts})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tHOST\tPIN\tEXPIRES\tUSES")
+	fmt.Fprintln(tw, "ID\tHOST\tPIN\tEXPIRES")
 	for _, trust := range trusts {
-		descriptions := make([]string, 0)
-		for _, use := range trust.Uses.Or(nil) {
-			descriptions = append(descriptions, use.Description)
-		}
-		fmt.Fprintf(tw, "%s\t%s\t%s:%s\t%s\t%s\n",
-			trust.ID, trust.Host, trust.Pin.Kind, shortHash(trust.Pin.SHA256), formatTime(trust.ExpiresAt), strings.Join(descriptions, "; "))
+		fmt.Fprintf(tw, "%s\t%s\t%s:%s\t%s\n",
+			trust.ID, trust.Host, trust.Pin.Kind, shortHash(trust.Pin.SHA256), formatTime(trust.ExpiresAt))
 	}
 	return tw.Flush()
 }

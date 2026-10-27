@@ -6,7 +6,6 @@ import (
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/pkg/policy"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
@@ -59,8 +58,7 @@ func TestAGrantFittedToADelegationEndsNoLaterThanIt(t *testing.T) {
 	lapses := time.Now().UTC().Add(2 * time.Hour)
 	delegation := &model.SecretGrant{
 		ProjectID: "project-1", SecretID: secret.ID, Scope: model.SecretGrantScopeSandbox, ScopeKey: "sbx-lead",
-		Hosts: []string{"github.com"}, GrantedBy: "user-1", Purpose: model.SecretGrantPurposeDelegate,
-		Uses: []model.SecretUse{{UseID: "use-delegated", Description: "read issues"}}, ExpiresAt: &lapses,
+		Hosts: []string{"github.com"}, GrantedBy: "user-1", Purpose: model.SecretGrantPurposeDelegate, ExpiresAt: &lapses,
 	}
 	if err := st.CreateSecretGrant(ctx, delegation); err != nil {
 		t.Fatalf("create delegation grant: %v", err)
@@ -71,14 +69,8 @@ func TestAGrantFittedToADelegationEndsNoLaterThanIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fit to the delegation: %v", err)
 	}
-	grant, err := svc.mintGrantAs(ctx, now, "project-1", secret, model.SecretGrantScopeSandbox, "sbx-worker", []string{"github.com"}, "GITHUB_TOKEN",
-		ttl, []model.SecretUse{{UseID: "use-1", Description: "read issue 43"}}, &policy.Policy{
-			Statements: []policy.Statement{{
-				Effect: policy.Allow, Actions: []string{policy.ActionRead}, ResourceType: "issue",
-				Scope: policy.Scope{Type: "repository", Name: "acme/web"},
-			}},
-			Definitions: map[string]string{"issue": "A GitHub issue.", "repository": "A GitHub repository, owner/name."},
-		}, model.SecretGrantPurposeUse, "", "")
+	grant, err := svc.mintGrantAs(ctx, now, "project-1", secret, model.SecretGrantScopeSandbox, "sbx-worker", []string{"github.com"},
+		ttl, model.SecretGrantPurposeUse, delegation.ID)
 	if err != nil {
 		t.Fatalf("mint the grant: %v", err)
 	}

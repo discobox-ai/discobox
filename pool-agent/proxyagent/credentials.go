@@ -6,26 +6,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
-	"github.com/discobox-ai/discobox/pkg/judge"
-	"github.com/discobox-ai/discobox/pkg/policy"
-	"github.com/discobox-ai/discobox/pkg/secretroute"
-	"github.com/discobox-ai/discobox/pkg/wellknown"
 	"github.com/discobox-ai/discobox/proxy"
 )
 
-// The pool half of the agent credentials protocol (ADR 0031).
-//
-// It lives in the proxy unit rather than the pool-agent process on purpose:
-// minting an ephemeral sentinel, registering it with the proxy's match set, and
-// translating it back at swap time are one indivisible act, and splitting them
-// across two processes would put a file and a race between the moment a sandbox
-// is handed a sentinel and the moment the proxy would recognize it.
+// The pool half of the agent credentials protocol (ADR 0031): it relays a
+// sandbox's list and requests to the control plane, and answers its host
+// trusts and egress audit from this process (ADR 0149, ADR 26-10-02-678). It
+// hands out no values: a credential granted to the sandbox is delivered as an
+// injected sentinel like any other (ADR 26-10-27-880).
 //
 // The sandbox reaches it over the same mTLS material the egress bridge already
 // uses, so the client certificate — issued per sandbox, CN = sandbox ID — is
@@ -38,13 +33,6 @@ import (
 // process open.
 const credentialBrokerTimeout = 15 * time.Second
 
-// credentialUseTimeout bounds a use, which waits on the project's judge before
-// anything is minted (ADR 26-09-22-838 §3). It allows the judge's whole
-// deadline and the calls around it, and stays inside what the sandbox waits
-// (agentcreds.UseTimeout), so a judge that takes its time is answered with its
-// sentence rather than the sandbox giving up first.
-const credentialUseTimeout = judgeHTTPTimeout + credentialBrokerTimeout
-
 // controlPlaneCredentials calls the control plane's agent credentials broker
 // routes with the scoped token from ResolveContextFile — the same file the
 // sentinel resolver reads, re-read per call so a token refresh takes effect
@@ -54,62 +42,44 @@ type controlPlaneCredentials struct {
 	client      *http.Client
 }
 
-type credentialUseDoc struct {
-	UseID       string `json:"useId,omitempty"`
-	Description string `json:"description"`
-}
-
+// credentialDoc is one credential the control plane says a sandbox holds.
+// Purpose is read when the control plane says it: a delegate grant, which is
+// nothing the sandbox is delivered.
 type credentialDoc struct {
-	Name      string             `json:"name"`
-	EnvVar    string             `json:"envVar"`
-	Hosts     []string           `json:"hosts,omitempty"`
-	SecretID  string             `json:"secretId"`
-	GrantID   string             `json:"grantId"`
-	Sentinel  string             `json:"sentinel"`
-	Format    string             `json:"format,omitempty"`
-	ExpiresAt *time.Time         `json:"expiresAt,omitempty"`
-	Uses      []credentialUseDoc `json:"uses,omitempty"`
-	Policy    *policy.Policy     `json:"policy,omitempty"`
-	// SecretRoutes are where the credential may be sent (ADR 26-10-02-924),
-	// which an activation of it is held to as well as to the grant's use.
-	SecretRoutes []secretroute.Route `json:"secretRoutes,omitempty"`
+	Name      string     `json:"name"`
+	EnvVar    string     `json:"envVar"`
+	Hosts     []string   `json:"hosts,omitempty"`
+	SecretID  string     `json:"secretId"`
+	GrantID   string     `json:"grantId"`
+	Purpose   string     `json:"purpose,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
 type listCredentialsDoc struct {
 	Credentials []credentialDoc `json:"credentials"`
 }
 
-// commandAskDoc is a command a sandbox is about to run, as the control plane
-// is asked about it (ADR 26-09-22-838 §3). Everything in it but the sandbox
-// is the sandbox's word.
-type commandAskDoc struct {
-	SandboxID string          `json:"sandboxId"`
-	UseID     string          `json:"useId"`
-	Command   []string        `json:"command"`
-	Stdin     *judge.Input    `json:"stdin,omitempty"`
-	Reported  *judge.Reported `json:"reported,omitempty"`
-}
-
 type createCredentialRequestDoc struct {
-	SandboxID       string             `json:"sandboxId"`
-	ID              string             `json:"id,omitempty"`
-	Name            string             `json:"name"`
-	EnvVar          string             `json:"envVar"`
-	Hosts           []string           `json:"hosts,omitempty"`
-	Justification   string             `json:"justification,omitempty"`
-	Uses            []credentialUseDoc `json:"uses"`
-	GrantTTLSeconds int64              `json:"grantTTLSeconds,omitempty"`
-	Purpose         string             `json:"purpose,omitempty"`
-	Policy          *policy.Policy     `json:"policy,omitempty"`
+	SandboxID       string   `json:"sandboxId"`
+	Name            string   `json:"name"`
+	EnvVar          string   `json:"envVar,omitempty"`
+	Hosts           []string `json:"hosts"`
+	Justification   string   `json:"justification,omitempty"`
+	GrantTTLSeconds int64    `json:"grantTTLSeconds,omitempty"`
+	Purpose         string   `json:"purpose,omitempty"`
 }
 
+// credentialRequestStatusDoc is a request's status as the control plane
+// answers it. Name, EnvVar and Hosts are what was granted, read when the
+// control plane says them.
 type credentialRequestStatusDoc struct {
-	RequestID string             `json:"requestId"`
-	Status    string             `json:"status"`
-	Purpose   string             `json:"purpose,omitempty"`
-	Uses      []credentialUseDoc `json:"uses,omitempty"`
-	Policy    *policy.Policy     `json:"policy,omitempty"`
-	ExpiresAt *time.Time         `json:"expiresAt,omitempty"`
+	RequestID string     `json:"requestId"`
+	Status    string     `json:"status"`
+	Purpose   string     `json:"purpose,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	Name      string     `json:"name,omitempty"`
+	EnvVar    string     `json:"envVar,omitempty"`
+	Hosts     []string   `json:"hosts,omitempty"`
 }
 
 func (c *controlPlaneCredentials) list(ctx context.Context, sandboxID string) ([]credentialDoc, error) {
@@ -119,15 +89,6 @@ func (c *controlPlaneCredentials) list(ctx context.Context, sandboxID string) ([
 		return nil, err
 	}
 	return out.Credentials, nil
-}
-
-// facts reads the sandbox's policy facts and variables. The control plane
-// resolves the variables itself, so its answer is the protocol's shape as is.
-func (c *controlPlaneCredentials) facts(ctx context.Context, sandboxID string) (agentcreds.FactsResponse, error) {
-	var out agentcreds.FactsResponse
-	query := url.Values{"sandboxId": []string{sandboxID}}
-	err := c.do(ctx, http.MethodGet, "sandbox-policy-facts", query, nil, &out)
-	return out, err
 }
 
 func (c *controlPlaneCredentials) createRequest(ctx context.Context, body createCredentialRequestDoc) (credentialRequestStatusDoc, error) {
@@ -225,10 +186,9 @@ func controlPlaneError(resp *http.Response) error {
 type credentialBroker struct {
 	sandboxID   string
 	controlPlan *controlPlaneCredentials
-	// judge reaches the same control plane with a client that waits as long
-	// as a verdict takes.
-	judge       *controlPlaneCredentials
-	activations *activations
+	// secretsPath is SecretsFile, which holds each sandbox's credential
+	// environment as the pool agent last delivered it.
+	secretsPath string
 	trusts      *hostTrusts
 	// proxy is the server this process runs, whose audit trail the broker
 	// reads this sandbox's rows from.
@@ -244,49 +204,40 @@ func (b *credentialBroker) List(ctx context.Context) ([]agentcreds.Credential, e
 	}
 	out := make([]agentcreds.Credential, 0, len(docs))
 	for _, doc := range docs {
-		// Sentinel and format stay here. list is what the sandbox sees, and the
-		// stable sentinel is the one thing on the trusted side that would let a
-		// sandbox address the credential directly.
 		out = append(out, agentcreds.Credential{
-			Name:   doc.Name,
-			EnvVar: doc.EnvVar,
-			Hosts:  doc.Hosts,
-			Uses:   protocolUses(doc.Uses, doc.ExpiresAt),
-			Policy: doc.Policy,
+			Name:      doc.Name,
+			EnvVar:    doc.EnvVar,
+			Hosts:     doc.Hosts,
+			Purpose:   doc.Purpose,
+			ExpiresAt: doc.ExpiresAt,
 		})
 	}
 	return out, nil
 }
 
-// Facts relays the control plane's record of this sandbox, never anything the
-// sandbox reports: the values a policy it writes resolves to at approval.
-func (b *credentialBroker) Facts(ctx context.Context) (agentcreds.FactsResponse, error) {
-	return b.controlPlan.facts(ctx, b.sandboxID)
+// Environment answers with every variable a credential is delivered in for
+// this sandbox, and the sentinel delivered there, as the pool agent last
+// delivered them (secretsDoc.Environment). A sentinel is a placeholder only
+// this sandbox's egress exchanges, never the credential; the sandbox already
+// holds each one in its secret environment, which this re-reads for a process
+// started before it changed.
+func (b *credentialBroker) Environment(context.Context) (map[string]string, error) {
+	doc, err := readSecretsDoc(b.secretsPath)
+	if err != nil {
+		return nil, err
+	}
+	return maps.Clone(doc.Environment[b.sandboxID]), nil
 }
 
 func (b *credentialBroker) Request(ctx context.Context, body agentcreds.RequestBody) (agentcreds.RequestStatus, error) {
-	uses := make([]credentialUseDoc, 0, len(body.Uses))
-	for _, use := range body.Uses {
-		uses = append(uses, credentialUseDoc{Description: use.Description})
-	}
-	// A well-known credential says its own name, variable, and hosts. What
-	// the agent spelled out is passed on as it was sent, not replaced: the
-	// control plane fills what was left out and refuses what contradicts the
-	// ID, and it can only refuse what it is shown.
-	if _, ok := wellknown.Lookup(body.ID); body.ID != "" && !ok {
-		return agentcreds.RequestStatus{}, fmt.Errorf("%w: %q is not a well-known credential", agentcreds.ErrInvalid, body.ID)
-	}
 	doc, err := b.controlPlan.createRequest(ctx, createCredentialRequestDoc{
 		SandboxID:       b.sandboxID,
-		ID:              body.ID,
 		Name:            body.Name,
 		EnvVar:          body.EnvVar,
 		Hosts:           body.Hosts,
 		Justification:   body.Justification,
-		Uses:            uses,
 		GrantTTLSeconds: body.GrantTTLSeconds,
 		Purpose:         body.Purpose,
-		Policy:          body.Policy,
 	})
 	if err != nil {
 		return agentcreds.RequestStatus{}, err
@@ -302,103 +253,18 @@ func (b *credentialBroker) RequestStatus(ctx context.Context, requestID string) 
 	return doc.protocol(), nil
 }
 
-// protocol is the status as the sandbox is answered with it.
+// protocol is the status as the sandbox is answered with it: what it now
+// holds, once granted.
 func (d credentialRequestStatusDoc) protocol() agentcreds.RequestStatus {
-	return agentcreds.RequestStatus{RequestID: d.RequestID, Status: d.Status, Purpose: d.Purpose, Uses: protocolUses(d.Uses, d.ExpiresAt), Policy: d.Policy}
-}
-
-// Get mints one ephemeral sentinel for one approved use, once the project's
-// judge has allowed the command it is for (ADR 26-09-22-838 §3).
-//
-// It re-reads the credential from the control plane rather than trusting a
-// cache: the answer to "may this sandbox still use this?" is the control
-// plane's, and a revoked grant must stop producing activations immediately
-// rather than at the end of some local TTL.
-func (b *credentialBroker) Get(ctx context.Context, body agentcreds.UseBody) (agentcreds.UseResponse, error) {
-	useID := strings.TrimSpace(body.UseID)
-	if useID == "" {
-		return agentcreds.UseResponse{}, fmt.Errorf("%w: useId is required", agentcreds.ErrInvalid)
-	}
-	if len(body.Command) == 0 || strings.TrimSpace(body.Command[0]) == "" {
-		return agentcreds.UseResponse{}, fmt.Errorf("%w: command is required: a value is only handed out for a command to judge", agentcreds.ErrInvalid)
-	}
-	docs, err := b.controlPlan.list(ctx, b.sandboxID)
-	if err != nil {
-		return agentcreds.UseResponse{}, err
-	}
-	for _, doc := range docs {
-		for _, use := range doc.Uses {
-			if use.UseID != useID {
-				continue
-			}
-			// Judged before the mint, and gating it. The control plane records
-			// the verdict before it answers, so nothing is minted for a verdict
-			// that is not on record (ADR 0091).
-			if err := b.judgeCommand(ctx, useID, body); err != nil {
-				return agentcreds.UseResponse{}, err
-			}
-			record, err := b.activations.mint(b.sandboxID, doc.Sentinel, useID, doc.SecretRoutes, doc.Hosts, doc.Format, body.Command)
-			if err != nil {
-				return agentcreds.UseResponse{}, err
-			}
-			expiresAt := record.ExpiresAt
-			// The grant is the consent clock and the activation is the use
-			// clock; the value dies at whichever comes first.
-			if doc.ExpiresAt != nil && doc.ExpiresAt.Before(expiresAt) {
-				expiresAt = *doc.ExpiresAt
-			}
-			return agentcreds.UseResponse{EnvVar: doc.EnvVar, Value: record.Sentinel, ExpiresAt: &expiresAt}, nil
+	status := agentcreds.RequestStatus{RequestID: d.RequestID, Status: d.Status, Purpose: d.Purpose}
+	if d.Status == agentcreds.StatusGranted {
+		status.Credential = &agentcreds.Credential{
+			Name:      d.Name,
+			EnvVar:    d.EnvVar,
+			Hosts:     d.Hosts,
+			Purpose:   d.Purpose,
+			ExpiresAt: d.ExpiresAt,
 		}
 	}
-	// Unknown, revoked, or expired all look the same from here, and saying which
-	// would tell an untrusted caller more than it needs.
-	return agentcreds.UseResponse{}, fmt.Errorf("%w: no live approved use %s", agentcreds.ErrDenied, useID)
-}
-
-// judgeCommand asks the project's judge whether the command carries out the
-// use, and returns nil only for an explicit allow, or for a server that says
-// it does not judge commands (ADR 26-10-02-054 §3). Everything else refuses:
-// a refusal, a judge that could not be reached, an answer that could not be
-// read. Unlike a request, no answer from a server that judges never lets a
-// command through, because a command is asked about before anything exists
-// to lose.
-func (b *credentialBroker) judgeCommand(ctx context.Context, useID string, body agentcreds.UseBody) error {
-	ask := commandAskDoc{SandboxID: b.sandboxID, UseID: useID, Command: body.Command}
-	if in := body.Stdin; in != nil {
-		ask.Stdin = &judge.Input{Content: in.Content, Missing: in.Missing}
-	}
-	if r := body.Reported; r != nil {
-		ask.Reported = &judge.Reported{
-			WorkingDirectory: r.WorkingDirectory,
-			RepositoryRoot:   r.RepositoryRoot,
-			RefCommit:        r.RefCommit,
-			RefSubject:       r.RefSubject,
-		}
-	}
-	answer, err := b.judge.askJudge(ctx, "judge-commands", ask)
-	switch {
-	case err == nil && answer.Allow != nil && *answer.Allow:
-		return nil
-	case err == nil:
-		reason := strings.TrimSpace(answer.Reason)
-		if reason == "" {
-			reason = "the judge did not allow the command"
-		}
-		return fmt.Errorf("%w: %s", agentcreds.ErrDenied, reason)
-	case outcomeOf(err) == outcomeNobodyJudges:
-		return nil
-	default:
-		return fmt.Errorf("%w: the command could not be judged, so nothing was issued for it: %w", agentcreds.ErrDenied, err)
-	}
-}
-
-func protocolUses(docs []credentialUseDoc, expiresAt *time.Time) []agentcreds.Use {
-	if len(docs) == 0 {
-		return nil
-	}
-	out := make([]agentcreds.Use, 0, len(docs))
-	for _, doc := range docs {
-		out = append(out, agentcreds.Use{UseID: doc.UseID, Description: doc.Description, ExpiresAt: expiresAt})
-	}
-	return out
+	return status
 }

@@ -24,8 +24,8 @@
   exists for this — it rewrites one row and takes it back down — so narrate on
   it and clear before the stream changes hands.
 
-- **Text a discobox wrote is escaped before it is printed.** A judge's reason,
-  an argv, a hook payload, a prompt, and every ID or name that arrived beside
+- **Text a discobox wrote is escaped before it is printed.** A refusal's
+  reason, a request's justification, an argv, a hook payload, a prompt, and every ID or name that arrived beside
   them: anything composed inside a discobox goes through `terminalSafe`
   (`audit.go`) on its way to a terminal, and JSON carrying it through
   `writeTerminalSafeJSON`. It is display data, and printed raw a control
@@ -85,9 +85,8 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   its commits, `push` the user's source, `shell` their keystrokes.
   `matchSandboxName` refuses a name that is a short ID of another discobox;
   anything that matches a name keeps going through it. The check is only as
-  good as the IDs it is given: the listing it reads includes judges
-  (`sandboxFilter.judges`), which an ordinary listing leaves out, and with a
-  server silent an ID-shaped name is refused rather than matched.
+  good as the IDs it is given: with a server silent an ID-shaped name is
+  refused rather than matched.
 - **One-server and many-server resolution are two paths that must agree.**
   `selectSandbox` resolves with `resolveListedSandbox` on one server and
   `selectSandboxOnEveryServer` on several; a rule added to one (the ID-shadow
@@ -121,13 +120,9 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   (`tui_local.go`, `tui/options.go`) move with it. The `run` rename also
   missed, on a first pass:
   - format strings (`"%[1]s new"`, `"%s new %q"`);
-  - the bare word in help prose ("By default new opens…");
-  - the credential judge's prompt (`pkg/judge/recognized.go`), which describes
-    the CLI's commands. It names every spelling, because approved purposes are
-    worded in the old one.
+  - the bare word in help prose ("By default new opens…").
 
-  Leave what records history: ADRs, the recorded judge-eval cases
-  (`test/judge-evals`), and audit argv in tests. A persisted configuration
+  Leave what records history: ADRs and audit argv in tests. A persisted configuration
   key is renamed only with a read path for the old one, as `client.yaml`'s
   `new:` is read as `run:`. Tests drive the canonical
   name. A blind replace of a word hits more than the command, so read every
