@@ -73,6 +73,9 @@ discobox terminal is up.`,
 			return a.runConsole(cmd, leaderFlag)
 		},
 	}
+	if name == "console" {
+		cmd.Aliases = []string{"c"}
+	}
 	cmd.Flags().StringVarP(&leaderFlag, "leader", "l", "",
 		"Prefix key for the terminal pane's own commands, as a single letter taken as Ctrl-that (e.g. -l b for Ctrl-B); defaults to "+keys.LeaderEnv+", then a")
 	return cmd
