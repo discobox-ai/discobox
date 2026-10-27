@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bmln4kjrz</task-id>
+<tool-use-id>toolu_01SEEUUqwfcjzUrb8oDYJMTK</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/38b50281-da82-4019-b04c-7c9858e15e0a/tasks/bmln4kjrz.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch the release workflow until it completes" completed (exit code 0)</summary>
+</task-notification>
