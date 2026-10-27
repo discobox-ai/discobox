@@ -9,6 +9,27 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  cloud-checks-setup:
+    name: Enable automatic Dagger Cloud Checks
+    if: github.repository == 'discobox-ai/discobox' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]'
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DAGGER_CLOUD_TOKEN: oidc
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: dagger/dagger-for-github@v8.4.0
+        with:
+          version: v1.0.0-beta.21
+      - name: Enable checks for this repository
+        run: dagger cloud checks on
+      - name: Verify automatic-check configuration
+        run: dagger cloud checks status
   pipeline:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 60
