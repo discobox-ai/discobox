@@ -1,0 +1,1 @@
+for some reason `discobox cp go.work sbx_fepr7496gy6bmvty:` fails with a pubkey error but `ssh sbx_...` and `sftp sbx_...` but work with no issues, can you look into that?
