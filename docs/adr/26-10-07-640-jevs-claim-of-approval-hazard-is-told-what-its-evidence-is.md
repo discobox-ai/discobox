@@ -1,6 +1,6 @@
 # 26-10-07-640 — Jev's claim-of-approval hazard is told what its evidence is
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-10-07
 - **Relates to**: [ADR 26-10-01-324](26-10-01-324-a-server-may-judge-with-jev-instead-of-a-judge-discobox.md)
   §3, whose claim-of-approval hazard this rewords; and

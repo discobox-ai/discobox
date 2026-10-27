@@ -1,6 +1,6 @@
 # 26-10-16-965 — The omp judge answers with thinking off, and configure proves it can
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-10-16
 - **Supersedes**: [26-10-14-718](26-10-14-718-the-omp-harness-imports-its-credentials-and-publishes-through-an-extension.md)
   §5's "The judge reasons as its model does by default"

@@ -1,6 +1,6 @@
 # 26-09-27-905 — The command judge is shown a bounded prefix of stdin
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-09-27
 
 ## Context

@@ -1,6 +1,6 @@
 # 0090 — The judge is handed facts and given no tools
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-09-03
 
 ## Context

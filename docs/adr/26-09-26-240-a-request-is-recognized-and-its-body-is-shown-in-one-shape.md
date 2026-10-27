@@ -1,6 +1,6 @@
 # 26-09-26-240 — A request is recognized, and its body is shown in one shape
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-09-26
 - **Supersedes**: [26-09-22-838](26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md)
   §6's body forms (the judge asking for a body "as text or as JSON") and its

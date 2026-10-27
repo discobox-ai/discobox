@@ -1,6 +1,6 @@
 # 26-10-07-937 — Every Jev refusal goes to the judge discobox
 
-- **Status**: Accepted (§1's sending of every refusal on, and §4's `UnsureAt` as only a reason's wording with `jev.Verdict.Unsure` removed, superseded by [26-10-12-669](26-10-12-669-jevs-confident-refusal-is-final-and-only-what-it-is-unsure-of-goes-on.md))
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-10-07
 - **Supersedes**: in [26-10-01-324](26-10-01-324-a-server-may-judge-with-jev-instead-of-a-judge-discobox.md),
   under `jevUnsure: harness` only: §3's marking of a refusal as *unsure* as

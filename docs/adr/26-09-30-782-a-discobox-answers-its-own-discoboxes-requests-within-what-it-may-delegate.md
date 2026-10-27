@@ -1,6 +1,6 @@
 # 26-09-30-782 — A discobox answers its own discoboxes' requests, within what it may delegate
 
-- **Status**: Accepted (§3's judging of the uses handed on against a delegation's superseded in part by [26-10-20-782](26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md) §11: a hand-off's policy is held to its delegation's)
+- **Status**: Accepted (§3's judging of the uses handed on against a delegation's superseded in part by [26-10-20-782](26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md) §11: a hand-off's policy is held to its delegation's; delegation grants and their judging superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md))
 - **Date**: 2026-09-30
 - **Supersedes in part**: [0140](0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)
   §4's grants pre-assigned or approved by a sandbox "with any project secret",

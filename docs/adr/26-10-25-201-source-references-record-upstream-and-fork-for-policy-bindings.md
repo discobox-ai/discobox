@@ -1,6 +1,6 @@
 # 26-10-25-201 — Source references record upstream and fork for policy bindings
 
-- **Status**: Proposed
+- **Status**: Rejected by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-10-25
 - **Supersedes**, once accepted:
   [26-10-20-782](26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md)

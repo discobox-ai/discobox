@@ -1,6 +1,6 @@
 # 0091 — A credential is not issued without a verdict on record
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-09-03
 
 ## Context

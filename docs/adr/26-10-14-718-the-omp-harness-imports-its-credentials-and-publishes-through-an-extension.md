@@ -3,7 +3,7 @@
 - **Status**: Accepted (§5's judge thinking at its model's default superseded by
   [26-10-16-965](26-10-16-965-the-omp-judge-answers-with-thinking-off-and-configure-proves-it-can.md);
   §2 narrowed for pending local credentials by
-  [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md))
+  [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md); §5 superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md))
 - **Date**: 2026-10-14
 
 ## Context

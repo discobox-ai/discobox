@@ -1,6 +1,6 @@
 # 0149 — A host's certificate is trusted for one sandbox when a person pins it
 
-- **Status**: Accepted
+- **Status**: Accepted (§5 superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md))
 - **Date**: 2026-09-24
 - **Relates to**: [ADR 0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md),
   the protocol this adds a verb to;

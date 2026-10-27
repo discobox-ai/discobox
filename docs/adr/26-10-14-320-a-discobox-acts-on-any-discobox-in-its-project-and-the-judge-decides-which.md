@@ -1,6 +1,6 @@
 # 26-10-14-320 — A discobox acts on any discobox in its project, and the judge decides which
 
-- **Status**: Accepted (§§1, 3 narrowed by [26-10-01-032](26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md) §4: a discobox writes to or sends into only discoboxes within its own egress policy)
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-10-14
 - **Supersedes in part**: the authority by creator that
   [26-09-24-630](26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md) §2,

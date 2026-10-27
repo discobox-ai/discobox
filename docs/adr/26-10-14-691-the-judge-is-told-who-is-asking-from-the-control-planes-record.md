@@ -1,6 +1,6 @@
 # 26-10-14-691 — The judge is told who is asking, from the control plane's record
 
-- **Status**: Accepted
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-10-14
 - **Supersedes in part**: [26-10-12-330](26-10-12-330-a-credential-request-may-be-answered-by-a-rule-the-judge-reads.md)'s
   rejection of a fact sheet the judge reads, for a rule's uses only (§6):

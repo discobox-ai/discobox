@@ -1,6 +1,6 @@
 # 26-10-20-782 — Approved access is a policy, decided at the network boundary by a generated fast path before any judge
 
-- **Status**: Accepted (Deferred "approval rules over policies" settled by [26-10-22-689](26-10-22-689-an-approval-rule-is-a-policy-a-requests-policy-must-fall-within.md); §11 amended in issues #317 and #312; Deferred "requiring a policy on every grant" settled in issue #312)
+- **Status**: Superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
 - **Date**: 2026-10-20
 - **Supersedes**:
   - [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md)
