@@ -1,0 +1,1 @@
+if you creata a new box with `discobox new -C discobox-ai/discobox` they are not starting very fast. What is going on? Can you watch the entire process and see what is taking so long?
