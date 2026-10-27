@@ -21,128 +21,6 @@ vars:
   # over all of them schedules their packages together rather than module by
   # module. The list is go.work's; a module added there is added here.
   WORKSPACE_PACKAGES: ./... ./access/... ./cli/... ./pool-agent/... ./sandbox-agent/... ./server/... ./termpane/...
-  # ghcr.io/<owner>, so a fork publishes into its own namespace instead of the
-  # upstream one. Actions knows the owner; elsewhere it comes from the origin
-  # remote, and a checkout whose origin is not GitHub leaves this empty rather
-  # than guessing. Override with REGISTRY=.
-  #
-  # Task evaluates this for every invocation, `ci:test` included, so it uses
-  # nothing but shell word splitting: a Windows runner has git on PATH but no
-  # sed, and reaching for one would fail the whole run before a test starts.
-  REGISTRY:
-    sh: |
-      owner="${GITHUB_REPOSITORY_OWNER:-}"
-      if [ -z "$owner" ]; then
-        url="$(git remote get-url origin 2>/dev/null)"
-        case "$url" in
-          git@github.com:*) path="${url#git@github.com:}" ;;
-          https://github.com/*) path="${url#https://github.com/}" ;;
-          *) path="" ;;
-        esac
-        owner="${path%%/*}"
-      fi
-      if [ -n "$owner" ]; then printf 'ghcr.io/%s' "$owner"; fi
-  # owner/name of the repository releases are cut from, for the URLs a Homebrew
-  # formula points at.
-  RELEASE_REPO:
-    sh: |
-      repo="${GITHUB_REPOSITORY:-}"
-      if [ -z "$repo" ]; then
-        url="$(git remote get-url origin 2>/dev/null)"
-        case "$url" in
-          git@github.com:*) repo="${url#git@github.com:}" ;;
-          https://github.com/*) repo="${url#https://github.com/}" ;;
-        esac
-        repo="${repo%.git}"
-      fi
-      printf %s "$repo"
-  # The asset mirror a staged server is fetched from before the release URL
-  # (ADR 0106 §2), and the one repository whose releases it fronts. A fork
-  # releases from GitHub alone: the mirror resolves namespaces its operator
-  # listed, so pointing a fork's manifest at it would name assets that are not
-  # there — caught by the digest, but only after a pointless round trip.
-  ASSET_MIRROR_REPO: discobox-ai/discobox
-  ASSET_MIRROR_BASE: https://assets.discobox.ai/discobox
-  # The tag being acted on, in order: `task <target> -- v1.2.3`, RELEASE_TAG=,
-  # then the tag a workflow is running for. Resolved once so a tag typed on the
-  # command line reaches DOT_RELEASE below as well as the task using it —
-  # they disagreeing is how `task brew:publish -- v1.2.3` would quietly decide
-  # v1.2.3 was a prerelease.
-  # The release tag: `-- v1.2.3` on the command line, else RELEASE_TAG, else the
-  # tag the workflow is running from.
-  #
-  # The last argument that is not a flag, so `-- --prerelease v1.2.3` still
-  # names v1.2.3 (see ALLOW_PRERELEASE).
-  TAG:
-    sh: |
-      args="{{.CLI_ARGS}}"
-      tag=""
-      for word in $args; do
-        case "$word" in
-          -*) ;;
-          *) tag="$word" ;;
-        esac
-      done
-      if [ -z "$tag" ]; then tag="${RELEASE_TAG:-}"; fi
-      if [ -z "$tag" ]; then tag="${GITHUB_REF_NAME:-}"; fi
-      printf %s "$tag"
-  # Publishing a prerelease to a package channel, said out loud: `task
-  # brew:publish -- --prerelease v1.2.3-alpha.4`. Nothing automatic sets it,
-  # which is the point — an alpha reaches a channel only because somebody typed
-  # the flag.
-  ALLOW_PRERELEASE:
-    sh: |
-      args="{{.CLI_ARGS}}"
-      for word in $args; do
-        case "$word" in
-          --prerelease) printf yes ;;
-        esac
-      done
-  # Which Homebrew channel a brew: target acts on: `task brew:publish -- --dev
-  # v1.2.3` writes discobox-dev.rb rather than discobox.rb (ADR 0105).
-  BREW_DEV:
-    sh: |
-      args="{{.CLI_ARGS}}"
-      for word in $args; do
-        case "$word" in
-          --dev) printf yes ;;
-        esac
-      done
-  # Whether that tag is a dot release: exactly vMAJOR.MINOR.PATCH.
-  # An explicit prerelease (v1.2.3-rc1), a partial tag (v1.2), or anything else
-  # is not.
-  #
-  # This is the *latest* channel's rule, not the stable one (ADR 0105). A dot
-  # release moves ghcr's :latest and the discobox-dev formula the moment it is
-  # cut; an explicit prerelease exists only under its own tag, reachable by
-  # pinning. Whether a release is *stable* is not a property of its tag at all —
-  # it is a human clearing the prerelease box on GitHub, later.
-  #
-  # Computed once because several things ask it and copies of the rule would
-  # drift. Pure shell: this is evaluated on every invocation, including on the
-  # Windows runner, which has neither sed nor grep.
-  DOT_RELEASE:
-    sh: |
-      tag="{{.TAG}}"
-      case "$tag" in
-        v*.*.*)
-          rest="${tag#v}"
-          case "$rest" in
-            *[!0-9.]*) ;;
-            *)
-              major="${rest%%.*}"; tmp="${rest#*.}"
-              minor="${tmp%%.*}"; patch="${tmp#*.}"
-              case "$patch" in
-                *.*|"") ;;
-                *) case "$major$minor$patch" in
-                     ""|*[!0-9]*) ;;
-                     *) printf yes ;;
-                   esac ;;
-              esac
-              ;;
-          esac
-          ;;
-      esac
   # Multi-architecture and multi-output builds both need the docker-container
   # driver; the default docker driver supports neither.
   BUILDX_BUILDER: discobox
@@ -154,6 +32,16 @@ tasks:
     desc: List available tasks
     cmds:
       - task --list
+
+  dagger:check:
+    desc: Run the complete Dagger check graph
+    cmds:
+      - dagger check {{.CLI_ARGS}}
+
+  dagger:list:
+    desc: List Dagger checks
+    cmds:
+      - dagger check --list {{.CLI_ARGS}}
 
   build:
     desc: Build binaries and all local Docker images
@@ -619,9 +507,9 @@ tasks:
       - cd server && go run ./cmd/discobox-secret-dump {{.CLI_ARGS}}
 
   test:
-    desc: Run root module tests
+    desc: Run application Go tests in Dagger
     cmds:
-      - go test {{.PACKAGES}}
+      - dagger api call tests
 
   test:docker:
     desc: Run Docker provider integration tests
@@ -764,66 +652,25 @@ tasks:
       - cd cli && DISCOBOX_TERMINAL_LATENCY_E2E=1 go test ./internal/cli -run TerminalLatency -count=1 -v
 
   test:all:
-    desc: Run root and nested module tests
+    desc: Run application Go tests in Dagger
     cmds:
-      # One `go test` across every go.work module rather than one per module:
-      # go test schedules packages from all of them together, so the slowest
-      # package of one module runs beside the others' instead of after them, and
-      # a failure in one module no longer stops the later ones from running.
-      - go test {{.WORKSPACE_PACKAGES}}
-
-  build:lint-tool:
-    desc: Build the golangci-lint binary the per-module checks share
-    # `go tool -n` is a dry run: it prints where the binary is or would be
-    # without building it, so it only yields a usable path when the linked
-    # binary already sits in the build cache. A developer's machine has it from
-    # the last run; a fresh CI runner does not, and the printed
-    # $TMPDIR/go-build*/b001/exe path is one that nothing ever creates. Building
-    # it to a known location depends on no cache state at all.
-    run: once
-    cmds:
-      - mkdir -p build/tools
-      - go build -o build/tools/{{.LINT_BIN}} github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+      - dagger api call tests
 
   check:
-    desc: Run static checks
-    deps:
-      - build:lint-tool
+    desc: Run Dagger static checks
     cmds:
-      - ./build/tools/{{.LINT_BIN}} run
-      - cd cli && ../build/tools/{{.LINT_BIN}} run
-      - cd termpane && ../build/tools/{{.LINT_BIN}} run
-      - cd server && ../build/tools/{{.LINT_BIN}} run
-      - cd pool-agent && ../build/tools/{{.LINT_BIN}} run
-      - cd sandbox-agent && ../build/tools/{{.LINT_BIN}} run
-      - cd access && ../build/tools/{{.LINT_BIN}} run
+      - dagger api call static {{.CLI_ARGS}}
 
   check:deadcode:
-    desc: Fail on functions no main or test program reaches on linux, darwin, or windows
-    # Built for the host, unlike `go tool deadcode`, which would build it for
-    # whichever GOOS scripts/deadcode.sh is analysing.
+    desc: Run the static check graph including deadcode
     cmds:
-      - mkdir -p build/tools
-      - go build -o build/tools/{{.DEADCODE_BIN}} golang.org/x/tools/cmd/deadcode
-      - scripts/deadcode.sh ./build/tools/{{.DEADCODE_BIN}}
+      - dagger api call static
 
   check:windows:
-    desc: Type-check the whole tree, tests included, for windows/amd64
-    # wslc drives WSL by shelling out, so nothing in the tree is cgo or
-    # build-tagged for Windows and the whole thing cross-compiles. `go vet`
-    # rather than `go build` because it type-checks the test tree too, which is
-    # where the Windows-only code paths are exercised (ADR 0066 §4).
-    env:
-      GOOS: windows
-      GOARCH: amd64
-      CGO_ENABLED: "0"
+    desc: Run the static check graph including Windows cross-typecheck
     cmds:
-      - go vet {{.WORKSPACE_PACKAGES}}
+      - dagger api call static
 
-  # The hooks tool lives in discobox-ai/hooks and is consumed here as a Go
-  # tool, so there is nothing to build first and nothing pinned by hand: the
-  # module graph pins it. It reads .discobox/hooks, which stays in this
-  # repository — the hooks are this repository's, the runner is not.
   check-hooks:
     desc: Run hooks checks
     cmds:
@@ -849,123 +696,24 @@ tasks:
       - scripts/dockerfile-test-builds.sh {{.CLI_ARGS}}
 
   check:dockerfiles:
-    desc: Every path a Dockerfile copies from the build context still exists
-    # A Dockerfile breaks from changes made nowhere near it: moving a directory
-    # out of this repository leaves `COPY gormdb ./gormdb` naming nothing, and
-    # nothing notices. The Discobot hook that builds images only fires when a
-    # Dockerfile itself changes, and CI never builds them, so the first thing to
-    # find out was a release tag.
-    #
-    # This is the cheap half of what an image build proves — that the context
-    # paths resolve — not a substitute for building.
+    desc: Validate Dockerfile source and import coverage
     cmds:
-      - |
-        set -eu
-        missing=""
-        # dockerfile:context. A COPY source is relative to the build context,
-        # not to the Dockerfile. Harness bundles share the repository-root
-        # context so they can carry their common exporter implementation.
-        for entry in \
-          server/providers/dockerworker/sandbox-image/Dockerfile:server/providers/dockerworker/sandbox-image \
-          pool-agent/Dockerfile:. \
-          sandbox-agent/Dockerfile:. \
-          vm-image/Dockerfile:. \
-          vm-image/kernel/Dockerfile:. \
-          harness/claude-code/Dockerfile:. \
-          harness/codex-cli/Dockerfile:. \
-          harness/opencode/Dockerfile:. \
-          harness/copilot/Dockerfile:. \
-          harness/omp/Dockerfile:. \
-          harness/pi/Dockerfile:. \
-          harness/shell/Dockerfile:.; do
-          dockerfile="${entry%:*}"
-          context="${entry##*:}"
-          # All but the last token of a COPY are sources; --from copies from an
-          # earlier stage rather than the context, so it is not ours to check.
-          # Collected rather than reported inside a pipeline: a `while` fed by
-          # one runs in a subshell, where a non-zero exit goes nowhere.
-          for src in $(awk '/^COPY / && !/--from=/ {
-                              for (i = 2; i < NF; i++) if ($i !~ /^--/) print $i
-                            }' "$dockerfile"); do
-            if [ ! -e "$context/$src" ]; then
-              missing="$missing$dockerfile: COPY $src: no such path in build context $context
-        "
-            fi
-          done
-        done
-        if [ -n "$missing" ]; then
-          printf '%s' "$missing" >&2
-          exit 1
-        fi
+      - dagger api call dockerfiles
 
   check:dockerfile-deps:
-    desc: Every package an image's Go binaries import is copied into its build context
-    # The other half of check:dockerfiles. That one catches a COPY naming a path
-    # that is gone; this catches the opposite and more common mistake: a new
-    # root-module package that nothing copies, which no amount of `go build` on
-    # the host notices because the host has the whole repository. The first
-    # thing to find out is the image build, minutes into a Docker layer.
-    #
-    # Each module is checked against the one stage that builds it, named here
-    # beside it (Dockerfile:stage:module).
-    #
-    # Deps are taken for the whole module rather than the binaries each
-    # Dockerfile builds, which is a superset: copying a directory the image did
-    # not strictly need is harmless, and parsing build targets out of a RUN line
-    # is not.
+    desc: Validate Dockerfile source and import coverage
     cmds:
-      - |
-        set -eu
-        missing=""
-        for entry in pool-agent/Dockerfile:build:pool-agent sandbox-agent/Dockerfile:sandbox-agent-builder:sandbox-agent sandbox-agent/Dockerfile:sandbox-agent-builder:access sandbox-agent/Dockerfile:discobox-cli-builder:cli; do
-          dockerfile="${entry%%:*}"
-          module="${entry##*:}"
-          stage="${entry#*:}"
-          stage="${stage%:*}"
-          # Only what the stage that builds the module copies: a package copied
-          # into another stage of the same Dockerfile is not in this one's
-          # build context, and counting it hid a missing COPY.
-          copied="$(awk -v stage="$stage" '
-            /^FROM / { current = ""; for (i = 2; i < NF; i++) if (toupper($i) == "AS") current = $(i + 1) }
-            /^COPY [a-z]/ && current == stage { split($2, parts, "/"); print (parts[1] == "pkg" ? parts[1] "/" parts[2] : parts[1]) }' "$dockerfile" | sort -u)"
-          if [ -z "$copied" ]; then
-            missing="$missing$dockerfile: no stage named $stage copies anything; the stage that builds $module was renamed
-        "
-            continue
-          fi
-          for dep in $(cd "$module" && go list -deps ./... |
-                         sed -n 's|^github.com/discobox-ai/discobox/||p' |
-                         awk -F/ '{ print ($1 == "pkg" ? $1 "/" $2 : $1) }' | sort -u); do
-            if ! printf '%s\n' "$copied" | grep -qx "$dep"; then
-              missing="$missing$dockerfile: $module imports $dep, which nothing copies into the build context
-        "
-            fi
-          done
-        done
-        if [ -n "$missing" ]; then
-          printf '%s' "$missing" >&2
-          exit 1
-        fi
+      - dagger api call dockerfiles
 
   check:shell:
-    desc: Run shellcheck over every shell script in the working tree
-    # The rule is not here: scripts/shellcheck.sh owns which files are shell
-    # scripts, so this and the hook of the same name check the same set
-    # (ADR 0066 §1). shellcheck itself comes from the flake's devShell.
+    desc: Check shell scripts in the Dagger toolchain
     cmds:
-      - scripts/shellcheck.sh
-
-  generate:harness-settings:
-    desc: Rebuild the bundled harness settings parsers and their licenses
-    cmds:
-      - pnpm install --frozen-lockfile
-      - node scripts/build-harness-settings.mjs
+      - dagger api call shell
 
   check:mermaid:
-    desc: Validate Mermaid diagrams in Markdown files
+    desc: Validate Mermaid in the Dagger toolchain
     cmds:
-      - pnpm install --frozen-lockfile
-      - pnpm run check:mermaid
+      - dagger api call mermaid
 
   logo:cells:
     desc: Rebuild the console mark's cell data from its terminal capture
@@ -975,97 +723,45 @@ tasks:
     cmds:
       - node scripts/logo-cells.mjs
 
-  check:fix:
-    desc: Run static checks and apply safe fixes
-    deps:
-      - build:lint-tool
-    cmds:
-      - ./build/tools/{{.LINT_BIN}} run --fix
-      - cd cli && ../build/tools/{{.LINT_BIN}} run --fix
-      - cd termpane && ../build/tools/{{.LINT_BIN}} run --fix
-      - cd server && ../build/tools/{{.LINT_BIN}} run --fix
-      - cd pool-agent && ../build/tools/{{.LINT_BIN}} run --fix
-      - cd sandbox-agent && ../build/tools/{{.LINT_BIN}} run --fix
-      - cd access && ../build/tools/{{.LINT_BIN}} run --fix
-
   fmt:
-    desc: Format every tracked Go source
+    desc: Format sources through a Dagger workspace changeset
     cmds:
-      - git ls-files -z '*.go' | xargs -0 gofmt -w
+      - dagger api call format -y
 
   fmt:verify:
-    desc: Fail when a tracked Go source is not gofmt-clean
+    desc: Verify formatting and repository consistency
     cmds:
-      - |
-        set -eu
-        unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
-        if [ -n "$unformatted" ]; then
-          echo "not gofmt-clean (run: go tool task fmt):" >&2
-          echo "$unformatted" >&2
-          exit 1
-        fi
+      - dagger api call verify
 
   tidy:
-    desc: Tidy every workspace module's go.mod/go.sum
+    desc: Tidy workspace modules through a Dagger changeset
     cmds:
-      # The rules are involved enough (workspace vs GOWORK=off resolution) to
-      # live in one script the Discobot go.mod hook runs too.
-      - scripts/go-mod-tidy.sh
+      - dagger api call tidy -y
 
   tidy:verify:
-    desc: Fail when a module's go.mod/go.sum is not tidy
+    desc: Verify module files and repository consistency
     cmds:
-      - task: verify:unchanged
-        vars: { VERIFY_WHAT: "go.mod/go.sum", VERIFY_TASK: tidy }
+      - dagger api call verify
+
+  generate:harness-settings:
+    desc: Rebuild bundled harness settings parsers and licenses through Dagger
+    cmds:
+      - dagger api call harness-settings -y
 
   generate:
-    desc: Regenerate generated files
+    desc: Regenerate contracts through a Dagger changeset
     cmds:
-      - task: generate:harness-settings
-      - go generate {{.PACKAGES}}
-      # Nested modules generate their own API surfaces and are not reached by
-      # the root pattern.
-      - cd pool-agent && go generate ./...
-      # The server's configuration schema is generated from config.Config, so
-      # a new setting cannot ship without the schema that documents it.
-      - cd server && go generate ./...
-      # So is the CLI's, from clientconfig.Config.
-      - cd cli && go generate ./...
+      - dagger api call generate -y
 
   generate:verify:
-    desc: Fail when a generated file is stale
-    # Dagger ran the generators as checks; this is what replaces that
-    # (ADR 0066 "Consequences").
+    desc: Verify generators and repository consistency
     cmds:
-      - task: verify:unchanged
-        vars: { VERIFY_WHAT: "generated files", VERIFY_TASK: generate }
-
-  verify:unchanged:
-    desc: Run VERIFY_TASK and fail if it changed anything tracked
-    internal: true
-    cmds:
-      # Compared against a snapshot rather than against a clean tree: CI always
-      # runs this on a fresh checkout, but a developer's tree is usually dirty
-      # for unrelated reasons and that must not read as staleness.
-      - |
-        set -eu
-        before="$(git status --porcelain; git --no-pager diff)"
-        go tool task {{.VERIFY_TASK}}
-        after="$(git status --porcelain; git --no-pager diff)"
-        if [ "$before" != "$after" ]; then
-          echo "{{.VERIFY_WHAT}} are stale: 'go tool task {{.VERIFY_TASK}}' changed the tree." >&2
-          echo "Run it and commit the result." >&2
-          git status --porcelain >&2
-          exit 1
-        fi
+      - dagger api call verify
 
   verify:
-    desc: Fail when formatting, module files, generated files, or diagrams are stale
+    desc: Verify formatting, tidy, generators and diagrams in Dagger
     cmds:
-      - task: fmt:verify
-      - task: tidy:verify
-      - task: generate:verify
-      - task: check:mermaid
+      - dagger api call verify
 
   buildx:builder:
     desc: Create the docker-container buildx builder multi-arch and multi-output builds need
@@ -1075,1169 +771,155 @@ tasks:
       - docker buildx create --name {{.BUILDX_BUILDER}} --driver docker-container >/dev/null
 
   ci:check:
-    desc: "The static half of CI on Linux: every lint pass, dead code, shellcheck, and the windows/amd64 cross type-check"
+    desc: Run Dagger static checks
     cmds:
-      - task: check
-      - task: check:deadcode
-      - task: check:windows
-      - task: check:dockerfiles
-      - task: check:dockerfile-deps
-      - task: check:shell
+      - dagger api call static
 
   ci:test:
-    desc: Run every module's tests the way CI does
-    # No Docker and no harness bundles: the suite that would need them seeds its
-    # harness config directly (ADR 0066 §7's stated end state), so this is
-    # test:all and runs identically on Linux, macOS, and Windows.
+    desc: Run workspace tests in Dagger
     cmds:
-      - task: test:all
-
-  check:darwin:
-    desc: Lint the packages darwin builds from other files than Linux, and type-check the whole tree for darwin
-    platforms: [darwin]
-    # `check` already lints every package on Linux. The Mac adds the packages
-    # darwin compiles differently — scripts/lint-darwin.sh owns which those
-    # are — and `go vet`, which type-checks every package and its tests against
-    # darwin's files far cheaper than linting them again.
-    deps:
-      - build:lint-tool
-    cmds:
-      - scripts/lint-darwin.sh ./build/tools/{{.LINT_BIN}}
-      - go vet {{.WORKSPACE_PACKAGES}}
+      - dagger api call tests
 
   ci:darwin:
-    desc: "The macOS half of CI: darwin's own static checks plus the native, signed release build"
-    platforms: [darwin]
+    desc: Run native macOS CI
     cmds:
-      - task: check:darwin
-      - task: release:build
+      - go run ./internal/cmd/discobox-native-ci -mode check {{.CLI_ARGS}}
 
   release:build:
-    desc: Build this platform's release binaries into build/release/bin
-    # Release binaries are built on the platform they target because darwin has
-    # to be: cgo, the macOS SDK, and codesigning are all native-only
-    # (ADR 0066 §4). Each platform's job contributes its own half.
+    desc: Build portable release binaries and native command plans
     cmds:
-      - rm -rf build/release/bin
-      - task: release:build:linux
-      - task: release:build:darwin
-      - task: release:verify
-
-  release:build:linux:
-    desc: Build the Linux and Windows release binaries
-    platforms: [linux]
-    cmds:
-      - task: release:binary
-        vars: { TARGET_OS: linux, TARGET_ARCH: amd64 }
-      - task: release:binary
-        vars: { TARGET_OS: linux, TARGET_ARCH: arm64 }
-      # Nix does not run on Windows and nothing in the tree is cgo or
-      # build-tagged for it, so the Windows binary is cross-compiled here. The
-      # Windows *tests* still run natively (ADR 0066 §4).
-      - task: release:binary
-        vars: { TARGET_OS: windows, TARGET_ARCH: amd64 }
-      - task: release:binary
-        vars: { TARGET_OS: windows, TARGET_ARCH: arm64 }
-      - task: release:windows-zip
-
-  release:build:darwin:
-    desc: Build and sign the macOS release binary
-    platforms: [darwin]
-    # darwin/amd64 is not shipped: ADR 0062 defers Intel Macs and
-    # assemble-guest-image refuses non-arm64, so an Intel binary would install
-    # and then fail at the first pool.
-    cmds:
-      - task: release:binary
-        vars: { TARGET_OS: darwin, TARGET_ARCH: arm64 }
-
-  release:binary:
-    desc: Build one platform's release binaries — the CLI and the server it stages (TARGET_OS=, TARGET_ARCH=)
-    requires:
-      vars: [TARGET_OS, TARGET_ARCH]
-    deps:
-      # The server embeds the guest relay, and the Linux CLI the clipboard
-      # helper.
-      - build:cp-relay
-      - build:clipwatch
-    vars:
-      # The tag the agent images are pinned to, resolved the way release:image
-      # and release:publish resolve theirs.
-      PIN_TAG:
-        sh: |
-          tag="{{.TAG}}"
-          case "$tag" in
-            v*) printf %s "$tag" ;;
-            *) printf %s "" ;;
-          esac
-      EXT: '{{if eq .TARGET_OS "windows"}}.exe{{end}}'
-      OUT: build/release/bin/discobox-{{.TARGET_OS}}-{{.TARGET_ARCH}}{{.EXT}}
-      # The server is published as its own asset and staged by the CLI on the
-      # machine that needs one (ADR 0099). SERVER_NAME is what it is called once
-      # staged, which is also what a sibling next to the CLI has to be called;
-      # SERVER_OUT is the published asset, whose name says which platform it is
-      # for.
-      SERVER_NAME: discobox-server{{.EXT}}
-      SERVER_OUT: build/release/bin/discobox-server-{{.TARGET_OS}}-{{.TARGET_ARCH}}{{.EXT}}
-      # cgo only where the platform's hypervisor bindings need it: Code-Hex/vz
-      # on darwin. Everywhere else a static binary is the better artifact.
-      CGO: '{{if eq .TARGET_OS "darwin"}}1{{else}}0{{end}}'
-      # Every image this release publishes is pinned to the release's own tag:
-      # the two agent images, and the registry and tag the built-in harness
-      # images resolve through. They reach the server's link and not the
-      # CLI's, because an image is what the server runs and the CLI does not
-      # contain one.
-      #
-      # Their defaults are :latest and local tags, which is right for a
-      # development build and wrong for a shipped one: a binary should run the
-      # images it was cut alongside, not whatever :latest has moved to since —
-      # and a local tag resolves to nothing at all on a user's machine, which is
-      # how a release shipped seeding three harnesses whose images Docker Hub
-      # had never heard of. The tag rather than a digest because release:images
-      # runs in a parallel job — there is no digest yet at link time — and a
-      # release tag never moves.
-      #
-      # Only when there is a tag to pin to. ci.yml builds the release artifacts
-      # on every push to prove they still build, with no tag in sight, and an
-      # empty PIN_TAG would bake "discobox-sandbox-base:" — a reference no daemon
-      # can pull — into a binary that otherwise looks fine.
-      SERVER_LDFLAGS: >-
-        {{if and .PIN_TAG .REGISTRY}}-X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultSandboxBaseImage={{.REGISTRY}}/discobox-sandbox-base:{{.PIN_TAG}}
-        -X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolAgentBundle={{.REGISTRY}}/discobox-pool-agent-bundle:{{.PIN_TAG}}
-        -X github.com/discobox-ai/discobox/harness.BundleRegistry={{.REGISTRY}}
-        -X github.com/discobox-ai/discobox/harness.BundleTag={{.PIN_TAG}}{{end}}
-      # The ELF interpreter, named rather than inherited.
-      #
-      # iroh-go reaches its embedded cdylib through purego, which imports dlopen
-      # with //go:cgo_import_dynamic — so the linker emits a dynamic executable
-      # whatever CGO_ENABLED says, and bakes in the loader path of the machine
-      # that built it. Inside `nix develop` that is a /nix/store path present on
-      # no user's system, and the binary cannot start anywhere else.
-      #
-      # A release binary's loader is a property of the target, not of the build
-      # host. Safe to name because nothing here needs a versioned glibc symbol:
-      # dlopen, dlsym, malloc, abort and pthread_* resolve against any libc.
-      # It does mean glibc — a musl system has no loader at this path, and one
-      # that dlopens cannot be static instead (ADR 0067 §2's embedded cdylib).
-      INTERP: '{{if eq .TARGET_OS "linux"}}{{if eq .TARGET_ARCH "amd64"}}/lib64/ld-linux-x86-64.so.2{{else}}/lib/ld-linux-aarch64.so.1{{end}}{{end}}'
-      # Both binaries carry the release version: the CLI prints it, the server
-      # answers it on /healthz, and the CLI compares the two to decide whether
-      # the running server is older than the one it would start.
-      LDFLAGS: -s -w {{if .INTERP}}-I {{.INTERP}}{{end}} {{if .PIN_TAG}}-X github.com/discobox-ai/discobox/pkg/version.Version={{.PIN_TAG}}{{end}}
-      # A release build autolaunches a server; a development build never does
-      # (cli/internal/cli/server_autolaunch_test.go).
-      CLI_LDFLAGS: -X github.com/discobox-ai/discobox/cli/internal/cli.serverAutoLaunch=true
-      # The Windows version resource each binary links, as Go finds one: a .syso
-      # in the main package's directory, named for the architecture it is for.
-      SERVER_SYSO: server/{{.SERVER_MAIN}}/zz_version_windows_{{.TARGET_ARCH}}.syso
-      CLI_SYSO: cli/{{.CLI_MAIN}}/zz_version_windows_{{.TARGET_ARCH}}.syso
-    cmds:
-      - mkdir -p build/release/bin
-      # The -X that stamps version.Version is invisible to Windows, which reads
-      # a file's version from its VS_VERSIONINFO resource: without one,
-      # Get-Command and Explorer report 0.0.0.0. Written into the source tree
-      # because that is the only place go build looks, and removed however the
-      # build ends so a later build for another target never links a stale one.
-      - defer: rm -f "{{.SERVER_SYSO}}" "{{.CLI_SYSO}}"
-      - cmd: >-
-          go run ./internal/cmd/discobox-winres write
-          -version "{{.PIN_TAG}}" -arch {{.TARGET_ARCH}}
-          -name "{{.SERVER_NAME}}" -description "Discobox server"
-          -out "{{.SERVER_SYSO}}"
-        if: '[ "{{.TARGET_OS}}" = windows ]'
-      - cmd: >-
-          go run ./internal/cmd/discobox-winres write
-          -version "{{.PIN_TAG}}" -arch {{.TARGET_ARCH}}
-          -name discobox.exe -description "Discobox CLI"
-          -out "{{.CLI_SYSO}}"
-        if: '[ "{{.TARGET_OS}}" = windows ]'
-      # The server first: the CLI is linked against its digest, so it cannot be
-      # built until the file it describes is final.
-      - >-
-        cd server &&
-        GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}}
-        go build -trimpath -ldflags="{{.LDFLAGS}} {{.SERVER_LDFLAGS}}" -o ../{{.SERVER_OUT}} {{.SERVER_MAIN}}
-      # After the link and after stripping, and before the digest is taken:
-      # signing rewrites the binary, so nothing may touch it afterwards
-      # (ADR 0066 §5). The server is the process that creates a VM, so it is the
-      # binary that needs the Virtualization entitlement (ADR 0099).
-      - task: sign
-        vars: { SIGN_BINARY: '{{.SERVER_OUT}}' }
-      # The manifest is generated here rather than in a var because it is a
-      # digest of a file this target has only just written, and Task evaluates
-      # vars before the first command runs.
-      #
-      # Only for a tagged build. ci.yml builds the release artifacts on every
-      # push to prove they still build, with no tag and so no release to
-      # download from; an untagged CLI carries no manifest and falls back to a
-      # server binary beside it, which is what a development build does anyway.
-      - |
-        set -eu
-        manifest=""
-        if [ -n "{{.PIN_TAG}}" ] && [ -n "{{.RELEASE_REPO}}" ]; then
-          set -- -version "{{.PIN_TAG}}" -os "{{.TARGET_OS}}" -arch "{{.TARGET_ARCH}}" \
-            -command "{{.SERVER_NAME}}" \
-            -asset "{{.SERVER_NAME}}={{.SERVER_OUT}}"
-          # Order is the fallback order. The mirror is tried first because
-          # staging a server is the heaviest download we serve; the release URL
-          # is last because it is the one that outlives everything else.
-          if [ "{{.RELEASE_REPO}}" = "{{.ASSET_MIRROR_REPO}}" ]; then
-            set -- "$@" -base-url "{{.ASSET_MIRROR_BASE}}/{{.PIN_TAG}}"
-          fi
-          set -- "$@" -base-url "https://github.com/{{.RELEASE_REPO}}/releases/download/{{.PIN_TAG}}"
-          # Export from a host build even when the server asset targets Windows.
-          go run -ldflags="{{.SERVER_LDFLAGS}} -X github.com/discobox-ai/discobox/pkg/version.Version={{.PIN_TAG}}" \
-            ./server/cmd/discobox-server manifest > "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json"
-          manifest="$(go run ./internal/cmd/discobox-server-manifest "$@")"
-        fi
-        cd cli && GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}} \
-          go build -trimpath \
-          -ldflags="{{.LDFLAGS}} {{.CLI_LDFLAGS}}${manifest:+ -X github.com/discobox-ai/discobox/pkg/serverstage.DefaultManifest=$manifest}" \
-          -o "../{{.OUT}}" {{.CLI_MAIN}}
-        cd ..
-        if [ -n "$manifest" ]; then
-          # The full external manifest is written after the CLI's final link:
-          # embedding its own digest would be self-referential.
-          go run ./internal/cmd/discobox-server-manifest "$@" \
-            -revision "$(git rev-parse HEAD)" \
-            -client-asset "discobox{{.EXT}}={{.OUT}}" \
-            -release-images "build/release/images-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json" \
-            -release-output "build/release/bin/discobox-manifest-{{.TARGET_OS}}-{{.TARGET_ARCH}}.json" >/dev/null
-        fi
-
-  release:windows-zip:
-    desc: Package each Windows binary as the archive winget installs from
-    platforms: [linux]
-    # winget installs a portable package by symlinking the executable under a
-    # command alias — but only where it can, which means an administrator or a
-    # machine with Developer Mode on. Everywhere else it falls back to putting
-    # the install directory on PATH, and then the command the user gets is
-    # whatever the file on disk is called.
-    #
-    # So the file has to be called discobox.exe, and the release asset is not:
-    # renaming it would break every existing download URL and the naming
-    # convention the other three binaries share. The archive carries the same
-    # binary under the name the command has to have, and is uploaded alongside
-    # them for winget alone to consume.
-    cmds:
-      - |
-        set -eu
-        work="$(mktemp -d)"
-        trap 'rm -rf "$work"' EXIT
-        # Whatever Windows binaries were built, rather than a list here that a
-        # new architecture would have to be added to twice.
-        found=0
-        for bin in build/release/bin/discobox-windows-*.exe; do
-          [ -e "$bin" ] || continue
-          name="$(basename "$bin" .exe)"
-          rm -rf "$work/stage" && mkdir "$work/stage"
-          cp "$bin" "$work/stage/discobox.exe"
-          # Zipped from inside the directory so the archive holds discobox.exe
-          # at its root, which is the path the manifest's RelativeFilePath
-          # names — the same path for every architecture.
-          (cd "$work/stage" && zip -q "$work/$name.zip" discobox.exe)
-          mv "$work/$name.zip" build/release/bin/
-          found=$((found + 1))
-        done
-        [ "$found" -gt 0 ] || { echo "release:windows-zip: no Windows binaries were built" >&2; exit 1; }
+      - dagger api call release-build {{.CLI_ARGS}} export --path=build/release/bin
 
   release:verify:
-    desc: Check that the release binaries in build/release/bin are runnable anywhere
-    vars:
-      # The tag the binaries should report, resolved the way release:binary
-      # resolves the one it links in. Empty for an untagged CI build, which
-      # has no version to assert.
-      PIN_TAG:
-        sh: |
-          tag="{{.TAG}}"
-          case "$tag" in
-            v*) printf %s "$tag" ;;
-            *) printf %s "" ;;
-          esac
-    # A release went green publishing Linux binaries that could not start on any
-    # machine but the builder: their ELF interpreter was a /nix/store path.
-    # Everything downstream looked healthy — build, checksums, upload — because
-    # nothing inspected one.
-    #
-    # Executing a binary is not enough to catch that, and this is the trap the
-    # first version of this check fell into: on the machine that built it the
-    # /nix/store loader does exist, so it runs perfectly and proves nothing.
-    # The interpreter is therefore checked for every Linux binary, whether or
-    # not this host can execute it, and execution is an extra assertion on top
-    # for the one it can.
+    desc: Validate complete platform artifacts and final digests
     cmds:
-      - |
-        set -eu
-        [ -d build/release/bin ] || { echo "release:verify: nothing built" >&2; exit 1; }
-        host="$(go env GOOS)-$(go env GOARCH)"
-        work="$(mktemp -d)"
-        trap 'rm -rf "$work"' EXIT
-        found=0
-        for binary in build/release/bin/*; do
-          [ -e "$binary" ] || continue
-          name=$(basename "$binary")
-          case "$name" in *.json) continue ;; esac
-          found=$((found + 1))
-
-          # A Windows server reaches its WSL guest through the relay embedded
-          # for its own architecture: WSL2 does not emulate, so the guest is
-          # always the host's. One built without it installs, launches, and
-          # fails at the first pool -- on a machine no Linux or amd64 test run
-          # ever touches, which is the same blind spot the interpreter check
-          # below exists for.
-          # The server binaries only: the relay is embedded in the server (ADR
-          # 0099), and release:windows-zip puts a .zip beside each CLI carrying
-          # the very same executable, so a looser pattern would both check a
-          # binary that does not contain a relay and pair the same one twice --
-          # and a .zip's name does not end in .exe, so its architecture would
-          # come out as "amd64.zip" and match no relay.
-          case "$name" in
-            discobox-server-windows-*.exe)
-              arch=${name#*-windows-}
-              arch=${arch%.exe}
-              relay="server/providers/wslc/relay/artifacts/discobox-cp-relay.linux-$arch.gz"
-              [ -f "$relay" ] || { echo "$name: no guest relay was built for linux/$arch; add it to build:cp-relay" >&2; exit 1; }
-              size=$(wc -c < "$relay")
-              [ "$size" -gt 65536 ] || { echo "$name: guest relay for linux/$arch is $size bytes, not a real binary" >&2; exit 1; }
-              echo "$name: guest relay linux/$arch ($size bytes)"
-              ;;
-          esac
-
-          # A Linux CLI carries the Windows clipboard helper it runs from WSL,
-          # for its own architecture, for the same reason. Without it the CLI
-          # builds and runs by design — a fresh checkout has no artifact — so
-          # only this notices a release whose dictation would be off on WSL.
-          case "$name" in
-            discobox-linux-*)
-              arch=${name#discobox-linux-}
-              helper="cli/internal/clipwatch/artifacts/discobox-clipwatch.windows-$arch.exe.gz"
-              [ -f "$helper" ] || { echo "$name: no clipboard helper was built for windows/$arch; add it to build:clipwatch" >&2; exit 1; }
-              size=$(wc -c < "$helper")
-              [ "$size" -gt 65536 ] || { echo "$name: clipboard helper for windows/$arch is $size bytes, not a real binary" >&2; exit 1; }
-              echo "$name: clipboard helper windows/$arch ($size bytes)"
-              ;;
-          esac
-
-          # Every Windows executable, whether or not this host can run it: the
-          # resource is read from the file, and a .syso go build did not find
-          # fails nothing but this. The CLI's .zip carries the same executable.
-          case "$name" in
-            *-windows-*.exe)
-              go run ./internal/cmd/discobox-winres verify -version "{{.PIN_TAG}}" "$binary"
-              ;;
-          esac
-
-          case "$name" in
-            *-linux-*)
-              interp=$(readelf -p .interp "$binary" 2>/dev/null | sed -n 's/.*\[ *0\] *//p' | tr -d ' ')
-              case "$interp" in
-                ""|/lib/*|/lib64/*) ;;
-                *) echo "$name: interpreter $interp exists only where this was built" >&2; exit 1 ;;
-              esac
-              echo "$name: interpreter ${interp:-none (static)}"
-              ;;
-          esac
-
-          case "$name" in
-            *-"$host"|*-"$host".exe)
-              got=$("$binary" --version) || { echo "$name: cannot execute" >&2; exit 1; }
-              echo "$name: $got"
-              # And that it is the version this release claims. The linker
-              # accepts -X for a symbol that does not exist without a word of
-              # complaint, so a moved or renamed version variable would leave
-              # every binary reporting a commit hash and nothing would notice.
-              if [ -n "{{.PIN_TAG}}" ]; then
-                case "$got" in
-                  *"{{.PIN_TAG}}"*) ;;
-                  *) echo "$name: reports '$got', not {{.PIN_TAG}}: the version ldflag is not reaching the binary" >&2; exit 1 ;;
-                esac
-              fi
-
-              # And, for the CLI, that it knows where to get a server. The
-              # manifest is a base64 blob passed through a shell into -X, and
-              # the linker accepts an -X for a symbol that does not exist
-              # without a word of complaint, so a release could otherwise ship
-              # a CLI that has no server to download and says so only on a
-              # user's machine (ADR 0099).
-              case "$name" in
-                discobox-server-*) ;;
-                *)
-                  if [ -n "{{.PIN_TAG}}" ]; then
-                    "$binary" admin server manifest > "$work/manifest.json" ||
-                      { echo "$name: carries no server manifest: the manifest ldflag is not reaching the binary" >&2; exit 1; }
-                    grep -q "discobox-server-$host" "$work/manifest.json" ||
-                      { echo "$name: its server manifest does not name the $host server asset:" >&2; cat "$work/manifest.json" >&2; exit 1; }
-                    echo "$name: stages $(grep -c '"sha256"' "$work/manifest.json") server asset(s) for $host"
-                  fi
-                  ;;
-              esac
-              ;;
-          esac
-        done
-        [ "$found" -gt 0 ] || { echo "release:verify: no binaries found" >&2; exit 1; }
+      - dagger api call release-assemble --artifacts=build/release/bin {{.CLI_ARGS}} export --path=build/release/assembled
 
   brew:publish:
-    desc: Push a Homebrew formula for a tag to the tap (task brew:publish -- [--dev] [--prerelease] TAG)
-    # Nothing automatic runs this. The tap updates itself from this repository's
-    # public releases (see its update-formula workflow), which is why no token
-    # for it is stored here; this is the button for publishing a tag the tap's
-    # own rule will not pick up, and for not waiting out its interval.
-    #
-    # Writing uses the operator's own GitHub credentials through gh, so running
-    # it requires being someone who may already write to the tap.
-    vars:
-      TAP_REPO: '{{.TAP_REPO | default "discobox-ai/homebrew-tap"}}'
-      # Which of the tap's two formulae this writes (ADR 0105).
-      NAME: '{{if .BREW_DEV}}discobox-dev{{else}}discobox{{end}}'
-      FORMULA: '{{.BREW_OUT | default (printf "build/%s.rb" .NAME)}}'
+    desc: Explicitly publish one formula; prereleases require an explicit override
     cmds:
-      # Before generating: refusing after downloading a release's assets wastes
-      # the download and reads like a failure rather than a decision.
-      - |
-        set -eu
-        tag="{{.TAG}}"
-        case "$tag" in
-          v*) ;;
-          *) echo "brew:publish: expected a v* tag, got '$tag'" >&2; exit 1 ;;
-        esac
-        # Neither channel serves an explicit prerelease: discobox-dev tracks the
-        # newest dot release, not every tag that ever built, and `brew install
-        # discobox` should give the version people are meant to run. So a
-        # v1.2.3-rc1 reaching either is a decision somebody makes out loud.
-        if [ -z "{{.DOT_RELEASE}}" ] && [ -z "{{.ALLOW_PRERELEASE}}" ]; then
-          echo "brew:publish: $tag is a prerelease, and neither tap channel serves one." >&2
-          echo "Publish it anyway with: task brew:publish -- {{if .BREW_DEV}}--dev {{end}}--prerelease $tag" >&2
-          exit 1
-        fi
-      - task: brew:formula
-        vars: { BREW_OUT: '{{.FORMULA}}' }
-      - |
-        set -eu
-        tag="{{.TAG}}"
-        work="$(mktemp -d)"
-        trap 'rm -rf "$work"' EXIT
-        # gh holds the credential; git is told to ask it rather than whatever
-        # helper the operator's global config names. Through the environment
-        # rather than -c, because the helper value contains spaces and every git
-        # command below needs it.
-        export GIT_CONFIG_COUNT=2
-        export GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0=
-        export GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1='!gh auth git-credential'
-        git clone --depth 1 "https://github.com/{{.TAP_REPO}}.git" "$work/tap"
-        mkdir -p "$work/tap/Formula"
-        cp "{{.FORMULA}}" "$work/tap/Formula/{{.NAME}}.rb"
-        # Staged before comparing: git does not track empty directories, so on a
-        # tap that has never carried a formula this is an untracked file, and an
-        # unstaged diff of one is empty — which once reported a push that never
-        # happened.
-        git -C "$work/tap" add "Formula/{{.NAME}}.rb"
-        if git -C "$work/tap" diff --cached --quiet; then
-          echo "the tap already serves {{.NAME}} $tag"
-          exit 0
-        fi
-        git -C "$work/tap" -c user.name="discobox release" -c user.email="noreply@discobox.ai" \
-          commit -q -m "{{.NAME}} $tag" -m "Generated by \`task brew:publish\` from the assets $tag uploaded."
-        git -C "$work/tap" push -q origin HEAD:main
-        echo "the tap now serves {{.NAME}} $tag"
+      - dagger api call brew-publish {{.CLI_ARGS}}
+
   release:publish:
-    desc: Create the GitHub release for RELEASE_TAG and upload build/release/bin
-    # Consumes whatever populated build/release/bin, so the fan-out that fills
-    # it can be GitHub's matrix or one developer's machine.
+    desc: Publish verified complete release artifacts
     cmds:
-      # Here rather than in release:build because the installers are stamped
-      # with every platform's binary, and only this job has all of them.
-      - task: release:manifest
-      - task: release:installers
-      - |
-        set -eu
-        tag="{{.TAG}}"
-        case "$tag" in
-          v*) ;;
-          *) echo "release:publish: set RELEASE_TAG=v<version> (or run from a v* tag)" >&2; exit 1 ;;
-        esac
-        if [ -z "$(ls -A build/release/bin 2>/dev/null)" ]; then
-          echo "release:publish: build/release/bin is empty; run release:build first" >&2
-          exit 1
-        fi
-        # Every release is created as a prerelease, dot releases included
-        # (ADR 0105). Nothing this workflow knows makes a release stable: a tag
-        # is a thing that built, and blessing one is a human clearing this box
-        # afterwards, which is what feeds `brew install discobox` and winget.
-        # Until then GitHub's own "Latest release" header keeps pointing at the
-        # last blessed one, which is the right answer for someone landing on the
-        # repository.
-        gh release view "$tag" >/dev/null 2>&1 ||
-          gh release create "$tag" --verify-tag --title "$tag" --generate-notes --prerelease
-        gh release upload "$tag" build/release/bin/* --clobber
-
-  release:manifest:
-    desc: Assemble every platform's CLI, server, and image metadata into release.json
-    cmds:
-      - go run ./internal/cmd/discobox-release-manifest -out build/release/bin/release.json build/release/bin/discobox-manifest-*.json
-
-  release:installers:
-    desc: Write install.sh and install.ps1 for RELEASE_TAG into build/release/bin
-    # Stamped with the tag and the SHA-256 of each CLI binary beside them, which
-    # is exactly what release:publish is about to upload, so every digest an
-    # installer checks describes a file its release carries (ADR 0110). The
-    # server binaries and the winget archives are left out: no installer
-    # downloads them.
-    cmds:
-      - |
-        set -eu
-        tag="{{.TAG}}"
-        case "$tag" in
-          v*) ;;
-          *) echo "release:installers: set RELEASE_TAG=v<version> (or run from a v* tag)" >&2; exit 1 ;;
-        esac
-        set --
-        for bin in build/release/bin/discobox-*; do
-          [ -f "$bin" ] || continue
-          case "$(basename "$bin")" in
-            discobox-server-* | *.zip | *.json) ;;
-            *) set -- "$@" "$bin" ;;
-          esac
-        done
-        if [ $# -eq 0 ]; then
-          echo "release:installers: build/release/bin has no CLI binaries; run release:build first" >&2
-          exit 1
-        fi
-        go run ./internal/cmd/discobox-installers -version "$tag" -out build/release/bin "$@"
-
-  release:dot:
-    desc: Print yes when the release tag is a dot release, nothing otherwise
-    # So a workflow can ask the question the publish targets already ask, rather
-    # than a second copy of the rule in YAML — which could not express it
-    # anyway, since GitHub expressions have no pattern matching (ADR 0066 §1).
-    silent: true
-    cmds:
-      - printf %s '{{.DOT_RELEASE}}'
-
-  release:require-dot:
-    desc: Fail unless the release tag is a dot release
-    # The gate on promoting a release to stable (ADR 0105). winget sorts
-    # semantic and string versions differently, so a package that publishes both
-    # v1.2.3 and 1.2.3-rc1 ends up pinned to whichever comparison wins and the
-    # only fix is deleting the odd one out — and a formula named `discobox`
-    # serving an rc is the same mistake in the other package manager. Clearing
-    # the prerelease box on an rc is a mis-click, not a plan, so it stops here.
-    silent: true
-    cmds:
-      - |
-        set -eu
-        if [ -z "{{.DOT_RELEASE}}" ]; then
-          echo "release:require-dot: {{.TAG}} is not a vMAJOR.MINOR.PATCH tag, so it cannot be promoted to stable" >&2
-          exit 1
-        fi
-        echo "{{.TAG}} is a dot release"
+      - dagger api call release-publish --artifacts=build/release/bin {{.CLI_ARGS}}
 
   winget:manifests:
-    desc: Write the winget manifests for a released tag to WINGET_OUT
-    # The rule lives in scripts/winget-manifests.sh for the same reason the
-    # Homebrew one does: nothing about it needs a Go toolchain to reach.
-    vars:
-      WINGET_OUT: '{{.WINGET_OUT | default "build/winget"}}'
+    desc: Generate manifests from published release assets
     cmds:
-      - scripts/winget-manifests.sh "{{.TAG}}" "{{.RELEASE_REPO}}" "{{.WINGET_OUT}}"
+      - dagger api call winget-manifests {{.CLI_ARGS}} export --path=build/winget
 
   winget:publish:
-    desc: Open the winget-pkgs pull request for a tag (task winget:publish -- [--prerelease] TAG)
-    # Run by promote.yml, when a human marks a release stable — never by cutting
-    # a tag, because winget is a stable channel and a tag is not yet a stable
-    # release (ADR 0105).
-    #
-    # The asymmetry with brew:publish is not an oversight. The tap is ours and a
-    # push to it is the publish; the Windows Package Manager Community
-    # Repository is Microsoft's, and every version is a pull request that a
-    # validation pipeline runs and a moderator merges. So this opens the request
-    # and stops. Somebody watches it land.
-    #
-    # Writing uses the operator's own GitHub credentials through gh, and the
-    # first pull request from an account has to sign Microsoft's CLA, which is
-    # a reply on the thread that only a human can make.
-    #
-    # No clone anywhere: winget-pkgs carries every manifest for every package
-    # in it, and the git data API writes a commit without one.
-    vars:
-      UPSTREAM: '{{.WINGET_REPO | default "microsoft/winget-pkgs"}}'
-      MANIFESTS: '{{.WINGET_OUT | default "build/winget"}}'
+    desc: Manually open or update the winget submission
     cmds:
-      # Before generating: refusing after downloading a release's asset wastes
-      # the download and reads like a failure rather than a decision.
-      - |
-        set -eu
-        tag="{{.TAG}}"
-        case "$tag" in
-          v*) ;;
-          *) echo "winget:publish: expected a v* tag, got '$tag'" >&2; exit 1 ;;
-        esac
-        # winget has no notion of a channel: whatever is published is what
-        # `winget install discobox` gives everyone. Same rule as the tap, and
-        # for the same reason — an alpha goes out only because somebody typed
-        # the flag.
-        if [ -z "{{.DOT_RELEASE}}" ] && [ -z "{{.ALLOW_PRERELEASE}}" ]; then
-          echo "winget:publish: $tag is a prerelease and winget serves one channel." >&2
-          echo "Publish it anyway with: task winget:publish -- --prerelease $tag" >&2
-          exit 1
-        fi
-        # Fail on the token here rather than on the first write it cannot make.
-        # A token that may read but not write gets all the way through: the
-        # fork-existence check is a GET, and so is every lookup against
-        # winget-pkgs, which is public and needs no token at all. The first blob
-        # POST is where it stops, and GitHub answers an unauthorised write with
-        # 404 rather than 403 so as not to confirm the repository exists — so
-        # the failure reads as "the fork is missing", which it is not, and the
-        # error can never say this for itself.
-        #
-        # A fine-grained PAT reports no scopes at all, which is the same empty
-        # string as a classic token carrying none, and neither can do this.
-        scopes="$(gh api -i user 2>/dev/null | tr -d "\r" | sed -n "s/^[Xx]-[Oo][Aa]uth-[Ss]copes: *//p")"
-        case ",$(printf %s "$scopes" | tr -d " ")," in
-          *,repo,*|*,public_repo,*) ;;
-          *)
-            echo "winget:publish: WINGET_TOKEN may not write to the winget-pkgs fork." >&2
-            echo "  scopes reported: ${scopes:-(none, which is also what a fine-grained token reports)}" >&2
-            echo "  It must be a classic PAT with public_repo (or repo), owned by the account whose" >&2
-            echo "  fork of microsoft/winget-pkgs the pull request comes from." >&2
-            exit 1 ;;
-        esac
-      - task: winget:manifests
-        vars: { WINGET_OUT: '{{.MANIFESTS}}' }
-      - |
-        set -eu
-        tag="{{.TAG}}"
-        upstream="{{.UPSTREAM}}"
-
-        # Read back out of what was just generated rather than restated here.
-        # The identifier and the rule that strips the `v` are the script's to
-        # own, and a second copy of either is a second copy that can be wrong.
-        installer="$(ls {{.MANIFESTS}}/*.installer.yaml)"
-        identifier="$(sed -n 's/^PackageIdentifier: //p' "$installer")"
-        version="$(sed -n 's/^PackageVersion: //p' "$installer")"
-
-        # manifests/<publisher's first letter, lowercased>/<publisher>/<package>.
-        publisher="${identifier%%.*}"
-        package="${identifier#*.}"
-        letter="$(printf %s "$publisher" | cut -c1 | tr 'A-Z' 'a-z')"
-        package_dir="manifests/$letter/$publisher/$package"
-
-        if gh api "repos/$upstream/contents/$package_dir/$version" >/dev/null 2>&1; then
-          echo "winget already serves $version"
-          exit 0
-        fi
-
-        login="$(gh api user -q .login)"
-        fork="$login/winget-pkgs"
-        # Idempotent: forking an existing fork says so and succeeds. No
-        # --remote: gh rejects the flag outright when a repository argument is
-        # given, and adds no remote in that case anyway.
-        gh repo fork "$upstream" --clone=false >/dev/null
-
-        # The fork's own master, which is allowed to be thousands of commits
-        # behind upstream's. It is a clean ancestor rather than a divergence —
-        # nothing ever commits to it — so it is the pull request's merge base
-        # and the diff is exactly the files added here. A new version directory
-        # cannot conflict with whatever upstream changed meanwhile, so the
-        # staleness costs nothing.
-        #
-        # Two things that do not work, both tried:
-        #
-        #   `gh repo sync "$fork" --branch master --force` goes through the
-        #   merge-upstream API. That refuses any incoming
-        #   commit touching .github/workflows unless the token carries
-        #   `workflow` scope, and winget-pkgs changes its workflows constantly —
-        #   so it broke as soon as the fork had any catching up to do. Granting
-        #   the scope would buy write access to every workflow in every public
-        #   repository the submitting account can reach, to tidy a fork whose
-        #   staleness does not matter.
-        #
-        #   Reading the base from *upstream* instead, to skip the fork's master
-        #   entirely, fails further along: a fork shares object storage with its
-        #   upstream for reads, but tree creation validates base_tree against
-        #   the repository being written, so `POST repos/$fork/git/trees`
-        #   answers "base_tree is not a valid tree oid" (422) for a tree only
-        #   upstream has.
-        base="$(gh api "repos/$fork/git/ref/heads/master" -q .object.sha)"
-        base_tree="$(gh api "repos/$fork/git/commits/$base" -q .tree.sha)"
-
-        # The title format the repository's pull request template asks for; the
-        # moderation tooling reads it.
-        # The two titles winget-pkgs actually uses, and the moderation tooling
-        # reads them: "New package: <id> version <v>" the first time a package
-        # appears, "New version: <id> version <v>" every time after. Measured
-        # rather than guessed — of the last hundred pull requests there, 55 are
-        # "New version:" and 10 "New package:", against 4 using "Update:", which
-        # is what this said until the first submission proved it had never run
-        # down this branch.
-        if gh api "repos/$upstream/contents/$package_dir" >/dev/null 2>&1; then
-          title="New version: $identifier version $version"
-        else
-          title="New package: $identifier version $version"
-        fi
-
-        tree='[]'
-        for manifest in {{.MANIFESTS}}/*.yaml; do
-          blob="$(jq -Rs '{content: ., encoding: "utf-8"}' < "$manifest" |
-            gh api "repos/$fork/git/blobs" --input - -q .sha)"
-          tree="$(printf %s "$tree" | jq \
-            --arg path "$package_dir/$version/$(basename "$manifest")" --arg sha "$blob" \
-            '. + [{path: $path, mode: "100644", type: "blob", sha: $sha}]')"
-        done
-
-        new_tree="$(jq -n --arg base "$base_tree" --argjson tree "$tree" \
-          '{base_tree: $base, tree: $tree}' |
-          gh api "repos/$fork/git/trees" --input - -q .sha)"
-        commit="$(jq -n --arg message "$title" --arg tree "$new_tree" --arg parent "$base" \
-          '{message: $message, tree: $tree, parents: [$parent]}' |
-          gh api "repos/$fork/git/commits" --input - -q .sha)"
-
-        branch="discobox-$version"
-        # Force, so a first attempt that failed before the pull request existed
-        # can simply be run again.
-        jq -n --arg sha "$commit" '{sha: $sha, force: true}' |
-          gh api -X PATCH "repos/$fork/git/refs/heads/$branch" --input - >/dev/null 2>&1 ||
-          jq -n --arg ref "refs/heads/$branch" --arg sha "$commit" '{ref: $ref, sha: $sha}' |
-            gh api "repos/$fork/git/refs" --input - >/dev/null
-
-        existing="$(gh pr list --repo "$upstream" --head "$branch" --state open \
-          --json url -q '.[0].url' 2>/dev/null || true)"
-        if [ -n "$existing" ]; then
-          echo "updated the open pull request: $existing"
-          exit 0
-        fi
-
-        # Which archives the submission actually offers, read back out of the
-        # manifest rather than named here. The installer manifest carries one
-        # entry per windows zip the release uploaded, so an architecture added
-        # to the build matrix is described correctly without an edit — this
-        # body claimed amd64 alone for the whole of v0.3.0, which shipped both.
-        archives="$(sed -n 's|.*InstallerUrl: .*/\(discobox-windows-[^/]*\.zip\)$|`\1`|p' "$installer" | paste -sd, - | sed 's/,/, /g')"
-
-        # The manifests are generated from the release's own assets and each
-        # archive was read back to check it holds what they declare, but
-        # `winget validate` and `winget install --manifest` are Windows-only
-        # and did not run. Said in the body rather than left as two ticked
-        # boxes that are not true.
-        gh pr create --repo "$upstream" --base master --head "$login:$branch" \
-          --title "$title" \
-          --body "$(printf '%s\n' \
-            "Generated by \`task winget:publish\` from the assets $tag uploaded." \
-            "" \
-            "- Installer: \`$identifier\` $version, portable, from the release's $archives." \
-            "- Each checksum is of the asset it names, and every archive was checked to contain \`discobox.exe\`." \
-            "- Not validated on Windows: this project releases from Linux and macOS.")"
+      - dagger api call winget-publish {{.CLI_ARGS}}
 
   brew:refresh:
-    desc: Tell the tap to regenerate both formulae from this repository's releases
-    # One dispatch, both channels: the tap recomputes discobox-dev from the
-    # newest dot release and discobox from the newest release a human has
-    # marked stable, and commits whichever actually moved (ADR 0105). So the
-    # same call is right after a tag is cut and after a release is blessed, and
-    # neither caller has to know which formula it is about to change.
-    #
-    # This is the *only* thing that updates the tap. There is no cron poll
-    # behind it, deliberately: a backstop that quietly covers for a broken
-    # release step is a backstop that stops anyone noticing the step is
-    # broken. If this does not run, the tap does not update, and the release
-    # that failed to run it goes red.
-    #
-    # It needs a credential, and there is no way around that: GITHUB_TOKEN is
-    # scoped to the repository it runs in, so nothing minted here can start a
-    # workflow in another repository (ADR 0066, and the original reason the tap
-    # pulls rather than being pushed to). What this does *not* need is write
-    # access: the narrowest token that works is scoped to the tap alone and may
-    # only start a workflow already defined there. That is much less than the
-    # `contents: write` the push-based design required, and it is why this is
-    # worth having and that was not.
-    vars:
-      TAP_REPO: '{{.TAP_REPO | default "discobox-ai/homebrew-tap"}}'
-      TAP_WORKFLOW: '{{.TAP_WORKFLOW | default "update-formula.yml"}}'
+    desc: Recompute Homebrew channels directly without Actions
     cmds:
-      - gh workflow run {{.TAP_WORKFLOW}} --repo {{.TAP_REPO}}
-      - echo "asked {{.TAP_REPO}} to update its formula"
+      - dagger api call brew-refresh {{.CLI_ARGS}}
 
   brew:formula:
-    desc: Write a Homebrew formula for a released tag to BREW_OUT (task brew:formula -- [--dev] TAG)
-    # The rule lives in scripts/brew-formula.sh so the tap's own update workflow
-    # runs exactly this, without needing a Go toolchain to reach it — including
-    # which of the two formulae it is writing.
-    vars:
-      NAME: '{{if .BREW_DEV}}discobox-dev{{else}}discobox{{end}}'
-      BREW_OUT: '{{.BREW_OUT | default (printf "build/%s.rb" .NAME)}}'
+    desc: Generate a released version Homebrew formula
     cmds:
-      - scripts/brew-formula.sh {{if .BREW_DEV}}--dev {{end}}"{{.TAG}}" "{{.RELEASE_REPO}}" "{{.BREW_OUT}}"
+      - dagger api call brew-formula {{.CLI_ARGS}} export --path=build/discobox.rb
 
   release:images:
-    desc: Build and push the multi-arch sandbox base image, the pool, agent and platform bundles, and the harness bundles for RELEASE_TAG
+    desc: Build all OCI artifacts locally
     cmds:
-      # Every sandbox container and every Docker pool's runs it; the server
-      # names it as dockerworker.DefaultSandboxBaseImage (ADR 26-10-16-423 §10,
-      # ADR 26-10-24-953 §2).
-      - task: release:image
-        vars:
-          IMAGE: sandbox-base
-          DOCKERFILE: server/providers/dockerworker/sandbox-image/Dockerfile
-          CONTEXT: server/providers/dockerworker/sandbox-image
-      # The pool bundle, a pool's box's one bundle (ADR 26-10-24-953 §2): a
-      # multi-architecture index, since it carries the pool agent's binaries.
-      # FROM scratch, so it needs no base image.
-      - task: release:image
-        vars:
-          IMAGE: pool-agent-bundle
-          DOCKERFILE: pool-agent/Dockerfile
-          TARGET: bundle
-          BUNDLE: "yes"
-      # The agent bundle the server's release pins (ADR 26-10-24-953 §2): the
-      # agent alone, a multi-architecture index like the platform bundle.
-      - task: release:image
-        vars:
-          IMAGE: agent
-          DOCKERFILE: sandbox-agent/Dockerfile
-          TARGET: agent
-          BUNDLE: "yes"
-      # The platform bundle the server's release pins (ADR 26-10-16-423 §7): a
-      # multi-architecture index like the images, since it carries the agent
-      # binaries. IMAGE_LAYER_METADATA is not optional: without it the build
-      # refuses, rather than publishing a platform layer every harness bundle
-      # is rejected against (ADR 26-10-16-423 §2).
-      - task: release:image
-        vars:
-          IMAGE: platform
-          DOCKERFILE: sandbox-agent/Dockerfile
-          TARGET: platform
-          BUNDLE: "yes"
-          BUILD_ARGS: --build-arg IMAGE_LAYER_METADATA="$(jq -c . sandbox-agent/image.json)"
-      # Harness bundles ship with the release for the same reason the images
-      # do. The built-in harness configs a server seeds name these, and their
-      # development default is a local tag that resolves to nothing on a
-      # user's machine — a released binary that did not publish them seeds
-      # harnesses it cannot run. No harness is an image (ADR 26-10-16-423 §10).
-      - task: release:harness-bundle
-        vars: { HARNESS: claude-code }
-      - task: release:harness-bundle
-        vars: { HARNESS: codex }
-      - task: release:harness-bundle
-        vars: { HARNESS: opencode }
-      - task: release:harness-bundle
-        vars: { HARNESS: copilot }
-      - task: release:harness-bundle
-        vars: { HARNESS: omp }
-      - task: release:harness-bundle
-        vars: { HARNESS: pi }
-      - task: release:harness-bundle
-        vars: { HARNESS: shell }
-
-  release:harness-bundle:
-    desc: Build and push one harness's bundle (HARNESS=claude-code|codex|opencode|copilot|omp|pi|shell)
-    requires:
-      vars: [HARNESS]
-    vars:
-      HARNESS_DIR: '{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}'
-    preconditions:
-      - sh: test -f harness/{{.HARNESS_DIR}}/Dockerfile
-        msg: "unknown harness: {{.HARNESS}}"
-      - sh: test -f harness/{{.HARNESS_DIR}}/image.json
-        msg: "harness {{.HARNESS}} has no image.json: every harness bundle names the platform API version it runs on"
-    cmds:
-      # The bundle, discobox-harness-<name>: what a box on the harness applies
-      # and a third party builds FROM. Platform-neutral, one manifest and no
-      # per-architecture index (ADR 26-10-16-423 §2): its layers are COPYs of
-      # files that are the same on every architecture, and its steps select by
-      # platform when they run. The command substitution is left for the shell
-      # release:image runs, so a manifest carrying spaces stays one argument.
-      - task: release:image
-        vars:
-          IMAGE: harness-{{.HARNESS}}
-          DOCKERFILE: harness/{{.HARNESS_DIR}}/Dockerfile
-          CONTEXT: .
-          SINGLE_MANIFEST: "yes"
-          BUNDLE: "yes"
-          BUILD_ARGS: --build-arg HARNESS_METADATA="$(jq -c . harness/{{.HARNESS_DIR}}/image.json)"
-
-  release:image:
-    desc: Build and push one multi-arch image (IMAGE names it; DOCKERFILE/CONTEXT/TARGET/BUILD_ARGS override the defaults, SINGLE_MANIFEST=yes pushes one platform-neutral manifest)
-    requires:
-      vars: [IMAGE]
-    vars:
-      # SINGLE_MANIFEST is for a harness bundle, which is one artifact rather
-      # than an index (ADR 26-10-16-423 §2). Built for one platform, since its
-      # content is the same on every one, and without the provenance and SBOM
-      # attestations, which buildx would otherwise attach by wrapping even a
-      # single platform's manifest in an index.
-      PLATFORMS: '{{if .SINGLE_MANIFEST}}linux/amd64{{else}}linux/amd64,linux/arm64{{end}}'
-      ATTEST_ARGS: '{{if .SINGLE_MANIFEST}}--provenance=false --sbom=false{{end}}'
-      # A bundle (BUNDLE=yes) is pushed with every file's time clamped to one
-      # epoch, harness.BundleSourceDateEpoch (the image watcher's tests hold
-      # this spelling of it to that constant): a box fetches only the layers its
-      # store lacks (ADR 26-10-16-423 §7), and a fresh checkout's file times
-      # would otherwise make every layer of every release a new one.
-      PUSH_ARGS: '{{if .BUNDLE}}--output type=image,push=true,rewrite-timestamp=true --build-arg SOURCE_DATE_EPOCH=315532800{{else}}--push{{end}}'
-      # The pool agent's image sits at <name>/Dockerfile and builds from the
-      # repository root. The sandbox base image and a harness bundle override
-      # them.
-      DOCKERFILE: '{{.DOCKERFILE | default (printf "%s/Dockerfile" .IMAGE)}}'
-      CONTEXT: '{{.CONTEXT | default "."}}'
-      # A stage, for a Dockerfile whose artifact is not its last: the platform
-      # bundle, after sandbox-agent's builder stages.
-      TARGET_ARG: '{{if .TARGET}}--target {{.TARGET}}{{end}}'
-      BUILD_ARGS: '{{.BUILD_ARGS | default ""}}'
-    cmds:
-      - |
-        set -eu
-        tag="{{.TAG}}"
-        case "$tag" in
-          v*) ;;
-          *) echo "release:image: set RELEASE_TAG=v<version> (or run from a v* tag)" >&2; exit 1 ;;
-        esac
-        if [ -z "{{.REGISTRY}}" ]; then
-          echo "release:image: could not resolve a registry from the origin remote; pass REGISTRY=ghcr.io/<owner>" >&2
-          exit 1
-        fi
-        ref="{{.REGISTRY}}/discobox-{{.IMAGE}}:$tag"
-
-        # dockerworker.DefaultSandboxBaseImage names :latest, so a release that pushes
-        # only the version tag leaves that default unresolvable. Every dot
-        # release moves it, whether or not anyone later marks it stable: :latest
-        # means the newest release, and the CLI pins its own tag anyway, so the
-        # only thing reading :latest is something that asked for no version.
-        # v1.2.3-rc1 still does not move it — an explicit prerelease is not the
-        # newest release, it is one you have to name.
-        tags="-t $ref"
-        if [ -n "{{.DOT_RELEASE}}" ]; then
-          tags="$tags -t {{.REGISTRY}}/discobox-{{.IMAGE}}:latest"
-        else
-          echo "$tag is an explicit prerelease; not moving :latest" >&2
-        fi
-
-        # depot builds each architecture on a native machine, so there is no
-        # per-arch fan-out and no manifest list to assemble (ADR 0066 §6).
-        if command -v depot >/dev/null 2>&1; then
-          depot build --platform {{.PLATFORMS}} {{.ATTEST_ARGS}} -f {{.DOCKERFILE}} {{.TARGET_ARG}} {{.BUILD_ARGS}} $tags {{.PUSH_ARGS}} {{.CONTEXT}}
-        else
-          echo "depot not found; falling back to emulated docker buildx." >&2
-          echo "Both Dockerfiles run their Go stage FROM --platform=\$BUILDPLATFORM, so no Go" >&2
-          echo "compilation is emulated. Only the Debian runtime stages are: slow for" >&2
-          echo "the sandbox base image's and sandbox-agent's apt, Nix, and language runtime installs." >&2
-          # buildx needs both of these for a foreign architecture and says
-          # nothing useful when they are missing.
-          docker run --privileged --rm mirror.gcr.io/tonistiigi/binfmt --install arm64,amd64 >/dev/null
-          go tool task buildx:builder
-          docker buildx build --builder {{.BUILDX_BUILDER}} --platform {{.PLATFORMS}} {{.ATTEST_ARGS}} \
-            -f {{.DOCKERFILE}} {{.TARGET_ARG}} {{.BUILD_ARGS}} $tags {{.PUSH_ARGS}} {{.CONTEXT}}
-        fi
+      - dagger api call images-build {{.CLI_ARGS}} export --path=build/release/oci
 
   vm:build:
-    desc: Build the pool VM's boot artifacts into build/vm (VM_PLATFORM= picks the architecture)
-    # The VM image has its own release line (ADR 0062 §3); this is its build
-    # step, runnable locally so its verification is too.
-    #
-    # It defaults to this machine's architecture, not to a fixed one: the guest
-    # is built for two, and the artifacts a developer wants locally are the
-    # ones their own hypervisor can boot. CI names the platform explicitly.
-    deps:
-      - buildx:builder
-    vars:
-      VM_PLATFORM: '{{.VM_PLATFORM | default (printf "linux/%s" ARCH)}}'
+    desc: Build and verify a guest image in Dagger
     cmds:
-      - rm -rf build/vm
-      - >-
-        docker buildx build --builder {{.BUILDX_BUILDER}}
-        --platform {{.VM_PLATFORM}}
-        --file vm-image/Dockerfile
-        --output type=local,dest=build/vm
-        .
+      - dagger api call vm-build --kind=guest {{.CLI_ARGS}} export --path=build/vm
 
   vm:build-kernel:
-    desc: Build the libkrun guest kernel into build/vm-kernel
-    deps:
-      - buildx:builder
+    desc: Build and verify the libkrun kernel in Dagger
     cmds:
-      - rm -rf build/vm-kernel
-      - >-
-        docker buildx build --builder {{.BUILDX_BUILDER}}
-        --platform linux/amd64
-        --file vm-image/kernel/Dockerfile
-        --output type=local,dest=build/vm-kernel
-        .
+      - dagger api call vm-build --kind=kernel {{.CLI_ARGS}} export --path=build/vm-kernel
 
   vm:verify:
-    desc: Verify the built VM artifacts will actually boot
-    # A guest that publishes a kernel the hypervisor cannot load, or a root
-    # filesystem that will not mount, fails silently: the VM boots to a blank
-    # console. Both are cheap to check here and impossible to diagnose from
-    # inside a VM that never came up.
-    vars:
-      VM_PLATFORM: '{{.VM_PLATFORM | default (printf "linux/%s" ARCH)}}'
+    desc: Build and verify both guest architectures
     cmds:
-      - |
-        set -eu
-        arch="{{.VM_PLATFORM}}"
-        arch="${arch#linux/}"
-        cd build/vm
-        ls -l
-        for artifact in initrd.img root.ext4; do
-          test -s "$artifact" || { echo "missing or empty: $artifact" >&2; exit 1; }
-        done
-        # Only arm64 publishes a kernel. amd64 is booted by libkrun, which needs
-        # the patched kernel from vm-image/kernel and would not load Debian's;
-        # see assemble-guest-image.
-        if [ "$arch" = arm64 ]; then
-          test -s vmlinux || { echo "missing or empty: vmlinux" >&2; exit 1; }
-          # A hypervisor that loads a kernel directly requires an uncompressed
-          # arm64 Image, which carries "ARMd" at offset 0x38.
-          magic=$(dd if=vmlinux bs=1 skip=56 count=4 status=none)
-          test "$magic" = "ARMd" || { echo "vmlinux is not an uncompressed arm64 kernel Image" >&2; exit 1; }
-        else
-          test ! -e vmlinux || { echo "amd64 published a vmlinux; libkrun boots its own kernel" >&2; exit 1; }
-        fi
-        dumpe2fs -h root.ext4 | grep -q "Filesystem volume name:   discobox-root"
-        # The guest's own name. The Debian base image ships /etc/hostname
-        # saying "debuerreotype" and a container never sees it, so this is only
-        # ever wrong in the artifact that boots — the one place nothing looks.
-        hostname=$(debugfs -R "cat /etc/hostname" root.ext4 2>/dev/null | tr -d '\0\r\n ')
-        test "$hostname" = "discobox" || { echo "root.ext4 boots as '$hostname', not discobox" >&2; exit 1; }
-        # One guest for every backend, so the network configuration has to be
-        # the one both can use: passt and Virtualization.framework's NAT both
-        # serve DHCP, and a guest that configured an address by hand would boot
-        # on exactly one of them.
-        network=$(debugfs -R "cat /etc/systemd/network/10-discobox.network" root.ext4 2>/dev/null)
-        echo "$network" | grep -q "DHCP=ipv4" \
-          || { echo "root.ext4 does not take its address from DHCP" >&2; exit 1; }
-        # And it has to match the interface both backends actually present:
-        # virtio-pci is enp0s*, libkrun's virtio-mmio NIC stays eth0.
-        echo "$network" | grep -q "Name=.*en\*.*eth\*" \
-          || { echo "root.ext4 matches only some of the interface names a backend presents" >&2; exit 1; }
-        # systemd-networkd-wait-online is what gives network-online.target a
-        # meaning under networkd, and docker.service orders itself after that
-        # target. Masked, the target is satisfied vacuously and dockerd races
-        # the lease this guest takes its address, route and resolver from. That
-        # failure is worse than getting the address wrong: not dead on one
-        # backend, but intermittent on both.
-        if debugfs -R "stat /etc/systemd/system/systemd-networkd-wait-online.service" root.ext4 2>/dev/null | grep -q "/dev/null"; then
-          echo "systemd-networkd-wait-online.service is masked; dockerd will race the DHCP lease" >&2
-          exit 1
-        fi
-        if ! debugfs -R "ls /etc/systemd/system/network-online.target.wants" root.ext4 2>/dev/null | grep -q "systemd-networkd-wait-online.service"; then
-          echo "systemd-networkd-wait-online.service is not enabled" >&2
-          exit 1
-        fi
-        echo "VM artifacts verified for $arch (hostname $hostname)"
+      - dagger api call vm-check --kind=guest
 
   vm:verify-kernel:
-    desc: Verify the built libkrun kernel is one libkrun can load
+    desc: Build and verify the libkrun kernel
     cmds:
-      - |
-        set -eu
-        cd build/vm-kernel
-        ls -l
-        test -s vmlinux || { echo "missing or empty: vmlinux" >&2; exit 1; }
-        # libkrun loads this with KRUN_KERNEL_FORMAT_ELF, so an ELF header is
-        # the difference between a VM that boots and one that dies with EINVAL.
-        magic=$(dd if=vmlinux bs=4 count=1 status=none | od -An -tx1 | tr -d ' \n')
-        test "$magic" = "7f454c46" || { echo "vmlinux is not an ELF image" >&2; exit 1; }
-        # Docker's iptables-nft frontend needs these built in, not modular:
-        # libkrunfw ships a compact nftables-only kernel and a guest missing
-        # them starts every container with no network rules and no error.
-        # CONFIG_PACKET is the DHCP client's socket family: the guest takes its
-        # address from a lease on every backend (ADR 0101 §2), so a kernel
-        # without it boots a guest that runs dockerd and never gets an address.
-        for required in CONFIG_PACKET=y CONFIG_NFT_COMPAT=y CONFIG_BRIDGE=y CONFIG_VETH=y CONFIG_OVERLAY_FS=y; do
-          grep -qx "$required" kernel.config || { echo "kernel is missing $required" >&2; exit 1; }
-        done
-        echo "kernel verified"
+      - dagger api call vm-check --kind=kernel
 
   vm:publish:
-    desc: Push the multi-architecture VM image for VM_TAG and report the digest to pin
-    deps:
-      - buildx:builder
+    desc: Publish verified guest images
     cmds:
-      - task: vm:push
-        vars:
-          PUSH_IMAGE: discobox-vm
-          PUSH_DOCKERFILE: vm-image/Dockerfile
-          PUSH_PLATFORMS: linux/arm64,linux/amd64
-          PUSH_FILE: server/providers/guestimage/image.go
-          PUSH_CONST: DefaultVMImage
+      - dagger api call vm-publish --kind=guest {{.CLI_ARGS}}
 
   vm:publish-kernel:
-    desc: Push the libkrun guest kernel for VM_TAG and report the digest to pin
-    deps:
-      - buildx:builder
+    desc: Publish the verified libkrun kernel
     cmds:
-      - task: vm:push
-        vars:
-          PUSH_IMAGE: discobox-vm-kernel
-          PUSH_DOCKERFILE: vm-image/kernel/Dockerfile
-          PUSH_PLATFORMS: linux/amd64
-          PUSH_FILE: server/providers/libkrun/provider.go
-          PUSH_CONST: DefaultKernelImage
-
-  vm:push:
-    internal: true
-    requires:
-      vars: [PUSH_IMAGE, PUSH_DOCKERFILE, PUSH_PLATFORMS, PUSH_FILE, PUSH_CONST]
-    cmds:
-      - |
-        set -eu
-        tag="{{.VM_TAG}}"
-        if [ -z "$tag" ]; then
-          # A git tag of vm/v1.2.3 carries a slash, which is not a legal Docker
-          # tag. The prefix scopes each VM artifact's release line in the git
-          # tag namespace; the image tag is the version alone.
-          case "${GITHUB_REF_NAME:-}" in
-            vm/v*) tag="${GITHUB_REF_NAME#vm/}" ;;
-            vm-kernel/v*) tag="${GITHUB_REF_NAME#vm-kernel/}" ;;
-          esac
-        fi
-        case "$tag" in
-          v*) ;;
-          *) echo "vm:publish: set VM_TAG=v<version> (or run from a vm/v* or vm-kernel/v* tag)" >&2; exit 1 ;;
-        esac
-        if [ -z "{{.REGISTRY}}" ]; then
-          echo "vm:publish: could not resolve a registry from the origin remote; pass REGISTRY=ghcr.io/<owner>" >&2
-          exit 1
-        fi
-        ref="{{.REGISTRY}}/{{.PUSH_IMAGE}}:$tag"
-        metadata="build/{{.PUSH_IMAGE}}-push.json"
-        # The publish jobs check out fresh and build nothing locally, so
-        # nothing has made build/ by the time the builder writes its metadata
-        # there. Without this the push itself succeeds and the task still
-        # fails, leaving an image published and no digest reported.
-        mkdir -p "$(dirname "$metadata")"
-
-        # depot builds each architecture on a native machine, so there is no
-        # per-arch fan-out and no manifest list to assemble (ADR 0066 §6). The
-        # buildx fallback emulates, which for a build that runs apt and
-        # mkfs.ext4 over a whole root filesystem is slow rather than broken.
-        if command -v depot >/dev/null 2>&1; then
-          depot build --platform {{.PUSH_PLATFORMS}} \
-            -f {{.PUSH_DOCKERFILE}} -t "$ref" --push \
-            --metadata-file "$metadata" .
-        else
-          echo "depot not found; falling back to emulated docker buildx." >&2
-          docker run --privileged --rm mirror.gcr.io/tonistiigi/binfmt --install arm64,amd64 >/dev/null
-          docker buildx build --builder {{.BUILDX_BUILDER}} \
-            --platform {{.PUSH_PLATFORMS}} \
-            -f {{.PUSH_DOCKERFILE}} -t "$ref" --push \
-            --metadata-file "$metadata" .
-        fi
-        digest="$(jq -r '."containerimage.digest"' "$metadata")"
-
-        # The tag is a convenience; the server pins the digest.
-        report() {
-          echo "### {{.PUSH_IMAGE}} published"
-          echo
-          echo 'Pin this in `{{.PUSH_FILE}}`:'
-          echo
-          echo '```go'
-          echo "const {{.PUSH_CONST}} = \"{{.REGISTRY}}/{{.PUSH_IMAGE}}@$digest\""
-          echo '```'
-        }
-        report
-        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-          report >> "$GITHUB_STEP_SUMMARY"
-        fi
+      - dagger api call vm-publish --kind=kernel {{.CLI_ARGS}}
 
   clean:
     desc: Remove local build artifacts
     cmds:
       - rm -rf build
+
+  ci:
+    desc: Check complete portable CI and export artifacts for native jobs
+    cmds:
+      - dagger check
+      - dagger api call ci-artifacts export --path=build/ci
+
+  release:preview:
+    desc: Rehearse a release without publishing
+    cmds:
+      - dagger api call preview {{.CLI_ARGS}} export --path=build/release/preview
+
+  release:
+    desc: Run the full release pipeline; requires native macOS artifacts
+    cmds:
+      - dagger api call release {{.CLI_ARGS}}
+
+  promote:
+    desc: Explicitly promote a released dot version and update Homebrew
+    cmds:
+      - dagger api call promote {{.CLI_ARGS}}
+
+  images:publish:
+    desc: Publish versioned OCI artifacts
+    cmds:
+      - dagger api call images-publish {{.CLI_ARGS}} contents
+
+  dagger:generate:
+    desc: Regenerate the pipeline's typed SDK bindings
+    cmds:
+      - dagger generate --module=go-sdk -y
+
+  ci:trust:
+    desc: Verify the shipped image's public roots and core provisioning HTTPS trust
+    cmds:
+      - dagger api call trust-check export --path=build/ci/trust.json
+
+  native:macos:
+    desc: Native macOS tests, lint/vet, build, signing and smoke checks
+    platforms: [darwin]
+    cmds:
+      - go run ./internal/cmd/discobox-native-ci -mode check {{.CLI_ARGS}}
+
+  native:macos:build:
+    desc: Native signed macOS artifacts with a source-bound receipt
+    platforms: [darwin]
+    cmds:
+      - go run ./internal/cmd/discobox-native-ci -mode build {{.CLI_ARGS}}
+
+  native:windows:
+    desc: Native Windows workspace tests
+    platforms: [windows]
+    cmds:
+      - go run ./internal/cmd/discobox-native-ci -mode check {{.CLI_ARGS}}
+
+  native:smoke:
+    desc: Execute native CLI/server artifacts from an explicit directory
+    cmds:
+      - go run ./internal/cmd/discobox-native-ci -mode smoke {{.CLI_ARGS}}

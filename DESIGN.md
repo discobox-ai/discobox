@@ -252,108 +252,59 @@ not listed here.
 
 ## Build, Check, and Release
 
-Three layers, and the top one holds no logic (ADR 0066):
+Dagger owns CI and release orchestration (ADR 26-10-26-225).
 
 ```mermaid
 flowchart TD
-    workflows[".github/workflows/<br/>when, on which runner, how artifacts move"]
-    action[".github/actions/task<br/>checkout done, install Nix (Go on Windows),<br/>restore caches, run one target, save caches on main"]
-    taskfile["Taskfile.yml<br/>every step of check, test, build, release"]
-    flake["flake.nix<br/>system tools and environment"]
-
-    workflows --> action --> taskfile --> flake
+    local["Local Dagger CLI"] --> pipeline[".dagger/modules/pipeline<br/>checks, builds, release policy"]
+    actions["GitHub Actions<br/>events and credentials"] --> pipeline
+    taskfile["Taskfile.yml<br/>pipeline shortcuts and host development"] --> pipeline
+    pipeline --> linux["Linux containers<br/>Go, Node, PowerShell, shell tools"]
+    actions --> native["macOS and Windows<br/>native repository commands"]
+    pipeline -->|"portable helper files"| native
+    native -->|"signed Mac artifacts"| artifacts
+    pipeline --> artifacts["Verified files and OCI bundles"]
+    artifacts --> publish["Explicit publication and promotion"]
 ```
 
-- `flake.nix` owns the toolchain. `nix develop` (or direnv via `.envrc`) is the
-  entry point; its `shellHook` exports the `DISCOBOX_*` environment and
-  regenerates CLI completions. `GOTOOLCHAIN=auto` means Nix supplies a bootstrap
-  Go and `go.mod` names the one that compiles. `devShells.libkrun` adds the two
-  things a machine running libkrun pools needs installed — libkrun and passt —
-  and stays out of the default shell because that libkrun build is not in
-  cache.nixos.org; `nix build .#libkrun-runtime` is the same closure for a
-  machine that is not in a dev shell.
-- `Taskfile.yml` owns every step. `go tool task --list` is the index; `task`,
-  `golangci-lint`, and `ogen` are `go tool` dependencies pinned by `go.mod`, not
-  by Nix.
-- `.github/workflows/` decides only *when* a target runs and on which runner.
-  Every job body is one Taskfile target, run by the `.github/actions/task`
-  composite action as `nix develop -c go tool task <target>`, or as plain
-  `go tool task <target>` on Windows. Its Go and golangci-lint caches are keyed
-  by commit and saved only by runs on `main`, so every run starts from the
-  newest `main` rather than from whenever `go.sum` last changed.
+- `.dagger/modules/pipeline` owns the graph, toolchain containers, cache volumes,
+  artifact receipts, and release/channel policy. It reads application modules
+  from `go.work`; its own Go SDK module stays outside that workspace.
+- `dagger check` runs the complete portable `ci` check: Linux tests, static and
+  repository checks, pipeline tests, portable builds, saved-image trust/HTTPS
+  verification and native inputs, plus SDK binding staleness. `ci-artifacts`
+  exposes the checked build outputs for native transport. Release/publication
+  remain explicit pipeline functions. See
+  [the pipeline design](.dagger/modules/pipeline/DESIGN.md).
+- `Taskfile.yml` exposes Dagger operations and retains host development tasks
+  such as `task dev`, native development binaries, and the local image watcher.
+  No Dagger operation calls Task; file-change hooks use the same shortcuts.
+- `.github/workflows` supplies events, source refs, and credentials for Dagger,
+  plus conventional native macOS/Windows jobs. It transfers portable helpers
+  and cross-built Windows executables to native CI and signed macOS artifacts
+  back to Linux release assembly. Native commands are repository-owned and
+  locally runnable. There is no Depot build service or tap dispatch.
 
-Release binaries are built on the platform they target — darwin has to be, since
-`vz` is cgo against Virtualization.framework and its entitlement is applied by
-`codesign` at build time (see
-[`server/providers/vz/DESIGN.md`](server/providers/vz/DESIGN.md)). Windows is the
-exception in both directions: no Nix, so the same action sets up plain Go there
-with `actions/setup-go`, and no cgo, so its binary is cross-compiled from the
-Linux job. The macOS job lints only the packages darwin builds from other files
-than Linux (`scripts/lint-darwin.sh`) and type-checks the rest; the Linux job
-already lints everything. Agent images are
-built once for both architectures by `depot build`, falling back to emulated
-`docker buildx`.
+- `flake.nix` still supplies the host development shell and libkrun runtime.
+  Container check toolchains are owned by the pipeline and pinned by
+  `dagger.lock`; Go tools remain pinned by the application's `go.mod`.
 
-A release passes through three states, and only the first is decided by the tag
-(ADR 0105). Pushing a tag publishes a GitHub **prerelease** and nothing more:
-whether a build turned out to be good is not knowable at push time, so nothing
-at push time claims it.
+Native macOS/Windows commands and artifact boundaries are described in
+[the pipeline design](.dagger/modules/pipeline/DESIGN.md) and
+[the local command guide](docs/dagger.md). Linux builds both Linux architectures
+and cross-compiles both Windows architectures. Native Mac signs final server
+bytes before the CLI embeds their digest. Dagger assembly requires real Mac
+artifacts and matching source-bound verification receipts; a Linux pass alone
+never establishes native coverage.
 
-```mermaid
-flowchart LR
-    tag["push vX.Y.Z<br/>release.yml"] --> pre["GitHub prerelease"]
-    pre --> latest["latest channel<br/>ghcr :latest<br/>brew discobox-dev"]
-    pre -.->|"a human unticks<br/>“Set as a pre-release”"| stable
-    stable["stable channel<br/>brew discobox<br/>winget<br/>discobox.ai installer"]
-    rc["push vX.Y.Z-rc1"] --> only["that tag, and the<br/>installer's edge channel"]
-```
-
-- **`DOT_RELEASE`** — exactly `vMAJOR.MINOR.PATCH` — is the *latest* channel's
-  rule, and the only thing the tag itself decides. A dot release moves ghcr's
-  `:latest` (`dockerworker.DefaultSandboxBaseImage`, what a pool boots when nothing
-  named a version) and the `discobox-dev` formula the moment it is cut. An
-  explicit prerelease tag (`-alpha`, `-beta`, `-rc`) moves neither, deliberately:
-  it is the lowest confidence level — a real release build, signed and pushed,
-  that reaches no brew channel at all and is had by pinning the version or by
-  asking the installer for its `edge` channel.
-- **Stable** is a human clearing the prerelease box on a GitHub release, which
-  runs `promote.yml`. That is the only thing that moves `brew install discobox`
-  (winget is submitted by hand; see below), and `release:require-dot` refuses to
-  promote anything that is not a dot release. It triggers on `released`,
-  `edited`, and `published` and gates
-  on `release.prerelease == false`, because which activity type a checkbox-only
-  edit emits is not something GitHub documents plainly. There is no un-promote —
-  both stable channels are recomputed from the newest blessed release, so
-  backing one out means blessing a different one.
-
-The two package channels are fed in opposite directions, and the difference is
-ownership.
-
-The Homebrew tap is ours, so it **pulls**: `discobox-ai/homebrew-tap` generates
-both formulae from this repository's public releases with
-`scripts/brew-formula.sh` — `discobox` from the newest blessed release,
-`discobox-dev` (`--dev`) from the newest dot release — needing no credential of
-ours to read them and its own `GITHUB_TOKEN` to commit. They are two formulae
-rather than one because Homebrew will not link two that install the same file,
-and holding both at once is the point; `discobox-dev` installs its command under
-that name, and the CLI reads which one it is off `argv[0]`. `brew:refresh` is
-one dispatch that recomputes both, and is the only thing that starts the tap.
-The tap deliberately has no cron: a backstop that covers for a broken release
-step is a backstop that stops anyone noticing the step is broken. So a release
-that cannot reach the tap fails rather than quietly leaving `brew install` a
-version behind. `brew:publish -- [--dev] TAG` remains
-the by-hand override for a tag the tap's own rule will not take.
-
-winget cannot be inverted, because `microsoft/winget-pkgs` is not ours and
-nothing there can pull from us. So `winget:publish` **pushes**: it opens a pull
-request from a fork, which is not something `GITHUB_TOKEN` can do, and ends
-there — a validation pipeline and a moderator decide the rest. It runs by hand
-only: `promote.yml` has no `winget` job while the first submission waits on a
-CLA signature and a moderator, because resubmitting per release re-queues the
-package rather than queueing the versions. Both cross-repo steps therefore hold
-a token, and both are scoped to the least each needs: the tap's may only start
-a workflow already defined there, and winget's may only write public
-repositories as the submitting account.
+A published product release is a GitHub prerelease (ADR 0105). A dot version
+also advances the registry's `latest` aliases and Homebrew's `discobox-dev`;
+explicit semver prereleases advance neither. Stable promotion is a separate
+explicit operation on a dot release. Homebrew recomputes both channels from
+published releases and commits directly to the tap, requiring a tap contents
+credential. No other repository's workflow is dispatched. winget submission
+remains a manual function that opens or updates a pull request; promotion does
+not call it. VM guest and kernel artifacts keep independent release lines.
 
 Release assets are also mirrored at `assets.discobox.ai`, a Cloudflare Worker
 caching them in R2 on first request — a short, CORS-enabled, range-capable URL
@@ -378,7 +329,7 @@ old alpha once every newer release is blessed — so the one consumer of the
 aliases, the installer's site below, never takes `prerelease` alone.
 
 Every release also uploads `install.sh` and `install.ps1`, stamped by
-`release:installers` with the tag and the SHA-256 of each CLI binary beside
+Dagger release assembly with the tag and the SHA-256 of each CLI binary beside
 them (ADR 0110; see [`pkg/installer/DESIGN.md`](pkg/installer/DESIGN.md)). A stamped
 installer installs its own release. Asked for a version, or for a channel —
 `stable`, `latest`, or `edge`, the newest release of any shape — it hands over
@@ -390,7 +341,7 @@ the newer of the two aliases' releases.
 
 Windows is the one platform whose asset is an archive rather than a bare binary.
 winget resolves a portable package's command from the file name whenever it
-cannot create a symlink, so `release:windows-zip` repackages the same binary as
+cannot create a symlink, so Dagger release assembly repackages the same binary as
 `discobox.exe` and uploads it alongside the rest.
 
 There is one container image, the Docker driver's sandbox base image, and
@@ -433,9 +384,10 @@ file change, including the initial build. The inputs themselves are discovered
 again every few seconds, not only at startup, so a file added to a package an
 image builds is watched without restarting the loop.
 
-Dockerfile verification reuses the Taskfile build recipes with test-only tags,
-so checking a Dockerfile cannot move the watcher-owned `:local` tags underneath
-a running development server.
+Dagger owns static Dockerfile input/import verification and portable image
+builds; host development test-build shortcuts retain test-only tags. Neither
+verification path moves the watcher-owned `:local` tags underneath a running
+development server.
 
 In local-build mode (the Linux default), the watcher exports OCI bundles with
 the host daemon's own builder when the daemon keeps images in containerd's

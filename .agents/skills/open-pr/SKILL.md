@@ -199,8 +199,10 @@ Arm a Monitor that polls `gh pr checks` (one `discobox-access run` per poll,
 every 60s) and exits when no check is in bucket `pending`, and keep working
 while it runs. CI takes about seven minutes.
 
-- **Green** — every check is `pass` or `skipping`, and CI's six jobs (`check`,
-  `test`, `verify`, `build`, `darwin`, `windows`) are among them. Path-filtered
+- **Green** — every check is `pass` or `skipping`, and CI's `pipeline` job is
+  among them, together with `native-macos` and `native-windows`. Native jobs
+  execute repository commands on those operating systems; a green Linux graph
+  alone does not verify them. Path-filtered
   workflows (`vm-image`, `vm-kernel`) appear only when their paths changed.
 - **`cancel`** — CI cancels a PR's run when a newer push supersedes it. A
   cancelled check on an older commit is not a failure; one on the head commit

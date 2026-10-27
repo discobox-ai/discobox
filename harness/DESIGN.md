@@ -476,7 +476,7 @@ coding harnesses; shell carries no capture implementation.
   `harness.BundleRef`, never as a literal, as `PlatformBundleRef` names the
   platform bundle. One `BundleRegistry`/`BundleTag` pair backs every one,
   unset and `local` by default and overwritten at link time by a release
-  (`Taskfile.yml`'s `release:binary`), so the built-in harnesses a binary seeds
+  (Dagger's `ReleaseBuild`), so the built-in harnesses a binary seeds
   are the bundles that shipped with it. One pair rather than a reference per
   bundle: a release publishes them together, and independent references could
   disagree about which release a sandbox is running.

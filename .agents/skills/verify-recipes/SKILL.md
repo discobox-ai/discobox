@@ -1109,8 +1109,10 @@ agent, runs `provision identity`, enrolls the key, and runs `provision apply`.
   identity directory is a host bind mount): the recreated box re-enrolls the
   same key. Delete a test pool with `d admin pool rm <id>`.
 - The release manifest: `./build/discobox-server manifest` refuses in a dev
-  build (its `:latest` defaults); render the release link with `RELEASE_TAG=v9.9.9
-  go tool task release:binary TARGET_OS=linux TARGET_ARCH=amd64
-  REGISTRY=ghcr.io/example RELEASE_REPO=example/discobox --dry` and run its
-  `go run -ldflags=... ./server/cmd/discobox-server manifest`. Never run
+  build (its `:latest` defaults). In a Linux amd64 discobox, build a real
+  nonpublishing fixture with `dagger api call --repository=example/discobox
+  release-build --version=v9.9.9 --target-os=linux --target-arch=amd64 export
+  --path=build/release/bin`, then run
+  `./build/release/bin/discobox-server-linux-amd64 manifest`. Its image and
+  bundle references must use `ghcr.io/example` and `v9.9.9`. Never run
   `discobox-server` with any other argument to "try" a flag: it starts a server.
