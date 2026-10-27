@@ -207,7 +207,7 @@ func (m *Pipeline) Release(ctx context.Context, version, username string, native
 	if err := m.publishable(ctx, version, token); err != nil {
 		return "", err
 	}
-	if _, err := m.Ci(ctx); err != nil {
+	if err := m.Ci(ctx); err != nil {
 		return "", err
 	}
 	// Ci builds untagged smoke artifacts. Release builds carry the actual version.

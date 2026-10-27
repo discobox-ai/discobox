@@ -19,16 +19,23 @@ the same pinned CLI, then runs the commands below.
 ```sh
 dagger check --list
 dagger check
-dagger api call ci export --path=build/ci
+dagger api call ci-artifacts export --path=build/ci
 ```
 
-`dagger check` covers workspace Go tests, lint across all workspace modules,
-Windows cross-typechecking, cross-platform deadcode, shellcheck, Dockerfile
-source/import coverage, formatting, standalone module tidy, all Go generators,
-Mermaid, pipeline unit tests, and SDK binding staleness. `ci` additionally
-builds the Linux and Windows release binaries for amd64 and arm64 and exports
-native command plans and revision-bound helper inputs. Application modules are read from `go.work`, so adding
-one does not require editing a duplicated pipeline list.
+`dagger check` runs the registered `pipeline/ci` check: workspace Go tests,
+lint across all workspace modules, Windows cross-typechecking, cross-platform
+deadcode, shellcheck, Dockerfile source/import coverage, formatting, standalone
+module tidy, Go/Node generators, Mermaid, pipeline unit tests, Linux/Windows
+release binaries for amd64/arm64, image trust/HTTPS validation, and revision-bound
+native helper inputs. The Go SDK's generated-binding staleness check also runs.
+Component functions remain available for focused runs; they are not separately
+registered checks, so automatic Cloud Checks gets the same complete CI graph.
+
+`ci-artifacts` exposes the portable outputs for export and native-job transport.
+It materializes builds and trust validation but does not substitute for the full
+`ci` check's tests/lint/verification. Actions runs `dagger check` before exporting
+these artifacts. Modules are read from `go.work`, so adding one does not require
+editing a duplicated pipeline list.
 
 Useful individual entry points:
 
@@ -72,15 +79,17 @@ macOS/Windows jobs still run directly on their own runners and receive neither
 the Cloud token setting nor permission to mint OIDC tokens.
 
 Fork and Dependabot PRs explicitly run the same graph on a local engine, with
-Cloud authentication disabled. Actions still owns event triggers. Automatic
-Dagger Cloud Checks are not enabled.
+Cloud authentication disabled. Actions invokes the same complete check before transporting native inputs.
+Cloud Checks, when enabled for the repository, discovers this check and can run
+it directly without an Actions runner. Release, preview, promotion and
+publication remain explicit pipeline functions and are never registered checks.
 
 Local execution remains the default. To use the same Cloud organization locally:
 
 ```sh
 dagger cloud login
 dagger --engine=cloud check
-dagger --engine=cloud api call ci export --path=build/ci
+dagger --engine=cloud api call ci-artifacts export --path=build/ci
 ```
 
 GitHub OIDC is available only inside Actions. Local/headless clients need their
@@ -242,7 +251,7 @@ operations to Dagger, records same-source comparisons and isolated publication
 tests, and records the original stubbed snapshot separately from later native integration.
 
 The image trust path is checked with `go tool task ci:trust` (also part of
-`ci`). It builds the existing base and platform Dockerfiles, runs core's
+`dagger check`). It builds the existing base and platform Dockerfiles, runs core's
 existing certificate-store script, verifies the saved certificates match the
 image's own distro inputs exactly, and tests runtime CA addition with real
 HTTPS. Results are exported as `build/ci/trust.json`. No host/toolchain CA
