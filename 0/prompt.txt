@@ -1,0 +1,1 @@
+no, discobox attach will attach to any server I believe. Can you file an issue for this transfer issue about the harness id.
