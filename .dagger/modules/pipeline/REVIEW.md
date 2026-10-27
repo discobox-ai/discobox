@@ -13,3 +13,9 @@
   image can temporarily inject builder CAs and hide missing or contaminated
   exported roots. Compare certificate DER against that image's enabled distro
   certificates, rather than subjects, fixed counts, or another image's bundle.
+- Dagger event adapters must check out full history (`fetch-depth: 0`). The beta
+  workspace Git importer cannot reconstruct a shallow PR merge checkout whose
+  parent objects are missing; VM checks failed before starting their builds.
+- Verify downloaded toolchain executables against committed digests before
+  executing them. A version argument to a mutable installer does not pin the
+  installer, and toolchain containers later receive publication credentials.
