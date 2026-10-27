@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bvnwztf17</task-id>
+<tool-use-id>toolu_011odHBPrWUxBV4NMegkqg58</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/b04ef5e6-0a67-4f98-b27c-d31bb0891fc9/tasks/bvnwztf17.output</output-file>
+<status>completed</status>
+<summary>Background command "gh run watch 37855156631 --repo discobox-ai/discobox --exit-status --interval 30 &gt; /tmp/claude-1002/-home-darren-src-disco2/b04ef5e6-0a67-4f98-b27c-d31bb0891fc9/scratchpad/watch.log 2&gt;&amp;1; echo exit=$?; tail -15 /tmp/claude-1002/-home-darren-src-disco2/b04ef5e6-0a67-4f98-b27c-d31bb0891fc9/scratchpad/watch.log" completed (exit code 0)</summary>
+</task-notification>
