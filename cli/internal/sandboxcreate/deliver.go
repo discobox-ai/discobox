@@ -18,6 +18,7 @@ import (
 // sourceDeliveryClient is the control-plane surface a push needs: the phase to
 // wait on, and the call that reports the push complete.
 type sourceDeliveryClient interface {
+	PullSandboxSource(context.Context, *apimodel.PullSandboxSourceBody, apiclientgen.PullSandboxSourceParams) (apiclientgen.PullSandboxSourceRes, error)
 	GetSandbox(context.Context, apiclientgen.GetSandboxParams) (apiclientgen.GetSandboxRes, error)
 	// GetPool is what Status needs to say more than "waiting for a pool to
 	// take it" for the stretch of the wait that is exactly that.
@@ -114,7 +115,7 @@ func sourceAwaitsDelivery(source apimodel.GitSource, awaiting bool) bool {
 //
 // It is a no-op unless the server expects a delivery, so callers can invoke it
 // unconditionally after create.
-func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID string, sandbox *apimodel.Sandbox, local *LocalSources, serverURL, token string, report Report) error {
+func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID string, sandbox *apimodel.Sandbox, local *LocalSources, serverURL, token string, report Report, options DeliveryOptions) error {
 	pending := pushDeliveredSources(sandbox)
 	if len(pending) == 0 {
 		return nil
@@ -140,7 +141,7 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 	// One step for the delivery as a whole rather than one per repository: a
 	// sandbox cut from several sources delivers them together, and naming
 	// each would be a line that changes faster than it can be read.
-	report.step(StepPushingSource)
+	report.step(StepDeliveringSource)
 	// Deliveries run together, and a frontend's line is not theirs to write
 	// to at once.
 	var reporting sync.Mutex
@@ -149,7 +150,8 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 		defer reporting.Unlock()
 		report.step(step)
 	})
-	cache := cacheDelivery{client: client, serverURL: serverURL, projectID: projectID, sandboxID: sandbox.ID, token: token, report: serialized}
+	var credentialUI sync.Mutex
+	cache := cacheDelivery{credentialUI: &credentialUI, client: client, serverURL: serverURL, projectID: projectID, sandboxID: sandbox.ID, token: token, report: serialized, options: options}
 	pushed := make(apiclientgen.CompleteSandboxSourcePushBodySources, len(pending))
 	// Sources delivered into a cache go all at once: each is its own
 	// namespace, in its own cache or the same one, and nothing orders them.
@@ -176,6 +178,7 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 		if err != nil {
 			return err
 		}
+		serialized.step(StepPushingSource)
 		leaseRef := sandboxgit.OriginLeaseRef(sandbox.ID, slug, pushBranch(branch))
 		if err := pushSource(ctx, repoRoot, originURL, token, leaseRef, commit, branch, snapshotRef); err != nil {
 			// Another client can be delivering this discobox at the same time:

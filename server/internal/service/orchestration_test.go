@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
+
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/pkg/platform"
@@ -887,4 +889,8 @@ func (noopSandboxProvider) ExportTree(context.Context, sandboxes.SandboxRef, str
 
 func (noopSandboxProvider) ImportTree(_ context.Context, _ sandboxes.SandboxRef, poolID string, _ platform.Platform, _ io.Reader) (string, error) {
 	return poolID, nil
+}
+
+func (noopSandboxProvider) PullSource(context.Context, sandboxes.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
+	panic("unexpected source pull")
 }

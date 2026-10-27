@@ -81,7 +81,7 @@ type delivery struct {
 // delivery runs on the context of the attach that started it. A create's own
 // delivery is not joined here; one overlapping it is DeliverSource's to
 // tolerate.
-func (a *App) deliverBeforeAttach(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string, report func(string)) error {
+func (a *App) deliverBeforeAttach(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string, report func(string), options sandboxcreate.DeliveryOptions) error {
 	a.pushMu.Lock()
 	if running := a.deliveries[sandboxID]; running != nil {
 		a.pushMu.Unlock()
@@ -102,7 +102,7 @@ func (a *App) deliverBeforeAttach(ctx context.Context, client *apiclientgen.Clie
 	a.deliveries[sandboxID] = running
 	a.pushMu.Unlock()
 
-	running.err = a.deliverOwedSource(ctx, client, projectID, sandboxID, report)
+	running.err = a.deliverOwedSource(ctx, client, projectID, sandboxID, report, options)
 	a.pushMu.Lock()
 	delete(a.deliveries, sandboxID)
 	a.pushMu.Unlock()
@@ -114,7 +114,7 @@ func (a *App) deliverBeforeAttach(ctx context.Context, client *apiclientgen.Clie
 // Another client delivering the same discobox at the same moment is
 // DeliverSource's to tolerate (ADR 26-09-24-005 §3), for this delivery and the create's
 // alike.
-func (a *App) deliverOwedSource(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string, report func(string)) error {
+func (a *App) deliverOwedSource(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string, report func(string), options sandboxcreate.DeliveryOptions) error {
 	sandbox, err := getSandbox(ctx, client, projectID, sandboxID)
 	if err != nil {
 		return err
@@ -135,7 +135,7 @@ func (a *App) deliverOwedSource(ctx context.Context, client *apiclientgen.Client
 			report(string(step))
 		}
 	}
-	_, err = a.deliverParkedSource(ctx, client, projectID, sandbox, sandboxcreate.PendingSourcePushes(sandbox), hostID, gitServerURL, nil, step)
+	_, err = a.deliverParkedSource(ctx, client, projectID, sandbox, sandboxcreate.PendingSourcePushes(sandbox), hostID, gitServerURL, nil, step, options)
 	if err == nil || errors.Is(err, context.Canceled) {
 		return err
 	}

@@ -2549,3 +2549,21 @@ func TestTheRemovedCloneFlagSaysWhereTheSourceWent(t *testing.T) {
 		t.Fatalf("an unrelated unknown flag was hinted at: %v", hinted)
 	}
 }
+
+func TestDebugNeverReadsLentGitCredentials(t *testing.T) {
+	var log bytes.Buffer
+	const body = `{"username":"reader","password":"never-log-this"}`
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "https://server/projects/p/sandboxes/s/sources/primary/pull", strings.NewReader(body))
+	original := req.Body
+	got, err := logRequestBody(&log, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Body != original || strings.Contains(log.String(), "never-log-this") || strings.Contains(log.String(), "reader") {
+		t.Fatal("debug read or rendered a lent credential")
+	}
+	sent, err := io.ReadAll(got.Body)
+	if err != nil || string(sent) != body {
+		t.Fatalf("redaction changed request body: %v", err)
+	}
+}

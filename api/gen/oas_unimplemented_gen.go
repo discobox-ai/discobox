@@ -1211,6 +1211,16 @@ func (UnimplementedHandler) ProposeSandboxRule(ctx context.Context, req *JudgePr
 	return r, ht.ErrNotImplemented
 }
 
+// PullSandboxSource implements pull-sandbox-source operation.
+//
+// Lend credentials for one HTTPS pull of the recorded source. Credentials are used inside this
+// request and never persisted. Sandbox callers cannot lend credentials.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/pull
+func (UnimplementedHandler) PullSandboxSource(ctx context.Context, req *PullSandboxSourceBody, params PullSandboxSourceParams) (r PullSandboxSourceRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // PurgeSandbox implements purge-sandbox operation.
 //
 // Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the

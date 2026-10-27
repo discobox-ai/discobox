@@ -203,8 +203,10 @@ sandbox create requests.
   own repository. Each local source's delivered commit is recorded as the
   origin lease ref a later `discobox push` leases against
   ([ADR 0058](../../../docs/adr/0058-a-push-delivered-source-has-a-pool-side-origin.md)
-  §6), and completion is reported only once every source has landed, since
-  that report starts the sandbox. It is a no-op when nothing awaits delivery,
+  §6). Completion may cover a subset of sources; the server resumes only
+  when every source has arrived. `sourcepull.go` waits for a pool's anonymous
+  pull when the client lacks the commit, and optionally lends a credential
+  with `DeliveryOptions` consent (ADR 26-10-23-948). It is a no-op when nothing awaits delivery,
   so callers invoke it unconditionally. See the CLI design doc's "Origin and
   Source Delivery".
 - Delivery is also reachable from outside a create: `PendingSourcePushes`,
@@ -262,6 +264,9 @@ sandbox create requests.
   ([ADR 0060](../../../docs/adr/0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md)).
   The words are `Step` constants here so the two frontends cannot describe one
   stage differently; where the line is drawn and when it is cleared is theirs.
+- Delivery preparation does not claim a push occurred. Actual client transfers
+  say "client fetching" or "client pushing"; recorded `fetching_source` says
+  "pool fetching", and `materializing_source` says "sandbox checking out".
 - Not every line is a step this client takes. `ProvisionStatus` renders what the
   pool agent recorded on the discobox — a phase, for a pull its byte and
   layer counts, and for a source's clone the source and git's counts — ignoring

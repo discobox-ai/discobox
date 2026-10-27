@@ -397,7 +397,7 @@ func requiredPoolOperationScope(operation workerapi.OperationName) string {
 	switch operation {
 	case workerapi.PoolListSandboxesOperation, workerapi.PoolGetSandboxOperation:
 		return ScopeSandboxRead
-	case workerapi.PoolCreateSandboxOperation,
+	case workerapi.PoolPullSandboxSourceOperation, workerapi.PoolCreateSandboxOperation,
 		workerapi.PoolUpdateSandboxOperation,
 		workerapi.PoolArchiveSandboxOperation,
 		workerapi.PoolDeleteSandboxOperation,

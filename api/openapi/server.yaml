@@ -437,6 +437,16 @@ components:
                 - hostId
                 - hostPath
             type: object
+        PullSandboxSourceBody:
+            additionalProperties: false
+            type: object
+            required: [username, password]
+            properties:
+                username:
+                    type: string
+                password:
+                    type: string
+                    writeOnly: true
         CompleteSandboxSourcePushBody:
             additionalProperties: false
             properties:
@@ -453,7 +463,7 @@ components:
                         minLength: 40
                         pattern: ^[0-9a-f]{40}$
                         type: string
-                    description: Commit the client pushed for each push-delivered source, keyed by source slug. Every push-delivered source of the sandbox must appear, and each commit confirms that source's checkout commit, which was fixed at create; a missing source or a commit that does not match is rejected. The sandbox resumes once all of them are delivered.
+                    description: Commit the client pushed for each push-delivered source, keyed by source slug. Each reported commit confirms that source's checkout commit, which was fixed at create; a commit that does not match is rejected. Reports may cover a subset of sources. The sandbox resumes once all of them are delivered.
                     type: object
             required:
                 - sources
@@ -4561,9 +4571,28 @@ components:
             required:
                 - available
             type: object
+        SourceDelivery:
+            additionalProperties: false
+            type: object
+            required: [status]
+            properties:
+                status:
+                    type: string
+                    description: delivered, needs_credential, missing_commit, or unreachable.
+                protocol:
+                    type: string
+                host:
+                    type: string
+                path:
+                    type: string
         SandboxRuntime:
             additionalProperties: false
             properties:
+                sourceDeliveries:
+                    type: object
+                    additionalProperties:
+                        $ref: '#/components/schemas/SourceDelivery'
+
                 agentStatus:
                     additionalProperties: true
                     description: Latest sandbox-agent-reported git/session/connection status, pushed periodically by the hosting pool-agent
@@ -7062,12 +7091,13 @@ components:
                 What a provisioning sandbox is being made to do right now, named for a client that
                 is waiting to attach and wants to know what it is waiting for. It is an
                 observation and never a state: it decides nothing, and it is history the moment the
-                phase ends. pulling_image carries pull byte counts and materializing_source the clone
-                of the source it is materializing; the rest are named work with no denominator to
-                report.
+                phase ends. pulling_image carries image byte counts. fetching_source reports the
+                pool fetching a remote into its cache; materializing_source reports the sandbox
+                checking out a source. Both Git phases carry clone progress.
             enum:
                 - pulling_image
                 - preparing_volumes
+                - fetching_source
                 - materializing_source
                 - creating_container
                 - starting_container
@@ -7079,7 +7109,7 @@ components:
                 Work underway on a sandbox that has no state transition to announce it, reported by
                 the hosting pool-agent. A client waiting to attach reads this to say what
                 it is waiting for. The phase always says what is happening; pull and clone refine the
-                two phases that can report how far in they are, because an image pull and a clone of
+                phases that can report how far in they are, because an image pull and a clone of
                 a large remote are the longest things an attach waits behind. The pool restates
                 materializing_source with each read of the clone, so the phase stays fresh for the
                 whole of a long one.
@@ -7096,9 +7126,9 @@ components:
         SandboxCloneProgress:
             additionalProperties: false
             description: |-
-                The source a materializing_source phase is cloning, and how far the clone has got. The
-                sandbox clones its own sources, so the counts are the sandbox agent's, read by the pool
-                while it waits on them. Only source is certain: a sandbox whose agent predates
+                Git transfer progress: fetching_source carries the pool fetch counts, while
+                materializing_source carries the sandbox clone counts read by the pool.
+                Only source is certain: a sandbox whose agent predates
                 reporting clone progress, or a clone git has said nothing about yet, has no stage.
             properties:
                 source:
@@ -7219,6 +7249,7 @@ components:
             enum:
                 - pulling_image
                 - preparing_volumes
+                - fetching_source
                 - materializing_source
                 - creating_container
                 - starting_container
@@ -7276,7 +7307,7 @@ components:
             type: object
         PoolSandboxCloneProgress:
             additionalProperties: false
-            description: The agent-facing twin of SandboxCloneProgress, refining materializing_source with the source being cloned and how far the sandbox's clone of it has got.
+            description: The agent-facing twin of SandboxCloneProgress, refining fetching_source or materializing_source with Git transfer progress.
             properties:
                 source:
                     description: What is being cloned, for a person to read - a remote's host and path, or a local checkout's directory name
@@ -10889,6 +10920,53 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Complete a sandbox source push
+            tags:
+                - Sandboxes
+    /projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/pull:
+        post:
+            operationId: pull-sandbox-source
+            description: Lend credentials for one HTTPS pull of the recorded source. Credentials are used inside this request and never persisted. Sandbox callers cannot lend credentials.
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Sandbox ID
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox ID
+                    type: string
+                - in: path
+                  name: slug
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/PullSandboxSourceBody'
+                required: true
+            responses:
+                202:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Sandbox'
+                    description: Accepted
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Pull one sandbox source
             tags:
                 - Sandboxes
     /projects/{projectId}/sandboxes/{sandboxId}/restart:

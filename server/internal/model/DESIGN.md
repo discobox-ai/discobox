@@ -5,6 +5,11 @@ GORM persistence tags plus JSON, `doc`, and `enum` tags; the API layer converts
 them to the generated contract types by JSON round-trip (`services.Convert`).
 Public REST API schema types live under the root `api/model` package.
 
+A sandbox records source delivery outside its manifest: `SourceDeliveries` is
+an additive nullable JSON column keyed by source slug, and `SourceDeliveredAt`
+records completion of the last source. Earlier sandboxes retain their existing
+completion timestamp and require no backfill (ADR 26-10-23-948).
+
 ## Core Entities
 
 | Entity | Description |

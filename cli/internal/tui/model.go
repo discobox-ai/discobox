@@ -2494,14 +2494,17 @@ var interactions = map[string]Interaction{
 // leave is whether the window closes on the answer rather than reporting it;
 // only archiveWorkspace asks for that.
 func (m *Model) runVerb(verb Verb, ids []string, leave bool) tea.Cmd {
+	feed, next := m.narrate()
 	m.busy = string(verb) + "…"
-	return func() tea.Msg {
+	run := func() tea.Msg {
+		defer feed.close()
 		errs := make([]error, len(ids))
 		for i, id := range ids {
-			errs[i] = m.ds.Do(m.ctx, verb, id)
+			errs[i] = m.ds.Do(m.ctx, verb, id, feed.credentials())
 		}
 		return verbDoneMsg{verb: verb, ids: ids, errs: errs, leave: leave}
 	}
+	return tea.Batch(run, next)
 }
 
 // archiveWorkspace archives the discobox whose workspace is open, leaving the
@@ -3222,7 +3225,9 @@ func (m *Model) create(req RunRequest) tea.Cmd {
 		defer close(accepted)
 		// Run calls accepted on this goroutine, so the flag needs no lock.
 		var taken bool
-		sandbox, err := m.ds.Run(m.ctx, req, feed.report, feed.warn, func() {
+		deliveryRequest := req
+		deliveryRequest.Credentials = feed.credentials()
+		sandbox, err := m.ds.Run(m.ctx, deliveryRequest, feed.report, feed.warn, func() {
 			taken = true
 			select {
 			case accepted <- struct{}{}:

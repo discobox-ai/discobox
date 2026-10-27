@@ -840,6 +840,13 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge/proposal
 	ProposeSandboxRule(ctx context.Context, req *JudgeProposalJob, params ProposeSandboxRuleParams) (ProposeSandboxRuleRes, error)
+	// PullSandboxSource implements pull-sandbox-source operation.
+	//
+	// Lend credentials for one HTTPS pull of the recorded source. Credentials are used inside this
+	// request and never persisted. Sandbox callers cannot lend credentials.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/sources/{slug}/pull
+	PullSandboxSource(ctx context.Context, req *PullSandboxSourceBody, params PullSandboxSourceParams) (PullSandboxSourceRes, error)
 	// PurgeSandbox implements purge-sandbox operation.
 	//
 	// Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the

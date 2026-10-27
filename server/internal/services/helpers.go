@@ -379,6 +379,9 @@ func SandboxToAPI(sandbox *model.Sandbox, basis SandboxUpgradeBasis) (serverapi.
 	if sandbox.StateReportedAt != nil {
 		runtime["stateReportedAt"] = *sandbox.StateReportedAt
 	}
+	if len(sandbox.SourceDeliveries) > 0 {
+		runtime["sourceDeliveries"] = sandbox.SourceDeliveries
+	}
 	if sandbox.SourceDeliveredAt != nil {
 		runtime["sourceDeliveredAt"] = *sandbox.SourceDeliveredAt
 	}

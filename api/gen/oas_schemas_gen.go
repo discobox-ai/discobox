@@ -1313,10 +1313,10 @@ func (s *CompleteSandboxApplyBody) SetSlug(val string) {
 type CompleteSandboxSourcePushBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Commit the client pushed for each push-delivered source, keyed by source slug. Every
-	// push-delivered source of the sandbox must appear, and each commit confirms that source's checkout
-	// commit, which was fixed at create; a missing source or a commit that does not match is rejected.
-	// The sandbox resumes once all of them are delivered.
+	// Commit the client pushed for each push-delivered source, keyed by source slug. Each reported
+	// commit confirms that source's checkout commit, which was fixed at create; a commit that does not
+	// match is rejected. Reports may cover a subset of sources. The sandbox resumes once all of them are
+	// delivered.
 	Sources CompleteSandboxSourcePushBodySources `json:"sources"`
 }
 
@@ -1340,10 +1340,10 @@ func (s *CompleteSandboxSourcePushBody) SetSources(val CompleteSandboxSourcePush
 	s.Sources = val
 }
 
-// Commit the client pushed for each push-delivered source, keyed by source slug. Every
-// push-delivered source of the sandbox must appear, and each commit confirms that source's checkout
-// commit, which was fixed at create; a missing source or a commit that does not match is rejected.
-// The sandbox resumes once all of them are delivered.
+// Commit the client pushed for each push-delivered source, keyed by source slug. Each reported
+// commit confirms that source's checkout commit, which was fixed at create; a commit that does not
+// match is rejected. Reports may cover a subset of sources. The sandbox resumes once all of them are
+// delivered.
 type CompleteSandboxSourcePushBodySources map[string]string
 
 func (s *CompleteSandboxSourcePushBodySources) init() CompleteSandboxSourcePushBodySources {
@@ -4218,6 +4218,7 @@ func (*ErrorModelStatusCode) listTrustRequestsRes()                {}
 func (*ErrorModelStatusCode) mintSandboxAgentStatusTokensRes()     {}
 func (*ErrorModelStatusCode) proposeApprovalRuleFromGrantRes()     {}
 func (*ErrorModelStatusCode) proposeApprovalRulesRes()             {}
+func (*ErrorModelStatusCode) pullSandboxSourceRes()                {}
 func (*ErrorModelStatusCode) purgeSandboxRes()                     {}
 func (*ErrorModelStatusCode) putProjectGatewayRes()                {}
 func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
@@ -16565,6 +16566,52 @@ func (o OptSandboxRuntimeRuntimeState) Or(d SandboxRuntimeRuntimeState) SandboxR
 	return d
 }
 
+// NewOptSandboxRuntimeSourceDeliveries returns new OptSandboxRuntimeSourceDeliveries with value set to v.
+func NewOptSandboxRuntimeSourceDeliveries(v SandboxRuntimeSourceDeliveries) OptSandboxRuntimeSourceDeliveries {
+	return OptSandboxRuntimeSourceDeliveries{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxRuntimeSourceDeliveries is optional SandboxRuntimeSourceDeliveries.
+type OptSandboxRuntimeSourceDeliveries struct {
+	Value SandboxRuntimeSourceDeliveries
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxRuntimeSourceDeliveries was set.
+func (o OptSandboxRuntimeSourceDeliveries) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxRuntimeSourceDeliveries) Reset() {
+	var v SandboxRuntimeSourceDeliveries
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxRuntimeSourceDeliveries) SetTo(v SandboxRuntimeSourceDeliveries) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxRuntimeSourceDeliveries) Get() (v SandboxRuntimeSourceDeliveries, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxRuntimeSourceDeliveries) Or(d SandboxRuntimeSourceDeliveries) SandboxRuntimeSourceDeliveries {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxSourceProjectLayerProjectLayer returns new OptSandboxSourceProjectLayerProjectLayer with value set to v.
 func NewOptSandboxSourceProjectLayerProjectLayer(v SandboxSourceProjectLayerProjectLayer) OptSandboxSourceProjectLayerProjectLayer {
 	return OptSandboxSourceProjectLayerProjectLayer{
@@ -19361,8 +19408,8 @@ func (s *PoolResources) init() PoolResources {
 	return m
 }
 
-// The agent-facing twin of SandboxCloneProgress, refining materializing_source with the source being
-// cloned and how far the sandbox's clone of it has got.
+// The agent-facing twin of SandboxCloneProgress, refining fetching_source or materializing_source
+// with Git transfer progress.
 // Ref: #/components/schemas/PoolSandboxCloneProgress
 type PoolSandboxCloneProgress struct {
 	// What is being cloned, for a person to read - a remote's host and path, or a local checkout's
@@ -19488,6 +19535,7 @@ type PoolSandboxProvisionPhase string
 const (
 	PoolSandboxProvisionPhasePullingImage        PoolSandboxProvisionPhase = "pulling_image"
 	PoolSandboxProvisionPhasePreparingVolumes    PoolSandboxProvisionPhase = "preparing_volumes"
+	PoolSandboxProvisionPhaseFetchingSource      PoolSandboxProvisionPhase = "fetching_source"
 	PoolSandboxProvisionPhaseMaterializingSource PoolSandboxProvisionPhase = "materializing_source"
 	PoolSandboxProvisionPhaseCreatingContainer   PoolSandboxProvisionPhase = "creating_container"
 	PoolSandboxProvisionPhaseStartingContainer   PoolSandboxProvisionPhase = "starting_container"
@@ -19499,6 +19547,7 @@ func (PoolSandboxProvisionPhase) AllValues() []PoolSandboxProvisionPhase {
 	return []PoolSandboxProvisionPhase{
 		PoolSandboxProvisionPhasePullingImage,
 		PoolSandboxProvisionPhasePreparingVolumes,
+		PoolSandboxProvisionPhaseFetchingSource,
 		PoolSandboxProvisionPhaseMaterializingSource,
 		PoolSandboxProvisionPhaseCreatingContainer,
 		PoolSandboxProvisionPhaseStartingContainer,
@@ -19512,6 +19561,8 @@ func (s PoolSandboxProvisionPhase) MarshalText() ([]byte, error) {
 	case PoolSandboxProvisionPhasePullingImage:
 		return []byte(s), nil
 	case PoolSandboxProvisionPhasePreparingVolumes:
+		return []byte(s), nil
+	case PoolSandboxProvisionPhaseFetchingSource:
 		return []byte(s), nil
 	case PoolSandboxProvisionPhaseMaterializingSource:
 		return []byte(s), nil
@@ -19534,6 +19585,9 @@ func (s *PoolSandboxProvisionPhase) UnmarshalText(data []byte) error {
 		return nil
 	case PoolSandboxProvisionPhasePreparingVolumes:
 		*s = PoolSandboxProvisionPhasePreparingVolumes
+		return nil
+	case PoolSandboxProvisionPhaseFetchingSource:
+		*s = PoolSandboxProvisionPhaseFetchingSource
 		return nil
 	case PoolSandboxProvisionPhaseMaterializingSource:
 		*s = PoolSandboxProvisionPhaseMaterializingSource
@@ -21006,6 +21060,32 @@ func (s *ProviderStatus) SetMessage(val OptString) {
 // SetState sets the value of State.
 func (s *ProviderStatus) SetState(val string) {
 	s.State = val
+}
+
+// Ref: #/components/schemas/PullSandboxSourceBody
+type PullSandboxSourceBody struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// GetUsername returns the value of Username.
+func (s *PullSandboxSourceBody) GetUsername() string {
+	return s.Username
+}
+
+// GetPassword returns the value of Password.
+func (s *PullSandboxSourceBody) GetPassword() string {
+	return s.Password
+}
+
+// SetUsername sets the value of Username.
+func (s *PullSandboxSourceBody) SetUsername(val string) {
+	s.Username = val
+}
+
+// SetPassword sets the value of Password.
+func (s *PullSandboxSourceBody) SetPassword(val string) {
+	s.Password = val
 }
 
 // PurgeSandboxNoContent is response for PurgeSandbox operation.
@@ -23016,6 +23096,7 @@ func (*Sandbox) completeSandboxSourcePushRes() {}
 func (*Sandbox) configureHarnessConfigRes()    {}
 func (*Sandbox) createSandboxRes()             {}
 func (*Sandbox) getSandboxRes()                {}
+func (*Sandbox) pullSandboxSourceRes()         {}
 func (*Sandbox) reconcileSandboxRes()          {}
 func (*Sandbox) repairSandboxRes()             {}
 func (*Sandbox) restartSandboxRes()            {}
@@ -25486,9 +25567,9 @@ func (s *SandboxCPUConsumptionAdditional) init() SandboxCPUConsumptionAdditional
 	return m
 }
 
-// The source a materializing_source phase is cloning, and how far the clone has got. The
-// sandbox clones its own sources, so the counts are the sandbox agent's, read by the pool
-// while it waits on them. Only source is certain: a sandbox whose agent predates
+// Git transfer progress: fetching_source carries the pool fetch counts, while
+// materializing_source carries the sandbox clone counts read by the pool.
+// Only source is certain: a sandbox whose agent predates
 // reporting clone progress, or a clone git has said nothing about yet, has no stage.
 // Ref: #/components/schemas/SandboxCloneProgress
 type SandboxCloneProgress struct {
@@ -28565,15 +28646,16 @@ func (*SandboxProviderInstance) updateSandboxProviderInstanceRes() {}
 // What a provisioning sandbox is being made to do right now, named for a client that
 // is waiting to attach and wants to know what it is waiting for. It is an
 // observation and never a state: it decides nothing, and it is history the moment the
-// phase ends. pulling_image carries pull byte counts and materializing_source the clone
-// of the source it is materializing; the rest are named work with no denominator to
-// report.
+// phase ends. pulling_image carries image byte counts. fetching_source reports the
+// pool fetching a remote into its cache; materializing_source reports the sandbox
+// checking out a source. Both Git phases carry clone progress.
 // Ref: #/components/schemas/SandboxProvisionPhase
 type SandboxProvisionPhase string
 
 const (
 	SandboxProvisionPhasePullingImage        SandboxProvisionPhase = "pulling_image"
 	SandboxProvisionPhasePreparingVolumes    SandboxProvisionPhase = "preparing_volumes"
+	SandboxProvisionPhaseFetchingSource      SandboxProvisionPhase = "fetching_source"
 	SandboxProvisionPhaseMaterializingSource SandboxProvisionPhase = "materializing_source"
 	SandboxProvisionPhaseCreatingContainer   SandboxProvisionPhase = "creating_container"
 	SandboxProvisionPhaseStartingContainer   SandboxProvisionPhase = "starting_container"
@@ -28585,6 +28667,7 @@ func (SandboxProvisionPhase) AllValues() []SandboxProvisionPhase {
 	return []SandboxProvisionPhase{
 		SandboxProvisionPhasePullingImage,
 		SandboxProvisionPhasePreparingVolumes,
+		SandboxProvisionPhaseFetchingSource,
 		SandboxProvisionPhaseMaterializingSource,
 		SandboxProvisionPhaseCreatingContainer,
 		SandboxProvisionPhaseStartingContainer,
@@ -28598,6 +28681,8 @@ func (s SandboxProvisionPhase) MarshalText() ([]byte, error) {
 	case SandboxProvisionPhasePullingImage:
 		return []byte(s), nil
 	case SandboxProvisionPhasePreparingVolumes:
+		return []byte(s), nil
+	case SandboxProvisionPhaseFetchingSource:
 		return []byte(s), nil
 	case SandboxProvisionPhaseMaterializingSource:
 		return []byte(s), nil
@@ -28621,6 +28706,9 @@ func (s *SandboxProvisionPhase) UnmarshalText(data []byte) error {
 	case SandboxProvisionPhasePreparingVolumes:
 		*s = SandboxProvisionPhasePreparingVolumes
 		return nil
+	case SandboxProvisionPhaseFetchingSource:
+		*s = SandboxProvisionPhaseFetchingSource
+		return nil
 	case SandboxProvisionPhaseMaterializingSource:
 		*s = SandboxProvisionPhaseMaterializingSource
 		return nil
@@ -28641,7 +28729,7 @@ func (s *SandboxProvisionPhase) UnmarshalText(data []byte) error {
 // Work underway on a sandbox that has no state transition to announce it, reported by
 // the hosting pool-agent. A client waiting to attach reads this to say what
 // it is waiting for. The phase always says what is happening; pull and clone refine the
-// two phases that can report how far in they are, because an image pull and a clone of
+// phases that can report how far in they are, because an image pull and a clone of
 // a large remote are the longest things an attach waits behind. The pool restates
 // materializing_source with each read of the clone, so the phase stays fresh for the
 // whole of a long one.
@@ -28913,6 +29001,7 @@ func (s *SandboxResourceConsumptionAdditional) init() SandboxResourceConsumption
 
 // Ref: #/components/schemas/SandboxRuntime
 type SandboxRuntime struct {
+	SourceDeliveries OptSandboxRuntimeSourceDeliveries `json:"sourceDeliveries"`
 	// Latest sandbox-agent-reported git/session/connection status, pushed periodically by the hosting
 	// pool-agent.
 	AgentStatus OptNilSandboxRuntimeAgentStatus `json:"agentStatus"`
@@ -28980,6 +29069,11 @@ type SandboxRuntime struct {
 	StateReportedAt OptDateTime               `json:"stateReportedAt"`
 	Upgrade         OptSandboxUpgrade         `json:"upgrade"`
 	AutomaticRepair OptSandboxAutomaticRepair `json:"automaticRepair"`
+}
+
+// GetSourceDeliveries returns the value of SourceDeliveries.
+func (s *SandboxRuntime) GetSourceDeliveries() OptSandboxRuntimeSourceDeliveries {
+	return s.SourceDeliveries
 }
 
 // GetAgentStatus returns the value of AgentStatus.
@@ -29090,6 +29184,11 @@ func (s *SandboxRuntime) GetUpgrade() OptSandboxUpgrade {
 // GetAutomaticRepair returns the value of AutomaticRepair.
 func (s *SandboxRuntime) GetAutomaticRepair() OptSandboxAutomaticRepair {
 	return s.AutomaticRepair
+}
+
+// SetSourceDeliveries sets the value of SourceDeliveries.
+func (s *SandboxRuntime) SetSourceDeliveries(val OptSandboxRuntimeSourceDeliveries) {
+	s.SourceDeliveries = val
 }
 
 // SetAgentStatus sets the value of AgentStatus.
@@ -29763,6 +29862,17 @@ func (s *SandboxRuntimeRuntimeState) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+type SandboxRuntimeSourceDeliveries map[string]SourceDelivery
+
+func (s *SandboxRuntimeSourceDeliveries) init() SandboxRuntimeSourceDeliveries {
+	m := *s
+	if m == nil {
+		m = map[string]SourceDelivery{}
+		*s = m
+	}
+	return m
 }
 
 // Existence state, written only by the reconciler: whether the sandbox's container has
@@ -33634,6 +33744,55 @@ func (s *SetHarnessConfigSecretBindingBody) SetSchema(val OptURI) {
 // SetSecretId sets the value of SecretId.
 func (s *SetHarnessConfigSecretBindingBody) SetSecretId(val string) {
 	s.SecretId = val
+}
+
+// Ref: #/components/schemas/SourceDelivery
+type SourceDelivery struct {
+	// Delivered, needs_credential, missing_commit, or unreachable.
+	Status   string    `json:"status"`
+	Protocol OptString `json:"protocol"`
+	Host     OptString `json:"host"`
+	Path     OptString `json:"path"`
+}
+
+// GetStatus returns the value of Status.
+func (s *SourceDelivery) GetStatus() string {
+	return s.Status
+}
+
+// GetProtocol returns the value of Protocol.
+func (s *SourceDelivery) GetProtocol() OptString {
+	return s.Protocol
+}
+
+// GetHost returns the value of Host.
+func (s *SourceDelivery) GetHost() OptString {
+	return s.Host
+}
+
+// GetPath returns the value of Path.
+func (s *SourceDelivery) GetPath() OptString {
+	return s.Path
+}
+
+// SetStatus sets the value of Status.
+func (s *SourceDelivery) SetStatus(val string) {
+	s.Status = val
+}
+
+// SetProtocol sets the value of Protocol.
+func (s *SourceDelivery) SetProtocol(val OptString) {
+	s.Protocol = val
+}
+
+// SetHost sets the value of Host.
+func (s *SourceDelivery) SetHost(val OptString) {
+	s.Host = val
+}
+
+// SetPath sets the value of Path.
+func (s *SourceDelivery) SetPath(val OptString) {
+	s.Path = val
 }
 
 // Ref: #/components/schemas/StartSandboxBody

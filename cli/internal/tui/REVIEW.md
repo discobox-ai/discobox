@@ -152,3 +152,9 @@
   terminal with no stream and be dropped, the way back included; `reviewKey`
   takes `q` and Esc then — `TestFilesChangedThatDoNotStartAreGivenUpOn`.
 
+
+- Credential consent and Git prompting belong to the active operation's
+  narration feed. Serialize them across concurrently delivered sources; a
+  stale feed or dismissed question must release the worker with a decline.
+  Return terminal ownership through `tea.ExecProcess`, and keep Git credential
+  stdout captured by the delivery layer, never rendered.

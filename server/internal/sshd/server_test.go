@@ -387,3 +387,7 @@ func (*fakeSandboxService) ExportSandbox(context.Context, string, string) (io.Re
 func (*fakeSandboxService) ImportSandbox(context.Context, string, io.Reader, services.SandboxImportOptions) (*services.SandboxImportResult, error) {
 	return nil, errors.New("not implemented")
 }
+
+func (f *fakeSandboxService) PullSandboxSource(context.Context, string, string, string, services.PullSandboxSourceBody) (*model.Sandbox, error) {
+	panic("not implemented")
+}

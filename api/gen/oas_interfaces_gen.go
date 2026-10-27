@@ -485,6 +485,10 @@ type ProposeSandboxRuleRes interface {
 	proposeSandboxRuleRes()
 }
 
+type PullSandboxSourceRes interface {
+	pullSandboxSourceRes()
+}
+
 type PurgeSandboxRes interface {
 	purgeSandboxRes()
 }

@@ -22,6 +22,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
+
 	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -930,4 +932,16 @@ func poolIDFromRuntimeState(state []byte) (string, error) {
 		return runtimeSandbox.Metadata["pool_id"], nil
 	}
 	return "", sandbox.ErrNotFound
+}
+
+func (p *Provider) PullSource(ctx context.Context, ref sandbox.SandboxRef, request sourcecache.PullRequest) (sourcecache.Delivery, error) {
+	pool, err := p.manager.GetPool(ctx, ref.ProjectID, ref.PoolID)
+	if err != nil {
+		return sourcecache.Delivery{}, err
+	}
+	client, err := p.agentClientForPool(ctx, pool)
+	if err != nil {
+		return sourcecache.Delivery{}, err
+	}
+	return client.PullSource(ctx, ref, request)
 }

@@ -352,7 +352,11 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 		// first, and the dial below then waits on a discobox that is starting
 		// rather than on a push nobody is making (ADR 26-09-24-005).
 		delivering := newStatusLine(stderr)
-		err = a.deliverBeforeAttach(ctx, apiClient, projectID, sandboxID, delivering.set)
+		ui := &cobra.Command{}
+		ui.SetIn(stdin)
+		ui.SetOut(stdout)
+		ui.SetErr(stderr)
+		err = a.deliverBeforeAttach(ctx, apiClient, projectID, sandboxID, delivering.set, credentialDeliveryOptions(ui, delivering, false))
 		delivering.clear()
 		if err != nil {
 			return err

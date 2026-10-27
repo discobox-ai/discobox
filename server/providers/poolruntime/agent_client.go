@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/sourcecache"
+
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/auditid"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
@@ -754,7 +756,7 @@ func poolHarnessVolumes(volumes []harness.Volume) []poolapimodel.HarnessVolume {
 }
 
 func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) *poolapimodel.PoolSandboxCreateRequest {
-	out := &poolapimodel.PoolSandboxCreateRequest{SandboxId: sandboxID}
+	out := &poolapimodel.PoolSandboxCreateRequest{SandboxId: sandboxID, PullSources: poolclient.NewOptBool(opts.PullSources)}
 	if opts.HarnessChangeID != "" {
 		out.HarnessChangeId = poolclient.NewOptString(opts.HarnessChangeID)
 	}
@@ -1026,6 +1028,10 @@ func sandboxFromPool(in *poolapimodel.PoolSandboxInstance, poolID string) *sandb
 	if in == nil {
 		return nil
 	}
+	deliveries := map[string]sourcecache.Delivery{}
+	for slug, d := range in.SourceDeliveries.Or(nil) {
+		deliveries[slug] = sourcecache.Delivery{Status: d.Status, Protocol: d.Protocol.Or(""), Host: d.Host.Or(""), Path: d.Path.Or("")}
+	}
 	runtime := in.Runtime
 	metadata := map[string]string(runtime.Metadata)
 	if metadata == nil {
@@ -1033,17 +1039,18 @@ func sandboxFromPool(in *poolapimodel.PoolSandboxInstance, poolID string) *sandb
 	}
 	metadata["pool_id"] = poolID
 	return &sandbox.Sandbox{
-		ID:        runtime.InstanceId,
-		SandboxID: in.SandboxId,
-		Status:    sandbox.Status(runtime.Status),
-		Image:     runtime.Image,
-		CreatedAt: runtime.CreatedAt,
-		StartedAt: timePtrFromPool(runtime.StartedAt),
-		StoppedAt: timePtrFromPool(runtime.StoppedAt),
-		Error:     runtime.Error,
-		Metadata:  metadata,
-		Ports:     portsFromPool(runtime.Ports),
-		Env:       map[string]string(runtime.Env),
+		SourceDeliveries: deliveries,
+		ID:               runtime.InstanceId,
+		SandboxID:        in.SandboxId,
+		Status:           sandbox.Status(runtime.Status),
+		Image:            runtime.Image,
+		CreatedAt:        runtime.CreatedAt,
+		StartedAt:        timePtrFromPool(runtime.StartedAt),
+		StoppedAt:        timePtrFromPool(runtime.StoppedAt),
+		Error:            runtime.Error,
+		Metadata:         metadata,
+		Ports:            portsFromPool(runtime.Ports),
+		Env:              map[string]string(runtime.Env),
 	}
 }
 
@@ -1221,4 +1228,21 @@ func poolEgressPolicy(policy egress.Policy) poolclient.EgressPolicy {
 		Allow:         poolclient.NewOptNilStringArray(policy.Allow),
 		DenyByDefault: poolclient.NewOptBool(policy.DenyByDefault),
 	}
+}
+
+func (p *poolAgentClient) PullSource(ctx context.Context, ref sandbox.SandboxRef, request sourcecache.PullRequest) (sourcecache.Delivery, error) {
+	client, release, err := p.poolClient(ref, poolagentauth.ScopeSandboxWrite)
+	if err != nil {
+		return sourcecache.Delivery{}, err
+	}
+	defer release()
+	body := &poolapimodel.PoolSourcePullRequest{Key: request.Key, Remote: request.Remote, Commit: request.Commit, Branch: request.Branch, Snapshot: poolclient.NewOptBool(request.Snapshot), WorkingPath: poolclient.NewOptString(request.WorkingPath)}
+	if c := request.Credential; c != nil {
+		body.Credential = poolclient.NewOptGitCredential(poolapimodel.GitCredential{Username: c.Username, Password: c.Password})
+	}
+	result, err := client.PoolPullSandboxSource(ctx, body, poolclient.PoolPullSandboxSourceParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID, Slug: request.Slug})
+	if err != nil {
+		return sourcecache.Delivery{}, mapPoolClientError(err)
+	}
+	return sourcecache.Delivery{Status: result.Status, Protocol: result.Protocol.Or(""), Host: result.Host.Or(""), Path: result.Path.Or("")}, nil
 }
