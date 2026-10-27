@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>brkb4isnf</task-id>
+<tool-use-id>toolu_01347sNjJx1CEn8Xz8oxdFfK</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/f6625e3c-bd32-43d1-852b-11e017c03f28/tasks/brkb4isnf.output</output-file>
+<status>completed</status>
+<summary>Background command "for i in 1 2 3 4 5 6; do id=$(gh run list --repo discobox-ai/discobox --commit eff8862d1b43ac52600aa50f6f53d5e48ee8da5e --json databaseId -q '.[0].databaseId'); [ -n "$id" ] &amp;&amp; break; sleep 10; done; echo RUN=$id; gh run watch $id --repo discobox-ai/discobox --exit-status --interval 30 &gt;/dev/null 2&gt;&amp;1; echo EXIT=$?; gh run view $id --repo discobox-ai/discobox | head -14" completed (exit code 0)</summary>
+</task-notification>
