@@ -1,0 +1,1 @@
+But what doesn't make sense to me is isn't he cache already uid specific? I thought we made the cache mount per-uid? So a chown is only needed when we create the home directory and ignoring the cross mounts?
