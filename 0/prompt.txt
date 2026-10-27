@@ -1,0 +1,1 @@
+can we inspect sandbox sbx_fepr7496gy6bmvty. This sandbox previously existed and it had an implementation of some code. The sandbox was in an error state and then I did a repair operation. Now there is nothing in the sandbox and my code and claude session is lost. What happened?
