@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b3o0uht7e</task-id>
+<tool-use-id>toolu_013eRT4A4sUzQR7VbGFvMizJ</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/f1e54408-018d-4295-bcd1-ed61ba7ef13b/tasks/b3o0uht7e.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for release workflow to finish" completed (exit code 0)</summary>
+</task-notification>
