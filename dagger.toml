@@ -1,4 +1,4 @@
-# CI and release graph. Native macOS/Windows workers are explicit stubs.
+# Portable CI/release graph; native Actions jobs run repository commands.
 [modules.pipeline]
 source = ".dagger/modules/pipeline"
 main = true

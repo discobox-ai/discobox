@@ -380,9 +380,10 @@ file change, including the initial build. The inputs themselves are discovered
 again every few seconds, not only at startup, so a file added to a package an
 image builds is watched without restarting the loop.
 
-Dockerfile verification reuses the Taskfile build recipes with test-only tags,
-so checking a Dockerfile cannot move the watcher-owned `:local` tags underneath
-a running development server.
+Dagger owns static Dockerfile input/import verification and portable image
+builds; host development test-build shortcuts retain test-only tags. Neither
+verification path moves the watcher-owned `:local` tags underneath a running
+development server.
 
 In local-build mode (the Linux default), the watcher exports OCI bundles with
 the host daemon's own builder when the daemon keeps images in containerd's

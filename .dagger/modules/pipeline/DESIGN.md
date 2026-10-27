@@ -44,6 +44,11 @@ its receipt. Assembly requires matching repository, version, revision, platform,
 required Mac checks and final hashes for all five platforms. No native input
 can overwrite Linux/Windows artifacts. Missing native artifacts fail closed.
 
+The nested Dagger CLI is extracted from the versioned official archive only
+after its SHA-256 matches the committed architecture-specific digest. No
+mutable remote installer is executed. Event adapters provide full Git history
+for the workspace Git importer.
+
 Build operations are cached by Dagger. API state reads and state-changing CLI
 operations use an invocation timestamp to avoid caching external state.
 Registry publishing uses Dagger's publication API. Versioned artifacts publish

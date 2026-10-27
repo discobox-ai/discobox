@@ -863,12 +863,12 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Ci",
 							dag.TypeDef().WithObject("Directory")).
 							WithDescription("Run Linux CI and release builds, and export native command plans and portable helpers.").
-							WithSourceMap(dag.SourceMap("main.go", 231, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 233, 1))).
 					WithFunction(
 						dag.Function("Dockerfiles",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Check Dockerfile COPY paths and imported Go packages without building images.").
-							WithSourceMap(dag.SourceMap("main.go", 160, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 162, 1))).
 					WithFunction(
 						dag.Function("Emulation",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
@@ -911,17 +911,17 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Macos",
 							dag.TypeDef().WithObject("File")).
 							WithDescription("Native macOS command plan. Execution occurs outside the Linux engine.").
-							WithSourceMap(dag.SourceMap("main.go", 219, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 221, 1))).
 					WithFunction(
 						dag.Function("Mermaid",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Validate all repository Mermaid diagrams.").
-							WithSourceMap(dag.SourceMap("main.go", 256, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 258, 1))).
 					WithFunction(
 						dag.Function("ModuleTests",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Compile and test the pipeline itself, outside the application's go.work.").
-							WithSourceMap(dag.SourceMap("main.go", 187, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 189, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("NativeInputs",
@@ -982,18 +982,18 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Shell",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Check repository shell scripts using the same toolchain as CI.").
-							WithSourceMap(dag.SourceMap("main.go", 251, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 253, 1))).
 					WithFunction(
 						dag.Function("Static",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Lint, cross-typecheck, deadcode, shellcheck, and validate Dockerfile inputs.").
-							WithSourceMap(dag.SourceMap("main.go", 137, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 139, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("Tests",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Run every application's Go tests on Linux, using the modules in go.work.").
-							WithSourceMap(dag.SourceMap("main.go", 127, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 129, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("Tidy",
@@ -1014,7 +1014,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Verify",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Verify formatting, tidy, generated files, and Mermaid without mutating the host.").
-							WithSourceMap(dag.SourceMap("main.go", 167, 1)).
+							WithSourceMap(dag.SourceMap("main.go", 169, 1)).
 							WithCheck()).
 					WithFunction(
 						dag.Function("VmBuild",
@@ -1043,7 +1043,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Windows",
 							dag.TypeDef().WithObject("File")).
 							WithDescription("Native Windows command plan. Execution occurs outside the Linux engine.").
-							WithSourceMap(dag.SourceMap("main.go", 225, 1))).
+							WithSourceMap(dag.SourceMap("main.go", 227, 1))).
 					WithFunction(
 						dag.Function("WingetManifests",
 							dag.TypeDef().WithObject("Directory")).

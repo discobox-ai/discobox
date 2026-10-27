@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
       - uses: dagger/dagger-for-github@v8.4.0
         with:
           version: v1.0.0-beta.21
@@ -37,6 +39,8 @@ jobs:
       REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
       - uses: dagger/dagger-for-github@v8.4.0
         with:
           version: v1.0.0-beta.21

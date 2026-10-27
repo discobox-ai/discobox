@@ -56,7 +56,9 @@ func (m *Pipeline) Toolchain() *dagger.Container {
 		WithSymlink("/opt/microsoft/powershell/7/pwsh", "/usr/local/bin/pwsh").
 		WithEnvVariable("NODE_USE_SYSTEM_CA", "1").
 		WithExec([]string{"npm", "install", "--global", "pnpm@11.9.0"}).
-		WithExec([]string{"sh", "-ec", "curl -fsSL https://dl.dagger.io/dagger/install.sh -o /tmp/install-dagger.sh && DAGGER_VERSION=1.0.0-beta.21 BIN_DIR=/usr/local/bin sh /tmp/install-dagger.sh"}).
+		WithFile("/pipeline/install-dagger.sh", dag.CurrentModule().Source().File("install-dagger.sh")).
+		WithFile("/pipeline/dagger-cli-checksums.txt", dag.CurrentModule().Source().File("dagger-cli-checksums.txt")).
+		WithExec([]string{"bash", "/pipeline/install-dagger.sh"}).
 		WithEnvVariable("GOFLAGS", "-buildvcs=false -p=4").
 		WithEnvVariable("GOMAXPROCS", "4").
 		WithEnvVariable("TERM", "xterm-256color")

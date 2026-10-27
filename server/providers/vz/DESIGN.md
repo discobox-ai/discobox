@@ -65,13 +65,13 @@ uses, `DeleteVM` is reserved for an authorized pool deletion.
 Codesigning is part of the build, not of packaging: creating a VM requires
 `com.apple.security.virtualization`, and that entitlement exists only on a
 signed binary. `task sign` re-signs after every build and is wired into
-`build:server` and the watchnbuild dev loop. Dagger's native macOS worker
-contract also requires signing, but that worker is currently stubbed. `go run` cannot
-start a server that runs pools.
+`build:server` and the watchnbuild dev loop. The native macOS CI/release command
+builds and signs on a Mac; Dagger validates its source-bound artifacts before
+release assembly. `go run` cannot start a server that runs pools.
 
-`discobox-server` is the only binary signed (`vz.entitlements`). The CLI runs
-the server as a separate program it downloads (ADR 0099), so the server is the
-process that creates the VM. The signature lives inside the Mach-O and the
+Native releases sign both executables. Only `discobox-server` receives the
+Virtualization entitlement (`vz.entitlements`): the CLI runs the server as a
+separate program it downloads (ADR 0099), so the server creates the VM. The signature lives inside the Mach-O and the
 release digest is taken after signing, so a staged server — verified against
 that digest — arrives signed.
 
