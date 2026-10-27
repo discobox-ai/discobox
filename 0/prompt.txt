@@ -1,0 +1,1 @@
+but you said that if we stored as a string it would have to be turn back into cells, is there some fidelity lost?
