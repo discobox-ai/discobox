@@ -1,0 +1,1 @@
+I want reads to exclude repair. There's no reason to repair if we can read snapshot data. So can we create two issues with all the background info so we can do this work?
