@@ -43,7 +43,7 @@ func gitSourceCacheKey(source workerapimodel.GitSource) string {
 // what an earlier create recorded. It runs on every create that builds
 // volumes, so it describes the sources the sandbox has now; a sandbox with
 // none has no file.
-func (r *DockerSandboxRuntime) writeSourceCaches(sandboxID string, sources []sandboxSource) error {
+func (r *sandboxCore) writeSourceCaches(sandboxID string, sources []sandboxSource) error {
 	root := r.sandboxRoot(sandboxID)
 	if err := os.Remove(filepath.Join(root, legacyLiveOriginsFileName)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
@@ -74,7 +74,7 @@ func (r *DockerSandboxRuntime) writeSourceCaches(sandboxID string, sources []san
 
 // readSourceCaches is the sandbox's cache-delivered sources and the cache
 // each is in, by slug. None is not an error.
-func (r *DockerSandboxRuntime) readSourceCaches(sandboxID string) (map[string]string, error) {
+func (r *sandboxCore) readSourceCaches(sandboxID string) (map[string]string, error) {
 	data, err := os.ReadFile(filepath.Join(r.sandboxRoot(sandboxID), sourceCachesFileName))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -94,7 +94,7 @@ func (r *DockerSandboxRuntime) readSourceCaches(sandboxID string) (map[string]st
 // for a cache-delivered source (ADR 26-10-10-545 §7), and otherwise the bare
 // repository an earlier pool made for the sandbox (ADR 0058), which a client
 // pushes into. The sandbox is given the same address either way.
-func (r *DockerSandboxRuntime) originLocation(ctx context.Context, sandboxID, slug string, env map[string]string) (GitRepositoryLocation, error) {
+func (r *sandboxCore) originLocation(ctx context.Context, sandboxID, slug string, env map[string]string) (GitRepositoryLocation, error) {
 	caches, err := r.readSourceCaches(sandboxID)
 	if err != nil {
 		return GitRepositoryLocation{}, err
@@ -140,7 +140,7 @@ func (r *DockerSandboxRuntime) originLocation(ctx context.Context, sandboxID, sl
 // poolServesSlug reports whether the sandbox's runtime-config document names
 // slug as a source whose origin is this pool's route: the pool's record of
 // what it told the sandbox to fetch from, and so of what it has to serve.
-func (r *DockerSandboxRuntime) poolServesSlug(sandboxID, slug string) (bool, error) {
+func (r *sandboxCore) poolServesSlug(sandboxID, slug string) (bool, error) {
 	doc, ok, err := r.readRuntimeConfig(sandboxID)
 	if err != nil || !ok {
 		return false, err

@@ -27,16 +27,16 @@ from the in-sandbox `sandbox-agent` API.
 | `githttp` | Serves a source's origin through the shared [`gitbackend`](../pkg/gitbackend) CGI bridge, run as the repository's owner: a bare repository made for one sandbox, or a Git namespace of a cache. A sandbox's own fetch is served fetch-only, on protocol v0, confined to what its namespace advertises; see [Git origins](#git-origins). The `git-repositories` route is not served here; see [The worktree route](#the-worktree-route). |
 | `gitcache` | The pool's cache of Git ([ADR 26-10-10-545](../docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md)): one bare repository per cache key under `layout.Root.PoolGitCache`, a namespace `refs/namespaces/<sandboxID>-<slug>/` per sandbox source, and the remote's own branches and tags under `refs/cache/`. Owns the pin, the configuration a push is received under, the pre-receive check a sandbox's push is held to (the agent binary run as `git-cache-pre-receive`), namespace export and import, and the sweep that removes namespaces, drops unused caches and collects the rest. It pulls remote sources over HTTPS (ADR 26-10-23-948). See [Git origins](#git-origins). |
 | `execidentity` | The `SysProcAttr` that runs a subprocess as a given uid/gid. |
-| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MemorySandboxRuntime` for tests). `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the base image the sandbox's container runs, with the agent it is pinned to bound read-only ([Delivering the Agent](#delivering-the-agent)) — the pins the control plane sends with the export, recorded as a create's are, since an archived sandbox may have been pinned since its last create — as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). It starts a delivered sandbox from a snapshot of its plan when it has one, and builds one when it does not ([Snapshots](#snapshots)). In-sandbox path wiring for the primary volumes is delegated to the sandbox agent's `discobox-wire.service` (ADR 0007, ADR 26-10-10-767); the per-source data mount already lands at its final runtime-owned path. |
+| `sandboxruntime` | The `Runtime` interface and its implementations (`DockerSandboxRuntime`; `MachineSandboxRuntime`, a machine pool's, see [Machine Sandboxes](#machine-sandboxes); `MemorySandboxRuntime` for tests). What does not depend on what a sandbox runs as is `sandboxCore`, which both real runtimes embed: the per-sandbox records in its tree, the runtime-config document and its delivery, the power lock and boot mark, the state and progress sinks, sources' settling, proxy policy staging, the Git cache and the agent layer's extraction. It asks the runtime it is embedded in, through the unexported `boxes` interface, only what that runtime alone knows: how to find, reach, wait for and rebuild a sandbox's box. `Runtime` is everything the agent needs from a runtime — sandbox CRUD and power, the durable tree, origin paths, how the pool reaches a sandbox ([Reaching a Sandbox](#reaching-a-sandbox)), the state channel, and the tree and proxy-material reclaim loops — so `Serve` holds no concrete type and a second runtime is a drop-in (ADR 0144 §2). What only a Docker pool has, such as image reclamation (`WatchImages`), stays on the Docker type and is started by the Docker pool's composition in `RunAgent`. The Docker runtime implements the durable-tree export and restore a transfer moves (ADR 0123; `tree.go`). An export does not walk the sandbox's `data` or `sources` here: it runs the base image the sandbox's container runs, with the agent it is pinned to bound read-only ([Delivering the Agent](#delivering-the-agent)) — the pins the control plane sends with the export, recorded as a create's are, since an archived sandbox may have been pinned since its last create — as a one-shot container in the sandbox agent's export mode — the trees and config mounted read-only, no network, no capability but `DAC_READ_SEARCH`, a read-only root — verifies the stream it gets back (`sandboxtree.Copy`), and appends the `origins` this pool owns (ADR 0129) — a bare repository made for the sandbox, or its namespaces of the Git cache written out as repositories for the length of the export. Only the sandbox can resolve which declared paths stay behind and where they live; and the reads happen in the sandbox's namespace rather than as root on this host. Closing the stream waits for the export container to be removed. Restore stays here, confined by `os.Root`. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` (a private one for a primary with no key), records which Git cache each cache-delivered source's namespace is in (`origin.go`, `source-caches.json`), holds the pool's `gitcache.Store` (`Runtime.GitCache`), and sweeps it from `WatchSandboxVolumes`; it binds no origin into a sandbox and runs no git in its checkout — the sandbox clones its own sources, and the runtime settles them (`sources.go`; see [Sources](#sources)). It starts a delivered sandbox from a snapshot of its plan when it has one, and builds one when it does not ([Snapshots](#snapshots)). In-sandbox path wiring for the primary volumes is delegated to the sandbox agent's `discobox-wire.service` (ADR 0007, ADR 26-10-10-767); the per-source data mount already lands at its final runtime-owned path. |
 | `dnsforward` | The pool's DNS-over-TLS server for its sandboxes: each framed query answered by the pool container's own resolver, connections capped per sandbox by client-certificate identity. Run by the proxy unit. See [Sandbox DNS](#sandbox-dns). |
 | `proxyagent` | Pool-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material for the runtime-config document and the pool endpoints the bootstrap names, the sentinel resolver, the sandbox-facing agent credentials endpoint (ADR 0031) with a sandbox's credential environment and its read of its own egress audit (ADR 26-10-02-678), route checking for every sentinel the proxy swaps (ADR 26-10-02-924), the discobox API gate (ADR 0140), the origins and assets hosts the proxy forwards to the agent (`origins.go`, ADR 26-10-08-561; `assets.go`, ADR 26-10-16-423 §13), and host trust: probing a host for a trust ask and keeping the proxy's pins in step with the control plane (ADR 0149). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
 | `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs, and `NotifyReady` (`sd_notify` for a Type=notify unit). |
-| `bundle` | The pool bundle (ADR 26-10-24-953 §2): its features (`bundle/features`: `pool-agent` and `pool-builder`), and where a pool's maker places what the agent reads beside them (`BootstrapFile`, `EnvironmentFile`). See [The Pool Bundle](#the-pool-bundle). |
+| `bundle` | The pool bundle (ADR 26-10-24-953 §2): its features (`bundle/features`: `pool-agent` and `pool-builder`), and where a pool's maker places what the agent reads beside them (`BootstrapFile`, `EnvironmentFile`, and a machine pool's `ProvisioningKeyFile`). See [The Pool Bundle](#the-pool-bundle). |
 | `childproc` | This process's children: every subprocess start in the agent, and the reaper for the ones nothing is waiting for. See [Child Processes](#child-processes). |
 | `provisioner` | The box provisioner ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md) §3, [ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md) §3): given a box's guest operations (`machine.Guest`: a disco-vm machine's, or a Docker pool container's), a tar tree and a command, it places the tree with disco-vm's copy and runs the command with its exec, returning its exit code and the tail of its output. No per-driver code, and no state: it is as idempotent as its command. A tree may hold secrets (a key, a credential), so no error carries its contents; a command's argv is named in errors, so secrets go in the tree. It is in this module rather than the root's so that the server can import it and the root module takes no dependency on disco-vm, which this module imports by commit, as the server does. |
-| `vmtest` | Test support for code that drives disco-vm machines: `RunFakeGuestIfInvoked` lets a test binary be the guest agent of disco-vm's fake driver, so a test boots fake machines through the engine. Only tests import it, here and in the server's `vm` provider. |
+| `vmtest` | Test support for code that drives disco-vm machines: `RunFakeGuestIfInvoked` lets a test binary be the guest agent of disco-vm's fake driver and the shim that holds a fake machine, and `FakeDriver` is that driver, with one base and any key source, so a test boots fake machines through the engine. Only tests import it, here and in the server's `vm` provider. |
 | `imagereap` | Rules for reclaiming unused Discobox images from a Docker daemon (ADR 0040). Shared with the server, which applies them to the daemon pool containers run on; see [Image Reclamation](#image-reclamation). |
 
 ## Startup Flow
@@ -54,7 +54,9 @@ applies it, laying and starting the agent's unit.
    the file's field. It holds no credential. The control plane and the agent's listener are one
    URL each, and the scheme alone picks the transport ([`wire`](../pkg/wire),
    in the root module). The bootstrap also names the sandbox runtime: `docker`
-   (the default) or `machine`, with its disco-vm driver.
+   (the default) or `machine`, with its disco-vm driver, the disco-vm project
+   its sandboxes' machines are made in, the base they boot and the provider
+   network they share with the pool's machine.
 2. The agent writes the proxy unit's environment and prepares the proxy CA
    bundle and control key; a Docker pool also renders the BuildKit/registry
    configuration. It starts the child systemd namespace — only as PID 1 in a
@@ -73,10 +75,8 @@ applies it, laying and starting the agent's unit.
    plane stamps `RegisteredAt` on a pool's first heartbeat.
 6. The agent starts the proxy unit's resolve-token refresher. A Docker pool
    builds its Docker sandbox runtime and starts that runtime's image reclaim
-   loop. A machine pool has no runtime composed yet
-   ([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
-   §3): it reports itself ready but not schedulable, with a `runtime`
-   condition saying why, and serves nothing.
+   loop. A machine pool opens its own disco-vm engine before its first report
+   and builds the machine runtime on it ([Machine Sandboxes](#machine-sandboxes)).
 7. `Serve`, handed the runtime as `sandboxruntime.Runtime`, starts the state,
    progress, tree-reaper, status-poll and resource loops and the proxy-material
    reclaim loop, and finally the pool-local HTTP server.
@@ -108,8 +108,12 @@ platform the pool hosts (`hostedPlatform`, ADR 0145 §1): a pool's sandboxes are
 containers on the agent's own kernel and architecture, so it is the agent's
 own. Repeating it on every report is how the control plane learns what a
 pool from before platforms hosts. Beside it, it declares the kind of image the pool
-runs (`hostedImageKind`, ADR 26-10-09-106 §4): `oci`, since this agent's
-sandboxes are containers. The same platform is the runtime's
+runs (`poolStatus.imageKind`, ADR 26-10-09-106 §4): `oci` for a Docker pool,
+whose sandboxes are containers, and `vm/<driver>` for a machine pool, which
+reports none of its own machine's CPU and memory as capacity — its sandboxes
+run on its driver — and names the driver's limits (`maxRunning`, `isolation`)
+in its `runtime` condition instead, beside why it schedules nothing
+([Machine Sandboxes](#machine-sandboxes)). The same platform is the runtime's
 (`DockerSandboxRuntimeConfig.Platform`), and every path the runtime names inside
 a sandbox — a source's target, the user's home, the working directory, the
 working root it writes into the manifest — is judged by its `sandboxpath`
@@ -253,8 +257,10 @@ hands it a `Dialer` for a port inside the sandbox — the sandbox agent on
 `SandboxAgentPort`, or anything the sandbox listens on — and every pool→sandbox
 request rides a connection it opened ([ADR 0126](../docs/adr/0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md) §5).
 How it connects is the runtime's: the Docker runtime dials the container's
-address on the pool network; a host-VM runtime would dial a guest socket, and a
-provider-hosted one a stream on a session the sandbox opened outward.
+address on the pool network, and the machine runtime dials the instance's one
+URL, TLS for an `https` one, which reaches the sandbox agent and nothing else:
+any other port of a machine is `ErrUnsupported`, answered 501
+([Machine Sandboxes](#machine-sandboxes)).
 
 ```mermaid
 flowchart LR
@@ -445,10 +451,11 @@ sequenceDiagram
 - **Settling a start** (`settleConverged`): a sandbox started rather than
   created — unarchived or imported, whose create did not start it — has nobody
   waiting on it, so the status poll's convergence settles it once the sandbox
-  reports every source materialized. With no create request in hand it cannot
-  rebuild, so a layer that needs one removes the container
-  (`removeForRebuild`) for the control plane to recreate from the recorded
-  layer. It takes the primary's slug from `project-layer.json`, and settles
+  reports every source materialized. With no create request in hand a
+  container pool cannot rebuild, so a layer that needs one removes the
+  container (`removeForRebuild`) for the control plane to recreate from the
+  recorded layer; a machine pool makes the machine again in place itself, from
+  the bootstrap it kept (`rebuildForProjectLayer`). It takes the primary's slug from `project-layer.json`, and settles
   nothing for a record from before that named one: only a create can say.
 - **Upgrade.** A checkout a pool cloned before this keeps the empty marker it
   wrote, which the agent reads as materialized; one from before the marker —
@@ -839,11 +846,78 @@ step is also what makes the reaper's "no data subtree means this proxy material
 is a regenerable leftover, delete it now" shortcut sound — that inference only
 holds while both trees cover the same set of pools.
 
+## Machine Sandboxes
+
+A machine pool's sandboxes are disco-vm machines on the pool's own engine
+([ADR 26-10-23-551](../docs/adr/26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
+§3), `sandboxruntime.MachineSandboxRuntime`. The engine is opened on the
+bootstrap's driver and project, with a key source that reads
+`bundle.ProvisioningKeyFile` (a `machine.Key` as JSON) on every call, so a
+renewed key is a new file and nothing more; nothing of the file reaches an
+error. Only boxd is linked.
+
+```mermaid
+flowchart LR
+    create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom the driver's base\n(isolated, on the pool's network)"]
+    inst --> start["startLocked: engine.Start"]
+    start --> place["place: sandbox.json,\nagentlayer.Archive, then\ndiscobox-provision apply"]
+    place -->|"placed before with something else"| restart["restart the machine"]
+    restart --> place
+    place --> boot["finishBoot: wait at the URL,\ndeliver runtime config"]
+```
+
+- **One machine per sandbox**, named by its ID in disco-vm's spelling
+  (`sbx_1` → `sbx-1`), so a create that was lost is found by name. A machine
+  is made `Isolated` on `MachineNetwork` (ADR 26-10-23-551 §4); a driver that
+  cannot isolate one is refused.
+- **Every start places**: sandbox.json at `/etc/discobox`, the agent layer
+  when the pool's record does not say it is there, the units and the pins, then
+  runs `discobox-provision apply` through the provisioner. A machine keeps its
+  disk, and its agent starts at boot from what was placed before, so when what
+  is placed moved — pins, the agent, or the bootstrap — the machine is
+  restarted onto it: a moved pin restarts, never rebuilds (ADR 26-10-24-953 §1).
+- **The agent listens where the driver's service says**
+  (ADR 26-10-27-345 §2): the instance's TCP `Service.Listen` is written into
+  sandbox.json as the agent's listen address, since the driver gives an
+  instance the same one at every boot, and the
+  pool reaches the agent at the instance's one URL (`SandboxDialer`: TLS for an
+  `https` URL). No other port of a machine is reached.
+- **Power is the engine's.** State is read from the driver; one it cannot be
+  asked for keeps the state last seen, since a lost connection is not a stop.
+  The state channel polls (no event stream), and a poll that cannot read every
+  machine publishes nothing rather than a sync that would report one gone.
+- **Rebuilding** — a spec that moved, or a project layer settling reads that
+  the bootstrap was not made with — happens in place
+  ([ADR 26-10-27-345](../docs/adr/26-10-27-345-a-machine-sandbox-is-made-again-in-place-and-its-bootstrap-names-where-its-agent-listens.md)):
+  a new bootstrap, the same disk, a restart if it ran, since the disk is all
+  the sandbox has. The pool keeps the bootstrap whole in `machine.json`, so the
+  status poll's convergence rebuilds with no create request.
+- **Archive** stops the machine and keeps it: its disk is the tree. The
+  unarchiving create starts the same machine. **Delete** returns only once the
+  driver no longer has the machine (ADR 0022 §3).
+- **Clear-cache** stops nothing, since no machine shares a cache: it empties
+  the proxy's response cache and asks each running sandbox's agent to empty
+  its own (`cache/clear`, the pool-only `cache-clear` scope). A stopped
+  sandbox keeps its cache.
+- **Refused**: suspend (a machine is not frozen whole; a sleep is a stop),
+  tree export and import, both `sandboxruntime.ErrUnsupported`, answered 501.
+- **The reaper** removes an unheld sandbox's machine with its tree, and a
+  machine of the pool's project named as a sandbox's (`sbx-…`) that neither a
+  tree nor a held sandbox names, once it has been so for the trees' retention
+  (its clock under the pool's `machine-orphans`). A machine of any other name
+  is left alone.
+- **It schedules nothing.** Isolating a machine bounds what its provider gives
+  it, not its egress, so the pool reports itself unschedulable, with a
+  `runtime` condition saying why, while nothing holds a machine's way out to
+  the pool's proxy (ADR 26-10-23-551 §5).
+
 ## Clearing the Pool's Caches
 
 `cache/clear` (scope `pool:cache-clear`, `sandboxruntime/clearcache.go`) is the
 agent's own operation from end to end: stop every running sandbox, empty every
-cache the pool holds, answer with the sandboxes it stopped. The control plane
+cache the pool holds, answer with the sandboxes it stopped. A machine pool's
+clear differs ([Machine Sandboxes](#machine-sandboxes)); what follows is a
+Docker pool's. The control plane
 forwards the request and waits; it records no state and orchestrates nothing.
 
 - **Stop first.** The pool cache is bound whole into every sandbox, and the

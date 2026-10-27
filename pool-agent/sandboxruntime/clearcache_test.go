@@ -141,7 +141,7 @@ func TestStartGateCloseGivesUpWhenItsContextEnds(t *testing.T) {
 // A clear that everyone stopped waiting for before the gate drained has done
 // nothing, so it must not go on holding the pool's starts off.
 func TestClearCacheAbandonedWhileDrainingReopensTheGate(t *testing.T) {
-	r := &DockerSandboxRuntime{}
+	r := testDockerRuntime(&DockerSandboxRuntime{})
 	leave, err := r.starts.enter(context.Background())
 	if err != nil {
 		t.Fatal(err)

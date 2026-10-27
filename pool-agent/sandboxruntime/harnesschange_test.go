@@ -40,7 +40,7 @@ func TestHarnessChangeFenceSurvivesRestartAndBlocksOldCreates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			runtime := &DockerSandboxRuntime{root: root, client: docker, projectID: "proj_1", poolID: "pool_1"}
+			runtime := testDockerRuntime(&DockerSandboxRuntime{root: root, client: docker, projectID: "proj_1", poolID: "pool_1"})
 			if err := os.MkdirAll(runtime.sandboxRoot("sbx_1"), 0700); err != nil {
 				t.Fatal(err)
 			}
@@ -55,7 +55,7 @@ func TestHarnessChangeFenceSurvivesRestartAndBlocksOldCreates(t *testing.T) {
 				t.Fatal(err)
 			}
 			// Reconstruct the pool object, with no in-memory locks or reservation state.
-			restarted := &DockerSandboxRuntime{root: root, client: docker, projectID: "proj_1", poolID: "pool_1"}
+			restarted := testDockerRuntime(&DockerSandboxRuntime{root: root, client: docker, projectID: "proj_1", poolID: "pool_1"})
 			if err := restarted.StartSandbox(context.Background(), "sbx_1", &api.PoolSandboxOperationRequest{}); !errors.Is(err, ErrHarnessChangeRefused) {
 				t.Fatalf("start through persisted fence: %v", err)
 			}
@@ -82,7 +82,7 @@ func TestHarnessChangeFenceSurvivesRestartAndBlocksOldCreates(t *testing.T) {
 }
 
 func TestFailedArchiveKeepsHarnessFence(t *testing.T) {
-	r := &DockerSandboxRuntime{root: withTestRoot(t), projectID: "proj_1", poolID: "pool_1"}
+	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), projectID: "proj_1", poolID: "pool_1"})
 	root := r.sandboxRoot("sbx_1")
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)

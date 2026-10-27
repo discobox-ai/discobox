@@ -43,13 +43,13 @@ func sandboxIsArchived(root string) bool {
 	return err == nil
 }
 
-func (r *DockerSandboxRuntime) sandboxRoot(sandboxID string) string {
+func (r *sandboxCore) sandboxRoot(sandboxID string) string {
 	return r.root.Sandbox(r.projectID, r.poolID, sandboxID)
 }
 
 // isArchived reports whether this pool holds the given sandbox as
 // archived data.
-func (r *DockerSandboxRuntime) isArchived(sandboxID string) bool {
+func (r *sandboxCore) isArchived(sandboxID string) bool {
 	return sandboxIsArchived(r.sandboxRoot(sandboxID))
 }
 
@@ -57,7 +57,7 @@ func (r *DockerSandboxRuntime) isArchived(sandboxID string) bool {
 // durable half of a sandbox and outlives its container. It is what tells a
 // sandbox whose container is being rebuilt from one this pool has never heard
 // of: the first is worth waiting for, the second never arrives.
-func (r *DockerSandboxRuntime) hostsSandbox(sandboxID string) bool {
+func (r *sandboxCore) hostsSandbox(sandboxID string) bool {
 	_, err := os.Stat(r.sandboxRoot(sandboxID))
 	return err == nil
 }

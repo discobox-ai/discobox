@@ -36,7 +36,7 @@ func fakeDaemon(t *testing.T, pullStatus int, pullMessage string) *DockerSandbox
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &DockerSandboxRuntime{client: cli}
+	return testDockerRuntime(&DockerSandboxRuntime{client: cli})
 }
 
 // A reference no registry will hand the pool is an answer about the image: the

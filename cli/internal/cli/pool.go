@@ -330,7 +330,11 @@ them, and then the pool empties:
 
 The command returns once they are empty. Nothing is started again afterwards: a
 stopped discobox starts the next time it is used. Images a discobox pushed to
-the registry are gone until it pushes them again.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
+the registry are gone until it pushes them again.
+
+A pool whose discoboxes are virtual machines shares no cache between them, so it
+stops nothing: it empties its proxy's cache, and each running discobox empties
+its own caches in place. A stopped one keeps its caches.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err

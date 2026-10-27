@@ -41,13 +41,13 @@ func runtimeConfigTestRuntime(t *testing.T) *DockerSandboxRuntime {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &DockerSandboxRuntime{
+	r := testDockerRuntime(&DockerSandboxRuntime{
 		root:               layout.ContainerAt(t.TempDir()),
 		projectID:          "proj_a",
 		poolID:             "pool_a",
 		identityKey:        key,
 		sandboxIdleTimeout: 20 * time.Minute,
-	}
+	})
 	// The sandbox's tree, which deciding a document requires.
 	if err := os.MkdirAll(r.sandboxRoot("sbx_1"), 0o755); err != nil {
 		t.Fatal(err)

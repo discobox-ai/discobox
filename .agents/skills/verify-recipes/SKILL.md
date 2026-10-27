@@ -1048,3 +1048,28 @@ agent, runs `provision identity`, enrolls the key, and runs `provision apply`.
   REGISTRY=ghcr.io/example RELEASE_REPO=example/discobox --dry` and run its
   `go run -ldflags=... ./server/cmd/discobox-server manifest`. Never run
   `discobox-server` with any other argument to "try" a flag: it starts a server.
+
+# Verifying a machine pool (`MachineSandboxRuntime`, the `vm` provider)
+
+- A machine pool cannot run here: its runtime needs a remote driver (boxd and a
+  key) and a provider that places its bootstrap and provisioning key (#127).
+  Its lifecycle is driven on disco-vm's fake driver in
+  `pool-agent/sandboxruntime/machine_test.go`. What reaches a dev box is the
+  sandbox agent's pool-only `POST .../cache/clear`, signed with a
+  `cache-clear` token from the pool's identity key (above) and `curl`ed on
+  `127.0.0.1:3003` from `d shell`. **On a dev box it empties the whole pool's
+  caches.** A Docker box's cache paths are binds of its pool's shared cache:
+  `/nix` is shared, and `~/.cache`, `~/go/pkg/mod`, `~/.npm`, `~/.rustup` and
+  the agent version store are shared by every box with the same uid. So one
+  call empties them under every running box of that pool, and stops none of
+  them first. Every path it answers is now empty for the whole pool. Drive it
+  only on a pool whose caches you can lose: a pool of your own (`d admin pool
+  create`, recipe above) or the isolated server's. Otherwise the unit test
+  `sandbox-agent/boot/clearcache_test.go` and the router test
+  `sandbox-agent/server/cache_clear_test.go` cover it.
+- Do not create a `vm` provider with `{"driver":"boxd"}` in the dev loop
+  without `BOXD_API_KEY` in the server's environment: its pool fails with
+  `boxd: no credentials`, and so does deleting it, since the stateless engine
+  asks boxd whether the pool's machine exists. The pool stays `failed` in the
+  loop's database. Use an isolated server (above) for it.
+

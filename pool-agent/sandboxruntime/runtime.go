@@ -21,7 +21,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -137,6 +136,9 @@ var (
 	// ErrNotRunning is an instruction that needs the sandbox running — a
 	// suspend — finding it not. Nothing changed.
 	ErrNotRunning = errors.New("the sandbox is not running")
+	// ErrUnsupported is an operation this pool's runtime cannot carry out
+	// for any sandbox, such as exporting a machine's disk. Nothing changed.
+	ErrUnsupported = errors.New("this pool's sandbox runtime does not support it")
 )
 
 // PowerDownReason is why the control plane is powering a sandbox down: it
@@ -357,70 +359,24 @@ var (
 
 // DockerSandboxRuntime launches sandboxes as Docker containers inside a pool.
 type DockerSandboxRuntime struct {
+	sandboxCore
 	client *client.Client
-	// paths judges every path this runtime names inside a sandbox: by the
-	// platform its sandboxes run on, the one the pool hosts (ADR 0145 §6).
-	paths                 sandboxpath.Paths
-	projectID             string
-	poolID                string
-	controlPlanePublicKey string
 	// sharedMemoryBytes sizes each sandbox container's /dev/shm; zero is
 	// Docker's 64 MiB default.
 	sharedMemoryBytes int64
-	// root is where this pool's state is, as this process sees it.
-	root layout.Root
-	// gitCache is this pool's cache of Git: one repository per remote, a
-	// namespace per sandbox source (ADR 26-10-10-545 §2).
-	gitCache *gitcache.Store
 	// hostStateRoot is where the daemon sees root's state; empty means it
 	// sees the paths root itself names. It is applied, through root, only where a path is
 	// handed to the daemon (daemonPath), so root and its translation are one.
 	hostStateRoot string
-	// powerLocks serializes power operations per sandbox (see power.go).
-	powerLocks sync.Map
-	// powerHandover holds, per sandbox, whether its status last advertised
-	// that the control plane may hold its power (ADR 26-10-16-337 §8). A
-	// sandbox the poll has not reached since this agent started has no entry,
-	// and keeps what its recorded document says.
-	powerHandover sync.Map
-	// booting holds the boot under way of each sandbox whose container is
-	// started and whose sandbox agent has not answered yet (see beginBoot).
-	booting sync.Map
 	// starts holds every operation that can start a container, so a cache
 	// clear can keep sandboxes down while it empties the caches; clearRun is
 	// the clear under way, which concurrent requests share (see clearcache.go).
 	starts   startGate
 	clearMu  sync.Mutex
 	clearRun *cacheClear
-	// statePublisher is the state channel's sink while a watcher is running
-	// (see statereport.go). Power operations use it to announce a transition
-	// they are about to make.
-	statePublisher atomic.Value
-	// progressPublisher is the same channel's sink for provisioning progress
-	// that has no state transition to hang off — an image pull, above all
-	// (see statereport.go, ADR 0039).
-	progressPublisher atomic.Value
-	// sandboxIdleTimeout is the pool policy's idle timeout, delivered in each
-	// sandbox's runtime-config document; zero leaves the sandbox-agent's
-	// default (ADR 0108).
-	sandboxIdleTimeout time.Duration
-	// poolEndpoints is where the pool serves its sandboxes, named in each
-	// one's bootstrap: directly, or through the edge it sits behind.
-	poolEndpoints sandboxconfig.PoolEndpoints
-	// identityKey is the pool's identity key. It signs runtime-config
-	// deliveries, and its public half is in every sandbox's bootstrap
-	// (ADR 26-10-08-127 §3).
-	identityKey ed25519.PrivateKey
-	// runtimeConfigLocks serializes deciding and delivering each sandbox's
-	// runtime-config document (see runtimeconfig.go).
-	runtimeConfigLocks sync.Map
 	// sandboxBaseImage is the provider's sandbox base image, which every
 	// sandbox delivered its platform runs (ADR 26-10-16-423 §10).
 	sandboxBaseImage string
-	// agentLayers is where the agent layer a delivered sandbox is placed
-	// with comes from, and agents its extractions (see agentlayer.go).
-	agentLayers AgentLayers
-	agents      agentExtract
 	// snapshots is the snapshot builds under way and failed (snapshot.go).
 	snapshots snapshotBuilds
 }
@@ -464,22 +420,26 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 	if err != nil {
 		return nil, err
 	}
-	return &DockerSandboxRuntime{
-		client:                cli,
-		paths:                 sandboxpath.For(cfg.Platform),
-		projectID:             cfg.ProjectID,
-		poolID:                cfg.PoolID,
-		controlPlanePublicKey: cfg.ControlPlanePublicKey,
-		sandboxIdleTimeout:    cfg.SandboxIdleTimeout,
-		poolEndpoints:         cfg.PoolEndpoints,
-		identityKey:           cfg.IdentityKey,
-		sharedMemoryBytes:     cfg.SharedMemoryBytes,
-		root:                  cfg.Root,
-		gitCache:              gitcache.New(cfg.Root.PoolGitCache(cfg.ProjectID, cfg.PoolID)),
-		hostStateRoot:         cfg.HostStateRoot,
-		sandboxBaseImage:      strings.TrimSpace(cfg.SandboxBaseImage),
-		agentLayers:           cfg.AgentLayers,
-	}, nil
+	r := &DockerSandboxRuntime{
+		sandboxCore: sandboxCore{
+			paths:                 sandboxpath.For(cfg.Platform),
+			projectID:             cfg.ProjectID,
+			poolID:                cfg.PoolID,
+			controlPlanePublicKey: cfg.ControlPlanePublicKey,
+			sandboxIdleTimeout:    cfg.SandboxIdleTimeout,
+			poolEndpoints:         cfg.PoolEndpoints,
+			identityKey:           cfg.IdentityKey,
+			root:                  cfg.Root,
+			gitCache:              gitcache.New(cfg.Root.PoolGitCache(cfg.ProjectID, cfg.PoolID)),
+			agentLayers:           cfg.AgentLayers,
+		},
+		client:            cli,
+		sharedMemoryBytes: cfg.SharedMemoryBytes,
+		hostStateRoot:     cfg.HostStateRoot,
+		sandboxBaseImage:  strings.TrimSpace(cfg.SandboxBaseImage),
+	}
+	r.boxes = r
+	return r, nil
 }
 
 func (r *DockerSandboxRuntime) ListSandboxes(ctx context.Context) ([]*Sandbox, error) {
@@ -522,7 +482,7 @@ func (r *DockerSandboxRuntime) RunningSandboxIDsInMode(ctx context.Context, harn
 // StoredSandboxIDs reads the per-sandbox volume root, which is the same tree
 // the volume reaper scans and is scoped to this pool — so it can never see
 // another pool's data even on a shared daemon.
-func (r *DockerSandboxRuntime) StoredSandboxIDs(context.Context) ([]string, error) {
+func (r *sandboxCore) StoredSandboxIDs(context.Context) ([]string, error) {
 	return storedSandboxIDs(r.sandboxesRoot())
 }
 
@@ -787,50 +747,20 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	if err := r.writeProjectLayerRecord(sandboxID, project); err != nil {
 		return nil, false, err
 	}
-	proxyMaterial, err := proxyagent.EnsureSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID)
+	proxyEnv, err := r.stageSandbox(sandboxID, req)
 	if err != nil {
-		return nil, false, err
-	}
-	sentinels, _ := req.Sentinels.Get()
-	sentinelRoutes, _ := req.SentinelRoutes.Get()
-	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxySentinelRoutes(sentinelRoutes)); err != nil {
-		return nil, false, err
-	}
-	// Recorded beside the sentinels, before the container exists, so the proxy
-	// has it before the sandbox's first request (ADR 26-10-01-032 §5). Absent is
-	// unrestricted. A create that finds its container already built returns
-	// before this; a change reaches that sandbox through UpdateSandbox, which the
-	// control plane sends after every create attempt.
-	if err := proxyagent.SetSandboxEgress(r.root, r.projectID, r.poolID, sandboxID, egressPolicy(req.Egress)); err != nil {
-		return nil, false, err
-	}
-	// Its project's gateways go beside it, for the same reason (ADR
-	// 26-10-16-470 §5).
-	gateways, _ := req.Gateways.Get()
-	if err := proxyagent.SetSandboxGateways(r.root, r.projectID, r.poolID, sandboxID, gatewayRoutes(gateways)); err != nil {
 		return nil, false, err
 	}
 	// The bootstrap: placed before the container exists, and the one thing the
 	// pool ever writes into the sandbox's config volume (ADR 0126 §3).
-	if err := r.writeSandboxHarnessConfig(ctx, sandboxID, imageName, req, proxyMaterial.Env, project.Project); err != nil {
+	if err := r.writeSandboxHarnessConfig(ctx, sandboxID, imageName, req, proxyEnv, project.Project); err != nil {
 		return nil, false, err
 	}
-	// Everything else the sandbox is told is its runtime-config document,
-	// delivered once its agent answers (finishBoot). The secrets the control
-	// plane sends a create are the sandbox's whole set. Each source is named
-	// with where its origin is, which the sandbox clones it from; it stays
-	// undelivered until settling has read its project layer.
 	secretEnv, _ := req.SecretEnv.Get()
-	if err := r.recordRuntimeConfig(sandboxID, func(doc *sandboxconfig.RuntimeConfig) {
-		doc.SecretEnv = cloneStringMap(secretEnv)
-		doc.Sources = r.runtimeSources(sandboxID, sandboxSources(r.paths, req), doc.Sources)
-	}); err != nil {
+	if err := r.publishCredentialEnvironment(sandboxID, cloneStringMap(secretEnv)); err != nil {
 		return nil, false, err
 	}
-	if err := r.publishCredentialEnvironment(sandboxID, secretEnv); err != nil {
-		return nil, false, err
-	}
-	baseEnv := mergeEnv(map[string]string(optSandboxConfigEnv(config.Env)), proxyMaterial.Env)
+	baseEnv := mergeEnv(map[string]string(optSandboxConfigEnv(config.Env)), proxyEnv)
 	name := sandboxContainerName(r.poolID, sandboxID)
 	cfg := &container.Config{
 		Image:    imageName,
@@ -903,6 +833,51 @@ func (r *DockerSandboxRuntime) buildSandboxContainer(ctx context.Context, sandbo
 	}
 	sb, err = r.observedSandbox(ctx, sandboxID)
 	return sb, false, err
+}
+
+// stageSandbox writes what the pool keeps for a sandbox before its box
+// exists: its proxy material, and its sentinels, egress policy and gateways,
+// which the proxy reads before the sandbox's first request, and its
+// runtime-config document's secrets and sources, delivered once its agent
+// answers (finishBoot). It returns the proxy environment the sandbox's
+// bootstrap carries.
+func (r *sandboxCore) stageSandbox(sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) (map[string]string, error) {
+	proxyMaterial, err := proxyagent.EnsureSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	sentinels, _ := req.Sentinels.Get()
+	sentinelRoutes, _ := req.SentinelRoutes.Get()
+	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxySentinelRoutes(sentinelRoutes)); err != nil {
+		return nil, err
+	}
+	// Recorded beside the sentinels, before the box exists, so the proxy
+	// has it before the sandbox's first request (ADR 26-10-01-032 §5). Absent is
+	// unrestricted. A create that finds its container already built returns
+	// before this; a change reaches that sandbox through UpdateSandbox, which the
+	// control plane sends after every create attempt.
+	if err := proxyagent.SetSandboxEgress(r.root, r.projectID, r.poolID, sandboxID, egressPolicy(req.Egress)); err != nil {
+		return nil, err
+	}
+	// Its project's gateways go beside it, for the same reason (ADR
+	// 26-10-16-470 §5).
+	gateways, _ := req.Gateways.Get()
+	if err := proxyagent.SetSandboxGateways(r.root, r.projectID, r.poolID, sandboxID, gatewayRoutes(gateways)); err != nil {
+		return nil, err
+	}
+	// Everything else the sandbox is told is its runtime-config document,
+	// delivered once its agent answers (finishBoot). The secrets the control
+	// plane sends a create are the sandbox's whole set. Each source is named
+	// with where its origin is, which the sandbox clones it from; it stays
+	// undelivered until settling has read its project layer.
+	secretEnv, _ := req.SecretEnv.Get()
+	if err := r.recordRuntimeConfig(sandboxID, func(doc *sandboxconfig.RuntimeConfig) {
+		doc.SecretEnv = cloneStringMap(secretEnv)
+		doc.Sources = r.runtimeSources(sandboxID, sandboxSources(r.paths, req), doc.Sources)
+	}); err != nil {
+		return nil, err
+	}
+	return proxyMaterial.Env, nil
 }
 
 // boxConfig is the host and network config of every box this runtime boots,
@@ -1634,7 +1609,7 @@ func proxySentinelRoutes(in map[string][]workerapimodel.SentinelRoute) map[strin
 	return out
 }
 
-func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error) {
+func (r *sandboxCore) UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error) {
 	if req != nil && req.ReserveHarnessChange.IsSet() {
 		return r.reserveHarnessChange(ctx, sandboxID, req.ReserveHarnessChange.Value)
 	}
@@ -1677,7 +1652,7 @@ func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID stri
 			}
 		}
 	}
-	return r.GetSandbox(ctx, sandboxID)
+	return r.boxes.GetSandbox(ctx, sandboxID)
 }
 
 // updateSandboxSecretEnv replaces the sandbox's secret environment in its
@@ -1688,12 +1663,12 @@ func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID stri
 // already delivered by the time it runs. A sandbox with no container — archived,
 // or between containers — is left alone: the create that gives it one sends its
 // whole secret set.
-func (r *DockerSandboxRuntime) updateSandboxSecretEnv(ctx context.Context, sandboxID string, secretEnv map[string]string) error {
+func (r *sandboxCore) updateSandboxSecretEnv(ctx context.Context, sandboxID string, secretEnv map[string]string) error {
 	power := r.sandboxLock(sandboxID)
 	power.Lock()
 	defer power.Unlock()
 	set := func(doc *sandboxconfig.RuntimeConfig) { doc.SecretEnv = secretEnv }
-	sb, err := r.GetSandbox(ctx, sandboxID)
+	sb, err := r.boxes.GetSandbox(ctx, sandboxID)
 	if errors.Is(err, ErrNotFound) || (err == nil && r.isArchived(sandboxID)) {
 		return nil
 	}
@@ -1720,7 +1695,7 @@ func (r *DockerSandboxRuntime) updateSandboxSecretEnv(ctx context.Context, sandb
 // it created — is published none until a create writes one: which of its
 // secrets are file-delivered is not known, and sandbox.json, which says, is the
 // sandbox's to write and never read back.
-func (r *DockerSandboxRuntime) publishCredentialEnvironment(sandboxID string, secretEnv map[string]string) error {
+func (r *sandboxCore) publishCredentialEnvironment(sandboxID string, secretEnv map[string]string) error {
 	record, ok, err := r.readFileSecretsRecord(sandboxID)
 	if err != nil {
 		return err
@@ -1745,13 +1720,13 @@ type fileSecretsRecord struct {
 	FileSecrets []string `json:"fileSecrets"`
 }
 
-func (r *DockerSandboxRuntime) fileSecretsRecordPath(sandboxID string) string {
+func (r *sandboxCore) fileSecretsRecordPath(sandboxID string) string {
 	return filepath.Join(r.sandboxRoot(sandboxID), fileSecretsRecordName)
 }
 
 // recordFileSecrets writes which of the harness secrets a create sent are
 // read from a file.
-func (r *DockerSandboxRuntime) recordFileSecrets(sandboxID string, secrets []harness.Secret) error {
+func (r *sandboxCore) recordFileSecrets(sandboxID string, secrets []harness.Secret) error {
 	record := fileSecretsRecord{FileSecrets: []string{}}
 	for _, secret := range secrets {
 		if secret.Delivery == harness.SecretDeliveryFile {
@@ -1775,7 +1750,7 @@ func (r *DockerSandboxRuntime) recordFileSecrets(sandboxID string, secrets []har
 
 // readFileSecretsRecord is the sandbox's file secrets record, and false when
 // none has been written.
-func (r *DockerSandboxRuntime) readFileSecretsRecord(sandboxID string) (fileSecretsRecord, bool, error) {
+func (r *sandboxCore) readFileSecretsRecord(sandboxID string) (fileSecretsRecord, bool, error) {
 	data, err := os.ReadFile(r.fileSecretsRecordPath(sandboxID))
 	if errors.Is(err, fs.ErrNotExist) {
 		return fileSecretsRecord{}, false, nil
@@ -1796,11 +1771,11 @@ func (r *DockerSandboxRuntime) readFileSecretsRecord(sandboxID string) (fileSecr
 // is answered ErrNotFound and nothing is written: its create carries the
 // policy (ADR 26-10-01-032 §5, ADR 26-10-16-470 §5), and a push that raced a
 // delete must not leave an entry nothing would ever remove.
-func (r *DockerSandboxRuntime) updateSandboxProxyPolicy(ctx context.Context, sandboxID string, write func() error) error {
+func (r *sandboxCore) updateSandboxProxyPolicy(ctx context.Context, sandboxID string, write func() error) error {
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
-	if _, err := r.GetSandbox(ctx, sandboxID); err != nil {
+	if _, err := r.boxes.GetSandbox(ctx, sandboxID); err != nil {
 		return err
 	}
 	if r.isArchived(sandboxID) {
@@ -1960,8 +1935,8 @@ const (
 	poolDataTombstone = ".discobox-orphaned-at"
 )
 
-func (r *DockerSandboxRuntime) liveSandboxIDs(ctx context.Context) ([]string, error) {
-	sandboxes, err := r.ListSandboxes(ctx)
+func (r *sandboxCore) liveSandboxIDs(ctx context.Context) ([]string, error) {
+	sandboxes, err := r.boxes.ListSandboxes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2013,7 +1988,7 @@ func (r *DockerSandboxRuntime) WatchProxyMaterial(ctx context.Context, logger *s
 // someone holds is skipped rather than waited for: whatever holds it is
 // operating on the sandbox, and a create can hold it for minutes, which would
 // stall the event stream this runs from. The next pass looks again.
-func (r *DockerSandboxRuntime) reconcileSandboxMaterial(ctx context.Context, logger *slog.Logger) {
+func (r *sandboxCore) reconcileSandboxMaterial(ctx context.Context, logger *slog.Logger) {
 	live, err := r.liveSandboxIDs(ctx)
 	if err != nil {
 		logger.Warn("list sandbox containers", "error", err)
@@ -2037,13 +2012,13 @@ func (r *DockerSandboxRuntime) reconcileSandboxMaterial(ctx context.Context, log
 
 // reapSandboxMaterial removes one orphan candidate's proxy material and policy
 // when nothing holds its lock and it still has no container.
-func (r *DockerSandboxRuntime) reapSandboxMaterial(ctx context.Context, logger *slog.Logger, sandboxID string) {
+func (r *sandboxCore) reapSandboxMaterial(ctx context.Context, logger *slog.Logger, sandboxID string) {
 	lock := r.sandboxLock(sandboxID)
 	if !lock.TryLock() {
 		return
 	}
 	defer lock.Unlock()
-	if _, err := r.GetSandbox(ctx, sandboxID); !errors.Is(err, ErrNotFound) {
+	if _, err := r.boxes.GetSandbox(ctx, sandboxID); !errors.Is(err, ErrNotFound) {
 		if err != nil {
 			logger.Warn("look up sandbox container before reaping its proxy material", "sandboxID", sandboxID, "error", err)
 		}
@@ -2078,7 +2053,7 @@ func (r *DockerSandboxRuntime) WatchSandboxVolumes(ctx context.Context, logger *
 	ticker := time.NewTicker(sandboxVolumeReapInterval)
 	defer ticker.Stop()
 	for {
-		reapUnheldSandboxVolumes(ctx, r.sandboxesRoot(), held, sandboxVolumeRetention, time.Now(), logger)
+		reapUnheldSandboxVolumes(ctx, r.sandboxesRoot(), held, sandboxVolumeRetention, time.Now(), logger, nil)
 		// When the last sweep ran is the store's to remember, on disk: a pool
 		// agent that restarts often neither repacks every cache each time it
 		// does nor goes without ever collecting one.
@@ -2276,7 +2251,11 @@ func unknownPoolDirs(root string, known map[string]struct{}, logger *slog.Logger
 // written before any create reaches this pool, so every tree listed here whose
 // sandbox exists is in the answer that follows; an import restores its tree
 // before its row (ADR 0123 §3), and the retention window covers that.
-func reapUnheldSandboxVolumes(ctx context.Context, root string, held HeldSandboxes, retention time.Duration, now time.Time, logger *slog.Logger) {
+//
+// release, when set, is what else goes with a tree that is reaped, before the
+// tree does: a machine pool's sandbox machine. A tree whose release fails is
+// kept for the next pass, so nothing it names is left without a record.
+func reapUnheldSandboxVolumes(ctx context.Context, root string, held HeldSandboxes, retention time.Duration, now time.Time, logger *slog.Logger, release func(ctx context.Context, sandboxID string) error) {
 	trees, err := storedSandboxIDs(root)
 	if err != nil {
 		logger.Warn("scan sandbox volume root", "root", root, "error", err)
@@ -2316,6 +2295,12 @@ func reapUnheldSandboxVolumes(ctx context.Context, root string, held HeldSandbox
 		}
 		if now.Sub(unheldAt) < retention {
 			continue
+		}
+		if release != nil {
+			if err := release(ctx, sandboxID); err != nil {
+				logger.Warn("release an unheld sandbox's box before reaping its tree", "sandboxID", sandboxID, "error", err)
+				continue
+			}
 		}
 		if err := os.RemoveAll(dir); err != nil {
 			logger.Warn("reap unheld sandbox volume", "sandboxID", sandboxID, "error", err)
@@ -2445,8 +2430,8 @@ func (r *DockerSandboxRuntime) adoptSourcePaths(ctx context.Context, sandboxID s
 // provisioning onwards, before the source has been delivered, which is the
 // whole point — it is what the client pushes into while the sandbox parks
 // (ADR 0058 §4).
-func (r *DockerSandboxRuntime) GitOriginPath(ctx context.Context, sandboxID, slug string) (GitRepositoryLocation, error) {
-	sb, err := r.GetSandbox(ctx, sandboxID)
+func (r *sandboxCore) GitOriginPath(ctx context.Context, sandboxID, slug string) (GitRepositoryLocation, error) {
+	sb, err := r.boxes.GetSandbox(ctx, sandboxID)
 	if err != nil {
 		return GitRepositoryLocation{}, err
 	}
@@ -2454,7 +2439,7 @@ func (r *DockerSandboxRuntime) GitOriginPath(ctx context.Context, sandboxID, slu
 }
 
 // GitCache is this pool's cache of Git.
-func (r *DockerSandboxRuntime) GitCache() *gitcache.Store {
+func (r *sandboxCore) GitCache() *gitcache.Store {
 	return r.gitCache
 }
 
@@ -3247,14 +3232,14 @@ func sandboxHostname(sandboxID string) string {
 // in this project (ADRs 0007 and 0013). Its independent top-level root lets a
 // provider mount disposable storage at /var/lib/discobox/cache without moving
 // durable sandbox state.
-func (r *DockerSandboxRuntime) poolCacheRoot() string {
+func (r *sandboxCore) poolCacheRoot() string {
 	return r.root.PoolCache(r.projectID, r.poolID)
 }
 
 // sandboxesRoot is the parent of every sandbox's per-sandbox volume tree for
 // this pool. The volume reaper scans only under here, which is why it can never
 // touch another pool's data.
-func (r *DockerSandboxRuntime) sandboxesRoot() string {
+func (r *sandboxCore) sandboxesRoot() string {
 	return r.root.PoolSandboxes(r.projectID, r.poolID)
 }
 
@@ -3277,38 +3262,38 @@ func (r *DockerSandboxRuntime) projectFilters() client.Filters {
 	return args
 }
 
-func (r *DockerSandboxRuntime) sandboxDataRootPath(sandboxID string) string {
+func (r *sandboxCore) sandboxDataRootPath(sandboxID string) string {
 	return r.root.SandboxData(r.projectID, r.poolID, sandboxID)
 }
 
-func (r *DockerSandboxRuntime) sourceDataPath(sourceKey string) string {
+func (r *sandboxCore) sourceDataPath(sourceKey string) string {
 	return r.root.SourceData(r.projectID, r.poolID, sourceKey)
 }
 
-func (r *DockerSandboxRuntime) sandboxSourceDataPath(sandboxID, slug string) string {
+func (r *sandboxCore) sandboxSourceDataPath(sandboxID, slug string) string {
 	return r.root.SandboxSourceData(r.projectID, r.poolID, sandboxID, slug)
 }
 
-func (r *DockerSandboxRuntime) sandboxConfigRoot(sandboxID string) string {
+func (r *sandboxCore) sandboxConfigRoot(sandboxID string) string {
 	return r.root.SandboxConfig(r.projectID, r.poolID, sandboxID)
 }
 
-func (r *DockerSandboxRuntime) sandboxSecretsRoot(sandboxID string) string {
+func (r *sandboxCore) sandboxSecretsRoot(sandboxID string) string {
 	return r.root.SandboxSecrets(r.projectID, r.poolID, sandboxID)
 }
 
-func (r *DockerSandboxRuntime) sandboxSourcesRoot(sandboxID string) string {
+func (r *sandboxCore) sandboxSourcesRoot(sandboxID string) string {
 	return r.root.SandboxSources(r.projectID, r.poolID, sandboxID)
 }
 
-func (r *DockerSandboxRuntime) sandboxSourcePath(sandboxID, slug string) string {
+func (r *sandboxCore) sandboxSourcePath(sandboxID, slug string) string {
 	return filepath.Join(r.sandboxSourcesRoot(sandboxID), slug)
 }
 
 // sandboxOriginPath is the bare repository a push-delivered source is pushed
 // into and served out of, over the git-origins route the sandbox fetches from
 // (ADR 0058 §1, ADR 0126 §4).
-func (r *DockerSandboxRuntime) sandboxOriginPath(sandboxID, slug string) string {
+func (r *sandboxCore) sandboxOriginPath(sandboxID, slug string) string {
 	return filepath.Join(r.root.SandboxOrigins(r.projectID, r.poolID, sandboxID), slug+".git")
 }
 
@@ -3708,7 +3693,7 @@ func sourcePoolRemote(source workerapimodel.GitSource) string {
 //
 // A branch the source names is HEAD from the start, so a clone made the moment
 // the client's push lands resolves origin/HEAD (ensureOriginHead).
-func (r *DockerSandboxRuntime) initGitOrigin(ctx context.Context, repoPath, branch string, user sandboxuser.User) error {
+func (r *sandboxCore) initGitOrigin(ctx context.Context, repoPath, branch string, user sandboxuser.User) error {
 	if _, err := os.Stat(filepath.Join(repoPath, "HEAD")); err == nil {
 		return nil
 	} else if !os.IsNotExist(err) {

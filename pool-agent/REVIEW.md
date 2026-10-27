@@ -64,6 +64,13 @@ agent, as root on the host, would follow and read without bound. It has been
 read back twice (`recordedSandboxUser`, and the credential environment before
 `file-secrets.json`); record what you need from the request that wrote it.
 
+A machine is the exception, and only for what it boots on: a machine can be
+copied into only while it runs, so `MachineSandboxRuntime.place` copies
+sandbox.json, the agent layer, its units and its pins into a running machine at
+every start, and restarts it when they moved (ADR 26-10-24-953 §2, ADR
+26-10-27-345). Nothing else is written into a machine either: no record of the
+pool's, and nothing into the sandbox's own files.
+
 The one other write is the agent's placement in a delivered sandbox's
 container, before each start and never into a running one: the agent layer,
 its units and `pins.json` (`placeAgent`, ADR 26-10-16-423 §7 as amended).
@@ -180,6 +187,19 @@ Do not answer it with the power lock: that lock is also held by create,
 archive, delete, import and stop, so waiting on it (or failing a `TryLock`)
 stalls healthy traffic behind unrelated work, and re-reading the container
 after it adds a Docker round trip to every request.
+
+Never take a machine as started on its power state alone. A machine is
+placed into only while it runs, so one can run with nothing placed in it: its
+start's placement failed, its caller went away, or the pool agent died
+mid-start. Every start checks the pool's own record of what it placed in that
+instance (`placementCurrent`) and places what is missing, and `startLocked`
+stops a box whose start fails after it came up, detached from the caller.
+Why: a machine answered as started on its state alone has no agent, and every
+request to it is a 502. The machine runtime's `EnsureSandboxRunning` answers
+without the power lock or a call to the driver, as the paragraph above asks,
+only for a sandbox it last saw running, on no boot under way, whose
+placement record is current (`answersRunning`): being seen running is a power
+state, which any poll sets, and never enough alone.
 
 Run a thaw's follow-up calls detached from the caller and under the power
 lock. What `resumeLocked` does after `ContainerUnpause` — the runtime-config
@@ -307,3 +327,14 @@ changed. A step added that lays a binary needs it there too.
 - When classifying Git HTTP authentication from a trace, keep the trace on a
   bounded, drained pipe with data disabled and redaction enabled. Never send
   it to stderr or a file: a lent request may carry real credentials.
+
+## Removing a machine
+
+A machine's disk is its sandbox's only copy, so nothing removes one on a single
+look. The volume reaper removes a sandbox's machine with its unheld tree, after
+the trees' retention. An orphan, a machine of the pool's project that no tree
+and no held sandbox names, is removed only if its name is a sandbox's
+(`sbx-…`), and only once the same retention has passed since it was first seen
+so (`machine-orphans`). A pool's project is the provider's naming convention,
+not a fence (ADR 26-10-23-551 §4), so a machine of any other name in it is
+never this runtime's to remove.

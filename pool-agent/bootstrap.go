@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/vm/pkg/machine"
+
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/controlplane"
 	"github.com/discobox-ai/discobox/pkg/platform"
@@ -84,6 +86,17 @@ type Bootstrap struct {
 	// Driver is the disco-vm driver a RuntimeMachine pool's sandboxes run on,
 	// such as boxd. Only that runtime has one.
 	Driver string `json:"driver,omitempty"`
+	// MachineProject is the disco-vm project a RuntimeMachine pool makes its
+	// sandboxes' machines in: the pool's own, which its provider derives from
+	// the pool (ADR 26-10-23-551 §3).
+	MachineProject string `json:"machineProject,omitempty"`
+	// MachineBase is the ID of the driver's base a sandbox's machine boots;
+	// empty is the first base the driver lists.
+	MachineBase string `json:"machineBase,omitempty"`
+	// MachineNetwork is the provider's network the pool's machine is on,
+	// which every sandbox's machine is made isolated on (ADR 26-10-23-551
+	// §4). A driver that isolates machines needs one.
+	MachineNetwork string `json:"machineNetwork,omitempty"`
 }
 
 // EffectiveRuntime is the runtime the bootstrap names, RuntimeDocker when it
@@ -118,9 +131,15 @@ func (b Bootstrap) Validate() error {
 		if b.Driver != "" {
 			return fmt.Errorf("driver %q is for the %s runtime; this pool's is %s", b.Driver, RuntimeMachine, RuntimeDocker)
 		}
+		if b.MachineProject != "" || b.MachineBase != "" || b.MachineNetwork != "" {
+			return fmt.Errorf("a machine project, base and network are for the %s runtime; this pool's is %s", RuntimeMachine, RuntimeDocker)
+		}
 	case RuntimeMachine:
 		if strings.TrimSpace(b.Driver) == "" {
 			return fmt.Errorf("the %s runtime needs a driver", RuntimeMachine)
+		}
+		if err := machine.ValidateProject(b.MachineProject); err != nil {
+			return fmt.Errorf("the %s runtime's machine project: %w", RuntimeMachine, err)
 		}
 	default:
 		return fmt.Errorf("unknown pool runtime %q", b.Runtime)
@@ -159,13 +178,6 @@ type SandboxAgentStatusClient interface {
 // agent's own platform.
 func hostedPlatform() platform.Platform {
 	return platform.Current()
-}
-
-// hostedImageKind is the kind of image this pool runs, declared beside its
-// platform (ADR 26-10-09-106 §4). This agent's sandboxes are containers, so
-// it runs OCI images.
-func hostedImageKind() platform.ImageKind {
-	return platform.OCI
 }
 
 // StatusRequest updates pool scheduling status using a signed pool assertion.

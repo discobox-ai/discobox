@@ -197,6 +197,14 @@ func (r Root) PoolGitCache(projectID, poolID string) string {
 	return r.join(r.PoolData(projectID, poolID), "git-cache")
 }
 
+// PoolMachines is the disco-vm state root of a pool whose sandboxes are
+// machines (ADR 26-10-23-551 §3): where a driver whose provider is this
+// host's disk keeps them. A remote driver's provider keeps its machines, and
+// nothing is written here.
+func (r Root) PoolMachines(projectID, poolID string) string {
+	return r.join(r.PoolData(projectID, poolID), "machines")
+}
+
 // SourceData is one source's durable pool-local data directory. sourceKey is
 // an opaque key resolved before the pool boundary; layout does not interpret
 // source identity.

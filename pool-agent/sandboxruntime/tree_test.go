@@ -186,8 +186,8 @@ func treeRuntime(t *testing.T, root layout.Root, projectID, poolID string) (*Doc
 	// The agent of a sandbox's platform pin is what an export reads with, over
 	// the sandbox base image (exportImage).
 	layers := &fakeAgentLayers{digest: testAgentLayer, layer: gzippedAgentLayer(t, "agent")}
-	return &DockerSandboxRuntime{client: cli, root: root, projectID: projectID, poolID: poolID,
-		sandboxBaseImage: "discobox-sandbox-base:test", agentLayers: layers}, daemon
+	return testDockerRuntime(&DockerSandboxRuntime{client: cli, root: root, projectID: projectID, poolID: poolID,
+		sandboxBaseImage: "discobox-sandbox-base:test", agentLayers: layers}), daemon
 }
 
 // testAgentLayer is the agent layer every tree runtime's sandbox is pinned to.

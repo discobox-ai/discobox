@@ -44,7 +44,7 @@ func snapshotCreate(sandboxID string, platform string) *workerapimodel.PoolSandb
 // nothing of the sandbox whose create asked for it, so every sandbox of a
 // plan shares one (ADR 26-10-16-423 §8).
 func TestASnapshotIsKeyedByItsPlanAndNothingOfTheSandbox(t *testing.T) {
-	r := &DockerSandboxRuntime{projectID: "proj_1", poolID: "pool_1"}
+	r := testDockerRuntime(&DockerSandboxRuntime{projectID: "proj_1", poolID: "pool_1"})
 	key := func(base string, req *workerapimodel.PoolSandboxCreateRequest) string {
 		t.Helper()
 		plan, err := r.newSnapshotPlan(base, req)
@@ -117,7 +117,7 @@ func snapshotDaemon(t *testing.T, snapshot, base string) *client.Client {
 // snapshot built behind it — once, and not again soon after it failed.
 func TestADeliveredCreateStartsFromItsPlansSnapshot(t *testing.T) {
 	req := snapshotCreate("sbx_1", "a")
-	r := &DockerSandboxRuntime{root: withTestRoot(t), projectID: "proj_1", poolID: "pool_1"}
+	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), projectID: "proj_1", poolID: "pool_1"})
 	plan, err := r.newSnapshotPlan("sha256:base", req)
 	if err != nil {
 		t.Fatal(err)
@@ -188,7 +188,7 @@ func TestDeliveredMovedReadsTheBaseOfASnapshot(t *testing.T) {
 		"built on the current base": {"sha256:base-v2", movedPins},
 		"built on an older base":    {"sha256:base-v1", movedBase},
 	} {
-		r := &DockerSandboxRuntime{root: withTestRoot(t), client: snapshotDaemon(t, "", tc.snapshotBase), projectID: "proj_1", poolID: "pool_1", poolEndpoints: proxyagent.PoolEndpoints(""), sandboxBaseImage: "discobox-sandbox-base:test"}
+		r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), client: snapshotDaemon(t, "", tc.snapshotBase), projectID: "proj_1", poolID: "pool_1", poolEndpoints: proxyagent.PoolEndpoints(""), sandboxBaseImage: "discobox-sandbox-base:test"})
 		existing := &Sandbox{ID: "ctr_snap", SandboxID: "sbx_1", Status: StatusRunning}
 		got, err := r.deliveredMoved(context.Background(), existing, snapshotCreate("sbx_1", "a"))
 		if err != nil || got != tc.want {
@@ -264,8 +264,8 @@ func buildFixture(t *testing.T, result string) (*DockerSandboxRuntime, *buildDae
 		t.Fatal(err)
 	}
 	digest := "sha256:" + strings.Repeat("c", 64)
-	r := &DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1", poolEndpoints: proxyagent.PoolEndpoints(""),
-		agentLayers: &fakeAgentLayers{digest: digest, layer: gzippedAgentLayer(t, "agent")}}
+	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1", poolEndpoints: proxyagent.PoolEndpoints(""),
+		agentLayers: &fakeAgentLayers{digest: digest, layer: gzippedAgentLayer(t, "agent")}})
 	req := snapshotCreate("sbx_1", "a")
 	req.Config.Features = workerclient.NewOptSandboxConfigFeatures(workerclient.SandboxConfigFeatures{"brew": {Enabled: false}})
 	plan, err := r.newSnapshotPlan("sha256:base", req)
@@ -383,7 +383,7 @@ func TestTheSweepRemovesWhatABuildLeft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1", poolEndpoints: proxyagent.PoolEndpoints("")}
+	r := testDockerRuntime(&DockerSandboxRuntime{root: withTestRoot(t), client: cli, projectID: "proj_1", poolID: "pool_1", poolEndpoints: proxyagent.PoolEndpoints("")})
 	for _, id := range []string{left, live, stuck} {
 		if err := os.MkdirAll(filepath.Join(r.snapshotsDir(), id, "etc"), 0o755); err != nil {
 			t.Fatal(err)
@@ -447,7 +447,7 @@ func TestAClearRemovesThePoolsSnapshots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &DockerSandboxRuntime{client: cli, projectID: "proj_1", poolID: "pool_1"}
+	r := testDockerRuntime(&DockerSandboxRuntime{client: cli, projectID: "proj_1", poolID: "pool_1"})
 	r.snapshots.failed = map[string]time.Time{"k": time.Now()}
 	if err := r.clearSnapshots(context.Background()); err != nil {
 		t.Fatal(err)

@@ -16,4 +16,9 @@ const (
 	// bootstrap: the pool's policy the agent reads from its environment.
 	// Optional; the agent's unit reads it when it is there.
 	EnvironmentFile = "/etc/discobox/pool-agent/environment"
+	// ProvisioningKeyFile is a machine pool's provisioning key (ADR
+	// 26-10-23-551 §4): a disco-vm machine.Key as JSON, root's alone, which
+	// the pool's engine reads on every call to its driver, so a renewed key
+	// is a new file and nothing more.
+	ProvisioningKeyFile = "/etc/discobox/pool-agent/provisioning-key.json"
 )

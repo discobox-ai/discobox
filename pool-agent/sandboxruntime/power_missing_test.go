@@ -34,7 +34,7 @@ func emptyDaemon(t *testing.T, root layout.Root) *DockerSandboxRuntime {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &DockerSandboxRuntime{client: cli, root: root, projectID: "proj_a", poolID: "pool_a"}
+	return testDockerRuntime(&DockerSandboxRuntime{client: cli, root: root, projectID: "proj_a", poolID: "pool_a"})
 }
 
 // An explicit power instruction for a sandbox with no container answers why

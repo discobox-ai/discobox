@@ -48,7 +48,7 @@ func materialDaemon(t *testing.T, sandboxID string, appearsAt int64) *DockerSand
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &DockerSandboxRuntime{client: cli, root: withTestRoot(t), projectID: "proj_a", poolID: "pool_a"}
+	return testDockerRuntime(&DockerSandboxRuntime{client: cli, root: withTestRoot(t), projectID: "proj_a", poolID: "pool_a"})
 }
 
 // stageAgedMaterial is what a sandbox created long ago holds on this pool: its
