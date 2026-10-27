@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b56etiayo</task-id>
+<tool-use-id>toolu_01QvjinyTB7SrNPkCtXM8QV4</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/98dcf5a1-157d-48e4-b153-caaa0fe8292b/tasks/b56etiayo.output</output-file>
+<status>completed</status>
+<summary>Background command "gh run rerun 36943682517 --repo discobox-ai/discobox --failed &amp;&amp; sleep 15 &amp;&amp; gh run watch 36943682517 --repo discobox-ai/discobox --exit-status --interval 30 &gt; /dev/null 2&gt;&amp;1; echo exit=$?; gh run view 36943682517 --repo discobox-ai/discobox | sed -n 1,20p" completed (exit code 0)</summary>
+</task-notification>
