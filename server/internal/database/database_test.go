@@ -659,48 +659,37 @@ func reshapeSandboxesToPreSplitSchema(t *testing.T, db *database.DB) {
 
 // TestMigrateMovesSecretHostsToLists upgrades requests and grants written when
 // each carried one host (ADR 26-10-02-393 §6): the host becomes the only one
-// in the list, normalized the way the proxy reports a destination, a row with
-// none keeps the wildcard, and the retired column is gone. A grant whose host
-// is not what the proxy reports is an approval nothing can match, so the
-// casing old rows were written in is repaired on the way.
+// in the list, normalized the way the proxy reports a destination, and the
+// retired column is gone. A grant whose host is not what the proxy reports is
+// an approval nothing can match, so the casing old rows were written in is
+// repaired on the way — and carried into the binding the grant becomes (ADR
+// 26-10-27-880 §8).
 func TestMigrateMovesSecretHostsToLists(t *testing.T) {
 	ctx := context.Background()
-	db, err := database.New(database.Config{
-		Driver: gormdb.DriverSQLite,
-		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
-	})
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := db.Close(); err != nil {
-			t.Fatalf("close database: %v", err)
-		}
-	})
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatalf("initial migrate: %v", err)
-	}
+	db := openGrantEra(t)
 	write := db.Write.WithContext(ctx)
-	if err := write.Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
-		t.Fatalf("create project: %v", err)
-	}
 	// The column as a database written before the list had it.
 	for _, table := range []string{"secret_requests", "secret_grants"} {
 		if err := write.Exec("ALTER TABLE " + table + " ADD COLUMN host text NOT NULL DEFAULT ''").Error; err != nil {
 			t.Fatalf("restore %s.host: %v", table, err)
 		}
 	}
+	if err := write.Create(&model.Sandbox{ID: "sbx-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "one"}).Error; err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
 	now := time.Now().UTC()
-	for _, grant := range []struct{ id, host string }{{"grant_shouty", "API.GitHub.com"}, {"grant_wildcard", ""}} {
-		if err := write.Exec(
-			"INSERT INTO secret_grants (id, project_id, secret_id, scope, scope_key, host, granted_by, granted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			grant.id, "project-1", "sec-1", model.SecretGrantScopeProject, "project-1", grant.host, "user-1", now, now, now).Error; err != nil {
-			t.Fatalf("seed grant: %v", err)
+	for _, stmt := range []string{
+		"INSERT INTO secrets (id, project_id, name, type, max_grant_ttl_seconds) VALUES ('sec-1', 'project-1', 'github', 'token', 0)",
+		"INSERT INTO sandbox_secrets (id, project_id, sandbox_id, secret_id, env_name, sentinel) VALUES ('ss_1', 'project-1', 'sbx-1', 'sec-1', 'GH_TOKEN', 'SENTINEL')",
+		"INSERT INTO secret_grants (id, project_id, secret_id, scope, scope_key, host) VALUES ('grant_shouty', 'project-1', 'sec-1', 'project', 'project-1', 'API.GitHub.com')",
+	} {
+		if err := write.Exec(stmt).Error; err != nil {
+			t.Fatalf("seed: %v", err)
 		}
 	}
 	if err := write.Exec(
-		"INSERT INTO secret_requests (id, project_id, requested_by, type, host, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		"req_old", "project-1", "agent:sbx-1", model.SecretTypeToken, "api.github.com", model.SecretRequestStatusPending, now, now).Error; err != nil {
+		"INSERT INTO secret_requests (id, project_id, requested_by, sandbox_id, name, env_name, type, host, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"req_old", "project-1", "agent:sbx-1", "sbx-1", "github", "GH_TOKEN", model.SecretTypeToken, "api.github.com", model.SecretRequestStatusPending, now, now).Error; err != nil {
 		t.Fatalf("seed request: %v", err)
 	}
 
@@ -712,30 +701,22 @@ func TestMigrateMovesSecretHostsToLists(t *testing.T) {
 		t.Fatalf("migrate again: %v", err)
 	}
 
-	for _, table := range []string{"secret_requests", "secret_grants"} {
-		if db.Write.Migrator().HasColumn(table, "host") {
-			t.Errorf("%s.host survived the migration", table)
-		}
+	if db.Write.Migrator().HasColumn("secret_requests", "host") {
+		t.Errorf("secret_requests.host survived the migration")
 	}
-	var shouty, wildcard model.SecretGrant
-	if err := write.First(&shouty, "id = ?", "grant_shouty").Error; err != nil {
-		t.Fatalf("read grant: %v", err)
+	var binding model.SecretBinding
+	if err := write.First(&binding, "id = ?", "bind_1").Error; err != nil {
+		t.Fatalf("read binding: %v", err)
 	}
-	if len(shouty.Hosts) != 1 || shouty.Hosts[0] != "api.github.com" {
-		t.Errorf("hosts = %q, want [api.github.com], lowercased to what the proxy reports", shouty.Hosts)
-	}
-	if err := write.First(&wildcard, "id = ?", "grant_wildcard").Error; err != nil {
-		t.Fatalf("read grant: %v", err)
-	}
-	if len(wildcard.Hosts) != 0 {
-		t.Errorf("a wildcard grant's hosts = %q, want none", wildcard.Hosts)
+	if !reflect.DeepEqual(binding.Routes, []model.SecretRoute{{Host: "api.github.com"}}) {
+		t.Errorf("routes = %+v, want [api.github.com], lowercased to what the proxy reports", binding.Routes)
 	}
 	var req model.SecretRequest
 	if err := write.First(&req, "id = ?", "req_old").Error; err != nil {
 		t.Fatalf("read request: %v", err)
 	}
-	if len(req.Hosts) != 1 || req.Hosts[0] != "api.github.com" {
-		t.Errorf("request hosts = %q, want [api.github.com]", req.Hosts)
+	if !reflect.DeepEqual(req.Routes, []model.SecretRoute{{Host: "api.github.com"}}) {
+		t.Errorf("request routes = %+v, want [api.github.com]", req.Routes)
 	}
 }
 
@@ -762,6 +743,7 @@ func TestMigrateSecretTypesRenamesAndPrunes(t *testing.T) {
 	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("initial migrate: %v", err)
 	}
+	grantEraSchema(t, db)
 	if err := db.Write.WithContext(ctx).Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -782,7 +764,7 @@ func TestMigrateSecretTypesRenamesAndPrunes(t *testing.T) {
 	// A grant standing on one of the unusable secrets, which has to go with it.
 	if err := db.Write.WithContext(ctx).Exec(
 		"INSERT INTO secret_grants (id, project_id, secret_id, scope, scope_key, hosts, granted_by, granted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		"grant_git", "project-1", "sec_git", model.SecretGrantScopeProject, "project-1", `["github.com"]`, "user-1", now, now, now).Error; err != nil {
+		"grant_git", "project-1", "sec_git", "project", "project-1", `["github.com"]`, "user-1", now, now, now).Error; err != nil {
 		t.Fatalf("seed grant: %v", err)
 	}
 
@@ -797,12 +779,12 @@ func TestMigrateSecretTypesRenamesAndPrunes(t *testing.T) {
 	if len(types) != 2 || types[0] != "token" || types[1] != "oauth" {
 		t.Fatalf("types = %v, want the bearer row renamed and git/ssh gone", types)
 	}
-	var grants int64
-	if err := db.Write.WithContext(ctx).Raw("SELECT count(*) FROM secret_grants").Scan(&grants).Error; err != nil {
-		t.Fatalf("count grants: %v", err)
+	var bindings int64
+	if err := db.Write.WithContext(ctx).Model(&model.SecretBinding{}).Count(&bindings).Error; err != nil {
+		t.Fatalf("count bindings: %v", err)
 	}
-	if grants != 0 {
-		t.Fatalf("grants = %d, want the one standing on a deleted secret gone", grants)
+	if bindings != 0 {
+		t.Fatalf("bindings = %d, want nothing made of the grant standing on a deleted secret", bindings)
 	}
 }
 
@@ -917,8 +899,8 @@ func TestMigrateCarriesGrantTTLIntoTheLimitColumn(t *testing.T) {
 	if err := db.Write.WithContext(ctx).First(&secret, "id = ?", "sec_day").Error; err != nil {
 		t.Fatalf("read secret: %v", err)
 	}
-	if secret.MaxGrantTTL != 86400 {
-		t.Fatalf("limit = %d, want the 86400 the database already carried", secret.MaxGrantTTL)
+	if secret.MaxBindingTTL != 86400 {
+		t.Fatalf("limit = %d, want the 86400 the database already carried", secret.MaxBindingTTL)
 	}
 	if db.Write.Migrator().HasColumn(&model.Secret{}, "default_grant_ttl_seconds") {
 		t.Fatal("the old column is still there; the value was copied rather than renamed")
@@ -931,8 +913,8 @@ func TestMigrateCarriesGrantTTLIntoTheLimitColumn(t *testing.T) {
 	if err := db.Write.WithContext(ctx).First(&secret, "id = ?", "sec_day").Error; err != nil {
 		t.Fatalf("read secret again: %v", err)
 	}
-	if secret.MaxGrantTTL != 86400 {
-		t.Fatalf("limit after a second migrate = %d, want 86400", secret.MaxGrantTTL)
+	if secret.MaxBindingTTL != 86400 {
+		t.Fatalf("limit after a second migrate = %d, want 86400", secret.MaxBindingTTL)
 	}
 }
 
@@ -964,9 +946,9 @@ func TestMigrateLiftsTheLimitOnConfiguredHarnessSecrets(t *testing.T) {
 	// Three secrets in the same project: the one a configure flow made, one a
 	// person made and bound to the same harness, and one somebody deliberately
 	// gave a limit to after it was configured.
-	configured := &model.Secret{ID: "sec_configured", ProjectID: "project-1", Name: "claude", Type: model.SecretTypeToken, UniqueKey: "sec_configured", MaxGrantTTL: 3600, EncryptedValue: []byte(`{"token":"a"}`)}
-	byHand := &model.Secret{ID: "sec_byhand", ProjectID: "project-1", Name: "mine", Type: model.SecretTypeToken, MaxGrantTTL: 3600, EncryptedValue: []byte(`{"token":"b"}`)}
-	chosen := &model.Secret{ID: "sec_chosen", ProjectID: "project-1", Name: "chosen", Type: model.SecretTypeToken, UniqueKey: "sec_chosen", MaxGrantTTL: 900, EncryptedValue: []byte(`{"token":"c"}`)}
+	configured := &model.Secret{ID: "sec_configured", ProjectID: "project-1", Name: "claude", Type: model.SecretTypeToken, MaxBindingTTL: 3600, EncryptedValue: []byte(`{"token":"a"}`)}
+	byHand := &model.Secret{ID: "sec_byhand", ProjectID: "project-1", Name: "mine", Type: model.SecretTypeToken, MaxBindingTTL: 3600, EncryptedValue: []byte(`{"token":"b"}`)}
+	chosen := &model.Secret{ID: "sec_chosen", ProjectID: "project-1", Name: "chosen", Type: model.SecretTypeToken, MaxBindingTTL: 900, EncryptedValue: []byte(`{"token":"c"}`)}
 	for _, secret := range []*model.Secret{configured, byHand, chosen} {
 		if err := db.Write.WithContext(ctx).Create(secret).Error; err != nil {
 			t.Fatalf("seed %s: %v", secret.ID, err)
@@ -989,7 +971,7 @@ func TestMigrateLiftsTheLimitOnConfiguredHarnessSecrets(t *testing.T) {
 		t.Fatalf("read secrets: %v", err)
 	}
 	for _, secret := range secrets {
-		limits[secret.ID] = secret.MaxGrantTTL
+		limits[secret.ID] = secret.MaxBindingTTL
 	}
 	if limits["sec_configured"] != 0 {
 		t.Fatalf("configured secret limit = %d, want none", limits["sec_configured"])
@@ -1227,8 +1209,7 @@ func TestMigrateRetiresPrepullWithoutLosingPools(t *testing.T) {
 		"ALTER TABLE pools ADD COLUMN images_staged boolean NOT NULL DEFAULT false",
 		"ALTER TABLE pools ADD COLUMN image_stage text",
 		"ALTER TABLE pools ADD COLUMN image_staged_at datetime",
-		"CREATE TABLE reconcile_dirty (resource_type text, resource_id text)",
-		"INSERT INTO reconcile_dirty VALUES ('poolImages', 'pool-1'), ('pool', 'project-1/pool-1')",
+		"INSERT INTO reconcile_dirty (resource_type, resource_id, seq, not_before, attempts, marked_at, created_at, updated_at) VALUES ('poolImages', 'pool-1', 1, CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), ('pool', 'project-1/pool-1', 1, CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
 	} {
 		if err := db.Write.Exec(sql).Error; err != nil {
 			t.Fatal(err)
@@ -1294,8 +1275,8 @@ func TestMigrateBackfillsSecretValueUpdatedAt(t *testing.T) {
 	// Written the way older rows were: in the server's local zone, nine hours
 	// east, which SQLite keeps as text with its offset.
 	written := time.Date(2025, 9, 1, 21, 0, 0, 0, time.FixedZone("UTC+9", 9*60*60))
-	if err := db.Write.Exec(`INSERT INTO secrets (id, project_id, name, type, host, unique_key, anonymous, format, max_grant_ttl_seconds, ttl_seconds, created_at, updated_at)
-		VALUES ('sec_legacy', 'project-1', 'github', 'token', '', '', false, '', 3600, 0, ?, ?)`, written, written).Error; err != nil {
+	if err := db.Write.Exec(`INSERT INTO secrets (id, project_id, name, type, anonymous, format, max_binding_ttl_seconds, ttl_seconds, created_at, updated_at)
+		VALUES ('sec_legacy', 'project-1', 'github', 'token', false, '', 3600, 0, ?, ?)`, written, written).Error; err != nil {
 		t.Fatalf("insert legacy secret: %v", err)
 	}
 	if err := db.Migrate(ctx); err != nil {
@@ -1540,60 +1521,6 @@ func TestMigrateRetiresHarnessImages(t *testing.T) {
 	}
 }
 
-func TestMigrateDeletesGrantsWhoseScopeIsGone(t *testing.T) {
-	ctx := context.Background()
-	db, err := database.New(database.Config{
-		Driver: gormdb.DriverSQLite,
-		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
-	})
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := db.Close(); err != nil {
-			t.Fatalf("close database: %v", err)
-		}
-	})
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatalf("initial migrate: %v", err)
-	}
-
-	for _, row := range []any{
-		&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"},
-		&model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "Docker"},
-		&model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: "provider-1"}},
-		&model.Sandbox{ID: "sb-live", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "sb-live"},
-		&model.HarnessConfig{ID: "hc-live", ProjectID: "project-1", Slug: "codex", Name: "Codex"},
-	} {
-		if err := db.Write.Create(row).Error; err != nil {
-			t.Fatalf("create %T: %v", row, err)
-		}
-	}
-	for _, g := range []model.SecretGrant{
-		{ID: "g-sb-live", Scope: model.SecretGrantScopeSandbox, ScopeKey: "sb-live"},
-		{ID: "g-sb-gone", Scope: model.SecretGrantScopeSandbox, ScopeKey: "sb-gone"},
-		{ID: "g-hc-live", Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: "hc-live"},
-		{ID: "g-hc-gone", Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: "hc-gone"},
-		{ID: "g-project", Scope: model.SecretGrantScopeProject, ScopeKey: "project-1"},
-	} {
-		g.ProjectID, g.SecretID = "project-1", "secret-1"
-		if err := db.Write.Create(&g).Error; err != nil {
-			t.Fatalf("create grant %s: %v", g.ID, err)
-		}
-	}
-
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatalf("upgrade migrate: %v", err)
-	}
-	var ids []string
-	if err := db.Write.Model(&model.SecretGrant{}).Order("id").Pluck("id", &ids).Error; err != nil {
-		t.Fatalf("list grants: %v", err)
-	}
-	if want := []string{"g-hc-live", "g-project", "g-sb-live"}; !reflect.DeepEqual(ids, want) {
-		t.Fatalf("grants after migrate = %v, want %v", ids, want)
-	}
-}
-
 func TestMigrateDeniesRequestsWhoseSandboxIsGone(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{
@@ -1625,10 +1552,9 @@ func TestMigrateDeniesRequestsWhoseSandboxIsGone(t *testing.T) {
 	for _, r := range []model.SecretRequest{
 		{ID: "r-live", SandboxID: "sb-live"},
 		{ID: "r-gone", SandboxID: "sb-gone"},
-		{ID: "r-gone-refresh", SandboxID: "sb-gone", Reason: model.SecretRequestReasonRefresh, SecretID: "secret-1"},
 		{ID: "r-person", SandboxID: ""},
 	} {
-		r.ProjectID, r.RequestedBy, r.Type, r.Status = "project-1", "user-1", model.SecretTypeToken, model.SecretRequestStatusPending
+		r.ProjectID, r.RequestedBy, r.Status = "project-1", "user-1", model.SecretRequestStatusPending
 		if err := db.Write.Create(&r).Error; err != nil {
 			t.Fatalf("create request %s: %v", r.ID, err)
 		}
@@ -1644,13 +1570,13 @@ func TestMigrateDeniesRequestsWhoseSandboxIsGone(t *testing.T) {
 	got := map[string]string{}
 	for _, r := range rows {
 		got[r.ID] = r.Status
-		if r.Status == model.SecretRequestStatusDenied && r.ClosedAt == nil {
-			t.Fatalf("request %s denied without being stamped closed", r.ID)
+		if r.Status == model.SecretRequestStatusDenied && (r.DecidedAt == nil || r.DecidedBy != model.SecretBindingActorSystem) {
+			t.Fatalf("request %s denied without being stamped decided", r.ID)
 		}
 	}
 	want := map[string]string{
 		"r-live": model.SecretRequestStatusPending, "r-gone": model.SecretRequestStatusDenied,
-		"r-gone-refresh": model.SecretRequestStatusPending, "r-person": model.SecretRequestStatusPending,
+		"r-person": model.SecretRequestStatusPending,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("requests after migrate = %v, want %v", got, want)
@@ -1764,61 +1690,6 @@ func TestMigrateRespellsDiscoVMImageKinds(t *testing.T) {
 	}
 	if gotConfig.ImageKind != platform.VM("vz") {
 		t.Errorf("harness config image kind = %q, want vm/vz", gotConfig.ImageKind)
-	}
-}
-
-func TestHarnessBindingProvenanceUpgradePreservesAssignments(t *testing.T) {
-	ctx := context.Background()
-	db, err := database.New(database.Config{DSN: ":memory:"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatal(err)
-	}
-	configID := "harness-old"
-	for _, row := range []any{
-		&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"},
-		&model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "Docker"},
-		&model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "Pool", ProviderInstanceID: "provider-1"}},
-		&model.HarnessConfig{ID: configID, ProjectID: "project-1", Slug: "old", Name: "Old"},
-		&model.Sandbox{ID: "sb-1", ProjectID: "project-1", CreatedByUserID: "user-1", PoolID: "pool-1", Name: "Box", SandboxManifest: model.SandboxManifest{HarnessConfigID: &configID}},
-		&model.Secret{ID: "secret-1", ProjectID: "project-1", Name: "Key", Type: model.SecretTypeToken, UniqueKey: "key"},
-		&model.HarnessConfigSecretBinding{ProjectID: "project-1", HarnessConfigID: configID, EnvName: "HARNESS_KEY", SecretID: "secret-1"},
-		&model.SandboxSecret{ID: "binding-harness", ProjectID: "project-1", SandboxID: "sb-1", EnvName: "HARNESS_KEY", SecretID: "secret-1", Sentinel: "sentinel-harness"},
-		&model.SandboxSecret{ID: "binding-explicit", ProjectID: "project-1", SandboxID: "sb-1", EnvName: "MY_KEY", SecretID: "secret-1", Sentinel: "sentinel-explicit"},
-	} {
-		if err := db.Write.Create(row).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := db.Write.Migrator().DropColumn(&model.SandboxSecret{}, "SourceHarnessConfigID"); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatal(err)
-	}
-	var assignments []model.SandboxSecret
-	if err := db.Write.Order("id").Find(&assignments).Error; err != nil {
-		t.Fatal(err)
-	}
-	if len(assignments) != 2 || assignments[0].SourceHarnessConfigID != "" || assignments[1].SourceHarnessConfigID != "" || assignments[1].Sentinel != "sentinel-harness" {
-		t.Fatalf("legacy assignments were not preserved: %+v", assignments)
-	}
-	// A later explicitly added assignment is not reclassified on another startup.
-	if err := db.Write.Model(&model.SandboxSecret{}).Where("id = ?", "binding-harness").Update("source_harness_config_id", "").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatal(err)
-	}
-	var explicit model.SandboxSecret
-	if err := db.Write.First(&explicit, "id = ?", "binding-harness").Error; err != nil {
-		t.Fatal(err)
-	}
-	if explicit.SourceHarnessConfigID != "" {
-		t.Fatal("later explicit assignment was reclassified")
 	}
 }
 

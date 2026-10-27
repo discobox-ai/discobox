@@ -21,7 +21,7 @@ func routesFixture(t *testing.T) (*Model, *fakeSource) {
 		}},
 		{ID: "sec_plain", Name: "github", Type: "token", MaxTTL: time.Hour},
 	}
-	ds.projectGrants = nil
+	ds.projectBindings = nil
 	ds.mu.Unlock()
 	send(t, m, keyPress("r"))
 	return m, ds

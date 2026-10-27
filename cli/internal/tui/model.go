@@ -144,7 +144,7 @@ type Model struct {
 	// whether or not the screen is up. See harnesses.go.
 	harnesses *harnessList
 
-	// secrets is the project's credentials and the grants standing on them:
+	// secrets is the project's credentials and the bindings standing on them:
 	// the screen that manages them, and the operator's side of the credential
 	// inbox. See secrets.go.
 	secrets *secretList
@@ -4657,11 +4657,11 @@ func (m *Model) helpText() string {
 		"  reaches the next.",
 		"",
 		"    n              a new secret",
-		"    " + grantCreateKey + "              grant it before anything asks",
-		"    e              its binding",
+		"    " + bindingCreateKey + "              bind it before anything asks",
+		"    e              edit it: its name, routes, limit, value",
 		"    d              delete it",
-		"    Enter          what stands on it. There, Enter reads a grant,",
-		"                   " + grantRevokeKey + " withdraws one, and the first row grants the",
+		"    Enter          what is bound to it. There, Enter reads a binding,",
+		"                   " + unbindKey + " takes one back, and the first row binds the",
 		"                   secret. On a request, Enter answers it",
 		"    r              refresh",
 		"    Esc or " + SecretsKeyName + "      leave this screen",

@@ -1,223 +1,163 @@
 # Secrets Design
 
-This package owns credentials: their storage, the approval lifecycle that
-authorizes them, and how a sandbox comes to hold one. It also owns host trust
-([below](#host-trust)), the other thing an agent asks a person for.
+This package owns credentials: their storage, the bindings that authorize
+them, the requests that ask a person for one, and how a sandbox comes to hold
+one. It also owns host trust ([below](#host-trust)), the other thing an agent
+asks a person for.
 
 Cleartext leaves the control plane through exactly one door — `ResolveSandboxSecret`,
 called by a pool agent's proxy for one sentinel and one destination host. An
 approved answer names the secret beside its value, which the proxy records on
 the request it swaps the value into
 ([ADR 26-10-01-240](../../../../docs/adr/26-10-01-240-a-swapped-request-records-the-secrets-it-spent.md)).
-Every other surface here deals in sentinels, requests, and grants.
+Every other surface here deals in sentinels, bindings and requests.
 
-Nothing here judges. What a credential may do is static: the hosts its grant
-covers, the secret's own host binding, and the secret's routes, which the
-pool checks on every request
+Nothing here judges. What a credential may do is static: the route lists its
+binding holds it to, which the pool checks on every request
 ([ADR 26-10-27-880](../../../../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)).
 
-## Grants authorize; requests are the inbox
+## Bindings authorize
 
-A `SecretGrant` is the durable authorization: a secret, a scope (sandbox,
-harness config, or project), its hosts, a purpose, and an expiry. A
-`SecretRequest` is only a question someone asked, and approving one mints a
-grant. Revoking the grant takes the credential away even though the request
-row stays approved — the request is history, the grant is the authority.
+A `SecretBinding` is the whole of the permission (ADR 26-10-27-880 §1): a
+secret, a target (a sandbox, a harness config or the project), what it is for
+— `use` in a variable, `delegate`, or both — its routes, an expiry, and the
+parent it was handed on under. One that exists and has not lapsed authorizes;
+nothing else does.
 
-A grant authorizes a sentinel a discobox already holds: a `SandboxSecret`
-binding of one variable to one secret, written by the discobox's harness
-config, its create, or an approved agent request. A grant binds nothing of its
-own (`CreateSecretGrant`), and a binding with no grant covering it resolves to
-nothing.
+```mermaid
+flowchart LR
+    person["person"] -->|"binding CRUD"| binding[(secret_bindings)]
+    approve["ApproveSecretRequest"] --> binding
+    create["PrepareSandboxBindings"] --> binding
+    configure["harness configure / save-back"] --> binding
+    binding -->|"every change, same tx"| events[(secret_binding_events)]
+    binding -->|"MarkBindingHoldersDirtyTx"| sentinels["sandboxSentinels reconcile"]
+    sentinels -->|"materialize + push route lists"| pool["pool proxy"]
+    sweep["BindingExpiryReconciler"] -->|"lapsed: expired event"| binding
+```
 
-A grant lives as long as what it is scoped to: deleting a sandbox or harness
-config deletes the grants scoped to it (`deleteSecretGrantsByScopeTx`), since
-its ID is never reused and the grant could cover nothing again, and
-`CreateSecretGrant` refuses one for a sandbox or harness config that does not
-exist — reading it `FOR SHARE` against the delete's `FOR UPDATE`, so the two
-serialize. Deleting a sandbox also closes its open requests as denied
-(`denySandboxSecretRequestsTx`): the agent waiting on the answer is gone. A
-refresh request stays open, since it is about the secret, not the sandbox that
-noticed. An expired grant is kept and listed; the console hides it until asked.
+- **What applies is resolved, not stacked** (`store.ResolveBindings`): per
+  variable, the use binding on the narrowest of four levels that has one —
+  the sandbox, its harness config, the harness configs attached to it to run a
+  second harness ([ADR 26-10-27-172](../../../../docs/adr/26-10-27-172-a-harness-config-attached-to-a-discobox-binds-it-for-use.md)),
+  then the project — and every live delegate binding on any level but an
+  attached harness config's, which binds for use only (`BindingTarget.UseOnly`,
+  `store.Covers`). A binding that has lapsed, or whose parent has gone or
+  lapsed, is not there. `ListBoundSecrets` is that view, with each binding's
+  route lists and the earlier of its and its parent's expiry.
+- **Every change is recorded** in `secret_binding_events`, in the transaction
+  that makes it: created, updated, deleted, expired, with who did it and why
+  — a request ID, the parent whose removal took it, the target or secret whose
+  delete took it, or `upgrade`. Cascades and expiry are the system's.
+- **Every change reaches the discoboxes it covers.** A write marks
+  `sandboxSentinels` for each in the same transaction
+  (`SecretHolders.MarkBindingHoldersDirtyTx`); the sandbox service
+  materializes and pushes ([`sandboxes/DESIGN.md`](../sandboxes/DESIGN.md)).
+- **A person's.** Binding CRUD and events refuse a sandbox principal
+  (`refuseSandboxPrincipal`); a discobox hands a credential on only by
+  approving a request or at a create, under a delegate binding.
+- **Shaped for what it does** (`checkBindingShape`): a use names a variable
+  matching `services.EnvVarNamePattern`, a delegation alone names none. One
+  use binding per target and variable, one delegate binding per target and
+  secret — unique indexes, a 409 on collision. An update may change what it is
+  for (`UpdateSecretBinding`): use off takes the variable away; delegate off
+  removes everything handed on under it, each recorded and its holders
+  marked; delegate on is refused for a binding handed on itself, since no
+  chain grows from a discobox; a binding left for neither is refused.
+- **A binding lives as long as its target and its parent.** Deleting a sandbox,
+  harness config or secret deletes the bindings on it, and what was handed on
+  under them (`store.DeleteSecretBindingsForTargetTx`); `CreateSecretBinding`
+  reads the target `FOR SHARE` against the delete's `FOR UPDATE`. Deleting a
+  binding deletes its children (`DeleteSecretBinding` answers every ID).
+- **Expiry is swept, not polled.** `BindingExpiryReconciler`
+  (`secretBindingExpiry`, one row) removes lapsed bindings and their children
+  with `expired` events, marks their holders, and arms itself with
+  `RequeueAt` for the next. Every binding written with an expiry marks it at
+  that time, by whichever path writes it: the store arms it with the
+  binding's event, in the same transaction (`recordBindingEventTx`), so no
+  writer can skip it. A lapsed binding authorizes nothing before the sweep
+  either: every read checks `Live`.
+- **A child's lists include its parent's**, so a change to a binding marks the
+  holders of its children too (`UpdateSecretBinding`).
 
-## Three species of request
+## Requests are the inbox
 
-They share a table and are handled apart on purpose (ADR 0031 §5).
+A `SecretRequest` is only a question an agent asked through the agent
+credentials protocol (ADR 0031): a credential name, a variable for a use,
+routes (one per host it named), a lifetime, a justification and a purpose. No
+other species exists: a sentinel exists only because a binding does, so the
+proxy never asks. Refresh requests are their own record
+([below](#a-token-may-expire-and-suggest-its-renewal)).
 
-| | Reactive | Protocol-originated | Refresh |
-| --- | --- | --- | --- |
-| Origin | The proxy hit a sentinel with no grant | An agent asked, through the agent credentials protocol | A token went stale or was refused |
-| Carries | type, host, sandbox | plus name, env var (for a use), hosts, justification, purpose, and optionally the lifetime asked for | the secret, the sandbox that needed it |
-| Answered by | a grant at the chosen scope | a sandbox-scoped, host-scoped grant, and for a use the variable bound on the asking sandbox | a new value |
+Approving one (`ApproveSecretRequest`) makes a binding on the discobox that
+asked — a use of the chosen secret in the variable it named, or a delegation —
+with the routes the approver named, else the ones asked for, and a lifetime
+the approver named, else `defaultApprovalTTL` (the ask, else
+`agentcreds.DefaultGrantTTL`, fitted within the secret's limit). The binding,
+its event, the holders' mark and the request's decision (`DecidedBy`,
+`DecidedAt`, `BindingID`) are one transaction (`commitApproval`). A variable
+the discobox already holds with another secret is a 409, never taken over; one
+holding the same secret is extended (`putRequestedBinding`).
 
-`SecretRequest.FromProtocol` is what tells a protocol request apart: only an
-agent that asked names the credential it wants. `IsRefresh` tells the third;
-it is never approved, see [below](#a-token-may-expire-and-suggest-its-renewal).
-
-An agent's ask for a **use** names the variable it wants the credential in;
-an ask to **delegate** names none and is refused if it does, since a
-delegation delivers nothing to the discobox that asks. A host is required
-either way: approving the request mints a grant, and a grant this flow mints
-is never host-unscoped.
-
-The lifetime an agent asks for (`SecretRequest.GrantTTL`) is recorded, never
-enforced: it is what the window opens on and what an approval that names no
-lifetime grants (`defaultApprovalTTL`: the ask, else `agentcreds.DefaultGrantTTL`,
-an hour, fitted within the secret's limit), so approving reads nothing first; an
-approval that names one still takes whatever lifetime it is sent. It is not
-checked against a secret's limit at the ask, because which secret answers is the
-approval's choice. Zero is no ask, not forever. It is bounded at
-`agentcreds.MaxGrantTTLSeconds` — thirty days — and an ask outside `1..max` is a
-400: an ask becomes the answer a human is shown already chosen, so an unbounded
-one is how forever arrives under another name.
-
-The proxy's ask is deduplicated to one pending request per sandbox, secret, and
-host. An agent's ask is deduplicated per sandbox, variable, purpose, set of
-hosts (in any order, ADR 26-10-02-393 §3), name and lifetime. A request made
-through the API (`CreateSecretRequest`) is the reactive species without a
-sandbox: it names a type and host, and is approved on the spot when a
-project-wide grant on a matching secret already covers it.
-
-Approving a protocol request is stricter than approving a reactive one, and the
-strictness is refused rather than silently relaxed:
-
-- **A concrete host is mandatory.** `FindLiveGrant` matches the destination the
-  proxy actually observed, so the hosts are what stop a token being swapped
-  toward somewhere it was not approved for. A wildcard grant stays an explicit
-  administrative act via `discobox secret grant create`.
-- **Sandbox scope only.** The agent asked on behalf of one sandbox; approving it
-  project-wide would answer a question nobody asked.
-- **A use binds its variable on the asking sandbox** (`bindApprovedVariable`),
-  as an ordinary injected binding, and marks that sandbox's sentinel delivery
-  (`SecretHolders.MarkSandboxSentinelsDirtyTx`) so the binding reaches it while
-  it runs. A variable already bound to the approved secret keeps its binding
-  and sentinel; one bound to another secret is a 409, never taken over.
-
-**An approval is one write.** Rebinding the answering secret and setting its
-grant limit (`secretHost`, `secretMaxGrantTTLSeconds`) ride on the approval. The
-secret is re-read inside the transaction, the change is applied to it, and the
-grant is checked against the result. Only the fields sent are written, so a
-concurrent edit to the other one stands. The change, the grant, the binding,
-the delivery mark, and the request marked approved share one transaction. A
-refusal anywhere leaves none of them behind. A discobox answering the inbox
-approves with the secret as it is, because its role changes no secret. It sees
-and answers only the requests it owns — filed by a discobox it created: the
-sandbox role decides that for one request by its ID, and `ListSecretRequests`
-filters the listing with `store.OwnedBy`
+Deleting a sandbox closes its open requests as denied: the agent waiting on
+the answer is gone. A discobox sees and answers only the requests filed by a
+discobox it created: the sandbox role decides that for one request by its ID,
+and `ListSecretRequests` filters the listing with `store.OwnedBy`
 ([ADR 26-09-30-782](../../../../docs/adr/26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md) §2).
 
-### A request and its grant name a list of hosts
+The lifetime an agent asks for is bounded at `agentcreds.MaxGrantTTLSeconds`
+— thirty days — and an ask outside `1..max` is a 400: an ask becomes the answer
+a human is shown already chosen. An agent's ask is deduplicated per sandbox,
+variable, purpose, set of hosts in any order, name and lifetime.
 
-`SecretRequest.Hosts` and `SecretGrant.Hosts` are lists (ADR 26-10-02-393): one
-credential a tool sends to unrelated sites — Copilot CLI's GitHub token, at
-`api.github.com` and `githubcopilot.com` — is one ask and one grant. A grant
-covers a destination any of its hosts covers (`hostscope.CoversAny`); no hosts
-is the wildcard. Every check reads the list: the grant lookup, the secret
-binding (each host inside it, `guardGrantHosts`), and the delegation a discobox
-hands on under (`hostscope.CoversEvery`).
+## Delegation
 
-`hosts` is the only spelling on the API (ADR 26-10-02-393 §4). A body that
-leaves it out takes the default — the secret's host for a grant, the request's
-hosts for an approval — and one that sends an empty list names none, which is
-how a grant asks for the wildcard (`askedHosts`).
+A delegate binding lets a discobox it covers hand the secret, for use, to the
+discoboxes it creates (ADR 26-10-27-880 §3). It authorizes nothing its holder
+sends.
+
+- **Only a person makes one**, and only a person answers an ask to delegate.
+- **What is handed on is a child.** A discobox approving a request from a
+  discobox it created, or binding at a create, does it under a live delegate
+  binding covering it — at any level — of the secret it answers with
+  (`delegationsFor`: among what it was delegated, never the project's
+  secrets; its `ListSecrets` holds only those, `store.DelegatedTo`). The child
+  is a use on the new discobox with `ParentID` set, the routes as asked — the
+  parent's list holds it as well — and a lifetime fitted to the parent's:
+  unnamed it is fitted, named longer it is refused (`fitToParent`). The
+  longest-lived parent is preferred; it is read again in the write's
+  transaction (`heldParent`), so one removed in between makes nothing.
+- **A child goes with its parent**, by delete or expiry, and is not live
+  without it.
 
 ## A discobox created with secrets
 
-A create may give the new discobox project secrets
-(`CreateSandboxBody.grants`), each naming a secret, the variable it is
-delivered in, and its hosts (`sandboxGrantTarget`).
-`PrepareSandboxGrants` checks each as a person's grant of the same shape is
-checked — a concrete host within the secret's binding (`guardGrantHosts`), a
-lifetime within its limit (`guardGrantTTL`), one credential per variable — and
-builds the sandbox grants and ordinary bindings without storing them; the
-sandbox create stores them in the transaction that stores the discobox, so a
-create that cannot give them all creates nothing. A grant a sandbox makes
-records the sandbox as its granter (`grantedByOf`).
-
-A discobox giving them is held to what it may hand on, as when it approves a
-request: each grant is made under a live delegation grant it holds of that
-secret, covering the hosts and fitting the lifetime (`delegationsOf`,
-`delegationsFitting`), the longest-lived that does, and records it as
-`DelegationID`. A lifetime it did not name is fitted to that delegation. The
-create's transaction holds each grant to its delegation again
-(`HoldDelegations`), so a delegation revoked in between creates nothing.
-
-## Delegation grants
-
-A grant's `Purpose` is what it authorizes its holder to do: `use` the
-credential, or `delegate` it — give it to the discoboxes it creates
-([ADR 26-10-27-880](../../../../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §3).
-One or the other, never both: a person approving a grant agrees to one thing,
-and a discobox that needs both holds two grants.
-
-- **A delegation grant authorizes nothing its holder sends.** It binds no
-  sentinel and is skipped by every lookup that hands a credential out
-  (`FindLiveGrant`; `SecretGrant.MayUse`). The broker lists it, with no
-  variable, as what its holder may hand on.
-- **It is one discobox's** (`guardPurpose`, in `mintGrantAs` beside the host
-  and lifetime guards): a grant wider than a discobox has nobody in particular
-  to delegate it.
-- **An agent may ask for one.** An agent credentials request carries a
-  `Purpose`, and approving it mints a grant with that purpose. Only a person
-  approves one: a discobox never hands on the power to hand on
-  (`refuseDelegatedApproval`).
-- **It bounds what its holder hands on** (`delegated_approval.go`). A discobox
-  approving one of its discoboxes' requests answers it with the secret of a
-  live delegation grant it holds (`ListLiveDelegationGrants`), not by choosing
-  among the project's — its `ListSecrets` holds only those
-  (`store.DelegatedTo`): one that covers every host asked for, and — when it
-  was delegated more than one secret that fits — the one it names. A secret it
-  was not delegated answers as one that does not exist.
-- **The bound is static.** Of that secret's delegations, those the lifetime
-  fits are candidates (`delegationsFor`, `delegationsFitting`): one the
-  approver named must end no later than the delegation, and one nobody named
-  needs a delegation with time left. The approval is made under the
-  longest-lived. The chosen delegation is read again by its ID in the
-  approval's transaction (`delegatedTTL`): still live and covering the hosts,
-  a lifetime nobody named fitted to its remaining time and one the approver
-  named refused if it does not fit. The lifetime is fitted against, and the
-  expiry stamped from, one reading of the clock (`mintGrantAs` takes it).
-
-A handed-on grant names the delegation it was made under
-(`SecretGrant.DelegationID`), on an approval and on a create alike: that is how
-it is traced to the delegation that allowed it. It records, and revokes
-nothing: the grant stands if the delegation goes. A request the proxy opened is
-a person's, and so is one to delegate.
+A create may give the new discobox bindings (`CreateSandboxBody.bindings`):
+`PrepareSandboxBindings` checks and builds them, and the sandbox create stores
+them in the transaction that stores the discobox
+(`StoreSandboxBindingsTx`), then materializes its sentinels, so a create that
+cannot make them all creates nothing. Inline secrets (`config.secrets`, a
+value) are the sandbox service's: an anonymous secret routed to the host given,
+else `*` (ADR 26-10-27-939 §2), and a use binding of it.
 
 ## The agent credentials broker
 
 `agentcredentials.go` is the control-plane half of the agent credentials
-protocol (ADR 0031, as ADR 26-10-27-880 leaves it). A pool agent calls it for
-one of its own sandboxes, and every entry point re-derives the sandbox from the
-calling pool rather than trusting the caller about which sandbox it speaks
-for. Nothing here returns a value: an approved use is delivered as every
-credential is, a sentinel in its variable that the pool swaps.
+protocol. A pool agent calls it for one of its own sandboxes, and every entry
+point re-derives the sandbox from the calling pool. Nothing here returns a
+value.
 
-The entry points:
-
-- **`ListSandboxCredentials`** — what the sandbox holds: each variable bound on
-  it whose secret a live use grant covering it authorizes — the narrowest
-  grant, which is the one a resolve finds — with that grant's hosts and
-  expiry, and each live delegation grant it holds, with no variable.
-- **`CreateSandboxCredentialRequest`** — records the ask as a pending request
-  and returns at once; the caller polls. An identical pending ask is reused
-  rather than duplicated.
-- **`GetSandboxCredentialRequest`** — a sandbox's own protocol request and, once
-  approved, its grant. `services.AgentCredentialRequestStatus` reports an
-  approval whose grant has since been revoked as `denied`; a granted status
-  carries the grant's hosts and expiry and, for a use, the variable.
-- **`ListSecretRefreshEvents`** — the refresh trail (ADR 26-09-25-122 §6), at
-  `/projects/{projectId}/secret-refreshes`: each refresh request as its
-  `asked` event at `CreatedAt` and, once closed, its `answered` or `dismissed`
-  event at `ClosedAt`. Two events rather than one row because the trail is read
-  forward by time and a request changes after it is asked. Both times are
-  stamped in UTC because the bounds are compared in SQL; the limit is exact
-  because requests are ordered by their event nearest the reading edge. Never
-  a value; the answer is the client's account.
-
-A protocol request is always recorded as type `token`. Both types carry their
-current value in `Value.Token`, the one field `ResolveSandboxSecret` emits, so
-either works through this flow.
+- **`ListSandboxCredentials`** — the sandbox's effective use bindings, each in
+  its variable, with the hosts of the narrowest routes it is held to and its
+  expiry, and its live delegate bindings with no variable.
+- **`CreateSandboxCredentialRequest`** — records the ask and returns at once.
+- **`GetSandboxCredentialRequest`** — a sandbox's own request and, once
+  approved, the binding it made while it stands.
+  `services.AgentCredentialRequestStatus` reports an approval whose binding has
+  gone as `denied`.
+- **`ListSecretRefreshEvents`** — the refresh trail (ADR 26-09-25-122 §6): each
+  refresh request as its `asked` event and, once closed, its `answered` or
+  `dismissed` event.
 
 ## Host trust
 
@@ -248,7 +188,7 @@ credential path reads them.
   its lifetime runs from an hour by default to thirty days at most.
 - **`ListPoolHostTrusts`** is what a pool's proxy enforces: the live trusts of
   every sandbox on it. A revoked or lapsed trust leaves it, and a poll of the
-  request that minted it answers `denied`, as a revoked grant does.
+  request that minted it answers `denied`, as a removed binding does.
 
 The window's inbox is `GET /projects/{projectId}/approval-requests`, a read
 model in the handlers over this resource's `ListSecretRequests` and
@@ -275,8 +215,8 @@ There is no username/password or private-key type: cleartext leaves only
 through `ResolveSandboxSecret`, which emits `Value.Token`, so such a credential
 has no path into a sandbox. `migrateSecretTypes` (in `internal/database`'s
 `DB.Migrate`, at every startup) holds stored data to these types: it renames
-`bearer` rows to `token` and deletes `git` and `ssh` ones with the grants,
-requests, and bindings standing on them. The API validates the enum on the way
+`bearer` rows to `token` and deletes `git` and `ssh` ones with the requests,
+bindings and sentinels standing on them. The API validates the enum on the way
 out as well as in, so one row left behind would fail to serialize and take the
 whole secret listing with it.
 
@@ -345,132 +285,71 @@ flowchart LR
   write, when the report may be about the value just replaced.
 - **A command's value lasts 5m unless named otherwise**
   (`model.DefaultRefreshTTL`).
-- **One open refresh request per secret**, held by a partial unique index
-  (`idx_secret_request_open_refresh`), so two resolves racing past the find
-  cannot both open one; the loser's create conflict is "already open".
+- **Refresh requests are their own record** (`SecretRefreshRequest`):
+  pending, answered or dismissed, listed in the inbox as their own kind, with
+  their service methods in `refresh.go`. A discobox is shown none
+  (`ListSecretRefreshRequests`). One open per
+  secret, held by a partial unique index (`idx_secret_refresh_open`), so two
+  resolves racing past the find cannot both open one; the loser's create
+  conflict is "already open".
 - **The value's fields have their own writer.** `store.UpdateSecret` leaves
   `value_updated_at` and `value_expires_at` out of a write that keeps the value,
   so a rename read before a rejection cannot put back what the rejection
   marked; `MarkSecretValueStale` refuses, in its `WHERE`, a value written within
   `rejectionAfterRenewal`.
-- **A discobox never reads a refresh command or answer.** The sandbox role lists
-  secrets and requests for names and bindings (ADR 0140 §4); a command a person
-  wrote can name a vault path or carry a credential, so it and the answer
-  recorded against a request are withheld from a sandbox principal
-  (`withholdRenewalFromSandbox`, `withholdAnswerFromSandbox`).
-- **Only a person renews.** A command is a secret write, which the sandbox role
-  lists none of. A discobox may not approve, dismiss, or answer a refresh
-  request; approving one is refused for anybody, since there is no grant to mint.
+- **A discobox never reads a refresh command.** The sandbox role lists
+  secrets for names (ADR 0140 §4); a command a person wrote can name a vault
+  path or carry a credential, so it is withheld from a sandbox principal
+  (`withholdRenewalFromSandbox`), and the inbox shows a discobox no refresh
+  request.
+- **Only a person renews.** A discobox may neither dismiss
+  (`DismissSecretRefreshRequest`) nor answer a refresh request.
 
-## A secret's host is a binding somebody set
+## A secret's routes say where it may go
 
-`Secret.Host` is optional and is only ever set explicitly — `--host` at create
-or update, the approval dialog proposing the host a request named, or a harness
-configure command naming the host of a secret it outputs. Nothing infers it:
-the provider table in the root `secretformat` package describes how a
-credential is *shaped*, so a sentinel can byte-mimic it, and says nothing
-about where it belongs. A host guessed from four leading characters is a
-binding nobody chose, and being wrong in the narrow direction is how the
-credential that plainly answers a request becomes the one an approver cannot
-pick.
+`Secret.Routes` (ADR 26-10-02-924, ADR 26-10-27-939) say where the credential
+may be sent. Each is a host with an optional path prefix, and may be blocked;
+`*` covers every host and is the least specific route. A secret with no routes
+is sent nowhere: `*` is how a person says anywhere. A binding may narrow them
+with routes of its own, and a child is held to its parent's too.
 
-A secret that carries one may be used for that host and the hosts beneath it,
-and nowhere else. That is checked twice, because the two checks answer
-different questions:
-
-- **`guardGrantHosts`, when a grant is minted** — refuses an approval that
-  would point the credential outside its binding at any of the grant's hosts,
-  which is the typo worth catching while somebody is still looking at it.
-- **`ResolveSandboxSecret`, when the value is handed out** — the same test
-  against the destination the proxy observed, so a grant written before the
-  binding existed does not outlive it.
-
-A secret with no host is unconstrained by this, and the grant is what scopes it.
-A binding stays one host: a credential sent to unrelated sites is an unbound
-secret whose grants list them (ADR 26-10-02-393 §2).
-
-## A secret's routes bind whoever holds it
-
-`Secret.Routes` (ADR 26-10-02-924) say where the credential itself may be
-sent. Each is a host with an optional path prefix, and may be blocked. They
-are set at create or update (`--route HOST[/PATH][=blocked]`) or written by a
-harness configure flow from its image. Every swap of the secret must fall on
-one, the most specific route decides, and a blocked one refuses
-(`secretroute.Decide`, run by the pool); a request no route covers is refused
-too. This is on top of the hosts of the grant the secret was handed out
-under. No routes leaves it to its grants. A blocked route is what a route a
-judge used to read became, so removing the judge sent nothing on it unjudged
-(ADR 26-10-27-880 §8).
-
-- **`Secret.ReplaceRoutes` normalizes and dedupes**, and reports whether
-  anything moved.
+- **Route lists, every one of which must allow.** A sentinel's lists are the
+  secret's, the binding's when it has any, and the parent's when it has any
+  (`store.RouteLists`). The pool runs `secretroute.Decide` over them on every
+  swap; `ResolveSandboxSecret` hands a value out only for a host every list
+  allows (`secretroute.HostAllowed`), from a binding that stands
+  (`standingBinding`: present, a use of the sentinel's secret, on a level
+  covering the sandbox, live, under a live parent).
+- **`model.NormalizeRoutes` normalizes and dedupes**, and
+  `Secret.ReplaceRoutes` reports whether anything moved.
 - **A change reaches running discoboxes level-triggered.** `UpdateSecret`
-  writes a changed set and has `SecretHolders` (the sandbox service) mark
-  the sentinel delivery of every discobox the secret is bound in, in the
-  same transaction; its reconciler re-sends the sentinel set with
-  `sentinelRoutes`, and retries a delivery the pool did not take (see
-  [`sandboxes/DESIGN.md`](../sandboxes/DESIGN.md)).
+  marks every discobox holding the secret in the same transaction
+  (`MarkSecretHoldersDirtyTx`), and so does `DeleteSecret`.
+- **An exchange recipe's URL is held to the routes** (`checkRecipe`): a key is
+  never sent to a host its token could not be.
 
-## A secret's grant limit is a ceiling, not a default
+## A secret's binding limit is a ceiling
 
-`Secret.MaxGrantTTL` is the longest a grant on that credential may live, and the
-lifetime a standing grant takes when nobody names one. Both jobs, one number: the
-value a person reads on the row is the value that binds. An approval that names
-no lifetime is fitted within it rather than given it: it grants what the agent
-asked for, else an hour.
+`Secret.MaxBindingTTL` is the longest a binding of that credential may live,
+and the lifetime a person's binding takes when nobody names one. An approval
+that names no lifetime is fitted within it rather than given it.
+`guardBindingTTL` enforces it wherever a binding is made — a person's, an
+approval, a create — and refuses forever under a limit.
 
-`guardGrantTTL` enforces it beside `guardGrantHosts`, in `mintGrantAs`, for the
-same reason: the lifetime arrives from an approval, a pre-approval, or a
-create, and a rule enforced in one of those is a rule the other two walk
-around. Over the limit is refused, and so is a grant that never expires —
-that case is named separately in the message, because it is not "longer"
-arithmetically and it is the one an approver reaches for.
-
-**Zero is the meaningful value "no limit"**, not an unset field: grants on such
-a credential may live forever, which is how an unlimited credential says so out
-loud. Two consequences follow. The column carries no GORM `default`, since GORM
-omits a zero-valued field from an INSERT when one exists and would quietly
-substitute an hour for "no limit"; the service owns the default a creator who
-names none receives (`defaultMaxGrantTTLSeconds`, an hour). And every writer
-says the lifetime explicitly rather than dropping a zero, or the same
-substitution happens a layer higher.
-
-Lowering a limit binds what is granted next, not what already stands: a live
-grant is an authorization somebody made, and it is revoked deliberately rather
-than shortened behind their back.
-
-**A harness's own credential carries no limit.** The configure flow creates the
-secret, binds it, and grants it at harness scope with no expiry — a harness that
-stops working an hour after it was configured is a harness nobody configured —
-so a ceiling there would describe a lifetime that grant does not have, and would
-refuse the next grant somebody writes for it. That grant is minted through the
-store rather than through `mintGrantAs`, which is why the limit never applied to
-it either way; stating the zero is what makes the record agree with the
-authorization. `liftConfiguredSecretGrantLimits` zeroes the limit on
-configure-created secrets, and only on rows still carrying the old 3600 column
-default, so a limit somebody chose is kept.
+**Zero is "no limit"**, not an unset field; the column carries no GORM
+`default`, and the service owns the hour a creator who names none receives
+(`defaultMaxBindingTTLSeconds`). Lowering a limit binds what is bound next,
+not what stands. A harness's own credential carries no limit: configure binds
+it with no expiry, and `liftConfiguredSecretGrantLimits` zeroes the old 3600
+column default on configure-created secrets.
 
 ## What a host scope covers
 
-A host on a grant, a secret, or an approved use is a **scope**, read by the
-root [`hostscope`](../../../../pkg/hostscope) package: it covers itself and
-everything beneath it, and never its parent. `github.com` answers for
-`api.github.com`; `api.github.com` answers for neither `github.com` nor
-`uploads.github.com`.
-
-The relation is one-way because the two directions are not the same act.
-Narrowing a credential to a host under its binding is the approver being
-careful. Widening one to the host above it hands the credential to a different
-service — the one the site's other subdomains belong to — which is what the
-binding said it was not for.
-
-Every check reads it and they must agree: `FindLiveGrant` matching the
-destination the proxy observed, `ResolveSandboxSecret` holding that destination
-inside the secret's binding, `guardGrantHosts` refusing a grant outside it, and
-the delegation a discobox hands on under. `FindLiveGrant` therefore matches the host
-in Go rather than in SQL, and prefers the narrowest covering grant
-(`hostscope.Specificity`). Hosts are stored through `hostscope.Normalize`
-(lowercased, no port), the form the proxy reports.
+A route's host is a **scope**, read by [`hostscope`](../../../../pkg/hostscope)
+and [`secretroute`](../../../../pkg/secretroute): it covers itself and
+everything beneath it, never its parent; `*` covers everything. Hosts are
+stored through `hostscope.Normalize` (lowercased, no port), the form the proxy
+reports.
 
 ## A refused credential is recorded, and only the unfixable kind
 
@@ -590,8 +469,8 @@ the recipe `recipe.go` reads.
   from the stored fields, and where the token and its expiry are in the
   answer. The fields themselves are sealed in the value.
 - **A key goes only where its token may go** (`checkRecipe`): the URL's host
-  sits inside the secret's binding, which an exchange secret must have, and a
-  new binding — by an update or by an approval — is held to the recipe.
+  is one the secret's routes allow, which an exchange secret must have, at
+  create and whenever its recipe, value or routes change.
   `tokenHTTPClient` follows no redirect, since a 307 would re-send the key to
   whatever it names.
 - **An exchange never reaches an internal address** (`internalAddress`):

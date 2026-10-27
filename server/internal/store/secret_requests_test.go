@@ -14,7 +14,7 @@ func TestListSecretRequestsStatusFilter(t *testing.T) {
 	for _, st := range []string{model.SecretRequestStatusPending, model.SecretRequestStatusPending, model.SecretRequestStatusApproved} {
 		if err := s.CreateSecretRequest(ctx, &model.SecretRequest{
 			ProjectID: "project-1", RequestedBy: "sandbox:sb-1", SandboxID: "sb-1",
-			Type: model.SecretTypeToken, Hosts: []string{"api.example.com"}, Status: st,
+			Routes: []model.SecretRoute{{Host: "api.example.com"}}, Status: st,
 		}); err != nil {
 			t.Fatalf("create request: %v", err)
 		}
@@ -38,9 +38,9 @@ func TestListSecretRequestsStatusFilter(t *testing.T) {
 }
 
 // Deleting a sandbox closes its open asks as denied — the agent that would
-// read the answer is gone — but leaves a refresh request open, since it is
-// about the secret rather than the sandbox, and leaves other sandboxes' asks
-// and answered ones alone.
+// read the answer is gone — and leaves other sandboxes' asks and answered ones
+// alone. A refresh request is about the secret, not the sandbox, and stays
+// open.
 func TestDeletingASandboxDeniesItsOpenRequests(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newTestStoreWithDB(t, nil)
@@ -50,23 +50,23 @@ func TestDeletingASandboxDeniesItsOpenRequests(t *testing.T) {
 			t.Fatalf("create sandbox: %v", err)
 		}
 	}
-	request := func(sandboxID, status, reason string) string {
+	request := func(sandboxID, status string) string {
 		req := &model.SecretRequest{
-			ProjectID: "project-1", RequestedBy: "sandbox:" + sandboxID, SandboxID: sandboxID,
-			Type: model.SecretTypeToken, Hosts: []string{"api.example.com"}, Status: status, Reason: reason,
-		}
-		if reason == model.SecretRequestReasonRefresh {
-			req.SecretID = "sec-1"
+			ProjectID: "project-1", RequestedBy: "agent:" + sandboxID, SandboxID: sandboxID,
+			Routes: []model.SecretRoute{{Host: "api.example.com"}}, Status: status,
 		}
 		if err := s.CreateSecretRequest(ctx, req); err != nil {
 			t.Fatalf("create request: %v", err)
 		}
 		return req.ID
 	}
-	open := request("sb-1", model.SecretRequestStatusPending, "")
-	approved := request("sb-1", model.SecretRequestStatusApproved, "")
-	refresh := request("sb-1", model.SecretRequestStatusPending, model.SecretRequestReasonRefresh)
-	other := request("sb-2", model.SecretRequestStatusPending, "")
+	open := request("sb-1", model.SecretRequestStatusPending)
+	approved := request("sb-1", model.SecretRequestStatusApproved)
+	other := request("sb-2", model.SecretRequestStatusPending)
+	refresh := &model.SecretRefreshRequest{ProjectID: "project-1", SecretID: "sec-1", SandboxID: "sb-1", Cause: model.SecretRefreshCauseStale, Status: model.SecretRefreshStatusPending}
+	if err := s.CreateSecretRefreshRequest(ctx, refresh); err != nil {
+		t.Fatalf("create refresh request: %v", err)
+	}
 
 	if err := s.DeleteSandbox(ctx, "project-1", "sb-1"); err != nil {
 		t.Fatalf("delete sandbox: %v", err)
@@ -75,7 +75,6 @@ func TestDeletingASandboxDeniesItsOpenRequests(t *testing.T) {
 	for id, want := range map[string]string{
 		open:     model.SecretRequestStatusDenied,
 		approved: model.SecretRequestStatusApproved,
-		refresh:  model.SecretRequestStatusPending,
 		other:    model.SecretRequestStatusPending,
 	} {
 		req, err := s.GetSecretRequest(ctx, "project-1", id)
@@ -83,10 +82,13 @@ func TestDeletingASandboxDeniesItsOpenRequests(t *testing.T) {
 			t.Fatalf("get request: %v", err)
 		}
 		if req.Status != want {
-			t.Fatalf("request %s (sandbox %s, reason %q) = %s, want %s", id, req.SandboxID, req.Reason, req.Status, want)
+			t.Fatalf("request %s (sandbox %s) = %s, want %s", id, req.SandboxID, req.Status, want)
 		}
-		if id == open && req.ClosedAt == nil {
-			t.Fatal("the denied request was not stamped closed")
+		if id == open && (req.DecidedAt == nil || req.DecidedBy != model.SecretBindingActorSystem) {
+			t.Fatal("the denied request was not stamped decided")
 		}
+	}
+	if got, err := s.GetSecretRefreshRequest(ctx, "project-1", refresh.ID); err != nil || got.Status != model.SecretRefreshStatusPending {
+		t.Fatalf("refresh request = %+v, %v; want it open", got, err)
 	}
 }

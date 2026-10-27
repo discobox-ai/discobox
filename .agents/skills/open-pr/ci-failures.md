@@ -4,7 +4,7 @@ Shared by `open-pr` and `push-main`. CI is `.github/workflows/ci.yml`; six
 jobs: `check` (`ci:check`), `test` (`ci:test`), `verify`, `build`
 (`release:build`), `darwin` (`ci:darwin`), `windows` (`ci:test` on Windows).
 It takes about eight minutes on Depot's runners; `darwin` and `windows` are
-the longest jobs. Inside a discobox every `gh` call reads the `GH_TOKEN` grant (`open-pr` §0).
+the longest jobs. Inside a discobox every `gh` call reads the `GH_TOKEN` credential (`open-pr` §0).
 
 ## Read a finished job while the run is still going
 

@@ -11,7 +11,6 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
-	"github.com/discobox-ai/discobox/pkg/secretformat"
 	"github.com/discobox-ai/discobox/pkg/tarsums"
 	"github.com/discobox-ai/discobox/pkg/version"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -156,22 +155,27 @@ func (s *Service) exportManifest(ctx context.Context, sb *model.Sandbox) (*sandb
 	return &sandboxexport.Manifest{ExportedAt: time.Now().UTC(), From: from, Sandbox: spec}, nil
 }
 
-// exportSecretBindings records which environment variable was bound to which
-// named secret, and never a value (ADR 0123 §1).
+// exportSecretBindings records which environment variable the discobox's own
+// use bindings deliver which named secret in, and never a value (ADR 0123 §1).
+// Its harness config's and its project's bindings are the destination's to
+// give.
 //
 // An anonymous secret's binding is left out: it has no name to resolve on the
 // other side -- it was minted from a value typed at create time
 // and is referenced only by ID -- so there is nothing to carry but the value,
 // which is the one thing that must not travel.
 func (s *Service) exportSecretBindings(ctx context.Context, sb *model.Sandbox) ([]sandboxexport.SecretBinding, error) {
-	assignments, err := s.store.ListSandboxSecrets(ctx, sb.ProjectID, sb.ID)
+	bindings, err := s.store.ListSecretBindings(ctx, sb.ProjectID, store.SecretBindingFilter{TargetKind: model.SecretBindingTargetSandbox, TargetID: sb.ID})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]sandboxexport.SecretBinding, 0, len(assignments))
-	for i := range assignments {
-		assignment := &assignments[i]
-		secret, err := s.store.GetSecret(ctx, sb.ProjectID, assignment.SecretID)
+	out := make([]sandboxexport.SecretBinding, 0, len(bindings))
+	for i := range bindings {
+		binding := &bindings[i]
+		if !binding.Use {
+			continue
+		}
+		secret, err := s.store.GetSecret(ctx, sb.ProjectID, binding.SecretID)
 		if errors.Is(err, store.ErrNotFound) {
 			// A binding whose secret is gone is already not working here; it
 			// does not become a reason to refuse the export.
@@ -187,7 +191,7 @@ func (s *Service) exportSecretBindings(ctx context.Context, sb *model.Sandbox) (
 		if secret.Anonymous || strings.TrimSpace(secret.Name) == "" {
 			continue
 		}
-		out = append(out, sandboxexport.SecretBinding{Env: assignment.EnvName, Secret: secret.Name})
+		out = append(out, sandboxexport.SecretBinding{Env: binding.EnvName, Secret: secret.Name})
 	}
 	if len(out) == 0 {
 		return nil, nil
@@ -398,20 +402,16 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	// not a corrupt archive, and answering it after a multi-gigabyte upload --
 	// which in a transfer has already stopped the source -- would make the user
 	// pay the whole transfer again for it. Only the write is left below.
-	assignments, warnings, err := s.importSecretBindings(ctx, projectID, sb, spec.Secrets)
+	bindings, warnings, err := s.importSecretBindings(ctx, projectID, sb, spec.Secrets)
 	if err != nil {
 		return nil, err
 	}
-	if sb.HarnessMode != "config" {
-		inlineEnvs := make(map[string]struct{}, len(assignments))
-		for _, assignment := range assignments {
-			inlineEnvs[assignment.EnvName] = struct{}{}
-		}
-		harnessAssignments, err := prepareHarnessConfigSecrets(ctx, s.store, projectID, sb, harnessConfig.ID, inlineEnvs)
-		if err != nil {
-			return nil, err
-		}
-		assignments = append(assignments, harnessAssignments...)
+	own := make(map[string]struct{}, len(bindings))
+	for _, binding := range bindings {
+		own[binding.EnvName] = struct{}{}
+	}
+	if err := checkRequiredSecrets(ctx, s.store, sb, harnessConfig.ID, own); err != nil {
+		return nil, err
 	}
 
 	ref := sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}
@@ -430,11 +430,15 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	}
 	sb.PoolID = landedPool
 
-	created, err := s.createSandboxIntent(ctx, sb, assignments, resourcesecrets.SandboxGrants{})
+	created, err := s.createSandboxIntent(ctx, sb, nil, bindings, resourcesecrets.SandboxBindings{})
 	if err != nil {
 		return nil, err
 	}
-	return &services.SandboxImportResult{Sandbox: created, Warnings: warnings}, nil
+	bound := make([]string, 0, len(bindings))
+	for _, binding := range bindings {
+		bound = append(bound, binding.EnvName+": "+binding.SecretName)
+	}
+	return &services.SandboxImportResult{Sandbox: created, Bound: bound, Warnings: warnings}, nil
 }
 
 // importedAt is the moment the sources count as delivered. The export's own
@@ -486,13 +490,14 @@ func (s *Service) importHarnessConfig(ctx context.Context, projectID string, har
 	return config, nil
 }
 
-// importSecretBindings binds each exported environment variable to this
-// project's secret of the same name, and reports the ones it could not.
+// importSecretBindings binds each exported environment variable on the new
+// discobox to this project's secret of the same name, for as long as that
+// secret's limit allows, and reports the ones it could not.
 //
 // An unbindable one is a warning rather than a refusal. The credential is a
 // command away — `discobox admin secret create` — and throwing away a
 // transferred workspace to save the user that command is the wrong trade.
-func (s *Service) importSecretBindings(ctx context.Context, projectID string, sb *model.Sandbox, bindings []sandboxexport.SecretBinding) ([]*model.SandboxSecret, []string, error) {
+func (s *Service) importSecretBindings(ctx context.Context, projectID string, sb *model.Sandbox, bindings []sandboxexport.SecretBinding) ([]*model.SecretBinding, []string, error) {
 	if len(bindings) == 0 {
 		return nil, nil, nil
 	}
@@ -508,13 +513,18 @@ func (s *Service) importSecretBindings(ctx context.Context, projectID string, sb
 		byName[secrets[i].Name] = &secrets[i]
 	}
 	var (
-		assignments []*model.SandboxSecret
-		warnings    []string
-		seen        = make(map[string]struct{}, len(bindings))
+		out      []*model.SecretBinding
+		warnings []string
+		seen     = make(map[string]struct{}, len(bindings))
 	)
+	principal, _ := auth.PrincipalFromContext(ctx)
+	now := time.Now().UTC()
 	for _, binding := range bindings {
 		env := strings.TrimSpace(binding.Env)
-		if env == "" {
+		if !services.EnvVarNamePattern.MatchString(env) {
+			if env != "" {
+				warnings = append(warnings, fmt.Sprintf("%q is no environment variable name; the discobox starts without it", env))
+			}
 			continue
 		}
 		if _, dup := seen[env]; dup {
@@ -528,21 +538,23 @@ func (s *Service) importSecretBindings(ctx context.Context, projectID string, sb
 				env, binding.Secret))
 			continue
 		}
-		format := s.store.SentinelFormat(ctx, secret)
-		sentinel, err := secretformat.MintSentinel(format)
-		if err != nil {
-			return nil, nil, err
+		binding := &model.SecretBinding{
+			ProjectID:  projectID,
+			SecretID:   secret.ID,
+			SecretName: secret.Name,
+			TargetKind: model.SecretBindingTargetSandbox,
+			TargetID:   sb.ID,
+			Use:        true,
+			EnvName:    env,
+			CreatedBy:  principal.Actor(),
 		}
-		assignments = append(assignments, &model.SandboxSecret{
-			ProjectID: projectID,
-			SandboxID: sb.ID,
-			SecretID:  secret.ID,
-			EnvName:   env,
-			Sentinel:  sentinel,
-			Format:    format,
-		})
+		if secret.MaxBindingTTL > 0 {
+			expires := now.Add(time.Duration(secret.MaxBindingTTL) * time.Second)
+			binding.ExpiresAt = &expires
+		}
+		out = append(out, binding)
 	}
-	return assignments, warnings, nil
+	return out, warnings, nil
 }
 
 // importingUserID is who the imported discobox belongs to: the caller, or the

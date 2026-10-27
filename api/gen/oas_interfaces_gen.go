@@ -109,12 +109,8 @@ type CreateSandboxTrustRequestRes interface {
 	createSandboxTrustRequestRes()
 }
 
-type CreateSecretGrantRes interface {
-	createSecretGrantRes()
-}
-
-type CreateSecretRequestRes interface {
-	createSecretRequestRes()
+type CreateSecretBindingRes interface {
+	createSecretBindingRes()
 }
 
 type CreateSecretRes interface {
@@ -127,10 +123,6 @@ type DeconfigureHarnessConfigRes interface {
 
 type DeleteHarnessConfigRes interface {
 	deleteHarnessConfigRes()
-}
-
-type DeleteHarnessConfigSecretBindingRes interface {
-	deleteHarnessConfigSecretBindingRes()
 }
 
 type DeletePeerRes interface {
@@ -173,6 +165,10 @@ type DeleteSandboxRes interface {
 	deleteSandboxRes()
 }
 
+type DeleteSecretBindingRes interface {
+	deleteSecretBindingRes()
+}
+
 type DeleteSecretRes interface {
 	deleteSecretRes()
 }
@@ -187,6 +183,10 @@ type DenyTrustRequestRes interface {
 
 type DiscardSandboxHarnessConfigChangesRes interface {
 	discardSandboxHarnessConfigChangesRes()
+}
+
+type DismissSecretRefreshRequestRes interface {
+	dismissSecretRefreshRequestRes()
 }
 
 type ForceJobRes interface {
@@ -285,6 +285,10 @@ type GetSandboxTrustRequestRes interface {
 	getSandboxTrustRequestRes()
 }
 
+type GetSecretBindingRes interface {
+	getSecretBindingRes()
+}
+
 type GetSecretRequestRes interface {
 	getSecretRequestRes()
 }
@@ -309,6 +313,10 @@ type ListApprovalRequestsRes interface {
 	listApprovalRequestsRes()
 }
 
+type ListBoundSecretsRes interface {
+	listBoundSecretsRes()
+}
+
 type ListDNSAuditRes interface {
 	listDNSAuditRes()
 }
@@ -319,10 +327,6 @@ type ListExecEventsRes interface {
 
 type ListHTTPAuditRes interface {
 	listHTTPAuditRes()
-}
-
-type ListHarnessConfigSecretBindingsRes interface {
-	listHarnessConfigSecretBindingsRes()
 }
 
 type ListHarnessConfigsRes interface {
@@ -421,8 +425,16 @@ type ListSandboxesRes interface {
 	listSandboxesRes()
 }
 
-type ListSecretGrantsRes interface {
-	listSecretGrantsRes()
+type ListSecretBindingEventsRes interface {
+	listSecretBindingEventsRes()
+}
+
+type ListSecretBindingsRes interface {
+	listSecretBindingsRes()
+}
+
+type ListSecretRefreshRequestsRes interface {
+	listSecretRefreshRequestsRes()
 }
 
 type ListSecretRefreshesRes interface {
@@ -553,10 +565,6 @@ type ResumeSandboxAutostopRes interface {
 	resumeSandboxAutostopRes()
 }
 
-type RevokeSecretGrantRes interface {
-	revokeSecretGrantRes()
-}
-
 type SaveSandboxHarnessConfigChangesRes interface {
 	saveSandboxHarnessConfigChangesRes()
 }
@@ -575,10 +583,6 @@ type SetDefaultPoolRes interface {
 
 type SetDefaultProjectRes interface {
 	setDefaultProjectRes()
-}
-
-type SetHarnessConfigSecretBindingRes interface {
-	setHarnessConfigSecretBindingRes()
 }
 
 type StartSandboxExecRes interface {
@@ -655,6 +659,10 @@ type UpdateSandboxProviderInstanceRes interface {
 
 type UpdateSandboxRes interface {
 	updateSandboxRes()
+}
+
+type UpdateSecretBindingRes interface {
+	updateSecretBindingRes()
 }
 
 type UpdateSecretRes interface {

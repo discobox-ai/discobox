@@ -126,6 +126,24 @@ func (s *ApprovalRequest) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Refresh.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "refresh",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Trust.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -155,6 +173,8 @@ func (s ApprovalRequestKind) Validate() error {
 		return nil
 	case "trust":
 		return nil
+	case "refresh":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -167,10 +187,20 @@ func (s *ApproveSecretRequestBody) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if value, ok := s.Scope.Get(); ok {
+		if value, ok := s.TtlSeconds.Get(); ok {
 			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        false,
+					Max:           0,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+					Pattern:       nil,
+				}).Validate(int64(value)); err != nil {
+					return errors.Wrap(err, "int")
 				}
 				return nil
 			}(); err != nil {
@@ -180,7 +210,7 @@ func (s *ApproveSecretRequestBody) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "scope",
+			Name:  "ttlSeconds",
 			Error: err,
 		})
 	}
@@ -188,19 +218,6 @@ func (s *ApproveSecretRequestBody) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
-}
-
-func (s ApproveSecretRequestBodyScope) Validate() error {
-	switch s {
-	case "sandbox":
-		return nil
-	case "harnessConfig":
-		return nil
-	case "project":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
 }
 
 func (s *ApproveTrustRequestBody) Validate() error {
@@ -231,6 +248,70 @@ func (s *ApproveTrustRequestBody) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s *BoundSecret) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.From.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "from",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if s.Routes == nil {
+			return errors.New("nil is invalid value")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.Routes {
+			if err := func() error {
+				if elem == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "routes",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s BoundSecretFrom) Validate() error {
+	switch s {
+	case "project":
+		return nil
+	case "harnessConfig":
+		return nil
+	case "sandbox":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *ClearPoolCacheBody) Validate() error {
@@ -650,6 +731,31 @@ func (s *CreateSandboxBody) Validate() error {
 			Error: err,
 		})
 	}
+	if err := func() error {
+		var failures []validate.FieldError
+		for i, elem := range s.Bindings {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "bindings",
+			Error: err,
+		})
+	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -929,6 +1035,100 @@ func (s *CreateSandboxTrustRequestBody) Validate() error {
 	return nil
 }
 
+func (s *CreateSecretBindingBody) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.EnvVar.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     0,
+					MaxLengthSet:  false,
+					Email:         false,
+					Hostname:      false,
+					Regex:         regexMap["^[A-Za-z_][A-Za-z0-9_]*$"],
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "envVar",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.TargetKind.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "targetKind",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.TtlSeconds.Get(); ok {
+			if err := func() error {
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        false,
+					Max:           0,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+					Pattern:       nil,
+				}).Validate(int64(value)); err != nil {
+					return errors.Wrap(err, "int")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "ttlSeconds",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s CreateSecretBindingBodyTargetKind) Validate() error {
+	switch s {
+	case "project":
+		return nil
+	case "harnessConfig":
+		return nil
+	case "sandbox":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *CreateSecretBody) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -950,6 +1150,34 @@ func (s *CreateSecretBody) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "exchange",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.MaxBindingTTLSeconds.Get(); ok {
+			if err := func() error {
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        false,
+					Max:           0,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+					Pattern:       nil,
+				}).Validate(int64(value)); err != nil {
+					return errors.Wrap(err, "int")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "maxBindingTTLSeconds",
 			Error: err,
 		})
 	}
@@ -1053,107 +1281,6 @@ func (s CreateSecretBodyType) Validate() error {
 	}
 }
 
-func (s *CreateSecretGrantBody) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if err := s.Scope.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "scope",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.Purpose.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "purpose",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s CreateSecretGrantBodyPurpose) Validate() error {
-	switch s {
-	case "use":
-		return nil
-	case "delegate":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s CreateSecretGrantBodyScope) Validate() error {
-	switch s {
-	case "sandbox":
-		return nil
-	case "harnessConfig":
-		return nil
-	case "project":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s *CreateSecretRequestBody) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if err := s.Type.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "type",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s CreateSecretRequestBodyType) Validate() error {
-	switch s {
-	case "token":
-		return nil
-	case "oauth":
-		return nil
-	case "exchange":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
 func (s *DNSAuditQuery) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -1191,6 +1318,29 @@ func (s *DNSAuditQuery) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "id",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *DeleteSecretBindingResponse) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.Deleted == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "deleted",
 			Error: err,
 		})
 	}
@@ -2588,6 +2738,59 @@ func (s ListApprovalRequestsStatus) Validate() error {
 	}
 }
 
+func (s *ListBoundSecretsBody) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.BoundSecrets == nil {
+			return errors.New("nil is invalid value")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.BoundSecrets {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "boundSecrets",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ListBoundSecretsTargetKind) Validate() error {
+	switch s {
+	case "project":
+		return nil
+	case "harnessConfig":
+		return nil
+	case "sandbox":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ListDNSAuditBody) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -2721,29 +2924,6 @@ func (s ListHTTPAuditOrder) Validate() error {
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
-}
-
-func (s *ListHarnessConfigSecretBindingsBody) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if s.SecretBindings == nil {
-			return errors.New("nil is invalid value")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "secretBindings",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
 }
 
 func (s *ListHarnessConfigsBody) Validate() error {
@@ -3208,18 +3388,18 @@ func (s *ListSandboxesBody) Validate() error {
 	return nil
 }
 
-func (s *ListSecretGrantsBody) Validate() error {
+func (s *ListSecretBindingEventsBody) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if s.SecretGrants == nil {
+		if s.SecretBindingEvents == nil {
 			return errors.New("nil is invalid value")
 		}
 		var failures []validate.FieldError
-		for i, elem := range s.SecretGrants {
+		for i, elem := range s.SecretBindingEvents {
 			if err := func() error {
 				if err := elem.Validate(); err != nil {
 					return err
@@ -3238,7 +3418,7 @@ func (s *ListSecretGrantsBody) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "secretGrants",
+			Name:  "secretBindingEvents",
 			Error: err,
 		})
 	}
@@ -3246,6 +3426,59 @@ func (s *ListSecretGrantsBody) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s *ListSecretBindingsBody) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.SecretBindings == nil {
+			return errors.New("nil is invalid value")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.SecretBindings {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "secretBindings",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ListSecretBindingsTargetKind) Validate() error {
+	switch s {
+	case "project":
+		return nil
+	case "harnessConfig":
+		return nil
+	case "sandbox":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *ListSecretRefreshEventsBody) Validate() error {
@@ -3286,6 +3519,59 @@ func (s *ListSecretRefreshEventsBody) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s *ListSecretRefreshRequestsBody) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.SecretRefreshRequests == nil {
+			return errors.New("nil is invalid value")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.SecretRefreshRequests {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "secretRefreshRequests",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ListSecretRefreshRequestsStatus) Validate() error {
+	switch s {
+	case "pending":
+		return nil
+	case "answered":
+		return nil
+	case "dismissed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s ListSecretRefreshesOrder) Validate() error {
@@ -5773,6 +6059,76 @@ func (s SandboxAutostopConfirmRequestReason) Validate() error {
 	}
 }
 
+func (s *SandboxBindingInput) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.EnvVar.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     0,
+					MaxLengthSet:  false,
+					Email:         false,
+					Hostname:      false,
+					Regex:         regexMap["^[A-Za-z_][A-Za-z0-9_]*$"],
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "envVar",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.TtlSeconds.Get(); ok {
+			if err := func() error {
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        false,
+					Max:           0,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+					Pattern:       nil,
+				}).Validate(int64(value)); err != nil {
+					return errors.Wrap(err, "int")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "ttlSeconds",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *SandboxCPUConsumption) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -7742,6 +8098,27 @@ func (s *Secret) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if err := (validate.Int{
+			MinSet:        true,
+			Min:           0,
+			MaxSet:        false,
+			Max:           0,
+			MinExclusive:  false,
+			MaxExclusive:  false,
+			MultipleOfSet: false,
+			MultipleOf:    0,
+			Pattern:       nil,
+		}).Validate(int64(s.MaxBindingTTLSeconds)); err != nil {
+			return errors.Wrap(err, "int")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "maxBindingTTLSeconds",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.OAuth.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -7830,6 +8207,91 @@ func (s *Secret) Validate() error {
 	return nil
 }
 
+func (s *SecretBinding) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.TargetKind.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "targetKind",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *SecretBindingEvent) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Binding.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "binding",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Event.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s SecretBindingEventEvent) Validate() error {
+	switch s {
+	case "created":
+		return nil
+	case "updated":
+		return nil
+	case "deleted":
+		return nil
+	case "expired":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s SecretBindingTargetKind) Validate() error {
+	switch s {
+	case "project":
+		return nil
+	case "harnessConfig":
+		return nil
+	case "sandbox":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *SecretExchange) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -7858,64 +8320,6 @@ func (s *SecretExchange) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
-}
-
-func (s *SecretGrant) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if err := s.Purpose.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "purpose",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := s.Scope.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "scope",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s SecretGrantPurpose) Validate() error {
-	switch s {
-	case "use":
-		return nil
-	case "delegate":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s SecretGrantScope) Validate() error {
-	switch s {
-	case "sandbox":
-		return nil
-	case "harnessConfig":
-		return nil
-	case "project":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
 }
 
 func (s *SecretOAuth) Validate() error {
@@ -8085,6 +8489,82 @@ func (s SecretRefreshEventRefreshCause) Validate() error {
 	}
 }
 
+func (s *SecretRefreshRequest) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Answer.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "answer",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Cause.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "cause",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.Status.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "status",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s SecretRefreshRequestCause) Validate() error {
+	switch s {
+	case "stale":
+		return nil
+	case "rejected":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s SecretRefreshRequestStatus) Validate() error {
+	switch s {
+	case "pending":
+		return nil
+	case "answered":
+		return nil
+	case "dismissed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *SecretRejection) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -8177,60 +8657,6 @@ func (s *SecretRequest) Validate() error {
 		})
 	}
 	if err := func() error {
-		if value, ok := s.Reason.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "reason",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.RefreshCause.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "refreshCause",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.RefreshAnswer.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "refreshAnswer",
-			Error: err,
-		})
-	}
-	if err := func() error {
 		if err := s.Status.Validate(); err != nil {
 			return err
 		}
@@ -8238,17 +8664,6 @@ func (s *SecretRequest) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "status",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := s.Type.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "type",
 			Error: err,
 		})
 	}
@@ -8269,26 +8684,6 @@ func (s SecretRequestPurpose) Validate() error {
 	}
 }
 
-func (s SecretRequestReason) Validate() error {
-	switch s {
-	case "refresh":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s SecretRequestRefreshCause) Validate() error {
-	switch s {
-	case "stale":
-		return nil
-	case "rejected":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
 func (s SecretRequestStatus) Validate() error {
 	switch s {
 	case "pending":
@@ -8296,19 +8691,6 @@ func (s SecretRequestStatus) Validate() error {
 	case "approved":
 		return nil
 	case "denied":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s SecretRequestType) Validate() error {
-	switch s {
-	case "token":
-		return nil
-	case "oauth":
-		return nil
-	case "exchange":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -8888,6 +9270,76 @@ func (s *UpdateSandboxProviderInstanceBody) Validate() error {
 	return nil
 }
 
+func (s *UpdateSecretBindingBody) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.EnvVar.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     0,
+					MaxLengthSet:  false,
+					Email:         false,
+					Hostname:      false,
+					Regex:         regexMap["^[A-Za-z_][A-Za-z0-9_]*$"],
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "envVar",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.TtlSeconds.Get(); ok {
+			if err := func() error {
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        false,
+					Max:           0,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+					Pattern:       nil,
+				}).Validate(int64(value)); err != nil {
+					return errors.Wrap(err, "int")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "ttlSeconds",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *UpdateSecretBody) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -8909,6 +9361,34 @@ func (s *UpdateSecretBody) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "exchange",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.MaxBindingTTLSeconds.Get(); ok {
+			if err := func() error {
+				if err := (validate.Int{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        false,
+					Max:           0,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    0,
+					Pattern:       nil,
+				}).Validate(int64(value)); err != nil {
+					return errors.Wrap(err, "int")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "maxBindingTTLSeconds",
 			Error: err,
 		})
 	}

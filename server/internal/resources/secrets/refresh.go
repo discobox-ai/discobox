@@ -14,7 +14,6 @@ import (
 	"gorm.io/gorm"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/pkg/hostscope"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -168,15 +167,6 @@ func withholdRenewalFromSandbox(ctx context.Context, sec *model.Secret) {
 	}
 }
 
-// withholdAnswerFromSandbox leaves how a refresh request was answered — the
-// command, the client host, who answered — out of what a discobox reads, for
-// the same reason.
-func withholdAnswerFromSandbox(ctx context.Context, req *model.SecretRequest) {
-	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox {
-		req.RefreshAnswer = nil
-	}
-}
-
 // describeStaleness fills in when a secret's value stops being trusted.
 func describeStaleness(sec *model.Secret) {
 	if at, ok := sec.StaleTime(); ok {
@@ -189,10 +179,10 @@ func describeStaleness(sec *model.Secret) {
 // on hand, always, with an expiry that brings the proxy back as the value ages
 // out — and, when it has aged out or nearly has, a refresh request for a
 // person's client to answer.
-func (s *Service) renewableResolution(ctx context.Context, secret *model.Secret, sandboxID string, grantExpiry *time.Time) *time.Time {
+func (s *Service) renewableResolution(ctx context.Context, secret *model.Secret, sandboxID string, bindingExpiry *time.Time) *time.Time {
 	staleAt, ok := secret.StaleTime()
 	if !ok {
-		return grantExpiry
+		return bindingExpiry
 	}
 	now := time.Now().UTC()
 	if !now.Before(staleAt.Add(-refreshAhead)) {
@@ -206,8 +196,8 @@ func (s *Service) renewableResolution(ctx context.Context, secret *model.Secret,
 	if !now.Before(staleAt) {
 		expiry = now.Add(staleResolutionTTL)
 	}
-	if grantExpiry != nil && grantExpiry.Before(expiry) {
-		return grantExpiry
+	if bindingExpiry != nil && bindingExpiry.Before(expiry) {
+		return bindingExpiry
 	}
 	return &expiry
 }
@@ -225,17 +215,12 @@ func (s *Service) openRefreshRequest(ctx context.Context, secret *model.Secret, 
 		}
 		return s.store.SetRefreshRequestSandbox(ctx, secret.ProjectID, existing.ID, sandboxID)
 	}
-	err = s.store.CreateSecretRequest(ctx, &model.SecretRequest{
-		ProjectID:    secret.ProjectID,
-		RequestedBy:  "sandbox:" + sandboxID,
-		SandboxID:    sandboxID,
-		Type:         secret.Type,
-		Hosts:        hostscope.List(secret.Host),
-		SecretID:     secret.ID,
-		Name:         secret.Name,
-		Status:       model.SecretRequestStatusPending,
-		Reason:       model.SecretRequestReasonRefresh,
-		RefreshCause: cause,
+	err = s.store.CreateSecretRefreshRequest(ctx, &model.SecretRefreshRequest{
+		ProjectID: secret.ProjectID,
+		SecretID:  secret.ID,
+		SandboxID: sandboxID,
+		Cause:     cause,
+		Status:    model.SecretRefreshStatusPending,
 	})
 	// Another resolve opened it between the find and the create: the index
 	// holds one per secret, and that one is the answer.
@@ -282,7 +267,7 @@ func (s *Service) RefreshSecret(ctx context.Context, projectID, secretID string,
 	now := time.Now().UTC()
 	answer := &model.SecretRefreshAnswer{
 		AnsweredAt: now,
-		AnsweredBy: grantedByOf(principal),
+		AnsweredBy: principal.Actor(),
 		Via:        string(input.Via),
 		Session:    input.Session.Or(false),
 		ClientHost: strings.TrimSpace(input.ClientHost.Or("")),
@@ -315,11 +300,11 @@ func (s *Service) RefreshSecret(ctx context.Context, projectID, secretID string,
 			return apperrors.NewStatusError(http.StatusBadRequest, "only a token secret is refreshed with a new value")
 		}
 		if requestID != "" {
-			req, err := txStore.GetSecretRequest(ctx, projectID, requestID)
+			req, err := txStore.GetSecretRefreshRequest(ctx, projectID, requestID)
 			if err != nil {
-				return apperrors.NotFound(err, "secret request not found")
+				return apperrors.NotFound(err, "secret refresh request not found")
 			}
-			if !req.IsRefresh() || req.SecretID != sec.ID {
+			if req.SecretID != sec.ID {
 				return apperrors.NewStatusError(http.StatusBadRequest, "that request does not ask for a new value of this secret")
 			}
 			if err := txStore.AnswerRefreshRequest(ctx, projectID, requestID, answer); err != nil {
@@ -346,4 +331,57 @@ func (s *Service) RefreshSecret(ctx context.Context, projectID, secretID string,
 		return nil, err
 	}
 	return s.GetSecret(ctx, projectID, secretID)
+}
+
+// ListSecretRefreshRequests lists a project's refresh requests, optionally
+// of one status. A discobox is shown none: when a credential is renewed is a
+// person's to decide (ADR 26-09-25-122 §4), the rule DismissSecretRefreshRequest
+// holds for dismissing one.
+func (s *Service) ListSecretRefreshRequests(ctx context.Context, projectID, status string) ([]model.SecretRefreshRequest, error) {
+	if _, err := s.store.GetProject(ctx, projectID); err != nil {
+		return nil, apperrors.NotFound(err, "project not found")
+	}
+	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox {
+		return nil, nil
+	}
+	requests, err := s.store.ListSecretRefreshRequests(ctx, projectID, status)
+	if err != nil {
+		return nil, err
+	}
+	for i := range requests {
+		if secret, err := s.store.GetSecret(ctx, projectID, requests[i].SecretID); err == nil {
+			requests[i].SecretName = secret.Name
+		}
+	}
+	return requests, nil
+}
+
+// DismissSecretRefreshRequest closes an open refresh request with no new
+// value. When a credential is renewed is a person's to decide, not a
+// discobox's (ADR 26-09-25-122 §4).
+func (s *Service) DismissSecretRefreshRequest(ctx context.Context, projectID, requestID string) (*model.SecretRefreshRequest, error) {
+	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox {
+		return nil, apperrors.NewStatusError(http.StatusForbidden, "a refresh request is dismissed by a person, not a discobox")
+	}
+	req, err := s.store.GetSecretRefreshRequest(ctx, projectID, requestID)
+	if err != nil {
+		return nil, apperrors.NotFound(err, "secret refresh request not found")
+	}
+	if req.Status != model.SecretRefreshStatusPending {
+		return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("secret refresh request is already %s", req.Status))
+	}
+	if err := s.store.DismissRefreshRequest(ctx, projectID, req.ID); err != nil {
+		if errors.Is(err, store.ErrGenerationConflict) {
+			return nil, apperrors.NewStatusError(http.StatusConflict, "secret refresh request status changed concurrently; refresh and try again")
+		}
+		return nil, err
+	}
+	req, err = s.store.GetSecretRefreshRequest(ctx, projectID, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	if secret, err := s.store.GetSecret(ctx, projectID, req.SecretID); err == nil {
+		req.SecretName = secret.Name
+	}
+	return req, nil
 }

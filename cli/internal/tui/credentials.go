@@ -11,7 +11,6 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
-	"github.com/discobox-ai/discobox/pkg/hostscope"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
@@ -29,7 +28,7 @@ import (
 //
 // Nothing here decides anything: the dialog collects which secret answers the
 // ask and for how long, and the server does the rest, so the window and
-// `discobox secret request approve` mint the same grant from the same checks.
+// `discobox secret request approve` make the same binding from the same checks.
 
 // credentialsKey opens the request waiting on a discobox, on its row in the
 // list and on the secrets screen. C rather than g, because g is the top of a
@@ -42,7 +41,7 @@ const credentialsKey = "C"
 //
 // It is the one place the workspace does not carry the list's key on the list's
 // letter. The leader's c opens another terminal, and a shift away from it sat a
-// dialog that grants a credential — two commands one modifier apart, one of
+// dialog that binds a credential — two commands one modifier apart, one of
 // them consequential and reached for in a hurry, on a screen whose banner is
 // asking you to hurry. There is no list here for g to be the top of, so g is
 // free, and it is the letter of the thing it does.
@@ -67,18 +66,17 @@ type secretsLoadedMsg struct {
 }
 
 // credentialAnsweredMsg reports an approval or a denial coming back. ttl is
-// what the approval granted, so the report says how long the credential is
-// good for rather than only that it was handed over.
+// how long the binding the approval made lasts, so the report says how long
+// the credential is good for rather than only that it was handed over.
 type credentialAnsweredMsg struct {
 	request  CredentialRequest
 	approved bool
 	ttl      time.Duration
 	err      error
 	// applied is what had already been done to the project's secrets when an
-	// approval failed: a credential typed in and stored ahead of the grant that
-	// then did not happen. The failure says so rather than leave it behind in
-	// silence. A change to an existing secret is never here: it goes with the
-	// approval, and the server writes the two together or not at all.
+	// approval failed: a credential typed in and stored ahead of the binding
+	// that then did not happen. The failure says so rather than leave it
+	// behind in silence.
 	applied []string
 }
 
@@ -196,7 +194,7 @@ func (m *Model) credentialRequestByID(requestID string) (CredentialRequest, bool
 
 // askAboutCredential is the dialog itself: what was asked, and the ways to
 // answer it. Choosing a secret, or a new credential, is the first of two steps;
-// the second is how long the grant lives (askLifetime).
+// the second is how long the binding lasts (askLifetime).
 func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.Cmd {
 	if req.Refresh != nil {
 		return m.askAboutRefresh(req, secrets)
@@ -257,18 +255,12 @@ func (m *Model) showRawRequest(req CredentialRequest, back func() tea.Cmd) tea.C
 }
 
 // secretRows is the project's secrets as rows to choose between, likeliest
-// first.
-//
-// Every secret is offered. A secret bound to a neighboring host is the
-// likeliest answer, not the least: a GitHub token is inferred as
-// api.github.com and asked for as github.com, and greying it out leaves the
-// one secret that plainly answers the request unpickable while an unrelated
-// one is offered. Choosing it asks about the binding instead — the remedy
-// the server names when it refuses the grant.
+// first. Every secret is offered: the binding the approval makes is held to
+// the secret's routes and the request's both, so any of them can answer.
 func secretRows(secrets []Secret, req CredentialRequest) []action {
 	items := make([]action, 0, len(secrets)+4)
 	for _, secret := range secretsForRequest(secrets, req) {
-		detail := secretDetail(secret, req.hosts())
+		detail := secretDetail(secret)
 		items = append(items, action{
 			key:      "secret:" + secret.ID,
 			label:    secret.Name,
@@ -285,7 +277,7 @@ func secretRows(secrets []Secret, req CredentialRequest) []action {
 // back is parsing what was chosen rather than remembering which row meant what.
 const lifetimeCustom = "custom"
 
-// askLifetime is the second step of every approval: how long the grant lives.
+// askLifetime is the second step of every approval: how long the binding lasts.
 //
 // It is a step of its own, and a required one, because it is the half of an
 // approval nobody thinks to look for: a window that left it out would hand
@@ -293,10 +285,13 @@ const lifetimeCustom = "custom"
 // that has to be answered is one that gets read. It opens on the lifetime the agent asked for, or on
 // agentcreds.DefaultGrantTTL, an hour, when it asked for nothing in particular.
 //
-// back is the dialog before this one, which Esc returns to: the request card,
-// or the binding question when the secret chosen raised one.
+// A lifetime longer than the secret allows is not offered: the server would
+// refuse it, and raising a secret's limit is a decision about the credential,
+// made on the secrets screen rather than on the way through one approval.
+//
+// back is the dialog before this one, which Esc returns to: the request card.
 func (m *Model) askLifetime(a approval, back func() tea.Cmd) tea.Cmd {
-	asked := a.req.GrantTTL
+	asked := a.req.AskedTTL
 	offered := lifetimeChoices(asked)
 	if !slices.Contains(offered, asked) {
 		// Not a row, so not what anything below may open on or mark.
@@ -308,13 +303,15 @@ func (m *Model) askLifetime(a approval, back func() tea.Cmd) tea.Cmd {
 	}
 	ask := durationAsk{
 		title:        "How long?",
-		sections:     []section{grantSection(a)},
+		sections:     []section{bindingSection(a)},
 		answerLabel:  "how long may " + credentialName(a.req) + " be used for?",
 		footer:       "when it lapses the credential stops working, and the agent asks again",
 		customFooter: "1h, 90m, 3d, 2w, 1mo — or forever",
 		choices:      offered,
 		opensOn:      opensOn,
 		detail:       func(d time.Duration) string { return lifetimeDetail(a.secret, asked, d) },
+		allowed:      func(d time.Duration) bool { return withinLimit(a.secret, d) },
+		refusal:      a.secret.Name + " allows at most " + lifetime.Label(a.secret.MaxTTL),
 	}
 	return m.askDuration(ask, func(d time.Duration, _ bool, again func() tea.Cmd) tea.Cmd {
 		next := a
@@ -324,7 +321,7 @@ func (m *Model) askLifetime(a approval, back func() tea.Cmd) tea.Cmd {
 }
 
 // durationAsk is a lifetime chosen from the presets, or typed: how long a
-// grant lives, or the longest one a secret allows. What a row is called and
+// binding lasts, or the longest one a secret allows. What a row is called and
 // what it says beyond its name are the asker's, since "forever" means
 // something different in each.
 type durationAsk struct {
@@ -341,6 +338,16 @@ type durationAsk struct {
 	// keep, when set, is a first row that leaves the value as it is, labeled
 	// with what it is; the cursor starts there.
 	keep string
+	// allowed, when set, says whether a lifetime may be chosen at all, and
+	// refusal what is said of one typed that may not.
+	allowed func(time.Duration) bool
+	refusal string
+}
+
+// withinLimit reports whether a binding of secret may last d: the secret
+// caps nothing, or d is no longer than its cap. Forever is longer than any.
+func withinLimit(secret Secret, d time.Duration) bool {
+	return secret.MaxTTL <= 0 || (d > 0 && d <= secret.MaxTTL)
 }
 
 // askDuration asks for the lifetime and hands chose what was chosen — kept
@@ -360,7 +367,8 @@ func (m *Model) askDuration(ask durationAsk, chose func(d time.Duration, kept bo
 		if ask.detail != nil {
 			detail = ask.detail(d)
 		}
-		items = append(items, action{key: strconv.FormatInt(lifetime.Seconds(d), 10), label: name(d), detail: detail, enabled: true})
+		enabled := ask.allowed == nil || ask.allowed(d)
+		items = append(items, action{key: strconv.FormatInt(lifetime.Seconds(d), 10), label: name(d), detail: detail, enabled: enabled})
 	}
 	items = append(items, action{key: lifetimeCustom, label: "custom…", detail: "type one: 90m, 3d, 6mo", enabled: true})
 
@@ -429,7 +437,7 @@ func lifetimeChoices(asked time.Duration) []time.Duration {
 
 // lifetimeDetail says what a lifetime means beyond its name: that it is what
 // the agent asked for, that forever never lapses, and that one longer than the
-// credential allows will be asked about — said before it is chosen rather than
+// credential allows cannot be chosen — said beside the row rather than
 // discovered after.
 func lifetimeDetail(secret Secret, asked, d time.Duration) string {
 	var notes []string
@@ -438,7 +446,7 @@ func lifetimeDetail(secret Secret, asked, d time.Duration) string {
 	}
 	switch limit := secret.MaxTTL; {
 	case limit > 0 && (d <= 0 || d > limit):
-		notes = append(notes, "longer than "+secret.Name+" allows ("+lifetime.Label(limit)+"), asks first")
+		notes = append(notes, "longer than "+secret.Name+" allows ("+lifetime.Label(limit)+")")
 	case d <= 0:
 		notes = append(notes, "never expires")
 	}
@@ -455,6 +463,9 @@ func (m *Model) askCustomDuration(ask durationAsk, chose func(d time.Duration, k
 		if err != nil {
 			return m.askCustomDuration(ask, chose, back, fmt.Sprintf("%v", err))
 		}
+		if ask.allowed != nil && !ask.allowed(chosen) {
+			return m.askCustomDuration(ask, chose, back, ask.refusal)
+		}
 		return chose(chosen, false, func() tea.Cmd { return m.askCustomDuration(ask, chose, back, "") })
 	})
 	d.sections = ask.sections
@@ -466,10 +477,10 @@ func (m *Model) askCustomDuration(ask durationAsk, chose func(d time.Duration, k
 	return nil
 }
 
-// grantSection is what the lifetime is being chosen for, so the card asking
+// bindingSection is what the lifetime is being chosen for, so the card asking
 // "how long" says how long *what*: the credential, what answers it, and where
 // it may be sent.
-func grantSection(a approval) section {
+func bindingSection(a approval) section {
 	answered := a.secret.Name
 	if a.fresh {
 		answered = "a new credential, filled in on the next card"
@@ -484,21 +495,20 @@ func grantSection(a approval) section {
 	if where := a.req.where(); where != "" {
 		fields = append(fields, field{label: "may be sent to", value: where, tone: toneAccent})
 	}
-	return section{label: "the grant", fields: fields}
+	return section{label: "the binding", fields: fields}
 }
 
-// delegationPurpose is what a grant to delegate is for, said the same way on
-// the request and on the grant.
+// delegationPurpose is what a binding to delegate is for, said the same way on
+// the request and on the binding.
 const delegationPurpose = "delegation — may give it to the discoboxes it creates, never uses it"
 
 // lifetimeChosen is where the two kinds of answer part: a new credential still
-// needs its value, and an existing one may need its limit raised. back is the
-// dialog the lifetime was chosen on, which either of them returns to.
-func (m *Model) lifetimeChosen(a approval, back func() tea.Cmd) tea.Cmd {
+// needs its value, and an existing one is approved with.
+func (m *Model) lifetimeChosen(a approval, _ func() tea.Cmd) tea.Cmd {
 	if a.fresh {
 		return m.askNewCredentialForm(a)
 	}
-	return m.confirmGrantLimit(a, back)
+	return m.finishApproval(a)
 }
 
 // credentialAsk is the request as a person needs to read it: who is asking, for
@@ -510,12 +520,6 @@ func (m *Model) lifetimeChosen(a approval, back func() tea.Cmd) tea.Cmd {
 // by somebody answering their fourth request of the morning.
 func credentialAsk(req CredentialRequest, now time.Time) []section {
 	asked := "the agent in this discobox"
-	if !req.FromAgent() {
-		// Not a question an agent composed: the proxy met a sentinel nothing
-		// resolves, and the ask is what it saw rather than what anyone means
-		// to do.
-		asked = "the proxy — this discobox used a credential it has no grant for"
-	}
 	if when := ago(req.Created, now); when != "" {
 		asked = when + " by " + asked
 	}
@@ -525,21 +529,18 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 	if req.Delegate {
 		fields = append(fields, field{label: "purpose", value: delegationPurpose, tone: toneAccent})
 	}
-	if req.Type != "" {
-		fields = append(fields, field{label: "kind", value: req.Type})
-	}
 	if req.EnvVar != "" {
 		fields = append(fields, field{label: "delivered as", value: req.EnvVar})
 	}
 	if where := req.where(); where != "" {
 		fields = append(fields, field{label: "may be sent to", value: where, tone: toneAccent})
 	}
-	if req.GrantTTL > 0 {
-		fields = append(fields, field{label: "wanted for", value: lifetime.Label(req.GrantTTL)})
+	if req.AskedTTL > 0 {
+		fields = append(fields, field{label: "wanted for", value: lifetime.Label(req.AskedTTL)})
 	}
 	fields = append(fields, field{label: "asked", value: asked, tone: toneDim})
 	// Where the secrets offered below are from, once there is more than one
-	// place they could be: the answer is stored and granted there (ADR 0131
+	// place they could be: the answer is stored and bound there (ADR 0131
 	// §1).
 	if req.Server != "" {
 		fields = append(fields, field{label: "on server", value: req.Server, tone: toneDim})
@@ -565,30 +566,12 @@ func credentialName(req CredentialRequest) string {
 	return "a credential"
 }
 
-// secretType is what a new credential answering the request is stored as. The
-// data source defaults an unset type the same way, so the check for a name
-// already taken compares what the server will actually be sent.
-func secretType(req CredentialRequest) string {
-	if t := strings.TrimSpace(req.Type); t != "" {
-		return t
-	}
-	return "token"
-}
-
-// secretNameTaken reports whether the project already holds a secret a new one
-// stored under this name would collide with. The server's uniqueness is
-// (name, type, host, unique_key), and the comparison here is exact because the
-// database's is: names are trimmed and hosts normalized on both sides.
-//
-// The last column is one the API does not carry, so this reads the first
-// three. A secret holding a unique key of its own — one the harness configure
-// flow made — sits outside the shared slot and would not have collided, and is
-// counted here as though it had. That asks a question nobody needed rather
-// than letting a create fail, which is the side to be wrong on.
-func secretNameTaken(secrets []Secret, name, kind, host string) bool {
-	name, host = strings.TrimSpace(name), normalizeHostName(host)
+// secretNameTaken reports whether the project already holds a secret by this
+// name: a secret's name is unique in its project.
+func secretNameTaken(secrets []Secret, name string) bool {
+	name = strings.TrimSpace(name)
 	for _, secret := range secrets {
-		if strings.TrimSpace(secret.Name) == name && secret.Type == kind && normalizeHostName(secret.Host) == host {
+		if strings.TrimSpace(secret.Name) == name {
 			return true
 		}
 	}
@@ -599,13 +582,13 @@ func secretNameTaken(secrets []Secret, name, kind, host string) bool {
 // hold. It is a suggestion to type over, not a name anything is stored under
 // without being seen: one more collision than there are secrets is impossible,
 // which is where the count stops.
-func freeSecretName(secrets []Secret, name, kind, host string) string {
-	if !secretNameTaken(secrets, name, kind, host) {
+func freeSecretName(secrets []Secret, name string) string {
+	if !secretNameTaken(secrets, name) {
 		return name
 	}
 	for n := 2; n <= len(secrets)+2; n++ {
 		candidate := fmt.Sprintf("%s-%d", name, n)
-		if !secretNameTaken(secrets, candidate, kind, host) {
+		if !secretNameTaken(secrets, candidate) {
 			return candidate
 		}
 	}
@@ -613,51 +596,24 @@ func freeSecretName(secrets []Secret, name, kind, host string) string {
 }
 
 // secretsForRequest orders the secrets by how likely each is to be the answer:
-// the host asked for, then a host of the same site, then the unbound ones, then
-// the rest. Order is the whole of the opinion here — every one of them can be
-// chosen.
+// the one named what the request asked for first, then the rest as listed.
+// Order is the whole of the opinion here — every one of them can be chosen.
 func secretsForRequest(secrets []Secret, req CredentialRequest) []Secret {
 	out := append([]Secret(nil), secrets...)
 	sort.SliceStable(out, func(i, j int) bool {
-		return hostRank(out[i].Host, req) < hostRank(out[j].Host, req)
+		return out[i].Name == req.Name && out[j].Name != req.Name
 	})
 	return out
 }
 
-// hostRank orders the picker: the secret bound to exactly what the request
-// would bind, then one whose binding covers every host it names, then the
-// unbound ones, then a binding that does not answer for all of them and will
-// be asked about (ADR 26-10-02-393 §2).
-func hostRank(bound string, req CredentialRequest) int {
-	bound, want := normalizeHostName(bound), normalizeHostName(req.binding())
-	switch {
-	case bound == want && want != "":
-		return 0
-	case bound != "" && hostscope.CoversEvery([]string{bound}, req.hosts()):
-		return 1
-	case bound == "":
-		return 2
-	default:
-		return 3
+// secretDetail says what a secret is and where it may be sent. A credential
+// that caps how long its bindings may last says so here, beside the row.
+func secretDetail(secret Secret) string {
+	where := "sent nowhere"
+	if len(secret.Routes) > 0 {
+		where = routesText(secret.Routes)
 	}
-}
-
-func normalizeHostName(host string) string { return hostscope.Normalize(host) }
-
-// secretDetail says what a secret is and, when its binding is not the host
-// being asked about, what choosing it will mean. A credential that caps how
-// long its grants may live says so here, beside the row that would be asked
-// about on the way through if the lifetime on the card is longer.
-func secretDetail(secret Secret, hosts []string) string {
-	bound := normalizeHostName(secret.Host)
-	kind := secretKind(secret)
-	detail := kind + " · bound to " + secret.Host + ", asks before using it here"
-	switch {
-	case bound == "":
-		detail = kind + " · any host"
-	case hostscope.CoversEvery([]string{bound}, hosts):
-		detail = kind + " · " + secret.Host
-	}
+	detail := secretKind(secret) + " · " + where
 	if secret.MaxTTL > 0 {
 		detail += " · at most " + lifetime.Label(secret.MaxTTL)
 	}
@@ -683,12 +639,12 @@ func secretKind(secret Secret) string {
 func (m *Model) askNewCredentialForm(a approval) tea.Cmd {
 	return m.newCredentialForm(a, section{label: "approves the request", fields: []field{
 		{label: "credential", value: credentialName(a.req), tone: toneAccent},
-		{label: "granted for", value: lifetime.Label(a.ttl), tone: toneAccent},
+		{label: "bound for", value: lifetime.Label(a.ttl), tone: toneAccent},
 	}}, "enter stores and approves", func(f *form, secret NewSecret) tea.Cmd {
-		// A limit shorter than the grant this approval is making is one the
-		// server would refuse the grant for, after the secret was stored.
+		// A limit shorter than the binding this approval is making is one the
+		// server would refuse the binding for, after the secret was stored.
 		if limit := time.Duration(secret.MaxTTLSeconds) * time.Second; limit > 0 && (a.ttl <= 0 || a.ttl > limit) {
-			f.err = "the grant limit is shorter than the " + lifetime.Label(a.ttl) + " this request is being approved for"
+			f.err = "the binding limit is shorter than the " + lifetime.Label(a.ttl) + " this request is being approved for"
 			return nil
 		}
 		return m.createAndApprove(a, secret)
@@ -699,7 +655,7 @@ func (m *Model) askNewCredentialForm(a approval) tea.Cmd {
 // storing it then does. about says so above the form, and back is where Esc
 // goes, nothing stored.
 func (m *Model) newCredentialForm(a approval, about section, store string, then func(*form, NewSecret) tea.Cmd, back func() tea.Cmd) tea.Cmd {
-	f := secretForm(nil)
+	f := secretForm(nil, a.req.Routes)
 	fillFromRequest(f, a.req, a.secrets)
 	d := formDialog("New credential", f, func(f *form) tea.Cmd {
 		secret, ok := secretFromForm(f)
@@ -717,28 +673,12 @@ func (m *Model) newCredentialForm(a approval, about section, store string, then 
 	return nil
 }
 
-// fillFromRequest fills the new-secret form from what a request asks for: named,
-// typed and bound as the request asks. A name the project already holds for
-// that kind and host is the first free one instead, which the server would
-// otherwise refuse the create for.
+// fillFromRequest fills the new-secret form from what a request asks for:
+// named as the request asks; the routes it asks for are the form's own rows
+// (newCredentialForm). A name the project already holds is the first free one
+// instead, which the server would otherwise refuse the create for.
 func fillFromRequest(f *form, req CredentialRequest, secrets []Secret) {
-	if secretType(req) == "oauth" {
-		f.choose("kind", "oauth")
-	}
-	f.set("name", credentialName(req))
-	f.set("host", req.binding())
-	kind := "token"
-	if f.chosen("kind") == "oauth" {
-		kind = "oauth"
-	}
-	name, host := f.value("name"), f.value("host")
-	if secretNameTaken(secrets, name, kind, host) || secretNameTaken(secrets, name, secretType(req), host) {
-		free := freeSecretName(secrets, name, kind, host)
-		for secretNameTaken(secrets, free, secretType(req), host) {
-			free = freeSecretName(secrets, free, secretType(req), host)
-		}
-		f.set("name", free)
-	}
+	f.set("name", freeSecretName(secrets, credentialName(req)))
 }
 
 // createAndApprove stores the new credential and answers with it, for the
@@ -771,8 +711,7 @@ func (m *Model) createAndApprove(a approval, secret NewSecret) tea.Cmd {
 }
 
 // approval is what answering a request will do, gathered one step at a time:
-// the secret chosen, how long its grant lives, and the change to the secret
-// those two need, applied with the grant.
+// the secret chosen, and how long the binding it makes lasts.
 //
 // It is carried whole, and copied rather than changed at each step, because
 // every step can be gone back from: the dialog before one is rebuilt from the
@@ -786,15 +725,6 @@ type approval struct {
 	// lifetime.
 	fresh bool
 	ttl   time.Duration
-	// bindTo and limit are what the approver agreed to change on the secret so
-	// the grant fits it: its binding (empty releases it) and its grant limit.
-	// Nil leaves each alone. They go with the approval, which the server
-	// applies whole or not at all.
-	bindTo *string
-	limit  *int64
-	// changes is what they do, in the words the status dialog says while it
-	// happens.
-	changes []string
 }
 
 // toRequest is the way back to the request card: where Esc goes from the first
@@ -803,126 +733,17 @@ func (m *Model) toRequest(a approval) func() tea.Cmd {
 	return func() tea.Cmd { return m.askAboutCredential(a.req, a.secrets) }
 }
 
-// chooseSecret is the first step's answer: the secret, then whatever it raises
-// — a binding pointing somewhere else — then how long.
+// chooseSecret is the first step's answer: the secret, then how long.
 func (m *Model) chooseSecret(a approval, secretID string) tea.Cmd {
 	for _, secret := range a.secrets {
 		if secret.ID == secretID {
 			a.secret = secret
 		}
 	}
-	return m.confirmGrantHost(a)
+	return m.askLifetime(a, m.toRequest(a))
 }
 
-// confirmGrantHost asks the one question standing between a secret bound to
-// another host and the request in front of it, before the lifetime: it is a
-// question about the secret just chosen, and is asked while that choice is the
-// thing being looked at.
-//
-// The server refuses a grant that would point a host-bound secret somewhere
-// else, and it is right to: that check is what stops an approval typo sending a
-// real credential to a host it was never meant for. But when the two hosts are
-// the same site, the mismatch is usually the inference being narrower than the
-// credential, and the remedy is the secret's binding rather than the grant. So
-// the window asks for exactly that, in the words the server would use.
-func (m *Model) confirmGrantHost(a approval) tea.Cmd {
-	bound := normalizeHostName(a.secret.Host)
-	if bound == "" || hostscope.CoversEvery([]string{bound}, a.req.hosts()) {
-		return m.askLifetime(a, m.toRequest(a))
-	}
-	// The binding that would cover both, when there is one: a credential asked
-	// for at github.com and bound to api.github.com belongs to the site, and
-	// the site covers what is beneath it. Otherwise the only way through is to
-	// release the binding entirely.
-	widened := ""
-	if asked := a.req.binding(); asked != "" {
-		widened = commonParent(a.secret.Host, asked)
-	}
-	question := fmt.Sprintf("release %s's binding, so it may be sent anywhere a grant says?", a.secret.Name)
-	if widened != "" {
-		question = fmt.Sprintf("bind %s to %s instead, so it covers both?", a.secret.Name, widened)
-	}
-	d := confirmDialog("Bound to another host", "", func(string) tea.Cmd {
-		next := a
-		host := widened
-		next.bindTo = &host
-		what := "releasing " + a.secret.Name + "'s binding"
-		if host != "" {
-			what = "binding " + a.secret.Name + " to " + host
-		}
-		next.changes = append(slices.Clip(a.changes), what)
-		return m.askLifetime(next, func() tea.Cmd { return m.confirmGrantHost(a) })
-	})
-	d.sections = []section{{
-		label: "the conflict",
-		fields: []field{
-			{label: "secret", value: a.secret.Name},
-			{label: "bound to", value: a.secret.Host, tone: toneAccent},
-			{label: "asked for", value: a.req.where(), tone: toneAccent},
-		},
-		lines: []line{{text: "a credential may only be sent to its own host and the hosts beneath it", tone: toneDim}},
-	}}
-	d.answerLabel = question
-	d.footer = "no goes back to the request, and nothing is changed"
-	// The costly answer is yes: it widens where a credential may be sent.
-	d.defaultNo = true
-	// Saying no goes back to the question rather than nowhere. A dialog that
-	// closes onto the list, having done nothing and said nothing, is how a
-	// deliberate "not that one" reads as the window ignoring the keypress.
-	d.onCancel = m.toRequest(a)
-	m.dialog = d
-	return nil
-}
-
-// commonParent is the scope that would cover both hosts, mirroring the server's
-// own answer when it refuses: the deeper of the two when one is beneath the
-// other, the shared site when they are siblings, and nothing when they share no
-// site at all.
-func commonParent(a, b string) string {
-	return hostscope.CommonParent(a, b)
-}
-
-// confirmGrantLimit asks about a lifetime the credential does not allow.
-//
-// The limit is the one place a credential says how long consent to it may
-// last, and the server refuses a grant that would outlive it. Raising it is a
-// decision about the credential rather than about this one grant, so it is
-// asked for as one — and No goes back to where the lifetime was chosen, where a
-// shorter one can be picked instead.
-func (m *Model) confirmGrantLimit(a approval, back func() tea.Cmd) tea.Cmd {
-	limit := a.secret.MaxTTL
-	if limit <= 0 || (a.ttl > 0 && a.ttl <= limit) {
-		return m.finishApproval(a)
-	}
-	d := confirmDialog("Longer than the credential allows", "", func(string) tea.Cmd {
-		next := a
-		seconds := lifetime.Seconds(a.ttl)
-		next.limit = &seconds
-		next.changes = append(slices.Clip(a.changes), "raising "+a.secret.Name+"'s limit to "+lifetime.Label(a.ttl))
-		return m.finishApproval(next)
-	})
-	d.sections = []section{{
-		label: "the conflict",
-		fields: []field{
-			{label: "secret", value: a.secret.Name},
-			{label: "grants last at most", value: lifetime.Label(limit), tone: toneAccent},
-			{label: "asked for", value: lifetime.Label(a.ttl), tone: toneAccent},
-		},
-		lines: []line{{text: "the limit is how long consent to this credential may last, and it holds for every grant minted on it from now on", tone: toneDim}},
-	}}
-	d.answerLabel = fmt.Sprintf("raise %s's limit to %s?", a.secret.Name, lifetime.Label(a.ttl))
-	d.footer = "no goes back, where a shorter lifetime can be chosen instead"
-	// The costly answer is yes: it lengthens how long every grant on this
-	// credential may live.
-	d.defaultNo = true
-	d.onCancel = back
-	m.dialog = d
-	return nil
-}
-
-// finishApproval mints the grant, with whatever the questions agreed to change
-// on the secret carried in the same approval: the server writes them together
-// or not at all, so a refused approval leaves the credential as it was.
+// finishApproval makes the binding.
 //
 // The lifetime rides on the approval itself rather than being left out for the
 // server to default: the default is the secret's own ceiling, which most
@@ -930,15 +751,10 @@ func (m *Model) confirmGrantLimit(a approval, back func() tea.Cmd) tea.Cmd {
 // permanent credentials without ever saying the word.
 func (m *Model) finishApproval(a approval) tea.Cmd {
 	what := "approving for " + lifetime.Label(a.ttl) + "…"
-	if len(a.changes) > 0 {
-		what = strings.Join(a.changes, " and ") + ", approving…"
-	}
 	sent := Approval{
-		RequestID:           a.req.ID,
-		SecretID:            a.secret.ID,
-		TTLSeconds:          lifetime.Seconds(a.ttl),
-		SecretHost:          a.bindTo,
-		SecretMaxTTLSeconds: a.limit,
+		RequestID:  a.req.ID,
+		SecretID:   a.secret.ID,
+		TTLSeconds: lifetime.Seconds(a.ttl),
 	}
 	m.dialog = statusDialog("Credential request", what)
 	return func() tea.Msg {
@@ -955,6 +771,13 @@ func (m *Model) denyCredential(req CredentialRequest) tea.Cmd {
 			return credentialAnsweredMsg{request: req, approved: false, err: err}
 		}
 	}
+	if req.Refresh != nil {
+		m.dialog = statusDialog("Refresh request", "dismissing…")
+		return func() tea.Msg {
+			err := m.ds.DismissRefresh(m.ctx, req.Server, req.ID)
+			return credentialAnsweredMsg{request: req, approved: false, err: err}
+		}
+	}
 	m.dialog = statusDialog("Credential request", "denying…")
 	return func() tea.Msg {
 		err := m.ds.DenyCredentialRequest(m.ctx, req.Server, req.ID)
@@ -966,10 +789,10 @@ func (m *Model) denyCredential(req CredentialRequest) tea.Cmd {
 // the banner go with the request that is no longer waiting.
 //
 // A failure replaces the dialog rather than dropping to the status line. The
-// server's refusals here are instructions — "bound to api.github.com and cannot
-// be granted for github.com; pick a secret for github.com, or clear the
-// secret's host" — and a line that clears itself after four seconds, on a
-// screen the request has just left, is one that reads as nothing happening.
+// server's refusals here are instructions — "GH_TOKEN already holds another
+// credential in this discobox; approve the request with that secret, or ask
+// for another variable" — and a line that clears itself after four seconds, on
+// a screen the request has just left, is one that reads as nothing happening.
 func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 	if msg.err != nil {
 		verb := "Could not approve"
@@ -983,7 +806,7 @@ func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 			for _, change := range msg.applied {
 				done.lines = append(done.lines, line{text: change, bullet: true, tone: toneAlert})
 			}
-			done.lines = append(done.lines, line{}, line{text: "it was done for this approval; the secrets screen (F4) removes it if the grant is not coming", tone: toneDim})
+			done.lines = append(done.lines, line{}, line{text: "it was done for this approval; the secrets screen (F4) removes it if the binding is not coming", tone: toneDim})
 			d.sections = append(d.sections, done)
 		}
 		m.dialog = d

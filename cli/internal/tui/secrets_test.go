@@ -29,13 +29,13 @@ func secretsFixture(t *testing.T) (*Model, *fakeSource) {
 	t.Helper()
 	ds := newFakeSource(testSandboxes()...)
 	ds.projectSecrets = []Secret{
-		{ID: "sec_gh", Name: "gh", Type: "bearer", Host: "github.com", MaxTTL: time.Hour},
+		{ID: "sec_gh", Name: "gh", Type: "bearer", Routes: []SecretRoute{{Host: "github.com"}}, MaxTTL: time.Hour},
 		{ID: "sec_loose", Name: "OpenAI key", Type: "bearer", MaxTTL: time.Hour},
 	}
-	ds.projectGrants = []Grant{
-		{ID: "grant_1", SecretID: "sec_gh", Scope: "sandbox", ScopeKey: "sbx_one", Host: "api.github.com",
-			GrantedBy: "user:alice", Granted: time.Now().Add(-time.Minute)},
-		{ID: "grant_2", SecretID: "sec_gh", Scope: "project", ScopeKey: "project-1", Host: "github.com"},
+	ds.projectBindings = []SecretBinding{
+		{ID: "binding_1", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, EnvVar: "GH_TOKEN",
+			Routes: []SecretRoute{{Host: "api.github.com"}}, CreatedBy: "user:alice", Created: time.Now().Add(-time.Minute)},
+		{ID: "binding_2", SecretID: "sec_gh", TargetKind: BindingProject, Use: true, EnvVar: "GITHUB"},
 	}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress(secretsKey))
@@ -50,161 +50,137 @@ func TestTheScreenShowsWhatEachSecretIsAndWhatStandsOnIt(t *testing.T) {
 	m, _ := secretsFixture(t)
 
 	body := strings.Join(frame(m), "\n")
-	for _, want := range []string{"Secrets", "gh", "github.com", "2 grants", "OpenAI key", "any host"} {
+	for _, want := range []string{"Secrets", "gh", "github.com", "2 bindings", "OpenAI key", "sent nowhere"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("frame does not carry %q:\n%s", want, body)
 		}
 	}
 }
 
-// The binding is the whole of what limits where a credential may travel, so an
-// unbound secret says so rather than showing a blank — blank reads as "not
-// loaded".
-func TestAnUnboundSecretSaysSo(t *testing.T) {
+// Routes are the whole of what limits where a credential may travel, so a
+// secret with none says it is sent nowhere rather than showing a blank —
+// blank reads as "not loaded".
+func TestASecretWithNoRoutesSaysSo(t *testing.T) {
 	t.Parallel()
 	m, _ := secretsFixture(t)
 	m.secrets.moveTo(1)
 	if s := m.secrets.current(); s == nil || s.ID != "sec_loose" {
-		t.Fatalf("cursor = %#v, want the unbound secret", m.secrets.current())
+		t.Fatalf("cursor = %#v, want the secret with no routes", m.secrets.current())
 	}
-	if !strings.Contains(strings.Join(frame(m), "\n"), "any host") {
-		t.Fatal("an unbound secret is drawn as a blank")
+	if !strings.Contains(strings.Join(frame(m), "\n"), "sent nowhere") {
+		t.Fatal("a secret with no routes is drawn as a blank")
 	}
 }
 
-func TestGrantsAreListedAndRevoked(t *testing.T) {
+func TestBindingsAreListedAndTakenBack(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("enter"))
 	if m.dialog == nil || m.dialog.kind != dlgActions {
-		t.Fatal("enter did not list the grants standing on the secret")
+		t.Fatal("enter did not list the bindings standing on the secret")
 	}
 	if len(m.dialog.items) != 3 {
-		t.Fatalf("items = %d, want the secret's two grants and the row that makes one", len(m.dialog.items))
+		t.Fatalf("items = %d, want the secret's two bindings and the row that makes one", len(m.dialog.items))
 	}
-	if m.dialog.items[0].key != grantCreateItem {
+	if m.dialog.items[0].key != bindingCreateItem {
 		t.Fatalf("first row = %q, want making one to lead", m.dialog.items[0].key)
 	}
-	// A grant says what it covers before it offers to be withdrawn.
+	// A binding says what it covers before it offers to be taken back.
 	joined := m.dialog.items[1].label + " " + m.dialog.items[1].detail
-	for _, want := range []string{"api.github.com", "sandbox", "sbx_one"} {
+	for _, want := range []string{"GH_TOKEN", "api.github.com", "discobox " + testSandboxes()[0].Name} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("row = %q, want it to carry %q", joined, want)
 		}
 	}
 
-	// Enter reads; x withdraws.
-	drain(t, m, m.dialog.action("grant_1"), 0)
-	if m.dialog == nil || m.dialog.title != "Grant" {
-		t.Fatalf("enter did not read the grant: %s", describe(m.dialog))
+	// Enter reads; x takes back.
+	drain(t, m, m.dialog.action("binding_1"), 0)
+	if m.dialog == nil || m.dialog.title != "Binding" {
+		t.Fatalf("enter did not read the binding: %s", describe(m.dialog))
 	}
-	for _, want := range []string{"api.github.com", "sandbox", "user:alice"} {
+	for _, want := range []string{"api.github.com", "GH_TOKEN", "discobox " + testSandboxes()[0].Name, "user:alice"} {
 		if !strings.Contains(dialogText(m), want) {
 			t.Fatalf("review = %q, want it to carry %q", dialogText(m), want)
 		}
 	}
-	// Esc comes back to the grants, so the withdraw key is right there.
+	// Esc comes back to the bindings, so the unbind key is right there.
 	send(t, m, keyPress("esc"))
 	if m.dialog == nil || m.dialog.kind != dlgActions {
-		t.Fatalf("dialog = %s, want the grants back", describe(m.dialog))
+		t.Fatalf("dialog = %s, want the bindings back", describe(m.dialog))
 	}
-	drain(t, m, m.dialog.alt("grant_1"), 0)
+	drain(t, m, m.dialog.alt("binding_1"), 0)
 	if m.dialog == nil || m.dialog.kind != dlgConfirm {
-		t.Fatalf("x did not ask before withdrawing: %s", describe(m.dialog))
+		t.Fatalf("x did not ask before unbinding: %s", describe(m.dialog))
 	}
 	if !m.dialog.defaultNo {
 		t.Fatal("the costly answer is the default")
 	}
 	drain(t, m, m.dialog.action("yes"), 0)
-	if len(ds.revoked) != 1 || ds.revoked[0] != "grant_1" {
-		t.Fatalf("revoked = %v, want the chosen grant", ds.revoked)
+	if len(ds.unbindings) != 1 || ds.unbindings[0] != "binding_1" {
+		t.Fatalf("unbindings = %v, want the chosen binding", ds.unbindings)
 	}
 	// The screen re-reads rather than guessing what the server now holds.
-	if got, _ := m.secrets.grantsFor("sec_gh"); len(got) != 1 {
-		t.Fatalf("grants = %#v, want the withdrawn one gone", got)
+	if got := m.secrets.bindingsFor("sec_gh"); len(got) != 1 {
+		t.Fatalf("bindings = %#v, want the one taken back gone", got)
 	}
 }
 
-// A lapsed grant authorizes nothing, so it is neither counted nor listed until
-// asked for — and the row that asks says how many there are.
-func TestExpiredGrantsAreHiddenUntilAskedFor(t *testing.T) {
+// A lapsed binding carries nothing, and is gone at the server's next sweep,
+// so it is neither counted nor listed in the meantime.
+func TestALapsedBindingIsNeitherCountedNorListed(t *testing.T) {
 	t.Parallel()
 	m, _ := secretsFixture(t)
-	m.secrets.setGrants(append(m.secrets.grants, Grant{
-		ID: "grant_old", SecretID: "sec_gh", Scope: "sandbox", ScopeKey: "sbx_gone", Host: "api.github.com",
+	m.secrets.setBindings(append(m.secrets.bindings, SecretBinding{
+		ID: "binding_old", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: "sbx_gone", Use: true, EnvVar: "OLD",
 		Expires: time.Now().Add(-time.Hour),
 	}))
-	if body := frameText(m); !strings.Contains(body, "2 grants") {
-		t.Fatalf("the row counts a lapsed grant:\n%s", body)
+	if body := frameText(m); !strings.Contains(body, "2 bindings") {
+		t.Fatalf("the row counts a lapsed binding:\n%s", body)
 	}
 
 	send(t, m, keyPress("enter"))
-	keys := func() []string {
-		var out []string
-		for _, it := range m.dialog.items {
-			out = append(out, it.key)
-		}
-		return out
+	var keys []string
+	for _, it := range m.dialog.items {
+		keys = append(keys, it.key)
 	}
-	if got, want := keys(), []string{grantCreateItem, grantExpiredItem, "grant_1", "grant_2"}; !slices.Equal(got, want) {
-		t.Fatalf("rows = %v, want %v", got, want)
-	}
-	if got := m.dialog.items[1].label; got != "Show 1 expired grant" {
-		t.Fatalf("toggle = %q, want it to say how many it hides", got)
-	}
-
-	send(t, m, keyPress(grantExpiredKey))
-	if got, want := keys(), []string{grantCreateItem, grantExpiredItem, "grant_1", "grant_2", "grant_old"}; !slices.Equal(got, want) {
-		t.Fatalf("rows after %s = %v, want %v", grantExpiredKey, got, want)
-	}
-	if m.dialog.cursor != 1 || m.dialog.items[1].label != "Hide expired grants" {
-		t.Fatalf("cursor %d on %q, want it left on the toggle", m.dialog.cursor, m.dialog.items[1].label)
-	}
-
-	send(t, m, keyPress(grantExpiredKey))
-	if got := len(m.dialog.items); got != 4 {
-		t.Fatalf("rows = %d after hiding again, want 4", got)
+	if want := []string{bindingCreateItem, "binding_1", "binding_2"}; !slices.Equal(keys, want) {
+		t.Fatalf("rows = %v, want %v", keys, want)
 	}
 }
 
-// A delegation grant reads the same as one its discobox uses in every field
-// but one, so that one is said wherever the grant is: its row, its card, and
-// the question before it is withdrawn.
-func TestADelegationGrantSaysWhatItIs(t *testing.T) {
+// A binding to give on reads the same as one its discobox uses in every field
+// but one, so that one is said wherever the binding is: its row, its card,
+// and the question before it is taken back.
+func TestADelegateBindingSaysWhatItIs(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
-	ds.projectGrants[0].Delegate = true
+	ds.mu.Lock()
+	ds.projectBindings[0].Use, ds.projectBindings[0].Delegate, ds.projectBindings[0].EnvVar = false, true, ""
+	ds.mu.Unlock()
 	send(t, m, keyPress(secretsKey), keyPress(secretsKey))
 
 	send(t, m, keyPress("enter"))
 	if m.dialog == nil || m.dialog.kind != dlgActions {
-		t.Fatal("enter did not list the grants standing on the secret")
+		t.Fatal("enter did not list the bindings standing on the secret")
 	}
-	if detail := m.dialog.items[1].detail; !strings.HasPrefix(detail, "delegates") {
-		t.Fatalf("row = %q, want it to lead with what the grant is for", detail)
+	if label := m.dialog.items[1].label; label != "given on" {
+		t.Fatalf("row = %q, want it to say it is only given on", label)
 	}
 
-	drain(t, m, m.dialog.action("grant_1"), 0)
-	for _, want := range []string{"held by", "never uses it"} {
-		if !strings.Contains(dialogText(m), want) {
-			t.Fatalf("review = %q, want it to carry %q", dialogText(m), want)
-		}
-	}
-	for _, wrong := range []string{"usable by"} {
-		if strings.Contains(dialogText(m), wrong) {
-			t.Fatalf("review = %q, want no claim that its discobox may use it (%q)", dialogText(m), wrong)
-		}
+	drain(t, m, m.dialog.action("binding_1"), 0)
+	if !strings.Contains(dialogText(m), "never uses it") || strings.Contains(dialogText(m), "as variable") {
+		t.Fatalf("review = %q, want it to say what it is for and no variable", dialogText(m))
 	}
 
 	send(t, m, keyPress("esc"))
-	drain(t, m, m.dialog.alt("grant_1"), 0)
-	if !strings.Contains(dialogText(m), "can no longer delegate") || strings.Contains(dialogText(m), "stops resolving") {
-		t.Fatalf("revoke = %q, want it to say what revoking a delegation grant stops", dialogText(m))
+	drain(t, m, m.dialog.alt("binding_1"), 0)
+	if !strings.Contains(dialogText(m), "can no longer be given on") || strings.Contains(dialogText(m), "stops resolving") {
+		t.Fatalf("unbind = %q, want it to say what taking back a delegation stops", dialogText(m))
 	}
 }
 
-func TestANewSecretIsNamedBoundAndStoredMasked(t *testing.T) {
+func TestANewSecretIsNamedRoutedAndStoredMasked(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 
@@ -213,13 +189,18 @@ func TestANewSecretIsNamedBoundAndStoredMasked(t *testing.T) {
 		t.Fatalf("n did not open the new-secret form: %s", describe(m.dialog))
 	}
 	typeInto(t, m, "name", "npm")
-	// The row being answered says what it means, so what a host covers is on
-	// screen while the host is being typed rather than a question ago.
-	typeInto(t, m, "host", "registry.npmjs.org")
-	if !strings.Contains(dialogText(m), "beneath it") {
-		t.Fatalf("the form does not say what a host covers: %q", dialogText(m))
-	}
 	typeInto(t, m, "token", "npm_typedbyahuman")
+	// A secret with no routes is sent nowhere, so one is asked for.
+	drain(t, m, submitForm(t, m), 0)
+	if len(ds.createdSecrets) != 0 || !strings.Contains(dialogText(m), "* for anywhere") {
+		t.Fatalf("created = %#v, card = %q; want a route asked for", ds.createdSecrets, dialogText(m))
+	}
+	// The row being answered says what it means, so what a route covers is
+	// on screen while it is being typed rather than a question ago.
+	typeInto(t, m, secretRouteKey+"0", "registry.npmjs.org")
+	if !strings.Contains(dialogText(m), "* for any host") {
+		t.Fatalf("the form does not say what a route may be: %q", dialogText(m))
+	}
 	// A value is never drawn back, on the card that takes it or anywhere else.
 	onRow(t, m, "token")
 	if strings.Contains(dialogText(m), "npm_typedbyahuman") {
@@ -231,7 +212,7 @@ func TestANewSecretIsNamedBoundAndStoredMasked(t *testing.T) {
 		t.Fatalf("created = %#v, want one", ds.createdSecrets)
 	}
 	got := ds.createdSecrets[0]
-	if got.Name != "npm" || got.Host != "registry.npmjs.org" || got.Value.Token != "npm_typedbyahuman" {
+	if got.Name != "npm" || len(got.Routes) != 1 || got.Routes[0].Host != "registry.npmjs.org" || got.Value.Token != "npm_typedbyahuman" {
 		t.Fatalf("stored = %#v, want what was typed", got)
 	}
 }
@@ -284,7 +265,7 @@ func TestARequiredRowRefusesTheFormRatherThanClosingIt(t *testing.T) {
 	}
 }
 
-func TestTheBindingCanBeEditedAndReleased(t *testing.T) {
+func TestTheRoutesCanBeEditedAndCleared(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 
@@ -294,13 +275,13 @@ func TestTheBindingCanBeEditedAndReleased(t *testing.T) {
 	}
 	// It opens on what the secret has, so editing is editing rather than
 	// retyping.
-	if got := formValue(t, m, "host"); got != "github.com" {
-		t.Fatalf("host row = %q, want the current binding", got)
+	if got := formValue(t, m, secretRouteKey+"0"); got != "github.com" {
+		t.Fatalf("route row = %q, want the current route", got)
 	}
-	clearRow(t, m, "host")
+	clearRow(t, m, secretRouteKey+"0")
 	drain(t, m, submitForm(t, m), 0)
-	if len(ds.unbound) != 1 || ds.unbound[0] != "sec_gh" {
-		t.Fatalf("unbound = %v, want the emptied binding released", ds.unbound)
+	if len(ds.updated) != 1 || ds.updated[0].Routes == nil || len(*ds.updated[0].Routes) != 0 {
+		t.Fatalf("updated = %#v, want the routes cleared", ds.updated)
 	}
 	// Only what changed is written back: the limit was not touched, so the
 	// server was not told about it.
@@ -341,7 +322,7 @@ func TestASecretsValueIsReplacedFromTheSameCard(t *testing.T) {
 	}
 	// One call, so a card cannot half-apply: everything it changed goes
 	// together.
-	if ds.updated[0].Name != nil || ds.updated[0].Host != nil {
+	if ds.updated[0].Name != nil || ds.updated[0].Routes != nil {
 		t.Fatalf("update = %#v, want only what changed", ds.updated[0])
 	}
 }
@@ -355,7 +336,7 @@ func TestReplacingAnOAuthValueTakesAllOfIt(t *testing.T) {
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
 	ds.projectSecrets = []Secret{{
-		ID: "sec_oauth", Name: "claude", Type: "oauth", Host: "api.anthropic.com",
+		ID: "sec_oauth", Name: "claude", Type: "oauth", Routes: []SecretRoute{{Host: "api.anthropic.com"}},
 		//nolint:gosec // A token endpoint, which is a URL rather than a credential.
 		OAuth: &SecretOAuth{TokenURL: "https://console.anthropic.com/v1/oauth/token"},
 	}}
@@ -417,7 +398,7 @@ func TestDeletingAsksFirstAndSaysWhatGoesWithIt(t *testing.T) {
 	if !m.dialog.defaultNo {
 		t.Fatal("the costly answer is the default")
 	}
-	if !strings.Contains(dialogText(m), "live grants  2") {
+	if !strings.Contains(dialogText(m), "live bindings  2") {
 		t.Fatalf("question = %q, want it to say what goes with the secret", dialogText(m))
 	}
 	if len(ds.deleted) != 0 {
@@ -468,21 +449,23 @@ func TestTheScreenIsAToggleAndEscapeLeavesIt(t *testing.T) {
 	}
 }
 
-// A request no discobox owns — made from the CLI, or by a person — is exactly
-// what this screen is for: there is no row to mark and no workspace to raise it
-// in, so if it is not counted here it is invisible everywhere.
+// A request no discobox owns — a value the control plane found stale with no
+// discobox in the middle of using it — is exactly what this screen is for:
+// there is no row to mark and no workspace to raise it in, so if it is not
+// counted here it is invisible everywhere.
 func TestTheScreenAnswersARequestNoDiscoboxOwns(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	orphan := waitingRequest()
 	orphan.ID, orphan.SandboxID = "sreq_orphan", ""
+	orphan.Refresh = &RefreshAsk{SecretID: "sec_gh", Cause: "stale"}
 	ds.mu.Lock()
 	ds.requests = []CredentialRequest{orphan}
 	ds.mu.Unlock()
 	send(t, m, tickMsg{})
 
 	body := strings.Join(frame(m), "\n")
-	if !strings.Contains(body, "1 waiting") || !strings.Contains(body, "a person") {
+	if !strings.Contains(body, "1 waiting") || !strings.Contains(body, "control plane") {
 		t.Fatalf("a request with no discobox is not shown on the operator's screen:\n%s", body)
 	}
 	// And no row is marked for it, since there is no row it belongs to.
@@ -497,7 +480,7 @@ func TestTheScreenAnswersARequestNoDiscoboxOwns(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal("the key did not open the waiting request")
 	}
-	if !strings.Contains(dialogText(m), "api.github.com") {
+	if m.dialog.title != "Refresh request" {
 		t.Fatalf("dialog = %q, want the orphan request", dialogText(m))
 	}
 }
@@ -514,7 +497,7 @@ func TestTheNewSecretFormIsAnsweredWithTheKeyboard(t *testing.T) {
 		t.Fatalf("dialog = %s, want the new-secret form", describe(m.dialog))
 	}
 	send(t, m, typeString("npm")...)
-	send(t, m, keyPress("down"), keyPress("down")) // past the kind, onto the binding
+	send(t, m, keyPress("down"), keyPress("down")) // past the kind, onto where it may be sent
 	send(t, m, typeString("registry.npmjs.org")...)
 	send(t, m, keyPress("down")) // the lifetime, on its default
 	send(t, m, keyPress("down")) // past it to how the value is given, on "enter a value"
@@ -529,7 +512,7 @@ func TestTheNewSecretFormIsAnsweredWithTheKeyboard(t *testing.T) {
 		t.Fatalf("created = %#v, want one", ds.createdSecrets)
 	}
 	got := ds.createdSecrets[0]
-	if got.Name != "npm" || got.Type != "token" || got.Host != "registry.npmjs.org" || got.Value.Token != "npm_typedbyahuman" {
+	if got.Name != "npm" || got.Type != "token" || len(got.Routes) != 1 || got.Routes[0].Host != "registry.npmjs.org" || got.Value.Token != "npm_typedbyahuman" {
 		t.Fatalf("stored = %#v, want what was typed", got)
 	}
 	// The limit is set as the credential is stored rather than left to a second
@@ -566,103 +549,95 @@ func TestATokenIsPastedIntoTheSecretItAnswers(t *testing.T) {
 		t.Fatalf("created = %#v, want the secret the pasted answers describe", ds.createdSecrets)
 	}
 	got := ds.createdSecrets[0]
-	if got.Host != "registry.npmjs.org" || got.Value.Token != token {
-		t.Fatalf("created = {Host: %q, Value: %q (%d chars)}, want the pasted host and the whole pasted token (%d chars)",
-			got.Host, got.Value.Token, len(got.Value.Token), len(token))
+	if len(got.Routes) != 1 || got.Routes[0].Host != "registry.npmjs.org" || got.Value.Token != token {
+		t.Fatalf("created = {Routes: %v, Value: %q (%d chars)}, want the pasted route and the whole pasted token (%d chars)",
+			got.Routes, got.Value.Token, len(got.Value.Token), len(token))
 	}
 	if v := m.prompt.Value(); v != "" {
 		t.Fatalf("the composer behind the dialog took the paste: %q", v)
 	}
 }
 
-// A pre-approval is a grant minted because somebody already knows the answer,
-// rather than one that answers a request. It is one card: the scope, what it
-// resolves against, how it may be used, and where and for how long — every key
-// picked out of what the window already holds, so nothing here is an ID
-// somebody has to type correctly.
-func TestAPreApprovalIsOneFormWithEveryAnswerOnIt(t *testing.T) {
+// A binding made from this screen is one an operator makes because they
+// already know the answer, rather than one that answers a request. It is one
+// card: what it is on, what for, as which variable, and where and for how long
+// — every key picked out of what the window already holds, so nothing here is
+// an ID somebody has to type correctly.
+func TestABindingIsOneFormWithEveryAnswerOnIt(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 
-	send(t, m, keyPress(grantCreateKey))
+	send(t, m, keyPress(bindingCreateKey))
 	if m.dialog == nil || m.dialog.kind != dlgForm {
-		t.Fatalf("dialog = %s, want the grant form", describe(m.dialog))
+		t.Fatalf("dialog = %s, want the binding form", describe(m.dialog))
 	}
-	// The narrowest scope, which is the one that needs a discobox chosen. The
-	// row for it is not asked until then.
+	// The narrowest target, which is the one that needs a discobox chosen.
+	// The row for it is not asked until then.
 	if rowShown(m, "sandbox") {
-		t.Fatal("the discobox row is asked before the scope calls for it")
+		t.Fatal("the discobox row is asked before the target calls for it")
 	}
-	onRow(t, m, "scope")
-	for m.dialog.form.chosen("scope") != "sandbox" {
+	onRow(t, m, "target")
+	for m.dialog.form.chosen("target") != BindingSandbox {
 		send(t, m, keyPress("right"))
 	}
 	if !rowShown(m, "sandbox") {
-		t.Fatal("a discobox-scoped grant does not ask which discobox")
+		t.Fatal("a binding to one discobox does not ask which discobox")
 	}
 	onRow(t, m, "sandbox")
 	if got := m.dialog.form.chosen("sandbox"); got != testSandboxes()[0].ID {
 		t.Fatalf("picker = %q, want the project's discoboxes", got)
 	}
 
-	// The form opens on a grant to use it: what a discobox holding the
-	// sentinel needs.
+	// The form opens on a binding to use it, in the variable named for the
+	// secret.
 	if got := m.dialog.form.chosen("purpose"); got != "use" {
-		t.Fatalf("purpose = %q, want a grant to use it by default", got)
+		t.Fatalf("purpose = %q, want a binding to use it by default", got)
 	}
-
-	// The host opens on the secret's own binding, which is the common answer
-	// and the widest the server will take; the lifetime on the secret's own
-	// default.
-	if got := formValue(t, m, "host"); got != "github.com" {
-		t.Fatalf("host = %q, want the secret's binding", got)
+	if got := formValue(t, m, "envVar"); got != "GH" {
+		t.Fatalf("variable = %q, want the secret's name upper-snaked", got)
 	}
 	if got := m.dialog.form.chosenLabel("ttl"); got != "1 hour" {
 		t.Fatalf("lifetime = %q, want the secret's own limit as the default", got)
 	}
-	clearRow(t, m, "host")
-	send(t, m, typeString("api.github.com")...)
+	clearRow(t, m, "envVar")
+	send(t, m, typeString("GH_TOKEN")...)
+	typeInto(t, m, secretRouteKey+"0", "api.github.com")
 	customTTL(t, m, "ttl", "900")
 	send(t, m, keyPress("enter"))
 
-	if len(ds.createdGrants) != 1 {
-		t.Fatalf("created = %#v, want one grant", ds.createdGrants)
+	if len(ds.createdBindings) != 1 {
+		t.Fatalf("created = %#v, want one binding", ds.createdBindings)
 	}
-	got := ds.createdGrants[0]
-	if got.SecretID != "sec_gh" || got.Scope != "sandbox" || got.ScopeKey != testSandboxes()[0].ID {
-		t.Fatalf("grant = %#v, want it scoped to the chosen discobox", got)
+	got := ds.createdBindings[0]
+	if got.SecretID != "sec_gh" || got.TargetKind != BindingSandbox || got.TargetID != testSandboxes()[0].ID {
+		t.Fatalf("binding = %#v, want it on the chosen discobox", got)
 	}
-	if got.Host != "api.github.com" || got.TTLSeconds != 900 {
-		t.Fatalf("grant = %#v, want the host and lifetime that were answered", got)
+	if got.EnvVar != "GH_TOKEN" || len(got.Routes) != 1 || got.Routes[0].Host != "api.github.com" || got.TTLSeconds != 900 {
+		t.Fatalf("binding = %#v, want the variable, route and lifetime that were answered", got)
 	}
-	if got.Delegate {
-		t.Fatalf("grant = %#v, want a grant to use it", got)
+	if !got.Use || got.Delegate {
+		t.Fatalf("binding = %#v, want a binding to use it", got)
 	}
 }
 
-// A delegation is one discobox's: only a grant scoped to one discobox is asked
-// what it is for, and choosing to give it on mints a delegation grant.
-func TestADelegationGrantIsOneDiscoboxs(t *testing.T) {
+// A binding only to give on is in no variable, so the variable is not asked.
+func TestABindingToGiveOnAsksNoVariable(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 
-	send(t, m, keyPress(grantCreateKey))
-	if rowShown(m, "purpose") {
-		t.Fatal("a project grant is asked whether it delegates")
-	}
-	onRow(t, m, "scope")
-	for m.dialog.form.chosen("scope") != "sandbox" {
-		send(t, m, keyPress("right"))
-	}
-	if !rowShown(m, "purpose") {
-		t.Fatal("a discobox grant is not asked what it is for")
+	send(t, m, keyPress(bindingCreateKey))
+	if !rowShown(m, "envVar") {
+		t.Fatal("a binding to use it does not ask its variable")
 	}
 	onRow(t, m, "purpose")
 	send(t, m, keyPress("right"))
+	if m.dialog.form.chosen("purpose") != "delegate" || rowShown(m, "envVar") {
+		t.Fatal("a binding only to give on is asked its variable")
+	}
 	send(t, m, keyPress("ctrl+s"))
 
-	if len(ds.createdGrants) != 1 || !ds.createdGrants[0].Delegate || ds.createdGrants[0].Scope != "sandbox" {
-		t.Fatalf("created = %#v, want one delegation grant for the discobox", ds.createdGrants)
+	if len(ds.createdBindings) != 1 || !ds.createdBindings[0].Delegate || ds.createdBindings[0].Use || ds.createdBindings[0].EnvVar != "" {
+		t.Fatalf("created = %#v, want one binding only to give on", ds.createdBindings)
 	}
 }
 
@@ -680,7 +655,7 @@ func TestTheFormIsTheSameHeightOnEveryRow(t *testing.T) {
 	}{
 		{"the new-secret card", "n"},
 		{"the edit card", "e"},
-		{"the grant card", grantCreateKey},
+		{"the binding card", bindingCreateKey},
 	} {
 		for _, width := range []int{60, 80, 120} {
 			send(t, m, keyPress(open.key))
@@ -739,18 +714,18 @@ func rowShown(m *Model, key string) bool {
 	return false
 }
 
-// A lifetime that is not a number grants nothing, rather than quietly meaning
+// A lifetime that is not a number binds nothing, rather than quietly meaning
 // something else — and the form stays up saying so, with what was typed on it.
-func TestAnUnreadableLifetimeGrantsNothing(t *testing.T) {
+func TestAnUnreadableLifetimeBindsNothing(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 
-	send(t, m, keyPress(grantCreateKey))
+	send(t, m, keyPress(bindingCreateKey))
 	customTTL(t, m, "ttl", "a while")
 	send(t, m, keyPress("enter"))
 
-	if len(ds.createdGrants) != 0 {
-		t.Fatalf("created = %#v, want nothing", ds.createdGrants)
+	if len(ds.createdBindings) != 0 {
+		t.Fatalf("created = %#v, want nothing", ds.createdBindings)
 	}
 	if m.dialog == nil || m.dialog.kind != dlgForm {
 		t.Fatalf("dialog = %s, want the form still up", describe(m.dialog))
@@ -760,37 +735,39 @@ func TestAnUnreadableLifetimeGrantsNothing(t *testing.T) {
 	}
 }
 
-// Reading a grant and coming back lands on the grants, not on the list behind
-// them: the next move after reading one is reading the next, or withdrawing it.
-func TestLeavingAGrantReturnsToTheGrants(t *testing.T) {
+// Reading a binding and coming back lands on the bindings, not on the list
+// behind them: the next move after reading one is reading the next, or taking
+// it back.
+func TestLeavingABindingReturnsToTheBindings(t *testing.T) {
 	t.Parallel()
 	m, _ := secretsFixture(t)
 
 	send(t, m, keyPress("enter"))
 	if m.dialog == nil || m.dialog.kind != dlgActions {
-		t.Fatalf("dialog = %s, want the grants", describe(m.dialog))
+		t.Fatalf("dialog = %s, want the bindings", describe(m.dialog))
 	}
-	drain(t, m, m.dialog.action("grant_1"), 0)
-	if m.dialog == nil || m.dialog.title != "Grant" {
-		t.Fatalf("dialog = %s, want the grant being read", describe(m.dialog))
+	drain(t, m, m.dialog.action("binding_1"), 0)
+	if m.dialog == nil || m.dialog.title != "Binding" {
+		t.Fatalf("dialog = %s, want the binding being read", describe(m.dialog))
 	}
 
 	drain(t, m, m.dialog.onCancel(), 0)
 	if m.dialog == nil || m.dialog.kind != dlgActions {
-		t.Fatalf("dialog = %s, want the grants back", describe(m.dialog))
+		t.Fatalf("dialog = %s, want the bindings back", describe(m.dialog))
 	}
 	if m.dialog.title != "gh" {
 		t.Fatalf("title = %q, want the secret it was opened from", m.dialog.title)
 	}
 }
 
-// Declining a revoke leaves you on the grants, not on the screen behind them.
-func TestDecliningARevokeReturnsToTheGrants(t *testing.T) {
+// Declining an unbind leaves you on the bindings, not on the screen behind
+// them.
+func TestDecliningAnUnbindReturnsToTheBindings(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 
 	send(t, m, keyPress("enter"))
-	drain(t, m, m.dialog.alt("grant_1"), 0)
+	drain(t, m, m.dialog.alt("binding_1"), 0)
 	if m.dialog == nil || m.dialog.kind != dlgConfirm {
 		t.Fatalf("dialog = %s, want the question", describe(m.dialog))
 	}
@@ -799,8 +776,8 @@ func TestDecliningARevokeReturnsToTheGrants(t *testing.T) {
 	if m.dialog == nil || m.dialog.kind != dlgActions || m.dialog.title != "gh" {
 		t.Fatalf("dialog = %s, want the secret back", describe(m.dialog))
 	}
-	if len(ds.revoked) != 0 {
-		t.Fatal("declining withdrew something")
+	if len(ds.unbindings) != 0 {
+		t.Fatal("declining took something back")
 	}
 }
 
@@ -852,8 +829,8 @@ func TestEnterOnARequestAnswersThatOne(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	older, newer := waitingRequest(), waitingRequest()
-	older.ID, older.Host, older.Created = "sreq_older", "api.github.com", older.Created.Add(-time.Hour)
-	newer.ID, newer.Name, newer.Host = "sreq_newer", "npm", "registry.npmjs.org"
+	older.ID, older.Created = "sreq_older", older.Created.Add(-time.Hour)
+	newer.ID, newer.Name, newer.Routes = "sreq_newer", "npm", []SecretRoute{{Host: "registry.npmjs.org"}}
 	ds.mu.Lock()
 	ds.requests = []CredentialRequest{older, newer}
 	ds.mu.Unlock()
@@ -874,34 +851,32 @@ func TestEnterOnARequestAnswersThatOne(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal("enter answered nothing")
 	}
-	if !strings.Contains(dialogText(m), chosen.Host) {
-		t.Fatalf("dialog = %q, want the request under the cursor (%s)", dialogText(m), chosen.Host)
+	if !strings.Contains(dialogText(m), chosen.where()) {
+		t.Fatalf("dialog = %q, want the request under the cursor (%s)", dialogText(m), chosen.where())
 	}
 }
 
-// Making a grant starts from the grants: a secret with none is not a dead end
-// telling somebody to go and run another command.
-func TestGrantsCanBeMadeFromTheGrantsList(t *testing.T) {
+func TestBindingsCanBeMadeFromTheBindingsList(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
-	ds.projectGrants = nil
+	ds.projectBindings = nil
 	ds.mu.Unlock()
 	send(t, m, keyPress("r"))
 
 	send(t, m, keyPress("enter"))
 	if m.dialog == nil || m.dialog.kind != dlgActions {
-		t.Fatalf("dialog = %s, want the grants", describe(m.dialog))
+		t.Fatalf("dialog = %s, want the bindings", describe(m.dialog))
 	}
-	if !strings.Contains(dialogText(m), "nothing stands on it yet") {
+	if !strings.Contains(dialogText(m), "nothing is bound to it") {
 		t.Fatalf("body = %q, want it to say the secret has none", dialogText(m))
 	}
-	if len(m.dialog.items) != 1 || m.dialog.items[0].key != grantCreateItem {
+	if len(m.dialog.items) != 1 || m.dialog.items[0].key != bindingCreateItem {
 		t.Fatalf("items = %#v, want the row that makes one", m.dialog.items)
 	}
-	drain(t, m, m.dialog.action(grantCreateItem), 0)
+	drain(t, m, m.dialog.action(bindingCreateItem), 0)
 	if m.dialog == nil || m.dialog.kind != dlgForm {
-		t.Fatalf("dialog = %s, want the grant form", describe(m.dialog))
+		t.Fatalf("dialog = %s, want the binding form", describe(m.dialog))
 	}
 }
 
@@ -918,18 +893,17 @@ func TestARequestRowSaysWhatItIsAbout(t *testing.T) {
 		{"an agent names the credential", CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", SandboxID: "sbx_1"}, "github"},
 		{"an ask to delegate says so", CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", SandboxID: "sbx_1", Delegate: true}, "github · to delegate"},
 		{"failing that, the variable", CredentialRequest{EnvVar: "GH_TOKEN", SandboxID: "sbx_1"}, "GH_TOKEN"},
-		{"the proxy saw a sentinel", CredentialRequest{SandboxID: "sbx_1", Type: "token"}, "an unresolvable sentinel"},
-		{"a person asked for a credential", CredentialRequest{Type: "token"}, "a token credential"},
+		{"a discobox asked for a credential it did not name", CredentialRequest{SandboxID: "sbx_1"}, "a credential"},
 	} {
 		if got := requestSubject(tc.req); got != tc.want {
 			t.Errorf("%s: subject = %q, want %q", tc.name, got, tc.want)
 		}
 	}
-	if got := requesterLabel(CredentialRequest{}); got != "a person" {
-		t.Errorf("requester = %q, want a person", got)
+	if got := requesterLabel(CredentialRequest{}); got != "control plane" {
+		t.Errorf("requester = %q, want the control plane", got)
 	}
-	if got := requesterLabel(CredentialRequest{SandboxID: "sbx_abcdefghij"}); got != "proxy · abcdefgh" {
-		t.Errorf("requester = %q, want the proxy and a short id", got)
+	if got := requesterLabel(CredentialRequest{SandboxID: "sbx_abcdefghij"}); got != "agent · abcdefgh" {
+		t.Errorf("requester = %q, want the agent and a short id", got)
 	}
 }
 
@@ -945,7 +919,7 @@ func TestAnOAuthSecretIsRegisteredFromTheWindow(t *testing.T) {
 	typeInto(t, m, "name", "claude")
 	onRow(t, m, "kind")
 	send(t, m, keyPress("right"))
-	typeInto(t, m, "host", "api.anthropic.com")
+	typeInto(t, m, secretRouteKey+"0", "api.anthropic.com")
 	typeInto(t, m, "access", "sk-ant-oat01-access")
 	typeInto(t, m, "refresh", "sk-ant-ort01-refresh")
 	typeInto(t, m, "tokenURL", "https://console.anthropic.com/v1/oauth/token")
@@ -1004,7 +978,7 @@ func TestOpeningAnOAuthSecretShowsWhatItIs(t *testing.T) {
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
 	ds.projectSecrets = []Secret{{
-		ID: "sec_oauth", Name: "claude", Type: "oauth", Host: "api.anthropic.com", MaxTTL: time.Hour,
+		ID: "sec_oauth", Name: "claude", Type: "oauth", Routes: []SecretRoute{{Host: "api.anthropic.com"}}, MaxTTL: time.Hour,
 		//nolint:gosec // A token endpoint, which is a URL rather than a credential.
 		OAuth: &SecretOAuth{
 			TokenURL:             "https://console.anthropic.com/v1/oauth/token",
@@ -1015,7 +989,7 @@ func TestOpeningAnOAuthSecretShowsWhatItIs(t *testing.T) {
 			Refreshable:          true,
 		},
 	}}
-	ds.projectGrants = nil
+	ds.projectBindings = nil
 	ds.mu.Unlock()
 	send(t, m, keyPress("r"))
 
@@ -1035,8 +1009,8 @@ func TestOpeningAnOAuthSecretShowsWhatItIs(t *testing.T) {
 		}
 	}
 	// And it still offers what a secret's view offers.
-	if len(m.dialog.items) != 1 || m.dialog.items[0].key != grantCreateItem {
-		t.Fatalf("items = %#v, want the row that grants it", m.dialog.items)
+	if len(m.dialog.items) != 1 || m.dialog.items[0].key != bindingCreateItem {
+		t.Fatalf("items = %#v, want the row that binds it", m.dialog.items)
 	}
 }
 
@@ -1067,53 +1041,53 @@ func TestTheWindowSaysHarnessAndSendsHarnessConfig(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
-	ds.projectGrants = []Grant{{
-		ID: "grant_h", SecretID: "sec_gh", Scope: "harnessConfig",
-		ScopeKey: "harness_1", Host: "api.github.com",
+	ds.projectBindings = []SecretBinding{{
+		ID: "binding_h", SecretID: "sec_gh", TargetKind: BindingHarnessConfig,
+		TargetID: "harness_1", Use: true, EnvVar: "GH_TOKEN",
 	}}
 	ds.mu.Unlock()
 	send(t, m, keyPress("r"))
 
-	// Drawn on the grant row, and again when the grant is read.
+	// Drawn on the binding row, and again when the binding is read.
 	send(t, m, keyPress("enter"))
 	var row action
 	for _, item := range m.dialog.items {
-		if item.key == "grant_h" {
+		if item.key == "binding_h" {
 			row = item
 		}
 	}
 	if !strings.Contains(row.detail, "harness") || strings.Contains(row.detail, "harnessConfig") {
 		t.Fatalf("row = %q, want it to say harness", row.detail)
 	}
-	drain(t, m, m.dialog.action("grant_h"), 0)
+	drain(t, m, m.dialog.action("binding_h"), 0)
 	if strings.Contains(dialogText(m), "harnessConfig") {
 		t.Fatalf("review = %q, want it to say harness", dialogText(m))
 	}
 	if !strings.Contains(dialogText(m), "harness") {
-		t.Fatalf("review = %q, want the scope named", dialogText(m))
+		t.Fatalf("review = %q, want the target named", dialogText(m))
 	}
 
 	// The form says harness too, and still sends the resource's own word.
 	send(t, m, keyPress("esc"))
 	send(t, m, keyPress("esc"))
-	send(t, m, keyPress(grantCreateKey))
-	onRow(t, m, "scope")
-	for m.dialog.form.chosen("scope") != "harnessConfig" {
+	send(t, m, keyPress(bindingCreateKey))
+	onRow(t, m, "target")
+	for m.dialog.form.chosen("target") != BindingHarnessConfig {
 		send(t, m, keyPress("right"))
 	}
-	if got := m.dialog.form.chosenLabel("scope"); got != "one harness" {
+	if got := m.dialog.form.chosenLabel("target"); got != "one harness" {
 		t.Fatalf("offered = %q, want it to say harness", got)
 	}
 	if !rowShown(m, "harness") {
-		t.Fatal("a harness grant does not ask which harness")
+		t.Fatal("a harness binding does not ask which harness")
 	}
 	send(t, m, keyPress("ctrl+s"))
 
-	if len(ds.createdGrants) != 1 || ds.createdGrants[0].Scope != "harnessConfig" {
-		t.Fatalf("created = %#v, want the server's own word on the wire", ds.createdGrants)
+	if len(ds.createdBindings) != 1 || ds.createdBindings[0].TargetKind != BindingHarnessConfig {
+		t.Fatalf("created = %#v, want the server's own word on the wire", ds.createdBindings)
 	}
-	if got := ds.createdGrants[0].ScopeKey; got != testHarnesses()[0].ID {
-		t.Fatalf("scope key = %q, want the harness chosen on the form", got)
+	if got := ds.createdBindings[0].TargetID; got != testHarnesses()[0].ID {
+		t.Fatalf("target = %q, want the harness chosen on the form", got)
 	}
 }
 
@@ -1160,7 +1134,7 @@ func TestAnUnreadableLimitSaysWhatOneLooksLike(t *testing.T) {
 // The limit is a ceiling on how long consent to a credential may last, and zero
 // is the meaningful answer "no limit" rather than an empty field. Both have to
 // be sayable in the window, and both have to read as what they are.
-func TestTheGrantLimitIsEditedAndZeroMeansForever(t *testing.T) {
+func TestTheBindingLimitIsEditedAndZeroMeansForever(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 
@@ -1168,15 +1142,15 @@ func TestTheGrantLimitIsEditedAndZeroMeansForever(t *testing.T) {
 	if m.dialog == nil || m.dialog.kind != dlgForm {
 		t.Fatalf("e did not offer what a secret says about itself: %s", describe(m.dialog))
 	}
-	// It opens on what the secret already limits its grants to, said as the
+	// It opens on what the secret already limits its bindings to, said as the
 	// preset it is rather than as a number of seconds.
 	if got := m.dialog.form.chosenLabel("ttl"); got != "1 hour" {
 		t.Fatalf("ttl row = %q, want the secret's current limit as a preset", got)
 	}
 	onRow(t, m, "ttl")
-	// The row is a ceiling, and says so: "grants last 1 hour" would state it as
-	// the lifetime every grant on the credential gets.
-	if !strings.Contains(dialogText(m), "grant limit") || !strings.Contains(dialogText(m), "the longest a grant on this credential may live") {
+	// The row is a ceiling, and says so: "bindings last 1 hour" would state it
+	// as the lifetime every binding of the credential gets.
+	if !strings.Contains(dialogText(m), "binding limit") || !strings.Contains(dialogText(m), "the longest a binding of this credential may last") {
 		t.Fatalf("form = %q, want the limit drawn as a ceiling", dialogText(m))
 	}
 
@@ -1190,17 +1164,18 @@ func TestTheGrantLimitIsEditedAndZeroMeansForever(t *testing.T) {
 	if len(ds.limited) != 1 || ds.limited[0] != "sec_gh=0" {
 		t.Fatalf("limited = %v, want the limit lifted on the secret under the cursor", ds.limited)
 	}
-	// Only what changed: the binding was not touched, so it was not rewritten.
-	if len(ds.bound) != 0 || len(ds.unbound) != 0 {
-		t.Fatalf("bound = %v / unbound = %v, want the untouched binding left alone", ds.bound, ds.unbound)
+	// Only what changed: the routes were not touched, so they were not
+	// rewritten.
+	if len(ds.updated) != 1 || ds.updated[0].Routes != nil {
+		t.Fatalf("updated = %#v, want the untouched routes left alone", ds.updated)
 	}
 	// And reading the secret says so — not the row, which carries what tells
 	// two credentials apart. "never", which is how a duration of zero is
 	// otherwise drawn, would read as the opposite of what it means.
 	m.secrets.all[0].MaxTTL = 0
-	drain(t, m, m.showGrants(), 0)
+	drain(t, m, m.showBindings(), 0)
 	if !strings.Contains(dialogText(m), "forever") {
-		t.Fatalf("reading an unlimited secret says %q, want it to say its grants may live forever", dialogText(m))
+		t.Fatalf("reading an unlimited secret says %q, want it to say its bindings may last forever", dialogText(m))
 	}
 }
 
@@ -1212,7 +1187,7 @@ func TestTheRowCarriesWhatTellsSecretsApartAndNoMore(t *testing.T) {
 	m, _ := secretsFixture(t)
 
 	body := strings.Join(frame(m), "\n")
-	for _, want := range []string{"gh", "github.com", "OpenAI key", "any host", "2 grants"} {
+	for _, want := range []string{"gh", "github.com", "OpenAI key", "sent nowhere", "2 bindings"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("frame does not carry %q:\n%s", want, body)
 		}
@@ -1256,26 +1231,26 @@ func TestTheRequestsTableSitsUnderTheSecrets(t *testing.T) {
 	}
 }
 
-// A capped secret cannot be granted forever, and finding that out from a server
+// A capped secret cannot be bound forever, and finding that out from a server
 // refusal teaches the rule one rejection at a time. The form says the limit
 // against the row it applies to.
-func TestTheGrantLifetimeRowNamesTheSecretsLimit(t *testing.T) {
+func TestTheBindingLifetimeRowNamesTheSecretsLimit(t *testing.T) {
 	t.Parallel()
 	m, _ := secretsFixture(t)
 
-	m.askForGrantScope()
+	m.askForBinding()
 	if m.dialog == nil || m.dialog.kind != dlgForm {
-		t.Fatal("no grant form was opened")
+		t.Fatal("no binding form was opened")
 	}
 	onRow(t, m, "ttl")
-	if text := dialogText(m); !strings.Contains(text, "at most 1 hour") || !strings.Contains(text, "cannot be granted forever") {
+	if text := dialogText(m); !strings.Contains(text, "at most 1 hour") || !strings.Contains(text, "cannot be bound forever") {
 		t.Fatalf("form = %q, want the secret's limit said before it is exceeded", text)
 	}
 
 	// A secret with no limit is the other half: forever is available, so the
 	// row offers it.
 	m.secrets.all[0].MaxTTL = 0
-	m.askForGrantScope()
+	m.askForBinding()
 	onRow(t, m, "ttl")
 	if got := m.dialog.form.chosenLabel("ttl"); got != "never expires" {
 		t.Fatalf("lifetime = %q, want forever offered when nothing forbids it", got)
@@ -1359,34 +1334,34 @@ func TestRequestsArrivingOnTheSecretsScreenAreDrawn(t *testing.T) {
 	}
 }
 
-// A grant with seconds left says so, rather than rounding to zero minutes and
-// reading as one that never expires.
-func TestAGrantAboutToLapseDoesNotReadAsNever(t *testing.T) {
+// A binding with seconds left says so, rather than rounding to zero minutes
+// and reading as one that never expires.
+func TestABindingAboutToLapseDoesNotReadAsNever(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
-	g := Grant{Expires: now.Add(20 * time.Second)}
-	if got := grantExpiry(g, now); got != "expires in 20s" {
+	b := SecretBinding{Expires: now.Add(20 * time.Second)}
+	if got := bindingExpiry(b, now); got != "expires in 20s" {
 		t.Fatalf("expiry = %q, want the seconds left", got)
 	}
-	if got := grantLifeLeft(g, now); got != "in 20s" {
+	if got := bindingLifeLeft(b, now); got != "in 20s" {
 		t.Fatalf("life left = %q, want the seconds left", got)
 	}
 }
 
-// The row's count is taken when it is drawn, so a grant that lapses between
+// The row's count is taken when it is drawn, so a binding that lapses between
 // reads stops being counted without waiting for the next one.
-func TestTheRowStopsCountingAGrantWhenItLapses(t *testing.T) {
+func TestTheRowStopsCountingABindingWhenItLapses(t *testing.T) {
 	t.Parallel()
 	m, _ := secretsFixture(t)
-	m.secrets.setGrants(append(m.secrets.grants, Grant{
-		ID: "grant_short", SecretID: "sec_gh", Scope: "project", ScopeKey: "project-1", Host: "x.github.com",
+	m.secrets.setBindings(append(m.secrets.bindings, SecretBinding{
+		ID: "binding_short", SecretID: "sec_gh", TargetKind: BindingProject, Use: true, EnvVar: "SHORT",
 		Expires: time.Now().Add(time.Minute),
 	}))
-	if body := frameText(m); !strings.Contains(body, "3 grants") {
-		t.Fatalf("the row does not count the live grant:\n%s", body)
+	if body := frameText(m); !strings.Contains(body, "3 bindings") {
+		t.Fatalf("the row does not count the live binding:\n%s", body)
 	}
 	m.secrets.now = func() time.Time { return time.Now().Add(2 * time.Minute) }
-	if body := frameText(m); !strings.Contains(body, "2 grants") {
-		t.Fatalf("the row still counts a lapsed grant:\n%s", body)
+	if body := frameText(m); !strings.Contains(body, "2 bindings") {
+		t.Fatalf("the row still counts a lapsed binding:\n%s", body)
 	}
 }

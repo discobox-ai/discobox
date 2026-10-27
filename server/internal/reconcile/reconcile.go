@@ -308,6 +308,15 @@ func MarkTx(ctx context.Context, tx *gorm.DB, resourceType, id string) error {
 	return writeMark(ctx, tx, resourceType, id, time.Now(), true)
 }
 
+// MarkAtTx is MarkDirtyAtTx for a writer below the engine: the store, which
+// arms a timer in the transaction that writes what it is for, and the
+// database upgrade. A mark for a later instant needs no wake — the engine's
+// poll claims it when it falls due — so it is written the same with or
+// without one.
+func MarkAtTx(ctx context.Context, tx *gorm.DB, resourceType, id string, at time.Time) error {
+	return writeMark(ctx, tx, resourceType, id, at, true)
+}
+
 // writeMark is the one implementation of a mark. overrideBackoff says whether
 // it may pull a row forward out of a failure backoff; see MarkDirtyDrift.
 func writeMark(ctx context.Context, tx *gorm.DB, resourceType, id string, at time.Time, overrideBackoff bool) error {

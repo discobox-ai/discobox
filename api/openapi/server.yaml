@@ -1,5 +1,122 @@
 components:
     schemas:
+        BoundSecret:
+            additionalProperties: false
+            description: 'One credential a target holds, resolved: the binding that applies (the narrowest per variable), and every route list a request carrying it is held to.'
+            properties:
+                bindingId:
+                    description: The binding that applies
+                    type: string
+                delegate:
+                    description: The target may give it to the discoboxes it creates
+                    type: boolean
+                envVar:
+                    description: Variable it is delivered in, for a use binding
+                    type: string
+                expiresAt:
+                    description: When it lapses, the earlier of the binding's and its parent's; absent never
+                    format: date-time
+                    type: string
+                from:
+                    description: The level the binding is on
+                    enum:
+                        - project
+                        - harnessConfig
+                        - sandbox
+                    type: string
+                fromId:
+                    description: The project, harness config or discobox ID the binding is on
+                    type: string
+                routes:
+                    description: "Every route list a request carrying it must be allowed by: the secret's, the binding's when it has any, and the parent's"
+                    items:
+                        items:
+                            $ref: '#/components/schemas/SecretRoute'
+                        type: array
+                    type: array
+                secretId:
+                    description: Secret ID
+                    type: string
+                secretName:
+                    description: Secret name
+                    type: string
+                use:
+                    description: Delivered to the target in envVar
+                    type: boolean
+            required:
+                - secretId
+                - bindingId
+                - from
+                - fromId
+                - use
+                - delegate
+                - routes
+            type: object
+        CreateSecretBindingBody:
+            additionalProperties: false
+            description: Bind a secret to a project, a harness config, or one discobox.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CreateSecretBindingBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                delegate:
+                    description: Let a discobox the binding covers give the credential to the discoboxes it creates. Only a person binds with delegate.
+                    type: boolean
+                envVar:
+                    description: Environment variable to deliver the credential's sentinel in; required with use
+                    pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                    type: string
+                routes:
+                    description: Routes that narrow the secret's for this binding; omitted or empty inherits the secret's
+                    items:
+                        $ref: '#/components/schemas/SecretRouteInput'
+                    type: array
+                secret:
+                    description: The secret, by name or ID
+                    type: string
+                target:
+                    description: The harness config (slug, name or ID) or discobox (name or ID) to bind to; omitted for the project
+                    type: string
+                targetKind:
+                    description: 'What the binding is for: every discobox of the project, every discobox on a harness config, or one discobox'
+                    enum:
+                        - project
+                        - harnessConfig
+                        - sandbox
+                    type: string
+                ttlSeconds:
+                    description: How long the binding lasts, in seconds, within the secret's limit; 0 never lapses where the secret allows it. Omitted takes the secret's limit.
+                    format: int64
+                    minimum: 0
+                    type: integer
+                use:
+                    description: Deliver the credential to the target in envVar. Defaults to true unless delegate is set.
+                    type: boolean
+            required:
+                - secret
+                - targetKind
+            type: object
+        DeleteSecretBindingResponse:
+            additionalProperties: false
+            description: 'What a delete removed: the binding, and every binding handed on under it.'
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/DeleteSecretBindingResponse.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                deleted:
+                    description: IDs of every binding removed, the one asked for first
+                    items:
+                        type: string
+                    type: array
+            required:
+                - deleted
+            type: object
         HarnessCaptureBaseline:
             additionalProperties: false
             properties:
@@ -154,11 +271,12 @@ components:
         HarnessCaptureRoute:
             additionalProperties: false
             properties:
+                blocked:
+                    description: Refuse every request on this route; a more specific route still answers for the paths beneath it (ADR 26-10-27-880 §4)
+                    type: boolean
                 host:
                     type: string
                 path:
-                    type: string
-                use:
                     type: string
             required:
                 - host
@@ -671,79 +789,6 @@ components:
             required:
                 - name
             type: object
-        HarnessConfigSecretBinding:
-            additionalProperties: false
-            description: Binds one of a harness config's environment variables to a project secret.
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/HarnessConfigSecretBinding.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                harnessConfigId:
-                    description: Harness config the binding belongs to
-                    type: string
-                createdAt:
-                    description: Creation timestamp
-                    format: date-time
-                    type: string
-                envName:
-                    description: Environment variable filled by the secret
-                    type: string
-                id:
-                    description: Stable binding ID
-                    type: string
-                projectId:
-                    description: Project ID
-                    type: string
-                secretId:
-                    description: Bound secret ID
-                    type: string
-                updatedAt:
-                    description: Last update timestamp
-                    format: date-time
-                    type: string
-            required:
-                - id
-                - projectId
-                - harnessConfigId
-                - envName
-                - secretId
-                - createdAt
-                - updatedAt
-            type: object
-        ListHarnessConfigSecretBindingsBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/ListHarnessConfigSecretBindingsBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                secretBindings:
-                    items:
-                        $ref: '#/components/schemas/HarnessConfigSecretBinding'
-                    type: array
-            required:
-                - secretBindings
-            type: object
-        SetHarnessConfigSecretBindingBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/SetHarnessConfigSecretBindingBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                secretId:
-                    description: Secret ID to bind to the environment variable
-                    type: string
-            required:
-                - secretId
-            type: object
         CompleteEvent:
             additionalProperties: false
             properties:
@@ -831,6 +876,70 @@ components:
                 - hostId
                 - hostPath
             type: object
+        ListBoundSecretsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListBoundSecretsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                boundSecrets:
+                    items:
+                        $ref: '#/components/schemas/BoundSecret'
+                    type: array
+            required:
+                - boundSecrets
+            type: object
+        ListSecretBindingEventsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListSecretBindingEventsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                secretBindingEvents:
+                    items:
+                        $ref: '#/components/schemas/SecretBindingEvent'
+                    type: array
+            required:
+                - secretBindingEvents
+            type: object
+        ListSecretBindingsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListSecretBindingsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                secretBindings:
+                    items:
+                        $ref: '#/components/schemas/SecretBinding'
+                    type: array
+            required:
+                - secretBindings
+            type: object
+        ListSecretRefreshRequestsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListSecretRefreshRequestsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                secretRefreshRequests:
+                    items:
+                        $ref: '#/components/schemas/SecretRefreshRequest'
+                    type: array
+            required:
+                - secretRefreshRequests
+            type: object
         PullSandboxSourceBody:
             additionalProperties: false
             type: object
@@ -886,33 +995,13 @@ components:
                 poolId:
                     description: Pool to schedule the sandbox into. Defaults to the project's default pool.
                     type: string
-                grants:
-                    description: Project secrets to give the new discobox, each minted as a sandbox grant with the variable it is delivered in, in the same transaction that creates it, so a create that cannot mint one creates nothing. The discobox receives a sentinel in each variable, which its pool swaps for the value on the hosts the grant covers.
+                bindings:
+                    description: Secrets to bind to the new discobox, made with it in one transaction, so a create that cannot make one creates nothing. A person may bind anything; a discobox creating one binds, to use, only what a delegate binding it holds covers (ADR 26-10-27-880 §5).
                     items:
-                        $ref: '#/components/schemas/SandboxGrant'
+                        $ref: '#/components/schemas/SandboxBindingInput'
                     type: array
             required:
                 - config
-            type: object
-        SandboxGrant:
-            additionalProperties: false
-            description: One credential for a new discobox, named by a secret and the variable it is delivered in.
-            properties:
-                secretId:
-                    description: The project secret given.
-                    type: string
-                envVar:
-                    description: Environment variable the discobox receives the credential's sentinel in.
-                    type: string
-                hosts:
-                    description: Hosts the credential may be sent to (ADR 26-10-02-393). Left out, the secret's host; one is required. Each must sit inside the secret's binding.
-                    items:
-                        type: string
-                    type: array
-                grantTTLSeconds:
-                    description: How long the grant lives, in seconds. Defaults to the secret's grant limit, and may not exceed it.
-                    format: int64
-                    type: integer
             type: object
         CreateSandboxProviderInstanceBody:
             additionalProperties: false
@@ -1017,6 +1106,36 @@ components:
                 - event
                 - payload
                 - createdAt
+            type: object
+        SandboxBindingInput:
+            additionalProperties: false
+            description: A secret to bind to the new discobox, in the transaction that creates it.
+            properties:
+                delegate:
+                    description: Let the new discobox give the credential to the discoboxes it creates. A discobox creating one may not set it.
+                    type: boolean
+                envVar:
+                    description: Environment variable the credential's sentinel is delivered in; required with use
+                    pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                    type: string
+                routes:
+                    description: Routes that narrow the secret's for this binding; omitted inherits them
+                    items:
+                        $ref: '#/components/schemas/SecretRouteInput'
+                    type: array
+                secret:
+                    description: The secret, by name or ID
+                    type: string
+                ttlSeconds:
+                    description: How long the binding lasts, in seconds, within the secret's limit and, for a discobox creating one, its delegation's
+                    format: int64
+                    minimum: 0
+                    type: integer
+                use:
+                    description: Deliver the credential in envVar. Defaults to true unless delegate is set.
+                    type: boolean
+            required:
+                - secret
             type: object
         SandboxFileType:
             description: What a path is. A symbolic link is reported as itself, never as what it points to.
@@ -2537,6 +2656,190 @@ components:
                 - meta
                 - observedAt
             type: object
+        SecretBinding:
+            additionalProperties: false
+            description: "A secret made available to a target (ADR 26-10-27-880 §1): existing and unexpired, it is the whole of the permission. Use delivers the credential's sentinel in envVar; delegate lets a discobox the binding covers give the credential to the discoboxes it creates."
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SecretBinding.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                createdBy:
+                    description: 'Principal that made the binding: a person, or the discobox that handed it on'
+                    type: string
+                delegate:
+                    description: A discobox the binding covers may give the credential, to use, to the discoboxes it creates (ADR 26-10-27-880 §3)
+                    type: boolean
+                envVar:
+                    description: Environment variable the credential's sentinel is delivered in; set when use is
+                    type: string
+                expiresAt:
+                    description: When the binding lapses; absent never
+                    format: date-time
+                    type: string
+                id:
+                    description: Stable binding ID
+                    type: string
+                parentId:
+                    description: The delegate binding this one was handed on under, when a discobox gave it; deleting that one deletes this
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                requestId:
+                    description: The request this binding answered, when one did
+                    type: string
+                routes:
+                    description: Routes that narrow the secret's for this binding; empty inherits the secret's. A request must be allowed by the secret's routes, these, and the parent's (ADR 26-10-27-880 §4).
+                    items:
+                        $ref: '#/components/schemas/SecretRoute'
+                    type: array
+                secretId:
+                    description: Bound secret ID
+                    type: string
+                secretName:
+                    description: Bound secret's name
+                    type: string
+                targetId:
+                    description: The project, harness config or discobox ID the binding is for
+                    type: string
+                targetKind:
+                    description: 'What the binding is for: every discobox of the project, every discobox on a harness config, or one discobox'
+                    enum:
+                        - project
+                        - harnessConfig
+                        - sandbox
+                    type: string
+                updatedAt:
+                    description: Last update timestamp
+                    format: date-time
+                    type: string
+                use:
+                    description: 'The target may send the credential: it is delivered in envVar'
+                    type: boolean
+            required:
+                - id
+                - projectId
+                - secretId
+                - targetKind
+                - targetId
+                - use
+                - delegate
+                - createdAt
+                - updatedAt
+            type: object
+        SecretBindingEvent:
+            additionalProperties: false
+            description: One change to a binding, as the append-only history records it (ADR 26-10-27-880 §6).
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SecretBindingEvent.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                actor:
+                    description: "Who did it: a person's or a discobox's principal, or system for a cascade or an expiry"
+                    type: string
+                at:
+                    description: When it happened
+                    format: date-time
+                    type: string
+                binding:
+                    $ref: '#/components/schemas/SecretBinding'
+                    description: The binding after the change; before it, for a delete or an expiry
+                bindingId:
+                    description: The binding changed
+                    type: string
+                cause:
+                    description: 'Why, when something caused it: the request it answered, or the parent binding whose removal took it'
+                    type: string
+                event:
+                    description: What happened
+                    enum:
+                        - created
+                        - updated
+                        - deleted
+                        - expired
+                    type: string
+                id:
+                    description: Event ID
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+            required:
+                - id
+                - projectId
+                - bindingId
+                - event
+                - actor
+                - binding
+                - at
+            type: object
+        SecretRefreshRequest:
+            additionalProperties: false
+            description: An ask for a new value of a token that went stale or was refused (ADR 26-09-25-122 §4). It is answered by writing a value, never by approving.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SecretRefreshRequest.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                answer:
+                    $ref: '#/components/schemas/SecretRefreshAnswer'
+                    description: How it was answered, once it was
+                cause:
+                    description: What opened the request
+                    enum:
+                        - stale
+                        - rejected
+                    type: string
+                closedAt:
+                    description: When it was answered or dismissed
+                    format: date-time
+                    type: string
+                createdAt:
+                    description: When it was asked
+                    format: date-time
+                    type: string
+                id:
+                    description: Refresh request ID
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                sandboxId:
+                    description: The discobox that most recently needed the value
+                    type: string
+                secretId:
+                    description: The secret a new value is asked for
+                    type: string
+                secretName:
+                    description: Its name
+                    type: string
+                status:
+                    description: Whether it is still asked
+                    enum:
+                        - pending
+                        - answered
+                        - dismissed
+                    type: string
+            required:
+                - id
+                - projectId
+                - secretId
+                - cause
+                - status
+                - createdAt
+            type: object
         UpdateSandboxMetaBody:
             additionalProperties: false
             description: A change to a sandbox's meta, applied to the meta file in the sandbox. What the change does not name is left as it is, including what the sandbox wrote itself.
@@ -3850,6 +4153,37 @@ components:
                 - available
                 - state
             type: object
+        UpdateSecretBindingBody:
+            additionalProperties: false
+            description: Change a binding's routes, lifetime, variable, or what it allows. Only the fields sent change.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/UpdateSecretBindingBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                delegate:
+                    description: Whether a discobox the binding covers may give the credential to the discoboxes it creates. Only a person sets it; turning it off removes every binding handed on under this one.
+                    type: boolean
+                envVar:
+                    description: A new environment variable for a use binding
+                    pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                    type: string
+                routes:
+                    description: Replacement routes; an empty array inherits the secret's again
+                    items:
+                        $ref: '#/components/schemas/SecretRouteInput'
+                    type: array
+                ttlSeconds:
+                    description: A new lifetime, in seconds from now, within the secret's limit and the parent's expiry; 0 never lapses where allowed
+                    format: int64
+                    minimum: 0
+                    type: integer
+                use:
+                    description: Whether the target may send the credential. Turning it off on a binding that also delegates keeps the delegation; a binding left with neither is refused, so remove it instead.
+                    type: boolean
+            type: object
         UpgradeSandboxBody:
             additionalProperties: false
             description: |-
@@ -4046,22 +4380,20 @@ components:
             type: object
         SandboxSecretInput:
             additionalProperties: false
-            description: Binds an environment variable to a secret injected into the sandbox as a sentinel placeholder. Provide exactly one of secretId or value.
+            description: An inline secret for the new sandbox. Its value becomes a project-managed anonymous secret, routed to host when one is given and to `*` otherwise (ADR 26-10-27-939), bound to the sandbox in env. An existing secret is bound through bindings instead.
             properties:
                 env:
                     description: Environment variable name to inject with the secret's sentinel placeholder value.
                     type: string
                 host:
-                    description: Optional host binding hint used when creating an anonymous secret from an inline value.
-                    type: string
-                secretId:
-                    description: ID of an existing project secret to assign.
+                    description: The host the inline secret is sent to, which becomes its route; omitted is `*`.
                     type: string
                 value:
                     description: Inline secret value. A project-managed anonymous secret is created from it.
                     type: string
             required:
                 - env
+                - value
             type: object
         ReportSandboxSecretRejectionBody:
             additionalProperties: false
@@ -4121,17 +4453,17 @@ components:
             type: object
         SandboxCredential:
             additionalProperties: false
-            description: One credential a sandbox may use, from a live grant covering it, and the variable its sentinel is delivered in.
+            description: One credential a sandbox holds, from an effective binding covering it (ADR 26-10-27-880 §2), and for a use the variable its sentinel is delivered in.
             properties:
+                bindingId:
+                    description: The binding the credential is held under
+                    type: string
                 envVar:
                     description: Environment variable the value is delivered in
                     type: string
                 expiresAt:
-                    description: When the grant lapses; empty never expires
+                    description: When the binding lapses; empty never expires
                     format: date-time
-                    type: string
-                grantId:
-                    description: Grant authorizing the credential
                     type: string
                 hosts:
                     description: Hosts the credential may be sent to; a destination any of them covers (ADR 26-10-02-393)
@@ -4142,7 +4474,7 @@ components:
                     description: Credential name
                     type: string
                 purpose:
-                    description: What the grant lets the sandbox do with the credential. use delivers it in envVar; delegate lets the sandbox give it to the discoboxes it creates and delivers nothing.
+                    description: What the binding lets the sandbox do with the credential. use delivers it in envVar; delegate lets the sandbox give it to the discoboxes it creates and delivers nothing.
                     enum:
                         - use
                         - delegate
@@ -4155,7 +4487,7 @@ components:
                 - envVar
                 - hosts
                 - secretId
-                - grantId
+                - bindingId
             type: object
         ListSandboxCredentialsResponse:
             additionalProperties: false
@@ -4187,18 +4519,18 @@ components:
                     description: Environment variable the credential is wanted in. Required to use it; a request to delegate it names none, since a delegation delivers nothing to the asking sandbox.
                     type: string
                 grantTTLSeconds:
-                    description: How long the agent asks the grant to live, in seconds, up to thirty days. A suggestion the approver starts from, not a term. 0 or absent asks for nothing in particular; forever cannot be asked for, and neither can a span longer than the ceiling.
+                    description: How long the agent asks the binding to last, in seconds, up to thirty days. A suggestion the approver starts from, not a term. 0 or absent asks for nothing in particular; forever cannot be asked for, and neither can a span longer than the ceiling.
                     format: int64
                     maximum: 2592000
                     minimum: 0
                     type: integer
                 hosts:
-                    description: Destination hosts the credential will be sent to (ADR 26-10-02-393). At least one is required, because approving this request may not mint a host-unscoped grant.
+                    description: Destination hosts the credential will be sent to (ADR 26-10-02-393). At least one is required, and each becomes a route of the binding approving the request makes, unless the approver names others.
                     items:
                         type: string
                     type: array
                 purpose:
-                    description: What the agent asks the credential for, one or the other and never both. use (the default) asks to use it. delegate asks to delegate it to other discoboxes; approving it mints a delegation grant, which authorizes nothing the asking discobox sends itself.
+                    description: What the agent asks the credential for, one or the other and never both. use (the default) asks to use it. delegate asks to delegate it to other discoboxes; approving it makes a delegate binding, which delivers nothing to the asking discobox.
                     enum:
                         - use
                         - delegate
@@ -4227,22 +4559,22 @@ components:
                     readOnly: true
                     type: string
                 envVar:
-                    description: The variable the granted credential is delivered in; absent for a delegation
+                    description: The variable the credential is delivered in, once granted; absent for a delegation
                     type: string
                 expiresAt:
-                    description: When the grant lapses, as the approver chose it rather than as it was asked. Absent on a pending or denied request, and on a granted one whose grant never lapses.
+                    description: When the binding lapses, as the approver chose it rather than as it was asked. Absent on a pending or denied request, and on a granted one whose binding never lapses.
                     format: date-time
                     type: string
                 hosts:
-                    description: Where the granted credential may be sent, as the approver chose
+                    description: Where the credential may be sent, once granted, as the approver chose
                     items:
                         type: string
                     type: array
                 name:
-                    description: The credential granted, once granted
+                    description: The credential, once granted
                     type: string
                 purpose:
-                    description: What the request asks the credential for. A delegate grant lets the sandbox give the credential to the discoboxes it creates, and delivers nothing to the sandbox itself.
+                    description: What the request asks the credential for. A delegate binding lets the sandbox give the credential to the discoboxes it creates, and delivers nothing to the sandbox itself.
                     enum:
                         - use
                         - delegate
@@ -4653,7 +4985,7 @@ components:
                     description: Real secret value; present only when status is approved.
                     type: string
                 expiresAt:
-                    description: Grant expiry time when approved.
+                    description: When the binding the value was handed out under lapses, capped by the token's own expiry; empty when neither lapses.
                     format: date-time
                     type: string
                 secretId:
@@ -5289,31 +5621,18 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                grantTTLSeconds:
-                    description: Grant duration in seconds; 0 grants one that never expires. Omitted, the grant lasts what the request asked for, else an hour, within the secret's limit; for a discobox approver, also within the delegation grant it approves under, and a named duration that outlasts that delegation is refused.
-                    format: int64
-                    type: integer
-                hosts:
-                    description: Hosts the minted grant is limited to (ADR 26-10-02-393). Left out, the hosts the request named; an empty list names none. Approving a protocol-originated request with no host at all is rejected; a wildcard grant stays an explicit administrative act.
+                routes:
+                    description: Routes the binding is approved for, narrowing the secret's; omitted takes the hosts the request asked for
                     items:
-                        type: string
+                        $ref: '#/components/schemas/SecretRouteInput'
                     type: array
-                scope:
-                    description: How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests, otherwise project.
-                    enum:
-                        - sandbox
-                        - harnessConfig
-                        - project
-                    type: string
-                secretHost:
-                    description: Rebinds the answering secret to this host as part of the approval; empty releases its binding. Applied only if the approval goes through, in the same write, so a refused approval leaves the secret as it was. Refused for a gate.
-                    type: string
                 secretId:
-                    description: Secret ID selected by the approver. A person must name one. A discobox approver answers with the secret of a delegation grant it holds, and names one, by its full ID, only to choose among the secrets it was delegated.
+                    description: Secret ID selected by the approver. A person must name one. A discobox approver answers with the secret of a delegate binding covering it, and names one only to choose among the secrets it was delegated.
                     type: string
-                secretMaxGrantTTLSeconds:
-                    description: Sets the answering secret's grant limit, in seconds, as part of the approval; 0 allows grants that never expire. Applied only if the approval goes through, in the same write.
+                ttlSeconds:
+                    description: How long the binding lasts, in seconds; omitted takes what the request asked for, else an hour, within the secret's limit and, for a discobox approving, the delegation's
                     format: int64
+                    minimum: 0
                     type: integer
             type: object
         CreateSecretBody:
@@ -5327,16 +5646,14 @@ components:
                     type: string
                 exchange:
                     "$ref": '#/components/schemas/ExchangeRecipe'
-                maxGrantTTLSeconds:
-                    description: Longest a grant on this secret may live, in seconds; 0 allows grants that never expire
-                    format: int64
-                    type: integer
                 format:
                     description: 'Template the sentinels for this secret are minted from: literal text with {charset:length} tokens, such as sk-ant-oat01-{base64url:95}. Charsets are digits, hex, HEX, lower, upper, alnum, base62, base32, base64url, and base64. Omitted or empty reads the shape from the value. A format set here is kept when the value is replaced.'
                     type: string
-                host:
-                    description: Optional host used to match requests (e.g. github.com)
-                    type: string
+                maxBindingTTLSeconds:
+                    description: Longest a binding of this secret may last, in seconds, and the lifetime one takes when nobody names one; 0 lets bindings never lapse
+                    format: int64
+                    minimum: 0
+                    type: integer
                 refreshCommand:
                     description: A command a person's client may run to produce a new value, as an argument vector run without a shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only; setting one without ttlSeconds gives the token 300s. An empty array removes it.
                     items:
@@ -5348,7 +5665,7 @@ components:
                     format: int64
                     type: integer
                 routes:
-                    description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in must fall on one; the most specific route covering it decides, and a blocked one refuses. Omitted or empty leaves it to its grants.
+                    description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in must fall on one; the most specific route covering it decides, and a blocked one refuses. `*` covers any host (ADR 26-10-27-939). Omitted or empty sends it nowhere.
                     items:
                         $ref: '#/components/schemas/SecretRouteInput'
                     nullable: true
@@ -5374,69 +5691,6 @@ components:
                 - name
                 - type
                 - value
-            type: object
-        CreateSecretGrantBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/CreateSecretGrantBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                grantTTLSeconds:
-                    description: Grant duration in seconds; defaults to the secret's default. 0 never expires.
-                    format: int64
-                    type: integer
-                hosts:
-                    description: Hosts the grant is limited to (ADR 26-10-02-393). Left out, the secret's host; an empty list matches any host.
-                    items:
-                        type: string
-                    type: array
-                scope:
-                    description: How widely the grant applies
-                    enum:
-                        - sandbox
-                        - harnessConfig
-                        - project
-                    type: string
-                scopeKey:
-                    description: Identifier the scope resolves against (sandbox ID or harness config ID). Defaults to the project ID for project scope.
-                    type: string
-                secretId:
-                    description: Secret ID to grant
-                    type: string
-                purpose:
-                    description: What the grant authorizes its holder to do, one or the other and never both. use (the default) lets it use the credential. delegate lets it give the credential to the discoboxes it creates and authorizes nothing it sends itself; sandbox scope only.
-                    enum:
-                        - use
-                        - delegate
-                    type: string
-            required:
-                - secretId
-                - scope
-            type: object
-        CreateSecretRequestBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/CreateSecretRequestBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                host:
-                    description: Optional host hint used to match a secret (e.g. github.com)
-                    type: string
-                type:
-                    description: Secret type being requested
-                    enum:
-                        - token
-                        - oauth
-                        - exchange
-                    type: string
-            required:
-                - type
             type: object
         ListSecretRejectionsBody:
             additionalProperties: false
@@ -5571,22 +5825,20 @@ components:
                     description: Creation timestamp
                     format: date-time
                     type: string
-                maxGrantTTLSeconds:
-                    description: Longest a grant on this secret may live, in seconds; 0 allows grants that never expire
-                    format: int64
-                    type: integer
                 format:
                     description: Generative format template describing the credential shape; used to mint sentinel placeholders
                     type: string
                 formatSet:
                     description: Format was set explicitly rather than read from the value
                     type: boolean
-                host:
-                    description: Optional host used to match requests (e.g. github.com)
-                    type: string
                 id:
                     description: Stable secret ID
                     type: string
+                maxBindingTTLSeconds:
+                    description: Longest a binding of this secret may last, in seconds, and the lifetime one takes when nobody names one; 0 lets bindings never lapse
+                    format: int64
+                    minimum: 0
+                    type: integer
                 oauth:
                     "$ref": '#/components/schemas/SecretOAuth'
                 exchange:
@@ -5638,7 +5890,7 @@ components:
                 - projectId
                 - name
                 - type
-                - maxGrantTTLSeconds
+                - maxBindingTTLSeconds
                 - createdAt
                 - updatedAt
             type: object
@@ -5673,94 +5925,6 @@ components:
                     type: string
             required:
                 - host
-            type: object
-        SecretGrant:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/SecretGrant.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                purpose:
-                    description: What the grant authorizes its holder to do -- use the credential, or delegate it to other discoboxes. Never both.
-                    enum:
-                        - use
-                        - delegate
-                    type: string
-                delegationId:
-                    description: The delegation grant a discobox handed this grant on under, when a discobox approved the request or gave the grant on a create (ADR 26-10-20-782 section 11). It traces the grant to the delegation that allowed it; the grant is independent of it once made.
-                    type: string
-                createdAt:
-                    description: Creation timestamp
-                    format: date-time
-                    type: string
-                expiresAt:
-                    description: Expiry time; empty never expires
-                    format: date-time
-                    type: string
-                grantedAt:
-                    description: When the grant was created
-                    format: date-time
-                    type: string
-                grantedBy:
-                    description: Principal ID that created the grant
-                    type: string
-                hosts:
-                    description: Hosts the grant is limited to; a destination any of them covers. Empty matches any host (ADR 26-10-02-393)
-                    items:
-                        type: string
-                    type: array
-                id:
-                    description: Stable grant ID
-                    type: string
-                projectId:
-                    description: Project ID
-                    type: string
-                scope:
-                    description: How widely the grant applies
-                    enum:
-                        - sandbox
-                        - harnessConfig
-                        - project
-                    type: string
-                scopeKey:
-                    description: Identifier the scope resolves against
-                    type: string
-                secretId:
-                    description: Granted secret ID
-                    type: string
-                updatedAt:
-                    description: Last update timestamp
-                    format: date-time
-                    type: string
-            required:
-                - id
-                - projectId
-                - secretId
-                - scope
-                - scopeKey
-                - purpose
-                - grantedAt
-                - createdAt
-                - updatedAt
-            type: object
-        ListSecretGrantsBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/ListSecretGrantsBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                secretGrants:
-                    items:
-                        $ref: '#/components/schemas/SecretGrant'
-                    type: array
-            required:
-                - secretGrants
             type: object
         SecretRefreshAnswer:
             additionalProperties: false
@@ -5916,25 +6080,23 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                bindingId:
+                    description: The binding approving the request made
+                    type: string
                 createdAt:
                     description: Creation timestamp
                     format: date-time
                     type: string
+                decidedAt:
+                    description: When it was answered
+                    format: date-time
+                    type: string
+                decidedBy:
+                    description: 'Who answered the request: a person, or the discobox that created the requester'
+                    type: string
                 envName:
                     description: Environment variable the credential is wanted in, for protocol-originated requests
                     type: string
-                grantId:
-                    description: Grant that satisfied this request; set when approved
-                    type: string
-                grantTTLSeconds:
-                    description: How long the agent asked the grant to live, in seconds -- the lifetime an approval starts from. At most thirty days. Absent when it asked for nothing in particular; never forever.
-                    format: int64
-                    type: integer
-                hosts:
-                    description: Hosts named at request time (ADR 26-10-02-393)
-                    items:
-                        type: string
-                    type: array
                 id:
                     description: Stable request ID
                     type: string
@@ -5945,7 +6107,7 @@ components:
                     description: Credential name the agent asked for, for protocol-originated requests
                     type: string
                 purpose:
-                    description: What the agent asked the credential for -- to use it, or to delegate it to other discoboxes. Approving the request mints a grant for that purpose.
+                    description: What the agent asked the credential for -- to use it, or to delegate it to other discoboxes. Approving the request makes a binding for that purpose on the discobox that asked.
                     enum:
                         - use
                         - delegate
@@ -5953,22 +6115,14 @@ components:
                 projectId:
                     description: Project ID
                     type: string
-                reason:
-                    description: Why the request exists, when it is not an ask for a grant. refresh asks for a new value of a token that has gone stale or was refused; it is answered by writing a value (refresh-secret), never by approving.
-                    enum:
-                        - refresh
-                    type: string
-                refreshCause:
-                    description: What opened a refresh request
-                    enum:
-                        - stale
-                        - rejected
-                    type: string
-                refreshAnswer:
-                    $ref: '#/components/schemas/SecretRefreshAnswer'
                 requestedBy:
                     description: Principal ID of the requestor
                     type: string
+                routes:
+                    description: Where the credential is asked to be sent
+                    items:
+                        $ref: '#/components/schemas/SecretRoute'
+                    type: array
                 sandboxId:
                     description: Sandbox that owns the sentinel, for sandbox-originated requests
                     type: string
@@ -5982,13 +6136,10 @@ components:
                         - approved
                         - denied
                     type: string
-                type:
-                    description: Secret type requested
-                    enum:
-                        - token
-                        - oauth
-                        - exchange
-                    type: string
+                ttlSeconds:
+                    description: How long the requester asks the binding to last, in seconds; a suggestion the approver starts from
+                    format: int64
+                    type: integer
                 updatedAt:
                     description: Last update timestamp
                     format: date-time
@@ -5997,7 +6148,6 @@ components:
                 - id
                 - projectId
                 - requestedBy
-                - type
                 - status
                 - createdAt
                 - updatedAt
@@ -6133,16 +6283,14 @@ components:
                     type: string
                 exchange:
                     "$ref": '#/components/schemas/ExchangeRecipe'
-                maxGrantTTLSeconds:
-                    description: Longest a grant on this secret may live, in seconds; 0 allows grants that never expire
-                    format: int64
-                    type: integer
                 format:
                     description: 'Template the sentinels for this secret are minted from: literal text with {charset:length} tokens, such as sk-ant-oat01-{base64url:95}. Charsets are digits, hex, HEX, lower, upper, alnum, base62, base32, base64url, and base64. A format set here is kept when the value is replaced; an empty string clears it and reads the shape from the value again. A running sandbox keeps the sentinel already in its environment.'
                     type: string
-                host:
-                    description: Optional host used to match requests (e.g. github.com)
-                    type: string
+                maxBindingTTLSeconds:
+                    description: Longest a binding of this secret may last, in seconds, and the lifetime one takes when nobody names one; 0 lets bindings never lapse
+                    format: int64
+                    minimum: 0
+                    type: integer
                 refreshCommand:
                     description: A command a person's client may run to produce a new value, as an argument vector run without a shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only; setting one without ttlSeconds gives the token 300s. An empty array removes it.
                     items:
@@ -6154,7 +6302,7 @@ components:
                     format: int64
                     type: integer
                 routes:
-                    description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in must fall on one; the most specific route covering it decides, and a blocked one refuses. Set replaces them; an empty array removes them.
+                    description: Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in must fall on one; the most specific route covering it decides, and a blocked one refuses. Set replaces them; an empty array removes them, and the credential is then sent nowhere.
                     items:
                         $ref: '#/components/schemas/SecretRouteInput'
                     nullable: true
@@ -7367,7 +7515,7 @@ components:
             type: object
         ApprovalRequest:
             additionalProperties: false
-            description: One item in a project's approval inbox (ADR 0149 §7). Exactly one of credential or trust is set, as kind says; each is answered on its own resource's approve and deny routes.
+            description: One item in a project's approval inbox (ADR 0149 §7). Exactly one of credential, trust or refresh is set, as kind says. A credential or trust request is answered on its own resource's approve and deny routes; a refresh by writing the secret's value, or dismissing it.
             properties:
                 credential:
                     $ref: '#/components/schemas/SecretRequest'
@@ -7376,7 +7524,10 @@ components:
                     enum:
                         - credential
                         - trust
+                        - refresh
                     type: string
+                refresh:
+                    $ref: '#/components/schemas/SecretRefreshRequest'
                 trust:
                     $ref: '#/components/schemas/HostTrustRequest'
             required:
@@ -7948,6 +8099,51 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
+    /projects/{projectId}/bound-secrets:
+        get:
+            operationId: list-bound-secrets
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                      default: default
+                      description: Project ID
+                      type: string
+                - description: The kind of target to resolve for
+                  in: query
+                  name: targetKind
+                  required: true
+                  schema:
+                      description: The kind of target to resolve for
+                      enum:
+                          - project
+                          - harnessConfig
+                          - sandbox
+                      type: string
+                - description: The harness config or discobox, by name or ID; omitted for the project
+                  in: query
+                  name: target
+                  schema:
+                      description: The harness config or discobox, by name or ID; omitted for the project
+                      type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListBoundSecretsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: What a project, harness config or discobox holds, resolved
+            tags:
+                - Secrets
     /projects/{projectId}/jobs:
         get:
             operationId: list-jobs
@@ -8494,12 +8690,12 @@ paths:
                   schema:
                     description: Pool ID
                     type: string
-                - description: Sandbox whose credentials to list (each variable a live grant covers, and its delegation grants)
+                - description: Sandbox whose credentials to list (its effective use bindings, each in its variable, and its delegate bindings)
                   in: query
                   name: sandboxId
                   required: true
                   schema:
-                    description: Sandbox whose credentials to list (each variable a live grant covers, and its delegation grants)
+                    description: Sandbox whose credentials to list (its effective use bindings, each in its variable, and its delegate bindings)
                     type: string
                 - description: Bearer pool assertion with the credential:broker scope
                   in: header
@@ -8520,7 +8716,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: List a sandbox's granted agent credentials
+            summary: List the credentials a sandbox's bindings give it
             tags:
                 - Pools
     /api/pools/{poolId}/sandbox-credential-requests:
@@ -9090,8 +9286,8 @@ paths:
             description: |-
                 Prepare the in-flight configure sandbox for attach, then attach to its primary terminal.
                 This seeds the previous configuration into the sandbox at a well-known path so the harness's
-                configure command may pre-fill from it; only secrets holding a live grant to this harness config
-                are included. The configure command is not launched until the primary terminal is attached, so
+                configure command may pre-fill from it; only the secrets a previous configure of this harness
+                config created, bound on it, are included. The configure command is not launched until the primary terminal is attached, so
                 seeding always precedes it. Call this before attaching to exec id "primary".
             operationId: attach-harness-config-configure
             parameters:
@@ -9309,126 +9505,6 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Clear the project default harness config
-            tags:
-                - Harness Configs
-    /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings:
-        get:
-            operationId: list-harness-config-secret-bindings
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Harness config ID
-                  in: path
-                  name: harnessConfigId
-                  required: true
-                  schema:
-                    description: Harness config ID
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ListHarnessConfigSecretBindingsBody'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: List harness config secret bindings
-            tags:
-                - Harness Configs
-    /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}:
-        put:
-            operationId: set-harness-config-secret-binding
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Harness config ID
-                  in: path
-                  name: harnessConfigId
-                  required: true
-                  schema:
-                    description: Harness config ID
-                    type: string
-                - description: Environment variable name
-                  in: path
-                  name: envName
-                  required: true
-                  schema:
-                    description: Environment variable name
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/SetHarnessConfigSecretBindingBody'
-                required: true
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/HarnessConfigSecretBinding'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Bind a harness config environment variable to a secret
-            tags:
-                - Harness Configs
-        delete:
-            operationId: delete-harness-config-secret-binding
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Harness config ID
-                  in: path
-                  name: harnessConfigId
-                  required: true
-                  schema:
-                    description: Harness config ID
-                    type: string
-                - description: Environment variable name
-                  in: path
-                  name: envName
-                  required: true
-                  schema:
-                    description: Environment variable name
-                    type: string
-            responses:
-                204:
-                    description: No Content
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Remove a harness config secret binding
             tags:
                 - Harness Configs
     /projects/{projectId}/providers:
@@ -12481,6 +12557,334 @@ paths:
             tags:
                 - Sandbox Files
             x-sandbox-agent: true
+    /projects/{projectId}/secret-binding-events:
+        get:
+            operationId: list-secret-binding-events
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                      default: default
+                      description: Project ID
+                      type: string
+                - description: Only this binding's events
+                  in: query
+                  name: bindingId
+                  schema:
+                      description: Only this binding's events
+                      type: string
+                - description: Only events of bindings of this secret, by name or ID
+                  in: query
+                  name: secret
+                  schema:
+                      description: Only events of bindings of this secret, by name or ID
+                      type: string
+                - description: Only events at or after this time
+                  in: query
+                  name: since
+                  schema:
+                      description: Only events at or after this time
+                      format: date-time
+                      type: string
+                      x-ogen-time-format: 2006-01-02T15:04:05.999999999Z07:00
+                - description: At most this many events
+                  in: query
+                  name: limit
+                  schema:
+                      description: At most this many events
+                      format: int64
+                      maximum: 1000
+                      minimum: 1
+                      type: integer
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListSecretBindingEventsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Read the history of secret bindings, newest first
+            tags:
+                - Secrets
+    /projects/{projectId}/secret-bindings:
+        get:
+            operationId: list-secret-bindings
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                      default: default
+                      description: Project ID
+                      type: string
+                - description: Only bindings of this secret, by name or ID
+                  in: query
+                  name: secret
+                  schema:
+                      description: Only bindings of this secret, by name or ID
+                      type: string
+                - description: Only bindings on this kind of target
+                  in: query
+                  name: targetKind
+                  schema:
+                      description: Only bindings on this kind of target
+                      enum:
+                          - project
+                          - harnessConfig
+                          - sandbox
+                      type: string
+                - description: 'Only bindings on this target: a harness config or discobox name or ID'
+                  in: query
+                  name: target
+                  schema:
+                      description: 'Only bindings on this target: a harness config or discobox name or ID'
+                      type: string
+                - description: Only bindings handed on under this delegate binding
+                  in: query
+                  name: parentId
+                  schema:
+                      description: Only bindings handed on under this delegate binding
+                      type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListSecretBindingsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List secret bindings
+            tags:
+                - Secrets
+        post:
+            operationId: create-secret-binding
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                      default: default
+                      description: Project ID
+                      type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateSecretBindingBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SecretBinding'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Bind a secret to a project, harness config or discobox
+            tags:
+                - Secrets
+    /projects/{projectId}/secret-bindings/{bindingId}:
+        delete:
+            operationId: delete-secret-binding
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                      default: default
+                      description: Project ID
+                      type: string
+                - description: Secret binding ID
+                  in: path
+                  name: bindingId
+                  required: true
+                  schema:
+                      description: Secret binding ID
+                      type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/DeleteSecretBindingResponse'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Remove a secret binding and every binding handed on under it
+            tags:
+                - Secrets
+        get:
+            operationId: get-secret-binding
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                      default: default
+                      description: Project ID
+                      type: string
+                - description: Secret binding ID
+                  in: path
+                  name: bindingId
+                  required: true
+                  schema:
+                      description: Secret binding ID
+                      type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SecretBinding'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Show a secret binding
+            tags:
+                - Secrets
+        patch:
+            operationId: update-secret-binding
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                      default: default
+                      description: Project ID
+                      type: string
+                - description: Secret binding ID
+                  in: path
+                  name: bindingId
+                  required: true
+                  schema:
+                      description: Secret binding ID
+                      type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateSecretBindingBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SecretBinding'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Change a secret binding's routes, lifetime or variable
+            tags:
+                - Secrets
+    /projects/{projectId}/secret-refresh-requests:
+        get:
+            operationId: list-secret-refresh-requests
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                      default: default
+                      description: Project ID
+                      type: string
+                - description: Only requests in this status
+                  in: query
+                  name: status
+                  schema:
+                      description: Only requests in this status
+                      enum:
+                          - pending
+                          - answered
+                          - dismissed
+                      type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListSecretRefreshRequestsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List requests for a new value of a token
+            tags:
+                - Secrets
+    /projects/{projectId}/secret-refresh-requests/{requestId}/dismiss:
+        post:
+            operationId: dismiss-secret-refresh-request
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                      default: default
+                      description: Project ID
+                      type: string
+                - description: Refresh request ID
+                  in: path
+                  name: requestId
+                  required: true
+                  schema:
+                      description: Refresh request ID
+                      type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SecretRefreshRequest'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Dismiss a refresh request without writing a value
+            tags:
+                - Secrets
     /projects/{projectId}/secrets:
         get:
             operationId: list-secrets
@@ -12755,39 +13159,6 @@ paths:
             summary: List secret requests
             tags:
                 - Secrets
-        post:
-            operationId: create-secret-request
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/CreateSecretRequestBody'
-                required: true
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/SecretRequest'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Request access to a secret
-            tags:
-                - Secrets
     /projects/{projectId}/secret-requests/{requestId}:
         get:
             operationId: get-secret-request
@@ -12893,104 +13264,6 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Deny a secret request
-            tags:
-                - Secrets
-    /projects/{projectId}/secret-grants:
-        get:
-            operationId: list-secret-grants
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Filter by granted secret ID
-                  in: query
-                  name: secretId
-                  schema:
-                    description: Filter by granted secret ID
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ListSecretGrantsBody'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: List secret grants
-            tags:
-                - Secrets
-        post:
-            operationId: create-secret-grant
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/CreateSecretGrantBody'
-                required: true
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/SecretGrant'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Create a secret grant (pre-approval)
-            tags:
-                - Secrets
-    /projects/{projectId}/secret-grants/{grantId}:
-        delete:
-            operationId: revoke-secret-grant
-            parameters:
-                - description: Project ID
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    default: default
-                    description: Project ID
-                    type: string
-                - description: Secret grant ID
-                  in: path
-                  name: grantId
-                  required: true
-                  schema:
-                    description: Secret grant ID
-                    type: string
-            responses:
-                204:
-                    description: No Content
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Revoke a secret grant
             tags:
                 - Secrets
     /projects/{projectId}/audit/dns:

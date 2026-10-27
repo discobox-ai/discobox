@@ -41,13 +41,13 @@ func TestTheFilledFormIsStillEditable(t *testing.T) {
 	}
 }
 
-// A name the project already holds for that kind and host is offered as the
+// A name the project already holds is offered as the
 // first free one, which is what the server would otherwise refuse.
 func TestATakenNameIsOfferedAsTheFirstFreeOne(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.mu.Lock()
-	ds.projectSecrets = append(ds.projectSecrets, Secret{ID: "sec_dupe", Name: "github", Type: "bearer", Host: "api.github.com"})
+	ds.projectSecrets = append(ds.projectSecrets, Secret{ID: "sec_dupe", Name: "github", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}})
 	ds.mu.Unlock()
 	toNewCredential(t, m, time.Hour)
 	if got := m.dialog.form.value("name"); got != "github-2" {
@@ -55,15 +55,15 @@ func TestATakenNameIsOfferedAsTheFirstFreeOne(t *testing.T) {
 	}
 }
 
-// A request fills the form with the name, kind and host it asks for; the token is typed, masked, and an empty one
+// A request fills the form with the name, kind and routes it asks for; the token is typed, masked, and an empty one
 // is refused on the form with the request still waiting.
 func TestANewCredentialForAnyOtherAskIsFilledFromIt(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	toNewCredential(t, m, lifetime.Day)
 	f := m.dialog.form
-	if f.chosen("kind") != "token" || f.value("name") != "github" || f.value("host") != "api.github.com" || f.chosen("source") != "value" {
-		t.Fatalf("form = kind %q name %q host %q source %q, want the request's", f.chosen("kind"), f.value("name"), f.value("host"), f.chosen("source"))
+	if f.chosen("kind") != "token" || f.value("name") != "github" || f.value(secretRouteKey+"0") != "api.github.com" || f.chosen("source") != "value" {
+		t.Fatalf("form = kind %q name %q route %q source %q, want the request's", f.chosen("kind"), f.value("name"), f.value(secretRouteKey+"0"), f.chosen("source"))
 	}
 	send(t, m, keyPress("enter"))
 	if len(ds.createdSecrets) != 0 || !onNewCredentialForm(m) || f.err == "" {
@@ -76,7 +76,7 @@ func TestANewCredentialForAnyOtherAskIsFilledFromIt(t *testing.T) {
 	}
 	f.set("token", "ghp_typedbyahuman")
 	send(t, m, keyPress("enter"))
-	if len(ds.createdSecrets) != 1 || ds.createdSecrets[0].Name != "github" || ds.createdSecrets[0].Host != "api.github.com" ||
+	if len(ds.createdSecrets) != 1 || ds.createdSecrets[0].Name != "github" || len(ds.createdSecrets[0].Routes) != 1 || ds.createdSecrets[0].Routes[0].Host != "api.github.com" ||
 		ds.createdSecrets[0].Value.Token != "ghp_typedbyahuman" {
 		t.Fatalf("created = %#v, want it shaped by the request", ds.createdSecrets)
 	}

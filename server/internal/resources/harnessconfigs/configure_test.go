@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -118,12 +119,12 @@ func TestPreviousConfigurationCarriesNoSecretValues(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	mine := &model.Secret{ProjectID: "project-1", Name: "configured", Type: model.SecretTypeToken, Host: "api.example.com", EncryptedValue: []byte(`{"token":"s3cr3t"}`)}
+	mine := &model.Secret{ProjectID: "project-1", Name: "configured", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "api.example.com"}}, EncryptedValue: []byte(`{"token":"s3cr3t"}`)}
 	if err := st.CreateSecret(ctx, mine); err != nil {
 		t.Fatalf("create configured secret: %v", err)
 	}
 	// A secret the user bound by hand is not the configure flow's to replay.
-	theirs := &model.Secret{ProjectID: "project-1", Name: "hand-bound", Type: model.SecretTypeToken, Host: "other.example.com", EncryptedValue: []byte(`{"token":"theirs"}`)}
+	theirs := &model.Secret{ProjectID: "project-1", Name: "hand-bound", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "other.example.com"}}, EncryptedValue: []byte(`{"token":"theirs"}`)}
 	if err := st.CreateSecret(ctx, theirs); err != nil {
 		t.Fatalf("create hand-bound secret: %v", err)
 	}
@@ -139,7 +140,7 @@ func TestPreviousConfigurationCarriesNoSecretValues(t *testing.T) {
 		t.Fatalf("create config: %v", err)
 	}
 	for env, s := range map[string]*model.Secret{"CONFIGURED_KEY": mine, "HAND_BOUND_KEY": theirs} {
-		if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+		if err := putHarnessBinding(ctx, st, harnessBinding{
 			ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: env, SecretID: s.ID,
 		}); err != nil {
 			t.Fatalf("bind %s: %v", env, err)
@@ -183,7 +184,7 @@ func TestApplyConfigureOutputKeepsPreviousSecret(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"old"}`)}
 	if err := st.CreateSecret(ctx, previous); err != nil {
 		t.Fatalf("create previous secret: %v", err)
 	}
@@ -195,7 +196,7 @@ func TestApplyConfigureOutputKeepsPreviousSecret(t *testing.T) {
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create config: %v", err)
 	}
-	if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+	if err := putHarnessBinding(ctx, st, harnessBinding{
 		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "ANTHROPIC_API_KEY", SecretID: previous.ID,
 	}); err != nil {
 		t.Fatalf("bind: %v", err)
@@ -244,7 +245,7 @@ func TestApplyConfigureOutputTreatsSentinelPassthroughAsReuse(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"old"}`)}
 	if err := st.CreateSecret(ctx, previous); err != nil {
 		t.Fatalf("create previous secret: %v", err)
 	}
@@ -297,11 +298,11 @@ func TestDeconfigureRemovesOnlyConfigureCreatedAssets(t *testing.T) {
 	st := newTestStore(t)
 
 	// A secret the configure flow created, and one the user owns independently.
-	configured := &model.Secret{ProjectID: "project-1", Name: "from-configure", Type: model.SecretTypeToken, Host: "configure.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
+	configured := &model.Secret{ProjectID: "project-1", Name: "from-configure", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "configure.example.com"}}, EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := st.CreateSecret(ctx, configured); err != nil {
 		t.Fatalf("create configured secret: %v", err)
 	}
-	unrelated := &model.Secret{ProjectID: "project-1", Name: "user-owned", Type: model.SecretTypeToken, Host: "user.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
+	unrelated := &model.Secret{ProjectID: "project-1", Name: "user-owned", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "user.example.com"}}, EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := st.CreateSecret(ctx, unrelated); err != nil {
 		t.Fatalf("create unrelated secret: %v", err)
 	}
@@ -320,7 +321,7 @@ func TestDeconfigureRemovesOnlyConfigureCreatedAssets(t *testing.T) {
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create config: %v", err)
 	}
-	if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+	if err := putHarnessBinding(ctx, st, harnessBinding{
 		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: configured.ID,
 	}); err != nil {
 		t.Fatalf("bind: %v", err)
@@ -352,7 +353,7 @@ func TestDeconfigureRemovesOnlyConfigureCreatedAssets(t *testing.T) {
 	if _, err := st.GetSecret(ctx, "project-1", unrelated.ID); err != nil {
 		t.Fatalf("unrelated secret was removed: %v", err)
 	}
-	bindings, err := st.ListHarnessConfigSecretBindings(ctx, "project-1", config.ID)
+	bindings, err := st.ListTargetUseBindings(ctx, "project-1", model.SecretBindingTargetHarnessConfig, config.ID)
 	if err != nil {
 		t.Fatalf("list bindings: %v", err)
 	}
@@ -606,7 +607,7 @@ func TestApplyConfigureOutputReplacesPreviousGeneration(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"old"}`)}
 	if err := st.CreateSecret(ctx, previous); err != nil {
 		t.Fatalf("create previous secret: %v", err)
 	}
@@ -637,26 +638,27 @@ func TestApplyConfigureOutputReplacesPreviousGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get new secret: %v", err)
 	}
-	// The new row must carry its own unique key so two harnesses can each hold a
-	// hostless secret of the same type.
-	if created.UniqueKey != created.ID {
-		t.Fatalf("unique key = %q, want the secret's own id", created.UniqueKey)
+	// With no host and no routes declared, it may go anywhere (ADR
+	// 26-10-27-939 §2), and the harness config binds it for use.
+	if !reflect.DeepEqual(created.Routes, []model.SecretRoute{{Host: "*"}}) {
+		t.Fatalf("routes = %+v, want *", created.Routes)
 	}
-	grant, err := st.FindLiveGrant(ctx, "project-1", created.ID, "", []store.GrantScope{{Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: config.ID}})
-	if err != nil || grant == nil {
-		t.Fatalf("grant = %v err = %v, want a live harnessConfig grant", grant, err)
+	bindings, err := st.ListTargetUseBindings(ctx, "project-1", model.SecretBindingTargetHarnessConfig, config.ID)
+	if err != nil || len(bindings) != 1 || bindings[0].SecretID != created.ID || bindings[0].EnvName != "TOKEN" || bindings[0].ExpiresAt != nil {
+		t.Fatalf("bindings = %+v, %v; want the harness config's use binding of the new secret", bindings, err)
 	}
 }
 
 // A reconfigure that returns a new value for an env name the harness already
 // binds updates the existing secret in place: the secret ID (and thus every
-// sandbox sentinel keyed on it) is stable, and the standing grant follows a
-// host change so the value keeps resolving.
+// sandbox sentinel keyed on it) is stable, and the routes it has — which a
+// person may have narrowed — are kept: a configure box's output never widens
+// them. Routes the image declares are written.
 func TestApplyConfigureOutputUpdatesBoundSecretInPlace(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, Host: "old.example.com", UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "old.example.com"}}, EncryptedValue: []byte(`{"token":"old"}`)}
 	if err := st.CreateSecret(ctx, previous); err != nil {
 		t.Fatalf("create previous secret: %v", err)
 	}
@@ -668,16 +670,10 @@ func TestApplyConfigureOutputUpdatesBoundSecretInPlace(t *testing.T) {
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create config: %v", err)
 	}
-	if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+	if err := putHarnessBinding(ctx, st, harnessBinding{
 		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "TOKEN", SecretID: previous.ID,
 	}); err != nil {
 		t.Fatalf("bind: %v", err)
-	}
-	if err := st.CreateSecretGrant(ctx, &model.SecretGrant{
-		ProjectID: "project-1", SecretID: previous.ID,
-		Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: config.ID, Hosts: []string{"old.example.com"},
-	}); err != nil {
-		t.Fatalf("grant: %v", err)
 	}
 
 	svc := &Service{store: st, inspector: &stubInspector{}}
@@ -699,16 +695,12 @@ func TestApplyConfigureOutputUpdatesBoundSecretInPlace(t *testing.T) {
 	if string(updated.EncryptedValue) != `{"token":"new"}` {
 		t.Fatalf("value = %q, want the new value", updated.EncryptedValue)
 	}
-	if updated.Host != "new.example.com" {
-		t.Fatalf("host = %q, want new.example.com", updated.Host)
+	if !reflect.DeepEqual(updated.Routes, []model.SecretRoute{{Host: "old.example.com"}}) {
+		t.Fatalf("routes = %+v, want the routes it had kept", updated.Routes)
 	}
-	// The grant must have followed the host, or the value stops resolving for it.
-	grant, err := st.FindLiveGrant(ctx, "project-1", previous.ID, "new.example.com", []store.GrantScope{{Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: config.ID}})
-	if err != nil || grant == nil {
-		t.Fatalf("grant = %v err = %v, want a live grant for the new host", grant, err)
-	}
-	if len(grant.Hosts) != 1 || grant.Hosts[0] != "new.example.com" {
-		t.Fatalf("grant hosts = %q, want [new.example.com]", grant.Hosts)
+	bindings, err := st.ListTargetUseBindings(ctx, "project-1", model.SecretBindingTargetHarnessConfig, config.ID)
+	if err != nil || len(bindings) != 1 || bindings[0].SecretID != previous.ID {
+		t.Fatalf("bindings = %+v, %v; want the standing binding kept", bindings, err)
 	}
 }
 
@@ -877,18 +869,36 @@ func (s *stubSandboxRuntime) MarkSecretHoldersDirtyTx(_ context.Context, _ *stor
 func (s *stubSandboxRuntime) AcquireSandboxHTTPClientForServer(ctx context.Context, p, b string, scopes []string, use services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error) {
 	return s.AcquireSandboxHTTPClient(ctx, p, b, scopes, use)
 }
-func (s *stubSandboxRuntime) EnsureCaptureOriginSecretsTx(context.Context, *store.Store, *gorm.DB, string, string, string, []string) error {
+
+// MarkBindingHoldersDirtyTx records the targets whose holders a binding
+// change reached.
+func (s *stubSandboxRuntime) MarkBindingHoldersDirtyTx(_ context.Context, _ *store.Store, _ *gorm.DB, _ string, bindings []model.SecretBinding) error {
+	for _, binding := range bindings {
+		if !slices.Contains(s.rebound, binding.TargetID) {
+			s.rebound = append(s.rebound, binding.TargetID)
+		}
+	}
 	return nil
 }
 
-func (s *stubSandboxRuntime) RebindHarnessConfigSecretsTx(_ context.Context, _ *store.Store, _ *gorm.DB, _, configID string) error {
-	s.rebound = append(s.rebound, configID)
+func (s *stubSandboxRuntime) MaterializeSandboxSecretsTx(context.Context, *store.Store, string, string) error {
 	return nil
 }
 
-func (s *stubSandboxRuntime) RebindHarnessConfigSecrets(_ context.Context, _, harnessConfigID string) error {
-	s.rebound = append(s.rebound, harnessConfigID)
-	return nil
+// harnessBinding is a harness config's use of a secret in a variable, as the
+// tests write it.
+type harnessBinding struct {
+	ProjectID, HarnessConfigID, EnvName, SecretID string
+}
+
+// putHarnessBinding binds a secret for use in a variable on a harness config,
+// as configure does.
+func putHarnessBinding(ctx context.Context, st *store.Store, b harnessBinding) error {
+	_, err := st.PutTargetUseBinding(ctx, &model.SecretBinding{
+		ProjectID: b.ProjectID, SecretID: b.SecretID, TargetKind: model.SecretBindingTargetHarnessConfig,
+		TargetID: b.HarnessConfigID, Use: true, EnvName: b.EnvName,
+	}, store.BindingChange{Actor: "user-1"})
+	return err
 }
 
 func (s *stubSandboxRuntime) UpgradeHarnessConfigSandboxes(_ context.Context, _, harnessConfigID string) error {
@@ -1015,20 +1025,17 @@ func TestConfigureCreatedSecretsHaveNoGrantLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the configured secret: %v", err)
 	}
-	if secret.MaxGrantTTL != 0 {
-		t.Fatalf("grant limit = %d, want none: the harness's own grant never expires", secret.MaxGrantTTL)
+	if secret.MaxBindingTTL != 0 {
+		t.Fatalf("binding limit = %d, want none: the harness's own binding never expires", secret.MaxBindingTTL)
 	}
 
-	// And the grant it stands on says the same thing from the other side.
-	grants, err := st.ListSecretGrants(ctx, "project-1", secret.ID)
+	// And the binding it stands on says the same thing from the other side.
+	bindings, err := st.ListTargetUseBindings(ctx, "project-1", model.SecretBindingTargetHarnessConfig, config.ID)
 	if err != nil {
-		t.Fatalf("list grants: %v", err)
+		t.Fatalf("list bindings: %v", err)
 	}
-	if len(grants) != 1 {
-		t.Fatalf("grants = %d, want the one the configure flow minted", len(grants))
-	}
-	if grants[0].ExpiresAt != nil {
-		t.Fatalf("expires at = %v, want a grant that outlives the configure run", grants[0].ExpiresAt)
+	if len(bindings) != 1 || bindings[0].ExpiresAt != nil {
+		t.Fatalf("bindings = %+v, want the one the configure flow made, never expiring", bindings)
 	}
 }
 
@@ -1096,7 +1103,7 @@ func TestApplyConfigureOutputClearsARefusedCredential(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, Host: "api.example.com", UniqueKey: "old", EncryptedValue: []byte(`{"token":"dead"}`)}
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "api.example.com"}}, EncryptedValue: []byte(`{"token":"dead"}`)}
 	if err := st.CreateSecret(ctx, previous); err != nil {
 		t.Fatalf("create previous secret: %v", err)
 	}
@@ -1108,7 +1115,7 @@ func TestApplyConfigureOutputClearsARefusedCredential(t *testing.T) {
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create config: %v", err)
 	}
-	if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+	if err := putHarnessBinding(ctx, st, harnessBinding{
 		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "TOKEN", SecretID: previous.ID,
 	}); err != nil {
 		t.Fatalf("bind: %v", err)

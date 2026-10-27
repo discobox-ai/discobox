@@ -121,9 +121,9 @@ func TestHarnessSecretsResolveBindings(t *testing.T) {
 			{Name: "CLAUDE_CODE_OAUTH_TOKEN"},
 		}),
 	}
-	bindings := []apimodel.HarnessConfigSecretBinding{
-		{EnvName: "ANTHROPIC_API_KEY", SecretId: "sec_1"},
-		{EnvName: "CUSTOM_TOKEN", SecretId: "sec_2"},
+	bindings := []apimodel.SecretBinding{
+		{EnvVar: apiclientgen.NewOptString("ANTHROPIC_API_KEY"), SecretId: "sec_1", Use: true},
+		{EnvVar: apiclientgen.NewOptString("CUSTOM_TOKEN"), SecretId: "sec_2", Use: true},
 	}
 	secretsByID := map[string]apimodel.Secret{
 		"sec_1": {ID: "sec_1", Name: "anthropic-api-key", Type: apiclientgen.SecretType("api_key")},

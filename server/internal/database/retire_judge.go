@@ -388,7 +388,7 @@ func retireJudgedGrant(db *gorm.DB, grant map[string]any, hasAgentBindings bool)
 	scope := columnText(grant["scope"])
 	sandboxID := columnText(grant["scope_key"])
 	envName := columnText(grant["env_name"])
-	if scope == model.SecretGrantScopeSandbox {
+	if scope == retiredGrantScopeSandbox {
 		if hasAgentBindings && envName == "" {
 			var bound []map[string]any
 			if err := db.Table("sandbox_secrets").Select("env_name").
@@ -446,7 +446,7 @@ func reaskForGrant(db *gorm.DB, grant map[string]any, envName string) (string, e
 	}
 	purpose := columnText(grant["purpose"])
 	if purpose == "" {
-		purpose = model.SecretGrantPurposeUse
+		purpose = model.SecretPurposeUse
 	}
 	requestID, err := id.New(id.PrefixSecretRequest)
 	if err != nil {
@@ -522,7 +522,7 @@ func dropJudgeSchema(db *gorm.DB) error {
 		table   string
 		columns []string
 	}{
-		{&model.SecretGrant{}, "secret_grants", []string{"uses", "policy", "rule_id", "env_name"}},
+		{"secret_grants", "secret_grants", []string{"uses", "policy", "rule_id", "env_name"}},
 		{&model.SecretRequest{}, "secret_requests", []string{"uses", "policy", "well_known_id"}},
 		{&model.Secret{}, "secrets", []string{"well_known_id"}},
 		{&model.HostTrust{}, "host_trusts", []string{"uses"}},

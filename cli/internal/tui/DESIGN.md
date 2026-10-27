@@ -33,7 +33,7 @@ flowchart LR
     WS -->|beat| Push["automatic push → PushSources"]
     L -->|C| Cred["credential dialog → Secrets / CreateSecret / ApproveCredentialRequest / DenyCredentialRequest"]
     M --> S["secretList (F4)"]
-    S -->|n e d enter p| SVerb["Secrets / Grants / CreateSecret / UpdateSecret / CreateGrant / RevokeGrant / DeleteSecret"]
+    S -->|n e d enter b| SVerb["Secrets / Bindings / CreateSecret / UpdateSecret / CreateBinding / DeleteBinding / DeleteSecret"]
     S -->|C| Cred
     M --> K["skillsList (F5)"]
     K -->|n d| KVerb["Skills / AddSkills / RemoveSkills"]
@@ -105,42 +105,43 @@ the window, and the secrets take only the rows they have, so the two tables sit
 together with two blank rows between them. What is left over falls below them
 both rather than between: the window keeps its full height without putting a
 screen of nothing between two tables that are read as one. A request row says what is being asked for, where it may go, who is
-waiting (an agent, the proxy on a discobox's behalf, or a person) and for how
+waiting (the agent in a discobox, or the control plane for a value gone stale) and for how
 long; Enter answers that one, while `C` answers the oldest from anywhere. The
 lower table's height is counted from its rows, so `syncRequestRows` lays the
 window out again whenever a poll changes how many there are.
 
-A secret row is what tells one credential from another: its name, the host it is
-bound to — spelled `any host` rather than left blank, because blank reads as
-"not loaded" and this is a fact about the secret — how many grants stand on it,
-and when it last changed. Its kind and its grant limit are not there. They are
-facts about a credential rather than ways to pick one out of a list, and a row
-carrying every field is a row nobody reads; Enter opens the secret, and they are
-in it. Grants are read for the whole project in one call and counted per row,
-rather than a call per row.
+A secret row is what tells one credential from another: its name, its routes —
+spelled `sent nowhere` rather than left blank when it has none, because blank
+reads as "not loaded" and this is a fact about the secret — how many bindings
+stand on it, and when it last changed. Its kind and its binding limit are not
+there. They are facts about a credential rather than ways to pick one out of a
+list, and a row carrying every field is a row nobody reads; Enter opens the
+secret, and they are in it. Bindings are read for the whole project in one call
+and counted per row, rather than a call per row.
 
-`Enter` **opens the secret**: what it is, then what may use it. For a token
-that is its kind, its binding and the ceiling on its grants — spelled `forever`
+`Enter` **opens the secret**: what it is, then what is bound to it. For a token
+that is its kind, its routes and the ceiling on its bindings — spelled `forever`
 when nothing limits them, since zero is the answer "no limit" and `never`, how a
 zero duration reads everywhere else, would say the opposite; for an OAuth
-credential it is also where it renews, whose client it is, what the grant may
-do, when the access token goes stale, and — said plainly, because it is the one
-thing that makes an OAuth credential useless — whether it can renew itself at
-all. None of it is the credential: not the access token, not the refresh token.
-The rows under it are the grants, and the first one **makes one**, so a
-credential with nothing standing on it is somewhere to decide who may use it
-rather than a dead end naming another command. `n` stores a new credential and
-`e` edits one, both on the same form (`secretForm`); `d` deletes, saying how
-many live grants go with it and defaulting to No. `C` answers the oldest
-request waiting anywhere in the project — including one no discobox owns, which
-the list's row mark cannot carry and which would otherwise have no home.
+credential it is also where it renews, whose client it is, what the OAuth grant
+may do, when the access token goes stale, and — said plainly, because it is the
+one thing that makes an OAuth credential useless — whether it can renew itself
+at all. None of it is the credential: not the access token, not the refresh
+token. The rows under it are the bindings, each named by its variable, and the
+first one **makes one**, so a credential with nothing bound is somewhere to
+decide who gets it rather than a dead end naming another command. `n` stores a
+new credential and `e` edits one, both on the same form (`secretForm`); `d`
+deletes, saying how many live bindings go with it and defaulting to No. `C`
+answers the oldest request waiting anywhere in the project — including one no
+discobox owns, which the list's row mark cannot carry and which would otherwise
+have no home.
 
 **A decision is one card, not a run of questions** (`form.go`, `dlgForm`). A
-pre-approval or a new secret has seven or eight parts, and a sequence of
+binding or a new secret has seven or eight parts, and a sequence of
 modals is the wrong shape for a decision whose parts are read against each
 other: nothing can be revised without abandoning the run, the answers already
 given are off screen by the third question, and the shape of what is being
-granted is only visible once it has been granted. A form asks everything at
+bound is only visible once it has been bound. A form asks everything at
 once, in the same label/value column a card is read as — the thing being built
 looks like the thing it will be when it is read back.
 
@@ -169,19 +170,21 @@ is folded onto its last row and cut with an ellipsis.
 
 **Create and edit are the same form** (`secretForm`). Editing opens on what the
 credential is and takes everything the server will change: the name, the
-binding, the grant limit, and the value. A value cannot be read *back* — nothing
+routes, the binding limit, and the value. A value cannot be read *back* — nothing
 here can — but it can be replaced, and a card that would not take one made
 rotating a token a matter of deleting the secret and storing it again, taking
-every grant standing on it along with it. The value rows say
+every binding standing on it along with it. The value rows say
 `unchanged — type to replace it`, and leaving them empty is the ordinary answer.
 
-**A secret's routes are one row each** (`secretRouteRows`), under their own
-rule at the foot of the card, with one empty row after them for another. Each
-is typed as the CLI's `--route` takes it, `HOST[/PATH][=blocked]`, through
-`secretroute.Parse`. A row that is not a route is refused on the card,
-including one that still carries the use a route once had. Emptying a row
-drops that route, and emptying them all clears them (ADR 26-10-02-924). The
-detail card lists each route as `allowed` or `blocked` (ADR 26-10-27-880).
+**A secret's routes are one row each** (`secretRouteRows`), straight under
+its name and kind, with one empty row after them for another. Each is typed as
+the CLI's `--route` takes it, `HOST[/PATH][=blocked]` or `*` for any host
+(ADR 26-10-27-939), through `secretroute.Parse`. A row that is not a route is
+refused on the card. A new secret is refused with none — it would be sent
+nowhere — as `discobox secret create` refuses one. Emptying a row drops that
+route, and emptying them all on an edit clears them (ADR 26-10-02-924). The
+detail card lists each route as `allowed` or `blocked`, and says `nowhere` for
+a secret with none (ADR 26-10-27-880).
 
 The **kind** is the one row an existing credential locks: a token and an oauth
 credential are stored and renewed differently, and the server has no answer for
@@ -208,13 +211,13 @@ A template is parsed on the card with the server's parser (`secretformat`), so a
 mistyped one is refused with the card still up. Reading the credential says the
 format and whether it was set or read.
 
-**One form, one call** (`DataSource.UpdateSecret`, `SecretUpdate`). The host,
+**One form, one call** (`DataSource.UpdateSecret`, `SecretUpdate`). The routes,
 the limit, the name and the value are one endpoint, and a card whose rows were
 saved by a call each would half-apply when the second failed and report two
 things where a person did one. Every field of `SecretUpdate` is a
 pointer, because absence has to be spelled differently from the values: an empty
-host releases a binding and a zero limit allows grants that never expire, so
-neither can stand for "unchanged".
+route list sends the secret nowhere and a zero limit allows bindings that never
+expire, so neither can stand for "unchanged".
 
 **A lifetime is asked as the answers people give** (`ttlRows`, `ttlSeconds`):
 1 hour, 1 day, 1 week, 1 month, forever, and a typed one behind `custom…`.
@@ -222,13 +225,13 @@ Seconds alone was a field nobody could answer without arithmetic, and `604800`
 is not a week to anyone reading it back. The presets, their spelling and what
 the typed row accepts all come from `cli/internal/lifetime`, which is also what
 the `discobox secret` flags parse — a window offering a month the flags could
-not express would be a second vocabulary for one decision. On a secret the row is labelled **grant limit**,
-not "grants last": the value is a ceiling, and "grants last 1 day" states it as
-the lifetime every grant on the credential gets, which is the opposite of what
-it does. Reading the credential says it the same way. A new credential is stored with **no limit** unless one is
+not express would be a second vocabulary for one decision. On a secret the row is labelled **binding limit**,
+not "bindings last": the value is a ceiling, and "bindings last 1 day" states it
+as the lifetime every binding of the credential gets, which is the opposite of
+what it does. Reading the credential says it the same way. A new credential is stored with **no limit** unless one is
 chosen: a limit is a decision about how long consent may last, and a default one
-is a decision nobody made — it expires grants mid-task, far from this form, and
-teaches people to grant again rather than to pick a limit. The limit travels
+is a decision nobody made — it expires bindings mid-task, far from this form, and
+teaches people to bind again rather than to pick a limit. The limit travels
 *with* the credential (`NewSecret.MaxTTLSeconds`) rather than being set by a
 second call, because a secret that exists for even a moment without one is a
 secret limited by whatever the server's default happens to be, and zero is sent
@@ -239,44 +242,45 @@ required row or a lifetime that cannot be read puts the reason on the hint line
 and the cursor on the row; closing the card and reporting onto the screen behind
 it would throw away everything already entered.
 
-**Reading a grant is not the same key as ending one.** In the grants list
-`Enter` reads — scope, where it may go, who granted it, whether it delegates,
-and when it lapses. `x` withdraws, behind a confirm.
-Revoking on `Enter` put ending a credential one keystroke from looking at one,
+**Reading a binding is not the same key as ending one.** In the bindings list
+`Enter` reads — what it is on, the variable, where it may go, whether it is
+given on, who made it, what it was handed on under, and when it lapses. `x`
+takes it back, behind a confirm that says what stops working; the count the
+data source returns of bindings handed on under it is said in the report.
+Unbinding on `Enter` put ending a credential one keystroke from looking at one,
 on the key that means "open this" everywhere else in the window.
 
-**A lapsed grant is hidden until asked for.** It authorizes nothing, so the
-row's count and the list leave it out; a row under "Grant this secret…" says how
-many there are and `a` shows or hides them.
+**A lapsed binding is not shown.** It carries nothing and the server's sweep
+removes it, so the row's count and the list leave it out between reads.
 
-**A question answered "no" leaves you where it was asked.** Declining a revoke
-returns to the grants, leaving a grant you were reading returns to the grants,
-and declining a rebind returns to the credential picker. A dialog that closes
-onto the screen behind it, having done nothing and said nothing, is how a
-deliberate "not that one" reads as the window ignoring the keypress.
+**A question answered "no" leaves you where it was asked.** Declining an unbind
+returns to the bindings, and leaving a binding you were reading returns to the
+bindings. A dialog that closes onto the screen behind it, having done nothing
+and said nothing, is how a deliberate "not that one" reads as the window
+ignoring the keypress.
 
 **The window says "harness", the wire says `harnessConfig`.** The resource is a
-harness config and the API's scope value is `harnessConfig`; a person calls it
-the harness, and one `scopeLabel` turns the first into the second everywhere it
-is drawn. A window that used both would be teaching two names for one thing.
+harness config and the API's target kind is `harnessConfig`; a person calls it
+the harness, and `bindingTarget` says "harness NAME", "discobox NAME" or "every
+discobox in the project" everywhere a binding is drawn. A window that used both
+would be teaching two names for one thing.
 
-**`p` grants a secret before anything asks for it** — the pre-approval an
-operator makes because they already know the answer. Scope first, since it
-decides whether there is a key to ask for next: a project grant needs none, and
-a discobox or harness is picked out of what the window already holds
-rather than typed as an ID that has to be right. Then the host, opening on the
-secret's own binding, and the lifetime, opening on the secret's limit. That
-question says the limit rather than leaving the server to refuse what is over
-it: a capped credential cannot be granted forever, and learning that from a
-rejection teaches the rule one rejection at a time. A grant to one discobox is
-also asked what it is for: to use the credential, or to give it on — a
-delegation grant, whose discobox may give it to the discoboxes it creates and
-may not use it (ADR 26-10-27-880 §3). Wider grants are never delegations, so
-the row is stepped over for them.
+**`b` binds a secret before anything asks for it** (`askForBinding`) — the
+binding an operator makes because they already know the answer. The target
+first, since it decides whether there is a key to ask for next: the project
+needs none, and a discobox or harness is picked out of what the window already
+holds rather than typed as an ID that has to be right. Then what it is for — to
+use it, to give it on (a delegate binding, whose discobox may bind it to the
+discoboxes it creates, ADR 26-10-27-880 §3), or both — and, unless it is only
+given on, the variable, opening on `secretenv.Name`. Then routes that narrow the
+secret's for this binding alone, empty to keep the secret's, and the lifetime,
+opening on the secret's limit. That question says the limit rather than leaving
+the server to refuse what is over it: a capped credential cannot be bound
+forever, and learning that from a rejection teaches the rule one rejection at a
+time.
 
-**`e` edits what a secret says about itself** — the two statements of the same
-kind: which hosts it may reach, and how long a grant on it may live. Neither
-touches the value, which nothing in the window can read.
+**`e` edits what a secret says about itself**: its routes and how long a
+binding of it may last, beside its name and value.
 
 Every action re-reads the listing rather than patching what is on screen: a
 screen that guesses at the new state is a screen that drifts from the server.
@@ -297,8 +301,11 @@ chain the pool was shown to pin, the server's default first and the leaf's key
 last, then how long, from an hour to a month: a trust always lapses.
 
 **It holds refresh requests too** ([ADR 26-09-25-122](../../../docs/adr/26-09-25-122-a-token-may-expire-and-suggest-the-command-that-renews-it.md)).
-A token whose value went stale or was refused asks for a new one; the item is a
-`CredentialRequest` with `Refresh` set, and its dialog (`refresh.go`) shows the
+A token whose value went stale or was refused asks for a new one. A refresh
+request is its own record and inbox kind (`refresh`, ADR 26-10-27-880 §1), not
+a credential request: the item is a `CredentialRequest` with `Refresh` set and
+its ID the refresh request's, and dismissing it is `DataSource.DismissRefresh`,
+never a denial, and its dialog (`refresh.go`) shows the
 token's command before anything runs and offers to run it once, run it for the
 session, take a typed value, or dismiss. The command runs in the data source, on
 this machine, without a shell (`refreshcmd`). "For the session" is a permission
@@ -308,7 +315,7 @@ in the window's memory, keyed by server, token, and the exact command
 the permission. A request's "New credential…" is F4's own new-secret form,
 filled from the request (see below); F4's new token picks between entering a
 value and getting it from a command, with how long a value lasts (5m unless
-chosen; minutes to a day, not a grant's weeks and months), which the edit card
+chosen; minutes to a day, not a binding's weeks and months), which the edit card
 changes for any token.
 
 **It is polled, not pushed.** The requests are read on the same 5s tick as the
@@ -352,29 +359,25 @@ There is no list in the workspace for `g` to be the top of, so it is free, and
 it is the letter of the thing it does.
 
 **The dialog decides nothing.** It shows what was asked — the credential, the
-env var, the hosts, and why the agent says it needs it — and collects two
-answers,
-one per step: which secret answers it (a project secret, a credential typed in
-on the spot, or a denial), then how long the grant lives. Everything else
-follows the request on the server, which is what keeps this and `discobox
-secret request approve` the same act: approving an ask to use mints a grant
-for the discobox and delivers the credential's sentinel in the variable it
-asked for (ADR 26-10-27-880). `r` shows the request as the server sent it, as JSON
-highlighted as a code block is (`showRawRequest`), for when the rendering is
-not enough; Esc goes back to the card. Every secret is offered,
-including one bound to another host: greying those out left the one secret that
-plainly answers the request unpickable, so the binding is asked about on the
-way through instead (`confirmGrantHost`), in the words the server would refuse
-it with. A request may name several hosts (ADR 26-10-02-393): the card shows
-them all, a binding must cover every one, and a credential typed in on the spot
-is bound to the site they share — or to nothing, when they share none
-(`CredentialRequest.binding`).
+env var, the routes it asks to be sent to, and why the agent says it needs it —
+and collects two answers, one per step: which secret answers it (a project
+secret, a credential typed in on the spot, or a denial), then how long the
+binding lasts. Everything else follows the request on the server, which is what
+keeps this and `discobox secret request approve` the same act: approving an ask
+to use binds the secret to the discobox in the variable it asked for, held to
+the routes it asked for within the secret's own (ADR 26-10-27-880). `r` shows
+the request as the server sent it, as JSON highlighted as a code block is
+(`showRawRequest`), for when the rendering is not enough; Esc goes back to the
+card. Every secret is offered, the one named as asked first
+(`secretsForRequest`): the binding is held to the secret's routes and the
+request's both, so none has to be refused here, and nothing about the secret
+is changed on the way through.
 
 **How long is a required second step** (`askLifetime`, through
 `askDuration`). Choosing a secret opens
 a card of its own — 1 hour, 1 day, 1 week, 1 month, forever, and `custom…` for a
 typed one — with the cursor on the lifetime the agent asked for
-(`CredentialRequest.GrantTTL`, shown on the request card as "wanted for"), else
+(`CredentialRequest.AskedTTL`, shown on the request card as "wanted for"), else
 on **1 hour**, so Enter is the default answer. An ask that is not a preset is
 added in its place among them (`lifetimeChoices`) and marked as the agent's. It
 is a step rather than a field on the request card because it is the half of an
@@ -383,54 +386,46 @@ whatever the server defaults to without anyone having read it. A card that has
 to be answered is one that gets read.
 `Approval.TTLSeconds` is always sent, zero included, and zero means forever
 rather than "whatever the secret allows". The hour is
-`agentcreds.DefaultGrantTTL`, and the server grants the same lifetime — the
-agent's ask, else the hour, within the secret's limit — to an approval that
+`agentcreds.DefaultGrantTTL`, and the server binds for the same lifetime — the
+agent's ask, else the hour, within the secret's limit — on an approval that
 names none, which is what `discobox secret request approve` sends when
-`--grant-ttl` is left out, so approving a request mints the same grant from
+`--for` is left out, so approving a request makes the same binding from
 either side. An agent cannot ask
 for forever, nor for longer than thirty days (`agentcreds.MaxGrantTTLSeconds`,
 enforced at the ask and again in `agentcreds.AskedGrantTTL`), so the default is
-never a grant that does not lapse. An ask that is not a whole positive number of
+never a binding that does not lapse. An ask that is not a whole positive number of
 seconds is no row at all (`lifetimeChoices`) and the step opens on the hour:
 a row's identity is its second count, and one that shared forever's count would
 otherwise take the cursor.
 
-The steps run: request → binding question, only when the secret is bound
-elsewhere → lifetime → limit question, only when the lifetime is over the
-secret's cap → approve; for a new credential, request → lifetime → the
-new-secret form → store and approve. A new credential takes its lifetime
-*before* its token, so going back never has to hold a token that was already
-typed.
+**A lifetime the credential does not allow is not offered** (`withinLimit`).
+A secret's binding limit is a ceiling the server enforces, so the request card
+names it on each secret's row, the lifetime step dims every choice over it and
+says why, and a typed one over it is refused on the spot. Raising the limit is a
+decision about the credential, made on the secrets screen, not something an
+approval does in passing.
+
+The steps run: request → lifetime → approve; for a new credential, request →
+lifetime → the new-secret form → store and approve. A new credential takes its
+lifetime *before* its token, so going back never has to hold a token that was
+already typed.
 
 **A new credential is the secrets screen's form, filled from the request**
 (`askNewCredentialForm`, `fillFromRequest`, `secretForm`, `secretFromForm`).
-The form is filled with the name, kind and host the request asks for. A name the project already holds for that kind and host is the
-first free one instead (`freeSecretName`, "github-2"), which the server would
-otherwise refuse the create for. Every field stays editable. Saving stores it
-and approves the request with it for the lifetime chosen (`createAndApprove`:
-a command is run by the data source, and a refusal after the store says what
-was already done); a grant limit shorter than that lifetime is refused on the
-form, before anything is stored. Esc from the form is the request, still
-waiting. The request card has no separate "From a command…" row: the form's
-source row takes one. **Esc, or No,
-goes back exactly one step**: from the lifetime to the binding question if one
-was asked, else to the request; from a typed lifetime to the presets; from the
-limit question to wherever the lifetime was chosen; from the new-credential
-form to the request. The answers so far travel as one `approval` value, copied rather than
-changed at each step, so the dialog before is rebuilt from the approval as it
-stood when that dialog was asked — agreeing to a rebind, backing out of the
-lifetime, and agreeing again binds once.
-
-**A lifetime the credential does not allow asks before it is refused**
-(`confirmGrantLimit`). A secret's grant limit is a ceiling the server enforces
-at minting, so the request card names it on each secret's row, the lifetime
-step marks every choice over it, and choosing one anyway offers to raise it —
-one question, defaulting to No, since raising it is a decision about the
-credential rather than something a grant does in passing. Nothing any question
-agrees to is applied until the last step. Then the binding and the limit ride on
-the approval itself (`finishApproval`), and the server writes them with the
-grant or not at all. A refused approval leaves the credential as it was, and a
-failure never has a changed secret to report.
+The form opens with the name the request asks for and a route row for each
+route it asks for. A name the project already holds is the first free one
+instead (`freeSecretName`, "github-2"), which the server would otherwise refuse
+the create for. Every field stays editable. Saving stores it and approves the
+request with it for the lifetime chosen (`createAndApprove`: a command is run by
+the data source, and a refusal after the store says what was already done); a
+binding limit shorter than that lifetime is refused on the form, before
+anything is stored. Esc from the form is the request, still waiting. The
+request card has no separate "From a command…" row: the form's source row takes
+one. **Esc goes back exactly one step**: from the lifetime to the request; from
+a typed lifetime to the presets; from the new-credential form to the request.
+The answers so far travel as one `approval` value, copied rather than changed at
+each step, so the dialog before is rebuilt from the approval as it stood when
+that dialog was asked.
 
 ## The attention band
 
@@ -1047,7 +1042,7 @@ before it creates. A change of server drops the rows kept for the last one
 is not drawn (`harnessesLoadedMsg.server`, `secretsLoadedListMsg.server`): a
 secret listed under `server beta` that is alpha's is the mistake this screen
 exists to prevent. The secrets screen's request table is its server's
-(`syncRequestRows`), and a grant's discobox choices are too.
+(`syncRequestRows`), and a binding's discobox choices are too.
 
 The machine line is the primary's figures
 (`DataSource.Resources`), and is drawn only while the list shows the primary's
@@ -1118,7 +1113,7 @@ server beside an ID. The run options carry a **Server** row — last, and only
 when `Session.Servers` has more than one — whose first choice is the primary, marked
 `(primary)`, so an untouched panel creates where it always did; anything else
 is `RunRequest.Server`, and `--server <name>` in the preview. It is the header's
-filter from the other side (above). Every harness, secret and grant call takes
+filter from the other side (above). Every harness, secret and binding call takes
 the server by name (ADR 0131 §3) — the configured server, or the request's
 own.
 
@@ -2335,7 +2330,7 @@ rows, and the floor of three rows a body or a menu is left with, so a window
 too short for the answers and that floor is one the card overruns after all.
 
 **A card of facts is a column, not a paragraph** (`section`, `field`, `line`,
-`answerLabel`). What a credential is, what a grant covers, what an agent is
+`answerLabel`). What a credential is, what a binding covers, what an agent is
 asking for: these are sets of facts an approval turns on, and a fact that has to
 be found inside a sentence is a fact that gets skipped by somebody answering
 their fourth request of the morning. A dialog carries named sections of aligned
@@ -2348,7 +2343,7 @@ paragraph does.
 
 **A menu row's key is not its identity** (`action.key`, `action.press`). Most of
 what this window offers to choose between is identified by something nobody can
-type — a secret's ID, a grant's ID, a scope's wire name — and a menu that
+type — a secret's ID, a binding's ID, a target kind's wire name — and a menu that
 printed those in the column where keystrokes go was offering keys that do not
 exist while wrecking the alignment of every row beside them. `press` is the
 accelerator and the only one of the two ever drawn; a menu whose rows have none
@@ -2925,7 +2920,7 @@ the card.
   its source unsaid (`askSource`), when the card is put up once both the
   session and the harness listing have landed (`startPendingRun`), with the
   rows prefilled from the command's flags (`optionSet.prefill`) and what the
-  card has no row for (`--grant`, `--pool`, the prompt's own tokens) carried
+  card has no row for (`--bind`, `--delegate`, `--pool`, the prompt's own tokens) carried
   from the request (`createCard.base`). Its cursor opens on the directory the
   command ran in, which is what no SOURCE meant before it asked. Leaving that
   card any way — Esc or q, from it or from a field it opened, or Ctrl-C —
@@ -3190,9 +3185,9 @@ the newest one where the busy line goes.
 | `fuzzy.go` | the fzf-style matcher the audit search filters and lights with |
 | `narration.go` | what a slow operation is doing, on the busy line |
 | `tui.go` | `Run`: the program the CLI starts against a `DataSource` |
-| `secrets.go` | the secrets screen (`F4`): the three tables' focus and frame, the secrets table, a secret's card and grants, the secret and grant forms |
+| `secrets.go` | the secrets screen (`F4`): the three tables' focus and frame, the secrets table, a secret's card and bindings, the secret and binding forms |
 | `skills.go` | the skills screen (`F5`): the project's skills sources and client.yaml's `run.skills`, added to and removed from by what a value is |
-| `requests.go` | the secrets screen's lower table: the credential requests waiting on a person |
+| `requests.go` | the secrets screen's lower table: the credential, refresh and trust requests waiting on a person |
 | `welcome.go` | the once-per-project introduction |
 | `draft.go` | the unsent prompt, saved per machine and restored |
 | `mouse.go` | the mouse: mode, routing, presses, hover, the wheel |

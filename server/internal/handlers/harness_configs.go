@@ -151,36 +151,3 @@ func (h *Handler) DeleteHarnessConfig(ctx context.Context, params serverapi.Dele
 	}
 	return &serverapi.DeleteHarnessConfigNoContent{}, nil
 }
-
-func (h *Handler) ListHarnessConfigSecretBindings(ctx context.Context, params serverapi.ListHarnessConfigSecretBindingsParams) (serverapi.ListHarnessConfigSecretBindingsRes, error) {
-	bindings, err := h.services.HarnessConfigs.ListHarnessConfigSecretBindings(ctx, params.ProjectId, params.HarnessConfigId)
-	if err != nil {
-		return apiError(err), nil
-	}
-	body, err := services.Convert[apimodel.ListHarnessConfigSecretBindingsBody](struct {
-		SecretBindings any `json:"secretBindings"`
-	}{SecretBindings: bindings})
-	if err != nil {
-		return nil, err
-	}
-	return &body, nil
-}
-
-func (h *Handler) SetHarnessConfigSecretBinding(ctx context.Context, req *apimodel.SetHarnessConfigSecretBindingBody, params serverapi.SetHarnessConfigSecretBindingParams) (serverapi.SetHarnessConfigSecretBindingRes, error) {
-	binding, err := h.services.HarnessConfigs.SetHarnessConfigSecretBinding(ctx, params.ProjectId, params.HarnessConfigId, params.EnvName, req.SecretId)
-	if err != nil {
-		return apiError(err), nil
-	}
-	body, err := services.Convert[apimodel.HarnessConfigSecretBinding](binding)
-	if err != nil {
-		return nil, err
-	}
-	return &body, nil
-}
-
-func (h *Handler) DeleteHarnessConfigSecretBinding(ctx context.Context, params serverapi.DeleteHarnessConfigSecretBindingParams) (serverapi.DeleteHarnessConfigSecretBindingRes, error) {
-	if err := h.services.HarnessConfigs.DeleteHarnessConfigSecretBinding(ctx, params.ProjectId, params.HarnessConfigId, params.EnvName); err != nil {
-		return apiError(err), nil
-	}
-	return &serverapi.DeleteHarnessConfigSecretBindingNoContent{}, nil
-}

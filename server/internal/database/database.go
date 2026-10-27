@@ -16,6 +16,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/hostscope"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/x/gormdb"
 )
 
@@ -80,10 +81,26 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := renameSecretGrantTTLColumn(write); err != nil {
 		return err
 	}
+	// The same number under its binding name (ADR 26-10-27-880 §1), renamed
+	// here for the reason the grant rename above is: AutoMigrate would add
+	// the new column empty and leave every limit in the old one.
+	if err := renameSecretBindingTTLColumn(write); err != nil {
+		return err
+	}
+	// A secret's name is now its whole uniqueness domain, and AutoMigrate's
+	// index over it fails on a project that holds two secrets of one name.
+	if err := deduplicateSecretNames(write); err != nil {
+		return err
+	}
 	// Read before AutoMigrate adds the columns, which is the one moment a row
 	// with no image kind is known to be one from before kinds.
 	backfillPoolKinds := addsImageKindColumn(write, &model.Pool{})
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
+		return err
+	}
+	// The engine's dirty set, which a binding written with an expiry marks in
+	// its own transaction (store.recordBindingEventTx).
+	if err := reconcile.Migrate(write); err != nil {
 		return err
 	}
 	if backfillPoolKinds {
@@ -148,13 +165,13 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := backfillSecretValueUpdatedAt(write); err != nil {
 		return err
 	}
-	if err := deleteOrphanedSecretGrants(write); err != nil {
-		return err
-	}
 	if err := denyOrphanedSecretRequests(write); err != nil {
 		return err
 	}
 	if err := retireCredentialJudge(write); err != nil {
+		return err
+	}
+	if err := retireSecretGrants(write); err != nil {
 		return err
 	}
 	if err := retireHarnessImages(write); err != nil {
@@ -278,35 +295,19 @@ func backfillPoolImageKinds(db *gorm.DB) error {
 // requests are left open: they are about the secret, not the sandbox. It is a
 // backfill; after the first run this matches nothing.
 func denyOrphanedSecretRequests(db *gorm.DB) error {
-	if !db.Migrator().HasTable(&model.SecretRequest{}) {
-		return nil
-	}
-	return db.Model(&model.SecretRequest{}).
-		Where("status = ? AND reason <> ? AND sandbox_id <> '' AND sandbox_id NOT IN (?)",
-			model.SecretRequestStatusPending, model.SecretRequestReasonRefresh, db.Model(&model.Sandbox{}).Select("id")).
-		Updates(map[string]any{"status": model.SecretRequestStatusDenied, "closed_at": time.Now().UTC()}).Error
-}
-
-// deleteOrphanedSecretGrants removes the grants scoped to a sandbox or harness
-// config that no longer exists. Deleting either now takes its grants with it
-// (store.deleteSecretGrantsByScopeTx); before that, every deleted discobox
-// left its grants behind, naming an ID that is never reused and so covering
-// nothing, while every listing still showed them as standing. It is a
-// backfill: store.CreateSecretGrant refuses a grant for a scope that does not
-// exist, so after the first run this matches nothing.
-func deleteOrphanedSecretGrants(db *gorm.DB) error {
 	migrator := db.Migrator()
-	if !migrator.HasTable(&model.SecretGrant{}) {
+	if !migrator.HasTable(&model.SecretRequest{}) || !migrator.HasColumn(&model.SecretRequest{}, "decided_at") {
 		return nil
 	}
-	if err := db.Where("scope = ? AND scope_key NOT IN (?)",
-		model.SecretGrantScopeSandbox, db.Model(&model.Sandbox{}).Select("id")).
-		Delete(&model.SecretGrant{}).Error; err != nil {
-		return err
+	query := db.Model(&model.SecretRequest{}).
+		Where("status = ? AND sandbox_id <> '' AND sandbox_id NOT IN (?)",
+			model.SecretRequestStatusPending, db.Model(&model.Sandbox{}).Select("id"))
+	// A refresh request still in this table, before retireSecretGrants moves
+	// it out, is about its secret, not the sandbox that noticed: it stays open.
+	if migrator.HasColumn(&model.SecretRequest{}, "reason") {
+		query = query.Where("reason <> ?", retiredRefreshReason)
 	}
-	return db.Where("scope = ? AND scope_key NOT IN (?)",
-		model.SecretGrantScopeHarnessConfig, db.Model(&model.HarnessConfig{}).Select("id")).
-		Delete(&model.SecretGrant{}).Error
+	return query.Updates(map[string]any{"status": model.SecretRequestStatusDenied, "decided_at": time.Now().UTC(), "decided_by": model.SecretBindingActorSystem}).Error
 }
 
 // backfillSecretValueUpdatedAt gives every secret written before
@@ -502,7 +503,7 @@ func migrateSecretTypes(db *gorm.DB) error {
 	if err := db.Exec("UPDATE secrets SET type = 'token' WHERE type = 'bearer'").Error; err != nil {
 		return err
 	}
-	if db.Migrator().HasTable("secret_requests") {
+	if db.Migrator().HasTable("secret_requests") && db.Migrator().HasColumn("secret_requests", "type") {
 		if err := db.Exec("UPDATE secret_requests SET type = 'token' WHERE type = 'bearer'").Error; err != nil {
 			return err
 		}
@@ -513,7 +514,7 @@ func migrateSecretTypes(db *gorm.DB) error {
 	// Everything standing on an unusable secret goes with it, deepest first:
 	// a grant or a binding whose secret is gone is a row that can only produce
 	// a lookup failure.
-	for _, table := range []string{"sandbox_secrets", "harness_config_secret_bindings", "secret_grants"} {
+	for _, table := range []string{"sandbox_secrets", "secret_bindings", "secret_refresh_requests", "harness_config_secret_bindings", "secret_grants"} {
 		if !db.Migrator().HasTable(table) {
 			continue
 		}
@@ -537,7 +538,7 @@ func migrateSecretTypes(db *gorm.DB) error {
 // matches nothing once the data is clean, and it costs one indexless scan of
 // a small table at startup.
 func normalizeSecretHosts(db *gorm.DB) error {
-	if !db.Migrator().HasTable("secrets") {
+	if !db.Migrator().HasTable("secrets") || !db.Migrator().HasColumn("secrets", "host") {
 		return nil
 	}
 	return db.Exec("UPDATE secrets SET host = lower(host) WHERE host <> lower(host)").Error
@@ -558,7 +559,7 @@ func moveSecretHostsToLists(db *gorm.DB) error {
 		table string
 	}{
 		{&model.SecretRequest{}, "secret_requests"},
-		{&model.SecretGrant{}, "secret_grants"},
+		{"secret_grants", "secret_grants"},
 	} {
 		migrator := db.Migrator()
 		if !migrator.HasTable(retired.table) || !migrator.HasColumn(retired.model, "host") {
@@ -625,8 +626,8 @@ func liftConfiguredSecretGrantLimits(db *gorm.DB) error {
 		return nil
 	}
 	return db.Model(&model.Secret{}).
-		Where("id IN ? AND max_grant_ttl_seconds = ?", ids, defaultGrantTTLSecondsBeforeItWasACeiling).
-		Update("max_grant_ttl_seconds", 0).Error
+		Where("id IN ? AND max_binding_ttl_seconds = ?", ids, defaultGrantTTLSecondsBeforeItWasACeiling).
+		Update("max_binding_ttl_seconds", 0).Error
 }
 
 // defaultGrantTTLSecondsBeforeItWasACeiling is the hour every secret carried

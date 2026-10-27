@@ -26,8 +26,7 @@ func waitingRequest() CredentialRequest {
 		SandboxID:     "sbx_one",
 		Name:          "github",
 		EnvVar:        "GH_TOKEN",
-		Host:          "api.github.com",
-		Type:          "bearer",
+		Routes:        []SecretRoute{{Host: "api.github.com"}},
 		Justification: "the task asks me to open a PR",
 		Created:       time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC),
 	}
@@ -38,8 +37,8 @@ func sourceWithRequest(t *testing.T) (*Model, *fakeSource) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{waitingRequest()}
 	ds.projectSecrets = []Secret{
-		{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"},
-		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Host: "api.openai.com"},
+		{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}},
+		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []SecretRoute{{Host: "api.openai.com"}}},
 	}
 	return newTestModel(t, ds), ds
 }
@@ -161,23 +160,17 @@ func TestAnAskToDelegateSaysWhatItIs(t *testing.T) {
 	}
 }
 
-// The order is the whole of the opinion: the secret for the site being asked
-// about comes first, however the inference spelled its host.
+// The order is the whole of the opinion: the secret named what the request
+// asks for comes first, and every secret is offered.
 func TestTheLikeliestSecretIsOfferedFirst(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	// The shape the server produces: a ghp_ token is bound to the site, and the
-	// agent asks for one of its hosts.
 	req := waitingRequest()
-	req.Host = "api.github.com"
 	ds.requests = []CredentialRequest{req}
 	ds.projectSecrets = []Secret{
-		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Host: "api.openai.com"},
-		// Bound below what is being asked for: it answers for nothing here,
-		// so it sorts last and asks on the way through.
-		{ID: "sec_narrow", Name: "uploads only", Type: "bearer", Host: "uploads.github.com"},
-		{ID: "sec_loose", Name: "unbound token", Type: "bearer"},
-		{ID: "sec_gh", Name: "gh", Type: "bearer", Host: "github.com"},
+		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []SecretRoute{{Host: "api.openai.com"}}},
+		{ID: "sec_loose", Name: "anywhere token", Type: "bearer", Routes: []SecretRoute{{Host: "*"}}},
+		{ID: "sec_gh", Name: "github", Type: "bearer", Routes: []SecretRoute{{Host: "github.com"}}},
 	}
 	m := newTestModel(t, ds)
 
@@ -191,72 +184,8 @@ func TestTheLikeliestSecretIsOfferedFirst(t *testing.T) {
 			order = append(order, strings.TrimPrefix(item.key, "secret:"))
 		}
 	}
-	// The site's secret covers the host asked for, so it leads; then the
-	// unbound one; then the two that answer for something else.
-	want := []string{"sec_gh", "sec_loose"}
-	for i := range want {
-		if i >= len(order) || order[i] != want[i] {
-			t.Fatalf("order = %v, want the covering secret first, then unbound (%v)", order, want)
-		}
-	}
-	for _, id := range order[len(want):] {
-		if id != "sec_openai" && id != "sec_narrow" {
-			t.Fatalf("order = %v, want the secrets that answer for another host last", order)
-		}
-	}
-}
-
-// Choosing a secret bound to a neighboring host asks about the binding rather
-// than failing at the server, and the answer is what the server would suggest.
-func TestChoosingANeighbouringHostAsksAboutTheBinding(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	// A binding under the host being asked for: api.github.com does not answer
-	// for github.com, which is a different host serving different things.
-	req := waitingRequest()
-	req.Host = "github.com"
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "gh", Type: "bearer", Host: "api.github.com"}}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	if m.dialog == nil || m.dialog.kind != dlgConfirm {
-		t.Fatal("choosing a secret bound elsewhere did not ask about the binding")
-	}
-	for _, want := range []string{"api.github.com", "github.com", "gh"} {
-		if !strings.Contains(dialogText(m), want) {
-			t.Fatalf("question = %q, want it to name %q", dialogText(m), want)
-		}
-	}
-	if !m.dialog.defaultNo {
-		t.Fatal("the costly answer is the default; widening where a credential may be sent is not an Enter away")
-	}
-	if len(ds.approvals) != 0 {
-		t.Fatal("it approved before asking")
-	}
-
-	// The site covers both, so that is what it offers to bind to rather than
-	// releasing the binding altogether.
-	if !strings.Contains(dialogText(m), "bind gh to github.com instead") {
-		t.Fatalf("question = %q, want it to offer the binding that covers both", dialogText(m))
-	}
-	if !strings.Contains(dialogText(m), "no goes back to the request") {
-		t.Fatalf("question = %q, want it to say what No does", dialogText(m))
-	}
-
-	// Yes is agreed to, not yet done: the lifetime is still to be chosen, and
-	// going back from it must find the secret as it was.
-	drain(t, m, m.dialog.action("yes"), 0)
-	if len(ds.bound) != 0 {
-		t.Fatal("the binding moved before the approval was finished")
-	}
-	grantFor(t, m, time.Hour)
-	if len(ds.bound) != 1 || ds.bound[0] != "sec_gh=github.com" {
-		t.Fatalf("bound = %v, want the secret moved to the host that covers both", ds.bound)
-	}
-	if len(ds.approvals) != 1 || ds.approvals[0].SecretID != "sec_gh" {
-		t.Fatalf("approvals = %#v, want the request answered with it", ds.approvals)
+	if len(order) != 3 || order[0] != "sec_gh" {
+		t.Fatalf("order = %v, want the secret named github first and every secret offered", order)
 	}
 }
 
@@ -270,9 +199,6 @@ func TestAMatchingSecretIsApprovedWithoutAQuestion(t *testing.T) {
 	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
 	grantFor(t, m, time.Hour)
 
-	if len(ds.unbound) != 0 {
-		t.Fatal("a matching secret was unbound")
-	}
 	if len(ds.approvals) != 1 {
 		t.Fatalf("approvals = %#v, want one, asked nothing further", ds.approvals)
 	}
@@ -386,37 +312,6 @@ func TestEscOnTheLifetimeGoesBackToTheRequest(t *testing.T) {
 	}
 }
 
-// When the secret raised a question on the way to the lifetime, that question
-// is the dialog before it, and Esc goes back there — with nothing it agreed to
-// done yet.
-func TestEscOnTheLifetimeGoesBackToTheBindingQuestion(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	req := waitingRequest()
-	req.Host = "github.com"
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "gh", Type: "bearer", Host: "api.github.com"}}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	drain(t, m, m.dialog.action("yes"), 0)
-	send(t, m, keyPress("esc"))
-
-	if m.dialog == nil || m.dialog.kind != dlgConfirm || m.dialog.title != "Bound to another host" {
-		t.Fatalf("dialog = %s, want the binding question back", describe(m.dialog))
-	}
-	if len(ds.bound) != 0 || len(ds.approvals) != 0 {
-		t.Fatal("going back changed something")
-	}
-	// And agreeing a second time binds once, not twice.
-	drain(t, m, m.dialog.action("yes"), 0)
-	grantFor(t, m, time.Hour)
-	if len(ds.bound) != 1 || len(ds.updated) != 1 {
-		t.Fatalf("bound = %v, updates = %d, want the one change agreed to", ds.bound, len(ds.updated))
-	}
-}
-
 // Every lifetime offered is one the `discobox secret` flags parse: the window
 // and the CLI mint the same grant from the same words.
 func TestTheOfferedLifetimesAreTheOnesTheFlagsTake(t *testing.T) {
@@ -446,9 +341,9 @@ func TestTheLifetimeStepOpensOnWhatTheAgentAskedFor(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	req := waitingRequest()
-	req.GrantTTL = 4 * time.Hour
+	req.AskedTTL = 4 * time.Hour
 	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -482,9 +377,9 @@ func TestALifetimeAskedForThatIsAPresetIsOfferedOnce(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	req := waitingRequest()
-	req.GrantTTL = lifetime.Week
+	req.AskedTTL = lifetime.Week
 	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -505,9 +400,9 @@ func TestAnAskThatCannotBeARowOpensOnTheDefault(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	req := waitingRequest()
-	req.GrantTTL = 290 * time.Millisecond
+	req.AskedTTL = 290 * time.Millisecond
 	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -571,11 +466,11 @@ func TestALifetimeCanBeTypedIn(t *testing.T) {
 	}
 }
 
-// A credential that caps how long its grants may live is one the server would
-// refuse the grant on. The window says so before the choice — on the secret's
-// row, and on the lifetimes it does not allow — and asks, in the words the
-// server would use, when one of those is chosen anyway.
-func TestALifetimeLongerThanTheCredentialAllowsAsksFirst(t *testing.T) {
+// A credential that caps how long its bindings may last is one the server
+// would refuse a longer binding of. The window says so before the choice — on
+// the secret's row, and on the lifetimes it does not allow — and does not
+// offer those, nor take one typed in.
+func TestALifetimeLongerThanTheCredentialAllowsIsNotOffered(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.mu.Lock()
@@ -588,59 +483,17 @@ func TestALifetimeLongerThanTheCredentialAllowsAsksFirst(t *testing.T) {
 	}
 	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
 	for _, item := range m.dialog.items {
-		over := item.label != "1 hour" && item.key != lifetimeCustom
-		if over != strings.Contains(item.detail, "asks first") {
-			t.Fatalf("%s = %q, want only the lifetimes over the limit to say they ask", item.label, item.detail)
+		if item.key == lifetimeCustom {
+			continue
 		}
-	}
-	grantFor(t, m, lifetime.Day)
-
-	if m.dialog == nil || m.dialog.kind != dlgConfirm {
-		t.Fatalf("dialog = %s, want the question about the limit", describe(m.dialog))
-	}
-	if !m.dialog.defaultNo {
-		t.Fatal("raising how long every grant on a credential may live is not an Enter away")
-	}
-	if len(ds.approvals) != 0 {
-		t.Fatal("it approved before asking")
-	}
-	for _, want := range []string{"1 hour", "1 day", "GitHub token"} {
-		if !strings.Contains(dialogText(m), want) {
-			t.Fatalf("question = %q, want it to name %q", dialogText(m), want)
+		over := item.label != "1 hour"
+		if over == item.enabled || over != strings.Contains(item.detail, "longer than") {
+			t.Fatalf("%s: enabled %v, detail %q; want only the lifetimes within the limit offered", item.label, item.enabled, item.detail)
 		}
-	}
-
-	drain(t, m, m.dialog.action("yes"), 0)
-	if len(ds.limited) != 1 || ds.limited[0] != "sec_gh=86400" {
-		t.Fatalf("limited = %v, want the credential's limit raised to what was granted", ds.limited)
-	}
-	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 86400 {
-		t.Fatalf("approvals = %#v, want the day it asked about", ds.approvals)
-	}
-}
-
-// No goes back to the lifetime, where a shorter one can be chosen instead.
-func TestDecliningTheLimitReturnsToTheLifetime(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-	ds.mu.Lock()
-	ds.projectSecrets[0].MaxTTL = time.Hour
-	ds.mu.Unlock()
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	grantFor(t, m, lifetime.Day)
-	send(t, m, keyPress("esc"))
-
-	if !onLifetimeStep(m) {
-		t.Fatalf("dialog = %s, want the lifetime back", describe(m.dialog))
-	}
-	if len(ds.limited) != 0 || len(ds.approvals) != 0 {
-		t.Fatal("declining changed something")
 	}
 	grantFor(t, m, time.Hour)
-	if len(ds.limited) != 0 || len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 3600 {
-		t.Fatalf("limited = %v, approvals = %#v, want the hour granted and the limit left alone", ds.limited, ds.approvals)
+	if len(ds.approvals) != 1 || ds.approvals[0].TTLSeconds != 3600 {
+		t.Fatalf("approvals = %#v, want the hour", ds.approvals)
 	}
 }
 
@@ -721,7 +574,7 @@ func TestTheLeaderAnswersOnItsOwnKey(t *testing.T) {
 	}
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{waitingRequest()}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the banner", func() bool { return m.bannerTop() == 1 })
 
@@ -773,7 +626,7 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{waitingRequest()}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the banner", func() bool { return m.bannerTop() == 1 })
 
@@ -900,40 +753,6 @@ func TestAFailedApprovalIsShownAndSaysWhatToDo(t *testing.T) {
 	}
 }
 
-// A change agreed to on the way through goes with the approval, which the
-// server applies whole or not at all: an approval that fails leaves the
-// credential as it was, and claims nothing was done to it.
-func TestAFailedApprovalLeavesTheSecretAsItWas(t *testing.T) {
-	t.Parallel()
-	m, ds := sourceWithRequest(t)
-	ds.mu.Lock()
-	ds.projectSecrets[0].MaxTTL = time.Hour
-	ds.approveErr = errors.New("secret request status changed concurrently; refresh and try again")
-	ds.mu.Unlock()
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	grantFor(t, m, lifetime.Forever)
-	drain(t, m, m.dialog.action("yes"), 0)
-
-	if m.dialog == nil || !m.dialog.err {
-		t.Fatalf("dialog = %s, want the failure", describe(m.dialog))
-	}
-	if text := dialogText(m); !strings.Contains(text, "changed concurrently") || strings.Contains(text, "already done") {
-		t.Fatalf("failure = %q, want the server's reason and no change claimed", text)
-	}
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-	if len(ds.limited) != 0 || ds.projectSecrets[0].MaxTTL != time.Hour {
-		t.Fatalf("limited = %v, limit = %s; want the secret left as it was", ds.limited, ds.projectSecrets[0].MaxTTL)
-	}
-	for _, call := range ds.onServer {
-		if strings.HasPrefix(call, "UpdateSecret@") {
-			t.Fatalf("calls = %v, want the change carried by the approval, not a call ahead of it", ds.onServer)
-		}
-	}
-}
-
 // A failure that changed nothing says nothing about changes.
 func TestAFailedApprovalThatChangedNothingSaysNothingOfChanges(t *testing.T) {
 	t.Parallel()
@@ -951,45 +770,13 @@ func TestAFailedApprovalThatChangedNothingSaysNothingOfChanges(t *testing.T) {
 	}
 }
 
-// Saying no goes back to the question. A dialog that closes onto the list,
-// having done nothing and said nothing, is how a deliberate "not that one"
-// reads as the window ignoring the keypress — which is what a refused
-// approval looked like.
-func TestDecliningToRebindReturnsToTheQuestion(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	req := waitingRequest()
-	req.Host = "github.com"
-	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "gh", Type: "token", Host: "api.github.com"}}
-	m := newTestModel(t, ds)
-
-	send(t, m, keyPress("tab"), keyPress(credentialsKey))
-	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
-	if m.dialog == nil || m.dialog.kind != dlgConfirm {
-		t.Fatal("choosing a secret bound elsewhere did not ask")
-	}
-
-	// Esc is the same answer as no, and it is the one a hurried reader gives.
-	drain(t, m, m.dialog.onCancel(), 0)
-	if !onRequestCard(m) {
-		t.Fatalf("dialog = %s, want the picker back", describe(m.dialog))
-	}
-	if !strings.Contains(dialogText(m), "github.com") {
-		t.Fatalf("body = %q, want the request still in front of you", dialogText(m))
-	}
-	if len(ds.bound) != 0 || len(ds.approvals) != 0 {
-		t.Fatal("declining changed something")
-	}
-}
-
 // A request card longer than the window still fits it, with its answers on
 // screen: a card that runs off the bottom hides the secrets and Deny.
 func TestALongRequestCardKeepsItsAnswersOnScreen(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	req := waitingRequest()
-	req.GrantTTL = 72 * time.Hour
+	req.AskedTTL = 72 * time.Hour
 	req.Justification = strings.Repeat("the user asked me to have worker discoboxes keep four pull requests reviewed, green and rebased ", 40)
 	ds.mu.Lock()
 	ds.requests = []CredentialRequest{req}
@@ -1050,7 +837,7 @@ func TestARequestCardShowsTheRawRequest(t *testing.T) {
 	req.Raw = "{\n  \"id\": \"sreq_1\",\n  \"name\": \"github\"\n}"
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -1067,25 +854,5 @@ func TestARequestCardShowsTheRawRequest(t *testing.T) {
 	drain(t, m, m.dialog.onCancel(), 0)
 	if !onRequestCard(m) {
 		t.Fatalf("esc left %s, want the request card", describe(m.dialog))
-	}
-}
-
-// An agent's ask to delegate a credential names none of the variable an ask to
-// use it does, and is still an agent's: the person approving the power to hand
-// a credential on is told who asked and why, not that the proxy hit a sentinel.
-func TestAnAgentsAskToDelegateIsFromTheAgent(t *testing.T) {
-	for _, tc := range []struct {
-		request CredentialRequest
-		want    bool
-	}{
-		{CredentialRequest{Name: "github", EnvVar: "GH_TOKEN"}, true},
-		{CredentialRequest{Name: "github"}, true},
-		{CredentialRequest{}, false},
-		{CredentialRequest{Name: "github", Refresh: &RefreshAsk{}}, false},
-		{CredentialRequest{Name: "34.70.64.109:443", Trust: &TrustAsk{}}, false},
-	} {
-		if got := tc.request.FromAgent(); got != tc.want {
-			t.Fatalf("FromAgent(%+v) = %v, want %v", tc.request, got, tc.want)
-		}
 	}
 }

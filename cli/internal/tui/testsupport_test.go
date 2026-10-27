@@ -137,20 +137,21 @@ type fakeSource struct {
 	createdSecrets  []NewSecret
 	approveErr      error
 	createSecretErr error
-	unbound         []string
-	bound           []string
-	unbindErr       error
 	limited         []string
 	limitErr        error
 	updated         []SecretUpdate
 	revalued        []string
-	projectGrants   []Grant
-	grantsErr       error
-	revoked         []string
-	createdGrants   []NewGrant
-	createGrantErr  error
-	deleted         []string
-	deleteErr       error
+	// projectBindings are the project's bindings; handedOn is how many
+	// bindings a delete takes with it, by binding ID.
+	projectBindings  []SecretBinding
+	bindingsErr      error
+	unbindings       []string
+	handedOn         map[string]int
+	createdBindings  []NewBinding
+	createBindingErr error
+	dismissed        []string
+	deleted          []string
+	deleteErr        error
 
 	listErr   error
 	runErr    error
@@ -1887,7 +1888,7 @@ func (f *fakeSource) CreateSecret(_ context.Context, server string, secret NewSe
 		return Secret{}, f.createSecretErr
 	}
 	f.createdSecrets = append(f.createdSecrets, secret)
-	created := Secret{ID: "sec_new", Name: secret.Name, Type: secret.Type, Host: secret.Host}
+	created := Secret{ID: "sec_new", Name: secret.Name, Type: secret.Type, Routes: secret.Routes}
 	f.projectSecrets = append(f.projectSecrets, created)
 	return created, nil
 }
@@ -1899,11 +1900,6 @@ func (f *fakeSource) ApproveCredentialRequest(_ context.Context, server string, 
 	if f.approveErr != nil {
 		return f.approveErr
 	}
-	// The secret's change is applied with the approval, as the server does: a
-	// refused approval above changed nothing.
-	if approval.SecretHost != nil || approval.SecretMaxTTLSeconds != nil {
-		f.applySecretUpdateLocked(approval.SecretID, SecretUpdate{Host: approval.SecretHost, MaxTTLSeconds: approval.SecretMaxTTLSeconds})
-	}
 	f.approvals = append(f.approvals, approval)
 	f.dropRequestLocked(approval.RequestID)
 	return nil
@@ -1914,6 +1910,15 @@ func (f *fakeSource) DenyCredentialRequest(_ context.Context, server, requestID 
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "DenyCredentialRequest@"+server)
 	f.denials = append(f.denials, requestID)
+	f.dropRequestLocked(requestID)
+	return nil
+}
+
+func (f *fakeSource) DismissRefresh(_ context.Context, server, requestID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onServer = append(f.onServer, "DismissRefresh@"+server)
+	f.dismissed = append(f.dismissed, requestID)
 	f.dropRequestLocked(requestID)
 	return nil
 }
@@ -1970,9 +1975,6 @@ func (f *fakeSource) UpdateSecret(_ context.Context, server, secretID string, up
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.onServer = append(f.onServer, "UpdateSecret@"+server)
-	if update.Host != nil && f.unbindErr != nil {
-		return f.unbindErr
-	}
 	if update.MaxTTLSeconds != nil && f.limitErr != nil {
 		return f.limitErr
 	}
@@ -1984,12 +1986,6 @@ func (f *fakeSource) UpdateSecret(_ context.Context, server, secretID string, up
 // came as an edit or with an approval.
 func (f *fakeSource) applySecretUpdateLocked(secretID string, update SecretUpdate) {
 	f.updated = append(f.updated, update)
-	if update.Host != nil {
-		f.bound = append(f.bound, secretID+"="+*update.Host)
-		if *update.Host == "" {
-			f.unbound = append(f.unbound, secretID)
-		}
-	}
 	if update.MaxTTLSeconds != nil {
 		f.limited = append(f.limited, fmt.Sprintf("%s=%d", secretID, *update.MaxTTLSeconds))
 	}
@@ -2003,9 +1999,6 @@ func (f *fakeSource) applySecretUpdateLocked(secretID string, update SecretUpdat
 		if update.Name != nil {
 			f.projectSecrets[i].Name = *update.Name
 		}
-		if update.Host != nil {
-			f.projectSecrets[i].Host = *update.Host
-		}
 		if update.MaxTTLSeconds != nil {
 			f.projectSecrets[i].MaxTTL = time.Duration(*update.MaxTTLSeconds) * time.Second
 		}
@@ -2015,51 +2008,52 @@ func (f *fakeSource) applySecretUpdateLocked(secretID string, update SecretUpdat
 	}
 }
 
-func (f *fakeSource) Grants(_ context.Context, server string, filter GrantFilter) ([]Grant, error) {
+func (f *fakeSource) Bindings(_ context.Context, server string, filter BindingFilter) ([]SecretBinding, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.onServer = append(f.onServer, "Grants@"+server)
-	if f.grantsErr != nil {
-		return nil, f.grantsErr
+	f.onServer = append(f.onServer, "Bindings@"+server)
+	if f.bindingsErr != nil {
+		return nil, f.bindingsErr
 	}
-	var out []Grant
-	for _, g := range f.projectGrants {
-		if filter.SecretID == "" || g.SecretID == filter.SecretID {
-			out = append(out, g)
+	var out []SecretBinding
+	for _, b := range f.projectBindings {
+		if filter.SecretID == "" || b.SecretID == filter.SecretID {
+			out = append(out, b)
 		}
 	}
 	return out, nil
 }
 
-func (f *fakeSource) CreateGrant(_ context.Context, server string, grant NewGrant) (Grant, error) {
+func (f *fakeSource) CreateBinding(_ context.Context, server string, binding NewBinding) (SecretBinding, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.onServer = append(f.onServer, "CreateGrant@"+server)
-	if f.createGrantErr != nil {
-		return Grant{}, f.createGrantErr
+	f.onServer = append(f.onServer, "CreateBinding@"+server)
+	if f.createBindingErr != nil {
+		return SecretBinding{}, f.createBindingErr
 	}
-	f.createdGrants = append(f.createdGrants, grant)
-	made := Grant{
-		ID: "grant_new", SecretID: grant.SecretID, Scope: grant.Scope,
-		ScopeKey: grant.ScopeKey, Host: grant.Host,
+	f.createdBindings = append(f.createdBindings, binding)
+	made := SecretBinding{
+		ID: "binding_new", SecretID: binding.SecretID, TargetKind: binding.TargetKind,
+		TargetID: binding.TargetID, Use: binding.Use, Delegate: binding.Delegate,
+		EnvVar: binding.EnvVar, Routes: binding.Routes,
 	}
-	f.projectGrants = append(f.projectGrants, made)
+	f.projectBindings = append(f.projectBindings, made)
 	return made, nil
 }
 
-func (f *fakeSource) RevokeGrant(_ context.Context, server, grantID string) error {
+func (f *fakeSource) DeleteBinding(_ context.Context, server, bindingID string) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.onServer = append(f.onServer, "RevokeGrant@"+server)
-	f.revoked = append(f.revoked, grantID)
-	kept := f.projectGrants[:0]
-	for _, g := range f.projectGrants {
-		if g.ID != grantID {
-			kept = append(kept, g)
+	f.onServer = append(f.onServer, "DeleteBinding@"+server)
+	f.unbindings = append(f.unbindings, bindingID)
+	kept := f.projectBindings[:0]
+	for _, b := range f.projectBindings {
+		if b.ID != bindingID && b.ParentID != bindingID {
+			kept = append(kept, b)
 		}
 	}
-	f.projectGrants = kept
-	return nil
+	f.projectBindings = kept
+	return f.handedOn[bindingID], nil
 }
 
 func (f *fakeSource) Skills(_ context.Context, server string) (SkillsListing, error) {

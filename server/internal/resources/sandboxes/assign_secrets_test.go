@@ -14,8 +14,10 @@ import (
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/proxy/gateway"
+	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
@@ -24,7 +26,7 @@ import (
 type recordingProvider struct {
 	updates []sandbox.UpdateOptions
 	updated [][]string
-	routes  []map[string][]secretroute.Route
+	routes  []map[string][][]secretroute.Route
 	// updateErrs fail the next updates, one each, in order.
 	updateErrs []error
 	// egress records each egress policy pushed, and updateErr is what Update
@@ -158,11 +160,7 @@ func TestAssignSandboxHarnessSecretsMintsPushesAndReuses(t *testing.T) {
 	svc, rec := newAssignFixture(t)
 	config := codexConfig(t, svc.store) // declares OPENAI_API_KEY required
 	sec := bearerSecret(t, svc.store, "openai", "")
-	if err := svc.store.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
-		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: sec.ID,
-	}); err != nil {
-		t.Fatalf("bind: %v", err)
-	}
+	bindUse(t, svc.store, sec.ID, model.SecretBindingTargetHarnessConfig, config.ID, "OPENAI_API_KEY")
 
 	got, err := svc.AssignSandboxHarnessSecrets(ctx, "project-1", "sb-1", config.ID)
 	if err != nil {
@@ -206,4 +204,38 @@ func TestAssignSandboxHarnessSecretsBlocksUnboundRequired(t *testing.T) {
 
 func (p *recordingProvider) PullSource(context.Context, sandbox.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
 	panic("unexpected source pull")
+}
+
+// A harness config given to a sandbox for a second harness is attached, not
+// copied: removing its binding later reaches the sandbox as it reaches every
+// sandbox running the config, and a discobox does not attach one.
+func TestAnAttachedHarnessConfigsBindingsStayItsOwn(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newAssignFixture(t)
+	st := svc.store
+	config := codexConfig(t, st)
+	sec := bearerSecret(t, st, "openai", "")
+	binding := bindUse(t, st, sec.ID, model.SecretBindingTargetHarnessConfig, config.ID, "OPENAI_API_KEY")
+
+	asBox := auth.WithPrincipal(ctx, auth.Principal{Type: auth.PrincipalTypeSandbox, SandboxID: "sb-1", ProjectID: "project-1"})
+	if _, err := svc.AssignSandboxHarnessSecrets(asBox, "project-1", "sb-1", config.ID); err == nil {
+		t.Fatal("a discobox attached a harness config")
+	}
+	if _, err := svc.AssignSandboxHarnessSecrets(ctx, "project-1", "sb-1", config.ID); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+	own, err := st.ListSecretBindings(ctx, "project-1", store.SecretBindingFilter{TargetKind: model.SecretBindingTargetSandbox, TargetID: "sb-1"})
+	if err != nil || len(own) != 0 {
+		t.Fatalf("sandbox bindings = %+v, %v; want none copied", own, err)
+	}
+	covered, err := st.ListSandboxIDsCoveredBy(ctx, "project-1", model.SecretBindingTargetHarnessConfig, config.ID)
+	if err != nil || len(covered) != 1 || covered[0] != "sb-1" {
+		t.Fatalf("covered = %v, %v; want the attached sandbox", covered, err)
+	}
+	if _, err := st.DeleteSecretBinding(ctx, "project-1", binding.ID, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if rows := materialized(t, st, "sb-1"); len(rows) != 0 {
+		t.Fatalf("rows = %+v, want the harness config's removal to reach the sandbox", rows)
+	}
 }

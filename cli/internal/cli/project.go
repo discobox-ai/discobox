@@ -80,7 +80,7 @@ built-in harnesses, unconfigured.
 
 --from seeds the rest of it from an existing project: its provider instances
 are duplicated, its pools are recreated against those copies as new hosts, and
-its configured harnesses come across with the files, secrets, and grants their
+its configured harnesses come across with the files, secrets, and bindings their
 configure flow produced. Pools imply providers, since a pool binds to a
 provider instance in its own project.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()

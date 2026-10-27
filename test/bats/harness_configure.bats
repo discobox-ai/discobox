@@ -284,7 +284,7 @@ configure_stub() {
   return "$status"
 }
 
-@test "configure applies the stub's secret, binding, grant, and file" {
+@test "configure applies the stub's secret, binding, and file" {
   local pool_id harness_json harness_id
   pool_id="$(ensure_pool)"
   [ -n "$pool_id" ]
@@ -306,13 +306,13 @@ configure_stub() {
   [ "$status" -eq 0 ]
   [ "$(printf '%s' "$output" | json_get configured)" = "True" ]
 
-  # The secret, its binding, and the harnessConfig-scoped grant that makes it
-  # usable at run time. A binding alone is not a grant.
+  # The secret, and the one harness-config binding that makes it usable at run
+  # time: existing, it is the whole of the permission (ADR 26-10-27-880 §1).
   run query "SELECT COUNT(*) FROM secrets WHERE name = 'stub-token'"
   [ "$output" = "1" ]
-  run query "SELECT env_name FROM harness_config_secret_bindings WHERE harness_config_id = '$harness_id'"
+  run query "SELECT b.env_name FROM secrets s JOIN secret_bindings b ON b.secret_id = s.id WHERE b.target_kind = 'harnessConfig' AND b.target_id = '$harness_id' AND b.\"use\" = 1"
   [ "$output" = "STUB_TOKEN" ]
-  run query "SELECT COUNT(*) FROM secret_grants g JOIN secrets s ON s.id = g.secret_id WHERE s.name = 'stub-token'"
+  run query "SELECT COUNT(*) FROM secret_bindings b JOIN secrets s ON s.id = b.secret_id WHERE s.name = 'stub-token'"
   [ "$output" = "1" ]
 }
 
@@ -346,7 +346,7 @@ configure_stub() {
 }
 
 @test "a configure that returns usePrevious keeps the existing secret" {
-  local pool_id harness_id before_id after_id before_grant after_grant
+  local pool_id harness_id before_id after_id before_binding after_binding
   pool_id="$(ensure_pool)"
 
   run cli admin harness create --bundle discobox-harness-stub-keep:local \
@@ -359,10 +359,10 @@ configure_stub() {
   run configure_stub stub-keep
   [ "$status" -eq 0 ]
   [[ "$output" == *"stub configure: PREV_STUB_TOKEN is unset"* ]]
-  before_id="$(query "SELECT s.id FROM secrets s JOIN harness_config_secret_bindings b ON b.secret_id = s.id WHERE b.harness_config_id = '$harness_id'")"
+  before_id="$(query "SELECT s.id FROM secrets s JOIN secret_bindings b ON b.secret_id = s.id WHERE b.target_kind = 'harnessConfig' AND b.target_id = '$harness_id'")"
   [ -n "$before_id" ]
-  before_grant="$(query "SELECT id FROM secret_grants WHERE secret_id = '$before_id'")"
-  [ -n "$before_grant" ]
+  before_binding="$(query "SELECT b.id FROM secrets s JOIN secret_bindings b ON b.secret_id = s.id WHERE b.target_kind = 'harnessConfig' AND b.target_id = '$harness_id'")"
+  [ -n "$before_binding" ]
 
   # Second run returns usePrevious and no value at all.
   run configure_stub stub-keep
@@ -377,12 +377,12 @@ configure_stub() {
   [ "$status" -eq 0 ]
   [ "$(printf '%s' "$output" | json_get configured)" = "True" ]
 
-  # The same secret row survives, with its binding and grant intact — a kept
-  # secret is carried over, not recreated, and not swept as a stale generation.
-  after_id="$(query "SELECT s.id FROM secrets s JOIN harness_config_secret_bindings b ON b.secret_id = s.id WHERE b.harness_config_id = '$harness_id'")"
+  # The same secret row survives, with its binding intact — a kept secret is
+  # carried over, not recreated, and not swept as a stale generation.
+  after_id="$(query "SELECT s.id FROM secrets s JOIN secret_bindings b ON b.secret_id = s.id WHERE b.target_kind = 'harnessConfig' AND b.target_id = '$harness_id'")"
   [ "$after_id" = "$before_id" ]
-  after_grant="$(query "SELECT id FROM secret_grants WHERE secret_id = '$before_id'")"
-  [ "$after_grant" = "$before_grant" ]
+  after_binding="$(query "SELECT b.id FROM secrets s JOIN secret_bindings b ON b.secret_id = s.id WHERE b.target_kind = 'harnessConfig' AND b.target_id = '$harness_id'")"
+  [ "$after_binding" = "$before_binding" ]
   run query "SELECT COUNT(*) FROM secrets WHERE id = '$before_id'"
   [ "$output" = "1" ]
 }
@@ -396,10 +396,10 @@ configure_stub() {
   [ "$status" -eq 0 ]
   [ "$(printf '%s' "$output" | json_get configured)" = "False" ]
 
-  run query "SELECT COUNT(*) FROM harness_config_secret_bindings WHERE harness_config_id = '$harness_id'"
+  run query "SELECT COUNT(*) FROM secret_bindings WHERE target_kind = 'harnessConfig' AND target_id = '$harness_id'"
   [ "$output" = "0" ]
   # The stub-keep harness still holds its own, so this counts only the one the
   # deconfigured harness created.
-  run query "SELECT COUNT(*) FROM secrets s JOIN harness_config_secret_bindings b ON b.secret_id = s.id WHERE b.harness_config_id = '$harness_id'"
+  run query "SELECT COUNT(*) FROM secrets s JOIN secret_bindings b ON b.secret_id = s.id WHERE b.target_kind = 'harnessConfig' AND b.target_id = '$harness_id'"
   [ "$output" = "0" ]
 }

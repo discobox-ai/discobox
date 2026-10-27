@@ -5188,9 +5188,10 @@ type PoolSandboxCreateRequest struct {
 	// Sentinel placeholder values injected into this sandbox. The pool registers them with the proxy so
 	// their real secret values are swapped at runtime.
 	Sentinels OptNilStringArray `json:"sentinels"`
-	// Routes keyed by stable sentinel, for an injected secret that carries routes (ADR 26-10-02-924).
-	// Every request carrying such a sentinel must fall on one, and the most specific routes it falls on
-	// must not be blocked.
+	// The route lists each stable sentinel is held to, keyed by sentinel (ADR 26-10-27-880 §4) — its
+	// secret's, its binding's when the binding has any, and its parent's. Every request carrying the
+	// sentinel must be allowed by every list; a sentinel with no lists, or an empty list, is sent
+	// nowhere.
 	SentinelRoutes OptNilPoolSandboxCreateRequestSentinelRoutes `json:"sentinelRoutes"`
 	// Secret-bound environment variable name to sentinel placeholder value. Delivered to the sandbox
 	// through a channel separate from sandbox.json (docs/adr/0012 section 3), independently refreshed as
@@ -5352,15 +5353,16 @@ func (s *PoolSandboxCreateRequestSecretEnv) init() PoolSandboxCreateRequestSecre
 	return m
 }
 
-// Routes keyed by stable sentinel, for an injected secret that carries routes (ADR 26-10-02-924).
-// Every request carrying such a sentinel must fall on one, and the most specific routes it falls on
-// must not be blocked.
-type PoolSandboxCreateRequestSentinelRoutes map[string][]SentinelRoute
+// The route lists each stable sentinel is held to, keyed by sentinel (ADR 26-10-27-880 §4) — its
+// secret's, its binding's when the binding has any, and its parent's. Every request carrying the
+// sentinel must be allowed by every list; a sentinel with no lists, or an empty list, is sent
+// nowhere.
+type PoolSandboxCreateRequestSentinelRoutes map[string][][]SentinelRoute
 
 func (s *PoolSandboxCreateRequestSentinelRoutes) init() PoolSandboxCreateRequestSentinelRoutes {
 	m := *s
 	if m == nil {
-		m = map[string][]SentinelRoute{}
+		m = map[string][][]SentinelRoute{}
 		*s = m
 	}
 	return m
@@ -5862,8 +5864,8 @@ type PoolSandboxUpdateRequest struct {
 	// Replacement sentinel placeholder set for a running sandbox. The pool re-registers them with the
 	// proxy so newly bound secrets resolve without a restart.
 	Sentinels OptNilStringArray `json:"sentinels"`
-	// Replacement routes keyed by stable sentinel, sent with sentinels and replacing the sandbox's whole
-	// map (ADR 26-10-02-924).
+	// Replacement route lists keyed by stable sentinel, sent with sentinels and replacing the sandbox's
+	// whole map (ADR 26-10-27-880 §4).
 	SentinelRoutes OptNilPoolSandboxUpdateRequestSentinelRoutes `json:"sentinelRoutes"`
 	// Replacement secret-bound environment variable name to sentinel placeholder map for a running
 	// sandbox.
@@ -5963,14 +5965,14 @@ func (s *PoolSandboxUpdateRequestSecretEnv) init() PoolSandboxUpdateRequestSecre
 	return m
 }
 
-// Replacement routes keyed by stable sentinel, sent with sentinels and replacing the sandbox's whole
-// map (ADR 26-10-02-924).
-type PoolSandboxUpdateRequestSentinelRoutes map[string][]SentinelRoute
+// Replacement route lists keyed by stable sentinel, sent with sentinels and replacing the sandbox's
+// whole map (ADR 26-10-27-880 §4).
+type PoolSandboxUpdateRequestSentinelRoutes map[string][][]SentinelRoute
 
 func (s *PoolSandboxUpdateRequestSentinelRoutes) init() PoolSandboxUpdateRequestSentinelRoutes {
 	m := *s
 	if m == nil {
-		m = map[string][]SentinelRoute{}
+		m = map[string][][]SentinelRoute{}
 		*s = m
 	}
 	return m
@@ -6810,8 +6812,8 @@ func (s *SandboxUser) SetUID(val OptInt64) {
 	s.UID = val
 }
 
-// Where a secret may be sent (ADR 26-10-02-924). A host covers itself and every host beneath it; a
-// path is a prefix matched on whole segments.
+// Where a secret may be sent (ADR 26-10-02-924). A host covers itself and every host beneath it, and
+// `*` covers every host (ADR 26-10-27-939); a path is a prefix matched on whole segments.
 // Ref: #/components/schemas/SentinelRoute
 type SentinelRoute struct {
 	// Refuse every request on this route; a more specific route still answers for the paths beneath it.

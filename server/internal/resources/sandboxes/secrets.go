@@ -9,181 +9,140 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/secretformat"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/x/id"
 	"gorm.io/gorm"
 )
 
-// prepareSandboxSecrets resolves each secret input to a project secret (creating
-// an anonymous secret for inline values), mints a sentinel placeholder from the
-// secret's format, and returns the assignment rows to persist after the sandbox
-// is created. The sentinel travels to the sandbox through the secrets channel
-// (SandboxSecret rows -> CreateOptions.SecretEnv), never through sandbox.Env.
-func (s *Service) prepareSandboxSecrets(ctx context.Context, projectID string, sandbox *model.Sandbox, inputs []services.SandboxSecretInput) ([]*model.SandboxSecret, error) {
+// A sandbox's sentinels are its effective use bindings, materialized (ADR
+// 26-10-27-880 §2): one SandboxSecret row per variable, naming the binding
+// that delivers it. materializeSandboxSecrets makes the rows match the
+// bindings; everything that changes a binding marks SentinelsResourceType for
+// the sandboxes it covers, whose reconciler materializes and pushes.
+
+// inlineSandboxBindings makes, for each inline secret a create carries, an
+// anonymous secret holding its value and a use binding of it on the new
+// sandbox in the variable named. The secret's route is the host given, else
+// `*` (ADR 26-10-27-939 §2). Neither is stored here: both are written with the
+// sandbox, so a create that fails leaves no value behind.
+func inlineSandboxBindings(ctx context.Context, projectID string, sandbox *model.Sandbox, inputs []services.SandboxSecretInput) ([]*model.Secret, []*model.SecretBinding, error) {
 	if len(inputs) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	seen := map[string]struct{}{}
-	assignments := make([]*model.SandboxSecret, 0, len(inputs))
+	principal, _ := auth.PrincipalFromContext(ctx)
+	secrets := make([]*model.Secret, 0, len(inputs))
+	bindings := make([]*model.SecretBinding, 0, len(inputs))
 	for _, input := range inputs {
 		env := strings.TrimSpace(input.Env)
-		if env == "" || strings.ContainsAny(env, "=\x00") {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, "sandbox secret requires a valid environment variable name")
+		if !services.EnvVarNamePattern.MatchString(env) {
+			return nil, nil, apperrors.NewStatusError(http.StatusBadRequest, "sandbox secret requires a valid environment variable name")
 		}
 		if _, dup := seen[env]; dup {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("duplicate sandbox secret for environment variable %q", env))
+			return nil, nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("duplicate sandbox secret for environment variable %q", env))
 		}
 		seen[env] = struct{}{}
-
-		secretID, format, err := s.resolveSecretForInput(ctx, projectID, input)
-		if err != nil {
-			return nil, err
+		if strings.TrimSpace(input.Value) == "" {
+			return nil, nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("sandbox secret %s has no value", env))
 		}
-		sentinel, err := secretformat.MintSentinel(format)
+		secret, err := anonymousSecret(projectID, input.Value, strings.TrimSpace(input.Host.Or("")))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		assignments = append(assignments, &model.SandboxSecret{
-			ProjectID: projectID,
-			SandboxID: sandbox.ID,
-			SecretID:  secretID,
-			EnvName:   env,
-			Sentinel:  sentinel,
-			Format:    format,
+		secrets = append(secrets, secret)
+		bindings = append(bindings, &model.SecretBinding{
+			ProjectID:  projectID,
+			SecretID:   secret.ID,
+			TargetKind: model.SecretBindingTargetSandbox,
+			TargetID:   sandbox.ID,
+			Use:        true,
+			EnvName:    env,
+			CreatedBy:  principal.Actor(),
 		})
 	}
-	return assignments, nil
+	return secrets, bindings, nil
 }
 
-// applyHarnessConfigSecrets materializes a harness config's secret bindings into
-// sentinel assignments and enforces that every declared required secret is
-// satisfied. inlineEnvs are env vars already bound per-sandbox by the create
-// request; an inline secret wins over a binding for the same env. It returns
-// the assignment rows to persist; sentinels reach the sandbox through the
-// secrets channel, never sandbox.Env.
-func prepareHarnessConfigSecrets(ctx context.Context, st *store.Store, projectID string, sandbox *model.Sandbox, harnessConfigID string, inlineEnvs map[string]struct{}) ([]*model.SandboxSecret, error) {
-	config, err := st.GetHarnessConfig(ctx, projectID, harnessConfigID)
-	if err != nil {
-		return nil, apperrors.NotFound(err, "harness config not found")
-	}
-	bindings, err := st.ListHarnessConfigSecretBindings(ctx, projectID, harnessConfigID)
+// anonymousSecret is an inline value as a secret of its own, sent to host, or
+// anywhere when none is given.
+func anonymousSecret(projectID, value, host string) (*model.Secret, error) {
+	secretID, err := id.New(id.PrefixSecret)
 	if err != nil {
 		return nil, err
 	}
-	boundByEnv := make(map[string]struct{}, len(bindings))
-	for _, b := range bindings {
-		boundByEnv[b.EnvName] = struct{}{}
+	//nolint:gosec // Secret values are intentionally marshaled before store encryption.
+	valueBytes, err := json.Marshal(model.SecretValue{Token: value})
+	if err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "invalid secret value")
 	}
+	route := model.SecretRoute{Host: secretroute.AnyHost}
+	if host != "" {
+		route.Host = host
+	}
+	routes, err := model.NormalizeRoutes([]model.SecretRoute{route})
+	if err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	secret := &model.Secret{
+		ID:        secretID,
+		ProjectID: projectID,
+		Name:      "sandbox-secret-" + secretID,
+		Type:      model.SecretTypeToken,
+		Routes:    routes,
+		Anonymous: true,
+		// The value lives as long as the sandbox it was given to, and goes
+		// with it: there is no limit to hold its binding to.
+		MaxBindingTTL:  0,
+		EncryptedValue: valueBytes,
+	}
+	return secret, nil
+}
 
-	// A required declared secret must be satisfied by an inline secret, an
-	// harness-config binding, or a literal sandbox env var. OneOfGroup members are
-	// satisfied collectively (at least one present).
+// checkRequiredSecrets refuses a sandbox whose harness config declares a
+// required secret nothing delivers: no use binding on the harness config or
+// the project, none the create gives the sandbox itself (ownEnvs), and no
+// literal environment variable. OneOfGroup members are satisfied
+// collectively. harnessMode "config" is exempt: the configure flow is how a
+// harness's secrets come to exist.
+func checkRequiredSecrets(ctx context.Context, st *store.Store, sandbox *model.Sandbox, harnessConfigID string, ownEnvs map[string]struct{}) error {
+	if harnessConfigID == "" || sandbox.HarnessMode == sandboxconfig.HarnessModeConfig {
+		return nil
+	}
+	config, err := st.GetHarnessConfig(ctx, sandbox.ProjectID, harnessConfigID)
+	if err != nil {
+		return apperrors.NotFound(err, "harness config not found")
+	}
+	effective, err := st.ResolveBindings(ctx, sandbox.ProjectID,
+		store.BindingTargetsAt(sandbox.ProjectID, model.SecretBindingTargetHarnessConfig, harnessConfigID), time.Now().UTC())
+	if err != nil {
+		return err
+	}
 	missing := missingRequiredSecrets(config.Secrets, func(name string) bool {
-		if _, ok := inlineEnvs[name]; ok {
+		if _, ok := ownEnvs[name]; ok {
 			return true
 		}
-		if _, ok := boundByEnv[name]; ok {
+		if _, ok := effective.UseFor(name); ok {
 			return true
 		}
 		_, ok := sandbox.Env[name]
 		return ok
 	})
 	if len(missing) > 0 {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+		return apperrors.NewStatusError(http.StatusBadRequest,
 			fmt.Sprintf("harness config %q requires secrets with no bound value: %s", config.Slug, strings.Join(missing, ", ")))
 	}
-
-	assignments := make([]*model.SandboxSecret, 0, len(bindings))
-	for _, b := range bindings {
-		if _, ok := inlineEnvs[b.EnvName]; ok {
-			continue // an explicit per-sandbox secret wins over the binding
-		}
-		secret, err := st.GetSecret(ctx, projectID, b.SecretID)
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				continue // secret deleted out from under the binding; skip
-			}
-			return nil, err
-		}
-		format := st.SentinelFormat(ctx, secret)
-		sentinel, err := secretformat.MintSentinel(format)
-		if err != nil {
-			return nil, err
-		}
-		assignments = append(assignments, &model.SandboxSecret{SourceHarnessConfigID: harnessConfigID,
-			ProjectID: projectID,
-			SandboxID: sandbox.ID,
-			SecretID:  secret.ID,
-			EnvName:   b.EnvName,
-			Sentinel:  sentinel,
-			Format:    format,
-		})
-	}
-	return assignments, nil
-}
-
-// applyPreviousConfigureSecrets injects the secrets a previous configure run
-// created into a harnessMode=config sandbox, under
-// harness.ConfigurePreviousEnvPrefix + the bound env name. The configure command
-// uses them to verify and keep an existing credential instead of re-prompting.
-//
-// Only the flow's own secrets are offered: a secret the user bound by hand is
-// theirs, not the configure flow's to replay. The values are sentinels like any
-// other sandbox secret, so the credential itself stays in the control plane and
-// resolves only while a live grant covers it — a revoked credential simply fails
-// the configure command's verification. Required-secret enforcement stays off in
-// config mode: this flow is how those secrets come to exist.
-func (s *Service) applyPreviousConfigureSecrets(ctx context.Context, projectID string, sandbox *model.Sandbox, harnessConfigID string) ([]*model.SandboxSecret, error) {
-	config, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
-	if err != nil {
-		return nil, apperrors.NotFound(err, "harness config not found")
-	}
-	if len(config.ConfiguredSecretIDs) == 0 {
-		return nil, nil
-	}
-	configured := make(map[string]struct{}, len(config.ConfiguredSecretIDs))
-	for _, secretID := range config.ConfiguredSecretIDs {
-		configured[strings.TrimSpace(secretID)] = struct{}{}
-	}
-	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, harnessConfigID)
-	if err != nil {
-		return nil, err
-	}
-	assignments := make([]*model.SandboxSecret, 0, len(bindings))
-	for _, b := range bindings {
-		if _, ok := configured[b.SecretID]; !ok {
-			continue
-		}
-		secret, err := s.store.GetSecret(ctx, projectID, b.SecretID)
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				continue // secret deleted out from under the binding; skip
-			}
-			return nil, err
-		}
-		format := s.store.SentinelFormat(ctx, secret)
-		sentinel, err := secretformat.MintSentinel(format)
-		if err != nil {
-			return nil, err
-		}
-		env := harness.ConfigurePreviousEnvPrefix + b.EnvName
-		assignments = append(assignments, &model.SandboxSecret{
-			ProjectID: projectID,
-			SandboxID: sandbox.ID,
-			SecretID:  secret.ID,
-			EnvName:   env,
-			Sentinel:  sentinel,
-			Format:    format,
-		})
-	}
-	return assignments, nil
+	return nil
 }
 
 // missingRequiredSecrets reports the unsatisfied required secret requirements of
@@ -223,69 +182,147 @@ func missingRequiredSecrets(decls []model.HarnessConfigSecret, satisfied func(na
 	return missing
 }
 
-// resolveSecretForInput returns the secret ID and format template for one input,
-// creating an anonymous secret when an inline value is supplied.
-func (s *Service) resolveSecretForInput(ctx context.Context, projectID string, input services.SandboxSecretInput) (secretID string, format string, err error) {
-	refID := strings.TrimSpace(input.SecretId.Or(""))
-	value := input.Value.Or("")
-	switch {
-	case refID != "" && strings.TrimSpace(value) != "":
-		return "", "", apperrors.NewStatusError(http.StatusBadRequest, "sandbox secret must set exactly one of secretId or value")
-	case refID != "":
-		secret, err := s.store.GetSecret(ctx, projectID, refID)
-		if err != nil {
-			return "", "", apperrors.NotFound(err, "secret not found")
-		}
-		return secret.ID, s.store.SentinelFormat(ctx, secret), nil
-	case strings.TrimSpace(value) != "":
-		secret, err := s.createAnonymousSecret(ctx, projectID, value, strings.TrimSpace(input.Host.Or("")))
-		if err != nil {
-			return "", "", err
-		}
-		return secret.ID, secret.Format, nil
-	default:
-		return "", "", apperrors.NewStatusError(http.StatusBadRequest, "sandbox secret must set secretId or value")
-	}
-}
-
-func (s *Service) createAnonymousSecret(ctx context.Context, projectID, value, host string) (*model.Secret, error) {
-	secretID, err := id.New(id.PrefixSecret)
-	if err != nil {
-		return nil, err
-	}
-	//nolint:gosec // Secret values are intentionally marshaled before store encryption.
-	valueBytes, err := json.Marshal(model.SecretValue{Token: value})
-	if err != nil {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "invalid secret value")
-	}
-	secret := &model.Secret{
-		ID:             secretID,
-		ProjectID:      projectID,
-		Name:           "sandbox-secret-" + secretID,
-		Type:           model.SecretTypeToken,
-		Host:           host,
-		UniqueKey:      secretID, // keeps anonymous rows out of the (project,type,host) uniqueness domain
-		Anonymous:      true,
-		MaxGrantTTL:    defaultAnonymousGrantTTLSeconds,
-		EncryptedValue: valueBytes,
-	}
-	if err := s.store.CreateSecret(ctx, secret); err != nil {
-		return nil, err
-	}
-	return secret, nil
-}
-
-const defaultAnonymousGrantTTLSeconds = 3600
-
-// AssignSandboxHarnessSecrets ensures the given harness config's secret bindings are
-// materialized for a running sandbox and returns the resulting env->sentinel map
-// for the caller to inject into a per-invocation exec/terminal environment.
+// materializeSandboxSecrets makes a sandbox's sentinel rows its effective use
+// bindings, reporting whether any row changed.
 //
-// Assignment is flat per env: if an env var is already assigned (by the primary
-// harness or an earlier assignment), that sentinel is reused (first-assigner wins)
-// even if this harness binds the env to a different secret. Newly minted sentinels
-// are pushed to the running sandbox's proxy immediately so they resolve without a
-// restart. Required declared secrets with no binding are rejected.
+// A sandbox in harness mode "config" is given, of its harness config's
+// bindings, only those of the secrets the configure flow made, under
+// harness.ConfigurePreviousEnvPrefix: the configure command uses them to
+// verify and keep an existing credential instead of re-prompting.
+//
+// The sentinel is kept wherever it can be: it is a per-sandbox opaque string
+// whose only meaning is the row it maps through, so repointing that row hands
+// the sandbox the new credential with nothing to re-deliver and no restart. It
+// is only re-minted when the new secret's format differs, because the sentinel
+// byte-mimics the credential it stands in for — and the string in a harness's
+// credential file is dead the moment it is replaced. That is why a row
+// records the format it was minted from.
+func materializeSandboxSecrets(ctx context.Context, st *store.Store, sb *model.Sandbox) (bool, error) {
+	effective, err := st.ResolveSandboxBindings(ctx, sb, time.Now().UTC())
+	if err != nil {
+		return false, err
+	}
+	configMode := sb.HarnessMode == sandboxconfig.HarnessModeConfig
+	configured := map[string]bool{}
+	if configMode && sb.HarnessConfigID != nil && *sb.HarnessConfigID != "" {
+		config, err := st.GetHarnessConfig(ctx, sb.ProjectID, *sb.HarnessConfigID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return false, err
+		}
+		if config != nil {
+			for _, secretID := range config.ConfiguredSecretIDs {
+				configured[strings.TrimSpace(secretID)] = true
+			}
+		}
+	}
+	desired := map[string]model.SecretBinding{}
+	for _, applied := range effective.Use {
+		env := applied.Binding.EnvName
+		if configMode && applied.Binding.TargetKind == model.SecretBindingTargetHarnessConfig {
+			if !configured[applied.Binding.SecretID] {
+				continue
+			}
+			env = harness.ConfigurePreviousEnvPrefix + env
+		}
+		desired[env] = applied.Binding
+	}
+	rows, err := st.ListSandboxSecrets(ctx, sb.ProjectID, sb.ID)
+	if err != nil {
+		return false, err
+	}
+	changed := false
+	for i := range rows {
+		row := &rows[i]
+		binding, wanted := desired[row.EnvName]
+		if !wanted {
+			if err := st.DeleteSandboxSecret(ctx, row.ID); err != nil {
+				return false, err
+			}
+			changed = true
+			continue
+		}
+		delete(desired, row.EnvName)
+		if row.SecretID == binding.SecretID && row.BindingID == binding.ID {
+			continue
+		}
+		if row.SecretID != binding.SecretID {
+			secret, err := st.GetSecret(ctx, sb.ProjectID, binding.SecretID)
+			if errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return false, err
+			}
+			format := st.SentinelFormat(ctx, secret)
+			// A row minted before formats were recorded keeps its sentinel:
+			// what it was minted from is unknown, and guessing wrong costs a
+			// live harness session.
+			if row.Format != "" && row.Format != format {
+				if row.Sentinel, err = secretformat.MintSentinel(format); err != nil {
+					return false, err
+				}
+			}
+			row.SecretID, row.Format = secret.ID, format
+		}
+		row.BindingID = binding.ID
+		if err := st.UpdateSandboxSecret(ctx, row); err != nil {
+			return false, err
+		}
+		changed = true
+	}
+	envs := make([]string, 0, len(desired))
+	for env := range desired {
+		envs = append(envs, env)
+	}
+	sort.Strings(envs)
+	for _, env := range envs {
+		binding := desired[env]
+		secret, err := st.GetSecret(ctx, sb.ProjectID, binding.SecretID)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		row, err := st.NewSandboxBinding(ctx, sb.ProjectID, sb.ID, env, secret)
+		if err != nil {
+			return false, err
+		}
+		row.BindingID = binding.ID
+		if err := st.CreateSandboxSecret(ctx, row); err != nil {
+			return false, err
+		}
+		changed = true
+	}
+	return changed, nil
+}
+
+// MaterializeSandboxSecretsTx makes one sandbox's sentinels its bindings, in
+// the caller's transaction (materializeSandboxSecrets).
+func (s *Service) MaterializeSandboxSecretsTx(ctx context.Context, txStore *store.Store, projectID, sandboxID string) error {
+	sb, err := txStore.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return err
+	}
+	_, err = materializeSandboxSecrets(ctx, txStore, sb)
+	return err
+}
+
+// AssignSandboxHarnessSecrets gives a running sandbox the credentials a
+// harness config binds, for a harness run in it beside its own, and returns
+// the env->sentinel map for the caller to inject into that invocation's
+// environment.
+//
+// Nothing is copied: the harness config is attached to the sandbox
+// (store.AttachSandboxHarnessConfig), and its bindings apply there after the
+// sandbox's own harness config's and before the project's (ADR 26-10-27-880
+// §2). A variable the sandbox already holds keeps its credential; removing or
+// narrowing the harness config's binding later reaches the sandbox as it
+// reaches every sandbox running the config. Attaching is a person's: a
+// discobox may only use a harness config already attached. The sandbox is
+// materialized and its sentinels pushed in place, so they resolve without a
+// restart. Required declared secrets nothing delivers are refused, before
+// anything is attached.
 func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sandboxID, harnessConfigID string) (map[string]string, error) {
 	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
@@ -295,65 +332,70 @@ func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sa
 	if err != nil {
 		return nil, apperrors.NotFound(err, "harness config not found")
 	}
-	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, harnessConfigID)
+	now := time.Now().UTC()
+	harnessBindings, err := s.store.ResolveBindings(ctx, projectID,
+		store.BindingTargetsAt(projectID, model.SecretBindingTargetHarnessConfig, config.ID), now)
 	if err != nil {
 		return nil, err
 	}
-	existing, err := s.store.ListSandboxSecrets(ctx, projectID, sandboxID)
+	held, err := s.store.ResolveSandboxBindings(ctx, sandboxModel, now)
 	if err != nil {
 		return nil, err
 	}
-	envSentinel := make(map[string]string, len(existing))
-	for _, assignment := range existing {
-		envSentinel[assignment.EnvName] = assignment.Sentinel
-	}
-
-	result := make(map[string]string, len(bindings))
-	created := false
-	for _, binding := range bindings {
-		if sentinel, ok := envSentinel[binding.EnvName]; ok {
-			result[binding.EnvName] = sentinel // reuse the existing assignment (first wins)
-			continue
-		}
-		secret, err := s.store.GetSecret(ctx, projectID, binding.SecretID)
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				continue // bound secret was deleted; leave the env unset
-			}
-			return nil, err
-		}
-		format := s.store.SentinelFormat(ctx, secret)
-		sentinel, err := secretformat.MintSentinel(format)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.store.CreateSandboxSecret(ctx, &model.SandboxSecret{SourceHarnessConfigID: harnessConfigID,
-			ProjectID: projectID,
-			SandboxID: sandboxID,
-			SecretID:  secret.ID,
-			EnvName:   binding.EnvName,
-			Sentinel:  sentinel,
-			Format:    format,
-		}); err != nil {
-			return nil, err
-		}
-		envSentinel[binding.EnvName] = sentinel
-		result[binding.EnvName] = sentinel
-		created = true
-	}
-
-	// A required declared secret must be satisfied by an assignment. OneOfGroup
-	// members are satisfied collectively (at least one present).
 	missing := missingRequiredSecrets(config.Secrets, func(name string) bool {
-		_, ok := envSentinel[name]
+		if _, ok := held.UseFor(name); ok {
+			return true
+		}
+		_, ok := harnessBindings.UseFor(name)
 		return ok
 	})
 	if len(missing) > 0 {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
 			fmt.Sprintf("harness config %q requires secrets with no bound value: %s", config.Slug, strings.Join(missing, ", ")))
 	}
-
-	if created {
+	alreadyCovered := false
+	for _, target := range store.SandboxBindingTargets(sandboxModel) {
+		if target.Kind == model.SecretBindingTargetHarnessConfig && target.ID == config.ID {
+			alreadyCovered = true
+		}
+	}
+	if !alreadyCovered {
+		if principal, _ := auth.PrincipalFromContext(ctx); principal.Type == auth.PrincipalTypeSandbox {
+			return nil, apperrors.NewStatusError(http.StatusForbidden,
+				fmt.Sprintf("harness config %q is not attached to this discobox, and a discobox does not attach one; ask a person to", config.Slug))
+		}
+	}
+	var rows []model.SandboxSecret
+	changed := false
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+		if !alreadyCovered {
+			if _, err := txStore.AttachSandboxHarnessConfig(ctx, projectID, sandboxID, config.ID); err != nil {
+				return err
+			}
+		}
+		current, err := txStore.GetSandbox(ctx, projectID, sandboxID)
+		if err != nil {
+			return err
+		}
+		if changed, err = materializeSandboxSecrets(ctx, txStore, current); err != nil {
+			return err
+		}
+		rows, err = txStore.ListSandboxSecrets(ctx, projectID, sandboxID)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	envSentinel := make(map[string]string, len(rows))
+	for _, row := range rows {
+		envSentinel[row.EnvName] = row.Sentinel
+	}
+	result := map[string]string{}
+	for _, applied := range harnessBindings.Use {
+		if sentinel, ok := envSentinel[applied.Binding.EnvName]; ok {
+			result[applied.Binding.EnvName] = sentinel
+		}
+	}
+	if changed {
 		if err := s.pushSandboxSentinels(ctx, sandboxModel); err != nil {
 			return nil, err
 		}
@@ -361,8 +403,13 @@ func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sa
 	return result, nil
 }
 
-// pushSandboxSentinels re-registers the running sandbox's full sentinel set with
-// its provider (and thus the proxy) so newly assigned secrets resolve live.
+// pushSandboxSentinels re-registers the running sandbox's full sentinel set,
+// each with its route lists, with its provider (and thus the proxy) so what it
+// holds now resolves live, and what it no longer holds does not.
+//
+// Push even when every sentinel was kept: the proxy caches a resolved value
+// per sentinel, and applying a sentinel set rebuilds the swapper, which drops
+// that cache.
 func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.Sandbox) error {
 	if s.sandboxProviders == nil {
 		return fmt.Errorf("sandbox provider manager is required")
@@ -377,7 +424,7 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 		sentinels = append(sentinels, assignment.Sentinel)
 		secretEnv[assignment.EnvName] = assignment.Sentinel
 	}
-	sentinelRoutes, err := sandboxSentinelRoutes(ctx, s.store, sandboxModel, assignments)
+	sentinelRoutes, err := s.store.SentinelRouteLists(ctx, sandboxModel.ProjectID, assignments)
 	if err != nil {
 		return err
 	}
@@ -391,248 +438,62 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 	return markSentinelsIfStale(ctx, s.store, s.engine, sandboxModel, sentinelRoutes)
 }
 
-// sandboxSentinelRoutes are the routes a pool holds a discobox's injected
-// sentinels to: those of the secrets they stand for.
-func sandboxSentinelRoutes(ctx context.Context, st *store.Store, sandboxModel *model.Sandbox, assignments []model.SandboxSecret) (map[string][]secretroute.Route, error) {
-	return st.SecretSentinelRoutes(ctx, sandboxModel.ProjectID, assignments)
-}
-
 // MarkSecretHoldersDirtyTx marks the sentinel delivery of every sandbox
 // holding a secret for reconcile, in the transaction that changed the secret's
-// routes (ADR 26-10-02-924). SentinelReconciler re-sends each sandbox's
-// sentinel set with their current routes, and retries a delivery its pool did
-// not take, so the routes as written reach every holder.
+// routes or removed it (ADR 26-10-02-924). SentinelReconciler re-sends each
+// sandbox's sentinel set with their current route lists, and retries a
+// delivery its pool did not take, so the routes as written reach every
+// holder.
 func (s *Service) MarkSecretHoldersDirtyTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, secretID string) error {
 	sandboxIDs, err := txStore.ListSandboxIDsHoldingSecret(ctx, projectID, secretID)
 	if err != nil {
 		return err
 	}
-	for _, sandboxID := range sandboxIDs {
-		if err := s.engine.MarkDirtyTx(ctx, txDB, SentinelsResourceType, SandboxDirtyID(projectID, sandboxID)); err != nil {
-			return err
-		}
-	}
-	return nil
+	return markSentinelsTx(ctx, s.engine, txDB, projectID, sandboxIDs)
 }
 
-// MarkSandboxSentinelsDirtyTx marks one sandbox's sentinel delivery for
-// reconcile, in the transaction that bound a variable on it — an approved
-// agent request (ADR 26-10-27-880) — so the new binding reaches it while it
-// runs.
-func (s *Service) MarkSandboxSentinelsDirtyTx(ctx context.Context, txDB *gorm.DB, projectID, sandboxID string) error {
-	return s.engine.MarkDirtyTx(ctx, txDB, SentinelsResourceType, SandboxDirtyID(projectID, sandboxID))
+// MarkBindingHoldersDirtyTx marks the sentinel delivery of every sandbox the
+// bindings' targets cover, in the transaction that made, changed or removed
+// them: SentinelReconciler materializes each sandbox's bindings again and
+// sends its pool the result.
+func (s *Service) MarkBindingHoldersDirtyTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID string, bindings []model.SecretBinding) error {
+	return markBindingHoldersTx(ctx, s.engine, txStore, txDB, projectID, bindings)
 }
 
-// RebindHarnessConfigSecrets brings every live sandbox running a harness config
-// back in line with that config's current secret bindings.
-//
-// An assignment is minted once at sandbox create and then outlives whatever
-// produced it. When the bound secret is replaced — a re-login, or a disable
-// followed by a re-enable — the binding moves and the assignment does not, so
-// the sandbox keeps a sentinel pointing at a secret that no longer exists and
-// the harness sees an unexplained 401. Rebinding is what closes that gap; it is
-// called wherever a binding changes and again when a sandbox starts, so a
-// sandbox that was down for the change is repaired before it runs.
-func (s *Service) RebindHarnessConfigSecrets(ctx context.Context, projectID, harnessConfigID string) error {
-	sandboxIDs, err := s.store.ListSandboxIDsForHarnessConfig(ctx, projectID, harnessConfigID)
-	if err != nil {
-		return err
-	}
-	for _, sandboxID := range sandboxIDs {
-		if err := s.RebindSandboxSecrets(ctx, projectID, sandboxID); err != nil {
-			return fmt.Errorf("rebind sandbox %s: %w", sandboxID, err)
-		}
-	}
-	return nil
-}
-
-// RebindSandboxSecrets reconciles one sandbox's assignments against its harness
-// config's bindings.
-//
-// The sentinel is kept wherever it can be: it is a per-sandbox opaque string
-// whose only meaning is the row it maps through, so repointing that row hands
-// the sandbox the new credential with nothing to re-deliver and no restart. It
-// is only re-minted when the replacement secret's format differs, because the
-// sentinel byte-mimics the credential it stands in for.
-//
-// Re-minting is the disruptive case: the string in the harness's credential
-// file is dead the moment it is replaced, and the harness cannot re-read it
-// while running. That is why an assignment records the format it was minted
-// from — so this can tell the two apart without the old secret row, which a
-// delete may already have taken away.
-func (s *Service) RebindSandboxSecrets(ctx context.Context, projectID, sandboxID string) error {
-	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
-	if err != nil {
-		return apperrors.NotFound(err, "sandbox not found")
-	}
-	if sandboxModel.HarnessConfigID == nil || strings.TrimSpace(*sandboxModel.HarnessConfigID) == "" {
-		return nil
-	}
-	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, strings.TrimSpace(*sandboxModel.HarnessConfigID))
-	if err != nil {
-		return err
-	}
-	if len(bindings) == 0 {
-		return nil
-	}
-	changed, err := rebindSandboxSecretRows(ctx, s.store, projectID, sandboxModel)
-	if err != nil {
-		return err
-	}
-	if !changed {
-		return nil
-	}
-	// A sandbox that is not running has nothing to push to: its assignments are
-	// read fresh when the reconciler builds its create options, so the rows
-	// above are the whole repair. A suspended one is pushed to: nothing builds
-	// it again when it thaws, and its pool delivers what it records then.
-	if sandboxModel.RuntimeState != model.SandboxRuntimeStateRunning && sandboxModel.RuntimeState != model.SandboxRuntimeStateSuspended {
-		return nil
-	}
-	// Push even when every sentinel was kept: the proxy caches a resolved value
-	// per sentinel, and applying a sentinel set rebuilds the swapper, which
-	// drops that cache. Without it the sandbox keeps being handed the replaced
-	// secret's value until something 401s on it — and that 401 is exactly what
-	// logs the harness out.
-	return s.pushSandboxSentinels(ctx, sandboxModel)
-}
-
-// rebindSandboxSecretRows repoints a sandbox's assignments at the secrets its
-// harness config's bindings now name, reporting whether anything moved.
-//
-// It takes the store rather than the service so the reconciler can run it as a
-// sandbox comes up: a fan-out at binding-change time reaches only the sandboxes
-// that exist and are reachable right then, and anything it missed has to be
-// repaired before the sandbox runs again.
-func rebindSandboxSecretRows(ctx context.Context, st *store.Store, projectID string, sandboxModel *model.Sandbox) (bool, error) {
-	if sandboxModel.HarnessConfigID == nil || strings.TrimSpace(*sandboxModel.HarnessConfigID) == "" {
-		return false, nil
-	}
-	bindings, err := st.ListHarnessConfigSecretBindings(ctx, projectID, strings.TrimSpace(*sandboxModel.HarnessConfigID))
-	if err != nil {
-		return false, err
-	}
-	if len(bindings) == 0 {
-		return false, nil
-	}
-	assignments, err := st.ListSandboxSecrets(ctx, projectID, sandboxModel.ID)
-	if err != nil {
-		return false, err
-	}
-	byEnv := make(map[string]*model.SandboxSecret, len(assignments))
-	for i := range assignments {
-		byEnv[assignments[i].EnvName] = &assignments[i]
-	}
-
-	changed := false
+// markBindingHoldersTx is MarkBindingHoldersDirtyTx for a caller holding
+// the engine rather than the service.
+func markBindingHoldersTx(ctx context.Context, engine *reconcile.Engine, txStore *store.Store, txDB *gorm.DB, projectID string, bindings []model.SecretBinding) error {
+	seen := map[string]bool{}
+	var sandboxIDs []string
 	for _, binding := range bindings {
-		assignment := byEnv[binding.EnvName]
-		if assignment == nil || assignment.SourceHarnessConfigID != *sandboxModel.HarnessConfigID || assignment.SecretID == binding.SecretID {
-			// No assignment for this env means the sandbox was never given the
-			// secret; minting one here would hand a running sandbox a credential
-			// its harness cannot pick up. Creation stays at sandbox create.
+		target := binding.TargetKind + "\x00" + binding.TargetID
+		if seen[target] {
 			continue
 		}
-		secret, err := st.GetSecret(ctx, projectID, binding.SecretID)
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				continue // binding points at a deleted secret; nothing to rebind to
-			}
-			return false, err
-		}
-		format := st.SentinelFormat(ctx, secret)
-		assignment.SecretID = secret.ID
-		// An assignment minted before formats were recorded keeps its sentinel:
-		// what it was minted from is unknown, and guessing wrong costs a live
-		// harness session, while keeping a sentinel costs at worst a placeholder
-		// that no longer mimics the credential's shape.
-		if assignment.Format != "" && assignment.Format != format {
-			sentinel, err := secretformat.MintSentinel(format)
-			if err != nil {
-				return false, err
-			}
-			assignment.Sentinel = sentinel
-		}
-		assignment.Format = format
-		if err := st.UpdateSandboxSecret(ctx, assignment); err != nil {
-			return false, err
-		}
-		changed = true
-	}
-	return changed, nil
-}
-
-// RebindHarnessConfigSecretsTx changes assignments and schedules delivery in the
-// same transaction as the credential replacement, including cache invalidation
-// when a sentinel's bytes did not change.
-func (s *Service) RebindHarnessConfigSecretsTx(ctx context.Context, st *store.Store, db *gorm.DB, projectID, configID string) error {
-	ids, err := st.ListSandboxIDsForHarnessConfig(ctx, projectID, configID)
-	if err != nil {
-		return err
-	}
-	for _, id := range ids {
-		sb, err := st.GetSandbox(ctx, projectID, id)
+		seen[target] = true
+		covered, err := txStore.ListSandboxIDsCoveredBy(ctx, projectID, binding.TargetKind, binding.TargetID)
 		if err != nil {
 			return err
 		}
-		if _, err := rebindSandboxSecretRows(ctx, st, projectID, sb); err != nil {
-			return err
-		}
-		if s.engine != nil {
-			if err := s.engine.MarkDirtyTx(ctx, db, SentinelsResourceType, SandboxDirtyID(projectID, id)); err != nil {
-				return err
-			}
-		}
+		sandboxIDs = append(sandboxIDs, covered...)
 	}
-	return nil
+	return markSentinelsTx(ctx, engine, txDB, projectID, sandboxIDs)
 }
 
-// EnsureCaptureOriginSecretsTx makes newly saved credentials consumable by the
-// originating sandbox. Other boxes retain their existing assignment lifecycle;
-// per-box overrides win even when a captured value rebinds the shared config.
-func (s *Service) EnsureCaptureOriginSecretsTx(ctx context.Context, st *store.Store, db *gorm.DB, projectID, sandboxID, configID string, envs []string) error {
-	box, err := st.GetSandbox(ctx, projectID, sandboxID)
-	if err != nil {
-		return err
+// markSentinelsTx marks each sandbox's sentinel delivery once.
+func markSentinelsTx(ctx context.Context, engine *reconcile.Engine, txDB *gorm.DB, projectID string, sandboxIDs []string) error {
+	if engine == nil {
+		return nil
 	}
-	if box.HarnessConfigID == nil || *box.HarnessConfigID != configID {
-		return store.ErrGenerationConflict
-	}
-	assignments, err := st.ListSandboxSecrets(ctx, projectID, sandboxID)
-	if err != nil {
-		return err
-	}
-	present := map[string]bool{}
-	for _, a := range assignments {
-		present[a.EnvName] = true
-	}
-	bindings, err := st.ListHarnessConfigSecretBindings(ctx, projectID, configID)
-	if err != nil {
-		return err
-	}
-	wanted := map[string]bool{}
-	for _, env := range envs {
-		wanted[env] = true
-	}
-	for _, binding := range bindings {
-		if !wanted[binding.EnvName] || present[binding.EnvName] {
+	seen := map[string]bool{}
+	for _, sandboxID := range sandboxIDs {
+		if seen[sandboxID] {
 			continue
 		}
-		secret, err := st.GetSecret(ctx, projectID, binding.SecretID)
-		if err != nil {
+		seen[sandboxID] = true
+		if err := engine.MarkDirtyTx(ctx, txDB, SentinelsResourceType, SandboxDirtyID(projectID, sandboxID)); err != nil {
 			return err
 		}
-		format := st.SentinelFormat(ctx, secret)
-		sentinel, err := secretformat.MintSentinel(format)
-		if err != nil {
-			return err
-		}
-		if err := st.CreateSandboxSecret(ctx, &model.SandboxSecret{ProjectID: projectID, SandboxID: sandboxID, SecretID: secret.ID, EnvName: binding.EnvName, Sentinel: sentinel, Format: format, SourceHarnessConfigID: configID}); err != nil {
-			return err
-		}
-	}
-	if s.engine != nil {
-		return s.engine.MarkDirtyTx(ctx, db, SentinelsResourceType, SandboxDirtyID(projectID, sandboxID))
 	}
 	return nil
 }

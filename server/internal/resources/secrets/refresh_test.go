@@ -24,20 +24,20 @@ func renewableFixture(t *testing.T, writtenAt time.Time) (*resourcesecrets.Servi
 	svc, st, db := newResolveFixtureDB(t)
 	createSandbox(t, st, "sb-1", "pool-1")
 	sec := &model.Secret{
-		ProjectID: "project-1", Name: "github", Type: model.SecretTypeToken, Host: "github.com",
-		MaxGrantTTL: 3600, EncryptedValue: mustTokenValue(t, "gho_old"),
+		ProjectID: "project-1", Name: "github", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "github.com"}},
+		MaxBindingTTL: 3600, EncryptedValue: mustTokenValue(t, "gho_old"),
 		TTL: 300, RefreshCommand: []string{"gh", "auth", "token"},
 	}
 	sec.ValueWritten(writtenAt, nil)
 	if err := st.CreateSecret(context.Background(), sec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeSandbox, "sb-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetSandbox, "sb-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 	return svc, st, db, sec
 }
 
-func pendingRefresh(t *testing.T, st *store.Store, secretID string) *model.SecretRequest {
+func pendingRefresh(t *testing.T, st *store.Store, secretID string) *model.SecretRefreshRequest {
 	t.Helper()
 	req, err := st.FindPendingRefreshRequest(context.Background(), "project-1", secretID)
 	if err != nil {
@@ -74,12 +74,8 @@ func TestResolveServesAFreshRenewableValueUntilItGoesStale(t *testing.T) {
 func TestResolveServesAStaleValueAndAsksOnceForAnother(t *testing.T) {
 	svc, st, _, sec := renewableFixture(t, time.Now().UTC().Add(-time.Hour))
 	createSandbox(t, st, "sb-2", "pool-1")
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeSandbox, "sb-2")
-	if err := st.CreateSandboxSecret(context.Background(), &model.SandboxSecret{
-		ProjectID: "project-1", SandboxID: "sb-2", SecretID: sec.ID, EnvName: "FOO", Sentinel: "SENTINEL-B",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	mustBind(t, st, sec.ID, model.SecretBindingTargetSandbox, "sb-2")
+	mustAssign(t, st, "sb-2", sec.ID, "SENTINEL-B")
 
 	before := time.Now()
 	res, err := svc.ResolveSandboxSecret(context.Background(), "pool-1", "sb-1", "SENTINEL-A", "github.com")
@@ -93,14 +89,14 @@ func TestResolveServesAStaleValueAndAsksOnceForAnother(t *testing.T) {
 		t.Fatalf("expiresAt = %v, want a short hold on a stale value", res.ExpiresAt)
 	}
 	first := pendingRefresh(t, st, sec.ID)
-	if first == nil || !first.IsRefresh() || first.RefreshCause != model.SecretRefreshCauseStale || first.SandboxID != "sb-1" {
+	if first == nil || first.Cause != model.SecretRefreshCauseStale || first.SandboxID != "sb-1" {
 		t.Fatalf("refresh request = %+v, want one opened by sb-1 for staleness", first)
 	}
 
 	if _, err := svc.ResolveSandboxSecret(context.Background(), "pool-1", "sb-2", "SENTINEL-B", "github.com"); err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	all, err := st.ListSecretRequests(context.Background(), "project-1", model.SecretRequestStatusPending)
+	all, err := st.ListSecretRefreshRequests(context.Background(), "project-1", model.SecretRefreshStatusPending)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,12 +139,12 @@ func TestRefreshAnswersTheRequestAndTheFirstAnswerWins(t *testing.T) {
 	if err != nil || res.Value.Token != "gho_new" {
 		t.Fatalf("resolve after refresh = %+v, %v; want the new value", res, err)
 	}
-	answered, err := st.GetSecretRequest(context.Background(), "project-1", req.ID)
+	answered, err := st.GetSecretRefreshRequest(context.Background(), "project-1", req.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := answered.RefreshAnswer
-	if answered.Status != model.SecretRequestStatusApproved || a == nil ||
+	a := answered.Answer
+	if answered.Status != model.SecretRefreshStatusAnswered || a == nil ||
 		a.Via != model.SecretRefreshViaCommand || a.AnsweredBy != "user-1" || !a.Session || a.ClientHost != "host-a" ||
 		a.CommandDigest != resourcesecrets.RefreshCommandDigest([]string{"gh", "auth", "token"}) {
 		t.Fatalf("answered request = %+v / %+v", answered, a)
@@ -181,17 +177,18 @@ func TestUpdatingTheValueClosesTheRefreshRequest(t *testing.T) {
 	if updated.StaleAt == nil || !updated.StaleAt.After(time.Now()) {
 		t.Fatalf("staleAt = %v, want the new value's lifetime", updated.StaleAt)
 	}
-	closed, err := st.GetSecretRequest(context.Background(), "project-1", req.ID)
+	closed, err := st.GetSecretRefreshRequest(context.Background(), "project-1", req.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if closed.Status != model.SecretRequestStatusApproved || closed.RefreshAnswer == nil || closed.RefreshAnswer.Via != model.SecretRefreshViaUpdate {
+	if closed.Status != model.SecretRefreshStatusAnswered || closed.Answer == nil || closed.Answer.Via != model.SecretRefreshViaUpdate {
 		t.Fatalf("request = %+v, want it answered by the update", closed)
 	}
 }
 
-// A refresh request is answered with a value: it cannot be approved, and a
-// discobox may neither dismiss it nor write the value.
+// A refresh request is answered with a value, or dismissed, by a person: it
+// is no request for a binding, and a discobox may neither dismiss it nor
+// write the value.
 func TestARefreshRequestIsAPersonsToAnswer(t *testing.T) {
 	svc, st, _, sec := renewableFixture(t, time.Now().UTC().Add(-time.Hour))
 	if _, err := svc.ResolveSandboxSecret(context.Background(), "pool-1", "sb-1", "SENTINEL-A", "github.com"); err != nil {
@@ -199,19 +196,20 @@ func TestARefreshRequestIsAPersonsToAnswer(t *testing.T) {
 	}
 	req := pendingRefresh(t, st, sec.ID)
 
-	if _, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: apigen.NewOptString(sec.ID)}); statusOf(err) != http.StatusBadRequest {
-		t.Fatalf("approve err = %v, want 400", err)
+	if _, err := svc.ApproveSecretRequest(testPrincipalContext(), "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: apigen.NewOptString(sec.ID)}); statusOf(err) != http.StatusNotFound {
+		t.Fatalf("approve err = %v, want 404", err)
 	}
 	asSandbox := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypeSandbox, SandboxID: "sb-1"})
-	if err := svc.DenySecretRequest(asSandbox, "project-1", req.ID); statusOf(err) != http.StatusForbidden {
-		t.Fatalf("deny as a discobox err = %v, want 403", err)
+	if _, err := svc.DismissSecretRefreshRequest(asSandbox, "project-1", req.ID); statusOf(err) != http.StatusForbidden {
+		t.Fatalf("dismiss as a discobox err = %v, want 403", err)
 	}
 	_, err := svc.RefreshSecret(asSandbox, "project-1", sec.ID, services.RefreshSecretBody{Value: "x", Via: apigen.RefreshSecretBodyViaEntered})
 	if statusOf(err) != http.StatusForbidden {
 		t.Fatalf("refresh as a discobox err = %v, want 403", err)
 	}
-	if err := svc.DenySecretRequest(testPrincipalContext(), "project-1", req.ID); err != nil {
-		t.Fatalf("dismiss as a person: %v", err)
+	dismissed, err := svc.DismissSecretRefreshRequest(testPrincipalContext(), "project-1", req.ID)
+	if err != nil || dismissed.Status != model.SecretRefreshStatusDismissed || dismissed.SecretName != "github" {
+		t.Fatalf("dismiss as a person = %+v, %v", dismissed, err)
 	}
 }
 
@@ -231,7 +229,7 @@ func TestARefusedRenewableTokenAsksForANewValue(t *testing.T) {
 		t.Fatalf("rejections = %+v, want none for a token a client renews", rejections)
 	}
 	req := pendingRefresh(t, st, sec.ID)
-	if req == nil || req.RefreshCause != model.SecretRefreshCauseRejected {
+	if req == nil || req.Cause != model.SecretRefreshCauseRejected {
 		t.Fatalf("refresh request = %+v, want one opened by the rejection", req)
 	}
 	got, err := svc.GetSecret(context.Background(), "project-1", sec.ID)
@@ -284,43 +282,6 @@ func statusOf(err error) int {
 		return status.StatusCode()
 	}
 	return 0
-}
-
-// An open refresh request is not the reactive ask: a discobox with no grant
-// on the same token still gets an ask a person can approve.
-func TestARefreshRequestIsNotTheAskForAGrant(t *testing.T) {
-	svc, st, _, sec := renewableFixture(t, time.Now().UTC().Add(-time.Hour))
-	if _, err := svc.ResolveSandboxSecret(context.Background(), "pool-1", "sb-1", "SENTINEL-A", "github.com"); err != nil {
-		t.Fatal(err)
-	}
-	createSandbox(t, st, "sb-2", "pool-1")
-	if err := st.CreateSandboxSecret(context.Background(), &model.SandboxSecret{
-		ProjectID: "project-1", SandboxID: "sb-2", SecretID: sec.ID, EnvName: "FOO", Sentinel: "SENTINEL-B",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	// The refresh request names sb-2 once sb-2 needs the value; then sb-2,
-	// with no grant, resolves.
-	if err := st.SetRefreshRequestSandbox(context.Background(), "project-1", pendingRefresh(t, st, sec.ID).ID, "sb-2"); err != nil {
-		t.Fatal(err)
-	}
-	res, err := svc.ResolveSandboxSecret(context.Background(), "pool-1", "sb-2", "SENTINEL-B", "github.com")
-	if err != nil || res.Status != model.SecretRequestStatusPending {
-		t.Fatalf("resolve = %+v, %v; want pending", res, err)
-	}
-	pending, err := st.ListSecretRequests(context.Background(), "project-1", model.SecretRequestStatusPending)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var asks int
-	for _, req := range pending {
-		if !req.IsRefresh() && req.SandboxID == "sb-2" {
-			asks++
-		}
-	}
-	if asks != 1 {
-		t.Fatalf("pending = %+v, want one ask for a grant from sb-2 beside the refresh request", pending)
-	}
 }
 
 // A token created with a refresh command and no lifetime is short-lived by
@@ -391,9 +352,9 @@ func TestOneOpenRefreshRequestPerSecretIsHeldByTheDatabase(t *testing.T) {
 	_, st, _, sec := renewableFixture(t, time.Now().UTC().Add(-time.Hour))
 	ctx := context.Background()
 	open := func() error {
-		return st.CreateSecretRequest(ctx, &model.SecretRequest{
-			ProjectID: "project-1", RequestedBy: "sandbox:sb-1", SandboxID: "sb-1", Type: model.SecretTypeToken,
-			SecretID: sec.ID, Status: model.SecretRequestStatusPending, Reason: model.SecretRequestReasonRefresh,
+		return st.CreateSecretRefreshRequest(ctx, &model.SecretRefreshRequest{
+			ProjectID: "project-1", SandboxID: "sb-1", SecretID: sec.ID,
+			Cause: model.SecretRefreshCauseStale, Status: model.SecretRefreshStatusPending,
 		})
 	}
 	if err := open(); err != nil {
@@ -410,8 +371,8 @@ func TestOneOpenRefreshRequestPerSecretIsHeldByTheDatabase(t *testing.T) {
 	}
 }
 
-// A discobox lists secrets and requests for their names and bindings: the
-// refresh command, and how a refresh was answered, are not in what it reads.
+// A discobox lists secrets for their names and bindings: the refresh command
+// is not in what it reads.
 func TestADiscoboxDoesNotSeeTheRefreshCommandOrItsAnswers(t *testing.T) {
 	svc, st, _, sec := renewableFixture(t, time.Now().UTC().Add(-time.Hour))
 	if _, err := svc.ResolveSandboxSecret(context.Background(), "pool-1", "sb-1", "SENTINEL-A", "github.com"); err != nil {
@@ -433,13 +394,6 @@ func TestADiscoboxDoesNotSeeTheRefreshCommandOrItsAnswers(t *testing.T) {
 		if len(s.RefreshCommand) > 0 {
 			t.Fatalf("a discobox listed %s's refresh command", s.Name)
 		}
-	}
-	got, err := svc.GetSecretRequest(asSandbox, "project-1", req.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.RefreshAnswer != nil {
-		t.Fatalf("a discobox read the refresh answer: %+v", got.RefreshAnswer)
 	}
 	// A person still sees both.
 	mine, err := svc.GetSecret(testPrincipalContext(), "project-1", sec.ID)

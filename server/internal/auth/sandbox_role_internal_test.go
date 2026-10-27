@@ -69,7 +69,7 @@ func roleStore(t *testing.T) *store.Store {
 		{ID: "sreq-gone", SandboxID: "sbx-gone"},
 		{ID: "sreq-person", RequestedBy: "user-1"},
 	} {
-		req.ProjectID, req.Type, req.Status = "proj-1", "token", model.SecretRequestStatusPending
+		req.ProjectID, req.Status = "proj-1", model.SecretRequestStatusPending
 		if req.RequestedBy == "" {
 			req.RequestedBy = "agent:" + req.SandboxID
 		}

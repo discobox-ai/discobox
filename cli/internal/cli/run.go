@@ -43,11 +43,12 @@ type runCommandOptions struct {
 	// raw attaches this terminal to the discobox's terminal directly, instead
 	// of opening the window on it.
 	raw bool
-	// grant is --grant as given, and grants what the create is given: parsed
-	// from it, or read from a --from-json request. discoboxAPI is
-	// --discobox-api, or the request's "discoboxApi".
-	grant       []string
-	grants      []apimodel.SandboxGrant
+	// bind and delegate are --bind and --delegate as given, and bindings what
+	// the create makes of them: parsed from them, or read from a --from-json
+	// request. discoboxAPI is --discobox-api, or the request's "discoboxApi".
+	bind        []string
+	delegate    []string
+	bindings    []apimodel.SandboxBindingInput
 	discoboxAPI bool
 	// pool is --pool as given: the pool the discobox is placed on, by ID,
 	// short ID, or name. Empty is the project's default pool.
@@ -208,12 +209,21 @@ the client writes client.example.yaml there, listing every setting. --skills
 given replaces run.skills rather than adding to it, and --user-skills=false
 turns run.userSkills off.
 
---grant gives the new discobox a project secret, SECRET[@HOST]:ENV_VAR: the
-discobox receives a sentinel in ENV_VAR, which its pool swaps for the value on
-the hosts the grant covers. HOST may be several, joined by commas, for a
-credential sent to more than one site, as Copilot CLI sends a GitHub token:
-github@api.github.com,githubcopilot.com:COPILOT_GITHUB_TOKEN. In --from-json,
-"hosts" lists them. A discobox creating one gives only what it may delegate.
+-s stores a secret of its own and binds it as KEY, read from where it already
+is: KEY takes $KEY from this shell, KEY=@FILE reads FILE (one trailing newline
+dropped). KEY=VALUE takes the value itself, which then sits in shell history
+and the process list. It is sent anywhere unless @HOST follows: KEY@HOST,
+KEY=@FILE@HOST, KEY=VALUE@HOST send it to HOST and the hosts beneath it alone.
+
+--bind binds a project secret to the new discobox, SECRET[:VAR][@ROUTE,...]:
+the discobox receives a sentinel in VAR — the secret's name upper-snaked when
+left out, so github is GITHUB — which its pool swaps for the value where the
+secret's routes allow, narrowed by any ROUTE given (HOST[/PATH][=blocked] or
+'*'), as Copilot CLI's GitHub token is:
+github:COPILOT_GITHUB_TOKEN@api.github.com,githubcopilot.com. --delegate
+SECRET[@ROUTE,...] lets the new discobox give the secret to the discoboxes it
+creates instead. In --from-json, "bindings" lists them. A discobox creating one
+binds only what it may delegate, and delegates nothing.
 
 --discobox-api lets the new discobox call the discobox API through its pool,
 acting only on the discoboxes it creates. A discobox creating one may set it
@@ -230,12 +240,13 @@ its flag does. No argument or other run flag may be given beside it:
     "source": "https://github.com/org/repo",
     "prompt": "fix the failing tests in pkg/foo",
     "harness": "codex",
-    "grants": [
-      {"secret": "npm", "envVar": "NPM_TOKEN", "hosts": ["registry.npmjs.org"]}
+    "bindings": [
+      {"secret": "npm", "envVar": "NPM_TOKEN", "routes": ["registry.npmjs.org"]},
+      {"secret": "github", "delegate": true}
     ],
     "discoboxApi": false,
     "env": ["MODE=test"],
-    "secrets": ["OPENAI_API_KEY=<sec_123>"],
+    "secrets": ["OPENAI_API_KEY=sk-...@api.openai.com"],
     "include": ["../foo"],
     "skills": ["./team-skills"],
     "userSkills": true,
@@ -255,9 +266,10 @@ const runCommandExample = `  discobox run . 'fix the failing tests'
   discobox run --user-skills --skills ./team-skills . 'fix the failing tests'
   discobox run --no-source 'draft a proposal for the new pricing page'
   discobox run -e GITHUB_TOKEN -e MODE=test . 'fix the failing tests'
-  discobox run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> . 'fix the failing tests'
+  discobox run -s OPENAI_API_KEY@api.openai.com -s 'NPM_TOKEN=@~/.npm-token' . 'fix the failing tests'
   discobox run --pool mac-mini . 'fix the failing tests'
-  discobox run -d --grant 'github@github.com:GH_TOKEN' . 'fix issue 42'
+  discobox run -d --bind github:GH_TOKEN . 'fix issue 42'
+  discobox run -d --bind npm-token --delegate github . 'fan out the issues'
   echo '{"source": ".", "prompt": "fix the failing tests"}' | discobox run --from-json
   discobox run --raw . 'fix the failing tests'
   discobox run . fix the failing tests
@@ -289,11 +301,11 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 		if opts.includeDirty {
 			opts.prompt.IncludeDirty = sandboxcreate.IncludeDirtyAlways
 		}
-		grants, err := sandboxcreate.ParseGrants(opts.grant)
+		bindings, err := sandboxcreate.ParseBindings(opts.bind, opts.delegate)
 		if err != nil {
 			return err
 		}
-		opts.grants = grants
+		opts.bindings = bindings
 		if opts.flags.Changed("user-skills") {
 			opts.userSkills = &opts.userSkillsFlag
 		}
@@ -364,6 +376,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	opts.prompt.SkipDeclaredSources = !opts.declaredSources
 	opts.prompt.ReportDeclaredSource = reportDeclaredSource(notes)
 	opts.prompt.Warn = func(warning string) { notes("%s", warningLine(warning)) }
+	opts.prompt.ReportInlineSecret = func(line string) { notes("%s", terminalSafe(line)) }
 	parsedOpts, err := sandboxcreate.ParsePromptOptions(opts.prompt, prompt)
 	if err != nil {
 		return err
@@ -401,10 +414,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 			return err
 		}
 	}
-	if err := a.resolveGrantSecrets(cmd.Context(), client, projectID, opts.grants); err != nil {
-		return err
-	}
-	parsedOpts.Grants = opts.grants
+	parsedOpts.Bindings = opts.bindings
 	parsedOpts.DiscoboxAPI = opts.discoboxAPI
 	if parsedOpts.PoolID, parsedOpts.Platform, err = a.newSandboxPlacement(cmd.Context(), client, projectID, opts.pool); err != nil {
 		return err
@@ -463,7 +473,7 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 
 	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after SOURCE")
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
-	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
+	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "A secret to store and bind as KEY: KEY reads $KEY from this shell, KEY=@FILE reads a file, KEY=VALUE takes the value itself (it then sits in shell history and the process list); add @HOST to send it to HOST alone, else it is sent anywhere. A value or path holding an @ ends with one. Repeat for more. A stored secret is bound with --bind")
 	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source to bring into the discobox, DIR, URL or GitHub OWNER/REPO, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under the discobox's working root (/workspace on Linux) where it cannot; either way it is named after itself, so -i ../foo is the source foo")
 	flags.StringArrayVar(&opts.skillDirs, "skills", nil, "Skills to install in the discobox: a directory, whose subdirectories holding a SKILL.md are each copied in as a skill, or a repository, URL or GitHub OWNER/REPO, then [@REF][//PATH], checked out under skill-sources with each skill in PATH linked in, so an edit can be pushed back; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills, but a linked skill wins over a copied one. Given, it replaces client.yaml's run.skills")
 	flags.BoolVar(&opts.noProjectSkills, "no-project-skills", false, "Leave the project's skills repositories (discobox skills) out of this discobox. Otherwise they are added ahead of any --skills, which win on a skill of the same name")
@@ -475,7 +485,8 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.BoolVar(&opts.noSource, "no-source", false, "Create the discobox with nothing checked out in it, in place of SOURCE, so every argument is the prompt; the directory you run in still decides where it is filed and what Git authorship it commits under")
 	flags.BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/settings.json, using a local checkout beside the source directory when there is one")
 	flags.BoolVar(&opts.includeDirty, "include-dirty", false, "Carry the uncommitted changes in each local source into the discobox, as a snapshot on top of its checked-out commit; without it only committed history goes in. A directory in no Git repository has no commit to start from, and is copied whatever this says")
-	flags.StringArrayVar(&opts.grant, "grant", nil, "A credential to give the new discobox, as SECRET[@HOST[,HOST...]]:ENV_VAR: the project secret, and the variable the discobox receives its sentinel in, which its pool swaps for the value on the hosts the grant covers; repeat for more. HOST defaults to the secret's host. A discobox creating one gives only what it may delegate")
+	flags.StringArrayVar(&opts.bind, "bind", nil, "Bind a project secret to the new discobox, as SECRET[:VAR][@ROUTE,...]: the variable it receives the sentinel in (default the secret's name upper-snaked), and routes that narrow where it may be sent; repeat for more. A discobox creating one binds only what it may delegate")
+	flags.StringArrayVar(&opts.delegate, "delegate", nil, "Let the new discobox give a project secret to the discoboxes it creates, as SECRET[@ROUTE,...]; repeat for more. A person's to give")
 	flags.BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the new discobox call the discobox API through its pool, acting only on the discoboxes it creates. A discobox creating one may set it only when it has it itself")
 	flags.BoolVar(&opts.fromJSON, "from-json", false, "Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON")
 	cmd.Flags().AddFlagSet(flags)
@@ -745,7 +756,8 @@ func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.Run
 		Harness:             opts.prompt.Harness,
 		Env:                 opts.prompt.Env,
 		Secret:              opts.prompt.Secret,
-		Grant:               opts.grant,
+		Bind:                opts.bind,
+		Delegate:            opts.delegate,
 		DiscoboxAPI:         opts.discoboxAPI,
 		Include:             opts.prompt.Include,
 		SkillDirs:           opts.skillDirs,

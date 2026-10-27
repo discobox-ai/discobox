@@ -71,7 +71,7 @@ type dialog struct {
 	// sections are the body with its structure kept: named blocks of aligned
 	// label/value fields, drawn as a column rather than dissolved into
 	// sentences. A dialog whose subject is a set of facts — what a credential
-	// is, what a grant covers, what an agent is asking for — carries these
+	// is, what a binding covers, what an agent is asking for — carries these
 	// instead of body, and the two are drawn one after the other where a
 	// dialog has both.
 	sections []section
@@ -206,7 +206,7 @@ type cardKey struct {
 // key identifies the row and is what the menu's callback receives; press is the
 // key that runs it without moving to it, and is the only one of the two ever
 // drawn. They are separate because most of what this window offers to choose
-// between is identified by something nobody can type — a secret's ID, a grant's
+// between is identified by something nobody can type — a secret's ID, a binding's
 // ID, a scope's wire name — and a menu that printed those in the column where
 // keystrokes go was offering keys that do not exist while wrecking the
 // alignment of every row beside them.
@@ -334,7 +334,7 @@ func inputDialog(title, body, placeholder, value string, act func(string) tea.Cm
 // nobody can leave is a trap — and canceling a wait for a discobox that is
 // coming up anyway costs the view of it, not the discobox.
 // formDialog asks everything at once. Enter answers the whole card, so a form
-// is for a decision with one outcome — a grant made, a secret stored — rather
+// is for a decision with one outcome — a binding made, a secret stored — rather
 // than for a menu of things that each do something different.
 func formDialog(title string, f *form, submit func(f *form) tea.Cmd) *dialog {
 	return &dialog{kind: dlgForm, title: title, form: f, submit: submit}

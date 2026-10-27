@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"gorm.io/gorm"
@@ -20,11 +21,23 @@ type SandboxGetOption func(*sandboxGetOptions)
 
 type sandboxGetOptions struct {
 	generation *int64
+	// bindingsDeleted is told, in DeleteSandbox's transaction, the bindings
+	// the delete took with it.
+	bindingsDeleted BindingsDeletedFunc
 }
 
 func WithGeneration(generation int64) SandboxGetOption {
 	return func(opts *sandboxGetOptions) {
 		opts.generation = &generation
+	}
+}
+
+// OnBindingsDeleted has DeleteSandbox hand fn, in its transaction, the
+// bindings it deleted with the sandbox: its own, and those other discoboxes
+// were handed on under its delegate bindings, whose sentinels fn marks.
+func OnBindingsDeleted(fn BindingsDeletedFunc) SandboxGetOption {
+	return func(opts *sandboxGetOptions) {
+		opts.bindingsDeleted = fn
 	}
 }
 
@@ -411,8 +424,12 @@ var sandboxWakeColumns = []string{"wake_at", "wake_epoch"}
 // whole-row save of that copy would put the old answer back.
 const sandboxDiscoboxAPIColumn = "discobox_api"
 
+// sandboxAttachedHarnessColumn is the harness configs a sandbox was given
+// beside its own, which AttachSandboxHarnessConfig alone writes.
+const sandboxAttachedHarnessColumn = "attached_harness_config_ids"
+
 // sandboxOmittedColumns is what UpdateSandbox never writes.
-var sandboxOmittedColumns = append(append(append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...), sandboxWakeColumns...), sandboxDiscoboxAPIColumn)
+var sandboxOmittedColumns = append(append(append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...), sandboxWakeColumns...), sandboxDiscoboxAPIColumn, sandboxAttachedHarnessColumn)
 
 // CancelSandboxWakeTx is what every power instruction from outside writes: no
 // scheduled start, and a new epoch, whether or not a wake was set — the race
@@ -446,6 +463,27 @@ func (s *Store) SetSandboxWakeIfEpoch(ctx context.Context, projectID, sandboxID 
 // SetSandboxEgress writes a sandbox's own egress level, and nothing else.
 func (s *Store) SetSandboxEgress(ctx context.Context, projectID, sandboxID string, level egress.Policy) error {
 	return s.setEgress(ctx, &model.Sandbox{}, projectID, sandboxID, level)
+}
+
+// AttachSandboxHarnessConfig gives a sandbox a harness config's bindings
+// beside its own harness config's, in the caller's transaction, reporting
+// whether it was not attached already. Its own harness config is never
+// attached: it applies already.
+func (s *Store) AttachSandboxHarnessConfig(ctx context.Context, projectID, sandboxID, configID string) (bool, error) {
+	attached := false
+	err := s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
+		sandbox, err := firstByID[model.Sandbox](tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID), "id", sandboxID)
+		if err != nil {
+			return err
+		}
+		if (sandbox.HarnessConfigID != nil && *sandbox.HarnessConfigID == configID) || slices.Contains(sandbox.AttachedHarnessConfigIDs, configID) {
+			return nil
+		}
+		attached = true
+		return tx.Model(sandbox).Select(sandboxAttachedHarnessColumn).
+			Updates(&model.Sandbox{AttachedHarnessConfigIDs: append(slices.Clone(sandbox.AttachedHarnessConfigIDs), configID)}).Error
+	})
+	return attached, err
 }
 
 // SetSandboxDiscoboxAPI writes whether a sandbox may call the discobox API,
@@ -628,9 +666,10 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 		}
 	}
 
-	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
-		// Locked before its grants are deleted, so a grant being written for it
-		// (CreateSecretGrant) either finds it gone or is deleted with it.
+	return s.Transaction(ctx, func(txStore *Store, tx *gorm.DB) error {
+		// Locked before its bindings are deleted, so a binding being written
+		// for it (CreateSecretBinding) either finds it gone or is deleted with
+		// it.
 		query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID)
 		if opts.generation != nil {
 			query = query.Where("generation = ?", *opts.generation)
@@ -642,6 +681,15 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 			}
 			return err
 		}
+		deleted, err := DeleteSecretBindingsForTargetTx(tx, projectID, model.SecretBindingTargetSandbox, sandbox.ID)
+		if err != nil {
+			return err
+		}
+		if opts.bindingsDeleted != nil {
+			if err := opts.bindingsDeleted(txStore, tx, deleted); err != nil {
+				return err
+			}
+		}
 		if err := deleteSandboxSecretsTx(tx, projectID, sandboxID); err != nil {
 			return err
 		}
@@ -649,9 +697,6 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 			return err
 		}
 		if err := tx.Where("sandbox_id = ?", sandbox.ID).Delete(&model.SandboxInventory{}).Error; err != nil {
-			return err
-		}
-		if err := deleteSecretGrantsByScopeTx(tx, model.SecretGrantScopeSandbox, sandbox.ID); err != nil {
 			return err
 		}
 		if err := denySandboxSecretRequestsTx(tx, projectID, sandbox.ID); err != nil {
@@ -724,6 +769,23 @@ func (s *Store) OpenSandboxSecretState(ctx context.Context, sandbox *model.Sandb
 
 func sandboxSecretResourceID(sandbox *model.Sandbox) string {
 	return sandbox.ProjectID + "/" + sandbox.ID
+}
+
+// GetSandboxByName reads a project's sandbox by its name, which is unique in
+// the project.
+func (s *Store) GetSandboxByName(ctx context.Context, projectID, name string) (*model.Sandbox, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var rows []model.Sandbox
+	if err := read.Where("project_id = ? AND name = ?", projectID, name).Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, ErrNotFound
+	}
+	return &rows[0], nil
 }
 
 // SandboxNameTaken reports whether a sandbox already holds name in the project.

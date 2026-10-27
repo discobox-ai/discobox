@@ -47,9 +47,9 @@ type Service struct {
 	// discobox://<server>/<discobox> address a sandbox is started with. Empty
 	// when the server is not reachable at it, and then no address is given.
 	serverPeerID string
-	// secrets prepares the grants a create gives the new discobox, which
+	// secrets prepares the bindings a create gives the new discobox, which
 	// holds a discobox giving them to what it was delegated (ADR
-	// 26-09-30-782 §1).
+	// 26-10-27-880 §3).
 	secrets *resourcesecrets.Service
 	// release answers the bundles the release names that every delivered
 	// sandbox is pinned to: the platform and the agent (ADR 26-10-16-423 §7,
@@ -113,8 +113,8 @@ func (s *Service) SetServerPeerID(id string) {
 	s.serverPeerID = strings.TrimSpace(id)
 }
 
-// SetSecrets gives the service the credential broker a create's grants are
-// prepared by.
+// SetSecrets gives the service the credential broker a create's bindings
+// are prepared by.
 func (s *Service) SetSecrets(secrets *resourcesecrets.Service) {
 	s.secrets = secrets
 }
@@ -215,9 +215,9 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		if len(config.Secrets) > 0 {
 			// Inline secrets put a value inside the new discobox where anything
 			// in it can read it. A sandbox gives another discobox a secret it
-			// was delegated, as a grant and a sentinel (grants, below).
+			// was delegated, as a binding and a sentinel (bindings, below).
 			return nil, apperrors.NewStatusError(http.StatusForbidden,
-				"a discobox gives a new discobox a secret through grants, never its value")
+				"a discobox gives a new discobox a secret through bindings, never its value")
 		}
 		createdBySandboxID = &principal.SandboxID
 	}
@@ -379,54 +379,40 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			return nil, err
 		}
 	}
-	assignments, err := s.prepareSandboxSecrets(ctx, projectID, sandbox, config.Secrets)
-	if err != nil {
-		return nil, err
-	}
-	// Materialize the harness config's secret bindings and enforce its required
-	// secrets. Inline per-sandbox secrets take precedence over bindings.
-	//
-	// harnessMode "config" is exempt: the configure flow is how a harness's
-	// secrets are obtained in the first place, so requiring them to already exist
-	// would make an unconfigured harness impossible to configure.
-	if harnessConfigID != "" {
-		if harnessMode == sandboxconfig.HarnessModeConfig {
-			// Config mode instead offers the previous configuration's secrets back
-			// under PREV_-prefixed names, so the configure flow can verify and keep
-			// an existing credential without it ever being re-typed or re-read.
-			previousAssignments, err := s.applyPreviousConfigureSecrets(ctx, projectID, sandbox, harnessConfigID)
-			if err != nil {
-				return nil, err
-			}
-			assignments = append(assignments, previousAssignments...)
-		} else {
-			inlineEnvs := make(map[string]struct{}, len(config.Secrets))
-			for _, in := range config.Secrets {
-				inlineEnvs[strings.TrimSpace(in.Env)] = struct{}{}
-			}
-			harnessAssignments, err := prepareHarnessConfigSecrets(ctx, s.store, projectID, sandbox, harnessConfigID, inlineEnvs)
-			if err != nil {
-				return nil, err
-			}
-			assignments = append(assignments, harnessAssignments...)
-		}
-	}
-	var grants resourcesecrets.SandboxGrants
-	if len(input.Grants) > 0 {
+	var prepared resourcesecrets.SandboxBindings
+	if len(input.Bindings) > 0 {
 		if s.secrets == nil {
-			return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "this server cannot give a new discobox grants")
+			return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "this server cannot give a new discobox bindings")
 		}
-		if grants, err = s.secrets.PrepareSandboxGrants(ctx, projectID, sandbox, input.Grants); err != nil {
+		if prepared, err = s.secrets.PrepareSandboxBindings(ctx, projectID, sandbox, input.Bindings); err != nil {
 			return nil, err
 		}
 	}
-	for _, binding := range grants.Bindings {
-		for _, assignment := range assignments {
-			if assignment.EnvName == binding.EnvName {
-				return nil, apperrors.NewStatusError(http.StatusBadRequest,
-					fmt.Sprintf("%s is already delivered to the new discobox another way; give its grant another variable", binding.EnvName))
-			}
+	// The variables the create gives the sandbox itself, which a binding of
+	// the harness config or the project for the same variable gives way to
+	// (ADR 26-10-27-880 §2).
+	ownEnvs := map[string]struct{}{}
+	for _, binding := range prepared.Bindings {
+		if binding.Use {
+			ownEnvs[binding.EnvName] = struct{}{}
 		}
+	}
+	for _, in := range config.Secrets {
+		env := strings.TrimSpace(in.Env)
+		if _, dup := ownEnvs[env]; dup {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				fmt.Sprintf("%s is given to the new discobox twice; one environment variable carries one credential", env))
+		}
+	}
+	for _, in := range config.Secrets {
+		ownEnvs[strings.TrimSpace(in.Env)] = struct{}{}
+	}
+	if err := checkRequiredSecrets(ctx, s.store, sandbox, harnessConfigID, ownEnvs); err != nil {
+		return nil, err
+	}
+	inlineSecrets, inline, err := inlineSandboxBindings(ctx, projectID, sandbox, config.Secrets)
+	if err != nil {
+		return nil, err
 	}
 	sandbox.SourceDeliveries = map[string]sourcecache.Delivery{}
 	for _, entry := range clientDeliveredSources(sandbox) {
@@ -434,7 +420,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			sandbox.SourceDeliveries[*entry.source.Slug] = sourcecache.Delivery{Status: "pending"}
 		}
 	}
-	return s.createSandboxIntent(ctx, sandbox, append(assignments, grants.Bindings...), grants)
+	return s.createSandboxIntent(ctx, sandbox, inlineSecrets, inline, prepared)
 }
 
 // createHarnessPins is what a sandbox created on config is pinned to: its

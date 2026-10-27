@@ -468,15 +468,9 @@ func TestExportCarriesNoSecretValuesAndNamesItsHarness(t *testing.T) {
 	if err := st.CreateSandbox(ctx, sb); err != nil {
 		t.Fatal(err)
 	}
-	for _, assignment := range []*model.SandboxSecret{
-		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: secret.ID, EnvName: "GITHUB_TOKEN", Sentinel: "sentinel-a"},
-		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: anonymous.ID, EnvName: "INLINE", Sentinel: "sentinel-b"},
-		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: secret.ID, EnvName: "ASKED", Sentinel: "sentinel-c"},
-	} {
-		if err := st.CreateSandboxSecret(ctx, assignment); err != nil {
-			t.Fatal(err)
-		}
-	}
+	deliver(t, st, "sb-1", secret.ID, "GITHUB_TOKEN", "sentinel-a")
+	deliver(t, st, "sb-1", anonymous.ID, "INLINE", "sentinel-b")
+	deliver(t, st, "sb-1", secret.ID, "ASKED", "sentinel-c")
 	provider.exportTree = emptyTar(t)
 
 	stream, err := svc.ExportSandbox(ctx, "project-1", "sb-1")

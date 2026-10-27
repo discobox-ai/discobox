@@ -79,8 +79,9 @@ func (h *Handler) DeleteSandboxHostTrust(ctx context.Context, params serverapi.D
 	return &serverapi.DeleteSandboxHostTrustNoContent{}, nil
 }
 
-// ListApprovalRequests is the window's inbox: a project's credential and
-// trust requests in one read, newest first (ADR 0149 §7). It is a read model
+// ListApprovalRequests is the window's inbox: a project's credential,
+// refresh and trust requests in one read, newest first (ADR 0149 §7). What a
+// discobox may see of each is its resource's listing's to decide. It is a read model
 // and nothing else — each item is answered on its own resource's routes — so
 // it composes the two resources' own listings rather than owning any state.
 func (h *Handler) ListApprovalRequests(ctx context.Context, params serverapi.ListApprovalRequestsParams) (serverapi.ListApprovalRequestsRes, error) {
@@ -96,11 +97,25 @@ func (h *Handler) ListApprovalRequests(ctx context.Context, params serverapi.Lis
 	if err != nil {
 		return apiError(err), nil
 	}
+	refreshes, err := h.services.Secrets.ListSecretRefreshRequests(ctx, params.ProjectId, refreshStatusFor(status))
+	if err != nil {
+		return apiError(err), nil
+	}
 	type dated struct {
 		at   time.Time
 		item apimodel.ApprovalRequest
 	}
-	items := make([]dated, 0, len(credentials)+len(trusts))
+	items := make([]dated, 0, len(credentials)+len(refreshes)+len(trusts))
+	for i := range refreshes {
+		refresh, err := services.Convert[apimodel.SecretRefreshRequest](refreshes[i])
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, dated{at: refreshes[i].CreatedAt, item: apimodel.ApprovalRequest{
+			Kind:    serverapi.ApprovalRequestKindRefresh,
+			Refresh: serverapi.NewOptSecretRefreshRequest(refresh),
+		}})
+	}
 	for i := range credentials {
 		credential, err := services.Convert[apimodel.SecretRequest](credentials[i])
 		if err != nil {
@@ -127,6 +142,18 @@ func (h *Handler) ListApprovalRequests(ctx context.Context, params serverapi.Lis
 		body.ApprovalRequests = append(body.ApprovalRequests, item.item)
 	}
 	return body, nil
+}
+
+// refreshStatusFor is the refresh request status an inbox status filter
+// means: an approved ask is an answered refresh, a denied one dismissed.
+func refreshStatusFor(status string) string {
+	switch status {
+	case model.SecretRequestStatusApproved:
+		return model.SecretRefreshStatusAnswered
+	case model.SecretRequestStatusDenied:
+		return model.SecretRefreshStatusDismissed
+	}
+	return status
 }
 
 // The pool half. Each call is a pool agent relaying for one of its own

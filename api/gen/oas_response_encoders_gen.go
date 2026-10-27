@@ -1298,54 +1298,9 @@ func encodeCreateSecretResponse(response CreateSecretRes, w http.ResponseWriter,
 	}
 }
 
-func encodeCreateSecretGrantResponse(response CreateSecretGrantRes, w http.ResponseWriter, span trace.Span) error {
+func encodeCreateSecretBindingResponse(response CreateSecretBindingRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *SecretGrant:
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
-
-		e := new(jx.Encoder)
-		response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		return nil
-
-	case *ErrorModelStatusCode:
-		w.Header().Set("Content-Type", "application/problem+json")
-		code := response.StatusCode
-		if code == 0 {
-			// Set default status code.
-			code = http.StatusOK
-		}
-		w.WriteHeader(code)
-		if st := http.StatusText(code); code >= http.StatusBadRequest {
-			span.SetStatus(codes.Error, st)
-		} else {
-			span.SetStatus(codes.Ok, st)
-		}
-
-		e := new(jx.Encoder)
-		response.Response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		if code >= http.StatusInternalServerError {
-			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
-		}
-		return nil
-
-	default:
-		return errors.Errorf("unexpected response type: %T", response)
-	}
-}
-
-func encodeCreateSecretRequestResponse(response CreateSecretRequestRes, w http.ResponseWriter, span trace.Span) error {
-	switch response := response.(type) {
-	case *SecretRequest:
+	case *SecretBinding:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -1436,44 +1391,6 @@ func encodeDeconfigureHarnessConfigResponse(response DeconfigureHarnessConfigRes
 func encodeDeleteHarnessConfigResponse(response DeleteHarnessConfigRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
 	case *DeleteHarnessConfigNoContent:
-		w.WriteHeader(204)
-		span.SetStatus(codes.Ok, http.StatusText(204))
-
-		return nil
-
-	case *ErrorModelStatusCode:
-		w.Header().Set("Content-Type", "application/problem+json")
-		code := response.StatusCode
-		if code == 0 {
-			// Set default status code.
-			code = http.StatusOK
-		}
-		w.WriteHeader(code)
-		if st := http.StatusText(code); code >= http.StatusBadRequest {
-			span.SetStatus(codes.Error, st)
-		} else {
-			span.SetStatus(codes.Ok, st)
-		}
-
-		e := new(jx.Encoder)
-		response.Response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		if code >= http.StatusInternalServerError {
-			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
-		}
-		return nil
-
-	default:
-		return errors.Errorf("unexpected response type: %T", response)
-	}
-}
-
-func encodeDeleteHarnessConfigSecretBindingResponse(response DeleteHarnessConfigSecretBindingRes, w http.ResponseWriter, span trace.Span) error {
-	switch response := response.(type) {
-	case *DeleteHarnessConfigSecretBindingNoContent:
 		w.WriteHeader(204)
 		span.SetStatus(codes.Ok, http.StatusText(204))
 
@@ -1927,6 +1844,51 @@ func encodeDeleteSecretResponse(response DeleteSecretRes, w http.ResponseWriter,
 	}
 }
 
+func encodeDeleteSecretBindingResponse(response DeleteSecretBindingRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *DeleteSecretBindingResponse:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *ErrorModelStatusCode:
+		w.Header().Set("Content-Type", "application/problem+json")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
 func encodeDenySecretRequestResponse(response DenySecretRequestRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
 	case *DenySecretRequestNoContent:
@@ -2020,6 +1982,51 @@ func encodeDiscardSandboxHarnessConfigChangesResponse(response DiscardSandboxHar
 
 	case *ErrorResponseStatusCode:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeDismissSecretRefreshRequestResponse(response DismissSecretRefreshRequestRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *SecretRefreshRequest:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *ErrorModelStatusCode:
+		w.Header().Set("Content-Type", "application/problem+json")
 		code := response.StatusCode
 		if code == 0 {
 			// Set default status code.
@@ -3397,6 +3404,51 @@ func encodeGetSecretResponse(response GetSecretRes, w http.ResponseWriter, span 
 	}
 }
 
+func encodeGetSecretBindingResponse(response GetSecretBindingRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *SecretBinding:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *ErrorModelStatusCode:
+		w.Header().Set("Content-Type", "application/problem+json")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
 func encodeGetSecretRequestResponse(response GetSecretRequestRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
 	case *SecretRequest:
@@ -3622,6 +3674,51 @@ func encodeListApprovalRequestsResponse(response ListApprovalRequestsRes, w http
 	}
 }
 
+func encodeListBoundSecretsResponse(response ListBoundSecretsRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *ListBoundSecretsBody:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *ErrorModelStatusCode:
+		w.Header().Set("Content-Type", "application/problem+json")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
 func encodeListDNSAuditResponse(response ListDNSAuditRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
 	case *ListDNSAuditBody:
@@ -3715,51 +3812,6 @@ func encodeListExecEventsResponse(response ListExecEventsRes, w http.ResponseWri
 func encodeListHTTPAuditResponse(response ListHTTPAuditRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
 	case *ListHTTPAuditBody:
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
-
-		e := new(jx.Encoder)
-		response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		return nil
-
-	case *ErrorModelStatusCode:
-		w.Header().Set("Content-Type", "application/problem+json")
-		code := response.StatusCode
-		if code == 0 {
-			// Set default status code.
-			code = http.StatusOK
-		}
-		w.WriteHeader(code)
-		if st := http.StatusText(code); code >= http.StatusBadRequest {
-			span.SetStatus(codes.Error, st)
-		} else {
-			span.SetStatus(codes.Ok, st)
-		}
-
-		e := new(jx.Encoder)
-		response.Response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		if code >= http.StatusInternalServerError {
-			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
-		}
-		return nil
-
-	default:
-		return errors.Errorf("unexpected response type: %T", response)
-	}
-}
-
-func encodeListHarnessConfigSecretBindingsResponse(response ListHarnessConfigSecretBindingsRes, w http.ResponseWriter, span trace.Span) error {
-	switch response := response.(type) {
-	case *ListHarnessConfigSecretBindingsBody:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -4882,9 +4934,99 @@ func encodeListSandboxesResponse(response ListSandboxesRes, w http.ResponseWrite
 	}
 }
 
-func encodeListSecretGrantsResponse(response ListSecretGrantsRes, w http.ResponseWriter, span trace.Span) error {
+func encodeListSecretBindingEventsResponse(response ListSecretBindingEventsRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *ListSecretGrantsBody:
+	case *ListSecretBindingEventsBody:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *ErrorModelStatusCode:
+		w.Header().Set("Content-Type", "application/problem+json")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeListSecretBindingsResponse(response ListSecretBindingsRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *ListSecretBindingsBody:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *ErrorModelStatusCode:
+		w.Header().Set("Content-Type", "application/problem+json")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeListSecretRefreshRequestsResponse(response ListSecretRefreshRequestsRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *ListSecretRefreshRequestsBody:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -6514,44 +6656,6 @@ func encodeResumeSandboxAutostopResponse(response ResumeSandboxAutostopRes, w ht
 	}
 }
 
-func encodeRevokeSecretGrantResponse(response RevokeSecretGrantRes, w http.ResponseWriter, span trace.Span) error {
-	switch response := response.(type) {
-	case *RevokeSecretGrantNoContent:
-		w.WriteHeader(204)
-		span.SetStatus(codes.Ok, http.StatusText(204))
-
-		return nil
-
-	case *ErrorModelStatusCode:
-		w.Header().Set("Content-Type", "application/problem+json")
-		code := response.StatusCode
-		if code == 0 {
-			// Set default status code.
-			code = http.StatusOK
-		}
-		w.WriteHeader(code)
-		if st := http.StatusText(code); code >= http.StatusBadRequest {
-			span.SetStatus(codes.Error, st)
-		} else {
-			span.SetStatus(codes.Ok, st)
-		}
-
-		e := new(jx.Encoder)
-		response.Response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		if code >= http.StatusInternalServerError {
-			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
-		}
-		return nil
-
-	default:
-		return errors.Errorf("unexpected response type: %T", response)
-	}
-}
-
 func encodeSaveSandboxHarnessConfigChangesResponse(response SaveSandboxHarnessConfigChangesRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
 	case *HarnessConfigSaveResult:
@@ -6735,51 +6839,6 @@ func encodeSetDefaultPoolResponse(response SetDefaultPoolRes, w http.ResponseWri
 func encodeSetDefaultProjectResponse(response SetDefaultProjectRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
 	case *Project:
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
-
-		e := new(jx.Encoder)
-		response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		return nil
-
-	case *ErrorModelStatusCode:
-		w.Header().Set("Content-Type", "application/problem+json")
-		code := response.StatusCode
-		if code == 0 {
-			// Set default status code.
-			code = http.StatusOK
-		}
-		w.WriteHeader(code)
-		if st := http.StatusText(code); code >= http.StatusBadRequest {
-			span.SetStatus(codes.Error, st)
-		} else {
-			span.SetStatus(codes.Ok, st)
-		}
-
-		e := new(jx.Encoder)
-		response.Response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		if code >= http.StatusInternalServerError {
-			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
-		}
-		return nil
-
-	default:
-		return errors.Errorf("unexpected response type: %T", response)
-	}
-}
-
-func encodeSetHarnessConfigSecretBindingResponse(response SetHarnessConfigSecretBindingRes, w http.ResponseWriter, span trace.Span) error {
-	switch response := response.(type) {
-	case *HarnessConfigSecretBinding:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -7675,6 +7734,51 @@ func encodeUpdateSandboxProviderInstanceResponse(response UpdateSandboxProviderI
 func encodeUpdateSecretResponse(response UpdateSecretRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
 	case *Secret:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *ErrorModelStatusCode:
+		w.Header().Set("Content-Type", "application/problem+json")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeUpdateSecretBindingResponse(response UpdateSecretBindingRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *SecretBinding:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))

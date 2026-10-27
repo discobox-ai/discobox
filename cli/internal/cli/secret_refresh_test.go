@@ -12,7 +12,7 @@ import (
 )
 
 //nolint:gosec // G101: a test fixture naming a command, not a credential.
-const refreshTestSecretJSON = `{"id":"secret-1","projectId":"project-1","name":"github","type":"token","host":"github.com","maxGrantTTLSeconds":3600,"ttlSeconds":300,"refreshCommand":["printf","gho_fresh"],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
+const refreshTestSecretJSON = `{"id":"secret-1","projectId":"project-1","name":"github","type":"token","maxBindingTTLSeconds":3600,"ttlSeconds":300,"refreshCommand":["printf","gho_fresh"],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
 
 // A token got from a command starts with a value: create runs the command
 // here for the first one.
@@ -36,7 +36,7 @@ func TestSecretCreateRunsTheRefreshCommandForTheFirstValue(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "create", "--name", "github", "--host", "github.com", "--refresh-command", "printf 'gho_first'", "--ttl", "10m"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "create", "--name", "github", "--route", "github.com", "--refresh-command", "printf 'gho_first'", "--ttl", "10m"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -48,8 +48,9 @@ func TestSecretCreateRunsTheRefreshCommandForTheFirstValue(t *testing.T) {
 	if len(command) != 2 || command[0] != "printf" || command[1] != "gho_first" {
 		t.Fatalf("refreshCommand = %#v, want the argument vector as split", posted["refreshCommand"])
 	}
-	if posted["ttlSeconds"] != float64(600) || posted["name"] != "github" || posted["host"] != "github.com" {
-		t.Fatalf("posted = %#v, want the lifetime, the name and the host", posted)
+	routes, _ := posted["routes"].([]any)
+	if posted["ttlSeconds"] != float64(600) || posted["name"] != "github" || len(routes) != 1 {
+		t.Fatalf("posted = %#v, want the lifetime, the name and the route", posted)
 	}
 }
 
@@ -67,10 +68,10 @@ func TestSecretRefreshRunsTheCommandAndAnswersTheRequest(t *testing.T) {
 			_, _ = w.Write([]byte(`{"secrets":[` + refreshTestSecretJSON + `]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets/secret-1":
 			_, _ = w.Write([]byte(refreshTestSecretJSON))
-		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests":
-			_, _ = w.Write([]byte(`{"secretRequests":[
-				{"id":"req-other","projectId":"project-1","requestedBy":"sandbox:sb-1","type":"token","status":"pending","secretId":"secret-1","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"},
-				{"id":"req-refresh","projectId":"project-1","requestedBy":"sandbox:sb-1","type":"token","status":"pending","secretId":"secret-1","reason":"refresh","refreshCause":"stale","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-refresh-requests":
+			_, _ = w.Write([]byte(`{"secretRefreshRequests":[
+				{"id":"req-other","projectId":"project-1","secretId":"secret-other","cause":"stale","status":"pending","createdAt":"2026-06-17T00:00:00Z"},
+				{"id":"req-refresh","projectId":"project-1","sandboxId":"sb-1","secretId":"secret-1","cause":"stale","status":"pending","createdAt":"2026-06-17T00:00:00Z"}]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secrets/secret-1/refresh":
 			if err := json.NewDecoder(r.Body).Decode(&refreshed); err != nil {
 				t.Fatal(err)
@@ -117,8 +118,8 @@ func TestSecretRefreshReadsAnEnteredValueFromStdin(t *testing.T) {
 			_, _ = w.Write([]byte(`{"secrets":[` + refreshTestSecretJSON + `]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets/secret-1":
 			_, _ = w.Write([]byte(refreshTestSecretJSON))
-		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests":
-			_, _ = w.Write([]byte(`{"secretRequests":[]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-refresh-requests":
+			_, _ = w.Write([]byte(`{"secretRefreshRequests":[]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secrets/secret-1/refresh":
 			if err := json.NewDecoder(r.Body).Decode(&refreshed); err != nil {
 				t.Fatal(err)

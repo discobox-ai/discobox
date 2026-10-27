@@ -66,7 +66,7 @@ func (m *Model) askAboutTrust(req CredentialRequest) tea.Cmd {
 
 // askTrustLifetime is the second step: how long the trust lasts.
 func (m *Model) askTrustLifetime(a trustAnswer, back func() tea.Cmd) tea.Cmd {
-	asked := a.req.GrantTTL
+	asked := a.req.AskedTTL
 	items := make([]action, 0, len(trustLifetimes)+1)
 	offered := false
 	for _, d := range trustLifetimes {
@@ -190,8 +190,8 @@ func trustAskSections(req CredentialRequest, now time.Time) []section {
 		{label: "trust", value: req.Host, tone: toneAccent},
 		{label: "for", value: "this discobox alone"},
 	}
-	if req.GrantTTL > 0 {
-		fields = append(fields, field{label: "wanted for", value: lifetime.Label(req.GrantTTL)})
+	if req.AskedTTL > 0 {
+		fields = append(fields, field{label: "wanted for", value: lifetime.Label(req.AskedTTL)})
 	}
 	fields = append(fields, field{label: "asked", value: asked, tone: toneDim})
 	if req.Server != "" {

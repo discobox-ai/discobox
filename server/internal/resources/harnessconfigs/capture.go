@@ -180,7 +180,7 @@ func (s *Service) commitCapture(ctx context.Context, p, b, configID string, c ha
 		if box.HarnessConfigID == nil || *box.HarnessConfigID != configID {
 			return captureConflict()
 		}
-		bindings, err := tx.ListHarnessConfigSecretBindings(ctx, p, configID)
+		bindings, err := tx.ListTargetUseBindings(ctx, p, model.SecretBindingTargetHarnessConfig, configID)
 		if err != nil {
 			return err
 		}
@@ -256,25 +256,19 @@ func (s *Service) commitCapture(ctx context.Context, p, b, configID string, c ha
 		if err := tx.UpdateHarnessConfig(ctx, cfg); err != nil {
 			return err
 		}
-		if s.sandboxes != nil {
-			if err := s.sandboxes.RebindHarnessConfigSecretsTx(ctx, tx, db, p, configID); err != nil {
-				return err
-			}
-		}
 		baseline, err = tx.CaptureBaseline(ctx, p, configID)
 		if err != nil {
 			return err
 		}
-		receipt = &model.HarnessCaptureReceipt{ProjectID: p, SandboxID: b, HarnessConfigID: configID, CandidateID: c.ID, Baseline: baseline}
-		envs := append([]string(nil), references...)
-		for _, credential := range c.Credentials {
-			envs = append(envs, credential.EnvName)
-		}
+		// The sandboxes running the config were marked by each binding
+		// written; the one that saved is given what they deliver now, so its
+		// acknowledgment carries their sentinels.
 		if s.sandboxes != nil {
-			if err := s.sandboxes.EnsureCaptureOriginSecretsTx(ctx, tx, db, p, b, configID, envs); err != nil {
+			if err := s.sandboxes.MaterializeSandboxSecretsTx(ctx, tx, p, b); err != nil {
 				return err
 			}
 		}
+		receipt = &model.HarnessCaptureReceipt{ProjectID: p, SandboxID: b, HarnessConfigID: configID, CandidateID: c.ID, Baseline: baseline}
 		if err := tx.CreateHarnessCaptureReceipt(ctx, receipt); err != nil {
 			return err
 		}
@@ -286,7 +280,7 @@ func (s *Service) commitCapture(ctx context.Context, p, b, configID string, c ha
 	return receipt, err
 }
 
-func (s *Service) applyCapturedCredential(ctx context.Context, tx *store.Store, db *gorm.DB, cfg *model.HarnessConfig, bindings []model.HarnessConfigSecretBinding, c harnesscapture.Credential) error {
+func (s *Service) applyCapturedCredential(ctx context.Context, tx *store.Store, db *gorm.DB, cfg *model.HarnessConfig, bindings []model.SecretBinding, c harnesscapture.Credential) error {
 	provider, ok := cfg.SaveBack.Provider(c.Provider, c.EnvName)
 	if !ok {
 		return captureConflict()
@@ -333,6 +327,8 @@ func (s *Service) applyCapturedCredential(ctx context.Context, tx *store.Store, 
 		return err
 	}
 	owned := slices.Contains(cfg.ConfiguredSecretIDs, existingID)
+	scoped := *s
+	scoped.store = tx
 	var secret *model.Secret
 	if owned {
 		secret, err = tx.GetSecret(ctx, cfg.ProjectID, existingID)
@@ -344,43 +340,47 @@ func (s *Service) applyCapturedCredential(ctx context.Context, tx *store.Store, 
 		if err != nil {
 			return err
 		}
-		secret = &model.Secret{ID: newID, ProjectID: cfg.ProjectID, Name: c.EnvName, UniqueKey: newID, MaxGrantTTL: 0}
+		name, err := scoped.freeSecretName(ctx, cfg, c.EnvName)
+		if err != nil {
+			return err
+		}
+		secret = &model.Secret{ID: newID, ProjectID: cfg.ProjectID, Name: name, MaxBindingTTL: 0}
 	}
 	secret.Type = c.Type
-	secret.Host = provider.Host
 	secret.EncryptedValue = raw
+	// Where it may go: the routes the provider registers. A provider that
+	// registers none leaves an existing secret's routes as they are — a
+	// person may have narrowed them — and gives a new one its host, else
+	// anywhere (ADR 26-10-27-939 §2).
 	routes := make([]model.SecretRoute, 0, len(provider.Routes))
 	for _, route := range provider.Routes {
 		routes = append(routes, model.SecretRoute{Host: route.Host, Path: route.Path, Blocked: route.Blocked})
 	}
-	if _, err := secret.ReplaceRoutes(routes); err != nil {
-		return apperrors.NewStatusError(http.StatusBadRequest, "invalid credential routes")
+	if len(routes) == 0 && !owned {
+		routes = configuredRoutes(&model.HarnessConfig{}, "", hostscope.Normalize(provider.Host))
+	}
+	routesChanged := false
+	if len(routes) > 0 {
+		if routesChanged, err = secret.ReplaceRoutes(routes); err != nil {
+			return apperrors.NewStatusError(http.StatusBadRequest, "invalid credential routes")
+		}
 	}
 	if owned {
 		if err := tx.UpdateSecret(ctx, secret); err != nil {
 			return err
 		}
-		scoped := *s
-		scoped.store = tx
-		if err := scoped.updateConfiguredGrantHost(ctx, cfg, secret.ID, provider.Host); err != nil {
-			return err
+		if routesChanged && s.sandboxes != nil {
+			if err := s.sandboxes.MarkSecretHoldersDirtyTx(ctx, tx, db, cfg.ProjectID, secret.ID); err != nil {
+				return err
+			}
 		}
 	} else {
 		if err := tx.CreateSecret(ctx, secret); err != nil {
 			return err
 		}
 		cfg.ConfiguredSecretIDs = append(cfg.ConfiguredSecretIDs, secret.ID)
-		if err := tx.CreateSecretGrant(ctx, &model.SecretGrant{ProjectID: cfg.ProjectID, SecretID: secret.ID, Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: cfg.ID, Hosts: hostscope.List(provider.Host)}); err != nil {
-			return err
-		}
 	}
-	if err := tx.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{ProjectID: cfg.ProjectID, HarnessConfigID: cfg.ID, EnvName: c.EnvName, SecretID: secret.ID}); err != nil {
-		return err
-	}
-	if s.sandboxes != nil {
-		return s.sandboxes.MarkSecretHoldersDirtyTx(ctx, tx, db, cfg.ProjectID, secret.ID)
-	}
-	return nil
+	return s.bindHarnessSecret(ctx, tx, db, cfg, c.EnvName, secret.ID)
 }
 
 // A preview crosses the same untrusted boundary as a candidate. Validate file

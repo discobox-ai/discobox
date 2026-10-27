@@ -9,6 +9,8 @@ import (
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/poolauth"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -44,15 +46,6 @@ func TestSecretRequestHandlersDoNotReturnSecretValues(t *testing.T) {
 	}
 	assertResponseDoesNotContain(t, getRes, "clear-token")
 	assertResponseDoesNotContain(t, getRes, "value")
-
-	createRes, err := h.CreateSecretRequest(context.Background(), &serverapi.CreateSecretRequestBody{
-		Type: serverapi.CreateSecretRequestBodyTypeToken,
-	}, serverapi.CreateSecretRequestParams{ProjectId: "project-1"})
-	if err != nil {
-		t.Fatalf("create secret request: %v", err)
-	}
-	assertResponseDoesNotContain(t, createRes, "clear-token")
-	assertResponseDoesNotContain(t, createRes, "value")
 }
 
 type fakeSecretService struct{}
@@ -94,11 +87,6 @@ func (fakeSecretService) ListSecretRequests(context.Context, string, string) ([]
 	return []model.SecretRequest{request}, nil
 }
 
-func (fakeSecretService) CreateSecretRequest(context.Context, string, svcapi.CreateSecretRequestBody) (*model.SecretRequest, error) {
-	request := fakeSecretRequest()
-	return &request, nil
-}
-
 func (fakeSecretService) GetSecretRequest(context.Context, string, string) (*model.SecretRequest, error) {
 	request := fakeSecretRequest()
 	return &request, nil
@@ -113,17 +101,46 @@ func (fakeSecretService) DenySecretRequest(context.Context, string, string) erro
 	return nil
 }
 
-func (fakeSecretService) ListSecretGrants(context.Context, string, string) ([]model.SecretGrant, error) {
-	return []model.SecretGrant{fakeSecretGrant()}, nil
+func (fakeSecretService) ListSecretRefreshRequests(context.Context, string, string) ([]model.SecretRefreshRequest, error) {
+	return nil, nil
 }
 
-func (fakeSecretService) CreateSecretGrant(context.Context, string, svcapi.CreateSecretGrantBody) (*model.SecretGrant, error) {
-	grant := fakeSecretGrant()
-	return &grant, nil
+func (fakeSecretService) DismissSecretRefreshRequest(context.Context, string, string) (*model.SecretRefreshRequest, error) {
+	return &model.SecretRefreshRequest{ID: "sref-1", Status: model.SecretRefreshStatusDismissed, Cause: model.SecretRefreshCauseStale}, nil
 }
 
-func (fakeSecretService) RevokeSecretGrant(context.Context, string, string) error {
-	return nil
+func (fakeSecretService) ListSecretBindings(context.Context, string, svcapi.SecretBindingQuery) ([]model.SecretBinding, error) {
+	return []model.SecretBinding{fakeSecretBinding()}, nil
+}
+
+func (fakeSecretService) CreateSecretBinding(context.Context, string, svcapi.CreateSecretBindingBody) (*model.SecretBinding, error) {
+	binding := fakeSecretBinding()
+	return &binding, nil
+}
+
+func (fakeSecretService) GetSecretBinding(context.Context, string, string) (*model.SecretBinding, error) {
+	binding := fakeSecretBinding()
+	return &binding, nil
+}
+
+func (fakeSecretService) UpdateSecretBinding(context.Context, string, string, svcapi.UpdateSecretBindingBody) (*model.SecretBinding, error) {
+	binding := fakeSecretBinding()
+	return &binding, nil
+}
+
+func (fakeSecretService) DeleteSecretBinding(context.Context, string, string) ([]string, error) {
+	return []string{"bind-1", "bind-2"}, nil
+}
+
+func (fakeSecretService) ListSecretBindingEvents(context.Context, string, svcapi.SecretBindingEventQuery) ([]model.SecretBindingEvent, error) {
+	binding := fakeSecretBinding()
+	return []model.SecretBindingEvent{{ID: "bev-1", ProjectID: "project-1", BindingID: binding.ID, SecretID: binding.SecretID,
+		Event: model.SecretBindingEventCreated, Actor: "user-1", Binding: binding, At: binding.CreatedAt}}, nil
+}
+
+func (fakeSecretService) ListBoundSecrets(context.Context, string, string, string) ([]svcapi.BoundSecret, error) {
+	binding := fakeSecretBinding()
+	return []svcapi.BoundSecret{{Binding: binding, SecretName: "github", RouteLists: [][]model.SecretRoute{{{Host: "*"}}, binding.Routes}}}, nil
 }
 
 func (fakeSecretService) ResolveSandboxSecret(context.Context, string, string, string, string) (*model.SandboxSecretResolution, error) {
@@ -146,7 +163,7 @@ func (fakeSecretService) CreateSandboxCredentialRequest(context.Context, string,
 	return &model.SecretRequest{ID: "sreq-1", Status: model.SecretRequestStatusPending}, nil
 }
 
-func (fakeSecretService) GetSandboxCredentialRequest(context.Context, string, string, string) (*model.SecretRequest, *model.SecretGrant, error) {
+func (fakeSecretService) GetSandboxCredentialRequest(context.Context, string, string, string) (*model.SecretRequest, *model.SecretBinding, error) {
 	return &model.SecretRequest{ID: "sreq-1", Status: model.SecretRequestStatusPending}, nil, nil
 }
 
@@ -157,8 +174,8 @@ func fakeSecret() model.Secret {
 		ProjectID:      "project-1",
 		Name:           "github",
 		Type:           model.SecretTypeToken,
-		Host:           "github.com",
-		MaxGrantTTL:    3600,
+		Routes:         []model.SecretRoute{{Host: "github.com"}},
+		MaxBindingTTL:  3600,
 		EncryptedValue: []byte(`{"token":"encrypted-token"}`),
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -171,28 +188,30 @@ func fakeSecretRequest() model.SecretRequest {
 		ID:          "request-1",
 		ProjectID:   "project-1",
 		RequestedBy: "user-1",
-		Type:        model.SecretTypeToken,
-		Hosts:       []string{"api.github.com", "api.githubcopilot.com"},
+		Routes:      []model.SecretRoute{{Host: "api.github.com"}, {Host: "api.githubcopilot.com"}},
 		SecretID:    "secret-1",
 		Status:      model.SecretRequestStatusApproved,
-		GrantID:     "grant-1",
+		BindingID:   "bind-1",
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
 }
 
-func fakeSecretGrant() model.SecretGrant {
+func fakeSecretBinding() model.SecretBinding {
 	now := time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC)
-	return model.SecretGrant{
-		ID:        "grant-1",
-		ProjectID: "project-1",
-		SecretID:  "secret-1",
-		Scope:     model.SecretGrantScopeProject,
-		ScopeKey:  "project-1",
-		Hosts:     []string{"api.github.com", "api.githubcopilot.com"},
-		GrantedAt: now,
-		CreatedAt: now,
-		UpdatedAt: now,
+	return model.SecretBinding{
+		ID:         "bind-1",
+		ProjectID:  "project-1",
+		SecretID:   "secret-1",
+		SecretName: "github",
+		TargetKind: model.SecretBindingTargetSandbox,
+		TargetID:   "sb-1",
+		Use:        true,
+		EnvName:    "GH_TOKEN",
+		Routes:     []model.SecretRoute{{Host: "api.github.com"}, {Host: "api.githubcopilot.com"}},
+		CreatedBy:  "user-1",
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 }
 
@@ -246,38 +265,77 @@ func TestResolveSandboxSecretNamesTheSecret(t *testing.T) {
 	}
 }
 
-// A grant and a request carry their hosts (ADR 26-10-02-393).
-func TestSecretGrantsAndRequestsCarryTheirHosts(t *testing.T) {
+// A binding and a request carry their routes, and the binding's handlers
+// answer in the API's shapes: the resolved view's route lists, a delete's
+// cascade, the history's snapshots.
+func TestSecretBindingsAndRequestsCarryTheirRoutes(t *testing.T) {
 	h := New(svcapi.Services{Secrets: fakeSecretService{}})
 	ctx := context.Background()
 	want := []string{"api.github.com", "api.githubcopilot.com"}
+	hosts := func(routes []serverapi.SecretRoute) []string {
+		var out []string
+		for _, route := range routes {
+			out = append(out, route.Host)
+		}
+		return out
+	}
 
-	listRes, err := h.ListSecretGrants(ctx, serverapi.ListSecretGrantsParams{ProjectId: "project-1"})
+	listRes, err := h.ListSecretBindings(ctx, serverapi.ListSecretBindingsParams{ProjectId: "project-1"})
 	if err != nil {
-		t.Fatalf("list grants: %v", err)
+		t.Fatalf("list bindings: %v", err)
 	}
-	grants := listRes.(*serverapi.ListSecretGrantsBody).SecretGrants
-	if len(grants) != 1 || !slices.Equal(grants[0].Hosts, want) {
-		t.Fatalf("grants = %+v, want hosts %q", grants, want)
+	bindings := listRes.(*serverapi.ListSecretBindingsBody).SecretBindings
+	if len(bindings) != 1 || !slices.Equal(hosts(bindings[0].Routes), want) || bindings[0].EnvVar.Or("") != "GH_TOKEN" ||
+		bindings[0].TargetKind != serverapi.SecretBindingTargetKindSandbox || bindings[0].SecretName.Or("") != "github" {
+		t.Fatalf("bindings = %+v, want routes %q", bindings, want)
 	}
-
 	getRes, err := h.GetSecretRequest(ctx, serverapi.GetSecretRequestParams{ProjectId: "project-1", RequestId: "request-1"})
 	if err != nil {
 		t.Fatalf("get request: %v", err)
 	}
-	if request := getRes.(*serverapi.SecretRequest); !slices.Equal(request.Hosts, want) {
-		t.Fatalf("request = %+v, want hosts %q", request, want)
+	if request := getRes.(*serverapi.SecretRequest); !slices.Equal(hosts(request.Routes), want) || request.BindingId.Or("") != "bind-1" {
+		t.Fatalf("request = %+v, want routes %q", request, want)
+	}
+	boundRes, err := h.ListBoundSecrets(ctx, serverapi.ListBoundSecretsParams{ProjectId: "project-1", TargetKind: serverapi.ListBoundSecretsTargetKindSandbox, Target: serverapi.NewOptString("sb-1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound := boundRes.(*serverapi.ListBoundSecretsBody).BoundSecrets
+	if len(bound) != 1 || len(bound[0].Routes) != 2 || bound[0].Routes[0][0].Host != "*" || bound[0].From != serverapi.BoundSecretFromSandbox {
+		t.Fatalf("bound = %+v, want the secret's list then the binding's", bound)
+	}
+	deleteRes, err := h.DeleteSecretBinding(ctx, serverapi.DeleteSecretBindingParams{ProjectId: "project-1", BindingId: "bind-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted := deleteRes.(*serverapi.DeleteSecretBindingResponse).Deleted; !slices.Equal(deleted, []string{"bind-1", "bind-2"}) {
+		t.Fatalf("deleted = %v", deleted)
+	}
+	eventsRes, err := h.ListSecretBindingEvents(ctx, serverapi.ListSecretBindingEventsParams{ProjectId: "project-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := eventsRes.(*serverapi.ListSecretBindingEventsBody).SecretBindingEvents
+	if len(events) != 1 || events[0].Event != serverapi.SecretBindingEventEventCreated || events[0].Binding.ID != "bind-1" {
+		t.Fatalf("events = %+v", events)
+	}
+	dismissRes, err := h.DismissSecretRefreshRequest(ctx, serverapi.DismissSecretRefreshRequestParams{ProjectId: "project-1", RequestId: "sref-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refresh := dismissRes.(*serverapi.SecretRefreshRequest); refresh.Status != serverapi.SecretRefreshRequestStatusDismissed {
+		t.Fatalf("refresh = %+v", refresh)
 	}
 }
 
-// The approver picks a grant's hosts and lifetime, so the status the asking
-// sandbox polls says what was picked: the hosts, the variable its sentinel is
-// in, and an expiry, or none for a grant that never lapses. A delegation is
-// in no variable.
+// The approver picks a binding's routes and lifetime, so the status the
+// asking sandbox polls says what was picked: the hosts, the variable its
+// sentinel is in, and an expiry, or none for a binding that never lapses. A
+// delegation is in no variable.
 func TestSandboxCredentialRequestStatusCarriesWhatWasGranted(t *testing.T) {
 	approved := &model.SecretRequest{ID: "sreq-1", Status: model.SecretRequestStatusApproved, Name: "asked", EnvName: "GH_TOKEN"}
 	expires := time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC)
-	timed := agentCredentialRequestStatus(approved, &model.SecretGrant{Hosts: []string{"api.github.com"}, ExpiresAt: &expires}, "github")
+	timed := agentCredentialRequestStatus(approved, &model.SecretBinding{Use: true, Routes: []model.SecretRoute{{Host: "api.github.com"}}, ExpiresAt: &expires}, nil, "github")
 	if got, ok := timed.ExpiresAt.Get(); !ok || !got.Equal(expires) {
 		t.Fatalf("expiresAt = %v (set %v), want %v", got, ok, expires)
 	}
@@ -286,18 +344,21 @@ func TestSandboxCredentialRequestStatusCarriesWhatWasGranted(t *testing.T) {
 		t.Fatalf("status = %+v, want the grant's name, variable and hosts", timed)
 	}
 
-	forever := agentCredentialRequestStatus(approved, &model.SecretGrant{}, "github")
+	forever := agentCredentialRequestStatus(approved, &model.SecretBinding{Use: true}, &model.Secret{Routes: []model.SecretRoute{{Host: "github.com"}}}, "github")
+	if !slices.Equal(forever.Hosts, []string{"github.com"}) {
+		t.Fatalf("hosts = %v, want the secret's when the binding names none", forever.Hosts)
+	}
 	if forever.ExpiresAt.IsSet() {
 		t.Fatalf("expiresAt = %v on a grant that never expires, want it absent", forever.ExpiresAt)
 	}
 
-	delegated := &model.SecretRequest{ID: "sreq-2", Status: model.SecretRequestStatusApproved, Name: "github", Purpose: model.SecretGrantPurposeDelegate}
-	status := agentCredentialRequestStatus(delegated, &model.SecretGrant{Purpose: model.SecretGrantPurposeDelegate, Hosts: []string{"github.com"}}, "github")
+	delegated := &model.SecretRequest{ID: "sreq-2", Status: model.SecretRequestStatusApproved, Name: "github", EnvName: "X", Purpose: model.SecretPurposeDelegate}
+	status := agentCredentialRequestStatus(delegated, &model.SecretBinding{Delegate: true, Routes: []model.SecretRoute{{Host: "github.com"}}}, nil, "github")
 	if status.EnvVar.IsSet() || status.Purpose != serverapi.SandboxCredentialRequestStatusPurposeDelegate {
 		t.Fatalf("status = %+v, want a delegation in no variable", status)
 	}
 
-	pending := agentCredentialRequestStatus(&model.SecretRequest{ID: "sreq-3", Status: model.SecretRequestStatusPending, EnvName: "X"}, nil, "")
+	pending := agentCredentialRequestStatus(&model.SecretRequest{ID: "sreq-3", Status: model.SecretRequestStatusPending, EnvName: "X"}, nil, nil, "")
 	if pending.Name.IsSet() || pending.EnvVar.IsSet() || len(pending.Hosts) != 0 {
 		t.Fatalf("pending status = %+v, want nothing granted", pending)
 	}
@@ -331,7 +392,28 @@ type listingSecretService struct{ fakeSecretService }
 
 func (listingSecretService) ListSandboxCredentials(context.Context, string, string) ([]svcapi.SandboxCredential, error) {
 	return []svcapi.SandboxCredential{
-		{Name: "github", EnvName: "GH_TOKEN", SecretID: "sec-1", GrantID: "g-1", Hosts: []string{"api.github.com"}, Purpose: model.SecretGrantPurposeUse},
-		{Name: "github", SecretID: "sec-1", GrantID: "g-2", Hosts: []string{"github.com"}, Purpose: model.SecretGrantPurposeDelegate},
+		{Name: "github", EnvName: "GH_TOKEN", SecretID: "sec-1", BindingID: "b-1", Hosts: []string{"api.github.com"}, Purpose: model.SecretPurposeUse},
+		{Name: "github", SecretID: "sec-1", BindingID: "b-2", Hosts: []string{"github.com"}, Purpose: model.SecretPurposeDelegate},
 	}, nil
+}
+
+// A harness config whose save-back routes include a blocked one serializes in
+// the API's shape (ADR 26-10-27-880 §4).
+func TestAHarnessConfigWithABlockedCaptureRouteSerializes(t *testing.T) {
+	config := model.HarnessConfig{ID: "hc-1", ProjectID: "project-1", Slug: "codex", Name: "Codex", SaveBack: &harnesscapture.Definition{
+		Version: 1, ExportCommand: []string{"export"}, HandoffCommand: []string{"handoff"}, Settings: []harnesscapture.Setting{}, Watch: []string{"~/.codex"},
+		Providers: []harnesscapture.Provider{{ID: "vendor", EnvName: "API_KEY", Types: []string{"token"},
+			Routes: []harnesscapture.Route{{Host: "api.vendor.example"}, {Host: "api.vendor.example", Path: "/admin", Blocked: true}}}},
+	}}
+	body, err := svcapi.Convert[apimodel.HarnessConfig](config)
+	if err != nil {
+		t.Fatalf("convert: %v", err)
+	}
+	saveBack, ok := body.SaveBack.Get()
+	if !ok || len(saveBack.Providers) != 1 {
+		t.Fatalf("save-back = %+v, want its provider", body.SaveBack)
+	}
+	if routes, _ := saveBack.Providers[0].Routes.Get(); len(routes) != 2 || !routes[1].Blocked.Or(false) {
+		t.Fatalf("save-back = %+v, want the blocked route carried", body.SaveBack)
+	}
 }

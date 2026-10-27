@@ -60,6 +60,7 @@ type Service struct {
 	providerService  *providers.Service
 	poolControlPlane *pools.ControlPlane
 	harnessConfigs   *harnessconfigs.Service
+	secrets          *secrets.Service
 	assets           *assets.Service
 	gateways         *gateways.Service
 }
@@ -136,11 +137,11 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	// One service answers both: host trust is the credential broker's act
 	// about a different thing (ADR 0149), and shares its pool-ownership check.
 	secretService := secrets.NewService(store)
-	// A create's grants are prepared by the credential broker, which holds a
-	// discobox giving them to what it was delegated (ADR 26-09-30-782 §1).
+	// A create's bindings are prepared by the credential broker, which holds
+	// a discobox giving them to what it was delegated (ADR 26-10-27-880 §3).
 	sandboxService.SetSecrets(secretService)
-	// And back: a change to a secret's routes is carried to the running
-	// discoboxes holding it (ADR 26-10-02-924).
+	// And back: a change to a secret's routes, or to a binding, is carried to
+	// the discoboxes it reaches (ADR 26-10-27-880 §2).
 	secretService.SetSecretHolders(sandboxService)
 	// The bundles a release names are the ones the server's own registry
 	// credentials pull; a project's are pulled without them.
@@ -216,6 +217,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		options:          options,
 		poolControlPlane: poolControlPlane,
 		harnessConfigs:   harnessConfigService,
+		secrets:          secretService,
 		assets:           assetService,
 		gateways:         gatewayService,
 	}
@@ -293,6 +295,10 @@ func (s *Service) registerReconcilers() error {
 	// Delivers committed harness capture acknowledgments and reaps configure
 	// flows, including accepted intent that outlives a server restart.
 	if err := s.engine.Register(harnessconfigs.HarnessConfigResourceType, s.harnessConfigs); err != nil {
+		return err
+	}
+	// Removes lapsed bindings with their expired events (ADR 26-10-27-880 §3).
+	if err := s.engine.Register(store.BindingExpiryResourceType, s.secrets.NewBindingExpiryReconciler()); err != nil {
 		return err
 	}
 	return s.poolControlPlane.RegisterJobs(s.SandboxProviderManager())

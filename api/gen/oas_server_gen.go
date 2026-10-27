@@ -36,8 +36,9 @@ type Handler interface {
 	//
 	// Prepare the in-flight configure sandbox for attach, then attach to its primary terminal.
 	// This seeds the previous configuration into the sandbox at a well-known path so the harness's
-	// configure command may pre-fill from it; only secrets holding a live grant to this harness config
-	// are included. The configure command is not launched until the primary terminal is attached, so
+	// configure command may pre-fill from it; only the secrets a previous configure of this harness
+	// config created, bound on it, are included. The configure command is not launched until the primary
+	// terminal is attached, so
 	// seeding always precedes it. Call this before attaching to exec id "primary".
 	//
 	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure/attach
@@ -211,18 +212,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/secrets
 	CreateSecret(ctx context.Context, req *CreateSecretBody, params CreateSecretParams) (CreateSecretRes, error)
-	// CreateSecretGrant implements create-secret-grant operation.
+	// CreateSecretBinding implements create-secret-binding operation.
 	//
-	// Create a secret grant (pre-approval).
+	// Bind a secret to a project, harness config or discobox.
 	//
-	// POST /projects/{projectId}/secret-grants
-	CreateSecretGrant(ctx context.Context, req *CreateSecretGrantBody, params CreateSecretGrantParams) (CreateSecretGrantRes, error)
-	// CreateSecretRequest implements create-secret-request operation.
-	//
-	// Request access to a secret.
-	//
-	// POST /projects/{projectId}/secret-requests
-	CreateSecretRequest(ctx context.Context, req *CreateSecretRequestBody, params CreateSecretRequestParams) (CreateSecretRequestRes, error)
+	// POST /projects/{projectId}/secret-bindings
+	CreateSecretBinding(ctx context.Context, req *CreateSecretBindingBody, params CreateSecretBindingParams) (CreateSecretBindingRes, error)
 	// DeconfigureHarnessConfig implements deconfigure-harness-config operation.
 	//
 	// Remove the assets the configure flow created for this harness — the secrets it created and their
@@ -238,12 +233,6 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}
 	DeleteHarnessConfig(ctx context.Context, params DeleteHarnessConfigParams) (DeleteHarnessConfigRes, error)
-	// DeleteHarnessConfigSecretBinding implements delete-harness-config-secret-binding operation.
-	//
-	// Remove a harness config secret binding.
-	//
-	// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
-	DeleteHarnessConfigSecretBinding(ctx context.Context, params DeleteHarnessConfigSecretBindingParams) (DeleteHarnessConfigSecretBindingRes, error)
 	// DeletePeer implements delete-peer operation.
 	//
 	// Revoke an enrolled peer.
@@ -312,6 +301,12 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/secrets/{secretId}
 	DeleteSecret(ctx context.Context, params DeleteSecretParams) (DeleteSecretRes, error)
+	// DeleteSecretBinding implements delete-secret-binding operation.
+	//
+	// Remove a secret binding and every binding handed on under it.
+	//
+	// DELETE /projects/{projectId}/secret-bindings/{bindingId}
+	DeleteSecretBinding(ctx context.Context, params DeleteSecretBindingParams) (DeleteSecretBindingRes, error)
 	// DenySecretRequest implements deny-secret-request operation.
 	//
 	// Deny a secret request.
@@ -330,6 +325,12 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
 	DiscardSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params DiscardSandboxHarnessConfigChangesParams) (DiscardSandboxHarnessConfigChangesRes, error)
+	// DismissSecretRefreshRequest implements dismiss-secret-refresh-request operation.
+	//
+	// Dismiss a refresh request without writing a value.
+	//
+	// POST /projects/{projectId}/secret-refresh-requests/{requestId}/dismiss
+	DismissSecretRefreshRequest(ctx context.Context, params DismissSecretRefreshRequestParams) (DismissSecretRefreshRequestRes, error)
 	// ForceJob implements force-job operation.
 	//
 	// Force a pending, scheduled, or backoff job to run immediately.
@@ -501,6 +502,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/secrets/{secretId}
 	GetSecret(ctx context.Context, params GetSecretParams) (GetSecretRes, error)
+	// GetSecretBinding implements get-secret-binding operation.
+	//
+	// Show a secret binding.
+	//
+	// GET /projects/{projectId}/secret-bindings/{bindingId}
+	GetSecretBinding(ctx context.Context, params GetSecretBindingParams) (GetSecretBindingRes, error)
 	// GetSecretRequest implements get-secret-request operation.
 	//
 	// Get a secret request; includes decrypted value when approved and not expired.
@@ -531,6 +538,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/approval-requests
 	ListApprovalRequests(ctx context.Context, params ListApprovalRequestsParams) (ListApprovalRequestsRes, error)
+	// ListBoundSecrets implements list-bound-secrets operation.
+	//
+	// What a project, harness config or discobox holds, resolved.
+	//
+	// GET /projects/{projectId}/bound-secrets
+	ListBoundSecrets(ctx context.Context, params ListBoundSecretsParams) (ListBoundSecretsRes, error)
 	// ListDNSAudit implements list-dns-audit operation.
 	//
 	// The DNS queries the project's pools answered for their sandboxes, newest first, read from each
@@ -556,12 +569,6 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/audit/http
 	ListHTTPAudit(ctx context.Context, params ListHTTPAuditParams) (ListHTTPAuditRes, error)
-	// ListHarnessConfigSecretBindings implements list-harness-config-secret-bindings operation.
-	//
-	// List harness config secret bindings.
-	//
-	// GET /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings
-	ListHarnessConfigSecretBindings(ctx context.Context, params ListHarnessConfigSecretBindingsParams) (ListHarnessConfigSecretBindingsRes, error)
 	// ListHarnessConfigs implements list-harness-configs operation.
 	//
 	// List harness configs.
@@ -631,7 +638,7 @@ type Handler interface {
 	ListSSHKeys(ctx context.Context, params ListSSHKeysParams) (ListSSHKeysRes, error)
 	// ListSandboxCredentials implements list-sandbox-credentials operation.
 	//
-	// List a sandbox's granted agent credentials.
+	// List the credentials a sandbox's bindings give it.
 	//
 	// GET /api/pools/{poolId}/sandbox-credentials
 	ListSandboxCredentials(ctx context.Context, params ListSandboxCredentialsParams) (ListSandboxCredentialsRes, error)
@@ -712,12 +719,24 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/sandboxes
 	ListSandboxes(ctx context.Context, params ListSandboxesParams) (ListSandboxesRes, error)
-	// ListSecretGrants implements list-secret-grants operation.
+	// ListSecretBindingEvents implements list-secret-binding-events operation.
 	//
-	// List secret grants.
+	// Read the history of secret bindings, newest first.
 	//
-	// GET /projects/{projectId}/secret-grants
-	ListSecretGrants(ctx context.Context, params ListSecretGrantsParams) (ListSecretGrantsRes, error)
+	// GET /projects/{projectId}/secret-binding-events
+	ListSecretBindingEvents(ctx context.Context, params ListSecretBindingEventsParams) (ListSecretBindingEventsRes, error)
+	// ListSecretBindings implements list-secret-bindings operation.
+	//
+	// List secret bindings.
+	//
+	// GET /projects/{projectId}/secret-bindings
+	ListSecretBindings(ctx context.Context, params ListSecretBindingsParams) (ListSecretBindingsRes, error)
+	// ListSecretRefreshRequests implements list-secret-refresh-requests operation.
+	//
+	// List requests for a new value of a token.
+	//
+	// GET /projects/{projectId}/secret-refresh-requests
+	ListSecretRefreshRequests(ctx context.Context, params ListSecretRefreshRequestsParams) (ListSecretRefreshRequestsRes, error)
 	// ListSecretRefreshes implements list-secret-refreshes operation.
 	//
 	// The refresh audit trail (ADR 26-09-25-122 §6) -- every time the control plane asked for a new
@@ -954,12 +973,6 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/autostop/resumed
 	ResumeSandboxAutostop(ctx context.Context, params ResumeSandboxAutostopParams) (ResumeSandboxAutostopRes, error)
-	// RevokeSecretGrant implements revoke-secret-grant operation.
-	//
-	// Revoke a secret grant.
-	//
-	// DELETE /projects/{projectId}/secret-grants/{grantId}
-	RevokeSecretGrant(ctx context.Context, params RevokeSecretGrantParams) (RevokeSecretGrantRes, error)
 	// SaveSandboxHarnessConfigChanges implements save-sandbox-harness-config-changes operation.
 	//
 	// Save sandbox harness config changes.
@@ -992,12 +1005,6 @@ type Handler interface {
 	//
 	// PUT /projects/{projectId}/default
 	SetDefaultProject(ctx context.Context, params SetDefaultProjectParams) (SetDefaultProjectRes, error)
-	// SetHarnessConfigSecretBinding implements set-harness-config-secret-binding operation.
-	//
-	// Bind a harness config environment variable to a secret.
-	//
-	// PUT /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
-	SetHarnessConfigSecretBinding(ctx context.Context, req *SetHarnessConfigSecretBindingBody, params SetHarnessConfigSecretBindingParams) (SetHarnessConfigSecretBindingRes, error)
 	// StartSandbox implements start-sandbox operation.
 	//
 	// Start a sandbox.
@@ -1131,6 +1138,12 @@ type Handler interface {
 	//
 	// PUT /projects/{projectId}/secrets/{secretId}
 	UpdateSecret(ctx context.Context, req *UpdateSecretBody, params UpdateSecretParams) (UpdateSecretRes, error)
+	// UpdateSecretBinding implements update-secret-binding operation.
+	//
+	// Change a secret binding's routes, lifetime or variable.
+	//
+	// PATCH /projects/{projectId}/secret-bindings/{bindingId}
+	UpdateSecretBinding(ctx context.Context, req *UpdateSecretBindingBody, params UpdateSecretBindingParams) (UpdateSecretBindingRes, error)
 	// UpgradeSandbox implements upgrade-sandbox operation.
 	//
 	// Upgrade a sandbox to its harness config's current image.

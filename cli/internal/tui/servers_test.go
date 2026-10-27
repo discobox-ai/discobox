@@ -746,7 +746,7 @@ func TestARequestOnAnotherServerIsAnsweredThere(t *testing.T) {
 	req := waitingRequest()
 	req.Server = "beta"
 	ds.requests = []CredentialRequest{req}
-	ds.secretsOn = map[string][]Secret{"beta": {{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}}
+	ds.secretsOn = map[string][]Secret{"beta": {{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}}
 	m := newTestModel(t, ds)
 
 	if pending := m.pendingFor("sbx_one"); len(pending) != 1 {

@@ -524,7 +524,7 @@ func TestTheBannerKeysAnswerOverTheAuditScreen(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{waitingRequest()}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
 	d, m, _ := openAuditScreen(t, ds)
 	deliverAudit(d, ds, AuditUpdate{Records: auditRecords("first", "second", "third"), Polled: true})
 	d.wait("the banner", func() bool { return m.bannerShowing() != bannerNone })

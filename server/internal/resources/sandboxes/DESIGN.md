@@ -636,9 +636,9 @@ recoverable and collected by the project's ordinary retention.
 A discobox may create discoboxes through the discobox API, in the sandbox role
 ([ADR 0140](../../../../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)).
 What it creates is created as the user who created it (`auth.ActingUserID`),
-and it may give the new discobox project secrets it was delegated — grants
-and bindings minted in the create's own transaction, each held to a
-delegation grant it holds (see the secrets package's
+and it may give the new discobox project secrets it was delegated — use
+bindings made in the create's own transaction, each a child of a delegate
+binding covering it (see the secrets package's
 [DESIGN.md](../secrets/DESIGN.md#a-discobox-created-with-secrets)). It may not
 give inline secrets, which put a value inside the new discobox where anything
 in it could read it. A create may set `DiscoboxAPI`, whether the new discobox
@@ -666,7 +666,7 @@ and changing its name, description and tags, whose write into the discobox
 leases the `exec:write` its terminal input already does. A sandbox's calls
 lease only `sandbox:write`, `exec:read`, `exec:write` and `sandbox:http`
 (`authorizeRequestedScopes`), and never attach. Nothing cascades by the
-creator: no archive, no purge, no inherited grant.
+creator: no archive, no purge, no inherited binding.
 
 It may not create one that can reach a destination it cannot
 (`refuseWiderThanCreator`, [Proxy policy](#proxy-policy)): the new discobox's effective
@@ -920,7 +920,7 @@ harness secret requirement gate before scheduling, binding each of the harness
 config's secrets to its declared env name. `config` mode skips that gate so the
 image-owned interactive command can collect required credentials, and instead
 binds the secrets a previous configure run created under
-`harness.ConfigurePreviousEnvPrefix` (`applyPreviousConfigureSecrets`) — the
+`harness.ConfigurePreviousEnvPrefix` (`materializeSandboxSecrets`) — the
 same sentinels, under `PREV_`-prefixed names so the harness CLI cannot quietly
 authenticate with the old credential. See
 `resources/harnessconfigs/DESIGN.md`.
@@ -936,19 +936,45 @@ next came up. For the same reason the reconciler fails the reconcile when it
 cannot read the assignments or the harness config, rather than degrading to a
 secretless launch.
 
-`ensure` also rebinds the sandbox's assignments to its harness config's current
-bindings (`rebindSandboxSecretRows`) before building the create options. That
-catches a binding change the live fan-out (`RebindHarnessConfigSecrets`) missed
-while the sandbox was down. Both repoint only injected assignments: an agent
-credential's binding may share a variable with one, and it keeps the secret it
-was granted.
+A sandbox's assignments are its effective use bindings, materialized
+(`materializeSandboxSecrets`, ADR 26-10-27-880 §2): one row per variable,
+naming the binding that delivers it — the sandbox's own, else its harness
+config's, else the project's. A row for a variable nothing binds any more is
+removed; one whose binding moved to another secret is repointed, keeping its
+sentinel unless the new secret's format differs; a newly bound variable gets a
+new sentinel. A configure-mode sandbox gets, of its harness config's bindings,
+only the configure-created secrets, under `harness.ConfigurePreviousEnvPrefix`.
+The create materializes in its transaction, after storing the bindings it was
+given (inline secrets become an anonymous secret routed to their host or `*`
+and a use binding, both written in that transaction, so a failed create keeps
+no value); `ensure` materializes again before building the create
+options, catching what changed while the sandbox was down. A required secret
+of the harness config that nothing delivers refuses the create
+(`checkRequiredSecrets`).
 
-A change to a secret's routes (ADR 26-10-02-924) is delivered
-level-triggered by a reconciler of its own, `SentinelReconciler`
-(`sandboxSentinels`, keyed like the sandbox): the write marks every sandbox
-the secret is injected into in its transaction (`MarkSecretHoldersDirtyTx`),
-and the reconciler sends the sandbox's sentinel set with their current routes
-as a provider `Update`. A state report of the sandbox coming up marks it too
+A change to a binding, or to a secret's routes (ADR 26-10-02-924), is
+delivered level-triggered by a reconciler of its own, `SentinelReconciler`
+(`sandboxSentinels`, keyed like the sandbox): the write marks every sandbox it
+reaches in its transaction (`MarkBindingHoldersDirtyTx`,
+`MarkSecretHoldersDirtyTx`), and the reconciler materializes the sandbox's
+bindings and sends its sentinel set with each sentinel's route lists — every
+sentinel has some, an empty list sending it nowhere — as a provider
+`Update`. Deleting a sandbox marks the discoboxes holding what was handed on
+under its delegate bindings (`store.OnBindingsDeleted`).
+
+Running a second harness in a sandbox (`AssignSandboxHarnessSecrets`, `POST
+.../harness-secrets`) attaches that harness config to it
+(`store.AttachSandboxHarnessConfig`, its own setter) rather than copying its
+bindings: they apply after the sandbox's own harness config's and before the
+project's, so a binding removed or narrowed at the harness config reaches the
+sandbox as it reaches every sandbox running the config, and marking covers it
+(`ListSandboxIDsCoveredBy`). It binds for use only: its delegate bindings do
+not cover the sandbox ([ADR 26-10-27-172](../../../../docs/adr/26-10-27-172-a-harness-config-attached-to-a-discobox-binds-it-for-use.md)).
+Attaching is a person's; a discobox may only use one already attached. An
+attachment lasts as long as the sandbox, or until its harness config is
+deleted: the delete marks every sandbox it was attached to and removes its ID
+from them (`store.DeleteHarnessConfig`), and an attachment does not hold the
+config in use. A state report of the sandbox coming up marks it too
 ([Proxy policy](#proxy-policy)). A pool with no container for the sandbox
 answers not found, which settles the delivery: the create carries the set.
 A delivery the pool does not take is returned and
@@ -958,10 +984,7 @@ the sandbox as failed. A sandbox no pool holds yet is skipped. Every send of a
 sentinel set — `ensure`'s create, a live push, this delivery — re-reads the
 routes once its pool has answered and marks the delivery again if they moved
 (`markSentinelsIfStale`), so a create that read the routes before a change and
-landed after its delivery cannot leave the old ones in place. An approved
-agent request marks the asking sandbox's delivery too
-(`MarkSandboxSentinelsDirtyTx`), in the transaction that bound its variable,
-so the binding reaches it while it runs.
+landed after its delivery cannot leave the old ones in place.
 
 ## The Sandbox's Own Address
 
@@ -1010,10 +1033,9 @@ secret assignments, advances the generation, clears the proposal and marks it
 dirty. Reconciliation sends the matching fence ID with its create; the pool
 releases starts only after that spec is applied. The replacement stays stopped;
 boot-time provisioning and readiness run on the next start. Archive/delete
-cancel a pending proposal and archive clears the pool fence. Explicit sandbox
-secret bindings survive; `SourceHarnessConfigID` identifies bindings to replace.
-Legacy bindings without trustworthy provenance are retained as sandbox overrides,
-even if their env names match the new harness.
+cancel a pending proposal and archive clears the pool fence. Promotion
+re-materializes the sandbox's bindings (`materializeSandboxSecrets`): the new
+config's apply, and the sandbox's own bindings keep winning per variable.
 
 The pending target has an indexed `PendingHarnessConfigID` foreign key, so it
 cannot be deleted while reservation or promotion is outstanding. Terminal

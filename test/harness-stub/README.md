@@ -15,20 +15,20 @@ One run of `configure` against this harness proves the whole chain:
 - attaching the virtual `primary` exec launches the configure command
 - the command writes `/run/discobox/configure/harness-configure.json` and exits 0
 - `configure/commit` reads the real exit status, applies the declared secret
-  (`STUB_TOKEN` → `stub-token`, with its binding and `harnessConfig`-scoped
-  grant) and file (`stub.json`), marks the harness configured, and deletes the
+  (`STUB_TOKEN` → `stub-token`, with its harness-config binding) and file
+  (`stub.json`), marks the harness configured, and deletes the
   sandbox
 
 Running configure a second time additionally proves the reconfigure path. The
 echoed previous configuration must now list the `STUB_TOKEN` secret and the file
 from the first run, and must contain **no secret value** — the value is offered
-as `$PREV_STUB_TOKEN`, a sentinel the proxy swaps only while a live grant covers
-it. Afterwards exactly one `stub-token` secret must exist (reconfigure replaces
+as `$PREV_STUB_TOKEN`, a sentinel the proxy swaps only while a live binding
+covers it. Afterwards exactly one `stub-token` secret must exist (reconfigure replaces
 the previous generation instead of leaking it).
 
 Set `STUB_CONFIGURE_KEEP=1` in the bundle's env to exercise the other half of
 that path: the command returns `usePrevious` instead of a value, and the
-secret from the first run must survive with its ID, binding, and grant intact.
+secret from the first run must survive with its ID and binding intact.
 It only keeps when there is something to keep — claiming `usePrevious` on a
 first run is a commit error, and a real harness makes the same check before
 offering to keep a credential.

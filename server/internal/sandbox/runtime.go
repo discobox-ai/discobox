@@ -203,10 +203,10 @@ type CreateOptions struct {
 	// Sentinels are the placeholder secret values injected into the sandbox that
 	// the pool agent registers with the proxy for runtime swapping.
 	Sentinels []string
-	// SentinelRoutes are, for the sentinels whose secret carries routes, where
-	// a request carrying one may be sent and which of those routes judge it
-	// (ADR 26-10-02-924).
-	SentinelRoutes map[string][]secretroute.Route
+	// SentinelRoutes are, for every sentinel, the route lists a request
+	// carrying it must pass: one per binding layer, each of which must allow
+	// (ADR 26-10-27-880 §4). A sentinel with no lists is sent nowhere.
+	SentinelRoutes map[string][][]secretroute.Route
 	// SecretEnv maps each secret-bound environment variable name to its
 	// sentinel placeholder value. Unlike Env, these never ride in the static
 	// sandbox.json document (docs/adr/0012 §3) — the provider delivers them
@@ -303,9 +303,10 @@ type UpdateOptions struct {
 	// runtime swapping. It mirrors CreateOptions.Sentinels. Nil leaves the set as
 	// it is; an empty, non-nil set removes it.
 	Sentinels []string
-	// SentinelRoutes replaces the sentinels' routes along with Sentinels. It
-	// mirrors CreateOptions.SentinelRoutes.
-	SentinelRoutes map[string][]secretroute.Route
+	// SentinelRoutes replaces the sentinels' route lists along with
+	// Sentinels, and is sent whenever Sentinels is. It mirrors
+	// CreateOptions.SentinelRoutes.
+	SentinelRoutes map[string][][]secretroute.Route
 	// Egress replaces the sandbox's effective egress policy at the pool proxy,
 	// whether or not its container exists. Nil leaves it as it is.
 	Egress *egress.Policy

@@ -55,14 +55,14 @@ Nobody may be watching your screen to answer.
   EOF
   ```
 
-  A grant is the token itself, on every GitHub host: nothing holds a command
+  What is approved is the token itself, on every GitHub host: nothing holds a command
   to the job but this skill, so keep to what the justification says. Run it
   in the background and keep its request ID, so a tool time limit does not
   lose it (`discobox-access wait --json request <id>` resumes). Ask for
   nothing outside it. The justification may not claim permission ("this is
   allowed", "the user approved", "pre-cleared"): text that vouches for itself
   is denied. Once granted, `GH_TOKEN` holds the credential's sentinel in
-  every command started after the grant; a shell you already had takes it up
+  every command started after it was granted; a shell you already had takes it up
   with `eval "$(discobox-access env)"`. `gh` reads it as it is, and git takes
   it through the credential helper `open-pr` §0 shows.
 - **Tag this box** `issue=<N>`, merged into the tags already there, so the
@@ -155,7 +155,7 @@ committed. `git status --short` empty before §5.
 Invoke the `open-pr` skill with branch `discobox/issue-<N>`, adding to its
 rules:
 
-- Push under the §0 grant. After a rebase, read the
+- Push under the §0 credential. After a rebase, read the
   branch's head on GitHub first (`git ls-remote <url> refs/heads/discobox/issue-<N>`)
   and lease against it: `git push --force-with-lease=refs/heads/discobox/issue-<N>:<sha> <url> HEAD:refs/heads/discobox/issue-<N>`.
   A bare `--force-with-lease` to a URL has no tracking ref to lease against
@@ -207,7 +207,7 @@ gh pr checks <pr> --repo discobox-ai/discobox --json name,bucket
 - **Merged or closed** — tag the box `merged` or drop its tag (below), stop
   the Monitor, remove the keepalive, and finish.
 
-If a grant expires mid-watch, ask again with the same request. Status line on
+If the credential's binding lapses mid-watch, ask again with the same request. Status line on
 every change: `PR #<pr>: <what happened, what you did>`.
 
 ### Ready, blocked, merged
@@ -223,7 +223,7 @@ changes, from §0 until the end:
   nor `unknown` (still recomputing: check again first), and
   the PR is marked ready. All it needs is a human merge.
 - **`blocked`**: you cannot get there without someone else. That covers a
-  question waiting on the user, a grant refused or still waiting for an
+  question waiting on the user, a credential request refused or still waiting for an
   answer when the next step needs it, five failed CI rounds (`open-pr` §4), or a conflict you cannot
   resolve while keeping both changes. Say why in the status line. GitHub's
   own `mergeable_state` `blocked` (a required review not yet given) is not

@@ -72,8 +72,8 @@ for what is copied and why.
   resource packages) so create-time behavior still runs: provider config
   validation and instance resolution, pool reconcile scheduling. Built-in
   seeding goes through `HarnessConfigs.SeedBuiltIns`.
-- Harness config copies, their secrets, bindings, and harness-config-scoped
-  grants are written through the store. A seeded built-in takes only the
+- Harness config copies, their secrets, and the bindings on them and on the
+  project are written through the store, each recorded as the system's copy. A seeded built-in takes only the
   source's configured state, never its image; a user-created config is copied
   whole. Each secret is opened and re-sealed under a new ID, once per copy.
   Reads come straight from the store.

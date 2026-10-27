@@ -23,11 +23,7 @@ func sentinelFixture(t *testing.T) (*Service, *recordingProvider, *model.Secret)
 	if err := st.UpdateSecret(ctx, sec); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.CreateSandboxSecret(ctx, &model.SandboxSecret{
-		ProjectID: "project-1", SandboxID: "sb-1", SecretID: sec.ID, EnvName: "GH_TOKEN", Sentinel: "SENT-1",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	deliver(t, st, "sb-1", sec.ID, "GH_TOKEN", "SENT-1")
 	sb, err := st.GetSandbox(ctx, "project-1", "sb-1")
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +62,7 @@ func TestSentinelDeliveryRetriesWithoutFailingTheSandbox(t *testing.T) {
 	if len(rec.updated) != 1 || len(rec.updated[0]) != 1 || rec.updated[0][0] != "SENT-1" {
 		t.Fatalf("updated = %v, want the sentinel set delivered on the retry", rec.updated)
 	}
-	if got := rec.routes[0]["SENT-1"]; len(got) != 1 || got[0].Host != "github.com" {
+	if got := rec.routes[0]["SENT-1"]; len(got) != 1 || len(got[0]) != 1 || got[0][0].Host != "github.com" {
 		t.Fatalf("routes = %v, want the secret's routes delivered with it", rec.routes)
 	}
 }
@@ -133,16 +129,12 @@ func TestASendThatCarriedStaleRoutesMarksTheDeliveryAgain(t *testing.T) {
 	if err := st.UpdateSecret(ctx, sec); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.CreateSandboxSecret(ctx, &model.SandboxSecret{
-		ProjectID: "project-1", SandboxID: "sb-1", SecretID: sec.ID, EnvName: "GH_TOKEN", Sentinel: "SENT-1",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	deliver(t, st, "sb-1", sec.ID, "GH_TOKEN", "SENT-1")
 	sb, err := st.GetSandbox(ctx, "project-1", "sb-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	current := map[string][]secretroute.Route{"SENT-1": {{Host: "github.com"}}}
+	current := map[string][][]secretroute.Route{"SENT-1": {{{Host: "github.com"}}}}
 	if err := markSentinelsIfStale(ctx, st, svc.engine, sb, current); err != nil {
 		t.Fatal(err)
 	}

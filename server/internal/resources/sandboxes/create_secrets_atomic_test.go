@@ -8,6 +8,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
+	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
@@ -51,9 +52,10 @@ func createIntentFixture(t *testing.T) (context.Context, *Service, *store.Store,
 func TestCreateSandboxIntentPersistsSecretsWithSandbox(t *testing.T) {
 	ctx, svc, st, _ := createIntentFixture(t)
 	sandbox := &model.Sandbox{ID: "sb-1", ProjectID: "project-1", CreatedByUserID: "user-1", Name: "sb-1", PoolID: "pool-1"}
-	created, err := svc.createSandboxIntent(ctx, sandbox, []*model.SandboxSecret{
-		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: "sec-1", EnvName: "TOKEN", Sentinel: "sentinel-1"},
-	}, resourcesecrets.SandboxGrants{})
+	sec := bearerSecret(t, st, "token", "")
+	created, err := svc.createSandboxIntent(ctx, sandbox, nil, []*model.SecretBinding{
+		{ProjectID: "project-1", SecretID: sec.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: "sb-1", Use: true, EnvName: "TOKEN"},
+	}, resourcesecrets.SandboxBindings{})
 	if err != nil {
 		t.Fatalf("create intent: %v", err)
 	}
@@ -64,24 +66,34 @@ func TestCreateSandboxIntentPersistsSecretsWithSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list assignments: %v", err)
 	}
-	if len(assignments) != 1 || assignments[0].EnvName != "TOKEN" || assignments[0].Sentinel != "sentinel-1" {
-		t.Fatalf("assignments = %#v, want the TOKEN assignment committed with the sandbox", assignments)
+	if len(assignments) != 1 || assignments[0].EnvName != "TOKEN" || assignments[0].SecretID != sec.ID || assignments[0].BindingID == "" {
+		t.Fatalf("assignments = %#v, want the TOKEN binding materialized with the sandbox", assignments)
 	}
 }
 
 func TestCreateSandboxIntentRollsBackSandboxOnSecretFailure(t *testing.T) {
 	ctx, svc, st, _ := createIntentFixture(t)
 	sandbox := &model.Sandbox{ID: "sb-1", ProjectID: "project-1", CreatedByUserID: "user-1", Name: "sb-1", PoolID: "pool-1"}
-	// Two assignments for the same env name violate idx_sandbox_secret_env,
-	// failing the second insert inside the transaction.
-	_, err := svc.createSandboxIntent(ctx, sandbox, []*model.SandboxSecret{
-		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: "sec-1", EnvName: "TOKEN", Sentinel: "sentinel-1"},
-		{ProjectID: "project-1", SandboxID: "sb-1", SecretID: "sec-2", EnvName: "TOKEN", Sentinel: "sentinel-2"},
-	}, resourcesecrets.SandboxGrants{})
+	// An inline value, then two use bindings of the same variable, which
+	// violate the binding's uniqueness and fail the transaction.
+	inlineSecrets, inline, err := inlineSandboxBindings(ctx, "project-1", sandbox, []services.SandboxSecretInput{{Env: "DB_PASS", Value: "hunter2"}})
+	if err != nil {
+		t.Fatalf("inline bindings: %v", err)
+	}
+	sec := bearerSecret(t, st, "token", "")
+	_, err = svc.createSandboxIntent(ctx, sandbox, inlineSecrets, append(inline,
+		&model.SecretBinding{ProjectID: "project-1", SecretID: sec.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: "sb-1", Use: true, EnvName: "TOKEN"},
+		&model.SecretBinding{ProjectID: "project-1", SecretID: sec.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: "sb-1", Use: true, EnvName: "TOKEN"},
+	), resourcesecrets.SandboxBindings{})
 	if err == nil {
 		t.Fatal("create intent succeeded, want a failed secret insert to fail the create")
 	}
 	if _, err := st.GetSandbox(ctx, "project-1", "sb-1"); err == nil {
 		t.Fatal("sandbox row survived a failed secret insert; the create must be atomic")
+	}
+	// The inline value goes with the failed create, not left stored with
+	// the route `*`.
+	if _, err := st.GetSecret(ctx, "project-1", inlineSecrets[0].ID); err == nil {
+		t.Fatal("the inline secret survived a failed create")
 	}
 }

@@ -90,14 +90,16 @@ func (s *AppliedSourceCommit) SetSlug(val string) {
 	s.Slug = val
 }
 
-// One item in a project's approval inbox (ADR 0149 §7). Exactly one of credential or trust is set,
-// as kind says; each is answered on its own resource's approve and deny routes.
+// One item in a project's approval inbox (ADR 0149 §7). Exactly one of credential, trust or refresh
+// is set, as kind says. A credential or trust request is answered on its own resource's approve and
+// deny routes; a refresh by writing the secret's value, or dismissing it.
 // Ref: #/components/schemas/ApprovalRequest
 type ApprovalRequest struct {
 	Credential OptSecretRequest `json:"credential"`
 	// Which kind of ask this is.
-	Kind  ApprovalRequestKind `json:"kind"`
-	Trust OptHostTrustRequest `json:"trust"`
+	Kind    ApprovalRequestKind     `json:"kind"`
+	Refresh OptSecretRefreshRequest `json:"refresh"`
+	Trust   OptHostTrustRequest     `json:"trust"`
 }
 
 // GetCredential returns the value of Credential.
@@ -108,6 +110,11 @@ func (s *ApprovalRequest) GetCredential() OptSecretRequest {
 // GetKind returns the value of Kind.
 func (s *ApprovalRequest) GetKind() ApprovalRequestKind {
 	return s.Kind
+}
+
+// GetRefresh returns the value of Refresh.
+func (s *ApprovalRequest) GetRefresh() OptSecretRefreshRequest {
+	return s.Refresh
 }
 
 // GetTrust returns the value of Trust.
@@ -125,6 +132,11 @@ func (s *ApprovalRequest) SetKind(val ApprovalRequestKind) {
 	s.Kind = val
 }
 
+// SetRefresh sets the value of Refresh.
+func (s *ApprovalRequest) SetRefresh(val OptSecretRefreshRequest) {
+	s.Refresh = val
+}
+
 // SetTrust sets the value of Trust.
 func (s *ApprovalRequest) SetTrust(val OptHostTrustRequest) {
 	s.Trust = val
@@ -136,6 +148,7 @@ type ApprovalRequestKind string
 const (
 	ApprovalRequestKindCredential ApprovalRequestKind = "credential"
 	ApprovalRequestKindTrust      ApprovalRequestKind = "trust"
+	ApprovalRequestKindRefresh    ApprovalRequestKind = "refresh"
 )
 
 // AllValues returns all ApprovalRequestKind values.
@@ -143,6 +156,7 @@ func (ApprovalRequestKind) AllValues() []ApprovalRequestKind {
 	return []ApprovalRequestKind{
 		ApprovalRequestKindCredential,
 		ApprovalRequestKindTrust,
+		ApprovalRequestKindRefresh,
 	}
 }
 
@@ -152,6 +166,8 @@ func (s ApprovalRequestKind) MarshalText() ([]byte, error) {
 	case ApprovalRequestKindCredential:
 		return []byte(s), nil
 	case ApprovalRequestKindTrust:
+		return []byte(s), nil
+	case ApprovalRequestKindRefresh:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -167,6 +183,9 @@ func (s *ApprovalRequestKind) UnmarshalText(data []byte) error {
 	case ApprovalRequestKindTrust:
 		*s = ApprovalRequestKindTrust
 		return nil
+	case ApprovalRequestKindRefresh:
+		*s = ApprovalRequestKindRefresh
+		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
@@ -176,29 +195,16 @@ func (s *ApprovalRequestKind) UnmarshalText(data []byte) error {
 type ApproveSecretRequestBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Grant duration in seconds; 0 grants one that never expires. Omitted, the grant lasts what the
-	// request asked for, else an hour, within the secret's limit; for a discobox approver, also within
-	// the delegation grant it approves under, and a named duration that outlasts that delegation is
-	// refused.
-	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
-	// Hosts the minted grant is limited to (ADR 26-10-02-393). Left out, the hosts the request named; an
-	// empty list names none. Approving a protocol-originated request with no host at all is rejected; a
-	// wildcard grant stays an explicit administrative act.
-	Hosts []string `json:"hosts"`
-	// How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests,
-	// otherwise project.
-	Scope OptApproveSecretRequestBodyScope `json:"scope"`
-	// Rebinds the answering secret to this host as part of the approval; empty releases its binding.
-	// Applied only if the approval goes through, in the same write, so a refused approval leaves the
-	// secret as it was. Refused for a gate.
-	SecretHost OptString `json:"secretHost"`
+	// Routes the binding is approved for, narrowing the secret's; omitted takes the hosts the request
+	// asked for.
+	Routes []SecretRouteInput `json:"routes"`
 	// Secret ID selected by the approver. A person must name one. A discobox approver answers with the
-	// secret of a delegation grant it holds, and names one, by its full ID, only to choose among the
-	// secrets it was delegated.
+	// secret of a delegate binding covering it, and names one only to choose among the secrets it was
+	// delegated.
 	SecretId OptString `json:"secretId"`
-	// Sets the answering secret's grant limit, in seconds, as part of the approval; 0 allows grants that
-	// never expire. Applied only if the approval goes through, in the same write.
-	SecretMaxGrantTTLSeconds OptInt64 `json:"secretMaxGrantTTLSeconds"`
+	// How long the binding lasts, in seconds; omitted takes what the request asked for, else an hour,
+	// within the secret's limit and, for a discobox approving, the delegation's.
+	TtlSeconds OptInt64 `json:"ttlSeconds"`
 }
 
 // GetSchema returns the value of Schema.
@@ -206,24 +212,9 @@ func (s *ApproveSecretRequestBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetGrantTTLSeconds returns the value of GrantTTLSeconds.
-func (s *ApproveSecretRequestBody) GetGrantTTLSeconds() OptInt64 {
-	return s.GrantTTLSeconds
-}
-
-// GetHosts returns the value of Hosts.
-func (s *ApproveSecretRequestBody) GetHosts() []string {
-	return s.Hosts
-}
-
-// GetScope returns the value of Scope.
-func (s *ApproveSecretRequestBody) GetScope() OptApproveSecretRequestBodyScope {
-	return s.Scope
-}
-
-// GetSecretHost returns the value of SecretHost.
-func (s *ApproveSecretRequestBody) GetSecretHost() OptString {
-	return s.SecretHost
+// GetRoutes returns the value of Routes.
+func (s *ApproveSecretRequestBody) GetRoutes() []SecretRouteInput {
+	return s.Routes
 }
 
 // GetSecretId returns the value of SecretId.
@@ -231,9 +222,9 @@ func (s *ApproveSecretRequestBody) GetSecretId() OptString {
 	return s.SecretId
 }
 
-// GetSecretMaxGrantTTLSeconds returns the value of SecretMaxGrantTTLSeconds.
-func (s *ApproveSecretRequestBody) GetSecretMaxGrantTTLSeconds() OptInt64 {
-	return s.SecretMaxGrantTTLSeconds
+// GetTtlSeconds returns the value of TtlSeconds.
+func (s *ApproveSecretRequestBody) GetTtlSeconds() OptInt64 {
+	return s.TtlSeconds
 }
 
 // SetSchema sets the value of Schema.
@@ -241,24 +232,9 @@ func (s *ApproveSecretRequestBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetGrantTTLSeconds sets the value of GrantTTLSeconds.
-func (s *ApproveSecretRequestBody) SetGrantTTLSeconds(val OptInt64) {
-	s.GrantTTLSeconds = val
-}
-
-// SetHosts sets the value of Hosts.
-func (s *ApproveSecretRequestBody) SetHosts(val []string) {
-	s.Hosts = val
-}
-
-// SetScope sets the value of Scope.
-func (s *ApproveSecretRequestBody) SetScope(val OptApproveSecretRequestBodyScope) {
-	s.Scope = val
-}
-
-// SetSecretHost sets the value of SecretHost.
-func (s *ApproveSecretRequestBody) SetSecretHost(val OptString) {
-	s.SecretHost = val
+// SetRoutes sets the value of Routes.
+func (s *ApproveSecretRequestBody) SetRoutes(val []SecretRouteInput) {
+	s.Routes = val
 }
 
 // SetSecretId sets the value of SecretId.
@@ -266,59 +242,9 @@ func (s *ApproveSecretRequestBody) SetSecretId(val OptString) {
 	s.SecretId = val
 }
 
-// SetSecretMaxGrantTTLSeconds sets the value of SecretMaxGrantTTLSeconds.
-func (s *ApproveSecretRequestBody) SetSecretMaxGrantTTLSeconds(val OptInt64) {
-	s.SecretMaxGrantTTLSeconds = val
-}
-
-// How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests,
-// otherwise project.
-type ApproveSecretRequestBodyScope string
-
-const (
-	ApproveSecretRequestBodyScopeSandbox       ApproveSecretRequestBodyScope = "sandbox"
-	ApproveSecretRequestBodyScopeHarnessConfig ApproveSecretRequestBodyScope = "harnessConfig"
-	ApproveSecretRequestBodyScopeProject       ApproveSecretRequestBodyScope = "project"
-)
-
-// AllValues returns all ApproveSecretRequestBodyScope values.
-func (ApproveSecretRequestBodyScope) AllValues() []ApproveSecretRequestBodyScope {
-	return []ApproveSecretRequestBodyScope{
-		ApproveSecretRequestBodyScopeSandbox,
-		ApproveSecretRequestBodyScopeHarnessConfig,
-		ApproveSecretRequestBodyScopeProject,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ApproveSecretRequestBodyScope) MarshalText() ([]byte, error) {
-	switch s {
-	case ApproveSecretRequestBodyScopeSandbox:
-		return []byte(s), nil
-	case ApproveSecretRequestBodyScopeHarnessConfig:
-		return []byte(s), nil
-	case ApproveSecretRequestBodyScopeProject:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ApproveSecretRequestBodyScope) UnmarshalText(data []byte) error {
-	switch ApproveSecretRequestBodyScope(data) {
-	case ApproveSecretRequestBodyScopeSandbox:
-		*s = ApproveSecretRequestBodyScopeSandbox
-		return nil
-	case ApproveSecretRequestBodyScopeHarnessConfig:
-		*s = ApproveSecretRequestBodyScopeHarnessConfig
-		return nil
-	case ApproveSecretRequestBodyScopeProject:
-		*s = ApproveSecretRequestBodyScopeProject
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
+// SetTtlSeconds sets the value of TtlSeconds.
+func (s *ApproveSecretRequestBody) SetTtlSeconds(val OptInt64) {
+	s.TtlSeconds = val
 }
 
 // Ref: #/components/schemas/ApproveTrustRequestBody
@@ -451,6 +377,182 @@ func (s *AttachSandboxExecSwitchingProtocols) SetUpgrade(val OptString) {
 }
 
 func (*AttachSandboxExecSwitchingProtocols) attachSandboxExecRes() {}
+
+// One credential a target holds, resolved: the binding that applies (the narrowest per variable),
+// and every route list a request carrying it is held to.
+// Ref: #/components/schemas/BoundSecret
+type BoundSecret struct {
+	// The binding that applies.
+	BindingId string `json:"bindingId"`
+	// The target may give it to the discoboxes it creates.
+	Delegate bool `json:"delegate"`
+	// Variable it is delivered in, for a use binding.
+	EnvVar OptString `json:"envVar"`
+	// When it lapses, the earlier of the binding's and its parent's; absent never.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+	// The level the binding is on.
+	From BoundSecretFrom `json:"from"`
+	// The project, harness config or discobox ID the binding is on.
+	FromId string `json:"fromId"`
+	// Every route list a request carrying it must be allowed by: the secret's, the binding's when it has
+	// any, and the parent's.
+	Routes [][]SecretRoute `json:"routes"`
+	// Secret ID.
+	SecretId string `json:"secretId"`
+	// Secret name.
+	SecretName OptString `json:"secretName"`
+	// Delivered to the target in envVar.
+	Use bool `json:"use"`
+}
+
+// GetBindingId returns the value of BindingId.
+func (s *BoundSecret) GetBindingId() string {
+	return s.BindingId
+}
+
+// GetDelegate returns the value of Delegate.
+func (s *BoundSecret) GetDelegate() bool {
+	return s.Delegate
+}
+
+// GetEnvVar returns the value of EnvVar.
+func (s *BoundSecret) GetEnvVar() OptString {
+	return s.EnvVar
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *BoundSecret) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetFrom returns the value of From.
+func (s *BoundSecret) GetFrom() BoundSecretFrom {
+	return s.From
+}
+
+// GetFromId returns the value of FromId.
+func (s *BoundSecret) GetFromId() string {
+	return s.FromId
+}
+
+// GetRoutes returns the value of Routes.
+func (s *BoundSecret) GetRoutes() [][]SecretRoute {
+	return s.Routes
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *BoundSecret) GetSecretId() string {
+	return s.SecretId
+}
+
+// GetSecretName returns the value of SecretName.
+func (s *BoundSecret) GetSecretName() OptString {
+	return s.SecretName
+}
+
+// GetUse returns the value of Use.
+func (s *BoundSecret) GetUse() bool {
+	return s.Use
+}
+
+// SetBindingId sets the value of BindingId.
+func (s *BoundSecret) SetBindingId(val string) {
+	s.BindingId = val
+}
+
+// SetDelegate sets the value of Delegate.
+func (s *BoundSecret) SetDelegate(val bool) {
+	s.Delegate = val
+}
+
+// SetEnvVar sets the value of EnvVar.
+func (s *BoundSecret) SetEnvVar(val OptString) {
+	s.EnvVar = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *BoundSecret) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetFrom sets the value of From.
+func (s *BoundSecret) SetFrom(val BoundSecretFrom) {
+	s.From = val
+}
+
+// SetFromId sets the value of FromId.
+func (s *BoundSecret) SetFromId(val string) {
+	s.FromId = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *BoundSecret) SetRoutes(val [][]SecretRoute) {
+	s.Routes = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *BoundSecret) SetSecretId(val string) {
+	s.SecretId = val
+}
+
+// SetSecretName sets the value of SecretName.
+func (s *BoundSecret) SetSecretName(val OptString) {
+	s.SecretName = val
+}
+
+// SetUse sets the value of Use.
+func (s *BoundSecret) SetUse(val bool) {
+	s.Use = val
+}
+
+// The level the binding is on.
+type BoundSecretFrom string
+
+const (
+	BoundSecretFromProject       BoundSecretFrom = "project"
+	BoundSecretFromHarnessConfig BoundSecretFrom = "harnessConfig"
+	BoundSecretFromSandbox       BoundSecretFrom = "sandbox"
+)
+
+// AllValues returns all BoundSecretFrom values.
+func (BoundSecretFrom) AllValues() []BoundSecretFrom {
+	return []BoundSecretFrom{
+		BoundSecretFromProject,
+		BoundSecretFromHarnessConfig,
+		BoundSecretFromSandbox,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s BoundSecretFrom) MarshalText() ([]byte, error) {
+	switch s {
+	case BoundSecretFromProject:
+		return []byte(s), nil
+	case BoundSecretFromHarnessConfig:
+		return []byte(s), nil
+	case BoundSecretFromSandbox:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *BoundSecretFrom) UnmarshalText(data []byte) error {
+	switch BoundSecretFrom(data) {
+	case BoundSecretFromProject:
+		*s = BoundSecretFromProject
+		return nil
+	case BoundSecretFromHarnessConfig:
+		*s = BoundSecretFromHarnessConfig
+		return nil
+	case BoundSecretFromSandbox:
+		*s = BoundSecretFromSandbox
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // The outcome of clearing a pool's caches. A container pool stops its running sandboxes and empties
 // the caches they share (its sandbox cache, build cache, registry, proxy response cache, and unused
@@ -1076,11 +1178,10 @@ type CreateSandboxBody struct {
 	Origin OptOrigin `json:"origin"`
 	// Pool to schedule the sandbox into. Defaults to the project's default pool.
 	PoolId OptString `json:"poolId"`
-	// Project secrets to give the new discobox, each minted as a sandbox grant with the variable it is
-	// delivered in, in the same transaction that creates it, so a create that cannot mint one creates
-	// nothing. The discobox receives a sentinel in each variable, which its pool swaps for the value on
-	// the hosts the grant covers.
-	Grants []SandboxGrant `json:"grants"`
+	// Secrets to bind to the new discobox, made with it in one transaction, so a create that cannot make
+	// one creates nothing. A person may bind anything; a discobox creating one binds, to use, only what
+	// a delegate binding it holds covers (ADR 26-10-27-880 §5).
+	Bindings []SandboxBindingInput `json:"bindings"`
 }
 
 // GetSchema returns the value of Schema.
@@ -1113,9 +1214,9 @@ func (s *CreateSandboxBody) GetPoolId() OptString {
 	return s.PoolId
 }
 
-// GetGrants returns the value of Grants.
-func (s *CreateSandboxBody) GetGrants() []SandboxGrant {
-	return s.Grants
+// GetBindings returns the value of Bindings.
+func (s *CreateSandboxBody) GetBindings() []SandboxBindingInput {
+	return s.Bindings
 }
 
 // SetSchema sets the value of Schema.
@@ -1148,9 +1249,9 @@ func (s *CreateSandboxBody) SetPoolId(val OptString) {
 	s.PoolId = val
 }
 
-// SetGrants sets the value of Grants.
-func (s *CreateSandboxBody) SetGrants(val []SandboxGrant) {
-	s.Grants = val
+// SetBindings sets the value of Bindings.
+func (s *CreateSandboxBody) SetBindings(val []SandboxBindingInput) {
+	s.Bindings = val
 }
 
 // An agent's ask, relayed by the pool agent on behalf of one of its sandboxes.
@@ -1161,16 +1262,16 @@ type CreateSandboxCredentialRequestBody struct {
 	// Environment variable the credential is wanted in. Required to use it; a request to delegate it
 	// names none, since a delegation delivers nothing to the asking sandbox.
 	EnvVar OptString `json:"envVar"`
-	// How long the agent asks the grant to live, in seconds, up to thirty days. A suggestion the
+	// How long the agent asks the binding to last, in seconds, up to thirty days. A suggestion the
 	// approver starts from, not a term. 0 or absent asks for nothing in particular; forever cannot be
 	// asked for, and neither can a span longer than the ceiling.
 	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
-	// Destination hosts the credential will be sent to (ADR 26-10-02-393). At least one is required,
-	// because approving this request may not mint a host-unscoped grant.
+	// Destination hosts the credential will be sent to (ADR 26-10-02-393). At least one is required, and
+	// each becomes a route of the binding approving the request makes, unless the approver names others.
 	Hosts []string `json:"hosts"`
 	// What the agent asks the credential for, one or the other and never both. use (the default) asks to
-	// use it. delegate asks to delegate it to other discoboxes; approving it mints a delegation grant,
-	// which authorizes nothing the asking discobox sends itself.
+	// use it. delegate asks to delegate it to other discoboxes; approving it makes a delegate binding,
+	// which delivers nothing to the asking discobox.
 	Purpose OptCreateSandboxCredentialRequestBodyPurpose `json:"purpose"`
 	// Why the agent says it needs the credential.
 	Justification OptString `json:"justification"`
@@ -1261,8 +1362,8 @@ func (s *CreateSandboxCredentialRequestBody) SetSandboxId(val string) {
 }
 
 // What the agent asks the credential for, one or the other and never both. use (the default) asks to
-// use it. delegate asks to delegate it to other discoboxes; approving it mints a delegation grant,
-// which authorizes nothing the asking discobox sends itself.
+// use it. delegate asks to delegate it to other discoboxes; approving it makes a delegate binding,
+// which delivers nothing to the asking discobox.
 type CreateSandboxCredentialRequestBodyPurpose string
 
 const (
@@ -1676,20 +1777,185 @@ func (s *CreateSandboxTrustRequestBody) SetSuppliedCA(val OptObservedCertificate
 	s.SuppliedCA = val
 }
 
+// Bind a secret to a project, a harness config, or one discobox.
+// Ref: #/components/schemas/CreateSecretBindingBody
+type CreateSecretBindingBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Let a discobox the binding covers give the credential to the discoboxes it creates. Only a person
+	// binds with delegate.
+	Delegate OptBool `json:"delegate"`
+	// Environment variable to deliver the credential's sentinel in; required with use.
+	EnvVar OptString `json:"envVar"`
+	// Routes that narrow the secret's for this binding; omitted or empty inherits the secret's.
+	Routes []SecretRouteInput `json:"routes"`
+	// The secret, by name or ID.
+	Secret string `json:"secret"`
+	// The harness config (slug, name or ID) or discobox (name or ID) to bind to; omitted for the project.
+	Target OptString `json:"target"`
+	// What the binding is for: every discobox of the project, every discobox on a harness config, or one
+	// discobox.
+	TargetKind CreateSecretBindingBodyTargetKind `json:"targetKind"`
+	// How long the binding lasts, in seconds, within the secret's limit; 0 never lapses where the secret
+	// allows it. Omitted takes the secret's limit.
+	TtlSeconds OptInt64 `json:"ttlSeconds"`
+	// Deliver the credential to the target in envVar. Defaults to true unless delegate is set.
+	Use OptBool `json:"use"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CreateSecretBindingBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetDelegate returns the value of Delegate.
+func (s *CreateSecretBindingBody) GetDelegate() OptBool {
+	return s.Delegate
+}
+
+// GetEnvVar returns the value of EnvVar.
+func (s *CreateSecretBindingBody) GetEnvVar() OptString {
+	return s.EnvVar
+}
+
+// GetRoutes returns the value of Routes.
+func (s *CreateSecretBindingBody) GetRoutes() []SecretRouteInput {
+	return s.Routes
+}
+
+// GetSecret returns the value of Secret.
+func (s *CreateSecretBindingBody) GetSecret() string {
+	return s.Secret
+}
+
+// GetTarget returns the value of Target.
+func (s *CreateSecretBindingBody) GetTarget() OptString {
+	return s.Target
+}
+
+// GetTargetKind returns the value of TargetKind.
+func (s *CreateSecretBindingBody) GetTargetKind() CreateSecretBindingBodyTargetKind {
+	return s.TargetKind
+}
+
+// GetTtlSeconds returns the value of TtlSeconds.
+func (s *CreateSecretBindingBody) GetTtlSeconds() OptInt64 {
+	return s.TtlSeconds
+}
+
+// GetUse returns the value of Use.
+func (s *CreateSecretBindingBody) GetUse() OptBool {
+	return s.Use
+}
+
+// SetSchema sets the value of Schema.
+func (s *CreateSecretBindingBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetDelegate sets the value of Delegate.
+func (s *CreateSecretBindingBody) SetDelegate(val OptBool) {
+	s.Delegate = val
+}
+
+// SetEnvVar sets the value of EnvVar.
+func (s *CreateSecretBindingBody) SetEnvVar(val OptString) {
+	s.EnvVar = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *CreateSecretBindingBody) SetRoutes(val []SecretRouteInput) {
+	s.Routes = val
+}
+
+// SetSecret sets the value of Secret.
+func (s *CreateSecretBindingBody) SetSecret(val string) {
+	s.Secret = val
+}
+
+// SetTarget sets the value of Target.
+func (s *CreateSecretBindingBody) SetTarget(val OptString) {
+	s.Target = val
+}
+
+// SetTargetKind sets the value of TargetKind.
+func (s *CreateSecretBindingBody) SetTargetKind(val CreateSecretBindingBodyTargetKind) {
+	s.TargetKind = val
+}
+
+// SetTtlSeconds sets the value of TtlSeconds.
+func (s *CreateSecretBindingBody) SetTtlSeconds(val OptInt64) {
+	s.TtlSeconds = val
+}
+
+// SetUse sets the value of Use.
+func (s *CreateSecretBindingBody) SetUse(val OptBool) {
+	s.Use = val
+}
+
+// What the binding is for: every discobox of the project, every discobox on a harness config, or one
+// discobox.
+type CreateSecretBindingBodyTargetKind string
+
+const (
+	CreateSecretBindingBodyTargetKindProject       CreateSecretBindingBodyTargetKind = "project"
+	CreateSecretBindingBodyTargetKindHarnessConfig CreateSecretBindingBodyTargetKind = "harnessConfig"
+	CreateSecretBindingBodyTargetKindSandbox       CreateSecretBindingBodyTargetKind = "sandbox"
+)
+
+// AllValues returns all CreateSecretBindingBodyTargetKind values.
+func (CreateSecretBindingBodyTargetKind) AllValues() []CreateSecretBindingBodyTargetKind {
+	return []CreateSecretBindingBodyTargetKind{
+		CreateSecretBindingBodyTargetKindProject,
+		CreateSecretBindingBodyTargetKindHarnessConfig,
+		CreateSecretBindingBodyTargetKindSandbox,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CreateSecretBindingBodyTargetKind) MarshalText() ([]byte, error) {
+	switch s {
+	case CreateSecretBindingBodyTargetKindProject:
+		return []byte(s), nil
+	case CreateSecretBindingBodyTargetKindHarnessConfig:
+		return []byte(s), nil
+	case CreateSecretBindingBodyTargetKindSandbox:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CreateSecretBindingBodyTargetKind) UnmarshalText(data []byte) error {
+	switch CreateSecretBindingBodyTargetKind(data) {
+	case CreateSecretBindingBodyTargetKindProject:
+		*s = CreateSecretBindingBodyTargetKindProject
+		return nil
+	case CreateSecretBindingBodyTargetKindHarnessConfig:
+		*s = CreateSecretBindingBodyTargetKindHarnessConfig
+		return nil
+	case CreateSecretBindingBodyTargetKindSandbox:
+		*s = CreateSecretBindingBodyTargetKindSandbox
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/CreateSecretBody
 type CreateSecretBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema   OptURI            `json:"$schema"`
 	Exchange OptExchangeRecipe `json:"exchange"`
-	// Longest a grant on this secret may live, in seconds; 0 allows grants that never expire.
-	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
 	// Template the sentinels for this secret are minted from: literal text with {charset:length} tokens,
 	// such as sk-ant-oat01-{base64url:95}. Charsets are digits, hex, HEX, lower, upper, alnum, base62,
 	// base32, base64url, and base64. Omitted or empty reads the shape from the value. A format set here
 	// is kept when the value is replaced.
 	Format OptString `json:"format"`
-	// Optional host used to match requests (e.g. github.com).
-	Host OptString `json:"host"`
+	// Longest a binding of this secret may last, in seconds, and the lifetime one takes when nobody
+	// names one; 0 lets bindings never lapse.
+	MaxBindingTTLSeconds OptInt64 `json:"maxBindingTTLSeconds"`
 	// A command a person's client may run to produce a new value, as an argument vector run without a
 	// shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only;
 	// setting one without ttlSeconds gives the token 300s. An empty array removes it.
@@ -1698,8 +1964,8 @@ type CreateSecretBody struct {
 	// only.
 	TtlSeconds OptInt64 `json:"ttlSeconds"`
 	// Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in
-	// must fall on one; the most specific route covering it decides, and a blocked one refuses. Omitted
-	// or empty leaves it to its grants.
+	// must fall on one; the most specific route covering it decides, and a blocked one refuses. `*`
+	// covers any host (ADR 26-10-27-939). Omitted or empty sends it nowhere.
 	Routes OptNilSecretRouteInputArray `json:"routes"`
 	// When this value goes stale, for a value that knows its own lifetime; overrides ttlSeconds for this
 	// value only. Token secrets only, and only with a value.
@@ -1721,19 +1987,14 @@ func (s *CreateSecretBody) GetExchange() OptExchangeRecipe {
 	return s.Exchange
 }
 
-// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
-func (s *CreateSecretBody) GetMaxGrantTTLSeconds() OptInt64 {
-	return s.MaxGrantTTLSeconds
-}
-
 // GetFormat returns the value of Format.
 func (s *CreateSecretBody) GetFormat() OptString {
 	return s.Format
 }
 
-// GetHost returns the value of Host.
-func (s *CreateSecretBody) GetHost() OptString {
-	return s.Host
+// GetMaxBindingTTLSeconds returns the value of MaxBindingTTLSeconds.
+func (s *CreateSecretBody) GetMaxBindingTTLSeconds() OptInt64 {
+	return s.MaxBindingTTLSeconds
 }
 
 // GetRefreshCommand returns the value of RefreshCommand.
@@ -1781,19 +2042,14 @@ func (s *CreateSecretBody) SetExchange(val OptExchangeRecipe) {
 	s.Exchange = val
 }
 
-// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
-func (s *CreateSecretBody) SetMaxGrantTTLSeconds(val OptInt64) {
-	s.MaxGrantTTLSeconds = val
-}
-
 // SetFormat sets the value of Format.
 func (s *CreateSecretBody) SetFormat(val OptString) {
 	s.Format = val
 }
 
-// SetHost sets the value of Host.
-func (s *CreateSecretBody) SetHost(val OptString) {
-	s.Host = val
+// SetMaxBindingTTLSeconds sets the value of MaxBindingTTLSeconds.
+func (s *CreateSecretBody) SetMaxBindingTTLSeconds(val OptInt64) {
+	s.MaxBindingTTLSeconds = val
 }
 
 // SetRefreshCommand sets the value of RefreshCommand.
@@ -1874,280 +2130,6 @@ func (s *CreateSecretBodyType) UnmarshalText(data []byte) error {
 		return nil
 	case CreateSecretBodyTypeExchange:
 		*s = CreateSecretBodyTypeExchange
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Ref: #/components/schemas/CreateSecretGrantBody
-type CreateSecretGrantBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Grant duration in seconds; defaults to the secret's default. 0 never expires.
-	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
-	// Hosts the grant is limited to (ADR 26-10-02-393). Left out, the secret's host; an empty list
-	// matches any host.
-	Hosts []string `json:"hosts"`
-	// How widely the grant applies.
-	Scope CreateSecretGrantBodyScope `json:"scope"`
-	// Identifier the scope resolves against (sandbox ID or harness config ID). Defaults to the project
-	// ID for project scope.
-	ScopeKey OptString `json:"scopeKey"`
-	// Secret ID to grant.
-	SecretId string `json:"secretId"`
-	// What the grant authorizes its holder to do, one or the other and never both. use (the default)
-	// lets it use the credential. delegate lets it give the credential to the discoboxes it creates and
-	// authorizes nothing it sends itself; sandbox scope only.
-	Purpose OptCreateSecretGrantBodyPurpose `json:"purpose"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *CreateSecretGrantBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetGrantTTLSeconds returns the value of GrantTTLSeconds.
-func (s *CreateSecretGrantBody) GetGrantTTLSeconds() OptInt64 {
-	return s.GrantTTLSeconds
-}
-
-// GetHosts returns the value of Hosts.
-func (s *CreateSecretGrantBody) GetHosts() []string {
-	return s.Hosts
-}
-
-// GetScope returns the value of Scope.
-func (s *CreateSecretGrantBody) GetScope() CreateSecretGrantBodyScope {
-	return s.Scope
-}
-
-// GetScopeKey returns the value of ScopeKey.
-func (s *CreateSecretGrantBody) GetScopeKey() OptString {
-	return s.ScopeKey
-}
-
-// GetSecretId returns the value of SecretId.
-func (s *CreateSecretGrantBody) GetSecretId() string {
-	return s.SecretId
-}
-
-// GetPurpose returns the value of Purpose.
-func (s *CreateSecretGrantBody) GetPurpose() OptCreateSecretGrantBodyPurpose {
-	return s.Purpose
-}
-
-// SetSchema sets the value of Schema.
-func (s *CreateSecretGrantBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetGrantTTLSeconds sets the value of GrantTTLSeconds.
-func (s *CreateSecretGrantBody) SetGrantTTLSeconds(val OptInt64) {
-	s.GrantTTLSeconds = val
-}
-
-// SetHosts sets the value of Hosts.
-func (s *CreateSecretGrantBody) SetHosts(val []string) {
-	s.Hosts = val
-}
-
-// SetScope sets the value of Scope.
-func (s *CreateSecretGrantBody) SetScope(val CreateSecretGrantBodyScope) {
-	s.Scope = val
-}
-
-// SetScopeKey sets the value of ScopeKey.
-func (s *CreateSecretGrantBody) SetScopeKey(val OptString) {
-	s.ScopeKey = val
-}
-
-// SetSecretId sets the value of SecretId.
-func (s *CreateSecretGrantBody) SetSecretId(val string) {
-	s.SecretId = val
-}
-
-// SetPurpose sets the value of Purpose.
-func (s *CreateSecretGrantBody) SetPurpose(val OptCreateSecretGrantBodyPurpose) {
-	s.Purpose = val
-}
-
-// What the grant authorizes its holder to do, one or the other and never both. use (the default)
-// lets it use the credential. delegate lets it give the credential to the discoboxes it creates and
-// authorizes nothing it sends itself; sandbox scope only.
-type CreateSecretGrantBodyPurpose string
-
-const (
-	CreateSecretGrantBodyPurposeUse      CreateSecretGrantBodyPurpose = "use"
-	CreateSecretGrantBodyPurposeDelegate CreateSecretGrantBodyPurpose = "delegate"
-)
-
-// AllValues returns all CreateSecretGrantBodyPurpose values.
-func (CreateSecretGrantBodyPurpose) AllValues() []CreateSecretGrantBodyPurpose {
-	return []CreateSecretGrantBodyPurpose{
-		CreateSecretGrantBodyPurposeUse,
-		CreateSecretGrantBodyPurposeDelegate,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s CreateSecretGrantBodyPurpose) MarshalText() ([]byte, error) {
-	switch s {
-	case CreateSecretGrantBodyPurposeUse:
-		return []byte(s), nil
-	case CreateSecretGrantBodyPurposeDelegate:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *CreateSecretGrantBodyPurpose) UnmarshalText(data []byte) error {
-	switch CreateSecretGrantBodyPurpose(data) {
-	case CreateSecretGrantBodyPurposeUse:
-		*s = CreateSecretGrantBodyPurposeUse
-		return nil
-	case CreateSecretGrantBodyPurposeDelegate:
-		*s = CreateSecretGrantBodyPurposeDelegate
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// How widely the grant applies.
-type CreateSecretGrantBodyScope string
-
-const (
-	CreateSecretGrantBodyScopeSandbox       CreateSecretGrantBodyScope = "sandbox"
-	CreateSecretGrantBodyScopeHarnessConfig CreateSecretGrantBodyScope = "harnessConfig"
-	CreateSecretGrantBodyScopeProject       CreateSecretGrantBodyScope = "project"
-)
-
-// AllValues returns all CreateSecretGrantBodyScope values.
-func (CreateSecretGrantBodyScope) AllValues() []CreateSecretGrantBodyScope {
-	return []CreateSecretGrantBodyScope{
-		CreateSecretGrantBodyScopeSandbox,
-		CreateSecretGrantBodyScopeHarnessConfig,
-		CreateSecretGrantBodyScopeProject,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s CreateSecretGrantBodyScope) MarshalText() ([]byte, error) {
-	switch s {
-	case CreateSecretGrantBodyScopeSandbox:
-		return []byte(s), nil
-	case CreateSecretGrantBodyScopeHarnessConfig:
-		return []byte(s), nil
-	case CreateSecretGrantBodyScopeProject:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *CreateSecretGrantBodyScope) UnmarshalText(data []byte) error {
-	switch CreateSecretGrantBodyScope(data) {
-	case CreateSecretGrantBodyScopeSandbox:
-		*s = CreateSecretGrantBodyScopeSandbox
-		return nil
-	case CreateSecretGrantBodyScopeHarnessConfig:
-		*s = CreateSecretGrantBodyScopeHarnessConfig
-		return nil
-	case CreateSecretGrantBodyScopeProject:
-		*s = CreateSecretGrantBodyScopeProject
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Ref: #/components/schemas/CreateSecretRequestBody
-type CreateSecretRequestBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Optional host hint used to match a secret (e.g. github.com).
-	Host OptString `json:"host"`
-	// Secret type being requested.
-	Type CreateSecretRequestBodyType `json:"type"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *CreateSecretRequestBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetHost returns the value of Host.
-func (s *CreateSecretRequestBody) GetHost() OptString {
-	return s.Host
-}
-
-// GetType returns the value of Type.
-func (s *CreateSecretRequestBody) GetType() CreateSecretRequestBodyType {
-	return s.Type
-}
-
-// SetSchema sets the value of Schema.
-func (s *CreateSecretRequestBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetHost sets the value of Host.
-func (s *CreateSecretRequestBody) SetHost(val OptString) {
-	s.Host = val
-}
-
-// SetType sets the value of Type.
-func (s *CreateSecretRequestBody) SetType(val CreateSecretRequestBodyType) {
-	s.Type = val
-}
-
-// Secret type being requested.
-type CreateSecretRequestBodyType string
-
-const (
-	CreateSecretRequestBodyTypeToken    CreateSecretRequestBodyType = "token"
-	CreateSecretRequestBodyTypeOAuth    CreateSecretRequestBodyType = "oauth"
-	CreateSecretRequestBodyTypeExchange CreateSecretRequestBodyType = "exchange"
-)
-
-// AllValues returns all CreateSecretRequestBodyType values.
-func (CreateSecretRequestBodyType) AllValues() []CreateSecretRequestBodyType {
-	return []CreateSecretRequestBodyType{
-		CreateSecretRequestBodyTypeToken,
-		CreateSecretRequestBodyTypeOAuth,
-		CreateSecretRequestBodyTypeExchange,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s CreateSecretRequestBodyType) MarshalText() ([]byte, error) {
-	switch s {
-	case CreateSecretRequestBodyTypeToken:
-		return []byte(s), nil
-	case CreateSecretRequestBodyTypeOAuth:
-		return []byte(s), nil
-	case CreateSecretRequestBodyTypeExchange:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *CreateSecretRequestBodyType) UnmarshalText(data []byte) error {
-	switch CreateSecretRequestBodyType(data) {
-	case CreateSecretRequestBodyTypeToken:
-		*s = CreateSecretRequestBodyTypeToken
-		return nil
-	case CreateSecretRequestBodyTypeOAuth:
-		*s = CreateSecretRequestBodyTypeOAuth
-		return nil
-	case CreateSecretRequestBodyTypeExchange:
-		*s = CreateSecretRequestBodyTypeExchange
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -2300,11 +2282,6 @@ type DeleteHarnessConfigNoContent struct{}
 
 func (*DeleteHarnessConfigNoContent) deleteHarnessConfigRes() {}
 
-// DeleteHarnessConfigSecretBindingNoContent is response for DeleteHarnessConfigSecretBinding operation.
-type DeleteHarnessConfigSecretBindingNoContent struct{}
-
-func (*DeleteHarnessConfigSecretBindingNoContent) deleteHarnessConfigSecretBindingRes() {}
-
 // DeletePeerNoContent is response for DeletePeer operation.
 type DeletePeerNoContent struct{}
 
@@ -2354,6 +2331,37 @@ func (*DeleteSandboxHostTrustNoContent) deleteSandboxHostTrustRes() {}
 type DeleteSandboxProviderInstanceNoContent struct{}
 
 func (*DeleteSandboxProviderInstanceNoContent) deleteSandboxProviderInstanceRes() {}
+
+// What a delete removed: the binding, and every binding handed on under it.
+// Ref: #/components/schemas/DeleteSecretBindingResponse
+type DeleteSecretBindingResponse struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// IDs of every binding removed, the one asked for first.
+	Deleted []string `json:"deleted"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *DeleteSecretBindingResponse) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetDeleted returns the value of Deleted.
+func (s *DeleteSecretBindingResponse) GetDeleted() []string {
+	return s.Deleted
+}
+
+// SetSchema sets the value of Schema.
+func (s *DeleteSecretBindingResponse) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetDeleted sets the value of Deleted.
+func (s *DeleteSecretBindingResponse) SetDeleted(val []string) {
+	s.Deleted = val
+}
+
+func (*DeleteSecretBindingResponse) deleteSecretBindingRes() {}
 
 // DeleteSecretNoContent is response for DeleteSecret operation.
 type DeleteSecretNoContent struct{}
@@ -2579,12 +2587,10 @@ func (*ErrorModelStatusCode) createSandboxCredentialRequestRes()        {}
 func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()         {}
 func (*ErrorModelStatusCode) createSandboxRes()                         {}
 func (*ErrorModelStatusCode) createSandboxTrustRequestRes()             {}
-func (*ErrorModelStatusCode) createSecretGrantRes()                     {}
-func (*ErrorModelStatusCode) createSecretRequestRes()                   {}
+func (*ErrorModelStatusCode) createSecretBindingRes()                   {}
 func (*ErrorModelStatusCode) createSecretRes()                          {}
 func (*ErrorModelStatusCode) deconfigureHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) deleteHarnessConfigRes()                   {}
-func (*ErrorModelStatusCode) deleteHarnessConfigSecretBindingRes()      {}
 func (*ErrorModelStatusCode) deletePeerRes()                            {}
 func (*ErrorModelStatusCode) deletePoolRes()                            {}
 func (*ErrorModelStatusCode) deleteProjectGatewayRes()                  {}
@@ -2594,9 +2600,11 @@ func (*ErrorModelStatusCode) deleteSSHKeyRes()                          {}
 func (*ErrorModelStatusCode) deleteSandboxHostTrustRes()                {}
 func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()         {}
 func (*ErrorModelStatusCode) deleteSandboxRes()                         {}
+func (*ErrorModelStatusCode) deleteSecretBindingRes()                   {}
 func (*ErrorModelStatusCode) deleteSecretRes()                          {}
 func (*ErrorModelStatusCode) denySecretRequestRes()                     {}
 func (*ErrorModelStatusCode) denyTrustRequestRes()                      {}
+func (*ErrorModelStatusCode) dismissSecretRefreshRequestRes()           {}
 func (*ErrorModelStatusCode) forceJobRes()                              {}
 func (*ErrorModelStatusCode) getHTTPAuditRes()                          {}
 func (*ErrorModelStatusCode) getHarnessConfigRes()                      {}
@@ -2611,15 +2619,16 @@ func (*ErrorModelStatusCode) getSandboxCredentialRequestRes()           {}
 func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()            {}
 func (*ErrorModelStatusCode) getSandboxRes()                            {}
 func (*ErrorModelStatusCode) getSandboxTrustRequestRes()                {}
+func (*ErrorModelStatusCode) getSecretBindingRes()                      {}
 func (*ErrorModelStatusCode) getSecretRequestRes()                      {}
 func (*ErrorModelStatusCode) getSecretRes()                             {}
 func (*ErrorModelStatusCode) getServerInfoRes()                         {}
 func (*ErrorModelStatusCode) getServerPeerRes()                         {}
 func (*ErrorModelStatusCode) getTrustRequestRes()                       {}
 func (*ErrorModelStatusCode) listApprovalRequestsRes()                  {}
+func (*ErrorModelStatusCode) listBoundSecretsRes()                      {}
 func (*ErrorModelStatusCode) listDNSAuditRes()                          {}
 func (*ErrorModelStatusCode) listHTTPAuditRes()                         {}
-func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()       {}
 func (*ErrorModelStatusCode) listHarnessConfigsRes()                    {}
 func (*ErrorModelStatusCode) listJobsRes()                              {}
 func (*ErrorModelStatusCode) listPeersRes()                             {}
@@ -2635,7 +2644,9 @@ func (*ErrorModelStatusCode) listSandboxHostTrustsRes()                 {}
 func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()            {}
 func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()          {}
 func (*ErrorModelStatusCode) listSandboxesRes()                         {}
-func (*ErrorModelStatusCode) listSecretGrantsRes()                      {}
+func (*ErrorModelStatusCode) listSecretBindingEventsRes()               {}
+func (*ErrorModelStatusCode) listSecretBindingsRes()                    {}
+func (*ErrorModelStatusCode) listSecretRefreshRequestsRes()             {}
 func (*ErrorModelStatusCode) listSecretRefreshesRes()                   {}
 func (*ErrorModelStatusCode) listSecretRejectionsRes()                  {}
 func (*ErrorModelStatusCode) listSecretRequestsRes()                    {}
@@ -2660,12 +2671,10 @@ func (*ErrorModelStatusCode) resolveGatewayHeadersRes()                 {}
 func (*ErrorModelStatusCode) resolvePoolAssetRes()                      {}
 func (*ErrorModelStatusCode) resolveSandboxSecretRes()                  {}
 func (*ErrorModelStatusCode) restartSandboxRes()                        {}
-func (*ErrorModelStatusCode) revokeSecretGrantRes()                     {}
 func (*ErrorModelStatusCode) saveSandboxHarnessConfigChangesRes()       {}
 func (*ErrorModelStatusCode) setDefaultHarnessConfigRes()               {}
 func (*ErrorModelStatusCode) setDefaultPoolRes()                        {}
 func (*ErrorModelStatusCode) setDefaultProjectRes()                     {}
-func (*ErrorModelStatusCode) setHarnessConfigSecretBindingRes()         {}
 func (*ErrorModelStatusCode) startSandboxRes()                          {}
 func (*ErrorModelStatusCode) stopSandboxRes()                           {}
 func (*ErrorModelStatusCode) suspendSandboxRes()                        {}
@@ -2679,6 +2688,7 @@ func (*ErrorModelStatusCode) updateProjectRes()                         {}
 func (*ErrorModelStatusCode) updateSandboxMetaRes()                     {}
 func (*ErrorModelStatusCode) updateSandboxProviderInstanceRes()         {}
 func (*ErrorModelStatusCode) updateSandboxRes()                         {}
+func (*ErrorModelStatusCode) updateSecretBindingRes()                   {}
 func (*ErrorModelStatusCode) updateSecretRes()                          {}
 func (*ErrorModelStatusCode) upgradeSandboxRes()                        {}
 
@@ -5001,9 +5011,16 @@ func (s *HarnessCaptureProvider) SetTypes(val []string) {
 
 // Ref: #/components/schemas/HarnessCaptureRoute
 type HarnessCaptureRoute struct {
-	Host string    `json:"host"`
-	Path OptString `json:"path"`
-	Use  OptString `json:"use"`
+	// Refuse every request on this route; a more specific route still answers for the paths beneath it
+	// (ADR 26-10-27-880 §4).
+	Blocked OptBool   `json:"blocked"`
+	Host    string    `json:"host"`
+	Path    OptString `json:"path"`
+}
+
+// GetBlocked returns the value of Blocked.
+func (s *HarnessCaptureRoute) GetBlocked() OptBool {
+	return s.Blocked
 }
 
 // GetHost returns the value of Host.
@@ -5016,9 +5033,9 @@ func (s *HarnessCaptureRoute) GetPath() OptString {
 	return s.Path
 }
 
-// GetUse returns the value of Use.
-func (s *HarnessCaptureRoute) GetUse() OptString {
-	return s.Use
+// SetBlocked sets the value of Blocked.
+func (s *HarnessCaptureRoute) SetBlocked(val OptBool) {
+	s.Blocked = val
 }
 
 // SetHost sets the value of Host.
@@ -5029,11 +5046,6 @@ func (s *HarnessCaptureRoute) SetHost(val string) {
 // SetPath sets the value of Path.
 func (s *HarnessCaptureRoute) SetPath(val OptString) {
 	s.Path = val
-}
-
-// SetUse sets the value of Use.
-func (s *HarnessCaptureRoute) SetUse(val OptString) {
-	s.Use = val
 }
 
 // Ref: #/components/schemas/HarnessCaptureSetting
@@ -6190,109 +6202,6 @@ func (s *HarnessConfigSecret) SetRoutes(val []SecretRouteInput) {
 	s.Routes = val
 }
 
-// Binds one of a harness config's environment variables to a project secret.
-// Ref: #/components/schemas/HarnessConfigSecretBinding
-type HarnessConfigSecretBinding struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Harness config the binding belongs to.
-	HarnessConfigId string `json:"harnessConfigId"`
-	// Creation timestamp.
-	CreatedAt time.Time `json:"createdAt"`
-	// Environment variable filled by the secret.
-	EnvName string `json:"envName"`
-	// Stable binding ID.
-	ID string `json:"id"`
-	// Project ID.
-	ProjectId string `json:"projectId"`
-	// Bound secret ID.
-	SecretId string `json:"secretId"`
-	// Last update timestamp.
-	UpdatedAt time.Time `json:"updatedAt"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *HarnessConfigSecretBinding) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetHarnessConfigId returns the value of HarnessConfigId.
-func (s *HarnessConfigSecretBinding) GetHarnessConfigId() string {
-	return s.HarnessConfigId
-}
-
-// GetCreatedAt returns the value of CreatedAt.
-func (s *HarnessConfigSecretBinding) GetCreatedAt() time.Time {
-	return s.CreatedAt
-}
-
-// GetEnvName returns the value of EnvName.
-func (s *HarnessConfigSecretBinding) GetEnvName() string {
-	return s.EnvName
-}
-
-// GetID returns the value of ID.
-func (s *HarnessConfigSecretBinding) GetID() string {
-	return s.ID
-}
-
-// GetProjectId returns the value of ProjectId.
-func (s *HarnessConfigSecretBinding) GetProjectId() string {
-	return s.ProjectId
-}
-
-// GetSecretId returns the value of SecretId.
-func (s *HarnessConfigSecretBinding) GetSecretId() string {
-	return s.SecretId
-}
-
-// GetUpdatedAt returns the value of UpdatedAt.
-func (s *HarnessConfigSecretBinding) GetUpdatedAt() time.Time {
-	return s.UpdatedAt
-}
-
-// SetSchema sets the value of Schema.
-func (s *HarnessConfigSecretBinding) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetHarnessConfigId sets the value of HarnessConfigId.
-func (s *HarnessConfigSecretBinding) SetHarnessConfigId(val string) {
-	s.HarnessConfigId = val
-}
-
-// SetCreatedAt sets the value of CreatedAt.
-func (s *HarnessConfigSecretBinding) SetCreatedAt(val time.Time) {
-	s.CreatedAt = val
-}
-
-// SetEnvName sets the value of EnvName.
-func (s *HarnessConfigSecretBinding) SetEnvName(val string) {
-	s.EnvName = val
-}
-
-// SetID sets the value of ID.
-func (s *HarnessConfigSecretBinding) SetID(val string) {
-	s.ID = val
-}
-
-// SetProjectId sets the value of ProjectId.
-func (s *HarnessConfigSecretBinding) SetProjectId(val string) {
-	s.ProjectId = val
-}
-
-// SetSecretId sets the value of SecretId.
-func (s *HarnessConfigSecretBinding) SetSecretId(val string) {
-	s.SecretId = val
-}
-
-// SetUpdatedAt sets the value of UpdatedAt.
-func (s *HarnessConfigSecretBinding) SetUpdatedAt(val time.Time) {
-	s.UpdatedAt = val
-}
-
-func (*HarnessConfigSecretBinding) setHarnessConfigSecretBindingRes() {}
-
 // How the credential reaches the harness. env (the default) exports the variable named by name; file
 // withholds that export because the harness reads the credential from a file the harness config
 // installs.
@@ -7435,6 +7344,84 @@ func (s *ListApprovalRequestsStatus) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/ListBoundSecretsBody
+type ListBoundSecretsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema       OptURI        `json:"$schema"`
+	BoundSecrets []BoundSecret `json:"boundSecrets"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListBoundSecretsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetBoundSecrets returns the value of BoundSecrets.
+func (s *ListBoundSecretsBody) GetBoundSecrets() []BoundSecret {
+	return s.BoundSecrets
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListBoundSecretsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetBoundSecrets sets the value of BoundSecrets.
+func (s *ListBoundSecretsBody) SetBoundSecrets(val []BoundSecret) {
+	s.BoundSecrets = val
+}
+
+func (*ListBoundSecretsBody) listBoundSecretsRes() {}
+
+// The kind of target to resolve for.
+type ListBoundSecretsTargetKind string
+
+const (
+	ListBoundSecretsTargetKindProject       ListBoundSecretsTargetKind = "project"
+	ListBoundSecretsTargetKindHarnessConfig ListBoundSecretsTargetKind = "harnessConfig"
+	ListBoundSecretsTargetKindSandbox       ListBoundSecretsTargetKind = "sandbox"
+)
+
+// AllValues returns all ListBoundSecretsTargetKind values.
+func (ListBoundSecretsTargetKind) AllValues() []ListBoundSecretsTargetKind {
+	return []ListBoundSecretsTargetKind{
+		ListBoundSecretsTargetKindProject,
+		ListBoundSecretsTargetKindHarnessConfig,
+		ListBoundSecretsTargetKindSandbox,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListBoundSecretsTargetKind) MarshalText() ([]byte, error) {
+	switch s {
+	case ListBoundSecretsTargetKindProject:
+		return []byte(s), nil
+	case ListBoundSecretsTargetKindHarnessConfig:
+		return []byte(s), nil
+	case ListBoundSecretsTargetKindSandbox:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListBoundSecretsTargetKind) UnmarshalText(data []byte) error {
+	switch ListBoundSecretsTargetKind(data) {
+	case ListBoundSecretsTargetKindProject:
+		*s = ListBoundSecretsTargetKindProject
+		return nil
+	case ListBoundSecretsTargetKindHarnessConfig:
+		*s = ListBoundSecretsTargetKindHarnessConfig
+		return nil
+	case ListBoundSecretsTargetKindSandbox:
+		*s = ListBoundSecretsTargetKindSandbox
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/ListDNSAuditBody
 type ListDNSAuditBody struct {
 	// A URL to the JSON Schema for this object.
@@ -7645,35 +7632,6 @@ func (s *ListHTTPAuditOrder) UnmarshalText(data []byte) error {
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
-
-// Ref: #/components/schemas/ListHarnessConfigSecretBindingsBody
-type ListHarnessConfigSecretBindingsBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema         OptURI                       `json:"$schema"`
-	SecretBindings []HarnessConfigSecretBinding `json:"secretBindings"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *ListHarnessConfigSecretBindingsBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetSecretBindings returns the value of SecretBindings.
-func (s *ListHarnessConfigSecretBindingsBody) GetSecretBindings() []HarnessConfigSecretBinding {
-	return s.SecretBindings
-}
-
-// SetSchema sets the value of Schema.
-func (s *ListHarnessConfigSecretBindingsBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetSecretBindings sets the value of SecretBindings.
-func (s *ListHarnessConfigSecretBindingsBody) SetSecretBindings(val []HarnessConfigSecretBinding) {
-	s.SecretBindings = val
-}
-
-func (*ListHarnessConfigSecretBindingsBody) listHarnessConfigSecretBindingsRes() {}
 
 // Ref: #/components/schemas/ListHarnessConfigsBody
 type ListHarnessConfigsBody struct {
@@ -8091,34 +8049,112 @@ func (s *ListSandboxesBody) SetSandboxes(val []Sandbox) {
 
 func (*ListSandboxesBody) listSandboxesRes() {}
 
-// Ref: #/components/schemas/ListSecretGrantsBody
-type ListSecretGrantsBody struct {
+// Ref: #/components/schemas/ListSecretBindingEventsBody
+type ListSecretBindingEventsBody struct {
 	// A URL to the JSON Schema for this object.
-	Schema       OptURI        `json:"$schema"`
-	SecretGrants []SecretGrant `json:"secretGrants"`
+	Schema              OptURI               `json:"$schema"`
+	SecretBindingEvents []SecretBindingEvent `json:"secretBindingEvents"`
 }
 
 // GetSchema returns the value of Schema.
-func (s *ListSecretGrantsBody) GetSchema() OptURI {
+func (s *ListSecretBindingEventsBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetSecretGrants returns the value of SecretGrants.
-func (s *ListSecretGrantsBody) GetSecretGrants() []SecretGrant {
-	return s.SecretGrants
+// GetSecretBindingEvents returns the value of SecretBindingEvents.
+func (s *ListSecretBindingEventsBody) GetSecretBindingEvents() []SecretBindingEvent {
+	return s.SecretBindingEvents
 }
 
 // SetSchema sets the value of Schema.
-func (s *ListSecretGrantsBody) SetSchema(val OptURI) {
+func (s *ListSecretBindingEventsBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetSecretGrants sets the value of SecretGrants.
-func (s *ListSecretGrantsBody) SetSecretGrants(val []SecretGrant) {
-	s.SecretGrants = val
+// SetSecretBindingEvents sets the value of SecretBindingEvents.
+func (s *ListSecretBindingEventsBody) SetSecretBindingEvents(val []SecretBindingEvent) {
+	s.SecretBindingEvents = val
 }
 
-func (*ListSecretGrantsBody) listSecretGrantsRes() {}
+func (*ListSecretBindingEventsBody) listSecretBindingEventsRes() {}
+
+// Ref: #/components/schemas/ListSecretBindingsBody
+type ListSecretBindingsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema         OptURI          `json:"$schema"`
+	SecretBindings []SecretBinding `json:"secretBindings"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListSecretBindingsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSecretBindings returns the value of SecretBindings.
+func (s *ListSecretBindingsBody) GetSecretBindings() []SecretBinding {
+	return s.SecretBindings
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListSecretBindingsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSecretBindings sets the value of SecretBindings.
+func (s *ListSecretBindingsBody) SetSecretBindings(val []SecretBinding) {
+	s.SecretBindings = val
+}
+
+func (*ListSecretBindingsBody) listSecretBindingsRes() {}
+
+// Only bindings on this kind of target.
+type ListSecretBindingsTargetKind string
+
+const (
+	ListSecretBindingsTargetKindProject       ListSecretBindingsTargetKind = "project"
+	ListSecretBindingsTargetKindHarnessConfig ListSecretBindingsTargetKind = "harnessConfig"
+	ListSecretBindingsTargetKindSandbox       ListSecretBindingsTargetKind = "sandbox"
+)
+
+// AllValues returns all ListSecretBindingsTargetKind values.
+func (ListSecretBindingsTargetKind) AllValues() []ListSecretBindingsTargetKind {
+	return []ListSecretBindingsTargetKind{
+		ListSecretBindingsTargetKindProject,
+		ListSecretBindingsTargetKindHarnessConfig,
+		ListSecretBindingsTargetKindSandbox,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListSecretBindingsTargetKind) MarshalText() ([]byte, error) {
+	switch s {
+	case ListSecretBindingsTargetKindProject:
+		return []byte(s), nil
+	case ListSecretBindingsTargetKindHarnessConfig:
+		return []byte(s), nil
+	case ListSecretBindingsTargetKindSandbox:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListSecretBindingsTargetKind) UnmarshalText(data []byte) error {
+	switch ListSecretBindingsTargetKind(data) {
+	case ListSecretBindingsTargetKindProject:
+		*s = ListSecretBindingsTargetKindProject
+		return nil
+	case ListSecretBindingsTargetKindHarnessConfig:
+		*s = ListSecretBindingsTargetKindHarnessConfig
+		return nil
+	case ListSecretBindingsTargetKindSandbox:
+		*s = ListSecretBindingsTargetKindSandbox
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // Ref: #/components/schemas/ListSecretRefreshEventsBody
 type ListSecretRefreshEventsBody struct {
@@ -8148,6 +8184,84 @@ func (s *ListSecretRefreshEventsBody) SetSecretRefreshEvents(val []SecretRefresh
 }
 
 func (*ListSecretRefreshEventsBody) listSecretRefreshesRes() {}
+
+// Ref: #/components/schemas/ListSecretRefreshRequestsBody
+type ListSecretRefreshRequestsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema                OptURI                 `json:"$schema"`
+	SecretRefreshRequests []SecretRefreshRequest `json:"secretRefreshRequests"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListSecretRefreshRequestsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSecretRefreshRequests returns the value of SecretRefreshRequests.
+func (s *ListSecretRefreshRequestsBody) GetSecretRefreshRequests() []SecretRefreshRequest {
+	return s.SecretRefreshRequests
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListSecretRefreshRequestsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSecretRefreshRequests sets the value of SecretRefreshRequests.
+func (s *ListSecretRefreshRequestsBody) SetSecretRefreshRequests(val []SecretRefreshRequest) {
+	s.SecretRefreshRequests = val
+}
+
+func (*ListSecretRefreshRequestsBody) listSecretRefreshRequestsRes() {}
+
+// Only requests in this status.
+type ListSecretRefreshRequestsStatus string
+
+const (
+	ListSecretRefreshRequestsStatusPending   ListSecretRefreshRequestsStatus = "pending"
+	ListSecretRefreshRequestsStatusAnswered  ListSecretRefreshRequestsStatus = "answered"
+	ListSecretRefreshRequestsStatusDismissed ListSecretRefreshRequestsStatus = "dismissed"
+)
+
+// AllValues returns all ListSecretRefreshRequestsStatus values.
+func (ListSecretRefreshRequestsStatus) AllValues() []ListSecretRefreshRequestsStatus {
+	return []ListSecretRefreshRequestsStatus{
+		ListSecretRefreshRequestsStatusPending,
+		ListSecretRefreshRequestsStatusAnswered,
+		ListSecretRefreshRequestsStatusDismissed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListSecretRefreshRequestsStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case ListSecretRefreshRequestsStatusPending:
+		return []byte(s), nil
+	case ListSecretRefreshRequestsStatusAnswered:
+		return []byte(s), nil
+	case ListSecretRefreshRequestsStatusDismissed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListSecretRefreshRequestsStatus) UnmarshalText(data []byte) error {
+	switch ListSecretRefreshRequestsStatus(data) {
+	case ListSecretRefreshRequestsStatusPending:
+		*s = ListSecretRefreshRequestsStatusPending
+		return nil
+	case ListSecretRefreshRequestsStatusAnswered:
+		*s = ListSecretRefreshRequestsStatusAnswered
+		return nil
+	case ListSecretRefreshRequestsStatusDismissed:
+		*s = ListSecretRefreshRequestsStatusDismissed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // Asc returns the oldest matches first, for reading forward from a since bound; desc, the default,
 // the newest first.
@@ -8601,52 +8715,6 @@ func (s *ObservedCertificate) SetSubject(val string) {
 	s.Subject = val
 }
 
-// NewOptApproveSecretRequestBodyScope returns new OptApproveSecretRequestBodyScope with value set to v.
-func NewOptApproveSecretRequestBodyScope(v ApproveSecretRequestBodyScope) OptApproveSecretRequestBodyScope {
-	return OptApproveSecretRequestBodyScope{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptApproveSecretRequestBodyScope is optional ApproveSecretRequestBodyScope.
-type OptApproveSecretRequestBodyScope struct {
-	Value ApproveSecretRequestBodyScope
-	Set   bool
-}
-
-// IsSet returns true if OptApproveSecretRequestBodyScope was set.
-func (o OptApproveSecretRequestBodyScope) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptApproveSecretRequestBodyScope) Reset() {
-	var v ApproveSecretRequestBodyScope
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptApproveSecretRequestBodyScope) SetTo(v ApproveSecretRequestBodyScope) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptApproveSecretRequestBodyScope) Get() (v ApproveSecretRequestBodyScope, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptApproveSecretRequestBodyScope) Or(d ApproveSecretRequestBodyScope) ApproveSecretRequestBodyScope {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptBool returns new OptBool with value set to v.
 func NewOptBool(v bool) OptBool {
 	return OptBool{
@@ -8917,52 +8985,6 @@ func (o OptCreateSandboxExecWait) Get() (v CreateSandboxExecWait, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptCreateSandboxExecWait) Or(d CreateSandboxExecWait) CreateSandboxExecWait {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptCreateSecretGrantBodyPurpose returns new OptCreateSecretGrantBodyPurpose with value set to v.
-func NewOptCreateSecretGrantBodyPurpose(v CreateSecretGrantBodyPurpose) OptCreateSecretGrantBodyPurpose {
-	return OptCreateSecretGrantBodyPurpose{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptCreateSecretGrantBodyPurpose is optional CreateSecretGrantBodyPurpose.
-type OptCreateSecretGrantBodyPurpose struct {
-	Value CreateSecretGrantBodyPurpose
-	Set   bool
-}
-
-// IsSet returns true if OptCreateSecretGrantBodyPurpose was set.
-func (o OptCreateSecretGrantBodyPurpose) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptCreateSecretGrantBodyPurpose) Reset() {
-	var v CreateSecretGrantBodyPurpose
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptCreateSecretGrantBodyPurpose) SetTo(v CreateSecretGrantBodyPurpose) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptCreateSecretGrantBodyPurpose) Get() (v CreateSecretGrantBodyPurpose, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptCreateSecretGrantBodyPurpose) Or(d CreateSecretGrantBodyPurpose) CreateSecretGrantBodyPurpose {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -10527,6 +10549,98 @@ func (o OptListHarnessHooksOrder) Get() (v ListHarnessHooksOrder, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptListHarnessHooksOrder) Or(d ListHarnessHooksOrder) ListHarnessHooksOrder {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListSecretBindingsTargetKind returns new OptListSecretBindingsTargetKind with value set to v.
+func NewOptListSecretBindingsTargetKind(v ListSecretBindingsTargetKind) OptListSecretBindingsTargetKind {
+	return OptListSecretBindingsTargetKind{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListSecretBindingsTargetKind is optional ListSecretBindingsTargetKind.
+type OptListSecretBindingsTargetKind struct {
+	Value ListSecretBindingsTargetKind
+	Set   bool
+}
+
+// IsSet returns true if OptListSecretBindingsTargetKind was set.
+func (o OptListSecretBindingsTargetKind) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListSecretBindingsTargetKind) Reset() {
+	var v ListSecretBindingsTargetKind
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListSecretBindingsTargetKind) SetTo(v ListSecretBindingsTargetKind) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListSecretBindingsTargetKind) Get() (v ListSecretBindingsTargetKind, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListSecretBindingsTargetKind) Or(d ListSecretBindingsTargetKind) ListSecretBindingsTargetKind {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListSecretRefreshRequestsStatus returns new OptListSecretRefreshRequestsStatus with value set to v.
+func NewOptListSecretRefreshRequestsStatus(v ListSecretRefreshRequestsStatus) OptListSecretRefreshRequestsStatus {
+	return OptListSecretRefreshRequestsStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListSecretRefreshRequestsStatus is optional ListSecretRefreshRequestsStatus.
+type OptListSecretRefreshRequestsStatus struct {
+	Value ListSecretRefreshRequestsStatus
+	Set   bool
+}
+
+// IsSet returns true if OptListSecretRefreshRequestsStatus was set.
+func (o OptListSecretRefreshRequestsStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListSecretRefreshRequestsStatus) Reset() {
+	var v ListSecretRefreshRequestsStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListSecretRefreshRequestsStatus) SetTo(v ListSecretRefreshRequestsStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListSecretRefreshRequestsStatus) Get() (v ListSecretRefreshRequestsStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListSecretRefreshRequestsStatus) Or(d ListSecretRefreshRequestsStatus) ListSecretRefreshRequestsStatus {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -14960,6 +15074,52 @@ func (o OptSecretRefreshEventRefreshCause) Or(d SecretRefreshEventRefreshCause) 
 	return d
 }
 
+// NewOptSecretRefreshRequest returns new OptSecretRefreshRequest with value set to v.
+func NewOptSecretRefreshRequest(v SecretRefreshRequest) OptSecretRefreshRequest {
+	return OptSecretRefreshRequest{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRefreshRequest is optional SecretRefreshRequest.
+type OptSecretRefreshRequest struct {
+	Value SecretRefreshRequest
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRefreshRequest was set.
+func (o OptSecretRefreshRequest) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRefreshRequest) Reset() {
+	var v SecretRefreshRequest
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRefreshRequest) SetTo(v SecretRefreshRequest) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRefreshRequest) Get() (v SecretRefreshRequest, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRefreshRequest) Or(d SecretRefreshRequest) SecretRefreshRequest {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSecretRejectionSecretType returns new OptSecretRejectionSecretType with value set to v.
 func NewOptSecretRejectionSecretType(v SecretRejectionSecretType) OptSecretRejectionSecretType {
 	return OptSecretRejectionSecretType{
@@ -15092,98 +15252,6 @@ func (o OptSecretRequestPurpose) Get() (v SecretRequestPurpose, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSecretRequestPurpose) Or(d SecretRequestPurpose) SecretRequestPurpose {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptSecretRequestReason returns new OptSecretRequestReason with value set to v.
-func NewOptSecretRequestReason(v SecretRequestReason) OptSecretRequestReason {
-	return OptSecretRequestReason{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptSecretRequestReason is optional SecretRequestReason.
-type OptSecretRequestReason struct {
-	Value SecretRequestReason
-	Set   bool
-}
-
-// IsSet returns true if OptSecretRequestReason was set.
-func (o OptSecretRequestReason) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptSecretRequestReason) Reset() {
-	var v SecretRequestReason
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptSecretRequestReason) SetTo(v SecretRequestReason) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptSecretRequestReason) Get() (v SecretRequestReason, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptSecretRequestReason) Or(d SecretRequestReason) SecretRequestReason {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptSecretRequestRefreshCause returns new OptSecretRequestRefreshCause with value set to v.
-func NewOptSecretRequestRefreshCause(v SecretRequestRefreshCause) OptSecretRequestRefreshCause {
-	return OptSecretRequestRefreshCause{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptSecretRequestRefreshCause is optional SecretRequestRefreshCause.
-type OptSecretRequestRefreshCause struct {
-	Value SecretRequestRefreshCause
-	Set   bool
-}
-
-// IsSet returns true if OptSecretRequestRefreshCause was set.
-func (o OptSecretRequestRefreshCause) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptSecretRequestRefreshCause) Reset() {
-	var v SecretRequestRefreshCause
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptSecretRequestRefreshCause) SetTo(v SecretRequestRefreshCause) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptSecretRequestRefreshCause) Get() (v SecretRequestRefreshCause, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptSecretRequestRefreshCause) Or(d SecretRequestRefreshCause) SecretRequestRefreshCause {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -19606,7 +19674,8 @@ type ResolveSandboxSecretResponse struct {
 	Status ResolveSandboxSecretResponseStatus `json:"status"`
 	// Real secret value; present only when status is approved.
 	Value OptString `json:"value"`
-	// Grant expiry time when approved.
+	// When the binding the value was handed out under lapses, capped by the token's own expiry; empty
+	// when neither lapses.
 	ExpiresAt OptDateTime `json:"expiresAt"`
 	// The secret the value is; present only when status is approved. The pool's proxy records it on the
 	// request the value is swapped into (ADR 26-10-01-240).
@@ -19826,11 +19895,6 @@ func (s *RestartSandboxBody) SetSchema(val OptURI) {
 func (s *RestartSandboxBody) SetForce(val OptBool) {
 	s.Force = val
 }
-
-// RevokeSecretGrantNoContent is response for RevokeSecretGrant operation.
-type RevokeSecretGrantNoContent struct{}
-
-func (*RevokeSecretGrantNoContent) revokeSecretGrantRes() {}
 
 // What an SSH client needs to verify this server. There is no address to discover; SSH reaches the
 // server over the same endpoint every other request uses, so the host key is the whole document.
@@ -22664,6 +22728,85 @@ func (s *SandboxAutostopResumption) SetWakes(val []string) {
 
 func (*SandboxAutostopResumption) resumeSandboxAutostopRes() {}
 
+// A secret to bind to the new discobox, in the transaction that creates it.
+// Ref: #/components/schemas/SandboxBindingInput
+type SandboxBindingInput struct {
+	// Let the new discobox give the credential to the discoboxes it creates. A discobox creating one may
+	// not set it.
+	Delegate OptBool `json:"delegate"`
+	// Environment variable the credential's sentinel is delivered in; required with use.
+	EnvVar OptString `json:"envVar"`
+	// Routes that narrow the secret's for this binding; omitted inherits them.
+	Routes []SecretRouteInput `json:"routes"`
+	// The secret, by name or ID.
+	Secret string `json:"secret"`
+	// How long the binding lasts, in seconds, within the secret's limit and, for a discobox creating one,
+	//  its delegation's.
+	TtlSeconds OptInt64 `json:"ttlSeconds"`
+	// Deliver the credential in envVar. Defaults to true unless delegate is set.
+	Use OptBool `json:"use"`
+}
+
+// GetDelegate returns the value of Delegate.
+func (s *SandboxBindingInput) GetDelegate() OptBool {
+	return s.Delegate
+}
+
+// GetEnvVar returns the value of EnvVar.
+func (s *SandboxBindingInput) GetEnvVar() OptString {
+	return s.EnvVar
+}
+
+// GetRoutes returns the value of Routes.
+func (s *SandboxBindingInput) GetRoutes() []SecretRouteInput {
+	return s.Routes
+}
+
+// GetSecret returns the value of Secret.
+func (s *SandboxBindingInput) GetSecret() string {
+	return s.Secret
+}
+
+// GetTtlSeconds returns the value of TtlSeconds.
+func (s *SandboxBindingInput) GetTtlSeconds() OptInt64 {
+	return s.TtlSeconds
+}
+
+// GetUse returns the value of Use.
+func (s *SandboxBindingInput) GetUse() OptBool {
+	return s.Use
+}
+
+// SetDelegate sets the value of Delegate.
+func (s *SandboxBindingInput) SetDelegate(val OptBool) {
+	s.Delegate = val
+}
+
+// SetEnvVar sets the value of EnvVar.
+func (s *SandboxBindingInput) SetEnvVar(val OptString) {
+	s.EnvVar = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *SandboxBindingInput) SetRoutes(val []SecretRouteInput) {
+	s.Routes = val
+}
+
+// SetSecret sets the value of Secret.
+func (s *SandboxBindingInput) SetSecret(val string) {
+	s.Secret = val
+}
+
+// SetTtlSeconds sets the value of TtlSeconds.
+func (s *SandboxBindingInput) SetTtlSeconds(val OptInt64) {
+	s.TtlSeconds = val
+}
+
+// SetUse sets the value of Use.
+func (s *SandboxBindingInput) SetUse(val OptBool) {
+	s.Use = val
+}
+
 // Both the cumulative counter and the rate - the counter so a consumer can difference across any two
 // reports it kept, the rate so it does not have to.
 // Ref: #/components/schemas/SandboxCPUConsumption
@@ -23536,25 +23679,30 @@ func (s *SandboxCreateConfigSourceCodeReferences) init() SandboxCreateConfigSour
 	return m
 }
 
-// One credential a sandbox may use, from a live grant covering it, and the variable its sentinel is
-// delivered in.
+// One credential a sandbox holds, from an effective binding covering it (ADR 26-10-27-880 §2), and
+// for a use the variable its sentinel is delivered in.
 // Ref: #/components/schemas/SandboxCredential
 type SandboxCredential struct {
+	// The binding the credential is held under.
+	BindingId string `json:"bindingId"`
 	// Environment variable the value is delivered in.
 	EnvVar string `json:"envVar"`
-	// When the grant lapses; empty never expires.
+	// When the binding lapses; empty never expires.
 	ExpiresAt OptDateTime `json:"expiresAt"`
-	// Grant authorizing the credential.
-	GrantId string `json:"grantId"`
 	// Hosts the credential may be sent to; a destination any of them covers (ADR 26-10-02-393).
 	Hosts []string `json:"hosts"`
 	// Credential name.
 	Name string `json:"name"`
-	// What the grant lets the sandbox do with the credential. use delivers it in envVar; delegate lets
+	// What the binding lets the sandbox do with the credential. use delivers it in envVar; delegate lets
 	// the sandbox give it to the discoboxes it creates and delivers nothing.
 	Purpose OptSandboxCredentialPurpose `json:"purpose"`
 	// Secret backing the credential.
 	SecretId string `json:"secretId"`
+}
+
+// GetBindingId returns the value of BindingId.
+func (s *SandboxCredential) GetBindingId() string {
+	return s.BindingId
 }
 
 // GetEnvVar returns the value of EnvVar.
@@ -23565,11 +23713,6 @@ func (s *SandboxCredential) GetEnvVar() string {
 // GetExpiresAt returns the value of ExpiresAt.
 func (s *SandboxCredential) GetExpiresAt() OptDateTime {
 	return s.ExpiresAt
-}
-
-// GetGrantId returns the value of GrantId.
-func (s *SandboxCredential) GetGrantId() string {
-	return s.GrantId
 }
 
 // GetHosts returns the value of Hosts.
@@ -23592,6 +23735,11 @@ func (s *SandboxCredential) GetSecretId() string {
 	return s.SecretId
 }
 
+// SetBindingId sets the value of BindingId.
+func (s *SandboxCredential) SetBindingId(val string) {
+	s.BindingId = val
+}
+
 // SetEnvVar sets the value of EnvVar.
 func (s *SandboxCredential) SetEnvVar(val string) {
 	s.EnvVar = val
@@ -23600,11 +23748,6 @@ func (s *SandboxCredential) SetEnvVar(val string) {
 // SetExpiresAt sets the value of ExpiresAt.
 func (s *SandboxCredential) SetExpiresAt(val OptDateTime) {
 	s.ExpiresAt = val
-}
-
-// SetGrantId sets the value of GrantId.
-func (s *SandboxCredential) SetGrantId(val string) {
-	s.GrantId = val
 }
 
 // SetHosts sets the value of Hosts.
@@ -23627,7 +23770,7 @@ func (s *SandboxCredential) SetSecretId(val string) {
 	s.SecretId = val
 }
 
-// What the grant lets the sandbox do with the credential. use delivers it in envVar; delegate lets
+// What the binding lets the sandbox do with the credential. use delivers it in envVar; delegate lets
 // the sandbox give it to the discoboxes it creates and delivers nothing.
 type SandboxCredentialPurpose string
 
@@ -23674,17 +23817,17 @@ func (s *SandboxCredentialPurpose) UnmarshalText(data []byte) error {
 type SandboxCredentialRequestStatus struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// The variable the granted credential is delivered in; absent for a delegation.
+	// The variable the credential is delivered in, once granted; absent for a delegation.
 	EnvVar OptString `json:"envVar"`
-	// When the grant lapses, as the approver chose it rather than as it was asked. Absent on a pending
-	// or denied request, and on a granted one whose grant never lapses.
+	// When the binding lapses, as the approver chose it rather than as it was asked. Absent on a pending
+	// or denied request, and on a granted one whose binding never lapses.
 	ExpiresAt OptDateTime `json:"expiresAt"`
-	// Where the granted credential may be sent, as the approver chose.
+	// Where the credential may be sent, once granted, as the approver chose.
 	Hosts []string `json:"hosts"`
-	// The credential granted, once granted.
+	// The credential, once granted.
 	Name OptString `json:"name"`
-	// What the request asks the credential for. A delegate grant lets the sandbox give the credential to
-	// the discoboxes it creates, and delivers nothing to the sandbox itself.
+	// What the request asks the credential for. A delegate binding lets the sandbox give the credential
+	// to the discoboxes it creates, and delivers nothing to the sandbox itself.
 	Purpose SandboxCredentialRequestStatusPurpose `json:"purpose"`
 	// Request ID to poll.
 	RequestId string `json:"requestId"`
@@ -23775,8 +23918,8 @@ func (s *SandboxCredentialRequestStatus) SetStatus(val SandboxCredentialRequestS
 func (*SandboxCredentialRequestStatus) createSandboxCredentialRequestRes() {}
 func (*SandboxCredentialRequestStatus) getSandboxCredentialRequestRes()    {}
 
-// What the request asks the credential for. A delegate grant lets the sandbox give the credential to
-// the discoboxes it creates, and delivers nothing to the sandbox itself.
+// What the request asks the credential for. A delegate binding lets the sandbox give the credential
+// to the discoboxes it creates, and delivers nothing to the sandbox itself.
 type SandboxCredentialRequestStatusPurpose string
 
 const (
@@ -25223,60 +25366,6 @@ func (s *SandboxGitIdentity) SetUserEmail(val OptString) {
 // SetUserName sets the value of UserName.
 func (s *SandboxGitIdentity) SetUserName(val OptString) {
 	s.UserName = val
-}
-
-// One credential for a new discobox, named by a secret and the variable it is delivered in.
-// Ref: #/components/schemas/SandboxGrant
-type SandboxGrant struct {
-	// The project secret given.
-	SecretId OptString `json:"secretId"`
-	// Environment variable the discobox receives the credential's sentinel in.
-	EnvVar OptString `json:"envVar"`
-	// Hosts the credential may be sent to (ADR 26-10-02-393). Left out, the secret's host; one is
-	// required. Each must sit inside the secret's binding.
-	Hosts []string `json:"hosts"`
-	// How long the grant lives, in seconds. Defaults to the secret's grant limit, and may not exceed it.
-	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
-}
-
-// GetSecretId returns the value of SecretId.
-func (s *SandboxGrant) GetSecretId() OptString {
-	return s.SecretId
-}
-
-// GetEnvVar returns the value of EnvVar.
-func (s *SandboxGrant) GetEnvVar() OptString {
-	return s.EnvVar
-}
-
-// GetHosts returns the value of Hosts.
-func (s *SandboxGrant) GetHosts() []string {
-	return s.Hosts
-}
-
-// GetGrantTTLSeconds returns the value of GrantTTLSeconds.
-func (s *SandboxGrant) GetGrantTTLSeconds() OptInt64 {
-	return s.GrantTTLSeconds
-}
-
-// SetSecretId sets the value of SecretId.
-func (s *SandboxGrant) SetSecretId(val OptString) {
-	s.SecretId = val
-}
-
-// SetEnvVar sets the value of EnvVar.
-func (s *SandboxGrant) SetEnvVar(val OptString) {
-	s.EnvVar = val
-}
-
-// SetHosts sets the value of Hosts.
-func (s *SandboxGrant) SetHosts(val []string) {
-	s.Hosts = val
-}
-
-// SetGrantTTLSeconds sets the value of GrantTTLSeconds.
-func (s *SandboxGrant) SetGrantTTLSeconds(val OptInt64) {
-	s.GrantTTLSeconds = val
 }
 
 // Ref: #/components/schemas/SandboxHarnessSecretsResponse
@@ -27062,18 +27151,17 @@ func (s *SandboxRuntimeState) UnmarshalText(data []byte) error {
 	}
 }
 
-// Binds an environment variable to a secret injected into the sandbox as a sentinel placeholder.
-// Provide exactly one of secretId or value.
+// An inline secret for the new sandbox. Its value becomes a project-managed anonymous secret, routed
+// to host when one is given and to `*` otherwise (ADR 26-10-27-939), bound to the sandbox in env. An
+// existing secret is bound through bindings instead.
 // Ref: #/components/schemas/SandboxSecretInput
 type SandboxSecretInput struct {
 	// Environment variable name to inject with the secret's sentinel placeholder value.
 	Env string `json:"env"`
-	// Optional host binding hint used when creating an anonymous secret from an inline value.
+	// The host the inline secret is sent to, which becomes its route; omitted is `*`.
 	Host OptString `json:"host"`
-	// ID of an existing project secret to assign.
-	SecretId OptString `json:"secretId"`
 	// Inline secret value. A project-managed anonymous secret is created from it.
-	Value OptString `json:"value"`
+	Value string `json:"value"`
 }
 
 // GetEnv returns the value of Env.
@@ -27086,13 +27174,8 @@ func (s *SandboxSecretInput) GetHost() OptString {
 	return s.Host
 }
 
-// GetSecretId returns the value of SecretId.
-func (s *SandboxSecretInput) GetSecretId() OptString {
-	return s.SecretId
-}
-
 // GetValue returns the value of Value.
-func (s *SandboxSecretInput) GetValue() OptString {
+func (s *SandboxSecretInput) GetValue() string {
 	return s.Value
 }
 
@@ -27106,13 +27189,8 @@ func (s *SandboxSecretInput) SetHost(val OptString) {
 	s.Host = val
 }
 
-// SetSecretId sets the value of SecretId.
-func (s *SandboxSecretInput) SetSecretId(val OptString) {
-	s.SecretId = val
-}
-
 // SetValue sets the value of Value.
-func (s *SandboxSecretInput) SetValue(val OptString) {
+func (s *SandboxSecretInput) SetValue(val string) {
 	s.Value = val
 }
 
@@ -28517,18 +28595,17 @@ type Secret struct {
 	Anonymous OptBool `json:"anonymous"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
-	// Longest a grant on this secret may live, in seconds; 0 allows grants that never expire.
-	MaxGrantTTLSeconds int64 `json:"maxGrantTTLSeconds"`
 	// Generative format template describing the credential shape; used to mint sentinel placeholders.
 	Format OptString `json:"format"`
 	// Format was set explicitly rather than read from the value.
 	FormatSet OptBool `json:"formatSet"`
-	// Optional host used to match requests (e.g. github.com).
-	Host OptString `json:"host"`
 	// Stable secret ID.
-	ID       string            `json:"id"`
-	OAuth    OptSecretOAuth    `json:"oauth"`
-	Exchange OptSecretExchange `json:"exchange"`
+	ID string `json:"id"`
+	// Longest a binding of this secret may last, in seconds, and the lifetime one takes when nobody
+	// names one; 0 lets bindings never lapse.
+	MaxBindingTTLSeconds int64             `json:"maxBindingTTLSeconds"`
+	OAuth                OptSecretOAuth    `json:"oauth"`
+	Exchange             OptSecretExchange `json:"exchange"`
 	// The command a person's client may run to produce a new value (ADR 26-09-25-122). Advice to the
 	// client; the server never runs it.
 	RefreshCommand OptNilStringArray `json:"refreshCommand"`
@@ -28567,11 +28644,6 @@ func (s *Secret) GetCreatedAt() time.Time {
 	return s.CreatedAt
 }
 
-// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
-func (s *Secret) GetMaxGrantTTLSeconds() int64 {
-	return s.MaxGrantTTLSeconds
-}
-
 // GetFormat returns the value of Format.
 func (s *Secret) GetFormat() OptString {
 	return s.Format
@@ -28582,14 +28654,14 @@ func (s *Secret) GetFormatSet() OptBool {
 	return s.FormatSet
 }
 
-// GetHost returns the value of Host.
-func (s *Secret) GetHost() OptString {
-	return s.Host
-}
-
 // GetID returns the value of ID.
 func (s *Secret) GetID() string {
 	return s.ID
+}
+
+// GetMaxBindingTTLSeconds returns the value of MaxBindingTTLSeconds.
+func (s *Secret) GetMaxBindingTTLSeconds() int64 {
+	return s.MaxBindingTTLSeconds
 }
 
 // GetOAuth returns the value of OAuth.
@@ -28662,11 +28734,6 @@ func (s *Secret) SetCreatedAt(val time.Time) {
 	s.CreatedAt = val
 }
 
-// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
-func (s *Secret) SetMaxGrantTTLSeconds(val int64) {
-	s.MaxGrantTTLSeconds = val
-}
-
 // SetFormat sets the value of Format.
 func (s *Secret) SetFormat(val OptString) {
 	s.Format = val
@@ -28677,14 +28744,14 @@ func (s *Secret) SetFormatSet(val OptBool) {
 	s.FormatSet = val
 }
 
-// SetHost sets the value of Host.
-func (s *Secret) SetHost(val OptString) {
-	s.Host = val
-}
-
 // SetID sets the value of ID.
 func (s *Secret) SetID(val string) {
 	s.ID = val
+}
+
+// SetMaxBindingTTLSeconds sets the value of MaxBindingTTLSeconds.
+func (s *Secret) SetMaxBindingTTLSeconds(val int64) {
+	s.MaxBindingTTLSeconds = val
 }
 
 // SetOAuth sets the value of OAuth.
@@ -28747,6 +28814,444 @@ func (*Secret) getSecretRes()     {}
 func (*Secret) refreshSecretRes() {}
 func (*Secret) updateSecretRes()  {}
 
+// A secret made available to a target (ADR 26-10-27-880 §1): existing and unexpired, it is the
+// whole of the permission. Use delivers the credential's sentinel in envVar; delegate lets a
+// discobox the binding covers give the credential to the discoboxes it creates.
+// Ref: #/components/schemas/SecretBinding
+type SecretBinding struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Principal that made the binding: a person, or the discobox that handed it on.
+	CreatedBy OptString `json:"createdBy"`
+	// A discobox the binding covers may give the credential, to use, to the discoboxes it creates (ADR
+	// 26-10-27-880 §3).
+	Delegate bool `json:"delegate"`
+	// Environment variable the credential's sentinel is delivered in; set when use is.
+	EnvVar OptString `json:"envVar"`
+	// When the binding lapses; absent never.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+	// Stable binding ID.
+	ID string `json:"id"`
+	// The delegate binding this one was handed on under, when a discobox gave it; deleting that one
+	// deletes this.
+	ParentId OptString `json:"parentId"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// The request this binding answered, when one did.
+	RequestId OptString `json:"requestId"`
+	// Routes that narrow the secret's for this binding; empty inherits the secret's. A request must be
+	// allowed by the secret's routes, these, and the parent's (ADR 26-10-27-880 §4).
+	Routes []SecretRoute `json:"routes"`
+	// Bound secret ID.
+	SecretId string `json:"secretId"`
+	// Bound secret's name.
+	SecretName OptString `json:"secretName"`
+	// The project, harness config or discobox ID the binding is for.
+	TargetId string `json:"targetId"`
+	// What the binding is for: every discobox of the project, every discobox on a harness config, or one
+	// discobox.
+	TargetKind SecretBindingTargetKind `json:"targetKind"`
+	// Last update timestamp.
+	UpdatedAt time.Time `json:"updatedAt"`
+	// The target may send the credential: it is delivered in envVar.
+	Use bool `json:"use"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *SecretBinding) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *SecretBinding) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetCreatedBy returns the value of CreatedBy.
+func (s *SecretBinding) GetCreatedBy() OptString {
+	return s.CreatedBy
+}
+
+// GetDelegate returns the value of Delegate.
+func (s *SecretBinding) GetDelegate() bool {
+	return s.Delegate
+}
+
+// GetEnvVar returns the value of EnvVar.
+func (s *SecretBinding) GetEnvVar() OptString {
+	return s.EnvVar
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *SecretBinding) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetID returns the value of ID.
+func (s *SecretBinding) GetID() string {
+	return s.ID
+}
+
+// GetParentId returns the value of ParentId.
+func (s *SecretBinding) GetParentId() OptString {
+	return s.ParentId
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *SecretBinding) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetRequestId returns the value of RequestId.
+func (s *SecretBinding) GetRequestId() OptString {
+	return s.RequestId
+}
+
+// GetRoutes returns the value of Routes.
+func (s *SecretBinding) GetRoutes() []SecretRoute {
+	return s.Routes
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *SecretBinding) GetSecretId() string {
+	return s.SecretId
+}
+
+// GetSecretName returns the value of SecretName.
+func (s *SecretBinding) GetSecretName() OptString {
+	return s.SecretName
+}
+
+// GetTargetId returns the value of TargetId.
+func (s *SecretBinding) GetTargetId() string {
+	return s.TargetId
+}
+
+// GetTargetKind returns the value of TargetKind.
+func (s *SecretBinding) GetTargetKind() SecretBindingTargetKind {
+	return s.TargetKind
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *SecretBinding) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// GetUse returns the value of Use.
+func (s *SecretBinding) GetUse() bool {
+	return s.Use
+}
+
+// SetSchema sets the value of Schema.
+func (s *SecretBinding) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *SecretBinding) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetCreatedBy sets the value of CreatedBy.
+func (s *SecretBinding) SetCreatedBy(val OptString) {
+	s.CreatedBy = val
+}
+
+// SetDelegate sets the value of Delegate.
+func (s *SecretBinding) SetDelegate(val bool) {
+	s.Delegate = val
+}
+
+// SetEnvVar sets the value of EnvVar.
+func (s *SecretBinding) SetEnvVar(val OptString) {
+	s.EnvVar = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *SecretBinding) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetID sets the value of ID.
+func (s *SecretBinding) SetID(val string) {
+	s.ID = val
+}
+
+// SetParentId sets the value of ParentId.
+func (s *SecretBinding) SetParentId(val OptString) {
+	s.ParentId = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *SecretBinding) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetRequestId sets the value of RequestId.
+func (s *SecretBinding) SetRequestId(val OptString) {
+	s.RequestId = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *SecretBinding) SetRoutes(val []SecretRoute) {
+	s.Routes = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *SecretBinding) SetSecretId(val string) {
+	s.SecretId = val
+}
+
+// SetSecretName sets the value of SecretName.
+func (s *SecretBinding) SetSecretName(val OptString) {
+	s.SecretName = val
+}
+
+// SetTargetId sets the value of TargetId.
+func (s *SecretBinding) SetTargetId(val string) {
+	s.TargetId = val
+}
+
+// SetTargetKind sets the value of TargetKind.
+func (s *SecretBinding) SetTargetKind(val SecretBindingTargetKind) {
+	s.TargetKind = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *SecretBinding) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+// SetUse sets the value of Use.
+func (s *SecretBinding) SetUse(val bool) {
+	s.Use = val
+}
+
+func (*SecretBinding) createSecretBindingRes() {}
+func (*SecretBinding) getSecretBindingRes()    {}
+func (*SecretBinding) updateSecretBindingRes() {}
+
+// One change to a binding, as the append-only history records it (ADR 26-10-27-880 §6).
+// Ref: #/components/schemas/SecretBindingEvent
+type SecretBindingEvent struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Who did it: a person's or a discobox's principal, or system for a cascade or an expiry.
+	Actor string `json:"actor"`
+	// When it happened.
+	At time.Time `json:"at"`
+	// The binding after the change; before it, for a delete or an expiry.
+	Binding SecretBinding `json:"binding"`
+	// The binding changed.
+	BindingId string `json:"bindingId"`
+	// Why, when something caused it: the request it answered, or the parent binding whose removal took it.
+	Cause OptString `json:"cause"`
+	// What happened.
+	Event SecretBindingEventEvent `json:"event"`
+	// Event ID.
+	ID string `json:"id"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *SecretBindingEvent) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetActor returns the value of Actor.
+func (s *SecretBindingEvent) GetActor() string {
+	return s.Actor
+}
+
+// GetAt returns the value of At.
+func (s *SecretBindingEvent) GetAt() time.Time {
+	return s.At
+}
+
+// GetBinding returns the value of Binding.
+func (s *SecretBindingEvent) GetBinding() SecretBinding {
+	return s.Binding
+}
+
+// GetBindingId returns the value of BindingId.
+func (s *SecretBindingEvent) GetBindingId() string {
+	return s.BindingId
+}
+
+// GetCause returns the value of Cause.
+func (s *SecretBindingEvent) GetCause() OptString {
+	return s.Cause
+}
+
+// GetEvent returns the value of Event.
+func (s *SecretBindingEvent) GetEvent() SecretBindingEventEvent {
+	return s.Event
+}
+
+// GetID returns the value of ID.
+func (s *SecretBindingEvent) GetID() string {
+	return s.ID
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *SecretBindingEvent) GetProjectId() string {
+	return s.ProjectId
+}
+
+// SetSchema sets the value of Schema.
+func (s *SecretBindingEvent) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetActor sets the value of Actor.
+func (s *SecretBindingEvent) SetActor(val string) {
+	s.Actor = val
+}
+
+// SetAt sets the value of At.
+func (s *SecretBindingEvent) SetAt(val time.Time) {
+	s.At = val
+}
+
+// SetBinding sets the value of Binding.
+func (s *SecretBindingEvent) SetBinding(val SecretBinding) {
+	s.Binding = val
+}
+
+// SetBindingId sets the value of BindingId.
+func (s *SecretBindingEvent) SetBindingId(val string) {
+	s.BindingId = val
+}
+
+// SetCause sets the value of Cause.
+func (s *SecretBindingEvent) SetCause(val OptString) {
+	s.Cause = val
+}
+
+// SetEvent sets the value of Event.
+func (s *SecretBindingEvent) SetEvent(val SecretBindingEventEvent) {
+	s.Event = val
+}
+
+// SetID sets the value of ID.
+func (s *SecretBindingEvent) SetID(val string) {
+	s.ID = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *SecretBindingEvent) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// What happened.
+type SecretBindingEventEvent string
+
+const (
+	SecretBindingEventEventCreated SecretBindingEventEvent = "created"
+	SecretBindingEventEventUpdated SecretBindingEventEvent = "updated"
+	SecretBindingEventEventDeleted SecretBindingEventEvent = "deleted"
+	SecretBindingEventEventExpired SecretBindingEventEvent = "expired"
+)
+
+// AllValues returns all SecretBindingEventEvent values.
+func (SecretBindingEventEvent) AllValues() []SecretBindingEventEvent {
+	return []SecretBindingEventEvent{
+		SecretBindingEventEventCreated,
+		SecretBindingEventEventUpdated,
+		SecretBindingEventEventDeleted,
+		SecretBindingEventEventExpired,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretBindingEventEvent) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretBindingEventEventCreated:
+		return []byte(s), nil
+	case SecretBindingEventEventUpdated:
+		return []byte(s), nil
+	case SecretBindingEventEventDeleted:
+		return []byte(s), nil
+	case SecretBindingEventEventExpired:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretBindingEventEvent) UnmarshalText(data []byte) error {
+	switch SecretBindingEventEvent(data) {
+	case SecretBindingEventEventCreated:
+		*s = SecretBindingEventEventCreated
+		return nil
+	case SecretBindingEventEventUpdated:
+		*s = SecretBindingEventEventUpdated
+		return nil
+	case SecretBindingEventEventDeleted:
+		*s = SecretBindingEventEventDeleted
+		return nil
+	case SecretBindingEventEventExpired:
+		*s = SecretBindingEventEventExpired
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// What the binding is for: every discobox of the project, every discobox on a harness config, or one
+// discobox.
+type SecretBindingTargetKind string
+
+const (
+	SecretBindingTargetKindProject       SecretBindingTargetKind = "project"
+	SecretBindingTargetKindHarnessConfig SecretBindingTargetKind = "harnessConfig"
+	SecretBindingTargetKindSandbox       SecretBindingTargetKind = "sandbox"
+)
+
+// AllValues returns all SecretBindingTargetKind values.
+func (SecretBindingTargetKind) AllValues() []SecretBindingTargetKind {
+	return []SecretBindingTargetKind{
+		SecretBindingTargetKindProject,
+		SecretBindingTargetKindHarnessConfig,
+		SecretBindingTargetKindSandbox,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretBindingTargetKind) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretBindingTargetKindProject:
+		return []byte(s), nil
+	case SecretBindingTargetKindHarnessConfig:
+		return []byte(s), nil
+	case SecretBindingTargetKindSandbox:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretBindingTargetKind) UnmarshalText(data []byte) error {
+	switch SecretBindingTargetKind(data) {
+	case SecretBindingTargetKindProject:
+		*s = SecretBindingTargetKindProject
+		return nil
+	case SecretBindingTargetKindHarnessConfig:
+		*s = SecretBindingTargetKindHarnessConfig
+		return nil
+	case SecretBindingTargetKindSandbox:
+		*s = SecretBindingTargetKindSandbox
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // What an exchange credential is, without being it (ADR 26-10-08-452). Never the stored fields and
 // never the token.
 // Ref: #/components/schemas/SecretExchange
@@ -28774,276 +29279,6 @@ func (s *SecretExchange) SetRecipe(val OptExchangeRecipe) {
 // SetTokenExpiresAt sets the value of TokenExpiresAt.
 func (s *SecretExchange) SetTokenExpiresAt(val OptInt64) {
 	s.TokenExpiresAt = val
-}
-
-// Ref: #/components/schemas/SecretGrant
-type SecretGrant struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// What the grant authorizes its holder to do -- use the credential, or delegate it to other
-	// discoboxes. Never both.
-	Purpose SecretGrantPurpose `json:"purpose"`
-	// The delegation grant a discobox handed this grant on under, when a discobox approved the request
-	// or gave the grant on a create (ADR 26-10-20-782 section 11). It traces the grant to the delegation
-	// that allowed it; the grant is independent of it once made.
-	DelegationId OptString `json:"delegationId"`
-	// Creation timestamp.
-	CreatedAt time.Time `json:"createdAt"`
-	// Expiry time; empty never expires.
-	ExpiresAt OptDateTime `json:"expiresAt"`
-	// When the grant was created.
-	GrantedAt time.Time `json:"grantedAt"`
-	// Principal ID that created the grant.
-	GrantedBy OptString `json:"grantedBy"`
-	// Hosts the grant is limited to; a destination any of them covers. Empty matches any host (ADR
-	// 26-10-02-393).
-	Hosts []string `json:"hosts"`
-	// Stable grant ID.
-	ID string `json:"id"`
-	// Project ID.
-	ProjectId string `json:"projectId"`
-	// How widely the grant applies.
-	Scope SecretGrantScope `json:"scope"`
-	// Identifier the scope resolves against.
-	ScopeKey string `json:"scopeKey"`
-	// Granted secret ID.
-	SecretId string `json:"secretId"`
-	// Last update timestamp.
-	UpdatedAt time.Time `json:"updatedAt"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *SecretGrant) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetPurpose returns the value of Purpose.
-func (s *SecretGrant) GetPurpose() SecretGrantPurpose {
-	return s.Purpose
-}
-
-// GetDelegationId returns the value of DelegationId.
-func (s *SecretGrant) GetDelegationId() OptString {
-	return s.DelegationId
-}
-
-// GetCreatedAt returns the value of CreatedAt.
-func (s *SecretGrant) GetCreatedAt() time.Time {
-	return s.CreatedAt
-}
-
-// GetExpiresAt returns the value of ExpiresAt.
-func (s *SecretGrant) GetExpiresAt() OptDateTime {
-	return s.ExpiresAt
-}
-
-// GetGrantedAt returns the value of GrantedAt.
-func (s *SecretGrant) GetGrantedAt() time.Time {
-	return s.GrantedAt
-}
-
-// GetGrantedBy returns the value of GrantedBy.
-func (s *SecretGrant) GetGrantedBy() OptString {
-	return s.GrantedBy
-}
-
-// GetHosts returns the value of Hosts.
-func (s *SecretGrant) GetHosts() []string {
-	return s.Hosts
-}
-
-// GetID returns the value of ID.
-func (s *SecretGrant) GetID() string {
-	return s.ID
-}
-
-// GetProjectId returns the value of ProjectId.
-func (s *SecretGrant) GetProjectId() string {
-	return s.ProjectId
-}
-
-// GetScope returns the value of Scope.
-func (s *SecretGrant) GetScope() SecretGrantScope {
-	return s.Scope
-}
-
-// GetScopeKey returns the value of ScopeKey.
-func (s *SecretGrant) GetScopeKey() string {
-	return s.ScopeKey
-}
-
-// GetSecretId returns the value of SecretId.
-func (s *SecretGrant) GetSecretId() string {
-	return s.SecretId
-}
-
-// GetUpdatedAt returns the value of UpdatedAt.
-func (s *SecretGrant) GetUpdatedAt() time.Time {
-	return s.UpdatedAt
-}
-
-// SetSchema sets the value of Schema.
-func (s *SecretGrant) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetPurpose sets the value of Purpose.
-func (s *SecretGrant) SetPurpose(val SecretGrantPurpose) {
-	s.Purpose = val
-}
-
-// SetDelegationId sets the value of DelegationId.
-func (s *SecretGrant) SetDelegationId(val OptString) {
-	s.DelegationId = val
-}
-
-// SetCreatedAt sets the value of CreatedAt.
-func (s *SecretGrant) SetCreatedAt(val time.Time) {
-	s.CreatedAt = val
-}
-
-// SetExpiresAt sets the value of ExpiresAt.
-func (s *SecretGrant) SetExpiresAt(val OptDateTime) {
-	s.ExpiresAt = val
-}
-
-// SetGrantedAt sets the value of GrantedAt.
-func (s *SecretGrant) SetGrantedAt(val time.Time) {
-	s.GrantedAt = val
-}
-
-// SetGrantedBy sets the value of GrantedBy.
-func (s *SecretGrant) SetGrantedBy(val OptString) {
-	s.GrantedBy = val
-}
-
-// SetHosts sets the value of Hosts.
-func (s *SecretGrant) SetHosts(val []string) {
-	s.Hosts = val
-}
-
-// SetID sets the value of ID.
-func (s *SecretGrant) SetID(val string) {
-	s.ID = val
-}
-
-// SetProjectId sets the value of ProjectId.
-func (s *SecretGrant) SetProjectId(val string) {
-	s.ProjectId = val
-}
-
-// SetScope sets the value of Scope.
-func (s *SecretGrant) SetScope(val SecretGrantScope) {
-	s.Scope = val
-}
-
-// SetScopeKey sets the value of ScopeKey.
-func (s *SecretGrant) SetScopeKey(val string) {
-	s.ScopeKey = val
-}
-
-// SetSecretId sets the value of SecretId.
-func (s *SecretGrant) SetSecretId(val string) {
-	s.SecretId = val
-}
-
-// SetUpdatedAt sets the value of UpdatedAt.
-func (s *SecretGrant) SetUpdatedAt(val time.Time) {
-	s.UpdatedAt = val
-}
-
-func (*SecretGrant) createSecretGrantRes() {}
-
-// What the grant authorizes its holder to do -- use the credential, or delegate it to other
-// discoboxes. Never both.
-type SecretGrantPurpose string
-
-const (
-	SecretGrantPurposeUse      SecretGrantPurpose = "use"
-	SecretGrantPurposeDelegate SecretGrantPurpose = "delegate"
-)
-
-// AllValues returns all SecretGrantPurpose values.
-func (SecretGrantPurpose) AllValues() []SecretGrantPurpose {
-	return []SecretGrantPurpose{
-		SecretGrantPurposeUse,
-		SecretGrantPurposeDelegate,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SecretGrantPurpose) MarshalText() ([]byte, error) {
-	switch s {
-	case SecretGrantPurposeUse:
-		return []byte(s), nil
-	case SecretGrantPurposeDelegate:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SecretGrantPurpose) UnmarshalText(data []byte) error {
-	switch SecretGrantPurpose(data) {
-	case SecretGrantPurposeUse:
-		*s = SecretGrantPurposeUse
-		return nil
-	case SecretGrantPurposeDelegate:
-		*s = SecretGrantPurposeDelegate
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// How widely the grant applies.
-type SecretGrantScope string
-
-const (
-	SecretGrantScopeSandbox       SecretGrantScope = "sandbox"
-	SecretGrantScopeHarnessConfig SecretGrantScope = "harnessConfig"
-	SecretGrantScopeProject       SecretGrantScope = "project"
-)
-
-// AllValues returns all SecretGrantScope values.
-func (SecretGrantScope) AllValues() []SecretGrantScope {
-	return []SecretGrantScope{
-		SecretGrantScopeSandbox,
-		SecretGrantScopeHarnessConfig,
-		SecretGrantScopeProject,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SecretGrantScope) MarshalText() ([]byte, error) {
-	switch s {
-	case SecretGrantScopeSandbox:
-		return []byte(s), nil
-	case SecretGrantScopeHarnessConfig:
-		return []byte(s), nil
-	case SecretGrantScopeProject:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SecretGrantScope) UnmarshalText(data []byte) error {
-	switch SecretGrantScope(data) {
-	case SecretGrantScopeSandbox:
-		*s = SecretGrantScopeSandbox
-		return nil
-	case SecretGrantScopeHarnessConfig:
-		*s = SecretGrantScopeHarnessConfig
-		return nil
-	case SecretGrantScopeProject:
-		*s = SecretGrantScopeProject
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }
 
 // What an OAuth credential is, without being it. Never the access token and never the refresh token.
@@ -29483,6 +29718,237 @@ func (s *SecretRefreshEventRefreshCause) UnmarshalText(data []byte) error {
 	}
 }
 
+// An ask for a new value of a token that went stale or was refused (ADR 26-09-25-122 §4). It is
+// answered by writing a value, never by approving.
+// Ref: #/components/schemas/SecretRefreshRequest
+type SecretRefreshRequest struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// How it was answered, once it was.
+	Answer OptSecretRefreshAnswer `json:"answer"`
+	// What opened the request.
+	Cause SecretRefreshRequestCause `json:"cause"`
+	// When it was answered or dismissed.
+	ClosedAt OptDateTime `json:"closedAt"`
+	// When it was asked.
+	CreatedAt time.Time `json:"createdAt"`
+	// Refresh request ID.
+	ID string `json:"id"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// The discobox that most recently needed the value.
+	SandboxId OptString `json:"sandboxId"`
+	// The secret a new value is asked for.
+	SecretId string `json:"secretId"`
+	// Its name.
+	SecretName OptString `json:"secretName"`
+	// Whether it is still asked.
+	Status SecretRefreshRequestStatus `json:"status"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *SecretRefreshRequest) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAnswer returns the value of Answer.
+func (s *SecretRefreshRequest) GetAnswer() OptSecretRefreshAnswer {
+	return s.Answer
+}
+
+// GetCause returns the value of Cause.
+func (s *SecretRefreshRequest) GetCause() SecretRefreshRequestCause {
+	return s.Cause
+}
+
+// GetClosedAt returns the value of ClosedAt.
+func (s *SecretRefreshRequest) GetClosedAt() OptDateTime {
+	return s.ClosedAt
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *SecretRefreshRequest) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetID returns the value of ID.
+func (s *SecretRefreshRequest) GetID() string {
+	return s.ID
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *SecretRefreshRequest) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *SecretRefreshRequest) GetSandboxId() OptString {
+	return s.SandboxId
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *SecretRefreshRequest) GetSecretId() string {
+	return s.SecretId
+}
+
+// GetSecretName returns the value of SecretName.
+func (s *SecretRefreshRequest) GetSecretName() OptString {
+	return s.SecretName
+}
+
+// GetStatus returns the value of Status.
+func (s *SecretRefreshRequest) GetStatus() SecretRefreshRequestStatus {
+	return s.Status
+}
+
+// SetSchema sets the value of Schema.
+func (s *SecretRefreshRequest) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAnswer sets the value of Answer.
+func (s *SecretRefreshRequest) SetAnswer(val OptSecretRefreshAnswer) {
+	s.Answer = val
+}
+
+// SetCause sets the value of Cause.
+func (s *SecretRefreshRequest) SetCause(val SecretRefreshRequestCause) {
+	s.Cause = val
+}
+
+// SetClosedAt sets the value of ClosedAt.
+func (s *SecretRefreshRequest) SetClosedAt(val OptDateTime) {
+	s.ClosedAt = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *SecretRefreshRequest) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetID sets the value of ID.
+func (s *SecretRefreshRequest) SetID(val string) {
+	s.ID = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *SecretRefreshRequest) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *SecretRefreshRequest) SetSandboxId(val OptString) {
+	s.SandboxId = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *SecretRefreshRequest) SetSecretId(val string) {
+	s.SecretId = val
+}
+
+// SetSecretName sets the value of SecretName.
+func (s *SecretRefreshRequest) SetSecretName(val OptString) {
+	s.SecretName = val
+}
+
+// SetStatus sets the value of Status.
+func (s *SecretRefreshRequest) SetStatus(val SecretRefreshRequestStatus) {
+	s.Status = val
+}
+
+func (*SecretRefreshRequest) dismissSecretRefreshRequestRes() {}
+
+// What opened the request.
+type SecretRefreshRequestCause string
+
+const (
+	SecretRefreshRequestCauseStale    SecretRefreshRequestCause = "stale"
+	SecretRefreshRequestCauseRejected SecretRefreshRequestCause = "rejected"
+)
+
+// AllValues returns all SecretRefreshRequestCause values.
+func (SecretRefreshRequestCause) AllValues() []SecretRefreshRequestCause {
+	return []SecretRefreshRequestCause{
+		SecretRefreshRequestCauseStale,
+		SecretRefreshRequestCauseRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRefreshRequestCause) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRefreshRequestCauseStale:
+		return []byte(s), nil
+	case SecretRefreshRequestCauseRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRefreshRequestCause) UnmarshalText(data []byte) error {
+	switch SecretRefreshRequestCause(data) {
+	case SecretRefreshRequestCauseStale:
+		*s = SecretRefreshRequestCauseStale
+		return nil
+	case SecretRefreshRequestCauseRejected:
+		*s = SecretRefreshRequestCauseRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Whether it is still asked.
+type SecretRefreshRequestStatus string
+
+const (
+	SecretRefreshRequestStatusPending   SecretRefreshRequestStatus = "pending"
+	SecretRefreshRequestStatusAnswered  SecretRefreshRequestStatus = "answered"
+	SecretRefreshRequestStatusDismissed SecretRefreshRequestStatus = "dismissed"
+)
+
+// AllValues returns all SecretRefreshRequestStatus values.
+func (SecretRefreshRequestStatus) AllValues() []SecretRefreshRequestStatus {
+	return []SecretRefreshRequestStatus{
+		SecretRefreshRequestStatusPending,
+		SecretRefreshRequestStatusAnswered,
+		SecretRefreshRequestStatusDismissed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRefreshRequestStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRefreshRequestStatusPending:
+		return []byte(s), nil
+	case SecretRefreshRequestStatusAnswered:
+		return []byte(s), nil
+	case SecretRefreshRequestStatusDismissed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRefreshRequestStatus) UnmarshalText(data []byte) error {
+	switch SecretRefreshRequestStatus(data) {
+	case SecretRefreshRequestStatusPending:
+		*s = SecretRefreshRequestStatusPending
+		return nil
+	case SecretRefreshRequestStatusAnswered:
+		*s = SecretRefreshRequestStatusAnswered
+		return nil
+	case SecretRefreshRequestStatusDismissed:
+		*s = SecretRefreshRequestStatusDismissed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // A credential an upstream refused that this control plane cannot renew, so a person has to replace
 // it. Live state, not history - it is cleared when the credential is replaced or starts working
 // again.
@@ -29790,17 +30256,16 @@ func (s *SecretReportRule) SetPaths(val []string) {
 type SecretRequest struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// The binding approving the request made.
+	BindingId OptString `json:"bindingId"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
+	// When it was answered.
+	DecidedAt OptDateTime `json:"decidedAt"`
+	// Who answered the request: a person, or the discobox that created the requester.
+	DecidedBy OptString `json:"decidedBy"`
 	// Environment variable the credential is wanted in, for protocol-originated requests.
 	EnvName OptString `json:"envName"`
-	// Grant that satisfied this request; set when approved.
-	GrantId OptString `json:"grantId"`
-	// How long the agent asked the grant to live, in seconds -- the lifetime an approval starts from. At
-	// most thirty days. Absent when it asked for nothing in particular; never forever.
-	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
-	// Hosts named at request time (ADR 26-10-02-393).
-	Hosts []string `json:"hosts"`
 	// Stable request ID.
 	ID string `json:"id"`
 	// Why the agent says it needs the credential.
@@ -29808,27 +30273,22 @@ type SecretRequest struct {
 	// Credential name the agent asked for, for protocol-originated requests.
 	Name OptString `json:"name"`
 	// What the agent asked the credential for -- to use it, or to delegate it to other discoboxes.
-	// Approving the request mints a grant for that purpose.
+	// Approving the request makes a binding for that purpose on the discobox that asked.
 	Purpose OptSecretRequestPurpose `json:"purpose"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
-	// Why the request exists, when it is not an ask for a grant. refresh asks for a new value of a token
-	// that has gone stale or was refused; it is answered by writing a value (refresh-secret), never by
-	// approving.
-	Reason OptSecretRequestReason `json:"reason"`
-	// What opened a refresh request.
-	RefreshCause  OptSecretRequestRefreshCause `json:"refreshCause"`
-	RefreshAnswer OptSecretRefreshAnswer       `json:"refreshAnswer"`
 	// Principal ID of the requestor.
 	RequestedBy string `json:"requestedBy"`
+	// Where the credential is asked to be sent.
+	Routes []SecretRoute `json:"routes"`
 	// Sandbox that owns the sentinel, for sandbox-originated requests.
 	SandboxId OptString `json:"sandboxId"`
 	// Matched secret ID; set when approved.
 	SecretId OptString `json:"secretId"`
 	// Request status.
 	Status SecretRequestStatus `json:"status"`
-	// Secret type requested.
-	Type SecretRequestType `json:"type"`
+	// How long the requester asks the binding to last, in seconds; a suggestion the approver starts from.
+	TtlSeconds OptInt64 `json:"ttlSeconds"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -29838,29 +30298,29 @@ func (s *SecretRequest) GetSchema() OptURI {
 	return s.Schema
 }
 
+// GetBindingId returns the value of BindingId.
+func (s *SecretRequest) GetBindingId() OptString {
+	return s.BindingId
+}
+
 // GetCreatedAt returns the value of CreatedAt.
 func (s *SecretRequest) GetCreatedAt() time.Time {
 	return s.CreatedAt
 }
 
+// GetDecidedAt returns the value of DecidedAt.
+func (s *SecretRequest) GetDecidedAt() OptDateTime {
+	return s.DecidedAt
+}
+
+// GetDecidedBy returns the value of DecidedBy.
+func (s *SecretRequest) GetDecidedBy() OptString {
+	return s.DecidedBy
+}
+
 // GetEnvName returns the value of EnvName.
 func (s *SecretRequest) GetEnvName() OptString {
 	return s.EnvName
-}
-
-// GetGrantId returns the value of GrantId.
-func (s *SecretRequest) GetGrantId() OptString {
-	return s.GrantId
-}
-
-// GetGrantTTLSeconds returns the value of GrantTTLSeconds.
-func (s *SecretRequest) GetGrantTTLSeconds() OptInt64 {
-	return s.GrantTTLSeconds
-}
-
-// GetHosts returns the value of Hosts.
-func (s *SecretRequest) GetHosts() []string {
-	return s.Hosts
 }
 
 // GetID returns the value of ID.
@@ -29888,24 +30348,14 @@ func (s *SecretRequest) GetProjectId() string {
 	return s.ProjectId
 }
 
-// GetReason returns the value of Reason.
-func (s *SecretRequest) GetReason() OptSecretRequestReason {
-	return s.Reason
-}
-
-// GetRefreshCause returns the value of RefreshCause.
-func (s *SecretRequest) GetRefreshCause() OptSecretRequestRefreshCause {
-	return s.RefreshCause
-}
-
-// GetRefreshAnswer returns the value of RefreshAnswer.
-func (s *SecretRequest) GetRefreshAnswer() OptSecretRefreshAnswer {
-	return s.RefreshAnswer
-}
-
 // GetRequestedBy returns the value of RequestedBy.
 func (s *SecretRequest) GetRequestedBy() string {
 	return s.RequestedBy
+}
+
+// GetRoutes returns the value of Routes.
+func (s *SecretRequest) GetRoutes() []SecretRoute {
+	return s.Routes
 }
 
 // GetSandboxId returns the value of SandboxId.
@@ -29923,9 +30373,9 @@ func (s *SecretRequest) GetStatus() SecretRequestStatus {
 	return s.Status
 }
 
-// GetType returns the value of Type.
-func (s *SecretRequest) GetType() SecretRequestType {
-	return s.Type
+// GetTtlSeconds returns the value of TtlSeconds.
+func (s *SecretRequest) GetTtlSeconds() OptInt64 {
+	return s.TtlSeconds
 }
 
 // GetUpdatedAt returns the value of UpdatedAt.
@@ -29938,29 +30388,29 @@ func (s *SecretRequest) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
+// SetBindingId sets the value of BindingId.
+func (s *SecretRequest) SetBindingId(val OptString) {
+	s.BindingId = val
+}
+
 // SetCreatedAt sets the value of CreatedAt.
 func (s *SecretRequest) SetCreatedAt(val time.Time) {
 	s.CreatedAt = val
 }
 
+// SetDecidedAt sets the value of DecidedAt.
+func (s *SecretRequest) SetDecidedAt(val OptDateTime) {
+	s.DecidedAt = val
+}
+
+// SetDecidedBy sets the value of DecidedBy.
+func (s *SecretRequest) SetDecidedBy(val OptString) {
+	s.DecidedBy = val
+}
+
 // SetEnvName sets the value of EnvName.
 func (s *SecretRequest) SetEnvName(val OptString) {
 	s.EnvName = val
-}
-
-// SetGrantId sets the value of GrantId.
-func (s *SecretRequest) SetGrantId(val OptString) {
-	s.GrantId = val
-}
-
-// SetGrantTTLSeconds sets the value of GrantTTLSeconds.
-func (s *SecretRequest) SetGrantTTLSeconds(val OptInt64) {
-	s.GrantTTLSeconds = val
-}
-
-// SetHosts sets the value of Hosts.
-func (s *SecretRequest) SetHosts(val []string) {
-	s.Hosts = val
 }
 
 // SetID sets the value of ID.
@@ -29988,24 +30438,14 @@ func (s *SecretRequest) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
-// SetReason sets the value of Reason.
-func (s *SecretRequest) SetReason(val OptSecretRequestReason) {
-	s.Reason = val
-}
-
-// SetRefreshCause sets the value of RefreshCause.
-func (s *SecretRequest) SetRefreshCause(val OptSecretRequestRefreshCause) {
-	s.RefreshCause = val
-}
-
-// SetRefreshAnswer sets the value of RefreshAnswer.
-func (s *SecretRequest) SetRefreshAnswer(val OptSecretRefreshAnswer) {
-	s.RefreshAnswer = val
-}
-
 // SetRequestedBy sets the value of RequestedBy.
 func (s *SecretRequest) SetRequestedBy(val string) {
 	s.RequestedBy = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *SecretRequest) SetRoutes(val []SecretRoute) {
+	s.Routes = val
 }
 
 // SetSandboxId sets the value of SandboxId.
@@ -30023,9 +30463,9 @@ func (s *SecretRequest) SetStatus(val SecretRequestStatus) {
 	s.Status = val
 }
 
-// SetType sets the value of Type.
-func (s *SecretRequest) SetType(val SecretRequestType) {
-	s.Type = val
+// SetTtlSeconds sets the value of TtlSeconds.
+func (s *SecretRequest) SetTtlSeconds(val OptInt64) {
+	s.TtlSeconds = val
 }
 
 // SetUpdatedAt sets the value of UpdatedAt.
@@ -30034,11 +30474,10 @@ func (s *SecretRequest) SetUpdatedAt(val time.Time) {
 }
 
 func (*SecretRequest) approveSecretRequestRes() {}
-func (*SecretRequest) createSecretRequestRes()  {}
 func (*SecretRequest) getSecretRequestRes()     {}
 
 // What the agent asked the credential for -- to use it, or to delegate it to other discoboxes.
-// Approving the request mints a grant for that purpose.
+// Approving the request makes a binding for that purpose on the discobox that asked.
 type SecretRequestPurpose string
 
 const (
@@ -30074,85 +30513,6 @@ func (s *SecretRequestPurpose) UnmarshalText(data []byte) error {
 		return nil
 	case SecretRequestPurposeDelegate:
 		*s = SecretRequestPurposeDelegate
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Why the request exists, when it is not an ask for a grant. refresh asks for a new value of a token
-// that has gone stale or was refused; it is answered by writing a value (refresh-secret), never by
-// approving.
-type SecretRequestReason string
-
-const (
-	SecretRequestReasonRefresh SecretRequestReason = "refresh"
-)
-
-// AllValues returns all SecretRequestReason values.
-func (SecretRequestReason) AllValues() []SecretRequestReason {
-	return []SecretRequestReason{
-		SecretRequestReasonRefresh,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SecretRequestReason) MarshalText() ([]byte, error) {
-	switch s {
-	case SecretRequestReasonRefresh:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SecretRequestReason) UnmarshalText(data []byte) error {
-	switch SecretRequestReason(data) {
-	case SecretRequestReasonRefresh:
-		*s = SecretRequestReasonRefresh
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// What opened a refresh request.
-type SecretRequestRefreshCause string
-
-const (
-	SecretRequestRefreshCauseStale    SecretRequestRefreshCause = "stale"
-	SecretRequestRefreshCauseRejected SecretRequestRefreshCause = "rejected"
-)
-
-// AllValues returns all SecretRequestRefreshCause values.
-func (SecretRequestRefreshCause) AllValues() []SecretRequestRefreshCause {
-	return []SecretRequestRefreshCause{
-		SecretRequestRefreshCauseStale,
-		SecretRequestRefreshCauseRejected,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SecretRequestRefreshCause) MarshalText() ([]byte, error) {
-	switch s {
-	case SecretRequestRefreshCauseStale:
-		return []byte(s), nil
-	case SecretRequestRefreshCauseRejected:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SecretRequestRefreshCause) UnmarshalText(data []byte) error {
-	switch SecretRequestRefreshCause(data) {
-	case SecretRequestRefreshCauseStale:
-		*s = SecretRequestRefreshCauseStale
-		return nil
-	case SecretRequestRefreshCauseRejected:
-		*s = SecretRequestRefreshCauseRejected
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -30202,55 +30562,6 @@ func (s *SecretRequestStatus) UnmarshalText(data []byte) error {
 		return nil
 	case SecretRequestStatusDenied:
 		*s = SecretRequestStatusDenied
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Secret type requested.
-type SecretRequestType string
-
-const (
-	SecretRequestTypeToken    SecretRequestType = "token"
-	SecretRequestTypeOAuth    SecretRequestType = "oauth"
-	SecretRequestTypeExchange SecretRequestType = "exchange"
-)
-
-// AllValues returns all SecretRequestType values.
-func (SecretRequestType) AllValues() []SecretRequestType {
-	return []SecretRequestType{
-		SecretRequestTypeToken,
-		SecretRequestTypeOAuth,
-		SecretRequestTypeExchange,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SecretRequestType) MarshalText() ([]byte, error) {
-	switch s {
-	case SecretRequestTypeToken:
-		return []byte(s), nil
-	case SecretRequestTypeOAuth:
-		return []byte(s), nil
-	case SecretRequestTypeExchange:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SecretRequestType) UnmarshalText(data []byte) error {
-	switch SecretRequestType(data) {
-	case SecretRequestTypeToken:
-		*s = SecretRequestTypeToken
-		return nil
-	case SecretRequestTypeOAuth:
-		*s = SecretRequestTypeOAuth
-		return nil
-	case SecretRequestTypeExchange:
-		*s = SecretRequestTypeExchange
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -30648,34 +30959,6 @@ func (s *ServerPeer) SetPeerId(val OptString) {
 }
 
 func (*ServerPeer) getServerPeerRes() {}
-
-// Ref: #/components/schemas/SetHarnessConfigSecretBindingBody
-type SetHarnessConfigSecretBindingBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Secret ID to bind to the environment variable.
-	SecretId string `json:"secretId"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *SetHarnessConfigSecretBindingBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetSecretId returns the value of SecretId.
-func (s *SetHarnessConfigSecretBindingBody) GetSecretId() string {
-	return s.SecretId
-}
-
-// SetSchema sets the value of Schema.
-func (s *SetHarnessConfigSecretBindingBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetSecretId sets the value of SecretId.
-func (s *SetHarnessConfigSecretBindingBody) SetSecretId(val string) {
-	s.SecretId = val
-}
 
 // Ref: #/components/schemas/SourceDelivery
 type SourceDelivery struct {
@@ -31521,21 +31804,100 @@ func (s *UpdateSandboxProviderInstanceBody) SetName(val OptString) {
 	s.Name = val
 }
 
+// Change a binding's routes, lifetime, variable, or what it allows. Only the fields sent change.
+// Ref: #/components/schemas/UpdateSecretBindingBody
+type UpdateSecretBindingBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Whether a discobox the binding covers may give the credential to the discoboxes it creates. Only a
+	// person sets it; turning it off removes every binding handed on under this one.
+	Delegate OptBool `json:"delegate"`
+	// A new environment variable for a use binding.
+	EnvVar OptString `json:"envVar"`
+	// Replacement routes; an empty array inherits the secret's again.
+	Routes []SecretRouteInput `json:"routes"`
+	// A new lifetime, in seconds from now, within the secret's limit and the parent's expiry; 0 never
+	// lapses where allowed.
+	TtlSeconds OptInt64 `json:"ttlSeconds"`
+	// Whether the target may send the credential. Turning it off on a binding that also delegates keeps
+	// the delegation; a binding left with neither is refused, so remove it instead.
+	Use OptBool `json:"use"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *UpdateSecretBindingBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetDelegate returns the value of Delegate.
+func (s *UpdateSecretBindingBody) GetDelegate() OptBool {
+	return s.Delegate
+}
+
+// GetEnvVar returns the value of EnvVar.
+func (s *UpdateSecretBindingBody) GetEnvVar() OptString {
+	return s.EnvVar
+}
+
+// GetRoutes returns the value of Routes.
+func (s *UpdateSecretBindingBody) GetRoutes() []SecretRouteInput {
+	return s.Routes
+}
+
+// GetTtlSeconds returns the value of TtlSeconds.
+func (s *UpdateSecretBindingBody) GetTtlSeconds() OptInt64 {
+	return s.TtlSeconds
+}
+
+// GetUse returns the value of Use.
+func (s *UpdateSecretBindingBody) GetUse() OptBool {
+	return s.Use
+}
+
+// SetSchema sets the value of Schema.
+func (s *UpdateSecretBindingBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetDelegate sets the value of Delegate.
+func (s *UpdateSecretBindingBody) SetDelegate(val OptBool) {
+	s.Delegate = val
+}
+
+// SetEnvVar sets the value of EnvVar.
+func (s *UpdateSecretBindingBody) SetEnvVar(val OptString) {
+	s.EnvVar = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *UpdateSecretBindingBody) SetRoutes(val []SecretRouteInput) {
+	s.Routes = val
+}
+
+// SetTtlSeconds sets the value of TtlSeconds.
+func (s *UpdateSecretBindingBody) SetTtlSeconds(val OptInt64) {
+	s.TtlSeconds = val
+}
+
+// SetUse sets the value of Use.
+func (s *UpdateSecretBindingBody) SetUse(val OptBool) {
+	s.Use = val
+}
+
 // Ref: #/components/schemas/UpdateSecretBody
 type UpdateSecretBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema   OptURI            `json:"$schema"`
 	Exchange OptExchangeRecipe `json:"exchange"`
-	// Longest a grant on this secret may live, in seconds; 0 allows grants that never expire.
-	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
 	// Template the sentinels for this secret are minted from: literal text with {charset:length} tokens,
 	// such as sk-ant-oat01-{base64url:95}. Charsets are digits, hex, HEX, lower, upper, alnum, base62,
 	// base32, base64url, and base64. A format set here is kept when the value is replaced; an empty
 	// string clears it and reads the shape from the value again. A running sandbox keeps the sentinel
 	// already in its environment.
 	Format OptString `json:"format"`
-	// Optional host used to match requests (e.g. github.com).
-	Host OptString `json:"host"`
+	// Longest a binding of this secret may last, in seconds, and the lifetime one takes when nobody
+	// names one; 0 lets bindings never lapse.
+	MaxBindingTTLSeconds OptInt64 `json:"maxBindingTTLSeconds"`
 	// A command a person's client may run to produce a new value, as an argument vector run without a
 	// shell (ADR 26-09-25-122). The server stores and shows it and never runs it. Token secrets only;
 	// setting one without ttlSeconds gives the token 300s. An empty array removes it.
@@ -31545,7 +31907,7 @@ type UpdateSecretBody struct {
 	TtlSeconds OptInt64 `json:"ttlSeconds"`
 	// Where the credential may be sent, whoever holds it (ADR 26-10-02-924). Every request it is sent in
 	// must fall on one; the most specific route covering it decides, and a blocked one refuses. Set
-	// replaces them; an empty array removes them.
+	// replaces them; an empty array removes them, and the credential is then sent nowhere.
 	Routes OptNilSecretRouteInputArray `json:"routes"`
 	// When this value goes stale, for a value that knows its own lifetime; overrides ttlSeconds for this
 	// value only. Token secrets only, and only with a value.
@@ -31565,19 +31927,14 @@ func (s *UpdateSecretBody) GetExchange() OptExchangeRecipe {
 	return s.Exchange
 }
 
-// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
-func (s *UpdateSecretBody) GetMaxGrantTTLSeconds() OptInt64 {
-	return s.MaxGrantTTLSeconds
-}
-
 // GetFormat returns the value of Format.
 func (s *UpdateSecretBody) GetFormat() OptString {
 	return s.Format
 }
 
-// GetHost returns the value of Host.
-func (s *UpdateSecretBody) GetHost() OptString {
-	return s.Host
+// GetMaxBindingTTLSeconds returns the value of MaxBindingTTLSeconds.
+func (s *UpdateSecretBody) GetMaxBindingTTLSeconds() OptInt64 {
+	return s.MaxBindingTTLSeconds
 }
 
 // GetRefreshCommand returns the value of RefreshCommand.
@@ -31620,19 +31977,14 @@ func (s *UpdateSecretBody) SetExchange(val OptExchangeRecipe) {
 	s.Exchange = val
 }
 
-// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
-func (s *UpdateSecretBody) SetMaxGrantTTLSeconds(val OptInt64) {
-	s.MaxGrantTTLSeconds = val
-}
-
 // SetFormat sets the value of Format.
 func (s *UpdateSecretBody) SetFormat(val OptString) {
 	s.Format = val
 }
 
-// SetHost sets the value of Host.
-func (s *UpdateSecretBody) SetHost(val OptString) {
-	s.Host = val
+// SetMaxBindingTTLSeconds sets the value of MaxBindingTTLSeconds.
+func (s *UpdateSecretBody) SetMaxBindingTTLSeconds(val OptInt64) {
+	s.MaxBindingTTLSeconds = val
 }
 
 // SetRefreshCommand sets the value of RefreshCommand.

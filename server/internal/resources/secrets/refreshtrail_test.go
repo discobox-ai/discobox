@@ -17,19 +17,15 @@ func staleToken(t *testing.T, st *store.Store, name, sandboxID, sentinel string)
 	t.Helper()
 	sec := &model.Secret{
 		ProjectID: "project-1", Name: name, Type: model.SecretTypeToken,
-		MaxGrantTTL: 3600, EncryptedValue: mustTokenValue(t, "old-"+name),
+		Routes:        []model.SecretRoute{{Host: "*"}},
+		MaxBindingTTL: 3600, EncryptedValue: mustTokenValue(t, "old-"+name),
 		TTL: 300, RefreshCommand: []string{"gh", "auth", "token"},
 	}
 	sec.ValueWritten(time.Now().UTC().Add(-time.Hour), nil)
 	if err := st.CreateSecret(context.Background(), sec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeSandbox, sandboxID)
-	if err := st.CreateSandboxSecret(context.Background(), &model.SandboxSecret{
-		ProjectID: "project-1", SandboxID: sandboxID, SecretID: sec.ID, EnvName: "TOKEN_" + name, Sentinel: sentinel,
-	}); err != nil {
-		t.Fatalf("create assignment: %v", err)
-	}
+	mustDeliver(t, st, sandboxID, sec.ID, "TOKEN_"+name, sentinel)
 	return sec
 }
 
@@ -67,7 +63,7 @@ func TestRefreshTrailRecordsEachAskAndItsAnswer(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
-	if err := svc.DenySecretRequest(testPrincipalContext(), "project-1", openB.ID); err != nil {
+	if _, err := svc.DismissSecretRefreshRequest(testPrincipalContext(), "project-1", openB.ID); err != nil {
 		t.Fatalf("dismiss: %v", err)
 	}
 	// The flow above stamps every event within a millisecond. Seconds apart,
@@ -78,7 +74,7 @@ func TestRefreshTrailRecordsEachAskAndItsAnswer(t *testing.T) {
 		openA.ID: {base, base.Add(10 * time.Second)},
 		openB.ID: {base.Add(5 * time.Second), base.Add(20 * time.Second)},
 	} {
-		if err := db.Model(&model.SecretRequest{}).Where("id = ?", id).
+		if err := db.Model(&model.SecretRefreshRequest{}).Where("id = ?", id).
 			Updates(map[string]any{"created_at": times[0], "closed_at": times[1]}).Error; err != nil {
 			t.Fatal(err)
 		}

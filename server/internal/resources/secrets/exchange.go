@@ -81,7 +81,7 @@ func exchangeToken(ctx context.Context, secret *model.Secret, val *model.SecretV
 // exchangeRecipe is the recipe a create or update gives, checked: only a
 // person names where a key is sent, only an exchange secret has one, and its
 // URL must sit inside the secret's binding. Nil when none was given.
-func exchangeRecipe(ctx context.Context, secretType, host string, given apigen.OptExchangeRecipe) (*model.ExchangeRecipe, error) {
+func exchangeRecipe(ctx context.Context, secretType string, routes []model.SecretRoute, given apigen.OptExchangeRecipe) (*model.ExchangeRecipe, error) {
 	in, ok := given.Get()
 	if !ok {
 		return nil, nil
@@ -106,7 +106,7 @@ func exchangeRecipe(ctx context.Context, secretType, host string, given apigen.O
 	if header, ok := in.Header.Get(); ok {
 		recipe.Header = header
 	}
-	if err := checkRecipe(recipe, host); err != nil {
+	if err := checkRecipe(recipe, routes); err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
 	if u, err := url.Parse(recipe.URL); err == nil {

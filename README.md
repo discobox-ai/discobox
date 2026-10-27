@@ -113,8 +113,8 @@ back the same two ways it does today:
     only the commits made since.
 - **Push to a remote and open a pull request** from inside the box, with
   `git push` and `gh`, the way you would from your laptop. The box never holds your
-  Git host token: you pass it in as a secret, or the agent requests access and
-  you grant it, and the box sees only a placeholder (see
+  Git host token: you bind it to the box as a secret, or the agent requests access
+  and you approve it, and the box sees only a placeholder (see
   [Isolation and credentials](#isolation-and-credentials)).
 
 ### Keeping parallel boxes in step
@@ -146,7 +146,7 @@ machine, the client pushes your new commits into it while you are attached, and
 - **Toolchain:** direnv loads the project's declared environment, including
   Nix or mise configuration.
 - **Automation:** The CLI and OpenAPI API support scripting box creation,
-  credential grants, and collecting results.
+  credential bindings, and collecting results.
 
 ## Isolation and credentials
 
@@ -156,9 +156,10 @@ through a proxy with a separate mTLS identity for each box, destination policy,
 and request auditing.
 
 Managed credentials remain outside the box. Agents receive placeholders called
-sentinels; the proxy substitutes the real credential only for the hosts and
-routes it is granted for, and refuses a request on a route it is not. An agent
-can request additional access, which a human grants with a host scope and an
+sentinels; the proxy substitutes the real credential only on the routes its
+secret and its binding allow, and refuses a request on any other. A secret is
+bound to a box, a harness or a whole project (`discobox secret bind`). An agent
+can request additional access, which a human approves with routes and an
 expiry.
 
 See [discobox.ai](https://discobox.ai) for the full overview and

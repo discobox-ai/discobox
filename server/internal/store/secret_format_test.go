@@ -30,7 +30,7 @@ func TestValueWriteRecordsTheSentinelFormat(t *testing.T) {
 	s, _ := newTestStoreWithDB(t, sealer)
 
 	oauth := &model.Secret{
-		ID: "sec-oauth", ProjectID: "project-1", Name: "claude", Type: model.SecretTypeOAuth, UniqueKey: "sec-oauth",
+		ID: "sec-oauth", ProjectID: "project-1", Name: "claude", Type: model.SecretTypeOAuth,
 		EncryptedValue: []byte(`{"token":"sk-ant-oat01-` + strings.Repeat("a", 95) + `","refreshToken":"sk-ant-ort01-x"}`),
 	}
 	if err := s.CreateSecret(ctx, oauth); err != nil {
@@ -205,8 +205,8 @@ func TestSecretWritesAdvanceTheRevision(t *testing.T) {
 	if edited.Revision != 2 {
 		t.Fatalf("revision after an update = %d, want 2", edited.Revision)
 	}
-	host := "api.example.com"
-	if err := s.SetSecretLimits(ctx, "project-1", "sec-rev", &host, nil); err != nil {
+	edited.MaxBindingTTL = 3600
+	if err := s.UpdateSecret(ctx, &edited); err != nil {
 		t.Fatal(err)
 	}
 	stale.EncryptedValue = []byte(`{"token":"y"}`)
@@ -215,7 +215,7 @@ func TestSecretWritesAdvanceTheRevision(t *testing.T) {
 	}
 	got, _ := s.GetSecret(ctx, "project-1", "sec-rev")
 	if got.Revision != 3 {
-		t.Fatalf("revision after setting limits = %d, want 3", got.Revision)
+		t.Fatalf("revision after a second update = %d, want 3", got.Revision)
 	}
 	if err := s.UpdateSecretValueIfUnchanged(ctx, got, got.Revision); err != nil {
 		t.Fatal(err)

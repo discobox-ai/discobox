@@ -23,13 +23,13 @@ import (
 // intent and do not pass through this file: they are instructions forwarded to
 // the runtime, which reports what became of them (ADR 0017 §9).
 
-// createSandboxIntent persists a new sandbox with create intent, its secret
-// assignments, and the dirty mark, atomically. The assignments must commit
-// with the sandbox row: the dirty mark wakes the reconciler on commit, and a
-// reconciler that can observe the sandbox without its assignments launches it
-// with no secrets — the miss is permanent, because assignments are not part of
-// the spec fingerprint and nothing re-pushes them to a running sandbox.
-func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbox, secrets []*model.SandboxSecret, grants resourcesecrets.SandboxGrants) (*model.Sandbox, error) {
+// createSandboxIntent persists a new sandbox with create intent, the inline
+// secrets and bindings it is created with, its sentinels materialized from every binding covering
+// it, and the dirty mark, atomically. The sentinels must commit with the
+// sandbox row: the dirty mark wakes the reconciler on commit, and a
+// reconciler that can observe the sandbox without them launches it with no
+// secrets.
+func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbox, inlineSecrets []*model.Secret, own []*model.SecretBinding, prepared resourcesecrets.SandboxBindings) (*model.Sandbox, error) {
 	if s.engine == nil {
 		return nil, errors.New("reconcile engine is required")
 	}
@@ -40,22 +40,27 @@ func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbo
 		if err := txStore.CreateSandbox(ctx, sandbox); err != nil {
 			return err
 		}
-		for _, secret := range secrets {
-			if err := txStore.CreateSandboxSecret(ctx, secret); err != nil {
+		// An inline value is stored with the sandbox it was given to, so a
+		// create that fails leaves none behind.
+		for _, secret := range inlineSecrets {
+			if err := txStore.CreateSecret(ctx, secret); err != nil {
 				return err
 			}
 		}
-		// The grants a create gives the new discobox, stored with it or not at
-		// all (ADR 0140 §4) — and, given by a discobox, only while the
-		// delegations they were made under still bound them (ADR
-		// 26-09-30-782 §1).
-		if err := resourcesecrets.HoldDelegations(ctx, txStore, grants); err != nil {
+		for _, binding := range own {
+			if err := txStore.CreateSecretBinding(ctx, binding, store.BindingChange{Actor: binding.CreatedBy}); err != nil {
+				return err
+			}
+		}
+		// The bindings a create gives the new discobox, stored with it or not
+		// at all (ADR 0140 §4) — and, given by a discobox, only while the
+		// delegate bindings they are handed on under still cover it (ADR
+		// 26-10-27-880 §3).
+		if err := resourcesecrets.StoreSandboxBindingsTx(ctx, txStore, prepared); err != nil {
 			return err
 		}
-		for _, grant := range grants.Grants {
-			if err := txStore.CreateSecretGrant(ctx, grant); err != nil {
-				return err
-			}
+		if _, err := materializeSandboxSecrets(ctx, txStore, sandbox); err != nil {
+			return err
 		}
 		if err := s.engine.MarkDirtyTx(ctx, txDB, SandboxResourceType, SandboxDirtyID(sandbox.ProjectID, sandbox.ID)); err != nil {
 			return err

@@ -21,6 +21,10 @@ type fakeCreator struct {
 	names     []string
 }
 
+func (f *fakeCreator) GetSecret(_ context.Context, params apiclientgen.GetSecretParams) (apiclientgen.GetSecretRes, error) {
+	return &apimodel.Secret{ID: params.SecretId, Name: "github-token"}, nil
+}
+
 func (f *fakeCreator) CreateSandbox(_ context.Context, body *apimodel.CreateSandboxBody, _ apiclientgen.CreateSandboxParams) (apiclientgen.CreateSandboxRes, error) {
 	f.names = append(f.names, body.Config.Name)
 	if f.conflicts > 0 {
@@ -225,5 +229,29 @@ func TestNoSourceRefusesARef(t *testing.T) {
 		PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t) + "@main", NoSource: true})
 	if err == nil || !strings.Contains(err.Error(), "no ref") {
 		t.Fatalf("err = %v, want a refusal naming the ref", err)
+	}
+}
+
+// Where an inline secret is sent is said once the create has succeeded, and
+// not at all for one that failed: a failed create stored nothing.
+func TestInlineSecretsAreReportedOnlyOnceCreated(t *testing.T) {
+	var said []string
+	opts := PromptOptions{Platform: linuxSandbox, Source: newRunSourceTestRepo(t), NoSource: true,
+		Secret: []string{"DB_PASS=hunter2@corp.example"}, ReportInlineSecret: func(line string) { said = append(said, line) }}
+
+	if _, _, err := CreatePromptSandbox(context.Background(), &fakeCreator{conflicts: 100, status: http.StatusBadRequest}, "project-1", opts, nil); err == nil {
+		t.Fatal("expected the failure to surface")
+	}
+	if len(said) != 0 {
+		t.Fatalf("said %q for a create that failed", said)
+	}
+
+	_, local, err := CreatePromptSandbox(context.Background(), &fakeCreator{}, "project-1", opts, nil)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	defer local.Close()
+	if len(said) != 1 || said[0] != "DB_PASS: stored, sent to corp.example" {
+		t.Fatalf("said %q, want where DB_PASS is sent", said)
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/hostscope"
 	"github.com/discobox-ai/discobox/pkg/secretformat"
-	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
 )
@@ -168,53 +166,37 @@ func (s *Store) GetSecret(ctx context.Context, projectID, secretID string) (*mod
 	return firstByID[model.Secret](read.Where("project_id = ?", projectID), "id", secretID)
 }
 
-// SetSecretLimits writes a secret's host binding, its grant limit, or both,
-// and nothing else, for an approval that changes them in the transaction
-// minting its grant. A nil field is left as it is: writing back what the caller
-// read would revert a change made since. A full save would write back the rest
-// of the row too, and the value may have been rotated since (an OAuth refresh);
-// neither column is the credential, so nothing recorded about it is retracted
-// (ADR 0132 §4).
-func (s *Store) SetSecretLimits(ctx context.Context, projectID, secretID string, host *string, maxGrantTTL *int64) error {
-	columns := map[string]any{}
-	if host != nil {
-		columns["host"] = *host
-	}
-	if maxGrantTTL != nil {
-		columns["max_grant_ttl_seconds"] = *maxGrantTTL
-	}
-	if len(columns) == 0 {
-		return nil
-	}
-	columns["revision"] = gorm.Expr("revision + 1")
-	write, err := s.getWrite(ctx)
+// GetSecretByName reads a project's secret by its name, which is unique in
+// the project.
+func (s *Store) GetSecretByName(ctx context.Context, projectID, name string) (*model.Secret, error) {
+	read, err := s.getRead(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	res := write.Model(&model.Secret{}).
-		Where("project_id = ? AND id = ?", projectID, secretID).
-		Updates(columns)
-	if res.Error != nil {
-		return res.Error
+	var rows []model.Secret
+	if err := read.Where("project_id = ? AND name = ?", projectID, name).Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
 	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
+	if len(rows) == 0 {
+		return nil, ErrNotFound
 	}
-	return nil
+	return &rows[0], nil
 }
 
 // SecretListOption narrows what a listing of secrets answers with.
 type SecretListOption func(*secretListOptions)
 
 type secretListOptions struct {
-	delegatedTo string
+	delegatedTo []BindingTarget
+	delegating  bool
 }
 
-// DelegatedTo lists only the secrets a discobox holds a live delegation grant
-// of: the ones it may hand on, and so the only ones it has reason to see or
-// name (ADR 26-09-30-782 §3).
-func DelegatedTo(sandboxID string) SecretListOption {
-	return func(options *secretListOptions) { options.delegatedTo = sandboxID }
+// DelegatedTo lists only the secrets a live delegate binding covering a
+// discobox is of — on it, its harness config or its project (targets, from
+// SandboxBindingTargets): the ones it may hand on, and so the only ones it has
+// reason to see or name (ADR 26-10-27-880 §3).
+func DelegatedTo(targets []BindingTarget) SecretListOption {
+	return func(options *secretListOptions) { options.delegatedTo, options.delegating = targets, true }
 }
 
 func (s *Store) ListSecrets(ctx context.Context, projectID string, listOptions ...SecretListOption) ([]model.Secret, error) {
@@ -229,10 +211,22 @@ func (s *Store) ListSecrets(ctx context.Context, projectID string, listOptions .
 		return nil, err
 	}
 	query := read.Where("project_id = ? AND anonymous = ?", projectID, false)
-	if options.delegatedTo != "" {
-		query = query.Where("id IN (?)", read.Model(&model.SecretGrant{}).Select("secret_id").
-			Where("project_id = ? AND purpose = ? AND scope = ? AND scope_key = ?",
-				projectID, model.SecretGrantPurposeDelegate, model.SecretGrantScopeSandbox, options.delegatedTo).
+	if options.delegating {
+		var clauses []string
+		var args []any
+		for _, target := range options.delegatedTo {
+			if target.UseOnly {
+				continue
+			}
+			clauses = append(clauses, "(target_kind = ? AND target_id = ?)")
+			args = append(args, target.Kind, target.ID)
+		}
+		if len(clauses) == 0 {
+			return nil, nil
+		}
+		query = query.Where("id IN (?)", read.Model(&model.SecretBinding{}).Select("secret_id").
+			Where("project_id = ? AND delegate", projectID).
+			Where(strings.Join(clauses, " OR "), args...).
 			Where("expires_at IS NULL OR expires_at > ?", time.Now().UTC()))
 	}
 	var out []model.Secret
@@ -364,14 +358,14 @@ func (s *Store) MarkSecretValueStale(ctx context.Context, projectID, secretID st
 // FindPendingRefreshRequest returns the open refresh request on a secret, or
 // ErrNotFound. There is at most one: staleness belongs to the secret, not to
 // the discobox that noticed it.
-func (s *Store) FindPendingRefreshRequest(ctx context.Context, projectID, secretID string) (*model.SecretRequest, error) {
+func (s *Store) FindPendingRefreshRequest(ctx context.Context, projectID, secretID string) (*model.SecretRefreshRequest, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var req model.SecretRequest
-	err = read.Where("project_id = ? AND secret_id = ? AND reason = ? AND status = ?",
-		projectID, secretID, model.SecretRequestReasonRefresh, model.SecretRequestStatusPending).
+	var req model.SecretRefreshRequest
+	err = read.Where("project_id = ? AND secret_id = ? AND status = ?",
+		projectID, secretID, model.SecretRefreshStatusPending).
 		Order("created_at DESC").First(&req).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
@@ -382,6 +376,41 @@ func (s *Store) FindPendingRefreshRequest(ctx context.Context, projectID, secret
 	return &req, nil
 }
 
+// CreateSecretRefreshRequest opens a refresh request. A second open one on the
+// same secret is a constraint error the caller reads as already open.
+func (s *Store) CreateSecretRefreshRequest(ctx context.Context, req *model.SecretRefreshRequest) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.Create(req).Error
+}
+
+// GetSecretRefreshRequest reads one refresh request of a project.
+func (s *Store) GetSecretRefreshRequest(ctx context.Context, projectID, requestID string) (*model.SecretRefreshRequest, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return firstByID[model.SecretRefreshRequest](read.Where("project_id = ?", projectID), "id", requestID)
+}
+
+// ListSecretRefreshRequests lists a project's refresh requests, oldest first,
+// optionally in one status.
+func (s *Store) ListSecretRefreshRequests(ctx context.Context, projectID, status string) ([]model.SecretRefreshRequest, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query := read.Where("project_id = ?", projectID)
+	if status = strings.TrimSpace(status); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	var out []model.SecretRefreshRequest
+	err = query.Order("created_at ASC, id ASC").Find(&out).Error
+	return out, err
+}
+
 // SetRefreshRequestSandbox records the discobox that most recently needed an
 // open refresh request's value, so the window's banner follows the work.
 func (s *Store) SetRefreshRequestSandbox(ctx context.Context, projectID, requestID, sandboxID string) error {
@@ -389,9 +418,9 @@ func (s *Store) SetRefreshRequestSandbox(ctx context.Context, projectID, request
 	if err != nil {
 		return err
 	}
-	return write.Model(&model.SecretRequest{}).
-		Where("project_id = ? AND id = ? AND status = ?", projectID, requestID, model.SecretRequestStatusPending).
-		Updates(map[string]any{"sandbox_id": sandboxID, "requested_by": "sandbox:" + sandboxID}).Error
+	return write.Model(&model.SecretRefreshRequest{}).
+		Where("project_id = ? AND id = ? AND status = ?", projectID, requestID, model.SecretRefreshStatusPending).
+		Update("sandbox_id", sandboxID).Error
 }
 
 // AnswerRefreshRequest closes one open refresh request with how it was
@@ -402,10 +431,29 @@ func (s *Store) AnswerRefreshRequest(ctx context.Context, projectID, requestID s
 	if err != nil {
 		return err
 	}
-	res := write.Model(&model.SecretRequest{}).
-		Where("project_id = ? AND id = ? AND reason = ? AND status = ?", projectID, requestID, model.SecretRequestReasonRefresh, model.SecretRequestStatusPending).
-		Select("status", "refresh_answer", "closed_at").
-		Updates(&model.SecretRequest{Status: model.SecretRequestStatusApproved, RefreshAnswer: answer, ClosedAt: closedAt(answer.AnsweredAt)})
+	res := write.Model(&model.SecretRefreshRequest{}).
+		Where("project_id = ? AND id = ? AND status = ?", projectID, requestID, model.SecretRefreshStatusPending).
+		Select("status", "answer", "closed_at").
+		Updates(&model.SecretRefreshRequest{Status: model.SecretRefreshStatusAnswered, Answer: answer, ClosedAt: closedAt(answer.AnsweredAt)})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrGenerationConflict
+	}
+	return nil
+}
+
+// DismissRefreshRequest closes one open refresh request without a value. It
+// returns ErrGenerationConflict when the request is no longer open.
+func (s *Store) DismissRefreshRequest(ctx context.Context, projectID, requestID string) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	res := write.Model(&model.SecretRefreshRequest{}).
+		Where("project_id = ? AND id = ? AND status = ?", projectID, requestID, model.SecretRefreshStatusPending).
+		Updates(map[string]any{"status": model.SecretRefreshStatusDismissed, "closed_at": closedAt(time.Now())})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -418,10 +466,10 @@ func (s *Store) AnswerRefreshRequest(ctx context.Context, projectID, requestID s
 // answerRefreshRequests closes every open refresh request on a secret with
 // one answer: a new value was written, so none of them is waiting on anything.
 func answerRefreshRequests(tx *gorm.DB, projectID, secretID string, answer *model.SecretRefreshAnswer) error {
-	return tx.Model(&model.SecretRequest{}).
-		Where("project_id = ? AND secret_id = ? AND reason = ? AND status = ?", projectID, secretID, model.SecretRequestReasonRefresh, model.SecretRequestStatusPending).
-		Select("status", "refresh_answer", "closed_at").
-		Updates(&model.SecretRequest{Status: model.SecretRequestStatusApproved, RefreshAnswer: answer, ClosedAt: closedAt(answer.AnsweredAt)}).Error
+	return tx.Model(&model.SecretRefreshRequest{}).
+		Where("project_id = ? AND secret_id = ? AND status = ?", projectID, secretID, model.SecretRefreshStatusPending).
+		Select("status", "answer", "closed_at").
+		Updates(&model.SecretRefreshRequest{Status: model.SecretRefreshStatusAnswered, Answer: answer, ClosedAt: closedAt(answer.AnsweredAt)}).Error
 }
 
 // UpdateSecretValueIfUnchanged replaces a secret's encrypted value only if its
@@ -469,12 +517,13 @@ func (s *Store) DeleteSecret(ctx context.Context, projectID, secretID string) er
 		if err := tx.Model(sec).Update("encrypted_value", nil).Error; err != nil {
 			return err
 		}
-		// Drop harness-config bindings, standing grants, and sandbox sentinel
-		// assignments that reference this secret so nothing dangles.
-		if err := s.deleteHarnessConfigSecretBindingsBySecret(tx, secretID); err != nil {
+		// Its bindings go with it, each with its event, and the sentinels
+		// that delivered them, so nothing dangles.
+		if _, err := deleteSecretBindingsBySecretTx(tx, projectID, secretID); err != nil {
 			return err
 		}
-		if err := s.deleteSecretGrantsBySecret(tx, secretID); err != nil {
+		if err := tx.Where("project_id = ? AND secret_id = ? AND status = ?", projectID, secretID, model.SecretRefreshStatusPending).
+			Delete(&model.SecretRefreshRequest{}).Error; err != nil {
 			return err
 		}
 		if err := s.deleteSandboxSecretsBySecret(tx, secretID); err != nil {
@@ -487,88 +536,12 @@ func (s *Store) DeleteSecret(ctx context.Context, projectID, secretID string) er
 	})
 }
 
-// MatchSecret finds the most specific secret for a project+type+host combination.
-// An exact host match beats a wildcard (empty host) match. Returns an error if
-// the result is ambiguous (multiple secrets at the same specificity).
-func (s *Store) MatchSecret(ctx context.Context, projectID, secretType, host string) (*model.Secret, error) {
-	read, err := s.getRead(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// The host is filtered in Go, for the reason FindLiveGrant is: a binding
-	// covers the hosts beneath it (hostscope.Covers), which SQL equality cannot
-	// express — and a secret bound to github.com is a candidate for a request
-	// about api.github.com, or the reactive path would open a request for a
-	// credential the project already holds.
-	var rows []model.Secret
-	err = read.
-		Where("project_id = ? AND anonymous = ? AND type = ?", projectID, false, secretType).
-		Find(&rows).Error
-	if err != nil {
-		return nil, err
-	}
-	var candidates []model.Secret
-	for _, row := range rows {
-		if hostscope.Covers(row.Host, host) {
-			candidates = append(candidates, row)
-		}
-	}
-	if len(candidates) == 0 {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "no matching secret found for the requested type and host")
-	}
-	// The narrowest binding that answers wins: the host itself, then a host
-	// above it, then a secret bound to nothing.
-	best := hostscope.Specificity(candidates[0].Host, host)
-	for _, c := range candidates[1:] {
-		best = min(best, hostscope.Specificity(c.Host, host))
-	}
-	var pool []model.Secret
-	for _, c := range candidates {
-		if hostscope.Specificity(c.Host, host) == best {
-			pool = append(pool, c)
-		}
-	}
-	if len(pool) > 1 {
-		return nil, apperrors.NewStatusError(http.StatusConflict, "ambiguous secret match: multiple secrets of the same type and host exist")
-	}
-	return &pool[0], nil
-}
-
 func (s *Store) CreateSecretRequest(ctx context.Context, req *model.SecretRequest) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
 	}
 	return write.Create(req).Error
-}
-
-// FindPendingSecretRequest returns the most recent pending secret request for a
-// specific secret, host, and requesting principal. It powers on-demand sentinel
-// resolution so repeated proxy lookups reuse an open request instead of piling
-// up duplicates while it waits for approval.
-func (s *Store) FindPendingSecretRequest(ctx context.Context, projectID, secretID, host, requestedBy string) (*model.SecretRequest, error) {
-	read, err := s.getRead(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var found []model.SecretRequest
-	// A refresh request names the same secret and discobox, and asks for
-	// something else: a value, not a grant. It is never the reactive ask.
-	//
-	// The host is compared in Go: the hosts are a JSON list, and a reactive
-	// request's is the one destination the proxy observed.
-	err = read.Where("project_id = ? AND secret_id = ? AND requested_by = ? AND status = ? AND reason = ''",
-		projectID, secretID, requestedBy, model.SecretRequestStatusPending).
-		Order("created_at DESC").Find(&found).Error
-	if err != nil {
-		return nil, err
-	}
-	for i := range found {
-		if hostscope.SameSet(found[i].Hosts, hostscope.List(host)) {
-			return &found[i], nil
-		}
-	}
-	return nil, ErrNotFound
 }
 
 // FindPendingAgentCredentialRequests returns the open protocol-originated
@@ -597,7 +570,7 @@ func (s *Store) FindPendingAgentCredentialRequests(ctx context.Context, projectI
 	}
 	out := found[:0]
 	for _, req := range found {
-		if req.FromProtocol() && hostscope.SameSet(req.Hosts, hosts) {
+		if hostscope.SameSet(req.Hosts(), hosts) {
 			out = append(out, req)
 		}
 	}
@@ -661,8 +634,8 @@ func (s *Store) UpdateSecretRequestIfPending(ctx context.Context, req *model.Sec
 	if err != nil {
 		return err
 	}
-	if req.Status != model.SecretRequestStatusPending && req.ClosedAt == nil {
-		req.ClosedAt = closedAt(time.Now())
+	if req.Status != model.SecretRequestStatusPending && req.DecidedAt == nil {
+		req.DecidedAt = closedAt(time.Now())
 	}
 	result := write.Model(&model.SecretRequest{}).
 		Where("project_id = ? AND id = ? AND status = ?", req.ProjectID, req.ID, model.SecretRequestStatusPending).
@@ -688,21 +661,18 @@ func (s *Store) AnswerOpenRefreshRequests(ctx context.Context, projectID, secret
 	return answerRefreshRequests(write, projectID, secretID, answer)
 }
 
-// closedAt is when a request stopped pending, in UTC: the refresh trail bounds
-// its reads by it, and SQLite compares times as text (see
-// SecretRequest.BeforeCreate).
 // denySandboxSecretRequestsTx closes a deleted sandbox's open requests as
 // denied. The agent that asked is gone, so nothing will poll for the answer,
-// and approving one would grant a credential to nothing. A refresh request is
-// left open: it asks for a new value of a secret every other sandbox using it
-// still needs, and only names the sandbox that noticed.
+// and approving one would bind a credential to nothing.
 func denySandboxSecretRequestsTx(tx *gorm.DB, projectID, sandboxID string) error {
 	return tx.Model(&model.SecretRequest{}).
-		Where("project_id = ? AND sandbox_id = ? AND status = ? AND reason <> ?",
-			projectID, sandboxID, model.SecretRequestStatusPending, model.SecretRequestReasonRefresh).
-		Updates(map[string]any{"status": model.SecretRequestStatusDenied, "closed_at": closedAt(time.Now())}).Error
+		Where("project_id = ? AND sandbox_id = ? AND status = ?",
+			projectID, sandboxID, model.SecretRequestStatusPending).
+		Updates(map[string]any{"status": model.SecretRequestStatusDenied, "decided_at": closedAt(time.Now()), "decided_by": model.SecretBindingActorSystem}).Error
 }
 
+// closedAt is when a request was decided or a refresh closed, in UTC: the
+// refresh trail bounds its reads by it, and SQLite compares times as text.
 func closedAt(at time.Time) *time.Time {
 	at = at.UTC()
 	return &at

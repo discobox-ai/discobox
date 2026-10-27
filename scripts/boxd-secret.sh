@@ -62,6 +62,6 @@ if "$discobox" "$@" secret get "$name" >/dev/null 2>&1; then
 	printf %s "$key" | "$discobox" "$@" secret update "$name" \
 		--exchange-recipe "$recipe" --field api_key=-
 else
-	printf %s "$key" | "$discobox" "$@" secret create --name "$name" --type exchange --host boxd.sh \
+	printf %s "$key" | "$discobox" "$@" secret create --name "$name" --type exchange --route boxd.sh \
 		--exchange-recipe "$recipe" --field api_key=-
 fi

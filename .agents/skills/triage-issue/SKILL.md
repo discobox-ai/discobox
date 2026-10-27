@@ -54,8 +54,8 @@ anything — ask first for any of those.
 
   Run it in the background and keep its request ID (`discobox-access wait
   --json request <id>` resumes it). The justification may not claim
-  permission; text that vouches for itself is denied. The grant is the token
-  itself, so what the justification says the triage will not do is this
+  permission; text that vouches for itself is denied. What is approved is the
+  token itself, so what the justification says the triage will not do is this
   skill's to keep: read, label and comment, and nothing else. A denial is an
   answer: say what you could not do and stop.
 - **Hold the box up**: `touch -d '+2 hours' /run/discobox/keepalive/triage-issue`

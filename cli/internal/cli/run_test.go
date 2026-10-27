@@ -239,7 +239,7 @@ func TestCreateRunSandboxBodySecrets(t *testing.T) {
 	body, local, err := sandboxcreate.BuildPromptSandboxBody(t.Context(), sandboxcreate.PromptOptions{
 		Source: repo,
 		Env:    []string{"PLAIN=value"},
-		Secret: []string{"OPENAI_API_KEY=sk-secret", "GITHUB_TOKEN=<sec_123>"},
+		Secret: []string{"OPENAI_API_KEY=sk-secret", "GITHUB_TOKEN=ghp_x@api.github.com"},
 	})
 	if err != nil {
 		t.Fatalf("createRunSandboxBody: %v", err)
@@ -256,11 +256,11 @@ func TestCreateRunSandboxBodySecrets(t *testing.T) {
 	for _, s := range body.Config.Secrets {
 		byEnv[s.Env] = s
 	}
-	if got := byEnv["OPENAI_API_KEY"]; got.Value.Value != "sk-secret" || got.SecretId.Set {
-		t.Fatalf("OPENAI_API_KEY = %#v, want inline value", got)
+	if got := byEnv["OPENAI_API_KEY"]; got.Value != "sk-secret" || got.Host.Set {
+		t.Fatalf("OPENAI_API_KEY = %#v, want inline value sent anywhere", got)
 	}
-	if got := byEnv["GITHUB_TOKEN"]; got.SecretId.Value != "sec_123" || got.Value.Set {
-		t.Fatalf("GITHUB_TOKEN = %#v, want secret reference", got)
+	if got := byEnv["GITHUB_TOKEN"]; got.Value != "ghp_x" || got.Host.Or("") != "api.github.com" {
+		t.Fatalf("GITHUB_TOKEN = %#v, want inline value sent to its host", got)
 	}
 }
 
@@ -401,7 +401,8 @@ func TestRunWindowRequestCarriesTheCommand(t *testing.T) {
 	opts.prompt.Env = []string{"MODE=test"}
 	opts.prompt.Secret = []string{"OPENAI_API_KEY=sk-x"}
 	opts.prompt.Include = []string{"../bar"}
-	opts.grant = []string{"github@github.com:GH_TOKEN"}
+	opts.bind = []string{"github:GH_TOKEN@github.com"}
+	opts.delegate = []string{"npm"}
 
 	req := app.runWindowRequest(&opts, []string{"fix", "the", "tests"})
 
@@ -413,7 +414,7 @@ func TestRunWindowRequestCarriesTheCommand(t *testing.T) {
 	}
 	if req.Harness != "codex" || !slices.Equal(req.Env, []string{"MODE=test"}) ||
 		!slices.Equal(req.Secret, []string{"OPENAI_API_KEY=sk-x"}) || !slices.Equal(req.Include, []string{"../bar"}) ||
-		!slices.Equal(req.Grant, []string{"github@github.com:GH_TOKEN"}) {
+		!slices.Equal(req.Bind, []string{"github:GH_TOKEN@github.com"}) || !slices.Equal(req.Delegate, []string{"npm"}) {
 		t.Fatalf("request = %+v, want every flag that describes the create", req)
 	}
 	if !req.SkipDeclaredSources {

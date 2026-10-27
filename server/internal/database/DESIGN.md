@@ -49,6 +49,28 @@ by what it is looking for and is idempotent:
    a codex harness's captured `config.toml`),
    moving a secret request's and grant's one `host` into its `hosts` list and
    dropping the column (`moveSecretHostsToLists`, ADR 26-10-02-393 §6),
+   retiring grants for bindings (`retireSecretGrants`, ADR 26-10-27-880 §8 with
+   ADR 26-10-27-939 §3), which widens nothing: a secret's host becomes its
+   route — a route above it is narrowed to it unless that would let it outrank
+   a blocked route it lost to before, when it is dropped; one beside it is
+   dropped — and one with neither host nor routes gets `*`; a harness config's
+   binding live grants covered becomes a use binding on it, and its
+   sandboxes' sentinels point at it; one no grant covered is dropped, as ADR
+   26-10-27-939 §3 records, its sentinels kept only where the sandbox's own
+   grant covered them; a sandbox's own sentinel live grants covered becomes a
+   use binding on it, one no grant covered a pending request from it. A
+   binding made from grants takes every covering grant's hosts as routes (`*`
+   when one had none) and the earliest expiry, logged when there were several.
+   A delegation grant becomes a delegate binding and what was handed on under
+   it its child; refresh requests move to `secret_refresh_requests`, the
+   proxy's own requests are deleted, an agent's keep their hosts as routes;
+   each binding is recorded as created by the system for the `upgrade`, takes
+   the ID of the row it replaces so a re-run finds it, and arms the expiry
+   sweep when it has an expiry; every sandbox holding a sentinel is marked
+   `sandboxSentinels` so its pool is sent route lists; then the grant and
+   harness binding tables and the retired columns go. Duplicate secret
+   names in a project get a numbered suffix first (`deduplicateSecretNames`),
+   and the limit column is renamed (`renameSecretBindingTTLColumn`),
    retiring the credential judge (`retireCredentialJudge`,
    [ADR 26-10-27-880](../../../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)
    §8), which widens nothing: a secret's or a harness config's route whose use
@@ -75,9 +97,7 @@ by what it is looking for and is idempotent:
    `dropPoolBootstrapTokens`, ADR 26-10-24-953 §4), moving pending `sandboxEgress` reconcile
    marks to `sandboxProxyPolicy`, the reconcile that now pushes egress and
    gateways together (`renameSandboxEgressReconcile`, ADR 26-10-16-470 §5), the
-   sandbox state split (ADR 0034), deleting the secret grants scoped to a
-   sandbox or harness config that no longer exists
-   (`deleteOrphanedSecretGrants`), denying the open requests of a sandbox that
+   sandbox state split (ADR 0034), denying the open requests of a sandbox that
    no longer exists (`denyOrphanedSecretRequests`), and re-keying every sandbox
    origin to where its source came from (`rekeySandboxOrigins`, ADR 0111 §4).
 

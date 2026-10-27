@@ -37,13 +37,23 @@ type Engine struct {
 	wg     sync.WaitGroup
 }
 
+// Migrate creates the dirty set's table. The database upgrade runs it too, so
+// a writer marking in its transaction (MarkAtTx) finds the table whether or
+// not an engine has started yet.
+func Migrate(db *gorm.DB) error {
+	if err := db.AutoMigrate(&dirtyRow{}); err != nil {
+		return fmt.Errorf("reconcile: migrate dirty table: %w", err)
+	}
+	return nil
+}
+
 // New creates an Engine. Call Register for each resource type, then Start.
 func New(db *gorm.DB, opt Options) (*Engine, error) {
 	if db == nil {
 		return nil, errors.New("reconcile: db is required")
 	}
-	if err := db.AutoMigrate(&dirtyRow{}); err != nil {
-		return nil, fmt.Errorf("reconcile: migrate dirty table: %w", err)
+	if err := Migrate(db); err != nil {
+		return nil, err
 	}
 	return &Engine{
 		db:      db,

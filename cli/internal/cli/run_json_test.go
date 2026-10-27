@@ -37,9 +37,6 @@ func runJSONServerWithSkills(t *testing.T, posted *map[string]any, skillsJSON st
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"id":"` + runJSONSandboxID + `","projectId":"project-1","createdByUserId":"user-1","createdBySandboxId":"sbx_lead","displayName":"run-test","config":{"name":"run-test","image":""},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			_, _ = w.Write([]byte(`{"secrets":[{"id":"sec_npm","projectId":"project-1","name":"npm","type":"token","maxGrantTTLSeconds":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/skills-sources":
 			if asked != nil {
 				*asked++
@@ -56,21 +53,21 @@ func runJSONServerWithSkills(t *testing.T, posted *map[string]any, skillsJSON st
 	return server
 }
 
-// postedGrants are the grants a create carried, as the server read them.
-func postedGrants(t *testing.T, posted map[string]any) []map[string]any {
+func postedBindings(t *testing.T, posted map[string]any) []map[string]any {
 	t.Helper()
-	raw, _ := posted["grants"].([]any)
-	grants := make([]map[string]any, 0, len(raw))
-	for _, grant := range raw {
-		grants = append(grants, grant.(map[string]any))
+	raw, _ := posted["bindings"].([]any)
+	bindings := make([]map[string]any, 0, len(raw))
+	for _, binding := range raw {
+		bindings = append(bindings, binding.(map[string]any))
 	}
-	return grants
+	return bindings
 }
 
-// `new --grant` gives the new discobox what `admin box create --grant` does, a
-// secret named by name reaching the server by its ID. A discobox making
-// another is refused the SSH sync, and the create stands (ADR 26-09-24-630 §4).
-func TestRunGivesItsGrants(t *testing.T) {
+// `new --bind` and `--delegate` give the new discobox what `admin box create`
+// does: the secret as written, which the server reads by name or ID. A
+// discobox making another is refused the SSH sync, and the create stands
+// (ADR 26-09-24-630 §4).
+func TestRunGivesItsBindings(t *testing.T) {
 	setHome(t, t.TempDir())
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Chdir(newRunSourceTestRepo(t))
@@ -82,19 +79,27 @@ func TestRunGivesItsGrants(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "--no-source",
-		"--grant", "npm@registry.npmjs.org:NPM_TOKEN",
+		"--bind", "npm:NPM_TOKEN@registry.npmjs.org",
+		"--bind", "github",
+		"--delegate", "openai",
 		"--discobox-api",
 		"-p", "fix issue 42"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute new: %v", err)
 	}
 
-	grants := postedGrants(t, posted)
-	if len(grants) != 1 {
-		t.Fatalf("grants = %#v, want one", posted["grants"])
+	bindings := postedBindings(t, posted)
+	if len(bindings) != 3 {
+		t.Fatalf("bindings = %#v, want three", posted["bindings"])
 	}
-	if grants[0]["secretId"] != "sec_npm" || grants[0]["envVar"] != "NPM_TOKEN" || !slices.Equal(grantHostsOf(grants[0]), []string{"registry.npmjs.org"}) {
-		t.Fatalf("grant = %#v, want npm resolved to its ID", grants[0])
+	if bindings[0]["secret"] != "npm" || bindings[0]["envVar"] != "NPM_TOKEN" || !slices.Equal(routeHostsOf(bindings[0]), []string{"registry.npmjs.org"}) {
+		t.Fatalf("binding = %#v, want npm in NPM_TOKEN to its registry", bindings[0])
+	}
+	if bindings[1]["secret"] != "github" || bindings[1]["envVar"] != "GITHUB" {
+		t.Fatalf("binding = %#v, want github in GITHUB", bindings[1])
+	}
+	if bindings[2]["secret"] != "openai" || bindings[2]["delegate"] != true || bindings[2]["use"] != false {
+		t.Fatalf("binding = %#v, want openai only to give on", bindings[2])
 	}
 	if posted["discoboxApi"] != true {
 		t.Fatalf("create = %#v, want --discobox-api carried", posted)
@@ -126,8 +131,8 @@ func TestRunTakesItsRequestAsJSON(t *testing.T) {
 		"noSource": true,
 		"env": ["MODE=test"],
 		"discoboxApi": true,
-		"grants": [
-			{"secret": "npm", "envVar": "NPM_TOKEN", "hosts": ["registry.npmjs.org"]}
+		"bindings": [
+			{"secret": "npm", "envVar": "NPM_TOKEN", "routes": ["registry.npmjs.org"]}
 		]
 	}`))
 	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "--from-json"})
@@ -146,10 +151,10 @@ func TestRunTakesItsRequestAsJSON(t *testing.T) {
 	if env, _ := config["env"].(map[string]any); env["MODE"] != "test" {
 		t.Fatalf("env = %#v, want MODE=test", config["env"])
 	}
-	grants := postedGrants(t, posted)
-	if len(grants) != 1 || grants[0]["secretId"] != "sec_npm" || grants[0]["envVar"] != "NPM_TOKEN" ||
-		!slices.Equal(grantHostsOf(grants[0]), []string{"registry.npmjs.org"}) {
-		t.Fatalf("grants = %#v, want the secret by its ID", posted["grants"])
+	bindings := postedBindings(t, posted)
+	if len(bindings) != 1 || bindings[0]["secret"] != "npm" || bindings[0]["envVar"] != "NPM_TOKEN" ||
+		!slices.Equal(routeHostsOf(bindings[0]), []string{"registry.npmjs.org"}) {
+		t.Fatalf("bindings = %#v, want the secret as given", posted["bindings"])
 	}
 	if posted["discoboxApi"] != true {
 		t.Fatalf("create = %#v, want discoboxApi carried", posted)
@@ -167,7 +172,7 @@ func TestRunTakesItsRequestAsJSON(t *testing.T) {
 }
 
 // A JSON request is the whole request: a flag or a word beside it is refused,
-// and so is a field --from-json does not know or a grant --grant would have refused.
+// and so is a field --from-json does not know or a binding --bind would have refused.
 func TestRunJSONRefusesWhatItCannotMean(t *testing.T) {
 	for name, tc := range map[string]struct {
 		args  []string
@@ -178,9 +183,10 @@ func TestRunJSONRefusesWhatItCannotMean(t *testing.T) {
 		"a word beside it":     {[]string{"run", "--from-json", "fix"}, `{}`, `"prompt"`},
 		"an unknown field":     {[]string{"run", "--from-json"}, `{"promt": "x"}`, `unknown field "promt"`},
 		"two requests":         {[]string{"run", "--from-json"}, `{} {}`, "more than one request"},
-		"a well-known ID":      {[]string{"run", "--from-json"}, `{"grants": [{"id": "com.github.api"}]}`, `unknown field "id"`},
-		"a secret with no var": {[]string{"run", "--from-json"}, `{"grants": [{"secret": "gh"}]}`, `"envVar"`},
-		"a variable twice":     {[]string{"run", "--from-json"}, `{"grants": [{"secret": "gh", "envVar": "T"}, {"secret": "npm", "envVar": "T"}]}`, "already given"},
+		"a well-known ID":      {[]string{"run", "--from-json"}, `{"bindings": [{"id": "com.github.api"}]}`, `unknown field "id"`},
+		"no secret":            {[]string{"run", "--from-json"}, `{"bindings": [{"envVar": "T"}]}`, `"secret"`},
+		"a variable twice":     {[]string{"run", "--from-json"}, `{"bindings": [{"secret": "gh", "envVar": "T"}, {"secret": "npm", "envVar": "T"}]}`, "already bound"},
+		"a delegation's var":   {[]string{"run", "--from-json"}, `{"bindings": [{"secret": "gh", "envVar": "T", "delegate": true}]}`, "names no envVar"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cmd := NewRootCommand()
@@ -196,13 +202,15 @@ func TestRunJSONRefusesWhatItCannotMean(t *testing.T) {
 	}
 }
 
-// grantHostsOf is the hosts a posted grant names.
-func grantHostsOf(grant map[string]any) []string {
+// routeHostsOf is the hosts of the routes a posted binding names.
+func routeHostsOf(binding map[string]any) []string {
 	var out []string
-	hosts, _ := grant["hosts"].([]any)
-	for _, host := range hosts {
-		if host, ok := host.(string); ok {
-			out = append(out, host)
+	routes, _ := binding["routes"].([]any)
+	for _, route := range routes {
+		if route, ok := route.(map[string]any); ok {
+			if host, ok := route["host"].(string); ok {
+				out = append(out, host)
+			}
 		}
 	}
 	return out

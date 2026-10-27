@@ -392,7 +392,7 @@ func TestARunWithNoSourceAsksOnTheCreateCard(t *testing.T) {
 		SkillDirs:  []string{"./team-skills"},
 		Include:    []string{"/src/obot"},
 		Env:        []string{"A=1"},
-		Grant:      []string{"github"},
+		Bind:       []string{"github:GH_TOKEN"},
 		Pool:       "pool-a",
 	}
 	d, m := openRunWith(t, ds, req, true)
@@ -421,8 +421,8 @@ func TestARunWithNoSourceAsksOnTheCreateCard(t *testing.T) {
 	if run.Harness != "codex" || run.UserSkills == nil || !*run.UserSkills || !slices.Equal(run.Include, req.Include) || !slices.Equal(run.Env, req.Env) {
 		t.Fatalf("run = %+v, want the command's flags carried", run)
 	}
-	if !slices.Equal(run.Prompt, req.Prompt) || !slices.Equal(run.Grant, req.Grant) || run.Pool != "pool-a" {
-		t.Fatalf("run = %+v, want the prompt, grant and pool as given", run)
+	if !slices.Equal(run.Prompt, req.Prompt) || !slices.Equal(run.Bind, req.Bind) || run.Pool != "pool-a" {
+		t.Fatalf("run = %+v, want the prompt, bindings and pool as given", run)
 	}
 }
 

@@ -60,8 +60,8 @@ func (s *Store) ListSecretRefreshEvents(ctx context.Context, projectID string, f
 	if filter.Until.IsZero() {
 		until = refreshTrailEnd
 	}
-	query := read.Model(&model.SecretRequest{}).
-		Where("project_id = ? AND reason = ?", projectID, model.SecretRequestReasonRefresh).
+	query := read.Model(&model.SecretRefreshRequest{}).
+		Where("project_id = ?", projectID).
 		Where("(created_at >= ? AND created_at <= ?) OR (closed_at IS NOT NULL AND closed_at >= ? AND closed_at <= ?)", since, until, since, until)
 	if filter.ID != "" {
 		query = query.Where("id = ?", filter.ID)
@@ -73,18 +73,14 @@ func (s *Store) ListSecretRefreshEvents(ctx context.Context, projectID string, f
 		query = query.Where("secret_id = ?", filter.SecretID)
 	}
 	if filter.Ascending {
-		// A request's earliest event inside the bounds: its asking, unless
-		// that came before them.
 		query = query.Order(orderByExpr("CASE WHEN created_at >= ? THEN created_at ELSE closed_at END ASC, id ASC", since))
 	} else {
-		// Its latest event inside the bounds: its closing, unless that is
-		// past them or has not happened.
 		query = query.Order(orderByExpr("CASE WHEN closed_at IS NOT NULL AND closed_at <= ? THEN closed_at ELSE created_at END DESC, id DESC", until))
 	}
 	if filter.Limit > 0 {
 		query = query.Limit(filter.Limit)
 	}
-	var rows []model.SecretRequest
+	var rows []model.SecretRefreshRequest
 	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -97,29 +93,27 @@ func (s *Store) ListSecretRefreshEvents(ctx context.Context, projectID string, f
 			ProjectID:    row.ProjectID,
 			SecretID:     row.SecretID,
 			SandboxID:    row.SandboxID,
-			RefreshCause: row.RefreshCause,
+			RefreshCause: row.Cause,
 		}
 		if within(row.CreatedAt) {
 			asked := base
 			asked.Event, asked.At = model.SecretRefreshEventAsked, row.CreatedAt.UTC()
 			events = append(events, asked)
 		}
-		if row.ClosedAt == nil || !within(*row.ClosedAt) || row.Status == model.SecretRequestStatusPending {
+		if row.ClosedAt == nil || !within(*row.ClosedAt) || row.Status == model.SecretRefreshStatusPending {
 			continue
 		}
 		closed := base
 		closed.At = row.ClosedAt.UTC()
 		switch row.Status {
-		case model.SecretRequestStatusDenied:
+		case model.SecretRefreshStatusDismissed:
 			closed.Event = model.SecretRefreshEventDismissed
 		default:
 			closed.Event = model.SecretRefreshEventAnswered
-			closed.Answer = row.RefreshAnswer
+			closed.Answer = row.Answer
 		}
 		events = append(events, closed)
 	}
-	// An asking sorts before the answer it shares an instant with, and two
-	// requests in one instant sort by ID, so two reads agree on the order.
 	rank := func(e model.SecretRefreshEvent) int {
 		if e.Event == model.SecretRefreshEventAsked {
 			return 0

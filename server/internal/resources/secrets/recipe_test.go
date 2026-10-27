@@ -87,13 +87,19 @@ func TestTheAnswerSaysTheTokenAndWhenItGoesStale(t *testing.T) {
 	}
 }
 
-func TestARecipeIsHeldToTheSecretsBinding(t *testing.T) {
-	if err := checkRecipe(boxdRecipe(), "boxd.sh"); err != nil {
-		t.Fatalf("boxd's recipe under boxd.sh: %v", err)
+func TestARecipeIsHeldToTheSecretsRoutes(t *testing.T) {
+	for _, routes := range [][]model.SecretRoute{{{Host: "boxd.sh"}}, {{Host: "*"}}} {
+		if err := checkRecipe(boxdRecipe(), routes); err != nil {
+			t.Fatalf("boxd's recipe under %+v: %v", routes, err)
+		}
 	}
-	for host, want := range map[string]string{"": "bound to a host", "example.com": "outside the secret's binding", "api.boxd.sh": "outside"} {
-		if err := checkRecipe(boxdRecipe(), host); err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("binding %q = %v, want %q", host, err, want)
+	for host, want := range map[string]string{"": "has routes", "example.com": "outside the secret's routes", "api.boxd.sh": "outside"} {
+		var routes []model.SecretRoute
+		if host != "" {
+			routes = []model.SecretRoute{{Host: host}}
+		}
+		if err := checkRecipe(boxdRecipe(), routes); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("routes %q = %v, want %q", host, err, want)
 		}
 	}
 }

@@ -1748,19 +1748,27 @@ flowchart LR
   request and before anything in it is resolved, whether the request may carry
   what its sentinels stand for
   (see [`proxy/DESIGN.md`](../proxy/DESIGN.md#sentinel-secret-swapping)). The
-  answer is the sentinels' routes and nothing else; no control-plane call is
-  made. A sentinel whose secret carries no routes passes here and is held to
-  its grant and host by the control plane at resolve time.
-- **A secret may carry routes** (ADR 26-10-02-924): where every swap of it
-  may go. The control plane sends them with the sentinel set
-  (`sentinelRoutes`, kept in SecretsFile) on every create and update; a route
-  change reaches a sandbox as an update. The watcher stages the new routes
+  answer is the sentinels' route lists and nothing else; no control-plane call
+  is made. The control plane still hands a value out only for a host every
+  list allows (`secretroute.HostAllowed`).
+- **A sentinel is held to route lists** (ADR 26-10-27-880 §4): its secret's,
+  its binding's when the binding has any, and its parent's. The control plane
+  sends them with the sentinel set (`sentinelRoutes`, a list of lists per
+  sentinel, kept in SecretsFile) on every create and update; a change to any
+  of them reaches a sandbox as an update. The watcher stages the new lists
   beside those of any sentinel leaving before it moves the sentinel set, so no
-  sentinel is ever swappable without its routes. `Authorize` holds the request
-  to every sentinel's routes with `secretroute.Decide`: every reading of its
-  path (`secretroute.RequestPaths`: decoded, and with an encoded `/` kept in
-  its segment) must fall on a route, and the most specific routes it falls on
-  must not be blocked. A blocked route is what a route a judge used to read
+  sentinel is ever swappable without its lists. `Authorize` holds the request
+  to every list of every sentinel with `secretroute.Decide`: in each list,
+  every reading of its path (`secretroute.RequestPaths`: decoded, and with an
+  encoded `/` kept in its segment) must fall on a route, and the most specific
+  routes it falls on must not be blocked. A list never unblocks what another
+  blocks, `*` covers every host (ADR 26-10-27-939), and a sentinel with no
+  lists is sent nowhere.
+- **SecretsFile is versioned** (`secretsDoc.Version`, 2 since route lists). A
+  file with no version is read as its writer meant it (`readSecretsDoc`): one
+  route list a sentinel, a route stored with a judge's use as blocked, and a
+  sentinel it held to no route as held to any host — what that pool enforced —
+  until the control plane pushes the sentinel's lists. A blocked route is what a route a judge used to read
   became, so removing the judge sent nothing on it unjudged
   ([ADR 26-10-27-880](../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)).
   A refusal says which, and the proxy records it as `route: <reason>`.

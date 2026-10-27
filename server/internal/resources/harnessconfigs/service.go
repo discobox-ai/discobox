@@ -378,95 +378,22 @@ func (s *Service) DeleteHarnessConfig(ctx context.Context, projectID, configID s
 		return apperrors.NewStatusError(http.StatusConflict,
 			fmt.Sprintf("harness %q is built in and cannot be deleted%s", config.Slug, builtInDeleteHint(config)))
 	}
-	if err := s.store.DeleteHarnessConfig(ctx, projectID, configID); err != nil {
+	// No discobox runs the config, but discoboxes it was attached to, and
+	// those handed a secret on under its delegate bindings, held what it
+	// delivered: they are marked.
+	var markHolders store.BindingsDeletedFunc
+	if s.sandboxes != nil {
+		markHolders = func(txStore *store.Store, txDB *gorm.DB, deleted []model.SecretBinding) error {
+			return s.sandboxes.MarkBindingHoldersDirtyTx(ctx, txStore, txDB, projectID, deleted)
+		}
+	}
+	if err := s.store.DeleteHarnessConfig(ctx, projectID, configID, markHolders); err != nil {
 		if errors.Is(err, store.ErrInUse) {
 			return apperrors.NewStatusError(http.StatusConflict, "harness config is in use by a sandbox")
 		}
 		return apperrors.NotFound(err, "harness config not found")
 	}
 	return nil
-}
-
-// ListHarnessConfigSecretBindings returns the env→secret bindings for a harness config.
-func (s *Service) ListHarnessConfigSecretBindings(ctx context.Context, projectID, configID string) ([]model.HarnessConfigSecretBinding, error) {
-	if _, err := s.store.GetHarnessConfig(ctx, projectID, configID); err != nil {
-		return nil, apperrors.NotFound(err, "harness config not found")
-	}
-	return s.store.ListHarnessConfigSecretBindings(ctx, projectID, configID)
-}
-
-// SetHarnessConfigSecretBinding binds (or rebinds) one of a harness config's
-// environment variables to a project secret.
-func (s *Service) SetHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName, secretID string) (*model.HarnessConfigSecretBinding, error) {
-	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
-	if err != nil {
-		return nil, apperrors.NotFound(err, "harness config not found")
-	}
-	envName = strings.TrimSpace(envName)
-	if !services.HarnessConfigEnvVarNamePattern.MatchString(envName) {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("environment variable name %q is invalid", envName))
-	}
-	secretID = strings.TrimSpace(secretID)
-	if secretID == "" {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "secret ID is required")
-	}
-	if _, err := s.store.GetSecret(ctx, projectID, secretID); err != nil {
-		return nil, apperrors.NotFound(err, "secret not found")
-	}
-	binding := &model.HarnessConfigSecretBinding{
-		ProjectID:       projectID,
-		HarnessConfigID: config.ID,
-		EnvName:         envName,
-		SecretID:        secretID,
-	}
-	if err := s.store.Transaction(ctx, func(tx *store.Store, db *gorm.DB) error {
-		current, err := tx.GetHarnessConfig(ctx, projectID, config.ID)
-		if err != nil {
-			return err
-		}
-		if err := tx.UpdateHarnessConfig(ctx, current); err != nil {
-			return err
-		}
-		if err := tx.UpsertHarnessConfigSecretBinding(ctx, binding); err != nil {
-			return err
-		}
-		if s.sandboxes != nil {
-			return s.sandboxes.RebindHarnessConfigSecretsTx(ctx, tx, db, projectID, config.ID)
-		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	// Sandboxes already running this config hold a sentinel bound to whatever
-	// the env named before. Rebinding here is what keeps the assignment and the
-	// binding from drifting apart the moment they can.
-	if s.sandboxes != nil {
-		if err := s.sandboxes.RebindHarnessConfigSecrets(ctx, projectID, config.ID); err != nil {
-			return nil, err
-		}
-	}
-	return binding, nil
-}
-
-// DeleteHarnessConfigSecretBinding removes a harness config's binding for an
-// environment variable.
-func (s *Service) DeleteHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName string) error {
-	return s.store.Transaction(ctx, func(tx *store.Store, db *gorm.DB) error {
-		config, err := tx.GetHarnessConfig(ctx, projectID, configID)
-		if err != nil {
-			return err
-		}
-		if err := tx.UpdateHarnessConfig(ctx, config); err != nil {
-			return err
-		}
-		if err := tx.DeleteHarnessConfigSecretBinding(ctx, projectID, configID, strings.TrimSpace(envName)); err != nil {
-			return err
-		}
-		if s.sandboxes != nil {
-			return s.sandboxes.RebindHarnessConfigSecretsTx(ctx, tx, db, projectID, configID)
-		}
-		return nil
-	})
 }
 
 // SeedBuiltIns creates the included harness configs for a project and keeps their

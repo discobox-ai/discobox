@@ -8,7 +8,7 @@ import (
 
 // Flag is a command-line flag holding a lifetime, read by Parse as it is set.
 // Every flag that takes a length of time takes this one type, so `--ttl`,
-// `--grant-ttl`, `--max-grant-ttl` and `--expires-in` take the same words, and
+// `--for`, `--max-binding-ttl` and `--expires-in` take the same words, and
 // a bad value is refused by the flag parser, naming the flag, before the
 // command runs.
 //

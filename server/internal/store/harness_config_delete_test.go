@@ -37,7 +37,7 @@ func TestDeleteHarnessConfigSandboxReferences(t *testing.T) {
 	// A live sandbox referencing the config blocks deletion with ErrInUse.
 	live := newConfig("live")
 	newSandbox("sb-live", live.ID)
-	if err := s.DeleteHarnessConfig(ctx, "project-1", live.ID); !errors.Is(err, store.ErrInUse) {
+	if err := s.DeleteHarnessConfig(ctx, "project-1", live.ID, nil); !errors.Is(err, store.ErrInUse) {
 		t.Fatalf("delete with live sandbox = %v, want ErrInUse", err)
 	}
 
@@ -47,7 +47,7 @@ func TestDeleteHarnessConfigSandboxReferences(t *testing.T) {
 	if err := db.Write.WithContext(ctx).Delete(&model.Sandbox{}, "id = ?", "sb-stale").Error; err != nil {
 		t.Fatalf("soft-delete sandbox: %v", err)
 	}
-	if err := s.DeleteHarnessConfig(ctx, "project-1", stale.ID); err != nil {
+	if err := s.DeleteHarnessConfig(ctx, "project-1", stale.ID, nil); err != nil {
 		t.Fatalf("delete with only a soft-deleted sandbox = %v, want success", err)
 	}
 	if _, err := s.GetHarnessConfig(ctx, "project-1", stale.ID); !errors.Is(err, store.ErrNotFound) {

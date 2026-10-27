@@ -20,13 +20,13 @@ import (
 
 type ApproveSecretRequestBody = apimodel.ApproveSecretRequestBody
 type CreateHarnessConfigBody = apimodel.CreateHarnessConfigBody
-type SetHarnessConfigSecretBindingBody = apimodel.SetHarnessConfigSecretBindingBody
 type CreateSecretBody = apimodel.CreateSecretBody
-type CreateSecretRequestBody = apimodel.CreateSecretRequestBody
 type CreateSandboxCredentialRequestBody = apimodel.CreateSandboxCredentialRequestBody
 type CreateSandboxTrustRequestBody = apimodel.CreateSandboxTrustRequestBody
 type ApproveTrustRequestBody = apimodel.ApproveTrustRequestBody
-type CreateSecretGrantBody = apimodel.CreateSecretGrantBody
+type CreateSecretBindingBody = apimodel.CreateSecretBindingBody
+type UpdateSecretBindingBody = apimodel.UpdateSecretBindingBody
+type SandboxBindingInput = apimodel.SandboxBindingInput
 type CreateSSHKeyBody = apimodel.CreateSSHKeyBody
 type CreateProjectSkillsSourceBody = apimodel.CreateProjectSkillsSourceBody
 type CreatePeerBody = apimodel.CreatePeerBody
@@ -124,10 +124,6 @@ type HarnessConfigService interface {
 	// invariant server startup checks before it hands over, since a project
 	// with no harness has no sandbox it can create (ADR 0048).
 	EnsureHarnessAvailable(ctx context.Context, projectID string) error
-
-	ListHarnessConfigSecretBindings(ctx context.Context, projectID, configID string) ([]model.HarnessConfigSecretBinding, error)
-	SetHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName, secretID string) (*model.HarnessConfigSecretBinding, error)
-	DeleteHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName string) error
 }
 
 // SandboxUse says what a request into a sandbox is for, which is what decides
@@ -260,6 +256,11 @@ type SandboxImportResult struct {
 	// afterwards would throw away a transferred workspace to save them one
 	// command.
 	Warnings []string
+	// Bound are the bindings the import made on the discobox from the
+	// archive, each "VAR: secret" — the credentials of this project it now
+	// holds because the archive named them, said so the person importing sees
+	// what they let in.
+	Bound []string
 }
 
 // HTTPAuditFilter narrows ListHTTPAudit. A zero field matches everything.
@@ -438,14 +439,29 @@ type SecretService interface {
 	RefreshSecret(ctx context.Context, projectID, secretID string, input RefreshSecretBody) (*model.Secret, error)
 
 	ListSecretRequests(ctx context.Context, projectID, status string) ([]model.SecretRequest, error)
-	CreateSecretRequest(ctx context.Context, projectID string, input CreateSecretRequestBody) (*model.SecretRequest, error)
 	GetSecretRequest(ctx context.Context, projectID, requestID string) (*model.SecretRequest, error)
 	ApproveSecretRequest(ctx context.Context, projectID, requestID string, input ApproveSecretRequestBody) (*model.SecretRequest, error)
 	DenySecretRequest(ctx context.Context, projectID, requestID string) error
 
-	ListSecretGrants(ctx context.Context, projectID, secretID string) ([]model.SecretGrant, error)
-	CreateSecretGrant(ctx context.Context, projectID string, input CreateSecretGrantBody) (*model.SecretGrant, error)
-	RevokeSecretGrant(ctx context.Context, projectID, grantID string) error
+	// Refresh requests ask a person for a new value of a token (ADR
+	// 26-09-25-122 §4); RefreshSecret answers one, and a person may dismiss
+	// one instead.
+	ListSecretRefreshRequests(ctx context.Context, projectID, status string) ([]model.SecretRefreshRequest, error)
+	DismissSecretRefreshRequest(ctx context.Context, projectID, requestID string) (*model.SecretRefreshRequest, error)
+
+	// Bindings are the authorization (ADR 26-10-27-880 §1): a person's to
+	// make, change and remove, each change recorded as an event.
+	ListSecretBindings(ctx context.Context, projectID string, filter SecretBindingQuery) ([]model.SecretBinding, error)
+	CreateSecretBinding(ctx context.Context, projectID string, input CreateSecretBindingBody) (*model.SecretBinding, error)
+	GetSecretBinding(ctx context.Context, projectID, bindingID string) (*model.SecretBinding, error)
+	UpdateSecretBinding(ctx context.Context, projectID, bindingID string, input UpdateSecretBindingBody) (*model.SecretBinding, error)
+	// DeleteSecretBinding removes a binding and those handed on under it,
+	// returning their IDs, the one asked for first.
+	DeleteSecretBinding(ctx context.Context, projectID, bindingID string) ([]string, error)
+	ListSecretBindingEvents(ctx context.Context, projectID string, filter SecretBindingEventQuery) ([]model.SecretBindingEvent, error)
+	// ListBoundSecrets resolves what applies at a target: per variable the
+	// narrowest use binding, and every delegate binding (ADR 26-10-27-880 §2).
+	ListBoundSecrets(ctx context.Context, projectID, targetKind, target string) ([]BoundSecret, error)
 
 	ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error)
 	// RecordSandboxSecretRejection takes what an upstream made of a credential
@@ -459,7 +475,9 @@ type SecretService interface {
 	// pool's ID and verifies the sandbox belongs to it.
 	ListSandboxCredentials(ctx context.Context, poolID, sandboxID string) ([]SandboxCredential, error)
 	CreateSandboxCredentialRequest(ctx context.Context, poolID string, input CreateSandboxCredentialRequestBody) (*model.SecretRequest, error)
-	GetSandboxCredentialRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.SecretRequest, *model.SecretGrant, error)
+	// GetSandboxCredentialRequest reads one of a sandbox's asks and, once
+	// approved, the binding that answered it while it stands.
+	GetSandboxCredentialRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.SecretRequest, *model.SecretBinding, error)
 	// ListSecretRefreshEvents reads the refresh audit trail: each ask for a
 	// new value of a token, and how it was answered (ADR 26-09-25-122 §6).
 	ListSecretRefreshEvents(ctx context.Context, projectID string, filter SecretRefreshFilter) ([]model.SecretRefreshEvent, error)
@@ -484,16 +502,45 @@ type HostTrustService interface {
 }
 
 // SandboxCredential is one credential a sandbox holds, as the agent
-// credentials protocol lists it (ADR 26-10-27-880): a live grant covering
-// the sandbox, and for a use grant the variable its sentinel is delivered in.
-// A delegation grant has no variable: it delivers nothing to its holder.
+// credentials protocol lists it (ADR 26-10-27-880): an effective binding
+// covering the sandbox, and for a use the variable its sentinel is delivered
+// in. A delegate binding has no variable: it delivers nothing to its holder.
 type SandboxCredential struct {
 	Name      string
 	EnvName   string
 	SecretID  string
-	GrantID   string
+	BindingID string
 	Hosts     []string
 	Purpose   string
+	ExpiresAt *time.Time
+}
+
+// SecretBindingQuery narrows a binding listing. Secret and Target name their
+// object by name or ID; an empty field filters nothing.
+type SecretBindingQuery struct {
+	Secret     string
+	TargetKind string
+	Target     string
+	ParentID   string
+}
+
+// SecretBindingEventQuery narrows a binding history listing.
+type SecretBindingEventQuery struct {
+	BindingID string
+	Secret    string
+	Since     time.Time
+	Limit     int
+}
+
+// BoundSecret is one binding that applies at a target, resolved: where it
+// comes from, and the route lists a request carrying it must pass, the
+// secret's first (ADR 26-10-27-880 §4).
+type BoundSecret struct {
+	Binding    model.SecretBinding
+	SecretName string
+	RouteLists [][]model.SecretRoute
+	// ExpiresAt is when it stops applying: the earlier of the binding's
+	// expiry and its parent's.
 	ExpiresAt *time.Time
 }
 

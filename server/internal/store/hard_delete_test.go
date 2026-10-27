@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // Deletes are real, not tombstones. Every table below carries a unique index, so
@@ -17,16 +18,16 @@ func TestDeletedSecretFreesItsUniqueSlot(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newTestStoreWithDB(t, nil)
 
-	// A user-created secret leaves UniqueKey empty, so its uniqueness domain is
-	// (project, type, host) — the case a tombstone would block.
-	first := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
+	// A secret's name is unique in its project — the slot a tombstone would
+	// block.
+	first := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := s.CreateSecret(ctx, first); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
 	if err := s.DeleteSecret(ctx, "project-1", first.ID); err != nil {
 		t.Fatalf("delete secret: %v", err)
 	}
-	second := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t2"}`)}
+	second := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"t2"}`)}
 	if err := s.CreateSecret(ctx, second); err != nil {
 		t.Fatalf("recreate secret after delete: %v", err)
 	}
@@ -60,39 +61,46 @@ func TestDeletedHarnessConfigBindingFreesItsEnvName(t *testing.T) {
 	if err := s.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)
 	}
-	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
+	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := s.CreateSecret(ctx, sec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
+	bind := func(secretID string) error {
+		_, err := s.PutTargetUseBinding(ctx, &model.SecretBinding{
+			ProjectID: "project-1", SecretID: secretID, TargetKind: model.SecretBindingTargetHarnessConfig,
+			TargetID: config.ID, Use: true, EnvName: "OPENAI_API_KEY",
+		}, store.BindingChange{Actor: "user-1"})
+		return err
+	}
 
-	// Deleting the secret cascades to its binding. Rebinding the same env name
-	// afterwards is the configure/deconfigure/configure path.
-	if err := s.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
-		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: sec.ID,
-	}); err != nil {
+	// Deleting the secret takes its binding with it. Rebinding the same env
+	// name afterwards is the configure/deconfigure/configure path.
+	if err := bind(sec.ID); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
 	if err := s.DeleteSecret(ctx, "project-1", sec.ID); err != nil {
 		t.Fatalf("delete secret: %v", err)
 	}
-	bindings, err := s.ListHarnessConfigSecretBindings(ctx, "project-1", config.ID)
+	bindings, err := s.ListTargetUseBindings(ctx, "project-1", model.SecretBindingTargetHarnessConfig, config.ID)
 	if err != nil {
 		t.Fatalf("list bindings: %v", err)
 	}
 	if len(bindings) != 0 {
 		t.Fatalf("expected the binding to be gone, got %d", len(bindings))
 	}
+	events, err := s.ListSecretBindingEvents(ctx, "project-1", store.SecretBindingEventFilter{SecretID: sec.ID})
+	if err != nil || len(events) != 2 || events[0].Event != model.SecretBindingEventDeleted || events[0].Actor != model.SecretBindingActorSystem {
+		t.Fatalf("events = %+v, %v; want the removal recorded as the system's after the creation", events, err)
+	}
 
-	replacement := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t2"}`)}
+	replacement := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"t2"}`)}
 	if err := s.CreateSecret(ctx, replacement); err != nil {
 		t.Fatalf("create replacement secret: %v", err)
 	}
-	if err := s.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
-		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: replacement.ID,
-	}); err != nil {
+	if err := bind(replacement.ID); err != nil {
 		t.Fatalf("rebind the same env name after delete: %v", err)
 	}
-	bindings, err = s.ListHarnessConfigSecretBindings(ctx, "project-1", config.ID)
+	bindings, err = s.ListTargetUseBindings(ctx, "project-1", model.SecretBindingTargetHarnessConfig, config.ID)
 	if err != nil {
 		t.Fatalf("list bindings: %v", err)
 	}

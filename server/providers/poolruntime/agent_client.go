@@ -404,7 +404,9 @@ func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, st
 	if opts.Gateways != nil {
 		req.Gateways = poolclient.NewOptNilGatewayArray(poolGateways(opts.Gateways))
 	}
-	if len(opts.SentinelRoutes) > 0 {
+	// The pool reads a sentinel with no route lists as sent nowhere, so the
+	// lists ride with every sentinel push, never left out or null.
+	if opts.Sentinels != nil || opts.SentinelRoutes != nil {
 		req.SentinelRoutes = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelRoutes))
 	}
 	if len(opts.SecretEnv) > 0 {
@@ -803,7 +805,7 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	if len(opts.Sentinels) > 0 {
 		out.Sentinels = poolclient.NewOptNilStringArray(opts.Sentinels)
 	}
-	if len(opts.SentinelRoutes) > 0 {
+	if len(opts.Sentinels) > 0 || len(opts.SentinelRoutes) > 0 {
 		out.SentinelRoutes = poolclient.NewOptNilPoolSandboxCreateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelRoutes))
 	}
 	out.Egress = poolclient.NewOptEgressPolicy(poolEgressPolicy(opts.Egress))
@@ -1193,21 +1195,28 @@ func (s workerSecuritySource) PoolBearerAuth(ctx context.Context, _ poolclient.O
 	return poolclient.PoolBearerAuth{Token: strings.TrimSpace(token)}, nil
 }
 
-// poolSentinelRoutes states each sentinel's routes (ADR 26-10-02-924) the
-// way the pool agent reads them.
-func poolSentinelRoutes(in map[string][]secretroute.Route) map[string][]poolclient.SentinelRoute {
-	out := make(map[string][]poolclient.SentinelRoute, len(in))
-	for sentinel, routes := range in {
-		for _, route := range routes {
-			item := poolclient.SentinelRoute{Host: route.Host}
-			if route.Path != "" {
-				item.Path = poolclient.NewOptString(route.Path)
+// poolSentinelRoutes states each sentinel's route lists (ADR 26-10-27-880
+// §4) the way the pool agent reads them; never nil, and an empty list stays
+// empty, refusing everything.
+func poolSentinelRoutes(in map[string][][]secretroute.Route) map[string][][]poolclient.SentinelRoute {
+	out := make(map[string][][]poolclient.SentinelRoute, len(in))
+	for sentinel, lists := range in {
+		poolLists := make([][]poolclient.SentinelRoute, 0, len(lists))
+		for _, routes := range lists {
+			list := make([]poolclient.SentinelRoute, 0, len(routes))
+			for _, route := range routes {
+				item := poolclient.SentinelRoute{Host: route.Host}
+				if route.Path != "" {
+					item.Path = poolclient.NewOptString(route.Path)
+				}
+				if route.Blocked {
+					item.Blocked = poolclient.NewOptBool(true)
+				}
+				list = append(list, item)
 			}
-			if route.Blocked {
-				item.Blocked = poolclient.NewOptBool(true)
-			}
-			out[sentinel] = append(out[sentinel], item)
+			poolLists = append(poolLists, list)
 		}
+		out[sentinel] = poolLists
 	}
 	return out
 }

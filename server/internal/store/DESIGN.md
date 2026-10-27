@@ -5,6 +5,12 @@ should issue resource-level GORM queries or write resource rows directly. The on
 exception is the reconcile engine's dirty marks, which `internal/reconcile` writes
 itself — inside a store transaction when they commit with intent.
 
+The store marks in one place: a binding written with an expiry arms the
+binding expiry sweep at that instant (`reconcile.MarkAtTx` in
+`recordBindingEventTx`), because that timer has to commit with every binding
+write whoever writes it. It is not licence for others: every other mark is the
+resource service's, through the engine, so the engine is woken.
+
 ## Boundaries
 
 ```mermaid
@@ -18,6 +24,7 @@ flowchart LR
     store --> db[(GORM write/read handles)]
     store --> model[internal/model]
     store --> secrets[internal/secrets Sealer]
+    store -- "binding expiry mark (MarkAtTx)" --> reconcile[internal/reconcile]
 ```
 
 - Construct with `New(write, read, ...Option)`; a nil read handle falls back to
@@ -65,7 +72,7 @@ re-reads the rows rather than being told
   `UpdateSecretRequestIfPending` (guarded on status) return
   `ErrGenerationConflict` the same way.
 - A secret's `revision` advances in SQL on every write that moves `updated_at`
-  (`UpdateSecret`, `SetSecretLimits`, `UpdateSecretValueIfUnchanged`). Checks
+  (`UpdateSecret`, `UpdateSecretValueIfUnchanged`). Checks
   compare it, never a timestamp: a coarse clock (Windows) stamps two writes in
   one tick alike.
 
@@ -179,12 +186,13 @@ Keep files split by resource area:
 | `transactions.go` | `Store.Transaction`. |
 | `id_lookup.go` | `firstByID`: exact or unique-prefix ID lookup. |
 | `projects.go`, `users.go` | Projects, members, per-user defaults, users, project user keys. |
-| `harness_configs.go`, `harness_config_secret_bindings.go` | Harness configs and their secret env bindings. |
+| `harness_configs.go` | Harness configs. |
 | `sandboxes.go` | Sandbox desired-state persistence, reconcile scans, archive expiry, agent-status/resource telemetry. |
 | `sandbox_state_reports.go` | Pool-agent state and provisioning-progress reports (the observed columns' only writer). |
 | `providers.go` | Provider instance persistence. |
 | `pools.go` | Pool persistence: CRUD, enrollment (the key a pool's maker read from its box) and heartbeats (the first registers it), telemetry, the schedulable-pool placement gate, and pool-scoped sandbox counts. |
-| `secrets.go`, `secret_grants.go` | Secrets (sealed values), secret requests, and host-scoped grants. |
+| `secrets.go` | Secrets (sealed values), secret requests and refresh requests. |
+| `secret_bindings.go`, `effective_bindings.go` | Bindings with their events and cascades, and what applies at a target (narrowest per variable). |
 | `sandbox_secrets.go` | Sandbox secret assignments: every binding is injected into its sandbox. |
 | `egress.go` | A sandbox's effective egress policy, merged from its four levels (`EffectiveSandboxEgress`), the same merge without the sandbox's own level for provisioning on no sandbox's behalf (`ProvisionEgress`), and the setters that alone write a level (ADR 26-10-01-032). |
 | `project_skills_sources.go` | A project's skills sources, in the order added (`position`, one past the last, not the creation time, which a coarse clock shares between two adds); an add holds the project's row for update and refuses a repeat or a second ref of one repository in the same transaction (ADR 26-10-14-894). |

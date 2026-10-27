@@ -153,9 +153,8 @@ func (l *requestList) row(st *styles, r CredentialRequest, i int, focused bool) 
 	return line
 }
 
-// requestSubject is what is being asked for. An agent names the credential it
-// wants; the proxy's reactive path names nothing, because all it saw was a
-// sentinel it could not resolve — and saying so is more use than a blank.
+// requestSubject is what is being asked for: the credential an agent names,
+// or failing that the variable it wants one in.
 func requestSubject(r CredentialRequest) string {
 	if r.Trust != nil {
 		return "trust this host"
@@ -170,24 +169,19 @@ func requestSubject(r CredentialRequest) string {
 		return r.Name
 	case r.EnvVar != "":
 		return r.EnvVar
-	case r.SandboxID != "":
-		return "an unresolvable sentinel"
 	default:
-		return "a " + r.Type + " credential"
+		return "a credential"
 	}
 }
 
-// requesterLabel says who is waiting, in the words the server records: an agent
-// inside a discobox, the proxy on that discobox's behalf, or a person.
+// requesterLabel says who is waiting: the agent inside a discobox, or — for a
+// value gone stale with no discobox in the middle of using it — the control
+// plane that noticed.
 func requesterLabel(r CredentialRequest) string {
-	switch {
-	case r.FromAgent() && r.SandboxID != "":
+	if r.SandboxID != "" {
 		return "agent · " + shortID(r.SandboxID)
-	case r.SandboxID != "":
-		return "proxy · " + shortID(r.SandboxID)
-	default:
-		return "a person"
 	}
+	return "control plane"
 }
 
 // shortID is an identifier at the width a column has for one.

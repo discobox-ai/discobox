@@ -53,8 +53,8 @@ header from the server's environment: a put with `valueFrom` is refused,
 API-made one that names a variable, from before that rule, with a warning.
 
 No resource judges credential use (ADR 26-10-27-880): what a credential may
-do is its grant's hosts and its secret's routes, checked statically by the
-pool. A judge discobox an older server made is marked for deletion by the
+do is the route lists of the binding it was delivered under, checked
+statically by the pool. A judge discobox an older server made is marked for deletion by the
 upgrade (`database.retireCredentialJudge`), and its reconcile removes it.
 
 ## Boundaries

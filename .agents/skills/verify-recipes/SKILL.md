@@ -173,21 +173,23 @@ and that the process started after the build (no `ps` in the image: walk
 - What the proxy saw: `d admin audit http --discobox <id> --since 10m`;
   bodies with `--discobox <id> --body http_N --part request|response`
   (`--body` alone errors). `--host 172.17.0.1` matched nothing.
-- A swapped credential needs a grant and a sentinel in the box: `d secret
-  create`, then a request from the box approved from outside (below), and a
-  command started after the grant carries it in its variable. Nothing judges
-  it; its routes (`d secret update --route HOST[/PATH][=blocked]`) are what
-  refuse it.
+- A swapped credential needs a binding and a sentinel in the box: `d secret
+  create`, then `d secret bind <secret> <box> --as ENV`, or a request from the
+  box approved from outside (below); a command started after the binding
+  carries it in its variable. Nothing judges it; its secret's routes
+  (`d secret update --route HOST[/PATH][=blocked]`, `*` for any host) and the
+  binding's (`--route`) are what refuse it — every list must allow a request.
 - A harness credential's 401 (the refused-credential band, a harness secret's
   `rejectionScope`) needs a box of a harness that declares secrets, which is
   refused until the harness is configured, and configuring needs a real
-  sign-in. Bind a fake `d secret create` token with `d admin harness secret
-  bind <slug> <ENV> <secret>` and a project grant, set `configured=1` on the
+  sign-in. Bind a fake `d secret create` token with `d secret bind <secret>
+  --harness <slug> --as <ENV>`, set `configured=1` on the
   harness's row in `.tmp/discobox/discobox.db` (`sqlite3`; set it back after),
-  then `d run -d -H <slug> --no-source -p x`. A `-s ENV=value` secret is not
-  swapped until its request is approved (`d secret request approve <sreq>
-  --secret <id>`, IDs from `d secret request ls`); an unswapped sentinel
-  also gets a 401, so check the audit row's secret column. Sentinels are in
+  then `d run -d -H <slug> --no-source -p x`. A `-s ENV=value` secret is
+  bound to the box at create with the route `*` (ADR 26-10-27-939), and
+  `-s ENV=value@HOST` with that host's (the create's output says which); an
+  unswapped sentinel also gets a 401, so check the audit row's secret
+  column. Sentinels are in
   the box's `/run/discobox/secrets/secrets.json` (root). What was recorded:
   `curl 127.0.0.1:8080/projects/<project>/secret-rejections`.
 - A harness bundle's manifest reaches the server only when the image watcher
@@ -195,10 +197,11 @@ and that the process started after the build (no `ps` in the image: walk
   does, a build in the chain is failing and retried every 15s: read the
   `docker build` command from `/proc/<pid>/cmdline` and run it under a
   throwaway tag to see the error.
-- A secret's routes (ADR 26-10-02-924): `d secret create --token X --host
-  172.17.0.1 --route 172.17.0.1/PATH`, `d admin harness secret bind <shell
-  harness id> ENV <secret>`, a `--scope harnessConfig` grant, then `d run -d
-  -H shell --no-source -p x`. A plain-HTTP origin on `0.0.0.0` echoing the
+- A secret's routes (ADR 26-10-02-924): `d secret create --token X --route
+  172.17.0.1 --route 172.17.0.1/PATH=blocked`, `d secret bind <secret>
+  --harness shell --as ENV` (a binding's own `--route` narrows further), then
+  `d run -d -H shell --no-source -p x`. `d secret bound <box>` shows every
+  route list a variable is held to. A plain-HTTP origin on `0.0.0.0` echoing the
   `Authorization` header shows swaps; `curl --path-as-is` keeps `..` and
   `%2F` as sent. The pool's per-sentinel routes are in
   `/var/lib/discobox/proxy/projects/<project>/pools/<pool>/secrets.json` in
@@ -313,7 +316,7 @@ Every command goes to the dev loop through `d()` from
 `.agents/skills/test-fix/driving-task-dev.md`
 (`d() { ./build/discobox --server http://127.0.0.1:8080 "$@"; }`): a bare
 `discobox` reaches the outer discobox API, where a fake secret and a forever
-grant do not belong.
+binding do not belong.
 
 A `d run -d -H shell --no-source -p x` box talks to the dev pool agent and
 server, but its in-image `discobox-access` can lag the checkout: `grep -c
@@ -329,13 +332,13 @@ server, but its in-image `discobox-access` can lag the checkout: `grep -c
   stdin: `base64 -w0 BIN | d admin exec create -i <box> -- sh -c 'base64 -d >
   /tmp/BIN && chmod +x /tmp/BIN'`. Build the CLI with `CGO_ENABLED=0 go build
   ./cli/cmd/discobox`: `build/discobox` links a Nix interpreter the box lacks.
-- Approving needs a secret: `d secret create --name N --host H --token fake
-  --max-grant-ttl forever` (the default cap is 1h, so a longer `--grant-ttl`
-  is refused without it), then `d secret request approve <sreq> --secret
-  N [--grant-ttl 2w|forever]`.
+- Approving needs a secret: `d secret create --name N --route H --token fake
+  --max-binding-ttl forever` (the default cap is 1h, so a longer `--for` is
+  refused without it), then `d secret request approve <sreq> --secret N
+  [--for 2w|forever]`; it makes a binding on the asking box.
 - A granted request binds the credential's variable in the box: a command
-  started after the grant has it (`echo ${N:+set}`), one already running does
-  not.
+  started after the binding has it (`echo ${N:+set}`), one already running
+  does not until it runs `eval "$(discobox-access env)"`.
 - Clean up: `d rm <id>`, `d admin box purge <id>`, `d secret rm N`.
 
 ## A request from a box, and its approval forms
@@ -538,11 +541,13 @@ every call is a `403` saying this discobox may not call the discobox API.
   run` a worker, then act on that one. Another discobox in the project is a
   `403`.
 - A lead answers only the requests of discoboxes it created (`403 … only the
-  requests of discoboxes it created`), and only under a `secret grant create
-  --delegate` grant given to the lead of the same secret, whose hosts cover the
-  request's. Full-precision expiries are in the isolated server's
-  `data/discobox.db` (`secret_grants.expires_at`); the API prints whole
-  seconds.
+  requests of discoboxes it created`), and only under a delegate binding of
+  the same secret on the lead (`d secret bind <secret> <lead> --delegate`);
+  the worker's binding is made with the delegation as its parent, held to its
+  routes too, and lapses no later than it. `d secret unbind <secret> <lead>`
+  takes the workers' bindings with it. Full-precision expiries are in the
+  isolated server's `data/discobox.db` (`secret_bindings.expires_at`); the API
+  prints whole seconds, and `d admin binding events` the history.
 
 # Verifying the iroh transport (`pkg/endpoint`: admission, peer certificates)
 
@@ -719,9 +724,10 @@ Drive it from `-H shell` boxes of the dev pool (see the console section for
 - The applied revision the control plane sees:
   `d admin box get <id> -o json | jq .runtime.agentStatus.runtimeConfigRevision`.
 - Secrets reaching a running box: `d secret create`, then
-  `d admin harness secret bind <shell-config-id> ENV <secret>`; a new box
-  gets it at create, and rebinding to a secret of another shape re-mints the
-  sentinel and pushes it to running boxes.
+  `d secret bind <secret> --harness <shell-config> --as ENV` (or `--project-wide`,
+  or a box); every box the binding covers gets it, running ones by a pushed
+  sentinel, and rebinding to a secret of another shape re-mints the sentinel
+  and pushes it.
 - The pool's idle timeout cannot be changed on the dev pool in place:
   `d admin provider update --sandbox-idle-timeout` records it but did not
   recreate the pool container within 10 minutes. To see the sandbox apply a

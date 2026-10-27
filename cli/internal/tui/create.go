@@ -35,7 +35,7 @@ type createCard struct {
 	prompt string
 	// base is the request `discobox run` opened the window on, when the card
 	// is asking where that run is cut from (WithRun). What the card has no row
-	// for — the prompt's own tokens, --grant, --pool, --declared-sources — is
+	// for — the prompt's own tokens, --bind, --delegate, --pool, --declared-sources — is
 	// taken from it as given. Nil for a card the composer opened.
 	base *RunRequest
 	// cursor is the row of the list Enter creates from: a source, or the last
@@ -312,7 +312,7 @@ func (c *createCard) requestFrom(source string) RunRequest {
 	req := c.opts.request(c.prompt, source)
 	if c.base != nil {
 		req.Prompt = append([]string(nil), c.base.Prompt...)
-		req.Grant, req.DiscoboxAPI, req.Pool = c.base.Grant, c.base.DiscoboxAPI, c.base.Pool
+		req.Bind, req.Delegate, req.DiscoboxAPI, req.Pool = c.base.Bind, c.base.Delegate, c.base.DiscoboxAPI, c.base.Pool
 		req.SkipDeclaredSources = c.base.SkipDeclaredSources
 	}
 	return req

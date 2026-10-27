@@ -182,7 +182,12 @@ func TestCaptureAddsOriginAccountWithoutReplacingBoxOverridesOrConsumerAssignmen
 	if err := st.CreateSecret(ctx, override); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.CreateSandboxSecret(ctx, &model.SandboxSecret{ProjectID: cfg.ProjectID, SandboxID: "sbx-capture", SecretID: override.ID, EnvName: "API_TOKEN", Sentinel: "box-override-sentinel"}); err != nil {
+	// The box's own binding of the variable, which wins over the harness's.
+	own := &model.SecretBinding{ProjectID: cfg.ProjectID, SecretID: override.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: "sbx-capture", Use: true, EnvName: "API_TOKEN"}
+	if err := st.CreateSecretBinding(ctx, own, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSandboxSecret(ctx, &model.SandboxSecret{ProjectID: cfg.ProjectID, SandboxID: "sbx-capture", SecretID: override.ID, EnvName: "API_TOKEN", Sentinel: "box-override-sentinel", BindingID: own.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.CreateSandbox(ctx, &model.Sandbox{ID: "sbx-consumer", ProjectID: cfg.ProjectID, PoolID: "pool-capture", Name: "Consumer", SandboxManifest: model.SandboxManifest{HarnessConfigID: &cfg.ID}}); err != nil {
@@ -239,13 +244,6 @@ func TestCaptureAddsOriginAccountWithoutReplacingBoxOverridesOrConsumerAssignmen
 		if i == 1 && ack.Sentinels["API_TOKEN_2"] == "" {
 			t.Fatal("additional account has no sentinel")
 		}
-	}
-	assignments, err := st.ListSandboxSecrets(ctx, cfg.ProjectID, "sbx-consumer")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(assignments) != 0 {
-		t.Fatal("new credential unexpectedly injected into existing consumer")
 	}
 	origin, err := st.ListSandboxSecrets(ctx, cfg.ProjectID, "sbx-capture")
 	if err != nil {
@@ -328,7 +326,7 @@ func TestCaptureOutcomeReachesOriginAfterRemoteEdit(t *testing.T) {
 				t.Fatal(err)
 			}
 			if change == "binding" {
-				if err := st.DeleteHarnessConfigSecretBinding(ctx, cfg.ProjectID, cfg.ID, "API_TOKEN"); err != nil {
+				if _, err := st.DeleteTargetUseBinding(ctx, cfg.ProjectID, model.SecretBindingTargetHarnessConfig, cfg.ID, "API_TOKEN", store.BindingChange{Actor: "user-1"}); err != nil {
 					t.Fatal(err)
 				}
 			}

@@ -241,11 +241,11 @@ func (s *Service) copyHarnessConfigs(ctx context.Context, source *model.Project,
 			defaultHarnessConfigID = config.ID
 		}
 	}
-	return defaultHarnessConfigID, nil
+	return defaultHarnessConfigID, s.copyProjectBindings(ctx, source.ID, projectID, secretIDs)
 }
 
 func (s *Service) copyHarnessConfig(ctx context.Context, sourceConfig *model.HarnessConfig, projectID string, secretIDs map[string]string) (*model.HarnessConfig, error) {
-	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, sourceConfig.ProjectID, sourceConfig.ID)
+	bindings, err := s.store.ListSecretBindings(ctx, sourceConfig.ProjectID, store.SecretBindingFilter{TargetKind: model.SecretBindingTargetHarnessConfig, TargetID: sourceConfig.ID})
 	if err != nil {
 		return nil, err
 	}
@@ -292,25 +292,50 @@ func (s *Service) copyHarnessConfig(ctx context.Context, sourceConfig *model.Har
 		}
 	}
 
+	return config, s.copyBindings(ctx, sourceConfig.ProjectID, projectID, bindings, config.ID, secretIDs)
+}
+
+// copyBindings carries bindings across onto the copy of their target, each a
+// new binding of the copy of its secret, with the same routes, lifetime and
+// purpose, recorded as made by the system for the copy. A harness config's
+// and the project's are copied; a discobox's are not: the new project has no
+// discoboxes.
+func (s *Service) copyBindings(ctx context.Context, sourceProjectID, projectID string, bindings []model.SecretBinding, targetID string, secretIDs map[string]string) error {
 	for i := range bindings {
-		binding := &bindings[i]
-		secretID, err := s.copySecret(ctx, sourceConfig.ProjectID, projectID, binding.SecretID, secretIDs)
+		source := &bindings[i]
+		secretID, err := s.copySecret(ctx, sourceProjectID, projectID, source.SecretID, secretIDs)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if secretID == "" {
 			continue
 		}
-		if err := s.store.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
-			ProjectID:       projectID,
-			HarnessConfigID: config.ID,
-			EnvName:         binding.EnvName,
-			SecretID:        secretID,
-		}); err != nil {
-			return nil, err
+		binding := &model.SecretBinding{
+			ProjectID:  projectID,
+			SecretID:   secretID,
+			TargetKind: source.TargetKind,
+			TargetID:   targetID,
+			Use:        source.Use,
+			Delegate:   source.Delegate,
+			EnvName:    source.EnvName,
+			Routes:     source.Routes,
+			ExpiresAt:  source.ExpiresAt,
+			CreatedBy:  source.CreatedBy,
+		}
+		if err := s.store.CreateSecretBinding(ctx, binding, store.BindingChange{Actor: model.SecretBindingActorSystem, Cause: "copy:" + source.ID}); err != nil {
+			return err
 		}
 	}
-	return config, s.copyGrants(ctx, sourceConfig, config, projectID, secretIDs)
+	return nil
+}
+
+// copyProjectBindings carries the source project's own bindings across.
+func (s *Service) copyProjectBindings(ctx context.Context, sourceProjectID, projectID string, secretIDs map[string]string) error {
+	bindings, err := s.store.ListSecretBindings(ctx, sourceProjectID, store.SecretBindingFilter{TargetKind: model.SecretBindingTargetProject, TargetID: sourceProjectID})
+	if err != nil {
+		return err
+	}
+	return s.copyBindings(ctx, sourceProjectID, projectID, bindings, projectID, secretIDs)
 }
 
 // copySecret duplicates one secret into the new project, once. Sealing binds
@@ -345,24 +370,16 @@ func (s *Service) copySecret(ctx context.Context, sourceProjectID, projectID, so
 		}
 	}
 	secretID := id.NewString(id.PrefixSecret)
-	uniqueKey := sourceSecret.UniqueKey
-	// A configure-created secret keys its uniqueness slot on its own ID so it
-	// does not occupy the shared (project,type,host) slot; the copy owns that
-	// same exemption under its own ID.
-	if uniqueKey == sourceSecret.ID {
-		uniqueKey = secretID
-	}
 	secret := &model.Secret{
 		ID:             secretID,
 		ProjectID:      projectID,
 		Name:           sourceSecret.Name,
 		Type:           sourceSecret.Type,
-		Host:           sourceSecret.Host,
-		UniqueKey:      uniqueKey,
+		Routes:         sourceSecret.Routes,
 		Anonymous:      sourceSecret.Anonymous,
 		Format:         sourceSecret.Format,
 		FormatSet:      sourceSecret.FormatSet,
-		MaxGrantTTL:    sourceSecret.MaxGrantTTL,
+		MaxBindingTTL:  sourceSecret.MaxBindingTTL,
 		EncryptedValue: plaintext,
 	}
 	if err := s.store.CreateSecret(ctx, secret); err != nil {
@@ -370,37 +387,4 @@ func (s *Service) copySecret(ctx context.Context, sourceProjectID, projectID, so
 	}
 	secretIDs[sourceSecretID] = secret.ID
 	return secret.ID, nil
-}
-
-// copyGrants carries the standing authorization a copied harness config held
-// over its secrets. Without it the copy would hold bound secrets it is not
-// authorized to resolve, and every sandbox would raise a fresh approval.
-// Sandbox-scoped grants are not copied: the new project has no sandboxes.
-func (s *Service) copyGrants(ctx context.Context, sourceConfig *model.HarnessConfig, config *model.HarnessConfig, projectID string, secretIDs map[string]string) error {
-	grants, err := s.store.ListSecretGrants(ctx, sourceConfig.ProjectID, "")
-	if err != nil {
-		return err
-	}
-	for i := range grants {
-		grant := &grants[i]
-		if grant.Scope != model.SecretGrantScopeHarnessConfig || grant.ScopeKey != sourceConfig.ID {
-			continue
-		}
-		secretID, ok := secretIDs[grant.SecretID]
-		if !ok {
-			continue
-		}
-		if err := s.store.CreateSecretGrant(ctx, &model.SecretGrant{
-			ProjectID: projectID,
-			SecretID:  secretID,
-			Scope:     model.SecretGrantScopeHarnessConfig,
-			ScopeKey:  config.ID,
-			Hosts:     grant.Hosts,
-			GrantedBy: grant.GrantedBy,
-			ExpiresAt: grant.ExpiresAt,
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
 }

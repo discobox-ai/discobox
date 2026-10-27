@@ -49,10 +49,11 @@ func (a *App) newHarnessCommand() *cobra.Command {
 }
 
 func (a *App) newHarnessSecretsCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "secret", Aliases: []string{"secrets"}, Short: "Manage a harness config's secret bindings"}
+	cmd := &cobra.Command{Use: "secret", Aliases: []string{"secrets"}, Short: "Show a harness config's declared secrets and what is bound to them", Long: `Show a harness config's declared secrets and what is bound to them.
+
+A secret is bound to a harness config with ` + "`discobox secret bind SECRET --harness HARNESS --as VAR`" + `,
+and taken back with ` + "`discobox secret unbind`" + `.`}
 	cmd.AddCommand(a.newHarnessSecretsListCommand())
-	cmd.AddCommand(a.newHarnessSecretsBindCommand())
-	cmd.AddCommand(a.newHarnessSecretsUnbindCommand())
 	return cmd
 }
 
@@ -80,55 +81,10 @@ func (a *App) newHarnessSecretsListCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *App) newHarnessSecretsBindCommand() *cobra.Command {
-	return &cobra.Command{Use: "bind HARNESS ENV_NAME SECRET", Short: "Bind a harness config environment variable to a secret", Args: cobra.ExactArgs(3), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
-		if err != nil {
-			return err
-		}
-		secretID, err := a.resolveSecretID(cmd.Context(), client, projectID, args[2])
-		if err != nil {
-			return err
-		}
-		body := &apimodel.SetHarnessConfigSecretBindingBody{SecretId: secretID}
-		res, err := client.SetHarnessConfigSecretBinding(cmd.Context(), body, apiclientgen.SetHarnessConfigSecretBindingParams{ProjectId: projectID, HarnessConfigId: harnessID, EnvName: args[1]})
-		if err != nil {
-			return err
-		}
-		binding, err := expectResponse[apimodel.HarnessConfigSecretBinding](res)
-		if err != nil {
-			return err
-		}
-		if a.output == "json" {
-			return writeJSON(cmd.OutOrStdout(), binding)
-		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "bound %s to secret %s\n", binding.EnvName, binding.SecretId)
-		return err
-	}}
-}
-
-func (a *App) newHarnessSecretsUnbindCommand() *cobra.Command {
-	return &cobra.Command{Use: "unbind HARNESS ENV_NAME", Short: "Remove a harness config secret binding", Args: cobra.ExactArgs(2), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
-		if err != nil {
-			return err
-		}
-		res, err := client.DeleteHarnessConfigSecretBinding(cmd.Context(), apiclientgen.DeleteHarnessConfigSecretBindingParams{ProjectId: projectID, HarnessConfigId: harnessID, EnvName: args[1]})
-		if err != nil {
-			return err
-		}
-		if err := expectNoContent[apiclientgen.DeleteHarnessConfigSecretBindingNoContent](res); err != nil {
-			return err
-		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s unbound\n", args[1])
-		return err
-	}}
-}
-
 // harnessSecretAssignments returns a harness's env→secret bindings along with
 // the project's secrets by ID, so callers can show what is actually assigned
 // to each declared environment variable.
-func (a *App) harnessSecretAssignments(ctx context.Context, client *apiclientgen.Client, projectID, harnessID string) ([]apimodel.HarnessConfigSecretBinding, map[string]apimodel.Secret, error) {
+func (a *App) harnessSecretAssignments(ctx context.Context, client *apiclientgen.Client, projectID, harnessID string) ([]apimodel.SecretBinding, map[string]apimodel.Secret, error) {
 	bindings, err := a.listHarnessSecretBindings(ctx, client, projectID, harnessID)
 	if err != nil {
 		return nil, nil, err
@@ -151,12 +107,18 @@ func (a *App) harnessSecretAssignments(ctx context.Context, client *apiclientgen
 	return bindings, secretsByID, nil
 }
 
-func (a *App) listHarnessSecretBindings(ctx context.Context, client *apiclientgen.Client, projectID, harnessID string) ([]apimodel.HarnessConfigSecretBinding, error) {
-	res, err := client.ListHarnessConfigSecretBindings(ctx, apiclientgen.ListHarnessConfigSecretBindingsParams{ProjectId: projectID, HarnessConfigId: harnessID})
+// listHarnessSecretBindings are the bindings on a harness config itself, which
+// every discobox on it holds unless one of its own binds the same variable.
+func (a *App) listHarnessSecretBindings(ctx context.Context, client *apiclientgen.Client, projectID, harnessID string) ([]apimodel.SecretBinding, error) {
+	res, err := client.ListSecretBindings(ctx, apiclientgen.ListSecretBindingsParams{
+		ProjectId:  projectID,
+		TargetKind: apiclientgen.NewOptListSecretBindingsTargetKind(apiclientgen.ListSecretBindingsTargetKindHarnessConfig),
+		Target:     apiclientgen.NewOptString(harnessID),
+	})
 	if err != nil {
 		return nil, err
 	}
-	body, err := expectResponse[apimodel.ListHarnessConfigSecretBindingsBody](res)
+	body, err := expectResponse[apimodel.ListSecretBindingsBody](res)
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -83,7 +84,8 @@ func mustSecret(t *testing.T, st *store.Store, name, token string) *model.Secret
 	t.Helper()
 	sec := &model.Secret{
 		ProjectID: "project-1", Name: name, Type: model.SecretTypeToken,
-		MaxGrantTTL: 3600, EncryptedValue: mustTokenValue(t, token),
+		Routes:        []model.SecretRoute{{Host: "*"}},
+		MaxBindingTTL: 3600, EncryptedValue: mustTokenValue(t, token),
 	}
 	if err := st.CreateSecret(context.Background(), sec); err != nil {
 		t.Fatalf("create secret: %v", err)
@@ -91,22 +93,57 @@ func mustSecret(t *testing.T, st *store.Store, name, token string) *model.Secret
 	return sec
 }
 
-func mustGrant(t *testing.T, st *store.Store, secretID, scope, scopeKey string) {
+// mustBind binds a secret for use in FOO on a target, as a person would.
+func mustBind(t *testing.T, st *store.Store, secretID, kind, targetID string) *model.SecretBinding {
 	t.Helper()
-	if err := st.CreateSecretGrant(context.Background(), &model.SecretGrant{
-		ProjectID: "project-1", SecretID: secretID, Scope: scope, ScopeKey: scopeKey,
-	}); err != nil {
-		t.Fatalf("create grant: %v", err)
+	binding := &model.SecretBinding{
+		ProjectID: "project-1", SecretID: secretID, TargetKind: kind, TargetID: targetID, Use: true, EnvName: "FOO",
+	}
+	if err := st.CreateSecretBinding(context.Background(), binding, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+	return binding
+}
+
+// mustAssign gives a sandbox the sentinel of FOO, naming the binding that
+// delivers it there, if one does.
+func mustAssign(t *testing.T, st *store.Store, sandboxID, secretID, sentinel string) {
+	t.Helper()
+	ctx := context.Background()
+	sandbox, err := st.GetSandbox(ctx, "project-1", sandboxID)
+	if err != nil {
+		t.Fatalf("read sandbox: %v", err)
+	}
+	effective, err := st.ResolveSandboxBindings(ctx, sandbox, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("resolve bindings: %v", err)
+	}
+	row := &model.SandboxSecret{ProjectID: "project-1", SandboxID: sandboxID, SecretID: secretID, EnvName: "FOO", Sentinel: sentinel}
+	if applied, ok := effective.UseFor("FOO"); ok {
+		row.BindingID = applied.Binding.ID
+	}
+	if err := st.CreateSandboxSecret(ctx, row); err != nil {
+		t.Fatalf("create assignment: %v", err)
 	}
 }
 
-func mustAssign(t *testing.T, st *store.Store, sandboxID, secretID, sentinel string) {
+// mustDeliver binds a secret for use in env on a sandbox and gives the
+// sandbox its sentinel there, as materializing the binding would.
+func mustDeliver(t *testing.T, st *store.Store, sandboxID, secretID, env, sentinel string) *model.SecretBinding {
 	t.Helper()
-	if err := st.CreateSandboxSecret(context.Background(), &model.SandboxSecret{
-		ProjectID: "project-1", SandboxID: sandboxID, SecretID: secretID, EnvName: "FOO", Sentinel: sentinel,
+	ctx := context.Background()
+	binding := &model.SecretBinding{
+		ProjectID: "project-1", SecretID: secretID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sandboxID, Use: true, EnvName: env,
+	}
+	if err := st.CreateSecretBinding(ctx, binding, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+	if err := st.CreateSandboxSecret(ctx, &model.SandboxSecret{
+		ProjectID: "project-1", SandboxID: sandboxID, SecretID: secretID, EnvName: env, Sentinel: sentinel, BindingID: binding.ID,
 	}); err != nil {
 		t.Fatalf("create assignment: %v", err)
 	}
+	return binding
 }
 
 func mustTokenValue(t *testing.T, token string) []byte {
@@ -124,7 +161,7 @@ func TestResolveSandboxSecretProjectGrantReturnsValue(t *testing.T) {
 	svc, st := newResolveFixture(t)
 
 	sec := mustSecret(t, st, "prj", "real-token")
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
@@ -159,7 +196,7 @@ func TestResolveSandboxSecretHarnessConfigGrantReturnsValue(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create harness config: %v", err)
 	}
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeHarnessConfig, "ac-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetHarnessConfig, "ac-1")
 	createSandboxWithHarness(t, st, "sb-1", "pool-1", "ac-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-C")
 
@@ -176,39 +213,55 @@ func TestResolveSandboxSecretHarnessConfigGrantReturnsValue(t *testing.T) {
 	}
 }
 
-func TestResolveSandboxSecretPendingWithoutGrant(t *testing.T) {
+// A sentinel exists because a binding does: one whose binding is gone, or
+// lapsed, or that never had one, resolves to nothing and asks nobody for
+// anything (ADR 26-10-27-880 §1).
+func TestResolveSandboxSecretDeniedWithoutABinding(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newResolveFixture(t)
 
 	sec := mustSecret(t, st, "manual", "real-token")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-B")
-
-	res, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-B", "api.example.com")
-	if err != nil {
-		t.Fatalf("resolve: %v", err)
-	}
-	if res.Status != model.SecretRequestStatusPending {
-		t.Fatalf("status = %q, want pending", res.Status)
-	}
-	if res.Value != nil {
-		t.Fatal("pending resolution must not carry a value")
+	lapsed := time.Now().UTC().Add(-time.Minute)
+	binding := mustDeliver(t, st, "sb-1", sec.ID, "LAPSED", "SENTINEL-L")
+	binding.ExpiresAt = &lapsed
+	if err := st.UpdateSecretBinding(ctx, binding, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatal(err)
 	}
 
-	// A second resolve for the same host reuses the pending request rather than
-	// piling up duplicates.
-	if _, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-B", "api.example.com"); err != nil {
-		t.Fatalf("resolve again: %v", err)
+	for _, sentinel := range []string{"SENTINEL-B", "SENTINEL-L"} {
+		res, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", sentinel, "api.example.com")
+		if err != nil {
+			t.Fatalf("resolve: %v", err)
+		}
+		if res.Status != model.SecretRequestStatusDenied || res.Value != nil {
+			t.Fatalf("%s = %+v, want denied with no value", sentinel, res)
+		}
 	}
 	pending, err := st.ListSecretRequests(ctx, "project-1", model.SecretRequestStatusPending)
-	if err != nil {
-		t.Fatalf("list requests: %v", err)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("pending requests = %+v, %v; want none", pending, err)
 	}
-	if len(pending) != 1 {
-		t.Fatalf("pending requests = %d, want 1", len(pending))
+}
+
+// A value is handed out only for a host every route list allows: the
+// secret's, the binding's, and the parent's it was handed on under.
+func TestResolveSandboxSecretHoldsToEveryRouteList(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newResolveFixture(t)
+	sec := mustSecret(t, st, "narrowed", "real-token")
+	createSandbox(t, st, "sb-1", "pool-1")
+	binding := mustDeliver(t, st, "sb-1", sec.ID, "TOKEN", "SENTINEL-N")
+	binding.Routes = []model.SecretRoute{{Host: "api.example.com"}}
+	if err := st.UpdateSecretBinding(ctx, binding, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatal(err)
 	}
-	if pending[0].SecretID != sec.ID || pending[0].SandboxID != "sb-1" {
-		t.Fatalf("pending request = %#v, want secret %s sandbox sb-1", pending[0], sec.ID)
+	for host, want := range map[string]string{"api.example.com": model.SecretRequestStatusApproved, "other.example.com": model.SecretRequestStatusDenied} {
+		res, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-N", host)
+		if err != nil || res.Status != want {
+			t.Fatalf("%s = %+v, %v; want %s", host, res, err, want)
+		}
 	}
 }
 
@@ -218,7 +271,7 @@ func TestResolveSandboxSecretSandboxGrantDoesNotLeakToOtherSandbox(t *testing.T)
 
 	sec := mustSecret(t, st, "iso", "real-token")
 	createSandbox(t, st, "sb-1", "pool-1")
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeSandbox, "sb-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetSandbox, "sb-1")
 	createSandbox(t, st, "sb-2", "pool-1")
 	mustAssign(t, st, "sb-2", sec.ID, "SENTINEL-D")
 
@@ -226,8 +279,8 @@ func TestResolveSandboxSecretSandboxGrantDoesNotLeakToOtherSandbox(t *testing.T)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if res.Status != model.SecretRequestStatusPending {
-		t.Fatalf("status = %q, want pending (grant is scoped to sb-1)", res.Status)
+	if res.Status != model.SecretRequestStatusDenied {
+		t.Fatalf("status = %q, want denied (the binding is on sb-1)", res.Status)
 	}
 }
 
@@ -262,7 +315,7 @@ func TestResolveSandboxSecretCarriesTheHarnessRejectionScope(t *testing.T) {
 		t.Fatalf("create harness config: %v", err)
 	}
 	sec := mustSecret(t, st, "login", "real-token")
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandboxWithHarness(t, st, "sb-1", "pool-1", "ac-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-S")
 	createSandbox(t, st, "sb-bare", "pool-1")
@@ -292,8 +345,13 @@ func TestResolveSandboxSecretCarriesTheHarnessRejectionScope(t *testing.T) {
 	}
 	// A configure sandbox holds the stored login under the prefixed name, and
 	// runs the same CLI with it.
+	prev, err := st.ResolveSandboxBindings(ctx, mustGetSandbox(t, st, "sb-1"), time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	applied, _ := prev.UseFor("FOO")
 	if err := st.CreateSandboxSecret(ctx, &model.SandboxSecret{
-		ProjectID: "project-1", SandboxID: "sb-1", SecretID: sec.ID, EnvName: "PREV_FOO", Sentinel: "SENTINEL-P",
+		ProjectID: "project-1", SandboxID: "sb-1", SecretID: sec.ID, EnvName: "PREV_FOO", Sentinel: "SENTINEL-P", BindingID: applied.Binding.ID,
 	}); err != nil {
 		t.Fatalf("create assignment: %v", err)
 	}
@@ -303,4 +361,13 @@ func TestResolveSandboxSecretCarriesTheHarnessRejectionScope(t *testing.T) {
 	if res := resolve("sb-bare", "SENTINEL-B"); res.ReportScope != nil {
 		t.Fatalf("report scope = %#v, want none for a sandbox with no harness config", res.ReportScope)
 	}
+}
+
+func mustGetSandbox(t *testing.T, st *store.Store, sandboxID string) *model.Sandbox {
+	t.Helper()
+	sandbox, err := st.GetSandbox(context.Background(), "project-1", sandboxID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sandbox
 }

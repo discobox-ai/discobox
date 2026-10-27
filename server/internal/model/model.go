@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -428,33 +429,6 @@ func (a *HarnessConfig) BeforeCreate(_ *gorm.DB) error {
 	if a.ID == "" {
 		var err error
 		a.ID, err = id.New(id.PrefixHarnessConfig)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// HarnessConfigSecretBinding binds one of a harness config's environment variables
-// to a project secret. Every sandbox created for the harness config materializes
-// its bindings into SandboxSecret sentinels, so the harness receives the secret
-// values (subject to the usual grant/approval flow — a binding is not a grant).
-type HarnessConfigSecretBinding struct {
-	ID              string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable binding ID"`
-	ProjectID       string    `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	HarnessConfigID string    `gorm:"column:harness_config_id;not null;type:text;index;uniqueIndex:idx_harness_config_secret_env,priority:1" json:"harnessConfigId" doc:"Harness config the binding belongs to"`
-	EnvName         string    `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_harness_config_secret_env,priority:2" json:"envName" doc:"Environment variable filled by the secret"`
-	SecretID        string    `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Bound secret ID"`
-	CreatedAt       time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt       time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-}
-
-func (HarnessConfigSecretBinding) TableName() string { return "harness_config_secret_bindings" }
-
-func (b *HarnessConfigSecretBinding) BeforeCreate(_ *gorm.DB) error {
-	if b.ID == "" {
-		var err error
-		b.ID, err = id.New(id.PrefixHarnessConfigSecretBinding)
 		if err != nil {
 			return err
 		}
@@ -1075,14 +1049,21 @@ type Sandbox struct {
 	// Like Egress it has its own setter (store.SetSandboxDiscoboxAPI) and is
 	// never written by a whole-row save: a person changes it while the
 	// reconciler holds a copy of the row.
-	DiscoboxAPI       bool                            `gorm:"column:discobox_api;not null;default:false" json:"discoboxApi,omitempty" doc:"The discobox may call the discobox API through its pool, acting only on the discoboxes it created"`
-	SourceRoot        *string                         `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
-	Origin            *Origin                         `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host the sandbox was created from. Immutable after create."`
-	SourceDeliveries  map[string]sourcecache.Delivery `gorm:"column:source_deliveries;type:text;serializer:json" json:"sourceDeliveries,omitempty"`
-	SourceDeliveredAt *time.Time                      `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`
-	AppliedCommits    []AppliedSourceCommit           `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful discobox apply runs that landed this sandbox's commits on a host. Client-reported; append-only."`
-	OriginKey         *string                         `gorm:"column:origin_key;type:text;index" json:"-" doc:"Where the sandbox belongs on the client that created it: SandboxOriginKey of its origin and primary source. Indexed; what listings filter on."`
-	ProviderState     json.RawMessage                 `gorm:"column:provider_state;type:text" json:"providerState,omitempty" doc:"Non-secret provider state"`
+	DiscoboxAPI bool `gorm:"column:discobox_api;not null;default:false" json:"discoboxApi,omitempty" doc:"The discobox may call the discobox API through its pool, acting only on the discoboxes it created"`
+	// AttachedHarnessConfigIDs are the harness configs, beside its own, whose
+	// credentials the discobox was given to run a second harness in it
+	// (POST .../harness-secrets): their bindings apply to it, after its own
+	// harness config's and before the project's (ADR 26-10-27-880 §2), so a
+	// change to them reaches it. Written only by its own setter
+	// (store.AttachSandboxHarnessConfig), never by a whole-row save.
+	AttachedHarnessConfigIDs []string                        `gorm:"column:attached_harness_config_ids;type:text;serializer:json" json:"-"`
+	SourceRoot               *string                         `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
+	Origin                   *Origin                         `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host the sandbox was created from. Immutable after create."`
+	SourceDeliveries         map[string]sourcecache.Delivery `gorm:"column:source_deliveries;type:text;serializer:json" json:"sourceDeliveries,omitempty"`
+	SourceDeliveredAt        *time.Time                      `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`
+	AppliedCommits           []AppliedSourceCommit           `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful discobox apply runs that landed this sandbox's commits on a host. Client-reported; append-only."`
+	OriginKey                *string                         `gorm:"column:origin_key;type:text;index" json:"-" doc:"Where the sandbox belongs on the client that created it: SandboxOriginKey of its origin and primary source. Indexed; what listings filter on."`
+	ProviderState            json.RawMessage                 `gorm:"column:provider_state;type:text" json:"providerState,omitempty" doc:"Non-secret provider state"`
 	// RepairGeneration marks one generation as a repair (ADR 0035): when it
 	// equals Generation, ensure tears the runtime down (provider Archive:
 	// container and disposable state dropped, durable tree kept) before the
@@ -1319,9 +1300,11 @@ const (
 	SecretRequestStatusApproved = "approved"
 	SecretRequestStatusDenied   = "denied"
 
-	// SecretRequestReasonRefresh marks a request for a new value
-	// (SecretRequest.Reason).
-	SecretRequestReasonRefresh = "refresh"
+	// SecretRefreshStatusPending and its siblings are where a refresh request
+	// stands: asked, answered with a value, or dismissed by a person.
+	SecretRefreshStatusPending   = "pending"
+	SecretRefreshStatusAnswered  = "answered"
+	SecretRefreshStatusDismissed = "dismissed"
 	// SecretRefreshCauseStale and SecretRefreshCauseRejected are what opened a
 	// refresh request: a resolve of a value past, or nearly past, its
 	// lifetime, or an upstream refusing it.
@@ -1333,19 +1316,28 @@ const (
 	SecretRefreshViaEntered = "entered"
 	SecretRefreshViaUpdate  = "update"
 
-	// SecretGrantScopeSandbox and its siblings decide how widely a single grant
-	// applies. A grant is matched against a resolving sandbox by its scope key:
-	// the sandbox's own ID, its harness config ID, or the project ID.
-	SecretGrantScopeSandbox       = "sandbox"
-	SecretGrantScopeHarnessConfig = "harnessConfig"
-	SecretGrantScopeProject       = "project"
+	// SecretBindingTargetSandbox and its siblings are what a binding is for
+	// (ADR 26-10-27-880 §2): one discobox, every discobox on a harness config,
+	// or every discobox in the project. Per variable the narrowest applies.
+	SecretBindingTargetSandbox       = "sandbox"
+	SecretBindingTargetHarnessConfig = "harnessConfig"
+	SecretBindingTargetProject       = "project"
 
-	// SecretGrantPurposeUse and SecretGrantPurposeDelegate are what a grant
-	// authorizes its holder to do with the credential: use it, or give it to
-	// the discoboxes it creates. A grant is one or the other, never both, so a
-	// person approving one is agreeing to one thing.
-	SecretGrantPurposeUse      = "use"
-	SecretGrantPurposeDelegate = "delegate"
+	// SecretPurposeUse and SecretPurposeDelegate are what an agent's request
+	// asks a credential for: to use it, delivered in a variable, or to give it
+	// to the discoboxes it creates (ADR 26-10-27-880 §3).
+	SecretPurposeUse      = "use"
+	SecretPurposeDelegate = "delegate"
+
+	// SecretBindingEventCreated and its siblings are what happened to a
+	// binding, as its append-only history records it (ADR 26-10-27-880 §6).
+	SecretBindingEventCreated = "created"
+	SecretBindingEventUpdated = "updated"
+	SecretBindingEventDeleted = "deleted"
+	SecretBindingEventExpired = "expired"
+	// SecretBindingActorSystem is the actor of a change nobody made directly:
+	// a cascade from a removed parent, an expiry, or the upgrade.
+	SecretBindingActorSystem = "system"
 
 	// SecretRejectionReasonUnrefreshable and its siblings are why a credential
 	// an upstream refused needs a person rather than another attempt
@@ -1385,18 +1377,11 @@ const (
 // Secret is a project-scoped encrypted credential that can be requested by sandboxes.
 type Secret struct {
 	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable secret ID"`
-	ProjectID string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_project_type_host,priority:1" json:"projectId" doc:"Project ID"`
-	// Name is part of the uniqueness domain. Without it a project could hold
-	// only one secret per (type, host) — and since nothing infers a host any
-	// more, that collapsed to one unbound token per project: a GitHub token and
-	// an OpenAI key could not both exist. What the domain is really for is
-	// keeping MatchSecret's answer unambiguous, and MatchSecret already refuses
-	// an ambiguous match at the moment it matters, with a sentence rather than
-	// a constraint violation.
-	Name      string `gorm:"column:name;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:2" json:"name" doc:"Secret name"`
-	Type      string `gorm:"column:type;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:3" json:"type" doc:"Secret type" enum:"token,oauth,exchange"`
-	Host      string `gorm:"column:host;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:4" json:"host,omitempty" doc:"Optional host used to match requests"`
-	UniqueKey string `gorm:"column:unique_key;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:5" json:"-"`
+	ProjectID string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_project_name,priority:1" json:"projectId" doc:"Project ID"`
+	// Name is what a person, a request and a binding name the secret by, so
+	// it is unique in its project.
+	Name      string `gorm:"column:name;not null;type:text;uniqueIndex:idx_secret_project_name,priority:2" json:"name" doc:"Secret name"`
+	Type      string `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type" enum:"token,oauth,exchange"`
 	Anonymous bool   `gorm:"column:anonymous;not null;default:false;index" json:"anonymous,omitempty" doc:"Sandbox-managed secret created from an inline value; referenced only by ID"`
 	Format    string `gorm:"column:format;not null;type:text;default:''" json:"format,omitempty" doc:"Generative format template describing the credential shape; used to mint sentinel placeholders"`
 	// FormatSet says Format was written by a person rather than read from the
@@ -1420,17 +1405,17 @@ type Secret struct {
 	// Exchange is the same for an exchange credential: its recipe and when
 	// the token goes stale. Filled in on read.
 	Exchange *SecretExchange `gorm:"-" json:"exchange,omitempty" doc:"What an exchange credential is; never the stored fields or the token"`
-	// MaxGrantTTL is the longest a grant on this credential may live, and the
-	// lifetime a grant takes when nobody names one. It is a ceiling rather
-	// than a suggestion: a longer grant, or a grant that never expires, is
-	// refused while it stands. Zero lifts it — grants on the secret may then
-	// live forever, which is what an unlimited credential says out loud.
+	// MaxBindingTTL is the longest a binding of this credential may last, and
+	// the lifetime a binding takes when nobody names one. It is a ceiling
+	// rather than a suggestion: a longer binding, or one that never lapses, is
+	// refused while it stands. Zero lifts it — bindings may then never lapse,
+	// which is what an unlimited credential says out loud.
 	//
 	// It carries no column default, unlike the rest of the not-null scalars
 	// here: GORM omits a zero-valued field from an INSERT when the column has
 	// one, so a default would quietly turn "no limit" into an hour. The
 	// service owns the default a creator who names none receives.
-	MaxGrantTTL    int64  `gorm:"column:max_grant_ttl_seconds;not null" json:"maxGrantTTLSeconds" doc:"Longest a grant on this secret may live, in seconds; 0 allows grants that never expire"`
+	MaxBindingTTL  int64  `gorm:"column:max_binding_ttl_seconds;not null" json:"maxBindingTTLSeconds" doc:"Longest a binding of this secret may last, in seconds; 0 lets bindings never lapse"`
 	EncryptedValue []byte `gorm:"column:encrypted_value" json:"-"`
 	// Revision advances on every write that moves updated_at, in the
 	// statement itself. It, not updated_at, is the secret's generation: a
@@ -1446,10 +1431,10 @@ type Secret struct {
 	// runs it, or checks that a value came from it.
 	RefreshCommand []string `gorm:"column:refresh_command;type:text;serializer:json" json:"refreshCommand,omitempty" doc:"Command a person's client may run to produce a new value"`
 	// Routes are where the credential may be sent, whoever holds it (ADR
-	// 26-10-02-924). With any, every request a sentinel for it is swapped into
-	// must fall on one, and the most specific routes covering it must not be
-	// blocked (secretroute.Decide). None leaves it to its grants.
-	Routes []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Where the credential may be sent; every request it is sent in must fall on one"`
+	// 26-10-27-880 §4): every request a sentinel for it is swapped into must
+	// be allowed by them, and by its binding's and parent's routes. None sends
+	// it nowhere; `*` sends it anywhere (ADR 26-10-27-939).
+	Routes []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Where the credential may be sent; none sends it nowhere"`
 	// ValueUpdatedAt is when the current value was written, set by the store
 	// on create and on every replaced value.
 	ValueUpdatedAt *time.Time `gorm:"column:value_updated_at" json:"valueUpdatedAt,omitempty" doc:"When the current value was written" format:"date-time"`
@@ -1469,12 +1454,12 @@ type Secret struct {
 func (Secret) TableName() string { return "secrets" }
 
 // SecretRoute is one place a secret may be sent (ADR 26-10-02-924): a host
-// and everything beneath it, and within it an optional path prefix matched on
-// whole segments. A blocked route refuses every request it is the most
-// specific route for; it is what a route whose use a judge read became, so
-// removing the judge sent nothing on it unjudged (ADR 26-10-27-880).
+// and everything beneath it, or `*` for every host (ADR 26-10-27-939), and
+// within it an optional path prefix matched on whole segments. A blocked route
+// refuses every request it is the most specific route for within its list
+// (ADR 26-10-27-880 §4).
 type SecretRoute struct {
-	Host    string `json:"host" doc:"Host the route covers, and every host beneath it"`
+	Host    string `json:"host" doc:"Host the route covers, and every host beneath it; * covers every host"`
 	Path    string `json:"path,omitempty" doc:"Path prefix matched on whole segments; empty is the whole host"`
 	Blocked bool   `json:"blocked,omitempty" doc:"Refuse every request this route is the most specific route for"`
 }
@@ -1483,12 +1468,25 @@ type SecretRoute struct {
 // Repeats collapse. A route with no host or a malformed path is an error.
 // changed reports whether anything moved.
 func (s *Secret) ReplaceRoutes(routes []SecretRoute) (changed bool, err error) {
+	out, err := NormalizeRoutes(routes)
+	if err != nil {
+		return false, err
+	}
+	changed = !slices.Equal(out, s.Routes)
+	s.Routes = out
+	return changed, nil
+}
+
+// NormalizeRoutes is a route list as it is stored: each route normalized, in
+// order, repeats collapsed. A route with no host or a malformed path is an
+// error rather than dropped: whoever wrote it meant somewhere.
+func NormalizeRoutes(routes []SecretRoute) ([]SecretRoute, error) {
 	var out []SecretRoute
 	seen := map[SecretRoute]bool{}
 	for _, route := range routes {
 		host, path, err := secretroute.Normalize(route.Host, route.Path)
 		if err != nil {
-			return false, err
+			return nil, err
 		}
 		next := SecretRoute{Host: host, Path: path, Blocked: route.Blocked}
 		if seen[next] {
@@ -1497,19 +1495,13 @@ func (s *Secret) ReplaceRoutes(routes []SecretRoute) (changed bool, err error) {
 		seen[next] = true
 		out = append(out, next)
 	}
-	changed = len(out) != len(s.Routes)
-	for i := 0; !changed && i < len(out); i++ {
-		changed = out[i] != s.Routes[i]
-	}
-	s.Routes = out
-	return changed, nil
+	return out, nil
 }
 
-// ProxyRoutes are the secret's routes as the pool proxy enforces them. Nil
-// when it carries none.
-func (s *Secret) ProxyRoutes() []secretroute.Route {
-	var out []secretroute.Route
-	for _, route := range s.Routes {
+// ProxyRoutes is a route list as the pool proxy enforces it.
+func ProxyRoutes(routes []SecretRoute) []secretroute.Route {
+	out := make([]secretroute.Route, 0, len(routes))
+	for _, route := range routes {
 		out = append(out, secretroute.Route{Host: route.Host, Path: route.Path, Blocked: route.Blocked})
 	}
 	return out
@@ -1647,71 +1639,113 @@ type SecretValue struct {
 	Exchange map[string]string `json:"exchange,omitempty"`
 }
 
-// SecretRequest records a runtime ask for a secret that has no covering grant.
-// It is the approval-inbox item: a human resolves it by minting a SecretGrant
-// (which approves it) or denying it. Authorization state — who approved, expiry —
-// lives on the grant, not here.
-//
-// Two species share this row, and the approve path treats them differently
-// rather than pretending they are one shape (ADR 0031 §5):
-//
-//   - Reactive: the proxy hit an unresolvable sentinel and auto-minted a bare
-//     request. It carries no Name, EnvName, or Justification.
-//   - Protocol-originated: an agent asked through the agent credentials
-//     protocol, naming the credential, the variable it wants it in, the hosts
-//     it will send it to, and why. Approving one mints a host-scoped grant
-//     for its sandbox and, for a use, binds the variable there.
+// SecretRequest is a sandbox asking for a binding (ADR 26-10-27-880 §1): the
+// approval-inbox item an agent files through the agent credentials protocol,
+// naming the credential, the hosts it will send it to, the variable it wants
+// it in for a use, and why. The decision is recorded on it, fixed once made;
+// approving one makes a binding on the sandbox that asked, which is what was
+// approved, since the approver may edit the ask.
 type SecretRequest struct {
-	ID string `gorm:"primaryKey;type:text" json:"id" doc:"Stable request ID"`
-	// ProjectID and SecretID are also the open-refresh index: one pending
-	// refresh request per secret (ADR 26-09-25-122 §4), held by the database
-	// so two resolves at once cannot both open one.
-	ProjectID   string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_request_open_refresh,priority:1" json:"projectId" doc:"Project ID"`
+	ID          string `gorm:"primaryKey;type:text" json:"id" doc:"Stable request ID"`
+	ProjectID   string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	RequestedBy string `gorm:"column:requested_by;not null;type:text" json:"requestedBy" doc:"Principal ID of the requestor"`
-	SandboxID   string `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"Sandbox that owns the sentinel, for sandbox-originated requests"`
-	Type        string `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"token,oauth,exchange"`
-	// Hosts are where the credential is asked for (ADR 26-10-02-393 §1): the
-	// destination the proxy observed, for a reactive or refresh request, and
-	// every host an agent named, for one from the protocol.
-	Hosts         []string `gorm:"column:hosts;type:text;serializer:json" json:"hosts,omitempty" doc:"Hosts named at request time"`
-	Name          string   `gorm:"column:name;not null;type:text;default:''" json:"name,omitempty" doc:"Credential name the agent asked for, for protocol-originated requests"`
-	EnvName       string   `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable the credential is wanted in, for protocol-originated requests"`
-	Justification string   `gorm:"column:justification;not null;type:text;default:''" json:"justification,omitempty" doc:"Why the agent says it needs the credential"`
-	// GrantTTL is how long the agent asked the grant to live, in seconds. It is
+	SandboxID   string `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"The discobox that asked, and the binding's target if approved"`
+	// SecretID is the secret approved, set when the request is; Name is the
+	// credential the agent asked for, which the approver answers with one.
+	SecretID      string        `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"The secret approved; set when approved"`
+	Name          string        `gorm:"column:name;not null;type:text;default:''" json:"name,omitempty" doc:"Credential name the agent asked for"`
+	EnvName       string        `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable the credential is wanted in, for a use"`
+	Justification string        `gorm:"column:justification;not null;type:text;default:''" json:"justification,omitempty" doc:"Why the agent says it needs the credential"`
+	Routes        []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Where the credential is asked to be sent"`
+	// TTL is how long the agent asked the binding to last, in seconds. It is
 	// what an approval starts from, never what it is held to: the approver
-	// chooses the lifetime. Zero is "nothing in particular", not forever — an
-	// agent cannot ask for a grant that never lapses.
-	GrantTTL int64 `gorm:"column:grant_ttl_seconds;not null;default:0" json:"grantTTLSeconds,omitempty" doc:"Grant lifetime the agent asked for, in seconds; absent when it named none"`
+	// chooses the lifetime. Zero is "nothing in particular", not forever.
+	TTL int64 `gorm:"column:ttl_seconds;not null;default:0" json:"ttlSeconds,omitempty" doc:"How long the requester asks the binding to last, in seconds"`
 	// Purpose is what the agent asked the credential for: to use it, or to
-	// give it to the discoboxes it creates. Approving the request mints a
-	// grant with this purpose. Every request written before an agent could ask to
-	// delegate asked to use, which the column's default gives it.
-	Purpose  string `gorm:"column:purpose;not null;type:text;default:'use'" json:"purpose,omitempty" doc:"What the agent asked the credential for: to use it, or to give it to the discoboxes it creates" enum:"use,delegate"`
-	SecretID string `gorm:"column:secret_id;not null;type:text;default:'';uniqueIndex:idx_secret_request_open_refresh,priority:2,where:reason = 'refresh' AND status = 'pending'" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
-	Status   string `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
-	GrantID  string `gorm:"column:grant_id;not null;type:text;default:''" json:"grantId,omitempty" doc:"Grant that satisfied this request; set when approved"`
-	// Reason is why the request exists when it is not an ask for a grant.
-	// SecretRequestReasonRefresh asks for a new value of a token that went
-	// stale or was refused (ADR 26-09-25-122 §4): a third species, answered by
-	// writing a value and never by approving.
-	Reason string `gorm:"column:reason;not null;type:text;default:''" json:"reason,omitempty" doc:"Why the request exists, when it is not an ask for a grant" enum:"refresh"`
-	// RefreshCause is what opened a refresh request.
-	RefreshCause string `gorm:"column:refresh_cause;not null;type:text;default:''" json:"refreshCause,omitempty" doc:"What opened a refresh request" enum:"stale,rejected"`
-	// RefreshAnswer is how a refresh request was answered, set when it is.
-	RefreshAnswer *SecretRefreshAnswer `gorm:"column:refresh_answer;type:text;serializer:json" json:"refreshAnswer,omitempty" doc:"How a refresh request was answered"`
-	// ClosedAt is when the request stopped pending: approved, answered, or
-	// denied. It is what the refresh trail reads a request's second event at
-	// (ADR 26-09-25-122 §6), stamped in UTC for the reason CreatedAt is.
-	ClosedAt  *time.Time `gorm:"column:closed_at;index" json:"-"`
+	// give it to the discoboxes it creates (ADR 26-10-27-880 §3).
+	Purpose   string     `gorm:"column:purpose;not null;type:text;default:'use'" json:"purpose,omitempty" doc:"What the agent asked the credential for: to use it, or to give it to the discoboxes it creates" enum:"use,delegate"`
+	Status    string     `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
+	BindingID string     `gorm:"column:binding_id;not null;type:text;default:''" json:"bindingId,omitempty" doc:"The binding approving the request made"`
+	DecidedBy string     `gorm:"column:decided_by;not null;type:text;default:''" json:"decidedBy,omitempty" doc:"Who answered the request"`
+	DecidedAt *time.Time `gorm:"column:decided_at" json:"decidedAt,omitempty" doc:"When it was answered" format:"date-time"`
 	CreatedAt time.Time  `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt time.Time  `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
 
-// IsRefresh reports whether the request asks for a new value rather than a
-// grant.
-func (r *SecretRequest) IsRefresh() bool { return r.Reason == SecretRequestReasonRefresh }
+// Hosts are the hosts the request's routes name, in order: what the agent
+// credentials protocol speaks.
+func (r *SecretRequest) Hosts() []string {
+	var out []string
+	for _, route := range r.Routes {
+		if !slices.Contains(out, route.Host) {
+			out = append(out, route.Host)
+		}
+	}
+	return out
+}
+
+// Delegates reports whether the request asks to give the credential on rather
+// than to use it.
+func (r *SecretRequest) Delegates() bool { return r.Purpose == SecretPurposeDelegate }
+
+func (SecretRequest) TableName() string { return "secret_requests" }
+
+func (r *SecretRequest) BeforeCreate(_ *gorm.DB) error {
+	if r.ID == "" {
+		var err error
+		r.ID, err = id.New(id.PrefixSecretRequest)
+		if err != nil {
+			return err
+		}
+	}
+	if r.CreatedAt.IsZero() {
+		r.CreatedAt = time.Now().UTC()
+	}
+	return nil
+}
+
+// PrefixSecretRefreshRequest identifies a refresh request. It sits here rather
+// than in github.com/discobox-ai/x/id, which carries no prefix for it.
+const PrefixSecretRefreshRequest = "sref"
+
+// SecretRefreshRequest asks for a new value of a token the project holds,
+// which went stale or was refused (ADR 26-09-25-122 §4). It is not a request
+// for access: it is answered by writing a value, or dismissed, and never
+// approved. One is pending per secret, which the database holds.
+type SecretRefreshRequest struct {
+	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Refresh request ID"`
+	ProjectID string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_refresh_open,priority:1,where:status = 'pending'" json:"projectId" doc:"Project ID"`
+	SecretID  string `gorm:"column:secret_id;not null;type:text;index;uniqueIndex:idx_secret_refresh_open,priority:2,where:status = 'pending'" json:"secretId" doc:"The secret a new value is asked for"`
+	// SecretName is filled in on read, while the secret exists.
+	SecretName string               `gorm:"-" json:"secretName,omitempty" doc:"Its name"`
+	SandboxID  string               `gorm:"column:sandbox_id;not null;type:text;default:''" json:"sandboxId,omitempty" doc:"The discobox that most recently needed the value"`
+	Cause      string               `gorm:"column:cause;not null;type:text" json:"cause" doc:"What opened the request" enum:"stale,rejected"`
+	Status     string               `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Whether it is still asked" enum:"pending,answered,dismissed"`
+	Answer     *SecretRefreshAnswer `gorm:"column:answer;type:text;serializer:json" json:"answer,omitempty" doc:"How it was answered, once it was"`
+	// CreatedAt and ClosedAt are stamped in UTC: the refresh trail bounds its
+	// reads by them, and SQLite compares a time as text carrying its offset.
+	CreatedAt time.Time  `gorm:"column:created_at;index" json:"createdAt" doc:"When it was asked" format:"date-time"`
+	ClosedAt  *time.Time `gorm:"column:closed_at;index" json:"closedAt,omitempty" doc:"When it was answered or dismissed" format:"date-time"`
+
+	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
+}
+
+func (SecretRefreshRequest) TableName() string { return "secret_refresh_requests" }
+
+func (r *SecretRefreshRequest) BeforeCreate(_ *gorm.DB) error {
+	if r.ID == "" {
+		var err error
+		if r.ID, err = id.New(PrefixSecretRefreshRequest); err != nil {
+			return err
+		}
+	}
+	if r.CreatedAt.IsZero() {
+		r.CreatedAt = time.Now().UTC()
+	}
+	return nil
+}
 
 // SecretRefreshAnswer is how a refresh request was answered: who wrote the
 // value, from where, and how the client says it produced it. Never the value.
@@ -1750,80 +1784,90 @@ const (
 	SecretRefreshEventDismissed = "dismissed"
 )
 
-// FromProtocol reports whether the request came through the agent credentials
-// protocol rather than the proxy's reactive sentinel path or a refresh. Only
-// an agent that asked names the credential it wants.
-func (r *SecretRequest) FromProtocol() bool { return r.Name != "" && !r.IsRefresh() }
+// PrefixSecretBinding identifies a binding. The x/id package names the same
+// string for the harness-config binding this replaced; the name here is what
+// it is now.
+const PrefixSecretBinding = "bind"
 
-func (SecretRequest) TableName() string { return "secret_requests" }
-
-func (r *SecretRequest) BeforeCreate(_ *gorm.DB) error {
-	if r.ID == "" {
-		var err error
-		r.ID, err = id.New(id.PrefixSecretRequest)
-		if err != nil {
-			return err
-		}
-	}
-	// Stamped in UTC rather than left to autoCreateTime, which fills it in
-	// the server's local zone: SQLite compares a time as text carrying its
-	// offset, and the refresh trail bounds its reads by this column.
-	if r.CreatedAt.IsZero() {
-		r.CreatedAt = time.Now().UTC()
-	}
-	return nil
-}
-
-// SecretGrant is a standing authorization to use a secret, scoped to a sandbox,
-// a harness config, or a whole project. It can be minted ahead of any request
-// (pre-approval) or as the result of approving a SecretRequest. A live,
-// unexpired grant whose scope key matches a resolving sandbox lets the proxy
-// return the decrypted value without a pending request.
-type SecretGrant struct {
-	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable grant ID"`
-	ProjectID string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	SecretID  string `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Granted secret ID"`
-	Scope     string `gorm:"column:scope;not null;type:text" json:"scope" doc:"How widely the grant applies" enum:"sandbox,harnessConfig,project"`
-	ScopeKey  string `gorm:"column:scope_key;not null;type:text;index" json:"scopeKey" doc:"Identifier the scope resolves against: sandbox ID, harness config ID, or project ID"`
-	// Hosts are where the grant lets the credential go: a destination any of
-	// them covers (hostscope.CoversAny). None at all is the wildcard, which
-	// only an explicit grant create mints (ADR 26-10-02-393 §1).
-	Hosts     []string   `gorm:"column:hosts;type:text;serializer:json" json:"hosts,omitempty" doc:"Hosts the grant is limited to; empty matches any host"`
-	GrantedBy string     `gorm:"column:granted_by;not null;type:text;default:''" json:"grantedBy,omitempty" doc:"Principal ID that created the grant"`
-	GrantedAt time.Time  `gorm:"column:granted_at;autoCreateTime" json:"grantedAt" doc:"Creation timestamp" format:"date-time"`
-	ExpiresAt *time.Time `gorm:"column:expires_at" json:"expiresAt,omitempty" doc:"Expiry time; empty never expires" format:"date-time"`
-	// Purpose is what the grant authorizes its holder to do: use the
-	// credential, or give it to the discoboxes it creates — never both, so a
-	// person approving a grant agrees to one thing. A delegation grant
-	// authorizes nothing its holder sends, and is held by one sandbox. Every grant written before delegation existed
-	// is a use grant, which the column's default gives it.
-	Purpose string `gorm:"column:purpose;not null;type:text;default:'use'" json:"purpose" doc:"What the grant authorizes its holder to do: use the credential, or give it to the discoboxes it creates" enum:"use,delegate"`
-	// DelegationID is the delegation grant a discobox handed this grant on
-	// under, by approving a request of a discobox it created or giving it on
-	// a create (ADR 26-10-27-880 §3). It is how a handed-on grant is traced to
-	// the delegation that allowed it. It records, and revokes nothing: the
-	// grant stands if the delegation goes. Empty on every other grant.
-	DelegationID string    `gorm:"column:delegation_id;not null;type:text;default:'';index" json:"delegationId,omitempty" doc:"Delegation grant a discobox handed this grant on under, when one did"`
-	CreatedAt    time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt    time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+// SecretBinding is a secret made available to a target (ADR 26-10-27-880 §1):
+// existing and unexpired, it is the whole of the permission. Use delivers the
+// credential's sentinel in EnvName to every discobox the target covers;
+// Delegate lets those discoboxes give it, to use, to the discoboxes they
+// create (§3). Routes narrow the secret's for this binding; a binding handed
+// on under a delegation records it as ParentID, is held to its routes and its
+// expiry too, and goes with it.
+type SecretBinding struct {
+	ID         string `gorm:"primaryKey;type:text" json:"id" doc:"Stable binding ID"`
+	ProjectID  string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	SecretID   string `gorm:"column:secret_id;not null;type:text;index;uniqueIndex:idx_secret_binding_delegate,priority:3,where:delegate" json:"secretId" doc:"Bound secret ID"`
+	SecretName string `gorm:"-" json:"secretName,omitempty" doc:"Bound secret's name"`
+	TargetKind string `gorm:"column:target_kind;not null;type:text;index:idx_secret_binding_target,priority:1;uniqueIndex:idx_secret_binding_use,priority:1,where:use;uniqueIndex:idx_secret_binding_delegate,priority:1,where:delegate" json:"targetKind" doc:"What the binding is for" enum:"project,harnessConfig,sandbox"`
+	TargetID   string `gorm:"column:target_id;not null;type:text;index:idx_secret_binding_target,priority:2;uniqueIndex:idx_secret_binding_use,priority:2,where:use;uniqueIndex:idx_secret_binding_delegate,priority:2,where:delegate" json:"targetId" doc:"The project, harness config or discobox ID the binding is for"`
+	Use        bool   `gorm:"column:use;not null;default:false" json:"use" doc:"The target may send the credential: it is delivered in envVar"`
+	Delegate   bool   `gorm:"column:delegate;not null;default:false" json:"delegate" doc:"A discobox the binding covers may give the credential, to use, to the discoboxes it creates"`
+	EnvName    string `gorm:"column:env_name;not null;type:text;default:'';uniqueIndex:idx_secret_binding_use,priority:3,where:use" json:"envVar,omitempty" doc:"Environment variable the credential's sentinel is delivered in; set when use is"`
+	// Routes narrow the secret's for this binding; none inherits them.
+	Routes    []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Routes that narrow the secret's for this binding; empty inherits the secret's"`
+	ExpiresAt *time.Time    `gorm:"column:expires_at;index" json:"expiresAt,omitempty" doc:"When the binding lapses; absent never" format:"date-time"`
+	ParentID  string        `gorm:"column:parent_id;not null;type:text;default:'';index" json:"parentId,omitempty" doc:"The delegate binding this one was handed on under"`
+	RequestID string        `gorm:"column:request_id;not null;type:text;default:''" json:"requestId,omitempty" doc:"The request this binding answered, when one did"`
+	CreatedBy string        `gorm:"column:created_by;not null;type:text;default:''" json:"createdBy,omitempty" doc:"Principal that made the binding"`
+	CreatedAt time.Time     `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time     `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
 
-// MayUse reports whether the holder may use the credential itself. Only a
-// delegation grant withholds it; an empty purpose is a row read before the
-// column existed, which is a use grant.
-func (g *SecretGrant) MayUse() bool { return g.Purpose != SecretGrantPurposeDelegate }
+func (SecretBinding) TableName() string { return "secret_bindings" }
 
-func (SecretGrant) TableName() string { return "secret_grants" }
-
-func (g *SecretGrant) BeforeCreate(_ *gorm.DB) error {
-	if g.ID == "" {
+func (b *SecretBinding) BeforeCreate(_ *gorm.DB) error {
+	if b.ID == "" {
 		var err error
-		g.ID, err = id.New(id.PrefixSecretGrant)
-		if err != nil {
+		if b.ID, err = id.New(PrefixSecretBinding); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// Live reports whether the binding stands at now: present and unexpired. A
+// binding handed on is live only while its parent is too, which the caller
+// checks with the parent.
+func (b *SecretBinding) Live(now time.Time) bool {
+	return b.ExpiresAt == nil || now.Before(*b.ExpiresAt)
+}
+
+// PrefixSecretBindingEvent identifies one change in a binding's history.
+const PrefixSecretBindingEvent = "bev"
+
+// SecretBindingEvent is one change to a binding, as the append-only history
+// records it (ADR 26-10-27-880 §6): written in the transaction that made the
+// change, with who made it, why, and the binding as it then stood. Bindings
+// are deleted outright, so this is what says, later, who could send a
+// credential where and who allowed it.
+type SecretBindingEvent struct {
+	ID        string        `gorm:"primaryKey;type:text" json:"id" doc:"Event ID"`
+	ProjectID string        `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	BindingID string        `gorm:"column:binding_id;not null;type:text;index" json:"bindingId" doc:"The binding changed"`
+	SecretID  string        `gorm:"column:secret_id;not null;type:text;index" json:"-"`
+	Event     string        `gorm:"column:event;not null;type:text" json:"event" doc:"What happened" enum:"created,updated,deleted,expired"`
+	Actor     string        `gorm:"column:actor;not null;type:text" json:"actor" doc:"Who did it, or system"`
+	Cause     string        `gorm:"column:cause;not null;type:text;default:''" json:"cause,omitempty" doc:"Why, when something caused it"`
+	Binding   SecretBinding `gorm:"column:binding;type:text;serializer:json" json:"binding" doc:"The binding after the change; before it, for a delete or an expiry"`
+	At        time.Time     `gorm:"column:at;not null;index" json:"at" doc:"When it happened" format:"date-time"`
+}
+
+func (SecretBindingEvent) TableName() string { return "secret_binding_events" }
+
+func (e *SecretBindingEvent) BeforeCreate(_ *gorm.DB) error {
+	if e.ID == "" {
+		var err error
+		if e.ID, err = id.New(PrefixSecretBindingEvent); err != nil {
+			return err
+		}
+	}
+	if e.At.IsZero() {
+		e.At = time.Now().UTC()
 	}
 	return nil
 }
@@ -1865,19 +1909,20 @@ type SandboxInventory struct {
 	ObservedAt time.Time `gorm:"column:observed_at;not null" json:"observedAt" doc:"When the sandbox last had this inventory" format:"date-time"`
 }
 
-// SandboxSecret binds a sandbox environment variable to a project secret via a
-// sentinel placeholder. The sandbox is provisioned with the sentinel value; the
+// SandboxSecret is one sentinel a sandbox is delivered: the materialized form
+// of a use binding that applies to it, never edited by a person. The sandbox is provisioned with the sentinel value; the
 // proxy swaps it for the real value resolved from the referenced secret. The
 // sentinel is non-secret but is not exposed through the API.
 type SandboxSecret struct {
-	// SourceHarnessConfigID distinguishes harness bindings from explicit sandbox bindings.
-	SourceHarnessConfigID string `gorm:"type:text;not null;default:''" json:"-"`
-	ID                    string `gorm:"primaryKey;type:text" json:"id" doc:"Stable assignment ID"`
-	ProjectID             string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	SandboxID             string `gorm:"column:sandbox_id;not null;type:text;index;uniqueIndex:idx_sandbox_secret_env,priority:1" json:"sandboxId" doc:"Sandbox ID"`
-	SecretID              string `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Assigned secret ID"`
-	EnvName               string `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_sandbox_secret_env,priority:2" json:"envName" doc:"Environment variable name injected into the sandbox"`
-	Sentinel              string `gorm:"column:sentinel;not null;type:text;uniqueIndex" json:"-"`
+	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable assignment ID"`
+	ProjectID string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	SandboxID string `gorm:"column:sandbox_id;not null;type:text;index;uniqueIndex:idx_sandbox_secret_env,priority:1" json:"sandboxId" doc:"Sandbox ID"`
+	// BindingID is the binding the row delivers: the narrowest use binding
+	// for EnvName that covers the sandbox (ADR 26-10-27-880 §2).
+	BindingID string `gorm:"column:binding_id;not null;type:text;default:'';index" json:"bindingId" doc:"The binding delivered"`
+	SecretID  string `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Assigned secret ID"`
+	EnvName   string `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_sandbox_secret_env,priority:2" json:"envName" doc:"Environment variable name injected into the sandbox"`
+	Sentinel  string `gorm:"column:sentinel;not null;type:text;uniqueIndex" json:"-"`
 	// Format is the template the sentinel was minted from. A rebind compares it
 	// against the replacement secret's format to decide whether the sentinel can
 	// be kept, which it must be able to do after the old secret row is gone.
@@ -1953,13 +1998,14 @@ func AllModels() []any {
 		&SandboxAccessIssuerKey{},
 		&HarnessConfig{},
 		&HarnessCaptureReceipt{},
-		&HarnessConfigSecretBinding{},
 		&Sandbox{},
 		&SandboxProviderInstance{},
 		&Pool{},
 		&Secret{},
 		&SecretRequest{},
-		&SecretGrant{},
+		&SecretRefreshRequest{},
+		&SecretBinding{},
+		&SecretBindingEvent{},
 		&SandboxSecret{},
 		&SandboxInventory{},
 		&SSHKey{},

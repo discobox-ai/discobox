@@ -602,7 +602,7 @@ func validateImageMetadata(metadata harness.ImageMetadata, goos, source string) 
 	seen := map[string]struct{}{}
 	for _, secret := range h.Secrets {
 		name := strings.TrimSpace(secret.Name)
-		if !services.HarnessConfigEnvVarNamePattern.MatchString(name) {
+		if !services.EnvVarNamePattern.MatchString(name) {
 			return fmt.Errorf("%s has invalid secret environment variable %q", source, secret.Name)
 		}
 		if _, ok := seen[name]; ok {

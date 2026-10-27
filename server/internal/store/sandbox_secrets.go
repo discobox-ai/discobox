@@ -108,9 +108,10 @@ func (s *Store) UpdateSandboxSecret(ctx context.Context, assignment *model.Sandb
 	return write.Model(&model.SandboxSecret{}).
 		Where("id = ?", assignment.ID).
 		Updates(map[string]any{
-			"secret_id": assignment.SecretID,
-			"sentinel":  assignment.Sentinel,
-			"format":    assignment.Format,
+			"binding_id": assignment.BindingID,
+			"secret_id":  assignment.SecretID,
+			"sentinel":   assignment.Sentinel,
+			"format":     assignment.Format,
 		}).Error
 }
 
@@ -138,30 +139,71 @@ func (s *Store) ListSandboxIDsForHarnessConfig(ctx context.Context, projectID, h
 	return out, err
 }
 
-// SecretSentinelRoutes maps each of a discobox's injected sentinels to the
-// routes of the secret it stands for, when that secret carries routes (ADR
-// 26-10-02-924): every request the sentinel is sent in must fall on one.
-// assignments are the discobox's injected secrets.
-func (s *Store) SecretSentinelRoutes(ctx context.Context, projectID string, assignments []model.SandboxSecret) (map[string][]secretroute.Route, error) {
-	var out map[string][]secretroute.Route
+// SentinelRouteLists are the route lists a pool holds each of a sandbox's
+// injected sentinels to (ADR 26-10-27-880 §4): the secret's, the binding's
+// when it has any, and its parent's when it has one with any. Every sentinel
+// has an entry, since the pool sends a sentinel with none nowhere; one whose
+// binding or secret is gone gets a single empty list, which allows nothing.
+func (s *Store) SentinelRouteLists(ctx context.Context, projectID string, assignments []model.SandboxSecret) (map[string][][]secretroute.Route, error) {
+	out := make(map[string][][]secretroute.Route, len(assignments))
 	for _, assignment := range assignments {
-		secret, err := s.GetSecret(ctx, projectID, assignment.SecretID)
+		lists, err := s.bindingRouteLists(ctx, projectID, assignment.BindingID, assignment.SecretID)
 		if err != nil {
-			if errors.Is(err, ErrNotFound) {
-				continue
-			}
 			return nil, err
 		}
-		routes := secret.ProxyRoutes()
-		if len(routes) == 0 {
-			continue
-		}
-		if out == nil {
-			out = map[string][]secretroute.Route{}
-		}
-		out[assignment.Sentinel] = routes
+		out[assignment.Sentinel] = lists
 	}
 	return out, nil
+}
+
+// bindingRouteLists are the route lists a credential delivered under a
+// binding is held to. Nowhere, as one empty list, when the binding or its
+// secret is gone, or the binding is of another secret than the row says.
+func (s *Store) bindingRouteLists(ctx context.Context, projectID, bindingID, secretID string) ([][]secretroute.Route, error) {
+	nowhere := [][]secretroute.Route{{}}
+	if bindingID == "" {
+		return nowhere, nil
+	}
+	binding, err := s.SecretBindingByExactID(ctx, projectID, bindingID)
+	if errors.Is(err, ErrNotFound) {
+		return nowhere, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if binding.SecretID != secretID {
+		return nowhere, nil
+	}
+	secret, err := s.GetSecret(ctx, projectID, binding.SecretID)
+	if errors.Is(err, ErrNotFound) {
+		return nowhere, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var parent *model.SecretBinding
+	if binding.ParentID != "" {
+		if parent, err = s.SecretBindingByExactID(ctx, projectID, binding.ParentID); errors.Is(err, ErrNotFound) {
+			return nowhere, nil
+		} else if err != nil {
+			return nil, err
+		}
+	}
+	return RouteLists(secret, binding, parent), nil
+}
+
+// RouteLists are the route lists a credential is held to under binding, and
+// parent when it was handed on under one: the secret's always, and the
+// binding's and the parent's when they have any.
+func RouteLists(secret *model.Secret, binding, parent *model.SecretBinding) [][]secretroute.Route {
+	lists := [][]secretroute.Route{model.ProxyRoutes(secret.Routes)}
+	if len(binding.Routes) > 0 {
+		lists = append(lists, model.ProxyRoutes(binding.Routes))
+	}
+	if parent != nil && len(parent.Routes) > 0 {
+		lists = append(lists, model.ProxyRoutes(parent.Routes))
+	}
+	return lists
 }
 
 // ListSandboxIDsHoldingSecret returns the discoboxes with a sentinel injected
@@ -179,20 +221,12 @@ func (s *Store) ListSandboxIDsHoldingSecret(ctx context.Context, projectID, secr
 	return out, err
 }
 
-// ReplaceSandboxHarnessSecrets changes only harness-owned injected bindings;
-// explicit bindings remain with the sandbox.
-func (s *Store) ReplaceSandboxHarnessSecrets(ctx context.Context, sandboxID string, assignments []*model.SandboxSecret) error {
+// DeleteSandboxSecret removes one sentinel row: a binding that no longer
+// applies to its sandbox.
+func (s *Store) DeleteSandboxSecret(ctx context.Context, id string) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
 	}
-	if err := write.Where("sandbox_id = ? AND source_harness_config_id <> ''", sandboxID).Delete(&model.SandboxSecret{}).Error; err != nil {
-		return err
-	}
-	for _, assignment := range assignments {
-		if err := s.CreateSandboxSecret(ctx, assignment); err != nil {
-			return err
-		}
-	}
-	return nil
+	return write.Where("id = ?", id).Delete(&model.SandboxSecret{}).Error
 }

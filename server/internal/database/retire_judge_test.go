@@ -77,6 +77,7 @@ func TestMigrateRetiresTheCredentialJudge(t *testing.T) {
 	if _, err := reconcile.New(db.Write, reconcile.Options{}); err != nil {
 		t.Fatalf("reconcile table: %v", err)
 	}
+	grantEraSchema(t, db)
 	judgeEraSchema(t, db)
 	write := db.Write.WithContext(ctx)
 	if err := write.Exec(`INSERT INTO projects (id, owner_user_id, name, judge_sandbox_id) VALUES ('project-1', 'user-1', 'Project', 'sbx-judge')`).Error; err != nil {
@@ -180,19 +181,22 @@ func TestMigrateRetiresTheCredentialJudge(t *testing.T) {
 			t.Fatalf("run %d: harness routes = %+v, want the judged one blocked", run, got)
 		}
 
-		var grants []string
-		if err := write.Model(&model.SecretGrant{}).Order("id").Pluck("id", &grants).Error; err != nil {
-			t.Fatalf("run %d: list grants: %v", run, err)
-		}
-		if want := []string{"g-standing"}; !reflect.DeepEqual(grants, want) {
-			t.Fatalf("run %d: grants = %v, want %v", run, grants, want)
-		}
-		var bindings []string
-		if err := write.Model(&model.SandboxSecret{}).Order("id").Pluck("id", &bindings).Error; err != nil {
+		// The standing grant, the only one left, covered the injected
+		// binding, which is bound on its sandbox (ADR 26-10-27-880 §8).
+		var bindings []model.SecretBinding
+		if err := write.Order("id").Find(&bindings).Error; err != nil {
 			t.Fatalf("run %d: list bindings: %v", run, err)
 		}
-		if want := []string{"ss-injected"}; !reflect.DeepEqual(bindings, want) {
-			t.Fatalf("run %d: bindings = %v, want %v", run, bindings, want)
+		if len(bindings) != 1 || bindings[0].ID != "bind_ss-injected" || bindings[0].TargetID != "sbx-1" ||
+			!reflect.DeepEqual(bindings[0].Routes, []model.SecretRoute{{Host: "github.com"}}) {
+			t.Fatalf("run %d: bindings = %+v, want the standing grant's", run, bindings)
+		}
+		var sentinels []string
+		if err := write.Model(&model.SandboxSecret{}).Order("id").Pluck("id", &sentinels).Error; err != nil {
+			t.Fatalf("run %d: list sentinels: %v", run, err)
+		}
+		if want := []string{"ss-injected"}; !reflect.DeepEqual(sentinels, want) {
+			t.Fatalf("run %d: sentinels = %v, want %v", run, sentinels, want)
 		}
 		var secrets []string
 		if err := write.Model(&model.Secret{}).Order("id").Pluck("id", &secrets).Error; err != nil {
@@ -210,13 +214,13 @@ func TestMigrateRetiresTheCredentialJudge(t *testing.T) {
 			t.Fatalf("run %d: requests = %+v, want the two sandbox grants asked again once", run, requests)
 		}
 		delegate, use := requests[0], requests[1]
-		if use.SandboxID != "sbx-1" || use.Status != model.SecretRequestStatusPending || use.Purpose != model.SecretGrantPurposeUse ||
-			use.Name != "github" || use.EnvName != "GH_TOKEN" || !reflect.DeepEqual(use.Hosts, []string{"api.github.com"}) ||
-			!use.FromProtocol() || !strings.Contains(use.Justification, "open a PR") {
+		if use.SandboxID != "sbx-1" || use.Status != model.SecretRequestStatusPending || use.Purpose != model.SecretPurposeUse ||
+			use.Name != "github" || use.EnvName != "GH_TOKEN" || !reflect.DeepEqual(use.Routes, []model.SecretRoute{{Host: "api.github.com"}}) ||
+			!strings.Contains(use.Justification, "open a PR") {
 			t.Fatalf("run %d: use request = %+v", run, use)
 		}
-		if delegate.Purpose != model.SecretGrantPurposeDelegate || delegate.Status != model.SecretRequestStatusPending ||
-			!reflect.DeepEqual(delegate.Hosts, []string{"github.com"}) {
+		if delegate.Purpose != model.SecretPurposeDelegate || delegate.Status != model.SecretRequestStatusPending ||
+			!reflect.DeepEqual(delegate.Routes, []model.SecretRoute{{Host: "github.com"}}) {
 			t.Fatalf("run %d: delegate request = %+v", run, delegate)
 		}
 
@@ -235,7 +239,6 @@ func TestMigrateRetiresTheCredentialJudge(t *testing.T) {
 			}
 		}
 		for table, columns := range map[string][]string{
-			"secret_grants":       {"uses", "policy", "rule_id", "env_name"},
 			"secret_requests":     {"uses", "policy", "well_known_id"},
 			"secrets":             {"well_known_id"},
 			"sandbox_secrets":     {"agent_requested"},

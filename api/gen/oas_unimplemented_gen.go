@@ -53,8 +53,9 @@ func (UnimplementedHandler) AssignSandboxHarnessSecrets(ctx context.Context, req
 //
 // Prepare the in-flight configure sandbox for attach, then attach to its primary terminal.
 // This seeds the previous configuration into the sandbox at a well-known path so the harness's
-// configure command may pre-fill from it; only secrets holding a live grant to this harness config
-// are included. The configure command is not launched until the primary terminal is attached, so
+// configure command may pre-fill from it; only the secrets a previous configure of this harness
+// config created, bound on it, are included. The configure command is not launched until the primary
+// terminal is attached, so
 // seeding always precedes it. Call this before attaching to exec id "primary".
 //
 // POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure/attach
@@ -301,21 +302,12 @@ func (UnimplementedHandler) CreateSecret(ctx context.Context, req *CreateSecretB
 	return r, ht.ErrNotImplemented
 }
 
-// CreateSecretGrant implements create-secret-grant operation.
+// CreateSecretBinding implements create-secret-binding operation.
 //
-// Create a secret grant (pre-approval).
+// Bind a secret to a project, harness config or discobox.
 //
-// POST /projects/{projectId}/secret-grants
-func (UnimplementedHandler) CreateSecretGrant(ctx context.Context, req *CreateSecretGrantBody, params CreateSecretGrantParams) (r CreateSecretGrantRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// CreateSecretRequest implements create-secret-request operation.
-//
-// Request access to a secret.
-//
-// POST /projects/{projectId}/secret-requests
-func (UnimplementedHandler) CreateSecretRequest(ctx context.Context, req *CreateSecretRequestBody, params CreateSecretRequestParams) (r CreateSecretRequestRes, _ error) {
+// POST /projects/{projectId}/secret-bindings
+func (UnimplementedHandler) CreateSecretBinding(ctx context.Context, req *CreateSecretBindingBody, params CreateSecretBindingParams) (r CreateSecretBindingRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -337,15 +329,6 @@ func (UnimplementedHandler) DeconfigureHarnessConfig(ctx context.Context, params
 //
 // DELETE /projects/{projectId}/harness-configs/{harnessConfigId}
 func (UnimplementedHandler) DeleteHarnessConfig(ctx context.Context, params DeleteHarnessConfigParams) (r DeleteHarnessConfigRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// DeleteHarnessConfigSecretBinding implements delete-harness-config-secret-binding operation.
-//
-// Remove a harness config secret binding.
-//
-// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
-func (UnimplementedHandler) DeleteHarnessConfigSecretBinding(ctx context.Context, params DeleteHarnessConfigSecretBindingParams) (r DeleteHarnessConfigSecretBindingRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -450,6 +433,15 @@ func (UnimplementedHandler) DeleteSecret(ctx context.Context, params DeleteSecre
 	return r, ht.ErrNotImplemented
 }
 
+// DeleteSecretBinding implements delete-secret-binding operation.
+//
+// Remove a secret binding and every binding handed on under it.
+//
+// DELETE /projects/{projectId}/secret-bindings/{bindingId}
+func (UnimplementedHandler) DeleteSecretBinding(ctx context.Context, params DeleteSecretBindingParams) (r DeleteSecretBindingRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // DenySecretRequest implements deny-secret-request operation.
 //
 // Deny a secret request.
@@ -474,6 +466,15 @@ func (UnimplementedHandler) DenyTrustRequest(ctx context.Context, params DenyTru
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/discard
 func (UnimplementedHandler) DiscardSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params DiscardSandboxHarnessConfigChangesParams) (r DiscardSandboxHarnessConfigChangesRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// DismissSecretRefreshRequest implements dismiss-secret-refresh-request operation.
+//
+// Dismiss a refresh request without writing a value.
+//
+// POST /projects/{projectId}/secret-refresh-requests/{requestId}/dismiss
+func (UnimplementedHandler) DismissSecretRefreshRequest(ctx context.Context, params DismissSecretRefreshRequestParams) (r DismissSecretRefreshRequestRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -723,6 +724,15 @@ func (UnimplementedHandler) GetSecret(ctx context.Context, params GetSecretParam
 	return r, ht.ErrNotImplemented
 }
 
+// GetSecretBinding implements get-secret-binding operation.
+//
+// Show a secret binding.
+//
+// GET /projects/{projectId}/secret-bindings/{bindingId}
+func (UnimplementedHandler) GetSecretBinding(ctx context.Context, params GetSecretBindingParams) (r GetSecretBindingRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetSecretRequest implements get-secret-request operation.
 //
 // Get a secret request; includes decrypted value when approved and not expired.
@@ -768,6 +778,15 @@ func (UnimplementedHandler) ListApprovalRequests(ctx context.Context, params Lis
 	return r, ht.ErrNotImplemented
 }
 
+// ListBoundSecrets implements list-bound-secrets operation.
+//
+// What a project, harness config or discobox holds, resolved.
+//
+// GET /projects/{projectId}/bound-secrets
+func (UnimplementedHandler) ListBoundSecrets(ctx context.Context, params ListBoundSecretsParams) (r ListBoundSecretsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListDNSAudit implements list-dns-audit operation.
 //
 // The DNS queries the project's pools answered for their sandboxes, newest first, read from each
@@ -801,15 +820,6 @@ func (UnimplementedHandler) ListExecEvents(ctx context.Context, params ListExecE
 //
 // GET /projects/{projectId}/audit/http
 func (UnimplementedHandler) ListHTTPAudit(ctx context.Context, params ListHTTPAuditParams) (r ListHTTPAuditRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ListHarnessConfigSecretBindings implements list-harness-config-secret-bindings operation.
-//
-// List harness config secret bindings.
-//
-// GET /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings
-func (UnimplementedHandler) ListHarnessConfigSecretBindings(ctx context.Context, params ListHarnessConfigSecretBindingsParams) (r ListHarnessConfigSecretBindingsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -915,7 +925,7 @@ func (UnimplementedHandler) ListSSHKeys(ctx context.Context, params ListSSHKeysP
 
 // ListSandboxCredentials implements list-sandbox-credentials operation.
 //
-// List a sandbox's granted agent credentials.
+// List the credentials a sandbox's bindings give it.
 //
 // GET /api/pools/{poolId}/sandbox-credentials
 func (UnimplementedHandler) ListSandboxCredentials(ctx context.Context, params ListSandboxCredentialsParams) (r ListSandboxCredentialsRes, _ error) {
@@ -1035,12 +1045,30 @@ func (UnimplementedHandler) ListSandboxes(ctx context.Context, params ListSandbo
 	return r, ht.ErrNotImplemented
 }
 
-// ListSecretGrants implements list-secret-grants operation.
+// ListSecretBindingEvents implements list-secret-binding-events operation.
 //
-// List secret grants.
+// Read the history of secret bindings, newest first.
 //
-// GET /projects/{projectId}/secret-grants
-func (UnimplementedHandler) ListSecretGrants(ctx context.Context, params ListSecretGrantsParams) (r ListSecretGrantsRes, _ error) {
+// GET /projects/{projectId}/secret-binding-events
+func (UnimplementedHandler) ListSecretBindingEvents(ctx context.Context, params ListSecretBindingEventsParams) (r ListSecretBindingEventsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListSecretBindings implements list-secret-bindings operation.
+//
+// List secret bindings.
+//
+// GET /projects/{projectId}/secret-bindings
+func (UnimplementedHandler) ListSecretBindings(ctx context.Context, params ListSecretBindingsParams) (r ListSecretBindingsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListSecretRefreshRequests implements list-secret-refresh-requests operation.
+//
+// List requests for a new value of a token.
+//
+// GET /projects/{projectId}/secret-refresh-requests
+func (UnimplementedHandler) ListSecretRefreshRequests(ctx context.Context, params ListSecretRefreshRequestsParams) (r ListSecretRefreshRequestsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -1376,15 +1404,6 @@ func (UnimplementedHandler) ResumeSandboxAutostop(ctx context.Context, params Re
 	return r, ht.ErrNotImplemented
 }
 
-// RevokeSecretGrant implements revoke-secret-grant operation.
-//
-// Revoke a secret grant.
-//
-// DELETE /projects/{projectId}/secret-grants/{grantId}
-func (UnimplementedHandler) RevokeSecretGrant(ctx context.Context, params RevokeSecretGrantParams) (r RevokeSecretGrantRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // SaveSandboxHarnessConfigChanges implements save-sandbox-harness-config-changes operation.
 //
 // Save sandbox harness config changes.
@@ -1429,15 +1448,6 @@ func (UnimplementedHandler) SetDefaultPool(ctx context.Context, params SetDefaul
 //
 // PUT /projects/{projectId}/default
 func (UnimplementedHandler) SetDefaultProject(ctx context.Context, params SetDefaultProjectParams) (r SetDefaultProjectRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// SetHarnessConfigSecretBinding implements set-harness-config-secret-binding operation.
-//
-// Bind a harness config environment variable to a secret.
-//
-// PUT /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
-func (UnimplementedHandler) SetHarnessConfigSecretBinding(ctx context.Context, req *SetHarnessConfigSecretBindingBody, params SetHarnessConfigSecretBindingParams) (r SetHarnessConfigSecretBindingRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -1631,6 +1641,15 @@ func (UnimplementedHandler) UpdateSandboxProviderInstance(ctx context.Context, r
 //
 // PUT /projects/{projectId}/secrets/{secretId}
 func (UnimplementedHandler) UpdateSecret(ctx context.Context, req *UpdateSecretBody, params UpdateSecretParams) (r UpdateSecretRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// UpdateSecretBinding implements update-secret-binding operation.
+//
+// Change a secret binding's routes, lifetime or variable.
+//
+// PATCH /projects/{projectId}/secret-bindings/{bindingId}
+func (UnimplementedHandler) UpdateSecretBinding(ctx context.Context, req *UpdateSecretBindingBody, params UpdateSecretBindingParams) (r UpdateSecretBindingRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

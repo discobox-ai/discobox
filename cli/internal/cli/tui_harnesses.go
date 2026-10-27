@@ -175,10 +175,12 @@ func (d *apiDataSource) HarnessSecrets(ctx context.Context, server, harnessID st
 	return harnessSecrets(*cfg, bindings, secretsByID), nil
 }
 
-func harnessSecrets(cfg apimodel.HarnessConfig, bindings []apimodel.HarnessConfigSecretBinding, secretsByID map[string]apimodel.Secret) []tui.HarnessSecret {
+func harnessSecrets(cfg apimodel.HarnessConfig, bindings []apimodel.SecretBinding, secretsByID map[string]apimodel.Secret) []tui.HarnessSecret {
 	boundByEnv := make(map[string]string, len(bindings))
 	for _, binding := range bindings {
-		boundByEnv[binding.EnvName] = binding.SecretId
+		if env := binding.EnvVar.Or(""); env != "" {
+			boundByEnv[env] = binding.SecretId
+		}
 	}
 
 	out := make([]tui.HarnessSecret, 0, len(bindings))
@@ -195,10 +197,11 @@ func harnessSecrets(cfg apimodel.HarnessConfig, bindings []apimodel.HarnessConfi
 	// A binding for a variable the image never declared still answers one, so
 	// it is listed too rather than silently dropped.
 	for _, binding := range bindings {
-		if declared[binding.EnvName] {
+		env := binding.EnvVar.Or("")
+		if env == "" || declared[env] {
 			continue
 		}
-		out = append(out, resolveHarnessSecret(tui.HarnessSecret{Name: binding.EnvName}, binding.SecretId, secretsByID))
+		out = append(out, resolveHarnessSecret(tui.HarnessSecret{Name: terminalSafe(env)}, binding.SecretId, secretsByID))
 	}
 	return out
 }

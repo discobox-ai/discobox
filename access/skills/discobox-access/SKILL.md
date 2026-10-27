@@ -119,7 +119,7 @@ and lifetime may differ from your ask.
 
 Run the command that needs it. The credential is in the variable you named,
 for every command started once it has reached your discobox — which follows
-the grant by a few seconds, as the pool is told. If the variable is not there
+the approval by a few seconds, as the pool is told. If the variable is not there
 yet, or a request carrying it is refused as unauthenticated, run `env` again
 in a moment. A shell that was already
 running — your harness's tool shell inherits the environment the harness was
@@ -219,7 +219,11 @@ discobox-access request --delegate \
 ```
 
 A delegation authorizes nothing you send yourself; ask separately to use the
-credential if you need it too.
+credential if you need it too. A person may already have given you one
+(`discobox secret bind <secret> <this discobox> --delegate`): `discobox-access
+list` shows it as a delegation. Under it you may also give a worker the
+credential when you create it, `discobox run --bind <secret>:<VAR> …`, which
+the server holds to your delegation as it does an approval.
 
 ### Create a worker
 
@@ -253,10 +257,11 @@ discobox secret request deny <request-id>
   nothing else, and the server refuses any other.
 - Read each request's `justification` and hosts. Approve what the worker's
   task needs and what you were delegated; deny the rest.
-- The server approves only under a delegation you hold of that secret, whose
-  hosts cover every host asked and which outlasts the grant, and fits the
-  grant's lifetime within it. Pass `--secret` only when the server says you
-  were delegated more than one secret that fits.
+- The server approves only under a delegate binding you hold of that secret:
+  the worker's binding is made under it, held to its routes as well as its
+  own, and lasts no longer than it. Pass `--secret` only when the server says
+  you were delegated more than one secret that fits. If the delegation is
+  removed, every binding made under it goes too.
 - A request to delegate waits for a person, as does every request when you
   hold no delegation that covers it.
 
