@@ -12,6 +12,10 @@ StartLimitIntervalSec=0
 # on a Docker pool the builder's and registry's configuration, which their
 # units are ordered after.
 Type=notify
+# Nested pools inherit the outer sandbox's proxy and trust settings at PID 1.
+# System services must opt in to that environment. The agent forwards these
+# settings to its proxy, builder and registry before reporting ready.
+PassEnvironment=HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy NO_PROXY no_proxy SSL_CERT_FILE SSL_CERT_DIR
 Environment=DISCOBOX_POOL_BOOTSTRAP_FILE=/etc/discobox/pool-agent/bootstrap.json
 # What the box's maker sets beside the bootstrap: the pool's policy the agent
 # reads from its environment (retention, the sandbox base image, the idle

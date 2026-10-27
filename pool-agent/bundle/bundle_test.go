@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
+	"github.com/discobox-ai/discobox/proxy"
 )
 
 // The pool bundle's tree loads (every provision.yaml valid, every feature's
@@ -52,5 +53,33 @@ func TestThePoolBundleLoads(t *testing.T) {
 		if !strings.Contains(string(unit), want) {
 			t.Errorf("the agent's unit does not say %s", want)
 		}
+	}
+}
+
+// Starting the agent as a systemd service must not lose the proxy injected
+// into PID 1 by an outer sandbox. Keep the unit's opt-in aligned with the
+// upstream transports, including both cases and the trust needed for MITM.
+func TestPoolAgentInheritsUpstreamEnvironment(t *testing.T) {
+	unit, err := os.ReadFile(filepath.Join("features", "pool-agent", "systemd", "discobox-pool-agent.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	passed := map[string]bool{}
+	for line := range strings.SplitSeq(string(unit), "\n") {
+		if value, ok := strings.CutPrefix(line, "PassEnvironment="); ok {
+			for _, name := range strings.Fields(value) {
+				passed[name] = true
+			}
+		}
+	}
+	want := append([]string{"NO_PROXY", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR"}, proxy.UpstreamProxyEnvVars...)
+	for _, name := range want {
+		if !passed[name] {
+			t.Errorf("pool agent loses inherited %s at the systemd boundary", name)
+		}
+		delete(passed, name)
+	}
+	if len(passed) != 0 {
+		t.Errorf("pool agent inherits unrelated environment variables: %v", passed)
 	}
 }
