@@ -1,0 +1,1 @@
+using claude hook can we inject environment variables per tool call?
