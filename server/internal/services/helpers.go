@@ -60,7 +60,9 @@ func HarnessConfigFilesToModel(files []apimodel.HarnessConfigFile) []model.Harne
 	return out
 }
 
-var HarnessConfigEnvVarNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+// EnvVarNamePattern is what an environment variable a credential or a
+// harness setting is delivered in may be called, wherever one is named.
+var EnvVarNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // SandboxUserFields is the sandbox user as the model stores it. Every field is
 // optional and stays nil when the request omitted it: the control plane cannot
@@ -993,12 +995,12 @@ func RawMessage(raw []byte) json.RawMessage {
 
 // AgentCredentialRequestStatus maps a request's approval state onto the
 // protocol's vocabulary. The protocol says "granted", the control plane says
-// "approved", and only the control plane knows that an approval whose grant has
-// since been revoked is no longer a grant.
-func AgentCredentialRequestStatus(req *model.SecretRequest, grant *model.SecretGrant) string {
+// "approved", and only the control plane knows that an approval whose binding
+// has since been removed or lapsed no longer holds.
+func AgentCredentialRequestStatus(req *model.SecretRequest, binding *model.SecretBinding) string {
 	switch req.Status {
 	case model.SecretRequestStatusApproved:
-		if grant == nil {
+		if binding == nil {
 			return model.SecretRequestStatusDenied
 		}
 		return "granted"

@@ -5,7 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
+	"time"
+
+	"github.com/discobox-ai/discobox/pkg/hostscope"
 
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -25,76 +29,73 @@ import (
 // sentinel in the variable it named, and cleartext leaves only through
 // ResolveSandboxSecret.
 
-// ListSandboxCredentials returns what a sandbox holds: each variable bound on
-// it whose secret a live use grant covering it authorizes, and each live
-// delegation grant it holds, which delivers nothing to it.
+// ListSandboxCredentials returns what a sandbox holds: its effective use
+// bindings, each in the variable it delivers, and its live delegate bindings,
+// which deliver nothing to it (ADR 26-10-27-880 §2).
 func (s *Service) ListSandboxCredentials(ctx context.Context, poolID, sandboxID string) ([]services.SandboxCredential, error) {
 	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, sandboxID)
 	if err != nil {
 		return nil, err
 	}
-	// The same scopes a resolve is matched against: what this discobox is, what
-	// harness it runs, and the project it belongs to.
-	grants, err := s.store.ListLiveGrantsCovering(ctx, sandbox.ProjectID, store.SandboxGrantScopes(sandbox))
+	effective, err := s.store.ResolveSandboxBindings(ctx, sandbox, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
-	bindings, err := s.store.ListSandboxSecrets(ctx, sandbox.ProjectID, sandbox.ID)
-	if err != nil {
-		return nil, err
-	}
-	names := map[string]string{}
-	secretName := func(secretID string) (string, bool) {
-		if name, ok := names[secretID]; ok {
-			return name, name != ""
+	secrets := map[string]*model.Secret{}
+	secretOf := func(secretID string) *model.Secret {
+		if secret, ok := secrets[secretID]; ok {
+			return secret
 		}
 		secret, err := s.store.GetSecret(ctx, sandbox.ProjectID, secretID)
 		if err != nil {
-			names[secretID] = ""
-			return "", false
+			secret = nil
 		}
-		names[secretID] = secret.Name
-		return secret.Name, true
+		secrets[secretID] = secret
+		return secret
 	}
 	var out []services.SandboxCredential
-	for _, binding := range bindings {
-		// The narrowest live use grant of the secret is the one a resolve
-		// would find.
-		for i := range grants {
-			grant := &grants[i]
-			if grant.SecretID != binding.SecretID || !grant.MayUse() {
-				continue
-			}
-			name, ok := secretName(grant.SecretID)
-			if !ok {
-				break
-			}
-			out = append(out, sandboxCredential(name, binding.EnvName, grant))
-			break
+	for _, applied := range effective.Use {
+		if secret := secretOf(applied.Binding.SecretID); secret != nil {
+			out = append(out, sandboxCredential(secret, applied, model.SecretPurposeUse))
 		}
 	}
-	for i := range grants {
-		grant := &grants[i]
-		if grant.MayUse() || grant.Scope != model.SecretGrantScopeSandbox || grant.ScopeKey != sandbox.ID {
-			continue
-		}
-		if name, ok := secretName(grant.SecretID); ok {
-			out = append(out, sandboxCredential(name, "", grant))
+	for _, applied := range effective.Delegate {
+		if secret := secretOf(applied.Binding.SecretID); secret != nil {
+			out = append(out, sandboxCredential(secret, applied, model.SecretPurposeDelegate))
 		}
 	}
 	return out, nil
 }
 
-func sandboxCredential(name, envName string, grant *model.SecretGrant) services.SandboxCredential {
-	return services.SandboxCredential{
-		Name:      name,
-		EnvName:   envName,
-		SecretID:  grant.SecretID,
-		GrantID:   grant.ID,
-		Hosts:     grant.Hosts,
-		Purpose:   grant.Purpose,
-		ExpiresAt: grant.ExpiresAt,
+// sandboxCredential is a binding as the protocol lists it: the hosts are
+// those of the narrowest routes it is held to — the binding's when it has
+// any, else its parent's, else the secret's.
+func sandboxCredential(secret *model.Secret, applied store.EffectiveBinding, purpose string) services.SandboxCredential {
+	routes := secret.Routes
+	switch {
+	case len(applied.Binding.Routes) > 0:
+		routes = applied.Binding.Routes
+	case applied.Parent != nil && len(applied.Parent.Routes) > 0:
+		routes = applied.Parent.Routes
 	}
+	var hosts []string
+	for _, route := range routes {
+		if !route.Blocked && !slices.Contains(hosts, route.Host) {
+			hosts = append(hosts, route.Host)
+		}
+	}
+	credential := services.SandboxCredential{
+		Name:      secret.Name,
+		SecretID:  secret.ID,
+		BindingID: applied.Binding.ID,
+		Hosts:     hosts,
+		Purpose:   purpose,
+		ExpiresAt: bindingExpiry(&applied.Binding, applied.Parent),
+	}
+	if purpose == model.SecretPurposeUse {
+		credential.EnvName = applied.Binding.EnvName
+	}
+	return credential
 }
 
 // CreateSandboxCredentialRequest records an agent's ask as a pending
@@ -112,15 +113,14 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	if err != nil {
 		return nil, err
 	}
-	// What the credential is asked for is the grant's purpose once approved,
-	// so it is read the way a grant's is.
-	purpose, err := grantPurpose(string(input.Purpose.Or("")))
+	// What the credential is asked for: to use it, or to delegate it.
+	purpose, err := requestPurpose(string(input.Purpose.Or("")))
 	if err != nil {
 		return nil, err
 	}
 	name := strings.TrimSpace(input.Name)
 	envName := strings.TrimSpace(input.EnvVar.Or(""))
-	hosts, _ := askedHosts(input.Hosts)
+	hosts := hostscope.List(input.Hosts...)
 	if name == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential name is required")
 	}
@@ -128,18 +128,27 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	// nothing to the discobox that asks, so naming one is a mistake about
 	// what it asks for.
 	switch {
-	case purpose == model.SecretGrantPurposeDelegate && envName != "":
+	case purpose == model.SecretPurposeDelegate && envName != "":
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
 			"a request to delegate names no environment variable: a delegation delivers nothing to the discobox that asks")
-	case purpose == model.SecretGrantPurposeUse && (envName == "" || strings.ContainsAny(envName, "=\x00")):
+	case purpose == model.SecretPurposeUse && !services.EnvVarNamePattern.MatchString(envName):
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a valid environment variable name")
 	}
-	// A host is mandatory here and nowhere else: approving this request mints
-	// a grant, and a grant minted by this flow may not be host-unscoped
-	// (ADR 0031 §5). Refusing at the ask is better than discovering it at the
-	// approval, where a human has already decided to say yes.
+	// A host is mandatory: the request's routes are what an approval binds
+	// unless the approver names others, and an agent says where it means to
+	// send what it asks for (ADR 0031 §5).
 	if len(hosts) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a destination host")
+	}
+	// Each host is a route, read as every route is written: a host that is
+	// no host name, or `*` inside one, is refused here rather than stored.
+	routes := make([]model.SecretRoute, 0, len(hosts))
+	for _, host := range hosts {
+		routes = append(routes, model.SecretRoute{Host: host})
+	}
+	routes, err = model.NormalizeRoutes(routes)
+	if err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
 	// The lifetime asked for is recorded, not checked against any secret: which
 	// secret answers the request is the approval's choice, and so is whether
@@ -162,24 +171,20 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 		return nil, err
 	}
 	for i := range pending {
-		if pending[i].GrantTTL == grantTTL && pending[i].Name == name {
+		if pending[i].TTL == grantTTL && pending[i].Name == name {
 			return &pending[i], nil
 		}
 	}
 
 	req := &model.SecretRequest{
-		ProjectID:   sandbox.ProjectID,
-		RequestedBy: agentRequesterID(sandbox.ID),
-		SandboxID:   sandbox.ID,
-		// Every secret is a token, and a token is what the swap carries:
-		// ResolveSandboxSecret emits Value.Token, so nothing a request can name
-		// is a credential the proxy could not substitute.
-		Type:          model.SecretTypeToken,
-		Hosts:         hosts,
+		ProjectID:     sandbox.ProjectID,
+		RequestedBy:   agentRequesterID(sandbox.ID),
+		SandboxID:     sandbox.ID,
+		Routes:        routes,
 		Name:          name,
 		EnvName:       envName,
 		Justification: strings.TrimSpace(input.Justification.Or("")),
-		GrantTTL:      grantTTL,
+		TTL:           grantTTL,
 		Purpose:       purpose,
 		Status:        model.SecretRequestStatusPending,
 	}
@@ -190,8 +195,8 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 }
 
 // GetSandboxCredentialRequest reads one of a sandbox's own credential requests
-// and, once approved, the grant it was answered with.
-func (s *Service) GetSandboxCredentialRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.SecretRequest, *model.SecretGrant, error) {
+// and, once approved, the binding it was answered with while it stands.
+func (s *Service) GetSandboxCredentialRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.SecretRequest, *model.SecretBinding, error) {
 	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, sandboxID)
 	if err != nil {
 		return nil, nil, err
@@ -203,27 +208,39 @@ func (s *Service) GetSandboxCredentialRequest(ctx context.Context, poolID, sandb
 	// A sandbox may poll only its own asks. Requests are project-scoped rows and
 	// a pool hosts many sandboxes, so without this a compromised sandbox could
 	// read every request in the project by guessing IDs.
-	if req.SandboxID != sandbox.ID || !req.FromProtocol() {
+	if req.SandboxID != sandbox.ID {
 		return nil, nil, apperrors.NewStatusError(http.StatusNotFound, "secret request not found")
 	}
-	if req.Status != model.SecretRequestStatusApproved || req.GrantID == "" {
+	if req.Status != model.SecretRequestStatusApproved || req.BindingID == "" {
 		return req, nil, nil
 	}
-	grant, err := s.store.GetSecretGrant(ctx, sandbox.ProjectID, req.GrantID)
+	binding, err := s.store.SecretBindingByExactID(ctx, sandbox.ProjectID, req.BindingID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			// The grant was revoked after approval. The request stays approved
-			// (it is history), but there is nothing to use.
+			// The binding was removed after approval. The request stays
+			// approved (it is history), but there is nothing to use.
 			return req, nil, nil
 		}
 		return nil, nil, err
 	}
-	return req, grant, nil
+	if !binding.Live(time.Now().UTC()) {
+		return req, nil, nil
+	}
+	return req, binding, nil
+}
+
+// requestPurpose reads what a credential is asked for. Nothing named is use.
+func requestPurpose(purpose string) (string, error) {
+	switch purpose = strings.TrimSpace(purpose); purpose {
+	case "", model.SecretPurposeUse:
+		return model.SecretPurposeUse, nil
+	case model.SecretPurposeDelegate:
+		return purpose, nil
+	}
+	return "", apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("a credential is asked for use or delegate, not %q", purpose))
 }
 
 // agentRequesterID is the principal recorded on a protocol-originated request.
-// It is distinct from the reactive path's "sandbox:<id>" so the two species stay
-// legible in the approval inbox and in FindPendingSecretRequest's dedup domain.
 func agentRequesterID(sandboxID string) string { return "agent:" + sandboxID }
 
 // sandboxOwnedByPool resolves a sandbox and verifies the calling pool hosts it,

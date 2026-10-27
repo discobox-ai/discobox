@@ -19,7 +19,7 @@
 # (CommitHarnessConfigConfigure), so this drives the real flow over the API and
 # replaces the configure sandbox's configure command, before it launches, with
 # one that writes the result the interactive flow would have. Everything after
-# that — the secret, its binding and grant, the files, `configured` — is the
+# that — the secret, its harness-config binding, the files, `configured` — is the
 # server's normal apply. The sentinel is assumed to work; --test first proves it
 # with `claude -p` through the nested proxy, which costs a model round trip.
 #

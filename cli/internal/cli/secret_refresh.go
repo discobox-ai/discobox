@@ -19,9 +19,9 @@ import (
 // (ADR 26-09-25-122 §5).
 func (a *App) newSecretRefreshCommand() *cobra.Command {
 	var value string
-	var run bool
+	var run, dismiss bool
 	cmd := &cobra.Command{
-		Use:   "refresh SECRET (--run | --value VALUE|-)",
+		Use:   "refresh SECRET (--run | --value VALUE|- | --dismiss)",
 		Short: "Write a new value for a token, answering its refresh request",
 		Long: `Write a new value for a token, answering its open refresh request.
 
@@ -29,7 +29,8 @@ func (a *App) newSecretRefreshCommand() *cobra.Command {
 sends what it prints. It is only run when asked for by name: the command is the
 project's, and anybody who can edit the secret can change it, so without --run
 this says what it would run and stops. --value gives the value instead;
---value - reads it from stdin.`,
+--value - reads it from stdin. --dismiss closes the open request without a new
+value.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := a.apiClient()
@@ -43,6 +44,12 @@ this says what it would run and stops. --value gives the value instead;
 			secretID, err := a.resolveSecretID(cmd.Context(), client, projectID, args[0])
 			if err != nil {
 				return err
+			}
+			if dismiss {
+				if run || cmd.Flags().Changed("value") {
+					return fmt.Errorf("--dismiss writes no value; give it alone")
+				}
+				return dismissRefreshRequest(cmd, client, projectID, secretID, args[0])
 			}
 			res, err := client.GetSecret(cmd.Context(), apiclientgen.GetSecretParams{ProjectId: projectID, SecretId: secretID})
 			if err != nil {
@@ -105,6 +112,7 @@ this says what it would run and stops. --value gives the value instead;
 	}
 	cmd.Flags().BoolVar(&run, "run", false, "Run the token's refresh command here and send what it prints")
 	cmd.Flags().StringVar(&value, "value", "", "The new value, or - to read it from stdin")
+	cmd.Flags().BoolVar(&dismiss, "dismiss", false, "Close the token's open refresh request without writing a value")
 	return cmd
 }
 
@@ -134,21 +142,41 @@ func enteredValue(name, flag string, stdin io.Reader) (string, error) {
 // openRefreshRequest is the open refresh request on a secret, or "" when
 // nothing is asking for a new value.
 func openRefreshRequest(ctx context.Context, client *apiclientgen.Client, projectID, secretID string) (string, error) {
-	res, err := client.ListSecretRequests(ctx, apiclientgen.ListSecretRequestsParams{
+	res, err := client.ListSecretRefreshRequests(ctx, apiclientgen.ListSecretRefreshRequestsParams{
 		ProjectId: projectID,
-		Status:    apiclientgen.NewOptListSecretRequestsStatus(apiclientgen.ListSecretRequestsStatusPending),
+		Status:    apiclientgen.NewOptListSecretRefreshRequestsStatus(apiclientgen.ListSecretRefreshRequestsStatusPending),
 	})
 	if err != nil {
 		return "", err
 	}
-	body, err := expectResponse[apimodel.ListSecretRequestsBody](res)
+	body, err := expectResponse[apimodel.ListSecretRefreshRequestsBody](res)
 	if err != nil {
 		return "", err
 	}
-	for _, request := range body.GetSecretRequests() {
-		if request.Reason.Or("") == apiclientgen.SecretRequestReasonRefresh && request.SecretId.Or("") == secretID {
+	for _, request := range body.GetSecretRefreshRequests() {
+		if request.SecretId == secretID {
 			return request.ID, nil
 		}
 	}
 	return "", nil
+}
+
+// dismissRefreshRequest closes a token's open refresh request with no value.
+func dismissRefreshRequest(cmd *cobra.Command, client *apiclientgen.Client, projectID, secretID, said string) error {
+	requestID, err := openRefreshRequest(cmd.Context(), client, projectID, secretID)
+	if err != nil {
+		return err
+	}
+	if requestID == "" {
+		return fmt.Errorf("nothing is asking for a new value of %s", said)
+	}
+	res, err := client.DismissSecretRefreshRequest(cmd.Context(), apiclientgen.DismissSecretRefreshRequestParams{ProjectId: projectID, RequestId: requestID})
+	if err != nil {
+		return err
+	}
+	if _, err := expectResponse[apimodel.SecretRefreshRequest](res); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "Dismissed the request for a new value of %s.\n", said)
+	return err
 }

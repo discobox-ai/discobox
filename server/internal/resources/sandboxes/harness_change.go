@@ -73,18 +73,11 @@ func (s *Service) prepareHarnessChange(ctx context.Context, sb *model.Sandbox, c
 	services.SandboxPinTarget{Harness: pins}.Apply(&candidate)
 	candidate.HarnessConfigID = &target.ID
 	candidate.Prompt = nil
-	existing, err := s.store.ListSandboxSecrets(ctx, sb.ProjectID, sb.ID)
+	own, err := ownBindingEnvs(ctx, s.store, sb)
 	if err != nil {
 		return nil, err
 	}
-	inline := map[string]struct{}{}
-	for _, secret := range existing {
-		if secret.SourceHarnessConfigID == "" {
-			inline[secret.EnvName] = struct{}{}
-		}
-	}
-	_, err = prepareHarnessConfigSecrets(ctx, s.store, sb.ProjectID, &candidate, target.ID, inline)
-	if err != nil {
+	if err := checkRequiredSecrets(ctx, s.store, &candidate, target.ID, own); err != nil {
 		return nil, err
 	}
 	changeID, err := id.New("hchange")
@@ -141,21 +134,9 @@ func (r *SandboxReconciler) applyHarnessChange(ctx context.Context, sb *model.Sa
 		current.PendingHarnessChange = nil
 		current.PendingHarnessConfigID = nil
 		current.HarnessChangeError = ""
-		existing, err := st.ListSandboxSecrets(ctx, current.ProjectID, current.ID)
-		if err != nil {
-			return err
-		}
-		inline := map[string]struct{}{}
-		for _, secret := range existing {
-			if secret.SourceHarnessConfigID == "" {
-				inline[secret.EnvName] = struct{}{}
-			}
-		}
-		assignments, err := prepareHarnessConfigSecrets(ctx, st, current.ProjectID, current, *current.HarnessConfigID, inline)
-		if err != nil {
-			return err
-		}
-		if err := st.ReplaceSandboxHarnessSecrets(ctx, current.ID, assignments); err != nil {
+		// The new harness config's bindings replace the old one's; the
+		// sandbox's own stay, and win for their variables.
+		if _, err := materializeSandboxSecrets(ctx, st, current); err != nil {
 			return err
 		}
 		if err := st.UpdateSandbox(ctx, current, store.WithGeneration(sb.Generation)); err != nil {
@@ -171,4 +152,19 @@ func (r *SandboxReconciler) applyHarnessChange(ctx context.Context, sb *model.Sa
 		return reconcile.Result{}, err
 	}
 	return r.ensure(ctx, sb, sb.Generation)
+}
+
+// ownBindingEnvs are the variables a sandbox's own use bindings deliver.
+func ownBindingEnvs(ctx context.Context, st *store.Store, sb *model.Sandbox) (map[string]struct{}, error) {
+	bindings, err := st.ListSecretBindings(ctx, sb.ProjectID, store.SecretBindingFilter{TargetKind: model.SecretBindingTargetSandbox, TargetID: sb.ID})
+	if err != nil {
+		return nil, err
+	}
+	own := map[string]struct{}{}
+	for _, binding := range bindings {
+		if binding.Use {
+			own[binding.EnvName] = struct{}{}
+		}
+	}
+	return own, nil
 }

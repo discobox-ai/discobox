@@ -549,7 +549,7 @@ components:
             type: object
         SentinelRoute:
             additionalProperties: false
-            description: Where a secret may be sent (ADR 26-10-02-924). A host covers itself and every host beneath it; a path is a prefix matched on whole segments.
+            description: Where a secret may be sent (ADR 26-10-02-924). A host covers itself and every host beneath it, and `*` covers every host (ADR 26-10-27-939); a path is a prefix matched on whole segments.
             properties:
                 blocked:
                     description: Refuse every request on this route; a more specific route still answers for the paths beneath it
@@ -968,10 +968,12 @@ components:
                     nullable: true
                     type: array
                 sentinelRoutes:
-                    description: Routes keyed by stable sentinel, for an injected secret that carries routes (ADR 26-10-02-924). Every request carrying such a sentinel must fall on one, and the most specific routes it falls on must not be blocked.
+                    description: The route lists each stable sentinel is held to, keyed by sentinel (ADR 26-10-27-880 §4) — its secret's, its binding's when the binding has any, and its parent's. Every request carrying the sentinel must be allowed by every list; a sentinel with no lists, or an empty list, is sent nowhere.
                     additionalProperties:
                         items:
-                            $ref: '#/components/schemas/SentinelRoute'
+                            items:
+                                $ref: '#/components/schemas/SentinelRoute'
+                            type: array
                         type: array
                     nullable: true
                     type: object
@@ -1530,10 +1532,12 @@ components:
                     nullable: true
                     type: array
                 sentinelRoutes:
-                    description: Replacement routes keyed by stable sentinel, sent with sentinels and replacing the sandbox's whole map (ADR 26-10-02-924).
+                    description: Replacement route lists keyed by stable sentinel, sent with sentinels and replacing the sandbox's whole map (ADR 26-10-27-880 §4).
                     additionalProperties:
                         items:
-                            $ref: '#/components/schemas/SentinelRoute'
+                            items:
+                                $ref: '#/components/schemas/SentinelRoute'
+                            type: array
                         type: array
                     nullable: true
                     type: object

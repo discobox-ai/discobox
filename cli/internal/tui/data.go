@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/programstatus"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/x/id"
@@ -1200,11 +1201,13 @@ type RunRequest struct {
 	// `discobox run`'s own request (WithRun).
 	Include []string
 
-	// Grant is `--grant`, as given: the credentials the new discobox is
-	// given, and DiscoboxAPI `--discobox-api`. The window offers no way to
-	// name either; it carries them because `discobox run` opens the window on
-	// its own request and that request is the whole command (WithRun).
-	Grant       []string
+	// Bind and Delegate are `--bind` and `--delegate`, as given: the secrets
+	// bound to the new discobox, and DiscoboxAPI `--discobox-api`. The window
+	// offers no way to name them; it carries them because `discobox run` opens
+	// the window on its own request and that request is the whole command
+	// (WithRun).
+	Bind        []string
+	Delegate    []string
 	DiscoboxAPI bool
 
 	// SkillDirs and UserSkills are `--skills` and `--user-skills`, from the run
@@ -1225,7 +1228,7 @@ type RunRequest struct {
 	SkipDeclaredSources bool
 
 	// Pool is `--pool`: the pool to create the discobox on, by ID or name.
-	// Empty is the project's default pool. Like Grant, only `discobox
+	// Empty is the project's default pool. Like Bind, only `discobox
 	// new`'s own request carries one.
 	Pool string
 
@@ -1464,12 +1467,11 @@ type AuditUpdate struct {
 // non-interactive commands use: the launcher runs `discobox`'s commands rather
 // than a second implementation of them.
 
-// CredentialRequest is one ask for a credential, waiting on a person. An agent
-// makes them through the in-sandbox CLI (ADR 0031); the proxy makes bare ones
-// when it meets a sentinel it cannot resolve. What separates them here is
-// Name: only an agent that asked names the credential it wants, as the server
-// reads it (model.SecretRequest.FromProtocol). An ask to use it also names
-// the variable it wants it in; an ask to delegate it names none.
+// CredentialRequest is one item waiting on a person: an agent's ask for a
+// credential, made through the in-sandbox CLI (ADR 0031) — an ask to use it
+// names the variable it wants it in, an ask to delegate it names none — or,
+// with Refresh or Trust set, an ask for a new value or for a host's
+// certificate to be trusted.
 type CredentialRequest struct {
 	ID        string
 	SandboxID string
@@ -1482,30 +1484,29 @@ type CredentialRequest struct {
 	// secret ID: choosing which secret answers it is the approval.
 	Name   string
 	EnvVar string
-	// Hosts are every host a credential request asks the credential to be
-	// sent to (ADR 26-10-02-393); Host is a trust's endpoint.
+	// Routes are where a credential request asks the credential to be sent;
+	// Host is a trust's endpoint.
 	Host          string
-	Hosts         []string
-	Type          string
+	Routes        []SecretRoute
 	Justification string
 	// Raw is the request as the server sent it, as indented JSON.
 	Raw string
-	// GrantTTL is how long the agent asked to keep the credential, and the
+	// AskedTTL is how long the agent asked to keep the credential, and the
 	// lifetime the approval opens on. Zero is no ask, never forever.
-	GrantTTL time.Duration
+	AskedTTL time.Duration
 	// Delegate is an ask to delegate the credential to other discoboxes rather
-	// than to use it; approving it mints a delegation grant.
+	// than to use it; approving it binds it to the asking discobox to give on.
 	Delegate bool
 	Created  time.Time
 	// Refresh is set on an item that asks for a new value of a token the
 	// project already holds, because it went stale or was refused
 	// (ADR 26-09-25-122 §4). Name is then the secret's name; the answer is a
-	// value, not a grant.
+	// value, not a binding.
 	Refresh *RefreshAsk
 	// Trust is set on an item that asks to trust a host for its discobox
 	// rather than for a credential (ADR 0149). Host is then the endpoint,
-	// Justification is why the agent says it needs it, and Name, EnvVar, and
-	// Type are empty: the answer is not a secret but which certificate to pin.
+	// Justification is why the agent says it needs it, and Name and EnvVar
+	// are empty: the answer is not a secret but which certificate to pin.
 	Trust *TrustAsk
 }
 
@@ -1580,29 +1581,19 @@ type TrustApproval struct {
 	TTLSeconds int64
 }
 
-// FromAgent reports whether a person is being asked a question with reasons
-// attached, rather than being told the proxy hit an unresolvable sentinel.
-func (r CredentialRequest) FromAgent() bool {
-	return r.Name != "" && r.Refresh == nil && r.Trust == nil
-}
-
 // Secret is a project secret as the window needs it: enough to choose between
 // them and to manage them, and never a value.
 type Secret struct {
 	ID   string
 	Name string
 	Type string
-	// Host the secret is bound to, empty when nobody bound it. A bound secret
-	// may only be granted for that host and the hosts beneath it, so the
-	// approval picker offers the ones that cover the request first.
-	Host string
-	// MaxTTL is the longest a grant on it may live, and the lifetime a grant
-	// takes when nobody names one. Zero is no limit: grants on this credential
-	// may then live forever.
+	// MaxTTL is the longest a binding of it may last, and the lifetime one
+	// takes when nobody names one. Zero is no limit: bindings of this
+	// credential may then last forever.
 	MaxTTL time.Duration
-	// Routes are where it may be sent, whoever holds it (ADR 26-10-02-924):
-	// every request it is sent in must fall on one, the most specific
-	// deciding. Empty leaves where it goes to its grants.
+	// Routes are where it may be sent, whoever holds it (ADR 26-10-27-880
+	// §4): every request it is sent in must fall on one, the most specific
+	// deciding. Empty sends it nowhere; `*` is any host (ADR 26-10-27-939).
 	Routes  []SecretRoute
 	Created time.Time
 	Updated time.Time
@@ -1649,43 +1640,62 @@ type SecretExchange struct {
 	TokenExpiresAt time.Time
 }
 
-// NewGrant is a standing authorization somebody is creating by hand: a
-// pre-approval, minted without a request to answer.
-type NewGrant struct {
+// Binding kinds: what a binding is on (ADR 26-10-27-880 §2), in the API's
+// words.
+const (
+	BindingProject       = "project"
+	BindingHarnessConfig = "harnessConfig"
+	BindingSandbox       = "sandbox"
+)
+
+// NewBinding is a secret somebody is binding by hand, without a request to
+// answer: to a discobox, a harness config, or the whole project.
+type NewBinding struct {
 	SecretID string
-	Scope    string
-	ScopeKey string
-	Host     string
-	// TTLSeconds is how long it lives. Zero asks for a grant that never
-	// expires, which a secret carrying a limit refuses.
-	TTLSeconds int64
-	// Delegate mints a delegation grant: its discobox may give the credential
-	// to the discoboxes it creates, and may not use it. Sandbox scope only.
+	// TargetKind is BindingProject, BindingHarnessConfig or BindingSandbox,
+	// and TargetID the harness config or discobox; empty for the project.
+	TargetKind string
+	TargetID   string
+	// Use delivers it in EnvVar; Delegate lets a discobox the binding covers
+	// give it to the discoboxes it creates. At least one.
+	Use      bool
 	Delegate bool
+	EnvVar   string
+	// Routes narrow the secret's for this binding; none inherits them.
+	Routes []SecretRoute
+	// TTLSeconds is how long it lasts. Zero asks for one that never lapses,
+	// which a secret carrying a limit refuses.
+	TTLSeconds int64
 }
 
-// Grant is a standing authorization on a secret: who may use it, where it may
-// be sent, and until when.
-type Grant struct {
-	ID       string
-	SecretID string
-	Scope    string
-	ScopeKey string
-	Host     string
-	// Delegate is a delegation grant: its discobox may hand the credential to
-	// other discoboxes and may not use it. A grant is one or the other, so
-	// false is a grant its discobox uses.
-	Delegate  bool
-	GrantedBy string
-	Granted   time.Time
-	// Expires is when the authorization lapses; zero never does.
+// SecretBinding is a secret made available to a target: existing and
+// unexpired, it is the whole of the permission (ADR 26-10-27-880 §1).
+type SecretBinding struct {
+	ID         string
+	SecretID   string
+	SecretName string
+	TargetKind string
+	TargetID   string
+	// Use is delivered in EnvVar; Delegate may be given on to the discoboxes
+	// a discobox the binding covers creates.
+	Use      bool
+	Delegate bool
+	EnvVar   string
+	// Routes narrow the secret's; none inherits them.
+	Routes []SecretRoute
+	// ParentID is the delegation a discobox handed this on under; removing
+	// that one removes this.
+	ParentID  string
+	CreatedBy string
+	Created   time.Time
+	// Expires is when the binding lapses; zero never does.
 	Expires time.Time
 }
 
-// GrantFilter narrows a listing of grants. Empty is every grant the server
-// holds for the project.
-type GrantFilter struct {
-	// SecretID is the grants standing on one secret.
+// BindingFilter narrows a listing of bindings. Empty is every binding the
+// server holds for the project.
+type BindingFilter struct {
+	// SecretID is the bindings of one secret.
 	SecretID string
 }
 
@@ -1726,19 +1736,18 @@ type SkillsEntry struct {
 type NewSecret struct {
 	Name string
 	Type string
-	Host string
 
-	// MaxTTLSeconds is the ceiling on grant lifetimes the credential is stored
-	// with. It is set here rather than left to a second call because it is a
+	// MaxTTLSeconds is the ceiling on binding lifetimes the credential is
+	// stored with. It is set here rather than left to a second call because it is a
 	// fact about the credential — how long consent to it may last — and a
 	// secret that exists for even a moment without one is a secret whose
-	// grants are limited by whatever the server's default happens to be.
+	// bindings are limited by whatever the server's default happens to be.
 	//
-	// Zero is not absence: it is the answer "no limit", and grants on the
-	// credential may then live forever.
+	// Zero is not absence: it is the answer "no limit", and bindings of the
+	// credential may then last forever.
 	MaxTTLSeconds int64
 
-	// Routes are where it may be sent, whoever holds it.
+	// Routes are where it may be sent, whoever holds it; at least one.
 	Routes []SecretRoute
 
 	// RefreshCommand makes the token one got from a command: when Value has no
@@ -1779,8 +1788,8 @@ type SecretValue struct {
 
 // SecretUpdate is what an edit says about a secret. Every field is a pointer
 // because absence has to be spelled differently from the values themselves:
-// an empty host releases a binding and a zero limit allows grants that never
-// expire, so neither can stand for "unchanged".
+// a zero limit allows bindings that never lapse, and an empty route list sends
+// the secret nowhere, so neither can stand for "unchanged".
 //
 // The type is not among them. A token and an oauth credential are stored and
 // renewed differently, and the server has no answer for a secret that changes
@@ -1788,7 +1797,6 @@ type SecretValue struct {
 // somebody's decision rather than a side effect of an edit.
 type SecretUpdate struct {
 	Name          *string
-	Host          *string
 	MaxTTLSeconds *int64
 	Value         *SecretValue
 	// RefreshCommand replaces the command a token suggests for its renewal;
@@ -1799,13 +1807,14 @@ type SecretUpdate struct {
 	// Format sets the template its sentinels are minted from; empty goes back
 	// to reading it from the value.
 	Format *string
-	// Routes replaces where it may be sent; empty clears them.
+	// Routes replaces where it may be sent; empty sends it nowhere.
 	Routes *[]SecretRoute
 }
 
 // SecretRoute is one place a secret may be sent: a host and everything
-// beneath it, narrowed to a path prefix when Path is set. A blocked route
-// refuses every request it is the most specific route for.
+// beneath it, or every host for `*`, narrowed to a path prefix when Path is
+// set. A blocked route refuses every request it is the most specific route
+// for.
 type SecretRoute struct {
 	Host    string
 	Path    string
@@ -1813,25 +1822,16 @@ type SecretRoute struct {
 }
 
 // Approval is what a person decided about a request: which secret answers it,
-// how long the grant it mints lives, and what they agreed to change on that
-// secret so the grant fits it. Everything else — scope, the variable, the
-// hosts — follows the request, which is what the approver read.
+// and how long the binding it makes lasts. Everything else — the discobox, the
+// variable, the routes — follows the request, which is what the approver read.
 type Approval struct {
 	RequestID string
 	SecretID  string
-	// TTLSeconds is how long the grant lives, and it is always said: zero is
-	// forever, not "whatever the secret's limit happens to be". An approval
-	// that left it out was minting a grant whose lifetime nobody on this side
-	// had seen — most credentials cap nothing, so most of those grants never
-	// expired. See credentials.go.
+	// TTLSeconds is how long the binding lasts, and it is always said: zero
+	// is forever, not "whatever the secret's limit happens to be". An approval
+	// that left it out was making a binding whose lifetime nobody on this side
+	// had seen. See credentials.go.
 	TTLSeconds int64
-	// SecretHost rebinds the secret (empty releases its binding), and
-	// SecretMaxTTLSeconds sets its grant limit. Nil leaves each as it is. They
-	// ride on the approval rather than a call ahead of it, so the server
-	// writes them with the grant or not at all: a refused approval leaves the
-	// secret as it was.
-	SecretHost          *string
-	SecretMaxTTLSeconds *int64
 }
 
 // SourcePush is what one of a discobox's push-delivered sources did when the
@@ -2425,8 +2425,8 @@ type DataSource interface {
 	// returns it, so the approval that follows has a secret to name.
 	CreateSecret(ctx context.Context, server string, secret NewSecret) (Secret, error)
 
-	// UpdateSecret changes what a secret says about itself: its name, the host
-	// it may be sent to, how long consent to it may last, and the credential
+	// UpdateSecret changes what a secret says about itself: its name, where
+	// it may be sent, how long consent to it may last, and the credential
 	// itself. Everything left nil is left alone.
 	//
 	// It is one call because it is one endpoint and, from the window, one form:
@@ -2434,24 +2434,26 @@ type DataSource interface {
 	// second one failed, and would report two things where a person did one.
 	UpdateSecret(ctx context.Context, server, secretID string, update SecretUpdate) error
 
-	// Grants lists the standing grants the filter names: on one secret, or —
-	// with an empty filter — every one the server holds for the project.
-	Grants(ctx context.Context, server string, filter GrantFilter) ([]Grant, error)
+	// Bindings lists the bindings the filter names: of one secret, or — with
+	// an empty filter — every one the server holds for the project.
+	Bindings(ctx context.Context, server string, filter BindingFilter) ([]SecretBinding, error)
 
-	// CreateGrant mints a standing grant without a request behind it: the
-	// pre-approval an operator makes because they already know the answer.
-	CreateGrant(ctx context.Context, server string, grant NewGrant) (Grant, error)
+	// CreateBinding binds a secret without a request behind it: the binding
+	// an operator makes because they already know the answer.
+	CreateBinding(ctx context.Context, server string, binding NewBinding) (SecretBinding, error)
 
-	// RevokeGrant withdraws one grant. The credential stops resolving at once —
-	// the request that produced it stays approved, because it is history.
-	RevokeGrant(ctx context.Context, server, grantID string) error
+	// DeleteBinding takes one binding back, with every binding a discobox
+	// handed on under it. The credential stops resolving at once — the request
+	// that produced it stays approved, because it is history. It returns how
+	// many handed-on bindings went with it.
+	DeleteBinding(ctx context.Context, server, bindingID string) (int, error)
 
-	// DeleteSecret removes a secret and everything standing on it.
+	// DeleteSecret removes a secret and every binding of it.
 	DeleteSecret(ctx context.Context, server, secretID string) error
 
-	// ApproveCredentialRequest answers a request yes, minting the grant that
-	// authorizes it. The server decides the scope and the variable from the
-	// request itself.
+	// ApproveCredentialRequest answers a request yes, binding the secret to
+	// the discobox that asked. The server takes the variable and the routes
+	// from the request itself.
 	ApproveCredentialRequest(ctx context.Context, server string, approval Approval) error
 
 	// DenyCredentialRequest answers a request no. It is a complete answer, not
@@ -2463,6 +2465,9 @@ type DataSource interface {
 	// a person entered.
 	RefreshSecret(ctx context.Context, server string, renewal Renewal) error
 
+	// DismissRefresh closes a refresh request without writing a value.
+	DismissRefresh(ctx context.Context, server, requestID string) error
+
 	// ApproveTrustRequest answers a trust request yes, pinning the chosen
 	// certificate for the asking discobox alone (ADR 0149).
 	ApproveTrustRequest(ctx context.Context, server string, approval TrustApproval) error
@@ -2471,40 +2476,20 @@ type DataSource interface {
 	DenyTrustRequest(ctx context.Context, server, requestID string) error
 }
 
-// where is where a request asks to reach, as a person reads it: every host a
+// where is where a request asks to reach, as a person reads it: every route a
 // credential request names, or a trust's endpoint.
 func (r CredentialRequest) where() string {
-	if len(r.Hosts) > 0 {
-		return strings.Join(r.Hosts, ", ")
+	if len(r.Routes) > 0 {
+		return routesText(r.Routes)
 	}
 	return r.Host
 }
 
-// hosts are the hosts a credential request names, or a trust's endpoint.
-func (r CredentialRequest) hosts() []string {
-	if len(r.Hosts) > 0 {
-		return r.Hosts
+// routesText is routes as a person types them, comma-joined.
+func routesText(routes []SecretRoute) string {
+	out := make([]string, 0, len(routes))
+	for _, route := range routes {
+		out = append(out, secretroute.Format(secretroute.Route{Host: route.Host, Path: route.Path, Blocked: route.Blocked}))
 	}
-	if r.Host != "" {
-		return []string{r.Host}
-	}
-	return nil
-}
-
-// binding is the one host a secret stored to answer the request is bound to:
-// its host, or the site its hosts share, or none when they share no site — a
-// credential sent to unrelated sites is bound to nothing, and its grant says
-// where it goes (ADR 26-10-02-393 §2).
-func (r CredentialRequest) binding() string {
-	hosts := r.hosts()
-	if len(hosts) == 0 {
-		return ""
-	}
-	bound := hosts[0]
-	for _, host := range hosts[1:] {
-		if bound = commonParent(bound, host); bound == "" {
-			return ""
-		}
-	}
-	return bound
+	return strings.Join(out, ", ")
 }

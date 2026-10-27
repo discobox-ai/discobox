@@ -10,13 +10,16 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"gorm.io/gorm"
 )
 
-// SentinelsResourceType is the reconcile resource that delivers a sandbox's
-// injected sentinel set, with each sentinel's routes, to its pool (ADR
-// 26-10-02-924). It is keyed like the sandbox (SandboxDirtyID) and marked in
-// the transaction that changes a secret's routes (MarkSecretHoldersDirtyTx),
-// and in the one that records the sandbox coming up (cameUp).
+// SentinelsResourceType is the reconcile resource that materializes a
+// sandbox's effective use bindings as its sentinels and delivers the set, with
+// each sentinel's route lists, to its pool (ADR 26-10-27-880 §2, §4). It is
+// keyed like the sandbox (SandboxDirtyID) and marked in the transaction that
+// changes a secret's routes (MarkSecretHoldersDirtyTx) or a binding covering
+// the sandbox (MarkBindingHoldersDirtyTx), and in the one that records the
+// sandbox coming up (cameUp).
 //
 // It is a resource of its own rather than a mark on the sandbox because a
 // delivery that fails is retried, and nothing else: a sandbox reconcile that
@@ -25,9 +28,9 @@ import (
 // reading failed, and the routes into a change nothing retries.
 const SentinelsResourceType = "sandboxSentinels"
 
-// SentinelReconciler re-sends a sandbox's sentinel set to its pool, with the
-// routes its secrets carry now. A failure is returned, so the engine retries
-// it with backoff until the pool takes it.
+// SentinelReconciler materializes a sandbox's bindings and re-sends its
+// sentinel set to its pool, with the route lists they carry now. A failure is
+// returned, so the engine retries it with backoff until the pool takes it.
 type SentinelReconciler struct {
 	service *Service
 }
@@ -54,6 +57,12 @@ func (r *SentinelReconciler) Reconcile(ctx context.Context, id string) (reconcil
 	if sb.DesiredState != model.DesiredStatePresent {
 		return reconcile.Result{}, nil
 	}
+	if err := r.service.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+		_, err := materializeSandboxSecrets(ctx, txStore, sb)
+		return err
+	}); err != nil {
+		return reconcile.Result{}, err
+	}
 	// Never placed: no pool holds its sentinels yet, and the create that
 	// places it sends them, then checks what it sent against the routes as
 	// they are by then (markSentinelsIfStale).
@@ -69,14 +78,14 @@ func (r *SentinelReconciler) Reconcile(ctx context.Context, id string) (reconcil
 	return reconcile.Result{}, err
 }
 
-// markSentinelsIfStale marks a sandbox's sentinel delivery when the routes a
-// send carried to its pool are no longer its secrets' routes. A send reads the
+// markSentinelsIfStale marks a sandbox's sentinel delivery when the route
+// lists a send carried to its pool are no longer its sentinels'. A send reads the
 // routes when it starts and lands when its pool answers — for a create that
 // rebuilds a container, minutes later — so a route change committed in between
 // can be delivered first and then overwritten by the send. Every send checks
 // after it lands, so the last delivery always follows the last send that read
 // the routes.
-func markSentinelsIfStale(ctx context.Context, st *store.Store, engine *reconcile.Engine, sb *model.Sandbox, sent map[string][]secretroute.Route) error {
+func markSentinelsIfStale(ctx context.Context, st *store.Store, engine *reconcile.Engine, sb *model.Sandbox, sent map[string][][]secretroute.Route) error {
 	if engine == nil {
 		return nil
 	}
@@ -84,11 +93,11 @@ func markSentinelsIfStale(ctx context.Context, st *store.Store, engine *reconcil
 	if err != nil {
 		return err
 	}
-	current, err := sandboxSentinelRoutes(ctx, st, sb, assignments)
+	current, err := st.SentinelRouteLists(ctx, sb.ProjectID, assignments)
 	if err != nil {
 		return err
 	}
-	if maps.EqualFunc(sent, current, slices.Equal) {
+	if maps.EqualFunc(sent, current, func(a, b [][]secretroute.Route) bool { return slices.EqualFunc(a, b, slices.Equal) }) {
 		return nil
 	}
 	return engine.MarkDirty(ctx, SentinelsResourceType, SandboxDirtyID(sb.ProjectID, sb.ID))

@@ -1597,14 +1597,20 @@ func (r *DockerSandboxRuntime) GetSandbox(ctx context.Context, sandboxID string)
 	return r.sandboxFromInspect(ctx, inspect.Container), nil
 }
 
-// proxySentinelRoutes are the routes the control plane sent with a sandbox's
-// sentinels (ADR 26-10-02-924), as the proxy enforces them.
-func proxySentinelRoutes(in map[string][]workerapimodel.SentinelRoute) map[string][]secretroute.Route {
-	out := make(map[string][]secretroute.Route, len(in))
-	for sentinel, routes := range in {
-		for _, route := range routes {
-			out[sentinel] = append(out[sentinel], secretroute.Route{Host: route.Host, Path: route.Path.Or(""), Blocked: route.Blocked.Or(false)})
+// proxySentinelRoutes are the route lists the control plane sent with a
+// sandbox's sentinels (ADR 26-10-27-880 §4), as the proxy enforces them.
+func proxySentinelRoutes(in map[string][][]workerapimodel.SentinelRoute) map[string][][]secretroute.Route {
+	out := make(map[string][][]secretroute.Route, len(in))
+	for sentinel, lists := range in {
+		converted := make([][]secretroute.Route, 0, len(lists))
+		for _, list := range lists {
+			routes := make([]secretroute.Route, 0, len(list))
+			for _, route := range list {
+				routes = append(routes, secretroute.Route{Host: route.Host, Path: route.Path.Or(""), Blocked: route.Blocked.Or(false)})
+			}
+			converted = append(converted, routes)
 		}
+		out[sentinel] = converted
 	}
 	return out
 }

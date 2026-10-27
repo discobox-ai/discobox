@@ -27,7 +27,8 @@ type sandboxCreateOptions struct {
 	prompt               []string
 	env                  []string
 	secret               []string
-	grant                []string
+	bind                 []string
+	delegate             []string
 	discoboxAPI          bool
 	sourceURL            string
 	sourceRef            string
@@ -179,13 +180,13 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := sandboxcreate.NameBindingVariables(cmd.Context(), client, projectID, body.Bindings); err != nil {
+				return err
+			}
 			if level, ok, err := egressOpts.create(cmd); err != nil {
 				return err
 			} else if ok {
 				body.Config.SetEgress(apiclientgen.NewOptEgressPolicy(level))
-			}
-			if err := a.resolveGrantSecrets(cmd.Context(), client, projectID, body.Grants); err != nil {
-				return err
 			}
 			sandboxRes, err := client.CreateSandbox(cmd.Context(), body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
 			if err != nil {
@@ -194,6 +195,12 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 			sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
 			if err != nil {
 				return err
+			}
+			// Where each value stored as a secret of its own is sent, so an @
+			// read as a host is seen rather than discovered (cli/REVIEW.md);
+			// said only now, since a create that failed stored nothing.
+			for _, secret := range body.Config.Secrets {
+				fmt.Fprintln(cmd.ErrOrStderr(), terminalSafe(sandboxcreate.InlineSecretLine(secret)))
 			}
 			if opts.wait {
 				sandbox, err = a.waitForSandbox(cmd, client, projectID, sandbox.ID, opts.waitTimeout)
@@ -616,9 +623,10 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.modelReasoningLevel, "model-reasoning-level", "", "Model reasoning level the harness should use")
 	cmd.Flags().StringArrayVar(&opts.prompt, "prompt", nil, "Prompt argument the harness should run; repeat to pass multiple argv tokens, preserving the caller's exact tokens")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
-	cmd.Flags().StringArrayVar(&opts.grant, "grant", nil, "A credential to give the new discobox, as SECRET[@HOST[,HOST...]]:ENV_VAR: the project secret, and the variable the discobox receives its sentinel in, which its pool swaps for the value on the hosts the grant covers; repeat for more. HOST defaults to the secret's host. A discobox creating one gives only what it may delegate")
+	cmd.Flags().StringArrayVar(&opts.bind, "bind", nil, "Bind a project secret to the new discobox, as SECRET[:VAR][@ROUTE,...]: the variable it receives the sentinel in (default the secret's name upper-snaked), and routes that narrow where it may be sent; repeat for more. A discobox creating one binds only what it may delegate")
+	cmd.Flags().StringArrayVar(&opts.delegate, "delegate", nil, "Let the new discobox give a project secret to the discoboxes it creates, as SECRET[@ROUTE,...]; repeat for more. A person's to give")
 	cmd.Flags().BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the new discobox call the discobox API through its pool, acting only on the discoboxes it creates. A discobox creating one may set it only when it has it itself")
-	cmd.Flags().StringArrayVarP(&opts.secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
+	cmd.Flags().StringArrayVarP(&opts.secret, "secret", "s", nil, "A secret to store and bind as KEY: KEY reads $KEY from this shell, KEY=@FILE reads a file, KEY=VALUE takes the value itself (it then sits in shell history and the process list); add @HOST to send it to HOST alone, else it is sent anywhere. A value or path holding an @ ends with one. Repeat for more. A stored secret is bound with --bind")
 	cmd.Flags().StringVar(&opts.sourceURL, "source-url", "", "Source repository or archive URL")
 	cmd.Flags().StringVar(&opts.sourceRef, "source-ref", "", "Source branch, tag, or commit")
 	cmd.Flags().StringVar(&opts.sourceRefType, "source-ref-type", "", "Source ref type, such as branch, tag, or commit")
@@ -636,24 +644,6 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().BoolVar(&opts.userSkills, "user-skills", false, "Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills")
 	cmd.Flags().BoolVar(&opts.wait, "wait", false, "Wait for discobox to reach running or fail")
 	cmd.Flags().DurationVar(&opts.waitTimeout, "wait-timeout", 2*time.Minute, "Maximum time to wait")
-}
-
-// resolveGrantSecrets turns the secrets grants name by name into their IDs, in
-// place, which is what the server takes. Every create that gives grants
-// resolves them here — `admin box create`, and both frontends of `run`.
-func (a *App) resolveGrantSecrets(ctx context.Context, client *apiclientgen.Client, projectID string, grants []apimodel.SandboxGrant) error {
-	for i := range grants {
-		ref, named := grants[i].SecretId.Get()
-		if !named {
-			continue
-		}
-		secretID, err := a.resolveSecretID(ctx, client, projectID, ref)
-		if err != nil {
-			return err
-		}
-		grants[i].SetSecretId(apiclientgen.NewOptString(secretID))
-	}
-	return nil
 }
 
 func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
@@ -685,11 +675,11 @@ func createSandboxBody(ctx context.Context, opts sandboxCreateOptions) (*apimode
 	if len(secrets) > 0 {
 		config.SetSecrets(secrets)
 	}
-	grants, err := sandboxcreate.ParseGrants(opts.grant)
+	bindings, err := sandboxcreate.ParseBindings(opts.bind, opts.delegate)
 	if err != nil {
 		return nil, err
 	}
-	body.Grants = grants
+	body.Bindings = bindings
 	if opts.discoboxAPI {
 		body.SetDiscoboxApi(apiclientgen.NewOptBool(true))
 	}

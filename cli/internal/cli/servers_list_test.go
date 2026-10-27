@@ -81,7 +81,7 @@ func fakePeerServerHandler(name, peerID string, sandboxIDs ...string) http.Handl
 			// test can tell whose inbox a request came from.
 			rows := make([]string, 0, len(sandboxIDs))
 			for _, id := range sandboxIDs {
-				rows = append(rows, fmt.Sprintf(`{"kind":"credential","credential":{"id":"sreq_%s_%s","projectId":%q,"sandboxId":%q,"requestedBy":"agent","type":"token","status":"pending",`+
+				rows = append(rows, fmt.Sprintf(`{"kind":"credential","credential":{"id":"sreq_%s_%s","projectId":%q,"sandboxId":%q,"requestedBy":"agent","status":"pending",`+
 					`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}}`, name, id, fakeProjectID(name), id))
 			}
 			_, _ = fmt.Fprintf(w, `{"approvalRequests":[%s]}`, strings.Join(rows, ","))

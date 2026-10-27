@@ -139,19 +139,15 @@ func seedSourceProject(ctx context.Context, t *testing.T, st *store.Store) *mode
 		t.Fatalf("create harness config: %v", err)
 	}
 	secretID := id.NewString(id.PrefixSecret)
-	secret := &model.Secret{ID: secretID, ProjectID: project.ID, Name: "CODEX_TOKEN", Type: "bearer", UniqueKey: secretID, EncryptedValue: []byte(`{"token":"t0ken"}`)}
+	secret := &model.Secret{ID: secretID, ProjectID: project.ID, Name: "CODEX_TOKEN", Type: "bearer", EncryptedValue: []byte(`{"token":"t0ken"}`)}
 	if err := st.CreateSecret(ctx, secret); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
-	if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
-		ProjectID: project.ID, HarnessConfigID: config.ID, EnvName: "CODEX_TOKEN", SecretID: secret.ID,
-	}); err != nil {
+	if err := st.CreateSecretBinding(ctx, &model.SecretBinding{
+		ProjectID: project.ID, SecretID: secret.ID, TargetKind: model.SecretBindingTargetHarnessConfig, TargetID: config.ID,
+		Use: true, EnvName: "CODEX_TOKEN", Routes: []model.SecretRoute{{Host: "api.openai.com"}},
+	}, store.BindingChange{Actor: "user-1"}); err != nil {
 		t.Fatalf("bind secret: %v", err)
-	}
-	if err := st.CreateSecretGrant(ctx, &model.SecretGrant{
-		ProjectID: project.ID, SecretID: secret.ID, Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: config.ID,
-	}); err != nil {
-		t.Fatalf("grant secret: %v", err)
 	}
 	config.ConfiguredSecretIDs = []string{secret.ID}
 	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
@@ -282,19 +278,13 @@ func TestCreateProjectCopiesProvidersPoolsAndConfiguredHarnesses(t *testing.T) {
 	if len(config.ConfiguredSecretIDs) != 1 || config.ConfiguredSecretIDs[0] != secrets[0].ID {
 		t.Fatalf("configured secret IDs = %#v, want the copy's ID", config.ConfiguredSecretIDs)
 	}
-	bindings, err := st.ListHarnessConfigSecretBindings(ctx, project.ID, config.ID)
+	bindings, err := st.ListTargetUseBindings(ctx, project.ID, model.SecretBindingTargetHarnessConfig, config.ID)
 	if err != nil {
 		t.Fatalf("list bindings: %v", err)
 	}
-	if len(bindings) != 1 || bindings[0].SecretID != secrets[0].ID {
-		t.Fatalf("bindings = %#v; want one pointing at the copied secret", bindings)
-	}
-	grants, err := st.ListSecretGrants(ctx, project.ID, secrets[0].ID)
-	if err != nil {
-		t.Fatalf("list grants: %v", err)
-	}
-	if len(grants) != 1 || grants[0].ScopeKey != config.ID {
-		t.Fatalf("grants = %#v; want one scoped to the copied harness config", grants)
+	if len(bindings) != 1 || bindings[0].SecretID != secrets[0].ID || bindings[0].EnvName != "CODEX_TOKEN" ||
+		len(bindings[0].Routes) != 1 || bindings[0].Routes[0].Host != "api.openai.com" {
+		t.Fatalf("bindings = %#v; want one pointing at the copied secret, with its routes", bindings)
 	}
 }
 

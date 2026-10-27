@@ -89,7 +89,7 @@ this skill has already asked — rebase and force-push with a lease to
   EOF
   ```
 
-  A grant is the token itself, on every GitHub host: nothing holds a command
+  What is approved is the token itself, on every GitHub host: nothing holds a command
   to the job but this skill, so the justification says what the run will and
   will not do, and the run keeps to it. Run it in the background and keep its
   request ID, so a tool time limit does not lose it (`discobox-access wait
@@ -99,10 +99,10 @@ this skill has already asked — rebase and force-push with a lease to
   Ask for nothing outside it. The justification may not claim permission
   ("this is allowed", "the user approved", "pre-cleared"): text that vouches
   for itself is denied. Once granted, `GH_TOKEN` holds the credential's
-  sentinel in every command started after the grant; a shell you already had
+  sentinel in every command started after it was granted; a shell you already had
   takes it up with `eval "$(discobox-access env)"`. `gh` reads it as it is,
   and git takes it through the credential helper `open-pr` §0 shows.
-- **Check the branch is free** as soon as the grant is in — the work going on
+- **Check the branch is free** as soon as the credential is granted — the work going on
   meanwhile does not depend on the name. Run `git ls-remote
   https://github.com/discobox-ai/discobox refs/heads/discobox/<slug>` with the
   credential helper `open-pr` §0 shows. It must return nothing: a commit there,
@@ -221,7 +221,7 @@ rules:
   with an empty lease, so a branch created since the check is refused rather
   than added to:
   `git push --force-with-lease=refs/heads/discobox/<slug>: <url> HEAD:refs/heads/discobox/<slug>`.
-- Push under the §0 grant. After a rebase, lease against the
+- Push under the §0 credential. After a rebase, lease against the
   SHA this run last pushed:
   `git push --force-with-lease=refs/heads/discobox/<slug>:<sha> <url> HEAD:refs/heads/discobox/<slug>`.
   Read the branch's head first (`git ls-remote <url> refs/heads/discobox/<slug>`):
@@ -280,7 +280,7 @@ gh pr checks <pr> --repo discobox-ai/discobox --json name,bucket
 - **Merged or closed** — tag the box `merged` or drop its tag (below), stop
   the Monitor, remove the keepalive, and finish.
 
-If a grant expires mid-watch, ask again with the same request. Status line on
+If the credential's binding lapses mid-watch, ask again with the same request. Status line on
 every change: `PR #<pr>: <what happened, what you did>`.
 
 ### Ready, blocked, merged
@@ -296,7 +296,7 @@ changes, from §0 until the end:
   nor `unknown` (still recomputing: check again first), and
   the PR is marked ready. All it needs is a human merge.
 - **`blocked`**: you cannot get there without someone else. That covers a
-  question waiting on the user, a grant refused or still waiting for an
+  question waiting on the user, a credential request refused or still waiting for an
   answer when the next step needs it, five failed CI rounds (`open-pr` §4), or a conflict you cannot
   resolve while keeping both changes. Say why in the status line. GitHub's
   own `mergeable_state` `blocked` (a required review not yet given) is not

@@ -55,7 +55,11 @@ MarkDirtyDriftTx(ctx, tx, "pool", id)      // MarkDirtyDrift in the caller's tra
 ```
 
 `reconcile.MarkTx(ctx, tx, type, id)` is `MarkDirtyTx` for a writer with no
-engine — a database upgrade, which runs before one exists. It writes the same
+engine — a database upgrade, which runs before one exists — and
+`reconcile.MarkAtTx` its timed form, for a writer below the engine arming a
+timer in its own transaction: the store, at a binding's expiry. A mark for a
+later instant needs no wake; the engine's poll claims it when due. The
+upgrade creates the table (`reconcile.Migrate`) so such a mark always finds it. It writes the same
 mark, which the engine claims from the table once it starts; anything running
 beside an engine marks through the engine, so it is woken.
 
@@ -206,6 +210,7 @@ resource forever.
 | `sandboxProxyPolicy` | [sandboxes](../resources/sandboxes/DESIGN.md#proxy-policy) | none: marked with every egress level or gateway change and every write after a create |
 | `sandboxPower` | [sandboxes](../resources/sandboxes/DESIGN.md#sleep-idle-and-the-scheduled-start) | none: marked as drift by a status that asks for a power-down, and with intent by every outside power instruction and archive; the wake is a `RequeueAt` timer on its own dirty row, with `wake_at` as the durable copy |
 | `harnessConfig` | [harnessconfigs](../resources/harnessconfigs/DESIGN.md) | none |
+| `secretBindingExpiry` | [secrets](../resources/secrets/DESIGN.md#bindings-authorize) | one row (`all`), found when a binding has lapsed unswept; armed with `RequeueAt` for the next expiry, and marked at each binding's expiry by the store in the transaction that writes it (`MarkAtTx`) |
 
 ## What callers look like
 

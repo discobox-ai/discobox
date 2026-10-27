@@ -207,19 +207,19 @@ func (s *Service) renewLocked(ctx context.Context, projectID, secretID string, f
 	return renewed, nil
 }
 
-// tokenResolutionExpiry caps the grant expiry the proxy caches against by the
+// tokenResolutionExpiry caps the binding expiry the proxy caches against by the
 // token's own expiry, so the proxy re-resolves — and thus triggers the next
-// renewal — right as the token ages out, without the grant itself needing to
-// expire. With the token's expiry unknown, the grant's own bound stands.
-func tokenResolutionExpiry(grantExpiry *time.Time, val *model.SecretValue) *time.Time {
+// renewal — right as the token ages out, without the binding itself needing to
+// expire. With the token's expiry unknown, the binding's own bound stands.
+func tokenResolutionExpiry(bindingExpiry *time.Time, val *model.SecretValue) *time.Time {
 	expiry := tokenExpiry(val)
 	if expiry.IsZero() {
-		return grantExpiry
+		return bindingExpiry
 	}
-	if grantExpiry == nil || expiry.Before(*grantExpiry) {
+	if bindingExpiry == nil || expiry.Before(*bindingExpiry) {
 		return &expiry
 	}
-	return grantExpiry
+	return bindingExpiry
 }
 
 // renewal is what a forced renewal settled. Four of the five are answers; the

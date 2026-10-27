@@ -7985,7 +7985,11 @@ func (s PoolSandboxCreateRequestSentinelRoutes) encodeFields(e *jx.Encoder) {
 
 		e.ArrStart()
 		for _, elem := range elem {
-			elem.Encode(e)
+			e.ArrStart()
+			for _, elem := range elem {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
 		}
 		e.ArrEnd()
 	}
@@ -7998,12 +8002,20 @@ func (s *PoolSandboxCreateRequestSentinelRoutes) Decode(d *jx.Decoder) error {
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem []SentinelRoute
+		var elem [][]SentinelRoute
 		if err := func() error {
-			elem = make([]SentinelRoute, 0)
+			elem = make([][]SentinelRoute, 0)
 			if err := d.Arr(func(d *jx.Decoder) error {
-				var elemElem SentinelRoute
-				if err := elemElem.Decode(d); err != nil {
+				var elemElem []SentinelRoute
+				elemElem = make([]SentinelRoute, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elemElemElem SentinelRoute
+					if err := elemElemElem.Decode(d); err != nil {
+						return err
+					}
+					elemElem = append(elemElem, elemElemElem)
+					return nil
+				}); err != nil {
 					return err
 				}
 				elem = append(elem, elemElem)
@@ -9696,7 +9708,11 @@ func (s PoolSandboxUpdateRequestSentinelRoutes) encodeFields(e *jx.Encoder) {
 
 		e.ArrStart()
 		for _, elem := range elem {
-			elem.Encode(e)
+			e.ArrStart()
+			for _, elem := range elem {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
 		}
 		e.ArrEnd()
 	}
@@ -9709,12 +9725,20 @@ func (s *PoolSandboxUpdateRequestSentinelRoutes) Decode(d *jx.Decoder) error {
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem []SentinelRoute
+		var elem [][]SentinelRoute
 		if err := func() error {
-			elem = make([]SentinelRoute, 0)
+			elem = make([][]SentinelRoute, 0)
 			if err := d.Arr(func(d *jx.Decoder) error {
-				var elemElem SentinelRoute
-				if err := elemElem.Decode(d); err != nil {
+				var elemElem []SentinelRoute
+				elemElem = make([]SentinelRoute, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elemElemElem SentinelRoute
+					if err := elemElemElem.Decode(d); err != nil {
+						return err
+					}
+					elemElem = append(elemElem, elemElemElem)
+					return nil
+				}); err != nil {
 					return err
 				}
 				elem = append(elem, elemElem)

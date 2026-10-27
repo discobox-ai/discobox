@@ -234,7 +234,7 @@ sequenceDiagram
     S->>B: create (harnessMode=config, primary NOT launched)
     S-->>C: 202 Sandbox
     C->>S: POST .../configure/attach
-    S->>B: seed previous config (granted secrets only)
+    S->>B: seed previous config (configure-created secrets only)
     C->>B: attach exec "primary" → launches configure command
     C->>S: POST .../configure/commit
     S->>B: read primary exec status (read-only)
@@ -242,7 +242,7 @@ sequenceDiagram
         S-->>C: 409, flow stays in flight
     else exited 0
         S->>B: cat ConfigureOutputPath
-        S->>S: apply files + secrets + grants, Configured=true
+        S->>S: apply files + secrets + bindings, Configured=true
         S->>B: delete sandbox
     else non-zero, failed, or lost
         S->>S: ConfigureError set, Configured unchanged
@@ -297,33 +297,36 @@ secret the user bound by hand is theirs, not the flow's to replay.
 
 **The seed carries no secret values.** It is metadata: env name, name, type,
 host, `usePrevious`. Values reach the configure sandbox the same way every other
-sandbox secret does — as sentinels in its environment, minted by
-`resources/sandboxes.applyPreviousConfigureSecrets` under
-`harness.ConfigurePreviousEnvPrefix`. Nothing on this path calls
+sandbox secret does — as sentinels in its environment, materialized from the
+harness config's bindings under `harness.ConfigurePreviousEnvPrefix`
+(`resources/sandboxes.materializeSandboxSecrets`). Nothing on this path calls
 `OpenSecretValue`; no credential is ever serialized into the sandbox.
 
-That is also why there is **no grant check here**. The sentinel resolves through
-`ResolveSandboxSecret`, which requires a live grant covering the configure
-sandbox's harness config — one enforcement point, at use, instead of a second
-copy of the rule that could drift from it.
+That is also why there is **no binding check here**. The sentinel resolves
+through `ResolveSandboxSecret`, which requires the harness config's binding to
+stand — one enforcement point, at use, instead of a second copy of the rule
+that could drift from it.
 
 A secret that no longer exists produces no `PREV_` variable at all: deleting it
-cascades its binding, and the seed walks bindings. The narrow case is a secret
-that still exists whose grant was explicitly revoked (`discobox secret grant
-rm`); configure-created grants set no expiry, so they do not lapse on their
-own. Then the sentinel does not resolve, the configure command's verification
-fails, and a pending `SecretRequest` is raised like any other unresolved
-sentinel.
+deletes its binding, and the seed walks bindings. The narrow case is a secret
+that still exists whose binding a person removed (`discobox secret unbind`);
+configure-made bindings set no expiry, so they do not lapse on their own. Then
+no sentinel is delivered and the configure command's verification fails.
 
-Applying output mints the grant for a newly collected secret — a binding alone is
-not a grant, so without it the secret would not be usable at run time. A secret
-returned with `usePrevious` (or as its own sentinel) keeps its existing row,
-binding, and grant, and stays out of the replacement sweep. A new value for an
-env name a configure-created secret already binds updates that secret in place,
-so its ID and every sentinel keyed on it stay stable; a changed host moves the
-config-scoped grant's host with it. Any other previously configured secret is
-deleted, and `RebindHarnessConfigSecrets` then repoints existing sandboxes. See
-`harness/DESIGN.md` for the command-side contract.
+Applying output writes one use binding on the harness config per variable
+(`bindHarnessSecret`): no routes of its own, so it inherits the secret's, and
+no expiry. A newly collected secret is routed to what the image declares for
+its variable, else the host the command named, else `*` (ADR 26-10-27-939
+§2), and named after the variable — with the config's slug before it when the
+project already has a secret of that name, since a secret's name is unique in
+its project. A secret returned with `usePrevious` (or as its own sentinel)
+keeps its row and binding, and stays out of the replacement sweep. A new value
+for an env name a configure-created secret already binds updates that secret
+in place, so its ID and every sentinel keyed on it stay stable; a changed host
+moves its routes with it. Any other previously configured secret is deleted,
+its holders marked. Every binding written marks the sandboxes running the
+config, which materialize it. See `harness/DESIGN.md` for the command-side
+contract.
 
 ## OAuth (rotating) secrets
 
@@ -335,7 +338,7 @@ the refresh material (`refreshToken`, `tokenUrl`, `clientId`,
 handler emits `Token` alone.
 
 It may also carry `scopes` and `subscriptionType`. These are **not** credentials
-— they describe what the grant is allowed to do — and they are recorded because
+— they describe what the token is allowed to do — and they are recorded because
 a client may gate features on the scopes it finds recorded next to the token:
 Claude Code refuses Remote Control unless the credential it reads carries
 `user:profile`, so a sandbox handed a bare token is limited to inference no
@@ -347,7 +350,7 @@ trades a clear client-side refusal for an opaque upstream 401. `/login` is the
 only moment they are visible — the authorization server returns them alongside
 the token and they appear nowhere else — so the configure command copies them
 out of the credentials file it just read. A rotation carries them forward
-untouched: a refresh mints a new token for the *same* grant, not a new grant.
+untouched: a refresh mints a new token for the *same* authorization, not a new one.
 
 Refresh happens lazily inside `ResolveSandboxSecret` (`resources/secrets`), the
 one place that decrypts and hands out a value:
@@ -367,9 +370,9 @@ one place that decrypts and hands out a value:
   every later resolve, and each refresh spends a refresh token that rotates on
   use. A token that states no expiry still records none — guessing one would
   defer the refresh past the point the token dies.
-- The resolution's `ExpiresAt` is capped at `min(grant expiry, token expiry)`,
+- The resolution's `ExpiresAt` is capped at `min(binding expiry, token expiry)`,
   so the proxy's per-`(client, sentinel, host)` cache lapses at token expiry and
-  re-resolves — which is what triggers the next refresh. The **grant stays
+  re-resolves — which is what triggers the next refresh. The **binding stays
   persistent**: consent is "the harness is configured", not the 8-hour token
   TTL, so tokens rotate silently without re-approval.
 - A failed refresh is not fatal while a token is still on hand: it is served and
@@ -424,7 +427,7 @@ routes that person gave it.
 ## Deconfigure
 
 Deconfigure deletes the secrets the configure flow created (cascading their
-bindings and grants), removes every remaining secret binding on the config — a
+bindings), removes every remaining use binding on the config — a
 hand-bound secret survives, its binding does not — clears `ConfiguredFiles` and
 `ConfigureError`, and sets `Configured=false`, leaving the bundle baseline intact
 so the harness can simply be configured again.
@@ -498,10 +501,11 @@ proxied as user routes.
 
 `commitCapture` locks the config and bound secret rows, checks the candidate's
 config revision, manifest digest and binding/value revisions, then commits a
-patch to `ConfiguredFiles`, owned secrets, bindings, grants, sentinel assignments,
-dirty marks and an idempotency receipt in one transaction. The origin receives
-an assignment for each newly captured env; existing per-box overrides are kept,
-and other boxes keep the normal binding/grant delivery lifecycle. Missing fields
+patch to `ConfiguredFiles`, owned secrets, harness-config bindings, the origin's
+sentinels (`MaterializeSandboxSecretsTx`), dirty marks and an idempotency
+receipt in one transaction. The origin receives a sentinel for each newly
+captured env unless its own binding of the variable wins; other boxes running
+the config are marked and materialize it. Missing fields
 leave remote state alone. Removing a settings override reveals the bundle baseline;
 missing local credentials never delete shared secrets. Provider endpoints and
 routes come from registered metadata. Hand-bound secrets survive replacement:

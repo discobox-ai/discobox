@@ -670,7 +670,7 @@ and one env prefix:
 
 **A credential never enters the sandbox.** `PREV_*` holds a sentinel that the
 proxy swaps for the real value on an outbound request, and only while a live
-grant covers it. So a configure command can *use* the old credential — that is
+binding covers it. So a configure command can *use* the old credential — that is
 how it verifies one — without being able to read, print, or log it. Nothing
 along this path decrypts a secret, and a revoked credential simply fails the
 command's own verification.
@@ -1087,7 +1087,7 @@ Either way Copilot stores the token, and the script reads it back:
   Copilot's own endpoints under `githubcopilot.com` and `api.github.com` are
   sent; its MCP server, its agents and the rest of `github.com` are blocked
   routes, which a judge used to read (ADR 26-10-27-880); anything else is
-  refused. The agent needs a grant of its own to do more on GitHub.
+  refused. The agent needs a binding of its own to do more on GitHub.
 - Every path ends in a tool-free `copilot -p` with only the chosen token, in a
   `COPILOT_HOME` of its own so the stored login cannot stand in for it.
 - It returns `~/.copilot/settings.json` as the user left it (`/config model`,

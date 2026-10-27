@@ -123,7 +123,7 @@ func TestPendingHarnessTargetCannotBeDeleted(t *testing.T) {
 	if err := svc.store.UpdateSandbox(context.Background(), sb); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.DeleteHarnessConfig(context.Background(), sb.ProjectID, target.ID); !errors.Is(err, store.ErrInUse) {
+	if err := st.DeleteHarnessConfig(context.Background(), sb.ProjectID, target.ID, nil); !errors.Is(err, store.ErrInUse) {
 		t.Fatalf("delete pending target: %v", err)
 	}
 }

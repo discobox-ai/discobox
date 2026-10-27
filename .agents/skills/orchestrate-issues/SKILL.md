@@ -64,12 +64,15 @@ discobox-access request --json <<'EOF'
 EOF
 ```
 
-**GitHub, to delegate** — what workers may be given. One delegation of the
-same credential at `github.com` holds every worker's ask, delivering and
+**GitHub, to delegate** — what workers may be given: a delegate binding of
+the same credential on this box. One holds every worker's ask, delivering and
 triaging alike (deliver-issue §0, triage-issue §0, which ask for `GH_TOKEN` at
-`github.com`): the server answers a worker's ask under it when the worker is
-one this box created, its hosts are within the delegation's, and the grant
-ends no later than the delegation does. Only a person approves it.
+`github.com`): when this box approves a worker's ask, the server binds the
+credential to the worker under the delegation — only for a worker this box
+created, ending no later than the delegation, and held to the delegation's
+routes as well as its own (ADR 26-10-27-880 §3). Only a person makes one. The
+user may already have, with `discobox secret bind github <this box> --delegate`
+(`discobox-access list` shows it as a delegation); otherwise ask:
 
 ```bash
 discobox-access request --json <<'EOF'
@@ -84,12 +87,12 @@ discobox-access request --json <<'EOF'
 EOF
 ```
 
-A grant is the token itself, so what each justification says is what this run
-and its workers keep to; nothing else holds them to it. A request that waits is
+A binding is the token itself, so what each justification says is what this
+run and its workers keep to; nothing else holds them to it. A request that waits is
 held by a tool time limit: run it in the background and keep its request ID
 (do not filter the `progress` line out), so `discobox-access wait --json
 request <id>` can resume it. `GH_TOKEN` reaches commands started after the
-grant; run `eval "$(discobox-access env)"` in a shell started before it, then
+binding; run `eval "$(discobox-access env)"` in a shell started before it, then
 `orchestrate.sh`.
 
 ## 2. Plan the batch
@@ -149,9 +152,9 @@ exits on:
 
 - **A request** — `approve` answers each worker's GitHub request once, when it
   is the ask its skill makes: to use `GH_TOKEN` at `github.com` (deliver-issue
-  §0, triage-issue §0). The server holds the grant within your delegation —
-  the same credential, hosts it covers, a lifetime it outlasts — and fits the
-  lifetime to it. Anything else comes back to you as `NEEDS LEAD`, and so does
+  §0, triage-issue §0). The server makes the worker's binding under your
+  delegation — the same credential, held to the delegation's routes too, a
+  lifetime it outlasts — and fits the lifetime to it. Anything else comes back to you as `NEEDS LEAD`, and so does
   a refusal: read it (`discobox secret request get <id>`), and approve it only
   when it is within your delegation and the worker's task needs it. Deny the
   rest, and when a worker needs more than the delegation holds, ask the user

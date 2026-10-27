@@ -3,14 +3,14 @@ package secrets_test
 import (
 	"context"
 	"net/http"
-	"slices"
-	"strings"
+	"reflect"
 	"testing"
 	"time"
 
 	"gorm.io/gorm"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
@@ -21,12 +21,15 @@ import (
 const (
 	testPoolID    = "pool-1"
 	testSandboxID = "sbx-1"
+	// leadID is the discobox that created testSandboxID, which the
+	// delegation tests act as.
+	leadID = "sbx-lead"
 )
 
-// sentinelMarks records which sandboxes an approval sent a new binding to.
+// sentinelMarks records what a change marked for delivery.
 type sentinelMarks struct {
-	sandboxes []string
-	secrets   []string
+	secrets  []string
+	bindings []model.SecretBinding
 }
 
 func (m *sentinelMarks) MarkSecretHoldersDirtyTx(_ context.Context, _ *store.Store, _ *gorm.DB, _, secretID string) error {
@@ -34,9 +37,13 @@ func (m *sentinelMarks) MarkSecretHoldersDirtyTx(_ context.Context, _ *store.Sto
 	return nil
 }
 
-func (m *sentinelMarks) MarkSandboxSentinelsDirtyTx(_ context.Context, _ *gorm.DB, _, sandboxID string) error {
-	m.sandboxes = append(m.sandboxes, sandboxID)
+func (m *sentinelMarks) MarkBindingHoldersDirtyTx(_ context.Context, _ *store.Store, _ *gorm.DB, _ string, bindings []model.SecretBinding) error {
+	m.bindings = append(m.bindings, bindings...)
 	return nil
+}
+
+func asLead() context.Context {
+	return auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypeSandbox, SandboxID: leadID, ProjectID: "project-1", UserID: "user-1"})
 }
 
 func TestAgentCredentialRequestIsPendingAndRecordsWhatWasAsked(t *testing.T) {
@@ -47,18 +54,15 @@ func TestAgentCredentialRequestIsPendingAndRecordsWhatWasAsked(t *testing.T) {
 	if req.Status != model.SecretRequestStatusPending {
 		t.Fatalf("status = %q, want pending", req.Status)
 	}
-	if !req.FromProtocol() {
-		t.Fatal("request does not read as protocol-originated; the credential it names is what separates it from the proxy's reactive path")
-	}
-	if req.Name != "github" || req.EnvName != "GITHUB_TOKEN" || !slices.Equal(req.Hosts, []string{"api.github.com"}) ||
-		req.Justification == "" || req.Purpose != model.SecretGrantPurposeUse {
-		t.Fatalf("request = %#v, want the ask recorded verbatim", req)
+	if req.Name != "github" || req.EnvName != "GITHUB_TOKEN" || !reflect.DeepEqual(req.Routes, []model.SecretRoute{{Host: "api.github.com"}}) ||
+		req.Justification == "" || req.Purpose != model.SecretPurposeUse || req.RequestedBy != "agent:"+testSandboxID {
+		t.Fatalf("request = %#v, want the ask recorded verbatim, one route per host", req)
 	}
 }
 
-// A use is delivered in the variable it names, so one names a variable; a
-// delegation delivers nothing to the discobox that asks, so one that names a
-// variable is a mistake about what it asks for.
+// A use is delivered in the variable it names, so one with no valid variable is
+// refused; a delegation delivers nothing to the discobox that asks, so one that
+// names a variable is a mistake about what it asks for.
 func TestAgentCredentialRequestNamesAVariableOnlyForAUse(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, _ := newAgentCredentialService(t)
@@ -71,6 +75,8 @@ func TestAgentCredentialRequestNamesAVariableOnlyForAUse(t *testing.T) {
 		{"a use with no variable", services.CreateSandboxCredentialRequestBody{Name: "github", Hosts: []string{"api.github.com"}}, http.StatusBadRequest},
 		{"a use with a malformed variable", services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("A=B"), Hosts: []string{"api.github.com"}}, http.StatusBadRequest},
 		{"a delegation naming a variable", services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Hosts: []string{"github.com"}, Purpose: delegate}, http.StatusBadRequest},
+		{"no host", services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN")}, http.StatusBadRequest},
+		{"a host that is no host name", services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Hosts: []string{"api.*.com"}}, http.StatusBadRequest},
 		{"a delegation", services.CreateSandboxCredentialRequestBody{Name: "github", Hosts: []string{"github.com"}, Purpose: delegate}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -89,76 +95,28 @@ func TestAgentCredentialRequestNamesAVariableOnlyForAUse(t *testing.T) {
 	}
 }
 
-// An agent that asks again — a retry, a wrapper asking on each attempt —
-// finds its open ask rather than filing another; an ask for anything approving
-// would grant differently is its own.
+// An agent that asks again finds its open ask rather than filing another; an
+// ask for anything approving would bind differently is its own.
 func TestAgentCredentialRequestReusesAnOpenAsk(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, _ := newAgentCredentialService(t)
 	first := createAgentRequest(ctx, t, svc)
-	again := createAgentRequest(ctx, t, svc)
-	if again.ID != first.ID {
+	if again := createAgentRequest(ctx, t, svc); again.ID != first.ID {
 		t.Fatalf("second ask = %s, want the open %s", again.ID, first.ID)
 	}
 	other, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
 		SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Hosts: []string{"api.github.com"},
 		GrantTTLSeconds: serverapi.NewOptInt64(7200),
 	})
-	if err != nil {
-		t.Fatalf("ask for another lifetime: %v", err)
-	}
-	if other.ID == first.ID {
-		t.Fatal("an ask for another lifetime was folded into the open one")
+	if err != nil || other.ID == first.ID || other.TTL != 7200 {
+		t.Fatalf("ask for another lifetime = %+v, %v; want its own request", other, err)
 	}
 }
 
-func TestAgentCredentialRequestRecordsTheLifetimeAskedFor(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, _ := newAgentCredentialService(t)
-	for _, tc := range []struct {
-		name    string
-		seconds int64
-		ok      bool
-	}{
-		{"a day", 86400, true},
-		{"thirty days", 30 * 86400, true},
-		{"past thirty days", 30*86400 + 1, false},
-		{"negative", -1, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
-				SandboxId: testSandboxID, Name: "github-" + tc.name, EnvVar: serverapi.NewOptString("GITHUB_TOKEN"),
-				Hosts: []string{"api.github.com"}, GrantTTLSeconds: serverapi.NewOptInt64(tc.seconds),
-			})
-			if tc.ok {
-				if err != nil || req.GrantTTL != tc.seconds {
-					t.Fatalf("request = %+v, %v; want the lifetime recorded", req, err)
-				}
-				return
-			}
-			if !isStatus(err, http.StatusBadRequest) {
-				t.Fatalf("create = %v, want 400", err)
-			}
-		})
-	}
-}
-
-func TestAgentCredentialRequestRequiresAHost(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, _ := newAgentCredentialService(t)
-	_, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
-		SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"),
-	})
-	if !isStatus(err, http.StatusBadRequest) {
-		t.Fatalf("create = %v, want 400: a grant this flow mints is never host-unscoped", err)
-	}
-}
-
-// Approving an agent's use mints a sandbox grant for the hosts approved and
-// binds the variable it named on the discobox like any credential, marking
-// that discobox's sentinel delivery so the binding reaches it while it runs
-// (ADR 26-10-27-880).
-func TestApprovingAnAgentRequestMintsAGrantAndAnInjectedBinding(t *testing.T) {
+// A person's approval binds the secret on the discobox that asked, in the
+// variable it named and to the routes it asked for, records who decided and
+// what it made, and marks the discobox to be sent it — all at once.
+func TestApprovingAnAgentRequestBindsTheSecretOnTheSandbox(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	marks := &sentinelMarks{}
@@ -166,38 +124,37 @@ func TestApprovingAnAgentRequestMintsAGrantAndAnInjectedBinding(t *testing.T) {
 	secret := createBearerSecret(ctx, t, svc)
 	req := createAgentRequest(ctx, t, svc)
 
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId: serverapi.NewOptString(secret.ID),
-	})
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.Name)})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
-	grant, err := st.GetSecretGrant(ctx, "project-1", approved.GrantID)
+	if approved.Status != model.SecretRequestStatusApproved || approved.SecretID != secret.ID || approved.DecidedBy != "user-1" || approved.DecidedAt == nil {
+		t.Fatalf("request = %+v, want it decided by the person", approved)
+	}
+	binding, err := st.SecretBindingByExactID(ctx, "project-1", approved.BindingID)
 	if err != nil {
-		t.Fatalf("get grant: %v", err)
+		t.Fatalf("read binding: %v", err)
 	}
-	if grant.Scope != model.SecretGrantScopeSandbox || grant.ScopeKey != testSandboxID || grant.Purpose != model.SecretGrantPurposeUse {
-		t.Fatalf("grant = %+v, want a use grant for the asking sandbox", grant)
+	if binding.TargetKind != model.SecretBindingTargetSandbox || binding.TargetID != testSandboxID || !binding.Use || binding.Delegate ||
+		binding.EnvName != "GITHUB_TOKEN" || binding.RequestID != req.ID || binding.CreatedBy != "user-1" ||
+		!reflect.DeepEqual(binding.Routes, []model.SecretRoute{{Host: "api.github.com"}}) {
+		t.Fatalf("binding = %+v", binding)
 	}
-	if !slices.Equal(grant.Hosts, []string{"api.github.com"}) {
-		t.Fatalf("grant hosts = %q, want the requested host; this flow never mints a wildcard", grant.Hosts)
+	if len(marks.bindings) != 1 || marks.bindings[0].ID != binding.ID {
+		t.Fatalf("marks = %+v, want the binding's holders marked", marks.bindings)
 	}
-	bindings, err := st.ListSandboxSecrets(ctx, "project-1", testSandboxID)
-	if err != nil {
-		t.Fatalf("list bindings: %v", err)
+	events, err := st.ListSecretBindingEvents(ctx, "project-1", store.SecretBindingEventFilter{BindingID: binding.ID})
+	if err != nil || len(events) != 1 || events[0].Event != model.SecretBindingEventCreated || events[0].Cause != req.ID || events[0].Actor != "user-1" {
+		t.Fatalf("events = %+v, %v; want the creation caused by the request", events, err)
 	}
-	if len(bindings) != 1 || bindings[0].EnvName != "GITHUB_TOKEN" || bindings[0].SecretID != secret.ID || bindings[0].Sentinel == "" {
-		t.Fatalf("bindings = %#v, want GITHUB_TOKEN bound to the secret with a sentinel", bindings)
-	}
-	if !slices.Equal(marks.sandboxes, []string{testSandboxID}) {
-		t.Fatalf("sentinel deliveries marked = %v, want the asking sandbox's", marks.sandboxes)
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); !isStatus(err, http.StatusConflict) {
+		t.Fatalf("second approval = %v, want 409", err)
 	}
 }
 
-// An agent may ask to delegate a credential rather than use it. Approving that
-// ask mints a delegation grant, which binds nothing: there is nothing for the
-// asking discobox to send. It is listed as what it may hand on.
-func TestApprovingAnAskToDelegateMintsADelegationGrant(t *testing.T) {
+// An ask to delegate is answered with a delegate binding, which delivers
+// nothing to the discobox that holds it.
+func TestApprovingAnAskToDelegateMakesADelegateBinding(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
@@ -206,66 +163,62 @@ func TestApprovingAnAskToDelegateMintsADelegationGrant(t *testing.T) {
 		Purpose: serverapi.NewOptCreateSandboxCredentialRequestBodyPurpose(serverapi.CreateSandboxCredentialRequestBodyPurposeDelegate),
 	})
 	if err != nil {
-		t.Fatalf("create request: %v", err)
+		t.Fatalf("ask: %v", err)
 	}
 	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
-	grant, err := st.GetSecretGrant(ctx, "project-1", approved.GrantID)
-	if err != nil || grant.Purpose != model.SecretGrantPurposeDelegate || grant.MayUse() {
-		t.Fatalf("grant = %+v, %v; want a delegation grant", grant, err)
-	}
-	if bindings, _ := st.ListSandboxSecrets(ctx, "project-1", testSandboxID); len(bindings) != 0 {
-		t.Fatalf("bindings = %#v, want none: a delegation delivers nothing", bindings)
-	}
-	listed, err := svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID)
-	if err != nil || len(listed) != 1 || listed[0].Purpose != model.SecretGrantPurposeDelegate || listed[0].EnvName != "" {
-		t.Fatalf("listed = %+v, %v; want the delegation, with no variable", listed, err)
+	binding, err := st.SecretBindingByExactID(ctx, "project-1", approved.BindingID)
+	if err != nil || binding.Use || !binding.Delegate || binding.EnvName != "" {
+		t.Fatalf("binding = %+v, %v; want a delegate binding and nothing to use", binding, err)
 	}
 }
 
-func TestApprovingAnAgentRequestRefusesABroaderScope(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, _ := newAgentCredentialService(t)
-	secret := createBearerSecret(ctx, t, svc)
-	req := createAgentRequest(ctx, t, svc)
-	_, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId: serverapi.NewOptString(secret.ID),
-		Scope:    serverapi.NewOptApproveSecretRequestBodyScope(serverapi.ApproveSecretRequestBodyScopeProject),
-	})
-	if !isStatus(err, http.StatusBadRequest) {
-		t.Fatalf("approve = %v, want 400: an agent asked on behalf of one sandbox", err)
-	}
-}
-
-// What a sandbox holds is listed for it: each variable a live use grant
-// authorizes, with the hosts it may be sent to, and nothing once the grant
-// is revoked.
-func TestGrantedCredentialIsListedForItsSandbox(t *testing.T) {
+// A variable already holding another credential is not taken over by an
+// approval; one holding the same secret is extended.
+func TestApprovingAVariableHeldByAnotherSecretIsRefused(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", createAgentRequest(ctx, t, svc).ID, services.ApproveSecretRequestBody{
-		SecretId: serverapi.NewOptString(secret.ID),
+	other := createRoutedSecret(ctx, t, svc, "other", "*", 0)
+	mustDeliverAs(t, st, testSandboxID, other.ID, "GITHUB_TOKEN")
+	req := createAgentRequest(ctx, t, svc)
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); !isStatus(err, http.StatusConflict) {
+		t.Fatalf("approve = %v, want 409", err)
+	}
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		SecretId: serverapi.NewOptString(other.ID), TtlSeconds: serverapi.NewOptInt64(600),
 	})
 	if err != nil {
-		t.Fatalf("approve: %v", err)
+		t.Fatalf("approve with the secret it holds: %v", err)
 	}
+	bindings, err := st.ListTargetUseBindings(ctx, "project-1", model.SecretBindingTargetSandbox, testSandboxID)
+	if err != nil || len(bindings) != 1 || bindings[0].ID != approved.BindingID || bindings[0].ExpiresAt == nil {
+		t.Fatalf("bindings = %+v, %v; want the standing one extended", bindings, err)
+	}
+}
+
+// What a sandbox holds is listed from its effective bindings: each use in its
+// variable with the hosts it may go to, each delegation with none.
+func TestGrantedCredentialIsListedForItsSandbox(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createRoutedSecret(ctx, t, svc, "github", "github.com", 0)
+	project := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetProject, TargetID: "project-1", Use: true, EnvName: "GH_TOKEN"})
+	delegate := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: testSandboxID, Delegate: true,
+		Routes: []model.SecretRoute{{Host: "api.github.com"}}})
+
 	credentials, err := svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID)
 	if err != nil {
-		t.Fatalf("list credentials: %v", err)
+		t.Fatalf("list: %v", err)
 	}
-	if len(credentials) != 1 || credentials[0].Name != "github" || credentials[0].EnvName != "GITHUB_TOKEN" ||
-		credentials[0].GrantID != approved.GrantID || !slices.Equal(credentials[0].Hosts, []string{"api.github.com"}) {
-		t.Fatalf("credentials = %+v, want the one granted", credentials)
+	want := []services.SandboxCredential{
+		{Name: "github", EnvName: "GH_TOKEN", SecretID: secret.ID, BindingID: project.ID, Hosts: []string{"github.com"}, Purpose: model.SecretPurposeUse},
+		{Name: "github", SecretID: secret.ID, BindingID: delegate.ID, Hosts: []string{"api.github.com"}, Purpose: model.SecretPurposeDelegate},
 	}
-	if err := st.DeleteSecretGrant(ctx, "project-1", approved.GrantID); err != nil {
-		t.Fatalf("revoke: %v", err)
-	}
-	credentials, err = svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID)
-	if err != nil || len(credentials) != 0 {
-		t.Fatalf("credentials = %+v, %v; want none after revocation", credentials, err)
+	if !reflect.DeepEqual(credentials, want) {
+		t.Fatalf("credentials = %+v, want %+v", credentials, want)
 	}
 }
 
@@ -278,37 +231,158 @@ func TestAgentCredentialCallsRefuseAnotherPoolsSandbox(t *testing.T) {
 	if _, err := svc.CreateSandboxCredentialRequest(ctx, "pool-other", services.CreateSandboxCredentialRequestBody{
 		SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Hosts: []string{"api.github.com"},
 	}); !isStatus(err, http.StatusNotFound) {
-		t.Fatalf("create = %v, want 404", err)
-	}
-	req := createAgentRequest(ctx, t, svc)
-	if _, _, err := svc.GetSandboxCredentialRequest(ctx, "pool-other", testSandboxID, req.ID); !isStatus(err, http.StatusNotFound) {
-		t.Fatalf("poll = %v, want 404", err)
+		t.Fatalf("ask = %v, want 404", err)
 	}
 }
 
-func TestPollingReportsGrantedOnceApprovedAndDeniedOnceRevoked(t *testing.T) {
+// Polling says granted while the binding an approval made stands, and denied
+// once it is removed.
+func TestPollingReportsGrantedOnceApprovedAndDeniedOnceRemoved(t *testing.T) {
 	ctx := testPrincipalContext()
-	svc, st := newAgentCredentialService(t)
+	svc, _ := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
 	req := createAgentRequest(ctx, t, svc)
-	got, grant, err := svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, req.ID)
-	if err != nil || services.AgentCredentialRequestStatus(got, grant) != model.SecretRequestStatusPending {
-		t.Fatalf("poll before approval = %+v, %v; want pending", got, err)
+	got, binding, err := svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, req.ID)
+	if err != nil || services.AgentCredentialRequestStatus(got, binding) != model.SecretRequestStatusPending {
+		t.Fatalf("poll = %+v, %v; want pending", got, err)
 	}
 	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
 	if err != nil {
-		t.Fatalf("approve: %v", err)
+		t.Fatal(err)
 	}
-	got, grant, err = svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, req.ID)
-	if err != nil || services.AgentCredentialRequestStatus(got, grant) != "granted" || grant.ID != approved.GrantID {
-		t.Fatalf("poll after approval = %+v, %+v, %v; want granted", got, grant, err)
+	got, binding, err = svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, req.ID)
+	if err != nil || services.AgentCredentialRequestStatus(got, binding) != "granted" {
+		t.Fatalf("poll after approval = %+v, %v; want granted", got, err)
 	}
-	if err := st.DeleteSecretGrant(ctx, "project-1", approved.GrantID); err != nil {
-		t.Fatalf("revoke: %v", err)
+	if _, err := svc.DeleteSecretBinding(ctx, "project-1", approved.BindingID); err != nil {
+		t.Fatal(err)
 	}
-	got, grant, err = svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, req.ID)
-	if err != nil || services.AgentCredentialRequestStatus(got, grant) != model.SecretRequestStatusDenied {
-		t.Fatalf("poll after revocation = %+v, %v; want denied", got, err)
+	got, binding, err = svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, req.ID)
+	if err != nil || services.AgentCredentialRequestStatus(got, binding) != model.SecretRequestStatusDenied {
+		t.Fatalf("poll after removal = %+v, %v; want denied", got, err)
+	}
+}
+
+// A discobox answers a request from a discobox it created only under a live
+// delegate binding covering it of the secret it answers with: the binding is
+// handed on under it, for use alone, and lasts no longer (ADR 26-10-27-880
+// §3). Named longer, it is refused.
+func TestADiscoboxApprovesUnderItsDelegateBinding(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	parentExpiry := time.Now().UTC().Add(30 * time.Minute)
+	parent := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: leadID, Delegate: true, ExpiresAt: &parentExpiry})
+	req := createAgentRequest(ctx, t, svc)
+
+	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{TtlSeconds: serverapi.NewOptInt64(7200)}); !isStatus(err, http.StatusForbidden) {
+		t.Fatalf("approve for longer than the delegation = %v, want 403", err)
+	}
+	approved, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{})
+	if err != nil {
+		t.Fatalf("approve as the lead: %v", err)
+	}
+	child, err := st.SecretBindingByExactID(ctx, "project-1", approved.BindingID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.ParentID != parent.ID || !child.Use || child.Delegate || child.CreatedBy != leadID || approved.DecidedBy != leadID ||
+		child.ExpiresAt == nil || child.ExpiresAt.After(parentExpiry) {
+		t.Fatalf("child = %+v, want a use handed on under %s ending by %v", child, parent.ID, parentExpiry)
+	}
+}
+
+// What only a person may do: answer an ask to delegate, and hand on what no
+// delegate binding covers.
+func TestADiscoboxHandsOnOnlyWhatItWasDelegated(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	use := createAgentRequest(ctx, t, svc)
+	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", use.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); !isStatus(err, http.StatusForbidden) {
+		t.Fatalf("approve with no delegate binding = %v, want 403", err)
+	}
+	mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetProject, TargetID: "project-1", Delegate: true})
+	ask, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId: testSandboxID, Name: "github", Hosts: []string{"github.com"},
+		Purpose: serverapi.NewOptCreateSandboxCredentialRequestBodyPurpose(serverapi.CreateSandboxCredentialRequestBodyPurposeDelegate),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", ask.ID, services.ApproveSecretRequestBody{}); !isStatus(err, http.StatusForbidden) {
+		t.Fatalf("approve an ask to delegate as a discobox = %v, want 403", err)
+	}
+	// A delegation on the project covers the lead too.
+	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", use.ID, services.ApproveSecretRequestBody{}); err != nil {
+		t.Fatalf("approve under the project's delegation: %v", err)
+	}
+	listed, err := svc.ListSecrets(asLead(), "project-1")
+	if err != nil || len(listed) != 1 || listed[0].ID != secret.ID {
+		t.Fatalf("the lead's secrets = %+v, %v; want only the one it was delegated", listed, err)
+	}
+}
+
+// A discobox listing requests sees only those filed by discoboxes it created;
+// a person sees every one (ADR 26-09-30-782 §2).
+func TestADiscoboxListsOnlyItsOwnDiscoboxesRequests(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	if err := st.CreateSandbox(ctx, &model.Sandbox{ID: "sbx-other", ProjectID: "project-1", Name: "other", PoolID: testPoolID}); err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+	for id, sandbox := range map[string]string{"sreq-worker": testSandboxID, "sreq-other": "sbx-other"} {
+		if err := st.CreateSecretRequest(ctx, &model.SecretRequest{
+			ID: id, ProjectID: "project-1", SandboxID: sandbox, RequestedBy: "agent:" + sandbox, Status: model.SecretRequestStatusPending,
+		}); err != nil {
+			t.Fatalf("create request %s: %v", id, err)
+		}
+	}
+	owned, err := svc.ListSecretRequests(asLead(), "project-1", "")
+	if err != nil || len(owned) != 1 || owned[0].ID != "sreq-worker" {
+		t.Fatalf("listed as the lead = %+v, %v; want only its worker's request", owned, err)
+	}
+	all, err := svc.ListSecretRequests(ctx, "project-1", "")
+	if err != nil || len(all) != 2 {
+		t.Fatalf("listed as a person = %d, %v; want both", len(all), err)
+	}
+}
+
+// An approval that names no lifetime binds for what the agent asked, else an
+// hour — what the window opens on — and never past the secret's limit.
+func TestAnApprovalNamingNoLifetimeBindsForWhatWasAsked(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		asked, limit int64
+		want         time.Duration
+	}{
+		{"what was asked", 7200, 86400, 2 * time.Hour},
+		{"an hour when nothing was asked", 0, 86400, time.Hour},
+		{"within the secret's limit", 7200, 600, 10 * time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := testPrincipalContext()
+			svc, st := newAgentCredentialService(t)
+			secret := createRoutedSecret(ctx, t, svc, "github", "*", tc.limit)
+			req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+				SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Hosts: []string{"api.github.com"},
+				GrantTTLSeconds: serverapi.NewOptInt64(tc.asked),
+			})
+			if err != nil {
+				t.Fatalf("create request: %v", err)
+			}
+			approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
+			if err != nil {
+				t.Fatalf("approve: %v", err)
+			}
+			binding, err := st.SecretBindingByExactID(ctx, "project-1", approved.BindingID)
+			if err != nil || binding.ExpiresAt == nil {
+				t.Fatalf("binding = %+v, %v; want one that expires", binding, err)
+			}
+			if got := time.Until(*binding.ExpiresAt); got > tc.want || got < tc.want-time.Minute {
+				t.Fatalf("expires in %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -329,15 +403,40 @@ func createAgentRequest(ctx context.Context, t *testing.T, svc *resourcesecrets.
 
 func createBearerSecret(ctx context.Context, t *testing.T, svc *resourcesecrets.Service) *model.Secret {
 	t.Helper()
+	return createRoutedSecret(ctx, t, svc, "github", "github.com", 0)
+}
+
+// createRoutedSecret creates a token sent to host, with a binding limit when
+// limit is positive and none otherwise.
+func createRoutedSecret(ctx context.Context, t *testing.T, svc *resourcesecrets.Service, name, host string, limit int64) *model.Secret {
+	t.Helper()
 	secret, err := svc.CreateSecret(ctx, "project-1", services.CreateSecretBody{
-		Name:  "github",
-		Type:  serverapi.CreateSecretBodyTypeToken,
-		Value: serverapi.SecretValue{Token: serverapi.NewOptString("ghp_realrealrealrealrealrealrealreal12")},
+		Name:                 name,
+		Type:                 serverapi.CreateSecretBodyTypeToken,
+		Value:                serverapi.SecretValue{Token: serverapi.NewOptString("ghp_realrealrealrealrealrealrealreal12")},
+		Routes:               hostRoutes(host),
+		MaxBindingTTLSeconds: serverapi.NewOptInt64(limit),
 	})
 	if err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
 	return secret
+}
+
+// mustBindAs stores a binding in project-1 as a person made it.
+func mustBindAs(t *testing.T, st *store.Store, binding *model.SecretBinding) *model.SecretBinding {
+	t.Helper()
+	binding.ProjectID = "project-1"
+	if err := st.CreateSecretBinding(context.Background(), binding, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+	return binding
+}
+
+// mustDeliverAs binds a secret for use in env on a sandbox.
+func mustDeliverAs(t *testing.T, st *store.Store, sandboxID, secretID, env string) *model.SecretBinding {
+	t.Helper()
+	return mustBindAs(t, st, &model.SecretBinding{SecretID: secretID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sandboxID, Use: true, EnvName: env})
 }
 
 // newAgentCredentialService builds a service over a database holding one
@@ -381,250 +480,4 @@ func newAgentCredentialService(t *testing.T) (*resourcesecrets.Service, *store.S
 	}
 	st := store.New(db.Write, db.Read)
 	return resourcesecrets.NewService(st), st
-}
-
-// A host is matched against what the proxy observed, which it reports
-// lowercased and without a port. A grant stored any other way is one nothing
-// can ever match.
-func TestApprovedHostIsNormalizedToWhatTheProxyReports(t *testing.T) {
-	for _, tc := range []struct{ name, approved string }{
-		{"mixed case", "API.GitHub.com"},
-		{"padded", "  api.github.com  "},
-		{"with a port", "api.github.com:443"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := testPrincipalContext()
-			svc, st := newAgentCredentialService(t)
-			secret := createBearerSecret(ctx, t, svc)
-			req := createAgentRequest(ctx, t, svc)
-			approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-				SecretId: serverapi.NewOptString(secret.ID),
-				Hosts:    []string{tc.approved},
-			})
-			if err != nil {
-				t.Fatalf("approve: %v", err)
-			}
-			grant, err := st.GetSecretGrant(ctx, "project-1", approved.GrantID)
-			if err != nil {
-				t.Fatalf("get grant: %v", err)
-			}
-			if !slices.Equal(grant.Hosts, []string{"api.github.com"}) {
-				t.Fatalf("grant host = %q, want the host as the proxy reports it", grant.Hosts)
-			}
-			if _, err := st.FindLiveGrant(ctx, "project-1", secret.ID, "api.github.com",
-				[]store.GrantScope{{Scope: model.SecretGrantScopeSandbox, ScopeKey: testSandboxID}}); err != nil {
-				t.Fatalf("the minted grant does not match the observed host: %v", err)
-			}
-		})
-	}
-}
-
-// What the approver agreed to change on the secret — its binding, its limit —
-// is written with the grant or not at all.
-func TestAnApprovalChangesTheSecretItAgreedTo(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, st := newAgentCredentialService(t)
-	secret := createBoundSecret(ctx, t, svc, "github", "www.github.com", 3600)
-	req := createAgentRequest(ctx, t, svc)
-
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId:                 serverapi.NewOptString(secret.ID),
-		GrantTTLSeconds:          serverapi.NewOptInt64(7200),
-		SecretHost:               serverapi.NewOptString("github.com"),
-		SecretMaxGrantTTLSeconds: serverapi.NewOptInt64(7200),
-	})
-	if err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-	stored, err := st.GetSecret(ctx, "project-1", secret.ID)
-	if err != nil {
-		t.Fatalf("get secret: %v", err)
-	}
-	if stored.Host != "github.com" || stored.MaxGrantTTL != 7200 {
-		t.Fatalf("secret = %s, limit %d; want bound to github.com with a 7200s limit", stored.Host, stored.MaxGrantTTL)
-	}
-	if approved.Status != model.SecretRequestStatusApproved || approved.GrantID == "" {
-		t.Fatalf("request = %#v, want approved with a grant", approved)
-	}
-}
-
-// A refused approval leaves the secret as it was, and the request pending: a
-// variable already holding another credential in the discobox is not taken
-// over by approving.
-func TestARefusedApprovalLeavesTheSecretAsItWas(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, st := newAgentCredentialService(t)
-
-	first := createBoundSecret(ctx, t, svc, "first", "", 0)
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", createAgentRequest(ctx, t, svc).ID, services.ApproveSecretRequestBody{
-		SecretId: serverapi.NewOptString(first.ID),
-	}); err != nil {
-		t.Fatalf("approve first: %v", err)
-	}
-	secret := createBoundSecret(ctx, t, svc, "github", "www.github.com", 3600)
-	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
-		SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Hosts: []string{"api.github.com"},
-		Justification: serverapi.NewOptString("again"), GrantTTLSeconds: serverapi.NewOptInt64(60),
-	})
-	if err != nil {
-		t.Fatalf("ask again: %v", err)
-	}
-
-	_, err = svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId:                 serverapi.NewOptString(secret.ID),
-		GrantTTLSeconds:          serverapi.NewOptInt64(7200),
-		SecretHost:               serverapi.NewOptString("github.com"),
-		SecretMaxGrantTTLSeconds: serverapi.NewOptInt64(7200),
-	})
-	if !isStatus(err, http.StatusConflict) || !strings.Contains(err.Error(), "another credential") {
-		t.Fatalf("approve = %v, want the binding conflict", err)
-	}
-	stored, err := st.GetSecret(ctx, "project-1", secret.ID)
-	if err != nil {
-		t.Fatalf("get secret: %v", err)
-	}
-	if stored.Host != "www.github.com" || stored.MaxGrantTTL != 3600 {
-		t.Fatalf("secret = %s, limit %d; want it as it was", stored.Host, stored.MaxGrantTTL)
-	}
-	if grants, _ := st.ListSecretGrants(ctx, "project-1", secret.ID); len(grants) != 0 {
-		t.Fatalf("grants = %#v, want none left behind", grants)
-	}
-	if pending, _ := st.GetSecretRequest(ctx, "project-1", req.ID); pending == nil || pending.Status != model.SecretRequestStatusPending {
-		t.Fatalf("request = %+v, want still pending", pending)
-	}
-}
-
-// A variable already bound to the secret approved keeps its binding and
-// sentinel: approving again delivers nothing new and swaps nothing.
-func TestApprovingAVariableAlreadyBoundToTheSecretKeepsItsSentinel(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, st := newAgentCredentialService(t)
-	secret := createBearerSecret(ctx, t, svc)
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", createAgentRequest(ctx, t, svc).ID, services.ApproveSecretRequestBody{
-		SecretId: serverapi.NewOptString(secret.ID),
-	}); err != nil {
-		t.Fatalf("approve first: %v", err)
-	}
-	before, _ := st.ListSandboxSecrets(ctx, "project-1", testSandboxID)
-	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
-		SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Hosts: []string{"github.com"},
-	})
-	if err != nil {
-		t.Fatalf("ask again: %v", err)
-	}
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); err != nil {
-		t.Fatalf("approve again: %v", err)
-	}
-	after, _ := st.ListSandboxSecrets(ctx, "project-1", testSandboxID)
-	if len(before) != 1 || len(after) != 1 || after[0].Sentinel != before[0].Sentinel {
-		t.Fatalf("bindings %#v became %#v, want the one binding kept", before, after)
-	}
-}
-
-// A discobox answering the inbox approves with the secret as it is: its role
-// changes no secret, and an approval is no way around that.
-func TestADiscoboxCannotChangeASecretByApproving(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, st := newAgentCredentialService(t)
-	secret := createBoundSecret(ctx, t, svc, "github", "www.github.com", 0)
-	req := createAgentRequest(ctx, t, svc)
-	// It holds a delegation of the secret, so the refusal is about changing
-	// it and not about what it may hand on.
-	delegate(t, st, secret, "api.github.com", time.Hour)
-
-	_, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId:   serverapi.NewOptString(secret.ID),
-		SecretHost: serverapi.NewOptString(""),
-	})
-	if err == nil || !strings.Contains(err.Error(), "a person changes") {
-		t.Fatalf("approve = %v, want a discobox refused a change to the secret", err)
-	}
-	if stored, _ := st.GetSecret(ctx, "project-1", secret.ID); stored == nil || stored.Host != "www.github.com" {
-		t.Fatalf("secret = %#v, want its binding kept", stored)
-	}
-}
-
-func createBoundSecret(ctx context.Context, t *testing.T, svc *resourcesecrets.Service, name, host string, limit int64) *model.Secret {
-	t.Helper()
-	body := services.CreateSecretBody{
-		Name:  name,
-		Type:  serverapi.CreateSecretBodyTypeToken,
-		Value: serverapi.SecretValue{Token: serverapi.NewOptString("ghp_realrealrealrealrealrealrealreal12")},
-	}
-	if host != "" {
-		body.Host = serverapi.NewOptString(host)
-	}
-	if limit > 0 {
-		body.MaxGrantTTLSeconds = serverapi.NewOptInt64(limit)
-	}
-	secret, err := svc.CreateSecret(ctx, "project-1", body)
-	if err != nil {
-		t.Fatalf("create secret: %v", err)
-	}
-	return secret
-}
-
-// A discobox listing requests sees only those filed by discoboxes it created;
-// a person sees every one (ADR 26-09-30-782 §2).
-func TestADiscoboxListsOnlyItsOwnDiscoboxesRequests(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, st := newAgentCredentialService(t)
-	if err := st.CreateSandbox(ctx, &model.Sandbox{ID: "sbx-other", ProjectID: "project-1", Name: "other", PoolID: testPoolID}); err != nil {
-		t.Fatalf("create other: %v", err)
-	}
-	for id, sandbox := range map[string]string{"sreq-worker": testSandboxID, "sreq-other": "sbx-other"} {
-		if err := st.CreateSecretRequest(ctx, &model.SecretRequest{
-			ID: id, ProjectID: "project-1", SandboxID: sandbox, RequestedBy: "agent:" + sandbox,
-			Type: "token", Status: model.SecretRequestStatusPending,
-		}); err != nil {
-			t.Fatalf("create request %s: %v", id, err)
-		}
-	}
-	owned, err := svc.ListSecretRequests(asLead(), "project-1", "")
-	if err != nil || len(owned) != 1 || owned[0].ID != "sreq-worker" {
-		t.Fatalf("listed as the lead = %+v, %v; want only its worker's request", owned, err)
-	}
-	all, err := svc.ListSecretRequests(ctx, "project-1", "")
-	if err != nil || len(all) != 2 {
-		t.Fatalf("listed as a person = %d, %v; want both", len(all), err)
-	}
-}
-
-// An approval that names no lifetime grants what the agent asked for, else an
-// hour — what the window opens on — and never past the secret's limit, so
-// approving needs nothing read first.
-func TestAnApprovalNamingNoLifetimeGrantsWhatWasAsked(t *testing.T) {
-	for _, tc := range []struct {
-		name         string
-		asked, limit int64
-		want         time.Duration
-	}{
-		{"what was asked", 7200, 86400, 2 * time.Hour},
-		{"an hour when nothing was asked", 0, 86400, time.Hour},
-		{"within the secret's limit", 7200, 600, 10 * time.Minute},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := testPrincipalContext()
-			svc, st := newAgentCredentialService(t)
-			secret := createBoundSecret(ctx, t, svc, "github", "", tc.limit)
-			req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
-				SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Hosts: []string{"api.github.com"},
-				GrantTTLSeconds: serverapi.NewOptInt64(tc.asked),
-			})
-			if err != nil {
-				t.Fatalf("create request: %v", err)
-			}
-			approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
-			if err != nil {
-				t.Fatalf("approve: %v", err)
-			}
-			grant, err := st.GetSecretGrant(ctx, "project-1", approved.GrantID)
-			if err != nil || grant.ExpiresAt == nil {
-				t.Fatalf("grant = %+v, %v; want one that expires", grant, err)
-			}
-			if got := time.Until(*grant.ExpiresAt); got > tc.want || got < tc.want-time.Minute {
-				t.Fatalf("expires in %v, want %v", got, tc.want)
-			}
-		})
-	}
 }

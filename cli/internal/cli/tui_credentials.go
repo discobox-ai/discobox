@@ -109,6 +109,9 @@ func (d *apiDataSource) requestsHere(ctx context.Context) ([]tui.CredentialReque
 		if trust, ok := item.Trust.Get(); ok && item.Kind == apiclientgen.ApprovalRequestKindTrust {
 			out = append(out, toTUITrustRequest(trust))
 		}
+		if refresh, ok := item.Refresh.Get(); ok && item.Kind == apiclientgen.ApprovalRequestKindRefresh {
+			out = append(out, toTUIRefreshRequest(refresh))
+		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Created.After(out[j].Created) })
 	return out, nil
@@ -180,30 +183,57 @@ func (d *apiDataSource) rejectionsHere(ctx context.Context) ([]tui.SecretRejecti
 
 func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 	req := tui.CredentialRequest{
-		ID:            r.ID,
-		SandboxID:     strings.TrimSpace(r.SandboxId.Or("")),
-		Name:          strings.TrimSpace(r.Name.Or("")),
-		EnvVar:        strings.TrimSpace(r.EnvName.Or("")),
-		Type:          string(r.Type),
-		Justification: strings.TrimSpace(r.Justification.Or("")),
-		GrantTTL:      agentcreds.AskedGrantTTL(r.GrantTTLSeconds.Or(0)),
+		ID:        r.ID,
+		SandboxID: strings.TrimSpace(r.SandboxId.Or("")),
+		// The name, variable, routes and reason are the asking agent's own
+		// words, and the window draws what it is given: they arrive escaped
+		// (cli/REVIEW.md).
+		Name:          terminalSafe(strings.TrimSpace(r.Name.Or(""))),
+		EnvVar:        terminalSafe(strings.TrimSpace(r.EnvName.Or(""))),
+		Justification: terminalSafeMultiline(strings.TrimSpace(r.Justification.Or(""))),
+		AskedTTL:      agentcreds.AskedGrantTTL(r.TtlSeconds.Or(0)),
 		Delegate:      r.Purpose.Or("") == apiclientgen.SecretRequestPurposeDelegate,
 		Created:       r.CreatedAt,
 	}
-	req.Hosts = r.Hosts
-	// Nearly all of it is text a discobox wrote, which a JSON encoder passes
-	// through but for C0 controls, so it is written terminal-safe.
-	var raw bytes.Buffer
-	if writeTerminalSafeJSON(&raw, r) == nil {
-		req.Raw = strings.TrimRight(raw.String(), "\n")
-	}
-	if r.Reason.Or("") == apiclientgen.SecretRequestReasonRefresh {
-		req.Refresh = &tui.RefreshAsk{
-			SecretID: strings.TrimSpace(r.SecretId.Or("")),
-			Cause:    string(r.RefreshCause.Or("")),
-		}
-	}
+	req.Routes = tuiRoutes(r.Routes)
+	req.Raw = requestJSON(r)
 	return req
+}
+
+// toTUIRefreshRequest is a refresh request as the inbox holds it: an item
+// whose answer is a new value for a token the project already holds, or a
+// dismissal (ADR 26-10-27-880 §1).
+func toTUIRefreshRequest(r apimodel.SecretRefreshRequest) tui.CredentialRequest {
+	return tui.CredentialRequest{
+		ID:        r.ID,
+		SandboxID: strings.TrimSpace(r.SandboxId.Or("")),
+		Name:      terminalSafe(strings.TrimSpace(r.SecretName.Or(r.SecretId))),
+		Created:   r.CreatedAt,
+		Raw:       requestJSON(r),
+		Refresh:   &tui.RefreshAsk{SecretID: r.SecretId, Cause: string(r.Cause)},
+	}
+}
+
+// tuiRoutes are routes as the window holds them, escaped: a request's are the
+// asking agent's, and a child binding's come from the discobox that asked or
+// delegated (cli/REVIEW.md).
+func tuiRoutes(routes []apimodel.SecretRoute) []tui.SecretRoute {
+	var out []tui.SecretRoute
+	for _, route := range routes {
+		out = append(out, tui.SecretRoute{Host: terminalSafe(route.Host), Path: terminalSafe(route.Path.Or("")), Blocked: route.Blocked.Or(false)})
+	}
+	return out
+}
+
+// requestJSON is a request as the server sent it, for the window to show.
+// Nearly all of it is text a discobox wrote, which a JSON encoder passes
+// through but for C0 controls, so it is written terminal-safe.
+func requestJSON(v any) string {
+	var raw bytes.Buffer
+	if writeTerminalSafeJSON(&raw, v) != nil {
+		return ""
+	}
+	return strings.TrimRight(raw.String(), "\n")
 }
 
 // toTUITrustRequest is a trust request as the inbox holds it: an item whose
@@ -221,9 +251,9 @@ func toTUITrustRequest(r apimodel.HostTrustRequest) tui.CredentialRequest {
 	req := tui.CredentialRequest{
 		ID:            r.ID,
 		SandboxID:     r.SandboxId,
-		Host:          r.Host,
-		Justification: strings.TrimSpace(r.Justification.Or("")),
-		GrantTTL:      agentcreds.AskedGrantTTL(r.GrantTTLSeconds.Or(0)),
+		Host:          terminalSafe(r.Host),
+		Justification: terminalSafeMultiline(strings.TrimSpace(r.Justification.Or(""))),
+		AskedTTL:      agentcreds.AskedGrantTTL(r.GrantTTLSeconds.Or(0)),
 		Created:       r.CreatedAt,
 		Trust:         ask,
 	}
@@ -330,8 +360,7 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 			ID:      s.ID,
 			Name:    s.Name,
 			Type:    string(s.Type),
-			Host:    strings.TrimSpace(s.Host.Or("")),
-			MaxTTL:  time.Duration(s.MaxGrantTTLSeconds) * time.Second,
+			MaxTTL:  time.Duration(s.MaxBindingTTLSeconds) * time.Second,
 			Created: s.CreatedAt,
 			Updated: s.UpdatedAt,
 		}
@@ -388,12 +417,9 @@ func (d *apiDataSource) CreateSecret(ctx context.Context, server string, secret 
 		return tui.Secret{}, err
 	}
 	body := &apimodel.CreateSecretBody{Name: strings.TrimSpace(secret.Name), Type: secretType}
-	if host := strings.TrimSpace(secret.Host); host != "" {
-		body.SetHost(apiclientgen.NewOptString(host))
-	}
-	// Always sent, zero included: zero is the answer "grants on this may live
-	// forever", and leaving it out would take the server's default instead.
-	body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(secret.MaxTTLSeconds))
+	// Always sent, zero included: zero is the answer "bindings of this may
+	// last forever", and leaving it out would take the server's default.
+	body.SetMaxBindingTTLSeconds(apiclientgen.NewOptInt64(secret.MaxTTLSeconds))
 	body.Value = secretValueBody(secret.Value)
 	if secret.ValueTTLSeconds != nil {
 		body.SetTtlSeconds(apiclientgen.NewOptInt64(*secret.ValueTTLSeconds))
@@ -430,8 +456,7 @@ func (d *apiDataSource) CreateSecret(ctx context.Context, server string, secret 
 		ID:     created.ID,
 		Name:   created.Name,
 		Type:   string(created.Type),
-		Host:   strings.TrimSpace(created.Host.Or("")),
-		MaxTTL: time.Duration(created.MaxGrantTTLSeconds) * time.Second,
+		MaxTTL: time.Duration(created.MaxBindingTTLSeconds) * time.Second,
 	}, nil
 }
 
@@ -460,7 +485,7 @@ func secretValueBody(value tui.SecretValue) apimodel.SecretValue {
 
 // UpdateSecret changes what a secret says about itself, in one call. Every
 // field the update names is set even when it is empty or zero — an unset field
-// changes nothing, so releasing a binding and lifting a limit both have to be
+// changes nothing, so clearing the routes and lifting a limit both have to be
 // said rather than left out — and every field it does not name is left out.
 func (d *apiDataSource) UpdateSecret(ctx context.Context, server, secretID string, update tui.SecretUpdate) error {
 	d, err := d.on(ctx, server)
@@ -471,11 +496,8 @@ func (d *apiDataSource) UpdateSecret(ctx context.Context, server, secretID strin
 	if update.Name != nil {
 		body.SetName(apiclientgen.NewOptString(strings.TrimSpace(*update.Name)))
 	}
-	if update.Host != nil {
-		body.SetHost(apiclientgen.NewOptString(strings.TrimSpace(*update.Host)))
-	}
 	if update.MaxTTLSeconds != nil {
-		body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(*update.MaxTTLSeconds))
+		body.SetMaxBindingTTLSeconds(apiclientgen.NewOptInt64(*update.MaxTTLSeconds))
 	}
 	if update.Value != nil {
 		body.SetValue(apiclientgen.NewOptSecretValue(secretValueBody(*update.Value)))
@@ -503,25 +525,19 @@ func (d *apiDataSource) UpdateSecret(ctx context.Context, server, secretID strin
 	return err
 }
 
-// ApproveCredentialRequest mints the grant that answers a request.
+// ApproveCredentialRequest makes the binding that answers a request.
 func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server string, approval tui.Approval) error {
 	window := d
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return err
 	}
-	// The lifetime is always sent, zero included: zero is a grant that never
+	// The lifetime is always sent, zero included: zero is a binding that never
 	// expires, and leaving it out would ask the server for the secret's own
-	// limit instead — a different grant from the one the window said it was
-	// minting.
+	// limit instead — a different binding from the one the window said it was
+	// making.
 	body := &apimodel.ApproveSecretRequestBody{SecretId: apiclientgen.NewOptString(approval.SecretID)}
-	body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(approval.TTLSeconds))
-	if approval.SecretHost != nil {
-		body.SetSecretHost(apiclientgen.NewOptString(strings.TrimSpace(*approval.SecretHost)))
-	}
-	if approval.SecretMaxTTLSeconds != nil {
-		body.SetSecretMaxGrantTTLSeconds(apiclientgen.NewOptInt64(*approval.SecretMaxTTLSeconds))
-	}
+	body.SetTtlSeconds(apiclientgen.NewOptInt64(approval.TTLSeconds))
 	res, err := d.client.ApproveSecretRequest(ctx, body, apiclientgen.ApproveSecretRequestParams{
 		ProjectId: d.projectID,
 		RequestId: approval.RequestID,
@@ -606,104 +622,131 @@ func (d *apiDataSource) DenyCredentialRequest(ctx context.Context, server, reque
 	return nil
 }
 
-// Grants lists the standing grants on a secret, or on one server's whole
-// project.
-func (d *apiDataSource) Grants(ctx context.Context, server string, filter tui.GrantFilter) ([]tui.Grant, error) {
-	d, err := d.on(ctx, server)
-	if err != nil {
-		return nil, err
-	}
-	params := apiclientgen.ListSecretGrantsParams{ProjectId: d.projectID}
-	if secretID := strings.TrimSpace(filter.SecretID); secretID != "" {
-		params.SecretId = apiclientgen.NewOptString(secretID)
-	}
-	res, err := d.client.ListSecretGrants(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	body, err := expectResponse[apimodel.ListSecretGrantsBody](res)
-	if err != nil {
-		return nil, err
-	}
-	grants := sortedByRecency(body.GetSecretGrants(), func(g apimodel.SecretGrant) time.Time { return g.GrantedAt })
-	out := make([]tui.Grant, 0, len(grants))
-	for _, g := range grants {
-		grant := tui.Grant{
-			ID:        g.ID,
-			SecretID:  g.SecretId,
-			Scope:     string(g.Scope),
-			ScopeKey:  strings.TrimSpace(g.ScopeKey),
-			Host:      strings.Join(g.Hosts, ", "),
-			Delegate:  g.Purpose == apiclientgen.SecretGrantPurposeDelegate,
-			GrantedBy: strings.TrimSpace(g.GrantedBy.Or("")),
-			Granted:   g.GrantedAt,
-		}
-		if expires, ok := g.ExpiresAt.Get(); ok {
-			grant.Expires = expires
-		}
-		out = append(out, grant)
-	}
-	return out, nil
-}
-
-// CreateGrant mints a standing grant.
-func (d *apiDataSource) CreateGrant(ctx context.Context, server string, grant tui.NewGrant) (tui.Grant, error) {
-	d, err := d.on(ctx, server)
-	if err != nil {
-		return tui.Grant{}, err
-	}
-	scope, err := createSecretGrantBodyScope(grant.Scope)
-	if err != nil {
-		return tui.Grant{}, err
-	}
-	body := &apimodel.CreateSecretGrantBody{SecretId: grant.SecretID, Scope: scope}
-	if grant.ScopeKey != "" {
-		body.SetScopeKey(apiclientgen.NewOptString(grant.ScopeKey))
-	}
-	// Sent even when empty: a list left out takes the secret's own binding,
-	// and "anywhere the secret allows" — an empty list — has to be sayable.
-	body.SetHosts([]string{})
-	if host := strings.TrimSpace(grant.Host); host != "" {
-		body.SetHosts([]string{host})
-	}
-	// Said even when zero: the window asked how long it lives and was answered,
-	// and zero is the answer "never expires" — dropping it would quietly
-	// substitute the secret's limit for what the person typed.
-	body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(grant.TTLSeconds))
-	if grant.Delegate {
-		body.SetPurpose(apiclientgen.NewOptCreateSecretGrantBodyPurpose(apiclientgen.CreateSecretGrantBodyPurposeDelegate))
-	}
-	res, err := d.client.CreateSecretGrant(ctx, body, apiclientgen.CreateSecretGrantParams{ProjectId: d.projectID})
-	if err != nil {
-		return tui.Grant{}, err
-	}
-	created, err := expectResponse[apimodel.SecretGrant](res)
-	if err != nil {
-		return tui.Grant{}, err
-	}
-	return tui.Grant{
-		ID:       created.ID,
-		SecretID: created.SecretId,
-		Scope:    string(created.Scope),
-		ScopeKey: strings.TrimSpace(created.ScopeKey),
-		Host:     strings.Join(created.Hosts, ", "),
-	}, nil
-}
-
-// RevokeGrant withdraws one grant.
-func (d *apiDataSource) RevokeGrant(ctx context.Context, server, grantID string) error {
+// DismissRefresh closes a refresh request without writing a value.
+func (d *apiDataSource) DismissRefresh(ctx context.Context, server, requestID string) error {
+	window := d
 	d, err := d.on(ctx, server)
 	if err != nil {
 		return err
 	}
-	res, err := d.client.RevokeSecretGrant(ctx, apiclientgen.RevokeSecretGrantParams{
+	res, err := d.client.DismissSecretRefreshRequest(ctx, apiclientgen.DismissSecretRefreshRequestParams{
 		ProjectId: d.projectID,
-		GrantId:   grantID,
+		RequestId: requestID,
 	})
 	if err != nil {
 		return err
 	}
-	return expectNoContent[apiclientgen.RevokeSecretGrantNoContent](res)
+	if _, err := expectResponse[apimodel.SecretRefreshRequest](res); err != nil {
+		return err
+	}
+	window.answered(server, requestID)
+	return nil
+}
+
+// Bindings lists the bindings of a secret, or one server's whole project's.
+func (d *apiDataSource) Bindings(ctx context.Context, server string, filter tui.BindingFilter) ([]tui.SecretBinding, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return nil, err
+	}
+	params := apiclientgen.ListSecretBindingsParams{ProjectId: d.projectID}
+	if secretID := strings.TrimSpace(filter.SecretID); secretID != "" {
+		params.Secret = apiclientgen.NewOptString(secretID)
+	}
+	res, err := d.client.ListSecretBindings(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.ListSecretBindingsBody](res)
+	if err != nil {
+		return nil, err
+	}
+	bindings := sortedByRecency(body.GetSecretBindings(), func(b apimodel.SecretBinding) time.Time { return b.CreatedAt })
+	out := make([]tui.SecretBinding, 0, len(bindings))
+	for _, b := range bindings {
+		out = append(out, toTUIBinding(b))
+	}
+	return out, nil
+}
+
+func toTUIBinding(b apimodel.SecretBinding) tui.SecretBinding {
+	binding := tui.SecretBinding{
+		ID:         b.ID,
+		SecretID:   b.SecretId,
+		SecretName: terminalSafe(strings.TrimSpace(b.SecretName.Or(""))),
+		TargetKind: string(b.TargetKind),
+		TargetID:   b.TargetId,
+		Use:        b.Use,
+		Delegate:   b.Delegate,
+		// A child binding's variable and routes are the asking or delegating
+		// discobox's words, escaped as every string the window draws is.
+		EnvVar:    terminalSafe(strings.TrimSpace(b.EnvVar.Or(""))),
+		ParentID:  strings.TrimSpace(b.ParentId.Or("")),
+		CreatedBy: terminalSafe(strings.TrimSpace(b.CreatedBy.Or(""))),
+		Routes:    tuiRoutes(b.Routes),
+		Created:   b.CreatedAt,
+	}
+	if expires, ok := b.ExpiresAt.Get(); ok {
+		binding.Expires = expires
+	}
+	return binding
+}
+
+// CreateBinding binds a secret by hand.
+func (d *apiDataSource) CreateBinding(ctx context.Context, server string, binding tui.NewBinding) (tui.SecretBinding, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return tui.SecretBinding{}, err
+	}
+	body := &apimodel.CreateSecretBindingBody{
+		Secret:     binding.SecretID,
+		TargetKind: apiclientgen.CreateSecretBindingBodyTargetKind(binding.TargetKind),
+		Use:        apiclientgen.NewOptBool(binding.Use),
+		Delegate:   apiclientgen.NewOptBool(binding.Delegate),
+	}
+	if binding.TargetID != "" {
+		body.SetTarget(apiclientgen.NewOptString(binding.TargetID))
+	}
+	if binding.EnvVar != "" {
+		body.SetEnvVar(apiclientgen.NewOptString(binding.EnvVar))
+	}
+	if len(binding.Routes) > 0 {
+		body.Routes = secretRouteInputs(binding.Routes)
+	}
+	// Said even when zero: the window asked how long it lasts and was
+	// answered, and zero is the answer "never expires" — dropping it would
+	// quietly substitute the secret's limit for what the person chose.
+	body.SetTtlSeconds(apiclientgen.NewOptInt64(binding.TTLSeconds))
+	res, err := d.client.CreateSecretBinding(ctx, body, apiclientgen.CreateSecretBindingParams{ProjectId: d.projectID})
+	if err != nil {
+		return tui.SecretBinding{}, err
+	}
+	created, err := expectResponse[apimodel.SecretBinding](res)
+	if err != nil {
+		return tui.SecretBinding{}, err
+	}
+	return toTUIBinding(*created), nil
+}
+
+// DeleteBinding takes one binding back, with every binding handed on under
+// it, and says how many of those there were.
+func (d *apiDataSource) DeleteBinding(ctx context.Context, server, bindingID string) (int, error) {
+	d, err := d.on(ctx, server)
+	if err != nil {
+		return 0, err
+	}
+	res, err := d.client.DeleteSecretBinding(ctx, apiclientgen.DeleteSecretBindingParams{
+		ProjectId: d.projectID,
+		BindingId: bindingID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	deleted, err := expectResponse[apimodel.DeleteSecretBindingResponse](res)
+	if err != nil {
+		return 0, err
+	}
+	return max(len(deleted.Deleted)-1, 0), nil
 }
 
 // DeleteSecret removes a secret and everything standing on it.

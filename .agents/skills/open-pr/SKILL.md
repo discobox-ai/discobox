@@ -47,9 +47,9 @@ EOF
 ```
 
 Name the branch in the justification (§1 picks it): the person approving reads
-it, and the grant is the whole token, so pushing anything else is this run
+it, and what is approved is the whole token, so pushing anything else is this run
 breaking its word. `GH_TOKEN` holds the credential's sentinel in every command
-started after the grant; a shell started before it takes it up with
+started after it was granted; a shell started before that takes it up with
 `eval "$(discobox-access env)"`. `gh` reads it as it is. Git takes it through a
 one-shot credential helper:
 

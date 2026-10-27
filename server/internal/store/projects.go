@@ -196,10 +196,11 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 			return err
 		}
 		for _, scoped := range []any{
-			&model.HarnessConfigSecretBinding{},
 			&model.HarnessConfig{},
-			&model.SecretGrant{},
+			&model.SecretBinding{},
+			&model.SecretBindingEvent{},
 			&model.SecretRequest{},
+			&model.SecretRefreshRequest{},
 			&model.Secret{},
 			&model.SandboxProviderInstance{},
 			&model.SandboxAccessIssuerKey{},

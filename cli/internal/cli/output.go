@@ -22,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 func writeJSON(w io.Writer, value any) error {
@@ -475,8 +476,8 @@ func (a *App) writeSecret(cmd *cobra.Command, secret *apimodel.Secret) error {
 	fmt.Fprintf(tw, "ID\t%s\n", secret.ID)
 	fmt.Fprintf(tw, "NAME\t%s\n", secret.Name)
 	fmt.Fprintf(tw, "TYPE\t%s\n", secret.Type)
-	fmt.Fprintf(tw, "HOST\t%s\n", secret.Host.Or(""))
-	fmt.Fprintf(tw, "MAX GRANT TTL\t%s\n", formatGrantLimit(secret.MaxGrantTTLSeconds))
+	fmt.Fprintf(tw, "SENT TO\t%s\n", routesText(secret.Routes.Or(nil)))
+	fmt.Fprintf(tw, "MAX BINDING TTL\t%s\n", formatBindingLimit(secret.MaxBindingTTLSeconds))
 	// The sentinel shape, and whether somebody chose it: a set one is kept
 	// when the value changes, a read one is re-read.
 	if format := secret.Format.Or(""); format != "" {
@@ -533,14 +534,14 @@ func (a *App) writeSecrets(cmd *cobra.Command, secrets []apimodel.Secret) error 
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"secrets": secrets})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tHOST\tMAX GRANT TTL\tUPDATED")
+	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tSENT TO\tMAX BINDING TTL\tUPDATED")
 	for _, secret := range secrets {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			secret.ID,
 			secret.Name,
 			secret.Type,
-			secret.Host.Or(""),
-			formatGrantLimit(secret.MaxGrantTTLSeconds),
+			routesText(secret.Routes.Or(nil)),
+			formatBindingLimit(secret.MaxBindingTTLSeconds),
 			formatTime(secret.UpdatedAt),
 		)
 	}
@@ -613,69 +614,6 @@ func (a *App) writePeers(cmd *cobra.Command, ids []apimodel.Peer) error {
 	return tw.Flush()
 }
 
-func (a *App) writeSecretGrant(cmd *cobra.Command, grant *apimodel.SecretGrant) error {
-	if grant == nil {
-		return nil
-	}
-	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), grant)
-	}
-	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "FIELD\tVALUE")
-	fmt.Fprintf(tw, "ID\t%s\n", grant.ID)
-	fmt.Fprintf(tw, "SECRET\t%s\n", grant.SecretId)
-	fmt.Fprintf(tw, "SCOPE\t%s\n", grant.Scope)
-	fmt.Fprintf(tw, "SCOPE KEY\t%s\n", grant.ScopeKey)
-	fmt.Fprintf(tw, "HOSTS\t%s\n", grantHostsText(grant.Hosts))
-	fmt.Fprintf(tw, "PURPOSE\t%s\n", grantPurposeText(grant.Purpose))
-	if delegation := grant.DelegationId.Or(""); delegation != "" {
-		fmt.Fprintf(tw, "GIVEN UNDER\t%s\n", delegation)
-	}
-	fmt.Fprintf(tw, "EXPIRES\t%s\n", formatGrantExpiry(grant))
-	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(grant.CreatedAt))
-	return tw.Flush()
-}
-
-// grantPurposeText says what a grant lets its discobox do with the credential,
-// which for a delegation grant is not the thing a reader would assume.
-func grantPurposeText(purpose apiclientgen.SecretGrantPurpose) string {
-	if purpose == apiclientgen.SecretGrantPurposeDelegate {
-		return "delegate: may give the credential to the discoboxes it creates, and may not use it"
-	}
-	return string(purpose)
-}
-
-func (a *App) writeSecretGrants(cmd *cobra.Command, grants []apimodel.SecretGrant) error {
-	grants = sortedByRecency(grants, func(grant apimodel.SecretGrant) time.Time { return recencyTime(grant.UpdatedAt, grant.CreatedAt) })
-	if a.quiet {
-		return writeResourceIDs(cmd.OutOrStdout(), grants, func(grant apimodel.SecretGrant) string { return grant.ID })
-	}
-	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"secretGrants": grants})
-	}
-	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSECRET\tSCOPE\tSCOPE KEY\tHOSTS\tPURPOSE\tEXPIRES")
-	for _, grant := range grants {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			grant.ID,
-			grant.SecretId,
-			grant.Scope,
-			grant.ScopeKey,
-			grantHostsText(grant.Hosts),
-			grant.Purpose,
-			formatGrantExpiry(&grant),
-		)
-	}
-	return tw.Flush()
-}
-
-func formatGrantExpiry(grant *apimodel.SecretGrant) string {
-	if expiresAt, ok := grant.ExpiresAt.Get(); ok && !expiresAt.IsZero() {
-		return formatTime(expiresAt)
-	}
-	return "never"
-}
-
 func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretRequest) error {
 	if request == nil {
 		return nil
@@ -687,21 +625,20 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	fmt.Fprintln(tw, "FIELD\tVALUE")
 	fmt.Fprintf(tw, "ID\t%s\n", request.ID)
 	fmt.Fprintf(tw, "REQUESTED BY\t%s\n", request.RequestedBy)
-	fmt.Fprintf(tw, "TYPE\t%s\n", request.Type)
-	fmt.Fprintf(tw, "HOSTS\t%s\n", strings.Join(request.Hosts, ", "))
+	fmt.Fprintf(tw, "SENT TO\t%s\n", routesText(request.Routes))
 	fmt.Fprintf(tw, "STATUS\t%s\n", request.Status)
 	// What an agent asked for and why is the whole basis for approving it, so it
 	// belongs in the detail view rather than only in the JSON.
 	if name, ok := request.Name.Get(); ok && name != "" {
-		fmt.Fprintf(tw, "CREDENTIAL\t%s\n", name)
+		fmt.Fprintf(tw, "CREDENTIAL\t%s\n", terminalSafe(name))
 	}
 	if envName, ok := request.EnvName.Get(); ok && envName != "" {
-		fmt.Fprintf(tw, "ENV VAR\t%s\n", envName)
+		fmt.Fprintf(tw, "ENV VAR\t%s\n", terminalSafe(envName))
 	}
 	if justification, ok := request.Justification.Get(); ok && justification != "" {
-		fmt.Fprintf(tw, "WHY\t%s\n", justification)
+		fmt.Fprintf(tw, "WHY\t%s\n", terminalSafe(justification))
 	}
-	if asked := agentcreds.AskedGrantTTL(request.GrantTTLSeconds.Or(0)); asked > 0 {
+	if asked := agentcreds.AskedGrantTTL(request.TtlSeconds.Or(0)); asked > 0 {
 		fmt.Fprintf(tw, "WANTED FOR\t%s\n", lifetime.Label(asked))
 	}
 	if purpose, ok := request.Purpose.Get(); ok {
@@ -710,8 +647,11 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	if secretID, ok := request.SecretId.Get(); ok && secretID != "" {
 		fmt.Fprintf(tw, "SECRET\t%s\n", secretID)
 	}
-	if grantID, ok := request.GrantId.Get(); ok && grantID != "" {
-		fmt.Fprintf(tw, "GRANT\t%s\n", grantID)
+	if bindingID, ok := request.BindingId.Get(); ok && bindingID != "" {
+		fmt.Fprintf(tw, "BINDING\t%s\n", bindingID)
+	}
+	if decidedBy, ok := request.DecidedBy.Get(); ok && decidedBy != "" {
+		fmt.Fprintf(tw, "DECIDED BY\t%s\n", decidedBy)
 	}
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(request.CreatedAt))
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(request.UpdatedAt))
@@ -739,24 +679,17 @@ func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.Secret
 		return writeTerminalSafeJSON(cmd.OutOrStdout(), map[string]any{"secretRequests": requests})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tTYPE\tHOSTS\tPURPOSE\tSTATUS\tSECRET\tDISCOBOX\tREQUESTED BY\tUPDATED")
+	fmt.Fprintln(tw, "ID\tCREDENTIAL\tVARIABLE\tSENT TO\tPURPOSE\tSTATUS\tDISCOBOX\tREQUESTED BY\tUPDATED")
 	for _, request := range requests {
-		// A refresh request asks for a new value, not a grant: its purpose
-		// column says so, and why it was opened.
-		purpose := string(request.Purpose.Or(apiclientgen.SecretRequestPurposeUse))
-		if request.Reason.Or("") == apiclientgen.SecretRequestReasonRefresh {
-			purpose = "refresh"
-			if cause := request.RefreshCause.Or(""); cause != "" {
-				purpose += " (" + string(cause) + ")"
-			}
-		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			request.ID,
-			request.Type,
-			strings.Join(request.Hosts, ","),
-			purpose,
+			terminalSafe(request.Name.Or("")),
+			// The variable is the asking discobox's own word, escaped as the
+			// name beside it is (cli/REVIEW.md); routesText escapes its own.
+			terminalSafe(request.EnvName.Or("")),
+			routesText(request.Routes),
+			request.Purpose.Or(apiclientgen.SecretRequestPurposeUse),
 			request.Status,
-			request.SecretId.Or(""),
 			request.SandboxId.Or(""),
 			request.RequestedBy,
 			formatTime(request.UpdatedAt),
@@ -813,17 +746,19 @@ func formatConfigured(harness *apimodel.HarnessConfig) string {
 	return "no"
 }
 
-func (a *App) writeHarnessSecretBindings(cmd *cobra.Command, declarations []apimodel.HarnessConfigSecret, bindings []apimodel.HarnessConfigSecretBinding) error {
+func (a *App) writeHarnessSecretBindings(cmd *cobra.Command, declarations []apimodel.HarnessConfigSecret, bindings []apimodel.SecretBinding) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"secrets": declarations, "secretBindings": bindings})
 	}
 	boundByEnv := make(map[string]string, len(bindings))
 	for _, b := range bindings {
-		boundByEnv[b.EnvName] = b.SecretId
+		if env := b.EnvVar.Or(""); env != "" {
+			boundByEnv[env] = b.SecretName.Or(b.SecretId)
+		}
 	}
 	// Show every declared env var, then any binding for an env the definition
 	// didn't declare (e.g. a custom secret the user added). -q prints the env
-	// names alone, which is what bind and unbind take.
+	// names alone.
 	seen := map[string]struct{}{}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	if !a.quiet {
@@ -838,14 +773,18 @@ func (a *App) writeHarnessSecretBindings(cmd *cobra.Command, declarations []apim
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", decl.Name, formatRequired(decl.Required.Or(false)), formatOneOfGroup(decl.OneOfGroup.Or("")), formatBoundSecret(boundByEnv[decl.Name]))
 	}
 	for _, b := range bindings {
-		if _, ok := seen[b.EnvName]; ok {
+		env := b.EnvVar.Or("")
+		if env == "" {
+			continue
+		}
+		if _, ok := seen[env]; ok {
 			continue
 		}
 		if a.quiet {
-			fmt.Fprintln(tw, b.EnvName)
+			fmt.Fprintln(tw, env)
 			continue
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", b.EnvName, "-", "-", formatBoundSecret(b.SecretId))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", env, "-", "-", formatBoundSecret(b.SecretName.Or(b.SecretId)))
 	}
 	return tw.Flush()
 }
@@ -1030,10 +969,10 @@ func formatBytes(value int64) string {
 	return fmt.Sprintf("%.1f%ciB", float64(value)/float64(div), "KMGTPE"[exp])
 }
 
-// formatGrantLimit says a secret's ceiling on grant lifetimes. Zero is not
+// formatBindingLimit says a secret's ceiling on binding lifetimes. Zero is not
 // absence here — it is the meaningful answer "no limit", so it is spelled out
 // rather than left blank the way an unset duration is.
-func formatGrantLimit(seconds int64) string {
+func formatBindingLimit(seconds int64) string {
 	if seconds <= 0 {
 		return "forever"
 	}
@@ -1241,11 +1180,17 @@ func optString(value string) apiclientgen.OptString {
 	return apiclientgen.NewOptString(value)
 }
 
-// grantHostsText is where a grant lets its credential go, as a table says it:
-// its hosts, or "(any)" for the wildcard.
-func grantHostsText(hosts []string) string {
-	if len(hosts) > 0 {
-		return strings.Join(hosts, ",")
+// routesText is where a credential may be sent, as a table says it: each
+// route as it is typed, or "nowhere" for none (ADR 26-10-27-880 §1).
+func routesText(routes []apimodel.SecretRoute) string {
+	if len(routes) == 0 {
+		return "nowhere"
 	}
-	return "(any)"
+	out := make([]string, 0, len(routes))
+	for _, route := range routes {
+		out = append(out, secretroute.Format(secretroute.Route{Host: route.Host, Path: route.Path.Or(""), Blocked: route.Blocked.Or(false)}))
+	}
+	// Escaped here, for every caller: a request's routes and a child
+	// binding's are a discobox's own words (cli/REVIEW.md).
+	return terminalSafe(strings.Join(out, ", "))
 }

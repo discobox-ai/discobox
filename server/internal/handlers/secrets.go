@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"slices"
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -95,18 +96,6 @@ func (h *Handler) ListSecretRequests(ctx context.Context, params serverapi.ListS
 	body, err := services.Convert[apimodel.ListSecretRequestsBody](struct {
 		SecretRequests any `json:"secretRequests"`
 	}{SecretRequests: reqs})
-	if err != nil {
-		return nil, err
-	}
-	return &body, nil
-}
-
-func (h *Handler) CreateSecretRequest(ctx context.Context, req *apimodel.CreateSecretRequestBody, params serverapi.CreateSecretRequestParams) (serverapi.CreateSecretRequestRes, error) {
-	result, err := h.services.Secrets.CreateSecretRequest(ctx, params.ProjectId, *req)
-	if err != nil {
-		return apiError(err), nil
-	}
-	body, err := services.Convert[apimodel.SecretRequest](result)
 	if err != nil {
 		return nil, err
 	}
@@ -230,12 +219,15 @@ func (h *Handler) ListSandboxCredentials(ctx context.Context, params serverapi.L
 	resp := apimodel.ListSandboxCredentialsResponse{Credentials: make([]apimodel.SandboxCredential, 0, len(credentials))}
 	for _, credential := range credentials {
 		item := apimodel.SandboxCredential{
-			Name:     credential.Name,
-			EnvVar:   credential.EnvName,
-			Hosts:    credential.Hosts,
-			SecretId: credential.SecretID,
-			GrantId:  credential.GrantID,
-			Purpose:  serverapi.NewOptSandboxCredentialPurpose(serverapi.SandboxCredentialPurpose(grantPurposeOf(credential.Purpose))),
+			Name:      credential.Name,
+			EnvVar:    credential.EnvName,
+			Hosts:     credential.Hosts,
+			SecretId:  credential.SecretID,
+			BindingId: credential.BindingID,
+			Purpose:   serverapi.NewOptSandboxCredentialPurpose(serverapi.SandboxCredentialPurpose(purposeOf(credential.Purpose))),
+		}
+		if item.Hosts == nil {
+			item.Hosts = []string{}
 		}
 		if credential.ExpiresAt != nil {
 			item.SetExpiresAt(serverapi.NewOptDateTime(*credential.ExpiresAt))
@@ -254,7 +246,7 @@ func (h *Handler) CreateSandboxCredentialRequest(ctx context.Context, req *apimo
 	if err != nil {
 		return apiError(err), nil
 	}
-	return agentCredentialRequestStatus(result, nil, ""), nil
+	return agentCredentialRequestStatus(result, nil, nil, ""), nil
 }
 
 func (h *Handler) GetSandboxCredentialRequest(ctx context.Context, params serverapi.GetSandboxCredentialRequestParams) (serverapi.GetSandboxCredentialRequestRes, error) {
@@ -262,19 +254,20 @@ func (h *Handler) GetSandboxCredentialRequest(ctx context.Context, params server
 	if err != nil {
 		return apiError(err), nil
 	}
-	result, grant, err := h.services.Secrets.GetSandboxCredentialRequest(ctx, principal.PoolID, params.SandboxId, params.RequestId)
+	result, binding, err := h.services.Secrets.GetSandboxCredentialRequest(ctx, principal.PoolID, params.SandboxId, params.RequestId)
 	if err != nil {
 		return apiError(err), nil
 	}
 	// A granted credential is listed under its secret's name, so the status
 	// names it the same way.
 	name := result.Name
-	if grant != nil {
-		if secret, err := h.services.Secrets.GetSecret(ctx, result.ProjectID, grant.SecretID); err == nil {
+	var secret *model.Secret
+	if binding != nil {
+		if secret, err = h.services.Secrets.GetSecret(ctx, result.ProjectID, binding.SecretID); err == nil {
 			name = secret.Name
 		}
 	}
-	return agentCredentialRequestStatus(result, grant, name), nil
+	return agentCredentialRequestStatus(result, binding, secret, name), nil
 }
 
 // credentialBrokerPrincipal authorizes an agent credentials broker call. The
@@ -294,32 +287,43 @@ func credentialBrokerPrincipal(ctx context.Context) (auth.Principal, error) {
 
 // agentCredentialRequestStatus is a request as the protocol reports it. Once
 // granted it carries what the sandbox now holds, as the approver chose it: the
-// hosts and lifetime of the grant, and for a use the variable its sentinel is
-// in. name is the credential's name then.
-func agentCredentialRequestStatus(req *model.SecretRequest, grant *model.SecretGrant, name string) *apimodel.SandboxCredentialRequestStatus {
+// hosts of the binding's routes — else its secret's — and its lifetime, and
+// for a use the variable its sentinel is in. name is the credential's name
+// then.
+func agentCredentialRequestStatus(req *model.SecretRequest, binding *model.SecretBinding, secret *model.Secret, name string) *apimodel.SandboxCredentialRequestStatus {
 	resp := &apimodel.SandboxCredentialRequestStatus{
 		RequestId: req.ID,
-		Status:    serverapi.SandboxCredentialRequestStatusStatus(services.AgentCredentialRequestStatus(req, grant)),
-		Purpose:   serverapi.SandboxCredentialRequestStatusPurpose(grantPurposeOf(req.Purpose)),
+		Status:    serverapi.SandboxCredentialRequestStatusStatus(services.AgentCredentialRequestStatus(req, binding)),
+		Purpose:   serverapi.SandboxCredentialRequestStatusPurpose(purposeOf(req.Purpose)),
 	}
-	if grant != nil {
+	if binding != nil {
 		resp.SetName(serverapi.NewOptString(name))
-		resp.SetHosts(grant.Hosts)
-		if grant.MayUse() && req.EnvName != "" {
+		routes := binding.Routes
+		if len(routes) == 0 && secret != nil {
+			routes = secret.Routes
+		}
+		hosts := []string{}
+		for _, route := range routes {
+			if !route.Blocked && !slices.Contains(hosts, route.Host) {
+				hosts = append(hosts, route.Host)
+			}
+		}
+		resp.SetHosts(hosts)
+		if binding.Use && req.EnvName != "" {
 			resp.SetEnvVar(serverapi.NewOptString(req.EnvName))
 		}
-		if grant.ExpiresAt != nil {
-			resp.SetExpiresAt(serverapi.NewOptDateTime(*grant.ExpiresAt))
+		if binding.ExpiresAt != nil {
+			resp.SetExpiresAt(serverapi.NewOptDateTime(*binding.ExpiresAt))
 		}
 	}
 	return resp
 }
 
-// grantPurposeOf is a grant's or a request's purpose as the API states it: an
+// purposeOf is a binding's or a request's purpose as the API states it: an
 // empty one asks to use, as it does everywhere a purpose is read.
-func grantPurposeOf(purpose string) string {
+func purposeOf(purpose string) string {
 	if purpose == "" {
-		return model.SecretGrantPurposeUse
+		return model.SecretPurposeUse
 	}
 	return purpose
 }
@@ -349,37 +353,4 @@ func (h *Handler) ListSecretRefreshes(ctx context.Context, params serverapi.List
 		return nil, err
 	}
 	return &body, nil
-}
-
-func (h *Handler) ListSecretGrants(ctx context.Context, params serverapi.ListSecretGrantsParams) (serverapi.ListSecretGrantsRes, error) {
-	grants, err := h.services.Secrets.ListSecretGrants(ctx, params.ProjectId, params.SecretId.Or(""))
-	if err != nil {
-		return apiError(err), nil
-	}
-	body, err := services.Convert[apimodel.ListSecretGrantsBody](struct {
-		SecretGrants any `json:"secretGrants"`
-	}{SecretGrants: grants})
-	if err != nil {
-		return nil, err
-	}
-	return &body, nil
-}
-
-func (h *Handler) CreateSecretGrant(ctx context.Context, req *apimodel.CreateSecretGrantBody, params serverapi.CreateSecretGrantParams) (serverapi.CreateSecretGrantRes, error) {
-	grant, err := h.services.Secrets.CreateSecretGrant(ctx, params.ProjectId, *req)
-	if err != nil {
-		return apiError(err), nil
-	}
-	body, err := services.Convert[apimodel.SecretGrant](grant)
-	if err != nil {
-		return nil, err
-	}
-	return &body, nil
-}
-
-func (h *Handler) RevokeSecretGrant(ctx context.Context, params serverapi.RevokeSecretGrantParams) (serverapi.RevokeSecretGrantRes, error) {
-	if err := h.services.Secrets.RevokeSecretGrant(ctx, params.ProjectId, params.GrantId); err != nil {
-		return apiError(err), nil
-	}
-	return &serverapi.RevokeSecretGrantNoContent{}, nil
 }

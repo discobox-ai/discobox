@@ -115,8 +115,8 @@ func refreshAsk(req CredentialRequest, secret Secret, now time.Time) []section {
 		{label: "token", value: secret.Name, tone: toneAccent},
 		{label: "why", value: why},
 	}
-	if secret.Host != "" {
-		fields = append(fields, field{label: "sent to", value: secret.Host})
+	if len(secret.Routes) > 0 {
+		fields = append(fields, field{label: "sent to", value: routesText(secret.Routes)})
 	}
 	if secret.ValueTTL > 0 {
 		fields = append(fields, field{label: "a value lasts", value: lifetime.Label(secret.ValueTTL)})

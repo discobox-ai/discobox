@@ -179,7 +179,7 @@ Current authorizers:
   delegation from becoming a use.
   The request and secret listings cannot be decided by their routes, so the
   secrets service filters them: to the caller's owned requests, and to the
-  secrets of its live delegation grants
+  secrets of the live delegate bindings covering it
   ([ADR 26-09-30-782](../../../docs/adr/26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md)
   §2 and §3 respectively). `ActingUserID` is the user such a call acts as: the sandbox's
   creator.

@@ -188,107 +188,10 @@ func TestReportNamesTheSentinel(t *testing.T) {
 	}
 }
 
-// A request is held to the routes of every sentinel it carries: off every
-// route, or on a blocked one, it is refused with a reason; a sentinel whose
-// secret has no routes holds it to nothing here (ADR 26-10-02-924,
-// ADR 26-10-27-880).
-func TestAuthorizeHoldsARequestToItsSentinelsRoutes(t *testing.T) {
-	r := &secretResolver{}
-	r.setSentinelRoutes(map[string]map[string][]secretroute.Route{"sb-1": {
-		"SENT-COPILOT": {
-			{Host: "githubcopilot.com"},
-			{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
-		},
-	}})
-	for _, tc := range []struct {
-		name      string
-		sentinels []string
-		url       string
-		allowed   bool
-	}{
-		{"on a route", []string{"SENT-COPILOT"}, "https://api.githubcopilot.com/v1/messages", true},
-		{"on a blocked route", []string{"SENT-COPILOT"}, "https://api.githubcopilot.com/mcp/x", false},
-		{"off every route", []string{"SENT-COPILOT"}, "https://api.github.com/user", false},
-		{"a sentinel with no routes", []string{"SENT-PLAIN"}, "https://api.github.com/user", true},
-		{"one sentinel off its routes refuses the request", []string{"SENT-PLAIN", "SENT-COPILOT"}, "https://api.github.com/user", false},
-	} {
-		host, _ := strings.CutPrefix(tc.url, "https://")
-		host, _, _ = strings.Cut(host, "/")
-		verdict, err := r.Authorize(context.Background(), proxy.SecretAuthorizeRequest{
-			ClientID: "sb-1", Sentinels: tc.sentinels, Method: http.MethodGet, Host: host, URL: tc.url,
-		})
-		if err != nil {
-			t.Fatalf("%s: %v", tc.name, err)
-		}
-		if verdict.Allow != tc.allowed || (!verdict.Allow && verdict.Reason == "") {
-			t.Fatalf("%s: verdict = %+v, want allowed %v with a reason for a refusal", tc.name, verdict, tc.allowed)
-		}
-	}
-	// Another sandbox's routes are not this one's.
-	if verdict, _ := r.Authorize(context.Background(), proxy.SecretAuthorizeRequest{
-		ClientID: "sb-2", Sentinels: []string{"SENT-COPILOT"}, Host: "api.github.com", URL: "https://api.github.com/user",
-	}); !verdict.Allow {
-		t.Fatalf("sb-2 was held to sb-1's routes: %+v", verdict)
-	}
-}
-
-// Routes are written only for sentinels the sandbox holds, and replaced with
-// its sentinel set.
-func TestUpsertSandboxSentinelsKeepsRoutesOfHeldSentinels(t *testing.T) {
-	root := withTestRoot(t)
-	routes := map[string][]secretroute.Route{
-		"SENT-A":    {{Host: "github.com", Blocked: true}},
-		"SENT-GONE": {{Host: "example.com"}},
-	}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, routes); err != nil {
-		t.Fatalf("upsert: %v", err)
-	}
-	doc, err := readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
-	if err != nil {
-		t.Fatalf("read doc: %v", err)
-	}
-	if got := doc.Routes["sb-1"]; len(got) != 1 || len(got["SENT-A"]) != 1 || !got["SENT-A"][0].Blocked {
-		t.Fatalf("routes = %#v, want only SENT-A's", doc.Routes)
-	}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A"}, nil); err != nil {
-		t.Fatalf("upsert: %v", err)
-	}
-	doc, _ = readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
-	if _, ok := doc.Routes["sb-1"]; ok {
-		t.Fatalf("routes = %#v, want them replaced with the set", doc.Routes)
-	}
-}
-
-// While the sentinel set moves, no sentinel reads as having no routes: one
-// arriving has its routes before it is swappable, and one leaving keeps its
-// own until it is gone.
-func TestStagedRoutesCoverSentinelsArrivingAndLeaving(t *testing.T) {
-	r := &secretResolver{}
-	leaving := []secretroute.Route{{Host: "github.com", Path: "/old"}}
-	r.setSentinelRoutes(map[string]map[string][]secretroute.Route{"sb-1": {"SENT-OLD": leaving}})
-
-	arriving := []secretroute.Route{{Host: "githubcopilot.com"}}
-	next := map[string]map[string][]secretroute.Route{"sb-1": {"SENT-NEW": arriving}}
-	r.stageSentinelRoutes(next)
-	if got := r.heldRoutes("sb-1", "SENT-NEW"); len(got) != 1 || got[0].Host != "githubcopilot.com" {
-		t.Fatalf("arriving routes = %#v, want them staged before the sentinel set moves", got)
-	}
-	if got := r.heldRoutes("sb-1", "SENT-OLD"); len(got) != 1 || got[0].Path != "/old" {
-		t.Fatalf("leaving routes = %#v, want them kept until the sentinel set has moved", got)
-	}
-	if _, ok := next["sb-1"]["SENT-OLD"]; ok {
-		t.Fatal("staging wrote the leaving sentinel's routes into the caller's map")
-	}
-
-	r.setSentinelRoutes(next)
-	if got := r.heldRoutes("sb-1", "SENT-OLD"); len(got) != 0 {
-		t.Fatalf("leaving routes = %#v, want them dropped once the set has moved", got)
-	}
-}
-
-// A route a pool agent from before ADR 26-10-27-880 persisted with a use — one
-// a judge read — reads back blocked, so the upgrade never sends a request on
-// it unjudged; a route without one reads as it was written.
+// A document a pool agent wrote before route lists — one list a sentinel, no
+// version — reads as that one list, with a route a judge read (a use) blocked,
+// so the upgrade never sends a request on it unjudged; a route without one
+// reads as it was written (ADR 26-10-27-880 §8).
 func TestARoutePersistedWithAUseReadsBlocked(t *testing.T) {
 	root := withTestRoot(t)
 	path := root.ProxySecretsFile(testProjectID, testPoolID)
@@ -306,11 +209,11 @@ func TestARoutePersistedWithAUseReadsBlocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	want := []secretroute.Route{
+	want := [][]secretroute.Route{{
 		{Host: "githubcopilot.com"},
 		{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
 		{Host: "github.com", Blocked: true},
-	}
+	}}
 	if got := doc.Routes["sb-1"]["SENT"]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("routes = %+v, want %+v", got, want)
 	}
@@ -321,11 +224,166 @@ func TestARoutePersistedWithAUseReadsBlocked(t *testing.T) {
 	}); verdict.Allow {
 		t.Fatal("a route a judge used to read was allowed after the upgrade")
 	}
-	// Written back by this pool, it keeps saying so.
+	// Written back by this pool, as lists, it keeps saying so.
 	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"OTHER"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if doc, err = readSecretsDoc(path); err != nil || !reflect.DeepEqual(doc.Routes["sb-1"]["SENT"], want) {
 		t.Fatalf("after a rewrite: routes = %+v (%v), want %+v", doc.Routes["sb-1"]["SENT"], err, want)
+	}
+}
+
+// A sentinel a document from before route lists held to no route at all reads
+// as held to any host, as it was enforced (ADR 26-10-27-939), until the
+// control plane pushes its lists; one this pool wrote with no lists is sent
+// nowhere.
+func TestAnUnroutedSentinelReadsAsItsDocumentMeantIt(t *testing.T) {
+	root := withTestRoot(t)
+	path := root.ProxySecretsFile(testProjectID, testPoolID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := `{"clients":{"sb-1":["SENT-PLAIN","SENT-ROUTED"]},"routes":{"sb-1":{"SENT-ROUTED":[{"host":"github.com"}]}}}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := readSecretsDoc(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if got := doc.Routes["sb-1"]["SENT-PLAIN"]; !reflect.DeepEqual(got, anyHost) {
+		t.Fatalf("an unrouted sentinel of an old document = %+v, want any host", got)
+	}
+	if got := doc.Routes["sb-1"]["SENT-ROUTED"]; !reflect.DeepEqual(got, [][]secretroute.Route{{{Host: "github.com"}}}) {
+		t.Fatalf("a routed sentinel of an old document = %+v, want its one list", got)
+	}
+
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"SENT-NEW"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if doc, err = readSecretsDoc(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc.Routes["sb-2"]["SENT-NEW"]; ok {
+		t.Fatalf("a sentinel written with no lists read as %+v, want none", doc.Routes["sb-2"]["SENT-NEW"])
+	}
+	r := &secretResolver{}
+	r.setSentinelRoutes(doc.Routes)
+	if verdict, _ := r.Authorize(context.Background(), proxy.SecretAuthorizeRequest{
+		ClientID: "sb-2", Sentinels: []string{"SENT-NEW"}, Host: "example.com", URL: "https://example.com/",
+	}); verdict.Allow {
+		t.Fatal("a sentinel with no lists was sent")
+	}
+	// The old document's unrouted sentinel keeps its reading once rewritten.
+	if got := doc.Routes["sb-1"]["SENT-PLAIN"]; !reflect.DeepEqual(got, anyHost) {
+		t.Fatalf("after a rewrite the unrouted sentinel = %+v, want any host", got)
+	}
+}
+
+// A request is held to every route list of every sentinel it carries: off a
+// route of any list, or on a blocked one, it is refused with a reason; a
+// sentinel with no lists is sent nowhere (ADR 26-10-27-880 §§1, 4).
+func TestAuthorizeHoldsARequestToItsSentinelsRouteLists(t *testing.T) {
+	r := &secretResolver{}
+	r.setSentinelRoutes(map[string]map[string][][]secretroute.Route{"sb-1": {
+		"SENT-COPILOT": {{
+			{Host: "githubcopilot.com"},
+			{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
+		}},
+		// A secret open to any host, narrowed by its binding.
+		"SENT-NARROWED": {
+			{{Host: secretroute.AnyHost}},
+			{{Host: "api.github.com", Path: "/repos/acme"}},
+		},
+	}})
+	for _, tc := range []struct {
+		name      string
+		sentinels []string
+		url       string
+		allowed   bool
+	}{
+		{"on a route", []string{"SENT-COPILOT"}, "https://api.githubcopilot.com/v1/messages", true},
+		{"on a blocked route", []string{"SENT-COPILOT"}, "https://api.githubcopilot.com/mcp/x", false},
+		{"off every route", []string{"SENT-COPILOT"}, "https://api.github.com/user", false},
+		{"on every list", []string{"SENT-NARROWED"}, "https://api.github.com/repos/acme/web", true},
+		{"off the binding's list", []string{"SENT-NARROWED"}, "https://api.github.com/user", false},
+		{"a sentinel with no lists", []string{"SENT-PLAIN"}, "https://api.github.com/user", false},
+		{"one sentinel off its routes refuses the request", []string{"SENT-NARROWED", "SENT-COPILOT"}, "https://api.github.com/repos/acme/web", false},
+	} {
+		host, _ := strings.CutPrefix(tc.url, "https://")
+		host, _, _ = strings.Cut(host, "/")
+		verdict, err := r.Authorize(context.Background(), proxy.SecretAuthorizeRequest{
+			ClientID: "sb-1", Sentinels: tc.sentinels, Method: http.MethodGet, Host: host, URL: tc.url,
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if verdict.Allow != tc.allowed || (!verdict.Allow && verdict.Reason == "") {
+			t.Fatalf("%s: verdict = %+v, want allowed %v with a reason for a refusal", tc.name, verdict, tc.allowed)
+		}
+	}
+	// Another sandbox's lists are not this one's: holding none, it is sent
+	// nowhere.
+	if verdict, _ := r.Authorize(context.Background(), proxy.SecretAuthorizeRequest{
+		ClientID: "sb-2", Sentinels: []string{"SENT-COPILOT"}, Host: "api.githubcopilot.com", URL: "https://api.githubcopilot.com/v1/messages",
+	}); verdict.Allow {
+		t.Fatalf("sb-2 was allowed under sb-1's lists: %+v", verdict)
+	}
+}
+
+// Route lists are written only for sentinels the sandbox holds, and replaced
+// with its sentinel set.
+func TestUpsertSandboxSentinelsKeepsRoutesOfHeldSentinels(t *testing.T) {
+	root := withTestRoot(t)
+	routes := map[string][][]secretroute.Route{
+		"SENT-A":    {{{Host: "github.com", Blocked: true}}, {{Host: "api.github.com"}}},
+		"SENT-GONE": {{{Host: "example.com"}}},
+	}
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, routes); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	doc, err := readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
+	if err != nil {
+		t.Fatalf("read doc: %v", err)
+	}
+	if got := doc.Routes["sb-1"]; len(got) != 1 || !reflect.DeepEqual(got["SENT-A"], routes["SENT-A"]) {
+		t.Fatalf("routes = %#v, want only SENT-A's lists", doc.Routes)
+	}
+	if doc.Version != secretsDocVersion {
+		t.Fatalf("version = %d, want %d", doc.Version, secretsDocVersion)
+	}
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A"}, nil); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	doc, _ = readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
+	if _, ok := doc.Routes["sb-1"]; ok {
+		t.Fatalf("routes = %#v, want them replaced with the set", doc.Routes)
+	}
+}
+
+// While the sentinel set moves, no sentinel reads as having no lists: one
+// arriving has its lists before it is swappable, and one leaving keeps its
+// own until it is gone.
+func TestStagedRoutesCoverSentinelsArrivingAndLeaving(t *testing.T) {
+	r := &secretResolver{}
+	leaving := [][]secretroute.Route{{{Host: "github.com", Path: "/old"}}}
+	r.setSentinelRoutes(map[string]map[string][][]secretroute.Route{"sb-1": {"SENT-OLD": leaving}})
+
+	arriving := [][]secretroute.Route{{{Host: "githubcopilot.com"}}}
+	next := map[string]map[string][][]secretroute.Route{"sb-1": {"SENT-NEW": arriving}}
+	r.stageSentinelRoutes(next)
+	if got := r.heldRoutes("sb-1", "SENT-NEW"); !reflect.DeepEqual(got, arriving) {
+		t.Fatalf("arriving lists = %#v, want them staged before the sentinel set moves", got)
+	}
+	if got := r.heldRoutes("sb-1", "SENT-OLD"); !reflect.DeepEqual(got, leaving) {
+		t.Fatalf("leaving lists = %#v, want them kept until the sentinel set has moved", got)
+	}
+	if _, ok := next["sb-1"]["SENT-OLD"]; ok {
+		t.Fatal("staging wrote the leaving sentinel's lists into the caller's map")
+	}
+
+	r.setSentinelRoutes(next)
+	if got := r.heldRoutes("sb-1", "SENT-OLD"); len(got) != 0 {
+		t.Fatalf("leaving lists = %#v, want them dropped once the set has moved", got)
 	}
 }

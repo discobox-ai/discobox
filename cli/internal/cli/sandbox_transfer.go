@@ -37,8 +37,12 @@ const (
 )
 
 type sandboxImportResponse struct {
-	Sandbox  *apimodel.Sandbox `json:"sandbox"`
-	Warnings []string          `json:"warnings,omitempty"`
+	Sandbox *apimodel.Sandbox `json:"sandbox"`
+	// Bound is every secret the import bound to the new discobox, as
+	// "VAR: secret", from the archive's manifest. It is said aloud because
+	// the archive, not the person importing, named them.
+	Bound    []string `json:"bound,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 func (a *App) newSandboxExportCommand() *cobra.Command {
@@ -638,6 +642,10 @@ func endpointLabel(address string) string {
 }
 
 func reportImportWarnings(stderr io.Writer, result *sandboxImportResponse) {
+	for _, bound := range result.Bound {
+		// The names come from the archive, which anyone could have written.
+		fmt.Fprintf(stderr, "bound %s\n", terminalSafe(bound))
+	}
 	for _, warning := range result.Warnings {
 		fmt.Fprintf(stderr, "warning: %s\n", warning)
 	}

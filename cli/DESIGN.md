@@ -21,7 +21,8 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/tui` | The `discobox console` window: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local TCP listeners and UDP sockets kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/localpty` | Running one of this CLI's own commands on a pty of its own for a console pane: `creack/pty` on Unix, ConPTY on Windows (ADR 0065). Sets `DISCOBOX_PARENT_PID` on the child. |
-| `internal/lifetime` | How long a grant lives, said the way people say it: the presets an approval offers, the words every length-of-time flag parses (`Flag`: `--ttl`, `--grant-ttl`, `--max-grant-ttl`, `--expires-in`, and `--since` counting back), and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
+| `internal/lifetime` | How long a binding lasts, said the way people say it: the presets an approval offers, the words every length-of-time flag parses (`Flag`: `--for`, `--ttl`, `--max-binding-ttl`, `--expires-in`, and `--since` counting back), and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
+| `internal/secretenv` | The variable a binding that names none is delivered in: the secret's name upper-snaked (`github` is `GITHUB`, `npm-token` is `NPM_TOKEN`). Shared by `--bind`, `secret bind` and the console's binding form, so the three agree on which variable a secret lands in. |
 | `internal/refreshcmd` | Running the command a token suggests for its renewal (ADR 26-09-25-122): an argument vector split as a person types it, run with no shell, no stdin, a deadline, and a bound on output, printed value trimmed. Shared by `discobox secret refresh`/`create` and the console's data source, so the command a person was shown is run one way everywhere. |
 | `internal/clipimage` | The images a paste means on this machine: the OS clipboard's (osascript, wl-paste/xclip, PowerShell from Windows and WSL) and the image files a pasted path names. The console carries them into a discobox. |
 | `internal/clipwatch` | Keeping up with the Windows clipboard while the console is open — in process on Windows, through the embedded `discobox-clipwatch` helper (installed under `%LOCALAPPDATA%\discobox\bin\<digest>`, the other builds' copies pruned) on WSL — so a dictation tool's Ctrl-V is answered with the text it pasted before it puts the clipboard back. Event-driven (`AddClipboardFormatListener`), idle at zero CPU. |
@@ -659,7 +660,7 @@ is an error rather than a lost convenience.
   comparing where two discoboxes are can name both.
 - **The console routes two ways.** A call about one discobox finds its server
   from the ID the listing located it under (`apiDataSource.at`). A call about
-  a server's configuration — harnesses, secrets, grants, answering a
+  a server's configuration — harnesses, secrets, bindings, answering a
   credential request — is handed the server's name and resolves it
   (`apiDataSource.on`), because a secret ID says nothing about where it lives
   until that server has been asked, and asking is the call that needs to know
@@ -1248,8 +1249,7 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
 `command_conventions_test.go` walks it and enforces what it can.
 
 - **Removing is `rm`**, with `delete` and `remove` as aliases, on every group.
-  `revoke` is an extra alias where it is the word for it (`trust rm`,
-  `secret grant rm`). What `rm` does is the group's: `admin box rm` archives,
+  `revoke` is an extra alias where it is the word for it (`trust rm`). What `rm` does is the group's: `admin box rm` archives,
   and `purge` is the verb that destroys.
 - **Listing is `ls`**, with `list` as an alias, and every `ls` takes `-q`. That
   prints one line per entry, and the line is what the group's other verbs take:
@@ -1263,7 +1263,7 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
 - **A placeholder says what resolves.** It is `DISCOBOX`, `POOL`, `PROJECT`,
   `HARNESS`, `SECRET` or `PROVIDER` where a name resolves as well as an ID
   (`resolvePoolID`, `resolveListedSandbox`, …). It is `X_ID` where only an ID
-  or a short ID does: the raw `admin box` forms, requests, grants,
+  or a short ID does: the raw `admin box` and `admin binding` forms, requests,
   jobs, execs, terminals, keys, peers and audit records. Arguments are written
   `UPPER`, never `<lower>`.
 - **Short help is a sentence** starting with a capital letter. A declared
@@ -1282,6 +1282,18 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
   intervals stay Go durations.
 - **An update's list flag is emptied by `--clear-<flag>`** (`addClearFlag`),
   refused beside the flag it clears, never by an empty value.
+- **A secret is bound, never granted** ([ADR 26-10-27-880](../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)).
+  No command or flag says "grant". A binding is spelled one way, by the
+  person's verbs and the raw ones alike: its variable `--as VAR`, its routes
+  `--route HOST[/PATH][=blocked]` (or `*`), one per flag, its lifetime
+  `--for LIFETIME`. `secret bind`, `unbind` and `bound` name their target as a
+  `[DISCOBOX]` argument, `--harness` or `--project-wide`; `admin binding`
+  names it by `--target-kind`/`--target` ID. `--ttl` is only a token's
+  staleness (`secret create`) and a trust's lifetime. `--bind`'s
+  `@ROUTE,…` stays a list, being one argument.
+- **A command's flag never takes a root flag's name.** `--project` is the root's
+  "which project", so the project as a target is `--project-wide`
+  (`command_conventions_test.go` checks every command).
 - **A shorthand means one thing.** `-s` is `--secret`; `-o` is `--output`,
   which is why `admin box export` takes its FILE as an argument; `-q` is the
   quiet bool, which is why `terminal wait` waits `--idle`.
@@ -2860,32 +2872,75 @@ since the file that declares them lives in a checkout there is none of.
 In the console this is the Source row's last entry rather than a flag of its
 own; see the console design doc.
 
-## Grants and a Request as JSON (ADR 26-09-24-630)
+## Bindings, and a Request as JSON (ADR 26-09-24-630, ADR 26-10-27-880)
 
-`discobox run --grant SECRET[@HOST[,HOST...]]:ENV_VAR` gives the new discobox a
-project secret in `admin box create --grant`'s form: a sandbox grant for the
-hosts named (the secret's own when none are), delivered as a sentinel in
-ENV_VAR (ADR 26-10-27-880). One variable is given once. Both commands parse
-through `sandboxcreate.ParseGrants` and resolve a secret's name to its ID
-through `App.resolveGrantSecrets`; `PromptOptions.Grants` carries the result,
-and the window, handed the flag as given (`RunRequest.Grant`), parses and
-resolves in its own create. A discobox creating one gives only what a
-delegation grant it holds covers; the server checks that.
+A binding makes a secret available to a target — every discobox of the
+project, every discobox on a harness config, or one discobox — to use in a
+variable, to give on, or both; existing is the whole of the permission
+(ADR 26-10-27-880 §1). The CLI has two front ends over it:
+
+- **The person's verbs** (`secret_bind.go`). `secret bind SECRET [DISCOBOX]
+  [--harness HARNESS | --project-wide] [--as VAR] [--route ROUTE]… [--for LIFETIME]
+  [--delegate]` binds and says what it did in a sentence — what the target now
+  holds, where it may be sent, how long it lasts, and for a discobox the
+  `eval "$(discobox-access env)"` a running shell takes it up with. `--as`
+  defaults to `secretenv.Name`; `--delegate` alone binds only to give on.
+  `secret unbind` takes back the secret's variables on the target (or the one
+  in `--as`), and `--delegate` the right to give it on; a binding holding both
+  loses only that half (`UpdateSecretBinding` with `use` or `delegate` false),
+  one holding only it is deleted with the handed-on bindings, which are named.
+  A plain unbind of a binding that is only given on says to use `--delegate`.
+  `secret bound [DISCOBOX]` is the server's resolved view (`bound-secrets`):
+  per variable, the narrowest binding, where it comes from by harness slug or
+  discobox name, and every route list a request carrying it is held to,
+  narrowest first. None of them print an ID, and a variable or route a
+  discobox wrote is escaped.
+- **The raw tools** (`admin_binding.go`): `admin binding ls|get|create|update|rm|events`,
+  by ID, printing the records the API answered with; `update` also turns
+  either half off with `--use=false` or `--delegate=false`; `events` is the
+  append-only trail of every change, with its actor and cause.
+
+`secret create` asks for at least one `--route`, `*` for anywhere
+(ADR 26-10-27-939 §2): a secret with no routes is sent nowhere. Its binding
+ceiling is `--max-binding-ttl`. `secret request approve REQUEST_ID [--secret
+SECRET] [--route ROUTE]… [--for LIFETIME]` answers an agent's ask with a binding
+on the asking discobox; refused, it exits non-zero with the server's reason. What it prints is
+the binding the approval made, read back by the request's `bindingId` and
+said as `secret bind` says one — variable, routes, lifetime — since those can
+be narrower than the ask; `-o json` is the request record.
+A refresh request is its own record (`secret-refresh-requests`) and kind in
+the inbox: `secret refresh SECRET --run | --value | --dismiss` answers it.
+
+`discobox run` and `admin box create` bind at create:
+`--bind SECRET[:VAR][@ROUTE,…]` a use binding (VAR defaulting to
+`secretenv.Name`), `--delegate SECRET[@ROUTE,…]` one to give on, both through
+`sandboxcreate.ParseBindings` into `CreateSandboxBody.bindings`. The secret is
+sent as written; the server reads a name or an ID. A secret given by ID with
+no VAR is looked up and named after its name (`NameBindingVariables`), so
+`--bind` and `secret bind` agree. One variable is bound once. The window is handed the flags as given (`RunRequest.Bind`/`Delegate`)
+and parses them in its own create. A discobox creating one binds only what a
+delegate binding it holds covers; the server checks that.
+`-s KEY[=VALUE|=@FILE][@HOST]` is always a new secret's value, never an
+existing secret's name: an anonymous secret routed to HOST, else `*`, and a use
+binding in KEY (`sandboxcreate.EnvAndSecretsFromOptions`). The value is read
+from where it already is — `$KEY` from the client's shell when nothing follows
+KEY, a file after `=@` (one trailing newline dropped, `~` expanded) — and taken
+from the argument itself only as the last resort, since a value on the command
+line reaches shell history and the process list. The host is what follows the
+last `@`; an `@` straight after `=` always means a file, since a host cannot
+follow an empty value. Every create that succeeded says where each such secret is sent
+(`InlineSecretLine`, "DB_PASS: stored, sent to corp.example"), on stderr for
+`run` and `admin box create` and on the console's create narration, so a
+value's own `@` read as a host is seen rather than discovered.
 
 `--discobox-api` on both creates sets the new discobox's `discoboxApi`: it may
 call the discobox API through its pool, acting only on the discoboxes it
 creates (ADR 26-10-27-880 §9). A person sets or clears it on an existing one
 with `admin box update DISCOBOX --discobox-api[=false]`.
 
-`secret grant create` mints a standing grant: a scope, hosts and a lifetime.
-`--delegate` makes it a delegation grant instead, sandbox scope only: its
-discobox may give the credential to the discoboxes it creates and may not use
-it. `secret request approve` answers a request with a secret, hosts and a
-lifetime; there is nothing else to approve.
-
 `--from-json` (`runJSONRequest`, `run_json.go`) reads the whole request from stdin
-as one object whose fields are the run flags', with grants as `secret`,
-`envVar` and `hosts` and the API flag as `discoboxApi`. It fills the same
+as one object whose fields are the run flags', with bindings as `secret`,
+`envVar`, `routes` and `delegate` and the API flag as `discoboxApi`. It fills the same
 `runCommandOptions` the flags do, so one validation and one create path serve
 both; it refuses any run flag or word beside it rather than merging two
 answers, forces `-d`, asks nothing (stdin is the request), and prints the
@@ -3251,7 +3306,7 @@ one set of keys is what the window already provides.
 
 The window's half of the data seam lives in `internal/cli/tui_harnesses.go`:
 `Harnesses`/`HarnessSecrets` map harness configs (plus the project's default
-pointer and secret bindings) onto `tui.Harness`, `DoHarness` runs disable and
+pointer and the harness config's secret bindings) onto `tui.Harness`, `DoHarness` runs disable and
 set-default, `OpenHarnessConfigure` opens the configure pane, and
 `EditHarnessFile` is the one that needs the real terminal (handed over with
 `tea.Exec`) and reuses `editHarnessFile` unchanged.

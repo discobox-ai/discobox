@@ -11,7 +11,7 @@
 # caps how many of this run's boxes are up at once, triaging and delivering together.
 #
 # The discobox API is this box's own setting (discoboxApi, which a person turns
-# on), and GitHub is the GH_TOKEN grant (SKILL.md §1). Commands that could read
+# on), and GitHub is the GH_TOKEN binding (SKILL.md §1). Commands that could read
 # stdin get </dev/null: in a loop they would read the loop's input.
 set -uo pipefail
 # nix develop exports $out, and a local of that name inherits the export: a
@@ -35,11 +35,11 @@ touch "$W" "$T" "$ORCH_DIR/tried.txt" "$ORCH_DIR/rebased.txt" "$ORCH_DIR/retired
 JQ_TITLE='def title: ([(.runtime.agentStatus.sessions // [])[] | select(.primary and ((.title // "") != ""))]
 	| sort_by(.startedAt // "") | last | .title) // "";'
 
-# need_github: GitHub is the GH_TOKEN grant, in the environment of every command started after it.
-# Without it the caller fails with MISSING GRANT, which watch exits on.
+# need_github: GitHub is the GH_TOKEN binding, in the environment of every command started after it.
+# Without it the caller fails with MISSING BINDING, which watch exits on.
 need_github() {
 	[ -n "${GH_TOKEN:-}" ] && return 0
-	echo "MISSING GRANT: GH_TOKEN is not set; ask for GitHub (SKILL.md §1), and once it is granted run: eval \"\$(discobox-access env)\""
+	echo "MISSING BINDING: GH_TOKEN is not set; ask for GitHub (SKILL.md §1), and once it is bound run: eval \"\$(discobox-access env)\""
 	return 1
 }
 box()  { discobox admin box "$@" </dev/null; }
@@ -121,15 +121,15 @@ cmd_retire() { # retire <issue>|<discobox-id> [merged]: a triage box has no issu
 }
 
 # A worker's ask is approved here only when it is the one its own skill asks for (deliver-issue §0,
-# triage-issue §0): to use GitHub in GH_TOKEN, at github.com and nowhere else. The server holds the
-# grant within this lead's delegation — the same secret, hosts it covers, a lifetime it outlasts —
-# and refuses one from a box this lead did not create. Anything else goes to the lead to read, as
+# triage-issue §0): to use GitHub in GH_TOKEN, at github.com and nowhere else. The server binds it
+# to the worker under this lead's delegate binding — the same secret, held to the delegation's routes
+# too, a lifetime it outlasts — and refuses one from a box this lead did not create. Anything else goes to the lead to read, as
 # NEEDS LEAD.
 cmd_approve() { # approve pending GitHub use requests from workers, once each
 	local reqs
 	reqs=$(discobox secret request ls -o json </dev/null 2>/dev/null |
 		jq -r '.secretRequests[]? | select(.status=="pending")
-			| "\(.id) \(.sandboxId) \(.purpose // "use") \(.envName // "-") \((.hosts // []) | sort | join(","))"')
+			| "\(.id) \(.sandboxId) \(.purpose // "use") \(.envName // "-") \((.routes // []) | map(.host + (.path // "")) | sort | join(","))"')
 	while read -r rid sid purpose env hosts; do
 		[ -z "$rid" ] && continue
 		grep -qx "$rid" "$ORCH_DIR/tried.txt" && continue
@@ -137,9 +137,11 @@ cmd_approve() { # approve pending GitHub use requests from workers, once each
 		local n; n=$(awk -v s="$sid" '$2==s{print $1}' "$W")
 		[ -z "$n" ] && n=$(awk -v s="$sid" '$1==s{print "t"$2}' "$T")
 		if [ -n "$n" ] && [ "$purpose" = use ] && [ "$env" = GH_TOKEN ] && [ "$hosts" = github.com ]; then
-			local res; res=$(discobox secret request approve "$rid" </dev/null 2>&1 | tail -3 | head -1 | cut -c1-300)
+			local res status=0
+			res=$(discobox secret request approve "$rid" </dev/null 2>&1) || status=$?
+			res=$(printf '%s' "$res" | tail -3 | head -1 | cut -c1-300)
 			echo "$(date -u +%FT%H:%M) approve $rid for #$n: $res" >>"$ORCH_DIR/approvals.log"
-			case "$res" in GRANT*) echo "approved #$n $rid" ;; *) echo "REFUSED #$n $rid: $res" ;; esac
+			if [ "$status" = 0 ]; then echo "approved #$n $rid"; else echo "REFUSED #$n $rid: $res"; fi
 		else
 			echo "NEEDS LEAD: $rid from $sid ($purpose $env at $hosts): not the ask its skill makes; read it"
 		fi
@@ -365,7 +367,7 @@ cmd_watch() { # watch [minutes]: approve, kick, and exit on an issue or PR chang
 	pr0=$(echo "$gh0" | grep '^pr ')
 	while :; do
 		out=$(cmd_approve)
-		echo "$out" | grep -E '^(REFUSED|NEEDS LEAD|MISSING GRANT)' && exit 0
+		echo "$out" | grep -E '^(REFUSED|NEEDS LEAD|MISSING BINDING)' && exit 0
 		prs=$(cmd_prs) || { echo "$prs"; exit 0; }
 		tick=$((tick + 1))
 		[ $((tick % 4)) -eq 1 ] && cmd_kick >/dev/null
@@ -385,10 +387,10 @@ cmd_watch() { # watch [minutes]: approve, kick, and exit on an issue or PR chang
 		if [ -n "$cur" ] && [ "$cur" != "$prev" ]; then echo "PR CHANGE:"; diff <(echo "$prev") <(echo "$cur") | grep '^[<>]'; exit 0; fi
 		[ $SECONDS -ge $end ] && { echo "HEARTBEAT ${free}G free"; cmd_status; exit 0; }
 		# Issues once a pass, PRs every 15s between passes: an issue closed or reopened, a PR opened,
-		# merged or closed. The human waits on what follows. A "?" or a missing grant is a failed read,
+		# merged or closed. The human waits on what follows. A "?" or a missing binding is a failed read,
 		# not a change.
 		gh1=$(cmd_github | sort)
-		if [ -n "$gh1" ] && ! echo "$gh1" | grep -qE ' \?$|MISSING GRANT' && [ "$gh1" != "$gh0" ]; then
+		if [ -n "$gh1" ] && ! echo "$gh1" | grep -qE ' \?$|MISSING BINDING' && [ "$gh1" != "$gh0" ]; then
 			echo "GITHUB:"; comm -13 <(echo "$gh0") <(echo "$gh1") | sed 's/^/  now /'
 			echo "$gh1" >"$ORCH_DIR/github.last"
 			exit 0
@@ -396,7 +398,7 @@ cmd_watch() { # watch [minutes]: approve, kick, and exit on an issue or PR chang
 		for _ in 1 2 3 4; do
 			sleep 15
 			pr1=$(cmd_github prs | sort) || continue
-			echo "$pr1" | grep -q 'MISSING GRANT' && continue
+			echo "$pr1" | grep -q 'MISSING BINDING' && continue
 			if [ -n "$pr1" ] && [ "$pr1" != "$pr0" ]; then
 				echo "GITHUB:"; comm -13 <(echo "$pr0") <(echo "$pr1") | sed 's/^/  now /'
 				{ echo "$gh0" | grep -v '^pr '; echo "$pr1"; } | sort >"$ORCH_DIR/github.last"

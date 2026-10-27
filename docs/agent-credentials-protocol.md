@@ -4,7 +4,7 @@ A small HTTP protocol an agent inside a sandbox uses to **ask a human** for a
 credential it was not provisioned with, and to learn when it has it. Two
 operations: `list` and `request` (with its poll), and
 [environment](#environment--what-is-in-my-variables-now), which a process
-started before a grant reads to take it up. A second verb,
+started before a binding reads to take it up. A second verb,
 [trust](#trust--ask-for-a-host-to-be-trusted), asks for a host whose
 certificate the sandbox's egress refuses to be trusted for it. A third,
 [audit](#audit--what-became-of-my-requests), reads back what the egress did
@@ -66,8 +66,8 @@ The protocol hands out nothing. An implementation delivers a granted
 credential itself, in the variable the request named. Discobox puts a
 *sentinel* there — a byte-shaped lookalike of the credential — in the
 environment of every command started from then on; its egress proxy swaps it
-for the real value on the hosts and routes the grant covers, and refuses a
-request on a route it does not. A process already running when the grant
+for the real value on the routes its secret and its binding allow, and
+refuses a request on any other. A process already running when the binding
 lands does not see it: it reads what is delivered now with `environment`.
 
 ## `environment` — what is in my variables now?
@@ -78,7 +78,7 @@ GET /v1/credentials/environment
 ```
 
 Every variable a credential is delivered in, and what is delivered there now.
-It is for a process that started before a grant — a harness's tool shell
+It is for a process that started before a binding — a harness's tool shell
 inherits the environment the harness was launched with, never a later one —
 to take the credential up: `eval "$(discobox-access env)"`. It never carries a
 value; in Discobox each one is the credential's sentinel, which only that
@@ -134,8 +134,10 @@ POST /v1/credentials/requests
 `hosts` the destinations it will be sent to: one, or several for a credential
 one tool sends to more than one site — Copilot CLI sends one GitHub token to
 `api.github.com` and to `githubcopilot.com`. Each covers the hosts beneath it
-([ADR 26-10-02-393](adr/26-10-02-393-a-credential-request-and-its-grant-may-name-several-hosts.md)).
-All three are required; an ask without them is `invalid`. A body that still
+([ADR 26-10-02-393](adr/26-10-02-393-a-credential-request-and-its-grant-may-name-several-hosts.md));
+in Discobox each becomes a route of the binding asked for, which the approver
+may narrow. `name` and `hosts` are required, and `envVar` to use the
+credential — an ask to delegate names none; an ask without them is `invalid`. A body that still
 names a destination as `host`, as a client that predates `hosts` sends, is
 `invalid` rather than read without it; an empty `host` is no destination.
 `justification` is shown to the person answering; nothing evaluates it.
@@ -173,9 +175,9 @@ GET /v1/credentials/requests/{requestId}
 `status` is one of `pending`, `granted`, `denied`. `credential` is present once
 granted, as `list` reports it — the hosts and lifetime the approver chose,
 which need not be the ones asked for. In Discobox a request may also be
-answered by the sandbox that created the caller, when it holds a grant to
-delegate that credential; the protocol is the same either way. Discobox
-reports an approval whose grant has since been revoked as `denied`, and a
+answered by the sandbox that created the caller, when it holds a delegate
+binding of that credential; the protocol is the same either way. Discobox
+reports an approval whose binding has since been removed as `denied`, and a
 request id that is not the calling sandbox's own as `not_found`.
 
 Blocking is the client's job (`--wait` on the CLI), built on this poll. There is
@@ -206,7 +208,7 @@ POST /v1/trusts/requests
 `host` is `host:port`, `:443` when no port is named; a trust covers exactly that
 endpoint and nothing beneath it. A trust says which certificate to accept there
 and nothing about what may be sent: a credential sent to a trusted host is held
-to its own grant and routes like any other
+to its own binding and routes like any other
 ([ADR 26-10-27-880](adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §10).
 `justification` is shown to the person answering. `suppliedCA` is
 optional: a CA the caller already has from a source it trusts. It is refused as
@@ -339,7 +341,8 @@ In Discobox: sandbox-agent serves the protocol on sandbox loopback
 (`127.0.0.1:17010`) and relays each call to the pool over the sandbox's mTLS
 client certificate, whose common name is the sandbox ID and is the identity.
 The pool's proxy unit (`pool-agent/proxyagent`, on `:17083`) answers it by
-calling the control plane, where grants and cleartext live; an approved
-request becomes a grant and a sentinel bound to the variable asked for. See
+calling the control plane, where bindings and cleartext live; an approved
+request becomes a binding on the asking sandbox, and a sentinel in the
+variable asked for. See
 [`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md) and
 [`sandbox-agent/DESIGN.md`](../sandbox-agent/DESIGN.md).

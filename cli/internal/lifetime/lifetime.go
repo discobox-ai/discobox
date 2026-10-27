@@ -1,12 +1,12 @@
-// Package lifetime is how long a grant lives, said the way people say it.
+// Package lifetime is how long a binding lasts, said the way people say it.
 //
-// A grant's lifetime is chosen in two places — the window's credential dialog
-// and the `discobox secret` flags — and both have to mean the same thing by
-// "1 week", or the same act mints different grants depending on which one made
-// it. So the vocabulary is here once rather than in each of them.
+// A binding's lifetime is chosen in two places — the window's credential
+// dialog and the `discobox secret` flags — and both have to mean the same
+// thing by "1 week", or the same act makes different bindings depending on
+// which one made it. So the vocabulary is here once rather than in each of them.
 //
-// Zero is forever. The wire carries a lifetime as seconds and a grant with no
-// seconds is one that never expires (`SecretGrant.ExpiresAt` is nil), so
+// Zero is forever. The wire carries a lifetime as seconds and a binding with no
+// seconds is one that never expires (`SecretBinding.ExpiresAt` is nil), so
 // "forever" and "no seconds" are the same value; there is nothing to spell
 // differently, and a caller that means forever says zero deliberately.
 package lifetime
@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-// The units a grant is granted in. A month is thirty days: calendar months run
+// The units a binding is given in. A month is thirty days: calendar months run
 // 28 to 31 and a credential does not care which one it was approved in.
 const (
 	Day   = 24 * time.Hour
@@ -67,7 +67,7 @@ var counted = regexp.MustCompile(`^(\d+)\s*([a-z]+)$`)
 //
 // What the wire cannot carry is refused rather than carried as something else.
 // The wire counts whole seconds, and zero is forever: 500ms truncated to zero,
-// or a count so large it wraps negative, would each go out as a grant that
+// or a count so large it wraps negative, would each go out as a binding that
 // never expires — the one answer nobody gave.
 func Parse(text string) (time.Duration, error) {
 	trimmed := strings.ToLower(strings.TrimSpace(text))

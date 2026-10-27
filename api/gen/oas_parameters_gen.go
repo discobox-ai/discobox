@@ -2903,13 +2903,13 @@ func decodeCreateSecretParams(args [1]string, argsEscaped bool, r *http.Request)
 	return params, nil
 }
 
-// CreateSecretGrantParams is parameters of create-secret-grant operation.
-type CreateSecretGrantParams struct {
+// CreateSecretBindingParams is parameters of create-secret-binding operation.
+type CreateSecretBindingParams struct {
 	// Project ID.
 	ProjectId string
 }
 
-func unpackCreateSecretGrantParams(packed middleware.Parameters) (params CreateSecretGrantParams) {
+func unpackCreateSecretBindingParams(packed middleware.Parameters) (params CreateSecretBindingParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -2920,78 +2920,7 @@ func unpackCreateSecretGrantParams(packed middleware.Parameters) (params CreateS
 	return params
 }
 
-func decodeCreateSecretGrantParams(args [1]string, argsEscaped bool, r *http.Request) (params CreateSecretGrantParams, _ error) {
-	// Set default value for path: projectId.
-	{
-		val := string("default")
-		params.ProjectId = val
-	}
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// CreateSecretRequestParams is parameters of create-secret-request operation.
-type CreateSecretRequestParams struct {
-	// Project ID.
-	ProjectId string
-}
-
-func unpackCreateSecretRequestParams(packed middleware.Parameters) (params CreateSecretRequestParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeCreateSecretRequestParams(args [1]string, argsEscaped bool, r *http.Request) (params CreateSecretRequestParams, _ error) {
+func decodeCreateSecretBindingParams(args [1]string, argsEscaped bool, r *http.Request) (params CreateSecretBindingParams, _ error) {
 	// Set default value for path: projectId.
 	{
 		val := string("default")
@@ -3288,185 +3217,6 @@ func decodeDeleteHarnessConfigParams(args [2]string, argsEscaped bool, r *http.R
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "harnessConfigId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// DeleteHarnessConfigSecretBindingParams is parameters of delete-harness-config-secret-binding operation.
-type DeleteHarnessConfigSecretBindingParams struct {
-	// Project ID.
-	ProjectId string
-	// Harness config ID.
-	HarnessConfigId string
-	// Environment variable name.
-	EnvName string
-}
-
-func unpackDeleteHarnessConfigSecretBindingParams(packed middleware.Parameters) (params DeleteHarnessConfigSecretBindingParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "harnessConfigId",
-			In:   "path",
-		}
-		params.HarnessConfigId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "envName",
-			In:   "path",
-		}
-		params.EnvName = packed[key].(string)
-	}
-	return params
-}
-
-func decodeDeleteHarnessConfigSecretBindingParams(args [3]string, argsEscaped bool, r *http.Request) (params DeleteHarnessConfigSecretBindingParams, _ error) {
-	// Set default value for path: projectId.
-	{
-		val := string("default")
-		params.ProjectId = val
-	}
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: harnessConfigId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "harnessConfigId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.HarnessConfigId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "harnessConfigId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: envName.
-	if err := func() error {
-		param := args[2]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[2])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "envName",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.EnvName = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "envName",
 			In:   "path",
 			Err:  err,
 		}
@@ -4839,6 +4589,131 @@ func decodeDeleteSecretParams(args [2]string, argsEscaped bool, r *http.Request)
 	return params, nil
 }
 
+// DeleteSecretBindingParams is parameters of delete-secret-binding operation.
+type DeleteSecretBindingParams struct {
+	// Project ID.
+	ProjectId string
+	// Secret binding ID.
+	BindingId string
+}
+
+func unpackDeleteSecretBindingParams(packed middleware.Parameters) (params DeleteSecretBindingParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "bindingId",
+			In:   "path",
+		}
+		params.BindingId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeDeleteSecretBindingParams(args [2]string, argsEscaped bool, r *http.Request) (params DeleteSecretBindingParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: bindingId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "bindingId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.BindingId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "bindingId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // DenySecretRequestParams is parameters of deny-secret-request operation.
 type DenySecretRequestParams struct {
 	// Project ID.
@@ -5200,6 +5075,131 @@ func decodeDiscardSandboxHarnessConfigChangesParams(args [2]string, argsEscaped 
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "sandboxId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// DismissSecretRefreshRequestParams is parameters of dismiss-secret-refresh-request operation.
+type DismissSecretRefreshRequestParams struct {
+	// Project ID.
+	ProjectId string
+	// Refresh request ID.
+	RequestId string
+}
+
+func unpackDismissSecretRefreshRequestParams(packed middleware.Parameters) (params DismissSecretRefreshRequestParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "requestId",
+			In:   "path",
+		}
+		params.RequestId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeDismissSecretRefreshRequestParams(args [2]string, argsEscaped bool, r *http.Request) (params DismissSecretRefreshRequestParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: requestId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "requestId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.RequestId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "requestId",
 			In:   "path",
 			Err:  err,
 		}
@@ -8801,6 +8801,131 @@ func decodeGetSecretParams(args [2]string, argsEscaped bool, r *http.Request) (p
 	return params, nil
 }
 
+// GetSecretBindingParams is parameters of get-secret-binding operation.
+type GetSecretBindingParams struct {
+	// Project ID.
+	ProjectId string
+	// Secret binding ID.
+	BindingId string
+}
+
+func unpackGetSecretBindingParams(packed middleware.Parameters) (params GetSecretBindingParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "bindingId",
+			In:   "path",
+		}
+		params.BindingId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeGetSecretBindingParams(args [2]string, argsEscaped bool, r *http.Request) (params GetSecretBindingParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: bindingId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "bindingId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.BindingId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "bindingId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // GetSecretRequestParams is parameters of get-secret-request operation.
 type GetSecretRequestParams struct {
 	// Project ID.
@@ -9183,6 +9308,183 @@ func decodeListApprovalRequestsParams(args [1]string, argsEscaped bool, r *http.
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "status",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// ListBoundSecretsParams is parameters of list-bound-secrets operation.
+type ListBoundSecretsParams struct {
+	// Project ID.
+	ProjectId string
+	// The kind of target to resolve for.
+	TargetKind ListBoundSecretsTargetKind
+	// The harness config or discobox, by name or ID; omitted for the project.
+	Target OptString `json:",omitempty,omitzero"`
+}
+
+func unpackListBoundSecretsParams(packed middleware.Parameters) (params ListBoundSecretsParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "targetKind",
+			In:   "query",
+		}
+		params.TargetKind = packed[key].(ListBoundSecretsTargetKind)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "target",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Target = v.(OptString)
+		}
+	}
+	return params
+}
+
+func decodeListBoundSecretsParams(args [1]string, argsEscaped bool, r *http.Request) (params ListBoundSecretsParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: targetKind.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "targetKind",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.TargetKind = ListBoundSecretsTargetKind(c)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if err := params.TargetKind.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "targetKind",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: target.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "target",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotTargetVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotTargetVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Target.SetTo(paramsDotTargetVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "target",
 			In:   "query",
 			Err:  err,
 		}
@@ -11180,131 +11482,6 @@ func decodeListHTTPAuditParams(args [1]string, argsEscaped bool, r *http.Request
 	return params, nil
 }
 
-// ListHarnessConfigSecretBindingsParams is parameters of list-harness-config-secret-bindings operation.
-type ListHarnessConfigSecretBindingsParams struct {
-	// Project ID.
-	ProjectId string
-	// Harness config ID.
-	HarnessConfigId string
-}
-
-func unpackListHarnessConfigSecretBindingsParams(packed middleware.Parameters) (params ListHarnessConfigSecretBindingsParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "harnessConfigId",
-			In:   "path",
-		}
-		params.HarnessConfigId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeListHarnessConfigSecretBindingsParams(args [2]string, argsEscaped bool, r *http.Request) (params ListHarnessConfigSecretBindingsParams, _ error) {
-	// Set default value for path: projectId.
-	{
-		val := string("default")
-		params.ProjectId = val
-	}
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: harnessConfigId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "harnessConfigId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.HarnessConfigId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "harnessConfigId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
 // ListHarnessConfigsParams is parameters of list-harness-configs operation.
 type ListHarnessConfigsParams struct {
 	// Project ID.
@@ -12445,7 +12622,8 @@ func decodeListSSHKeysParams(args [1]string, argsEscaped bool, r *http.Request) 
 type ListSandboxCredentialsParams struct {
 	// Pool ID.
 	PoolId string
-	// Sandbox whose credentials to list (each variable a live grant covers, and its delegation grants).
+	// Sandbox whose credentials to list (its effective use bindings, each in its variable, and its
+	// delegate bindings).
 	SandboxId string
 }
 
@@ -14362,15 +14540,21 @@ func decodeListSandboxesParams(args [1]string, argsEscaped bool, r *http.Request
 	return params, nil
 }
 
-// ListSecretGrantsParams is parameters of list-secret-grants operation.
-type ListSecretGrantsParams struct {
+// ListSecretBindingEventsParams is parameters of list-secret-binding-events operation.
+type ListSecretBindingEventsParams struct {
 	// Project ID.
 	ProjectId string
-	// Filter by granted secret ID.
-	SecretId OptString `json:",omitempty,omitzero"`
+	// Only this binding's events.
+	BindingId OptString `json:",omitempty,omitzero"`
+	// Only events of bindings of this secret, by name or ID.
+	Secret OptString `json:",omitempty,omitzero"`
+	// Only events at or after this time.
+	Since OptDateTime `json:",omitempty,omitzero"`
+	// At most this many events.
+	Limit OptInt64 `json:",omitempty,omitzero"`
 }
 
-func unpackListSecretGrantsParams(packed middleware.Parameters) (params ListSecretGrantsParams) {
+func unpackListSecretBindingEventsParams(packed middleware.Parameters) (params ListSecretBindingEventsParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -14380,17 +14564,44 @@ func unpackListSecretGrantsParams(packed middleware.Parameters) (params ListSecr
 	}
 	{
 		key := middleware.ParameterKey{
-			Name: "secretId",
+			Name: "bindingId",
 			In:   "query",
 		}
 		if v, ok := packed[key]; ok {
-			params.SecretId = v.(OptString)
+			params.BindingId = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "secret",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Secret = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "since",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Since = v.(OptDateTime)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "limit",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Limit = v.(OptInt64)
 		}
 	}
 	return params
 }
 
-func decodeListSecretGrantsParams(args [1]string, argsEscaped bool, r *http.Request) (params ListSecretGrantsParams, _ error) {
+func decodeListSecretBindingEventsParams(args [1]string, argsEscaped bool, r *http.Request) (params ListSecretBindingEventsParams, _ error) {
 	q := uri.NewQueryDecoder(r.URL.Query())
 	// Set default value for path: projectId.
 	{
@@ -14442,17 +14653,17 @@ func decodeListSecretGrantsParams(args [1]string, argsEscaped bool, r *http.Requ
 			Err:  err,
 		}
 	}
-	// Decode query: secretId.
+	// Decode query: bindingId.
 	if err := func() error {
 		cfg := uri.QueryParameterDecodingConfig{
-			Name:    "secretId",
+			Name:    "bindingId",
 			Style:   uri.QueryStyleForm,
 			Explode: true,
 		}
 
 		if err := q.HasParam(cfg); err == nil {
 			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
-				var paramsDotSecretIdVal string
+				var paramsDotBindingIdVal string
 				if err := func() error {
 					val, err := d.DecodeValue()
 					if err != nil {
@@ -14464,12 +14675,12 @@ func decodeListSecretGrantsParams(args [1]string, argsEscaped bool, r *http.Requ
 						return err
 					}
 
-					paramsDotSecretIdVal = c
+					paramsDotBindingIdVal = c
 					return nil
 				}(); err != nil {
 					return err
 				}
-				params.SecretId.SetTo(paramsDotSecretIdVal)
+				params.BindingId.SetTo(paramsDotBindingIdVal)
 				return nil
 			}); err != nil {
 				return err
@@ -14478,7 +14689,589 @@ func decodeListSecretGrantsParams(args [1]string, argsEscaped bool, r *http.Requ
 		return nil
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
-			Name: "secretId",
+			Name: "bindingId",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: secret.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "secret",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotSecretVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotSecretVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Secret.SetTo(paramsDotSecretVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "secret",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: since.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "since",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotSinceVal time.Time
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := time.Parse("2006-01-02T15:04:05.999999999Z07:00", val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotSinceVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Since.SetTo(paramsDotSinceVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "since",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: limit.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "limit",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotLimitVal int64
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToInt64(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotLimitVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Limit.SetTo(paramsDotLimitVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.Limit.Get(); ok {
+					if err := func() error {
+						if err := (validate.Int{
+							MinSet:        true,
+							Min:           1,
+							MaxSet:        true,
+							Max:           1000,
+							MinExclusive:  false,
+							MaxExclusive:  false,
+							MultipleOfSet: false,
+							MultipleOf:    0,
+							Pattern:       nil,
+						}).Validate(int64(value)); err != nil {
+							return errors.Wrap(err, "int")
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "limit",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// ListSecretBindingsParams is parameters of list-secret-bindings operation.
+type ListSecretBindingsParams struct {
+	// Project ID.
+	ProjectId string
+	// Only bindings of this secret, by name or ID.
+	Secret OptString `json:",omitempty,omitzero"`
+	// Only bindings on this kind of target.
+	TargetKind OptListSecretBindingsTargetKind `json:",omitempty,omitzero"`
+	// Only bindings on this target: a harness config or discobox name or ID.
+	Target OptString `json:",omitempty,omitzero"`
+	// Only bindings handed on under this delegate binding.
+	ParentId OptString `json:",omitempty,omitzero"`
+}
+
+func unpackListSecretBindingsParams(packed middleware.Parameters) (params ListSecretBindingsParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "secret",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Secret = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "targetKind",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.TargetKind = v.(OptListSecretBindingsTargetKind)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "target",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Target = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "parentId",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.ParentId = v.(OptString)
+		}
+	}
+	return params
+}
+
+func decodeListSecretBindingsParams(args [1]string, argsEscaped bool, r *http.Request) (params ListSecretBindingsParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: secret.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "secret",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotSecretVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotSecretVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Secret.SetTo(paramsDotSecretVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "secret",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: targetKind.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "targetKind",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotTargetKindVal ListSecretBindingsTargetKind
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotTargetKindVal = ListSecretBindingsTargetKind(c)
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.TargetKind.SetTo(paramsDotTargetKindVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.TargetKind.Get(); ok {
+					if err := func() error {
+						if err := value.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "targetKind",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: target.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "target",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotTargetVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotTargetVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Target.SetTo(paramsDotTargetVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "target",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: parentId.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "parentId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotParentIdVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotParentIdVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.ParentId.SetTo(paramsDotParentIdVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "parentId",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// ListSecretRefreshRequestsParams is parameters of list-secret-refresh-requests operation.
+type ListSecretRefreshRequestsParams struct {
+	// Project ID.
+	ProjectId string
+	// Only requests in this status.
+	Status OptListSecretRefreshRequestsStatus `json:",omitempty,omitzero"`
+}
+
+func unpackListSecretRefreshRequestsParams(packed middleware.Parameters) (params ListSecretRefreshRequestsParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "status",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Status = v.(OptListSecretRefreshRequestsStatus)
+		}
+	}
+	return params
+}
+
+func decodeListSecretRefreshRequestsParams(args [1]string, argsEscaped bool, r *http.Request) (params ListSecretRefreshRequestsParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: status.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "status",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotStatusVal ListSecretRefreshRequestsStatus
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotStatusVal = ListSecretRefreshRequestsStatus(c)
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Status.SetTo(paramsDotStatusVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.Status.Get(); ok {
+					if err := func() error {
+						if err := value.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "status",
 			In:   "query",
 			Err:  err,
 		}
@@ -18570,131 +19363,6 @@ func decodeResumeSandboxAutostopParams(args [2]string, argsEscaped bool, r *http
 	return params, nil
 }
 
-// RevokeSecretGrantParams is parameters of revoke-secret-grant operation.
-type RevokeSecretGrantParams struct {
-	// Project ID.
-	ProjectId string
-	// Secret grant ID.
-	GrantId string
-}
-
-func unpackRevokeSecretGrantParams(packed middleware.Parameters) (params RevokeSecretGrantParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "grantId",
-			In:   "path",
-		}
-		params.GrantId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeRevokeSecretGrantParams(args [2]string, argsEscaped bool, r *http.Request) (params RevokeSecretGrantParams, _ error) {
-	// Set default value for path: projectId.
-	{
-		val := string("default")
-		params.ProjectId = val
-	}
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: grantId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "grantId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.GrantId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "grantId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
 // SaveSandboxHarnessConfigChangesParams is parameters of save-sandbox-harness-config-changes operation.
 type SaveSandboxHarnessConfigChangesParams struct {
 	ProjectId string
@@ -19301,185 +19969,6 @@ func decodeSetDefaultProjectParams(args [1]string, argsEscaped bool, r *http.Req
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// SetHarnessConfigSecretBindingParams is parameters of set-harness-config-secret-binding operation.
-type SetHarnessConfigSecretBindingParams struct {
-	// Project ID.
-	ProjectId string
-	// Harness config ID.
-	HarnessConfigId string
-	// Environment variable name.
-	EnvName string
-}
-
-func unpackSetHarnessConfigSecretBindingParams(packed middleware.Parameters) (params SetHarnessConfigSecretBindingParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "harnessConfigId",
-			In:   "path",
-		}
-		params.HarnessConfigId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "envName",
-			In:   "path",
-		}
-		params.EnvName = packed[key].(string)
-	}
-	return params
-}
-
-func decodeSetHarnessConfigSecretBindingParams(args [3]string, argsEscaped bool, r *http.Request) (params SetHarnessConfigSecretBindingParams, _ error) {
-	// Set default value for path: projectId.
-	{
-		val := string("default")
-		params.ProjectId = val
-	}
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: harnessConfigId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "harnessConfigId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.HarnessConfigId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "harnessConfigId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: envName.
-	if err := func() error {
-		param := args[2]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[2])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "envName",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.EnvName = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "envName",
 			In:   "path",
 			Err:  err,
 		}
@@ -22099,6 +22588,131 @@ func decodeUpdateSecretParams(args [2]string, argsEscaped bool, r *http.Request)
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "secretId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// UpdateSecretBindingParams is parameters of update-secret-binding operation.
+type UpdateSecretBindingParams struct {
+	// Project ID.
+	ProjectId string
+	// Secret binding ID.
+	BindingId string
+}
+
+func unpackUpdateSecretBindingParams(packed middleware.Parameters) (params UpdateSecretBindingParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "bindingId",
+			In:   "path",
+		}
+		params.BindingId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeUpdateSecretBindingParams(args [2]string, argsEscaped bool, r *http.Request) (params UpdateSecretBindingParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: bindingId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "bindingId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.BindingId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "bindingId",
 			In:   "path",
 			Err:  err,
 		}

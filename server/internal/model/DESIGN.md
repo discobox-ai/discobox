@@ -20,15 +20,16 @@ completion timestamp and require no backfill (ADR 26-10-23-948).
 | `ServerState` | Generic key/value state for server preferences and one-time initialization flags. |
 | `Sandbox` | Main managed runtime/session resource. Belongs to a project and pool; embeds its spec as `SandboxManifest` (harness config, `harnessMode`, image, source, user, and the skills it was created with, content and all; reads return only their names, from `SkillNames` beside the manifest, which the insert writes and listings read instead of loading the skills; and `SkillsSources`, the directories of its skills sources in the order a later one wins in, each naming a `SourceCodeReferences` key whose `GitSource.Purpose` is `skills`, a list because the references are a map, ADR 26-10-14-294; and `Features`, the repository's features as its client read them from `.discobox/settings.json`, each on or off, carried into the bootstrap so the box provisions every one not turned off, omitted when empty so no older sandbox's fingerprint moves, ADR 26-10-16-423 §§4, 11) and carries its platform (its pool's, set when it is placed, immutable, outside the manifest so it moves no fingerprint), observed runtime state, agent status, resources, its own egress level (outside the manifest, so a change rebuilds nothing; ADR 26-10-01-032), and `DiscoboxAPI`, whether it may call the discobox API (ADR 26-10-27-880 §9). |
 | `HarnessConfig` | Project-scoped harness runtime configuration selected by sandboxes. Records the platforms its image is published for (ADR 0145 §1), the egress hosts the image declares, and the egress level a person set (ADR 26-10-01-032). The included harnesses are seeded as `builtIn` configs; a config is selectable only once `configured`. |
-| `HarnessConfigSecretBinding` | Binds a harness config env var to a project secret; materialized into `SandboxSecret` rows per sandbox. |
 | `SandboxProviderInstance` | Project-scoped backend identity: provider type, credentials, and connection config. Capacity and sharing policy live on `Pool`. |
 | `Pool` | User-visible sharing boundary sandboxes are scheduled into, and its own runtime host (ADR-0006). Embeds its spec as `PoolManifest` (name, immutable provider instance, and the pool's size: CPU, memory, storage); carries the runtime lifecycle, the one platform its agent declares it hosts, agent identity and public key, `ready`/`schedulable`/`degraded` flags, reported capacity, image staging, resources, heartbeat, and its egress level (ADR 26-10-01-032). Sandboxes in one pool share a cache, the pool's CPU and memory, and a kernel/host. |
 | `SandboxAccessIssuerKey` | Per-project, per-user issuer key used by the control plane to sign sandbox access tokens. `ProjectUserKey` is a type alias for it. |
 | `Secret` | Project-scoped encrypted credential (`token`, `oauth`, or `exchange`), and its `Routes`: where it may be sent, each route open or blocked (ADR 26-10-27-880). `ExchangeRecipe` is how an exchange credential's stored fields are traded for its token (ADR 26-10-08-452). |
-| `SecretRequest` | Approval-inbox item for a secret use with no covering grant (reactive, agent-protocol originated, or a refresh). |
-| `SecretGrant` | Standing authorization on a secret, scoped to a sandbox, harness config, or project, for the hosts it names. `Purpose` is `use` (every grant before delegation, by the column's default) or `delegate`, never both. `DelegationID` is the delegation grant a discobox handed it on under, when one did (ADR 26-10-27-880 §3). |
+| `SecretBinding` | The authorization (ADR 26-10-27-880 §1): a secret bound on a sandbox, harness config or project, for `use` in a variable, to `delegate`, or both, with routes that narrow the secret's, an expiry, and the delegate binding it was handed on under (`ParentID`). One use binding per target and variable, one delegate binding per target and secret. |
+| `SecretBindingEvent` | Append-only history of a binding: created, updated, deleted or expired, by whom and why, with a snapshot (§6). |
+| `SecretRequest` | An agent's ask for a credential, through the agent credentials protocol: name, variable, routes, lifetime, purpose; approved with a binding (`BindingID`, `DecidedBy`, `DecidedAt`). |
+| `SecretRefreshRequest` | An ask for a new value of a token (ADR 26-09-25-122 §4): one open per secret, answered or dismissed. |
 | `SandboxInventory` | What a sandbox's list reads last answered — execs, services, tools, each terminal's visible screen — as its sandbox agent posted it, one row per sandbox, sealed, deleted with the sandbox (ADR 26-10-11-657). Kept off the `Sandbox` row so no listing loads it. |
-| `SandboxSecret` | Binds a sandbox env var to a secret through a sentinel placeholder; every binding is injected into its sandbox and registered with its proxy. |
+| `SandboxSecret` | A sandbox's sentinel for one variable, materialized from the binding that delivers it there (`BindingID`); injected into its sandbox and registered with its proxy with that binding's route lists. |
 | `SSHKey` | Project-scoped public key authorizing SSH to the project's sandboxes (ADR 0024). |
 | `ProjectGateway` | A gateway every discobox of the project is routed through by its pool's proxy (ADR 26-10-16-470): addressed by `name`, its `match` unique in the project, stored as `gateway.Normalize` writes it. A header value from the server's environment is stored as the variable's name, never its value. `managed_by` is `config` for one the server configuration file keeps (ADR 26-10-17-271), which alone may take a value from the environment, and `api` for the API's. |
 | `ProjectSkillsSource` | One skills repository (`url`, `ref`, `directory`) every discobox of the project is created with, in the order added. The creating client copies the list into its create request; the server never adds it to one (ADR 26-10-14-894). |
@@ -131,15 +132,19 @@ erDiagram
     PROJECT ||--o| HARNESS_CONFIG : default_harness
 
     HARNESS_CONFIG ||--o{ SANDBOX : runs
-    HARNESS_CONFIG ||--o{ HARNESS_CONFIG_SECRET_BINDING : binds
+    HARNESS_CONFIG ||--o{ SECRET_BINDING : binds
     SANDBOX_PROVIDER_INSTANCE ||--o{ POOL : backs
     POOL ||--o{ SANDBOX : schedules
 
-    SECRET ||--o{ SECRET_GRANT : authorizes
+    SECRET ||--o{ SECRET_BINDING : authorizes
     SECRET ||--o{ SANDBOX_SECRET : fills
-    SECRET ||--o{ HARNESS_CONFIG_SECRET_BINDING : fills
-    SECRET_REQUEST }o--o| SECRET_GRANT : approved_by
-    SANDBOX ||--o{ SANDBOX_SECRET : binds
+    SECRET_BINDING ||--o{ SECRET_BINDING : parent_of
+    SECRET_BINDING ||--o{ SECRET_BINDING_EVENT : records
+    SECRET_BINDING ||--o{ SANDBOX_SECRET : delivers
+    SECRET_REQUEST }o--o| SECRET_BINDING : approved_by
+    SECRET ||--o{ SECRET_REFRESH_REQUEST : renews
+    SANDBOX ||--o{ SECRET_BINDING : binds
+    SANDBOX ||--o{ SANDBOX_SECRET : holds
 
     USER {
         string id
@@ -294,9 +299,9 @@ manifest until its pool reserves the stopped runtime. Its indexed
 `PendingHarnessConfigID` foreign key keeps that target from being deleted. `HarnessChangeID` fences
 its replacement at the pool; `HarnessChangeError` records a refused proposal.
 These internal fields are outside the manifest fingerprint and public JSON.
-`SandboxSecret.SourceHarnessConfigID` records which injected bindings came from
-the harness so a change can replace those while retaining explicit bindings.
-
-Existing secret assignments have no trustworthy harness provenance and retain
-sandbox-override precedence. Matching an old harness binding does not establish
-ownership; migration never guesses from that match.
+A sandbox's sentinels are its effective use bindings (`SandboxSecret.BindingID`
+names the one delivering each): per variable its own binding wins over its
+harness config's, then the harness configs attached to it
+(`Sandbox.AttachedHarnessConfigIDs`), then the project's. A harness change
+re-resolves: the new config's bindings apply where the sandbox binds nothing
+itself.

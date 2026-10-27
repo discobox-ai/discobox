@@ -26,7 +26,7 @@ import (
 
 // startRoutedProxy runs the pool proxy over the resolver this package builds,
 // with sentinel registered for sb-1 under routes, as SecretsFile would.
-func startRoutedProxy(ctx context.Context, t *testing.T, controlPlaneURL, sentinel string, routes []secretroute.Route) (*proxy.Server, proxy.ClientMaterial) {
+func startRoutedProxy(ctx context.Context, t *testing.T, controlPlaneURL, sentinel string, lists [][]secretroute.Route) (*proxy.Server, proxy.ClientMaterial) {
 	t.Helper()
 	root := withTestRoot(t)
 	if err := WriteResolveContext(root, testProjectID, testPoolID, controlPlaneURL, "tok"); err != nil {
@@ -40,7 +40,7 @@ func startRoutedProxy(ctx context.Context, t *testing.T, controlPlaneURL, sentin
 	if err != nil {
 		t.Fatalf("issue client certificate: %v", err)
 	}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{sentinel}, map[string][]secretroute.Route{sentinel: routes}); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{sentinel}, map[string][][]secretroute.Route{sentinel: lists}); err != nil {
 		t.Fatalf("register sentinel: %v", err)
 	}
 	cfg := proxy.DefaultConfig()
@@ -100,10 +100,10 @@ func TestASentinelIsHeldToItsRoutesOnRealTraffic(t *testing.T) {
 	}))
 	defer controlPlane.Close()
 
-	server, material := startRoutedProxy(ctx, t, controlPlane.URL, sentinel, []secretroute.Route{
+	server, material := startRoutedProxy(ctx, t, controlPlane.URL, sentinel, [][]secretroute.Route{{
 		{Host: originHost},
 		{Host: originHost, Path: "/admin", Blocked: true},
-	})
+	}})
 	client := proxyClient(t, server, material)
 	get := func(path string) int {
 		t.Helper()

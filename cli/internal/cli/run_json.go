@@ -7,7 +7,6 @@ import (
 	"io"
 	"strings"
 
-	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/spf13/cobra"
@@ -21,10 +20,10 @@ import (
 // none, because a JSON run creates, prints, and returns.
 type runJSONRequest struct {
 	// Source is SOURCE, required unless NoSource is set.
-	Source  string         `json:"source"`
-	Prompt  string         `json:"prompt"`
-	Harness string         `json:"harness"`
-	Grants  []runJSONGrant `json:"grants"`
+	Source   string           `json:"source"`
+	Prompt   string           `json:"prompt"`
+	Harness  string           `json:"harness"`
+	Bindings []runJSONBinding `json:"bindings"`
 	// DiscoboxAPI is --discobox-api.
 	DiscoboxAPI bool     `json:"discoboxApi"`
 	Env         []string `json:"env"`
@@ -46,12 +45,16 @@ type runJSONRequest struct {
 	DeclaredSources *bool `json:"declaredSources"`
 }
 
-// runJSONGrant is one --grant: a project secret, the variable the new
-// discobox receives its sentinel in, and the hosts it may be sent to.
-type runJSONGrant struct {
-	Secret string   `json:"secret"`
-	EnvVar string   `json:"envVar"`
-	Hosts  []string `json:"hosts"`
+// runJSONBinding is one --bind or --delegate: a project secret, the variable
+// the new discobox receives its sentinel in (for --bind; the secret's name
+// upper-snaked when left out), routes that narrow
+// where it may be sent, each as --to writes one, and whether the new
+// discobox may give it on (for --delegate).
+type runJSONBinding struct {
+	Secret   string   `json:"secret"`
+	EnvVar   string   `json:"envVar"`
+	Routes   []string `json:"routes"`
+	Delegate bool     `json:"delegate"`
 }
 
 // readJSONRequest settles opts from the request on stdin. The command line may
@@ -80,11 +83,11 @@ func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return errors.New("--from-json: stdin holds more than one request")
 	}
-	grants, err := req.grants()
+	bindings, err := req.bindings()
 	if err != nil {
 		return err
 	}
-	opts.grants = grants
+	opts.bindings = bindings
 	opts.discoboxAPI = req.DiscoboxAPI
 	if req.Prompt != "" {
 		opts.promptFlag = []string{req.Prompt}
@@ -121,25 +124,37 @@ func (opts *runCommandOptions) readJSONRequest(cmd *cobra.Command, args []string
 	return nil
 }
 
-// grants are the request's grants in the form the create takes, checked for
-// the shape --grant would have refused.
-func (req runJSONRequest) grants() ([]apimodel.SandboxGrant, error) {
-	grants := make([]apimodel.SandboxGrant, 0, len(req.Grants))
-	seen := map[string]bool{}
-	for i, in := range req.Grants {
+// bindings are the request's bindings in the form the create takes, checked
+// as --bind and --delegate check theirs.
+func (req runJSONRequest) bindings() ([]apimodel.SandboxBindingInput, error) {
+	var binds, delegates []string
+	for i, in := range req.Bindings {
 		secret, envVar := strings.TrimSpace(in.Secret), strings.TrimSpace(in.EnvVar)
-		if secret == "" || envVar == "" {
-			return nil, fmt.Errorf(`--from-json: grants[%d]: want {"secret": SECRET, "envVar": ENV_VAR}, with "hosts" to narrow where it may be sent`, i)
+		routes := strings.Join(in.Routes, ",")
+		switch {
+		case secret == "":
+			return nil, fmt.Errorf(`--from-json: bindings[%d]: want {"secret": SECRET}, with "envVar" to name its variable, "routes" to narrow where it may be sent, or "delegate": true to let the new discobox give it on`, i)
+		case in.Delegate && envVar != "":
+			return nil, fmt.Errorf("--from-json: bindings[%d]: a delegation is delivered to nothing, so it names no envVar", i)
+		case in.Delegate:
+			if routes != "" {
+				secret += "@" + routes
+			}
+			delegates = append(delegates, secret)
+		default:
+			value := secret
+			if envVar != "" {
+				value += ":" + envVar
+			}
+			if routes != "" {
+				value += "@" + routes
+			}
+			binds = append(binds, value)
 		}
-		if seen[envVar] {
-			return nil, fmt.Errorf("--from-json: grants[%d]: %s is already given; a variable holds one credential", i, envVar)
-		}
-		seen[envVar] = true
-		var grant apimodel.SandboxGrant
-		grant.SetSecretId(apiclientgen.NewOptString(secret))
-		grant.SetEnvVar(apiclientgen.NewOptString(envVar))
-		grant.SetHosts(in.Hosts)
-		grants = append(grants, grant)
 	}
-	return grants, nil
+	bindings, err := sandboxcreate.ParseBindings(binds, delegates)
+	if err != nil {
+		return nil, fmt.Errorf("--from-json: %w", err)
+	}
+	return bindings, nil
 }

@@ -67,7 +67,7 @@ func TestCaptureCommitsPatchSecretsAndReceiptIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if secret.Host != "api.example.com" || len(secret.Routes) != 1 {
+	if len(secret.Routes) != 1 {
 		t.Fatal("provider authority missing")
 	}
 	encoded, marshalErr := json.Marshal(receipt)
@@ -96,7 +96,7 @@ func TestCaptureConflictsAfterSettingsEditWithoutWritingSecret(t *testing.T) {
 	if _, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c); err == nil {
 		t.Fatal("stale candidate accepted")
 	}
-	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, cfg.ProjectID, cfg.ID)
+	bindings, err := s.store.ListTargetUseBindings(ctx, cfg.ProjectID, model.SecretBindingTargetHarnessConfig, cfg.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestCaptureConflictsAfterSecretRefreshAndPreservesUserBinding(t *testing.T)
 	if err := s.store.CreateSecret(ctx, sec); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.store.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{ProjectID: cfg.ProjectID, HarnessConfigID: cfg.ID, EnvName: "API_TOKEN", SecretID: sec.ID}); err != nil {
+	if err := putHarnessBinding(ctx, s.store, harnessBinding{ProjectID: cfg.ProjectID, HarnessConfigID: cfg.ID, EnvName: "API_TOKEN", SecretID: sec.ID}); err != nil {
 		t.Fatal(err)
 	}
 	baseline, err := s.store.CaptureBaseline(ctx, cfg.ProjectID, cfg.ID)
@@ -138,7 +138,7 @@ func TestCaptureConflictsAfterSecretRefreshAndPreservesUserBinding(t *testing.T)
 	if _, err := s.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, c); err != nil {
 		t.Fatal(err)
 	}
-	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, cfg.ProjectID, cfg.ID)
+	bindings, err := s.store.ListTargetUseBindings(ctx, cfg.ProjectID, model.SecretBindingTargetHarnessConfig, cfg.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestCaptureRollsBackAssetsWhenDeliveryPreparationFails(t *testing.T) {
 	if stored.Revision != cfg.Revision || len(stored.ConfiguredFiles) != 0 || len(stored.ConfiguredSecretIDs) != 0 {
 		t.Fatal("partial config commit")
 	}
-	bindings, err := s.store.ListHarnessConfigSecretBindings(context.Background(), cfg.ProjectID, cfg.ID)
+	bindings, err := s.store.ListTargetUseBindings(context.Background(), cfg.ProjectID, model.SecretBindingTargetHarnessConfig, cfg.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func TestCaptureRollsBackAssetsWhenDeliveryPreparationFails(t *testing.T) {
 
 type failingCaptureRuntime struct{ stubSandboxRuntime }
 
-func (*failingCaptureRuntime) RebindHarnessConfigSecretsTx(context.Context, *store.Store, *gorm.DB, string, string) error {
+func (*failingCaptureRuntime) MarkBindingHoldersDirtyTx(context.Context, *store.Store, *gorm.DB, string, []model.SecretBinding) error {
 	return errors.New("injected transaction failure")
 }
 

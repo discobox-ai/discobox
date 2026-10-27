@@ -40,14 +40,6 @@ func newBindingService(t *testing.T) (*harnessconfigs.Service, *store.Store, str
 	return harnessconfigs.NewService(st, harnessdefs.References{}, false, ""), st, config.ID
 }
 
-func badRequest(t *testing.T, err error) {
-	t.Helper()
-	var statusErr interface{ StatusCode() int }
-	if !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusBadRequest {
-		t.Fatalf("err = %v, want 400", err)
-	}
-}
-
 func conflict(t *testing.T, err error) {
 	t.Helper()
 	var statusErr interface{ StatusCode() int }
@@ -111,33 +103,6 @@ func TestUnsetDefaultHarnessConfigRequiresDefault(t *testing.T) {
 
 	_, err := svc.UnsetDefaultHarnessConfig(ctx, "project-1", configID)
 	conflict(t, err)
-}
-
-func TestSetHarnessConfigSecretBindingValidates(t *testing.T) {
-	ctx := context.Background()
-	svc, st, configID := newBindingService(t)
-	sec := &model.Secret{ProjectID: "project-1", Name: "openai", Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"t"}`)}
-	if err := st.CreateSecret(ctx, sec); err != nil {
-		t.Fatalf("create secret: %v", err)
-	}
-
-	if _, err := svc.SetHarnessConfigSecretBinding(ctx, "project-1", configID, "1BAD", sec.ID); err == nil {
-		t.Fatal("expected invalid env name to fail")
-	} else {
-		badRequest(t, err)
-	}
-
-	if _, err := svc.SetHarnessConfigSecretBinding(ctx, "project-1", configID, "OPENAI_API_KEY", "does-not-exist"); err == nil {
-		t.Fatal("expected missing secret to fail")
-	}
-
-	binding, err := svc.SetHarnessConfigSecretBinding(ctx, "project-1", configID, "OPENAI_API_KEY", sec.ID)
-	if err != nil {
-		t.Fatalf("bind: %v", err)
-	}
-	if binding.EnvName != "OPENAI_API_KEY" || binding.SecretID != sec.ID {
-		t.Fatalf("binding = %#v", binding)
-	}
 }
 
 func TestDeleteDefaultHarnessConfigClearsProjectDefault(t *testing.T) {

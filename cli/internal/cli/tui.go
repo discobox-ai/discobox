@@ -633,7 +633,7 @@ func fetchFrom[T any](ctx context.Context, d *apiDataSource, s *tuiServer, fetch
 
 // on is the data source for the server the window lists as name: this one for
 // the primary, and for a window with one server, whatever the name. It is how
-// the server-scoped calls — harnesses, secrets, grants, answering a request —
+// the server-scoped calls — harnesses, secrets, bindings, answering a request —
 // reach the server the window said (ADR 0131 §3), where the calls about one
 // discobox find theirs from its ID (at).
 func (d *apiDataSource) on(ctx context.Context, name string) (*apiDataSource, error) {
@@ -1209,6 +1209,7 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 		opts.ReportDeclaredSource = func(source sandboxcreate.DeclaredSource) {
 			report(declaredSourceLine(source))
 		}
+		opts.ReportInlineSecret = func(line string) { report(terminalSafe(line)) }
 	}
 	// A warning is its own line, which the window keeps on screen: escaped,
 	// since a repository's files can be what it is about (cli/REVIEW.md).
@@ -1238,13 +1239,10 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
-	if opts.Grants, err = sandboxcreate.ParseGrants(req.Grant); err != nil {
+	if opts.Bindings, err = sandboxcreate.ParseBindings(req.Bind, req.Delegate); err != nil {
 		return tui.Sandbox{}, err
 	}
 	opts.DiscoboxAPI = req.DiscoboxAPI
-	if err := d.app.resolveGrantSecrets(ctx, d.client, d.projectID, opts.Grants); err != nil {
-		return tui.Sandbox{}, err
-	}
 	if opts.PoolID, opts.Platform, err = d.app.newSandboxPlacement(ctx, d.client, d.projectID, req.Pool); err != nil {
 		return tui.Sandbox{}, err
 	}

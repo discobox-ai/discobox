@@ -36,13 +36,11 @@ import (
 // the value set. Both sides must stay identical.
 var yamlEnumAliases = map[string]string{
 	"CreateSecretBody.type":                      "Secret.type",
-	"CreateSecretRequestBody.type":               "SecretRequest.type",
-	"CreateSecretGrantBody.scope":                "SecretGrant.scope",
-	"CreateSecretGrantBody.purpose":              "SecretGrant.purpose",
-	"ApproveSecretRequestBody.scope":             "SecretGrant.scope",
-	"CreateSandboxCredentialRequestBody.purpose": "SecretGrant.purpose",
-	"SandboxCredential.purpose":                  "SecretGrant.purpose",
-	"SandboxCredentialRequestStatus.purpose":     "SecretGrant.purpose",
+	"CreateSandboxCredentialRequestBody.purpose": "SecretRequest.purpose",
+	"SandboxCredential.purpose":                  "SecretRequest.purpose",
+	"SandboxCredentialRequestStatus.purpose":     "SecretRequest.purpose",
+	"CreateSecretBindingBody.targetKind":         "SecretBinding.targetKind",
+	"BoundSecret.from":                           "SecretBinding.targetKind",
 	"ResolveSandboxSecretResponse.status":        "SecretRequest.status",
 	// The sandbox owns the full existence vocabulary, so the tag on the embedded
 	// ResourceLifecycle is authoritative for it. The pool does not match:

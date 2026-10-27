@@ -44,7 +44,7 @@ func TestReplaceRoutes(t *testing.T) {
 	}
 	sec.Routes = []SecretRoute{{Host: "githubcopilot.com"}, {Host: "github.com", Blocked: true}}
 	want := []secretroute.Route{{Host: "githubcopilot.com"}, {Host: "github.com", Blocked: true}}
-	got := sec.ProxyRoutes()
+	got := ProxyRoutes(sec.Routes)
 	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("proxy routes = %+v, want %+v", got, want)
 	}

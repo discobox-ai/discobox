@@ -32,7 +32,7 @@ func TestAuditGetReadsAnExchangeInFull(t *testing.T) {
 				"runtime":{"state":"ready","desiredState":"present","generation":1,"observedGeneration":1},
 				"createdAt":"2026-09-17T09:00:00Z","updatedAt":"2026-09-17T09:00:01Z"}`))
 		case strings.HasSuffix(r.URL.Path, "/secrets/sec_gh"):
-			_, _ = w.Write([]byte(`{"id":"sec_gh","projectId":"project-1","name":"GitHub token","type":"token","maxGrantTTLSeconds":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+			_, _ = w.Write([]byte(`{"id":"sec_gh","projectId":"project-1","name":"GitHub token","type":"token","maxBindingTTLSeconds":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 		case strings.HasSuffix(r.URL.Path, "/secrets/sec_gone"):
 			// Deleted since: the record still names it, by ID.
 			w.Header().Set("Content-Type", "application/problem+json")

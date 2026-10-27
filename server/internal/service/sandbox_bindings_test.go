@@ -18,12 +18,12 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
-// githubGrant is a grant of the secret for a new discobox, in GH_TOKEN.
-func githubGrant(secretID string) serverapi.SandboxGrant {
-	return serverapi.SandboxGrant{
-		SecretId: serverapi.NewOptString(secretID),
-		EnvVar:   serverapi.NewOptString("GH_TOKEN"),
-		Hosts:    []string{"github.com"},
+// githubBinding binds the secret on a new discobox for use in GH_TOKEN.
+func githubBinding(secret string) serverapi.SandboxBindingInput {
+	return serverapi.SandboxBindingInput{
+		Secret: secret,
+		EnvVar: serverapi.NewOptString("GH_TOKEN"),
+		Routes: []serverapi.SecretRouteInput{{Host: "github.com"}},
 	}
 }
 
@@ -32,9 +32,10 @@ func createGitHubSecret(ctx context.Context, t *testing.T, svc interface {
 }, projectID string) *model.Secret {
 	t.Helper()
 	secret, err := svc.CreateSecret(ctx, projectID, services.CreateSecretBody{
-		Name:  "github",
-		Type:  serverapi.CreateSecretBodyTypeToken,
-		Value: serverapi.SecretValue{Token: serverapi.NewOptString("ghp_realrealrealrealrealrealrealreal12")},
+		Name:   "github",
+		Type:   serverapi.CreateSecretBodyTypeToken,
+		Value:  serverapi.SecretValue{Token: serverapi.NewOptString("ghp_realrealrealrealrealrealrealreal12")},
+		Routes: serverapi.NewOptNilSecretRouteInputArray([]serverapi.SecretRouteInput{{Host: "*"}}),
 	})
 	if err != nil {
 		t.Fatalf("create secret: %v", err)
@@ -42,8 +43,8 @@ func createGitHubSecret(ctx context.Context, t *testing.T, svc interface {
 	return secret
 }
 
-// A discobox can be created already holding project secrets: grants for it,
-// and the bindings that deliver them, stored with it.
+// A discobox can be created already holding project secrets: bindings on it,
+// stored with it.
 func TestADiscoboxIsCreatedWithTheSecretsItIsGiven(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, projectID := newSandboxTestService(t, nil)
@@ -52,7 +53,7 @@ func TestADiscoboxIsCreatedWithTheSecretsItIsGiven(t *testing.T) {
 	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
 		Config:      serverapi.SandboxCreateConfig{Name: "worker"},
-		Grants:      []serverapi.SandboxGrant{githubGrant(secret.ID)},
+		Bindings:    []serverapi.SandboxBindingInput{githubBinding(secret.ID)},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -65,13 +66,13 @@ func TestADiscoboxIsCreatedWithTheSecretsItIsGiven(t *testing.T) {
 		t.Fatalf("credentials = %#v, want the one it was given", credentials)
 	}
 	got := credentials[0]
-	if got.EnvName != "GH_TOKEN" || !slices.Equal(got.Hosts, []string{"github.com"}) || got.Purpose != model.SecretGrantPurposeUse {
+	if got.EnvName != "GH_TOKEN" || !slices.Equal(got.Hosts, []string{"github.com"}) || got.Purpose != model.SecretPurposeUse {
 		t.Fatalf("credential = %+v, want github.com in GH_TOKEN", got)
 	}
 }
 
 // ensureLead creates the lead discobox, sbx-lead, the first time it is asked
-// for: a grant names a discobox that exists, and a create from the sandbox role
+// for: a binding names a discobox that exists, and a create from the sandbox role
 // is bounded by its creator's egress policy, read off its row
 // (ADR 26-10-01-032 §4).
 func ensureLead(t *testing.T, st *store.Store, projectID string) {
@@ -92,31 +93,31 @@ func ensureLead(t *testing.T, st *store.Store, projectID string) {
 	}
 }
 
-// delegateToLead gives the lead a delegation grant of secret to github.com,
-// lapsing after lifetime (none when zero). The lead is created the first time:
-// a grant names a discobox that exists.
-func delegateToLead(t *testing.T, st *store.Store, projectID string, secret *model.Secret, lifetime time.Duration) *model.SecretGrant {
+// delegateToLead gives the lead a delegate binding of secret, lapsing after
+// lifetime (none when zero). The lead is created the first time: a binding
+// names a discobox that exists.
+func delegateToLead(t *testing.T, st *store.Store, projectID string, secret *model.Secret, lifetime time.Duration) *model.SecretBinding {
 	t.Helper()
 	ctx := context.Background()
 	ensureLead(t, st, projectID)
-	grant := &model.SecretGrant{
-		ProjectID: projectID, SecretID: secret.ID, Scope: model.SecretGrantScopeSandbox, ScopeKey: "sbx-lead",
-		Hosts: []string{"github.com"}, GrantedBy: "user-1", Purpose: model.SecretGrantPurposeDelegate,
+	binding := &model.SecretBinding{
+		ProjectID: projectID, SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: "sbx-lead",
+		Delegate: true, Routes: []model.SecretRoute{{Host: "github.com"}}, CreatedBy: "user-1",
 	}
 	if lifetime > 0 {
 		expires := time.Now().UTC().Add(lifetime)
-		grant.ExpiresAt = &expires
+		binding.ExpiresAt = &expires
 	}
-	if err := st.CreateSecretGrant(ctx, grant); err != nil {
-		t.Fatalf("create delegation grant: %v", err)
+	if err := st.CreateSecretBinding(ctx, binding, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatalf("create delegate binding: %v", err)
 	}
-	return grant
+	return binding
 }
 
-// What a sandbox creates it creates as the user who created it, and the grants
-// it gives are recorded as its own doing, under the delegation it holds. It
-// gives grants, never values (ADR 26-10-27-880 §§3, 5).
-func TestADiscoboxCreatedByASandboxIsItsUsersAndItsGrantsAreTheSandboxs(t *testing.T) {
+// What a sandbox creates it creates as the user who created it, and the
+// bindings it gives are recorded as its own doing, under the delegate binding
+// it holds. It gives bindings, never values (ADR 26-10-27-880 §§3, 5).
+func TestADiscoboxCreatedByASandboxIsItsUsersAndItsBindingsAreTheSandboxs(t *testing.T) {
 	ctx := context.Background()
 	svc, _, st, projectID := newSandboxTestService(t, nil)
 	secret := createGitHubSecret(ctx, t, svc, projectID)
@@ -128,7 +129,7 @@ func TestADiscoboxCreatedByASandboxIsItsUsersAndItsGrantsAreTheSandboxs(t *testi
 	created, err := svc.CreateSandbox(lead, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
 		Config:      serverapi.SandboxCreateConfig{Name: "worker"},
-		Grants:      []serverapi.SandboxGrant{githubGrant(secret.ID)},
+		Bindings:    []serverapi.SandboxBindingInput{githubBinding(secret.ID)},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -139,60 +140,54 @@ func TestADiscoboxCreatedByASandboxIsItsUsersAndItsGrantsAreTheSandboxs(t *testi
 	if created.CreatedBySandboxID == nil || *created.CreatedBySandboxID != "sbx-lead" {
 		t.Fatalf("created by sandbox %v, want the lead (ADR 26-09-24-630 §1)", created.CreatedBySandboxID)
 	}
-	grants, err := svc.ListSecretGrants(ctx, projectID, secret.ID)
-	var given []model.SecretGrant
-	for _, grant := range grants {
-		if grant.Purpose == model.SecretGrantPurposeUse {
-			given = append(given, grant)
-		}
-	}
-	if err != nil || len(given) != 1 || given[0].GrantedBy != "sbx-lead" || given[0].ScopeKey != created.ID {
-		t.Fatalf("grants = %+v, %v; want one for the worker, granted by the lead", given, err)
+	given, err := svc.ListSecretBindings(ctx, projectID, services.SecretBindingQuery{TargetKind: model.SecretBindingTargetSandbox, Target: created.ID})
+	if err != nil || len(given) != 1 || given[0].CreatedBy != "sbx-lead" || !given[0].Use {
+		t.Fatalf("bindings = %+v, %v; want one for the worker, made by the lead", given, err)
 	}
 	if given[0].ExpiresAt == nil || given[0].ExpiresAt.After(*delegation.ExpiresAt) {
-		t.Fatalf("grant expires %v, want no later than the delegation it was made under", given[0].ExpiresAt)
+		t.Fatalf("binding expires %v, want no later than the delegation it was made under", given[0].ExpiresAt)
 	}
-	if given[0].DelegationID != delegation.ID {
-		t.Fatalf("grant made under %q, want the lead's delegation %s", given[0].DelegationID, delegation.ID)
+	if given[0].ParentID != delegation.ID {
+		t.Fatalf("binding made under %q, want the lead's delegation %s", given[0].ParentID, delegation.ID)
 	}
 
 	_, err = svc.CreateSandbox(lead, projectID, services.CreateSandboxBody{
 		HarnessName: serverapi.NewOptString("shell"),
 		Config: serverapi.SandboxCreateConfig{Name: "leaky", Secrets: []serverapi.SandboxSecretInput{{
-			Env: "GH_TOKEN", SecretId: serverapi.NewOptString(secret.ID),
+			Env: "GH_TOKEN", Value: "ghp_inline",
 		}}},
 	})
 	requireStatus(t, err, http.StatusForbidden)
 }
 
-// A create whose grants cannot all be given creates nothing: a discobox that
+// A create whose bindings cannot all be made creates nothing: a discobox that
 // started without a use it was meant to have would be doing different work.
-func TestACreateThatCannotGiveItsGrantsCreatesNothing(t *testing.T) {
+func TestACreateThatCannotMakeItsBindingsCreatesNothing(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, projectID := newSandboxTestService(t, nil)
 	secret := createGitHubSecret(ctx, t, svc, projectID)
 
-	noVariable := githubGrant(secret.ID)
+	noVariable := githubBinding(secret.ID)
 	noVariable.EnvVar = serverapi.OptString{}
-	noHost := githubGrant(secret.ID)
-	noHost.Hosts = nil
+	badRoute := githubBinding(secret.ID)
+	badRoute.Routes = []serverapi.SecretRouteInput{{Host: " "}}
 	other := createSecretNamed(ctx, t, svc, projectID, "gitlab")
-	twoForOneVariable := githubGrant(other.ID)
+	twoForOneVariable := githubBinding(other.ID)
 
 	for name, tc := range map[string]struct {
-		grants []serverapi.SandboxGrant
-		want   int
+		bindings []serverapi.SandboxBindingInput
+		want     int
 	}{
-		"a grant without a variable":      {[]serverapi.SandboxGrant{noVariable}, http.StatusBadRequest},
-		"a grant without a host":          {[]serverapi.SandboxGrant{noHost}, http.StatusBadRequest},
-		"a secret that does not exist":    {[]serverapi.SandboxGrant{githubGrant("sec_nobody")}, http.StatusNotFound},
-		"two credentials in one variable": {[]serverapi.SandboxGrant{githubGrant(secret.ID), twoForOneVariable}, http.StatusBadRequest},
+		"a binding without a variable":    {[]serverapi.SandboxBindingInput{noVariable}, http.StatusBadRequest},
+		"a route with no host":            {[]serverapi.SandboxBindingInput{badRoute}, http.StatusBadRequest},
+		"a secret that does not exist":    {[]serverapi.SandboxBindingInput{githubBinding("sec_nobody")}, http.StatusNotFound},
+		"two credentials in one variable": {[]serverapi.SandboxBindingInput{githubBinding(secret.ID), twoForOneVariable}, http.StatusBadRequest},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 				HarnessName: serverapi.NewOptString("shell"),
 				Config:      serverapi.SandboxCreateConfig{Name: "worker"},
-				Grants:      tc.grants,
+				Bindings:    tc.bindings,
 			})
 			requireStatus(t, err, tc.want)
 			sandboxes, err := svc.ListSandboxes(ctx, projectID, "", nil, nil)
@@ -285,8 +280,8 @@ func TestASandboxsSourceIsDeliveredAsAPersonsIs(t *testing.T) {
 	}
 }
 
-// A discobox gives on a create only what it was delegated; a grant it may not
-// give refuses the whole create, which then creates nothing (ADR 26-10-27-880
+// A discobox gives on a create only what it was delegated; a binding it may
+// not make refuses the whole create, which then creates nothing (ADR 26-10-27-880
 // §5). A person's create is not held to any of it.
 func TestADiscoboxGivesOnACreateOnlyWhatItWasDelegated(t *testing.T) {
 	ctx := context.Background()
@@ -300,7 +295,7 @@ func TestADiscoboxGivesOnACreateOnlyWhatItWasDelegated(t *testing.T) {
 		_, err := svc.CreateSandbox(as, projectID, services.CreateSandboxBody{
 			HarnessName: serverapi.NewOptString("shell"),
 			Config:      serverapi.SandboxCreateConfig{Name: name},
-			Grants:      []serverapi.SandboxGrant{githubGrant(secret.ID)},
+			Bindings:    []serverapi.SandboxBindingInput{githubBinding(secret.ID)},
 		})
 		return err
 	}
@@ -319,14 +314,14 @@ func TestADiscoboxGivesOnACreateOnlyWhatItWasDelegated(t *testing.T) {
 
 	requireStatus(t, create(lead, "undelegated"), http.StatusForbidden)
 	if created("undelegated") {
-		t.Fatal("a create refused for a grant it could not give created a discobox")
+		t.Fatal("a create refused for a binding it could not make created a discobox")
 	}
 	delegateToLead(t, st, projectID, secret, time.Hour)
 	if err := create(lead, "delegated"); err != nil {
 		t.Fatalf("a create under a delegation: %v", err)
 	}
 	if err := create(ctx, "a-persons"); err != nil {
-		t.Fatalf("a person's create with a grant: %v", err)
+		t.Fatalf("a person's create with a binding: %v", err)
 	}
 }
 

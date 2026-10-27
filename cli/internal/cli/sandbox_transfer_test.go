@@ -201,7 +201,7 @@ func TestImportPostsTheArchiveAndReportsWarnings(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"sandbox":` + transferSandboxJSON("sbx_new", "my-box", "") +
-			`,"warnings":["OPENAI_API_KEY was bound to a secret named \"openai\", which this project does not have"]}`))
+			`,"bound":["GH_TOKEN: github","EVIL: \u001b]0;pwned\u0007x"],"warnings":["OPENAI_API_KEY was bound to a secret named \"openai\", which this project does not have"]}`))
 	}))
 	defer server.Close()
 
@@ -230,6 +230,13 @@ func TestImportPostsTheArchiveAndReportsWarnings(t *testing.T) {
 	reportImportWarnings(&stderr, result)
 	if !strings.Contains(stderr.String(), "openai") {
 		t.Errorf("stderr = %q, want the unmatched secret named", stderr.String())
+	}
+	// What the archive bound is said aloud, and escaped: the archive named it.
+	if !strings.Contains(stderr.String(), "bound GH_TOKEN: github") {
+		t.Errorf("stderr = %q, want each bound secret named", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "\x1b") {
+		t.Errorf("stderr = %q, want the archive's escape sequence escaped", stderr.String())
 	}
 }
 

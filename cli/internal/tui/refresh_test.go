@@ -18,8 +18,6 @@ func refreshRequest() CredentialRequest {
 		ID:        "sreq_refresh",
 		SandboxID: "sbx_one",
 		Name:      "github",
-		Host:      "github.com",
-		Type:      "token",
 		Created:   time.Date(2026, 8, 7, 11, 58, 0, 0, time.UTC),
 		Refresh:   &RefreshAsk{SecretID: "sec_gh", Cause: "stale"},
 	}
@@ -30,7 +28,7 @@ func sourceWithRefresh(t *testing.T) (*Model, *fakeSource) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{refreshRequest()}
 	ds.projectSecrets = []Secret{{
-		ID: "sec_gh", Name: "github", Type: "token", Host: "github.com",
+		ID: "sec_gh", Name: "github", Type: "token", Routes: []SecretRoute{{Host: "github.com"}},
 		RefreshCommand: ghCommand, ValueTTL: 5 * time.Minute,
 	}}
 	return newTestModel(t, ds), ds
@@ -144,13 +142,15 @@ func TestARenewalCanBeTypedIn(t *testing.T) {
 	}
 }
 
-func TestDismissingARefreshDeniesIt(t *testing.T) {
+// A refresh request is dismissed, not denied: it is its own kind of request,
+// and nothing is waiting on a yes or no (ADR 26-10-27-880 §1).
+func TestDismissingARefreshDismissesIt(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRefresh(t)
 	openRefresh(t, m)
 	drain(t, m, m.dialog.action("dismiss"), 0)
-	if !slices.Equal(ds.denials, []string{"sreq_refresh"}) || len(ds.renewals) != 0 {
-		t.Fatalf("denials = %v, renewals = %v", ds.denials, ds.renewals)
+	if !slices.Equal(ds.dismissed, []string{"sreq_refresh"}) || len(ds.denials) != 0 || len(ds.renewals) != 0 {
+		t.Fatalf("dismissed = %v, denials = %v, renewals = %v", ds.dismissed, ds.denials, ds.renewals)
 	}
 }
 
@@ -210,8 +210,10 @@ func TestAValueLifetimeCanBeChosenAndChanged(t *testing.T) {
 
 	send(t, m, keyPress("n"))
 	send(t, m, typeString("gcloud")...)
-	send(t, m, keyPress("down"), keyPress("down"), keyPress("down"), keyPress("down")) // kind, host, grant limit, how the value is given
-	send(t, m, keyPress("right"), keyPress("down"))                                    // from a command, onto it
+	send(t, m, keyPress("down"), keyPress("down")) // past the kind, onto where it may be sent
+	send(t, m, typeString("oauth2.googleapis.com")...)
+	send(t, m, keyPress("down"), keyPress("down"))  // the binding limit, how the value is given
+	send(t, m, keyPress("right"), keyPress("down")) // from a command, onto it
 	send(t, m, typeString("gcloud auth print-access-token")...)
 	send(t, m, keyPress("down"), keyPress("right"), keyPress("right")) // a value lasts: 5m → 15m → 1h
 	send(t, m, keyPress("ctrl+s"))
@@ -253,7 +255,7 @@ func TestAnExchangeCredentialOpensOnItsFields(t *testing.T) {
 	}
 	send(t, m, keyPress("esc"))
 
-	secret := Secret{ID: "sec_bx", Name: "boxd", Type: "exchange", Host: "boxd.sh",
+	secret := Secret{ID: "sec_bx", Name: "boxd", Type: "exchange", Routes: []SecretRoute{{Host: "boxd.sh"}},
 		Exchange: &SecretExchange{URL: "https://app.boxd.sh/api/v1/auth/token", Fields: []string{"api_key", "org"}}}
 	drain(t, m, m.editSecretForm("", secret), 0)
 	f := m.dialog.form
@@ -284,7 +286,7 @@ func TestASecretFromACommandIsNamedByItAndNotOfferedTwice(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 	ds.mu.Lock()
 	ds.projectSecrets = append(ds.projectSecrets, Secret{
-		ID: "sec_ghcmd", Name: "github", Type: "token", Host: "github.com", RefreshCommand: ghCommand,
+		ID: "sec_ghcmd", Name: "github", Type: "token", Routes: []SecretRoute{{Host: "github.com"}}, RefreshCommand: ghCommand,
 	})
 	ds.mu.Unlock()
 	send(t, m, credentialsLoadedMsg{requests: ds.requests})

@@ -6,7 +6,7 @@ with, or for a host whose certificate the egress refuses to be trusted, and
 reports when the answer comes. It never carries a credential's value: a
 granted credential is delivered by the service — Discobox puts a sentinel in
 the variable the request named, and its egress swaps it for the value on the
-hosts the grant covers ([ADR 26-10-27-880](../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)).
+routes its secret and its binding allow ([ADR 26-10-27-880](../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)).
 So the agent uses a granted credential by running the command that needs it;
 there is nothing to wrap.
 

@@ -16,7 +16,7 @@ func formatFixture(t *testing.T) (*Model, *fakeSource) {
 		{ID: "sec_read", Name: "anthropic", Type: "token", MaxTTL: time.Hour, Format: "sk-ant-api03-{base64url:95}"},
 		{ID: "sec_set", Name: "custom", Type: "token", MaxTTL: time.Hour, Format: "sk-custom-{hex:40}", FormatSet: true},
 	}
-	ds.projectGrants = nil
+	ds.projectBindings = nil
 	ds.mu.Unlock()
 	send(t, m, keyPress("r"))
 	return m, ds
@@ -111,6 +111,7 @@ func TestANewSecretTakesAFormat(t *testing.T) {
 	send(t, m, keyPress("n"))
 	typeInto(t, m, "name", "claude")
 	typeInto(t, m, "token", "sk-ant-oat01-real")
+	typeInto(t, m, secretRouteKey+"0", "api.anthropic.com")
 	typeInto(t, m, "format", "sk-ant-oat01-{base64url:95}")
 	drain(t, m, submitForm(t, m), 0)
 	if len(ds.createdSecrets) != 1 || ds.createdSecrets[0].Format != "sk-ant-oat01-{base64url:95}" {

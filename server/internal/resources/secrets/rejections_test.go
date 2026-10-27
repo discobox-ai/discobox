@@ -24,7 +24,7 @@ func TestRecordRejectionOfATokenNeedsAPerson(t *testing.T) {
 	svc, st := newResolveFixture(t)
 
 	sec := mustSecret(t, st, "gh", "dead-token")
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
@@ -62,7 +62,7 @@ func TestRecordRejectionRenewsAnOAuthCredentialBeforeJudgingIt(t *testing.T) {
 		ClientID:             "client-1",
 		AccessTokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
@@ -110,7 +110,7 @@ func TestRecordRejectionRecordsAFailedRenewal(t *testing.T) {
 		ClientID:             "client-1",
 		AccessTokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
@@ -141,7 +141,7 @@ func TestRecordRejectionAfterASuccessfulRenewalSaysSo(t *testing.T) {
 		ClientID:             "client-1",
 		AccessTokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
@@ -172,7 +172,7 @@ func TestRecordRejectionRenewsOncePerCooldown(t *testing.T) {
 		ClientID:             "client-1",
 		AccessTokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	for _, sandbox := range []string{"sb-1", "sb-2", "sb-3"} {
 		createSandbox(t, st, sandbox, "pool-1")
 		mustAssign(t, st, sandbox, sec.ID, "SENTINEL-"+sandbox)
@@ -231,7 +231,7 @@ func TestARenewalThatFixesNothingIsNotRecoveryTwice(t *testing.T) {
 		ClientID:             "client-1",
 		AccessTokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
@@ -265,7 +265,7 @@ func TestRecordRejectionIsPerHost(t *testing.T) {
 	svc, st := newResolveFixture(t)
 
 	sec := mustSecret(t, st, "gh", "a-token")
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
@@ -295,7 +295,7 @@ func TestAcceptedOutcomeClearsARejection(t *testing.T) {
 	svc, st := newResolveFixture(t)
 
 	sec := mustSecret(t, st, "gh", "dead-token")
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
@@ -317,7 +317,7 @@ func TestReplacingASecretValueClearsItsRejections(t *testing.T) {
 	svc, st := newResolveFixture(t)
 
 	sec := mustSecret(t, st, "gh", "dead-token")
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 	if err := svc.RecordSandboxSecretRejection(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.github.com", resourcesecrets.SecretRejectedOutcome); err != nil {
@@ -363,12 +363,12 @@ func TestListSecretRejectionsNamesTheHarnessThatOwnsTheCredential(t *testing.T) 
 	if err := st.UpdateHarnessConfig(ctx, cfg); err != nil {
 		t.Fatalf("update harness config: %v", err)
 	}
-	if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
-		ProjectID: "project-1", HarnessConfigID: cfg.ID, EnvName: "ANTHROPIC_API_KEY", SecretID: sec.ID,
-	}); err != nil {
+	if err := st.CreateSecretBinding(ctx, &model.SecretBinding{
+		ProjectID: "project-1", SecretID: sec.ID, TargetKind: model.SecretBindingTargetHarnessConfig, TargetID: cfg.ID, Use: true, EnvName: "ANTHROPIC_API_KEY",
+	}, store.BindingChange{Actor: "user-1"}); err != nil {
 		t.Fatalf("create binding: %v", err)
 	}
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeHarnessConfig, cfg.ID)
+	mustBind(t, st, sec.ID, model.SecretBindingTargetHarnessConfig, cfg.ID)
 	createSandboxWithHarness(t, st, "sb-1", "pool-1", cfg.ID)
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
@@ -473,7 +473,7 @@ func TestATokenEndpointOutageIsNotAVerdict(t *testing.T) {
 		ClientID:             "client-1",
 		AccessTokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
@@ -516,7 +516,7 @@ func TestARefusedRenewalIsAVerdict(t *testing.T) {
 		ClientID:             "client-1",
 		AccessTokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
@@ -590,7 +590,7 @@ func TestAStandingRejectionSurvivesAnUnjudgeableRenewal(t *testing.T) {
 		ClientID:             "client-1",
 		AccessTokenExpiresAt: time.Now().Add(time.Hour).UnixMilli(),
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 

@@ -96,7 +96,7 @@ func TestDeleteHarnessConfigClearsProjectDefault(t *testing.T) {
 		t.Fatalf("set project default harness config: %v", err)
 	}
 
-	if err := s.DeleteHarnessConfig(ctx, project.ID, otherConfig.ID); err != nil {
+	if err := s.DeleteHarnessConfig(ctx, project.ID, otherConfig.ID, nil); err != nil {
 		t.Fatalf("delete non-default harness config: %v", err)
 	}
 	got, err := s.GetProject(ctx, project.ID)
@@ -107,7 +107,7 @@ func TestDeleteHarnessConfigClearsProjectDefault(t *testing.T) {
 		t.Fatalf("default after non-default delete = %q, want %q", got.DefaultHarnessConfigID, defaultConfig.ID)
 	}
 
-	if err := s.DeleteHarnessConfig(ctx, project.ID, defaultConfig.ID); err != nil {
+	if err := s.DeleteHarnessConfig(ctx, project.ID, defaultConfig.ID, nil); err != nil {
 		t.Fatalf("delete default harness config: %v", err)
 	}
 	got, err = s.GetProject(ctx, project.ID)
@@ -131,7 +131,7 @@ func TestDeleteHarnessConfigHardDeletes(t *testing.T) {
 	if err := s.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)
 	}
-	if err := s.DeleteHarnessConfig(ctx, config.ProjectID, config.ID); err != nil {
+	if err := s.DeleteHarnessConfig(ctx, config.ProjectID, config.ID, nil); err != nil {
 		t.Fatalf("delete harness config: %v", err)
 	}
 

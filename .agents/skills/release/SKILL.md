@@ -140,11 +140,11 @@ wrong repo, this is why.
 
 Every GitHub step in this skill runs on one `GH_TOKEN` with host `github.com`:
 `git push` over https, and every `gh` call, which goes to `api.github.com` and
-is covered by the same grant. Ask for all of it in one request, so the human
+is covered by the same credential. Ask for all of it in one request, so the human
 answers once and the release then runs without them.
 
 1. **Settle the version first.** The justification names it, and a version
-   changed after the grant is a second request. If the user did not name one and it is
+   changed after it is granted is a second request. If the user did not name one and it is
    not a plain patch bump, ask the patch-or-minor question now, not at the tag.
 2. **Request before anything else, in the background**, and run the local
    `ci:test` and `ci:check` while the human answers:
@@ -170,8 +170,8 @@ it down:
   moves whenever CI needs a fix or `main` moves under you — one release went through
   three candidate commits — and an approval naming one commit cannot honestly
   be stretched to another. §3's gate is what picks the commit.
-- **Ask for how long it takes.** The approver picks the grant's lifetime, from
-  `grantTTLSeconds` as the default. One grant lasted an hour, less than a
+- **Ask for how long it takes.** The approver picks the binding's lifetime, from
+  `grantTTLSeconds` as the default. One lasted an hour, less than a
   release with a CI fix in it takes.
 - **Never two requests in flight.** One filed while another is still pending
   comes back as that one — same request ID — and what it asked for is never

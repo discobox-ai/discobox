@@ -174,7 +174,7 @@ func (s *Service) ApproveTrustRequest(ctx context.Context, projectID, requestID 
 		Pin:       pin,
 		PinPEM:    pinPEM,
 		ExpiresAt: time.Now().UTC().Add(time.Duration(ttl) * time.Second),
-		GrantedBy: grantedByOf(principal),
+		GrantedBy: principal.Actor(),
 		RequestID: req.ID,
 	}
 	if err := s.store.ApproveHostTrustRequest(ctx, req, trust); err != nil {

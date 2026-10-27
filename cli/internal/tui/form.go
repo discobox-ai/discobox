@@ -12,12 +12,12 @@ import (
 // The form: one card that asks everything a decision needs, instead of a run of
 // dialogs that ask one thing each.
 //
-// A pre-approval is seven questions — scope, what it resolves against, how it
-// may be used, the variable, the use, the host, the lifetime — and a sequence
+// A binding is seven questions — what it is on, which harness or discobox, what
+// it is for, the variable, the routes, the lifetime — and a sequence
 // of modals is the wrong shape for that. Nothing can be revised
 // without abandoning the run and starting again, the answers already given are
 // off screen by the third question, and a person can only see the shape of what
-// they are granting once it is granted.
+// they are binding once it is bound.
 //
 // A form shows the whole decision at once, with rows appearing as the answers
 // above them make them relevant: choosing "anything in the discobox" takes the
@@ -443,7 +443,7 @@ func (f *form) viewValue(st *styles, i, valueW int) string {
 	if !f.answerable(i) {
 		// A row that does not apply says so, whatever it happens to hold: the
 		// harness picker still knows which harness it was on, and drawing that
-		// under a project-scoped grant would state a fact the grant does not
+		// under a binding to the project would state a fact the binding does not
 		// carry. A locked row is the other way round — it exists to show what
 		// the credential already is — so it draws its value, unless the value
 		// is one nothing may draw.
@@ -461,7 +461,7 @@ func (f *form) viewValue(st *styles, i, valueW int) string {
 	if len(row.choices) > 0 {
 		label := row.choices[row.at].label
 		if len(row.choices) == 1 {
-			// Nothing to cycle through: it is a fact about the grant rather
+			// Nothing to cycle through: it is a fact about the binding rather
 			// than a choice, and marks around it would offer a move that does
 			// nothing.
 			return st.name.Render(truncate(label, valueW))

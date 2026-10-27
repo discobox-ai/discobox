@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/pkg/endpoint"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 type principalKey struct{}
@@ -135,4 +136,27 @@ func normalizeScopes(scopes []string) []string {
 		out = append(out, scope)
 	}
 	return out
+}
+
+// Actor is who a change made by the principal is recorded as having made it,
+// as a binding's history records it (ADR 26-10-27-880 §6). A sandbox acts as
+// the user who created it but is recorded as itself: the change was its doing
+// (ADR 0140 §4). A change no principal made is the system's.
+func (p Principal) Actor() string {
+	switch {
+	case p.Type == PrincipalTypeSandbox && p.SandboxID != "":
+		return p.SandboxID
+	case p.UserID != "":
+		return p.UserID
+	case p.PoolID != "":
+		return p.PoolID
+	}
+	return model.SecretBindingActorSystem
+}
+
+// ActorFromContext is the Actor of the request's principal, or the system's
+// when there is none.
+func ActorFromContext(ctx context.Context) string {
+	principal, _ := PrincipalFromContext(ctx)
+	return principal.Actor()
 }

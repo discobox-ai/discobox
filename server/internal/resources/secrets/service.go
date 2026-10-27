@@ -18,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
 	"github.com/discobox-ai/discobox/pkg/secretformat"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -25,10 +26,10 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
-// defaultMaxGrantTTLSeconds is the limit a secret gets when its creator
+// defaultMaxBindingTTLSeconds is the limit a secret gets when its creator
 // names none: an hour, which is short enough that forgetting to think about it
-// is not the same as granting forever.
-const defaultMaxGrantTTLSeconds = 3600
+// is not the same as binding forever.
+const defaultMaxBindingTTLSeconds = 3600
 
 type Service struct {
 	store *store.Store
@@ -41,20 +42,22 @@ type Service struct {
 	// See renewedRecently.
 	renewalsMu sync.Mutex
 	renewals   map[string]time.Time
-	// holders marks the sentinel delivery of the discoboxes holding a secret,
-	// in the transaction that changes its routes, so each is sent them.
+	// holders marks the sentinel delivery of the discoboxes a change reaches,
+	// in the transaction that makes it, so each is sent the result.
 	holders SecretHolders
 }
 
-// SecretHolders marks the sentinel delivery of every discobox holding a
-// secret for reconcile, inside the caller's transaction (ADR 26-10-02-924). The sandbox service is one; it
+// SecretHolders marks the sentinel delivery of discoboxes for reconcile,
+// inside the caller's transaction, so what a change gives or takes away
+// reaches each of them (ADR 26-10-27-880 §2). The sandbox service is one; it
 // is set after construction because it is built from this service.
 type SecretHolders interface {
+	// MarkSecretHoldersDirtyTx marks every discobox holding a secret, in the
+	// transaction that changed its routes or removed it.
 	MarkSecretHoldersDirtyTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, secretID string) error
-	// MarkSandboxSentinelsDirtyTx marks one sandbox's sentinel delivery, in
-	// the transaction that bound a variable on it, so the binding reaches it
-	// while it runs.
-	MarkSandboxSentinelsDirtyTx(ctx context.Context, txDB *gorm.DB, projectID, sandboxID string) error
+	// MarkBindingHoldersDirtyTx marks every discobox the bindings' targets
+	// cover, in the transaction that made, changed or removed them.
+	MarkBindingHoldersDirtyTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID string, bindings []model.SecretBinding) error
 }
 
 func NewService(store *store.Store) *Service {
@@ -67,13 +70,26 @@ func (s *Service) SetSecretHolders(holders SecretHolders) {
 	s.holders = holders
 }
 
-// replaceRoutes writes the routes a create or update names onto sec (ADR
-// 26-10-02-924). A route without a host, or with a malformed path, is refused
+// routesFrom reads the routes a body names (ADR 26-10-02-924, ADR
+// 26-10-27-939). A route without a host, or with a malformed path, is refused
 // rather than dropped: a person who wrote one meant somewhere.
-func replaceRoutes(sec *model.Secret, input []apigen.SecretRouteInput) (bool, error) {
+func routesFrom(input []apigen.SecretRouteInput) ([]model.SecretRoute, error) {
 	routes := make([]model.SecretRoute, 0, len(input))
 	for _, route := range input {
 		routes = append(routes, model.SecretRoute{Host: route.Host, Path: route.Path.Or(""), Blocked: route.Blocked.Or(false)})
+	}
+	normalized, err := model.NormalizeRoutes(routes)
+	if err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	return normalized, nil
+}
+
+// replaceRoutes writes the routes a create or update names onto sec.
+func replaceRoutes(sec *model.Secret, input []apigen.SecretRouteInput) (bool, error) {
+	routes, err := routesFrom(input)
+	if err != nil {
+		return false, err
 	}
 	changed, err := sec.ReplaceRoutes(routes)
 	if err != nil {
@@ -87,10 +103,14 @@ func (s *Service) ListSecrets(ctx context.Context, projectID string) ([]model.Se
 		return nil, apperrors.NotFound(err, "project not found")
 	}
 	// A discobox sees only the secrets it was delegated: the ones it may hand
-	// on, and so the only ones it may name (ADR 26-09-30-782 §3).
+	// on, and so the only ones it may name (ADR 26-10-27-880 §3).
 	var options []store.SecretListOption
 	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox {
-		options = append(options, store.DelegatedTo(principal.SandboxID))
+		sandbox, err := s.store.GetSandbox(ctx, projectID, principal.SandboxID)
+		if err != nil {
+			return nil, apperrors.NotFound(err, "sandbox not found")
+		}
+		options = append(options, store.DelegatedTo(store.SandboxBindingTargets(sandbox)))
 	}
 	secrets, err := s.store.ListSecrets(ctx, projectID, options...)
 	if err != nil {
@@ -132,25 +152,9 @@ func (s *Service) describeOAuth(ctx context.Context, secret *model.Secret) {
 	}
 }
 
-// normalizeHost is the one reading of a destination host in this package.
-//
-// The proxy reports the host it observed lowercased and without a port. Grants
-// and secrets are matched against it in Go through hostscope.Covers, which
-// normalizes both sides, but a secret's host is part of its unique index, and a
-// stored host is what people read back. Normalizing on the way in is what keeps
-// every stored host comparable to the observed one, whichever of the two does
-// the comparing.
+// normalizeHost is the one reading of a destination host in this package:
+// lowercased and without a port, as the proxy reports the host it observed.
 func normalizeHost(host string) string { return hostscope.Normalize(host) }
-
-// askedHosts reads the hosts a request body names, normalized
-// (ADR 26-10-02-393 §1).
-//
-// named reports whether the body gave the list at all. An empty list is named,
-// and names none: it is how a body asks for the wildcard, where a body that
-// leaves it out takes whatever default the caller has.
-func askedHosts(hosts []string) (list []string, named bool) {
-	return hostscope.List(hosts...), hosts != nil
-}
 
 func (s *Service) CreateSecret(ctx context.Context, projectID string, input services.CreateSecretBody) (*model.Secret, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
@@ -170,17 +174,13 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 	}
 	// An explicit zero is honored, unlike every other unset field here: zero is
 	// the meaningful value "no limit", and a caller who types it is saying
-	// grants on this credential may live forever.
-	ttl := int64(defaultMaxGrantTTLSeconds)
-	if v, ok := input.MaxGrantTTLSeconds.Get(); ok {
+	// bindings of this credential may live forever.
+	ttl := int64(defaultMaxBindingTTLSeconds)
+	if v, ok := input.MaxBindingTTLSeconds.Get(); ok {
 		if v < 0 {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, "a grant limit is a number of seconds; 0 allows grants that never expire")
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, "a binding limit is a number of seconds; 0 allows bindings that never expire")
 		}
 		ttl = v
-	}
-	host := ""
-	if v, ok := input.Host.Get(); ok {
-		host = strings.TrimSpace(v)
 	}
 	if err := checkOAuthValue(secretType, input.Value); err != nil {
 		return nil, err
@@ -193,14 +193,20 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 		ProjectID:      projectID,
 		Name:           name,
 		Type:           secretType,
-		Host:           normalizeHost(host),
 		Format:         format,
 		FormatSet:      formatSet,
-		MaxGrantTTL:    ttl,
+		MaxBindingTTL:  ttl,
 		EncryptedValue: valueBytes,
 	}
 	sec.ValueWritten(time.Now().UTC(), nil)
-	if sec.ExchangeRecipe, err = exchangeRecipe(ctx, secretType, sec.Host, input.Exchange); err != nil {
+	// Routes first: a recipe is held to them. A secret with none is sent
+	// nowhere (ADR 26-10-27-880 §1); `*` is how a person says anywhere.
+	if routes, ok := input.Routes.Get(); ok {
+		if _, err := replaceRoutes(sec, routes); err != nil {
+			return nil, err
+		}
+	}
+	if sec.ExchangeRecipe, err = exchangeRecipe(ctx, secretType, sec.Routes, input.Exchange); err != nil {
 		return nil, err
 	}
 	if sec.Type == model.SecretTypeExchange {
@@ -212,11 +218,6 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 	}
 	if err := createLifetime(input).apply(sec, true); err != nil {
 		return nil, err
-	}
-	if routes, ok := input.Routes.Get(); ok {
-		if _, err := replaceRoutes(sec, routes); err != nil {
-			return nil, err
-		}
 	}
 	if err := s.store.CreateSecret(ctx, sec); err != nil {
 		return nil, secretCollision(err, sec)
@@ -250,9 +251,6 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 		}
 		sec.Name = name
 	}
-	if hostVal, ok := input.Host.Get(); ok {
-		sec.Host = normalizeHost(hostVal)
-	}
 	if input.Format.IsSet() {
 		// Cleared, the store reads the shape from the value again on this
 		// write, the way it does for a value nobody described.
@@ -260,15 +258,15 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 			return nil, err
 		}
 	}
-	if ttl, ok := input.MaxGrantTTLSeconds.Get(); ok {
+	if ttl, ok := input.MaxBindingTTLSeconds.Get(); ok {
 		if ttl < 0 {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, "a grant limit is a number of seconds; 0 allows grants that never expire")
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, "a binding limit is a number of seconds; 0 allows bindings that never expire")
 		}
-		// Lowering the limit binds the grants minted after it, not the ones
-		// already standing: a live grant is an authorization somebody made,
-		// and it is revoked deliberately rather than shortened behind their
+		// Lowering the limit binds the bindings made after it, not the ones
+		// already standing: a live binding is an authorization somebody made,
+		// and it is removed deliberately rather than shortened behind their
 		// back.
-		sec.MaxGrantTTL = ttl
+		sec.MaxBindingTTL = ttl
 	}
 	if err := updateLifetime(input).apply(sec, input.Value.IsSet()); err != nil {
 		return nil, err
@@ -282,7 +280,7 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	// A recipe says where a stored key is sent, so it changes only with the
 	// key beside it: pointing a stored key at a new endpoint would hand it to
 	// whoever runs that endpoint. A new binding is held to the recipe too.
-	recipe, err := exchangeRecipe(ctx, sec.Type, sec.Host, input.Exchange)
+	recipe, err := exchangeRecipe(ctx, sec.Type, sec.Routes, input.Exchange)
 	switch {
 	case err != nil:
 		return nil, err
@@ -291,8 +289,8 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 			"a new exchange recipe is given with the value it exchanges: the stored fields are not sent anywhere new")
 	case recipe != nil:
 		sec.ExchangeRecipe = recipe
-	case sec.ExchangeRecipe != nil && input.Host.IsSet():
-		if err := checkRecipe(sec.ExchangeRecipe, sec.Host); err != nil {
+	case sec.ExchangeRecipe != nil && routesChanged:
+		if err := checkRecipe(sec.ExchangeRecipe, sec.Routes); err != nil {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 		}
 	}
@@ -333,11 +331,26 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	return s.GetSecret(ctx, projectID, sec.ID)
 }
 
+// DeleteSecret removes a secret with its bindings, each recorded as removed,
+// and the sentinels that delivered it. Every discobox that held it is marked
+// in the same transaction, so its pool stops holding a sentinel nothing
+// resolves.
 func (s *Service) DeleteSecret(ctx context.Context, projectID, secretID string) error {
-	if err := s.store.DeleteSecret(ctx, projectID, secretID); err != nil {
+	sec, err := s.store.GetSecret(ctx, projectID, secretID)
+	if err != nil {
 		return apperrors.NotFound(err, "secret not found")
 	}
-	return nil
+	return s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		if s.holders != nil {
+			if err := s.holders.MarkSecretHoldersDirtyTx(ctx, txStore, txDB, projectID, sec.ID); err != nil {
+				return err
+			}
+		}
+		if err := txStore.DeleteSecret(ctx, projectID, sec.ID); err != nil {
+			return apperrors.NotFound(err, "secret not found")
+		}
+		return nil
+	})
 }
 
 func (s *Service) ListSecretRequests(ctx context.Context, projectID, status string) ([]model.SecretRequest, error) {
@@ -351,68 +364,7 @@ func (s *Service) ListSecretRequests(ctx context.Context, projectID, status stri
 	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox {
 		options = append(options, store.OwnedBy(principal.SandboxID))
 	}
-	requests, err := s.store.ListSecretRequests(ctx, projectID, status, options...)
-	if err != nil {
-		return nil, err
-	}
-	for i := range requests {
-		withholdAnswerFromSandbox(ctx, &requests[i])
-	}
-	return requests, nil
-}
-
-func (s *Service) CreateSecretRequest(ctx context.Context, projectID string, input services.CreateSecretRequestBody) (*model.SecretRequest, error) {
-	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apperrors.NotFound(err, "project not found")
-	}
-	secretType := string(input.Type)
-	if !validSecretType(secretType) {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "invalid secret type")
-	}
-	host := normalizeHost(input.Host.Or(""))
-
-	principal, ok := auth.PrincipalFromContext(ctx)
-	if !ok {
-		return nil, apperrors.NewStatusError(http.StatusUnauthorized, "authentication required")
-	}
-	requestedBy := principal.UserID
-	if requestedBy == "" {
-		requestedBy = principal.PoolID
-	}
-	if requestedBy == "" {
-		return nil, apperrors.NewStatusError(http.StatusUnauthorized, "could not determine requesting principal")
-	}
-
-	req := &model.SecretRequest{
-		ProjectID:   projectID,
-		RequestedBy: requestedBy,
-		Type:        secretType,
-		Hosts:       hostscope.List(host),
-		Status:      model.SecretRequestStatusPending,
-	}
-
-	// A non-sandbox request is satisfied immediately only by a project-wide grant
-	// on a matching secret; otherwise it waits for approval.
-	matched, err := s.store.MatchSecret(ctx, projectID, secretType, host)
-	if err != nil && !isAdvisoryMatchError(err) {
-		return nil, err
-	}
-	if err == nil {
-		grant, gerr := s.store.FindLiveGrant(ctx, projectID, matched.ID, host, []store.GrantScope{{Scope: model.SecretGrantScopeProject, ScopeKey: projectID}})
-		if gerr != nil && !errors.Is(gerr, store.ErrNotFound) {
-			return nil, gerr
-		}
-		if grant != nil {
-			req.SecretID = matched.ID
-			req.Status = model.SecretRequestStatusApproved
-			req.GrantID = grant.ID
-		}
-	}
-
-	if err := s.store.CreateSecretRequest(ctx, req); err != nil {
-		return nil, err
-	}
-	return req, nil
+	return s.store.ListSecretRequests(ctx, projectID, status, options...)
 }
 
 func (s *Service) GetSecretRequest(ctx context.Context, projectID, requestID string) (*model.SecretRequest, error) {
@@ -420,18 +372,21 @@ func (s *Service) GetSecretRequest(ctx context.Context, projectID, requestID str
 	if err != nil {
 		return nil, apperrors.NotFound(err, "secret request not found")
 	}
-	withholdAnswerFromSandbox(ctx, req)
 	return req, nil
 }
 
 // errRequestAnswered is an approval that found its request no longer pending.
 var errRequestAnswered = errors.New("the request was answered concurrently")
 
-// ApproveSecretRequest approves a pending request by minting a SecretGrant at the
-// chosen scope and linking it to the request. The grant is the durable
-// authorization future resolutions match against; the request is only marked
-// approved for audit. A change to the secret the approver agreed to along the
-// way is written with the grant, or not at all.
+// ApproveSecretRequest answers a pending request with a binding on the
+// discobox that asked (ADR 26-10-27-880 §5): to use the secret chosen, in the
+// variable it named, or to delegate it. The binding, its event, the mark that
+// delivers it and the request's decision are one transaction.
+//
+// A person may answer any request. A discobox answers a use request from a
+// discobox it created, and only under a live delegate binding covering it of
+// the secret it answers with (§3): the binding is handed on under that one,
+// as its child, and lasts no longer.
 func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID string, input services.ApproveSecretRequestBody) (*model.SecretRequest, error) {
 	req, err := s.store.GetSecretRequest(ctx, projectID, requestID)
 	if err != nil {
@@ -440,146 +395,43 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	if req.Status != model.SecretRequestStatusPending {
 		return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("secret request is already %s", req.Status))
 	}
-	// A refresh request has no grant to mint: it asks for a new value, and is
-	// answered by writing one (ADR 26-09-25-122 §4).
-	if req.IsRefresh() {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest,
-			fmt.Sprintf("a refresh request is answered with a new value, not an approval: `discobox secret refresh %s --run` runs its command, or --value gives one", req.SecretID))
+	if req.SandboxID == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "this request names no discobox to bind the credential to")
 	}
-
-	// A discobox answering the inbox may hand on only what it was delegated
-	// (ADR 26-10-27-880 §3), so the secret is the one a delegation grant it
-	// holds is of, not any the project has.
 	principal, _ := auth.PrincipalFromContext(ctx)
 	approverIsSandbox := principal.Type == auth.PrincipalTypeSandbox
-	// The hosts the approver named, else the ones the request did.
-	hosts, named := askedHosts(input.Hosts)
-	if !named {
-		hosts = req.Hosts
+
+	// The routes the approver named, else the ones the request asked for.
+	routes := req.Routes
+	if input.Routes != nil {
+		if routes, err = routesFrom(input.Routes); err != nil {
+			return nil, err
+		}
 	}
-	secretID := strings.TrimSpace(input.SecretId.Or(""))
-	var secret *model.Secret
-	// The delegation a discobox's approval is made under: the longest-lived
-	// of those that hold it, held to again in the transaction, and what the
-	// grant is traced to.
-	var delegation *model.SecretGrant
+	ttl, ttlNamed := input.TtlSeconds.Get()
+	if ttlNamed && ttl < 0 {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "a binding's lifetime is a number of seconds; 0 is forever")
+	}
+	secretRef := strings.TrimSpace(input.SecretId.Or(""))
+
+	write := &approvalWrite{req: req, routes: routes, ttl: ttl, ttlNamed: ttlNamed, actor: principal.Actor()}
 	if approverIsSandbox {
-		if err := refuseDelegatedApproval(req); err != nil {
+		if req.Delegates() {
+			return nil, apperrors.NewStatusError(http.StatusForbidden,
+				"a discobox never approves a request to delegate: handing on the power to hand on is a person's to approve")
+		}
+		parents, secret, err := s.delegationsFor(ctx, projectID, principal.SandboxID, secretRef)
+		if err != nil {
 			return nil, err
 		}
-		named, namedTTL := input.GrantTTLSeconds.IsSet(), input.GrantTTLSeconds.Or(0)
-		var delegations []*model.SecretGrant
-		if delegations, secret, err = s.delegationsFor(ctx, projectID, principal.SandboxID, secretID, hosts, namedTTL, named); err != nil {
-			return nil, err
-		}
-		delegation = delegations[0]
+		write.secret, write.parents, write.approverID = secret, parents, principal.SandboxID
 	} else {
-		if secretID == "" {
+		if secretRef == "" {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, "secret ID is required")
 		}
-		if secret, err = s.store.GetSecret(ctx, projectID, secretID); err != nil {
-			return nil, apperrors.NotFound(err, "secret not found")
-		}
-	}
-
-	// What the approver agreed to change on the secret so this grant fits it:
-	// its host binding, its grant limit. It is part of the approval rather
-	// than a call ahead of it, so a refused approval leaves the secret as it
-	// was — the change is written in the transaction that mints the grant, and
-	// the grant is checked against the secret as changed.
-	var bindTo *string
-	var limit *int64
-	if host, ok := input.SecretHost.Get(); ok {
-		host = normalizeHost(host)
-		bindTo = &host
-	}
-	if seconds, ok := input.SecretMaxGrantTTLSeconds.Get(); ok {
-		if seconds < 0 {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, "a grant limit is a number of seconds; 0 allows grants that never expire")
-		}
-		limit = &seconds
-	}
-	if bindTo != nil || limit != nil {
-		// An exchange secret's binding is where its key may be sent, which
-		// UpdateSecret holds to the recipe; an approval is no way around it.
-		if bindTo != nil && secret.ExchangeRecipe != nil {
-			if err := checkRecipe(secret.ExchangeRecipe, *bindTo); err != nil {
-				return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
-			}
-		}
-		// A discobox answering the inbox approves with the secret as it is:
-		// its role does not change secrets, and an approval is not a way
-		// around that.
-		if approverIsSandbox {
-			return nil, apperrors.NewStatusError(http.StatusForbidden,
-				"a discobox approves with the secret as it is; a person changes its binding or limit")
-		}
-	}
-
-	scope := strings.TrimSpace(string(input.Scope.Or("")))
-	if scope == "" {
-		// Default to the narrowest scope the request can support.
-		if req.SandboxID != "" {
-			scope = model.SecretGrantScopeSandbox
-		} else {
-			scope = model.SecretGrantScopeProject
-		}
-	}
-
-	// The grant is for what the agent asked: to use the credential, or to
-	// delegate it. A reactive request asked for nothing but use.
-	purpose, err := grantPurpose(req.Purpose)
-	if err != nil {
-		return nil, err
-	}
-	// A protocol-originated request is a different species from one the proxy
-	// minted on hitting an unresolvable sentinel (ADR 0031 §5). Approving one
-	// is scoped to a concrete host and to the asking sandbox, and a use binds
-	// the variable it named there.
-	if req.FromProtocol() {
-		if len(hosts) == 0 {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest,
-				"approving an agent credential request requires a host; a wildcard grant must be created explicitly with `discobox secret grant create`")
-		}
-		if scope != model.SecretGrantScopeSandbox {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest,
-				"an agent credential request can only be approved at sandbox scope")
-		}
-	}
-
-	scopeKey, err := s.grantScopeKey(ctx, projectID, req.SandboxID, scope)
-	if err != nil {
-		return nil, err
-	}
-
-	// A discobox cannot change the secret, so its binding and limit are what
-	// the transaction will find: the grant is held to them here as well, so a
-	// refusal says so before anything is written.
-	if approverIsSandbox {
-		if err := guardGrantHosts(secret, hosts); err != nil {
+		if write.secret, err = s.lookupSecret(ctx, projectID, secretRef); err != nil {
 			return nil, err
 		}
-		if named, ok := input.GrantTTLSeconds.Get(); ok {
-			if err := guardGrantTTL(secret, named); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	write := &approvalWrite{
-		req:        req,
-		secret:     secret,
-		bindTo:     bindTo,
-		limit:      limit,
-		scope:      scope,
-		scopeKey:   scopeKey,
-		hosts:      hosts,
-		purpose:    purpose,
-		delegation: delegation,
-	}
-	write.ttl, write.ttlNamed = input.GrantTTLSeconds.Get()
-	if approverIsSandbox {
-		write.approverID, write.delegated = principal.SandboxID, true
 	}
 	if err := s.commitApproval(ctx, write); err != nil {
 		if errors.Is(err, errRequestAnswered) {
@@ -587,115 +439,87 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		}
 		return nil, err
 	}
-	if delegation != nil {
-		slog.InfoContext(ctx, "a discobox approved a request under its delegation",
-			"projectId", projectID, "requestId", req.ID, "grantId", req.GrantID,
-			"approver", principal.SandboxID, "delegationGrantId", delegation.ID)
+	if write.approverID != "" {
+		slog.InfoContext(ctx, "a discobox approved a request under its delegate binding",
+			"projectId", projectID, "requestId", req.ID, "bindingId", req.BindingID,
+			"approver", write.approverID, "parentBindingId", write.binding.ParentID)
 	}
 	return req, nil
 }
 
-// approvalWrite is one approval of a request, as its transaction makes it:
-// whoever approved — a person, or a discobox under a delegation — it is the
-// same write, so a grant is the same grant whoever said yes.
+// approvalWrite is one approval of a request, as its transaction makes it.
 type approvalWrite struct {
-	req *model.SecretRequest
-	// secret is the secret the grant is of. commitApproval replaces it with
-	// the row as the transaction found and left it.
+	req    *model.SecretRequest
 	secret *model.Secret
-	// bindTo and limit are what the approver agreed to change on the secret.
-	bindTo *string
-	limit  *int64
-
-	scope, scopeKey string
-	hosts           []string
-	purpose         string
+	routes []model.SecretRoute
 	// ttl is the lifetime the approver named, read only when ttlNamed.
 	ttl      int64
 	ttlNamed bool
-
-	// delegated is a discobox's approval, made under delegation by
-	// approverID; it is refused rather than minted unbounded if no delegation
-	// was chosen.
-	delegated  bool
+	actor    string
+	// parents are, for a discobox's approval, the delegate bindings it may
+	// hand the secret on under, longest-lived first; approverID is the
+	// discobox.
+	parents    []model.SecretBinding
 	approverID string
-	delegation *model.SecretGrant
+	// binding is what the approval made or extended.
+	binding *model.SecretBinding
 }
 
-// commitApproval makes every write an approval makes as one act: the secret's
-// change, the grant, the binding that delivers it, the mark that sends that
-// binding to the sandbox, and the request marked approved. A refusal anywhere
-// — a variable already holding another credential, the request answered
-// concurrently — leaves none of them behind. A request no longer pending is
-// errRequestAnswered.
+// commitApproval makes every write an approval makes as one act: the binding
+// and its event, the mark that delivers it, and the request decided. A
+// refusal anywhere — a variable already holding another credential, a
+// delegate binding gone, the request answered concurrently — leaves none of
+// them behind. A request no longer pending is errRequestAnswered.
 func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 	req, projectID := a.req, a.req.ProjectID
 	err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
-		tx := &Service{store: txStore}
-		// The grant is checked against the secret as it stands now, with the
-		// agreed change on top: a copy read before this could put back a
-		// binding or limit changed since.
 		secret, err := txStore.GetSecret(ctx, projectID, a.secret.ID)
 		if err != nil {
 			return apperrors.NotFound(err, "secret not found")
 		}
-		a.secret = secret
-		if a.bindTo != nil {
-			secret.Host = *a.bindTo
-		}
-		if a.limit != nil {
-			secret.MaxGrantTTL = *a.limit
-		}
-		if err := txStore.SetSecretLimits(ctx, projectID, secret.ID, a.bindTo, a.limit); err != nil {
-			return secretCollision(err, secret)
-		}
-		// An approval that names no lifetime grants what the agent asked for,
-		// else agentcreds.DefaultGrantTTL — what the window opens on — within
-		// the secret's limit, so approving needs nothing read first. An
-		// explicit value is checked against the limit in mintGrantAs, along
-		// with every other path that mints one.
+		now := time.Now().UTC()
 		ttl := a.ttl
 		if !a.ttlNamed {
 			ttl = defaultApprovalTTL(req, secret)
 		}
-		// One reading of the clock is what the grant's lifetime is both
-		// fitted against and stamped from, so a grant fitted to a delegation
-		// ends no later than it does.
-		now := time.Now().UTC()
-		delegationID := ""
-		// A discobox's grant is always made under a delegation: it is refused
-		// rather than minted unbounded if none was chosen.
-		if a.delegated {
-			if a.delegation == nil {
-				return apperrors.NewStatusError(http.StatusForbidden,
-					"a discobox hands on only what a delegation grant it holds covers, and this approval was made under none")
-			}
-			if ttl, err = delegatedTTL(ctx, txStore, projectID, a.approverID, a.delegation, secret.ID, a.hosts, ttl, a.ttlNamed, now); err != nil {
+		binding := &model.SecretBinding{
+			ProjectID:  projectID,
+			SecretID:   secret.ID,
+			TargetKind: model.SecretBindingTargetSandbox,
+			TargetID:   req.SandboxID,
+			Use:        !req.Delegates(),
+			Delegate:   req.Delegates(),
+			Routes:     a.routes,
+			RequestID:  req.ID,
+			CreatedBy:  a.actor,
+		}
+		if binding.Use {
+			binding.EnvName = req.EnvName
+		}
+		if a.approverID != "" {
+			parent, err := heldParent(ctx, txStore, projectID, a.approverID, secret.ID, a.parents, now)
+			if err != nil {
 				return err
 			}
-			delegationID = a.delegation.ID
+			if ttl, err = fitToParent(parent, ttl, a.ttlNamed, now); err != nil {
+				return err
+			}
+			binding.ParentID = parent.ID
 		}
-		grant, err := tx.mintGrantAs(ctx, now, projectID, secret, a.scope, a.scopeKey, a.hosts, ttl, a.purpose, delegationID)
+		if err := guardBindingTTL(secret, ttl); err != nil {
+			return err
+		}
+		binding.ExpiresAt = expiryAt(now, ttl)
+		made, err := s.putRequestedBinding(ctx, txStore, txDB, binding, store.BindingChange{Actor: a.actor, Cause: req.ID})
 		if err != nil {
 			return err
 		}
-		// An agent's use is delivered the way every other credential is: a
-		// sentinel in the variable it named, injected into its sandbox and
-		// sent to its pool (ADR 26-10-27-880). A delegation grant binds
-		// nothing: there is nothing for its holder to send.
-		if req.FromProtocol() && grant.MayUse() {
-			if err := bindApprovedVariable(ctx, txStore, req, secret); err != nil {
-				return err
-			}
-			if s.holders != nil {
-				if err := s.holders.MarkSandboxSentinelsDirtyTx(ctx, txDB, req.ProjectID, req.SandboxID); err != nil {
-					return err
-				}
-			}
-		}
+		a.binding = made
 		req.SecretID = secret.ID
 		req.Status = model.SecretRequestStatusApproved
-		req.GrantID = grant.ID
+		req.BindingID = made.ID
+		req.DecidedBy = a.actor
+		req.DecidedAt = &now
 		return txStore.UpdateSecretRequestIfPending(ctx, req)
 	})
 	if errors.Is(err, store.ErrGenerationConflict) {
@@ -704,27 +528,52 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 	return err
 }
 
-// bindApprovedVariable binds the variable an approved agent request named to
-// the secret approved, on the sandbox that asked. A variable already bound to
-// that secret keeps its binding and sentinel; one bound to another secret is
-// refused rather than taken over, since swapping the credential under a
-// variable something already uses is the surprise this must not spring.
-func bindApprovedVariable(ctx context.Context, txStore *store.Store, req *model.SecretRequest, secret *model.Secret) error {
-	existing, err := txStore.FindSandboxSecretByEnv(ctx, req.ProjectID, req.SandboxID, req.EnvName)
-	switch {
-	case err == nil && existing.SecretID == secret.ID:
-		return nil
-	case err == nil:
-		return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
-			"%s already holds another credential in this discobox; approve the request with that secret, or ask for another variable", req.EnvName))
-	case !errors.Is(err, store.ErrNotFound):
-		return err
-	}
-	binding, err := txStore.NewSandboxBinding(ctx, req.ProjectID, req.SandboxID, req.EnvName, secret)
+// putRequestedBinding stores the binding an approval makes, or extends the
+// one already standing for the same thing: a use of the same secret in the
+// same variable, or a delegate binding of the same secret, takes the
+// approval's routes and lifetime. A variable already holding another
+// credential on the discobox is refused rather than taken over, since swapping
+// the credential under a variable something already uses is the surprise this
+// must not spring.
+func (s *Service) putRequestedBinding(ctx context.Context, txStore *store.Store, txDB *gorm.DB, binding *model.SecretBinding, change store.BindingChange) (*model.SecretBinding, error) {
+	existing, err := txStore.ListSecretBindings(ctx, binding.ProjectID, store.SecretBindingFilter{TargetKind: binding.TargetKind, TargetID: binding.TargetID})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return txStore.CreateSandboxSecret(ctx, binding)
+	for i := range existing {
+		standing := &existing[i]
+		sameUse := binding.Use && standing.Use && standing.EnvName == binding.EnvName
+		sameDelegate := binding.Delegate && standing.Delegate && standing.SecretID == binding.SecretID
+		if !sameUse && !sameDelegate {
+			continue
+		}
+		if standing.SecretID != binding.SecretID {
+			return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
+				"%s already holds another credential in this discobox; approve the request with that secret, or ask for another variable", binding.EnvName))
+		}
+		if standing.ParentID != binding.ParentID {
+			return nil, apperrors.NewStatusError(http.StatusConflict,
+				"this discobox already holds that credential under another binding; remove it first")
+		}
+		standing.Routes, standing.ExpiresAt = binding.Routes, binding.ExpiresAt
+		if err := txStore.UpdateSecretBinding(ctx, standing, change); err != nil {
+			return nil, err
+		}
+		return standing, s.markBindingHolders(ctx, txStore, txDB, *standing)
+	}
+	if err := txStore.CreateSecretBinding(ctx, binding, change); err != nil {
+		return nil, bindingConflict(err)
+	}
+	return binding, s.markBindingHolders(ctx, txStore, txDB, *binding)
+}
+
+// markBindingHolders marks the discoboxes bindings cover, when the service
+// knows what marks them.
+func (s *Service) markBindingHolders(ctx context.Context, txStore *store.Store, txDB *gorm.DB, bindings ...model.SecretBinding) error {
+	if s.holders == nil || len(bindings) == 0 {
+		return nil
+	}
+	return s.holders.MarkBindingHoldersDirtyTx(ctx, txStore, txDB, bindings[0].ProjectID, bindings)
 }
 
 func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID string) error {
@@ -735,12 +584,11 @@ func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID st
 	if req.Status != model.SecretRequestStatusPending {
 		return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("secret request is already %s", req.Status))
 	}
-	// Dismissing a refresh request decides when a credential is renewed, which
-	// is a person's to decide, not a discobox's (ADR 26-09-25-122 §4).
-	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox && req.IsRefresh() {
-		return apperrors.NewStatusError(http.StatusForbidden, "a refresh request is dismissed by a person, not a discobox")
-	}
+	principal, _ := auth.PrincipalFromContext(ctx)
+	now := time.Now().UTC()
 	req.Status = model.SecretRequestStatusDenied
+	req.DecidedBy = principal.Actor()
+	req.DecidedAt = &now
 	if err := s.store.UpdateSecretRequestIfPending(ctx, req); err != nil {
 		if errors.Is(err, store.ErrGenerationConflict) {
 			return apperrors.NewStatusError(http.StatusConflict, "secret request status changed concurrently; refresh and try again")
@@ -750,11 +598,13 @@ func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID st
 	return nil
 }
 
-// ResolveSandboxSecret resolves a sentinel injected into a sandbox. It maps the
-// sentinel to its assignment and looks for a live grant covering the sandbox at
-// any scope (its own ID, its harness config, or the project). A match returns the
-// decrypted value; otherwise a single pending request is created (or reused) and
-// the proxy leaves the sentinel in place until a grant exists.
+// ResolveSandboxSecret resolves a sentinel injected into a sandbox. The
+// sentinel names the binding that delivered it; the value is handed out only
+// while that binding stands — live, of this secret, on a level covering the
+// sandbox, and under a live parent when it was handed on — and only for a
+// host every one of its route lists allows (ADR 26-10-27-880 §4). Anything
+// else is refused: no request is opened, since a sentinel exists only because
+// a binding does.
 func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error) {
 	assignment, err := s.store.GetSandboxSecretBySentinel(ctx, sandboxID, sentinel)
 	if err != nil {
@@ -773,235 +623,106 @@ func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, s
 		return nil, apperrors.NotFound(err, "secret not found")
 	}
 	host = normalizeHost(host)
+	denied := &model.SandboxSecretResolution{Status: model.SecretRequestStatusDenied}
 
-	scopes := store.SandboxGrantScopes(sandbox)
-	// The binding is checked where the credential is handed out, not only where
-	// a grant is minted. A secret bound to a host may be used for that host and
-	// the hosts beneath it and nowhere else — which has to hold for grants that
-	// already exist too: one written before the binding, or before this check,
-	// is exactly the grant nobody would write today.
-	if !hostscope.Covers(secret.Host, host) {
-		return &model.SandboxSecretResolution{Status: model.SecretRequestStatusDenied}, nil
-	}
-	grant, err := s.store.FindLiveGrant(ctx, assignment.ProjectID, assignment.SecretID, host, scopes)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		return nil, err
-	}
-	if grant != nil {
-		val, err := s.store.OpenSecretValue(ctx, secret)
-		if err != nil {
-			return nil, fmt.Errorf("decrypt secret: %w", err)
-		}
-		expiresAt := grant.ExpiresAt
-		if renews(secret.Type) {
-			// Renew a near-expired token before handing it out, and cap the
-			// cache lifetime the proxy honors by the token's own expiry so it
-			// re-resolves — and renews again — as the token ages out.
-			val, err = s.ensureFresh(ctx, secret, val)
-			if err != nil {
-				return nil, err
-			}
-			expiresAt = tokenResolutionExpiry(grant.ExpiresAt, val)
-		}
-		if secret.Renewable() {
-			expiresAt = s.renewableResolution(ctx, secret, sandbox.ID, grant.ExpiresAt)
-		}
-		reportScope, err := s.reportScope(ctx, sandbox, assignment.EnvName)
-		if err != nil {
-			return nil, err
-		}
-		return &model.SandboxSecretResolution{Status: model.SecretRequestStatusApproved, Value: val, ExpiresAt: expiresAt, SecretID: secret.ID, ReportScope: reportScope}, nil
-	}
-
-	// No grant: ensure exactly one pending request exists for this sandbox+secret+host.
-	requestedBy := "sandbox:" + sandboxID
-	existing, err := s.store.FindPendingSecretRequest(ctx, assignment.ProjectID, assignment.SecretID, host, requestedBy)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		return nil, err
-	}
-	if existing == nil {
-		req := &model.SecretRequest{
-			ProjectID:   assignment.ProjectID,
-			RequestedBy: requestedBy,
-			SandboxID:   assignment.SandboxID,
-			Type:        secret.Type,
-			Hosts:       hostscope.List(host),
-			SecretID:    secret.ID,
-			Status:      model.SecretRequestStatusPending,
-		}
-		if err := s.store.CreateSecretRequest(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusPending}, nil
-}
-
-// ListSecretGrants returns a project's grants, optionally filtered to one
-// secret.
-func (s *Service) ListSecretGrants(ctx context.Context, projectID, secretID string) ([]model.SecretGrant, error) {
-	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apperrors.NotFound(err, "project not found")
-	}
-	secretID = strings.TrimSpace(secretID)
-	if secretID != "" {
-		if _, err := s.store.GetSecret(ctx, projectID, secretID); err != nil {
-			return nil, apperrors.NotFound(err, "secret not found")
-		}
-	}
-	return s.store.ListSecretGrants(ctx, projectID, secretID)
-}
-
-// CreateSecretGrant mints a standing grant directly (pre-approval), without a
-// prior request.
-func (s *Service) CreateSecretGrant(ctx context.Context, projectID string, input services.CreateSecretGrantBody) (*model.SecretGrant, error) {
-	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apperrors.NotFound(err, "project not found")
-	}
-	secretID := strings.TrimSpace(input.SecretId)
-	if secretID == "" {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "secret ID is required")
-	}
-	secret, err := s.store.GetSecret(ctx, projectID, secretID)
-	if err != nil {
-		return nil, apperrors.NotFound(err, "secret not found")
-	}
-	scope := strings.TrimSpace(string(input.Scope))
-	scopeKey := strings.TrimSpace(input.ScopeKey.Or(""))
-	if scope == model.SecretGrantScopeProject && scopeKey == "" {
-		scopeKey = projectID
-	}
-	if err := validateGrantScope(scope, scopeKey); err != nil {
-		return nil, err
-	}
-	// The hosts named, else the secret's own.
-	hosts, named := askedHosts(input.Hosts)
-	if !named {
-		hosts = hostscope.List(secret.Host)
-	}
-	// Default to the secret's limit; an explicit value wins, up to that limit.
-	ttl := secret.MaxGrantTTL
-	if v, ok := input.GrantTTLSeconds.Get(); ok {
-		ttl = v
-	}
-
-	purpose, err := grantPurpose(string(input.Purpose.Or("")))
+	binding, parent, ok, err := s.standingBinding(ctx, sandbox, assignment, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
-	// A grant authorizes the sentinel a discobox is already given — by its
-	// harness config, its create, or an approved request — and binds none of
-	// its own.
-	return s.mintGrantAs(ctx, time.Now().UTC(), projectID, secret, scope, scopeKey, hosts, ttl, purpose, "")
-}
-
-// RevokeSecretGrant deletes a standing grant.
-func (s *Service) RevokeSecretGrant(ctx context.Context, projectID, grantID string) error {
-	if err := s.store.DeleteSecretGrant(ctx, projectID, grantID); err != nil {
-		return apperrors.NotFound(err, "secret grant not found")
+	if !ok || !secretroute.HostAllowed(store.RouteLists(secret, binding, parent), host) {
+		return denied, nil
 	}
-	return nil
-}
-
-// grantScopeKey resolves the identifier a grant scope binds to for a request.
-func (s *Service) grantScopeKey(ctx context.Context, projectID, sandboxID, scope string) (string, error) {
-	switch scope {
-	case model.SecretGrantScopeProject:
-		return projectID, nil
-	case model.SecretGrantScopeSandbox:
-		if sandboxID == "" {
-			return "", apperrors.NewStatusError(http.StatusBadRequest, "sandbox scope requires a sandbox-originated request")
-		}
-		return sandboxID, nil
-	case model.SecretGrantScopeHarnessConfig:
-		if sandboxID == "" {
-			return "", apperrors.NewStatusError(http.StatusBadRequest, "harnessConfig scope requires a sandbox-originated request")
-		}
-		sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+	val, err := s.store.OpenSecretValue(ctx, secret)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt secret: %w", err)
+	}
+	expiresAt := bindingExpiry(binding, parent)
+	if renews(secret.Type) {
+		// Renew a near-expired token before handing it out, and cap the
+		// cache lifetime the proxy honors by the token's own expiry so it
+		// re-resolves — and renews again — as the token ages out.
+		val, err = s.ensureFresh(ctx, secret, val)
 		if err != nil {
-			return "", apperrors.NotFound(err, "sandbox not found")
+			return nil, err
 		}
-		if sandbox.HarnessConfigID == nil || strings.TrimSpace(*sandbox.HarnessConfigID) == "" {
-			return "", apperrors.NewStatusError(http.StatusBadRequest, "sandbox has no harness config to scope the grant to")
-		}
-		return strings.TrimSpace(*sandbox.HarnessConfigID), nil
-	default:
-		return "", apperrors.NewStatusError(http.StatusBadRequest, "grant scope must be sandbox, harnessConfig, or project")
+		expiresAt = tokenResolutionExpiry(expiresAt, val)
 	}
+	if secret.Renewable() {
+		expiresAt = s.renewableResolution(ctx, secret, sandbox.ID, expiresAt)
+	}
+	reportScope, err := s.reportScope(ctx, sandbox, assignment.EnvName)
+	if err != nil {
+		return nil, err
+	}
+	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusApproved, Value: val, ExpiresAt: expiresAt, SecretID: secret.ID, ReportScope: reportScope}, nil
 }
 
-// guardGrantHosts refuses a grant that would send a credential somewhere it
-// does not belong.
-//
-// The grant's hosts are what the proxy enforces; the secret's own host says
-// which service the credential is *for*. When both are set and they disagree,
-// the grant would swap that credential into requests to another service — an
-// approval typo becomes the real key leaving for a host that was never supposed
-// to see it, and with the agent credentials flow the hosts are proposed by the
-// sandbox. A secret carrying no host is unconstrained on purpose: a credential
-// that genuinely spans hosts is expressed by leaving the field empty rather
-// than by widening every grant. So is one a grant sends to several unrelated
-// sites (ADR 26-10-02-393 §2): every one of the grant's hosts must sit inside
-// the binding.
-func guardGrantHosts(secret *model.Secret, hosts []string) error {
-	secretHost := normalizeHost(secret.Host)
-	if secretHost == "" {
-		return nil
+// standingBinding is the binding a sentinel was delivered under and its
+// parent, when it still stands for the sandbox at now: present, a use of the
+// sentinel's secret, on a level covering the sandbox, live, and under a live
+// parent when it has one.
+func (s *Service) standingBinding(ctx context.Context, sandbox *model.Sandbox, assignment *model.SandboxSecret, now time.Time) (*model.SecretBinding, *model.SecretBinding, bool, error) {
+	if assignment.BindingID == "" {
+		return nil, nil, false, nil
 	}
-	// The message names the command, the way the wildcard-grant refusal does:
-	// the remedy is a second call, and an error that describes one without
-	// spelling it is an error the reader has to go looking behind.
-	if len(hosts) == 0 {
-		return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-			"secret %s is bound to %s, so it cannot be granted for every host; grant it for %s, or release the binding with `discobox secret update %s --host \"\"`",
-			secret.ID, secretHost, secretHost, secret.ID))
+	binding, err := s.store.SecretBindingByExactID(ctx, sandbox.ProjectID, assignment.BindingID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil, false, nil
 	}
-	for _, host := range hosts {
-		// The grant has to sit inside the binding, not merely touch it: a
-		// secret for github.com may be granted for api.github.com, and one for
-		// api.github.com may not be granted for github.com — that is a
-		// different host, serving different things, and the binding says the
-		// credential does not belong to it.
-		if hostscope.Covers(secretHost, host) {
-			continue
-		}
-		// A binding that covers both is usually the right answer rather than
-		// none: a credential asked for at github.com and api.github.com
-		// belongs to the site, and the site covers what is beneath it.
-		remedy := fmt.Sprintf("`discobox secret update %s --host %s`", secret.ID, hostscope.CommonParent(secretHost, host))
-		if hostscope.CommonParent(secretHost, host) == "" {
-			remedy = fmt.Sprintf("`discobox secret update %s --host \"\"`", secret.ID)
-		}
-		return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-			"secret %s is bound to %s and cannot be granted for %s; pick a secret for %s, or widen the binding with %s",
-			secret.ID, secretHost, host, host, remedy))
+	if err != nil {
+		return nil, nil, false, err
 	}
-	return nil
+	if !binding.Use || binding.SecretID != assignment.SecretID || !binding.Live(now) || !store.Covers(store.SandboxBindingTargets(sandbox), binding, false) {
+		return nil, nil, false, nil
+	}
+	if binding.ParentID == "" {
+		return binding, nil, true, nil
+	}
+	parent, err := s.store.SecretBindingByExactID(ctx, sandbox.ProjectID, binding.ParentID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil, false, nil
+	}
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if !parent.Live(now) {
+		return nil, nil, false, nil
+	}
+	return binding, parent, true, nil
 }
 
-// guardGrantTTL refuses a grant that would outlive what the secret allows.
+// bindingExpiry is when a binding stops authorizing: its own expiry, or its
+// parent's when that comes first.
+func bindingExpiry(binding, parent *model.SecretBinding) *time.Time {
+	expires := binding.ExpiresAt
+	if parent != nil && parent.ExpiresAt != nil && (expires == nil || parent.ExpiresAt.Before(*expires)) {
+		expires = parent.ExpiresAt
+	}
+	return expires
+}
+
+// guardBindingTTL refuses a binding that would outlive what the secret
+// allows.
 //
-// The limit is the one place a credential says how long consent to it may last,
-// and it has to bite at minting rather than at creation: the lifetime arrives
-// from an approval dialog, a pre-approval, or the in-sandbox flow, and a rule
-// enforced in one of those is a rule the other two walk around. A secret with
-// no limit is unconstrained on purpose — that is what zero says — and there the
-// grant keeps whatever lifetime it was given, forever included.
-func guardGrantTTL(secret *model.Secret, ttlSeconds int64) error {
-	limit := secret.MaxGrantTTL
+// The limit is the one place a credential says how long consent to it may
+// last, and it has to bite where a binding is made: the lifetime arrives from
+// an approval, a person's binding, or a create, and a rule enforced in one of
+// those is a rule the others walk around. A secret with no limit is
+// unconstrained on purpose — that is what zero says — and there the binding
+// keeps whatever lifetime it was given, forever included.
+func guardBindingTTL(secret *model.Secret, ttlSeconds int64) error {
+	limit := secret.MaxBindingTTL
 	if limit <= 0 || (ttlSeconds > 0 && ttlSeconds <= limit) {
 		return nil
 	}
-	// The remedy names the command, as the host refusal does: raising the limit
-	// is a deliberate act on the secret, not something a grant may do in
-	// passing by asking for more.
 	if ttlSeconds <= 0 {
 		return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-			"a grant on secret %s may live at most %s, so it cannot be granted forever; grant it for less, or lift the limit with `discobox secret update %s --max-grant-ttl 0`",
-			secret.ID, formatTTL(limit), secret.ID))
+			"a binding of secret %s may live at most %s, so it cannot be made forever; make it for less, or lift the limit with `discobox secret update %s --max-binding-ttl 0`",
+			secret.Name, formatTTL(limit), secret.Name))
 	}
 	return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf(
-		"a grant on secret %s may live at most %s, and %s was asked for; grant it for less, or raise the limit with `discobox secret update %s --max-grant-ttl %d`",
-		secret.ID, formatTTL(limit), formatTTL(ttlSeconds), secret.ID, ttlSeconds))
+		"a binding of secret %s may live at most %s, and %s was asked for; make it for less, or raise the limit with `discobox secret update %s --max-binding-ttl %d`",
+		secret.Name, formatTTL(limit), formatTTL(ttlSeconds), secret.Name, ttlSeconds))
 }
 
 // defaultApprovalTTL is the lifetime of an approval that names none: what the
@@ -1009,14 +730,24 @@ func guardGrantTTL(secret *model.Secret, ttlSeconds int64) error {
 // secret's limit — a default is an answer nobody chose, so it is fitted to the
 // limit rather than refused by it.
 func defaultApprovalTTL(req *model.SecretRequest, secret *model.Secret) int64 {
-	ttl := int64(agentcreds.AskedGrantTTL(req.GrantTTL) / time.Second)
+	ttl := int64(agentcreds.AskedGrantTTL(req.TTL) / time.Second)
 	if ttl == 0 {
 		ttl = int64(agentcreds.DefaultGrantTTL / time.Second)
 	}
-	if secret.MaxGrantTTL > 0 && ttl > secret.MaxGrantTTL {
-		ttl = secret.MaxGrantTTL
+	if secret.MaxBindingTTL > 0 && ttl > secret.MaxBindingTTL {
+		ttl = secret.MaxBindingTTL
 	}
 	return ttl
+}
+
+// expiryAt is when a binding of ttlSeconds made at now lapses; nil, forever,
+// for zero.
+func expiryAt(now time.Time, ttlSeconds int64) *time.Time {
+	if ttlSeconds <= 0 {
+		return nil
+	}
+	expires := now.Add(time.Duration(ttlSeconds) * time.Second)
+	return &expires
 }
 
 // formatTTL says a lifetime the way a person reads one, so a refusal compares
@@ -1025,74 +756,22 @@ func formatTTL(seconds int64) string {
 	return (time.Duration(seconds) * time.Second).String()
 }
 
-// mintGrantAs creates the standing authorization.
-//
-// It takes the secret rather than its ID because it is the one place every
-// grant passes through, which makes it the place to check the grant against the
-// credential it hands out.
-//
-// purpose is what the grant authorizes — using the credential, or delegating
-// it — and is checked here with the rest. delegationID is the delegation grant
-// a discobox handed this one on under, empty when a person made it.
-//
-// now is the instant the grant's lifetime runs from: its expiry is now plus
-// ttlSeconds, and never a later reading of the clock, so a lifetime a caller
-// fitted at now ends where it was fitted to.
-func (s *Service) mintGrantAs(ctx context.Context, now time.Time, projectID string, secret *model.Secret, scope, scopeKey string, hosts []string, ttlSeconds int64, purpose, delegationID string) (*model.SecretGrant, error) {
-	hosts = hostscope.List(hosts...)
-	if err := guardGrantHosts(secret, hosts); err != nil {
+// lookupSecret reads a project's secret by ID, ID prefix or name.
+func (s *Service) lookupSecret(ctx context.Context, projectID, ref string) (*model.Secret, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "a secret is named")
+	}
+	if secret, err := s.store.GetSecretByName(ctx, projectID, ref); err == nil {
+		return secret, nil
+	} else if !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
-	if err := guardGrantTTL(secret, ttlSeconds); err != nil {
-		return nil, err
+	secret, err := s.store.GetSecret(ctx, projectID, ref)
+	if err != nil {
+		return nil, apperrors.NotFound(err, fmt.Sprintf("secret %s not found", ref))
 	}
-	if err := s.guardPurpose(ctx, projectID, scope, scopeKey, purpose); err != nil {
-		return nil, err
-	}
-	principal, _ := auth.PrincipalFromContext(ctx)
-	grant := &model.SecretGrant{
-		ProjectID:    projectID,
-		SecretID:     secret.ID,
-		Scope:        scope,
-		ScopeKey:     scopeKey,
-		Hosts:        hosts,
-		GrantedBy:    grantedByOf(principal),
-		Purpose:      purpose,
-		DelegationID: delegationID,
-	}
-	if ttlSeconds > 0 {
-		exp := now.Add(time.Duration(ttlSeconds) * time.Second)
-		grant.ExpiresAt = &exp
-	}
-	if err := s.store.CreateSecretGrant(ctx, grant); err != nil {
-		return nil, apperrors.NotFound(err, fmt.Sprintf("%s %s does not exist, so nothing can be granted to it", scope, scopeKey))
-	}
-	return grant, nil
-}
-
-// grantedByOf is who a grant records as having made it. A sandbox acts as the
-// user who created it but is recorded as itself: the grant was its doing
-// (ADR 0140 §4).
-func grantedByOf(principal auth.Principal) string {
-	switch {
-	case principal.Type == auth.PrincipalTypeSandbox:
-		return principal.SandboxID
-	case principal.UserID != "":
-		return principal.UserID
-	}
-	return principal.PoolID
-}
-
-func validateGrantScope(scope, scopeKey string) error {
-	switch scope {
-	case model.SecretGrantScopeSandbox, model.SecretGrantScopeHarnessConfig, model.SecretGrantScopeProject:
-	default:
-		return apperrors.NewStatusError(http.StatusBadRequest, "grant scope must be sandbox, harnessConfig, or project")
-	}
-	if scopeKey == "" {
-		return apperrors.NewStatusError(http.StatusBadRequest, "grant scopeKey is required")
-	}
-	return nil
+	return secret, nil
 }
 
 // marshalSecretValue converts a generated SecretValue to JSON plaintext for encryption.
@@ -1141,25 +820,22 @@ func isGenerationConflict(err error) bool {
 }
 
 // secretCollision turns the uniqueness constraint into an answer. A name
-// already taken for that host is something the caller can fix; a driver's
-// constraint text reaching the client as a 500 is neither readable nor true —
-// nothing failed on the server's side.
+// already taken is something the caller can fix; a driver's constraint text
+// reaching the client as a 500 is neither readable nor true — nothing failed
+// on the server's side.
 func secretCollision(err error, sec *model.Secret) error {
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
+	if err == nil || !isUniqueViolation(err) {
 		return err
 	}
-	where := "with no host"
-	if sec.Host != "" {
-		where = "for " + sec.Host
-	}
 	return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
-		"this project already has a %s secret named %q %s; pick another name, or update the one it has",
-		sec.Type, sec.Name, where))
+		"this project already has a secret named %q; pick another name, or update the one it has", sec.Name))
 }
 
-func isAdvisoryMatchError(err error) bool {
-	var statusErr interface{ StatusCode() int }
-	return errors.As(err, &statusErr) && (statusErr.StatusCode() == http.StatusNotFound || statusErr.StatusCode() == http.StatusConflict)
+// isUniqueViolation reports whether err is a uniqueness constraint refusing a
+// write.
+func isUniqueViolation(err error) bool {
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "unique constraint") || strings.Contains(text, "duplicate key")
 }
 
 // sentinelFormat is the format a person asked for, and whether they asked for

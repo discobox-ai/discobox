@@ -170,12 +170,13 @@ func TestQuietListWritersPrintFullIDsOnly(t *testing.T) {
 			want: "job-full-id\n",
 		},
 		{
-			// What bind and unbind take: the env names, declared ones first.
+			// What a harness's variables are: the env names, declared ones
+			// first.
 			name: "harness secret bindings",
 			write: func(cmd *cobra.Command) error {
 				return app.writeHarnessSecretBindings(cmd,
 					[]apimodel.HarnessConfigSecret{{Name: "ANTHROPIC_API_KEY"}},
-					[]apimodel.HarnessConfigSecretBinding{{EnvName: "ANTHROPIC_API_KEY", SecretId: "sec_1"}, {EnvName: "EXTRA", SecretId: "sec_2"}})
+					[]apimodel.SecretBinding{{EnvVar: apiclientgen.NewOptString("ANTHROPIC_API_KEY"), SecretId: "sec_1", Use: true}, {EnvVar: apiclientgen.NewOptString("EXTRA"), SecretId: "sec_2", Use: true}})
 			},
 			want: "ANTHROPIC_API_KEY\nEXTRA\n",
 		},
@@ -297,7 +298,7 @@ func TestListSubcommandsUseLSWithListAlias(t *testing.T) {
 		{"admin", "provider", "ls"},
 		{"admin", "job", "ls"},
 		{"secret", "ls"},
-		{"secret", "grant", "ls"},
+		{"admin", "binding", "ls"},
 		{"secret", "request", "ls"},
 		{"admin", "harness", "ls"},
 		{"admin", "harness", "secret", "ls"},
@@ -610,14 +611,14 @@ func TestSecretCreateCommandSendsSecretValue(t *testing.T) {
 			t.Fatalf("decode body: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"secret-1","projectId":"project-1","name":"github","type":"token","host":"github.com","maxGrantTTLSeconds":7200,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"secret-1","projectId":"project-1","name":"github","type":"token","maxBindingTTLSeconds":7200,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "create", "--name", "github", "--type", "token", "--host", "github.com", "--max-grant-ttl", "7200", "--token", "token-value",
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "create", "--name", "github", "--type", "token", "--max-binding-ttl", "7200", "--token", "token-value",
 		"--route", "githubcopilot.com", "--route", "github.com/repos=blocked"})
 
 	if err := cmd.Execute(); err != nil {
@@ -630,13 +631,13 @@ func TestSecretCreateCommandSendsSecretValue(t *testing.T) {
 	if !reflect.DeepEqual(posted["routes"], wantRoutes) {
 		t.Fatalf("posted routes = %#v, want both --route values in order", posted["routes"])
 	}
-	if posted["name"] != "github" || posted["type"] != "token" || posted["host"] != "github.com" {
+	if _, sent := posted["host"]; posted["name"] != "github" || posted["type"] != "token" || sent {
 		t.Fatalf("posted body = %#v", posted)
 	}
 	// The limit travels under the name that says what it is: the longest a
-	// grant on this credential may live, not a default anything may exceed.
-	if posted["maxGrantTTLSeconds"] != float64(7200) {
-		t.Fatalf("posted grant limit = %#v, want 7200 under maxGrantTTLSeconds", posted["maxGrantTTLSeconds"])
+	// binding of this credential may last, not a default anything may exceed.
+	if posted["maxBindingTTLSeconds"] != float64(7200) {
+		t.Fatalf("posted binding limit = %#v, want 7200 under maxBindingTTLSeconds", posted["maxBindingTTLSeconds"])
 	}
 	value, ok := posted["value"].(map[string]any)
 	if !ok || value["token"] != "token-value" {
@@ -660,9 +661,9 @@ func TestSecretRequestApproveCommandSendsSelectedSecretID(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&approved); err != nil {
 				t.Fatalf("decode approve body: %v", err)
 			}
-			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","type":"token","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
-			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"selected","type":"token","maxGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"selected","type":"token","maxBindingTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
 		default:
 			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
 		}
@@ -672,12 +673,12 @@ func TestSecretRequestApproveCommandSendsSelectedSecretID(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret", secretID, "--grant-ttl", "600"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret", secretID, "--for", "600"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret request approve: %v", err)
 	}
-	if approved["secretId"] != secretID || approved["grantTTLSeconds"] != float64(600) {
+	if approved["secretId"] != secretID || approved["ttlSeconds"] != float64(600) {
 		t.Fatalf("approve body = %#v", approved)
 	}
 	if output := out.String(); !strings.Contains(output, requestID) || !strings.Contains(output, "approved") {
@@ -701,11 +702,11 @@ func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&approved); err != nil {
 				t.Fatalf("decode approve body: %v", err)
 			}
-			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","type":"token","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/"+requestID:
-			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"agent:sbx-1","type":"token","status":"pending","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"agent:sbx-1","status":"pending","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
-			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"selected","type":"token","maxGrantTTLSeconds":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"selected","type":"token","maxBindingTTLSeconds":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
 		default:
 			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
 		}
@@ -714,11 +715,11 @@ func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
 
 	cmd := NewRootCommand()
 	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret", secretID, "--grant-ttl", "1w"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret", secretID, "--for", "1w"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret request approve: %v", err)
 	}
-	if approved["grantTTLSeconds"] != float64(604800) {
+	if approved["ttlSeconds"] != float64(604800) {
 		t.Fatalf("approve body = %#v, want a week in seconds", approved)
 	}
 
@@ -727,12 +728,12 @@ func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
 	cmd = NewRootCommand()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret", secretID, "--grant-ttl", "a while"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret", secretID, "--for", "a while"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("a lifetime nobody can read was accepted")
 	}
-	if !strings.Contains(err.Error(), "--grant-ttl") || !strings.Contains(err.Error(), "1h, 90m, 3d, 2w, 1mo, or forever") {
+	if !strings.Contains(err.Error(), "--for") || !strings.Contains(err.Error(), "1h, 90m, 3d, 2w, 1mo, or forever") {
 		t.Fatalf("error = %q, want it to name the flag and the spellings that work", err)
 	}
 }
@@ -740,7 +741,7 @@ func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
 // Said nothing about the lifetime, approve sends none and reads nothing first:
 // the server grants what the agent asked for, else an hour, within the
 // secret's limit — what the window opens on (ADR 26-09-30-782 §4).
-// --grant-ttl still says one.
+// --for still says one.
 func TestSecretRequestApproveLeavesTheLifetimeToTheServer(t *testing.T) {
 	const (
 		requestID = "request-1"
@@ -755,7 +756,7 @@ func TestSecretRequestApproveLeavesTheLifetimeToTheServer(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&approved); err != nil {
 				t.Fatalf("decode approve body: %v", err)
 			}
-			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"agent:sbx-1","type":"token","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"agent:sbx-1","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 		default:
 			t.Fatalf("approving made another request first: %s %s", r.Method, r.URL.Path)
 		}
@@ -768,18 +769,18 @@ func TestSecretRequestApproveLeavesTheLifetimeToTheServer(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret request approve: %v", err)
 	}
-	if _, sent := approved["grantTTLSeconds"]; sent {
+	if _, sent := approved["ttlSeconds"]; sent {
 		t.Fatalf("approve body = %#v, want the lifetime left to the server", approved)
 	}
 
 	cmd = NewRootCommand()
 	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--grant-ttl", "1h"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--for", "1h"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret request approve: %v", err)
 	}
-	if approved["grantTTLSeconds"] != float64(3600) {
-		t.Fatalf("approve body = %#v, want --grant-ttl sent", approved)
+	if approved["ttlSeconds"] != float64(3600) {
+		t.Fatalf("approve body = %#v, want --for sent", approved)
 	}
 }
 
@@ -2274,43 +2275,6 @@ func TestRunHelpListsEverySpelling(t *testing.T) {
 	}
 }
 
-// A person makes a delegation grant from the command line, and the grant it
-// gets back says what that means, since it is not what a reader assumes.
-func TestSecretGrantCreateMakesADelegationGrant(t *testing.T) {
-	const secretID = "secret-1"
-	var created map[string]any
-	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-grants":
-			if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
-				t.Fatalf("decode grant body: %v", err)
-			}
-			_, _ = w.Write([]byte(`{"id":"grant-1","projectId":"project-1","secretId":"` + secretID + `","scope":"sandbox","scopeKey":"sbx-1","hosts":["github.com"],"purpose":"delegate","grantedAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
-			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"github","type":"token","maxGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
-		default:
-			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	cmd := NewRootCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "grant", "create",
-		"--secret", secretID, "--scope", "sandbox", "--scope-key", "sbx-1", "--hosts", "github.com", "--delegate"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute secret grant create: %v", err)
-	}
-	if created["purpose"] != "delegate" {
-		t.Fatalf("grant body = %#v, want a delegation grant asked for", created)
-	}
-	if output := out.String(); !strings.Contains(output, "may give the credential to the discoboxes it creates, and may not use it") {
-		t.Fatalf("output = %q, want the grant to say what its holder may do", output)
-	}
-}
-
 // A secret is named the way it is shown: by its name, which is what an agent
 // or a person reaches for. A name two secrets share is refused, naming both,
 // rather than answered with one of them.
@@ -2325,12 +2289,12 @@ func TestASecretIsNamedByItsName(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&approved); err != nil {
 				t.Fatalf("decode approve body: %v", err)
 			}
-			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","type":"token","status":"approved","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","status":"approved","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
 			_, _ = w.Write([]byte(`{"secrets":[` +
-				`{"id":"sec_1github","projectId":"project-1","name":"github","type":"token","maxGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
-				`{"id":"sec_2twin","projectId":"project-1","name":"twin","type":"token","host":"a.example","maxGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
-				`{"id":"sec_3twin","projectId":"project-1","name":"twin","type":"token","host":"b.example","maxGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+				`{"id":"sec_1github","projectId":"project-1","name":"github","type":"token","maxBindingTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
+				`{"id":"sec_2twin","projectId":"project-1","name":"twin","type":"token","maxBindingTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
+				`{"id":"sec_3twin","projectId":"project-1","name":"twin","type":"token","maxBindingTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
 		default:
 			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
 		}
@@ -2340,7 +2304,7 @@ func TestASecretIsNamedByItsName(t *testing.T) {
 		cmd := NewRootCommand()
 		cmd.SetOut(new(bytes.Buffer))
 		cmd.SetErr(new(bytes.Buffer))
-		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret", secret, "--grant-ttl", "600"})
+		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret", secret, "--for", "600"})
 		return cmd.Execute()
 	}
 
@@ -2383,51 +2347,6 @@ func TestUnknownFlagsThatAreNotABareRunAreNotPointedAtNew(t *testing.T) {
 		}
 		if hinted := withRunFlagHint(found, err); hinted.Error() != err.Error() {
 			t.Fatalf("`discobox %s`: error = %q, want cobra's own %q", strings.Join(args, " "), hinted, err)
-		}
-	}
-}
-
-// --hosts takes a credential's hosts comma-separated, repeated, or both, and
-// sends them as one list (ADR 26-10-02-393).
-func TestSecretGrantCreateTakesHostsEitherWay(t *testing.T) {
-	const secretID = "secret-1"
-	for _, args := range [][]string{
-		{"--hosts", "api.github.com,githubcopilot.com"},
-		{"--hosts", "api.github.com", "--hosts", "githubcopilot.com"},
-	} {
-		var created map[string]any
-		server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			switch {
-			case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-grants":
-				if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
-					t.Fatalf("decode grant body: %v", err)
-				}
-				_, _ = w.Write([]byte(`{"id":"grant-1","projectId":"project-1","secretId":"` + secretID + `","scope":"project","scopeKey":"project-1","hosts":["api.github.com","githubcopilot.com"],"purpose":"use","grantedAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
-			case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
-				_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"github","type":"token","maxGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
-			default:
-				t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
-			}
-		}))
-		cmd := NewRootCommand()
-		var out bytes.Buffer
-		cmd.SetOut(&out)
-		cmd.SetArgs(append([]string{"--server", server.URL, "--project", "project-1", "secret", "grant", "create",
-			"--secret", secretID, "--scope", "project"}, args...))
-		err := cmd.Execute()
-		server.Close()
-		if err != nil {
-			t.Fatalf("%q: execute secret grant create: %v", args, err)
-		}
-		if got := strings.Join(grantHostsOf(created), ","); got != "api.github.com,githubcopilot.com" {
-			t.Fatalf("%q: posted hosts = %s, want both as one list", args, got)
-		}
-		if _, ok := created["host"]; ok {
-			t.Fatalf("%q: posted a host field beside hosts: %#v", args, created)
-		}
-		if !strings.Contains(out.String(), "api.github.com,githubcopilot.com") {
-			t.Fatalf("%q: output = %q, want both hosts", args, out.String())
 		}
 	}
 }

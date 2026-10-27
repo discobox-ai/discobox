@@ -298,13 +298,13 @@ func (s *Service) ListSecretRejections(ctx context.Context, projectID string) ([
 		for _, secretID := range cfg.ConfiguredSecretIDs {
 			owners[secretID] = owner{id: cfg.ID, name: cfg.Name}
 		}
-		bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, cfg.ID)
+		bindings, err := s.store.ListSecretBindings(ctx, projectID, store.SecretBindingFilter{TargetKind: model.SecretBindingTargetHarnessConfig, TargetID: cfg.ID})
 		if err != nil {
 			return nil, err
 		}
 		for _, binding := range bindings {
 			found, ok := owners[binding.SecretID]
-			if !ok {
+			if !ok || !binding.Use {
 				continue
 			}
 			if found.id == cfg.ID && found.envName == "" {

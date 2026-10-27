@@ -314,22 +314,8 @@ func encodeCreateSecretRequest(
 	return nil
 }
 
-func encodeCreateSecretGrantRequest(
-	req *CreateSecretGrantBody,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeCreateSecretRequestRequest(
-	req *CreateSecretRequestBody,
+func encodeCreateSecretBindingRequest(
+	req *CreateSecretBindingBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
@@ -636,20 +622,6 @@ func encodeSendSandboxExecInputRequest(
 	return nil
 }
 
-func encodeSetHarnessConfigSecretBindingRequest(
-	req *SetHarnessConfigSecretBindingBody,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
 func encodeStartSandboxRequest(
 	req *StartSandboxBody,
 	r *http.Request,
@@ -806,6 +778,20 @@ func encodeUpdateSandboxProviderInstanceRequest(
 
 func encodeUpdateSecretRequest(
 	req *UpdateSecretBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeUpdateSecretBindingRequest(
+	req *UpdateSecretBindingBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

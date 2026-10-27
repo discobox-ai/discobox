@@ -54,10 +54,15 @@ type PromptOptions struct {
 	// built from — a repository whose settings are read from the files
 	// .discobox/settings.json replaces. Leave it nil when there is nowhere to
 	// show it.
-	Warn   func(string)
-	Prompt []string
-	Env    []string
-	Secret []string
+	Warn func(string)
+	// ReportInlineSecret is told, once the create has succeeded, for each
+	// value it stored as a secret of its own, where it is sent ("DB_PASS: stored, sent to
+	// corp.example"), so an @ read as a host is seen rather than discovered.
+	// Leave it nil when there is nowhere to show it.
+	ReportInlineSecret func(string)
+	Prompt             []string
+	Env                []string
+	Secret             []string
 	// SkillDirs and UserSkills are --skills and --user-skills: directories of
 	// skills read into the request, and whether ~/.claude/skills and
 	// ~/.agents/skills are read first (ReadSkills).
@@ -67,10 +72,10 @@ type PromptOptions struct {
 	// skills sources of SkillDirs so a person's own win on a skill's name (ADR
 	// 26-10-14-894 §2). The frontend reads them from the server.
 	ProjectSkills []SkillsRepository
-	// Grants are the credentials the new discobox is given, already resolved
-	// to what the server takes: a secret by its ID. ParseGrants reads them
-	// from --grant.
-	Grants []apimodel.SandboxGrant
+	// Bindings are the secrets bound to the new discobox at create (ADR
+	// 26-10-27-880 §5), as ParseBindings reads them from --bind and
+	// --delegate. The server reads each secret by name or ID.
+	Bindings []apimodel.SandboxBindingInput
 	// DiscoboxAPI lets the new discobox call the discobox API through its
 	// pool (ADR 26-10-27-880 §9).
 	DiscoboxAPI bool
@@ -157,7 +162,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	if len(secrets) > 0 {
 		body.Config.SetSecrets(secrets)
 	}
-	body.Grants = opts.Grants
+	body.Bindings = opts.Bindings
 	if opts.DiscoboxAPI {
 		body.SetDiscoboxApi(apiclientgen.NewOptBool(true))
 	}
@@ -441,6 +446,7 @@ func declaredPromptSettings(ctx context.Context, opts PromptOptions, primary res
 
 type promptSandboxCreator interface {
 	CreateSandbox(context.Context, *apimodel.CreateSandboxBody, apiclientgen.CreateSandboxParams) (apiclientgen.CreateSandboxRes, error)
+	secretReader
 }
 
 // nameConflictAttempts bounds the retries below. Sandbox names are unique
@@ -463,6 +469,10 @@ func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, proje
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := NameBindingVariables(ctx, client, projectID, body.Bindings); err != nil {
+		local.Close()
+		return nil, nil, err
+	}
 	report.step(StepCreating)
 	for attempt := 1; ; attempt++ {
 		res, err := client.CreateSandbox(ctx, body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
@@ -471,6 +481,12 @@ func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, proje
 			return nil, nil, err
 		}
 		if sandbox, ok := res.(*apimodel.Sandbox); ok {
+			// Said only now: a create that failed stored nothing.
+			if opts.ReportInlineSecret != nil {
+				for _, secret := range body.Config.Secrets {
+					opts.ReportInlineSecret(InlineSecretLine(secret))
+				}
+			}
 			return sandbox, local, nil
 		}
 		if attempt >= nameConflictAttempts || !isNameConflict(res) {

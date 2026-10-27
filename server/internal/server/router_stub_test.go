@@ -607,42 +607,6 @@ func (s *routerTestServices) DeleteHarnessConfig(_ context.Context, projectID, c
 	return nil
 }
 
-func (s *routerTestServices) ListHarnessConfigSecretBindings(_ context.Context, projectID, configID string) ([]model.HarnessConfigSecretBinding, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if projectID != s.project.ID {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
-	}
-	if _, ok := s.harnessConfigs[configID]; !ok {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
-	}
-	return nil, nil
-}
-
-func (s *routerTestServices) SetHarnessConfigSecretBinding(_ context.Context, projectID, configID, envName, secretID string) (*model.HarnessConfigSecretBinding, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if projectID != s.project.ID {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
-	}
-	if _, ok := s.harnessConfigs[configID]; !ok {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
-	}
-	return &model.HarnessConfigSecretBinding{ID: "binding-1", ProjectID: projectID, HarnessConfigID: configID, EnvName: envName, SecretID: secretID}, nil
-}
-
-func (s *routerTestServices) DeleteHarnessConfigSecretBinding(_ context.Context, projectID, configID, _ string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if projectID != s.project.ID {
-		return apperrors.NewStatusError(http.StatusNotFound, "project not found")
-	}
-	if _, ok := s.harnessConfigs[configID]; !ok {
-		return apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
-	}
-	return nil
-}
-
 func (s *routerTestServices) ListSandboxProviderCatalogItems(context.Context) ([]services.SandboxProviderCatalogItem, error) {
 	return []services.SandboxProviderCatalogItem{{ID: "digitalocean", Name: "DigitalOcean"}}, nil
 }

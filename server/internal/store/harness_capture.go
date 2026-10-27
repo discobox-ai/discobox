@@ -29,11 +29,14 @@ func (s *Store) CaptureBaseline(ctx context.Context, projectID, configID string)
 			}
 		}
 	}
-	bindings, err := s.ListHarnessConfigSecretBindings(ctx, projectID, cfg.ID)
+	bindings, err := s.ListSecretBindings(ctx, projectID, SecretBindingFilter{TargetKind: model.SecretBindingTargetHarnessConfig, TargetID: cfg.ID})
 	if err != nil {
 		return b, err
 	}
 	for _, binding := range bindings {
+		if !binding.Use {
+			continue
+		}
 		secret, err := s.GetSecret(ctx, projectID, binding.SecretID)
 		if err != nil {
 			return b, err

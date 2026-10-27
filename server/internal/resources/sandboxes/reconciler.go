@@ -369,7 +369,12 @@ func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, 
 }
 
 func (r *SandboxReconciler) softDelete(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
-	if err := r.store.DeleteSandbox(ctx, sandbox.ProjectID, sandbox.ID, store.WithGeneration(generation)); err != nil {
+	// The bindings handed on under its delegate bindings go with it, and the
+	// discoboxes holding them are marked to drop what they delivered.
+	markHolders := store.OnBindingsDeleted(func(txStore *store.Store, txDB *gorm.DB, deleted []model.SecretBinding) error {
+		return markBindingHoldersTx(ctx, r.engine, txStore, txDB, sandbox.ProjectID, deleted)
+	})
+	if err := r.store.DeleteSandbox(ctx, sandbox.ProjectID, sandbox.ID, store.WithGeneration(generation), markHolders); err != nil {
 		if errors.Is(err, store.ErrGenerationConflict) {
 			return reconcile.Superseded("sandbox generation changed")
 		}
@@ -461,15 +466,15 @@ func (r *SandboxReconciler) createSandbox(ctx context.Context, sb *model.Sandbox
 
 func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.Sandbox, provider Provider, secretState []byte, start bool) ([]byte, error) {
 	ref := sandboxRefFromSandbox(sb)
-	// Repair the sandbox's secret bindings on the way up. The fan-out when a
-	// binding changes reaches the sandboxes that exist and are reachable at that
-	// moment; this catches what it missed — a sandbox archived across the change,
-	// a fan-out that stopped on an earlier sandbox's error — before the create
-	// options below read the assignments. It only covers a sandbox being
-	// reconciled: one whose generations already agree is never handed here, so
-	// drift on an idle sandbox waits for its next start.
-	if _, err := rebindSandboxSecretRows(ctx, r.store, sb.ProjectID, sb); err != nil {
-		return secretState, fmt.Errorf("rebind sandbox secrets: %w", err)
+	// Materialize the sandbox's bindings on the way up. The marks a binding
+	// change makes reach the sandboxes present at that moment; this catches
+	// what they missed — a sandbox archived across the change — before the
+	// create options below read the sentinels.
+	if err := r.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+		_, err := materializeSandboxSecrets(ctx, txStore, sb)
+		return err
+	}); err != nil {
+		return secretState, fmt.Errorf("materialize sandbox secrets: %w", err)
 	}
 	createOpts, err := r.createOptionsFromSandbox(ctx, sb)
 	if err != nil {
@@ -641,7 +646,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			}
 			opts.SecretEnv[assignment.EnvName] = assignment.Sentinel
 		}
-		if opts.SentinelRoutes, err = sandboxSentinelRoutes(ctx, r.store, sb, assignments); err != nil {
+		if opts.SentinelRoutes, err = r.store.SentinelRouteLists(ctx, sb.ProjectID, assignments); err != nil {
 			return CreateOptions{}, fmt.Errorf("list sentinel routes: %w", err)
 		}
 		// Merged from the levels as they stand, so a new container is restricted

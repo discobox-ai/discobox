@@ -259,8 +259,8 @@ func newOptions(session Session) *optionSet {
 		},
 		optSecret: {
 			label: "Secrets", kind: optMulti,
-			hint:    "-s · KEY=VALUE, or KEY=<sec_id> to reference an existing secret",
-			example: "KEY=VALUE",
+			hint:    "-s · KEY from this shell, KEY=@FILE, or KEY=VALUE; @HOST sends it to HOST alone",
+			example: "KEY",
 		},
 		optSource: {
 			label: "Source", kind: optChoice,

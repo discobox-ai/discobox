@@ -7,8 +7,10 @@ sandbox create requests.
   dirty local workspaces, captures local user identity, captures the local Git
   authorship, derives the origin keys a folder is listed by (`OriginKeys`,
   over the root a create records for its source, `SourceRoot`), classifies
-  environment and secret inputs, parses `--grant` (`ParseGrants`), builds the API body, and submits prompt sandbox
-  creates.
+  environment and secret inputs (`-s KEY[=VALUE|=@FILE][@HOST]`: a value from
+  the shell's `$KEY`, a file, or the argument, stored as an anonymous secret), parses `--bind` and `--delegate`
+  (`ParseBindings`, the variable defaulting to `secretenv.Name`), builds the API
+  body, and submits prompt sandbox creates.
 - Every path placed in the sandbox is judged by the sandbox's platform
   (`PromptOptions.Platform`, through `sandboxpath`; ADR 0145 §6), never by this
   machine's: where a source lands and the working root it lands under. This

@@ -91,13 +91,13 @@ func boxdValue(key string) apigen.SecretValue {
 }
 
 // createBoxdSecret stores an exchange secret the way the boxd helper script
-// does, bound to the test server's host.
+// does, routed to the test server's host.
 func createBoxdSecret(t *testing.T, svc *resourcesecrets.Service, ts *boxdTokenServer, key string) (*model.Secret, error) {
 	t.Helper()
 	return svc.CreateSecret(testPrincipalContext(), "project-1", services.CreateSecretBody{
 		Name:     "boxd",
 		Type:     apigen.CreateSecretBodyTypeExchange,
-		Host:     apigen.NewOptString("127.0.0.1"),
+		Routes:   hostRoutes("127.0.0.1"),
 		Exchange: apigen.NewOptExchangeRecipe(ts.recipe()),
 		Value:    boxdValue(key),
 	})
@@ -153,12 +153,12 @@ func TestAnExchangeSecretNeedsASoundRecipeAndItsFields(t *testing.T) {
 		return apigen.NewOptExchangeRecipe(r)
 	}
 	body := func(name, host string, recipe apigen.OptExchangeRecipe, value apigen.SecretValue) services.CreateSecretBody {
-		return services.CreateSecretBody{Name: name, Type: apigen.CreateSecretBodyTypeExchange, Host: apigen.NewOptString(host), Exchange: recipe, Value: value}
+		return services.CreateSecretBody{Name: name, Type: apigen.CreateSecretBodyTypeExchange, Routes: hostRoutes(host), Exchange: recipe, Value: value}
 	}
 	cases := map[string]services.CreateSecretBody{
 		"no recipe":                         body("a", "127.0.0.1", apigen.OptExchangeRecipe{}, boxdValue("bxd_good")),
-		"no host binding":                   body("b", "", apigen.NewOptExchangeRecipe(ts.recipe()), boxdValue("bxd_good")),
-		"a url outside the binding":         body("c", "boxd.sh", apigen.NewOptExchangeRecipe(ts.recipe()), boxdValue("bxd_good")),
+		"no routes":                         body("b", "", apigen.NewOptExchangeRecipe(ts.recipe()), boxdValue("bxd_good")),
+		"a url outside the routes":          body("c", "boxd.sh", apigen.NewOptExchangeRecipe(ts.recipe()), boxdValue("bxd_good")),
 		"plain http":                        body("d", "127.0.0.1", with(func(r *apigen.ExchangeRecipe) { r.URL = strings.Replace(r.URL, "https:", "http:", 1) }), boxdValue("bxd_good")),
 		"a template naming no field":        body("e", "127.0.0.1", with(func(r *apigen.ExchangeRecipe) { r.Body.Value["api_key"] = "{apikey}" }), boxdValue("bxd_good")),
 		"a field nothing sends":             body("f", "127.0.0.1", with(func(r *apigen.ExchangeRecipe) { r.Fields = append(r.Fields, "spare") }), boxdValue("bxd_good")),
@@ -170,7 +170,7 @@ func TestAnExchangeSecretNeedsASoundRecipeAndItsFields(t *testing.T) {
 			t.Errorf("%s: created, want refused", name)
 		}
 	}
-	token := services.CreateSecretBody{Name: "i", Type: apigen.CreateSecretBodyTypeToken, Host: apigen.NewOptString("127.0.0.1"),
+	token := services.CreateSecretBody{Name: "i", Type: apigen.CreateSecretBodyTypeToken, Routes: hostRoutes("127.0.0.1"),
 		Exchange: apigen.NewOptExchangeRecipe(ts.recipe()), Value: apigen.SecretValue{Token: apigen.NewOptString("t")}}
 	if _, err := svc.CreateSecret(ctx, "project-1", token); err == nil {
 		t.Error("a token with an exchange recipe was created")
@@ -181,8 +181,8 @@ func TestAnExchangeSecretNeedsASoundRecipeAndItsFields(t *testing.T) {
 }
 
 // A recipe says where a stored key is sent, so a new one comes only with the
-// key: an update cannot point a stored key at somebody else's endpoint, and a
-// new binding cannot leave the recipe's endpoint outside it.
+// key: an update cannot point a stored key at somebody else's endpoint, and
+// new routes cannot leave the recipe's endpoint outside them.
 func TestAStoredKeyIsNeverSentSomewhereNew(t *testing.T) {
 	svc, _ := newResolveFixture(t)
 	ts := newBoxdTokenServer(t, "bxd_good", time.Hour)
@@ -196,8 +196,8 @@ func TestAStoredKeyIsNeverSentSomewhereNew(t *testing.T) {
 	if _, err := svc.UpdateSecret(ctx, "project-1", sec.ID, services.UpdateSecretBody{Exchange: apigen.NewOptExchangeRecipe(moved)}); err == nil {
 		t.Fatal("a recipe was replaced without the key")
 	}
-	if _, err := svc.UpdateSecret(ctx, "project-1", sec.ID, services.UpdateSecretBody{Host: apigen.NewOptString("boxd.sh")}); err == nil {
-		t.Fatal("a binding was moved off the recipe's endpoint")
+	if _, err := svc.UpdateSecret(ctx, "project-1", sec.ID, services.UpdateSecretBody{Routes: hostRoutes("boxd.sh")}); err == nil {
+		t.Fatal("the routes were moved off the recipe's endpoint")
 	}
 	updated, err := svc.UpdateSecret(ctx, "project-1", sec.ID, services.UpdateSecretBody{
 		Exchange: apigen.NewOptExchangeRecipe(ts.recipe()),
@@ -212,7 +212,7 @@ func TestADiscoboxMayNotGiveAnExchangeRecipe(t *testing.T) {
 	svc, _ := newResolveFixture(t)
 	ts := newBoxdTokenServer(t, "bxd_good", time.Hour)
 	_, err := svc.CreateSecret(auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypeSandbox, SandboxID: "sb-1", ProjectID: "project-1", UserID: "user-1"}), "project-1", services.CreateSecretBody{
-		Name: "boxd", Type: apigen.CreateSecretBodyTypeExchange, Host: apigen.NewOptString("127.0.0.1"),
+		Name: "boxd", Type: apigen.CreateSecretBodyTypeExchange, Routes: hostRoutes("127.0.0.1"),
 		Exchange: apigen.NewOptExchangeRecipe(ts.recipe()), Value: boxdValue("bxd_good"),
 	})
 	var status interface{ StatusCode() int }
@@ -232,7 +232,7 @@ func TestResolveRenewsAnExchangedTokenAsItAgesOut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-BX")
 
@@ -261,7 +261,7 @@ func TestResolveServesAFreshExchangedTokenWithoutExchanging(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-BX")
 	for range 3 {
@@ -285,7 +285,7 @@ func TestARefusedExchangedTokenIsRenewedThenRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-BX")
 
@@ -313,7 +313,7 @@ func TestARevokedExchangeKeyIsRecordedAsARenewalThatFailed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-BX")
 
@@ -387,7 +387,7 @@ func TestATokenOfUnknownLifetimeIsNotExchangedOnEveryResolve(t *testing.T) {
 	if sec.Exchange == nil || sec.Exchange.TokenExpiresAt == 0 {
 		t.Fatalf("exchange = %+v, want a lifetime assumed", sec.Exchange)
 	}
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-BX")
 	for range 3 {
@@ -400,38 +400,12 @@ func TestATokenOfUnknownLifetimeIsNotExchangedOnEveryResolve(t *testing.T) {
 	}
 }
 
-// Approving a request may rebind the secret it answers with, and an exchange
-// secret's binding is where its key may be sent: the approval is held to the
-// recipe the way an update is, and refused rather than moving the key.
-func TestApprovingCannotMoveAnExchangeSecretOffItsRecipe(t *testing.T) {
-	ctx := testPrincipalContext()
-	svc, st := newAgentCredentialService(t)
-	ts := newBoxdTokenServer(t, "bxd_good", time.Hour)
-	sec, err := createBoxdSecret(t, svc, ts, "bxd_good")
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	req := createAgentRequest(ctx, t, svc)
-	for _, host := range []string{"api.github.com", ""} {
-		_, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-			SecretId:   apigen.NewOptString(sec.ID),
-			SecretHost: apigen.NewOptString(host),
-		})
-		if err == nil || !strings.Contains(err.Error(), "exchange recipe") {
-			t.Fatalf("approve rebinding to %q = %v, want refused by the recipe", host, err)
-		}
-	}
-	if stored, _ := st.GetSecret(ctx, "project-1", sec.ID); stored == nil || stored.Host != "127.0.0.1" {
-		t.Fatalf("secret = %#v, want its binding kept", stored)
-	}
-}
-
 // A recipe may not send the server to an address only it can reach — loopback,
 // private, link-local — and read back the answer.
 func TestAnExchangeIsNeverSentToAnInternalAddress(t *testing.T) {
 	svc, _ := newResolveFixture(t)
 	ctx := testPrincipalContext()
-	for target, host := range map[string]string{
+	for target := range map[string]string{
 		"https://127.0.0.1:8443/token":  "127.0.0.1",
 		"https://10.1.2.3/token":        "10.1.2.3",
 		"https://169.254.169.254/token": "169.254.169.254",
@@ -440,7 +414,7 @@ func TestAnExchangeIsNeverSentToAnInternalAddress(t *testing.T) {
 		"https://localhost/token":       "localhost",
 	} {
 		_, err := svc.CreateSecret(ctx, "project-1", services.CreateSecretBody{
-			Name: "internal", Type: apigen.CreateSecretBodyTypeExchange, Host: apigen.NewOptString(host),
+			Name: "internal", Type: apigen.CreateSecretBodyTypeExchange, Routes: hostRoutes("*"),
 			Exchange: apigen.NewOptExchangeRecipe(apigen.ExchangeRecipe{URL: target, Fields: []string{"api_key"},
 				Body: apigen.NewOptExchangeRecipeBody(apigen.ExchangeRecipeBody{"api_key": "{api_key}"}), TokenPath: "token"}),
 			Value: boxdValue("bxd_good"),
@@ -450,4 +424,12 @@ func TestAnExchangeIsNeverSentToAnInternalAddress(t *testing.T) {
 			t.Errorf("%s = %v, want a 400 refusing an internal address", target, err)
 		}
 	}
+}
+
+// hostRoutes are the routes of a secret sent to host alone; none for no host.
+func hostRoutes(host string) apigen.OptNilSecretRouteInputArray {
+	if host == "" {
+		return apigen.OptNilSecretRouteInputArray{}
+	}
+	return apigen.NewOptNilSecretRouteInputArray([]apigen.SecretRouteInput{{Host: host}})
 }

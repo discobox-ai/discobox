@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // BoundSecrets is not a column, so every read that hands out a harness config
@@ -28,11 +29,19 @@ func TestEveryHarnessConfigReadCountsItsBindings(t *testing.T) {
 		if err := s.CreateSecret(ctx, sec); err != nil {
 			t.Fatalf("create secret: %v", err)
 		}
-		if err := s.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
-			ProjectID: "project-1", HarnessConfigID: bound.ID, EnvName: env, SecretID: sec.ID,
-		}); err != nil {
-			t.Fatalf("upsert binding: %v", err)
+		if err := s.CreateSecretBinding(ctx, &model.SecretBinding{
+			ProjectID: "project-1", SecretID: sec.ID, TargetKind: model.SecretBindingTargetHarnessConfig,
+			TargetID: bound.ID, Use: true, EnvName: env,
+		}, store.BindingChange{Actor: "user-1"}); err != nil {
+			t.Fatalf("create binding: %v", err)
 		}
+	}
+	// A delegation delivers nothing to the harness, and is not counted.
+	if err := s.CreateSecretBinding(ctx, &model.SecretBinding{
+		ProjectID: "project-1", SecretID: "sec-other", TargetKind: model.SecretBindingTargetHarnessConfig,
+		TargetID: bound.ID, Delegate: true,
+	}, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatalf("create delegate binding: %v", err)
 	}
 	if err := s.CreateSandbox(ctx, &model.Sandbox{
 		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "sb-1",

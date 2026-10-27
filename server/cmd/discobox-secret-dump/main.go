@@ -20,6 +20,8 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/discobox-ai/discobox/pkg/secretroute"
+
 	"github.com/discobox-ai/discobox/server/internal/config"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -102,8 +104,8 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("secret %s has no stored value", secret.ID)
 	}
 
-	fmt.Fprintf(os.Stderr, "secret %s  project=%s  name=%q  type=%s  host=%q\n",
-		secret.ID, secret.ProjectID, secret.Name, secret.Type, secret.Host)
+	fmt.Fprintf(os.Stderr, "secret %s  project=%s  name=%q  type=%s  routes=%s\n",
+		secret.ID, secret.ProjectID, secret.Name, secret.Type, dumpRoutes(secret.Routes))
 
 	if *jsonOut {
 		// Emitting the plaintext secret is this tool's entire purpose.
@@ -153,4 +155,13 @@ func printValue(_ string, v *model.SecretValue) {
 	if v.Token != "" {
 		fmt.Printf("token: %s\n", v.Token)
 	}
+}
+
+// dumpRoutes writes a secret's routes the way a person writes them.
+func dumpRoutes(routes []model.SecretRoute) string {
+	parts := make([]string, 0, len(routes))
+	for _, route := range model.ProxyRoutes(routes) {
+		parts = append(parts, secretroute.Format(route))
+	}
+	return strings.Join(parts, ",")
 }

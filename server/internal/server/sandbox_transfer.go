@@ -114,6 +114,7 @@ func sandboxImportHandler(service services.SandboxService) http.Handler {
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(sandboxImportResponse{
 			Sandbox:  &body,
+			Bound:    result.Bound,
 			Warnings: result.Warnings,
 		})
 	})
@@ -124,8 +125,13 @@ func sandboxImportHandler(service services.SandboxService) http.Handler {
 // not carry over. A secret the destination has no equivalent of does not fail
 // the import, and a client that only ever saw the sandbox would have no way to
 // learn it is missing until the harness said so from inside.
+//
+// It also says what it carried over that authorizes something: each binding
+// it made from the archive, so the person importing sees which of this
+// project's credentials the discobox now holds.
 type sandboxImportResponse struct {
 	Sandbox  *serverapi.Sandbox `json:"sandbox"`
+	Bound    []string           `json:"bound,omitempty"`
 	Warnings []string           `json:"warnings,omitempty"`
 }
 

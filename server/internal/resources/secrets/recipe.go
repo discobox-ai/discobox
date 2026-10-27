@@ -12,29 +12,30 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/hostscope"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 // This file reads an exchange recipe (ADR 26-10-08-452): whether one is sound,
 // the request it makes from what was stored, and the token in its answer.
 
-// checkRecipe reports what is wrong with a recipe for a secret bound to host.
+// checkRecipe reports what is wrong with a recipe for a secret with routes.
 //
-// The URL is where the long-lived key is sent, so it is held to the binding
-// that already says where the token may go: a key is never sent anywhere its
+// The URL is where the long-lived key is sent, so it is held to the routes
+// that already say where the token may go: a key is never sent to a host its
 // token could not be. A template naming a field the recipe does not declare
 // would send the placeholder itself, and a field nothing sends is a key stored
 // for no reason.
-func checkRecipe(recipe *model.ExchangeRecipe, host string) error {
+func checkRecipe(recipe *model.ExchangeRecipe, routes []model.SecretRoute) error {
 	var problems []string
 	u, err := url.Parse(recipe.URL)
 	switch {
 	case err != nil || u.Scheme != "https" || u.Hostname() == "":
 		problems = append(problems, fmt.Sprintf("url %q is not an https URL", recipe.URL))
-	case host == "":
-		problems = append(problems, "an exchange secret is bound to a host, and its url must sit inside it: give it one")
-	case !hostscope.Covers(host, u.Hostname()):
-		problems = append(problems, fmt.Sprintf("url host %s is outside the secret's binding %s: a key is only sent where its token may go", u.Hostname(), host))
+	case len(routes) == 0:
+		problems = append(problems, "an exchange secret has routes, and its url must sit inside them: give it some")
+	case !secretroute.HostAllowed([][]secretroute.Route{model.ProxyRoutes(routes)}, hostscope.Normalize(u.Hostname())):
+		problems = append(problems, fmt.Sprintf("url host %s is outside the secret's routes: a key is only sent where its token may go", u.Hostname()))
 	}
 	if len(recipe.Fields) == 0 {
 		problems = append(problems, "no fields")

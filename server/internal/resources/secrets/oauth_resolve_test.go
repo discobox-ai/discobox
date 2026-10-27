@@ -71,7 +71,8 @@ func mustOAuthSecret(t *testing.T, st *store.Store, name string, val model.Secre
 	}
 	sec := &model.Secret{
 		ProjectID: "project-1", Name: name, Type: model.SecretTypeOAuth,
-		MaxGrantTTL: 3600, EncryptedValue: b,
+		Routes:        []model.SecretRoute{{Host: "*"}},
+		MaxBindingTTL: 3600, EncryptedValue: b,
 	}
 	if err := st.CreateSecret(context.Background(), sec); err != nil {
 		t.Fatalf("create oauth secret: %v", err)
@@ -91,7 +92,7 @@ func TestResolveOAuthRefreshesExpiredToken(t *testing.T) {
 		ClientID:             "client-x",
 		AccessTokenExpiresAt: time.Now().UTC().Add(-time.Minute).UnixMilli(), // expired
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-OA")
 
@@ -166,7 +167,7 @@ func TestResolveOAuthRefreshSendsAConfidentialClientsSecret(t *testing.T) {
 				AccessTokenExpiresAt: time.Now().UTC().Add(-time.Minute).UnixMilli(),
 				TokenRequestEncoding: model.OAuthTokenRequestForm,
 			})
-			mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+			mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 			createSandbox(t, st, "sb-1", "pool-1")
 			mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-OA")
 
@@ -218,7 +219,7 @@ func TestResolveOAuthRefreshesWithTheRecordedEncoding(t *testing.T) {
 				AccessTokenExpiresAt: time.Now().UTC().Add(-time.Minute).UnixMilli(),
 				TokenRequestEncoding: tc.encoding,
 			})
-			mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+			mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 			createSandbox(t, st, "sb-1", "pool-1")
 			mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-OA")
 
@@ -266,7 +267,7 @@ func TestResolveOAuthKeepsFreshTokenWithoutRefresh(t *testing.T) {
 		ClientID:             "client-x",
 		AccessTokenExpiresAt: time.Now().UTC().Add(time.Hour).UnixMilli(), // well within validity
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-OB")
 
@@ -300,7 +301,7 @@ func TestResolveOAuthServesStaleTokenWhenRefreshFails(t *testing.T) {
 		ClientID:             "client-x",
 		AccessTokenExpiresAt: time.Now().UTC().Add(-time.Minute).UnixMilli(),
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-OC")
 
@@ -333,7 +334,7 @@ func TestResolveOAuthRotationPreservesCapturedScopes(t *testing.T) {
 		Scopes:               []string{"user:inference", "user:profile"},
 		SubscriptionType:     "max",
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-OA")
 
@@ -399,7 +400,7 @@ func TestResolveOAuthDerivesExpiryFromJWTWhenEndpointOmitsExpiresIn(t *testing.T
 		ClientID:             "client-x",
 		AccessTokenExpiresAt: time.Now().UTC().Add(-time.Minute).UnixMilli(), // expired
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-OD")
 
@@ -457,7 +458,7 @@ func TestResolveOAuthLeavesExpiryUnknownForOpaqueToken(t *testing.T) {
 		ClientID:             "client-x",
 		AccessTokenExpiresAt: time.Now().UTC().Add(-time.Minute).UnixMilli(),
 	})
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetProject, "project-1")
 	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-OE")
 

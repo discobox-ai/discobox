@@ -489,7 +489,7 @@ discobox push       push local commits into a box, to rebase there
 discobox proxy      forward a box's ports without the window open
 discobox cp         copy files in and out
 discobox tools      run git, ssh, VS Code, or Zed against a box
-discobox secret     secrets, grants, and approval requests
+discobox secret     secrets, bindings, and approval requests
 discobox configure  enable, disable, and set the default harness
 discobox id         print this machine's peer ID and the server's
 discobox admin      pools, projects, harnesses, the server and its status

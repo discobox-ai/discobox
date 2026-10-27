@@ -283,7 +283,7 @@ func TestTheTokensRoutesSendCopilotsOwnTrafficAndBlockTheRest(t *testing.T) {
 		{"https://github.com/org/repo", false},
 	} {
 		host := strings.SplitN(strings.TrimPrefix(tc.url, "https://"), "/", 2)[0]
-		if allowed, reason := secretroute.Decide(routes, host, tc.url); allowed != tc.allowed {
+		if allowed, reason := secretroute.Decide([][]secretroute.Route{routes}, host, tc.url); allowed != tc.allowed {
 			t.Fatalf("%s: allowed = %v (%s), want %v", tc.url, allowed, reason, tc.allowed)
 		}
 	}

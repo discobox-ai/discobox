@@ -137,6 +137,50 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   Scripts and console launchers must put CLI flags before DISCOBOX; otherwise
   those flags become the remote command. Check callers outside Go tests too.
 
+## Secrets and bindings
+
+- **A person's binding verbs print sentences, not IDs.** `secret bind`,
+  `unbind` and `bound` say what changed for whom; an ID, a raw record or a
+  table of target kinds belongs in `admin binding`. A new field on a binding
+  is said in the sentence, or it is raw.
+- **A binding's target is `[DISCOBOX]`, `--harness` or `--project-wide`,
+  exactly one,** read by `resolveBindingTarget`. A new `secret` verb that names
+  a target takes the same three (`command_conventions_test.go` checks).
+- **A binding's words are `--as`, `--route` (one per flag) and `--for`**, on
+  the person's verbs and `admin binding` alike. `--to`, `--env` and `--ttl` for
+  a binding are a second vocabulary; `--ttl` is a token's staleness.
+- **A subcommand's flag must not reuse a root persistent flag's name.** It
+  shadows the global one on that command: a local `--project` made
+  `secret bind … --project acme` stop choosing the project.
+- **A variable, route or name a discobox wrote is escaped wherever printed**:
+  a request's env name and routes, a child binding's variable and routes
+  (`routesText` escapes its own output). The secret's name beside them was
+  never the only box-written cell.
+- **Unbinding takes back the half asked for.** A binding that both delivers a
+  variable and may be given on is updated, not deleted, by an unbind of one
+  half.
+- **`-s` is a new secret's value only, read from where it is.**
+  `KEY[=VALUE|=@FILE][@HOST]` makes an anonymous secret, from `$KEY` or a
+  file before a literal value: help and examples lead with those, since a value
+  on the command line reaches shell history and the process list;
+  nothing in `-s`, `--from-json`'s `secrets` or the console's Secrets row may
+  name a stored secret — that is `--bind`. The host is what follows the last
+  `@`, and a word with no dot after it is refused, not taken for a host: a
+  password's tail is not a route. One with a dot is taken, so every create
+  says where each inline secret is sent; a create path that does not print
+  `InlineSecretLine` hides a misread `@`.
+- **A default variable is `secretenv.Name` of the secret's name, everywhere.**
+  `--bind` without `:VAR`, `secret bind` without `--as` and the console's
+  binding form must agree; a secret given by ID is looked up first
+  (`NameBindingVariables`, `defaultBindingVariable`), never upper-snaked as an
+  ID.
+- **A secret is created with a route.** The CLI and the console both refuse a
+  secret with none and say `*` is anywhere (ADR 26-10-27-939); a route-less
+  secret is sent nowhere and fails far from where it was made.
+- **A refresh request is dismissed, never denied.** It is its own kind
+  (`secret-refresh-requests`); answering one through the credential request
+  endpoints is a 404 at best.
+
 ## Handing the sandbox's paths to host tools
 
 - **A folder from the server's record is checked before a host tool gets it**

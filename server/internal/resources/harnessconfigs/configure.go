@@ -18,7 +18,9 @@ import (
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	"github.com/discobox-ai/discobox/server/internal/auth"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
@@ -111,15 +113,17 @@ func configureSecretType(declared string) (string, error) {
 // of a committed capture receipt uses the explicit server-only lease.
 type SandboxRuntime interface {
 	AcquireSandboxHTTPClientForServer(context.Context, string, string, []string, services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error)
-	EnsureCaptureOriginSecretsTx(context.Context, *store.Store, *gorm.DB, string, string, string, []string) error
 	CreateSandbox(ctx context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error)
 	DeleteSandbox(ctx context.Context, projectID, sandboxID string) error
 	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string, use services.SandboxUse) (*services.HTTPClientLease, *model.Sandbox, error)
-	// RebindHarnessConfigSecrets repoints existing sandboxes at the secrets this
-	// config's bindings now name. Configure is one of the two places a binding's
-	// secret changes, and the only one that can replace it outright.
-	RebindHarnessConfigSecrets(ctx context.Context, projectID, harnessConfigID string) error
-	RebindHarnessConfigSecretsTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, harnessConfigID string) error
+	// MarkBindingHoldersDirtyTx marks the sandboxes the bindings' targets
+	// cover, in the transaction that wrote or removed them, so each is
+	// materialized again and its pool sent the result (ADR 26-10-27-880 §2).
+	MarkBindingHoldersDirtyTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID string, bindings []model.SecretBinding) error
+	// MaterializeSandboxSecretsTx makes one sandbox's sentinels its bindings
+	// now, in the caller's transaction: a save-back hands the sandbox that
+	// saved its new credentials' sentinels in its acknowledgment.
+	MaterializeSandboxSecretsTx(ctx context.Context, txStore *store.Store, projectID, sandboxID string) error
 	// MarkSecretHoldersDirtyTx marks the sandboxes holding a secret for
 	// reconcile in the transaction that changes its routes, so each converges
 	// on them (ADR 26-10-02-924).
@@ -267,14 +271,14 @@ func (s *Service) AttachHarnessConfigConfigure(ctx context.Context, projectID, c
 // previousConfiguration rebuilds the configure output that produced the harness's
 // current configuration, in the same shape the configure command writes, minus
 // every secret value: it says which secrets exist, not what they are. The values
-// ride in as PREV_-prefixed sentinels (applyPreviousConfigureSecrets), so no
+// ride in as PREV_-prefixed sentinels (sandboxes.materializeSandboxSecrets), so no
 // credential is ever written to a file inside the sandbox.
 func (s *Service) previousConfiguration(ctx context.Context, config *model.HarnessConfig) (*configureOutput, error) {
 	out := &configureOutput{Files: config.ConfiguredFiles, Secrets: []configureSecret{}}
 	if out.Files == nil {
 		out.Files = []model.HarnessConfigFile{}
 	}
-	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, config.ProjectID, config.ID)
+	bindings, err := s.store.ListTargetUseBindings(ctx, config.ProjectID, model.SecretBindingTargetHarnessConfig, config.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -296,14 +300,14 @@ func (s *Service) previousConfiguration(ctx context.Context, config *model.Harne
 			return nil, err
 		}
 		// Metadata only. Whether the credential is still usable is not decided
-		// here: its sentinel resolves through the proxy only while a live grant
-		// covers it, so a revoked credential fails the command's own verification
-		// rather than needing a second, divergent grant check on this path.
+		// here: its sentinel resolves through the proxy only while its binding
+		// stands, so a removed one fails the command's own verification rather
+		// than needing a second, divergent check on this path.
 		out.Secrets = append(out.Secrets, configureSecret{
 			EnvName:     binding.EnvName,
 			Name:        secret.Name,
 			Type:        secret.Type,
-			Host:        secret.Host,
+			Host:        secretHost(secret),
 			UsePrevious: true,
 		})
 	}
@@ -348,7 +352,7 @@ func (s *Service) CommitHarnessConfigConfigure(ctx context.Context, projectID, c
 			if current.Revision != config.Revision || (current.ConfigureRevision != 0 && current.ConfigureRevision != current.Revision) {
 				return captureConflict()
 			}
-			bindings, err := tx.ListHarnessConfigSecretBindings(ctx, projectID, configID)
+			bindings, err := tx.ListTargetUseBindings(ctx, projectID, model.SecretBindingTargetHarnessConfig, configID)
 			if err != nil {
 				return err
 			}
@@ -446,14 +450,15 @@ func (s *Service) collectConfigureOutput(ctx context.Context, projectID, sandbox
 }
 
 // applyConfigureOutput records what the configure flow produced: its files land in
-// ConfiguredFiles, and each declared secret is created, bound, and granted to this
-// harness config, with the resulting IDs tracked so deconfigure removes exactly
-// these. The grant is what makes the secret usable at run time — a binding alone
-// is not a grant.
+// ConfiguredFiles, and each declared secret is created and bound to this
+// harness config for use, with the resulting IDs tracked so deconfigure
+// removes exactly these. The binding is what makes the secret usable at run
+// time (ADR 26-10-27-880 §5): the person just handed this credential to this
+// harness's configure flow, which is the consent it records.
 //
 // A secret the command asked to keep (UsePrevious, or the PREV_ sentinel handed
-// straight back) is carried over as-is: the existing secret row, binding, and
-// grant survive, and nothing about the credential passes through this process.
+// straight back) is carried over as-is: the existing secret row and binding
+// survive, and nothing about the credential passes through this process.
 func (s *Service) applyConfigureOutput(ctx context.Context, config *model.HarnessConfig, sandboxID string, out *configureOutput) error {
 	if out == nil {
 		return nil
@@ -467,9 +472,10 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 		return err
 	}
 	createdSecretIDs := make([]string, 0, len(out.Secrets))
+	bound := map[string]string{}
 	for _, secret := range out.Secrets {
 		envName := strings.TrimSpace(secret.EnvName)
-		if !services.HarnessConfigEnvVarNamePattern.MatchString(envName) {
+		if !services.EnvVarNamePattern.MatchString(envName) {
 			return fmt.Errorf("configure output has invalid secret environment variable %q", secret.EnvName)
 		}
 		secretType, err := configureSecretType(secret.Type)
@@ -494,14 +500,7 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 		}
 		if keptID != "" {
 			createdSecretIDs = append(createdSecretIDs, keptID)
-			if err := s.store.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
-				ProjectID:       config.ProjectID,
-				HarnessConfigID: config.ID,
-				EnvName:         envName,
-				SecretID:        keptID,
-			}); err != nil {
-				return fmt.Errorf("bind kept secret %q: %w", envName, err)
-			}
+			bound[envName] = keptID
 			continue
 		}
 		if len(bytes.TrimSpace(secret.Value)) == 0 {
@@ -510,43 +509,37 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 		// A new value for an env name this harness already binds updates that
 		// secret in place, so its ID — and every sandbox sentinel keyed on it —
 		// stays stable and running sandboxes resolve the new value without a new
-		// grant or sentinel. Only a genuinely new env name mints a new secret.
+		// binding or sentinel. Only a genuinely new env name mints a new secret.
 		if existingID := previousByEnv[envName]; existingID != "" {
 			existing, err := s.store.GetSecret(ctx, config.ProjectID, existingID)
 			if err != nil {
 				return fmt.Errorf("load configured secret %q for update: %w", envName, err)
 			}
-			hostChanged := existing.Host != secret.Host
-			existing.Name = name
+			if name != existing.Name {
+				if taken, err := s.secretNameTaken(ctx, config.ProjectID, name, existing.ID); err != nil {
+					return err
+				} else if !taken {
+					existing.Name = name
+				}
+			}
 			existing.Type = secretType
-			existing.Host = secret.Host
 			existing.EncryptedValue = []byte(secret.Value)
+			// Where it may go is what the image declares, when it declares
+			// some (syncConfiguredSecretRoutes, below); otherwise it keeps
+			// the routes it has. A person may have narrowed them, and what a
+			// configure box outputs never widens them.
 			if err := s.store.UpdateSecret(ctx, existing); err != nil {
 				return fmt.Errorf("update configured secret %q: %w", envName, err)
 			}
 			createdSecretIDs = append(createdSecretIDs, existing.ID)
-			// The binding already points here, but re-upsert so it stays
-			// authoritative even if its stored fields drifted.
-			if err := s.store.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
-				ProjectID:       config.ProjectID,
-				HarnessConfigID: config.ID,
-				EnvName:         envName,
-				SecretID:        existing.ID,
-			}); err != nil {
-				return fmt.Errorf("bind updated secret %q: %w", envName, err)
-			}
-			// A host change moves which requests the grant authorizes, so the
-			// standing grant's host must follow the secret's or the value stops
-			// resolving for the new host.
-			if hostChanged {
-				if err := s.updateConfiguredGrantHost(ctx, config, existing.ID, secret.Host); err != nil {
-					return fmt.Errorf("update grant host for %q: %w", envName, err)
-				}
-			}
+			bound[envName] = existing.ID
 			continue
 		}
 		secretID, err := id.New(id.PrefixSecret)
 		if err != nil {
+			return err
+		}
+		if name, err = s.freeSecretName(ctx, config, name); err != nil {
 			return err
 		}
 		created := &model.Secret{
@@ -554,85 +547,159 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 			ProjectID: config.ProjectID,
 			Name:      name,
 			Type:      secretType,
-			Host:      secret.Host,
-			// A configure-created secret belongs to this harness (bound, granted,
-			// and deleted with it), so it must not occupy the shared
-			// (project,name,type,host) uniqueness slot: two harnesses may each
-			// hold, say, a token of the same name bound to no host.
-			UniqueKey: secretID,
-			// No ceiling on the grants that stand on it, said rather than left
-			// to a default. The grant below never expires, because a harness
-			// that stops working an hour after it was configured is a harness
-			// nobody configured; a limit here would describe a lifetime this
-			// credential's own grant does not have, and would refuse the next
-			// one somebody writes for it.
-			MaxGrantTTL:    0,
+			// No ceiling on the bindings that stand on it, said rather than
+			// left to a default. The binding below never expires, because a
+			// harness that stops working an hour after it was configured is a
+			// harness nobody configured.
+			MaxBindingTTL:  0,
 			EncryptedValue: []byte(secret.Value),
 		}
-		// Born with the routes its image declares, so the rebind below hands
-		// running sandboxes a sentinel that is held to them from the first
-		// swap rather than one left to its grant until a second push.
-		if _, err := created.ReplaceRoutes(declaredRoutesByEnv(config)[envName]); err != nil {
+		// Born with the routes its image declares — else the host the command
+		// named, else anywhere (ADR 26-10-27-939 §2) — so a sandbox is handed a
+		// sentinel held to them from the first swap. Only a new secret takes
+		// the command's word for where it goes.
+		if _, err := created.ReplaceRoutes(configuredRoutes(config, envName, hostscope.Normalize(secret.Host))); err != nil {
 			return fmt.Errorf("routes of configured secret %q: %w", envName, err)
 		}
 		if err := s.store.CreateSecret(ctx, created); err != nil {
 			return fmt.Errorf("create configured secret %q: %w", name, err)
 		}
 		createdSecretIDs = append(createdSecretIDs, created.ID)
-		if err := s.store.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
-			ProjectID:       config.ProjectID,
-			HarnessConfigID: config.ID,
-			EnvName:         envName,
-			SecretID:        created.ID,
-		}); err != nil {
-			return fmt.Errorf("bind configured secret %q: %w", envName, err)
-		}
-		// The user just handed this credential to this harness's configure flow,
-		// which is the consent the grant records.
-		if err := s.store.CreateSecretGrant(ctx, &model.SecretGrant{
-			ProjectID: config.ProjectID,
-			SecretID:  created.ID,
-			Scope:     model.SecretGrantScopeHarnessConfig,
-			ScopeKey:  config.ID,
-			Hosts:     hostscope.List(secret.Host),
-		}); err != nil {
-			return fmt.Errorf("grant configured secret %q: %w", envName, err)
-		}
+		bound[envName] = created.ID
 	}
-	// Reconfiguring replaces the previous generation of configure-created
-	// secrets: their bindings were just overwritten above, so keeping the rows
-	// would leak one orphaned secret per reconfigure. Secrets the command kept are
-	// in createdSecretIDs too, which is what spares them from this sweep.
-	replaced := map[string]struct{}{}
-	for _, secretID := range createdSecretIDs {
-		replaced[secretID] = struct{}{}
-	}
-	for _, secretID := range config.ConfiguredSecretIDs {
-		secretID = strings.TrimSpace(secretID)
-		if secretID == "" {
-			continue
-		}
-		if _, ok := replaced[secretID]; ok {
-			continue
-		}
-		if err := s.store.DeleteSecret(ctx, config.ProjectID, secretID); err != nil && !errors.Is(err, store.ErrNotFound) {
-			return err
-		}
-	}
+	previous := config.ConfiguredSecretIDs
 	config.ConfiguredFiles = out.Files
 	config.ConfiguredSecretIDs = createdSecretIDs
-	// A secret updated in place or kept may hold the routes of an image the
-	// config has since moved off; they are written, and their holders marked,
-	// in one transaction.
+	// The bindings, the sweep of the previous generation's secrets and the
+	// routes an image declares are written, and their holders marked, in one
+	// transaction.
 	return s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
-		if err := s.syncConfiguredSecretRoutes(ctx, txStore, txDB, config); err != nil {
-			return err
+		envs := make([]string, 0, len(bound))
+		for env := range bound {
+			envs = append(envs, env)
 		}
-		if s.sandboxes != nil {
-			return s.sandboxes.RebindHarnessConfigSecretsTx(ctx, txStore, txDB, config.ProjectID, config.ID)
+		slices.Sort(envs)
+		for _, env := range envs {
+			if err := s.bindHarnessSecret(ctx, txStore, txDB, config, env, bound[env]); err != nil {
+				return fmt.Errorf("bind configured secret %q: %w", env, err)
+			}
 		}
-		return nil
+		// Reconfiguring replaces the previous generation of configure-created
+		// secrets: their bindings were just overwritten above, so keeping the
+		// rows would leak one orphaned secret per reconfigure. Secrets the
+		// command kept are in createdSecretIDs too, which spares them.
+		replaced := map[string]struct{}{}
+		for _, secretID := range createdSecretIDs {
+			replaced[secretID] = struct{}{}
+		}
+		for _, secretID := range previous {
+			secretID = strings.TrimSpace(secretID)
+			if _, ok := replaced[secretID]; ok || secretID == "" {
+				continue
+			}
+			if s.sandboxes != nil {
+				if err := s.sandboxes.MarkSecretHoldersDirtyTx(ctx, txStore, txDB, config.ProjectID, secretID); err != nil {
+					return err
+				}
+			}
+			if err := txStore.DeleteSecret(ctx, config.ProjectID, secretID); err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+		}
+		return s.syncConfiguredSecretRoutes(ctx, txStore, txDB, config)
 	})
+}
+
+// bindHarnessSecret makes envName on the harness config deliver secretID for
+// use: the one binding configure and save-back write (ADR 26-10-27-880 §5),
+// with no routes of its own — it inherits the secret's — and no expiry. One
+// already standing for another secret is replaced. The sandboxes running the
+// config are marked.
+func (s *Service) bindHarnessSecret(ctx context.Context, txStore *store.Store, txDB *gorm.DB, config *model.HarnessConfig, envName, secretID string) error {
+	actor := auth.ActorFromContext(ctx)
+	binding := &model.SecretBinding{
+		ProjectID:  config.ProjectID,
+		SecretID:   secretID,
+		TargetKind: model.SecretBindingTargetHarnessConfig,
+		TargetID:   config.ID,
+		Use:        true,
+		EnvName:    envName,
+		CreatedBy:  actor,
+	}
+	removed, err := txStore.PutTargetUseBinding(ctx, binding, store.BindingChange{Actor: actor})
+	if err != nil {
+		return err
+	}
+	if s.sandboxes == nil {
+		return nil
+	}
+	return s.sandboxes.MarkBindingHoldersDirtyTx(ctx, txStore, txDB, config.ProjectID, append(removed, *binding))
+}
+
+// configuredRoutes are where a secret the configure flow or a save-back
+// stores may go: the routes the image declares for its variable, else the
+// host the command named, else anywhere (ADR 26-10-27-939 §2).
+func configuredRoutes(config *model.HarnessConfig, envName, host string) []model.SecretRoute {
+	if declared := declaredRoutesByEnv(config)[envName]; len(declared) > 0 {
+		return declared
+	}
+	if host != "" {
+		return []model.SecretRoute{{Host: host}}
+	}
+	return []model.SecretRoute{{Host: secretroute.AnyHost}}
+}
+
+// secretHost is the one host a secret's routes name, for the configure
+// command's metadata, which speaks of one; empty when they name none or more
+// than one.
+func secretHost(secret *model.Secret) string {
+	host := ""
+	for _, route := range secret.Routes {
+		if route.Blocked {
+			continue
+		}
+		if host != "" && host != route.Host {
+			return ""
+		}
+		host = route.Host
+	}
+	if host == secretroute.AnyHost {
+		return ""
+	}
+	return host
+}
+
+// secretNameTaken reports whether another secret of the project has name.
+func (s *Service) secretNameTaken(ctx context.Context, projectID, name, exceptID string) (bool, error) {
+	secret, err := s.store.GetSecretByName(ctx, projectID, name)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return secret.ID != exceptID, nil
+}
+
+// freeSecretName is name when no secret of the project has it, else the
+// harness config's slug before it, else that with the first free number
+// after it: a secret's name is unique in its project, and two harnesses may
+// each store a credential under the same variable.
+func (s *Service) freeSecretName(ctx context.Context, config *model.HarnessConfig, name string) (string, error) {
+	candidates := []string{name, config.Slug + "-" + name}
+	for n := 2; n < 100; n++ {
+		candidates = append(candidates, fmt.Sprintf("%s-%s-%d", config.Slug, name, n))
+	}
+	for _, candidate := range candidates {
+		taken, err := s.secretNameTaken(ctx, config.ProjectID, candidate, "")
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("no free name for secret %q", name)
 }
 
 // syncConfiguredSecretRoutes writes the routes the config's image declares for
@@ -652,12 +719,14 @@ func (s *Service) syncConfiguredSecretRoutes(ctx context.Context, txStore *store
 		return nil
 	}
 	declared := declaredRoutesByEnv(config)
-	bindings, err := txStore.ListHarnessConfigSecretBindings(ctx, config.ProjectID, config.ID)
+	bindings, err := txStore.ListTargetUseBindings(ctx, config.ProjectID, model.SecretBindingTargetHarnessConfig, config.ID)
 	if err != nil {
 		return err
 	}
 	for _, binding := range bindings {
-		if !configured[binding.SecretID] {
+		// An image that declares no routes for a variable says nothing about
+		// where its secret goes, and leaves it as configure wrote it.
+		if !configured[binding.SecretID] || len(declared[binding.EnvName]) == 0 {
 			continue
 		}
 		secret, err := txStore.GetSecret(ctx, config.ProjectID, binding.SecretID)
@@ -696,32 +765,6 @@ func declaredRoutesByEnv(config *model.HarnessConfig) map[string][]model.SecretR
 	return declared
 }
 
-// updateConfiguredGrantHost points this harness config's standing grant(s) for a
-// secret at a new host, in place, when an update-in-place reconfigure moved the
-// secret's host. Only the harness-config-scoped grants this flow created are
-// touched.
-func (s *Service) updateConfiguredGrantHost(ctx context.Context, config *model.HarnessConfig, secretID, host string) error {
-	grants, err := s.store.ListSecretGrants(ctx, config.ProjectID, secretID)
-	if err != nil {
-		return err
-	}
-	for i := range grants {
-		grant := &grants[i]
-		if grant.Scope != model.SecretGrantScopeHarnessConfig || grant.ScopeKey != config.ID {
-			continue
-		}
-		hosts := hostscope.List(host)
-		if slices.Equal(grant.Hosts, hosts) {
-			continue
-		}
-		grant.Hosts = hosts
-		if err := s.store.UpdateSecretGrant(ctx, grant); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // previousSecretIDsByEnv maps each env name the harness config currently binds to
 // a configure-created secret, for resolving an output that asks to keep one.
 func (s *Service) previousSecretIDsByEnv(ctx context.Context, config *model.HarnessConfig) (map[string]string, error) {
@@ -732,7 +775,7 @@ func (s *Service) previousSecretIDsByEnv(ctx context.Context, config *model.Harn
 	if len(configured) == 0 {
 		return nil, nil
 	}
-	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, config.ProjectID, config.ID)
+	bindings, err := s.store.ListTargetUseBindings(ctx, config.ProjectID, model.SecretBindingTargetHarnessConfig, config.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -833,31 +876,36 @@ func (s *Service) DeconfigureHarnessConfig(ctx context.Context, projectID, confi
 			if secretID == "" {
 				continue
 			}
+			if s.sandboxes != nil {
+				if err := s.sandboxes.MarkSecretHoldersDirtyTx(ctx, tx, db, projectID, secretID); err != nil {
+					return err
+				}
+			}
 			if err := tx.DeleteSecret(ctx, projectID, secretID); err != nil && !errors.Is(err, store.ErrNotFound) {
 				return err
 			}
 		}
-		bindings, err := tx.ListHarnessConfigSecretBindings(ctx, projectID, configID)
+		bindings, err := tx.ListTargetUseBindings(ctx, projectID, model.SecretBindingTargetHarnessConfig, configID)
 		if err != nil {
 			return err
 		}
 		for _, binding := range bindings {
-			if err := tx.DeleteHarnessConfigSecretBinding(ctx, projectID, configID, binding.EnvName); err != nil &&
-				!errors.Is(err, store.ErrNotFound) {
+			removed, err := tx.DeleteTargetUseBinding(ctx, projectID, model.SecretBindingTargetHarnessConfig, configID, binding.EnvName,
+				store.BindingChange{Actor: auth.ActorFromContext(ctx), Cause: "deconfigure"})
+			if err != nil {
 				return err
+			}
+			if s.sandboxes != nil {
+				if err := s.sandboxes.MarkBindingHoldersDirtyTx(ctx, tx, db, projectID, removed); err != nil {
+					return err
+				}
 			}
 		}
 		config.Configured = false
 		config.ConfiguredFiles = nil
 		config.ConfiguredSecretIDs = nil
 		config.ConfigureError = ""
-		if err := tx.UpdateHarnessConfig(ctx, config); err != nil {
-			return err
-		}
-		if s.sandboxes != nil {
-			return s.sandboxes.RebindHarnessConfigSecretsTx(ctx, tx, db, projectID, configID)
-		}
-		return nil
+		return tx.UpdateHarnessConfig(ctx, config)
 	}); err != nil {
 		return nil, err
 	}

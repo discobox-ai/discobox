@@ -242,7 +242,7 @@ passed, is the template:
    command, `discobox admin harness configure <id>`, and drive it to the
    point where the CLI's TUI is up, ready for a sign-in. Waiting on a pane's
    text is enough; save every pane to `/dev/shm` for the report.
-2. **run, from a shell started after the grant**, so the credential's
+2. **run, from a shell started after it is granted**, so the credential's
    variable holds its sentinel: write the credential into the CLI's store in the configure sandbox on
    stdin (`discobox shell <configure-box> -- sh -c 'umask 077; cat > …'`,
    below), never typed into the TUI; finish the flow (the CLI's quit key, the
@@ -279,7 +279,7 @@ What this needs, learned the hard way:
 - **A granted key goes into the configure sandbox on stdin**, never typed
   into the CLI's TUI: typing echoes it into the pane and the configure log.
   `discobox --server … shell <configure-box> -- sh -c 'umask 077; cat > <the
-  CLI's credential file>'` from a shell started after the grant, then the
+  CLI's credential file>'` from a shell started after it was granted, then the
   CLI's quit key in the pane; print only the configure log's fixed status
   lines (`grep -o`), never the log.
 - **A model chosen in the configure session may not persist.** pi's
@@ -290,9 +290,9 @@ What this needs, learned the hard way:
   --after`.** A one-line answer's `Stop` lands before a wait started after
   it, which then times out.
 
-- **The grant arrives as a sentinel in its variable**, in every command
-  started after it. The nested server stores *that* sentinel, which the outer
-  proxy swaps for as long as the grant lives; ask for a lifetime that covers
+- **A granted credential arrives as a sentinel in its variable**, in every
+  command started after it. The nested server stores *that* sentinel, which
+  the outer proxy swaps for as long as its binding lives; ask for a lifetime that covers
   the whole run.
 - **Every host the CLI sends the credential to, in one request** (`hosts`,
   ADR 26-10-02-393) — Copilot needed `api.github.com` and

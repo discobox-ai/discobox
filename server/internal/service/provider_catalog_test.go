@@ -712,7 +712,7 @@ func clearSeededHarnessConfigs(ctx context.Context, t *testing.T, st *store.Stor
 		t.Fatalf("list harness configs: %v", err)
 	}
 	for _, config := range configs {
-		if err := st.DeleteHarnessConfig(ctx, projectID, config.ID); err != nil {
+		if err := st.DeleteHarnessConfig(ctx, projectID, config.ID, nil); err != nil {
 			t.Fatalf("delete harness config %s: %v", config.ID, err)
 		}
 	}

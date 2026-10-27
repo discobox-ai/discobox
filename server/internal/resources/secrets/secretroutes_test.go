@@ -47,18 +47,19 @@ func secretRouteFixture(t *testing.T) (*resourcesecrets.Service, *store.Store, *
 		t.Fatalf("create secret: %v", err)
 	}
 	createSandboxWithHarness(t, st, "sb-1", "pool-1", "")
+	mustBind(t, st, sec.ID, model.SecretBindingTargetSandbox, "sb-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-S")
 	return svc, st, sec
 }
 
-func sentinelRoutes(t *testing.T, st *store.Store) map[string][]secretroute.Route {
+func sentinelRoutes(t *testing.T, st *store.Store) map[string][][]secretroute.Route {
 	t.Helper()
 	ctx := context.Background()
 	assignments, err := st.ListSandboxSecrets(ctx, "project-1", "sb-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := st.SecretSentinelRoutes(ctx, "project-1", assignments)
+	out, err := st.SentinelRouteLists(ctx, "project-1", assignments)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +131,11 @@ func TestAChangeToASecretsRoutesReachesItsHolders(t *testing.T) {
 // routes: the pool is told them, blocked ones included.
 func TestAnInjectedSecretIsHeldToItsRoutes(t *testing.T) {
 	_, st, _ := secretRouteFixture(t)
-	got := sentinelRoutes(t, st)["SENTINEL-S"]
+	lists := sentinelRoutes(t, st)["SENTINEL-S"]
+	if len(lists) != 1 {
+		t.Fatalf("route lists = %+v, want the secret's alone", lists)
+	}
+	got := lists[0]
 	want := []secretroute.Route{
 		{Host: "githubcopilot.com"},
 		{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
