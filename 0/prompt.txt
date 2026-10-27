@@ -1,0 +1,1 @@
+okay, lets do that fix. But can you launch a new discobox from here and pass in a prompt tht explains the problem and fix
