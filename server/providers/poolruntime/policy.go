@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
@@ -43,6 +44,21 @@ type PoolPolicy struct {
 	// The next use starts it again. Empty leaves every sandbox on the
 	// sandbox-agent's default.
 	SandboxIdleTimeout Duration `json:"sandboxIdleTimeout,omitempty"`
+}
+
+// Env is the policy as the pool agent reads it from its environment, which a
+// provider places beside its bootstrap (bundle.EnvironmentFile). An unset
+// setting is left out, leaving the agent on its default.
+func (p PoolPolicy) Env() map[string]string {
+	env := map[string]string{}
+	if p.ProxyAuditRetention > 0 {
+		env[proxyagent.EnvAuditRetention] = p.ProxyAuditRetention.Value().String()
+	}
+	p.SetAuditSpoolEnv(env)
+	if p.SandboxIdleTimeout > 0 {
+		env[sandboxruntime.EnvSandboxIdleTimeout] = p.SandboxIdleTimeout.Value().String()
+	}
+	return env
 }
 
 // defaultRetentionHint mirrors proxy.DefaultRetention for display only. It is
