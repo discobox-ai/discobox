@@ -1,0 +1,3 @@
+1. if other things go through the saem route, why do they have a different behavior of auto start?
+2. which fail fast routes exist?
+3. we need to decide what is the rule of when to start and when to not
