@@ -1,0 +1,35 @@
+another agent was looking at memory and say this about the client process ```
+
+<pasted_content id="edc4">
+You're right that it shouldn't need that much. It isn't a leak, though. It's a zstd encoder pool that's far too big, and its size depends on how many CPUs the host has.
+
+Cause: sandbox-agent/execs/logs.go:94. Each exec-shim runs an AsyncLogger that compresses the exec's transcript before writing it to sqlite. It created its encoder like this:
+
+zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedDefault))
+
+With no concurrency set, klauspost/zstd creates one encoder per CPU (GOMAXPROCS of them). EncodeAll hands them out in turn, so even with a single caller every one of them eventually gets used. Each one then keeps its own tables and history buffer, about 18 MB. The shim only ever calls it from one goroutine, so all but one of those encoders are waste.
+
+I measured heap after 20 sequential EncodeAll calls on 256 KB blocks:
+
+┌────────────┬─────────┬───────────────────────────┐
+│ GOMAXPROCS │ default │ WithEncoderConcurrency(1) │
+├────────────┼─────────┼───────────────────────────┤
+│ 1          │ 17.7 MB │ 17.7 MB                   │
+├────────────┼─────────┼───────────────────────────┤
+│ 8          │ 141 MB  │ 17.7 MB                   │
+├────────────┼─────────┼───────────────────────────┤
+│ 64         │ 408 MB  │ 17.6 MB                   │
+└────────────┴─────────┴───────────────────────────┘
+
+That matches your ~310 MB RSS on a large server. It levels off instead of growing, which is why it looks like a leak but isn't one. Every long-running exec on that host pays it, so the waste is that amount times the number of shims.
+
+Other suspects I checked:
+- Terminal emulator (charmbracelet/x/vt with 1000 lines of scrollback): steady at about 26 MB for a 200-column terminal. It didn't grow over 40k lines of colored output or repeated resizes. That's sizeable but bounded, and could be trimmed later if you care.
+- Transcript decoder (ReadExecLog): it's created per read and closed afterwards, and it runs in the main agent, not the shim.
+
+Fix (not committed): I added zstd.WithEncoderConcurrency(1) with a comment explaining why. That brings the encoder down to about 18 MB whatever the CPU count. Adding WithLowerEncoderMem(true) would cut it to about 10 MB, but I left that out. The execs tests pass and check-hooks is green. I didn't add a regression test, because a heap-size assertion would be flaky.
+
+Shims that are already running keep the memory until they restart with the new binary.
+</pasted_content id="edc4">
+
+```
