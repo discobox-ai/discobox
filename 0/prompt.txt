@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bn7yhhd0l</task-id>
+<tool-use-id>toolu_01489ZpLJ2GSQHV8V99jpkS6</tool-use-id>
+<output-file>/tmp/claude-1002/-home-darren-src-disco2/9ebd1b36-3747-4d18-8bd9-f1e64b3195d7/tasks/bn7yhhd0l.output</output-file>
+<status>completed</status>
+<summary>Background command "gh run watch 37137300016 --repo discobox-ai/discobox --exit-status &gt; /tmp/claude-1002/watch.log 2&gt;&amp;1; echo exit=$? &gt;&gt; /tmp/claude-1002/watch.log" completed (exit code 0)</summary>
+</task-notification>
