@@ -20,7 +20,7 @@ jobs:
         with:
           version: v1.0.0-beta.21
       - name: Run portable CI
-        run: dagger api call --repository="$GITHUB_REPOSITORY" ci export --path=build/ci
+        run: dagger --progress=plain api call --repository="$GITHUB_REPOSITORY" ci export --path=build/ci
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: ci-artifacts
