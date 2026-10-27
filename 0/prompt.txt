@@ -1,0 +1,1 @@
+can you look at the box sbx_7gq73ma13ths3r98. If you run `discobox` CLI you will see it. It seems to have lost all it's state. How did that happen? It's actually running on station76 (192.168.1.168) so you might have to ssh to that machine to look. I need to figure out why the content is gone or deleted?
