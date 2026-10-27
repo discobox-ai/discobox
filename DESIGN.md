@@ -270,9 +270,11 @@ flowchart TD
 - `.dagger/modules/pipeline` owns the graph, toolchain containers, cache volumes,
   artifact receipts, and release/channel policy. It reads application modules
   from `go.work`; its own Go SDK module stays outside that workspace.
-- `dagger check` runs Linux tests, static checks, repository verification, the
-  pipeline's own tests, and SDK binding staleness. `ci` adds release builds,
-  saved-image trust/HTTPS verification, and native reports. See
+- `dagger check` runs the complete portable `ci` check: Linux tests, static and
+  repository checks, pipeline tests, portable builds, saved-image trust/HTTPS
+  verification and native inputs, plus SDK binding staleness. `ci-artifacts`
+  exposes the checked build outputs for native transport. Release/publication
+  remain explicit pipeline functions. See
   [the pipeline design](.dagger/modules/pipeline/DESIGN.md).
 - `Taskfile.yml` exposes Dagger operations and retains host development tasks
   such as `task dev`, native development binaries, and the local image watcher.

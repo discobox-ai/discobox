@@ -6,6 +6,12 @@ The release transfers signed Mac output and source-bound receipts into Dagger.
 The historical stub references below describe the original audit snapshot;
 implementation is not evidence that those new native jobs have executed.
 
+CI entry-point follow-up: the full portable graph is now the `ci` check run by
+`dagger check`; `ci-artifacts` exposes its outputs for native transport. Release
+and publication remain explicit functions. Commands using `ci export` and the
+five-check inventory below are historical validation records from before this
+entry-point change.
+
 Audit date: 2026-10-26. Baseline: Git commit
 `d61a7f405389fcc0dda68c5689397aec3a085d9e`, using its original Taskfile and
 all five workflows. The working tree contains the Dagger migration.

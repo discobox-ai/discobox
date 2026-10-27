@@ -60,7 +60,11 @@ Cloud with GitHub OIDC (`DAGGER_CLOUD_TOKEN=oidc`, job-scoped `id-token: write`)
 so cache persists across ephemeral runners; fork and Dependabot PRs use local
 engines with Cloud authentication disabled. Native jobs do not
 receive the Cloud token. Local commands can select either backend without
-changing the pipeline. Actions retains event ownership; Cloud Checks are off.
+changing the pipeline. `Ci` is the single aggregate portable check; component
+operations remain callable functions. `CiArtifacts` exposes build/trust/helper
+outputs for transport after validation. Actions invokes `dagger check` before
+export; native Cloud Checks can invoke the same check directly when enabled.
+Release, preview, publication and promotion remain explicit pipeline functions.
 
 Build operations are cached by Dagger. API state reads and state-changing CLI
 operations use an invocation timestamp to avoid caching external state.
@@ -70,7 +74,9 @@ winget remains an explicit manual operation. Credentials are Secret arguments
 and are only mounted for the operation that needs them.
 
 `preview` builds all Linux and Windows binaries, manifests, and ZIPs. Its
-`--images` option adds real OCI builds. `ci` runs checks and those cross-builds.
+`--images` option adds real OCI builds. The `ci` check validates its complete
+portable graph and materializes builds, trust results and native inputs.
+`ci-artifacts` exports those outputs without rerunning the validation functions.
 VM checks inspect guest filesystems and kernel configuration; they do not claim
 to boot a hypervisor. Actions adapts portable operations and transports native artifacts; native
 commands run directly on their operating systems.

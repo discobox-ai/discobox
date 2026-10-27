@@ -125,7 +125,6 @@ func parallel(jobs ...func() error) error {
 }
 
 // Run every application's Go tests on Linux, using the modules in go.work.
-// +check
 func (m *Pipeline) Tests(ctx context.Context) error {
 	mods, err := m.modules(ctx)
 	if err != nil {
@@ -135,7 +134,6 @@ func (m *Pipeline) Tests(ctx context.Context) error {
 }
 
 // Lint, cross-typecheck, deadcode, shellcheck, and validate Dockerfile inputs.
-// +check
 func (m *Pipeline) Static(ctx context.Context) error {
 	mods, err := m.modules(ctx)
 	if err != nil {
@@ -165,7 +163,6 @@ func (m *Pipeline) Dockerfiles(ctx context.Context) error {
 }
 
 // Verify formatting, tidy, generated files, and Mermaid without mutating the host.
-// +check
 func (m *Pipeline) Verify(ctx context.Context) error {
 	ctr := m.work()
 	return parallel(
@@ -185,7 +182,6 @@ func (m *Pipeline) Verify(ctx context.Context) error {
 }
 
 // Compile and test the pipeline itself, outside the application's go.work.
-// +check
 func (m *Pipeline) ModuleTests(ctx context.Context) error {
 	ctr := m.Toolchain().WithEnvVariable("GOWORK", "off").
 		WithMountedCache("/go/pkg/mod", dag.CacheVolume("discobox-pipeline-mod")).
@@ -229,11 +225,23 @@ func (m *Pipeline) Windows() *dagger.File {
 	return dag.Directory().WithNewFile("windows.json", string(data)+"\n").File("windows.json")
 }
 
-// Run Linux CI and release builds, and export native command plans and portable helpers.
-func (m *Pipeline) Ci(ctx context.Context) (*dagger.Directory, error) {
+// Check the complete portable CI graph, including builds and native-job inputs.
+// +check
+func (m *Pipeline) Ci(ctx context.Context) error {
 	if err := parallel(func() error { return m.Tests(ctx) }, func() error { return m.Static(ctx) }, func() error { return m.Verify(ctx) }, func() error { return m.ModuleTests(ctx) }); err != nil {
-		return nil, err
+		return err
 	}
+	artifacts, err := m.CiArtifacts(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = artifacts.Sync(ctx)
+	return err
+}
+
+// Build verified portable CI artifacts for local export or native-job transport.
+// The ci check validates the complete graph; this function exposes its outputs.
+func (m *Pipeline) CiArtifacts(ctx context.Context) (*dagger.Directory, error) {
 	out, err := m.ReleaseBuild(ctx, "", "all", "all")
 	if err != nil {
 		return nil, err

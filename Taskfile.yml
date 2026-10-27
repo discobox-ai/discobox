@@ -866,9 +866,10 @@ tasks:
       - rm -rf build
 
   ci:
-    desc: Run portable CI and export artifacts for native jobs
+    desc: Check complete portable CI and export artifacts for native jobs
     cmds:
-      - dagger api call ci export --path=build/ci
+      - dagger check
+      - dagger api call ci-artifacts export --path=build/ci
 
   release:preview:
     desc: Rehearse a release without publishing

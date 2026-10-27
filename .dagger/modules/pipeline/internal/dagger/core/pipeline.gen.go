@@ -18,6 +18,7 @@ type Pipeline struct { // pipeline (../../../../../../:0:0)
 
 	brewPublish    *string
 	brewRefresh    *string
+	ci             *Void
 	dockerfiles    *Void
 	emulation      *Void
 	id             *ID
@@ -138,9 +139,20 @@ func (r *Pipeline) BrewRefresh(ctx context.Context, token *Secret, opts ...Pipel
 	return response, q.Execute(ctx)
 }
 
-// Run Linux CI and release builds, and export native command plans and portable helpers.
-func (r *Pipeline) Ci() *Directory {
+// Check the complete portable CI graph, including builds and native-job inputs.
+func (r *Pipeline) Ci(ctx context.Context) error {
+	if r.ci != nil {
+		return nil
+	}
 	q := r.query.Select("ci")
+
+	return q.Execute(ctx)
+}
+
+// Build verified portable CI artifacts for local export or native-job transport.
+// The ci check validates the complete graph; this function exposes its outputs.
+func (r *Pipeline) CiArtifacts() *Directory {
+	q := r.query.Select("ciArtifacts")
 
 	return &Directory{
 		query:     q,

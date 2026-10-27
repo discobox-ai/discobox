@@ -217,7 +217,7 @@ Mac artifacts still block assembly and publication. Rehearse locally instead:
 
 ```bash
 dagger check
-dagger api call ci export --path=build/ci
+dagger api call ci-artifacts export --path=build/ci
 dagger api call preview --version=v0.0.0-preview --images export --path=build/release/preview
 ```
 
@@ -234,7 +234,7 @@ release and uses the current pipeline without rebuilding historical source.
 The operator passes the repository explicitly when targeting a fork:
 
 ```bash
-dagger api call --repository=OWNER/REPO ci export --path=build/ci
+dagger api call --repository=OWNER/REPO ci-artifacts export --path=build/ci
 ```
 
 Actions triggers Dagger and native repository commands, supplies credentials,

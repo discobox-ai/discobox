@@ -74,8 +74,8 @@ release toolchains run in Dagger containers and require the pinned Dagger CLI
 (`v1.0.0-beta.21`) and a container runtime. See `docs/dagger.md`.
 
 ```bash
-dagger check                         # complete Linux checks and pipeline tests
-dagger api call ci export --path=build/ci
+dagger check                         # complete portable CI, builds and trust checks
+dagger api call ci-artifacts export --path=build/ci
 dagger api call preview export --path=build/release/preview
 go tool task --list                  # shortcuts and host development tasks
 go tool task dev                     # local development server and watcher
