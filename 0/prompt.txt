@@ -1,0 +1,1 @@
+if I run `discobox new -C discobox-ai/discobox` it is uncomfortably slow creating the box and I suspect it because of delivering git sources. 1. why is it so slow. 2. why is there no UI feedback about what is going on. Can you investigate this issue, do not modify code or fix it, just investigate
