@@ -1,0 +1,1 @@
+Can you compare this to running `discobox new` from ~/src/disco2, whic goes through a different code path. Hwo does that work?
