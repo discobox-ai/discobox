@@ -1,0 +1,1 @@
+can you setup a discobox tool in my home directory that will download/install tuicr if not already installed (and cache the downlaod to ~/.cache to future runs it will just copy from there) and then set it up as the default diff tool, use the well known name.
