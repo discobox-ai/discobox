@@ -1,0 +1,4 @@
+# Optional event adapters use the project's existing Depot-hosted Linux runners.
+self-hosted-runner:
+  labels:
+    - depot-ubuntu-24.04-4

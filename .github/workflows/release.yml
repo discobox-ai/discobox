@@ -1,133 +1,125 @@
-# A release is cut by pushing a v* tag. This workflow decides only where each
-# step runs and how artifacts move between jobs; every step is a Taskfile target
-# that also runs on a developer's machine (ADR 0066 §1).
 name: Release
-
 on:
   push:
-    tags:
-      - "v*"
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing v* tag to release
+        description: Existing vMAJOR.MINOR.PATCH[-prerelease] tag
         required: true
-
+      preview:
+        description: Build and assemble all platforms without publishing
+        type: boolean
+        default: true
 permissions:
   contents: read
-
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
-
 env:
-  # workflow_dispatch runs off a branch, so GITHUB_REF_NAME is not the tag.
-  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-
+  RELEASE_VERSION: ${{ inputs.tag || github.ref_name }}
+  RELEASE_REPOSITORY: ${{ github.repository }}
 jobs:
-  # Each platform builds what only it can build: darwin because cgo, the macOS
-  # SDK, and codesigning are native-only; Linux because it also cross-compiles
-  # the Windows binary (ADR 0066 §4).
-  binaries:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runs-on: depot-ubuntu-24.04-4
-            artifact: linux
-          - runs-on: depot-macos-15
-            artifact: darwin
-    runs-on: ${{ matrix.runs-on }}
+  native-inputs:
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: dagger/dagger-for-github@v8.4.0
+        with:
+          version: v1.0.0-beta.21
+      - run: dagger api call --repository="$RELEASE_REPOSITORY" native-inputs export --path=build/native-inputs
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-native-inputs
+          path: build/native-inputs
+          if-no-files-found: error
+          overwrite: true
+  native-macos:
+    needs: native-inputs
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: ./.github/actions/task
         with:
-          target: release:build
-      - uses: actions/upload-artifact@v7.0.1
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v7.0.0
         with:
-          name: release-bin-${{ matrix.artifact }}
-          path: build/release/bin
-          if-no-files-found: error
-
-  images:
-    runs-on: depot-ubuntu-24.04-4
-    timeout-minutes: 90
-    permissions:
-      contents: read
-      packages: write
-      # Depot authenticates by OIDC against the trust relationship on its
-      # project, which is what mints the token. No DEPOT_TOKEN secret is
-      # needed, and without this the CLI has nothing to present.
-      id-token: write
-    env:
-      DEPOT_PROJECT_ID: ${{ vars.DEPOT_PROJECT_ID }}
-      DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
-    steps:
-      - uses: actions/checkout@v6.0.2
-      # Without a Depot project the Taskfile falls back to emulated buildx,
-      # which is correct but slow for sandbox-agent's Debian stage
-      # (ADR 0066 §6).
-      - uses: depot/setup-action@v1.7.2
-        if: vars.DEPOT_PROJECT_ID != ''
-      - uses: docker/login-action@v3.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: ./.github/actions/task
-        with:
-          target: release:images
-
-  publish:
-    needs: [binaries, images]
-    runs-on: depot-ubuntu-24.04-4
-    timeout-minutes: 30
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Read only to decide whether the refresh step runs; the step that uses it
-      # takes it as its own GH_TOKEN.
-      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-    steps:
-      - uses: actions/checkout@v6.0.2
-      # Both matrix legs land in one directory; release:publish uploads
-      # whatever populated it.
+          go-version-file: go.mod
+          cache-dependency-path: '**/go.sum'
       - uses: actions/download-artifact@v8.0.1
         with:
-          pattern: release-bin-*
-          merge-multiple: true
-          path: build/release/bin
-      - uses: ./.github/actions/task
+          name: release-native-inputs
+          path: build/native-inputs
+      - name: Build, sign, smoke and receipt the exact tagged source
+        run: >-
+          go run ./internal/cmd/discobox-native-ci -mode build
+          -version "$RELEASE_VERSION" -repository "$RELEASE_REPOSITORY"
+      - uses: actions/upload-artifact@v7.0.1
         with:
-          target: release:publish
-      # Nix is installed by the step above. Asked here rather than decided in
-      # YAML so the rule stays the Taskfile's (ADR 0066 §1). A dot release joins
-      # the latest channel the moment it is cut; an explicit prerelease exists
-      # only under its own tag (ADR 0105).
-      - id: dot
-        run: echo "dot=$(nix develop -c go tool task release:dot)" >> "$GITHUB_OUTPUT"
-
-      # A step here rather than a job of its own, which ADR 0066 §2 allows once
-      # Nix is installed: this is one API call, and standing up another runner
-      # to make it would cost minutes to save seconds.
-      #
-      # This feeds `brew install discobox-dev`. It cannot feed
-      # `brew install discobox`: what was just published is a prerelease, and
-      # the tap builds the stable formula from the newest release a human has
-      # marked stable. That is promote.yml's job, later and by hand.
-      #
-      # Nothing else updates the tap — it has no cron any more — so a missing
-      # token is a broken release, not a slow one, and fails here rather than
-      # leaving `brew install discobox-dev` on the previous version with nobody
-      # aware of it.
-      - if: steps.dot.outputs.dot == 'yes' && env.TAP_TOKEN == ''
-        run: |
-          echo "::error::HOMEBREW_TAP_TOKEN is not set, and nothing else will tell the tap about $RELEASE_TAG"
-          exit 1
-      - name: Tell the tap to update
-        if: steps.dot.outputs.dot == 'yes'
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: nix develop -c go tool task brew:refresh
+          name: release-macos-arm64
+          path: build/native
+          if-no-files-found: error
+          overwrite: true
+  preview:
+    needs: native-macos
+    if: github.event_name == 'workflow_dispatch' && inputs.preview
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: dagger/dagger-for-github@v8.4.0
+        with:
+          version: v1.0.0-beta.21
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-macos-arm64
+          path: build/native
+      - run: >-
+          dagger api call --repository="$RELEASE_REPOSITORY" preview
+          --version="$RELEASE_VERSION" --native-artifacts=build/native
+          export --path=build/release/preview
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-preview
+          path: build/release/preview
+          if-no-files-found: error
+          overwrite: true
+  release:
+    needs: native-macos
+    if: github.event_name == 'push' || !inputs.preview
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      packages: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      REGISTRY_USERNAME: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: dagger/dagger-for-github@v8.4.0
+        with:
+          version: v1.0.0-beta.21
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-macos-arm64
+          path: build/native
+      - name: Validate, assemble and publish through Dagger
+        run: >-
+          dagger api call --repository="$RELEASE_REPOSITORY" release
+          --version="$RELEASE_VERSION" --native-artifacts=build/native
+          --username="$REGISTRY_USERNAME" --registry-password=env:REGISTRY_PASSWORD
+          --token=env:GH_TOKEN --tap-token=env:TAP_TOKEN

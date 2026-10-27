@@ -13,7 +13,7 @@
 # cross listing would otherwise drop every cgo file and flag the whole tree.
 #
 # Usage: scripts/lint-darwin.sh <golangci-lint binary> [golangci-lint flags...]
-# Called by `go tool task check:darwin`.
+# Called by `go tool task native:macos`.
 
 set -euo pipefail
 

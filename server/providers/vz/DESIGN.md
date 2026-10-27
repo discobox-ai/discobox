@@ -65,7 +65,8 @@ uses, `DeleteVM` is reserved for an authorized pool deletion.
 Codesigning is part of the build, not of packaging: creating a VM requires
 `com.apple.security.virtualization`, and that entitlement exists only on a
 signed binary. `task sign` re-signs after every build and is wired into
-`build:server`, `release:binary`, and the watchnbuild dev loop. `go run` cannot
+`build:server` and the watchnbuild dev loop. Dagger's native macOS worker
+contract also requires signing, but that worker is currently stubbed. `go run` cannot
 start a server that runs pools.
 
 `discobox-server` is the only binary signed (`vz.entitlements`). The CLI runs

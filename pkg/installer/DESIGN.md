@@ -32,7 +32,9 @@ flowchart TD
   `$release = ''`, `$checksums = @{}`). `Stamp` validates every value against a
   pattern that cannot close a quote in either language, and requires each marker
   exactly once. `internal/cmd/discobox-installers` is its one caller, run by
-  `release:installers` over the CLI binaries `release:publish` uploads.
+  Dagger release assembly over the final CLI binaries. Production assembly
+  requires all platform receipts; preview assembly stamps only the real
+  platforms built and is explicitly incomplete.
 - **Channels** are resolved by the script from one unauthenticated Releases API
   request, never on the default path: `stable` is the newest non-prerelease,
   `latest` the newest `vMAJOR.MINOR.PATCH`, and `edge` the newer (by version

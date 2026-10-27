@@ -170,7 +170,7 @@ flowchart TD
   the agent credentials protocol. It is its own module and its own binary — not
   an `argv[0]` alias of the sandbox agent — because it is meant to be liftable
   into another repository, and it depends on nothing but the stdlib-only
-  protocol package, `agentcreds`. See
+  protocol packages, `agentcreds` and the `policy` types it carries. See
   [`access/DESIGN.md`](access/DESIGN.md).
 - Termpane module: `termpane`, a Bubble Tea component that draws a live
   terminal from any stream; the CLI uses it. It depends on nothing else in
@@ -194,19 +194,20 @@ modules — or Go gives the location meaning (`internal`).
 | [`api/sandboxgen`](api/sandboxgen) | Generated client/server API scaffold from generated `api/openapi/sandbox.yaml`, the sandbox-agent subset of the server contract. |
 | [`api/model`](api/model) | Generated stable aliases for server REST API schema types. |
 | [`api/internal`](api/internal) | The generators behind the `api/model` aliases and the `sandbox.yaml` subset. |
-| [`pkg/gitprogress`](pkg/gitprogress) | Git clone/fetch progress meters shared by the sandbox agent and pool pulls; numeric stages, object counts and bytes, with bounded error messages. |
 | [`pkg/configfile`](pkg/configfile) | The engine behind a schema-checked YAML configuration file whose Go struct is its source of truth: struct tags declare each setting, and one walk over them gives the strict decode (a key nothing defines is an error naming it), the environment overlay, the commented reference file and the JSON Schema. Shared because the server's `server.yaml` (ADR 0096) and the CLI's `client.yaml` (ADR 26-10-09-389) must be checked and documented by the same rules; a repository's `.discobox/settings.json` takes its schema from the same walk. |
 | [`pkg/devimage`](pkg/devimage) | Versioned watcher/server contract for content-addressed development Docker image sets, the bundles beside them — exported as OCI image layouts, or in build-mode described for a pool's daemon to build — and their opt-in environment keys. |
-| [`pkg/agentlayer`](pkg/agentlayer) | How the sandbox agent reaches a box (ADR 26-10-16-423 §7, ADR 26-10-24-953 §§1–2): the box's content store layout (`/opt/discobox/bundles`, each applied bundle linked by name at `by-name/<name>`), the agent bundle's one layer (the agent alone) and the `/opt/discobox/current` link the agent runs from, the ordered list of bundles a box applies (`Pins`), and the agent's own boot units. A pool's Docker runtime places it in a container before every start (`Archive`), and the agent fills the rest of the store itself; a pool's maker also places the pool's bundles' blobs where its store applies them from (`PlacedDir`, ADR 26-10-30-875 §5). It also holds the snapshot contract (`SnapshotPlan`, ADR 26-10-16-423 §8, ADR 26-11-03-986 §§1, 3): the plan a box provisioned for no sandbox is given on the stdin of the agent's snapshot command (`SnapshotCommand`), which its taker runs as one exec whose exit status and stderr are the result, and the seal (`SealedFile`) a box made from a snapshot takes an identity of its own by. |
-| [`pkg/agentcreds`](pkg/agentcreds) | The agent credentials protocol: the portable list/request contract an agent asks a person for a credential by, the environment verb a process started before a binding takes it up by, and the host-trust and egress-audit verbs, its client, an `http.Handler` over a `Service` interface, and the stable error codes and client configuration both halves share. It knows nothing about Discobox and carries no value: a granted credential is delivered by the implementation (in Discobox, a sentinel in the variable asked for, or for a binding a person made raw the value itself or a file's path, which `list` says, [ADR 26-10-27-840](docs/adr/26-10-27-840-a-binding-may-hand-over-the-raw-value-held-in-memory-and-watched-for-at-the-proxy.md)). Standard library only, which is what lets one in-sandbox CLI work against sandbox-agent and against any other implementation. See [`docs/agent-credentials-protocol.md`](docs/agent-credentials-protocol.md) and [ADR 26-10-27-880](docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md). |
-| [`pkg/endpoint`](pkg/endpoint) | How a client reaches the control plane and how the control plane listens, resolved from a URL scheme — and, for a `discobox://` address that names its server by DNS name, from the `_discobox` TXT record `Resolve` looks up before a dial (ADR 0116). It also owns the grammar of a discobox's own address, `discobox://<server>/<discobox>`, and `discobox:///<discobox>` for one on the reader's server (ADR 26-11-03-113). Shared because the CLI and the server must agree on what an endpoint means, and because `git`, websockets, and the generated client all reach the server through the one client it builds. The pool hops are resolved separately by [`wire`](pkg/wire). It also owns `Diagnose`, which reports reaching a server layer by layer rather than as the one error the top of the stack produces, and the transport logging behind `discobox --iroh-log` and the server's `iroh.logLevel` — both live here because the layers they describe are this package's, and nothing above it can see them. |
-| [`pkg/poolauth`](pkg/poolauth) | A pool's identity and its assertions to the control plane: the identity key file on the pool's own storage (`LoadKey`, and `LoadOrCreateKey`, which makes it on demand), and PASETO v4.public assertions signed with it, audience `discobox-control-plane`, with the scopes and forwarding headers they carry. Shared because the pool agent signs them, the provisioner makes the key before its agent runs (ADR 26-10-24-953 §4), and the server verifies them. |
-| [`pkg/poolassets`](pkg/poolassets) | Reading the server's asset routes as a pool (ADR 26-10-16-423 §13): a manifest or blob under `/api/pools/{poolId}/assets`, signed with the pool's key, never trusted for its content. The pool agent fills its cache through it; a pool's own bundles are placed in its box by its maker instead, so the provisioner reads nothing through it (ADR 26-10-30-875 §5). The bundle client that reads through it stays the pool agent's own (ADR 26-10-24-953 §3 as amended). |
+| [`pkg/agentlayer`](pkg/agentlayer) | How the sandbox agent reaches a box (ADR 26-10-16-423 §7, ADR 26-10-24-953 §§1–2): the box's content store layout (`/opt/discobox/bundles`, each applied bundle linked by name at `by-name/<name>`), the agent bundle's one layer (the agent alone) and the `/opt/discobox/current` link the agent runs from, the ordered list of bundles a box applies (`Pins`), and the agent's own boot units. A pool's Docker runtime places it in a container before every start (`Archive`), and the agent fills the rest of the store itself. It also holds the snapshot plan contract (`SnapshotPlan`, ADR 26-10-16-423 §8): what a box provisioned for no sandbox is booted with, and the result its taker reads. |
+| [`pkg/agentcreds`](pkg/agentcreds) | The agent credentials protocol: the portable list/request/get contract, its client, an `http.Handler` over a `Service` interface, and the stable error codes and client configuration both halves share. It knows nothing about Discobox beyond the shape of a policy and of the facts its variables resolve against, which it carries from the root `policy` package (standard library only), and that is what lets one in-sandbox CLI work against sandbox-agent and against any other implementation. See [`docs/agent-credentials-protocol.md`](docs/agent-credentials-protocol.md) and [ADR 0031](docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md). |
+| [`pkg/policy`](pkg/policy) | What a credential grant authorizes: statements of actions on resources in scopes, the definitions of their words, and the variables they resolve from a discobox's typed facts at approval — validated, and combined from decided parts in two phases where order never matters. Shared because the agent asking, the pool relaying, the control plane storing and resolving, and whatever decides a request must read one policy the same way. See [`policy/DESIGN.md`](pkg/policy/DESIGN.md) and [ADR 26-10-20-782](docs/adr/26-10-20-782-approved-access-is-a-policy-decided-at-the-network-boundary-fast-path-first.md). |
+| [`pkg/judge`](pkg/judge) | The question Discobox puts to a model before a credential is used, and the answer it will accept back: the job — a command, or a request the proxy observed — the system prompt and schema, and the strict decoding that refuses anything readable as permission nobody gave. A request is recognized — its protocol and endpoint, which bring the judge Discobox's guidance — and its body is described in one shape, with a parser's metadata, rather than sent; the judge asks to be shown it, which is why an answer may allow, refuse, or ask, and an allow may stand for a route (ADR 26-09-25-428, 26-09-26-240). Shared because the caller asking, the runtime prompting, and the control plane recording a verdict must agree on every word of it. `judge/jev` puts the same jobs to TypeSafe's Jev for a server that judges with it instead of a judge discobox (ADR 26-10-01-324). See [`judge/DESIGN.md`](pkg/judge/DESIGN.md) and [ADR 26-09-22-838](docs/adr/26-09-22-838-a-dedicated-pool-harness-judges-commands-and-credential-bearing-requests.md). |
+| [`pkg/wellknown`](pkg/wellknown) | The registry of well-known credentials: a reverse-DNS ID (`com.github.api`), the hosts it is sent to — each covering the hosts beneath it, so `github.com` answers for `api.github.com` too — the variable it is delivered in, and the command that prints it on a logged-in machine, offered to a person who stores it (ADR 26-09-25-122), so an agent asks for one by ID. Shared because the pool's credential broker expands an ID into a request and the control plane checks it and binds the project secret marked with it. |
+| [`pkg/endpoint`](pkg/endpoint) | How a client reaches the control plane and how the control plane listens, resolved from a URL scheme — and, for a `discobox://` address that names its server by DNS name, from the `_discobox` TXT record `Resolve` looks up before a dial (ADR 0116). It also owns the grammar of a discobox's own address, `discobox://<server>/<discobox>`. Shared because the CLI and the server must agree on what an endpoint means, and because `git`, websockets, and the generated client all reach the server through the one client it builds. The pool hops are resolved separately by [`wire`](pkg/wire). It also owns `Diagnose`, which reports reaching a server layer by layer rather than as the one error the top of the stack produces, and the transport logging behind `discobox --iroh-log` and the server's `iroh.logLevel` — both live here because the layers they describe are this package's, and nothing above it can see them. |
+| [`pkg/poolauth`](pkg/poolauth) | A pool's identity and its assertions to the control plane: the identity key file on the pool's own storage (`LoadKey`, and `LoadOrCreateKey`, which makes it on demand), and PASETO v4.public assertions signed with it, audience `discobox-control-plane`, with the scopes and forwarding headers they carry. Shared because the pool agent signs them, the provisioner makes the key and signs as the pool before its agent runs (ADR 26-10-24-953 §4), and the server verifies them. |
+| [`pkg/poolassets`](pkg/poolassets) | Reading the server's asset routes as a pool (ADR 26-10-16-423 §13): a manifest or blob under `/api/pools/{poolId}/assets`, signed with the pool's key, never trusted for its content. Shared because the pool agent fills its cache through it, and the provisioner applies a pool's own bundles through it before the agent runs (ADR 26-10-24-953 §4); the bundle clients that read through it stay each module's own (§3 as amended). |
 | [`pkg/wire`](pkg/wire) | How the pool agent and the control plane reach each other, and how a sandbox reaches its pool's services, resolved from a URL scheme: `http`/`https` over TCP, `vsock` over AF_VSOCK, `unix` over a socket, for dialing and listening alike, and `wss`, a pool behind an HTTPS edge, which only `proxy/bridge` opens (through `wstunnel`). Shared because the in-sandbox `proxy/bridge` dials through it as well as the pool agent and the server's VM providers (ADR 0144 §4). Kept apart from `endpoint`, whose iroh and DNS resolution describe the client hop only. |
-| [`pkg/wsrecord`](pkg/wsrecord/DESIGN.md) | Versioned WebSocket message spool format shared by the proxy capture and CLI audit viewer. |
 | [`pkg/wstunnel`](pkg/wstunnel) | Byte streams over WebSocket for a sandbox whose pool sits behind an HTTPS edge that terminates TLS (ADR 26-10-23-719): one stream at a time per tunnel, ended by `end`/`end-ack` so the client reuses idle tunnels. Shared because the in-sandbox `proxy/bridge` dials it and the pool's proxy unit serves it. |
 | [`pkg/vsock`](pkg/vsock) | The AF_VSOCK listener and dialers behind `wire`'s `vsock` scheme, and the host and any-CID constants a VM guest binds and dials with. Also used directly by the VM guest's `discobox-vsock-guest`. |
-| [`pkg/programstatus`](pkg/programstatus) | OSC 7501, the Program Status Protocol: parsing a report by the spec's grammar and limits, keeping one terminal's records by its replacement and clearing rules (`Set`), choosing the record that stands for the terminal, encoding one to send on, and reading the status a box's agent posts for its primary terminal (`PrimaryPosted`), which `discobox ls`, the console and the server's sandbox events share ([ADR 26-10-29-316](docs/adr/26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md)), and the window title and msg it last posted (`PrimaryTitleAndMsg`), which the server's display name and the console's primary title share ([ADR 26-10-31-618](docs/adr/26-10-31-618-a-sandboxs-name-is-followed-by-what-its-program-reports.md)). Shared because the shim keeps the records of the program it runs and the console re-emits the focused box's to the terminal it runs in, and the two must read the protocol alike ([ADR 26-10-16-424](docs/adr/26-10-16-424-a-terminals-status-is-what-its-program-reports-over-osc-7501.md)). |
+| [`pkg/programstatus`](pkg/programstatus) | OSC 7501, the Program Status Protocol: parsing a report by the spec's grammar and limits, keeping one terminal's records by its replacement and clearing rules (`Set`), choosing the record that stands for the terminal, and encoding one to send on. Shared because the shim keeps the records of the program it runs and the console re-emits the focused box's to the terminal it runs in, and the two must read the protocol alike ([ADR 26-10-16-424](docs/adr/26-10-16-424-a-terminals-status-is-what-its-program-reports-over-osc-7501.md)). |
 | [`harness`](harness) | The harness bundle contract (OCI-label manifest, registration) and hook registration drivers for sandbox terminals. See [`harness/DESIGN.md`](harness/DESIGN.md). |
 | [`pkg/releasemanifest`](pkg/releasemanifest/DESIGN.md) | Full release build inventory: source revision, CLI and server downloads with platform/size/digest metadata, named runtime image roles, and the platform, harness, agent and pool bundles. Also consumed by development builds through `DISCOBOX_RELEASE_MANIFEST`. |
 | [`pkg/serverstage`](pkg/serverstage) | The description of a released server — its assets, where each is published, and what each one's SHA-256 is — and the staging that turns one into verified files on disk, one directory per version. In the root module because it is a release-format contract with two ends: the CLI decodes the manifest a release linked into it, and `internal/cmd/discobox-server-manifest` is what encodes one at build time. See [ADR 0099](docs/adr/0099-the-cli-downloads-the-server-it-starts.md). |
@@ -214,34 +215,31 @@ modules — or Go gives the location meaning (`internal`).
 | [`pkg/imagecache`](pkg/imagecache) | The image store: images kept on this machine as an OCI image layout, and the downloader that fills it, fetching only missing blobs for one platform and verifying each, and the blob reads and writes a layout of blobs no entry names is filled with. The CLI stages the images its server names into it before starting that server; the server keeps its asset store, which serves bundles to pools, as another, and each pool its pull-through cache of that store, both reading a bundle's manifests and walking what a pin reaches with this package (ADR 26-10-16-423 §13), and hands the CLI's to its providers, which fetch a VM guest through it, and the engine loads a container image from it into a pool's daemon before pulling, in an archive from which both Docker image stores keep the registry digest a sandbox is pinned to. The layout's format is this package's alone. In the root module because the CLI and the server both use it, and stdlib-only so the CLI's module graph gains no registry client. See [ADR 0113](docs/adr/0113-the-cli-stages-the-images-its-server-loads.md). |
 | [`pkg/tarsums`](pkg/tarsums) | A tar archive whose last member is a `SHA256SUMS` in `sha256sum`'s own format, and a reader that ends it with `io.EOF` only once that member has arrived and matched. Shared because every hop of a discobox transfer writes and verifies one — the sandbox agent's export mode and the pool agent for a sandbox's tree, the server for a `.dbox` — and each writes its own sums only after verifying what it read. See [ADR 0123](docs/adr/0123-a-discobox-is-exported-as-its-spec-and-its-durable-tree.md) §8. |
 | [`pkg/sandboxtree`](pkg/sandboxtree) | A sandbox's durable tree as a tar: its subtrees (`data`, `sources`, `origins`), the walk that writes a directory into one — hard links stored once, sockets and fifos skipped, a file that changed length ending the archive — and the check that an entry's name is inside the subtrees a writer may send. Shared because two processes write one tree: the sandbox agent's export mode writes `data` and `sources`, and the pool agent verifies that stream, re-emits it and adds its own `origins` ([ADR 0129](docs/adr/0129-the-sandbox-agent-reads-the-tree-an-export-carries.md)). |
-| [`pkg/hostscope`](pkg/hostscope) | The one spelling of a destination host every side shares (`Normalize`, `List`: lowercased, no port), and what a credential's report scope covers: a scope covers itself and everything beneath it, never its parent. The proxy's match of a request against a report scope (ADR 26-10-13-595) is what still reads that rule; a secret route's host does not — it covers itself alone, and `*.h` names the hosts beneath h (`secretroute`, ADR 26-10-27-880 §4), so a route is never matched with `Covers`. Shared because the control plane stores hosts in the form the proxy reports them, and a spelling that differed would match nothing. |
-| [`pkg/secretroute`](pkg/secretroute) | Where a secret may be sent (ADR 26-10-02-924, ADR 26-10-27-880 §4): a route names hosts — exact, `*.suffix` strictly beneath a suffix, or `*`, any host (ADR 26-10-27-939) — and optionally methods, paths (segment globs: `*` one segment, a trailing `**` the rest), the GraphQL operation types and root fields or the MCP tools a body may hold, and whether it is blocked; one typed syntax, `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`, is parsed and formatted here, and `FromLegacy` converts a host-and-prefix route without widening it (§8), and `FromLegacyList` reads a legacy list whatever it holds, never widening — a list it empties is `RefusingList`, never empty — so the pool's old file and the server's stored routes convert alike. Within one list the candidates are the routes a request matches, the most specific decide — host, then path — and a blocked one among them refuses; a credential's binding holds it to several lists at once, its secret's, its binding's and its parents', every one of which must allow it, and with the binding's expiry those lists are one grant (`Grant`, ADR 26-11-03-329 §3): a credential is held to a grant for each binding it stands on — its plain binding and each addition stacking on it — and some grant not lapsed by the caller's clock must allow it (`DecideGrants`), grants never merged into one list. Protocol blocks read the parsed body (gqlparser for GraphQL, JSON-RPC for MCP), and a body that cannot be read is never what an open route allows and always what a blocked one may refuse. Shared because the control plane normalizes the routes a person, agent or harness image writes and checks them when it hands out a value, and the pool proxy decides every swap against them; a reading that differed between the two would enforce a route nobody wrote. |
-| [`pkg/bindingplan`](pkg/bindingplan/DESIGN.md) | What approving one part of a credential request does to the bindings the asking discobox already holds of the secret (ADR 26-11-02-022 §5): which is kept and updated, which go, which lose their use side or are split. The server applies it; the CLI and the console show it before a person approves. Shared so the rule shown is the rule applied. Standard library only. |
-| [`pkg/credentialpolicy`](pkg/credentialpolicy/DESIGN.md) | Credential policy files (ADR 26-10-30-584): the strict versioned JSON format, literal path-segment parameters, and their resolution into concrete routes. The CLI resolves a person's files before writing a binding; the server resolves the documents a credential request carries (ADR 26-11-02-022 §2). Shared so a document means one thing wherever it is read. The editor schema is `cli/credential-policy.schema.json`. |
-| [`pkg/secretformat`](pkg/secretformat) | The shape of credential values: a generative template that mints a sentinel byte-identical to a real provider key, and inference of a template from a real value. The control plane mints every sentinel from it; it is shared because the console checks a format a person writes against the same grammar before sending it, so a template it accepts is one the control plane can mint from. |
+| [`pkg/hostscope`](pkg/hostscope) | What a credential's host scope covers: a scope covers itself and everything beneath it, never its parent, and a list of scopes — a grant's hosts (ADR 26-10-02-393) — covers what any of them covers, with none at all the wildcard. Shared because four places compare a scope against the destination the proxy observed — the control plane's grant lookup, the pool agent's activation check, the guard on what a grant may point a secret at, and the proxy's match of a request against a credential's report scope (ADR 26-10-13-595) — and a rule that differs in one of them is either a credential that stops working for no visible reason or one that travels somewhere nobody approved. |
+| [`pkg/secretroute`](pkg/secretroute) | Where a secret may be sent (ADR 26-10-02-924): a route is a host scope and an optional path prefix matched on whole segments, and a request falls on the most specific routes covering it — most host labels, then longest path. Shared because the control plane normalizes the routes a person or harness image writes and the pool proxy matches every swap against them; a reading that differed between the two would enforce a route nobody wrote. |
+| [`pkg/secretformat`](pkg/secretformat) | The shape of credential values: a generative template that mints a sentinel byte-identical to a real provider key, and inference of a template from a real value. Shared because both ends mint sentinels — the control plane the stable one bound to a sandbox, the pool agent the ephemeral one per use — and a sentinel shaped by different rules at each end would be distinguishable from the real thing. |
 | [`internal/hostid`](internal/hostid) | This machine's generated, persisted Discobox identity, which a client reports as the origin of what it creates: it files a discobox under where it was created (ADR 0111), says which machine holds a local source's directory, and keys the pool cache of a source with no remote. The control plane resolves none of its own. |
 | [`internal/originkey`](internal/originkey) | Derives the origin key: where a sandbox belongs on the client that created it (ADR 0111). Shared so client and server cannot drift on it. |
-| [`pkg/sourceref`](pkg/sourceref) | How a source is named — `LOCATION[@REF][//PATH]`, a directory, a Git URL or GitHub `owner/repo` — and when two names are one source: the parse, the key that compares them, the short spelling a listing shows, and the remote normalization the pool cache keys by. In the root module because the CLI, the console and the server's skills-source check read it alike. See [`pkg/sourceref/DESIGN.md`](pkg/sourceref/DESIGN.md) and [ADR 26-10-15-664](docs/adr/26-10-15-664-a-source-is-named-one-way-everywhere.md). |
-| [`pkg/sse`](pkg/sse) | Reads a server-sent events stream: each event's id, type and data, an id-only block as the cursor move it is, and other fields such as `retry` to the caller. Shared because two clients follow the server's sandbox event stream: the CLI's `discobox events` and the `discobox-box` monitor in a box ([ADR 26-11-01-560](docs/adr/26-11-01-560-discobox-box-watches-other-boxes-through-the-sandbox-event-stream.md)). |
+| [`pkg/sourceref`](pkg/sourceref) | How a source is named — `LOCATION[@REF][//PATH]`, a directory, a Git URL or GitHub `owner/repo` — and when two names are one source: the parse, the key that compares them, the short spelling a listing shows, and the remote normalization the pool cache and secret rules key by. In the root module because the CLI, the console and the server's skills-source check read it alike. See [`pkg/sourceref/DESIGN.md`](pkg/sourceref/DESIGN.md) and [ADR 26-10-15-664](docs/adr/26-10-15-664-a-source-is-named-one-way-everywhere.md). |
 | [`pkg/sourcecache`](pkg/sourcecache) | Names the pool cache a sandbox's Git source is delivered into — its remote normalized, else its client's directory, else one of its own — and how the control plane addresses that cache on a pool: the routes, the pin suffix, and the headers ([ADR 26-10-10-545](docs/adr/26-10-10-545-git-reaches-a-pool-only-from-a-client-and-is-cached-there-per-remote.md) §§2–3). Shared so the server, the pool agent and the CLI cannot drift on it. |
 | [`internal/privatefs`](internal/privatefs) | Makes a file or directory this user's alone, checks that one is, and writes a new file that is private from the moment it exists: nothing on Unix, where the mode already says it, and an explicit owner-only ACL on Windows, where a mode sets nothing. Shared because the CLI and the server both write private keys, and each writer's test asserts privacy through the same check on every platform. |
 | [`internal/filelock`](internal/filelock) | Advisory exclusive file locks for resources that tolerate one process at a time: a server's data directory, a development loop's checkout. |
+| [`internal/skillpolicies`](internal/skillpolicies) | Tests only: every `discobox-access request --json` the skills in `.agents/skills` and `access/skills` show carries a policy that parses and validates, in the canonical sentences a lead compares word for word, and a worker's policy falls within the delegation its lead asks for (#312). In the root module because the skills span the repository, and a test of them belongs to no one module. |
 | [`proxy`](proxy) | The pool-scoped HTTP/HTTPS and SOCKS proxy: certificates, traffic policy, response caching, and audit. Run by the pool agent and sandbox agent. Its [`egress`](proxy/egress) package is the egress policy's vocabulary — validation, the merge of a sandbox's levels, matching, and the coverage check — and the control plane imports it too, since what a person writes, what the control plane merges and bounds, and what the proxy enforces must read an entry one way ([ADR 26-10-01-032](docs/adr/26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md)). Its [`gateway`](proxy/gateway) package is a project's gateways the same way — validation, normalization, and the match and rewrite — imported by the control plane, which validates what a person writes, and the pool agent, which records it, so a route is read one way where it is written and where it is applied ([ADR 26-10-16-470](docs/adr/26-10-16-470-a-project-may-route-a-providers-api-through-a-gateway.md)). Both sit under `proxy` because what they decide is the proxy's policy. See [`proxy/DESIGN.md`](proxy/DESIGN.md). |
 | [`pkg/auditid`](pkg/auditid) | How an audit record's ID is written on an API. Three of the four trails of [ADR 0130](docs/adr/0130-an-audit-record-is-read-where-it-was-written-and-names-its-attestor.md) number their records with an `x/id` value; the pool proxy's numbers them by audit-database row, because that order is the write order a follower reads along, so its ID is written `http_<row>` above the database. In the root module, and deliberately dependency-free, because the proxy that owns the row, the pool agent and server that relay it, and the CLI that prints and parses it all have to spell it the same way, and the CLI cannot import the proxy to learn it. |
 | [`pkg/gitbackend`](pkg/gitbackend) | Git's smart HTTP protocol over `git http-backend` as a CGI: the `<slug>.git/...` route grammar, telling a push from a fetch, and running the backend in an environment built from nothing. Shared because two processes serve repositories this way and must not drift on it — the sandbox agent its own worktree, the pool agent each source's origin, a namespace of its Git cache ([ADR 0126](docs/adr/0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md) §4). |
 | [`pkg/runcca`](pkg/runcca) | The runc wrapper that injects the sandbox's MITM CA into every container a nested Docker daemon creates. |
 | [`pkg/provisionspec`](pkg/provisionspec) | The `provision.yaml` contract ([ADR 26-10-16-423](docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §§3–6): a bundle tree's `features/<name>/` layout, the typed steps a feature declares, how it is adopted and what runs in the background, and what makes them valid; and `/run/discobox/provision.json`, where a box says how far its features got. Bundle authors write the first; the sandbox agent's runner (`sandbox-agent/provision`) applies it and writes the second, which the box's runtime integrations and the agent's status report read. |
-| [`pkg/harnesscapture`](pkg/harnesscapture) | Versioned harness save-back contracts and validation of registered literal portable settings and credential documents, and the route a harness bundle declares (`Route`), for a secret its image declares and a save-back provider alike, reading a bundle's pre-pattern `{host, path, use}` shape through `secretroute.FromLegacy` until it is rebuilt. See [`pkg/harnesscapture/DESIGN.md`](pkg/harnesscapture/DESIGN.md). |
-| [`pkg/sandboxconfig`](pkg/sandboxconfig) | The sandbox's effective runtime config (`/etc/discobox/sandbox.json`) assembled from attribute-owned layers, the revisioned runtime-config document a pool delivers to a running sandbox (ADR 0126 §3), the contract by which a sandbox asks its pool for its raw secrets' values (ADR 26-10-27-840), and a repository's `.discobox/settings.json` (ADR 26-10-16-423 §11). See [`pkg/sandboxconfig/DESIGN.md`](pkg/sandboxconfig/DESIGN.md). |
+| [`pkg/sandboxconfig`](pkg/sandboxconfig) | The sandbox's effective runtime config (`/etc/discobox/sandbox.json`) assembled from attribute-owned layers, the revisioned runtime-config document a pool delivers to a running sandbox (ADR 0126 §3), and a repository's `.discobox/settings.json` (ADR 26-10-16-423 §11). See [`pkg/sandboxconfig/DESIGN.md`](pkg/sandboxconfig/DESIGN.md). |
 | [`pkg/sandboxuser`](pkg/sandboxuser) | The identity a sandbox process runs as and the precedence between the layers that describe it. See [`pkg/sandboxuser/DESIGN.md`](pkg/sandboxuser/DESIGN.md). |
 | [`pkg/sandboxshell`](pkg/sandboxshell) | The exec env variable through which a client names its person's preferred shell (ADR 0138), shared by the CLI that sets it and the sandbox agent that honors it. |
 | [`pkg/sandboxservices`](pkg/sandboxservices) | Names of the services Discobox itself declares inside a sandbox, shared by the sandbox agent that reports them and the CLI that recognizes them. |
-| [`pkg/sandboxmeta`](pkg/sandboxmeta) | A sandbox's meta — its name, description and tags: the file inside the sandbox that holds them (`~/.discobox/meta.json`, their system of record), the rules each must satisfy, how a change applies, the tag selector grammar listings filter by, and the rule that names a sandbox on screen — its set name, else its primary terminal's window title, followed by its OSC 7501 msg ([ADR 26-10-31-618](docs/adr/26-10-31-618-a-sandboxs-name-is-followed-by-what-its-program-reports.md)). Shared because the sandbox agent reads and writes the file, the server validates what it caches and filters on, and the CLI parses selectors ([ADR 0136](docs/adr/0136-a-sandboxs-meta-lives-in-the-sandbox-and-the-server-caches-it.md)). |
-| [`pkg/declared`](pkg/declared) | The file shapes of a declaration directory — a `.yaml` that is only metadata, or a script with front matter — and the id, name, duplicate and script problems every declaration shares. Read by `services`, `tools` and `monitors` (ADR 0125 §1, ADR 26-10-31-073 §2). |
-| [`pkg/tools`](pkg/tools) | What a declared tool means: where it runs (the discobox, or this machine handed the discobox as `ssh`/`git` placeholders and the CLI, server and project to reach it again), which of the builtin, image, source and user layers may declare what, and how the layers merge. Shared because the sandbox agent lists the image's and source's declarations and the CLI merges them with its own and the user's ([ADR 0125](docs/adr/0125-tools-are-declared-in-files-the-way-services-are.md)). |
-| [`pkg/platform`](pkg/platform) | What a sandbox runs on: an OS and an architecture, spelled `os/arch` the way a server manifest spells one; the image kind a pool runs — OCI images, or VM images for one driver (ADR 26-10-09-106 §4); and the placement rule — a sandbox lands only on a pool of its own platform (ADR 0145 §1). A harness names neither: both are its pool's (ADR 26-11-01-122). Shared because the control plane that records and places by them and the pool agent that declares what its pool hosts and runs must spell and compare it the same way. |
+| [`pkg/sandboxmeta`](pkg/sandboxmeta) | A sandbox's meta — its name, description and tags: the file inside the sandbox that holds them (`~/.discobox/meta.json`, their system of record), the rules each must satisfy, how a change applies, and the tag selector grammar listings filter by. Shared because the sandbox agent reads and writes the file, the server validates what it caches and filters on, and the CLI parses selectors ([ADR 0136](docs/adr/0136-a-sandboxs-meta-lives-in-the-sandbox-and-the-server-caches-it.md)). |
+| [`pkg/declared`](pkg/declared) | The file shapes of a declaration directory — a `.yaml` that is only metadata, or a script with front matter — and the id, name, duplicate and script problems every declaration shares. Read by `services` and `tools` (ADR 0125 §1). |
+| [`pkg/tools`](pkg/tools) | What a declared tool means: where it runs (the discobox, or this machine handed the discobox as `ssh`/`git` placeholders), which of the builtin, image, source and user layers may declare what, and how the layers merge. Shared because the sandbox agent lists the image's and source's declarations and the CLI merges them with its own and the user's ([ADR 0125](docs/adr/0125-tools-are-declared-in-files-the-way-services-are.md)). |
+| [`pkg/platform`](pkg/platform) | What a sandbox runs on: an OS and an architecture, spelled `os/arch` the way a server manifest spells one; the set of platforms an image is published for; the image kind — an OCI image, or a VM image for one driver; and the placement rules — a sandbox lands only on a pool of its own platform, which its harness's image must be published for (ADR 0145 §1), and that runs the kind of image its harness's image is (ADR 26-10-09-106 §4). Shared because the control plane that records and places by them, the pool agent that declares what its pool hosts and runs, and the CLI that offers only harnesses a pool can run must spell and compare it the same way. |
 | [`pkg/sandboxpath`](pkg/sandboxpath) | How a path inside a sandbox is spelled and judged, by that sandbox's platform rather than the host's: absolute, clean, join, the working root, and whether the platform has declared volumes at all — only Linux does ([ADR 0145](docs/adr/0145-a-sandbox-declares-its-platform-and-a-non-linux-one-is-a-vm-template.md) §6). Shared because the CLI that places sources, the pool agent that writes the manifest, and the sandbox agent that seeds the working root and wires volumes each run on a host of their own and must judge one path the same way. |
-| [`pkg/layout`](pkg/layout) | Where Discobox stores state, scoped so no two pools share a writable path. Every path resolves against a `Root` the pool's shape picks: the container's view (`ContainerRoot`) for a pool whose agent runs in a container, or the user's per-OS data directory for one whose agent runs on the host ([ADR 0144](docs/adr/0144-a-pool-of-host-vm-sandboxes-runs-its-agent-on-the-host.md) §1). It also keeps the modes of the trees a pool's state hangs from, which a pool machine's agent sets at every start (`PreparePoolTrees`). |
+| [`pkg/layout`](pkg/layout) | Where Discobox stores state, scoped so no two pools share a writable path. Every path resolves against a `Root` the pool's shape picks: the container's view (`ContainerRoot`) for a pool whose agent runs in a container, or the user's per-OS data directory for one whose agent runs on the host ([ADR 0144](docs/adr/0144-a-pool-of-host-vm-sandboxes-runs-its-agent-on-the-host.md) §1). |
 | [`pkg/controlplane`](pkg/controlplane) | Shared control-plane endpoint defaults. |
 | [`pkg/health`](pkg/health) | Wire contract for the server's readiness endpoint, which the CLI polls after launching a server. |
 | [`pkg/version`](pkg/version) | The release a binary was cut from, for `discobox --version` and the server's `/healthz`. |
@@ -252,121 +250,57 @@ not listed here.
 
 ## Build, Check, and Release
 
-The required Linux `ci:ux-smoke` job boots an isolated Docker stack and drives
-the terminal, harness save/reset and adoption flows through real boxes. Its
-fixtures, bounds, ownership and failure evidence are described in
-[`test/ux-smoke/README.md`](test/ux-smoke/README.md). Portable `ci:test` stays
-independent of Docker.
-
-Three layers, and the top one holds no logic (ADR 0066):
+Dagger owns CI and release orchestration (ADR 26-10-26-225).
 
 ```mermaid
 flowchart TD
-    workflows[".github/workflows/<br/>when, on which runner, how artifacts move"]
-    action[".github/actions/task<br/>checkout done, install Nix on Linux<br/>(setup-go on macOS and Windows),<br/>run one target;<br/>Go's and golangci-lint's caches are Depot Cache"]
-    taskfile["Taskfile.yml<br/>every step of check, test, build, release"]
-    flake["flake.nix<br/>system tools and environment"]
-
-    workflows --> action --> taskfile --> flake
+    local["Local Dagger CLI"] --> pipeline[".dagger/modules/pipeline<br/>checks, builds, release policy"]
+    actions["GitHub Actions<br/>events and credentials"] --> pipeline
+    taskfile["Taskfile.yml<br/>pipeline shortcuts and host development"] --> pipeline
+    pipeline --> linux["Linux containers<br/>Go, Node, PowerShell, shell tools"]
+    actions --> native["macOS and Windows<br/>native repository commands"]
+    pipeline -->|"portable helper files"| native
+    native -->|"signed Mac artifacts"| artifacts
+    pipeline --> artifacts["Verified files and OCI bundles"]
+    artifacts --> publish["Explicit publication and promotion"]
 ```
 
-- `flake.nix` owns the toolchain. `nix develop` (or direnv via `.envrc`) is the
-  entry point; its `shellHook` exports the `DISCOBOX_*` environment and
-  regenerates CLI completions. `GOTOOLCHAIN=auto` means Nix supplies a bootstrap
-  Go and `go.mod` names the one that compiles. `devShells.libkrun` adds the two
-  things a machine running libkrun pools needs installed — libkrun and passt —
-  and stays out of the default shell because that libkrun build is not in
-  cache.nixos.org; `nix build .#libkrun-runtime` is the same closure for a
-  machine that is not in a dev shell.
-- `Taskfile.yml` owns every step. `go tool task --list` is the index; `task`,
-  `golangci-lint`, and `ogen` are `go tool` dependencies pinned by `go.mod`, not
-  by Nix.
-- `.github/workflows/` decides only *when* a target runs and on which runner.
-  Every job body is one Taskfile target, run by the `.github/actions/task`
-  composite action as `nix develop -c go tool task <target>` on Linux, or as
-  plain `go tool task <target>` on macOS and Windows (ADR 26-11-02-173). Go's
-  build and test cache is Depot Cache, which Depot's runners set as
-  `GOCACHEPROG` and every run, pull requests included, reads and writes per
-  object; a runner without it builds cold. Any run but a pull request or a
-  branch push turns Depot Cache off (a tag's release, a dispatched one), since
-  a pull request can write what it would read.
-  golangci-lint's analysis cache is Depot Cache too, through the
-  `GOLANGCI_LINT_CACHEPROG` Depot's Linux runner sets. Nothing else is cached:
-  modules come from the module proxy each run, which measured no slower than
-  restoring an `actions/cache` tarball of them.
+- `.dagger/modules/pipeline` owns the graph, toolchain containers, cache volumes,
+  artifact receipts, and release/channel policy. It reads application modules
+  from `go.work`; its own Go SDK module stays outside that workspace.
+- `dagger check` runs Linux tests, static checks, repository verification, the
+  pipeline's own tests, and SDK binding staleness. `ci` adds release builds,
+  saved-image trust/HTTPS verification, and native reports. See
+  [the pipeline design](.dagger/modules/pipeline/DESIGN.md).
+- `Taskfile.yml` exposes Dagger operations and retains host development tasks
+  such as `task dev`, native development binaries, and the local image watcher.
+  No Dagger operation calls Task; file-change hooks use the same shortcuts.
+- `.github/workflows` supplies events, source refs, and credentials for Dagger,
+  plus conventional native macOS/Windows jobs. It transfers portable helpers
+  and cross-built Windows executables to native CI and signed macOS artifacts
+  back to Linux release assembly. Native commands are repository-owned and
+  locally runnable. There is no Depot build service or tap dispatch.
 
-Release binaries are built on the platform they target — darwin has to be, since
-`vz` is cgo against Virtualization.framework and its entitlement is applied by
-`codesign` at build time (see
-[`server/providers/vz/DESIGN.md`](server/providers/vz/DESIGN.md)); it needs
-nothing of Nix but Go, so the macOS job sets up plain Go with
-`actions/setup-go`, as Windows does. Windows has no cgo, so its binary is
-cross-compiled from the Linux job. The macOS job lints only the packages darwin
-builds from other files than Linux (`scripts/lint-darwin.sh`) and type-checks
-the rest; the Linux job already lints everything. Agent images are built once
-for both architectures by `depot build`, falling back to emulated `docker
-buildx`.
+- `flake.nix` still supplies the host development shell and libkrun runtime.
+  Container check toolchains are owned by the pipeline and pinned by
+  `dagger.lock`; Go tools remain pinned by the application's `go.mod`.
 
-A release passes through three states, and only the first is decided by the tag
-(ADR 0105). Pushing a tag publishes a GitHub **prerelease** and nothing more:
-whether a build turned out to be good is not knowable at push time, so nothing
-at push time claims it.
+Native macOS/Windows commands and artifact boundaries are described in
+[the pipeline design](.dagger/modules/pipeline/DESIGN.md) and
+[the local command guide](docs/dagger.md). Linux builds both Linux architectures
+and cross-compiles both Windows architectures. Native Mac signs final server
+bytes before the CLI embeds their digest. Dagger assembly requires real Mac
+artifacts and matching source-bound verification receipts; a Linux pass alone
+never establishes native coverage.
 
-```mermaid
-flowchart LR
-    tag["push vX.Y.Z<br/>release.yml"] --> pre["GitHub prerelease"]
-    pre --> latest["latest channel<br/>ghcr :latest<br/>brew discobox-dev"]
-    pre -.->|"a human unticks<br/>“Set as a pre-release”"| stable
-    stable["stable channel<br/>brew discobox<br/>winget<br/>discobox.ai installer"]
-    rc["push vX.Y.Z-rc1"] --> only["that tag, and the<br/>installer's edge channel"]
-```
-
-- **`DOT_RELEASE`** — exactly `vMAJOR.MINOR.PATCH` — is the *latest* channel's
-  rule, and the only thing the tag itself decides. A dot release moves ghcr's
-  `:latest` (`dockerworker.DefaultSandboxBaseImage`, what a pool boots when nothing
-  named a version) and the `discobox-dev` formula the moment it is cut. An
-  explicit prerelease tag (`-alpha`, `-beta`, `-rc`) moves neither, deliberately:
-  it is the lowest confidence level — a real release build, signed and pushed,
-  that reaches no brew channel at all and is had by pinning the version or by
-  asking the installer for its `edge` channel.
-- **Stable** is a human clearing the prerelease box on a GitHub release, which
-  runs `promote.yml`. That is the only thing that moves `brew install discobox`
-  (winget is submitted by hand; see below), and `release:require-dot` refuses to
-  promote anything that is not a dot release. It triggers on `released`,
-  `edited`, and `published` and gates
-  on `release.prerelease == false`, because which activity type a checkbox-only
-  edit emits is not something GitHub documents plainly. There is no un-promote —
-  both stable channels are recomputed from the newest blessed release, so
-  backing one out means blessing a different one.
-
-The two package channels are fed in opposite directions, and the difference is
-ownership.
-
-The Homebrew tap is ours, so it **pulls**: `discobox-ai/homebrew-tap` generates
-both formulae from this repository's public releases with
-`scripts/brew-formula.sh` — `discobox` from the newest blessed release,
-`discobox-dev` (`--dev`) from the newest dot release — needing no credential of
-ours to read them and its own `GITHUB_TOKEN` to commit. They are two formulae
-rather than one because Homebrew will not link two that install the same file,
-and holding both at once is the point; `discobox-dev` installs its command under
-that name, and the CLI reads which one it is off `argv[0]`. `brew:refresh` is
-one dispatch that recomputes both, and is the only thing that starts the tap.
-The tap deliberately has no cron: a backstop that covers for a broken release
-step is a backstop that stops anyone noticing the step is broken. So a release
-that cannot reach the tap fails rather than quietly leaving `brew install` a
-version behind. `brew:publish -- [--dev] TAG` remains
-the by-hand override for a tag the tap's own rule will not take.
-
-winget cannot be inverted, because `microsoft/winget-pkgs` is not ours and
-nothing there can pull from us. So `winget:publish` **pushes**: it opens a pull
-request from a fork, which is not something `GITHUB_TOKEN` can do, and ends
-there — a validation pipeline and a moderator decide the rest. It runs by hand
-only: `promote.yml` has no `winget` job while the first submission waits on a
-CLA signature and a moderator, because resubmitting per release re-queues the
-package rather than queueing the versions. Both cross-repo steps therefore hold
-a token, and both are scoped to the least each needs: the tap's may only start
-a workflow already defined there, and winget's may only write public
-repositories as the submitting account.
+A published product release is a GitHub prerelease (ADR 0105). A dot version
+also advances the registry's `latest` aliases and Homebrew's `discobox-dev`;
+explicit semver prereleases advance neither. Stable promotion is a separate
+explicit operation on a dot release. Homebrew recomputes both channels from
+published releases and commits directly to the tap, requiring a tap contents
+credential. No other repository's workflow is dispatched. winget submission
+remains a manual function that opens or updates a pull request; promotion does
+not call it. VM guest and kernel artifacts keep independent release lines.
 
 Release assets are also mirrored at `assets.discobox.ai`, a Cloudflare Worker
 caching them in R2 on first request — a short, CORS-enabled, range-capable URL
@@ -391,7 +325,7 @@ old alpha once every newer release is blessed — so the one consumer of the
 aliases, the installer's site below, never takes `prerelease` alone.
 
 Every release also uploads `install.sh` and `install.ps1`, stamped by
-`release:installers` with the tag and the SHA-256 of each CLI binary beside
+Dagger release assembly with the tag and the SHA-256 of each CLI binary beside
 them (ADR 0110; see [`pkg/installer/DESIGN.md`](pkg/installer/DESIGN.md)). A stamped
 installer installs its own release. Asked for a version, or for a channel —
 `stable`, `latest`, or `edge`, the newest release of any shape — it hands over
@@ -403,7 +337,7 @@ the newer of the two aliases' releases.
 
 Windows is the one platform whose asset is an archive rather than a bare binary.
 winget resolves a portable package's command from the file name whenever it
-cannot create a symlink, so `release:windows-zip` repackages the same binary as
+cannot create a symlink, so Dagger release assembly repackages the same binary as
 `discobox.exe` and uploads it alongside the rest.
 
 There is one container image, the Docker driver's sandbox base image, and
