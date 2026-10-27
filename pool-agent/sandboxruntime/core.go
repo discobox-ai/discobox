@@ -15,10 +15,12 @@ import (
 
 // sandboxCore is the half of a runtime that is the same whatever a sandbox
 // runs as: the pool's records of each sandbox in its tree (its runtime-config
-// document, bundles, project layer, harness fence and archive marker), the
-// delivery of that document to the sandbox agent, the per-sandbox power lock
-// and boot mark, the state and progress sinks, the sources' settling, and the
-// pool's Git cache. A container (DockerSandboxRuntime) and a machine
+// document, bundles, project layer, file secrets, harness fence and archive
+// marker), the delivery of that document to the sandbox agent, the proxy
+// policy and the credentials broker's environment it stages for the sandbox
+// (publishCredentialEnvironment), the per-sandbox power lock and boot mark,
+// the state and progress sinks, the sources' settling, and the pool's Git
+// cache. A container (DockerSandboxRuntime) and a machine
 // (MachineSandboxRuntime) each embed one, and give it what only they know
 // through boxes.
 type sandboxCore struct {
