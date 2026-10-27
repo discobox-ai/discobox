@@ -75,6 +75,10 @@ re-reads the rows rather than being told
   (`UpdateSecret`, `UpdateSecretValueIfUnchanged`). Checks
   compare it, never a timestamp: a coarse clock (Windows) stamps two writes in
   one tick alike.
+- A binding's events carry a per-binding `seq` beside their clock time `at`,
+  and listings order by `at`, then `seq`: one binding's history stays in order
+  when a coarse clock stamps two of its changes alike. Events of different
+  bindings in one tick (a cascade) have no order beyond a stable one.
 
 ## Field Ownership on Whole-Row Writes
 

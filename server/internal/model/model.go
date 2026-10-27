@@ -1854,7 +1854,9 @@ type SecretBindingEvent struct {
 	Actor     string        `gorm:"column:actor;not null;type:text" json:"actor" doc:"Who did it, or system"`
 	Cause     string        `gorm:"column:cause;not null;type:text;default:''" json:"cause,omitempty" doc:"Why, when something caused it"`
 	Binding   SecretBinding `gorm:"column:binding;type:text;serializer:json" json:"binding" doc:"The binding after the change; before it, for a delete or an expiry"`
-	At        time.Time     `gorm:"column:at;not null;index" json:"at" doc:"When it happened" format:"date-time"`
+	// Seq orders a binding's events among themselves, where At ties.
+	Seq int64     `gorm:"column:seq;not null;default:0" json:"-"`
+	At  time.Time `gorm:"column:at;not null;index" json:"at" doc:"When it happened" format:"date-time"`
 }
 
 func (SecretBindingEvent) TableName() string { return "secret_binding_events" }

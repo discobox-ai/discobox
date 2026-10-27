@@ -368,7 +368,6 @@ func TestListSecretRejectionsNamesTheHarnessThatOwnsTheCredential(t *testing.T) 
 	}, store.BindingChange{Actor: "user-1"}); err != nil {
 		t.Fatalf("create binding: %v", err)
 	}
-	mustBind(t, st, sec.ID, model.SecretBindingTargetHarnessConfig, cfg.ID)
 	createSandboxWithHarness(t, st, "sb-1", "pool-1", cfg.ID)
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
