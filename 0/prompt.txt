@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bp527m8cr</task-id>
+<summary>Monitor event: "CI run 37137300016 job results"</summary>
+<event>build: success
+check: success</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
