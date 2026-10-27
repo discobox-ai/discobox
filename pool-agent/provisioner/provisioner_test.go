@@ -4,92 +4,37 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/discobox-ai/vm/pkg/engine"
 	"github.com/discobox-ai/vm/pkg/machine"
-	"github.com/discobox-ai/vm/pkg/machine/fake"
 
 	"github.com/discobox-ai/discobox/pool-agent/vmtest"
 )
-
-// shimSubcommand is this test binary run as the engine's shim.
-const shimSubcommand = "__vm-shim"
 
 // TestMain lets this binary be the two processes the engine starts for a
 // fake machine: its guest's agent, as `disco-vm guest` is, and its shim.
 func TestMain(m *testing.M) {
 	vmtest.RunFakeGuestIfInvoked()
-	if len(os.Args) > 1 && os.Args[1] == shimSubcommand {
-		if err := runShim(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, "shim:", err)
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}
 	os.Exit(m.Run())
 }
 
-// runShim opens the test's engine again, on the root and project it was
-// given, and serves the instance it was started for.
-func runShim(args []string) error {
-	if len(args) < 2 {
-		return errors.New("usage: <root> <project> <shim arguments>")
-	}
-	e, err := openEngine(args[0], args[1])
-	if err != nil {
-		return err
-	}
-	defer e.Close()
-	return e.ShimMain(context.Background(), args[2:])
-}
-
-func openEngine(root, project string) (*engine.Engine, error) {
-	driver, err := machine.New("fake")
-	if err != nil {
-		return nil, err
-	}
-	e, err := engine.Open(root, driver, nil, project)
-	if err != nil {
-		return nil, err
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		_ = e.Close()
-		return nil, err
-	}
-	e.ShimCommand = []string{exe, shimSubcommand, root, project}
-	return e, nil
-}
-
-// fakeMachine boots a machine of disco-vm's fake driver from one of its
-// bases, as a sandbox's or a pool's machine boots a driver's base, and
-// returns its guest operations.
+// fakeMachine boots a machine of disco-vm's fake driver from its base, as a
+// sandbox's or a pool's machine boots a driver's base, and returns its guest
+// operations.
 func fakeMachine(t *testing.T) machine.Guest {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the commands these tests provision with are POSIX shell")
-	}
-	bases, err := json.Marshal([]machine.Base{{Name: "base", ID: "base-id", GuestOS: machine.OS(runtime.GOOS)}})
+	e, err := engine.Open(vmtest.FakeDriver(t, t.TempDir(), "provisioner-test", nil), "provisioner-test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(fake.BasesEnv, string(bases))
-	e, err := openEngine(t.TempDir(), "provisioner-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = e.Close() })
 	ctx := context.Background()
-	inst, err := e.Create(ctx, "base-id", engine.CreateOptions{Name: "sandbox"})
+	inst, err := e.Create(ctx, vmtest.Base, engine.CreateOptions{Name: "sandbox"})
 	if err != nil {
 		t.Fatal(err)
 	}

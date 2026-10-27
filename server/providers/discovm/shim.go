@@ -7,19 +7,23 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/discobox-ai/vm/pkg/machine"
+	"github.com/discobox-ai/vm/pkg/machine/local"
 )
 
 // shimSubcommand is the hidden subcommand that is one disco-vm shim: the
 // process that boots a local machine and holds it for its whole life, serving
-// the engine's control API on loopback.
+// its control API on loopback.
 //
 // It is this binary re-executed, as the libkrun launcher is, so the server
-// ships no disco-vm binary beside itself (ADR 26-10-09-106 §2). The engine
-// appends the shim's own arguments to the ones shimCommand gives it.
+// ships no disco-vm binary beside itself (ADR 26-10-09-106 §2). It is the
+// local driver's machine.Config.ShimCommand (driverConfig), to which the
+// driver appends the shim's own arguments.
 const shimSubcommand = "__vm-shim"
 
-func shimCommand(exe, root, driver, project string) []string {
-	return []string{exe, shimSubcommand, "--root", root, "--driver", driver, "--project", project}
+func shimCommand(exe, dir, driver, project string) []string {
+	return []string{exe, shimSubcommand, "--dir", dir, "--driver", driver, "--project", project}
 }
 
 // RunShimIfInvoked runs this process as a disco-vm shim and exits, or returns
@@ -39,21 +43,21 @@ func RunShimIfInvoked() {
 	os.Exit(0)
 }
 
-// runShim opens the engine the server opened, on the same root, driver and
-// project, and runs the shim the engine asked for. Canceling ctx shuts its
-// guest down in order.
+// runShim makes the driver the server made, from the same configuration
+// (driverConfig) on the same directory, driver and project, and runs the shim
+// it asked for. Canceling ctx shuts its guest down in order.
 func runShim(ctx context.Context, args []string) error {
-	if len(args) < 6 || args[0] != "--root" || args[2] != "--driver" || args[4] != "--project" {
-		return errors.New("usage: --root <state dir> --driver <driver> --project <project> <shim arguments>")
+	if len(args) < 6 || args[0] != "--dir" || args[2] != "--driver" || args[4] != "--project" {
+		return errors.New("usage: --dir <state dir> --driver <driver> --project <project> <shim arguments>")
 	}
-	driver, err := newDriver(args[3])
+	dir, name, project := args[1], args[3], args[5]
+	cfg, err := driverConfig(name, project, dir)
 	if err != nil {
 		return err
 	}
-	e, err := openEngine(args[1], driver, args[5])
+	driver, err := machine.New(name, cfg)
 	if err != nil {
 		return err
 	}
-	defer e.Close()
-	return e.ShimMain(ctx, args[6:])
+	return local.ShimMain(ctx, driver, args[6:])
 }

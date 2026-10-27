@@ -87,20 +87,21 @@ func poolMachineName(poolID string) string { return "discobox-pool-" + poolID }
 var errNoPoolMachine = errors.New("the pool has no machine")
 
 // instance finds the pool's machine, or reports errNoPoolMachine.
-func (h *poolMachine) instance(pool *model.Pool) (*engine.Instance, error) {
-	inst, err := h.engine.Get(poolMachineName(pool.ID))
+func (h *poolMachine) instance(ctx context.Context, pool *model.Pool) (engine.Instance, error) {
+	inst, err := h.engine.Get(ctx, poolMachineName(pool.ID))
 	if errors.Is(err, engine.ErrNotFound) {
-		return nil, fmt.Errorf("pool %s: %w: it is created when the pool reconciles", pool.ID, errNoPoolMachine)
+		return engine.Instance{}, fmt.Errorf("pool %s: %w: it is created when the pool reconciles", pool.ID, errNoPoolMachine)
 	}
 	return inst, err
 }
 
 func (h *poolMachine) ensurePoolHost(ctx context.Context, pool *model.Pool, begin func(context.Context) error) error {
-	inst, err := h.instance(pool)
+	inst, err := h.instance(ctx, pool)
 	if err != nil && !errors.Is(err, errNoPoolMachine) {
 		return err
 	}
-	if inst != nil {
+	found := err == nil
+	if found {
 		state, err := h.state(ctx, pool, inst)
 		if err != nil {
 			return err
@@ -114,7 +115,7 @@ func (h *poolMachine) ensurePoolHost(ctx context.Context, pool *model.Pool, begi
 			return err
 		}
 	}
-	if inst == nil {
+	if !found {
 		base, err := h.baseRef(ctx)
 		if err != nil {
 			return err
@@ -153,7 +154,7 @@ func (h *poolMachine) baseRef(ctx context.Context) (string, error) {
 }
 
 func (h *poolMachine) repairPoolHost(ctx context.Context, pool *model.Pool, begin func(context.Context) error) error {
-	inst, err := h.instance(pool)
+	inst, err := h.instance(ctx, pool)
 	if errors.Is(err, errNoPoolMachine) {
 		return h.ensurePoolHost(ctx, pool, begin)
 	}
@@ -189,7 +190,7 @@ func (h *poolMachine) repairPoolHost(ctx context.Context, pool *model.Pool, begi
 // Unknown asks the machine once more, through Engine.Guest, which makes the
 // same call to the service and returns its error, and only a service that
 // cannot be reached is waited on; any other error is the pool's.
-func (h *poolMachine) state(ctx context.Context, pool *model.Pool, inst *engine.Instance) (engine.State, error) {
+func (h *poolMachine) state(ctx context.Context, pool *model.Pool, inst engine.Instance) (engine.State, error) {
 	state := h.engine.State(ctx, inst)
 	if state != engine.Unknown {
 		return state, nil
@@ -226,7 +227,7 @@ func unreachable(err error) bool {
 }
 
 func (h *poolMachine) removePoolHost(ctx context.Context, pool *model.Pool) error {
-	inst, err := h.instance(pool)
+	inst, err := h.instance(ctx, pool)
 	if errors.Is(err, errNoPoolMachine) {
 		return nil
 	}
@@ -238,7 +239,7 @@ func (h *poolMachine) removePoolHost(ctx context.Context, pool *model.Pool) erro
 
 // recordPoolMachine stores the machine on the pool row. A machine that was just
 // started has an agent that has not registered yet.
-func recordPoolMachine(pool *model.Pool, inst *engine.Instance, started bool) error {
+func recordPoolMachine(pool *model.Pool, inst engine.Instance, started bool) error {
 	state, err := json.Marshal(poolRuntimeState{Instance: inst.ID})
 	if err != nil {
 		return err
@@ -255,17 +256,17 @@ func recordPoolMachine(pool *model.Pool, inst *engine.Instance, started bool) er
 
 // running finds the pool's machine and requires it to be running: the console
 // and the log are read from inside it.
-func (h *poolMachine) running(ctx context.Context, pool *model.Pool) (*engine.Instance, error) {
-	inst, err := h.instance(pool)
+func (h *poolMachine) running(ctx context.Context, pool *model.Pool) (engine.Instance, error) {
+	inst, err := h.instance(ctx, pool)
 	if err != nil {
-		return nil, err
+		return engine.Instance{}, err
 	}
 	state, err := h.state(ctx, pool, inst)
 	if err != nil {
-		return nil, err
+		return engine.Instance{}, err
 	}
 	if state != engine.Running {
-		return nil, fmt.Errorf("pool %s's machine is %s", pool.ID, state)
+		return engine.Instance{}, fmt.Errorf("pool %s's machine is %s", pool.ID, state)
 	}
 	return inst, nil
 }

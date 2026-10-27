@@ -6,8 +6,9 @@ beside `dockerworker.Engine` rather than under it: a vm pool has no
 pool-agent container, BuildKit, registry or sandbox network of the engine's
 (ADR 26-10-09-106 §1). This package holds the provider kind, the embedded
 engine and its shim, and pool hosting with its console and log. The driver is
-configuration it passes to disco-vm; how a pool is hosted follows from what
-that driver reports. It starts no pool agent: `EnsurePool` mints no
+configuration it passes to disco-vm; how a pool is hosted follows from the
+driver's kind: whether it is disco-vm's local driver, whose provider is this
+host's disk. It starts no pool agent: `EnsurePool` mints no
 bootstrap, and `AcquirePoolAgentClient` answers that the pool runs none.
 
 ```mermaid
@@ -15,23 +16,29 @@ flowchart TD
     pool["poolruntime.Provider"]
     runtime["discovm.Runtime\nengine"]
     engine["disco-vm pkg/engine\non machine.New(config driver)"]
-    host{"driver's Capabilities.Remote"}
+    host{"driver is a *local.Driver?"}
     machine["poolMachine\na Linux machine from a driver base"]
     agent["hostAgent\npool agent on this host"]
 
     pool --> runtime
     runtime --> engine
     runtime --> host
-    host -- remote --> machine
-    host -- local --> agent
+    host -- no: remote --> machine
+    host -- yes: local --> agent
 ```
 
 ## The Engine Is the Server's
 
+- The engine is stateless (disco-vm ADR 26-10-23-417): the driver holds its
+  project and its state, and every image and instance is read from it.
+  `driverConfig` is the one `machine.Config` the server and its shims make a
+  driver with: the state root as `Dir`, this binary's shim as `ShimCommand`,
+  and `machine.KeyFromEnv` as `Keys`.
 - One state root per driver per host (`stateRoot`, under the platform's data
   directory), shared by every provider instance on that driver; it is not
-  configurable. Each provider instance opens an engine on it, in a disco-vm
-  project (disco-vm ADR 0004; `engineProject`):
+  configurable. Only a local driver keeps anything in it. Each provider
+  instance's driver is made in a disco-vm project (disco-vm ADR 0004;
+  `openDriver`):
   - **remote driver**: the provider instance's own, spelled from its ID
     (`prov_x` → `prov-x`; ADR 26-10-23-551 §1). A remote driver's machines
     outlive any store and are named for their project, so the project is
@@ -39,17 +46,28 @@ flowchart TD
     other's machines as their own orphans.
   - **local driver**: `discobox` (`localProject`) for every provider
     instance. The engine counts a driver's running-guest cap at `Start`
-    within a project, so one project per root is what makes vz's two running
-    macOS guests the host's (ADR 26-10-09-106 §4). It is not disco-vm's
-    default project, which is the disco-vm CLI's.
-- The engine keeps its metadata in its own SQLite database in the root
-  (`engine.Open` with no database), not in the server's: the root is the
-  user's, shared by every server of theirs on the host, and a database serves
-  one root. `Runtime.Close` and the shim close it.
+    over the driver's instances, which are its project's, so one project per
+    root is what makes vz's two running macOS guests the host's (ADR
+    26-10-09-106 §4). It is not disco-vm's default project, which is the
+    disco-vm CLI's.
+- Which project follows from the driver's kind, so the driver is made in
+  `localProject` first and made again in the provider's when it is not a
+  `*local.Driver`; construction touches no hypervisor or service.
+- Nothing is kept in the server's database or in a database of the engine's;
+  `Runtime.Close` releases nothing, and exists for `poolruntime.RuntimeProvider`.
 - The module is imported by commit (a pseudo-version), never a tag.
+- **Upgrading from an engine with a database** (disco-vm before c88c4006,
+  ADR 26-10-23-417 there): its root and database are not read. Nothing of
+  value was in them: a local driver's pool never ran (its host agent is not
+  staged, #64), and a boxd pool machine carried nothing placed on it. A boxd
+  machine that engine made is named by its old instance ID, not by
+  `discobox-pool-<pool>`, so it is not found: the pool's next reconcile makes
+  its machine again, and the old one is the operator's to remove from the
+  account (`dvm-<project>--<id>`).
 - A local machine's shim is this binary re-executed as `__vm-shim`
   (`RunShimIfInvoked`, called from `server.RunVMLauncherIfInvoked` before
-  anything a server does) with the engine's root, driver and project, so the
+  anything a server does) with the driver's directory, name and project; it
+  makes the same driver from `driverConfig` and runs `local.ShimMain`, so the
   server ships no disco-vm binary. A remote driver (boxd) runs no shim: the
   engine attaches to the service's machine on every call, so a running one is adopted across
   restarts, which "VM Lifetime" in [../DESIGN.md](../DESIGN.md) does not forbid
@@ -59,7 +77,7 @@ flowchart TD
 ## Drivers
 
 The driver is configuration, passed to disco-vm as it is: `newDriver` is
-`machine.New(cfg.Driver)` on disco-vm's own registry, and validation asks the
+`machine.New(cfg.Driver, driverConfig(...))` on disco-vm's own registry, and validation asks the
 same registry. Nothing in this package is written per driver, but for
 `unreachable` (below), which reads the transports the linked remote drivers
 use, because disco-vm reports no unreachable service of its own. A build links
@@ -73,14 +91,14 @@ it.
 `driver` is `Immutable`: it cannot change while the provider has pools,
 because only the driver that made a pool's host can remove it.
 
-Where a pool's agent runs follows from what the driver reports
-(`newPoolHost`, `machine.Capabilities.Remote`), as ADR 26-10-09-106 §1 places
-it:
+Where a pool's agent runs follows from whether the driver's provider is this
+host's disk — the driver is a `*local.Driver` (`newPoolHost`, `isLocal`) —
+as ADR 26-10-09-106 §1 places it:
 
-| driver reports | pool host | console | log |
+| driver | pool host | console | log |
 | --- | --- | --- | --- |
 | remote (boxd) | `poolMachine`: a Linux machine named `discobox-pool-<pool>`, booted from a driver base | `bash -l` in it, through the driver's guest exec | its journal for this boot, through the same exec |
-| local (vz, hcs) | `hostAgent`: a pool agent process under `<stateRoot>/pools/<pool>` | refused, `sandbox.ErrPoolConsoleUnsupported`: the host is the user's own machine | the agent's `pool-agent.log` |
+| local (vz, hcs) | `hostAgent`: a pool agent process under `<driver Dir>/pools/<pool>` (the state root) | refused, `sandbox.ErrPoolConsoleUnsupported`: the host is the user's own machine | the agent's `pool-agent.log` |
 
 - `poolMachine` reaches the host through the driver's guest operations
   (`Engine.Guest`: boxd's own API, or disco-vm's guest agent), never through
@@ -111,8 +129,9 @@ it:
   (`fake.BasesEnv`; a local driver, so they build that `poolMachine`
   themselves), which runs the engine, its shim, and the guest operations as a
   real machine does.
-- disco-vm's boxd driver reads `BOXD_API_KEY` from the server's environment;
-  the provider's configuration holds no key.
+- boxd authenticates with `BOXD_API_KEY` from the server's environment,
+  passed as `Config.Keys` (`machine.KeyFromEnv`), since disco-vm reads no key
+  of its own accord; the provider's configuration holds no key.
 
 ## Images
 
