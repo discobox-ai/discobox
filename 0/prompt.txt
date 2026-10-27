@@ -1,0 +1,1 @@
+can you figure out why `discobox --debug ls` just hangs?
