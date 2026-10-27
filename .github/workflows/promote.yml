@@ -18,8 +18,11 @@ jobs:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     permissions:
+      id-token: write
       contents: write
     env:
+      DAGGER_ENGINE: cloud
+      DAGGER_CLOUD_TOKEN: oidc
       RELEASE_VERSION: ${{ inputs.tag || github.event.release.tag_name }}
       RELEASE_REPOSITORY: ${{ github.repository }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

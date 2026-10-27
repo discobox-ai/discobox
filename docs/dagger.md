@@ -54,6 +54,40 @@ The first three apply workspace Changesets. The last regenerates the pipeline's
 own SDK bindings. Dagger never invokes Task, so these operations are also safe
 behind file-change hooks that invoke the Task shortcuts.
 
+## Dagger Cloud execution and cache
+
+Trusted Actions jobs execute Dagger on Cloud Engines with `DAGGER_ENGINE=cloud`.
+They authenticate through GitHub OIDC: the job grants `id-token: write` and
+sets `DAGGER_CLOUD_TOKEN` to the literal **`oidc`**, not a repository secret.
+The pinned CLI requests GitHub's short-lived token with audience `dagger.cloud`
+and exchanges it with Dagger Cloud. The repository must be authorized in the
+intended Dagger Cloud organization's GitHub integration before this exchange
+can succeed. No static Cloud token needs to be stored in Actions.
+
+The official action installs the pinned CLI. Engine and OIDC settings live in
+the job environment because the workflows invoke Dagger in separate steps;
+the action's `cloud-token` input only applies to commands that action runs itself.
+Cloud Engines retain build cache beyond an ephemeral Actions runner. Native
+macOS/Windows jobs still run directly on their own runners and receive neither
+the Cloud token setting nor permission to mint OIDC tokens.
+
+Fork and Dependabot PRs explicitly run the same graph on a local engine, with
+Cloud authentication disabled. Actions still owns event triggers. Automatic
+Dagger Cloud Checks are not enabled.
+
+Local execution remains the default. To use the same Cloud organization locally:
+
+```sh
+dagger cloud login
+dagger --engine=cloud check
+dagger --engine=cloud api call ci export --path=build/ci
+```
+
+GitHub OIDC is available only inside Actions. Local/headless clients need their
+own login or a CI token supplied through a credential manager. To return to the
+local engine, omit `--engine=cloud` and unset any `DAGGER_ENGINE` override.
+Never commit a Cloud token.
+
 ## End-to-end release rehearsal
 
 ```sh

@@ -12,6 +12,12 @@ jobs:
   pipeline:
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DAGGER_ENGINE: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]') && 'image://registry.dagger.io/engine:v1.0.0-beta.21' || 'cloud' }}
+      DAGGER_CLOUD_TOKEN: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) && 'oidc' || '' }}
     steps:
       - uses: actions/checkout@v6.0.2
         with:
