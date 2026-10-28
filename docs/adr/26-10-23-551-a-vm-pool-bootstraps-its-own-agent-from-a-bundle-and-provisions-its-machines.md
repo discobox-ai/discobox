@@ -2,8 +2,9 @@
 
 - **Status**: Accepted (§3's agent listening where `guest.ServiceFile` says
   narrowed by [26-10-27-345](26-10-27-345-a-machine-sandbox-is-made-again-in-place-and-its-bootstrap-names-where-its-agent-listens.md);
-  §1's pool machine running nothing but the agent and its proxy, and §2's
-  bundle of nothing a machine pool cannot use, superseded by
+  §1's pool machine running nothing but the agent and its proxy, §2's
+  bundle of nothing a machine pool cannot use, and §4's no sandbox build on
+  the pool's machine, superseded by
   [26-10-27-767](26-10-27-767-a-machine-pool-runs-what-every-pool-runs.md))
 - **Date**: 2026-10-23
 - **Supersedes**, for a remote driver (boxd now, disco-vm's

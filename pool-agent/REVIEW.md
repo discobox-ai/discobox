@@ -350,11 +350,17 @@ never this runtime's to remove.
   authorized the hop (`sandboxProxy` drops `Authorization` but the sandbox
   agent's own). Why: code in a sandbox could otherwise replay the control
   plane's token at the pool's URL.
-- A machine pool's mediator serves no builds (`mediatorServes`, from the
-  bootstrap's runtime): the refusal is the pool's, and giving a machine
-  sandbox no BuildKit endpoint (`machinePoolEndpoints`) is only what follows
-  from it. Why: the pool's builder runs on the pool's machine, beside the
-  provisioning key and the driver's machine token, which reach the
-  provider's org; a build's steps are the sandbox's code; and every sandbox
-  of the pool holds a certificate the mediator would accept, at an address
-  that is no secret (ADR 26-10-23-551 §4, ADR 26-10-27-767).
+- Nothing of a pool's builder is conditioned on its runtime: the agent
+  prepares it, and the mediator serves it, on a machine pool as on a Docker
+  pool. Why: the two provide the same functionality (ADR 26-10-27-767), and
+  a builder unit whose configuration the agent did not write fails `apply`'s
+  start of it, so a machine pool would never finish provisioning. On a
+  machine pool a build runs beside the provisioning key and the driver's
+  machine token, which reach the provider's org: a change that widens what a
+  build can reach on the pool's host (its mounts, its network, the runc
+  wrapper) is judged against that. Nothing on the builder's path may assume
+  a Docker pool's network either — the pool's name resolves on a pool
+  machine only through `ensurePoolName`, which this path has missed once
+  already — and that name is the hosts file's, never a resolver's: the
+  registry it names is plaintext and unauthenticated, so whoever answers it
+  receives every build's output.

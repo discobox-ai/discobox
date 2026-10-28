@@ -14,7 +14,6 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/platform"
-	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pool-agent/assetcache"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
@@ -85,22 +84,11 @@ func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, e *engine.E
 		Isolate:               true,
 		Network:               bootstrap.MachineNetwork,
 		SandboxIdleTimeout:    idleTimeout,
-		PoolEndpoints:         machinePoolEndpoints(tunnelURL),
+		PoolEndpoints:         proxyagent.PoolEndpoints(tunnelURL),
 		IdentityKey:           identityKey,
 		Platform:              hostedPlatform(),
 		AgentLayers:           assets,
 	})
-}
-
-// machinePoolEndpoints is where a machine sandbox reaches its pool: as any
-// sandbox does, but for BuildKit, which a machine pool's mediator does not
-// serve (mediatorServes): the pool's builder runs on the pool's machine,
-// beside the provisioning key and the driver's machine token, and a build's
-// steps are the sandbox's code (ADR 26-10-23-551 §4, ADR 26-10-27-767).
-func machinePoolEndpoints(tunnelURL string) sandboxconfig.PoolEndpoints {
-	endpoints := proxyagent.PoolEndpoints(tunnelURL)
-	endpoints.BuildKit = ""
-	return endpoints
 }
 
 // machinePoolStatus is what a machine pool says of itself: it runs images

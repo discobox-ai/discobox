@@ -42,7 +42,9 @@ const (
 	RegistryEnvironmentFile = "/etc/discobox/registry.env"
 
 	// RegistryListen is where the pool registry binds. It is reachable by every
-	// sandbox in the pool over the per-pool internal network.
+	// sandbox in the pool over the pool's network: a Docker pool's per-pool
+	// internal network, or the provider's network a machine pool's machines
+	// share, which no machine outside the pool is on.
 	RegistryListen = "0.0.0.0:5000"
 
 	// RegistryServerName mirrors proxyagent.ServerName. The pool container is
@@ -222,9 +224,11 @@ func stageMITMCA(root layout.Root, source string) error {
 // flag, so the unit stays the single readable description of how buildkitd runs.
 func renderConfig() string {
 	// The pool registry speaks plaintext HTTP. It is only reachable over the
-	// per-pool internal network, which has no route off-box, and giving it TLS
-	// would mean issuing and rotating a server certificate for a hop that
-	// cannot leave the host.
+	// pool's network. On a Docker pool that is the sandboxes' internal network,
+	// which has no route off-box, and TLS would mean a server certificate for a
+	// hop that cannot leave the host; on a machine pool the hop crosses the
+	// driver's network between the pool's machines, which only they are on
+	// (ADR 26-10-27-767).
 	return fmt.Sprintf(`# Rendered by pool-agent. Do not edit.
 [registry."%s"]
   http = true
@@ -247,7 +251,12 @@ func renderUnitEnvironment(stateRoot, projectID, poolID string) string {
 	fmt.Fprintf(&b, "%s=%s\n", envPoolID, poolID)
 	// buildkitd resolves and pulls base images itself, before any build
 	// container exists, so nothing injected into a container's spec can give it
-	// egress. A pool has no route off-box except the proxy.
+	// egress. What it is given is the agent's own inherited proxy environment
+	// (its unit's PassEnvironment): an operator's upstream proxy where one is
+	// set, never the pool's proxy, and on a pool machine usually nothing, so
+	// its pulls there go out over the machine's own route. A build step's proxy
+	// is not this: the mediator injects it (withBuildProxy) and the runc
+	// wrapper rewrites it. A cost ADR 26-10-27-767 states.
 	b.WriteString(proxyEnvironment(os.Environ()))
 	return b.String()
 }
@@ -263,11 +272,13 @@ func renderRegistryEnvironment(registryRoot string) string {
 	return b.String()
 }
 
-// proxyEnvironment forwards this process's proxy-trust variables to a unit.
-// Both the builder and the registry reach upstreams through the same MITM proxy
-// as everything else in the pool, and systemd resets the environment for units,
-// so without this they try to reach origins directly. A registry that cannot
-// resolve its upstream fails as an opaque 404 rather than a connection error.
+// proxyEnvironment forwards this process's proxy-trust variables to a unit:
+// whatever proxy environment the agent inherited (an operator's upstream proxy,
+// as a pool inside a sandbox has; never the pool's own proxy; on a pool machine
+// usually nothing). systemd resets the environment for units, so without this
+// the builder and the registry would not have even that, and where an upstream
+// proxy is the only way out, a registry that cannot resolve its upstream fails
+// as an opaque 404 rather than a connection error.
 //
 // The pool registry is excepted. It is a pool-internal hop with no route
 // off-box, and proxying it is worse than pointless: the MITM proxy answers a
