@@ -385,13 +385,20 @@ func ValidName(name string) bool {
 
 // Load reads the features of each tree's features directory. A feature named
 // in two trees is refused: a layer adds features and never replaces another's
-// (ADR 26-10-16-423 §2).
+// (ADR 26-10-16-423 §2). A tree with no features directory is a bundle that
+// declares none, as the shell harness's does, and adds nothing; a tree that is
+// not there at all is refused, since its bundle never composed.
 func Load(trees ...string) ([]Feature, error) {
 	var features []Feature
 	seen := map[string]string{}
 	for _, tree := range trees {
 		dir := filepath.Join(tree, FeaturesDir)
 		entries, err := os.ReadDir(dir)
+		if errors.Is(err, fs.ErrNotExist) {
+			if _, terr := os.Stat(tree); terr == nil {
+				continue
+			}
+		}
 		if err != nil {
 			return nil, fmt.Errorf("read features of %s: %w", tree, err)
 		}

@@ -39,6 +39,31 @@ func TestLoadMergesTreesAndRefusesAFeatureInTwo(t *testing.T) {
 	}
 }
 
+// A bundle that declares no features — the shell harness's, which holds only
+// its label — composes to a tree with no features directory, and adds nothing
+// beside the platform's; a tree that is not there at all is still refused.
+func TestLoadTakesATreeWithNoFeatures(t *testing.T) {
+	dir := t.TempDir()
+	platform := filepath.Join(dir, "platform", FeaturesDir, "core", FileName)
+	if err := os.MkdirAll(filepath.Dir(platform), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(platform, []byte("apiVersion: discobox.ai/provision/v1\nsteps: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	empty := filepath.Join(dir, "harness-shell")
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	features, err := Load(filepath.Join(dir, "platform"), empty)
+	if err != nil || len(features) != 1 || features[0].Name != "core" {
+		t.Fatalf("Load(platform, empty) = %v, %v; want the platform's feature alone", features, err)
+	}
+	if _, err := Load(filepath.Join(dir, "platform"), filepath.Join(dir, "never-composed")); err == nil {
+		t.Fatal("a tree that is not there was taken for one with no features")
+	}
+}
+
 // A step names a file the feature does not have: refused at load.
 func TestLoadRefusesAMissingScript(t *testing.T) {
 	tree := t.TempDir()
