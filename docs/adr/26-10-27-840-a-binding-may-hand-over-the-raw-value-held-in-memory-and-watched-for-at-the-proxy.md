@@ -47,41 +47,66 @@ of that is acceptable for a raw value, so it cannot ride the sentinel path.
 - Every type may be raw. An OAuth or exchange secret's raw value is its
   current access token, and is replaced when it rotates (§3).
 
-### 2. Only a person makes a binding raw
+### 2. Only a person makes a binding raw, and nothing asks for it
 
-A raw binding is written only by a person: directly, at create, or by
-approving a request that asks for raw. A `Delegate` holder hands on `Use`
-without `Raw` (§3 of 26-10-27-880 stays the only way a sandbox gives a
-binding), and a binding written under a parent is never raw. A raw value
-cannot be taken back once seen, so who saw it is a person's decision.
+A raw binding is written only by a person: directly, or at create. No request
+asks for raw, so no approval makes one, and none extends one: a request for
+a variable a raw binding delivers is refused, since the approver is shown a
+sentinel ask, and a person renews the raw binding itself. A `Delegate` holder hands on `Use` without `Raw`
+(§3 of 26-10-27-880 stays the only way a sandbox gives a binding), and a
+binding written under a parent is never raw. A raw value cannot be taken back
+once seen, so who saw it is a person's decision.
+
+A raw binding on a harness config or the project covers every discobox it
+covers (26-10-27-880 §2), those a discobox created included. A discobox
+holding `DiscoboxAPI` can therefore create one on such a harness config and
+read the value from it: setting the flag confers the credentials of the
+project's harness configs (26-10-27-880 §9), and a raw value among them. That
+is accepted. Making a binding raw is a deliberate hole; a person who wants it
+held to one discobox binds it on that discobox.
 
 ### 3. The value is pulled into memory and never written to disk
 
 - The server never puts a raw value in a runtime config, a sentinel push, or
-  any record. It pushes the pool the raw binding's ID, env name, delivery,
-  and routes, beside the sentinel set.
-- The sandbox agent asks for the value over its mTLS link to its pool (the
-  credentials relay). The pool asks the server, which checks the binding is
-  live, raw, applies to that sandbox, and its secret still allows raw, and
+  any record. A raw binding materializes as a sandbox's sentinel row like any
+  other, but its sentinel is only a handle: the server pushes the pool each
+  raw binding's handle, variable, delivery and route lists beside the
+  sentinel set, and the handle is never delivered into the sandbox nor
+  swapped.
+- The pool's runtime-config document names the sandbox's raw secrets,
+  variable and delivery, never a value. A name is safe to record, as a
+  sentinel is; the value is not, and the document is recorded on the pool's
+  disk and the sandbox's data volume, and redelivered from that record. The
+  pool names them only to an agent whose status advertises it takes them,
+  since an older agent refuses a document with a field it does not know.
+- The sandbox agent asks for the values over its own mTLS link to its pool
+  when that list changes, and while it is not empty, every few seconds and
+  before a value expires; a sandbox with none asks nothing. The credentials
+  relay that the sandbox's processes reach does not serve the route. The pool
+  asks the server by the handle, and the server checks the binding stands,
+  is raw, applies to that sandbox, and its secret still allows raw, and
   answers with the value. The pool keeps it in memory, as the swap cache
   does, and never writes it.
 - The sandbox agent writes it to `/run/discobox/raw-secrets/<ENV_NAME>`,
   mode 0400, owned by the sandbox user, in a 0700 directory. That directory
-  is on the sandbox's own `/run` tmpfs and is never bind-mounted from the
-  pool. It is excluded from export, and gone when the sandbox stops; the
-  agent pulls again on start.
+  is on the sandbox's own `/run` tmpfs, which the agent checks before
+  writing, and is never bind-mounted from the pool. It is excluded from
+  export, gone when the sandbox stops, and emptied when the agent starts; the
+  agent pulls again then.
 - `file` delivery sets `ENV_NAME` to that path. `env` delivery reads the
   file when an exec or terminal starts and sets `ENV_NAME` to the value in
-  that process's environment only.
+  that process's environment only. A start waits, briefly, for the values of
+  the raw secrets the document names, so the first harness launch is not
+  started without them.
 - No record a sandbox keeps on disk or sends out carries the value: the
   agent drops raw names from an exec's stored and inventoried environment,
   `discobox-access env` prints the path for `file` and omits `env` names,
   and harness-file templates cannot read a raw binding (`.secrets.NAME`
   renders into `$HOME`, which is on disk).
-- On rotation, revocation, or expiry the pool tells the agent, which
-  rewrites or removes the file. A running process started with `env`
-  delivery keeps the value it was started with; `file` delivery sees the
-  new one.
+- A rotated value reaches the file by the agent's next ask; a revoked
+  binding leaves the document, and its file is removed at once. A running
+  process started with `env` delivery keeps the value it was started with;
+  `file` delivery sees the new one.
 
 ### 4. The proxy watches for the value, and refuses it off its routes
 
@@ -92,6 +117,12 @@ routes are enforced by recognising the value on the way out:
   binding, parents, as for a sentinel). Every request from the sandbox is
   scanned for the literal value, and for its base64, base64url and
   percent-encoded forms, in headers, query string and the captured body.
+  A value shorter than eight bytes is neither watched for nor redacted: it
+  would match ordinary traffic.
+- A sandbox with a raw binding whose value the pool does not hold yet has its
+  requests held, then refused, as an unresolved sentinel's are: what there is
+  to watch for is the configured set, never what happens to be fetched. A
+  request that carried a value is never cached.
 - A request carrying it to a place its routes do not allow is refused and
   audited as a refusal naming the binding. One on its routes is forwarded
   and audited as spending the binding.
@@ -106,10 +137,11 @@ bindings are, so a reader knows which credentials have left the pool.
 
 ### 5. Audit
 
-A raw binding's handover is a binding event (26-10-27-880 §6) with the
-pulling sandbox, so when a value reached which sandbox is on record. Its
-spends and refusals are in the pool's HTTP audit by binding ID, by match
-rather than by swap.
+A raw binding's handover is a `delivered` binding event (26-10-27-880 §6),
+once per secret revision and discobox, naming the discobox, so when a value
+reached which discobox is on record. Its spends are in the pool's HTTP audit
+by binding ID, as its own field beside the secret IDs a request spent, by
+match rather than by swap; a refusal names the binding.
 
 ## Alternatives rejected
 
@@ -127,6 +159,15 @@ rather than by swap.
 - **Raw values with no proxy check.** Most leaks are an agent pasting the
   value somewhere ordinary, which the scan catches cheaply; without it, the
   value would also be written unredacted into the HTTP audit.
+- **An agent may ask for raw.** A request is how an agent gets what it was
+  not given; a raw value is one a person decides to give. Letting an agent
+  ask turns the decision into an approval of its words.
+- **Deliver the value with the runtime-config document.** The document is
+  recorded where it is decided and where it is applied, and redelivered from
+  the record; carrying a value it never records would special-case its
+  revision, its redelivery and its conflict check.
+- **Every sandbox polls for raw values.** Most sandboxes have none; the
+  document saying which it has keeps the rest silent.
 - **Only static tokens may be raw.** The programs that need raw values
   rotate tokens as often as not; rewriting the file is cheap.
 
