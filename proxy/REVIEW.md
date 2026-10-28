@@ -156,3 +156,21 @@
   stays on the kept-alive connection for the client to read as the next
   response. A HEAD keeps its transfer coding: it describes the GET, and
   without it net/http closes the connection after an unsized HEAD.
+- A new place the audit trail keeps request or response text — a row field, a
+  spool, a span attribute — goes through the recorder's redactor
+  (`Recorder.SetRedactor`), or a client's raw secret (ADR 26-10-27-840) is
+  written down in it. The redactor is applied to copies; never redact the
+  live request, which still has to carry the value on its routes.
+- A raw secret is judged on the request as the sandbox sent it, before the
+  cache, a gateway or a swap touches it (`watchRaw`). A body is never read
+  ahead past `rawBodyScanLimit` or when its length is undeclared: a stream
+  whose sender waits on the response would never end.
+- Whether a client has raw secrets to watch for is read from its configured
+  raw sentinels (`SecretClient.Raw`), never from the values fetched so far.
+  A request from a client with one whose value is not held waits for it and
+  is refused if it does not come (`Swapper.AwaitRaw`); treating "nothing
+  fetched" as "nothing to watch for" sends the value out unwatched whenever
+  the control plane was slow or down.
+- A request that carried a raw value is kept out of the response cache, both
+  read and write: anything derived from the request that lands on the pool's
+  disk — a cache key, an entry's metadata — can hold the value.

@@ -395,7 +395,8 @@ func (h *httpProxy) refuseUntrusted(req, outbound *http.Request, meta *requestMe
 		AppliedPattern:       meta.appliedPattern,
 		AppliedHeaders:       meta.appliedHeaders,
 		ForwardedURL:         meta.forwardedURL,
-		SwappedSecretIDs:     meta.swappedSecretIDs,
+		SwappedSecretIDs:     meta.spentSecretIDs(),
+		RawBindingIDs:        meta.spentRawBindingIDs(),
 		RedactRequestHeaders: meta.redactRequestHeaders(),
 		RequestHeaders:       req.Header,
 	})

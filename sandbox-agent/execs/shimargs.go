@@ -38,6 +38,11 @@ func shimArgv(exe string, req StartRequest) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Names and paths only: the values stay in their files (RawEnv).
+	rawEnvJSON, err := json.Marshal(req.RawEnv)
+	if err != nil {
+		return nil, err
+	}
 	argv := []string{
 		exe,
 		"exec-shim",
@@ -54,6 +59,9 @@ func shimArgv(exe string, req StartRequest) ([]string, error) {
 		"--env", base64.StdEncoding.EncodeToString(envJSON),
 		"--user", base64.StdEncoding.EncodeToString(userJSON),
 		"--metadata", base64.StdEncoding.EncodeToString(metadataJSON),
+	}
+	if len(req.RawEnv) > 0 {
+		argv = append(argv, "--raw-env", base64.StdEncoding.EncodeToString(rawEnvJSON))
 	}
 	if req.TTY {
 		argv = append(argv, "--tty")
@@ -81,6 +89,7 @@ func ParseShimArgs(args []string) (ShimArgs, error) {
 		out                                                                        ShimArgs
 		cfg                                                                        = &out.Config
 		commandBase64, startupCommandBase64, envBase64, userBase64, metadataBase64 string
+		rawEnvBase64                                                               string
 		lifetime                                                                   string
 		rows, cols                                                                 int
 	)
@@ -100,6 +109,7 @@ func ParseShimArgs(args []string) (ShimArgs, error) {
 	flags.StringVar(&envBase64, "env", "", "base64 encoded JSON environment")
 	flags.StringVar(&userBase64, "user", "", "base64 encoded JSON exec user")
 	flags.StringVar(&metadataBase64, "metadata", "", "base64 encoded JSON exec metadata")
+	flags.StringVar(&rawEnvBase64, "raw-env", "", "base64 encoded JSON map of each env-delivered raw secret to the file its value is read from")
 	flags.StringVar(&lifetime, "lifetime", "", "descriptor held for the shim's lifetime (Supervisor)")
 	if err := flags.Parse(args); err != nil {
 		return ShimArgs{}, err
@@ -117,6 +127,7 @@ func ParseShimArgs(args []string) (ShimArgs, error) {
 		{"env", envBase64, &cfg.Env},
 		{"user", userBase64, &cfg.User},
 		{"metadata", metadataBase64, &cfg.Metadata},
+		{"raw env", rawEnvBase64, &cfg.RawEnv},
 	} {
 		if field.encoded == "" {
 			continue

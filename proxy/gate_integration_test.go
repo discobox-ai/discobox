@@ -199,3 +199,8 @@ func gateClient(t *testing.T, addr string, material ClientMaterial) *http.Client
 		},
 	}}
 }
+
+// ResolveRaw: gateResolver holds no raw secrets.
+func (r *gateResolver) ResolveRaw(context.Context, secrets.RawRequest) (secrets.RawResult, error) {
+	return secrets.RawResult{}, secrets.ErrDenied
+}

@@ -10,7 +10,8 @@
 // A granted credential is delivered by the implementation, not through the
 // protocol: Discobox puts a sentinel in the variable the request named, which
 // its egress proxy exchanges for the real value on the hosts the grant covers
-// (ADR 26-10-27-880). Nothing here ever carries a value.
+// (ADR 26-10-27-880), or, for a grant a person made raw, the value itself or a
+// file holding it (ADR 26-10-27-840). Nothing here ever carries a value.
 //
 // See docs/agent-credentials-protocol.md and
 // docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md.
@@ -85,11 +86,15 @@ const (
 // and Hosts are where it may be sent (ADR 26-10-02-393). Purpose is
 // PurposeDelegate for one the caller may give the sandboxes it creates, which
 // it is not delivered itself.
+//
+// Raw is set for one the caller holds the value of rather than a placeholder
+// for (RawEnv, RawFile).
 type Credential struct {
 	Name      string     `json:"name"`
 	EnvVar    string     `json:"envVar,omitempty"`
 	Hosts     []string   `json:"hosts,omitempty"`
 	Purpose   string     `json:"purpose,omitempty"`
+	Raw       string     `json:"raw,omitempty"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
@@ -147,6 +152,16 @@ const (
 	// PurposeDelegate asks to give the credential to the sandboxes the caller
 	// creates. The approval authorizes nothing the caller sends itself.
 	PurposeDelegate = "delegate"
+)
+
+// How a credential is delivered when the caller holds its value rather than
+// a placeholder for it, as list reports it. Only a person delivers one so; a
+// request never asks for it. Empty is a placeholder.
+const (
+	// RawEnv puts the value in the variable.
+	RawEnv = "env"
+	// RawFile puts the path of a file holding the value in the variable.
+	RawFile = "file"
 )
 
 // RequestBody asks a human for a credential.

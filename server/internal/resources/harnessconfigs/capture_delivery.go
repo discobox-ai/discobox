@@ -50,7 +50,11 @@ func (s *Service) deliverCaptureAcknowledgment(ctx context.Context, r *model.Har
 	ack := harnesscapture.Acknowledgment{CandidateID: r.CandidateID, Baseline: r.Baseline, Superseded: superseded, Sentinels: map[string]string{}}
 	if !superseded {
 		for _, assignment := range assignments {
-			ack.Sentinels[assignment.EnvName] = assignment.Sentinel
+			// A raw binding's sentinel is the pool's handle for its value,
+			// never delivered into the sandbox (ADR 26-10-27-840).
+			if assignment.Raw == "" {
+				ack.Sentinels[assignment.EnvName] = assignment.Sentinel
+			}
 		}
 		// Conditional revisions advance, but the handoff contains only templates
 		// accepted by this receipt, never unrelated later settings.

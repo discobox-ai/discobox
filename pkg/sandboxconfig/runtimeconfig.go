@@ -41,6 +41,13 @@ type RuntimeConfig struct {
 	// sentinel. Sentinels only: a resolved value never reaches a sandbox
 	// (ADR 0012 §3).
 	SecretEnv map[string]string `json:"secretEnv,omitempty"`
+	// RawSecrets are the sandbox's raw secrets, variable to RawDeliveryEnv or
+	// RawDeliveryFile (ADR 26-10-27-840). Never a value: the sandbox asks its
+	// pool for those (RawSecretsRoute) when this changes, and while it holds
+	// any. A pool sends it only to a sandbox whose status advertised raw
+	// secrets, since an older agent refuses a document with a field it does
+	// not know.
+	RawSecrets map[string]string `json:"rawSecrets,omitempty"`
 	// Proxy is the material for the sandbox's hop to its pool. Absent means
 	// the sandbox has none.
 	Proxy *RuntimeProxy `json:"proxy,omitempty"`
@@ -185,6 +192,14 @@ func (c RuntimeConfig) Validate(paths sandboxpath.Paths) error {
 	for name := range c.SecretEnv {
 		if name == "" || strings.ContainsAny(name, "=\x00") {
 			errs = append(errs, fmt.Errorf("secretEnv name %q is not an environment variable name", name))
+		}
+	}
+	for name, delivery := range c.RawSecrets {
+		switch {
+		case name == "" || strings.ContainsAny(name, "=\x00/") || name == "." || name == "..":
+			errs = append(errs, fmt.Errorf("rawSecrets name %q is not an environment variable name", name))
+		case !ValidRawDelivery(delivery):
+			errs = append(errs, fmt.Errorf("rawSecrets %s is delivered %q, not %q or %q", name, delivery, RawDeliveryEnv, RawDeliveryFile))
 		}
 	}
 	if c.Proxy != nil {

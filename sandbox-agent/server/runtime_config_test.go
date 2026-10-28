@@ -258,9 +258,10 @@ func TestRuntimeConfigWithoutAnIntake(t *testing.T) {
 // unchanged; a field added to one and not the other fails here.
 func TestRuntimeConfigWireRoundTrip(t *testing.T) {
 	full := sandboxconfig.RuntimeConfig{
-		Revision:  7,
-		Agent:     sandboxconfig.RuntimeAgent{IdleTimeout: "1h0m0s", ControlPlanePower: true},
-		SecretEnv: map[string]string{"A": "sentinel-a"},
+		Revision:   7,
+		Agent:      sandboxconfig.RuntimeAgent{IdleTimeout: "1h0m0s", ControlPlanePower: true},
+		SecretEnv:  map[string]string{"A": "sentinel-a"},
+		RawSecrets: map[string]string{"API_KEY": sandboxconfig.RawDeliveryEnv, "PEM": sandboxconfig.RawDeliveryFile},
 		Proxy: &sandboxconfig.RuntimeProxy{
 			MTLSCA:     "mtls",
 			MITMCA:     "mitm",

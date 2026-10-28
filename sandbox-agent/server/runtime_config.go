@@ -63,6 +63,9 @@ func (h *handler) PutSandboxRuntimeConfig(ctx context.Context, req *sandboxapi.S
 	}
 	h.autostop.SetIdleTimeout(held.Agent.IdleTimeoutDuration())
 	h.autostop.SetControlPlanePower(held.Agent.ControlPlanePower)
+	// The raw secrets the sandbox now holds are asked for when they changed
+	// (ADR 26-10-27-840 §3).
+	h.rawSecrets.SetApplied(held.RawSecrets)
 	// The sources converge on what the sandbox now holds, which is this
 	// document unless it was out of date; converging on the held one again is
 	// a no-op for every source already materialized.

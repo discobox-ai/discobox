@@ -2902,6 +2902,11 @@ variable, to give on, or both; existing is the whole of the permission
   holds, where it may be sent, how long it lasts, and for a discobox the
   `eval "$(discobox-access env)"` a running shell takes it up with. `--as`
   defaults to `secretenv.Name`; `--delegate` alone binds only to give on.
+  `--raw env|file` hands over the value itself (ADR 26-10-27-840), of a
+  secret that `secret create/update --allow-raw` allows, and the sentence
+  says that the value leaves the pool; `admin binding create/update --raw`
+  sets the same delivery. No request asks for raw, so `secret request
+  approve` has no `--raw`.
   `secret unbind` takes back the secret's variables on the target (or the one
   in `--as`), and `--delegate` the right to give it on; a binding holding both
   loses only that half (`UpdateSecretBinding` with `use` or `delegate` false),

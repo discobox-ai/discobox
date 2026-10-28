@@ -228,6 +228,14 @@ harness's secret declarations ride the image layer (`ImageLayer.Secrets`), and
 the sandbox reads them for `Delivery` alone: a file-delivered secret must not
 also be exported as an env var.
 
+A raw binding's value ([ADR 26-10-27-840](../../docs/adr/26-10-27-840-a-binding-may-hand-over-the-raw-value-held-in-memory-and-watched-for-at-the-proxy.md))
+is in neither: it rides no document. `rawsecrets.go` is its contract between
+pool and sandbox. The sandbox agent reads `RawSecretsRoute` from its pool's
+credentials endpoint over its own mTLS link, and keeps each value at
+`RawSecretPath` under `RawSecretsDir` on its own `/run`.
+`RawDeliveryEnv`/`RawDeliveryFile` say whether the variable holds the value
+or that path.
+
 ## Runtime config
 
 `RuntimeConfig` (`runtimeconfig.go`) is the pool's whole view of a *running*

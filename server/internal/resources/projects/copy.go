@@ -319,6 +319,7 @@ func (s *Service) copyBindings(ctx context.Context, sourceProjectID, projectID s
 			Delegate:   source.Delegate,
 			EnvName:    source.EnvName,
 			Routes:     source.Routes,
+			Raw:        source.Raw,
 			ExpiresAt:  source.ExpiresAt,
 			CreatedBy:  source.CreatedBy,
 		}
@@ -380,6 +381,7 @@ func (s *Service) copySecret(ctx context.Context, sourceProjectID, projectID, so
 		Format:         sourceSecret.Format,
 		FormatSet:      sourceSecret.FormatSet,
 		MaxBindingTTL:  sourceSecret.MaxBindingTTL,
+		AllowRaw:       sourceSecret.AllowRaw,
 		EncryptedValue: plaintext,
 	}
 	if err := s.store.CreateSecret(ctx, secret); err != nil {

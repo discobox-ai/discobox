@@ -1103,6 +1103,24 @@ func (s *CreateSecretBindingBody) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Raw.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "raw",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		var failures []validate.FieldError
 		for i, elem := range s.Routes {
 			if err := func() error {
@@ -1170,6 +1188,17 @@ func (s *CreateSecretBindingBody) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s CreateSecretBindingBodyRaw) Validate() error {
+	switch s {
+	case "env":
+		return nil
+	case "file":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s CreateSecretBindingBodyTargetKind) Validate() error {
@@ -5347,6 +5376,40 @@ func (s *ResolveGatewayHeadersBody) Validate() error {
 	return nil
 }
 
+func (s *ResolveSandboxRawSecretResponse) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Status.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "status",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ResolveSandboxRawSecretResponseStatus) Validate() error {
+	switch s {
+	case "approved":
+		return nil
+	case "denied":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ResolveSandboxSecretResponse) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -6319,6 +6382,24 @@ func (s *SandboxBindingInput) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Raw.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "raw",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		var failures []validate.FieldError
 		for i, elem := range s.Routes {
 			if err := func() error {
@@ -6375,6 +6456,17 @@ func (s *SandboxBindingInput) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s SandboxBindingInputRaw) Validate() error {
+	switch s {
+	case "env":
+		return nil
+	case "file":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *SandboxCPUConsumption) Validate() error {
@@ -6820,6 +6912,24 @@ func (s *SandboxCredential) Validate() error {
 			Error: err,
 		})
 	}
+	if err := func() error {
+		if value, ok := s.Raw.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "raw",
+			Error: err,
+		})
+	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -6831,6 +6941,17 @@ func (s SandboxCredentialPurpose) Validate() error {
 	case "use":
 		return nil
 	case "delegate":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s SandboxCredentialRaw) Validate() error {
+	switch s {
+	case "env":
+		return nil
+	case "file":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -7757,6 +7878,69 @@ func (s *SandboxRuntime) Validate() error {
 	return nil
 }
 
+func (s *SandboxRuntimeConfig) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.RawSecrets.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "rawSecrets",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s SandboxRuntimeConfigRawSecrets) Validate() error {
+	var failures []validate.FieldError
+	for key, elem := range s {
+		if err := func() error {
+			if err := elem.Validate(); err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			failures = append(failures, validate.FieldError{
+				Name:  key,
+				Error: err,
+			})
+		}
+	}
+
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s SandboxRuntimeConfigRawSecretsItem) Validate() error {
+	switch s {
+	case "env":
+		return nil
+	case "file":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s SandboxRuntimeDesiredState) Validate() error {
 	switch s {
 	case "present":
@@ -8479,6 +8663,24 @@ func (s *SecretBinding) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if value, ok := s.Raw.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "raw",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		var failures []validate.FieldError
 		for i, elem := range s.Routes {
 			if err := func() error {
@@ -8563,6 +8765,19 @@ func (s SecretBindingEventEvent) Validate() error {
 	case "deleted":
 		return nil
 	case "expired":
+		return nil
+	case "delivered":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s SecretBindingRaw) Validate() error {
+	switch s {
+	case "env":
+		return nil
+	case "file":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -9770,6 +9985,24 @@ func (s *UpdateSecretBindingBody) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Raw.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "raw",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		var failures []validate.FieldError
 		for i, elem := range s.Routes {
 			if err := func() error {
@@ -9826,6 +10059,19 @@ func (s *UpdateSecretBindingBody) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s UpdateSecretBindingBodyRaw) Validate() error {
+	switch s {
+	case "none":
+		return nil
+	case "env":
+		return nil
+	case "file":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *UpdateSecretBody) Validate() error {

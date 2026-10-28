@@ -649,6 +649,84 @@ Key properties:
 Audit redaction covers every header whose value was swapped, in addition to
 the headers a gateway touches and credential-like header names.
 
+## Raw Secrets
+
+A raw binding hands the sandbox the value itself rather than a sentinel
+([ADR 26-10-27-840](../docs/adr/26-10-27-840-a-binding-may-hand-over-the-raw-value-held-in-memory-and-watched-for-at-the-proxy.md)).
+The proxy cannot swap what the sandbox already holds, so it holds the value
+too, in memory only (`secrets.rawWatch`), and watches the sandbox's requests
+for it. It is a guard against mistakes, not a boundary.
+
+```mermaid
+flowchart LR
+    cfg["SecretClient.Raw (raw binding sentinels)"] --> watch["rawWatch: ResolveRaw per sentinel, in memory"]
+    watch -->|"Server.RawSecrets"| hand["handed to the sandbox (proxyagent)"]
+    req["request as the sandbox sent it"] --> scan["RawSet.Find: URL, headers, body"]
+    watch --> scan
+    scan -->|"found"| authorize["Resolver.Authorize(the binding's sentinel)"]
+    authorize -->|"deny"| refuse["403, audited as raw: <binding>"]
+    authorize -->|"allow"| spend["forwarded, SwappedSecretIDs += secret"]
+    watch -->|"Recorder.SetRedactor"| redact["audit rows, body and stream spools redacted"]
+```
+
+- **A raw binding has a sentinel the sandbox never sees.** It is the handle
+  the value is resolved by (`Resolver.ResolveRaw`, no host) and the key its
+  routes are held under, so the route check is the one every sentinel gets
+  (`Resolver.Authorize`). `SecretClient.Raw` carries them; they are never
+  swapped.
+- **The value is resolved ahead of use** on every `ApplyConfig` that brings a
+  new one, refreshed like a sentinel's (soft at `RefreshInterval`, hard at the
+  binding's or token's lapse), and served through an outage until it lapses.
+  A denial drops it from what is handed over.
+- **It fails closed** (`Swapper.AwaitRaw`). What a client's requests are
+  watched for is its configured raw sentinels, not the values that happened
+  to be fetched: a request from a client with a configured one this proxy
+  holds no value for is held, asked about through `ResolveRetrySeconds` as an
+  unresolved sentinel is, and refused 503 with `Retry-After` if no answer
+  comes. A denial is an answer (nothing to watch for), remembered for
+  `NegativeTTLSeconds` so a client whose binding is gone is not asked about on
+  every request.
+- **A value the sandbox may still hold is still watched for.** One displaced
+  by a rotation, denied, or whose sentinel left is retired and watched for
+  `rawRetiredGrace` (a day): a process started with it keeps it. One whose
+  binding is gone has no routes, so it is refused everywhere.
+- **What is looked for**: the value itself, its base64 in both alphabets with
+  and without padding, its query and path percent-encodings, and, in the URL
+  and headers, any base64 token whose decoded text holds it (`Authorization:
+  Basic`). A value shorter than `secrets.RawMinLength` (8) is neither watched
+  for nor redacted: it would match ordinary text.
+- **Where**: the request as the sandbox sent it, before the cache may answer
+  it or a gateway forward it (`watchRaw`). A body of declared length up to
+  `rawBodyScanLimit` (1 MiB) is read whole and judged before any of it is
+  sent; a larger or streamed one is watched as it is sent (`rawBodyWatch`),
+  with the bytes a value could straddle carried between reads, and a read
+  that would complete a refused value fails instead, cutting the request off
+  before the upstream has it whole. Responses are not scanned; upgraded
+  streams are not scanned either, only redacted.
+- **A refusal names the binding** (`raw: <binding id>: <reason>`), like a
+  sentinel's `route:` refusal. A request on its routes records the bindings
+  it carried in `RawBindingIDs` (ADR 26-10-27-840 §5) and their secrets in
+  `SwappedSecretIDs` beside the swapped ones, so a read of what spent a
+  secret finds raw spends without knowing about them.
+- **A request that carried a raw value is never cached**, read or written:
+  the cache's key and entry metadata are on the pool's disk.
+- **The audit trail never keeps a value.** `audit.Recorder.SetRedactor` is
+  given each client's `RawSet`: every row's URL, forwarded URL, reason, cache
+  key and headers are redacted when recorded (copies; the live request is
+  untouched), and every body spool is redacted as it is written, holding back
+  the bytes a value could straddle until the next write or close. A stream
+  spool is redacted per chunk. Span attributes that carry request text —
+  `url.full`, `proxy.gateway.forwarded_url`, `proxy.cache.key` — are redacted
+  too.
+- **What it does not catch**: another encoding, a value split, hashed or
+  encrypted, a connection the proxy does not read, a value kept for later.
+  The ADR accepts that; the binding records that a person did.
+- **Retired values do not survive a restart.** Values are never written
+  anywhere, so a proxy unit that restarts — a pool agent restart or upgrade —
+  fetches each binding's current value again and has lost every retired one:
+  a value a rotation displaced, or whose binding went, before the restart is
+  no longer watched for, though a process in the sandbox may still hold it.
+
 ## Response Cache
 
 The cache is pool-wide. It makes upstream image pulls cheap across a pool,

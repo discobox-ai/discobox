@@ -239,3 +239,45 @@ func TestAnAttachedHarnessConfigsBindingsStayItsOwn(t *testing.T) {
 		t.Fatalf("rows = %+v, want the harness config's removal to reach the sandbox", rows)
 	}
 }
+
+// A raw binding's row is materialized with its delivery, and its sentinel is
+// only the pool's handle (ADR 26-10-27-840): pushed as a raw secret, never
+// among the sentinels, and never handed to a harness run in the sandbox.
+func TestARawBindingIsPushedRawAndNeverAsASentinel(t *testing.T) {
+	ctx := context.Background()
+	svc, rec := newAssignFixture(t)
+	config := codexConfig(t, svc.store)
+	sec := bearerSecret(t, svc.store, "openai", "")
+	sec.AllowRaw = true
+	if err := svc.store.UpdateSecret(ctx, sec); err != nil {
+		t.Fatal(err)
+	}
+	binding := &model.SecretBinding{ProjectID: "project-1", SecretID: sec.ID, TargetKind: model.SecretBindingTargetHarnessConfig, TargetID: config.ID, Use: true, EnvName: "OPENAI_API_KEY", Raw: "file"}
+	if err := svc.store.CreateSecretBinding(ctx, binding, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.AssignSandboxHarnessSecrets(ctx, "project-1", "sb-1", config.ID)
+	if err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+	if _, ok := got["OPENAI_API_KEY"]; ok {
+		t.Fatalf("env = %#v, want no sentinel for a raw binding", got)
+	}
+	rows, err := svc.store.ListSandboxSecrets(ctx, "project-1", "sb-1")
+	if err != nil || len(rows) != 1 || rows[0].Raw != "file" || rows[0].BindingID != binding.ID {
+		t.Fatalf("rows = %+v, %v, want one raw file row", rows, err)
+	}
+	if len(rec.updates) != 1 {
+		t.Fatalf("updates = %d, want one push", len(rec.updates))
+	}
+	pushed := rec.updates[0]
+	if len(pushed.Sentinels) != 0 || len(pushed.SecretEnv) != 0 {
+		t.Fatalf("pushed sentinels %v and env %v, want none for a raw binding", pushed.Sentinels, pushed.SecretEnv)
+	}
+	if raw := pushed.RawSecrets[rows[0].Sentinel]; raw != (RawSecret{EnvName: "OPENAI_API_KEY", Delivery: "file"}) {
+		t.Fatalf("pushed raw = %#v, want the row's delivery by its sentinel", pushed.RawSecrets)
+	}
+	if len(pushed.SentinelRoutes[rows[0].Sentinel]) == 0 {
+		t.Fatalf("pushed routes = %#v, want the raw sentinel's route lists", pushed.SentinelRoutes)
+	}
+}

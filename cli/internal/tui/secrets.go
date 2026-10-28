@@ -859,6 +859,8 @@ func bindingLabel(b SecretBinding) string {
 	switch {
 	case b.Use && b.Delegate:
 		return b.EnvVar + ", and given on"
+	case b.Use && b.RawDelivery != "":
+		return b.EnvVar + ", the value itself"
 	case b.Use:
 		return b.EnvVar
 	default:
@@ -892,6 +894,9 @@ func (m *Model) reviewBinding(secretName string, b SecretBinding, back func() te
 	}}
 	if b.Use {
 		covers.fields = append(covers.fields, field{label: "as variable", value: b.EnvVar, tone: toneAccent})
+	}
+	if b.RawDelivery != "" {
+		covers.fields = append(covers.fields, field{label: "hands over", value: rawDeliveryText(b.RawDelivery), tone: toneAccent})
 	}
 	if b.Delegate {
 		covers.fields = append(covers.fields, field{label: "purpose", value: delegationPurpose, tone: toneAccent})

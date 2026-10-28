@@ -247,6 +247,8 @@ var poolRuntimeActions = map[string]int{
 	"sandbox-states":         0,
 	"status":                 0,
 	"resolve-sandbox-secret": 0,
+	// A raw binding's value, by its sentinel (ADR 26-10-27-840).
+	"resolve-sandbox-raw-secret": 0,
 	// A gateway's header values from the server's environment (ADR
 	// 26-10-16-470 §4). One call names its gateway in the body.
 	"resolve-gateway-headers": 0,

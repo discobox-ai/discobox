@@ -15,14 +15,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/proxy/bridge"
 )
 
@@ -69,7 +72,16 @@ type Relay struct {
 
 	mu     sync.Mutex
 	built  materialStamp
-	client *agentcreds.Client
+	client *poolClient
+}
+
+// poolClient is the protocol client and, beside it, the HTTP client and base
+// URL it calls the pool with, which RawSecrets uses for the one route that is
+// not the protocol's.
+type poolClient struct {
+	protocol *agentcreds.Client
+	http     *http.Client
+	baseURL  string
 }
 
 var _ agentcreds.Service = (*Relay)(nil)
@@ -107,7 +119,7 @@ func stampOf(paths ...string) materialStamp {
 
 // load builds the protocol client from the bridge config at path, and stamps
 // the files it read.
-func load(path string) (*agentcreds.Client, materialStamp, error) {
+func load(path string) (*poolClient, materialStamp, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, materialStamp{}, fmt.Errorf("read proxy material: %w", err)
@@ -140,14 +152,18 @@ func load(path string) (*agentcreds.Client, materialStamp, error) {
 			DialTLSContext: pool.DialTLSContext,
 		},
 	}
-	return agentcreds.NewClient(pool.ServerURL(), agentcreds.WithHTTPClient(httpClient)), stamp, nil
+	return &poolClient{
+		protocol: agentcreds.NewClient(pool.ServerURL(), agentcreds.WithHTTPClient(httpClient)),
+		http:     httpClient,
+		baseURL:  pool.ServerURL(),
+	}, stamp, nil
 }
 
 // current is the client for the material as it is now. A rebuild that fails
 // keeps the client that worked, and is tried again on the next call. One
 // failure is expected: the intake replaces the certificate and the key one
 // after the other, so a call between the two finds a pair that does not match.
-func (r *Relay) current() *agentcreds.Client {
+func (r *Relay) current() *poolClient {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.path == "" {
@@ -174,36 +190,71 @@ func (r *Relay) current() *agentcreds.Client {
 }
 
 func (r *Relay) List(ctx context.Context) ([]agentcreds.Credential, error) {
-	return r.current().List(ctx)
+	return r.current().protocol.List(ctx)
 }
 
 func (r *Relay) Request(ctx context.Context, body agentcreds.RequestBody) (agentcreds.RequestStatus, error) {
-	return r.current().Request(ctx, body)
+	return r.current().protocol.Request(ctx, body)
 }
 
 func (r *Relay) RequestStatus(ctx context.Context, requestID string) (agentcreds.RequestStatus, error) {
-	return r.current().RequestStatus(ctx, requestID)
+	return r.current().protocol.RequestStatus(ctx, requestID)
 }
 
 func (r *Relay) Environment(ctx context.Context) (map[string]string, error) {
-	return r.current().Environment(ctx)
+	return r.current().protocol.Environment(ctx)
 }
 
 func (r *Relay) Trusts(ctx context.Context) ([]agentcreds.Trust, error) {
-	return r.current().Trusts(ctx)
+	return r.current().protocol.Trusts(ctx)
 }
 
 func (r *Relay) RequestTrust(ctx context.Context, body agentcreds.TrustRequestBody) (agentcreds.TrustRequestStatus, error) {
-	return r.current().RequestTrust(ctx, body)
+	return r.current().protocol.RequestTrust(ctx, body)
 }
 
 func (r *Relay) TrustRequestStatus(ctx context.Context, requestID string) (agentcreds.TrustRequestStatus, error) {
-	return r.current().TrustRequestStatus(ctx, requestID)
+	return r.current().protocol.TrustRequestStatus(ctx, requestID)
 }
 
 func (r *Relay) AuditHTTP(ctx context.Context, query agentcreds.AuditQuery) ([]agentcreds.AuditExchange, error) {
-	return r.current().AuditHTTP(ctx, query)
+	return r.current().protocol.AuditHTTP(ctx, query)
 }
+
+// rawSecretsTimeout bounds one ask for the sandbox's raw secrets.
+const rawSecretsTimeout = 15 * time.Second
+
+// RawSecrets asks the pool for every raw secret the sandbox holds now
+// (ADR 26-10-27-840 §3), over the same client certificate as the protocol.
+// It is the agent's own call and not the protocol's: Serve's handler is the
+// protocol's alone, so no process in the sandbox reaches this route through
+// the loopback endpoint.
+func (r *Relay) RawSecrets(ctx context.Context) (sandboxconfig.RawSecretsResponse, error) {
+	client := r.current()
+	ctx, cancel := context.WithTimeout(ctx, rawSecretsTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(client.baseURL, "/")+sandboxconfig.RawSecretsRoute, nil)
+	if err != nil {
+		return sandboxconfig.RawSecretsResponse{}, err
+	}
+	resp, err := client.http.Do(req)
+	if err != nil {
+		return sandboxconfig.RawSecretsResponse{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return sandboxconfig.RawSecretsResponse{}, fmt.Errorf("pool answered %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var out sandboxconfig.RawSecretsResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, rawSecretsMaxBody)).Decode(&out); err != nil {
+		return sandboxconfig.RawSecretsResponse{}, fmt.Errorf("parse raw secrets: %w", err)
+	}
+	return out, nil
+}
+
+// rawSecretsMaxBody bounds the answer read.
+const rawSecretsMaxBody = 4 << 20
 
 // Serve runs the loopback protocol endpoint until ctx is done.
 //

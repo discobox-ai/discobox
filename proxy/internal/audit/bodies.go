@@ -39,6 +39,9 @@ type BodySpool struct {
 	onClose func()
 	// onWrite counts written bytes toward the recorder's spool budget.
 	onWrite func(int64)
+	// redaction keeps the client's raw secrets out of the file
+	// (Recorder.SetRedactor); nil writes what passes as it is.
+	redaction *spoolRedaction
 }
 
 // BeginBody creates a raw body spool file.
@@ -75,6 +78,22 @@ func (s *BodySpool) Write(p []byte) (int, error) {
 	if s.writeErr != nil {
 		return 0, s.writeErr
 	}
+	if s.redaction != nil {
+		// What is held back is written on Close; the caller is told all of
+		// p was taken, since it was.
+		if _, err := s.writeLocked(s.redaction.next(p)); err != nil {
+			return 0, err
+		}
+		return len(p), nil
+	}
+	return s.writeLocked(p)
+}
+
+// writeLocked writes p to the file, counting it, with mu held.
+func (s *BodySpool) writeLocked(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
 	n, err := s.file.Write(p)
 	s.bytes += int64(n)
 	if s.onWrite != nil {
@@ -94,6 +113,9 @@ func (s *BodySpool) Close() error {
 	s.closeOnce.Do(func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		if s.redaction != nil && s.writeErr == nil {
+			_, _ = s.writeLocked(s.redaction.flush())
+		}
 		s.closeErr = s.file.Close()
 	})
 	if s.onClose != nil {

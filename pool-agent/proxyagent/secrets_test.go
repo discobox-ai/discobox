@@ -20,10 +20,10 @@ import (
 func TestUpsertAndRemoveSentinels(t *testing.T) {
 	root := withTestRoot(t)
 
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, nil); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, nil, nil); err != nil {
 		t.Fatalf("upsert sb-1: %v", err)
 	}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"SENT-C"}, nil); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"SENT-C"}, nil, nil); err != nil {
 		t.Fatalf("upsert sb-2: %v", err)
 	}
 
@@ -46,7 +46,7 @@ func TestUpsertAndRemoveSentinels(t *testing.T) {
 		t.Fatal("sb-2 should remain")
 	}
 
-	clients := secretClients(doc.Clients)
+	clients := secretClients(doc.Clients, nil)
 	if len(clients) != 1 || clients[0].ClientID != "sb-2" {
 		t.Fatalf("secretClients = %#v", clients)
 	}
@@ -227,7 +227,7 @@ func TestARoutePersistedWithAUseReadsBlocked(t *testing.T) {
 		t.Fatal("a route a judge used to read was allowed after the upgrade")
 	}
 	// Written back by this pool, as lists, it keeps saying so.
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"OTHER"}, nil); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"OTHER"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if doc, err = readSecretsDoc(path); err != nil || !reflect.DeepEqual(doc.Routes["sb-1"]["SENT"], want) {
@@ -260,7 +260,7 @@ func TestAnUnroutedSentinelReadsAsItsDocumentMeantIt(t *testing.T) {
 		t.Fatalf("a routed sentinel of an old document = %+v, want its one list", got)
 	}
 
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"SENT-NEW"}, nil); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"SENT-NEW"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if doc, err = readSecretsDoc(path); err != nil {
@@ -341,7 +341,7 @@ func TestUpsertSandboxSentinelsKeepsRoutesOfHeldSentinels(t *testing.T) {
 		"SENT-A":    {parsedRoutes(t, "github.com=blocked"), parsedRoutes(t, "api.github.com")},
 		"SENT-GONE": {parsedRoutes(t, "example.com")},
 	}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, routes); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, nil, routes); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	doc, err := readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
@@ -354,7 +354,7 @@ func TestUpsertSandboxSentinelsKeepsRoutesOfHeldSentinels(t *testing.T) {
 	if doc.Version != secretsDocVersion {
 		t.Fatalf("version = %d, want %d", doc.Version, secretsDocVersion)
 	}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A"}, nil); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A"}, nil, nil); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	doc, _ = readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
@@ -466,7 +466,7 @@ func TestAVersion2DocumentReadsThroughFromLegacy(t *testing.T) {
 	}
 
 	// Rewritten by this pool, the document is version 3 and reads the same.
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"OTHER"}, nil); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"OTHER"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if doc, err = readSecretsDoc(path); err != nil || doc.Version != secretsDocVersion || !reflect.DeepEqual(doc.Routes["sb-1"]["SENT"], want) {
@@ -489,7 +489,7 @@ func TestUpsertSandboxSentinelsHoldsAnUnreadableRouteClosed(t *testing.T) {
 			{Hosts: []string{"uploads.github.com"}, Paths: []string{"no-slash"}, Blocked: true},
 		},
 	}}
-	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT"}, routes); err != nil {
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT"}, nil, routes); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	doc, err := readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))

@@ -1128,6 +1128,24 @@ func (s *PoolSandboxCreateRequest) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.RawSecrets.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "rawSecrets",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.SentinelRoutes.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -1145,6 +1163,28 @@ func (s *PoolSandboxCreateRequest) Validate() error {
 			Error: err,
 		})
 	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s PoolSandboxCreateRequestRawSecrets) Validate() error {
+	var failures []validate.FieldError
+	for key, elem := range s {
+		if err := func() error {
+			if err := elem.Validate(); err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			failures = append(failures, validate.FieldError{
+				Name:  key,
+				Error: err,
+			})
+		}
+	}
+
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -1410,6 +1450,24 @@ func (s *PoolSandboxUpdateRequest) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.RawSecrets.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "rawSecrets",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.SentinelRoutes.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -1427,6 +1485,28 @@ func (s *PoolSandboxUpdateRequest) Validate() error {
 			Error: err,
 		})
 	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s PoolSandboxUpdateRequestRawSecrets) Validate() error {
+	var failures []validate.FieldError
+	for key, elem := range s {
+		if err := func() error {
+			if err := elem.Validate(); err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			failures = append(failures, validate.FieldError{
+				Name:  key,
+				Error: err,
+			})
+		}
+	}
+
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -1510,6 +1590,40 @@ func (s *PoolSyncRequest) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s *RawSentinel) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Delivery.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "delivery",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s RawSentinelDelivery) Validate() error {
+	switch s {
+	case "env":
+		return nil
+	case "file":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *ResolvedHarnessConfig) Validate() error {

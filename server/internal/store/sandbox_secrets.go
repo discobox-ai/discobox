@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/discobox-ai/discobox/pkg/secretformat"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
@@ -112,7 +113,53 @@ func (s *Store) UpdateSandboxSecret(ctx context.Context, assignment *model.Sandb
 			"secret_id":  assignment.SecretID,
 			"sentinel":   assignment.Sentinel,
 			"format":     assignment.Format,
+			"raw":        assignment.Raw,
+			// A row repointed, or made raw again, has handed this binding's
+			// value over to nobody yet.
+			"raw_delivered_revision": 0,
 		}).Error
+}
+
+// RecordRawDelivery records that a raw binding's value at a secret revision
+// is being handed to the pool of the sandbox a row delivers it to (ADR
+// 26-10-27-840 §5): the row's delivered revision moves, and the binding's
+// delivered event is written with it, once per revision and row. The row and
+// the binding are read again here, the row locked: one gone, repointed to
+// another binding, or no longer raw is ErrNotFound, and nothing may be handed
+// out. A revision already recorded writes nothing.
+//
+// The binding's row is written in the same transaction, unchanged, so the
+// event is ordered against every other change to the binding as theirs are
+// (recordBindingEventTx).
+func (s *Store) RecordRawDelivery(ctx context.Context, assignment *model.SandboxSecret, bindingID string, revision int64) error {
+	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
+		var row model.SandboxSecret
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", assignment.ID).First(&row).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
+		} else if err != nil {
+			return err
+		}
+		var binding model.SecretBinding
+		if err := tx.Where("project_id = ? AND id = ?", row.ProjectID, bindingID).First(&binding).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
+		} else if err != nil {
+			return err
+		}
+		if row.Raw == "" || row.BindingID != binding.ID || binding.Raw != row.Raw {
+			return ErrNotFound
+		}
+		if row.RawDeliveredRevision == revision {
+			return nil
+		}
+		if err := tx.Model(&model.SandboxSecret{}).Where("id = ?", row.ID).Update("raw_delivered_revision", revision).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.SecretBinding{}).Where("id = ?", binding.ID).UpdateColumn("id", gorm.Expr("id")).Error; err != nil {
+			return err
+		}
+		return recordBindingEventTx(tx, &binding, model.SecretBindingEventDelivered,
+			BindingChange{Actor: model.SecretBindingActorSystem, Cause: row.SandboxID})
+	})
 }
 
 // deleteSandboxSecretsBySecret removes every assignment naming a secret. It runs

@@ -242,7 +242,7 @@ func materializeSandboxSecrets(ctx context.Context, st *store.Store, sb *model.S
 			continue
 		}
 		delete(desired, row.EnvName)
-		if row.SecretID == binding.SecretID && row.BindingID == binding.ID {
+		if row.SecretID == binding.SecretID && row.BindingID == binding.ID && row.Raw == binding.Raw {
 			continue
 		}
 		if row.SecretID != binding.SecretID {
@@ -264,7 +264,7 @@ func materializeSandboxSecrets(ctx context.Context, st *store.Store, sb *model.S
 			}
 			row.SecretID, row.Format = secret.ID, format
 		}
-		row.BindingID = binding.ID
+		row.BindingID, row.Raw = binding.ID, binding.Raw
 		if err := st.UpdateSandboxSecret(ctx, row); err != nil {
 			return false, err
 		}
@@ -288,7 +288,7 @@ func materializeSandboxSecrets(ctx context.Context, st *store.Store, sb *model.S
 		if err != nil {
 			return false, err
 		}
-		row.BindingID = binding.ID
+		row.BindingID, row.Raw = binding.ID, binding.Raw
 		if err := st.CreateSandboxSecret(ctx, row); err != nil {
 			return false, err
 		}
@@ -387,7 +387,11 @@ func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sa
 	}
 	envSentinel := make(map[string]string, len(rows))
 	for _, row := range rows {
-		envSentinel[row.EnvName] = row.Sentinel
+		// A raw binding is delivered by the sandbox agent to every process it
+		// starts; its sentinel is only the pool's handle (ADR 26-10-27-840).
+		if row.Raw == "" {
+			envSentinel[row.EnvName] = row.Sentinel
+		}
 	}
 	result := map[string]string{}
 	for _, applied := range harnessBindings.Use {
@@ -418,11 +422,10 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 	if err != nil {
 		return err
 	}
-	sentinels := make([]string, 0, len(assignments))
-	secretEnv := make(map[string]string, len(assignments))
-	for _, assignment := range assignments {
-		sentinels = append(sentinels, assignment.Sentinel)
-		secretEnv[assignment.EnvName] = assignment.Sentinel
+	sentinels, secretEnv, rawSecrets := sentinelDelivery(assignments)
+	if sentinels == nil {
+		// An empty set, not none: it is what removes the last sentinel.
+		sentinels = []string{}
 	}
 	sentinelRoutes, err := s.store.SentinelRouteLists(ctx, sandboxModel.ProjectID, assignments)
 	if err != nil {
@@ -432,10 +435,35 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 	if err != nil {
 		return err
 	}
-	if _, _, err := provider.Update(ctx, SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.ProviderState, UpdateOptions{Sentinels: sentinels, SentinelRoutes: sentinelRoutes, SecretEnv: secretEnv}); err != nil {
+	if _, _, err := provider.Update(ctx, SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.ProviderState, UpdateOptions{Sentinels: sentinels, SentinelRoutes: sentinelRoutes, RawSecrets: rawSecrets, SecretEnv: secretEnv}); err != nil {
 		return err
 	}
 	return markSentinelsIfStale(ctx, s.store, s.engine, sandboxModel, sentinelRoutes)
+}
+
+// sentinelDelivery splits a sandbox's rows into what its pool is sent: the
+// sentinels delivered into it and swapped, its secret environment, and its raw
+// bindings (ADR 26-10-27-840), whose sentinel is only the pool's handle for
+// the value and is delivered nowhere. Each is nil when there are none.
+func sentinelDelivery(assignments []model.SandboxSecret) ([]string, map[string]string, map[string]RawSecret) {
+	var sentinels []string
+	var secretEnv map[string]string
+	var raw map[string]RawSecret
+	for _, assignment := range assignments {
+		if assignment.Raw != "" {
+			if raw == nil {
+				raw = map[string]RawSecret{}
+			}
+			raw[assignment.Sentinel] = RawSecret{EnvName: assignment.EnvName, Delivery: assignment.Raw}
+			continue
+		}
+		sentinels = append(sentinels, assignment.Sentinel)
+		if secretEnv == nil {
+			secretEnv = map[string]string{}
+		}
+		secretEnv[assignment.EnvName] = assignment.Sentinel
+	}
+	return sentinels, secretEnv, raw
 }
 
 // MarkSecretHoldersDirtyTx marks the sentinel delivery of every sandbox

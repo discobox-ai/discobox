@@ -329,11 +329,11 @@ type Runtime interface {
 	// pool has decided (ADR 0126 §3). The status poll calls it with what each
 	// sandbox reports, so a delivery that did not land is repaired rather than
 	// assumed, and a changed idle timeout or renewed credential reaches a
-	// sandbox that is already running. controlPlanePower is whether the
-	// sandbox advertised that it can hand its power to the control plane: the
-	// document hands it over only then, because an agent that predates the
-	// field refuses a whole delivery over it (ADR 26-10-16-337 §8).
-	ConvergeRuntimeConfig(ctx context.Context, sandboxID string, applied int64, controlPlanePower bool) error
+	// sandbox that is already running. advertised is what the sandbox's
+	// status says its agent takes: the document carries a field only to an
+	// agent that does, because one that predates it refuses a whole delivery
+	// over it.
+	ConvergeRuntimeConfig(ctx context.Context, sandboxID string, applied int64, advertised Advertised) error
 
 	// The rest run until ctx ends, and the agent starts each once.
 	//
@@ -847,8 +847,9 @@ func (r *sandboxCore) stageSandbox(sandboxID string, req *workerapimodel.PoolSan
 		return nil, err
 	}
 	sentinels, _ := req.Sentinels.Get()
+	rawSecrets, _ := req.RawSecrets.Get()
 	sentinelRoutes, _ := req.SentinelRoutes.Get()
-	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxySentinelRoutes(sentinelRoutes)); err != nil {
+	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxyRawSentinels(rawSecrets), proxySentinelRoutes(sentinelRoutes)); err != nil {
 		return nil, err
 	}
 	// Recorded beside the sentinels, before the box exists, so the proxy
@@ -1636,6 +1637,16 @@ func sentinelRoute(in workerapimodel.SentinelRoute) secretroute.Route {
 	return route
 }
 
+// proxyRawSentinels are the raw bindings' sentinels the control plane sent
+// with a sandbox's sentinels (ADR 26-10-27-840), as the proxy holds them.
+func proxyRawSentinels(in map[string]workerapimodel.RawSentinel) map[string]proxyagent.RawSentinel {
+	out := make(map[string]proxyagent.RawSentinel, len(in))
+	for sentinel, raw := range in {
+		out[sentinel] = proxyagent.RawSentinel{EnvName: raw.EnvName, Delivery: string(raw.Delivery)}
+	}
+	return out
+}
+
 func (r *sandboxCore) UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error) {
 	if req != nil && req.ReserveHarnessChange.IsSet() {
 		return r.reserveHarnessChange(ctx, sandboxID, req.ReserveHarnessChange.Value)
@@ -1663,11 +1674,20 @@ func (r *sandboxCore) UpdateSandbox(ctx context.Context, sandboxID string, req *
 			// written only for a sandbox whose container exists: a push that
 			// raced a delete would otherwise leave entries no material record
 			// names, which the reaper never finds.
+			rawSecrets, _ := req.RawSecrets.Get()
 			sentinelRoutes, _ := req.SentinelRoutes.Get()
 			if err := r.updateSandboxProxyPolicy(ctx, sandboxID, func() error {
-				return proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxySentinelRoutes(sentinelRoutes))
+				return proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, sentinels, proxyRawSentinels(rawSecrets), proxySentinelRoutes(sentinelRoutes))
 			}); err != nil {
 				return nil, err
+			}
+			// The document names the raw secrets the set now holds (ADR
+			// 26-10-27-840); a secret environment below delivers it, and
+			// without one it is delivered here.
+			if !req.SecretEnv.IsSet() {
+				if err := r.redeliverRuntimeConfig(ctx, sandboxID); err != nil {
+					return nil, err
+				}
 			}
 		}
 		if secretEnv, ok := req.SecretEnv.Get(); ok {
@@ -1710,6 +1730,27 @@ func (r *sandboxCore) updateSandboxSecretEnv(ctx context.Context, sandboxID stri
 		return r.recordRuntimeConfig(sandboxID, set)
 	}
 	return logRuntimeConfigFailure(ctx, sandboxID, r.deliverRuntimeConfig(ctx, sandboxID, set))
+}
+
+// redeliverRuntimeConfig decides the sandbox's document again, with nothing
+// changed by the caller, and delivers it when the sandbox is running: what it
+// reads from elsewhere — the raw secrets SecretsFile holds — reaches the
+// sandbox. It holds the power lock as updateSandboxSecretEnv does.
+func (r *sandboxCore) redeliverRuntimeConfig(ctx context.Context, sandboxID string) error {
+	power := r.sandboxLock(sandboxID)
+	power.Lock()
+	defer power.Unlock()
+	sb, err := r.boxes.GetSandbox(ctx, sandboxID)
+	if errors.Is(err, ErrNotFound) || (err == nil && r.isArchived(sandboxID)) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if sb.Status != StatusRunning {
+		return r.recordRuntimeConfig(sandboxID, nil)
+	}
+	return logRuntimeConfigFailure(ctx, sandboxID, r.deliverRuntimeConfig(ctx, sandboxID, nil))
 }
 
 // publishCredentialEnvironment tells the pool's credentials broker which
@@ -3108,7 +3149,7 @@ func (r *MemorySandboxRuntime) GitOriginPath(ctx context.Context, sandboxID, slu
 
 // ConvergeRuntimeConfig records what the poll reported: a memory sandbox has no
 // agent to deliver to.
-func (r *MemorySandboxRuntime) ConvergeRuntimeConfig(_ context.Context, sandboxID string, applied int64, _ bool) error {
+func (r *MemorySandboxRuntime) ConvergeRuntimeConfig(_ context.Context, sandboxID string, applied int64, _ Advertised) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.appliedRuntimeConfig == nil {

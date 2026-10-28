@@ -1006,6 +1006,9 @@ components:
                 provision:
                     $ref: '#/components/schemas/SandboxAgentProvisionStatus'
                     description: The sandbox's provisioning this boot, its /run/discobox/provision.json (ADR 26-10-16-423 §6). Absent from a sandbox agent that predates it.
+                rawSecrets:
+                    description: Always true from a sandbox agent that takes raw secrets (ADR 26-10-27-840). The pool sends a runtime-config document's rawSecrets only to a sandbox that says so.
+                    type: boolean
                 resources:
                     $ref: '#/components/schemas/SandboxAgentResourceUsage'
                     description: This sandbox's CPU and memory consumption as cumulative counters. Absent on a platform where neither the cgroup nor procfs could be read.
@@ -1538,6 +1541,14 @@ components:
                 proxy:
                     $ref: '#/components/schemas/SandboxRuntimeConfigProxy'
                     description: Material for the sandbox's hop to its pool. Absent when it has none.
+                rawSecrets:
+                    additionalProperties:
+                        enum:
+                            - env
+                            - file
+                        type: string
+                    description: 'The sandbox''s raw secrets, variable to how it is delivered (ADR 26-10-27-840): env puts the value in the variable, file the path of a file under /run/discobox/raw-secrets holding it. Never a value - the sandbox agent asks its pool for those over its own mTLS link when this changes, and while it holds any. Sent only to a sandbox whose status advertised rawSecrets, because an older agent refuses the whole document over a field it does not know.'
+                    type: object
                 revision:
                     description: Orders documents, from 1. A sandbox applies a newer revision than it holds and ignores an older one. A newer document under a revision below 1 is refused as invalid (422) - the sandbox validates it, not the schema, so every invalid document is answered alike.
                     format: int64

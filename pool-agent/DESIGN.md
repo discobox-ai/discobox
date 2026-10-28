@@ -1757,7 +1757,11 @@ flowchart LR
   its binding's when the binding has any, and its parent's. The control plane
   sends them with the sentinel set (`sentinelRoutes`, a list of lists per
   sentinel, kept in SecretsFile) on every create and update; a change to any
-  of them reaches a sandbox as an update. The watcher stages the new lists
+  of them reaches a sandbox as an update. A raw binding's sentinel
+  (`rawSecrets`, ADR 26-10-27-840) rides beside the set with its variable and
+  delivery, kept in SecretsFile's `raw` (`UpsertSandboxSentinels`) and never
+  in the runtime-config document; its lists are among the others, and an
+  update carrying sentinels but no `rawSecrets` removes them. The watcher stages the new lists
   beside those of any sentinel leaving before it moves the sentinel set, so no
   sentinel is ever swappable without its lists. `Authorize` holds the request
   — its method, host, URL, headers (for the method overrides they carry) and
@@ -1821,10 +1825,11 @@ flowchart LR
 
 It lives in the proxy unit rather than the agent process because what it
 reads besides the control plane — the proxy's audit trail, its pins, and the
-policy file the proxy watches — is that unit's. It hands out no values: a
-credential granted to a sandbox is delivered as an injected sentinel like any
-other
+policy file the proxy watches — is that unit's. The protocol hands out no
+values: a credential granted to a sandbox is delivered as an injected sentinel
+like any other
 ([ADR 26-10-27-880](../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)).
+The one exception is a raw binding's, on a route outside the protocol (below).
 
 - `list`, `request`, and a request's status are relayed to the control plane
   for the certificate's sandbox (`/api/pools/{poolId}/sandbox-credentials`,
@@ -1846,8 +1851,22 @@ other
   environment with the rest of the sandbox's policy. A sandbox created by a
   pool agent that predates the record is published none until a create writes
   one.
+- **A raw binding's value** ([ADR 26-10-27-840](../docs/adr/26-10-27-840-a-binding-may-hand-over-the-raw-value-held-in-memory-and-watched-for-at-the-proxy.md))
+  is served on `sandboxconfig.RawSecretsRoute` (`serveRawSecrets`), not part
+  of the agent credentials protocol and not relayed by the sandbox's
+  credentials relay: the sandbox agent reads it over its own certificate. It
+  answers each raw sentinel SecretsFile's `raw` names for the certificate's
+  sandbox — variable and delivery — with the value the proxy holds to watch
+  its requests for (`proxy.Server.RawSecrets`), resolved from the control
+  plane by the sentinel (`secretResolver.ResolveRaw`,
+  `/api/pools/{poolId}/resolve-sandbox-raw-secret`) and never written. One the
+  control plane denies is left out. `Environment` names a file-delivered one
+  by its path (`sandboxconfig.RawSecretPath`) and leaves an env-delivered one
+  out: it never hands a process a value. `list` says which credentials the
+  sandbox holds raw (`raw`); an agent cannot ask for one raw — only a person
+  makes a binding raw.
 - **`policyPublisher` owns the proxy's per-client policy**, merging the
-  sentinels, the restricted sandboxes' egress allow lists, and each sandbox's
+  sentinels and raw sentinels, the restricted sandboxes' egress allow lists, and each sandbox's
   gateways from SecretsFile, and the pool's host trusts.
   They have to be applied together because `ApplyConfig` replaces the whole of
   it, and each publish is one read-and-apply so two that race cannot land an

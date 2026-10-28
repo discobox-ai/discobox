@@ -105,6 +105,10 @@ type requestMeta struct {
 	// writing the retry's result here would backdate it onto the 401's row,
 	// which is written after the retry is chosen.
 	swappedSecretIDs []string
+	// raw is what the request spent of raw bindings (rawwatch.go), and
+	// rawSet the client's raw values, which span attributes are redacted of.
+	raw    rawSpend
+	rawSet *secrets.RawSet
 	// swappedSentinels is which sentinels this request carried, kept beside the
 	// header names they were found in because a rejection has to name the
 	// credential and a header name cannot (ADR 0132 §1).
@@ -326,7 +330,7 @@ func (h *httpProxy) setupHandlers() {
 		traceCtx, span := proxyTracer().Start(req.Context(), "proxy.http.request", trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(append(clientAttrs(client),
 				attribute.String("http.request.method", req.Method),
-				attribute.String("url.full", requestURL(req)),
+				attribute.String("url.full", h.traceURL(req, client.ID)),
 				attribute.String("server.address", req.Host),
 			)...),
 		)
@@ -362,7 +366,7 @@ func (h *httpProxy) setupHandlers() {
 				span.SetAttributes(
 					attribute.Bool("proxy.http.tunnel_upgraded", true),
 					attribute.String("user_agent.original", req.UserAgent()),
-					attribute.String("url.full", requestURL(req)),
+					attribute.String("url.full", h.traceURL(req, client.ID)),
 				)
 			}
 			if tunnel.misdirected(req) {
@@ -419,6 +423,12 @@ func (h *httpProxy) setupHandlers() {
 			span.End()
 			return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, "blocked by proxy")
 		}
+		// A raw secret is judged on the request as the sandbox sent it, before
+		// a cache may answer it or a gateway forward it (ADR 26-10-27-840).
+		if refused := h.watchRaw(req, meta, client); refused != nil {
+			span.End()
+			return req, refused
+		}
 		endpoint := requestEndpoint(req)
 		applied, viaGateway, err := h.matchGateway(req, client.ID)
 		if err != nil {
@@ -437,11 +447,14 @@ func (h *httpProxy) setupHandlers() {
 		// A gateway's response is not cached: it is the gateway's, which the
 		// project can change or remove, and a key made from what the sandbox
 		// sent would outlive either.
-		if matcher := h.cache.Matcher(); !viaGateway && matcher != nil && matcher.ShouldCache(req) {
+		//
+		// Nor is one that carried a raw secret (ADR 26-10-27-840): its key
+		// and the entry's metadata are on the pool's disk.
+		if matcher := h.cache.Matcher(); !viaGateway && !meta.raw.carried.Load() && matcher != nil && matcher.ShouldCache(req) {
 			key := matcher.GenerateKey(req)
 			meta.cacheKey = key
 			lookupCtx, lookupSpan := proxyTracer().Start(traceCtx, "proxy.cache.lookup",
-				trace.WithAttributes(attribute.String("proxy.cache.key", key)),
+				trace.WithAttributes(attribute.String("proxy.cache.key", meta.rawSet.Redact(key))),
 			)
 			if entry, err := h.cache.Get(key); err == nil {
 				meta.cacheHit = true
@@ -564,10 +577,10 @@ func (h *httpProxy) setupHandlers() {
 		var store *cache.StreamingPut
 		// A pool host's content is the pool's own, already on its disk: a
 		// cache entry would only store it twice.
-		if matcher := h.cache.Matcher(); meta.poolHost == nil && matcher != nil && matcher.ShouldCache(ctx.Req) && matcher.ShouldCacheResponse(resp) {
+		if matcher := h.cache.Matcher(); meta.poolHost == nil && !meta.raw.carried.Load() && matcher != nil && matcher.ShouldCache(ctx.Req) && matcher.ShouldCacheResponse(resp) {
 			key := matcher.GenerateKey(ctx.Req)
 			meta.cacheKey = key
-			_, cacheSpan := proxyTracer().Start(meta.ctx, "proxy.cache.store.start", trace.WithAttributes(attribute.String("proxy.cache.key", key)))
+			_, cacheSpan := proxyTracer().Start(meta.ctx, "proxy.cache.store.start", trace.WithAttributes(attribute.String("proxy.cache.key", meta.rawSet.Redact(key))))
 			var err error
 			store, err = h.cache.BeginStreamingPut(key, resp)
 			if err != nil {
@@ -641,7 +654,8 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 		AppliedPattern:       meta.appliedPattern,
 		AppliedHeaders:       meta.appliedHeaders,
 		ForwardedURL:         meta.forwardedURL,
-		SwappedSecretIDs:     meta.swappedSecretIDs,
+		SwappedSecretIDs:     meta.spentSecretIDs(),
+		RawBindingIDs:        meta.spentRawBindingIDs(),
 		RedactRequestHeaders: meta.redactRequestHeaders(),
 		RequestHeaders:       req.Header,
 		ResponseHeaders:      headers,
@@ -1311,7 +1325,8 @@ func (s *upgradedResponseStream) auditEvent(duration time.Duration) audit.HTTPEv
 		AppliedPattern:       s.meta.appliedPattern,
 		AppliedHeaders:       s.meta.appliedHeaders,
 		ForwardedURL:         s.meta.forwardedURL,
-		SwappedSecretIDs:     s.meta.swappedSecretIDs,
+		SwappedSecretIDs:     s.meta.spentSecretIDs(),
+		RawBindingIDs:        s.meta.spentRawBindingIDs(),
 		RedactRequestHeaders: s.meta.redactRequestHeaders(),
 		RequestHeaders:       s.req.Header,
 		ResponseHeaders:      s.headers,
@@ -1412,7 +1427,8 @@ func (s *responseStream) finish(aborted bool, readErr error) {
 			AppliedPattern:       s.meta.appliedPattern,
 			AppliedHeaders:       s.meta.appliedHeaders,
 			ForwardedURL:         s.meta.forwardedURL,
-			SwappedSecretIDs:     s.meta.swappedSecretIDs,
+			SwappedSecretIDs:     s.meta.spentSecretIDs(),
+			RawBindingIDs:        s.meta.spentRawBindingIDs(),
 			RedactRequestHeaders: s.meta.redactRequestHeaders(),
 			RequestHeaders:       s.req.Header,
 			ResponseHeaders:      s.headers,

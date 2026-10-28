@@ -9,6 +9,7 @@ type Provider = contract.Provider
 type ProviderManager = contract.ProviderManager
 type CreateOptions = contract.CreateOptions
 type UpdateOptions = contract.UpdateOptions
+type RawSecret = contract.RawSecret
 type SandboxRef = contract.SandboxRef
 type Use = contract.Use
 type Sandbox = contract.Sandbox

@@ -201,6 +201,33 @@ func (h *Handler) ResolveSandboxSecret(ctx context.Context, req *apimodel.Resolv
 	return &resp, nil
 }
 
+// ResolveSandboxRawSecret hands a pool the value of one of its sandbox's raw
+// bindings (ADR 26-10-27-840), under the same principal and scope as a swap.
+func (h *Handler) ResolveSandboxRawSecret(ctx context.Context, req *apimodel.ResolveSandboxRawSecretBody, _ serverapi.ResolveSandboxRawSecretParams) (serverapi.ResolveSandboxRawSecretRes, error) {
+	principal, ok := auth.PrincipalFromContext(ctx)
+	if !ok || principal.Type != auth.PrincipalTypePool {
+		return apiError(apperrors.NewStatusError(http.StatusUnauthorized, "pool agent authentication required")), nil
+	}
+	if !principal.HasScope(poolauth.ScopeSecretResolve) {
+		return apiError(apperrors.NewStatusError(http.StatusForbidden, "secret:resolve scope required")), nil
+	}
+	resolution, err := h.services.Secrets.ResolveSandboxRawSecret(ctx, principal.PoolID, req.SandboxId, req.Sentinel)
+	if err != nil {
+		return apiError(err), nil
+	}
+	resp := apimodel.ResolveSandboxRawSecretResponse{Status: serverapi.ResolveSandboxRawSecretResponseStatusDenied}
+	if resolution.Status == model.SecretRequestStatusApproved && resolution.Value != nil && resolution.Value.Token != "" {
+		resp.Status = serverapi.ResolveSandboxRawSecretResponseStatusApproved
+		resp.SetValue(serverapi.NewOptString(resolution.Value.Token))
+		if resolution.ExpiresAt != nil {
+			resp.SetExpiresAt(serverapi.NewOptDateTime(*resolution.ExpiresAt))
+		}
+		resp.SetSecretId(serverapi.NewOptString(resolution.SecretID))
+		resp.SetBindingId(serverapi.NewOptString(resolution.BindingID))
+	}
+	return &resp, nil
+}
+
 // The agent credentials broker (ADR 0031). Each route is called by a pool agent
 // relaying for one of its own sandboxes, and authorizes the same way
 // ResolveSandboxSecret does: a pool principal carrying the broker scope, with
@@ -224,6 +251,9 @@ func (h *Handler) ListSandboxCredentials(ctx context.Context, params serverapi.L
 			SecretId:  credential.SecretID,
 			BindingId: credential.BindingID,
 			Purpose:   serverapi.NewOptSandboxCredentialPurpose(serverapi.SandboxCredentialPurpose(purposeOf(credential.Purpose))),
+		}
+		if credential.Raw != "" {
+			item.SetRaw(serverapi.NewOptSandboxCredentialRaw(serverapi.SandboxCredentialRaw(credential.Raw)))
 		}
 		if item.Hosts == nil {
 			item.Hosts = []string{}

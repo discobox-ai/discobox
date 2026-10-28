@@ -185,6 +185,10 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 	if err != nil {
 		return nil, err
 	}
+	allowRaw := input.AllowRaw.Or(false)
+	if err := guardAllowRaw(ctx, allowRaw); err != nil {
+		return nil, err
+	}
 	sec := &model.Secret{
 		ProjectID:      projectID,
 		Name:           name,
@@ -192,6 +196,7 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 		Format:         format,
 		FormatSet:      formatSet,
 		MaxBindingTTL:  ttl,
+		AllowRaw:       allowRaw,
 		EncryptedValue: valueBytes,
 	}
 	sec.ValueWritten(time.Now().UTC(), nil)
@@ -267,6 +272,14 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	if err := updateLifetime(input).apply(sec, input.Value.IsSet()); err != nil {
 		return nil, err
 	}
+	rawRevoked := false
+	if allowRaw, ok := input.AllowRaw.Get(); ok {
+		if err := guardAllowRaw(ctx, allowRaw); err != nil {
+			return nil, err
+		}
+		rawRevoked = sec.AllowRaw && !allowRaw
+		sec.AllowRaw = allowRaw
+	}
 	routesChanged := false
 	if routes, ok := input.Routes.Get(); ok {
 		if routesChanged, err = replaceRoutes(sec, routes); err != nil {
@@ -315,6 +328,11 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 		if err := txStore.UpdateSecret(ctx, sec); err != nil {
 			return secretCollision(err, sec)
 		}
+		if rawRevoked {
+			if err := s.deleteRawBindingsTx(ctx, txStore, txDB, sec); err != nil {
+				return err
+			}
+		}
 		if routesChanged && s.holders != nil {
 			return s.holders.MarkSecretHoldersDirtyTx(ctx, txStore, txDB, projectID, sec.ID)
 		}
@@ -325,6 +343,42 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	// Through the service's own read, so a create and an update answer with the
 	// same summary a get does rather than a bare row.
 	return s.GetSecret(ctx, projectID, sec.ID)
+}
+
+// guardAllowRaw keeps letting a value be handed over raw a person's (ADR
+// 26-10-27-840 §2): a discobox may not allow it, though it may take it away.
+func guardAllowRaw(ctx context.Context, allowRaw bool) error {
+	if principal, _ := auth.PrincipalFromContext(ctx); allowRaw && principal.Type == auth.PrincipalTypeSandbox {
+		return apperrors.NewStatusError(http.StatusForbidden, "only a person allows a secret's value to be handed over raw")
+	}
+	return nil
+}
+
+// deleteRawBindingsTx removes the raw bindings of a secret that no longer
+// allows raw (ADR 26-10-27-840 §1), each recorded as removed by whoever took
+// raw away, and marks their holders, whose pools then drop the value.
+func (s *Service) deleteRawBindingsTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, sec *model.Secret) error {
+	bindings, err := txStore.ListSecretBindings(ctx, sec.ProjectID, store.SecretBindingFilter{SecretID: sec.ID})
+	if err != nil {
+		return err
+	}
+	change := store.BindingChange{Actor: auth.ActorFromContext(ctx), Cause: "raw no longer allowed on " + sec.ID}
+	for _, binding := range bindings {
+		if binding.Raw == "" {
+			continue
+		}
+		deleted, err := txStore.DeleteSecretBinding(ctx, sec.ProjectID, binding.ID, change)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if err := s.markBindingHolders(ctx, txStore, txDB, deleted...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DeleteSecret removes a secret with its bindings, each recorded as removed,
@@ -409,7 +463,6 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "a binding's lifetime is a number of seconds; 0 is forever")
 	}
 	secretRef := strings.TrimSpace(input.SecretId.Or(""))
-
 	write := &approvalWrite{req: req, routes: routes, ttl: ttl, ttlNamed: ttlNamed, actor: principal.Actor()}
 	if approverIsSandbox {
 		if req.Delegates() {
@@ -527,7 +580,9 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 // putRequestedBinding stores the binding an approval makes, or extends the
 // one already standing for the same thing: a use of the same secret in the
 // same variable, or a delegate binding of the same secret, takes the
-// approval's routes and lifetime. A variable already holding another
+// approval's routes and lifetime. A raw binding is never extended: a person
+// made it raw, the approver is shown a sentinel ask, and renewing it would
+// widen a handover nobody looked at (ADR 26-10-27-840 §2). A variable already holding another
 // credential on the discobox is refused rather than taken over, since swapping
 // the credential under a variable something already uses is the surprise this
 // must not spring.
@@ -546,6 +601,10 @@ func (s *Service) putRequestedBinding(ctx context.Context, txStore *store.Store,
 		if standing.SecretID != binding.SecretID {
 			return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
 				"%s already holds another credential in this discobox; approve the request with that secret, or ask for another variable", binding.EnvName))
+		}
+		if standing.Raw != "" {
+			return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
+				"%s holds this credential's value itself in this discobox, which a person bound; a person renews it on the binding, not by approving a request", binding.EnvName))
 		}
 		if standing.ParentID != binding.ParentID {
 			return nil, apperrors.NewStatusError(http.StatusConflict,
@@ -602,55 +661,134 @@ func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID st
 // else is refused: no request is opened, since a sentinel exists only because
 // a binding does.
 func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error) {
+	r, err := s.resolution(ctx, poolID, sandboxID, sentinel)
+	if err != nil {
+		return nil, err
+	}
+	// A raw binding's sentinel is the pool's handle for the value, never
+	// swapped: its value is handed out only by ResolveSandboxRawSecret.
+	if !r.ok || r.assignment.Raw != "" || r.binding.Raw != "" ||
+		!secretroute.HostAllowed(store.RouteLists(r.secret, r.binding, r.parent), normalizeHost(host)) {
+		return deniedResolution(), nil
+	}
+	out, err := s.handOut(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	if out.ReportScope, err = s.reportScope(ctx, r.sandbox, r.assignment.EnvName); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ResolveSandboxRawSecret hands a sandbox's pool the value of one of its raw
+// bindings (ADR 26-10-27-840 §3), by the sentinel that is its handle: to hand
+// the sandbox, and to watch its requests for. It is the second door cleartext
+// leaves by, and the only one with no host: the value goes to the sandbox
+// itself. It answers only for a row and a binding that are raw, of a secret
+// that still allows raw, from a binding that stands, and records the
+// binding's delivered event in the same transaction that reads the row and
+// the binding again: one removed or made a sentinel in between is denied, and
+// the pool drops the value.
+func (s *Service) ResolveSandboxRawSecret(ctx context.Context, poolID, sandboxID, sentinel string) (*model.SandboxSecretResolution, error) {
+	r, err := s.resolution(ctx, poolID, sandboxID, sentinel)
+	if err != nil {
+		return nil, err
+	}
+	if !r.ok || r.assignment.Raw == "" || r.binding.Raw != r.assignment.Raw || !r.secret.AllowRaw || r.parent != nil {
+		return deniedResolution(), nil
+	}
+	out, err := s.handOut(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	if out.Value == nil || out.Value.Token == "" {
+		return deniedResolution(), nil
+	}
+	if err := s.store.RecordRawDelivery(ctx, r.assignment, r.binding.ID, out.Revision); errors.Is(err, store.ErrNotFound) {
+		return deniedResolution(), nil
+	} else if err != nil {
+		return nil, err
+	}
+	out.BindingID = r.binding.ID
+	return out, nil
+}
+
+// resolved is what a pool's resolve of a sentinel stands on, read once for
+// both doors: the row, its sandbox, the secret and the binding it was
+// delivered under. ok is false when that binding no longer stands.
+type resolved struct {
+	assignment *model.SandboxSecret
+	sandbox    *model.Sandbox
+	secret     *model.Secret
+	binding    *model.SecretBinding
+	parent     *model.SecretBinding
+	ok         bool
+}
+
+func deniedResolution() *model.SandboxSecretResolution {
+	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusDenied}
+}
+
+// resolution reads what a resolve of sentinel stands on, refusing a sandbox
+// the calling pool does not hold.
+func (s *Service) resolution(ctx context.Context, poolID, sandboxID, sentinel string) (resolved, error) {
 	assignment, err := s.store.GetSandboxSecretBySentinel(ctx, sandboxID, sentinel)
 	if err != nil {
-		return nil, apperrors.NotFound(err, "sandbox secret not found")
+		return resolved{}, apperrors.NotFound(err, "sandbox secret not found")
 	}
 	// The calling pool agent must own the sandbox the sentinel belongs to.
 	sandbox, err := s.store.GetSandbox(ctx, assignment.ProjectID, assignment.SandboxID)
 	if err != nil {
-		return nil, apperrors.NotFound(err, "sandbox not found")
+		return resolved{}, apperrors.NotFound(err, "sandbox not found")
 	}
 	if strings.TrimSpace(sandbox.PoolID) != strings.TrimSpace(poolID) {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "sandbox secret not found")
+		return resolved{}, apperrors.NewStatusError(http.StatusNotFound, "sandbox secret not found")
 	}
 	secret, err := s.store.GetSecret(ctx, assignment.ProjectID, assignment.SecretID)
 	if err != nil {
-		return nil, apperrors.NotFound(err, "secret not found")
+		return resolved{}, apperrors.NotFound(err, "secret not found")
 	}
-	host = normalizeHost(host)
-	denied := &model.SandboxSecretResolution{Status: model.SecretRequestStatusDenied}
-
 	binding, parent, ok, err := s.standingBinding(ctx, sandbox, assignment, time.Now().UTC())
 	if err != nil {
-		return nil, err
+		return resolved{}, err
 	}
-	if !ok || !secretroute.HostAllowed(store.RouteLists(secret, binding, parent), host) {
-		return denied, nil
-	}
+	return resolved{assignment: assignment, sandbox: sandbox, secret: secret, binding: binding, parent: parent, ok: ok}, nil
+}
+
+// handOut is the value a standing binding resolves to, renewed first when it
+// renews, with how long the pool may hold it: the binding's expiry, capped by
+// the token's own and by its staleness. Revision is the secret's revision the
+// value is of.
+func (s *Service) handOut(ctx context.Context, r resolved) (*model.SandboxSecretResolution, error) {
+	secret := r.secret
 	val, err := s.store.OpenSecretValue(ctx, secret)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt secret: %w", err)
 	}
-	expiresAt := bindingExpiry(binding, parent)
+	expiresAt := bindingExpiry(r.binding, r.parent)
 	if renews(secret.Type) {
 		// Renew a near-expired token before handing it out, and cap the
 		// cache lifetime the proxy honors by the token's own expiry so it
 		// re-resolves — and renews again — as the token ages out.
-		val, err = s.ensureFresh(ctx, secret, val)
+		renewed, err := s.ensureFresh(ctx, secret, val)
 		if err != nil {
 			return nil, err
 		}
+		if renewed != val {
+			// Renewed under its own read of the secret: the revision the
+			// value is of is the one it wrote.
+			if current, err := s.store.GetSecret(ctx, secret.ProjectID, secret.ID); err == nil {
+				secret = current
+			}
+		}
+		val = renewed
 		expiresAt = tokenResolutionExpiry(expiresAt, val)
 	}
 	if secret.Renewable() {
-		expiresAt = s.renewableResolution(ctx, secret, sandbox.ID, expiresAt)
+		expiresAt = s.renewableResolution(ctx, secret, r.sandbox.ID, expiresAt)
 	}
-	reportScope, err := s.reportScope(ctx, sandbox, assignment.EnvName)
-	if err != nil {
-		return nil, err
-	}
-	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusApproved, Value: val, ExpiresAt: expiresAt, SecretID: secret.ID, ReportScope: reportScope}, nil
+	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusApproved, Value: val, ExpiresAt: expiresAt, SecretID: secret.ID, Revision: secret.Revision}, nil
 }
 
 // standingBinding is the binding a sentinel was delivered under and its

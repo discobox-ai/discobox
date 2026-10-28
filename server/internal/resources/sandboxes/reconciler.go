@@ -639,13 +639,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 		if err != nil {
 			return CreateOptions{}, fmt.Errorf("list sandbox secret assignments: %w", err)
 		}
-		for _, assignment := range assignments {
-			opts.Sentinels = append(opts.Sentinels, assignment.Sentinel)
-			if opts.SecretEnv == nil {
-				opts.SecretEnv = map[string]string{}
-			}
-			opts.SecretEnv[assignment.EnvName] = assignment.Sentinel
-		}
+		opts.Sentinels, opts.SecretEnv, opts.RawSecrets = sentinelDelivery(assignments)
 		if opts.SentinelRoutes, err = r.store.SentinelRouteLists(ctx, sb.ProjectID, assignments); err != nil {
 			return CreateOptions{}, fmt.Errorf("list sentinel routes: %w", err)
 		}

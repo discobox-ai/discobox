@@ -204,6 +204,7 @@ func (a *App) writeSecretBinding(cmd *cobra.Command, b *apimodel.SecretBinding) 
 		{"USE", fmt.Sprint(b.Use)},
 		{"DELEGATE", fmt.Sprint(b.Delegate)},
 		{"VARIABLE", orDash(terminalSafe(b.EnvVar.Or("")))},
+		{"RAW", orDash(string(b.Raw.Or("")))},
 		{"ROUTES", bindingRoutesText(b.Routes)},
 		{"PARENT", orDash(b.ParentId.Or(""))},
 		{"REQUEST", orDash(b.RequestId.Or(""))},
@@ -217,17 +218,19 @@ func (a *App) writeSecretBinding(cmd *cobra.Command, b *apimodel.SecretBinding) 
 }
 
 func (a *App) newAdminBindingCreateCommand() *cobra.Command {
-	var secret, targetKind, target, envVar string
+	var secret, targetKind, target, envVar, raw string
 	var use, delegate bool
 	var routes []string
 	ttl := lifetime.NewFlag()
 	cmd := &cobra.Command{
-		Use:   "create --secret SECRET --target-kind KIND [--target ID] [--as VAR] [--delegate]",
+		Use:   "create --secret SECRET --target-kind KIND [--target ID] [--as VAR] [--raw env|file] [--delegate]",
 		Short: "Create a secret binding",
 		Long: `Create a secret binding, as the API takes one: a secret by name or ID, a
 target kind (project, harnessConfig or sandbox) and, for any but the project, its
-ID. --as names the variable a use binding is delivered in; --delegate makes it
-a binding to give on, and --use=false one only given on. --route narrows the
+ID. --as names the variable a use binding is delivered in, and --raw hands over
+the value itself there (env) or a file holding it (file) rather than a
+sentinel; --delegate makes it a binding to give on, and --use=false one only
+given on. --route narrows the
 secret's routes for this binding; left out, it goes where the secret's go.
 
 ` + routeHelp,
@@ -258,6 +261,13 @@ secret's routes for this binding; left out, it goes where the secret's go.
 			if envVar != "" {
 				body.SetEnvVar(apiclientgen.NewOptString(envVar))
 			}
+			if raw != "" {
+				value := apiclientgen.CreateSecretBindingBodyRaw(raw)
+				if err := value.Validate(); err != nil {
+					return fmt.Errorf("--raw %q: want env or file", raw)
+				}
+				body.SetRaw(apiclientgen.NewOptCreateSecretBindingBodyRaw(value))
+			}
 			if seconds, given := ttl.Seconds(); given {
 				body.SetTtlSeconds(apiclientgen.NewOptInt64(seconds))
 			}
@@ -276,6 +286,7 @@ secret's routes for this binding; left out, it goes where the secret's go.
 	cmd.Flags().StringVar(&targetKind, "target-kind", "", "What it is bound to: project, harnessConfig or sandbox")
 	cmd.Flags().StringVar(&target, "target", "", "The harness config or discobox, by name or ID; omitted for the project")
 	cmd.Flags().StringVar(&envVar, "as", "", "The variable a use binding is delivered in")
+	cmd.Flags().StringVar(&raw, "raw", "", "Hand over the value itself: env, or file for a file whose path is in the variable")
 	cmd.Flags().BoolVar(&use, "use", true, "Deliver it to use (default true unless --delegate)")
 	cmd.Flags().BoolVar(&delegate, "delegate", false, "Let the target give it to the discoboxes it creates")
 	cmd.Flags().StringArrayVar(&routes, "route", nil, "A route narrowing the secret's, as "+secretroute.Syntax+"; one per flag, repeat for more")
@@ -286,13 +297,13 @@ secret's routes for this binding; left out, it goes where the secret's go.
 }
 
 func (a *App) newAdminBindingUpdateCommand() *cobra.Command {
-	var envVar string
+	var envVar, raw string
 	var routes []string
 	var clearRoutes, use, delegate bool
 	ttl := lifetime.NewFlag()
 	cmd := &cobra.Command{
-		Use:   "update BINDING_ID [--route ROUTE]... [--clear-route] [--for LIFETIME] [--as VAR] [--use=BOOL] [--delegate=BOOL]",
-		Short: "Change a secret binding's routes, lifetime, variable or purpose",
+		Use:   "update BINDING_ID [--route ROUTE]... [--clear-route] [--for LIFETIME] [--as VAR] [--raw env|file|none] [--use=BOOL] [--delegate=BOOL]",
+		Short: "Change a secret binding's routes, lifetime, variable, delivery or purpose",
 		Long: `Change a secret binding by ID. --route replaces its routes, and --clear-route
 removes them, so it goes where its secret's go.
 
@@ -331,8 +342,16 @@ removes them, so it goes where its secret's go.
 				body.SetDelegate(apiclientgen.NewOptBool(delegate))
 				changed = true
 			}
+			if cmd.Flags().Changed("raw") {
+				value := apiclientgen.UpdateSecretBindingBodyRaw(raw)
+				if err := value.Validate(); err != nil {
+					return fmt.Errorf("--raw %q: want env, file or none", raw)
+				}
+				body.SetRaw(apiclientgen.NewOptUpdateSecretBindingBodyRaw(value))
+				changed = true
+			}
 			if !changed {
-				return fmt.Errorf("nothing to change: give --route, --clear-route, --for, --as, --use or --delegate")
+				return fmt.Errorf("nothing to change: give --route, --clear-route, --for, --as, --raw, --use or --delegate")
 			}
 			projectID, client, err := a.adminBindingClient()
 			if err != nil {
@@ -353,6 +372,7 @@ removes them, so it goes where its secret's go.
 	cmd.Flags().BoolVar(&clearRoutes, "clear-route", false, "Remove its routes, so it goes where its secret's go")
 	cmd.Flags().Var(ttl, "for", "How long it lasts from now (e.g. 1h, 2w, forever)")
 	cmd.Flags().StringVar(&envVar, "as", "", "The variable it is delivered in")
+	cmd.Flags().StringVar(&raw, "raw", "", "Hand over the value itself (env, or file), or a sentinel again (none)")
 	cmd.Flags().BoolVar(&use, "use", false, "Whether it is delivered to use; --use=false stops that, keeping the delegation")
 	cmd.Flags().BoolVar(&delegate, "delegate", false, "Whether it may be given on; --delegate=false stops that, keeping the variable")
 	return cmd

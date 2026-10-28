@@ -51,6 +51,7 @@ type HTTPEvent struct {
 	AppliedHeaders       []string
 	ForwardedURL         string
 	SwappedSecretIDs     []string
+	RawBindingIDs        []string
 	RedactRequestHeaders []string
 	RequestHeaders       http.Header
 	ResponseHeaders      http.Header
@@ -144,7 +145,13 @@ type HTTPExchange struct {
 	//
 	// AutoMigrate adds it to a database written before it, where those rows
 	// read it as empty: nothing was recorded about their secrets.
-	SwappedSecretIDs    string
+	SwappedSecretIDs string
+	// RawBindingIDs names the raw bindings whose values this request was
+	// found carrying and let through on their routes, comma-joined (ADR
+	// 26-10-27-840 §5); each one's secret is in SwappedSecretIDs too. Like
+	// it, never a value and unindexed, and AutoMigrate adds it to a database
+	// written before it, whose rows read it as empty.
+	RawBindingIDs       string
 	RequestHeaders      string
 	ResponseHeaders     string
 	ResponseBytes       int64
@@ -242,6 +249,8 @@ type Recorder struct {
 	spoolBytes atomic.Int64
 	spoolLimit atomic.Int64
 	overBudget chan struct{}
+	// redactor is what each client's trail is kept clean of (SetRedactor).
+	redactor atomic.Pointer[func(clientID string) Redactor]
 	// pools owns the database handle db borrows. Close releases it: without
 	// that the connection outlives the recorder, which on Linux merely leaks
 	// and on Windows makes the database file undeletable for the life of the
@@ -348,6 +357,9 @@ func (r *Recorder) BeginUpgradeStream(clientID, upgradeType string) (*StreamReco
 	if err != nil || record == nil {
 		return record, session, err
 	}
+	if redactor := r.redactorFor(clientID); redactor != nil {
+		session.patterns = redactor.Patterns()
+	}
 	session.onClose = r.trackSpool(record.File)
 	session.onWrite = r.addSpoolBytes
 	return record, session, nil
@@ -362,6 +374,7 @@ func (r *Recorder) BeginBody(clientID, kind string) (*BodyRecord, *BodySpool, er
 	if err != nil || record == nil {
 		return record, spool, err
 	}
+	spool.redaction = newSpoolRedaction(r.redactorFor(clientID))
 	spool.onClose = r.trackSpool(record.File)
 	spool.onWrite = r.addSpoolBytes
 	return record, spool, nil
@@ -406,7 +419,7 @@ func (r *Recorder) RecordHTTP(event HTTPEvent) {
 	if event.EnqueuedAt.IsZero() {
 		event.EnqueuedAt = time.Now().UTC()
 	}
-	r.enqueue(event)
+	r.enqueue(redactHTTP(event, r.redactorFor(event.ClientID)))
 }
 
 // DNS audit budget per sandbox: a sustained rate and a burst above it. Past
@@ -695,6 +708,7 @@ func (r *Recorder) write(event any) {
 			AppliedHeaders:      strings.Join(e.AppliedHeaders, ","),
 			ForwardedURL:        e.ForwardedURL,
 			SwappedSecretIDs:    strings.Join(e.SwappedSecretIDs, ","),
+			RawBindingIDs:       strings.Join(e.RawBindingIDs, ","),
 			RequestHeaders:      marshalHeaders(e.RequestHeaders, e.RedactRequestHeaders),
 			ResponseHeaders:     marshalHeaders(e.ResponseHeaders, nil),
 			ResponseBytes:       e.ResponseBytes,

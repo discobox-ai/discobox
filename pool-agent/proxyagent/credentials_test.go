@@ -142,6 +142,22 @@ func TestRequestStatusSaysWhatWasGranted(t *testing.T) {
 	}
 }
 
+// A credential the sandbox holds raw says so in the list (ADR 26-10-27-840),
+// so an agent knows its variable holds the value, or a file's path.
+func TestListSaysACredentialIsHeldRaw(t *testing.T) {
+	plane, _ := newFakeControlPlane(t, []credentialDoc{
+		{Name: "aws", EnvVar: "AWS_SECRET_ACCESS_KEY", Hosts: []string{"amazonaws.com"}, SecretID: "sec_1", Raw: agentcreds.RawFile},
+	})
+	b := &credentialBroker{sandboxID: "sb-1", controlPlan: plane}
+	listed, err := b.List(context.Background())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(listed) != 1 || listed[0].Raw != agentcreds.RawFile {
+		t.Fatalf("list = %+v, want the credential held raw in a file", listed)
+	}
+}
+
 // A refusal reaches the sandbox as a refusal, in the control plane's words,
 // rather than as an outage two hops away.
 func TestAControlPlaneRefusalIsADenial(t *testing.T) {

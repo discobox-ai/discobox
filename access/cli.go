@@ -130,7 +130,10 @@ func usage(w io.Writer) {
       Print every credential variable and what is delivered in it now, as
       export lines for a shell: eval "$(%[1]s env)". A credential granted
       after your shell started reaches it this way. The values are
-      placeholders your egress exchanges, never the credential itself.
+      placeholders your egress exchanges, never the credential itself, or,
+      for one a person handed over raw in a file, the path of that file; one
+      handed over raw in its variable is left out, and reaches only commands
+      started after it was.
 
   %[1]s request [--json] --name NAME --env-var VAR --route ROUTE... [flags]
       Ask a human for a credential. Returns a request id immediately unless

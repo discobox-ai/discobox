@@ -464,6 +464,7 @@ type SecretService interface {
 	ListBoundSecrets(ctx context.Context, projectID, targetKind, target string) ([]BoundSecret, error)
 
 	ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error)
+	ResolveSandboxRawSecret(ctx context.Context, poolID, sandboxID, sentinel string) (*model.SandboxSecretResolution, error)
 	// RecordSandboxSecretRejection takes what an upstream made of a credential
 	// the pool's proxy swapped in, and decides whether it needs a person
 	// (ADR 0132). ListSecretRejections is what the window reads back.
@@ -512,6 +513,9 @@ type SandboxCredential struct {
 	BindingID string
 	Hosts     []string
 	Purpose   string
+	// Raw is the binding's raw delivery, when it hands the value over (ADR
+	// 26-10-27-840).
+	Raw       string
 	ExpiresAt *time.Time
 }
 

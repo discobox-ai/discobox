@@ -84,8 +84,13 @@ func runEnv(ctx context.Context, args []string) int {
 // line says what it is instead of naming a variable.
 func writeCredential(w io.Writer, credential agentcreds.Credential) {
 	delivered := credential.EnvVar
-	if credential.Purpose == agentcreds.PurposeDelegate {
+	switch {
+	case credential.Purpose == agentcreds.PurposeDelegate:
 		delivered = "delegate: give it to the discoboxes you create"
+	case credential.Raw == agentcreds.RawEnv:
+		delivered = credential.EnvVar + ", the value itself"
+	case credential.Raw == agentcreds.RawFile:
+		delivered = credential.EnvVar + ", the path of a file holding the value"
 	}
 	fmt.Fprintf(w, "%s (%s → %s) %s\n", credential.Name, delivered, strings.Join(credential.Hosts, ", "), expiry(credential.ExpiresAt))
 }

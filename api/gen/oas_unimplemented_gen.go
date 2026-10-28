@@ -1364,6 +1364,15 @@ func (UnimplementedHandler) ResolvePoolAsset(ctx context.Context, params Resolve
 	return r, ht.ErrNotImplemented
 }
 
+// ResolveSandboxRawSecret implements resolve-sandbox-raw-secret operation.
+//
+// Resolve the value of a sandbox's raw binding, to hand the sandbox and to watch its requests for.
+//
+// POST /api/pools/{poolId}/resolve-sandbox-raw-secret
+func (UnimplementedHandler) ResolveSandboxRawSecret(ctx context.Context, req *ResolveSandboxRawSecretBody, params ResolveSandboxRawSecretParams) (r ResolveSandboxRawSecretRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ResolveSandboxSecret implements resolve-sandbox-secret operation.
 //
 // Resolve a sandbox sentinel secret.

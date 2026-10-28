@@ -44,6 +44,10 @@ type sandboxCore struct {
 	// sandbox the poll has not reached since this agent started has no entry,
 	// and keeps what its recorded document says.
 	powerHandover sync.Map
+	// rawSecretsTaken holds, per sandbox, whether its status last advertised
+	// that its agent takes raw secrets (ADR 26-10-27-840), as powerHandover
+	// does for the power.
+	rawSecretsTaken sync.Map
 	// booting holds the boot under way of each sandbox whose box is started
 	// and whose sandbox agent has not answered yet (see beginBoot).
 	booting sync.Map

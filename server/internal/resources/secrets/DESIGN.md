@@ -5,8 +5,10 @@ them, the requests that ask a person for one, and how a sandbox comes to hold
 one. It also owns host trust ([below](#host-trust)), the other thing an agent
 asks a person for.
 
-Cleartext leaves the control plane through exactly one door — `ResolveSandboxSecret`,
-called by a pool agent's proxy for one sentinel and one destination host. An
+Cleartext leaves the control plane through two doors, both called by a pool
+agent's proxy for one of its own sandboxes: `ResolveSandboxSecret`, for one
+sentinel and one destination host, and `ResolveSandboxRawSecret`, for one raw
+binding's handle and no host ([below](#a-raw-binding-hands-over-the-value)). An
 approved answer names the secret beside its value, which the proxy records on
 the request it swaps the value into
 ([ADR 26-10-01-240](../../../../docs/adr/26-10-01-240-a-swapped-request-records-the-secrets-it-spent.md)).
@@ -80,6 +82,39 @@ flowchart LR
 - **A child's lists include its parent's**, so a change to a binding marks the
   holders of its children too (`UpdateSecretBinding`).
 
+## A raw binding hands over the value
+
+A binding may hand the discobox the value itself rather than a sentinel
+([ADR 26-10-27-840](../../../../docs/adr/26-10-27-840-a-binding-may-hand-over-the-raw-value-held-in-memory-and-watched-for-at-the-proxy.md)),
+for a program that signs with it or sends it where a swap cannot reach.
+`SecretBinding.Raw` is the delivery: `env` (the value in the variable) or
+`file` (the path of a file under `/run/discobox/raw-secrets` holding it).
+
+- **Both opt in** (`checkRawBinding`, on every binding write: CRUD, approval,
+  create): the secret allows it (`Secret.AllowRaw`), the binding is a use, and
+  it is not handed on under a delegation. Clearing `AllowRaw` deletes the raw
+  bindings that stand (`deleteRawBindingsTx`), each recorded and its holders
+  marked.
+- **Only a person, and nothing asks.** A discobox may neither allow raw on a
+  secret (`guardAllowRaw`) nor make or create-with a raw binding, and no
+  request asks for raw, so no approval makes one or extends one: approving
+  a request for a variable a raw binding delivers is a 409
+  (`putRequestedBinding`), and a person renews the binding itself. A raw binding on a harness config or the
+  project reaches the discoboxes a discobox created there too, which ADR
+  26-10-27-840 §2 accepts.
+- **The handle is a sentinel the sandbox never sees.** A raw binding
+  materializes as a `SandboxSecret` row with `Raw` set, whose sentinel the
+  pool is sent as a raw secret rather than a sentinel or a variable
+  ([`sandboxes/DESIGN.md`](../sandboxes/DESIGN.md)). `ResolveSandboxSecret`
+  refuses it, so it is never swapped.
+- **`ResolveSandboxRawSecret`** answers only for a raw row of a standing raw
+  binding of a secret still allowing raw, renewed as a swap is
+  (`resolution` and `handOut`, which both doors share), with the binding's
+  ID. The first answer at each secret revision records the binding's
+  `delivered` event (`store.RecordRawDelivery`, cause the discobox), which
+  reads the row and the binding again, the row locked: one no longer raw is
+  denied rather than handed out. A row repointed starts its count again.
+
 ## Requests are the inbox
 
 A `SecretRequest` is only a question an agent asked through the agent
@@ -98,7 +133,9 @@ the approver named, else `defaultApprovalTTL` (the ask, else
 its event, the holders' mark and the request's decision (`DecidedBy`,
 `DecidedAt`, `BindingID`) are one transaction (`commitApproval`). A variable
 the discobox already holds with another secret is a 409, never taken over; one
-holding the same secret is extended (`putRequestedBinding`).
+holding the same secret is extended (`putRequestedBinding`), unless that
+binding is raw, which is a 409 too: a person renews a raw binding itself
+([above](#a-raw-binding-hands-over-the-value)).
 
 Deleting a sandbox closes its open requests as denied: the agent waiting on
 the answer is gone. A discobox sees and answers only the requests filed by a

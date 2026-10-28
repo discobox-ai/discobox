@@ -180,7 +180,11 @@ eval "$(discobox-access env)"
 
 `env` prints an export for every credential variable and what is delivered in
 it now: a placeholder your egress exchanges, never the credential itself
-(`--json` for the map).
+(`--json` for the map). A person may instead hand you a credential's real
+value (`list` says `the value itself`): one in a file is printed as the file's
+path, one in its variable is left out of `env` and reaches only commands
+started after it arrived. Send it only where it is meant to go; a request
+carrying it anywhere else is refused, and recorded.
 
 A request the credential is not allowed to go on is refused by the egress
 before it leaves, and the reason is in the response and in the audit (§6):

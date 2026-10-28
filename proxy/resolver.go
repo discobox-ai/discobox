@@ -27,6 +27,13 @@ type SecretResolveRequest = secrets.ResolveRequest
 // SecretResolveResult is the output of a SecretResolver.
 type SecretResolveResult = secrets.ResolveResult
 
+// SecretRawRequest asks a SecretResolver for the value of a client's raw
+// binding, by its sentinel (ADR 26-10-27-840).
+type SecretRawRequest = secrets.RawRequest
+
+// SecretRawResult is a raw binding's value as a SecretResolver answers it.
+type SecretRawResult = secrets.RawResult
+
 // ErrSecretResolveDenied signals that a sentinel is unknown, unapproved, or not
 // permitted for the requested host. The proxy leaves the sentinel in place.
 var ErrSecretResolveDenied = secrets.ErrDenied

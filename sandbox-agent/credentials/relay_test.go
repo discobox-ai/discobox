@@ -13,12 +13,15 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/wire"
 )
 
@@ -117,6 +120,13 @@ func TestRelayDialsUnixURLWithMTLS(t *testing.T) {
 			EnvVar: "SEEN_AS",
 		}}})
 	})
+	mux.HandleFunc("GET "+sandboxconfig.RawSecretsRoute, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(sandboxconfig.RawSecretsResponse{Secrets: []sandboxconfig.RawSecret{{
+			Name:     "API_KEY",
+			Delivery: sandboxconfig.RawDeliveryFile,
+			Value:    "raw-for-" + r.TLS.PeerCertificates[0].Subject.CommonName,
+		}}})
+	})
 	server := &http.Server{
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -155,6 +165,20 @@ func TestRelayDialsUnixURLWithMTLS(t *testing.T) {
 	}
 	if len(credentials) != 1 || credentials[0].Name != "sandbox-1" {
 		t.Fatalf("pool saw %+v, want one credential naming sandbox-1", credentials)
+	}
+	raw, err := relay.RawSecrets(context.Background())
+	if err != nil {
+		t.Fatalf("RawSecrets: %v", err)
+	}
+	if len(raw.Secrets) != 1 || raw.Secrets[0].Value != "raw-for-sandbox-1" {
+		t.Fatalf("raw secrets = %+v, want the value the pool gave sandbox-1", raw.Secrets)
+	}
+	// The loopback endpoint every process in the sandbox reaches serves the
+	// protocol alone: the raw values are the agent's own call.
+	recorder := httptest.NewRecorder()
+	agentcreds.NewHandler(relay).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, sandboxconfig.RawSecretsRoute, nil))
+	if recorder.Code == http.StatusOK || strings.Contains(recorder.Body.String(), "raw-for-") {
+		t.Fatalf("loopback endpoint answered the raw secrets route: %d %s", recorder.Code, recorder.Body.String())
 	}
 
 	// The pool renews the sandbox's certificate while it runs, delivering new

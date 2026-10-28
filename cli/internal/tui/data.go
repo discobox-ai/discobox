@@ -1681,6 +1681,9 @@ type SecretBinding struct {
 	Use      bool
 	Delegate bool
 	EnvVar   string
+	// RawDelivery is how the value itself is handed over, "env" or "file",
+	// when it is rather than a sentinel (ADR 26-10-27-840).
+	RawDelivery string
 	// Routes narrow the secret's; none inherits them.
 	Routes []secretroute.Route
 	// ParentID is the delegation a discobox handed this on under; removing

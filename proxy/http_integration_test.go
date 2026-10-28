@@ -49,6 +49,8 @@ type stubResolver struct {
 	// resolved, when set, counts the sentinels this resolver was asked to
 	// resolve. A refused request must leave it at zero.
 	resolved *atomic.Int64
+	// raw is the value of each raw binding's sentinel the stub holds.
+	raw map[string]secrets.RawResult
 }
 
 func TestMergeResponseBodyErrorRecordsUnexpectedEOF(t *testing.T) {
@@ -75,6 +77,15 @@ func (r stubResolver) Report(_ context.Context, req secrets.ReportRequest) error
 // Gate admits nothing: these tests have no gate host.
 func (stubResolver) Gate(context.Context, secrets.GateRequest) (secrets.GateAdmission, error) {
 	return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "no gate here"}
+}
+
+// ResolveRaw answers the raw value the stub holds for a sentinel, and denies
+// any other.
+func (r stubResolver) ResolveRaw(_ context.Context, req secrets.RawRequest) (secrets.RawResult, error) {
+	if raw, ok := r.raw[req.Sentinel]; ok {
+		return raw, nil
+	}
+	return secrets.RawResult{}, secrets.ErrDenied
 }
 
 func (r stubResolver) Authorize(_ context.Context, req secrets.AuthorizeRequest) (secrets.Verdict, error) {

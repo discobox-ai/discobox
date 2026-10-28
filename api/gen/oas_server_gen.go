@@ -945,6 +945,12 @@ type Handler interface {
 	//
 	// GET /api/pools/{poolId}/assets/{name}
 	ResolvePoolAsset(ctx context.Context, params ResolvePoolAssetParams) (ResolvePoolAssetRes, error)
+	// ResolveSandboxRawSecret implements resolve-sandbox-raw-secret operation.
+	//
+	// Resolve the value of a sandbox's raw binding, to hand the sandbox and to watch its requests for.
+	//
+	// POST /api/pools/{poolId}/resolve-sandbox-raw-secret
+	ResolveSandboxRawSecret(ctx context.Context, req *ResolveSandboxRawSecretBody, params ResolveSandboxRawSecretParams) (ResolveSandboxRawSecretRes, error)
 	// ResolveSandboxSecret implements resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.

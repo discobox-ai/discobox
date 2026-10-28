@@ -63,7 +63,7 @@ func stageAgedMaterial(t *testing.T, r *DockerSandboxRuntime, sandboxID string) 
 	if err := os.Chtimes(record, past, past); err != nil {
 		t.Fatalf("age material record: %v", err)
 	}
-	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, []string{"sk-" + sandboxID}, nil); err != nil {
+	if err := proxyagent.UpsertSandboxSentinels(r.root, r.projectID, r.poolID, sandboxID, []string{"sk-" + sandboxID}, nil, nil); err != nil {
 		t.Fatalf("UpsertSandboxSentinels() error = %v", err)
 	}
 }

@@ -143,6 +143,7 @@ const (
 	ReportSandboxSecretRejectionOperation          OperationName = "ReportSandboxSecretRejection"
 	ResolveGatewayHeadersOperation                 OperationName = "ResolveGatewayHeaders"
 	ResolvePoolAssetOperation                      OperationName = "ResolvePoolAsset"
+	ResolveSandboxRawSecretOperation               OperationName = "ResolveSandboxRawSecret"
 	ResolveSandboxSecretOperation                  OperationName = "ResolveSandboxSecret"
 	RestartSandboxOperation                        OperationName = "RestartSandbox"
 	RestartSandboxServiceOperation                 OperationName = "RestartSandboxService"

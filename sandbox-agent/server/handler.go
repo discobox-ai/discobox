@@ -25,6 +25,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/meta"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
+	"github.com/discobox-ai/discobox/sandbox-agent/rawsecrets"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 	"github.com/discobox-ai/discobox/sandbox-agent/services"
 	"github.com/discobox-ai/discobox/sandbox-agent/sourceconverge"
@@ -53,6 +54,9 @@ type handler struct {
 	// runtimeConfig is the pool's runtime-config intake (ADR 0126 §3), nil
 	// when the sandbox was started without one.
 	runtimeConfig *intake.Intake
+	// rawSecrets is told the raw secrets each applied document names
+	// (ADR 26-10-27-840 §3).
+	rawSecrets *rawsecrets.Holder
 	// sourceConverger clones the sources the applied document names (ADR
 	// 0126 §4), nil when the handler was built without one.
 	sourceConverger *sourceconverge.Converger
@@ -599,6 +603,10 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 			response.RuntimeConfigRevision = sandboxapi.NewOptInt64(revision)
 		}
 	}
+	// This agent takes the names of its raw secrets and asks its pool for
+	// their values, so the pool may name them in a document (ADR
+	// 26-10-27-840).
+	response.RawSecrets = sandboxapi.NewOptBool(true)
 	// The box's provisioning rides it too, so the console shows a feature
 	// still provisioning without entering the box (ADR 26-10-16-423 §6).
 	if h.provision != nil {

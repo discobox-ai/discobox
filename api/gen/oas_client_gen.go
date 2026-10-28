@@ -964,6 +964,12 @@ type Invoker interface {
 	//
 	// GET /api/pools/{poolId}/assets/{name}
 	ResolvePoolAsset(ctx context.Context, params ResolvePoolAssetParams) (ResolvePoolAssetRes, error)
+	// ResolveSandboxRawSecret invokes resolve-sandbox-raw-secret operation.
+	//
+	// Resolve the value of a sandbox's raw binding, to hand the sandbox and to watch its requests for.
+	//
+	// POST /api/pools/{poolId}/resolve-sandbox-raw-secret
+	ResolveSandboxRawSecret(ctx context.Context, request *ResolveSandboxRawSecretBody, params ResolveSandboxRawSecretParams) (ResolveSandboxRawSecretRes, error)
 	// ResolveSandboxSecret invokes resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.
@@ -17291,6 +17297,102 @@ func (c *Client) sendResolvePoolAsset(ctx context.Context, params ResolvePoolAss
 
 	stage = "DecodeResponse"
 	result, err := decodeResolvePoolAssetResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ResolveSandboxRawSecret invokes resolve-sandbox-raw-secret operation.
+//
+// Resolve the value of a sandbox's raw binding, to hand the sandbox and to watch its requests for.
+//
+// POST /api/pools/{poolId}/resolve-sandbox-raw-secret
+func (c *Client) ResolveSandboxRawSecret(ctx context.Context, request *ResolveSandboxRawSecretBody, params ResolveSandboxRawSecretParams) (ResolveSandboxRawSecretRes, error) {
+	res, err := c.sendResolveSandboxRawSecret(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendResolveSandboxRawSecret(ctx context.Context, request *ResolveSandboxRawSecretBody, params ResolveSandboxRawSecretParams) (res ResolveSandboxRawSecretRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("resolve-sandbox-raw-secret"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/resolve-sandbox-raw-secret"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ResolveSandboxRawSecretOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/resolve-sandbox-raw-secret"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeResolveSandboxRawSecretRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeResolveSandboxRawSecretResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

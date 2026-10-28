@@ -69,6 +69,12 @@ components:
                     description: Environment variable to deliver the credential's sentinel in; required with use
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                     type: string
+                raw:
+                    description: "Hand the discobox the value itself (ADR 26-10-27-840): env in envVar, or file, the path of a file holding it in envVar. Needs use and a secret that allows raw. Absent is a sentinel."
+                    enum:
+                        - env
+                        - file
+                    type: string
                 routes:
                     description: Routes that narrow the secret's for this binding; omitted or empty inherits the secret's
                     items:
@@ -1137,6 +1143,12 @@ components:
                 envVar:
                     description: Environment variable the credential's sentinel is delivered in; required with use
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                    type: string
+                raw:
+                    description: "Hand the new discobox the value itself (ADR 26-10-27-840). Only a person may; a discobox creating a discobox gives sentinels alone."
+                    enum:
+                        - env
+                        - file
                     type: string
                 routes:
                     description: Routes that narrow the secret's for this binding; omitted inherits them
@@ -2340,6 +2352,9 @@ components:
                     type: string
                 harnessConfigState:
                     type: string
+                rawSecrets:
+                    description: "Always true from a sandbox agent that takes raw secrets (ADR 26-10-27-840). The pool sends a runtime-config document's rawSecrets only to a sandbox that says so."
+                    type: boolean
                 sources:
                     items:
                         $ref: '#/components/schemas/SandboxAgentGitSourceStatus'
@@ -2563,6 +2578,14 @@ components:
             additionalProperties: false
             description: The pool's whole view of a running sandbox, delivered as one document with a revision (ADR 0126 §3) - everything about it that can change while it exists. What cannot is the static bootstrap, sandbox.json (ADR 26-10-08-127). Whole rather than incremental - a field that is absent is something the sandbox no longer has. The Go type is sandboxconfig.RuntimeConfig.
             properties:
+                rawSecrets:
+                    description: "The sandbox's raw secrets, variable to how it is delivered (ADR 26-10-27-840): env puts the value in the variable, file the path of a file under /run/discobox/raw-secrets holding it. Never a value - the sandbox agent asks its pool for those over its own mTLS link when this changes, and while it holds any. Sent only to a sandbox whose status advertised rawSecrets, because an older agent refuses the whole document over a field it does not know."
+                    additionalProperties:
+                        enum:
+                            - env
+                            - file
+                        type: string
+                    type: object
                 revision:
                     description: Orders documents, from 1. A sandbox applies a newer revision than it holds and ignores an older one. A newer document under a revision below 1 is refused as invalid (422) - the sandbox validates it, not the schema, so every invalid document is answered alike.
                     format: int64
@@ -2709,6 +2732,12 @@ components:
                 projectId:
                     description: Project ID
                     type: string
+                raw:
+                    description: "Hands the discobox the value itself rather than a sentinel (ADR 26-10-27-840): env puts it in envVar, file puts the path of a file under /run/discobox/raw-secrets holding it there. Absent is a sentinel."
+                    enum:
+                        - env
+                        - file
+                    type: string
                 requestId:
                     description: The request this binding answered, when one did
                     type: string
@@ -2778,12 +2807,13 @@ components:
                     description: 'Why, when something caused it: the request it answered, or the parent binding whose removal took it'
                     type: string
                 event:
-                    description: What happened
+                    description: What happened; delivered is a raw binding's value handed to the pool of a discobox it covers, once per value (ADR 26-10-27-840 §5)
                     enum:
                         - created
                         - updated
                         - deleted
                         - expired
+                        - delivered
                     type: string
                 id:
                     description: Event ID
@@ -4189,6 +4219,13 @@ components:
                     description: A new environment variable for a use binding
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                     type: string
+                raw:
+                    description: "Replace the delivery: env or file hands over the value itself (ADR 26-10-27-840), none delivers a sentinel again. Absent leaves it as it is."
+                    enum:
+                        - none
+                        - env
+                        - file
+                    type: string
                 routes:
                     description: Replacement routes; an empty array inherits the secret's again
                     items:
@@ -4446,6 +4483,58 @@ components:
                 - host
                 - outcome
             type: object
+        ResolveSandboxRawSecretBody:
+            additionalProperties: false
+            description: "Pool request for the value of one of its sandbox's raw bindings (ADR 26-10-27-840), by the sentinel that is its handle. There is no host: the value is handed to the sandbox itself, and the pool watches the sandbox's requests for it."
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ResolveSandboxRawSecretBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                sandboxId:
+                    description: Sandbox that holds the raw binding.
+                    type: string
+                sentinel:
+                    description: The raw binding's sentinel, as the pool was sent it in rawSecrets.
+                    type: string
+            required:
+                - sandboxId
+                - sentinel
+            type: object
+        ResolveSandboxRawSecretResponse:
+            additionalProperties: false
+            description: The value of a raw binding. The value is present only when status is approved; denied means the sandbox no longer holds the binding raw.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ResolveSandboxRawSecretResponse.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                status:
+                    description: Resolution status.
+                    enum:
+                        - approved
+                        - denied
+                    type: string
+                value:
+                    description: Real secret value; present only when status is approved.
+                    type: string
+                expiresAt:
+                    description: When the binding lapses, capped by the token's own expiry; empty when neither lapses. The pool asks again before then.
+                    format: date-time
+                    type: string
+                secretId:
+                    description: The secret the value is; present only when status is approved.
+                    type: string
+                bindingId:
+                    description: The raw binding the value was handed out under; present only when status is approved.
+                    type: string
+            required:
+                - status
+            type: object
         ResolveSandboxSecretBody:
             additionalProperties: false
             description: Worker request to resolve a sentinel placeholder observed by the proxy to its real secret value for a destination host.
@@ -4497,6 +4586,12 @@ components:
                     enum:
                         - use
                         - delegate
+                    type: string
+                raw:
+                    description: "The discobox holds the value itself (ADR 26-10-27-840): in envVar (env), or in a file whose path is in envVar (file)."
+                    enum:
+                        - env
+                        - file
                     type: string
                 secretId:
                     description: Secret backing the credential
@@ -4657,6 +4752,11 @@ components:
                 poolId:
                     description: Pool whose proxy recorded the exchange
                     type: string
+                rawBindingIds:
+                    description: "Raw bindings whose values this request carried, by ID (ADR 26-10-27-840): matched in it, not swapped. Their secrets are in swappedSecretIds as well. Absent means none, and from a pool agent that predates raw bindings."
+                    items:
+                        type: string
+                    type: array
                 requestBodyBytes:
                     description: Size of the recorded request body
                     format: int64
@@ -4763,6 +4863,11 @@ components:
                 poolId:
                     description: Pool whose proxy recorded the exchange
                     type: string
+                rawBindingIds:
+                    description: "Raw bindings whose values this request carried, by ID (ADR 26-10-27-840): matched in it, not swapped. Their secrets are in swappedSecretIds as well. Absent means none, and from a pool agent that predates raw bindings."
+                    items:
+                        type: string
+                    type: array
                 requestBodyBytes:
                     description: Size of the recorded request body
                     format: int64
@@ -5667,6 +5772,9 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                allowRaw:
+                    description: "Let a person bind the value itself, raw, to a discobox (ADR 26-10-27-840 §1). Off by default."
+                    type: boolean
                 exchange:
                     "$ref": '#/components/schemas/ExchangeRecipe'
                 format:
@@ -5841,6 +5949,9 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                allowRaw:
+                    description: "The value itself may be handed to a discobox by a raw binding a person makes (ADR 26-10-27-840 §1); clearing it deletes those bindings"
+                    type: boolean
                 anonymous:
                     description: Sandbox-managed secret created from an inline value; referenced only by ID
                     type: boolean
@@ -6361,6 +6472,9 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                allowRaw:
+                    description: "Let a person bind the value itself, raw, to a discobox (ADR 26-10-27-840 §1); false deletes the raw bindings that stand, absent leaves it as it is."
+                    type: boolean
                 exchange:
                     "$ref": '#/components/schemas/ExchangeRecipe'
                 format:
@@ -9017,6 +9131,45 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Resolve a sandbox sentinel secret
+            tags:
+                - Pools
+    /api/pools/{poolId}/resolve-sandbox-raw-secret:
+        post:
+            operationId: resolve-sandbox-raw-secret
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bearer worker assertion with the secret:resolve scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer worker assertion with the secret:resolve scope
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ResolveSandboxRawSecretBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ResolveSandboxRawSecretResponse'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Resolve the value of a sandbox's raw binding, to hand the sandbox and to watch its requests for
             tags:
                 - Pools
     /projects:

@@ -691,13 +691,14 @@ func (d *apiDataSource) Bindings(ctx context.Context, server string, filter tui.
 
 func toTUIBinding(b apimodel.SecretBinding) tui.SecretBinding {
 	binding := tui.SecretBinding{
-		ID:         b.ID,
-		SecretID:   b.SecretId,
-		SecretName: terminalSafe(strings.TrimSpace(b.SecretName.Or(""))),
-		TargetKind: string(b.TargetKind),
-		TargetID:   b.TargetId,
-		Use:        b.Use,
-		Delegate:   b.Delegate,
+		ID:          b.ID,
+		SecretID:    b.SecretId,
+		SecretName:  terminalSafe(strings.TrimSpace(b.SecretName.Or(""))),
+		TargetKind:  string(b.TargetKind),
+		TargetID:    b.TargetId,
+		Use:         b.Use,
+		Delegate:    b.Delegate,
+		RawDelivery: string(b.Raw.Or("")),
 		// A child binding's variable and routes are the asking or delegating
 		// discobox's words, escaped as every string the window draws is.
 		EnvVar:    terminalSafe(strings.TrimSpace(b.EnvVar.Or(""))),
