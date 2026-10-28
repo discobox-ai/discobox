@@ -108,7 +108,10 @@ GET /v1/credentials
 `hosts` the hosts of the routes it may be sent on, and `expiresAt` when the approval lapses; absent,
 it does not expire on its own. A credential with `purpose` `delegate` is one
 the caller may give the sandboxes it creates, and is not delivered to the
-caller itself, so it has no `envVar`.
+caller itself, so it has no `envVar`. `raw` (`env` or `file`) says a person
+handed over the value itself in `envVar`, or the path of a file holding it,
+rather than a placeholder; no request asks for that
+([ADR 26-10-27-840](adr/26-10-27-840-a-binding-may-hand-over-the-raw-value-held-in-memory-and-watched-for-at-the-proxy.md)).
 
 ## `request` — ask for something new
 

@@ -130,6 +130,7 @@ func (a *App) printHTTPAuditRecord(ctx context.Context, out io.Writer, asJSON bo
 		{"status", httpAuditDetailStatus(detail)},
 		{"duration", (time.Duration(detail.DurationMillis.Or(0)) * time.Millisecond).String()},
 		{"secrets", a.auditSecretNames(ctx, client, projectID, detail.SwappedSecretIds)},
+		{"raw bindings", terminalSafe(strings.Join(detail.RawBindingIds, ", "))},
 		{"gateway", auditFieldPair(detail.AppliedRuleId.Or(""), detail.AppliedPattern.Or(""))},
 		{"forwarded to", terminalSafe(detail.ForwardedUrl.Or(""))},
 		{"gateway headers", terminalSafe(strings.Join(detail.AppliedHeaders, ", "))},

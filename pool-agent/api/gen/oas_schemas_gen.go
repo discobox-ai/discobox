@@ -3060,6 +3060,69 @@ func (o OptNilHarnessVolumeArray) Or(d []HarnessVolume) []HarnessVolume {
 	return d
 }
 
+// NewOptNilPoolSandboxCreateRequestRawSecrets returns new OptNilPoolSandboxCreateRequestRawSecrets with value set to v.
+func NewOptNilPoolSandboxCreateRequestRawSecrets(v PoolSandboxCreateRequestRawSecrets) OptNilPoolSandboxCreateRequestRawSecrets {
+	return OptNilPoolSandboxCreateRequestRawSecrets{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilPoolSandboxCreateRequestRawSecrets is optional nullable PoolSandboxCreateRequestRawSecrets.
+type OptNilPoolSandboxCreateRequestRawSecrets struct {
+	Value PoolSandboxCreateRequestRawSecrets
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilPoolSandboxCreateRequestRawSecrets was set.
+func (o OptNilPoolSandboxCreateRequestRawSecrets) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilPoolSandboxCreateRequestRawSecrets) Reset() {
+	var v PoolSandboxCreateRequestRawSecrets
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilPoolSandboxCreateRequestRawSecrets) SetTo(v PoolSandboxCreateRequestRawSecrets) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilPoolSandboxCreateRequestRawSecrets) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilPoolSandboxCreateRequestRawSecrets) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v PoolSandboxCreateRequestRawSecrets
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilPoolSandboxCreateRequestRawSecrets) Get() (v PoolSandboxCreateRequestRawSecrets, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilPoolSandboxCreateRequestRawSecrets) Or(d PoolSandboxCreateRequestRawSecrets) PoolSandboxCreateRequestRawSecrets {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilPoolSandboxCreateRequestSecretEnv returns new OptNilPoolSandboxCreateRequestSecretEnv with value set to v.
 func NewOptNilPoolSandboxCreateRequestSecretEnv(v PoolSandboxCreateRequestSecretEnv) OptNilPoolSandboxCreateRequestSecretEnv {
 	return OptNilPoolSandboxCreateRequestSecretEnv{
@@ -3180,6 +3243,69 @@ func (o OptNilPoolSandboxCreateRequestSentinelRoutes) Get() (v PoolSandboxCreate
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilPoolSandboxCreateRequestSentinelRoutes) Or(d PoolSandboxCreateRequestSentinelRoutes) PoolSandboxCreateRequestSentinelRoutes {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilPoolSandboxUpdateRequestRawSecrets returns new OptNilPoolSandboxUpdateRequestRawSecrets with value set to v.
+func NewOptNilPoolSandboxUpdateRequestRawSecrets(v PoolSandboxUpdateRequestRawSecrets) OptNilPoolSandboxUpdateRequestRawSecrets {
+	return OptNilPoolSandboxUpdateRequestRawSecrets{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilPoolSandboxUpdateRequestRawSecrets is optional nullable PoolSandboxUpdateRequestRawSecrets.
+type OptNilPoolSandboxUpdateRequestRawSecrets struct {
+	Value PoolSandboxUpdateRequestRawSecrets
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilPoolSandboxUpdateRequestRawSecrets was set.
+func (o OptNilPoolSandboxUpdateRequestRawSecrets) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilPoolSandboxUpdateRequestRawSecrets) Reset() {
+	var v PoolSandboxUpdateRequestRawSecrets
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilPoolSandboxUpdateRequestRawSecrets) SetTo(v PoolSandboxUpdateRequestRawSecrets) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilPoolSandboxUpdateRequestRawSecrets) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilPoolSandboxUpdateRequestRawSecrets) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v PoolSandboxUpdateRequestRawSecrets
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilPoolSandboxUpdateRequestRawSecrets) Get() (v PoolSandboxUpdateRequestRawSecrets, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilPoolSandboxUpdateRequestRawSecrets) Or(d PoolSandboxUpdateRequestRawSecrets) PoolSandboxUpdateRequestRawSecrets {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -4466,6 +4592,10 @@ type PoolHTTPAuditExchange struct {
 	ID string `json:"id"`
 	// HTTP method.
 	Method string `json:"method"`
+	// Raw bindings whose values this request carried, by ID (ADR 26-10-27-840): matched in it, not
+	// swapped. Their secrets are in swappedSecretIds as well. Absent means none, and from a pool agent
+	// that predates raw bindings.
+	RawBindingIds []string `json:"rawBindingIds"`
 	// Size of the recorded request body.
 	RequestBodyBytes OptInt64 `json:"requestBodyBytes"`
 	// Size of the response body.
@@ -4529,6 +4659,11 @@ func (s *PoolHTTPAuditExchange) GetID() string {
 // GetMethod returns the value of Method.
 func (s *PoolHTTPAuditExchange) GetMethod() string {
 	return s.Method
+}
+
+// GetRawBindingIds returns the value of RawBindingIds.
+func (s *PoolHTTPAuditExchange) GetRawBindingIds() []string {
+	return s.RawBindingIds
 }
 
 // GetRequestBodyBytes returns the value of RequestBodyBytes.
@@ -4614,6 +4749,11 @@ func (s *PoolHTTPAuditExchange) SetID(val string) {
 // SetMethod sets the value of Method.
 func (s *PoolHTTPAuditExchange) SetMethod(val string) {
 	s.Method = val
+}
+
+// SetRawBindingIds sets the value of RawBindingIds.
+func (s *PoolHTTPAuditExchange) SetRawBindingIds(val []string) {
+	s.RawBindingIds = val
 }
 
 // SetRequestBodyBytes sets the value of RequestBodyBytes.
@@ -4703,6 +4843,10 @@ type PoolHTTPAuditExchangeDetail struct {
 	ID string `json:"id"`
 	// HTTP method.
 	Method string `json:"method"`
+	// Raw bindings whose values this request carried, by ID (ADR 26-10-27-840): matched in it, not
+	// swapped. Their secrets are in swappedSecretIds as well. Absent means none, and from a pool agent
+	// that predates raw bindings.
+	RawBindingIds []string `json:"rawBindingIds"`
 	// Size of the recorded request body.
 	RequestBodyBytes OptInt64 `json:"requestBodyBytes"`
 	// Why the request body was not recorded in full.
@@ -4838,6 +4982,11 @@ func (s *PoolHTTPAuditExchangeDetail) GetID() string {
 // GetMethod returns the value of Method.
 func (s *PoolHTTPAuditExchangeDetail) GetMethod() string {
 	return s.Method
+}
+
+// GetRawBindingIds returns the value of RawBindingIds.
+func (s *PoolHTTPAuditExchangeDetail) GetRawBindingIds() []string {
+	return s.RawBindingIds
 }
 
 // GetRequestBodyBytes returns the value of RequestBodyBytes.
@@ -5043,6 +5192,11 @@ func (s *PoolHTTPAuditExchangeDetail) SetID(val string) {
 // SetMethod sets the value of Method.
 func (s *PoolHTTPAuditExchangeDetail) SetMethod(val string) {
 	s.Method = val
+}
+
+// SetRawBindingIds sets the value of RawBindingIds.
+func (s *PoolHTTPAuditExchangeDetail) SetRawBindingIds(val []string) {
+	s.RawBindingIds = val
 }
 
 // SetRequestBodyBytes sets the value of RequestBodyBytes.
@@ -5332,6 +5486,11 @@ type PoolSandboxCreateRequest struct {
 	// Sentinel placeholder values injected into this sandbox. The pool registers them with the proxy so
 	// their real secret values are swapped at runtime.
 	Sentinels OptNilStringArray `json:"sentinels"`
+	// The sentinels of this sandbox's raw bindings, keyed by sentinel (ADR 26-10-27-840): handles the
+	// pool resolves the value by, to hand the sandbox and to watch its requests for, and never delivered
+	// into it. Their route lists are in sentinelRoutes. Sent only when there are any, so a pool that
+	// predates them is not sent the field.
+	RawSecrets OptNilPoolSandboxCreateRequestRawSecrets `json:"rawSecrets"`
 	// The route lists each stable sentinel is held to, keyed by sentinel (ADR 26-10-27-880 §4) — its
 	// secret's, its binding's when the binding has any, and its parent's. Every request carrying the
 	// sentinel must be allowed by every list; a sentinel with no lists, or an empty list, is sent
@@ -5401,6 +5560,11 @@ func (s *PoolSandboxCreateRequest) GetSandboxId() string {
 // GetSentinels returns the value of Sentinels.
 func (s *PoolSandboxCreateRequest) GetSentinels() OptNilStringArray {
 	return s.Sentinels
+}
+
+// GetRawSecrets returns the value of RawSecrets.
+func (s *PoolSandboxCreateRequest) GetRawSecrets() OptNilPoolSandboxCreateRequestRawSecrets {
+	return s.RawSecrets
 }
 
 // GetSentinelRoutes returns the value of SentinelRoutes.
@@ -5473,6 +5637,11 @@ func (s *PoolSandboxCreateRequest) SetSentinels(val OptNilStringArray) {
 	s.Sentinels = val
 }
 
+// SetRawSecrets sets the value of RawSecrets.
+func (s *PoolSandboxCreateRequest) SetRawSecrets(val OptNilPoolSandboxCreateRequestRawSecrets) {
+	s.RawSecrets = val
+}
+
 // SetSentinelRoutes sets the value of SentinelRoutes.
 func (s *PoolSandboxCreateRequest) SetSentinelRoutes(val OptNilPoolSandboxCreateRequestSentinelRoutes) {
 	s.SentinelRoutes = val
@@ -5481,6 +5650,21 @@ func (s *PoolSandboxCreateRequest) SetSentinelRoutes(val OptNilPoolSandboxCreate
 // SetSecretEnv sets the value of SecretEnv.
 func (s *PoolSandboxCreateRequest) SetSecretEnv(val OptNilPoolSandboxCreateRequestSecretEnv) {
 	s.SecretEnv = val
+}
+
+// The sentinels of this sandbox's raw bindings, keyed by sentinel (ADR 26-10-27-840): handles the
+// pool resolves the value by, to hand the sandbox and to watch its requests for, and never delivered
+// into it. Their route lists are in sentinelRoutes. Sent only when there are any, so a pool that
+// predates them is not sent the field.
+type PoolSandboxCreateRequestRawSecrets map[string]RawSentinel
+
+func (s *PoolSandboxCreateRequestRawSecrets) init() PoolSandboxCreateRequestRawSecrets {
+	m := *s
+	if m == nil {
+		m = map[string]RawSentinel{}
+		*s = m
+	}
+	return m
 }
 
 // Secret-bound environment variable name to sentinel placeholder value. Delivered to the sandbox
@@ -6008,6 +6192,9 @@ type PoolSandboxUpdateRequest struct {
 	// Replacement sentinel placeholder set for a running sandbox. The pool re-registers them with the
 	// proxy so newly bound secrets resolve without a restart.
 	Sentinels OptNilStringArray `json:"sentinels"`
+	// Replacement raw sentinels keyed by sentinel, sent with sentinels when the sandbox has any; absent
+	// with sentinels present removes them (ADR 26-10-27-840).
+	RawSecrets OptNilPoolSandboxUpdateRequestRawSecrets `json:"rawSecrets"`
 	// Replacement route lists keyed by stable sentinel, sent with sentinels and replacing the sandbox's
 	// whole map (ADR 26-10-27-880 §4).
 	SentinelRoutes OptNilPoolSandboxUpdateRequestSentinelRoutes `json:"sentinelRoutes"`
@@ -6044,6 +6231,11 @@ func (s *PoolSandboxUpdateRequest) GetGateways() OptNilGatewayArray {
 // GetSentinels returns the value of Sentinels.
 func (s *PoolSandboxUpdateRequest) GetSentinels() OptNilStringArray {
 	return s.Sentinels
+}
+
+// GetRawSecrets returns the value of RawSecrets.
+func (s *PoolSandboxUpdateRequest) GetRawSecrets() OptNilPoolSandboxUpdateRequestRawSecrets {
+	return s.RawSecrets
 }
 
 // GetSentinelRoutes returns the value of SentinelRoutes.
@@ -6086,6 +6278,11 @@ func (s *PoolSandboxUpdateRequest) SetSentinels(val OptNilStringArray) {
 	s.Sentinels = val
 }
 
+// SetRawSecrets sets the value of RawSecrets.
+func (s *PoolSandboxUpdateRequest) SetRawSecrets(val OptNilPoolSandboxUpdateRequestRawSecrets) {
+	s.RawSecrets = val
+}
+
 // SetSentinelRoutes sets the value of SentinelRoutes.
 func (s *PoolSandboxUpdateRequest) SetSentinelRoutes(val OptNilPoolSandboxUpdateRequestSentinelRoutes) {
 	s.SentinelRoutes = val
@@ -6094,6 +6291,19 @@ func (s *PoolSandboxUpdateRequest) SetSentinelRoutes(val OptNilPoolSandboxUpdate
 // SetSecretEnv sets the value of SecretEnv.
 func (s *PoolSandboxUpdateRequest) SetSecretEnv(val OptNilPoolSandboxUpdateRequestSecretEnv) {
 	s.SecretEnv = val
+}
+
+// Replacement raw sentinels keyed by sentinel, sent with sentinels when the sandbox has any; absent
+// with sentinels present removes them (ADR 26-10-27-840).
+type PoolSandboxUpdateRequestRawSecrets map[string]RawSentinel
+
+func (s *PoolSandboxUpdateRequestRawSecrets) init() PoolSandboxUpdateRequestRawSecrets {
+	m := *s
+	if m == nil {
+		m = map[string]RawSentinel{}
+		*s = m
+	}
+	return m
 }
 
 // Replacement secret-bound environment variable name to sentinel placeholder map for a running
@@ -6234,6 +6444,79 @@ func (s *PoolSyncRequest) SetSchema(val OptURI) {
 // SetKnownPoolIds sets the value of KnownPoolIds.
 func (s *PoolSyncRequest) SetKnownPoolIds(val []string) {
 	s.KnownPoolIds = val
+}
+
+// How a raw binding's value is delivered in its sandbox (ADR 26-10-27-840).
+// Ref: #/components/schemas/RawSentinel
+type RawSentinel struct {
+	// The variable the value, or the path of the file holding it, is delivered in.
+	EnvName string `json:"envName"`
+	// Env sets the variable to the value; file sets it to the path of a file under
+	// /run/discobox/raw-secrets holding it.
+	Delivery RawSentinelDelivery `json:"delivery"`
+}
+
+// GetEnvName returns the value of EnvName.
+func (s *RawSentinel) GetEnvName() string {
+	return s.EnvName
+}
+
+// GetDelivery returns the value of Delivery.
+func (s *RawSentinel) GetDelivery() RawSentinelDelivery {
+	return s.Delivery
+}
+
+// SetEnvName sets the value of EnvName.
+func (s *RawSentinel) SetEnvName(val string) {
+	s.EnvName = val
+}
+
+// SetDelivery sets the value of Delivery.
+func (s *RawSentinel) SetDelivery(val RawSentinelDelivery) {
+	s.Delivery = val
+}
+
+// Env sets the variable to the value; file sets it to the path of a file under
+// /run/discobox/raw-secrets holding it.
+type RawSentinelDelivery string
+
+const (
+	RawSentinelDeliveryEnv  RawSentinelDelivery = "env"
+	RawSentinelDeliveryFile RawSentinelDelivery = "file"
+)
+
+// AllValues returns all RawSentinelDelivery values.
+func (RawSentinelDelivery) AllValues() []RawSentinelDelivery {
+	return []RawSentinelDelivery{
+		RawSentinelDeliveryEnv,
+		RawSentinelDeliveryFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RawSentinelDelivery) MarshalText() ([]byte, error) {
+	switch s {
+	case RawSentinelDeliveryEnv:
+		return []byte(s), nil
+	case RawSentinelDeliveryFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RawSentinelDelivery) UnmarshalText(data []byte) error {
+	switch RawSentinelDelivery(data) {
+	case RawSentinelDeliveryEnv:
+		*s = RawSentinelDeliveryEnv
+		return nil
+	case RawSentinelDeliveryFile:
+		*s = RawSentinelDeliveryFile
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/ResolvedHarnessConfig

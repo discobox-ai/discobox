@@ -952,6 +952,15 @@ options, catching what changed while the sandbox was down. A required secret
 of the harness config that nothing delivers refuses the create
 (`checkRequiredSecrets`).
 
+A raw binding ([ADR 26-10-27-840](../../../../docs/adr/26-10-27-840-a-binding-may-hand-over-the-raw-value-held-in-memory-and-watched-for-at-the-proxy.md))
+materializes the same way, its row carrying the delivery (`SandboxSecret.Raw`).
+Its sentinel is only the pool's handle for the value: every send of the set
+(`sentinelDelivery`) puts it in `RawSecrets`, with its route lists in
+`SentinelRoutes`, never among the sentinels or in the secret environment, and
+neither a harness run in the sandbox (`AssignSandboxHarnessSecrets`) nor a
+harness capture is handed it. `RawSecrets` is sent only when there are any, so
+a pool that predates them is not sent a field it would refuse.
+
 A change to a binding, or to a secret's routes (ADR 26-10-02-924), is
 delivered level-triggered by a reconciler of its own, `SentinelReconciler`
 (`sandboxSentinels`, keyed like the sandbox): the write marks every sandbox it

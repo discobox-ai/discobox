@@ -10,7 +10,9 @@ import (
 
 	"gorm.io/gorm"
 
+	apigen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -112,8 +114,12 @@ func (s *Service) CreateSecretBinding(ctx context.Context, projectID string, inp
 		Delegate:   delegate,
 		EnvName:    strings.TrimSpace(input.EnvVar.Or("")),
 		Routes:     routes,
+		Raw:        string(input.Raw.Or("")),
 	}
 	if err := checkBindingShape(binding); err != nil {
+		return nil, err
+	}
+	if err := checkRawBinding(ctx, binding, secret); err != nil {
 		return nil, err
 	}
 	ttl, named := input.TtlSeconds.Get()
@@ -155,11 +161,37 @@ func checkBindingShape(binding *model.SecretBinding) error {
 	return nil
 }
 
+// checkRawBinding refuses a raw binding that may not be (ADR 26-10-27-840
+// §§1-2): one with no valid delivery, one not for use, one of a secret that
+// does not allow raw, one handed on under a delegation, and one a discobox
+// makes. A sentinel binding passes.
+func checkRawBinding(ctx context.Context, binding *model.SecretBinding, secret *model.Secret) error {
+	if binding.Raw == "" {
+		return nil
+	}
+	principal, _ := auth.PrincipalFromContext(ctx)
+	switch {
+	case !sandboxconfig.ValidRawDelivery(binding.Raw):
+		return apperrors.NewStatusError(http.StatusBadRequest, "a raw binding delivers the value in its variable (env) or in a file whose path is in it (file)")
+	case !binding.Use:
+		return apperrors.NewStatusError(http.StatusBadRequest, "a raw binding hands the value over to use; a delegation alone delivers nothing")
+	case !secret.AllowRaw:
+		return apperrors.NewStatusError(http.StatusForbidden,
+			fmt.Sprintf("secret %s does not allow its value to be handed over raw; a person allows it on the secret first", secret.Name))
+	case binding.ParentID != "" || principal.Type == auth.PrincipalTypeSandbox:
+		return apperrors.NewStatusError(http.StatusForbidden,
+			"only a person hands a value over raw: a discobox hands on a sentinel, which can be taken back")
+	}
+	return nil
+}
+
 // UpdateSecretBinding changes a binding's routes, lifetime, variable, or what
 // it is for. A lifetime named runs from now, held to the secret's limit and,
 // for a binding handed on, to its parent's. Turning use off takes the variable
 // away, and its sentinel with it; turning use on needs a free variable.
-// Turning delegate off removes every binding handed on under this one, each
+// A delivery named makes it raw or a sentinel again (checkRawBinding); use
+// off makes it a sentinel. Turning delegate off removes every binding handed
+// on under this one, each
 // with its event; turning it on is refused for a binding handed on itself,
 // since no chain grows from a discobox (ADR 26-10-27-880 §3). A binding left
 // for neither is refused: remove it instead.
@@ -185,6 +217,13 @@ func (s *Service) UpdateSecretBinding(ctx context.Context, projectID, bindingID 
 		binding.Use = use
 		if !use {
 			binding.EnvName = ""
+			binding.Raw = ""
+		}
+	}
+	if raw, ok := input.Raw.Get(); ok {
+		binding.Raw = string(raw)
+		if raw == apigen.UpdateSecretBindingBodyRawNone {
+			binding.Raw = ""
 		}
 	}
 	if env, ok := input.EnvVar.Get(); ok {
@@ -202,6 +241,9 @@ func (s *Service) UpdateSecretBinding(ctx context.Context, projectID, bindingID 
 			"a binding for neither use nor delegation does nothing; remove it instead")
 	}
 	if err := checkBindingShape(binding); err != nil {
+		return nil, err
+	}
+	if err := checkRawBinding(ctx, binding, secret); err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
@@ -461,6 +503,7 @@ func (s *Service) PrepareSandboxBindings(ctx context.Context, projectID string, 
 			Use:        in.Use.Or(!delegate),
 			Delegate:   delegate,
 			EnvName:    strings.TrimSpace(in.EnvVar.Or("")),
+			Raw:        string(in.Raw.Or("")),
 			CreatedBy:  out.Actor,
 		}
 		var err error
@@ -485,6 +528,9 @@ func (s *Service) PrepareSandboxBindings(ctx context.Context, projectID string, 
 			return SandboxBindings{}, err
 		}
 		binding.SecretID, binding.SecretName = secret.ID, secret.Name
+		if err := checkRawBinding(ctx, binding, secret); err != nil {
+			return SandboxBindings{}, err
+		}
 		if binding.Use {
 			if bound[binding.EnvName] {
 				return SandboxBindings{}, apperrors.NewStatusError(http.StatusBadRequest,

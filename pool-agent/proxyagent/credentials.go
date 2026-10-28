@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/proxy"
 )
 
@@ -46,12 +47,15 @@ type controlPlaneCredentials struct {
 // Purpose is read when the control plane says it: a delegate grant, which is
 // nothing the sandbox is delivered.
 type credentialDoc struct {
-	Name      string     `json:"name"`
-	EnvVar    string     `json:"envVar"`
-	Hosts     []string   `json:"hosts,omitempty"`
-	SecretID  string     `json:"secretId"`
-	GrantID   string     `json:"grantId"`
-	Purpose   string     `json:"purpose,omitempty"`
+	Name     string   `json:"name"`
+	EnvVar   string   `json:"envVar"`
+	Hosts    []string `json:"hosts,omitempty"`
+	SecretID string   `json:"secretId"`
+	GrantID  string   `json:"grantId"`
+	Purpose  string   `json:"purpose,omitempty"`
+	// Raw is how the sandbox holds the value itself, when it does rather
+	// than a sentinel (ADR 26-10-27-840).
+	Raw       string     `json:"raw,omitempty"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
@@ -210,6 +214,7 @@ func (b *credentialBroker) List(ctx context.Context) ([]agentcreds.Credential, e
 			EnvVar:    doc.EnvVar,
 			Hosts:     doc.Hosts,
 			Purpose:   doc.Purpose,
+			Raw:       doc.Raw,
 			ExpiresAt: doc.ExpiresAt,
 		})
 	}
@@ -222,12 +227,27 @@ func (b *credentialBroker) List(ctx context.Context) ([]agentcreds.Credential, e
 // this sandbox's egress exchanges, never the credential; the sandbox already
 // holds each one in its secret environment, which this re-reads for a process
 // started before it changed.
+//
+// A raw secret delivered in a file (ADR 26-10-27-840) is its variable and the
+// file's path, which is all its variable ever holds; one delivered as its
+// value is left out, since the value is the one thing this never hands a
+// process that asks.
 func (b *credentialBroker) Environment(context.Context) (map[string]string, error) {
 	doc, err := readSecretsDoc(b.secretsPath)
 	if err != nil {
 		return nil, err
 	}
-	return maps.Clone(doc.Environment[b.sandboxID]), nil
+	env := maps.Clone(doc.Environment[b.sandboxID])
+	for _, raw := range doc.Raw[b.sandboxID] {
+		if raw.Delivery != sandboxconfig.RawDeliveryFile {
+			continue
+		}
+		if env == nil {
+			env = map[string]string{}
+		}
+		env[raw.EnvName] = sandboxconfig.RawSecretPath(raw.EnvName)
+	}
+	return env, nil
 }
 
 func (b *credentialBroker) Request(ctx context.Context, body agentcreds.RequestBody) (agentcreds.RequestStatus, error) {

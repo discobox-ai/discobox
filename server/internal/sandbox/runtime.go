@@ -180,6 +180,14 @@ type StateEvent struct {
 	ProviderID string
 }
 
+// RawSecret is how a raw binding's value is delivered in its sandbox (ADR
+// 26-10-27-840): the variable, and sandboxconfig.RawDeliveryEnv or
+// RawDeliveryFile.
+type RawSecret struct {
+	EnvName  string
+	Delivery string
+}
+
 // CreateOptions configures sandbox creation.
 type CreateOptions struct {
 	HarnessChangeID string
@@ -207,6 +215,11 @@ type CreateOptions struct {
 	// carrying it must pass: one per binding layer, each of which must allow
 	// (ADR 26-10-27-880 §4). A sentinel with no lists is sent nowhere.
 	SentinelRoutes map[string][][]secretroute.Route
+	// RawSecrets are the sandbox's raw bindings (ADR 26-10-27-840), keyed by
+	// the sentinel that is the pool's handle for the value. A raw binding's
+	// sentinel is in neither Sentinels nor SecretEnv, since it is never
+	// delivered into the sandbox; its route lists are in SentinelRoutes.
+	RawSecrets map[string]RawSecret
 	// SecretEnv maps each secret-bound environment variable name to its
 	// sentinel placeholder value. Unlike Env, these never ride in the static
 	// sandbox.json document (docs/adr/0012 §3) — the provider delivers them
@@ -307,6 +320,9 @@ type UpdateOptions struct {
 	// Sentinels, and is sent whenever Sentinels is. It mirrors
 	// CreateOptions.SentinelRoutes.
 	SentinelRoutes map[string][][]secretroute.Route
+	// RawSecrets replaces the raw bindings along with Sentinels, and is sent
+	// whenever Sentinels is. It mirrors CreateOptions.RawSecrets.
+	RawSecrets map[string]RawSecret
 	// Egress replaces the sandbox's effective egress policy at the pool proxy,
 	// whether or not its container exists. Nil leaves it as it is.
 	Egress *egress.Policy
@@ -431,6 +447,10 @@ type HTTPAuditExchange struct {
 	// optional, where an empty list and an absent one say the same, and a nil
 	// slice must not reach the API's decoder as null.
 	SwappedSecretIDs []string `json:"swappedSecretIds,omitempty"`
+	// RawBindingIDs are the raw bindings whose values the request carried,
+	// matched rather than swapped (ADR 26-10-27-840 §5); their secrets are in
+	// SwappedSecretIDs too. Omitted when empty, as SwappedSecretIDs is.
+	RawBindingIDs    []string `json:"rawBindingIds,omitempty"`
 	RequestBodyBytes int64    `json:"requestBodyBytes"`
 	ResponseBytes    int64    `json:"responseBytes"`
 	Upgrade          bool     `json:"upgrade"`

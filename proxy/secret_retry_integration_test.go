@@ -702,3 +702,23 @@ func TestHTTPProxyAuthorizesEverySentinelTheRetryCarries(t *testing.T) {
 		t.Fatalf("the retry was authorized over %v, want every sentinel it carries %v", asked[1], want)
 	}
 }
+
+// ResolveRaw: rotatingResolver holds no raw secrets.
+func (r *rotatingResolver) ResolveRaw(context.Context, secrets.RawRequest) (secrets.RawResult, error) {
+	return secrets.RawResult{}, secrets.ErrDenied
+}
+
+// ResolveRaw: settableResolver holds no raw secrets.
+func (r *settableResolver) ResolveRaw(context.Context, secrets.RawRequest) (secrets.RawResult, error) {
+	return secrets.RawResult{}, secrets.ErrDenied
+}
+
+// ResolveRaw: revokingResolver holds no raw secrets.
+func (r *revokingResolver) ResolveRaw(context.Context, secrets.RawRequest) (secrets.RawResult, error) {
+	return secrets.RawResult{}, secrets.ErrDenied
+}
+
+// ResolveRaw: flakyResolver holds no raw secrets.
+func (r *flakyResolver) ResolveRaw(context.Context, secrets.RawRequest) (secrets.RawResult, error) {
+	return secrets.RawResult{}, secrets.ErrDenied
+}

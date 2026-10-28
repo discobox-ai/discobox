@@ -1804,6 +1804,9 @@ type CreateSecretBindingBody struct {
 	Delegate OptBool `json:"delegate"`
 	// Environment variable to deliver the credential's sentinel in; required with use.
 	EnvVar OptString `json:"envVar"`
+	// Hand the discobox the value itself (ADR 26-10-27-840): env in envVar, or file, the path of a file
+	// holding it in envVar. Needs use and a secret that allows raw. Absent is a sentinel.
+	Raw OptCreateSecretBindingBodyRaw `json:"raw"`
 	// Routes that narrow the secret's for this binding; omitted or empty inherits the secret's.
 	Routes []SecretRouteInput `json:"routes"`
 	// The secret, by name or ID.
@@ -1833,6 +1836,11 @@ func (s *CreateSecretBindingBody) GetDelegate() OptBool {
 // GetEnvVar returns the value of EnvVar.
 func (s *CreateSecretBindingBody) GetEnvVar() OptString {
 	return s.EnvVar
+}
+
+// GetRaw returns the value of Raw.
+func (s *CreateSecretBindingBody) GetRaw() OptCreateSecretBindingBodyRaw {
+	return s.Raw
 }
 
 // GetRoutes returns the value of Routes.
@@ -1880,6 +1888,11 @@ func (s *CreateSecretBindingBody) SetEnvVar(val OptString) {
 	s.EnvVar = val
 }
 
+// SetRaw sets the value of Raw.
+func (s *CreateSecretBindingBody) SetRaw(val OptCreateSecretBindingBodyRaw) {
+	s.Raw = val
+}
+
 // SetRoutes sets the value of Routes.
 func (s *CreateSecretBindingBody) SetRoutes(val []SecretRouteInput) {
 	s.Routes = val
@@ -1908,6 +1921,49 @@ func (s *CreateSecretBindingBody) SetTtlSeconds(val OptInt64) {
 // SetUse sets the value of Use.
 func (s *CreateSecretBindingBody) SetUse(val OptBool) {
 	s.Use = val
+}
+
+// Hand the discobox the value itself (ADR 26-10-27-840): env in envVar, or file, the path of a file
+// holding it in envVar. Needs use and a secret that allows raw. Absent is a sentinel.
+type CreateSecretBindingBodyRaw string
+
+const (
+	CreateSecretBindingBodyRawEnv  CreateSecretBindingBodyRaw = "env"
+	CreateSecretBindingBodyRawFile CreateSecretBindingBodyRaw = "file"
+)
+
+// AllValues returns all CreateSecretBindingBodyRaw values.
+func (CreateSecretBindingBodyRaw) AllValues() []CreateSecretBindingBodyRaw {
+	return []CreateSecretBindingBodyRaw{
+		CreateSecretBindingBodyRawEnv,
+		CreateSecretBindingBodyRawFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CreateSecretBindingBodyRaw) MarshalText() ([]byte, error) {
+	switch s {
+	case CreateSecretBindingBodyRawEnv:
+		return []byte(s), nil
+	case CreateSecretBindingBodyRawFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CreateSecretBindingBodyRaw) UnmarshalText(data []byte) error {
+	switch CreateSecretBindingBodyRaw(data) {
+	case CreateSecretBindingBodyRawEnv:
+		*s = CreateSecretBindingBodyRawEnv
+		return nil
+	case CreateSecretBindingBodyRawFile:
+		*s = CreateSecretBindingBodyRawFile
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // What the binding is for: every discobox of the project, every discobox on a harness config, or one
@@ -1963,7 +2019,9 @@ func (s *CreateSecretBindingBodyTargetKind) UnmarshalText(data []byte) error {
 // Ref: #/components/schemas/CreateSecretBody
 type CreateSecretBody struct {
 	// A URL to the JSON Schema for this object.
-	Schema   OptURI            `json:"$schema"`
+	Schema OptURI `json:"$schema"`
+	// Let a person bind the value itself, raw, to a discobox (ADR 26-10-27-840 §1). Off by default.
+	AllowRaw OptBool           `json:"allowRaw"`
 	Exchange OptExchangeRecipe `json:"exchange"`
 	// Template the sentinels for this secret are minted from: literal text with {charset:length} tokens,
 	// such as sk-ant-oat01-{base64url:95}. Charsets are digits, hex, HEX, lower, upper, alnum, base62,
@@ -1997,6 +2055,11 @@ type CreateSecretBody struct {
 // GetSchema returns the value of Schema.
 func (s *CreateSecretBody) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetAllowRaw returns the value of AllowRaw.
+func (s *CreateSecretBody) GetAllowRaw() OptBool {
+	return s.AllowRaw
 }
 
 // GetExchange returns the value of Exchange.
@@ -2052,6 +2115,11 @@ func (s *CreateSecretBody) GetValue() SecretValue {
 // SetSchema sets the value of Schema.
 func (s *CreateSecretBody) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetAllowRaw sets the value of AllowRaw.
+func (s *CreateSecretBody) SetAllowRaw(val OptBool) {
+	s.AllowRaw = val
 }
 
 // SetExchange sets the value of Exchange.
@@ -2686,6 +2754,7 @@ func (*ErrorModelStatusCode) reportSandboxInventoriesRes()              {}
 func (*ErrorModelStatusCode) reportSandboxSecretRejectionRes()          {}
 func (*ErrorModelStatusCode) resolveGatewayHeadersRes()                 {}
 func (*ErrorModelStatusCode) resolvePoolAssetRes()                      {}
+func (*ErrorModelStatusCode) resolveSandboxRawSecretRes()               {}
 func (*ErrorModelStatusCode) resolveSandboxSecretRes()                  {}
 func (*ErrorModelStatusCode) restartSandboxRes()                        {}
 func (*ErrorModelStatusCode) saveSandboxHarnessConfigChangesRes()       {}
@@ -3809,6 +3878,10 @@ type HTTPAuditExchange struct {
 	Method string `json:"method"`
 	// Pool whose proxy recorded the exchange.
 	PoolId string `json:"poolId"`
+	// Raw bindings whose values this request carried, by ID (ADR 26-10-27-840): matched in it, not
+	// swapped. Their secrets are in swappedSecretIds as well. Absent means none, and from a pool agent
+	// that predates raw bindings.
+	RawBindingIds []string `json:"rawBindingIds"`
 	// Size of the recorded request body.
 	RequestBodyBytes OptInt64 `json:"requestBodyBytes"`
 	// Size of the response body.
@@ -3877,6 +3950,11 @@ func (s *HTTPAuditExchange) GetMethod() string {
 // GetPoolId returns the value of PoolId.
 func (s *HTTPAuditExchange) GetPoolId() string {
 	return s.PoolId
+}
+
+// GetRawBindingIds returns the value of RawBindingIds.
+func (s *HTTPAuditExchange) GetRawBindingIds() []string {
+	return s.RawBindingIds
 }
 
 // GetRequestBodyBytes returns the value of RequestBodyBytes.
@@ -3969,6 +4047,11 @@ func (s *HTTPAuditExchange) SetPoolId(val string) {
 	s.PoolId = val
 }
 
+// SetRawBindingIds sets the value of RawBindingIds.
+func (s *HTTPAuditExchange) SetRawBindingIds(val []string) {
+	s.RawBindingIds = val
+}
+
 // SetRequestBodyBytes sets the value of RequestBodyBytes.
 func (s *HTTPAuditExchange) SetRequestBodyBytes(val OptInt64) {
 	s.RequestBodyBytes = val
@@ -4056,6 +4139,10 @@ type HTTPAuditExchangeDetail struct {
 	Method string `json:"method"`
 	// Pool whose proxy recorded the exchange.
 	PoolId string `json:"poolId"`
+	// Raw bindings whose values this request carried, by ID (ADR 26-10-27-840): matched in it, not
+	// swapped. Their secrets are in swappedSecretIds as well. Absent means none, and from a pool agent
+	// that predates raw bindings.
+	RawBindingIds []string `json:"rawBindingIds"`
 	// Size of the recorded request body.
 	RequestBodyBytes OptInt64 `json:"requestBodyBytes"`
 	// Why the request body was not recorded in full.
@@ -4196,6 +4283,11 @@ func (s *HTTPAuditExchangeDetail) GetMethod() string {
 // GetPoolId returns the value of PoolId.
 func (s *HTTPAuditExchangeDetail) GetPoolId() string {
 	return s.PoolId
+}
+
+// GetRawBindingIds returns the value of RawBindingIds.
+func (s *HTTPAuditExchangeDetail) GetRawBindingIds() []string {
+	return s.RawBindingIds
 }
 
 // GetRequestBodyBytes returns the value of RequestBodyBytes.
@@ -4406,6 +4498,11 @@ func (s *HTTPAuditExchangeDetail) SetMethod(val string) {
 // SetPoolId sets the value of PoolId.
 func (s *HTTPAuditExchangeDetail) SetPoolId(val string) {
 	s.PoolId = val
+}
+
+// SetRawBindingIds sets the value of RawBindingIds.
+func (s *HTTPAuditExchangeDetail) SetRawBindingIds(val []string) {
+	s.RawBindingIds = val
 }
 
 // SetRequestBodyBytes sets the value of RequestBodyBytes.
@@ -9058,6 +9155,52 @@ func (o OptCreateSandboxExecWait) Or(d CreateSandboxExecWait) CreateSandboxExecW
 	return d
 }
 
+// NewOptCreateSecretBindingBodyRaw returns new OptCreateSecretBindingBodyRaw with value set to v.
+func NewOptCreateSecretBindingBodyRaw(v CreateSecretBindingBodyRaw) OptCreateSecretBindingBodyRaw {
+	return OptCreateSecretBindingBodyRaw{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCreateSecretBindingBodyRaw is optional CreateSecretBindingBodyRaw.
+type OptCreateSecretBindingBodyRaw struct {
+	Value CreateSecretBindingBodyRaw
+	Set   bool
+}
+
+// IsSet returns true if OptCreateSecretBindingBodyRaw was set.
+func (o OptCreateSecretBindingBodyRaw) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCreateSecretBindingBodyRaw) Reset() {
+	var v CreateSecretBindingBodyRaw
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCreateSecretBindingBodyRaw) SetTo(v CreateSecretBindingBodyRaw) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCreateSecretBindingBodyRaw) Get() (v CreateSecretBindingBodyRaw, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCreateSecretBindingBodyRaw) Or(d CreateSecretBindingBodyRaw) CreateSecretBindingBodyRaw {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptDateTime returns new OptDateTime with value set to v.
 func NewOptDateTime(v time.Time) OptDateTime {
 	return OptDateTime{
@@ -13485,6 +13628,52 @@ func (o OptSandboxAutomaticRepair) Or(d SandboxAutomaticRepair) SandboxAutomatic
 	return d
 }
 
+// NewOptSandboxBindingInputRaw returns new OptSandboxBindingInputRaw with value set to v.
+func NewOptSandboxBindingInputRaw(v SandboxBindingInputRaw) OptSandboxBindingInputRaw {
+	return OptSandboxBindingInputRaw{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxBindingInputRaw is optional SandboxBindingInputRaw.
+type OptSandboxBindingInputRaw struct {
+	Value SandboxBindingInputRaw
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxBindingInputRaw was set.
+func (o OptSandboxBindingInputRaw) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxBindingInputRaw) Reset() {
+	var v SandboxBindingInputRaw
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxBindingInputRaw) SetTo(v SandboxBindingInputRaw) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxBindingInputRaw) Get() (v SandboxBindingInputRaw, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxBindingInputRaw) Or(d SandboxBindingInputRaw) SandboxBindingInputRaw {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxCPUConsumption returns new OptSandboxCPUConsumption with value set to v.
 func NewOptSandboxCPUConsumption(v SandboxCPUConsumption) OptSandboxCPUConsumption {
 	return OptSandboxCPUConsumption{
@@ -14037,6 +14226,52 @@ func (o OptSandboxCredentialPurpose) Or(d SandboxCredentialPurpose) SandboxCrede
 	return d
 }
 
+// NewOptSandboxCredentialRaw returns new OptSandboxCredentialRaw with value set to v.
+func NewOptSandboxCredentialRaw(v SandboxCredentialRaw) OptSandboxCredentialRaw {
+	return OptSandboxCredentialRaw{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCredentialRaw is optional SandboxCredentialRaw.
+type OptSandboxCredentialRaw struct {
+	Value SandboxCredentialRaw
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCredentialRaw was set.
+func (o OptSandboxCredentialRaw) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCredentialRaw) Reset() {
+	var v SandboxCredentialRaw
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCredentialRaw) SetTo(v SandboxCredentialRaw) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCredentialRaw) Get() (v SandboxCredentialRaw, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCredentialRaw) Or(d SandboxCredentialRaw) SandboxCredentialRaw {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxExecEnv returns new OptSandboxExecEnv with value set to v.
 func NewOptSandboxExecEnv(v SandboxExecEnv) OptSandboxExecEnv {
 	return OptSandboxExecEnv{
@@ -14543,6 +14778,52 @@ func (o OptSandboxRuntimeConfigProxy) Or(d SandboxRuntimeConfigProxy) SandboxRun
 	return d
 }
 
+// NewOptSandboxRuntimeConfigRawSecrets returns new OptSandboxRuntimeConfigRawSecrets with value set to v.
+func NewOptSandboxRuntimeConfigRawSecrets(v SandboxRuntimeConfigRawSecrets) OptSandboxRuntimeConfigRawSecrets {
+	return OptSandboxRuntimeConfigRawSecrets{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxRuntimeConfigRawSecrets is optional SandboxRuntimeConfigRawSecrets.
+type OptSandboxRuntimeConfigRawSecrets struct {
+	Value SandboxRuntimeConfigRawSecrets
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxRuntimeConfigRawSecrets was set.
+func (o OptSandboxRuntimeConfigRawSecrets) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxRuntimeConfigRawSecrets) Reset() {
+	var v SandboxRuntimeConfigRawSecrets
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxRuntimeConfigRawSecrets) SetTo(v SandboxRuntimeConfigRawSecrets) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxRuntimeConfigRawSecrets) Get() (v SandboxRuntimeConfigRawSecrets, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxRuntimeConfigRawSecrets) Or(d SandboxRuntimeConfigRawSecrets) SandboxRuntimeConfigRawSecrets {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxRuntimeConfigSecretEnv returns new OptSandboxRuntimeConfigSecretEnv with value set to v.
 func NewOptSandboxRuntimeConfigSecretEnv(v SandboxRuntimeConfigSecretEnv) OptSandboxRuntimeConfigSecretEnv {
 	return OptSandboxRuntimeConfigSecretEnv{
@@ -15043,6 +15324,52 @@ func (o OptSandboxUser) Get() (v SandboxUser, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxUser) Or(d SandboxUser) SandboxUser {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretBindingRaw returns new OptSecretBindingRaw with value set to v.
+func NewOptSecretBindingRaw(v SecretBindingRaw) OptSecretBindingRaw {
+	return OptSecretBindingRaw{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretBindingRaw is optional SecretBindingRaw.
+type OptSecretBindingRaw struct {
+	Value SecretBindingRaw
+	Set   bool
+}
+
+// IsSet returns true if OptSecretBindingRaw was set.
+func (o OptSecretBindingRaw) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretBindingRaw) Reset() {
+	var v SecretBindingRaw
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretBindingRaw) SetTo(v SecretBindingRaw) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretBindingRaw) Get() (v SecretBindingRaw, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretBindingRaw) Or(d SecretBindingRaw) SecretBindingRaw {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -15871,6 +16198,52 @@ func (o OptUpdateSandboxMetaBodySetTags) Get() (v UpdateSandboxMetaBodySetTags, 
 
 // Or returns value if set, or given parameter if does not.
 func (o OptUpdateSandboxMetaBodySetTags) Or(d UpdateSandboxMetaBodySetTags) UpdateSandboxMetaBodySetTags {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptUpdateSecretBindingBodyRaw returns new OptUpdateSecretBindingBodyRaw with value set to v.
+func NewOptUpdateSecretBindingBodyRaw(v UpdateSecretBindingBodyRaw) OptUpdateSecretBindingBodyRaw {
+	return OptUpdateSecretBindingBodyRaw{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptUpdateSecretBindingBodyRaw is optional UpdateSecretBindingBodyRaw.
+type OptUpdateSecretBindingBodyRaw struct {
+	Value UpdateSecretBindingBodyRaw
+	Set   bool
+}
+
+// IsSet returns true if OptUpdateSecretBindingBodyRaw was set.
+func (o OptUpdateSecretBindingBodyRaw) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptUpdateSecretBindingBodyRaw) Reset() {
+	var v UpdateSecretBindingBodyRaw
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptUpdateSecretBindingBodyRaw) SetTo(v UpdateSecretBindingBodyRaw) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptUpdateSecretBindingBodyRaw) Get() (v UpdateSecretBindingBodyRaw, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptUpdateSecretBindingBodyRaw) Or(d UpdateSecretBindingBodyRaw) UpdateSecretBindingBodyRaw {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -19989,6 +20362,172 @@ func (s *ResolvePoolAssetOKApplicationVndOciImageManifestV1JSONHeaders) SetRespo
 
 func (*ResolvePoolAssetOKApplicationVndOciImageManifestV1JSONHeaders) resolvePoolAssetRes() {}
 
+// Pool request for the value of one of its sandbox's raw bindings (ADR 26-10-27-840), by the
+// sentinel that is its handle. There is no host: the value is handed to the sandbox itself, and the
+// pool watches the sandbox's requests for it.
+// Ref: #/components/schemas/ResolveSandboxRawSecretBody
+type ResolveSandboxRawSecretBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Sandbox that holds the raw binding.
+	SandboxId string `json:"sandboxId"`
+	// The raw binding's sentinel, as the pool was sent it in rawSecrets.
+	Sentinel string `json:"sentinel"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ResolveSandboxRawSecretBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *ResolveSandboxRawSecretBody) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetSentinel returns the value of Sentinel.
+func (s *ResolveSandboxRawSecretBody) GetSentinel() string {
+	return s.Sentinel
+}
+
+// SetSchema sets the value of Schema.
+func (s *ResolveSandboxRawSecretBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *ResolveSandboxRawSecretBody) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetSentinel sets the value of Sentinel.
+func (s *ResolveSandboxRawSecretBody) SetSentinel(val string) {
+	s.Sentinel = val
+}
+
+// The value of a raw binding. The value is present only when status is approved; denied means the
+// sandbox no longer holds the binding raw.
+// Ref: #/components/schemas/ResolveSandboxRawSecretResponse
+type ResolveSandboxRawSecretResponse struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Resolution status.
+	Status ResolveSandboxRawSecretResponseStatus `json:"status"`
+	// Real secret value; present only when status is approved.
+	Value OptString `json:"value"`
+	// When the binding lapses, capped by the token's own expiry; empty when neither lapses. The pool
+	// asks again before then.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+	// The secret the value is; present only when status is approved.
+	SecretId OptString `json:"secretId"`
+	// The raw binding the value was handed out under; present only when status is approved.
+	BindingId OptString `json:"bindingId"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ResolveSandboxRawSecretResponse) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetStatus returns the value of Status.
+func (s *ResolveSandboxRawSecretResponse) GetStatus() ResolveSandboxRawSecretResponseStatus {
+	return s.Status
+}
+
+// GetValue returns the value of Value.
+func (s *ResolveSandboxRawSecretResponse) GetValue() OptString {
+	return s.Value
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *ResolveSandboxRawSecretResponse) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *ResolveSandboxRawSecretResponse) GetSecretId() OptString {
+	return s.SecretId
+}
+
+// GetBindingId returns the value of BindingId.
+func (s *ResolveSandboxRawSecretResponse) GetBindingId() OptString {
+	return s.BindingId
+}
+
+// SetSchema sets the value of Schema.
+func (s *ResolveSandboxRawSecretResponse) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetStatus sets the value of Status.
+func (s *ResolveSandboxRawSecretResponse) SetStatus(val ResolveSandboxRawSecretResponseStatus) {
+	s.Status = val
+}
+
+// SetValue sets the value of Value.
+func (s *ResolveSandboxRawSecretResponse) SetValue(val OptString) {
+	s.Value = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *ResolveSandboxRawSecretResponse) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *ResolveSandboxRawSecretResponse) SetSecretId(val OptString) {
+	s.SecretId = val
+}
+
+// SetBindingId sets the value of BindingId.
+func (s *ResolveSandboxRawSecretResponse) SetBindingId(val OptString) {
+	s.BindingId = val
+}
+
+func (*ResolveSandboxRawSecretResponse) resolveSandboxRawSecretRes() {}
+
+// Resolution status.
+type ResolveSandboxRawSecretResponseStatus string
+
+const (
+	ResolveSandboxRawSecretResponseStatusApproved ResolveSandboxRawSecretResponseStatus = "approved"
+	ResolveSandboxRawSecretResponseStatusDenied   ResolveSandboxRawSecretResponseStatus = "denied"
+)
+
+// AllValues returns all ResolveSandboxRawSecretResponseStatus values.
+func (ResolveSandboxRawSecretResponseStatus) AllValues() []ResolveSandboxRawSecretResponseStatus {
+	return []ResolveSandboxRawSecretResponseStatus{
+		ResolveSandboxRawSecretResponseStatusApproved,
+		ResolveSandboxRawSecretResponseStatusDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ResolveSandboxRawSecretResponseStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case ResolveSandboxRawSecretResponseStatusApproved:
+		return []byte(s), nil
+	case ResolveSandboxRawSecretResponseStatusDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ResolveSandboxRawSecretResponseStatus) UnmarshalText(data []byte) error {
+	switch ResolveSandboxRawSecretResponseStatus(data) {
+	case ResolveSandboxRawSecretResponseStatusApproved:
+		*s = ResolveSandboxRawSecretResponseStatusApproved
+		return nil
+	case ResolveSandboxRawSecretResponseStatusDenied:
+		*s = ResolveSandboxRawSecretResponseStatusDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Worker request to resolve a sentinel placeholder observed by the proxy to its real secret value
 // for a destination host.
 // Ref: #/components/schemas/ResolveSandboxSecretBody
@@ -22714,9 +23253,12 @@ func (s *SandboxAgentStatusEntryStatus) init() SandboxAgentStatusEntryStatus {
 
 // Ref: #/components/schemas/SandboxAgentStatusResponse
 type SandboxAgentStatusResponse struct {
-	HarnessConfigCandidate OptString                     `json:"harnessConfigCandidate"`
-	HarnessConfigState     OptString                     `json:"harnessConfigState"`
-	Sources                []SandboxAgentGitSourceStatus `json:"sources"`
+	HarnessConfigCandidate OptString `json:"harnessConfigCandidate"`
+	HarnessConfigState     OptString `json:"harnessConfigState"`
+	// Always true from a sandbox agent that takes raw secrets (ADR 26-10-27-840). The pool sends a
+	// runtime-config document's rawSecrets only to a sandbox that says so.
+	RawSecrets OptBool                       `json:"rawSecrets"`
+	Sources    []SandboxAgentGitSourceStatus `json:"sources"`
 	// Terminal sessions only, live and ended alike - every terminal a record still exists for, typically
 	// just the primary. One-shot execs are not sessions and never appear.
 	Sessions []SandboxAgentSessionStatus `json:"sessions"`
@@ -22757,6 +23299,11 @@ func (s *SandboxAgentStatusResponse) GetHarnessConfigCandidate() OptString {
 // GetHarnessConfigState returns the value of HarnessConfigState.
 func (s *SandboxAgentStatusResponse) GetHarnessConfigState() OptString {
 	return s.HarnessConfigState
+}
+
+// GetRawSecrets returns the value of RawSecrets.
+func (s *SandboxAgentStatusResponse) GetRawSecrets() OptBool {
+	return s.RawSecrets
 }
 
 // GetSources returns the value of Sources.
@@ -22822,6 +23369,11 @@ func (s *SandboxAgentStatusResponse) SetHarnessConfigCandidate(val OptString) {
 // SetHarnessConfigState sets the value of HarnessConfigState.
 func (s *SandboxAgentStatusResponse) SetHarnessConfigState(val OptString) {
 	s.HarnessConfigState = val
+}
+
+// SetRawSecrets sets the value of RawSecrets.
+func (s *SandboxAgentStatusResponse) SetRawSecrets(val OptBool) {
+	s.RawSecrets = val
 }
 
 // SetSources sets the value of Sources.
@@ -23114,6 +23666,9 @@ type SandboxBindingInput struct {
 	Delegate OptBool `json:"delegate"`
 	// Environment variable the credential's sentinel is delivered in; required with use.
 	EnvVar OptString `json:"envVar"`
+	// Hand the new discobox the value itself (ADR 26-10-27-840). Only a person may; a discobox creating
+	// a discobox gives sentinels alone.
+	Raw OptSandboxBindingInputRaw `json:"raw"`
 	// Routes that narrow the secret's for this binding; omitted inherits them.
 	Routes []SecretRouteInput `json:"routes"`
 	// The secret, by name or ID.
@@ -23133,6 +23688,11 @@ func (s *SandboxBindingInput) GetDelegate() OptBool {
 // GetEnvVar returns the value of EnvVar.
 func (s *SandboxBindingInput) GetEnvVar() OptString {
 	return s.EnvVar
+}
+
+// GetRaw returns the value of Raw.
+func (s *SandboxBindingInput) GetRaw() OptSandboxBindingInputRaw {
+	return s.Raw
 }
 
 // GetRoutes returns the value of Routes.
@@ -23165,6 +23725,11 @@ func (s *SandboxBindingInput) SetEnvVar(val OptString) {
 	s.EnvVar = val
 }
 
+// SetRaw sets the value of Raw.
+func (s *SandboxBindingInput) SetRaw(val OptSandboxBindingInputRaw) {
+	s.Raw = val
+}
+
 // SetRoutes sets the value of Routes.
 func (s *SandboxBindingInput) SetRoutes(val []SecretRouteInput) {
 	s.Routes = val
@@ -23183,6 +23748,49 @@ func (s *SandboxBindingInput) SetTtlSeconds(val OptInt64) {
 // SetUse sets the value of Use.
 func (s *SandboxBindingInput) SetUse(val OptBool) {
 	s.Use = val
+}
+
+// Hand the new discobox the value itself (ADR 26-10-27-840). Only a person may; a discobox creating
+// a discobox gives sentinels alone.
+type SandboxBindingInputRaw string
+
+const (
+	SandboxBindingInputRawEnv  SandboxBindingInputRaw = "env"
+	SandboxBindingInputRawFile SandboxBindingInputRaw = "file"
+)
+
+// AllValues returns all SandboxBindingInputRaw values.
+func (SandboxBindingInputRaw) AllValues() []SandboxBindingInputRaw {
+	return []SandboxBindingInputRaw{
+		SandboxBindingInputRawEnv,
+		SandboxBindingInputRawFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxBindingInputRaw) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxBindingInputRawEnv:
+		return []byte(s), nil
+	case SandboxBindingInputRawFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxBindingInputRaw) UnmarshalText(data []byte) error {
+	switch SandboxBindingInputRaw(data) {
+	case SandboxBindingInputRawEnv:
+		*s = SandboxBindingInputRawEnv
+		return nil
+	case SandboxBindingInputRawFile:
+		*s = SandboxBindingInputRawFile
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Both the cumulative counter and the rate - the counter so a consumer can difference across any two
@@ -24075,6 +24683,9 @@ type SandboxCredential struct {
 	// What the binding lets the sandbox do with the credential. use delivers it in envVar; delegate lets
 	// the sandbox give it to the discoboxes it creates and delivers nothing.
 	Purpose OptSandboxCredentialPurpose `json:"purpose"`
+	// The discobox holds the value itself (ADR 26-10-27-840): in envVar (env), or in a file whose path
+	// is in envVar (file).
+	Raw OptSandboxCredentialRaw `json:"raw"`
 	// Secret backing the credential.
 	SecretId string `json:"secretId"`
 }
@@ -24107,6 +24718,11 @@ func (s *SandboxCredential) GetName() string {
 // GetPurpose returns the value of Purpose.
 func (s *SandboxCredential) GetPurpose() OptSandboxCredentialPurpose {
 	return s.Purpose
+}
+
+// GetRaw returns the value of Raw.
+func (s *SandboxCredential) GetRaw() OptSandboxCredentialRaw {
+	return s.Raw
 }
 
 // GetSecretId returns the value of SecretId.
@@ -24142,6 +24758,11 @@ func (s *SandboxCredential) SetName(val string) {
 // SetPurpose sets the value of Purpose.
 func (s *SandboxCredential) SetPurpose(val OptSandboxCredentialPurpose) {
 	s.Purpose = val
+}
+
+// SetRaw sets the value of Raw.
+func (s *SandboxCredential) SetRaw(val OptSandboxCredentialRaw) {
+	s.Raw = val
 }
 
 // SetSecretId sets the value of SecretId.
@@ -24186,6 +24807,49 @@ func (s *SandboxCredentialPurpose) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxCredentialPurposeDelegate:
 		*s = SandboxCredentialPurposeDelegate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// The discobox holds the value itself (ADR 26-10-27-840): in envVar (env), or in a file whose path
+// is in envVar (file).
+type SandboxCredentialRaw string
+
+const (
+	SandboxCredentialRawEnv  SandboxCredentialRaw = "env"
+	SandboxCredentialRawFile SandboxCredentialRaw = "file"
+)
+
+// AllValues returns all SandboxCredentialRaw values.
+func (SandboxCredentialRaw) AllValues() []SandboxCredentialRaw {
+	return []SandboxCredentialRaw{
+		SandboxCredentialRawEnv,
+		SandboxCredentialRawFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxCredentialRaw) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxCredentialRawEnv:
+		return []byte(s), nil
+	case SandboxCredentialRawFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxCredentialRaw) UnmarshalText(data []byte) error {
+	switch SandboxCredentialRaw(data) {
+	case SandboxCredentialRawEnv:
+		*s = SandboxCredentialRawEnv
+		return nil
+	case SandboxCredentialRawFile:
+		*s = SandboxCredentialRawFile
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -26903,6 +27567,12 @@ func (s *SandboxRuntimeAgentStatus) init() SandboxRuntimeAgentStatus {
 // something the sandbox no longer has. The Go type is sandboxconfig.RuntimeConfig.
 // Ref: #/components/schemas/SandboxRuntimeConfig
 type SandboxRuntimeConfig struct {
+	// The sandbox's raw secrets, variable to how it is delivered (ADR 26-10-27-840): env puts the value
+	// in the variable, file the path of a file under /run/discobox/raw-secrets holding it. Never a value
+	// - the sandbox agent asks its pool for those over its own mTLS link when this changes, and while it
+	// holds any. Sent only to a sandbox whose status advertised rawSecrets, because an older agent
+	// refuses the whole document over a field it does not know.
+	RawSecrets OptSandboxRuntimeConfigRawSecrets `json:"rawSecrets"`
 	// Orders documents, from 1. A sandbox applies a newer revision than it holds and ignores an older
 	// one. A newer document under a revision below 1 is refused as invalid (422) - the sandbox validates
 	// it, not the schema, so every invalid document is answered alike.
@@ -26914,6 +27584,11 @@ type SandboxRuntimeConfig struct {
 	// Material for the sandbox's hop to its pool. Absent when it has none.
 	Proxy   OptSandboxRuntimeConfigProxy `json:"proxy"`
 	Sources []SandboxRuntimeConfigSource `json:"sources"`
+}
+
+// GetRawSecrets returns the value of RawSecrets.
+func (s *SandboxRuntimeConfig) GetRawSecrets() OptSandboxRuntimeConfigRawSecrets {
+	return s.RawSecrets
 }
 
 // GetRevision returns the value of Revision.
@@ -26939,6 +27614,11 @@ func (s *SandboxRuntimeConfig) GetProxy() OptSandboxRuntimeConfigProxy {
 // GetSources returns the value of Sources.
 func (s *SandboxRuntimeConfig) GetSources() []SandboxRuntimeConfigSource {
 	return s.Sources
+}
+
+// SetRawSecrets sets the value of RawSecrets.
+func (s *SandboxRuntimeConfig) SetRawSecrets(val OptSandboxRuntimeConfigRawSecrets) {
+	s.RawSecrets = val
 }
 
 // SetRevision sets the value of Revision.
@@ -27056,6 +27736,63 @@ func (s *SandboxRuntimeConfigProxy) SetClientCert(val string) {
 // SetClientKey sets the value of ClientKey.
 func (s *SandboxRuntimeConfigProxy) SetClientKey(val OptString) {
 	s.ClientKey = val
+}
+
+// The sandbox's raw secrets, variable to how it is delivered (ADR 26-10-27-840): env puts the value
+// in the variable, file the path of a file under /run/discobox/raw-secrets holding it. Never a value
+// - the sandbox agent asks its pool for those over its own mTLS link when this changes, and while it
+// holds any. Sent only to a sandbox whose status advertised rawSecrets, because an older agent
+// refuses the whole document over a field it does not know.
+type SandboxRuntimeConfigRawSecrets map[string]SandboxRuntimeConfigRawSecretsItem
+
+func (s *SandboxRuntimeConfigRawSecrets) init() SandboxRuntimeConfigRawSecrets {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxRuntimeConfigRawSecretsItem{}
+		*s = m
+	}
+	return m
+}
+
+type SandboxRuntimeConfigRawSecretsItem string
+
+const (
+	SandboxRuntimeConfigRawSecretsItemEnv  SandboxRuntimeConfigRawSecretsItem = "env"
+	SandboxRuntimeConfigRawSecretsItemFile SandboxRuntimeConfigRawSecretsItem = "file"
+)
+
+// AllValues returns all SandboxRuntimeConfigRawSecretsItem values.
+func (SandboxRuntimeConfigRawSecretsItem) AllValues() []SandboxRuntimeConfigRawSecretsItem {
+	return []SandboxRuntimeConfigRawSecretsItem{
+		SandboxRuntimeConfigRawSecretsItemEnv,
+		SandboxRuntimeConfigRawSecretsItemFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxRuntimeConfigRawSecretsItem) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxRuntimeConfigRawSecretsItemEnv:
+		return []byte(s), nil
+	case SandboxRuntimeConfigRawSecretsItemFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxRuntimeConfigRawSecretsItem) UnmarshalText(data []byte) error {
+	switch SandboxRuntimeConfigRawSecretsItem(data) {
+	case SandboxRuntimeConfigRawSecretsItemEnv:
+		*s = SandboxRuntimeConfigRawSecretsItemEnv
+		return nil
+	case SandboxRuntimeConfigRawSecretsItemFile:
+		*s = SandboxRuntimeConfigRawSecretsItemFile
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // The sandbox's secret-bound environment, env name to sentinel. Sentinels only; a resolved value
@@ -28958,6 +29695,9 @@ func (s *SandboxUser) SetUID(val OptInt64) {
 type Secret struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// The value itself may be handed to a discobox by a raw binding a person makes (ADR 26-10-27-840
+	// §1); clearing it deletes those bindings.
+	AllowRaw OptBool `json:"allowRaw"`
 	// Sandbox-managed secret created from an inline value; referenced only by ID.
 	Anonymous OptBool `json:"anonymous"`
 	// Creation timestamp.
@@ -28999,6 +29739,11 @@ type Secret struct {
 // GetSchema returns the value of Schema.
 func (s *Secret) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetAllowRaw returns the value of AllowRaw.
+func (s *Secret) GetAllowRaw() OptBool {
+	return s.AllowRaw
 }
 
 // GetAnonymous returns the value of Anonymous.
@@ -29089,6 +29834,11 @@ func (s *Secret) GetRoutes() OptNilSecretRouteArray {
 // SetSchema sets the value of Schema.
 func (s *Secret) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetAllowRaw sets the value of AllowRaw.
+func (s *Secret) SetAllowRaw(val OptBool) {
+	s.AllowRaw = val
 }
 
 // SetAnonymous sets the value of Anonymous.
@@ -29206,6 +29956,10 @@ type SecretBinding struct {
 	ParentId OptString `json:"parentId"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
+	// Hands the discobox the value itself rather than a sentinel (ADR 26-10-27-840): env puts it in
+	// envVar, file puts the path of a file under /run/discobox/raw-secrets holding it there. Absent is a
+	// sentinel.
+	Raw OptSecretBindingRaw `json:"raw"`
 	// The request this binding answered, when one did.
 	RequestId OptString `json:"requestId"`
 	// Routes that narrow the secret's for this binding; empty inherits the secret's. A request must be
@@ -29269,6 +30023,11 @@ func (s *SecretBinding) GetParentId() OptString {
 // GetProjectId returns the value of ProjectId.
 func (s *SecretBinding) GetProjectId() string {
 	return s.ProjectId
+}
+
+// GetRaw returns the value of Raw.
+func (s *SecretBinding) GetRaw() OptSecretBindingRaw {
+	return s.Raw
 }
 
 // GetRequestId returns the value of RequestId.
@@ -29356,6 +30115,11 @@ func (s *SecretBinding) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
+// SetRaw sets the value of Raw.
+func (s *SecretBinding) SetRaw(val OptSecretBindingRaw) {
+	s.Raw = val
+}
+
 // SetRequestId sets the value of RequestId.
 func (s *SecretBinding) SetRequestId(val OptString) {
 	s.RequestId = val
@@ -29415,7 +30179,8 @@ type SecretBindingEvent struct {
 	BindingId string `json:"bindingId"`
 	// Why, when something caused it: the request it answered, or the parent binding whose removal took it.
 	Cause OptString `json:"cause"`
-	// What happened.
+	// What happened; delivered is a raw binding's value handed to the pool of a discobox it covers, once
+	// per value (ADR 26-10-27-840 §5).
 	Event SecretBindingEventEvent `json:"event"`
 	// Event ID.
 	ID string `json:"id"`
@@ -29513,14 +30278,16 @@ func (s *SecretBindingEvent) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
-// What happened.
+// What happened; delivered is a raw binding's value handed to the pool of a discobox it covers, once
+// per value (ADR 26-10-27-840 §5).
 type SecretBindingEventEvent string
 
 const (
-	SecretBindingEventEventCreated SecretBindingEventEvent = "created"
-	SecretBindingEventEventUpdated SecretBindingEventEvent = "updated"
-	SecretBindingEventEventDeleted SecretBindingEventEvent = "deleted"
-	SecretBindingEventEventExpired SecretBindingEventEvent = "expired"
+	SecretBindingEventEventCreated   SecretBindingEventEvent = "created"
+	SecretBindingEventEventUpdated   SecretBindingEventEvent = "updated"
+	SecretBindingEventEventDeleted   SecretBindingEventEvent = "deleted"
+	SecretBindingEventEventExpired   SecretBindingEventEvent = "expired"
+	SecretBindingEventEventDelivered SecretBindingEventEvent = "delivered"
 )
 
 // AllValues returns all SecretBindingEventEvent values.
@@ -29530,6 +30297,7 @@ func (SecretBindingEventEvent) AllValues() []SecretBindingEventEvent {
 		SecretBindingEventEventUpdated,
 		SecretBindingEventEventDeleted,
 		SecretBindingEventEventExpired,
+		SecretBindingEventEventDelivered,
 	}
 }
 
@@ -29543,6 +30311,8 @@ func (s SecretBindingEventEvent) MarshalText() ([]byte, error) {
 	case SecretBindingEventEventDeleted:
 		return []byte(s), nil
 	case SecretBindingEventEventExpired:
+		return []byte(s), nil
+	case SecretBindingEventEventDelivered:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -29563,6 +30333,53 @@ func (s *SecretBindingEventEvent) UnmarshalText(data []byte) error {
 		return nil
 	case SecretBindingEventEventExpired:
 		*s = SecretBindingEventEventExpired
+		return nil
+	case SecretBindingEventEventDelivered:
+		*s = SecretBindingEventEventDelivered
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Hands the discobox the value itself rather than a sentinel (ADR 26-10-27-840): env puts it in
+// envVar, file puts the path of a file under /run/discobox/raw-secrets holding it there. Absent is a
+// sentinel.
+type SecretBindingRaw string
+
+const (
+	SecretBindingRawEnv  SecretBindingRaw = "env"
+	SecretBindingRawFile SecretBindingRaw = "file"
+)
+
+// AllValues returns all SecretBindingRaw values.
+func (SecretBindingRaw) AllValues() []SecretBindingRaw {
+	return []SecretBindingRaw{
+		SecretBindingRawEnv,
+		SecretBindingRawFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretBindingRaw) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretBindingRawEnv:
+		return []byte(s), nil
+	case SecretBindingRawFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretBindingRaw) UnmarshalText(data []byte) error {
+	switch SecretBindingRaw(data) {
+	case SecretBindingRawEnv:
+		*s = SecretBindingRawEnv
+		return nil
+	case SecretBindingRawFile:
+		*s = SecretBindingRawFile
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -32393,6 +33210,9 @@ type UpdateSecretBindingBody struct {
 	Delegate OptBool `json:"delegate"`
 	// A new environment variable for a use binding.
 	EnvVar OptString `json:"envVar"`
+	// Replace the delivery: env or file hands over the value itself (ADR 26-10-27-840), none delivers a
+	// sentinel again. Absent leaves it as it is.
+	Raw OptUpdateSecretBindingBodyRaw `json:"raw"`
 	// Replacement routes; an empty array inherits the secret's again.
 	Routes []SecretRouteInput `json:"routes"`
 	// A new lifetime, in seconds from now, within the secret's limit and the parent's expiry; 0 never
@@ -32416,6 +33236,11 @@ func (s *UpdateSecretBindingBody) GetDelegate() OptBool {
 // GetEnvVar returns the value of EnvVar.
 func (s *UpdateSecretBindingBody) GetEnvVar() OptString {
 	return s.EnvVar
+}
+
+// GetRaw returns the value of Raw.
+func (s *UpdateSecretBindingBody) GetRaw() OptUpdateSecretBindingBodyRaw {
+	return s.Raw
 }
 
 // GetRoutes returns the value of Routes.
@@ -32448,6 +33273,11 @@ func (s *UpdateSecretBindingBody) SetEnvVar(val OptString) {
 	s.EnvVar = val
 }
 
+// SetRaw sets the value of Raw.
+func (s *UpdateSecretBindingBody) SetRaw(val OptUpdateSecretBindingBodyRaw) {
+	s.Raw = val
+}
+
 // SetRoutes sets the value of Routes.
 func (s *UpdateSecretBindingBody) SetRoutes(val []SecretRouteInput) {
 	s.Routes = val
@@ -32463,10 +33293,63 @@ func (s *UpdateSecretBindingBody) SetUse(val OptBool) {
 	s.Use = val
 }
 
+// Replace the delivery: env or file hands over the value itself (ADR 26-10-27-840), none delivers a
+// sentinel again. Absent leaves it as it is.
+type UpdateSecretBindingBodyRaw string
+
+const (
+	UpdateSecretBindingBodyRawNone UpdateSecretBindingBodyRaw = "none"
+	UpdateSecretBindingBodyRawEnv  UpdateSecretBindingBodyRaw = "env"
+	UpdateSecretBindingBodyRawFile UpdateSecretBindingBodyRaw = "file"
+)
+
+// AllValues returns all UpdateSecretBindingBodyRaw values.
+func (UpdateSecretBindingBodyRaw) AllValues() []UpdateSecretBindingBodyRaw {
+	return []UpdateSecretBindingBodyRaw{
+		UpdateSecretBindingBodyRawNone,
+		UpdateSecretBindingBodyRawEnv,
+		UpdateSecretBindingBodyRawFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s UpdateSecretBindingBodyRaw) MarshalText() ([]byte, error) {
+	switch s {
+	case UpdateSecretBindingBodyRawNone:
+		return []byte(s), nil
+	case UpdateSecretBindingBodyRawEnv:
+		return []byte(s), nil
+	case UpdateSecretBindingBodyRawFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *UpdateSecretBindingBodyRaw) UnmarshalText(data []byte) error {
+	switch UpdateSecretBindingBodyRaw(data) {
+	case UpdateSecretBindingBodyRawNone:
+		*s = UpdateSecretBindingBodyRawNone
+		return nil
+	case UpdateSecretBindingBodyRawEnv:
+		*s = UpdateSecretBindingBodyRawEnv
+		return nil
+	case UpdateSecretBindingBodyRawFile:
+		*s = UpdateSecretBindingBodyRawFile
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/UpdateSecretBody
 type UpdateSecretBody struct {
 	// A URL to the JSON Schema for this object.
-	Schema   OptURI            `json:"$schema"`
+	Schema OptURI `json:"$schema"`
+	// Let a person bind the value itself, raw, to a discobox (ADR 26-10-27-840 §1); false deletes the
+	// raw bindings that stand, absent leaves it as it is.
+	AllowRaw OptBool           `json:"allowRaw"`
 	Exchange OptExchangeRecipe `json:"exchange"`
 	// Template the sentinels for this secret are minted from: literal text with {charset:length} tokens,
 	// such as sk-ant-oat01-{base64url:95}. Charsets are digits, hex, HEX, lower, upper, alnum, base62,
@@ -32499,6 +33382,11 @@ type UpdateSecretBody struct {
 // GetSchema returns the value of Schema.
 func (s *UpdateSecretBody) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetAllowRaw returns the value of AllowRaw.
+func (s *UpdateSecretBody) GetAllowRaw() OptBool {
+	return s.AllowRaw
 }
 
 // GetExchange returns the value of Exchange.
@@ -32549,6 +33437,11 @@ func (s *UpdateSecretBody) GetValue() OptSecretValue {
 // SetSchema sets the value of Schema.
 func (s *UpdateSecretBody) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetAllowRaw sets the value of AllowRaw.
+func (s *UpdateSecretBody) SetAllowRaw(val OptBool) {
+	s.AllowRaw = val
 }
 
 // SetExchange sets the value of Exchange.

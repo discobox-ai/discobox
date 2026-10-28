@@ -36,6 +36,10 @@ type routeResolver struct {
 	bodies []string
 }
 
+func (r *routeResolver) ResolveRaw(context.Context, secrets.RawRequest) (secrets.RawResult, error) {
+	return secrets.RawResult{}, secrets.ErrDenied
+}
+
 func (r *routeResolver) Gate(context.Context, secrets.GateRequest) (secrets.GateAdmission, error) {
 	return secrets.GateAdmission{}, &secrets.GateRefusal{Reason: "no gate here"}
 }

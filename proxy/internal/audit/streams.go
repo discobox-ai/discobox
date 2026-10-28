@@ -57,6 +57,9 @@ type StreamSession struct {
 	onClose func()
 	// onWrite counts written frames toward the recorder's spool budget.
 	onWrite func(int64)
+	// patterns are the client's raw secrets, kept out of every chunk
+	// (Recorder.SetRedactor).
+	patterns [][]byte
 
 	droppedChunks atomic.Uint64
 	droppedBytes  atomic.Uint64
@@ -118,7 +121,9 @@ func (s *StreamSession) RecordChunk(direction StreamDirection, payload []byte) {
 	if s == nil || len(payload) == 0 {
 		return
 	}
-	event := streamEvent{direction: byte(direction), payload: bytes.Clone(payload)}
+	// Each chunk is redacted on its own: a raw secret split across two chunks
+	// is not caught, which an upgraded stream's framing makes the rarer case.
+	event := streamEvent{direction: byte(direction), payload: redactPatterns(bytes.Clone(payload), s.patterns)}
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
 	if s.closed {

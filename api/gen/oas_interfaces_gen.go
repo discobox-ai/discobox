@@ -549,6 +549,10 @@ type ResolvePoolAssetRes interface {
 	resolvePoolAssetRes()
 }
 
+type ResolveSandboxRawSecretRes interface {
+	resolveSandboxRawSecretRes()
+}
+
 type ResolveSandboxSecretRes interface {
 	resolveSandboxSecretRes()
 }

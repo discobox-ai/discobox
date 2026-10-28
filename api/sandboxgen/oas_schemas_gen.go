@@ -2779,6 +2779,52 @@ func (o OptSandboxRuntimeConfigProxy) Or(d SandboxRuntimeConfigProxy) SandboxRun
 	return d
 }
 
+// NewOptSandboxRuntimeConfigRawSecrets returns new OptSandboxRuntimeConfigRawSecrets with value set to v.
+func NewOptSandboxRuntimeConfigRawSecrets(v SandboxRuntimeConfigRawSecrets) OptSandboxRuntimeConfigRawSecrets {
+	return OptSandboxRuntimeConfigRawSecrets{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxRuntimeConfigRawSecrets is optional SandboxRuntimeConfigRawSecrets.
+type OptSandboxRuntimeConfigRawSecrets struct {
+	Value SandboxRuntimeConfigRawSecrets
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxRuntimeConfigRawSecrets was set.
+func (o OptSandboxRuntimeConfigRawSecrets) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxRuntimeConfigRawSecrets) Reset() {
+	var v SandboxRuntimeConfigRawSecrets
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxRuntimeConfigRawSecrets) SetTo(v SandboxRuntimeConfigRawSecrets) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxRuntimeConfigRawSecrets) Get() (v SandboxRuntimeConfigRawSecrets, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxRuntimeConfigRawSecrets) Or(d SandboxRuntimeConfigRawSecrets) SandboxRuntimeConfigRawSecrets {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxRuntimeConfigSecretEnv returns new OptSandboxRuntimeConfigSecretEnv with value set to v.
 func NewOptSandboxRuntimeConfigSecretEnv(v SandboxRuntimeConfigSecretEnv) OptSandboxRuntimeConfigSecretEnv {
 	return OptSandboxRuntimeConfigSecretEnv{
@@ -5140,6 +5186,9 @@ type SandboxAgentStatusResponse struct {
 	// The sandbox's provisioning this boot, its /run/discobox/provision.json (ADR 26-10-16-423 §6).
 	// Absent from a sandbox agent that predates it.
 	Provision OptSandboxAgentProvisionStatus `json:"provision"`
+	// Always true from a sandbox agent that takes raw secrets (ADR 26-10-27-840). The pool sends a
+	// runtime-config document's rawSecrets only to a sandbox that says so.
+	RawSecrets OptBool `json:"rawSecrets"`
 	// This sandbox's CPU and memory consumption as cumulative counters. Absent on a platform where
 	// neither the cgroup nor procfs could be read.
 	Resources OptSandboxAgentResourceUsage `json:"resources"`
@@ -5193,6 +5242,11 @@ func (s *SandboxAgentStatusResponse) GetPorts() []SandboxAgentListeningPort {
 // GetProvision returns the value of Provision.
 func (s *SandboxAgentStatusResponse) GetProvision() OptSandboxAgentProvisionStatus {
 	return s.Provision
+}
+
+// GetRawSecrets returns the value of RawSecrets.
+func (s *SandboxAgentStatusResponse) GetRawSecrets() OptBool {
+	return s.RawSecrets
 }
 
 // GetResources returns the value of Resources.
@@ -5258,6 +5312,11 @@ func (s *SandboxAgentStatusResponse) SetPorts(val []SandboxAgentListeningPort) {
 // SetProvision sets the value of Provision.
 func (s *SandboxAgentStatusResponse) SetProvision(val OptSandboxAgentProvisionStatus) {
 	s.Provision = val
+}
+
+// SetRawSecrets sets the value of RawSecrets.
+func (s *SandboxAgentStatusResponse) SetRawSecrets(val OptBool) {
+	s.RawSecrets = val
 }
 
 // SetResources sets the value of Resources.
@@ -6756,6 +6815,12 @@ type SandboxRuntimeConfig struct {
 	Agent SandboxRuntimeConfigAgent `json:"agent"`
 	// Material for the sandbox's hop to its pool. Absent when it has none.
 	Proxy OptSandboxRuntimeConfigProxy `json:"proxy"`
+	// The sandbox's raw secrets, variable to how it is delivered (ADR 26-10-27-840): env puts the value
+	// in the variable, file the path of a file under /run/discobox/raw-secrets holding it. Never a value
+	// - the sandbox agent asks its pool for those over its own mTLS link when this changes, and while it
+	// holds any. Sent only to a sandbox whose status advertised rawSecrets, because an older agent
+	// refuses the whole document over a field it does not know.
+	RawSecrets OptSandboxRuntimeConfigRawSecrets `json:"rawSecrets"`
 	// Orders documents, from 1. A sandbox applies a newer revision than it holds and ignores an older
 	// one. A newer document under a revision below 1 is refused as invalid (422) - the sandbox validates
 	// it, not the schema, so every invalid document is answered alike.
@@ -6774,6 +6839,11 @@ func (s *SandboxRuntimeConfig) GetAgent() SandboxRuntimeConfigAgent {
 // GetProxy returns the value of Proxy.
 func (s *SandboxRuntimeConfig) GetProxy() OptSandboxRuntimeConfigProxy {
 	return s.Proxy
+}
+
+// GetRawSecrets returns the value of RawSecrets.
+func (s *SandboxRuntimeConfig) GetRawSecrets() OptSandboxRuntimeConfigRawSecrets {
+	return s.RawSecrets
 }
 
 // GetRevision returns the value of Revision.
@@ -6799,6 +6869,11 @@ func (s *SandboxRuntimeConfig) SetAgent(val SandboxRuntimeConfigAgent) {
 // SetProxy sets the value of Proxy.
 func (s *SandboxRuntimeConfig) SetProxy(val OptSandboxRuntimeConfigProxy) {
 	s.Proxy = val
+}
+
+// SetRawSecrets sets the value of RawSecrets.
+func (s *SandboxRuntimeConfig) SetRawSecrets(val OptSandboxRuntimeConfigRawSecrets) {
+	s.RawSecrets = val
 }
 
 // SetRevision sets the value of Revision.
@@ -6903,6 +6978,63 @@ func (s *SandboxRuntimeConfigProxy) SetMitmCa(val string) {
 // SetMtlsCa sets the value of MtlsCa.
 func (s *SandboxRuntimeConfigProxy) SetMtlsCa(val string) {
 	s.MtlsCa = val
+}
+
+// The sandbox's raw secrets, variable to how it is delivered (ADR 26-10-27-840): env puts the value
+// in the variable, file the path of a file under /run/discobox/raw-secrets holding it. Never a value
+// - the sandbox agent asks its pool for those over its own mTLS link when this changes, and while it
+// holds any. Sent only to a sandbox whose status advertised rawSecrets, because an older agent
+// refuses the whole document over a field it does not know.
+type SandboxRuntimeConfigRawSecrets map[string]SandboxRuntimeConfigRawSecretsItem
+
+func (s *SandboxRuntimeConfigRawSecrets) init() SandboxRuntimeConfigRawSecrets {
+	m := *s
+	if m == nil {
+		m = map[string]SandboxRuntimeConfigRawSecretsItem{}
+		*s = m
+	}
+	return m
+}
+
+type SandboxRuntimeConfigRawSecretsItem string
+
+const (
+	SandboxRuntimeConfigRawSecretsItemEnv  SandboxRuntimeConfigRawSecretsItem = "env"
+	SandboxRuntimeConfigRawSecretsItemFile SandboxRuntimeConfigRawSecretsItem = "file"
+)
+
+// AllValues returns all SandboxRuntimeConfigRawSecretsItem values.
+func (SandboxRuntimeConfigRawSecretsItem) AllValues() []SandboxRuntimeConfigRawSecretsItem {
+	return []SandboxRuntimeConfigRawSecretsItem{
+		SandboxRuntimeConfigRawSecretsItemEnv,
+		SandboxRuntimeConfigRawSecretsItemFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxRuntimeConfigRawSecretsItem) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxRuntimeConfigRawSecretsItemEnv:
+		return []byte(s), nil
+	case SandboxRuntimeConfigRawSecretsItemFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxRuntimeConfigRawSecretsItem) UnmarshalText(data []byte) error {
+	switch SandboxRuntimeConfigRawSecretsItem(data) {
+	case SandboxRuntimeConfigRawSecretsItemEnv:
+		*s = SandboxRuntimeConfigRawSecretsItemEnv
+		return nil
+	case SandboxRuntimeConfigRawSecretsItemFile:
+		*s = SandboxRuntimeConfigRawSecretsItemFile
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // The sandbox's secret-bound environment, env name to sentinel. Sentinels only; a resolved value

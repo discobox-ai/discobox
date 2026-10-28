@@ -23,6 +23,7 @@ func TestPoolRuntimePathAllowlist(t *testing.T) {
 	}{
 		{"a listed action", "/api/pools/pool-1/status", true},
 		{"sentinel resolution", "/api/pools/pool-1/resolve-sandbox-secret", true},
+		{"raw secret resolution", "/api/pools/pool-1/resolve-sandbox-raw-secret", true},
 		{"gateway header resolution", "/api/pools/pool-1/resolve-gateway-headers", true},
 		{"listing agent credentials", "/api/pools/pool-1/sandbox-credentials", true},
 		{"recording a credential request", "/api/pools/pool-1/sandbox-credential-requests", true},

@@ -17,6 +17,9 @@ var (
 	rn192AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
+	rn194AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
 	rn183AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
@@ -41,7 +44,7 @@ var (
 	rn58AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn219AllowedHeaders = map[string]string{
+	rn221AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn40AllowedHeaders = map[string]string{
@@ -53,10 +56,10 @@ var (
 	rn26AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn199AllowedHeaders = map[string]string{
+	rn201AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn224AllowedHeaders = map[string]string{
+	rn226AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn172AllowedHeaders = map[string]string{
@@ -86,13 +89,13 @@ var (
 	rn177AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn198AllowedHeaders = map[string]string{
+	rn200AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn175AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn220AllowedHeaders = map[string]string{
+	rn222AllowedHeaders = map[string]string{
 		"PATCH": "Content-Type",
 	}
 	rn114AllowedHeaders = map[string]string{
@@ -143,25 +146,25 @@ var (
 	rn19AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn221AllowedHeaders = map[string]string{
+	rn223AllowedHeaders = map[string]string{
 		"PATCH": "Content-Type",
 	}
-	rn193AllowedHeaders = map[string]string{
+	rn195AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn169AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn205AllowedHeaders = map[string]string{
+	rn207AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn211AllowedHeaders = map[string]string{
+	rn213AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn216AllowedHeaders = map[string]string{
+	rn218AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn223AllowedHeaders = map[string]string{
+	rn225AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn62AllowedHeaders = map[string]string{
@@ -459,31 +462,72 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										return
 									}
 
-								case 's': // Prefix: "sandbox-secret"
+								case 's': // Prefix: "sandbox-"
 
-									if l := len("sandbox-secret"); len(elem) >= l && elem[0:l] == "sandbox-secret" {
+									if l := len("sandbox-"); len(elem) >= l && elem[0:l] == "sandbox-" {
 										elem = elem[l:]
 									} else {
 										break
 									}
 
 									if len(elem) == 0 {
-										// Leaf node.
-										switch r.Method {
-										case "POST":
-											s.handleResolveSandboxSecretRequest([1]string{
-												args[0],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, notAllowedParams{
-												allowedMethods: "POST",
-												allowedHeaders: rn192AllowedHeaders,
-												acceptPost:     "application/json",
-												acceptPatch:    "",
-											})
+										break
+									}
+									switch elem[0] {
+									case 'r': // Prefix: "raw-secret"
+
+										if l := len("raw-secret"); len(elem) >= l && elem[0:l] == "raw-secret" {
+											elem = elem[l:]
+										} else {
+											break
 										}
 
-										return
+										if len(elem) == 0 {
+											// Leaf node.
+											switch r.Method {
+											case "POST":
+												s.handleResolveSandboxRawSecretRequest([1]string{
+													args[0],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "POST",
+													allowedHeaders: rn192AllowedHeaders,
+													acceptPost:     "application/json",
+													acceptPatch:    "",
+												})
+											}
+
+											return
+										}
+
+									case 's': // Prefix: "secret"
+
+										if l := len("secret"); len(elem) >= l && elem[0:l] == "secret" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											// Leaf node.
+											switch r.Method {
+											case "POST":
+												s.handleResolveSandboxSecretRequest([1]string{
+													args[0],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "POST",
+													allowedHeaders: rn194AllowedHeaders,
+													acceptPost:     "application/json",
+													acceptPatch:    "",
+												})
+											}
+
+											return
+										}
+
 									}
 
 								}
@@ -950,7 +994,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "POST",
-											allowedHeaders: rn219AllowedHeaders,
+											allowedHeaders: rn221AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -1328,7 +1372,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 													default:
 														s.notAllowed(w, r, notAllowedParams{
 															allowedMethods: "POST",
-															allowedHeaders: rn199AllowedHeaders,
+															allowedHeaders: rn201AllowedHeaders,
 															acceptPost:     "application/json",
 															acceptPatch:    "",
 														})
@@ -1560,7 +1604,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 													default:
 														s.notAllowed(w, r, notAllowedParams{
 															allowedMethods: "POST",
-															allowedHeaders: rn224AllowedHeaders,
+															allowedHeaders: rn226AllowedHeaders,
 															acceptPost:     "application/json",
 															acceptPatch:    "",
 														})
@@ -2026,7 +2070,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														default:
 															s.notAllowed(w, r, notAllowedParams{
 																allowedMethods: "POST",
-																allowedHeaders: rn198AllowedHeaders,
+																allowedHeaders: rn200AllowedHeaders,
 																acceptPost:     "application/json",
 																acceptPatch:    "",
 															})
@@ -2148,7 +2192,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "PATCH",
-											allowedHeaders: rn220AllowedHeaders,
+											allowedHeaders: rn222AllowedHeaders,
 											acceptPost:     "",
 											acceptPatch:    "application/json",
 										})
@@ -3996,7 +4040,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														default:
 															s.notAllowed(w, r, notAllowedParams{
 																allowedMethods: "PATCH",
-																allowedHeaders: rn221AllowedHeaders,
+																allowedHeaders: rn223AllowedHeaders,
 																acceptPost:     "",
 																acceptPatch:    "application/json",
 															})
@@ -4120,7 +4164,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 															default:
 																s.notAllowed(w, r, notAllowedParams{
 																	allowedMethods: "POST",
-																	allowedHeaders: rn193AllowedHeaders,
+																	allowedHeaders: rn195AllowedHeaders,
 																	acceptPost:     "application/json",
 																	acceptPatch:    "",
 																})
@@ -4226,7 +4270,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 																default:
 																	s.notAllowed(w, r, notAllowedParams{
 																		allowedMethods: "POST",
-																		allowedHeaders: rn205AllowedHeaders,
+																		allowedHeaders: rn207AllowedHeaders,
 																		acceptPost:     "application/json",
 																		acceptPatch:    "",
 																	})
@@ -4254,7 +4298,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 																default:
 																	s.notAllowed(w, r, notAllowedParams{
 																		allowedMethods: "POST",
-																		allowedHeaders: rn211AllowedHeaders,
+																		allowedHeaders: rn213AllowedHeaders,
 																		acceptPost:     "application/json",
 																		acceptPatch:    "",
 																	})
@@ -4284,7 +4328,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 															default:
 																s.notAllowed(w, r, notAllowedParams{
 																	allowedMethods: "POST",
-																	allowedHeaders: rn216AllowedHeaders,
+																	allowedHeaders: rn218AllowedHeaders,
 																	acceptPost:     "application/json",
 																	acceptPatch:    "",
 																})
@@ -4354,7 +4398,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 															default:
 																s.notAllowed(w, r, notAllowedParams{
 																	allowedMethods: "POST",
-																	allowedHeaders: rn223AllowedHeaders,
+																	allowedHeaders: rn225AllowedHeaders,
 																	acceptPost:     "application/json",
 																	acceptPatch:    "",
 																})
@@ -5602,29 +5646,68 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 										}
 									}
 
-								case 's': // Prefix: "sandbox-secret"
+								case 's': // Prefix: "sandbox-"
 
-									if l := len("sandbox-secret"); len(elem) >= l && elem[0:l] == "sandbox-secret" {
+									if l := len("sandbox-"); len(elem) >= l && elem[0:l] == "sandbox-" {
 										elem = elem[l:]
 									} else {
 										break
 									}
 
 									if len(elem) == 0 {
-										// Leaf node.
-										switch method {
-										case "POST":
-											r.name = ResolveSandboxSecretOperation
-											r.summary = "Resolve a sandbox sentinel secret"
-											r.operationID = "resolve-sandbox-secret"
-											r.operationGroup = ""
-											r.pathPattern = "/api/pools/{poolId}/resolve-sandbox-secret"
-											r.args = args
-											r.count = 1
-											return r, true
-										default:
-											return
+										break
+									}
+									switch elem[0] {
+									case 'r': // Prefix: "raw-secret"
+
+										if l := len("raw-secret"); len(elem) >= l && elem[0:l] == "raw-secret" {
+											elem = elem[l:]
+										} else {
+											break
 										}
+
+										if len(elem) == 0 {
+											// Leaf node.
+											switch method {
+											case "POST":
+												r.name = ResolveSandboxRawSecretOperation
+												r.summary = "Resolve the value of a sandbox's raw binding, to hand the sandbox and to watch its requests for"
+												r.operationID = "resolve-sandbox-raw-secret"
+												r.operationGroup = ""
+												r.pathPattern = "/api/pools/{poolId}/resolve-sandbox-raw-secret"
+												r.args = args
+												r.count = 1
+												return r, true
+											default:
+												return
+											}
+										}
+
+									case 's': // Prefix: "secret"
+
+										if l := len("secret"); len(elem) >= l && elem[0:l] == "secret" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											// Leaf node.
+											switch method {
+											case "POST":
+												r.name = ResolveSandboxSecretOperation
+												r.summary = "Resolve a sandbox sentinel secret"
+												r.operationID = "resolve-sandbox-secret"
+												r.operationGroup = ""
+												r.pathPattern = "/api/pools/{poolId}/resolve-sandbox-secret"
+												r.args = args
+												r.count = 1
+												return r, true
+											default:
+												return
+											}
+										}
+
 									}
 
 								}

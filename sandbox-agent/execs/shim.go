@@ -42,11 +42,15 @@ type ShimConfig struct {
 	// trail: a signal the platform could not deliver as asked, and what it
 	// delivered instead. Like Logs it is the shim's own connection to the
 	// sandbox's database.
-	Events   ExecEventRecorder
-	Rows     uint16
-	Cols     uint16
-	TTY      bool
-	Env      map[string]string
+	Events ExecEventRecorder
+	Rows   uint16
+	Cols   uint16
+	TTY    bool
+	Env    map[string]string
+	// RawEnv is StartRequest.RawEnv: each env-delivered raw secret and the
+	// file its value is read from as the command starts. The value goes into
+	// the command's environment and into nothing the shim records.
+	RawEnv   map[string]string
 	User     *User
 	Metadata map[string]string
 }
@@ -493,6 +497,7 @@ func (r *shimRuntime) startCommand() error {
 			env = append(env, key+"="+value)
 		}
 	}
+	env = append(env, rawEnvList(r.cfg.RawEnv)...)
 	sysProcAttr, err := agentSysProcAttr(r.cfg.User)
 	if err != nil {
 		r.markStartFailed(err)

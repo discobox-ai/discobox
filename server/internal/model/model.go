@@ -1369,6 +1369,10 @@ const (
 	SecretBindingEventUpdated = "updated"
 	SecretBindingEventDeleted = "deleted"
 	SecretBindingEventExpired = "expired"
+	// SecretBindingEventDelivered is a raw binding's value handed to the
+	// pool of a discobox it covers, to deliver there (ADR 26-10-27-840 §5):
+	// once per value and discobox, Cause naming the discobox.
+	SecretBindingEventDelivered = "delivered"
 	// SecretBindingActorSystem is the actor of a change nobody made directly:
 	// a cascade from a removed parent, an expiry, or the upgrade.
 	SecretBindingActorSystem = "system"
@@ -1469,6 +1473,11 @@ type Secret struct {
 	// be allowed by them, and by its binding's and parent's routes. None sends
 	// it nowhere; `*` sends it anywhere (ADR 26-10-27-939).
 	Routes []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Where the credential may be sent; none sends it nowhere"`
+	// AllowRaw says the value itself may ever be handed to a discobox, by a
+	// binding a person makes raw (ADR 26-10-27-840 §1). It is part of the
+	// furthest the secret may go: no binding is raw unless it is set, and
+	// clearing it deletes the raw bindings that stand.
+	AllowRaw bool `gorm:"column:allow_raw;not null;default:false" json:"allowRaw,omitempty" doc:"The value itself may be handed to a discobox by a raw binding a person makes; clearing it deletes those bindings"`
 	// ValueUpdatedAt is when the current value was written, set by the store
 	// on create and on every replaced value.
 	ValueUpdatedAt *time.Time `gorm:"column:value_updated_at" json:"valueUpdatedAt,omitempty" doc:"When the current value was written" format:"date-time"`
@@ -1857,13 +1866,18 @@ type SecretBinding struct {
 	Delegate   bool   `gorm:"column:delegate;not null;default:false" json:"delegate" doc:"A discobox the binding covers may give the credential, to use, to the discoboxes it creates"`
 	EnvName    string `gorm:"column:env_name;not null;type:text;default:'';uniqueIndex:idx_secret_binding_use,priority:3,where:use" json:"envVar,omitempty" doc:"Environment variable the credential's sentinel is delivered in; set when use is"`
 	// Routes narrow the secret's for this binding; none inherits them.
-	Routes    []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Routes that narrow the secret's for this binding; empty inherits the secret's"`
-	ExpiresAt *time.Time    `gorm:"column:expires_at;index" json:"expiresAt,omitempty" doc:"When the binding lapses; absent never" format:"date-time"`
-	ParentID  string        `gorm:"column:parent_id;not null;type:text;default:'';index" json:"parentId,omitempty" doc:"The delegate binding this one was handed on under"`
-	RequestID string        `gorm:"column:request_id;not null;type:text;default:''" json:"requestId,omitempty" doc:"The request this binding answered, when one did"`
-	CreatedBy string        `gorm:"column:created_by;not null;type:text;default:''" json:"createdBy,omitempty" doc:"Principal that made the binding"`
-	CreatedAt time.Time     `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time     `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	Routes []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Routes that narrow the secret's for this binding; empty inherits the secret's"`
+	// Raw hands the discobox the value itself rather than a sentinel (ADR
+	// 26-10-27-840): sandboxconfig.RawDeliveryEnv or RawDeliveryFile, empty
+	// for a sentinel. Only a person makes a binding raw, only for a use of a
+	// secret that allows it, and never one handed on under a delegation.
+	Raw       string     `gorm:"column:raw;not null;type:text;default:''" json:"raw,omitempty" doc:"Hand the discobox the value itself: env puts it in envVar, file puts the path of a file holding it there; empty delivers a sentinel" enum:"env,file"`
+	ExpiresAt *time.Time `gorm:"column:expires_at;index" json:"expiresAt,omitempty" doc:"When the binding lapses; absent never" format:"date-time"`
+	ParentID  string     `gorm:"column:parent_id;not null;type:text;default:'';index" json:"parentId,omitempty" doc:"The delegate binding this one was handed on under"`
+	RequestID string     `gorm:"column:request_id;not null;type:text;default:''" json:"requestId,omitempty" doc:"The request this binding answered, when one did"`
+	CreatedBy string     `gorm:"column:created_by;not null;type:text;default:''" json:"createdBy,omitempty" doc:"Principal that made the binding"`
+	CreatedAt time.Time  `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time  `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
@@ -1900,7 +1914,7 @@ type SecretBindingEvent struct {
 	ProjectID string        `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	BindingID string        `gorm:"column:binding_id;not null;type:text;index" json:"bindingId" doc:"The binding changed"`
 	SecretID  string        `gorm:"column:secret_id;not null;type:text;index" json:"-"`
-	Event     string        `gorm:"column:event;not null;type:text" json:"event" doc:"What happened" enum:"created,updated,deleted,expired"`
+	Event     string        `gorm:"column:event;not null;type:text" json:"event" doc:"What happened; delivered is a raw binding's value reaching the discobox it covers, once per value" enum:"created,updated,deleted,expired,delivered"`
 	Actor     string        `gorm:"column:actor;not null;type:text" json:"actor" doc:"Who did it, or system"`
 	Cause     string        `gorm:"column:cause;not null;type:text;default:''" json:"cause,omitempty" doc:"Why, when something caused it"`
 	Binding   SecretBinding `gorm:"column:binding;type:text;serializer:json" json:"binding" doc:"The binding after the change; before it, for a delete or an expiry"`
@@ -1933,6 +1947,11 @@ type SandboxSecretResolution struct {
 	// SecretID is the secret an approved value is, which the pool's proxy
 	// records on the request it swapped it into (ADR 26-10-01-240 §1).
 	SecretID string
+	// BindingID is, for a raw binding's value, the binding it was handed out
+	// under (ADR 26-10-27-840).
+	BindingID string
+	// Revision is the secret's revision the value is of.
+	Revision int64
 	// ReportScope is the rejection scope the sandbox's harness declares for
 	// the variable the sentinel is bound to, which the pool's proxy holds its
 	// reports to (ADR 26-10-13-595). Empty is every request.
@@ -1978,8 +1997,15 @@ type SandboxSecret struct {
 	// Format is the template the sentinel was minted from. A rebind compares it
 	// against the replacement secret's format to decide whether the sentinel can
 	// be kept, which it must be able to do after the old secret row is gone.
-	Format    string    `gorm:"column:format;type:text" json:"-"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	Format string `gorm:"column:format;type:text" json:"-"`
+	// Raw is the delivery of a raw binding's row, copied from the binding
+	// (ADR 26-10-27-840): its sentinel is then only the pool's handle for the
+	// value and is never delivered into the sandbox.
+	Raw string `gorm:"column:raw;not null;type:text;default:''" json:"-"`
+	// RawDeliveredRevision is the secret revision whose value this row last
+	// handed its pool, so the delivered event is recorded once per value.
+	RawDeliveredRevision int64     `gorm:"column:raw_delivered_revision;not null;default:0" json:"-"`
+	CreatedAt            time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 }
 
 func (SandboxSecret) TableName() string { return "sandbox_secrets" }

@@ -3,14 +3,18 @@ package proxyagent
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/layout"
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/proxy"
 )
 
@@ -112,6 +116,10 @@ func (h *credentialsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), credentialBrokerTimeout)
 	defer cancel()
+	if r.URL.Path == sandboxconfig.RawSecretsRoute {
+		h.serveRawSecrets(w, r.WithContext(ctx), sandboxID)
+		return
+	}
 	agentcreds.NewHandler(&credentialBroker{
 		sandboxID:   sandboxID,
 		controlPlan: h.controlPlane,
@@ -130,4 +138,49 @@ func sandboxIDFromRequest(r *http.Request) string {
 		return ""
 	}
 	return r.TLS.PeerCertificates[0].Subject.CommonName
+}
+
+// serveRawSecrets answers the sandbox's raw secrets (ADR 26-10-27-840): each
+// raw binding SecretsFile names for it, in the variable and delivery it is
+// delivered in, with the value this process holds to watch its requests for.
+// One the control plane no longer hands out is left out, which is how the
+// sandbox learns it is gone. It is the one route here that carries a value,
+// and it is not part of the agent credentials protocol: the sandbox agent
+// reads it over its own link, and its credentials relay does not serve it.
+func (h *credentialsHandler) serveRawSecrets(w http.ResponseWriter, r *http.Request, sandboxID string) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	doc, err := readSecretsDoc(h.secretsPath)
+	if err != nil {
+		http.Error(w, "raw secrets unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	held := doc.Raw[sandboxID]
+	out := sandboxconfig.RawSecretsResponse{Secrets: []sandboxconfig.RawSecret{}}
+	if len(held) > 0 && h.proxy != nil {
+		for _, value := range h.proxy.RawSecrets(r.Context(), sandboxID) {
+			entry, ok := held[value.Sentinel]
+			if !ok || !sandboxconfig.ValidRawDelivery(entry.Delivery) {
+				continue
+			}
+			secret := sandboxconfig.RawSecret{Name: entry.EnvName, Delivery: entry.Delivery, Value: value.Value}
+			if !value.ExpiresAt.IsZero() {
+				expires := value.ExpiresAt.UTC()
+				secret.ExpiresAt = &expires
+			}
+			out.Secrets = append(out.Secrets, secret)
+		}
+	}
+	slices.SortFunc(out.Secrets, func(a, b sandboxconfig.RawSecret) int { return strings.Compare(a.Name, b.Name) })
+	data, err := json.Marshal(out)
+	if err != nil {
+		http.Error(w, "raw secrets unavailable", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
 }

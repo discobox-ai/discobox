@@ -161,6 +161,9 @@ func (r *sandboxCore) decideRuntimeConfig(sandboxID string, change func(*sandbox
 		change(&next)
 	}
 	next.Agent = sandboxconfig.RuntimeAgent{ControlPlanePower: r.handsOverPower(sandboxID, recorded)}
+	if next.RawSecrets, err = r.rawSecretsOf(sandboxID, recorded); err != nil {
+		return sandboxconfig.RuntimeConfig{}, err
+	}
 	if r.sandboxIdleTimeout > 0 {
 		next.Agent.IdleTimeout = r.sandboxIdleTimeout.String()
 	}
@@ -195,6 +198,44 @@ func (r *sandboxCore) handsOverPower(sandboxID string, recorded sandboxconfig.Ru
 		}
 	}
 	return recorded.Agent.ControlPlanePower
+}
+
+// Advertised is what a sandbox's status says its agent takes, which decides
+// the fields its runtime-config document may carry.
+type Advertised struct {
+	// ControlPlanePower: the pool may hand its power to the control plane
+	// (ADR 26-10-16-337 §8).
+	ControlPlanePower bool
+	// RawSecrets: it takes the names of its raw secrets, and asks the pool
+	// for their values (ADR 26-10-27-840).
+	RawSecrets bool
+}
+
+// rawSecretsOf is the document's raw secrets, variable to delivery: the raw
+// sentinels SecretsFile holds for the sandbox, for an agent that takes them —
+// what its status last advertised, or, before the poll has reached it since
+// this agent started, whether the recorded document already carried them.
+// Never a value; the sandbox asks for those.
+func (r *sandboxCore) rawSecretsOf(sandboxID string, recorded sandboxconfig.RuntimeConfig) (map[string]string, error) {
+	takes := recorded.RawSecrets != nil
+	if advertised, ok := r.rawSecretsTaken.Load(sandboxID); ok {
+		takes, _ = advertised.(bool)
+	}
+	if !takes {
+		return nil, nil
+	}
+	raw, err := proxyagent.SandboxRawSentinels(r.root, r.projectID, r.poolID, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(raw))
+	for _, entry := range raw {
+		out[entry.EnvName] = entry.Delivery
+	}
+	return out, nil
 }
 
 // recordRuntimeConfig settles a change to the sandbox's document without
@@ -235,8 +276,9 @@ func (r *sandboxCore) deliverRuntimeConfig(ctx context.Context, sandboxID string
 // It steps aside for anything holding the sandbox's power lock — a create, a
 // start, an archive, a delete — rather than waiting on it or racing it: the
 // boot that work ends in delivers for itself, and the next poll looks again.
-func (r *sandboxCore) ConvergeRuntimeConfig(ctx context.Context, sandboxID string, applied int64, controlPlanePower bool) error {
-	r.powerHandover.Store(sandboxID, controlPlanePower)
+func (r *sandboxCore) ConvergeRuntimeConfig(ctx context.Context, sandboxID string, applied int64, advertised Advertised) error {
+	r.powerHandover.Store(sandboxID, advertised.ControlPlanePower)
+	r.rawSecretsTaken.Store(sandboxID, advertised.RawSecrets)
 	power := r.sandboxLock(sandboxID)
 	if !power.TryLock() {
 		return nil

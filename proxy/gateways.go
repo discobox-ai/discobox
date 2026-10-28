@@ -188,7 +188,7 @@ func (meta *requestMeta) recordGateway(applied *appliedGateway) {
 	}
 	meta.span.SetAttributes(
 		attribute.String("proxy.gateway", applied.route.Name),
-		attribute.String("proxy.gateway.forwarded_url", meta.forwardedURL),
+		attribute.String("proxy.gateway.forwarded_url", meta.rawSet.Redact(meta.forwardedURL)),
 	)
 }
 
@@ -263,7 +263,8 @@ func (h *httpProxy) refuseGateway(req *http.Request, meta *requestMeta, client c
 		AppliedPattern:       meta.appliedPattern,
 		AppliedHeaders:       meta.appliedHeaders,
 		ForwardedURL:         meta.forwardedURL,
-		SwappedSecretIDs:     meta.swappedSecretIDs,
+		SwappedSecretIDs:     meta.spentSecretIDs(),
+		RawBindingIDs:        meta.spentRawBindingIDs(),
 		RedactRequestHeaders: meta.redactRequestHeaders(),
 		RequestHeaders:       req.Header,
 	})

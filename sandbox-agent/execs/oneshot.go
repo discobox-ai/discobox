@@ -49,6 +49,9 @@ func (m *Manager) RunOnce(ctx context.Context, req OnceRequest) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
+	if err := m.awaitRawSecrets(ctx); err != nil {
+		return nil, err
+	}
 	env := m.Environment(req.Env, user)
 	dir := req.Dir
 	if dir == "" {
@@ -87,7 +90,7 @@ func (m *Manager) RunOnce(ctx context.Context, req OnceRequest) ([]byte, error) 
 	//nolint:gosec // The command is the caller's by design, as every exec's is.
 	cmd := exec.CommandContext(ctx, program, req.Command[1:]...)
 	cmd.Stdin = bytes.NewReader(req.Stdin)
-	cmd.Env = envList(env)
+	cmd.Env = append(envList(env), rawEnvList(m.rawEnv(env))...)
 	cmd.Dir = dir
 	cmd.SysProcAttr = attributes
 	// Killing the child alone is not enough to end this. Its output is read

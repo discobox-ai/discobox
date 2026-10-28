@@ -252,6 +252,7 @@ func (p *poolAgentClient) ListHTTPAudit(ctx context.Context, projectID string, q
 			BlockedReason:    e.BlockedReason.Or(""),
 			CacheHit:         e.CacheHit.Or(false),
 			SwappedSecretIDs: append([]string{}, e.SwappedSecretIds...),
+			RawBindingIDs:    append([]string{}, e.RawBindingIds...),
 			RequestBodyBytes: e.RequestBodyBytes.Or(0),
 			ResponseBytes:    e.ResponseBytes.Or(0),
 			Upgrade:          e.Upgrade.Or(false),
@@ -301,6 +302,7 @@ func httpAuditExchangeDetail(res *poolapimodel.PoolHTTPAuditExchangeDetail) (*sa
 			BlockedReason:    res.BlockedReason.Or(""),
 			CacheHit:         res.CacheHit.Or(false),
 			SwappedSecretIDs: append([]string{}, res.SwappedSecretIds...),
+			RawBindingIDs:    append([]string{}, res.RawBindingIds...),
 			RequestBodyBytes: res.RequestBodyBytes.Or(0),
 			ResponseBytes:    res.ResponseBytes.Or(0),
 			Upgrade:          res.Upgrade.Or(false),
@@ -408,6 +410,12 @@ func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, st
 	// lists ride with every sentinel push, never left out or null.
 	if opts.Sentinels != nil || opts.SentinelRoutes != nil {
 		req.SentinelRoutes = poolclient.NewOptNilPoolSandboxUpdateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelRoutes))
+	}
+	// Raw bindings ride with the sentinels and are sent only when there are
+	// any, so a pool that predates them is not sent a field it refuses; one
+	// absent beside sentinels removes them (ADR 26-10-27-840).
+	if opts.Sentinels != nil && len(opts.RawSecrets) > 0 {
+		req.RawSecrets = poolclient.NewOptNilPoolSandboxUpdateRequestRawSecrets(poolclient.PoolSandboxUpdateRequestRawSecrets(poolRawSecrets(opts.RawSecrets)))
 	}
 	if len(opts.SecretEnv) > 0 {
 		req.SecretEnv = poolclient.NewOptNilPoolSandboxUpdateRequestSecretEnv(poolclient.PoolSandboxUpdateRequestSecretEnv(opts.SecretEnv))
@@ -808,6 +816,9 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	if len(opts.Sentinels) > 0 || len(opts.SentinelRoutes) > 0 {
 		out.SentinelRoutes = poolclient.NewOptNilPoolSandboxCreateRequestSentinelRoutes(poolSentinelRoutes(opts.SentinelRoutes))
 	}
+	if len(opts.RawSecrets) > 0 {
+		out.RawSecrets = poolclient.NewOptNilPoolSandboxCreateRequestRawSecrets(poolclient.PoolSandboxCreateRequestRawSecrets(poolRawSecrets(opts.RawSecrets)))
+	}
 	out.Egress = poolclient.NewOptEgressPolicy(poolEgressPolicy(opts.Egress))
 	out.ProvisionEgress = poolclient.NewOptEgressPolicy(poolEgressPolicy(opts.ProvisionEgress))
 	if len(opts.Gateways) > 0 {
@@ -1193,6 +1204,15 @@ func (s workerSecuritySource) PoolBearerAuth(ctx context.Context, _ poolclient.O
 		return poolclient.PoolBearerAuth{}, err
 	}
 	return poolclient.PoolBearerAuth{Token: strings.TrimSpace(token)}, nil
+}
+
+// poolRawSecrets states each raw binding's delivery, by its sentinel.
+func poolRawSecrets(in map[string]sandbox.RawSecret) map[string]poolclient.RawSentinel {
+	out := make(map[string]poolclient.RawSentinel, len(in))
+	for sentinel, raw := range in {
+		out[sentinel] = poolclient.RawSentinel{EnvName: raw.EnvName, Delivery: poolclient.RawSentinelDelivery(raw.Delivery)}
+	}
+	return out
 }
 
 // poolSentinelRoutes states each sentinel's route lists (ADR 26-10-27-880

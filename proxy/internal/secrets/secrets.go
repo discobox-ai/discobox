@@ -3,7 +3,10 @@
 // convincing fake credential) instead of the real secret; the proxy detects the
 // sentinel in outbound requests and, when the destination host is authorized,
 // substitutes the real value resolved on demand. The real credential never
-// exists inside the sandbox and is never persisted by the proxy.
+// exists inside the sandbox and is never persisted by the proxy. The one
+// exception is a raw binding's value, which a person handed the sandbox, and
+// which this package holds in memory to watch the sandbox's requests for
+// (raw.go).
 package secrets
 
 import (
@@ -194,6 +197,10 @@ type Resolver interface {
 	// the upstream unreachable, or gone quiet after the request went out —
 	// since the request may have been acted on.
 	Gate(ctx context.Context, req GateRequest) (GateAdmission, error)
+	// ResolveRaw returns the value of a client's raw binding by its sentinel
+	// (ADR 26-10-27-840), ErrDenied when the client no longer holds it raw,
+	// or any other error when there is no answer.
+	ResolveRaw(ctx context.Context, req RawRequest) (RawResult, error)
 }
 
 // GateAdmission is a request the gate let in: the upstream's answer.
@@ -244,6 +251,10 @@ type Config struct {
 	// it is answered by the resolver's Gate, which admits one carrying a live
 	// use of the credential that opens it (ADR 0140 §2). Empty is no gate.
 	GateHost string
+	// Raw maps client (sandbox) ID to the sentinels of its raw bindings (ADR
+	// 26-10-27-840): never swapped, each the handle a value the sandbox holds
+	// is resolved by, to hand it over and to watch its requests for.
+	Raw map[string][]string
 }
 
 const (
@@ -280,6 +291,8 @@ const (
 // 26-10-14-482 §1).
 type Swapper struct {
 	resolver Resolver
+	// raw holds the values of the clients' raw bindings (raw.go).
+	raw *rawWatch
 	// settings is what Reconfigure replaces. It is stored under mu, so a
 	// store that checks it under mu cannot race the prune that follows a
 	// change, and read without it everywhere else.
@@ -356,7 +369,12 @@ func New(resolver Resolver, cfg Config) *Swapper {
 		refreshing: map[cacheKey]struct{}{},
 		now:        time.Now,
 	}
-	s.settings.Store(newSettings(cfg))
+	st := newSettings(cfg)
+	s.settings.Store(st)
+	if resolver != nil {
+		s.raw = newRawWatch(resolver, func() time.Time { return s.now() })
+		s.raw.reconfigure(cfg.Raw, st.refreshTTL)
+	}
 	return s
 }
 
@@ -374,6 +392,7 @@ func (s *Swapper) Reconfigure(cfg Config) {
 		return
 	}
 	next := newSettings(cfg)
+	s.raw.reconfigure(cfg.Raw, next.refreshTTL)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.settings.Store(next)
@@ -462,6 +481,36 @@ type Result struct {
 
 // Swapped reports whether any value in the request was substituted.
 func (r Result) Swapped() bool { return len(r.Headers) > 0 || len(r.QueryParams) > 0 }
+
+// RawValues is every raw value clientID holds now, to hand it over: each
+// asked for again once its refresh is due, one the resolver denies left out.
+func (s *Swapper) RawValues(ctx context.Context, clientID string) []RawValue {
+	if s == nil {
+		return nil
+	}
+	return s.raw.values(ctx, clientID)
+}
+
+// AwaitRaw holds a request from clientID until every raw sentinel configured
+// for it has an answer, within the resolve retry window, and returns the
+// failures of those that still have none: such a request is refused, never
+// sent unwatched (ADR 26-10-27-840).
+func (s *Swapper) AwaitRaw(ctx context.Context, clientID string) []string {
+	if s == nil {
+		return nil
+	}
+	st := s.settings.Load()
+	return s.raw.await(ctx, clientID, time.Now().Add(st.resolveRetry), st.negTTL)
+}
+
+// Raw is the raw values clientID's requests are watched for and its audit
+// trail is kept clean of, nil when there are none.
+func (s *Swapper) Raw(clientID string) *RawSet {
+	if s == nil {
+		return nil
+	}
+	return s.raw.set(clientID)
+}
 
 // Active reports whether the Swapper can swap for clientID.
 func (s *Swapper) Active(clientID string) bool {

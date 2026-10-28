@@ -213,6 +213,7 @@ reading it from the value gets it wrong, and is kept when the value changes.
 	cmd.Flags().StringVar(&name, "name", "", "Secret name")
 	cmd.Flags().StringVar(&secretType, "type", "", "Secret type: token, oauth, or exchange (default token)")
 	cmd.Flags().Var(ttl, "max-binding-ttl", maxBindingTTLCreateFlagUsage)
+	cmd.Flags().Bool("allow-raw", false, allowRawFlagUsage)
 	cmd.Flags().StringVar(&format, "format", "", secretFormatFlagUsage)
 	cmd.Flags().StringArray("route", nil, secretRouteFlagUsage)
 	addSecretValueFlags(cmd.Flags(), &value)
@@ -269,6 +270,7 @@ it none, so it is sent nowhere.
 	}}
 	cmd.Flags().StringVar(&name, "name", "", "Secret name")
 	cmd.Flags().Var(ttl, "max-binding-ttl", maxBindingTTLUpdateFlagUsage)
+	cmd.Flags().Bool("allow-raw", false, allowRawFlagUsage+"; --allow-raw=false removes the raw bindings that stand")
 	cmd.Flags().StringVar(&format, "format", "", secretFormatFlagUsage+`; "" goes back to that. A running discobox keeps the sentinel already in its environment`)
 	cmd.Flags().StringArray("route", nil, secretRouteFlagUsage+"; replaces the secret's routes")
 	addClearFlag(cmd, "route", "Remove the secret's routes, so it is sent nowhere until it has some again")
@@ -561,6 +563,13 @@ func createSecretBody(flags *pflag.FlagSet, name, secretType string, ttl *lifeti
 	if seconds, given := ttl.Seconds(); given {
 		body.SetMaxBindingTTLSeconds(apiclientgen.NewOptInt64(seconds))
 	}
+	if flags.Changed("allow-raw") {
+		allow, err := flags.GetBool("allow-raw")
+		if err != nil {
+			return nil, err
+		}
+		body.SetAllowRaw(apiclientgen.NewOptBool(allow))
+	}
 	// A secret with no routes is sent nowhere (ADR 26-10-27-880 §1), so one
 	// made here says where it may go: '*' is how a person says anywhere
 	// (ADR 26-10-27-939).
@@ -574,6 +583,8 @@ func createSecretBody(flags *pflag.FlagSet, name, secretType string, ttl *lifeti
 	body.SetRoutes(apiclientgen.NewOptNilSecretRouteInputArray(routes))
 	return body, nil
 }
+
+const allowRawFlagUsage = "Let a person bind the value itself to a discobox (secret bind --raw), rather than only a sentinel its pool exchanges"
 
 const secretRouteFlagUsage = "Where the secret may be sent, whoever holds it, as " + secretroute.Syntax + ", or '*' for any host: a host is exact, *.h is the hosts beneath h. Every request it is sent in must fall on one; the most specific decides (repeatable)"
 
@@ -605,6 +616,13 @@ func updateSecretBody(flags *pflag.FlagSet, name string, ttl *lifetime.Flag, val
 	}
 	if seconds, given := ttl.Seconds(); given {
 		body.SetMaxBindingTTLSeconds(apiclientgen.NewOptInt64(seconds))
+	}
+	if flags.Changed("allow-raw") {
+		allow, err := flags.GetBool("allow-raw")
+		if err != nil {
+			return nil, err
+		}
+		body.SetAllowRaw(apiclientgen.NewOptBool(allow))
 	}
 	if secretValueFlagsChanged(flags) {
 		value, err := secretValueFromOptions(flags, valueOpts)

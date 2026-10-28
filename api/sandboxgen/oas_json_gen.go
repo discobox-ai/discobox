@@ -4217,6 +4217,40 @@ func (s *OptSandboxRuntimeConfigProxy) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxRuntimeConfigRawSecrets as json.
+func (o OptSandboxRuntimeConfigRawSecrets) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxRuntimeConfigRawSecrets from json.
+func (o *OptSandboxRuntimeConfigRawSecrets) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxRuntimeConfigRawSecrets to nil")
+	}
+	o.Set = true
+	o.Value = make(SandboxRuntimeConfigRawSecrets)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxRuntimeConfigRawSecrets) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxRuntimeConfigRawSecrets) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxRuntimeConfigSecretEnv as json.
 func (o OptSandboxRuntimeConfigSecretEnv) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -8298,6 +8332,12 @@ func (s *SandboxAgentStatusResponse) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.RawSecrets.Set {
+			e.FieldStart("rawSecrets")
+			s.RawSecrets.Encode(e)
+		}
+	}
+	{
 		if s.Resources.Set {
 			e.FieldStart("resources")
 			s.Resources.Encode(e)
@@ -8337,7 +8377,7 @@ func (s *SandboxAgentStatusResponse) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxAgentStatusResponse = [13]string{
+var jsonFieldsNameOfSandboxAgentStatusResponse = [14]string{
 	0:  "autostop",
 	1:  "harnessConfigCandidate",
 	2:  "harnessConfigState",
@@ -8346,11 +8386,12 @@ var jsonFieldsNameOfSandboxAgentStatusResponse = [13]string{
 	5:  "observedAt",
 	6:  "ports",
 	7:  "provision",
-	8:  "resources",
-	9:  "runtimeConfigRevision",
-	10: "sessions",
-	11: "sourceStates",
-	12: "sources",
+	8:  "rawSecrets",
+	9:  "resources",
+	10: "runtimeConfigRevision",
+	11: "sessions",
+	12: "sourceStates",
+	13: "sources",
 }
 
 // Decode decodes SandboxAgentStatusResponse from json.
@@ -8452,6 +8493,16 @@ func (s *SandboxAgentStatusResponse) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"provision\"")
 			}
+		case "rawSecrets":
+			if err := func() error {
+				s.RawSecrets.Reset()
+				if err := s.RawSecrets.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rawSecrets\"")
+			}
 		case "resources":
 			if err := func() error {
 				s.Resources.Reset()
@@ -8473,7 +8524,7 @@ func (s *SandboxAgentStatusResponse) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"runtimeConfigRevision\"")
 			}
 		case "sessions":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				s.Sessions = make([]SandboxAgentSessionStatus, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -8508,7 +8559,7 @@ func (s *SandboxAgentStatusResponse) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sourceStates\"")
 			}
 		case "sources":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				s.Sources = make([]SandboxAgentGitSourceStatus, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -8536,7 +8587,7 @@ func (s *SandboxAgentStatusResponse) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b01100000,
-		0b00010100,
+		0b00101000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -12200,6 +12251,12 @@ func (s *SandboxRuntimeConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.RawSecrets.Set {
+			e.FieldStart("rawSecrets")
+			s.RawSecrets.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("revision")
 		e.Int64(s.Revision)
 	}
@@ -12221,12 +12278,13 @@ func (s *SandboxRuntimeConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxRuntimeConfig = [5]string{
+var jsonFieldsNameOfSandboxRuntimeConfig = [6]string{
 	0: "agent",
 	1: "proxy",
-	2: "revision",
-	3: "secretEnv",
-	4: "sources",
+	2: "rawSecrets",
+	3: "revision",
+	4: "secretEnv",
+	5: "sources",
 }
 
 // Decode decodes SandboxRuntimeConfig from json.
@@ -12258,8 +12316,18 @@ func (s *SandboxRuntimeConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"proxy\"")
 			}
+		case "rawSecrets":
+			if err := func() error {
+				s.RawSecrets.Reset()
+				if err := s.RawSecrets.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rawSecrets\"")
+			}
 		case "revision":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Int64()
 				s.Revision = int64(v)
@@ -12307,7 +12375,7 @@ func (s *SandboxRuntimeConfig) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000101,
+		0b00001001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -12576,6 +12644,100 @@ func (s *SandboxRuntimeConfigProxy) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxRuntimeConfigProxy) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s SandboxRuntimeConfigRawSecrets) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s SandboxRuntimeConfigRawSecrets) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		elem.Encode(e)
+	}
+}
+
+// Decode decodes SandboxRuntimeConfigRawSecrets from json.
+func (s *SandboxRuntimeConfigRawSecrets) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxRuntimeConfigRawSecrets to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem SandboxRuntimeConfigRawSecretsItem
+		if err := func() error {
+			if err := elem.Decode(d); err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxRuntimeConfigRawSecrets")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxRuntimeConfigRawSecrets) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxRuntimeConfigRawSecrets) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxRuntimeConfigRawSecretsItem as json.
+func (s SandboxRuntimeConfigRawSecretsItem) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SandboxRuntimeConfigRawSecretsItem from json.
+func (s *SandboxRuntimeConfigRawSecretsItem) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxRuntimeConfigRawSecretsItem to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SandboxRuntimeConfigRawSecretsItem(v) {
+	case SandboxRuntimeConfigRawSecretsItemEnv:
+		*s = SandboxRuntimeConfigRawSecretsItemEnv
+	case SandboxRuntimeConfigRawSecretsItemFile:
+		*s = SandboxRuntimeConfigRawSecretsItemFile
+	default:
+		*s = SandboxRuntimeConfigRawSecretsItem(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxRuntimeConfigRawSecretsItem) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxRuntimeConfigRawSecretsItem) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

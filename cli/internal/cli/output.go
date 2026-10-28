@@ -516,6 +516,9 @@ func (a *App) writeSecret(cmd *cobra.Command, secret *apimodel.Secret) error {
 	fmt.Fprintf(tw, "TYPE\t%s\n", secret.Type)
 	fmt.Fprintf(tw, "SENT TO\t%s\n", routesText(secret.Routes.Or(nil)))
 	fmt.Fprintf(tw, "MAX BINDING TTL\t%s\n", formatBindingLimit(secret.MaxBindingTTLSeconds))
+	if secret.AllowRaw.Or(false) {
+		fmt.Fprintf(tw, "RAW\tallowed: a person may hand a discobox the value itself\n")
+	}
 	// The sentinel shape, and whether somebody chose it: a set one is kept
 	// when the value changes, a read one is re-read.
 	if format := secret.Format.Or(""); format != "" {

@@ -565,6 +565,21 @@ components:
             required:
                 - name
             type: object
+        RawSentinel:
+            additionalProperties: false
+            description: How a raw binding's value is delivered in its sandbox (ADR 26-10-27-840).
+            properties:
+                envName:
+                    description: The variable the value, or the path of the file holding it, is delivered in.
+                    type: string
+                delivery:
+                    description: env sets the variable to the value; file sets it to the path of a file under /run/discobox/raw-secrets holding it.
+                    enum: [env, file]
+                    type: string
+            required:
+                - envName
+                - delivery
+            type: object
         SentinelRoute:
             additionalProperties: false
             description: "Where a secret may be sent (ADR 26-10-02-924, ADR 26-10-27-880 §4). A request falls on the route when its host, method, path and protocol block all match; the most specific route of a list a request falls on decides it, host first, then path, and a blocked one among the most specific refuses."
@@ -1030,6 +1045,12 @@ components:
                         type: string
                     nullable: true
                     type: array
+                rawSecrets:
+                    description: "The sentinels of this sandbox's raw bindings, keyed by sentinel (ADR 26-10-27-840): handles the pool resolves the value by, to hand the sandbox and to watch its requests for, and never delivered into it. Their route lists are in sentinelRoutes. Sent only when there are any, so a pool that predates them is not sent the field."
+                    additionalProperties:
+                        $ref: '#/components/schemas/RawSentinel'
+                    nullable: true
+                    type: object
                 sentinelRoutes:
                     description: The route lists each stable sentinel is held to, keyed by sentinel (ADR 26-10-27-880 §4) — its secret's, its binding's when the binding has any, and its parent's. Every request carrying the sentinel must be allowed by every list; a sentinel with no lists, or an empty list, is sent nowhere.
                     additionalProperties:
@@ -1200,6 +1221,11 @@ components:
                 method:
                     description: HTTP method
                     type: string
+                rawBindingIds:
+                    description: "Raw bindings whose values this request carried, by ID (ADR 26-10-27-840): matched in it, not swapped. Their secrets are in swappedSecretIds as well. Absent means none, and from a pool agent that predates raw bindings."
+                    items:
+                        type: string
+                    type: array
                 requestBodyBytes:
                     description: Size of the recorded request body
                     format: int64
@@ -1307,6 +1333,11 @@ components:
                 method:
                     description: HTTP method
                     type: string
+                rawBindingIds:
+                    description: "Raw bindings whose values this request carried, by ID (ADR 26-10-27-840): matched in it, not swapped. Their secrets are in swappedSecretIds as well. Absent means none, and from a pool agent that predates raw bindings."
+                    items:
+                        type: string
+                    type: array
                 requestBodyBytes:
                     description: Size of the recorded request body
                     format: int64
@@ -1594,6 +1625,12 @@ components:
                         type: string
                     nullable: true
                     type: array
+                rawSecrets:
+                    description: "Replacement raw sentinels keyed by sentinel, sent with sentinels when the sandbox has any; absent with sentinels present removes them (ADR 26-10-27-840)."
+                    additionalProperties:
+                        $ref: '#/components/schemas/RawSentinel'
+                    nullable: true
+                    type: object
                 sentinelRoutes:
                     description: Replacement route lists keyed by stable sentinel, sent with sentinels and replacing the sandbox's whole map (ADR 26-10-27-880 §4).
                     additionalProperties:

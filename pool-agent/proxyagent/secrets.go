@@ -59,6 +59,19 @@ type secretsDoc struct {
 	// the protocol's environment read from it, for a process that started
 	// before a grant (agentcreds.PathEnvironment).
 	Environment map[string]map[string]string `json:"environment,omitempty"`
+	// Raw are, per sandbox, the sentinels of its raw bindings (ADR
+	// 26-10-27-840): never delivered into the sandbox, and never swapped. Each
+	// is the handle this pool resolves the value by, to hand the sandbox and
+	// to watch its requests for; its route lists are in Routes beside the
+	// others. The value itself is never written here.
+	Raw map[string]map[string]RawSentinel `json:"raw,omitempty"`
+}
+
+// RawSentinel is how a raw binding's value is delivered in its sandbox: the
+// variable and sandboxconfig.RawDeliveryEnv or RawDeliveryFile.
+type RawSentinel struct {
+	EnvName  string `json:"envName"`
+	Delivery string `json:"delivery"`
 }
 
 // resolveContext is the on-disk resolve credential the proxy unit reads.
@@ -82,28 +95,40 @@ var secretsFileMu sync.Mutex
 const secretsDocVersion = 3
 
 // UpsertSandboxSentinels registers a sandbox's sentinel set with the proxy by
-// updating SecretsFile, with the route lists each sentinel is held to (ADR
-// 26-10-27-880 §4). Passing an empty set removes the sandbox entry. A
-// sentinel routes names no lists for is sent nowhere. Each route is written
-// normalized (secretroute.Normalize), and one that does not normalize is held
-// as heldList says: never as anything wider than it was.
-func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string, sentinels []string, routes map[string][][]secretroute.Route) error {
+// updating SecretsFile, with its raw bindings' sentinels (raw, ADR
+// 26-10-27-840) and the route lists each sentinel of either is held to (ADR
+// 26-10-27-880 §4). Passing empty sets removes the sandbox entry. A sentinel
+// routes names no lists for is sent nowhere. Each route is written normalized
+// (secretroute.Normalize), and one that does not normalize is held as heldList
+// says: never as anything wider than it was.
+func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string, sentinels []string, raw map[string]RawSentinel, routes map[string][][]secretroute.Route) error {
 	return updateSecretsDoc(root, projectID, poolID, func(doc *secretsDoc) {
 		if len(sentinels) == 0 {
 			delete(doc.Clients, sandboxID)
 		} else {
 			doc.Clients[sandboxID] = sentinels
 		}
+		if len(raw) == 0 {
+			delete(doc.Raw, sandboxID)
+		} else {
+			doc.Raw[sandboxID] = maps.Clone(raw)
+		}
 		held := map[string][][]secretroute.Route{}
-		for _, sentinel := range sentinels {
+		hold := func(sentinel string) {
 			if len(routes[sentinel]) == 0 {
-				continue
+				return
 			}
 			lists := make([][]secretroute.Route, 0, len(routes[sentinel]))
 			for _, list := range routes[sentinel] {
 				lists = append(lists, heldList(list))
 			}
 			held[sentinel] = lists
+		}
+		for _, sentinel := range sentinels {
+			hold(sentinel)
+		}
+		for sentinel := range raw {
+			hold(sentinel)
 		}
 		if len(held) == 0 {
 			delete(doc.Routes, sandboxID)
@@ -114,6 +139,17 @@ func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxI
 			doc.Routes[sandboxID] = held
 		}
 	})
+}
+
+// SandboxRawSentinels are the raw sentinels SecretsFile holds for a sandbox
+// (ADR 26-10-27-840): how each raw binding is delivered there, never its
+// value.
+func SandboxRawSentinels(root layout.Root, projectID, poolID, sandboxID string) (map[string]RawSentinel, error) {
+	doc, err := readSecretsDoc(root.ProxySecretsFile(projectID, poolID))
+	if err != nil {
+		return nil, err
+	}
+	return maps.Clone(doc.Raw[sandboxID]), nil
 }
 
 // SetSandboxEgress records a sandbox's effective egress policy for the proxy by
@@ -153,12 +189,13 @@ func SetSandboxEnvironment(root layout.Root, projectID, poolID string, sandboxID
 	})
 }
 
-// RemoveSandboxPolicy drops a sandbox's sentinel set, its sentinels' routes,
-// its egress policy, its gateways, and its credential environment from
-// SecretsFile.
+// RemoveSandboxPolicy drops a sandbox's sentinel set, its raw sentinels, its
+// sentinels' routes, its egress policy, its gateways, and its credential
+// environment from SecretsFile.
 func RemoveSandboxPolicy(root layout.Root, projectID, poolID string, sandboxID string) error {
 	return updateSecretsDoc(root, projectID, poolID, func(doc *secretsDoc) {
 		delete(doc.Clients, sandboxID)
+		delete(doc.Raw, sandboxID)
 		delete(doc.Routes, sandboxID)
 		delete(doc.Egress, sandboxID)
 		delete(doc.Gateways, sandboxID)
@@ -185,6 +222,9 @@ func updateSecretsDoc(root layout.Root, projectID, poolID string, update func(*s
 	}
 	if doc.Environment == nil {
 		doc.Environment = map[string]map[string]string{}
+	}
+	if doc.Raw == nil {
+		doc.Raw = map[string]map[string]RawSentinel{}
 	}
 	update(&doc)
 	doc.Version = secretsDocVersion
@@ -521,6 +561,67 @@ func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveReq
 	return result, nil
 }
 
+type resolveRawRequestBody struct {
+	SandboxID string `json:"sandboxId"`
+	Sentinel  string `json:"sentinel"`
+}
+
+type resolveRawResponseBody struct {
+	Status    string     `json:"status"`
+	Value     string     `json:"value"`
+	ExpiresAt *time.Time `json:"expiresAt"`
+	SecretID  string     `json:"secretId"`
+	BindingID string     `json:"bindingId"`
+}
+
+// ResolveRaw asks the control plane for the value of one of a sandbox's raw
+// bindings, by the sentinel that is its handle (ADR 26-10-27-840). The value
+// is held in memory by the proxy, to hand the sandbox and to watch its
+// requests for, and is never written or logged. An answer about the control
+// plane rather than the binding is an error, so a value already held keeps
+// standing; one about the binding — any other refusal, or not approved — is a
+// denial.
+func (r *secretResolver) ResolveRaw(ctx context.Context, req proxy.SecretRawRequest) (proxy.SecretRawResult, error) {
+	rc, err := readResolveContext(r.contextPath)
+	if err != nil || rc.Token == "" || rc.ControlPlaneURL == "" || rc.PoolID == "" {
+		return proxy.SecretRawResult{}, errors.New("resolve raw secret: no control plane credential yet")
+	}
+	url := fmt.Sprintf("%s/api/pools/%s/resolve-sandbox-raw-secret", rc.ControlPlaneURL, rc.PoolID)
+	payload, err := json.Marshal(resolveRawRequestBody{SandboxID: req.ClientID, Sentinel: req.Sentinel})
+	if err != nil {
+		return proxy.SecretRawResult{}, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return proxy.SecretRawResult{}, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+rc.Token)
+	resp, err := r.client.Do(httpReq)
+	if err != nil {
+		return proxy.SecretRawResult{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusInternalServerError || resolveStatusTransient(resp.StatusCode) {
+		return proxy.SecretRawResult{}, fmt.Errorf("resolve raw secret: control plane returned %d", resp.StatusCode)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return proxy.SecretRawResult{}, proxy.ErrSecretResolveDenied
+	}
+	var out resolveRawResponseBody
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return proxy.SecretRawResult{}, err
+	}
+	if out.Status != "approved" || out.Value == "" {
+		return proxy.SecretRawResult{}, proxy.ErrSecretResolveDenied
+	}
+	result := proxy.SecretRawResult{Value: out.Value, SecretID: out.SecretID, BindingID: out.BindingID}
+	if out.ExpiresAt != nil {
+		result.ExpiresAt = *out.ExpiresAt
+	}
+	return result, nil
+}
+
 type gatewayHeadersBody struct {
 	SandboxID string   `json:"sandboxId"`
 	Gateway   string   `json:"gateway"`
@@ -742,6 +843,13 @@ func (p *policyPublisher) apply() error {
 	for clientID, sentinels := range p.file.Clients {
 		merged[clientID] = append([]string(nil), sentinels...)
 	}
+	raw := make(map[string][]string, len(p.file.Raw))
+	for clientID, sentinels := range p.file.Raw {
+		for sentinel := range sentinels {
+			raw[clientID] = append(raw[clientID], sentinel)
+		}
+		slices.Sort(raw[clientID])
+	}
 	allowlist := make(map[string][]string, len(p.file.Egress))
 	for clientID, allow := range p.file.Egress {
 		allowlist[clientID] = append([]string(nil), allow...)
@@ -757,7 +865,7 @@ func (p *policyPublisher) apply() error {
 	// Keep the swap tuning (TTLs, refresh interval, query scanning) from the
 	// startup config; only the sentinel client set changes per apply.
 	cfg.Secrets = p.base.Secrets
-	cfg.Secrets.Clients = secretClients(merged)
+	cfg.Secrets.Clients = secretClients(merged, raw)
 	cfg.Trusts = trusts
 	cfg.Allowlist = proxy.AllowlistConfig{Clients: allowlist}
 	cfg.Gateways = proxy.GatewaysConfig{Clients: gateways}
@@ -858,13 +966,21 @@ func pollSecretsFile(ctx context.Context, apply func()) {
 	}
 }
 
-func secretClients(byClient map[string][]string) []proxy.SecretClient {
+// secretClients is each client's sentinels and raw sentinels as the proxy
+// takes them. A client with neither is left out.
+func secretClients(byClient, rawByClient map[string][]string) []proxy.SecretClient {
 	clients := make([]proxy.SecretClient, 0, len(byClient))
 	for clientID, sentinels := range byClient {
-		if len(sentinels) == 0 {
+		if len(sentinels) == 0 && len(rawByClient[clientID]) == 0 {
 			continue
 		}
-		clients = append(clients, proxy.SecretClient{ClientID: clientID, Sentinels: sentinels})
+		clients = append(clients, proxy.SecretClient{ClientID: clientID, Sentinels: sentinels, Raw: rawByClient[clientID]})
+	}
+	for clientID, raw := range rawByClient {
+		if _, ok := byClient[clientID]; ok || len(raw) == 0 {
+			continue
+		}
+		clients = append(clients, proxy.SecretClient{ClientID: clientID, Raw: raw})
 	}
 	return clients
 }

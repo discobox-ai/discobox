@@ -96,13 +96,13 @@ func (a *App) resolveBindingTarget(cmd *cobra.Command, discobox string, flags bi
 }
 
 func (a *App) newSecretBindCommand() *cobra.Command {
-	var as string
+	var as, raw string
 	var routes []string
 	var delegate bool
 	var target bindingTargetFlags
 	lasts := lifetime.NewFlag()
 	cmd := &cobra.Command{
-		Use:   "bind SECRET [DISCOBOX] [--harness HARNESS | --project-wide] [--as VAR]",
+		Use:   "bind SECRET [DISCOBOX] [--harness HARNESS | --project-wide] [--as VAR] [--raw env|file]",
 		Short: "Give a secret to a discobox, a harness config, or the whole project",
 		Long: `Give a secret to a discobox, every discobox on a harness config (--harness),
 or every discobox of the project (--project-wide).
@@ -112,6 +112,14 @@ discobox's pool exchanges for the value on the way out. Left out, it is the
 secret's name upper-snaked: github is GITHUB, npm-token is NPM_TOKEN. --route narrows where it
 may be sent for this binding; left out, it goes where the secret's routes say. --for is how long the binding lasts, within
 the secret's limit.
+
+--raw hands over the value itself rather than a sentinel, for a program that
+signs with it or sends it where an exchange cannot reach: env puts it in the
+variable, file puts there the path of a file under /run/discobox/raw-secrets
+holding it. The secret must allow it (secret update --allow-raw). The value is
+held in memory, never on a disk, and the pool refuses a request carrying it
+off its routes; but a discobox holding a value can send it anywhere, so that is
+a guard against mistakes, not a boundary.
 
 --delegate lets the discobox give the secret, to use, to the discoboxes it
 creates: by answering their requests, or when it creates them. With --as as
@@ -156,6 +164,15 @@ over its harness config's, and that over the project's.
 			if delegate {
 				body.SetDelegate(apiclientgen.NewOptBool(true))
 			}
+			if raw != "" {
+				if raw != string(apiclientgen.CreateSecretBindingBodyRawEnv) && raw != string(apiclientgen.CreateSecretBindingBodyRawFile) {
+					return fmt.Errorf("--raw is env or file, not %q", raw)
+				}
+				if as == "" {
+					return fmt.Errorf("--raw hands the value over to use, so it needs a variable (--as)")
+				}
+				body.SetRaw(apiclientgen.NewOptCreateSecretBindingBodyRaw(apiclientgen.CreateSecretBindingBodyRaw(raw)))
+			}
 			if seconds, given := lasts.Seconds(); given {
 				body.SetTtlSeconds(apiclientgen.NewOptInt64(seconds))
 			}
@@ -180,6 +197,7 @@ over its harness config's, and that over the project's.
 	cmd.Flags().StringVar(&as, "as", "", "The environment variable to deliver it in (default the secret's name upper-snaked)")
 	cmd.Flags().StringArrayVar(&routes, "route", nil, "Where it may be sent for this binding, narrowing the secret's routes, as "+secretroute.Syntax+"; one per flag, repeat for more")
 	cmd.Flags().Var(lasts, "for", bindingLifetimeFlagUsage)
+	cmd.Flags().StringVar(&raw, "raw", "", "Hand over the value itself: env (in the variable) or file (a file whose path is in it)")
 	cmd.Flags().BoolVar(&delegate, "delegate", false, "Let the discobox give the secret to the discoboxes it creates; a person's to set")
 	target.add(cmd, "bind it to")
 	return cmd
@@ -199,13 +217,26 @@ func writeBound(w io.Writer, binding *apimodel.SecretBinding, secret *apimodel.S
 	// every name here is escaped once, before any sentence uses it.
 	name = terminalSafe(name)
 	holder := terminalSafe(delegateHolder(t))
-	if binding.Use {
-		fmt.Fprintf(w, "%s is now %s in %s, sent to %s; it %s.\n", name, terminalSafe(binding.EnvVar.Or("")), holder, sentTo, lasts)
+	env := terminalSafe(binding.EnvVar.Or(""))
+	raw, isRaw := binding.Raw.Get()
+	switch {
+	case binding.Use && isRaw && raw == apiclientgen.SecretBindingRawFile:
+		fmt.Fprintf(w, "%s's value itself is now in a file in %s, its path in %s, refused off %s; it %s.\n", name, holder, env, sentTo, lasts)
+	case binding.Use && isRaw:
+		fmt.Fprintf(w, "%s's value itself is now %s in %s, refused off %s; it %s.\n", name, env, holder, sentTo, lasts)
+	case binding.Use:
+		fmt.Fprintf(w, "%s is now %s in %s, sent to %s; it %s.\n", name, env, holder, sentTo, lasts)
+	}
+	if binding.Use && isRaw {
+		fmt.Fprintln(w, "The value leaves the pool: it is held in memory and refused off its routes, but a discobox holding it can send it anywhere.")
 	}
 	if binding.Delegate {
 		fmt.Fprintf(w, "%s may give %s to the discoboxes it creates, sent to %s; it %s.\n", holder, name, sentTo, lasts)
 	}
-	if binding.Use && t.kind == apiclientgen.CreateSecretBindingBodyTargetKindSandbox {
+	switch {
+	case binding.Use && isRaw && raw == apiclientgen.SecretBindingRawEnv && t.kind == apiclientgen.CreateSecretBindingBodyTargetKindSandbox:
+		fmt.Fprintf(w, "Every process started in %s from now on has it; one already running does not.\n", holder)
+	case binding.Use && t.kind == apiclientgen.CreateSecretBindingBodyTargetKindSandbox:
 		fmt.Fprintf(w, "A shell already running in %s takes it up with: eval \"$(discobox-access env)\"\n", holder)
 	}
 	return nil

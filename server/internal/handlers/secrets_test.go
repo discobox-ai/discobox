@@ -147,6 +147,10 @@ func (fakeSecretService) ResolveSandboxSecret(context.Context, string, string, s
 	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusPending}, nil
 }
 
+func (fakeSecretService) ResolveSandboxRawSecret(context.Context, string, string, string) (*model.SandboxSecretResolution, error) {
+	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusDenied}, nil
+}
+
 func (fakeSecretService) RecordSandboxSecretRejection(context.Context, string, string, string, string, string) error {
 	return nil
 }
@@ -262,6 +266,36 @@ func TestResolveSandboxSecretNamesTheSecret(t *testing.T) {
 	// to (ADR 26-10-13-595).
 	if len(body.ReportScope) != 1 || body.ReportScope[0].Host != "api.example.com" || !slices.Equal(body.ReportScope[0].Paths, []string{"/v1/messages"}) {
 		t.Fatalf("report scope = %+v, want api.example.com /v1/messages", body.ReportScope)
+	}
+}
+
+func (resolvingSecretService) ResolveSandboxRawSecret(context.Context, string, string, string) (*model.SandboxSecretResolution, error) {
+	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusApproved, Value: &model.SecretValue{Token: "real-token"}, SecretID: "sec_1", BindingID: "sbnd_1"}, nil
+}
+
+// A raw binding's value is answered to a pool holding the resolve scope, with
+// the binding it was handed out under, and to nothing else (ADR 26-10-27-840).
+func TestResolveSandboxRawSecretNamesTheBinding(t *testing.T) {
+	h := New(svcapi.Services{Secrets: resolvingSecretService{}})
+	body := &serverapi.ResolveSandboxRawSecretBody{SandboxId: "sb-1", Sentinel: "RAW"}
+	params := serverapi.ResolveSandboxRawSecretParams{PoolId: "pool-1"}
+	unscoped := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.PrincipalTypePool, PoolID: "pool-1"})
+	if res, err := h.ResolveSandboxRawSecret(unscoped, body, params); err != nil {
+		t.Fatal(err)
+	} else if _, ok := res.(*serverapi.ResolveSandboxRawSecretResponse); ok {
+		t.Fatalf("a pool without the resolve scope was answered: %+v", res)
+	}
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
+		Type: auth.PrincipalTypePool, PoolID: "pool-1", Scopes: []string{poolauth.ScopeSecretResolve},
+	})
+	res, err := h.ResolveSandboxRawSecret(ctx, body, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := res.(*serverapi.ResolveSandboxRawSecretResponse)
+	if !ok || got.Status != serverapi.ResolveSandboxRawSecretResponseStatusApproved || got.Value.Or("") != "real-token" ||
+		got.SecretId.Or("") != "sec_1" || got.BindingId.Or("") != "sbnd_1" {
+		t.Fatalf("resolution = %+v, want the value, its secret and its binding", res)
 	}
 }
 

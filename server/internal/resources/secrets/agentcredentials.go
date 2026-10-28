@@ -87,6 +87,7 @@ func sandboxCredential(secret *model.Secret, applied store.EffectiveBinding, pur
 	}
 	if purpose == model.SecretPurposeUse {
 		credential.EnvName = applied.Binding.EnvName
+		credential.Raw = applied.Binding.Raw
 	}
 	return credential
 }

@@ -193,3 +193,23 @@ func TestPoolCreateRequestForwardsBundlePins(t *testing.T) {
 		t.Fatalf("bundles = %+v, agent %+v for a sandbox pinned to none", request.Bundles, request.Agent)
 	}
 }
+
+// A raw binding rides beside the sentinels by its handle, and only when there
+// is one: a create with none sends a pool that predates raw bindings nothing
+// it would refuse (ADR 26-10-27-840).
+func TestPoolCreateRequestCarriesRawSecretsOnlyWhenThereAreAny(t *testing.T) {
+	none := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{Sentinels: []string{"s-1"}})
+	if none.RawSecrets.IsSet() {
+		t.Fatalf("raw secrets sent with none: %#v", none.RawSecrets)
+	}
+	request := poolCreateRequestFromOptions("sandbox-1", sandbox.CreateOptions{
+		RawSecrets: map[string]sandbox.RawSecret{"raw-1": {EnvName: "AWS_SECRET_ACCESS_KEY", Delivery: sandboxconfig.RawDeliveryFile}},
+	})
+	raw, ok := request.RawSecrets.Get()
+	if !ok || raw["raw-1"].EnvName != "AWS_SECRET_ACCESS_KEY" || string(raw["raw-1"].Delivery) != sandboxconfig.RawDeliveryFile {
+		t.Fatalf("raw secrets = %#v, want the handle's delivery", raw)
+	}
+	if request.Sentinels.IsSet() {
+		t.Fatalf("sentinels = %#v, want none: a raw handle is not a sentinel", request.Sentinels)
+	}
+}

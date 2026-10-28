@@ -177,6 +177,11 @@ type StartRequest struct {
 	DatabasePath string
 	Rows         uint16
 	Cols         uint16
+	// RawEnv names the env-delivered raw secrets (ADR 26-10-27-840 §3), each
+	// with the file under /run holding its value. The shim reads each into the
+	// command's environment as it starts it, and into nothing else: no record,
+	// no argument and no unit property carries the value.
+	RawEnv map[string]string
 }
 
 type StartResult struct {
@@ -261,6 +266,9 @@ type Manager struct {
 	env            map[string]string
 	secretEnv      func() map[string]string
 	fileSecrets    []string
+	rawSecrets     func() map[string]string
+	rawSecretPath  func(string) string
+	awaitRaw       func(context.Context) error
 	units          UnitManager
 	audit          AuditRecorder
 	logs           LogSink
@@ -314,9 +322,17 @@ type ManagerConfig struct {
 	SecretEnv func() map[string]string
 	// FileSecrets are delivered through harness files, never automatically exported.
 	FileSecrets []string
-	Units       UnitManager
-	Audit       AuditRecorder
-	Logs        LogSink
+	// RawSecrets reads the raw secrets held now, variable to delivery
+	// (rawsecrets.Holder.Deliveries), and RawSecretPath the file each is kept
+	// in. Nil holds none.
+	RawSecrets    func() map[string]string
+	RawSecretPath func(name string) string
+	// AwaitRawSecrets holds a start until the raw secrets the sandbox was
+	// told it holds are in place, within a bound of its own; nil holds none.
+	AwaitRawSecrets func(context.Context) error
+	Units           UnitManager
+	Audit           AuditRecorder
+	Logs            LogSink
 }
 
 func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
@@ -346,6 +362,9 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 		env:            cloneMap(cfg.Env),
 		secretEnv:      cfg.SecretEnv,
 		fileSecrets:    append([]string(nil), cfg.FileSecrets...),
+		rawSecrets:     cfg.RawSecrets,
+		rawSecretPath:  cfg.RawSecretPath,
+		awaitRaw:       cfg.AwaitRawSecrets,
 		units:          units,
 		audit:          cfg.Audit,
 		logs:           cfg.Logs,
@@ -355,7 +374,10 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 
 // Environment resolves the common execution environment. Live secret sentinels
 // override the base environment; explicit request variables override both.
-// File-delivered credentials remain available to file templates only.
+// File-delivered credentials remain available to file templates only. A
+// file-delivered raw secret's variable is the path of its file; an
+// env-delivered one's is absent, because its value is put only into the
+// started process's environment (rawEnv).
 func (m *Manager) Environment(override map[string]string, user *User) map[string]string {
 	base := m.env
 	if m.secretEnv != nil {
@@ -368,7 +390,56 @@ func (m *Manager) Environment(override map[string]string, user *User) map[string
 		}
 		base = MergeEnv(base, exported)
 	}
+	if files := m.rawSecretsDelivered(sandboxconfig.RawDeliveryFile); len(files) > 0 {
+		paths := make(map[string]string, len(files))
+		for _, name := range files {
+			paths[name] = m.rawSecretPath(name)
+		}
+		base = MergeEnv(base, paths)
+	}
 	return EnvWithRuntimeDefaults(MergeEnv(base, override), user)
+}
+
+// awaitRawSecrets waits, within its own bound, for the raw secrets the
+// sandbox was told it holds, so a process does not start without one its
+// document names (ADR 26-10-27-840 §3).
+func (m *Manager) awaitRawSecrets(ctx context.Context) error {
+	if m.awaitRaw == nil {
+		return nil
+	}
+	return m.awaitRaw(ctx)
+}
+
+// rawSecretsDelivered is the variables of the raw secrets held now with
+// delivery.
+func (m *Manager) rawSecretsDelivered(delivery string) []string {
+	if m.rawSecrets == nil || m.rawSecretPath == nil {
+		return nil
+	}
+	var out []string
+	for name, held := range m.rawSecrets() {
+		if held == delivery {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// rawEnv is the env-delivered raw secrets a process started with env is
+// given, each with the file its value is read from: those env does not set
+// otherwise, since a variable a caller named outright is the caller's.
+func (m *Manager) rawEnv(env map[string]string) map[string]string {
+	names := m.rawSecretsDelivered(sandboxconfig.RawDeliveryEnv)
+	if len(names) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(names))
+	for _, name := range names {
+		if _, set := env[name]; !set {
+			out[name] = m.rawSecretPath(name)
+		}
+	}
+	return out
 }
 
 // MergeEnv overlays override on base, returning nil when both are empty. It is
@@ -479,6 +550,9 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 	if err != nil {
 		return Exec{}, err
 	}
+	if err := m.awaitRawSecrets(ctx); err != nil {
+		return Exec{}, err
+	}
 	env := m.Environment(req.Env, user)
 	// The workdir is resolved after the run user and env, because `~` expands
 	// against the home directory of the identity the exec actually runs as.
@@ -552,6 +626,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		DatabasePath:   m.databasePath,
 		Rows:           req.Rows,
 		Cols:           req.Cols,
+		RawEnv:         m.rawEnv(env),
 	})
 	current := exec
 	if err != nil {
@@ -881,6 +956,9 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 	if err != nil {
 		return Exec{}, err
 	}
+	if err := m.awaitRawSecrets(ctx); err != nil {
+		return Exec{}, err
+	}
 	env := m.Environment(req.Env, user)
 	// Fence the previous run: the shim outlives its command to serve replay,
 	// and it holds the socket path the new generation must bind. Only an ended
@@ -929,6 +1007,7 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 		DatabasePath:   m.databasePath,
 		Rows:           req.Rows,
 		Cols:           req.Cols,
+		RawEnv:         m.rawEnv(env),
 	})
 	if err != nil {
 		current.Status = StatusFailed

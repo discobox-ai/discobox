@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"time"
 
@@ -90,10 +91,14 @@ type SecretsConfig struct {
 const DefaultSecretPositiveTTLSeconds = 300
 
 // SecretClient binds a client (sandbox) ID to the sentinel strings whose values
-// the proxy swaps in that client's requests.
+// the proxy swaps in that client's requests, and to the sentinels of its raw
+// bindings (ADR 26-10-27-840): never swapped, each the handle of a value the
+// sandbox holds itself, which the proxy resolves to hand it over and watches
+// its requests for.
 type SecretClient struct {
 	ClientID  string
 	Sentinels []string
+	Raw       []string
 }
 
 // ControlConfig controls the optional read-only control API, which
@@ -310,10 +315,10 @@ func validateSecretClient(client SecretClient) error {
 	if strings.TrimSpace(client.ClientID) == "" {
 		return errors.New("secret client ID is required")
 	}
-	if len(client.Sentinels) == 0 {
+	if len(client.Sentinels) == 0 && len(client.Raw) == 0 {
 		return fmt.Errorf("secret client %q must include at least one sentinel", client.ClientID)
 	}
-	for _, sentinel := range client.Sentinels {
+	for _, sentinel := range append(slices.Clone(client.Sentinels), client.Raw...) {
 		if strings.TrimSpace(sentinel) == "" {
 			return fmt.Errorf("secret client %q has empty sentinel", client.ClientID)
 		}

@@ -321,3 +321,8 @@ func TestHTTPProxyRetrySendsNoSentinelThePreviousValueCannotCover(t *testing.T) 
 		t.Fatalf("upstream saw %d requests, want 2: the retry must not be sent", len(sawB))
 	}
 }
+
+// ResolveRaw: outageResolver holds no raw secrets.
+func (r *outageResolver) ResolveRaw(context.Context, secrets.RawRequest) (secrets.RawResult, error) {
+	return secrets.RawResult{}, secrets.ErrDenied
+}

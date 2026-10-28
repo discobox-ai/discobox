@@ -568,3 +568,13 @@ user waits on every single start.
   when emptying a cache. Why: the Docker clear empties `/.discobox/cache`,
   where no data lives, so a machine's clear is the first to walk a cache that
   holds data.
+- A raw secret's value (ADR 26-10-27-840) is read from its file under
+  `/run/discobox/raw-secrets` by whatever starts the process, into that
+  process's environment and nothing else. A new start path passes
+  `RawEnv` through rather than putting the value in `Env`: `Env` is recorded
+  in the exec's runtime file, answered by the exec API, posted in the
+  inventory and written into the shim's arguments.
+- A new way to start a process goes through `execs.Manager` (or calls its
+  `awaitRawSecrets` first). The hold for raw secrets lives there, so a start
+  path of its own would launch before the pool has answered for the raw
+  secrets the applied document names, and run without them for good.

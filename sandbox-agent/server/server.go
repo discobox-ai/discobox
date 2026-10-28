@@ -34,6 +34,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/meta"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
+	"github.com/discobox-ai/discobox/sandbox-agent/rawsecrets"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 	"github.com/discobox-ai/discobox/sandbox-agent/secretswatch"
 	"github.com/discobox-ai/discobox/sandbox-agent/services"
@@ -83,6 +84,10 @@ type Config struct {
 	// Serve wires this to a live secretswatch.Watcher; callers that build a
 	// router directly (e.g. tests) may leave it nil.
 	SecretEnv func() map[string]string
+	// RawSecrets holds the sandbox's raw secrets (ADR 26-10-27-840). Serve
+	// builds one and keeps it filled from the pool; callers that build a
+	// router directly may leave it nil, which holds none.
+	RawSecrets *rawsecrets.Holder
 	// CredentialsBridgePath overrides where the agent credentials relay reads
 	// the pool-staged mTLS material and endpoint. Empty uses the documented
 	// mount path.
@@ -201,18 +206,21 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	}
 	// One exec runtime backs both plain execs and terminals.
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
-		WorkingRoot:    cfg.WorkingRoot,
-		DefaultWorkdir: cfg.ExecDefaults.Workdir,
-		SourceRoot:     cfg.ExecDefaults.SourceRoot,
-		DefaultUser:    execDefaultUser(cfg.ExecDefaults),
-		RuntimeDir:     cfg.RuntimeDir,
-		DatabasePath:   cfg.DatabasePath,
-		Env:            cfg.Env,
-		SecretEnv:      cfg.SecretEnv,
-		FileSecrets:    cfg.Harness.FileSecrets,
-		Units:          cfg.ExecUnitManager,
-		Audit:          execAudit,
-		Logs:           localStore,
+		WorkingRoot:     cfg.WorkingRoot,
+		DefaultWorkdir:  cfg.ExecDefaults.Workdir,
+		SourceRoot:      cfg.ExecDefaults.SourceRoot,
+		DefaultUser:     execDefaultUser(cfg.ExecDefaults),
+		RuntimeDir:      cfg.RuntimeDir,
+		DatabasePath:    cfg.DatabasePath,
+		Env:             cfg.Env,
+		SecretEnv:       cfg.SecretEnv,
+		FileSecrets:     cfg.Harness.FileSecrets,
+		RawSecrets:      rawSecretDeliveries(cfg.RawSecrets),
+		RawSecretPath:   rawSecretPath(cfg.RawSecrets),
+		AwaitRawSecrets: awaitRawSecrets(cfg.RawSecrets, cfg.RuntimeConfig),
+		Units:           cfg.ExecUnitManager,
+		Audit:           execAudit,
+		Logs:            localStore,
 	})
 	if err != nil {
 		return agentRuntime{}, err
@@ -341,6 +349,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		autostop:          idleStop,
 		meta:              metaFile,
 		runtimeConfig:     cfg.RuntimeConfig,
+		rawSecrets:        cfg.RawSecrets,
 		sourceConverger:   sourceConverger,
 		provision:         cfg.Provision,
 		files:             fileService,
@@ -587,6 +596,40 @@ func execDefaultUser(defaults config.ExecDefaults) *execs.User {
 	return user
 }
 
+// rawSecretDeliveries and rawSecretPath are the exec manager's view of the
+// raw secrets held: none without a holder.
+func rawSecretDeliveries(holder *rawsecrets.Holder) func() map[string]string {
+	if holder == nil {
+		return nil
+	}
+	return holder.Deliveries
+}
+
+// awaitRawSecrets holds a process's start until the pool has answered for the
+// raw secrets the applied document names (rawsecrets.Holder.AwaitFetched). It
+// tells the holder that document first, so a start that the document's
+// readiness let through before its delivery reached the holder still waits.
+func awaitRawSecrets(holder *rawsecrets.Holder, runtimeConfig *intake.Intake) func(context.Context) error {
+	if holder == nil {
+		return nil
+	}
+	return func(ctx context.Context) error {
+		if runtimeConfig != nil {
+			if applied, ok := runtimeConfig.Applied(); ok {
+				holder.SetApplied(applied.RawSecrets)
+			}
+		}
+		return holder.AwaitFetched(ctx)
+	}
+}
+
+func rawSecretPath(holder *rawsecrets.Holder) func(string) string {
+	if holder == nil {
+		return nil
+	}
+	return holder.Path
+}
+
 func cloneInt64(in *int64) *int64 {
 	if in == nil {
 		return nil
@@ -604,6 +647,18 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 			logger.Warn("sandbox agent secrets watch", "error", err)
 		})
 		cfg.SecretEnv = watcher.Env
+	}
+	if cfg.RawSecrets == nil {
+		var owner rawsecrets.Owner
+		if user := execDefaultUser(cfg.ExecDefaults); user != nil {
+			owner = rawsecrets.Owner{UID: user.UID, GID: user.GID}
+		}
+		cfg.RawSecrets = rawsecrets.New(rawsecrets.Config{Owner: owner, Logger: logger})
+	}
+	// Before anything can start a process: values a previous run kept are not
+	// trusted to still stand, and are asked for again (ADR 26-10-27-840 §3).
+	if err := cfg.RawSecrets.Sweep(); err != nil {
+		logger.Warn("remove the raw secrets a previous run kept", "error", err)
 	}
 	built, err := newRouterAndManager(cfg)
 	if err != nil {
@@ -676,7 +731,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 			logger.Debug("sandbox agent hook collector stopped", "error", err)
 		}
 	}()
-	go serveCredentials(ctx, logger, cfg.CredentialsBridgePath)
+	go serveCredentials(ctx, logger, cfg.CredentialsBridgePath, cfg.RawSecrets)
 	// The sources converge on the document the intake holds: the one it
 	// restored at start, here, and each one delivered after, from the
 	// handler (ADR 0126 §4).
@@ -689,6 +744,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	if cfg.RuntimeConfig != nil {
 		if applied, ok := cfg.RuntimeConfig.Applied(); ok {
 			built.sourceConverger.Converge(applied)
+			cfg.RawSecrets.SetApplied(applied.RawSecrets)
 		}
 	}
 	httpServer := &http.Server{
@@ -731,7 +787,10 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 // runs, which is the same as the endpoint never coming up: the CLI reports a
 // refused connection, which says more than an endpoint answering "denied" to
 // everything.
-func serveCredentials(ctx context.Context, logger *slog.Logger, bridgePath string) {
+//
+// The raw secrets are asked for over the same relay (ADR 26-10-27-840 §3),
+// from when it is up until ctx ends; the relay's endpoint does not serve them.
+func serveCredentials(ctx context.Context, logger *slog.Logger, bridgePath string, raw *rawsecrets.Holder) {
 	if bridgePath == "" {
 		bridgePath = credentials.DefaultBridgeConfigPath
 	}
@@ -742,6 +801,9 @@ func serveCredentials(ctx context.Context, logger *slog.Logger, bridgePath strin
 	if err != nil {
 		logger.Info("sandbox credentials endpoint not started", "reason", err)
 		return
+	}
+	if raw != nil {
+		go raw.Run(ctx, relay.RawSecrets)
 	}
 	if err := credentials.Serve(ctx, logger, relay, ""); err != nil && !errors.Is(err, context.Canceled) {
 		logger.Warn("sandbox credentials endpoint stopped", "error", err)

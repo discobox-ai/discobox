@@ -84,6 +84,13 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 	var swapper *secrets.Swapper
 	if resolver != nil {
 		swapper = secrets.New(resolver, swapperConfig(cfg))
+		// A client's raw secrets never reach its trail (ADR 26-10-27-840).
+		recorder.SetRedactor(func(clientID string) audit.Redactor {
+			if set := swapper.Raw(clientID); set != nil {
+				return set
+			}
+			return nil
+		})
 	}
 	s := &Server{
 		ctx:         ctx,
@@ -169,11 +176,16 @@ func buildFilter(cfg Config) *filter.Filter {
 
 func swapperConfig(cfg Config) secrets.Config {
 	sentinels := make(map[string][]string, len(cfg.Secrets.Clients))
+	raw := make(map[string][]string, len(cfg.Secrets.Clients))
 	for _, client := range cfg.Secrets.Clients {
 		sentinels[client.ClientID] = client.Sentinels
+		if len(client.Raw) > 0 {
+			raw[client.ClientID] = client.Raw
+		}
 	}
 	return secrets.Config{
 		Sentinels:       sentinels,
+		Raw:             raw,
 		ScanQuery:       cfg.Secrets.ScanQuery,
 		PositiveTTL:     time.Duration(cfg.Secrets.PositiveTTLSeconds) * time.Second,
 		NegativeTTL:     time.Duration(cfg.Secrets.NegativeTTLSeconds) * time.Second,
@@ -327,6 +339,22 @@ type DNSAuditEvent = audit.DNSEvent
 // the event is dropped and counted in /audit/dropped like any other.
 func (s *Server) RecordDNS(event DNSAuditEvent) {
 	s.audit.RecordDNS(event)
+}
+
+// RawSecret is one value a client holds of a raw binding (ADR 26-10-27-840),
+// as it is handed over: the binding's sentinel, which names it, the value,
+// and when it lapses, zero when it does not.
+type RawSecret = secrets.RawValue
+
+// RawSecrets is every raw value clientID holds now, each asked for again once
+// its refresh is due; one the resolver denies is left out. It is what the
+// sandbox is handed, from the values this proxy already watches its requests
+// for, and is never written anywhere.
+func (s *Server) RawSecrets(ctx context.Context, clientID string) []RawSecret {
+	if s == nil || s.http == nil {
+		return nil
+	}
+	return s.http.swapper.RawValues(ctx, clientID)
 }
 
 // ClientHTTPAudit reads one client's audited HTTP exchanges in this process,

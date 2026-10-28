@@ -566,6 +566,20 @@ func encodeResolveGatewayHeadersRequest(
 	return nil
 }
 
+func encodeResolveSandboxRawSecretRequest(
+	req *ResolveSandboxRawSecretBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeResolveSandboxSecretRequest(
 	req *ResolveSandboxSecretBody,
 	r *http.Request,

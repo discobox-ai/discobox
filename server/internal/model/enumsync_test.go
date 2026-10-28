@@ -37,6 +37,9 @@ import (
 var yamlEnumAliases = map[string]string{
 	"CreateSecretBody.type":                      "Secret.type",
 	"CreateSandboxCredentialRequestBody.purpose": "SecretRequest.purpose",
+	"CreateSecretBindingBody.raw":                "SecretBinding.raw",
+	"SandboxBindingInput.raw":                    "SecretBinding.raw",
+	"SandboxCredential.raw":                      "SecretBinding.raw",
 	"SandboxCredential.purpose":                  "SecretRequest.purpose",
 	"SandboxCredentialRequestStatus.purpose":     "SecretRequest.purpose",
 	"CreateSecretBindingBody.targetKind":         "SecretBinding.targetKind",
@@ -62,10 +65,12 @@ var yamlEnumAliases = map[string]string{
 //
 //nolint:gosec // G101: these are contract enum names, not credentials.
 var yamlOwnedEnums = map[string]string{
-	"SecretRouteGraphQL.operations[]": "the GraphQL operation types a route names, owned by pkg/secretroute, whose Normalize refuses any other; model.SecretRoute is that package's Route",
-	"Pool.health":                     "derived by Pool.Health from heartbeat freshness and reported readiness",
-	"RefreshSecretBody.via":           "a narrowing of SecretRefreshAnswer.via: a client says it ran the command or a person entered the value; update is recorded only for an ordinary write",
-	"Job.status":                      "job status values are owned by the orchestration module; model.Job.Status is untagged text",
+	"SecretRouteGraphQL.operations[]":        "the GraphQL operation types a route names, owned by pkg/secretroute, whose Normalize refuses any other; model.SecretRoute is that package's Route",
+	"UpdateSecretBindingBody.raw":            "a binding's raw delivery plus none, which makes it a sentinel again (ADR 26-10-27-840)",
+	"ResolveSandboxRawSecretResponse.status": "a narrowing of the resolve status: a raw value is never pending, only handed over or refused",
+	"Pool.health":                            "derived by Pool.Health from heartbeat freshness and reported readiness",
+	"RefreshSecretBody.via":                  "a narrowing of SecretRefreshAnswer.via: a client says it ran the command or a person entered the value; update is recorded only for an ordinary write",
+	"Job.status":                             "job status values are owned by the orchestration module; model.Job.Status is untagged text",
 	// Both axes now diverge per resource, which is what a single embedded tag
 	// cannot express: the shared tag is the union, and each resource's schema
 	// narrows it (ADR 0017 §2, ADR 0022 §1).

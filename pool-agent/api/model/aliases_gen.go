@@ -46,6 +46,7 @@ type PoolSandboxRuntime = poolagentapi.PoolSandboxRuntime
 type PoolSandboxUpdateRequest = poolagentapi.PoolSandboxUpdateRequest
 type PoolSourcePullRequest = poolagentapi.PoolSourcePullRequest
 type PoolSyncRequest = poolagentapi.PoolSyncRequest
+type RawSentinel = poolagentapi.RawSentinel
 type ResolvedHarnessConfig = poolagentapi.ResolvedHarnessConfig
 type SandboxConfig = poolagentapi.SandboxConfig
 type SandboxFeature = poolagentapi.SandboxFeature

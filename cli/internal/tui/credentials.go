@@ -502,6 +502,16 @@ func bindingSection(a approval) section {
 // the request and on the binding.
 const delegationPurpose = "delegation — may give it to the discoboxes it creates, never uses it"
 
+// rawDeliveryText is what a raw binding hands over (ADR 26-10-27-840),
+// said so a person approving it reads that the value itself leaves the pool.
+func rawDeliveryText(delivery string) string {
+	where := "in its variable"
+	if delivery == "file" {
+		where = "in a file in memory, its path in the variable"
+	}
+	return "the value itself, " + where + " — refused off its routes, but the discobox can send it anywhere"
+}
+
 // lifetimeChosen is where the two kinds of answer part: a new credential still
 // needs its value, and an existing one is approved with.
 func (m *Model) lifetimeChosen(a approval, _ func() tea.Cmd) tea.Cmd {

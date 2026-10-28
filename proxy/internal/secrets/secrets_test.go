@@ -17,6 +17,15 @@ type fakeResolver struct {
 	fn      func(ResolveRequest) (ResolveResult, error)
 	lastReq ResolveRequest
 	reports []ReportRequest
+	// raw answers ResolveRaw; nil denies every raw sentinel.
+	raw func(RawRequest) (RawResult, error)
+}
+
+func (f *fakeResolver) ResolveRaw(_ context.Context, req RawRequest) (RawResult, error) {
+	if f.raw == nil {
+		return RawResult{}, ErrDenied
+	}
+	return f.raw(req)
 }
 
 func (f *fakeResolver) Report(_ context.Context, req ReportRequest) error {
