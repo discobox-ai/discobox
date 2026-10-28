@@ -58,8 +58,9 @@ applies it, laying and starting the agent's unit.
    its sandboxes' machines are made in, the base they boot and the provider
    network they share with the pool's machine.
 2. The agent writes the proxy unit's environment and prepares the proxy CA
-   bundle and control key; a Docker pool also renders the BuildKit/registry
-   configuration. It starts the child systemd namespace — only as PID 1 in a
+   bundle and control key, names its own host by the pool's server name in
+   `/etc/hosts` (`ensurePoolName`, never DNS), and renders the
+   BuildKit/registry configuration, on every pool. It starts the child systemd namespace — only as PID 1 in a
    pool container — and the `childproc` reaper. The agent then tells systemd it has started (`sd_notify` `READY=1`),
    which only a pool machine's Type=notify unit listens for: the proxy unit is
    ordered after it.
@@ -1884,15 +1885,13 @@ other
 
 ## Pool-Shared Builds
 
-`docker build` in a Docker pool's sandbox runs on one BuildKit daemon here, so
-the pool's sandboxes share a solver cache
-([ADR 0044](../docs/adr/0044-builds-run-on-a-pool-shared-buildkit.md)). A
-machine pool's sandboxes do not: its builder runs on the pool's machine,
-beside the provisioning key and the driver's machine token, so its mediator
-serves no builds (`mediatorServes`, from the bootstrap's runtime) and a machine
-sandbox is given no BuildKit endpoint (`machinePoolEndpoints`); a machine
-sandbox builds on its own machine
+`docker build` in any sandbox runs on one BuildKit daemon here, so the pool's
+sandboxes share a solver cache
+([ADR 0044](../docs/adr/0044-builds-run-on-a-pool-shared-buildkit.md)): a
+machine pool's as a Docker pool's
 ([ADR 26-10-27-767](../docs/adr/26-10-27-767-a-machine-pool-runs-what-every-pool-runs.md)).
+On a machine pool the builds run on the pool's machine, beside the
+provisioning key and the driver's machine token; the ADR states that cost.
 `docker run` stays in the sandbox: a nested run's bind mounts name sandbox
 paths that do not exist out here.
 

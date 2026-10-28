@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 )
 
 // The provisioning key is read on every call, so a key the provider renews is
@@ -41,40 +43,29 @@ func TestProvisioningKeysReadTheFileOnEveryCall(t *testing.T) {
 	}
 }
 
-// A machine sandbox is never given the pool's BuildKit: a build's steps would
-// run on the pool's machine, beside its provisioning key.
-func TestMachinePoolEndpointsHaveNoBuildKit(t *testing.T) {
-	for _, tunnel := range []string{"", "wss://pool.example.com"} {
-		endpoints := machinePoolEndpoints(tunnel)
-		if endpoints.BuildKit != "" || endpoints.Proxy == "" {
-			t.Errorf("machinePoolEndpoints(%q) = %+v, want the proxy and no BuildKit", tunnel, endpoints)
-		}
+// A host is given the pool's server name in its hosts file, once, whatever
+// DNS answers for it: a resolver must not choose where builds are pushed. A
+// line that names it already is left alone.
+func TestEnsurePoolNameIsTheHostsFiles(t *testing.T) {
+	hosts := filepath.Join(t.TempDir(), "hosts")
+	if err := os.WriteFile(hosts, []byte("127.0.0.1 localhost\n# 10.0.0.9 "+proxyagent.ServerName+"\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-}
-
-// A machine pool's mediator serves no builds, whatever a sandbox is told:
-// every sandbox of it holds a certificate the mediator would accept. A Docker
-// pool's serves them, and so does a box with no bootstrap file.
-func TestMediatorServesNoMachinePool(t *testing.T) {
-	dir := t.TempDir()
-	for _, tc := range []struct {
-		bootstrap string
-		want      bool
-	}{
-		{`{"controlPlaneUrl":"http://cp","poolId":"pool_1","runtime":"machine","driver":"boxd","machineProject":"pool-1"}`, false},
-		{`{"controlPlaneUrl":"http://cp","poolId":"pool_1"}`, true},
-		{`{"controlPlaneUrl":"http://cp","poolId":"pool_1","runtime":"docker"}`, true},
-		{"", true},
-	} {
-		path := filepath.Join(dir, "absent.json")
-		if tc.bootstrap != "" {
-			path = filepath.Join(dir, "bootstrap.json")
-			if err := os.WriteFile(path, []byte(tc.bootstrap), 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}
-		if got, err := mediatorServes(path); err != nil || got != tc.want {
-			t.Errorf("mediatorServes(%s) = %v, %v, want %v", tc.bootstrap, got, err, tc.want)
-		}
+	if err := ensurePoolName(hosts); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(hosts)
+	if !strings.Contains(string(data), "127.0.0.1 localhost\n") || !strings.Contains(string(data), "\n127.0.0.1 "+proxyagent.ServerName+"\n") {
+		t.Fatalf("hosts = %q, want the pool's name beside what was there; a commented line names nothing", data)
+	}
+	if err := ensurePoolName(hosts); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.ReadFile(hosts); string(again) != string(data) {
+		t.Fatalf("the name was added again: %q", again)
+	}
+	missing := filepath.Join(t.TempDir(), "absent")
+	if err := ensurePoolName(missing); err != nil {
+		t.Fatalf("a host with no hosts file: %v", err)
 	}
 }

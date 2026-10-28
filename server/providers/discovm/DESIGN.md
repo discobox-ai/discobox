@@ -148,8 +148,10 @@ as ADR 26-10-09-106 §1 places it:
 
 A remote driver's pool machine is made the pool's box as a Docker pool's
 container is, with `poolruntime.ProvisionBox` over the machine's guest
-operations (ADR 26-10-24-953 §2), every feature of the pool bundle applied
-(ADR 26-10-27-767). Its bootstrap names its own engine (ADR 26-10-23-551 §3):
+operations (ADR 26-10-24-953 §2), every feature of the pool bundle applied:
+the pool-shared builder serves its sandboxes' builds there, beside the
+provisioning key and the driver's machine token, a cost ADR 26-10-27-767
+states. Its bootstrap names its own engine (ADR 26-10-23-551 §3):
 the machine runtime, the driver, the pool's project as the project and
 network its sandboxes' machines are made in, the provider's base, the
 provider's `controlPlaneUrl`, and where the agent listens: the driver's

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -83,14 +84,18 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if _, err := proxyagent.PrepareControlKey(root, bootstrap.ProjectID, bootstrap.PoolID); err != nil {
 		return fmt.Errorf("prepare proxy control key: %w", err)
 	}
-	if runtimeKind == RuntimeDocker {
-		// Render the shared builder's and its registry's configuration for the
-		// same reason and at the same point: both run as systemd units with a
-		// clean environment, and every path they own is pool-scoped (ADR 0044).
-		// A pool machine runs no builder (ADR 26-10-23-551 §1).
-		if err := buildkitagent.Prepare(root, bootstrap.ProjectID, bootstrap.PoolID, bundle.MITMCAPath); err != nil {
-			return err
-		}
+	// The pool's own services name it as the proxy's server name, which this
+	// host is given here, at every start, since an image may rewrite
+	// /etc/hosts at boot. Before the builder's units, which start after this.
+	if err := ensurePoolName(root.System("/etc/hosts")); err != nil {
+		return err
+	}
+	// Render the shared builder's and its registry's configuration for the
+	// same reason and at the same point: both run as systemd units with a
+	// clean environment, and every path they own is pool-scoped (ADR 0044).
+	// Every pool runs them, a machine pool's included (ADR 26-10-27-767).
+	if err := buildkitagent.Prepare(root, bootstrap.ProjectID, bootstrap.PoolID, bundle.MITMCAPath); err != nil {
+		return err
 	}
 	// Only PID 1 in a pool container boots systemd itself; on a pool machine
 	// systemd is already the init and this starts nothing.
@@ -629,17 +634,6 @@ func RunBuildkitMediator(ctx context.Context, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	serves, err := mediatorServes(poolbundle.BootstrapFile)
-	if err != nil {
-		return err
-	}
-	if !serves {
-		// The unit runs, as every pool's does (ADR 26-10-27-767), and binds
-		// nothing a sandbox could dial.
-		logger.Info("buildkit mediator serving no builds: a machine pool's sandboxes build on their own machines")
-		<-ctx.Done()
-		return ctx.Err()
-	}
 	projectID := strings.TrimSpace(os.Getenv("DISCOBOX_PROJECT_ID"))
 	poolID := strings.TrimSpace(os.Getenv("DISCOBOX_POOL_ID"))
 	if projectID == "" || poolID == "" {
@@ -668,23 +662,36 @@ func RunBuildkitMediator(ctx context.Context, logger *slog.Logger) error {
 	return mediator.Serve(ctx, listener, tlsConfig)
 }
 
-// mediatorServes reports whether the pool whose bootstrap is at path serves
-// its sandboxes' builds. A machine pool does not: its builder runs on the
-// pool's machine, beside the provisioning key and the driver's machine token,
-// and a build's steps are a sandbox's code (ADR 26-10-23-551 §4, ADR
-// 26-10-27-767). Every sandbox of it holds a certificate the mediator would
-// accept, and the mediator's address is no secret, so the pool refuses rather
-// than relying on a sandbox not being told it. A box with no bootstrap file is
-// a Docker pool from before one was placed.
-func mediatorServes(path string) (bool, error) {
-	bootstrap, err := readBootstrapFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return true, nil
+// ensurePoolName names the pool's own host by its server name
+// (proxyagent.ServerName) in hostsFile, unless a line there already does: the
+// builder pushes to the pool registry, over plaintext HTTP, and a build
+// step's forwarder dials the pool proxy, by that name, and both listen on
+// every interface of this host. It never asks DNS: a resolver that answered
+// the name would choose where every build's output goes. A pool machine's
+// network has no alias for it; a Docker pool's container has one, and
+// loopback reaches the same services.
+func ensurePoolName(hostsFile string) error {
+	data, err := os.ReadFile(hostsFile) //nolint:gosec // G304: the host's /etc/hosts
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("name the pool in %s: %w", hostsFile, err)
 	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if fields := strings.Fields(strings.SplitN(line, "#", 2)[0]); len(fields) > 1 && slices.Contains(fields[1:], proxyagent.ServerName) {
+			return nil
+		}
+	}
+	f, err := os.OpenFile(hostsFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644) //nolint:gosec // G302: /etc/hosts is world-readable by design
 	if err != nil {
-		return false, err
+		return fmt.Errorf("name the pool in %s: %w", hostsFile, err)
 	}
-	return bootstrap.EffectiveRuntime() != RuntimeMachine, nil
+	_, werr := fmt.Fprintf(f, "\n# The pool's own services, by the name they serve under (discobox).\n127.0.0.1 %s\n", proxyagent.ServerName)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return fmt.Errorf("name the pool in %s: %w", hostsFile, werr)
+	}
+	return nil
 }
 
 // listenAssets binds the asset cache's socket, replacing one an earlier agent
