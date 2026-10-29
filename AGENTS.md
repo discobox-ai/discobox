@@ -52,6 +52,15 @@
   mark into those scripts, from the console's own cell data), `discobox-winres` (the
   Windows version resource a release executable links, and the check that it did).
 - `scripts`: shell and Node helpers the Taskfile and hooks run.
+- `.agents/skills` (`.claude/skills` links to it): this repository's own skills
+  (`add-harness`, `release`, `verify-recipes`). The shared SDLC skills
+  (`commit`, `develop`, `deliver-issue`, `triage-issue`, `orchestrate-issues`,
+  `verify`, `test-fix`, `open-pr`, `push-main`) are not here: they live in
+  `discobox-ai/skills` and are changed there. A repository cannot add a skills
+  source itself (ADR 26-10-14-294): the project adds it once with `discobox
+  skills add https://github.com/discobox-ai/skills`, or one box gets it with
+  `discobox run --skills https://github.com/discobox-ai/skills`. A discobox made
+  without it has none of these skills.
 - `docs`: user/developer documentation and ADRs (`docs/adr`).
 - `test`: Bats integration tests, the test-only harness stub image, and terminal performance tests.
 - `DESIGN.md` / `REVIEW.md`: package-local design and review notes. Read the closest files in the current package and its parents before making design-sensitive changes.
