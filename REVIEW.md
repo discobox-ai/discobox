@@ -20,7 +20,8 @@ Global review expectations:
   `agentlayer.AgentLayer` to `ExtractAgent` left five citations of the old
   name, a review note among them, pointing at code that was gone.
 - Retiring a concept: grep every `DESIGN.md`, `REVIEW.md`, `AGENTS.md` and
-  skill under `.agents/skills` for it, not only the docs on the change's path.
+  skill under `.agents/skills` for it, and the shared skills in the
+  discobox-ai/skills repository, not only the docs on the change's path.
   A doc off that path goes on describing what no longer exists, and an agent
   follows it: retiring harness images left `AGENTS.md`, the pools design and
   several verify recipes naming targets and images that were gone.

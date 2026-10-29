@@ -115,7 +115,7 @@ enforces the ones a tree walk can see. These are the ones it cannot:
 - **A command rename keeps the old spelling as an alias, and teaches only the
   new one.** A flag rename does not: the old flag goes (ADR 26-10-24-254), so
   everything that teaches it moves in the same change. Skills (`.agents/skills`, `sandbox-agent/features/*/skills`,
-  `access/skills`), bats tests, harness hints (`harness/*/image.json`,
+  `access/skills`, and the discobox-ai/skills repository), bats tests, harness hints (`harness/*/image.json`,
   `configure.sh`), design docs and the argv the console builds
   (`tui_local.go`, `tui/options.go`) move with it. The `run` rename also
   missed, on a first pass:

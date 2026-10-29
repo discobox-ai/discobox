@@ -14,8 +14,8 @@
   exact, and `*.h` (or `*`) is a widening someone has to read and approve.
 - Change `skills/discobox-access/SKILL.md` and the help in the same commit as
   the flag or field they describe.
-- Every request example in a skill — this module's and `.agents/skills`'
-  alike — passes this CLI's own validation: run it against a stub or read it
+- Every request example in a skill — this module's, `.agents/skills`' and
+  the discobox-ai/skills repository's alike — passes this CLI's own validation: run it against a stub or read it
   against `runRequest`. A delegation names no `--env-var` (`"envVar"`), and
   two skills shipped an example that refused itself, so a lead following them
   could never hold a delegation.

@@ -1,11 +1,11 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, a Docker pool's box (provisioning, enrollment, an in-place re-apply) and the server's release manifest export, a pool build (`docker build` in a box through the shared builder, its registry at `registry.discobox.internal`, a build through a tunnel), the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, a pool's box or its bundle, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, a Docker pool's box (provisioning, enrollment, an in-place re-apply) and the server's release manifest export, a pool build (`docker build` in a box through the shared builder, its registry at `registry.discobox.internal`, a build through a tunnel), the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`, or one from the discobox-ai/skills skills source) via a headless agent in an isolated HOME. The generic `verify` skill (from the discobox-ai/skills skills source) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, a pool's box or its bundle, or a skill.
 ---
 
 # Verifying the console
 
-Read `.agents/skills/test-fix/driving-task-dev.md` first: the dev loop is
+Read `.agents/skills/verify-recipes/driving-task-dev.md` first: the dev loop is
 already running, and every CLI call needs `--server http://127.0.0.1:8080`.
 Confirm `build/discobox` is newer than your last edit before driving it.
 
@@ -266,7 +266,7 @@ dev pool's proxy unit by hand and run a stand-in edge inside a `-H shell` box:
   at start: append the edge cert to the bundle, restart
   `discobox-sandbox-agent.service`, then edit `credentialsUrl`.
 
-# Verifying a skill change (`.agents/skills`)
+# Verifying a skill change (`.agents/skills`, discobox-ai/skills)
 
 The surface is an agent loading the skill. Install it the way
 `sandbox-agent/terminal/skills.go` does — the image's skills (this repository
@@ -276,7 +276,12 @@ the changed instruction. A changed `.agents/skills/<name>` is a project skill:
 the harness reads it from the repo it runs in, so copy it into the throwaway
 repo's `.agents/skills/` and link `.claude/skills -> ../.agents/skills` there,
 as this repository does: Claude Code reads only a repo's `.claude/skills`
-(a run with the skill in `.agents/skills` alone did not list it).
+(a run with the skill in `.agents/skills` alone did not list it). The shared
+SDLC skills (`commit`, `develop`, `test-fix`, `orchestrate-issues`, ...) are
+not here: they come from the discobox-ai/skills skills source and are changed
+in that repository. Verify one the same way, copying its directory from that
+checkout (in a discobox, the skills source's checkout its skills are linked
+from).
 
 ```bash
 S=<scratchpad>; H=$S/home; mkdir -p $H/.claude
@@ -305,7 +310,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_
 - A narrow rule (one tag step, one section) needs no full run: prompt
   `Read .claude/skills/<name>/SKILL.md and do ONLY <step> for <state>`, with
   the state seeded in `$H/.discobox/meta.json`, and read the file afterwards.
-- `orchestrate-issues/orchestrate.sh` runs against the dev server with a
+- `orchestrate-issues/orchestrate.sh` (in discobox-ai/skills) runs against the dev server with a
   `discobox` link to `./build/discobox` first on `PATH`, any `GH_TOKEN` and a
   stub `gh` there too for its GitHub reads, and `ORCH_DIR` in the scratchpad
   holding a `workers.tsv` row for a box made with `./build/discobox run -d
@@ -315,7 +320,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_
 # Verifying `discobox-access` in a dev box (request, wait, list)
 
 Every command goes to the dev loop through `d()` from
-`.agents/skills/test-fix/driving-task-dev.md`
+`.agents/skills/verify-recipes/driving-task-dev.md`
 (`d() { ./build/discobox --server http://127.0.0.1:8080 "$@"; }`): a bare
 `discobox` reaches the outer discobox API, where a fake secret and a forever
 binding do not belong.
