@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"errors"
-	"slices"
 	"strings"
 	"time"
 
@@ -538,7 +537,7 @@ func (s *Store) PutTargetUseBinding(ctx context.Context, binding *model.SecretBi
 			if current.SecretID == binding.SecretID {
 				binding.ID, binding.CreatedAt = current.ID, current.CreatedAt
 				binding.Delegate, binding.ParentID = current.Delegate, current.ParentID
-				if slices.EqualFunc(current.Routes, binding.Routes, func(a, b model.SecretRoute) bool { return a == b }) &&
+				if model.SameRoutes(current.Routes, binding.Routes) &&
 					sameExpiry(current.ExpiresAt, binding.ExpiresAt) {
 					return nil
 				}

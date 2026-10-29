@@ -53,7 +53,7 @@ func bearerSecret(t *testing.T, st *store.Store, name, host string) *model.Secre
 		host = "*"
 	}
 	sec := &model.Secret{ProjectID: "project-1", Name: name, Type: model.SecretTypeToken,
-		Routes: []model.SecretRoute{{Host: host}}, EncryptedValue: []byte(`{"token":"sk-abc"}`)}
+		Routes: []model.SecretRoute{{Hosts: []string{host}}}, EncryptedValue: []byte(`{"token":"sk-abc"}`)}
 	if err := st.CreateSecret(context.Background(), sec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}

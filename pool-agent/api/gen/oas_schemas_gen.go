@@ -994,41 +994,93 @@ func (s *HarnessCaptureProvider) SetTypes(val []string) {
 	s.Types = val
 }
 
+// A route a harness's captured secret is bound with, in SentinelRoute's shape.
 // Ref: #/components/schemas/HarnessCaptureRoute
 type HarnessCaptureRoute struct {
-	Host string    `json:"host"`
-	Path OptString `json:"path"`
-	Use  OptString `json:"use"`
+	// Refuse every request this route is the most specific route for; a more specific route of the same
+	// list still answers for what it covers (ADR 26-10-27-880 §4).
+	Blocked OptBool                 `json:"blocked"`
+	Graphql OptSentinelRouteGraphQL `json:"graphql"`
+	// Hosts the route covers, each an exact name, `*.suffix` for every name strictly beneath suffix but
+	// not suffix itself, or `*` alone for any host (ADR 26-10-27-939). A :port is dropped, so a host is
+	// every port of it. A host covers no host beneath it; `*.h` says that.
+	Hosts []string            `json:"hosts"`
+	Mcp   OptSentinelRouteMCP `json:"mcp"`
+	// HTTP methods the route covers, upper case; empty is any method. A request names its request line's
+	// method and every method it overrides it with: the X-HTTP-Method-Override, X-HTTP-Method and
+	// X-Method-Override headers, and _method in its URL, plus, on a POST only, _method in a URL-encoded
+	// form body, a body with no Content-Type (read as a form), or the top level of a JSON object body.
+	// An open route matches only when every one is among methods; of a POST body it ignores only a JSON
+	// body it could not read at all (too large, of undeclared length, in an unknown encoding) and a
+	// multipart body, and refuses a form or untyped body it could not read and any body it read but
+	// could not parse unambiguously. A blocked route matches when any one is among methods, or when a
+	// POST body that may name one cannot be read or parsed. So a _method hidden in an unreadable JSON or
+	// multipart POST is caught only by a blocked method route.
+	Methods []string `json:"methods"`
+	// Path patterns, each matched against the whole request path one segment at a time: `*` is exactly
+	// one segment, `**` as the last segment is zero or more, anything else is literal, compared ignoring
+	// case (so /repos/acme/** also allows /Repos/ACME/...). Empty is any path.
+	Paths []string `json:"paths"`
 }
 
-// GetHost returns the value of Host.
-func (s *HarnessCaptureRoute) GetHost() string {
-	return s.Host
+// GetBlocked returns the value of Blocked.
+func (s *HarnessCaptureRoute) GetBlocked() OptBool {
+	return s.Blocked
 }
 
-// GetPath returns the value of Path.
-func (s *HarnessCaptureRoute) GetPath() OptString {
-	return s.Path
+// GetGraphql returns the value of Graphql.
+func (s *HarnessCaptureRoute) GetGraphql() OptSentinelRouteGraphQL {
+	return s.Graphql
 }
 
-// GetUse returns the value of Use.
-func (s *HarnessCaptureRoute) GetUse() OptString {
-	return s.Use
+// GetHosts returns the value of Hosts.
+func (s *HarnessCaptureRoute) GetHosts() []string {
+	return s.Hosts
 }
 
-// SetHost sets the value of Host.
-func (s *HarnessCaptureRoute) SetHost(val string) {
-	s.Host = val
+// GetMcp returns the value of Mcp.
+func (s *HarnessCaptureRoute) GetMcp() OptSentinelRouteMCP {
+	return s.Mcp
 }
 
-// SetPath sets the value of Path.
-func (s *HarnessCaptureRoute) SetPath(val OptString) {
-	s.Path = val
+// GetMethods returns the value of Methods.
+func (s *HarnessCaptureRoute) GetMethods() []string {
+	return s.Methods
 }
 
-// SetUse sets the value of Use.
-func (s *HarnessCaptureRoute) SetUse(val OptString) {
-	s.Use = val
+// GetPaths returns the value of Paths.
+func (s *HarnessCaptureRoute) GetPaths() []string {
+	return s.Paths
+}
+
+// SetBlocked sets the value of Blocked.
+func (s *HarnessCaptureRoute) SetBlocked(val OptBool) {
+	s.Blocked = val
+}
+
+// SetGraphql sets the value of Graphql.
+func (s *HarnessCaptureRoute) SetGraphql(val OptSentinelRouteGraphQL) {
+	s.Graphql = val
+}
+
+// SetHosts sets the value of Hosts.
+func (s *HarnessCaptureRoute) SetHosts(val []string) {
+	s.Hosts = val
+}
+
+// SetMcp sets the value of Mcp.
+func (s *HarnessCaptureRoute) SetMcp(val OptSentinelRouteMCP) {
+	s.Mcp = val
+}
+
+// SetMethods sets the value of Methods.
+func (s *HarnessCaptureRoute) SetMethods(val []string) {
+	s.Methods = val
+}
+
+// SetPaths sets the value of Paths.
+func (s *HarnessCaptureRoute) SetPaths(val []string) {
+	s.Paths = val
 }
 
 // Ref: #/components/schemas/HarnessCaptureSetting
@@ -3984,6 +4036,98 @@ func (o OptSandboxUser) Or(d SandboxUser) SandboxUser {
 	return d
 }
 
+// NewOptSentinelRouteGraphQL returns new OptSentinelRouteGraphQL with value set to v.
+func NewOptSentinelRouteGraphQL(v SentinelRouteGraphQL) OptSentinelRouteGraphQL {
+	return OptSentinelRouteGraphQL{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSentinelRouteGraphQL is optional SentinelRouteGraphQL.
+type OptSentinelRouteGraphQL struct {
+	Value SentinelRouteGraphQL
+	Set   bool
+}
+
+// IsSet returns true if OptSentinelRouteGraphQL was set.
+func (o OptSentinelRouteGraphQL) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSentinelRouteGraphQL) Reset() {
+	var v SentinelRouteGraphQL
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSentinelRouteGraphQL) SetTo(v SentinelRouteGraphQL) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSentinelRouteGraphQL) Get() (v SentinelRouteGraphQL, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSentinelRouteGraphQL) Or(d SentinelRouteGraphQL) SentinelRouteGraphQL {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSentinelRouteMCP returns new OptSentinelRouteMCP with value set to v.
+func NewOptSentinelRouteMCP(v SentinelRouteMCP) OptSentinelRouteMCP {
+	return OptSentinelRouteMCP{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSentinelRouteMCP is optional SentinelRouteMCP.
+type OptSentinelRouteMCP struct {
+	Value SentinelRouteMCP
+	Set   bool
+}
+
+// IsSet returns true if OptSentinelRouteMCP was set.
+func (o OptSentinelRouteMCP) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSentinelRouteMCP) Reset() {
+	var v SentinelRouteMCP
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSentinelRouteMCP) SetTo(v SentinelRouteMCP) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSentinelRouteMCP) Get() (v SentinelRouteMCP, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSentinelRouteMCP) Or(d SentinelRouteMCP) SentinelRouteMCP {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptString returns new OptString with value set to v.
 func NewOptString(v string) OptString {
 	return OptString{
@@ -6812,14 +6956,36 @@ func (s *SandboxUser) SetUID(val OptInt64) {
 	s.UID = val
 }
 
-// Where a secret may be sent (ADR 26-10-02-924). A host covers itself and every host beneath it, and
-// `*` covers every host (ADR 26-10-27-939); a path is a prefix matched on whole segments.
+// Where a secret may be sent (ADR 26-10-02-924, ADR 26-10-27-880 §4). A request falls on the route
+// when its host, method, path and protocol block all match; the most specific route of a list a
+// request falls on decides it, host first, then path, and a blocked one among the most specific
+// refuses.
 // Ref: #/components/schemas/SentinelRoute
 type SentinelRoute struct {
-	// Refuse every request on this route; a more specific route still answers for the paths beneath it.
-	Blocked OptBool   `json:"blocked"`
-	Host    string    `json:"host"`
-	Path    OptString `json:"path"`
+	// Refuse every request this route is the most specific route for; a more specific route of the same
+	// list still answers for what it covers (ADR 26-10-27-880 §4).
+	Blocked OptBool                 `json:"blocked"`
+	Graphql OptSentinelRouteGraphQL `json:"graphql"`
+	// Hosts the route covers, each an exact name, `*.suffix` for every name strictly beneath suffix but
+	// not suffix itself, or `*` alone for any host (ADR 26-10-27-939). A :port is dropped, so a host is
+	// every port of it. A host covers no host beneath it; `*.h` says that.
+	Hosts []string            `json:"hosts"`
+	Mcp   OptSentinelRouteMCP `json:"mcp"`
+	// HTTP methods the route covers, upper case; empty is any method. A request names its request line's
+	// method and every method it overrides it with: the X-HTTP-Method-Override, X-HTTP-Method and
+	// X-Method-Override headers, and _method in its URL, plus, on a POST only, _method in a URL-encoded
+	// form body, a body with no Content-Type (read as a form), or the top level of a JSON object body.
+	// An open route matches only when every one is among methods; of a POST body it ignores only a JSON
+	// body it could not read at all (too large, of undeclared length, in an unknown encoding) and a
+	// multipart body, and refuses a form or untyped body it could not read and any body it read but
+	// could not parse unambiguously. A blocked route matches when any one is among methods, or when a
+	// POST body that may name one cannot be read or parsed. So a _method hidden in an unreadable JSON or
+	// multipart POST is caught only by a blocked method route.
+	Methods []string `json:"methods"`
+	// Path patterns, each matched against the whole request path one segment at a time: `*` is exactly
+	// one segment, `**` as the last segment is zero or more, anything else is literal, compared ignoring
+	// case (so /repos/acme/** also allows /Repos/ACME/...). Empty is any path.
+	Paths []string `json:"paths"`
 }
 
 // GetBlocked returns the value of Blocked.
@@ -6827,14 +6993,29 @@ func (s *SentinelRoute) GetBlocked() OptBool {
 	return s.Blocked
 }
 
-// GetHost returns the value of Host.
-func (s *SentinelRoute) GetHost() string {
-	return s.Host
+// GetGraphql returns the value of Graphql.
+func (s *SentinelRoute) GetGraphql() OptSentinelRouteGraphQL {
+	return s.Graphql
 }
 
-// GetPath returns the value of Path.
-func (s *SentinelRoute) GetPath() OptString {
-	return s.Path
+// GetHosts returns the value of Hosts.
+func (s *SentinelRoute) GetHosts() []string {
+	return s.Hosts
+}
+
+// GetMcp returns the value of Mcp.
+func (s *SentinelRoute) GetMcp() OptSentinelRouteMCP {
+	return s.Mcp
+}
+
+// GetMethods returns the value of Methods.
+func (s *SentinelRoute) GetMethods() []string {
+	return s.Methods
+}
+
+// GetPaths returns the value of Paths.
+func (s *SentinelRoute) GetPaths() []string {
+	return s.Paths
 }
 
 // SetBlocked sets the value of Blocked.
@@ -6842,14 +7023,142 @@ func (s *SentinelRoute) SetBlocked(val OptBool) {
 	s.Blocked = val
 }
 
-// SetHost sets the value of Host.
-func (s *SentinelRoute) SetHost(val string) {
-	s.Host = val
+// SetGraphql sets the value of Graphql.
+func (s *SentinelRoute) SetGraphql(val OptSentinelRouteGraphQL) {
+	s.Graphql = val
 }
 
-// SetPath sets the value of Path.
-func (s *SentinelRoute) SetPath(val OptString) {
-	s.Path = val
+// SetHosts sets the value of Hosts.
+func (s *SentinelRoute) SetHosts(val []string) {
+	s.Hosts = val
+}
+
+// SetMcp sets the value of Mcp.
+func (s *SentinelRoute) SetMcp(val OptSentinelRouteMCP) {
+	s.Mcp = val
+}
+
+// SetMethods sets the value of Methods.
+func (s *SentinelRoute) SetMethods(val []string) {
+	s.Methods = val
+}
+
+// SetPaths sets the value of Paths.
+func (s *SentinelRoute) SetPaths(val []string) {
+	s.Paths = val
+}
+
+// Narrows a route to GraphQL requests by their parsed documents (ADR 26-10-27-880 §4): the body's,
+// a JSON object {query, ...} or a batch of them, and any query in the URL's query string;
+// operationName is never read, and root fragment spreads are expanded. Matching is asymmetric, so a
+// carve-out cannot be stepped around. An open route matches only when every operation is readable
+// and matches, its type among operations and every root field among fields; a persisted query with
+// no document, or a body past the capture limit, unparsable, in an encoding the proxy cannot decode,
+// or on an upgraded connection, does not match. A blocked route matches when any one operation
+// matches, its type among operations and any root field among fields, or when the documents cannot
+// be read for any of those reasons: a blocked GraphQL route refuses every request on its hosts and
+// paths whose body cannot be read.
+// Ref: #/components/schemas/SentinelRouteGraphQL
+type SentinelRouteGraphQL struct {
+	// Root field names every operation's root fields must be among, aliases resolved and root fragment
+	// spreads expanded; a name may end in one `*`. Empty is any field.
+	Fields []string `json:"fields"`
+	// Operation types every operation must be one of; empty is any.
+	Operations []SentinelRouteGraphQLOperationsItem `json:"operations"`
+}
+
+// GetFields returns the value of Fields.
+func (s *SentinelRouteGraphQL) GetFields() []string {
+	return s.Fields
+}
+
+// GetOperations returns the value of Operations.
+func (s *SentinelRouteGraphQL) GetOperations() []SentinelRouteGraphQLOperationsItem {
+	return s.Operations
+}
+
+// SetFields sets the value of Fields.
+func (s *SentinelRouteGraphQL) SetFields(val []string) {
+	s.Fields = val
+}
+
+// SetOperations sets the value of Operations.
+func (s *SentinelRouteGraphQL) SetOperations(val []SentinelRouteGraphQLOperationsItem) {
+	s.Operations = val
+}
+
+type SentinelRouteGraphQLOperationsItem string
+
+const (
+	SentinelRouteGraphQLOperationsItemQuery        SentinelRouteGraphQLOperationsItem = "query"
+	SentinelRouteGraphQLOperationsItemMutation     SentinelRouteGraphQLOperationsItem = "mutation"
+	SentinelRouteGraphQLOperationsItemSubscription SentinelRouteGraphQLOperationsItem = "subscription"
+)
+
+// AllValues returns all SentinelRouteGraphQLOperationsItem values.
+func (SentinelRouteGraphQLOperationsItem) AllValues() []SentinelRouteGraphQLOperationsItem {
+	return []SentinelRouteGraphQLOperationsItem{
+		SentinelRouteGraphQLOperationsItemQuery,
+		SentinelRouteGraphQLOperationsItemMutation,
+		SentinelRouteGraphQLOperationsItemSubscription,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SentinelRouteGraphQLOperationsItem) MarshalText() ([]byte, error) {
+	switch s {
+	case SentinelRouteGraphQLOperationsItemQuery:
+		return []byte(s), nil
+	case SentinelRouteGraphQLOperationsItemMutation:
+		return []byte(s), nil
+	case SentinelRouteGraphQLOperationsItemSubscription:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SentinelRouteGraphQLOperationsItem) UnmarshalText(data []byte) error {
+	switch SentinelRouteGraphQLOperationsItem(data) {
+	case SentinelRouteGraphQLOperationsItemQuery:
+		*s = SentinelRouteGraphQLOperationsItemQuery
+		return nil
+	case SentinelRouteGraphQLOperationsItemMutation:
+		*s = SentinelRouteGraphQLOperationsItemMutation
+		return nil
+	case SentinelRouteGraphQLOperationsItemSubscription:
+		*s = SentinelRouteGraphQLOperationsItemSubscription
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Narrows a route to MCP JSON-RPC requests (ADR 26-10-27-880 §4): the body, one JSON-RPC 2.0
+// message or a batch of them. Matching is asymmetric, so a carve-out cannot be stepped around. An
+// open route matches only when every message is readable and is a tools/call whose params.name is
+// among tools, a protocol method (initialize, ping, tools/list, notifications/*), or a response to a
+// request of the server's; a GET that opens the server's stream or a DELETE that ends the session,
+// each with an empty body, matches too, since neither calls a tool. Any other method, or a body past
+// the capture limit, unparsable, in an encoding the proxy cannot decode, or on an upgraded
+// connection, does not match. A blocked route matches when any one message is a tools/call of a tool
+// among tools, or when the body cannot be read for any of those reasons: a blocked MCP route refuses
+// every request on its hosts and paths whose body cannot be read.
+// Ref: #/components/schemas/SentinelRouteMCP
+type SentinelRouteMCP struct {
+	// Tool names a tools/call may name; a name may end in one `*`. Empty is any tool.
+	Tools []string `json:"tools"`
+}
+
+// GetTools returns the value of Tools.
+func (s *SentinelRouteMCP) GetTools() []string {
+	return s.Tools
+}
+
+// SetTools sets the value of Tools.
+func (s *SentinelRouteMCP) SetTools(val []string) {
+	s.Tools = val
 }
 
 // Ref: #/components/schemas/SourceDelivery

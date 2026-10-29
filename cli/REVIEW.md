@@ -154,7 +154,8 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   `secret bind … --project acme` stop choosing the project.
 - **A variable, route or name a discobox wrote is escaped wherever printed**:
   a request's env name and routes, a child binding's variable and routes
-  (`routesText` escapes its own output). The secret's name beside them was
+  (`routesText` escapes its own output; the console's copy is escaped word by
+  word in `terminalSafeRoute`, hosts, methods, paths, fields and tools alike). The secret's name beside them was
   never the only box-written cell.
 - **Unbinding takes back the half asked for.** A binding that both delivers a
   variable and may be given on is updated, not deleted, by an unbind of one
@@ -174,6 +175,15 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   binding form must agree; a secret given by ID is looked up first
   (`NameBindingVariables`, `defaultBindingVariable`), never upper-snaked as an
   ID.
+- **A route goes through `secretroute.Parse` and `secretroute.Format`,
+  never a parser or printer of its own.** A route converts to and from the
+  API's shape only in `internal/apiroute`; a new route field is added there
+  and nowhere else. Routes on one line are joined by `; ` (a comma is the
+  route's own), and `--route` never splits on commas.
+- **Help that describes a route says a host is exact** (`*.h` for beneath
+  it) and uses `secretroute.Syntax`/`routeHelp`; `HOST[/PATH]` and "a host covers
+  the hosts beneath it" are the routes before ADR 26-10-27-880 §4
+  (`command_conventions_test.go` checks).
 - **A secret is created with a route.** The CLI and the console both refuse a
   secret with none and say `*` is anywhere (ADR 26-10-27-939); a route-less
   secret is sent nowhere and fails far from where it was made.

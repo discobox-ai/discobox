@@ -399,6 +399,23 @@ func (s *HarnessCaptureProvider) Validate() error {
 				if value == nil {
 					return errors.New("nil is invalid value")
 				}
+				var failures []validate.FieldError
+				for i, elem := range value {
+					if err := func() error {
+						if err := elem.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						failures = append(failures, validate.FieldError{
+							Name:  fmt.Sprintf("[%d]", i),
+							Error: err,
+						})
+					}
+				}
+				if len(failures) > 0 {
+					return &validate.Error{Fields: failures}
+				}
 				return nil
 			}(); err != nil {
 				return err
@@ -408,6 +425,55 @@ func (s *HarnessCaptureProvider) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "routes",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *HarnessCaptureRoute) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Graphql.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "graphql",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if s.Hosts == nil {
+			return errors.New("nil is invalid value")
+		}
+		if err := (validate.Array{
+			MinLength:    1,
+			MinLengthSet: true,
+			MaxLength:    0,
+			MaxLengthSet: false,
+		}).ValidateLength(len(s.Hosts)); err != nil {
+			return errors.Wrap(err, "array")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "hosts",
 			Error: err,
 		})
 	}
@@ -1098,6 +1164,23 @@ func (s PoolSandboxCreateRequestSentinelRoutes) Validate() error {
 					if elem == nil {
 						return errors.New("nil is invalid value")
 					}
+					var failures []validate.FieldError
+					for i, elem := range elem {
+						if err := func() error {
+							if err := elem.Validate(); err != nil {
+								return err
+							}
+							return nil
+						}(); err != nil {
+							failures = append(failures, validate.FieldError{
+								Name:  fmt.Sprintf("[%d]", i),
+								Error: err,
+							})
+						}
+					}
+					if len(failures) > 0 {
+						return &validate.Error{Fields: failures}
+					}
 					return nil
 				}(); err != nil {
 					failures = append(failures, validate.FieldError{
@@ -1362,6 +1445,23 @@ func (s PoolSandboxUpdateRequestSentinelRoutes) Validate() error {
 				if err := func() error {
 					if elem == nil {
 						return errors.New("nil is invalid value")
+					}
+					var failures []validate.FieldError
+					for i, elem := range elem {
+						if err := func() error {
+							if err := elem.Validate(); err != nil {
+								return err
+							}
+							return nil
+						}(); err != nil {
+							failures = append(failures, validate.FieldError{
+								Name:  fmt.Sprintf("[%d]", i),
+								Error: err,
+							})
+						}
+					}
+					if len(failures) > 0 {
+						return &validate.Error{Fields: failures}
 					}
 					return nil
 				}(); err != nil {
@@ -1801,4 +1901,103 @@ func (s *SandboxSkillsSource) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s *SentinelRoute) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Graphql.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "graphql",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if s.Hosts == nil {
+			return errors.New("nil is invalid value")
+		}
+		if err := (validate.Array{
+			MinLength:    1,
+			MinLengthSet: true,
+			MaxLength:    0,
+			MaxLengthSet: false,
+		}).ValidateLength(len(s.Hosts)); err != nil {
+			return errors.Wrap(err, "array")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "hosts",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *SentinelRouteGraphQL) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		var failures []validate.FieldError
+		for i, elem := range s.Operations {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "operations",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s SentinelRouteGraphQLOperationsItem) Validate() error {
+	switch s {
+	case "query":
+		return nil
+	case "mutation":
+		return nil
+	case "subscription":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }

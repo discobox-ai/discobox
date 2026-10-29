@@ -18,8 +18,8 @@
 //
 // The CLI never carries a credential's value. A granted credential is
 // delivered by the service — Discobox puts a sentinel in the variable the
-// request named, which its egress swaps for the value on the hosts the grant
-// covers (ADR 26-10-27-880) — so a granted credential is used by running the
+// request named, which its egress swaps for the value on the routes its
+// binding allows (ADR 26-10-27-880) — so a granted credential is used by running the
 // command that needs it, with no wrapper. A process started before the grant
 // — a harness's tool shell inherits the harness's launch environment — takes
 // it up with "env", which prints what is delivered now for a shell to export.
@@ -116,9 +116,9 @@ func usage(w io.Writer) {
 	fmt.Fprintf(w, `%[1]s — ask a human for a credential you were not provisioned with.
 
   %[1]s list [--json]
-      Show the credentials you hold: the variable each is in and the hosts it
-      may be sent to, and the ones you may give the discoboxes you create
-      (delegate). A credential you hold is already in its variable for every
+      Show the credentials you hold: the variable each is in and the hosts of
+      the routes it may be sent on, and the ones you may give the discoboxes
+      you create (delegate). A credential you hold is already in its variable for every
       command you start; use it as you would any token.
 
   %[1]s env [--json]
@@ -127,11 +127,35 @@ func usage(w io.Writer) {
       after your shell started reaches it this way. The values are
       placeholders your egress exchanges, never the credential itself.
 
-  %[1]s request [--json] --name NAME --env-var VAR --hosts HOST[,HOST...] [flags]
+  %[1]s request [--json] --name NAME --env-var VAR --route ROUTE... [flags]
       Ask a human for a credential. Returns a request id immediately unless
       you --wait for an answer. Once granted, the credential is in VAR for
-      every command started from then on, and is sent only to the hosts the
-      human approved; each covers the hosts beneath it.
+      every command started from then on, and is sent only on the routes the
+      human approved.
+
+      --route is where you will send it, one route per flag, as narrow as
+      the task needs:
+
+        %[5]s
+
+      METHODS are upper-case methods joined by commas (GET,HEAD); left out,
+      any. HOSTS are joined by commas, and each is exact: *.example.com is
+      the hosts beneath example.com, not example.com, and * alone is any
+      host. PATHS start at the first /, several joined by ,/; a path is
+      matched whole, * is one segment and ** (last only) the rest; left out,
+      any path. graphql= names the GraphQL operations allowed (query,
+      mutation, subscription, or *) and optionally :FIELDS, the root fields
+      they select; mcp= the MCP tools a tools/call may name. =blocked carves
+      a route out of a wider one. For example:
+
+        --route 'GET api.github.com/repos/acme/web/**'
+        --route 'api.github.com/graphql graphql=query'
+        --route 'POST api.github.com/repos/acme/web/pulls'
+        --route 'api.github.com/graphql graphql=mutation:markPullRequestReadyForReview'
+        --route 'github.com/acme/web.git/**,/acme/web/**'
+
+      --hosts HOST[,HOST...] is shorthand for one route to each exact host,
+      any method and path.
 
       --justification says why you need it, in the words the human reads:
       the task and its target. --ttl asks how long to keep it (a Go duration
@@ -146,7 +170,12 @@ func usage(w io.Writer) {
         {
           "name": "github",
           "envVar": "GITHUB_TOKEN",
-          "hosts": ["github.com", "api.github.com"],
+          "routes": [
+            "github.com/acme/web.git/**,/acme/web/**",
+            "GET api.github.com/repos/acme/web/**",
+            "api.github.com/graphql graphql=query",
+            "POST api.github.com/repos/acme/web/pulls"
+          ],
           "justification": "the user's task asks me to open a PR into main of acme/web",
           "grantTTLSeconds": 14400,
           "wait": true,
@@ -207,7 +236,7 @@ func usage(w io.Writer) {
   unavailable  the service could not answer; retry
 
 Configured by %[2]s (default %[3]s) and %[4]s.
-`, Name, agentcreds.URLEnv, agentcreds.DefaultBaseURL, agentcreds.TokenEnv)
+`, Name, agentcreds.URLEnv, agentcreds.DefaultBaseURL, agentcreds.TokenEnv, routeSyntax)
 }
 
 // usageError reports a mistake in how the command was invoked, which is

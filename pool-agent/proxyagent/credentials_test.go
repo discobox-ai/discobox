@@ -99,6 +99,7 @@ func TestRequestPassesTheAskOn(t *testing.T) {
 	b := &credentialBroker{sandboxID: "sb-1", controlPlan: plane}
 	status, err := b.Request(context.Background(), agentcreds.RequestBody{
 		Name: "github", EnvVar: "GH_TOKEN", Hosts: []string{"api.github.com", "api.githubcopilot.com"},
+		Routes:        []string{"api.github.com/graphql graphql=query"},
 		Justification: "run copilot", GrantTTLSeconds: 3600, Purpose: agentcreds.PurposeUse,
 	})
 	if err != nil {
@@ -109,6 +110,7 @@ func TestRequestPassesTheAskOn(t *testing.T) {
 	}
 	want := createCredentialRequestDoc{
 		SandboxID: "sb-1", Name: "github", EnvVar: "GH_TOKEN", Hosts: []string{"api.github.com", "api.githubcopilot.com"},
+		Routes:        []string{"api.github.com/graphql graphql=query"},
 		Justification: "run copilot", GrantTTLSeconds: 3600, Purpose: agentcreds.PurposeUse,
 	}
 	if len(fake.requests) != 1 || !reflect.DeepEqual(fake.requests[0], want) {

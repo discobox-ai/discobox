@@ -2703,12 +2703,24 @@ func (s *CreateSandboxCredentialRequestBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("hosts")
-		e.ArrStart()
-		for _, elem := range s.Hosts {
-			e.Str(elem)
+		if s.Hosts != nil {
+			e.FieldStart("hosts")
+			e.ArrStart()
+			for _, elem := range s.Hosts {
+				e.Str(elem)
+			}
+			e.ArrEnd()
 		}
-		e.ArrEnd()
+	}
+	{
+		if s.Routes != nil {
+			e.FieldStart("routes")
+			e.ArrStart()
+			for _, elem := range s.Routes {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
 	}
 	{
 		if s.Purpose.Set {
@@ -2732,15 +2744,16 @@ func (s *CreateSandboxCredentialRequestBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreateSandboxCredentialRequestBody = [8]string{
+var jsonFieldsNameOfCreateSandboxCredentialRequestBody = [9]string{
 	0: "$schema",
 	1: "envVar",
 	2: "grantTTLSeconds",
 	3: "hosts",
-	4: "purpose",
-	5: "justification",
-	6: "name",
-	7: "sandboxId",
+	4: "routes",
+	5: "purpose",
+	6: "justification",
+	7: "name",
+	8: "sandboxId",
 }
 
 // Decode decodes CreateSandboxCredentialRequestBody from json.
@@ -2748,7 +2761,7 @@ func (s *CreateSandboxCredentialRequestBody) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode CreateSandboxCredentialRequestBody to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -2783,7 +2796,6 @@ func (s *CreateSandboxCredentialRequestBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"grantTTLSeconds\"")
 			}
 		case "hosts":
-			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				s.Hosts = make([]string, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -2801,6 +2813,25 @@ func (s *CreateSandboxCredentialRequestBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"hosts\"")
+			}
+		case "routes":
+			if err := func() error {
+				s.Routes = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Routes = append(s.Routes, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"routes\"")
 			}
 		case "purpose":
 			if err := func() error {
@@ -2823,7 +2854,7 @@ func (s *CreateSandboxCredentialRequestBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"justification\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -2835,7 +2866,7 @@ func (s *CreateSandboxCredentialRequestBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "sandboxId":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -2855,8 +2886,9 @@ func (s *CreateSandboxCredentialRequestBody) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b11001000,
+	for i, mask := range [2]uint8{
+		0b10000000,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -9447,21 +9479,54 @@ func (s *HarnessCaptureRoute) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("host")
-		e.Str(s.Host)
+		if s.Graphql.Set {
+			e.FieldStart("graphql")
+			s.Graphql.Encode(e)
+		}
 	}
 	{
-		if s.Path.Set {
-			e.FieldStart("path")
-			s.Path.Encode(e)
+		e.FieldStart("hosts")
+		e.ArrStart()
+		for _, elem := range s.Hosts {
+			e.Str(elem)
+		}
+		e.ArrEnd()
+	}
+	{
+		if s.Mcp.Set {
+			e.FieldStart("mcp")
+			s.Mcp.Encode(e)
+		}
+	}
+	{
+		if s.Methods != nil {
+			e.FieldStart("methods")
+			e.ArrStart()
+			for _, elem := range s.Methods {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.Paths != nil {
+			e.FieldStart("paths")
+			e.ArrStart()
+			for _, elem := range s.Paths {
+				e.Str(elem)
+			}
+			e.ArrEnd()
 		}
 	}
 }
 
-var jsonFieldsNameOfHarnessCaptureRoute = [3]string{
+var jsonFieldsNameOfHarnessCaptureRoute = [6]string{
 	0: "blocked",
-	1: "host",
-	2: "path",
+	1: "graphql",
+	2: "hosts",
+	3: "mcp",
+	4: "methods",
+	5: "paths",
 }
 
 // Decode decodes HarnessCaptureRoute from json.
@@ -9483,27 +9548,83 @@ func (s *HarnessCaptureRoute) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"blocked\"")
 			}
-		case "host":
-			requiredBitSet[0] |= 1 << 1
+		case "graphql":
 			if err := func() error {
-				v, err := d.Str()
-				s.Host = string(v)
-				if err != nil {
+				s.Graphql.Reset()
+				if err := s.Graphql.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"host\"")
+				return errors.Wrap(err, "decode field \"graphql\"")
 			}
-		case "path":
+		case "hosts":
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
-				s.Path.Reset()
-				if err := s.Path.Decode(d); err != nil {
+				s.Hosts = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Hosts = append(s.Hosts, elem)
+					return nil
+				}); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"path\"")
+				return errors.Wrap(err, "decode field \"hosts\"")
+			}
+		case "mcp":
+			if err := func() error {
+				s.Mcp.Reset()
+				if err := s.Mcp.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"mcp\"")
+			}
+		case "methods":
+			if err := func() error {
+				s.Methods = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Methods = append(s.Methods, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"methods\"")
+			}
+		case "paths":
+			if err := func() error {
+				s.Paths = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Paths = append(s.Paths, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"paths\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -9515,7 +9636,7 @@ func (s *HarnessCaptureRoute) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000010,
+		0b00000100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -22950,6 +23071,72 @@ func (s OptSecretRequestPurpose) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptSecretRequestPurpose) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SecretRouteGraphQL as json.
+func (o OptSecretRouteGraphQL) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SecretRouteGraphQL from json.
+func (o *OptSecretRouteGraphQL) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSecretRouteGraphQL to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSecretRouteGraphQL) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSecretRouteGraphQL) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SecretRouteMCP as json.
+func (o OptSecretRouteMCP) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SecretRouteMCP from json.
+func (o *OptSecretRouteMCP) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSecretRouteMCP to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSecretRouteMCP) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSecretRouteMCP) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -52927,21 +53114,54 @@ func (s *SecretRoute) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("host")
-		e.Str(s.Host)
+		if s.Graphql.Set {
+			e.FieldStart("graphql")
+			s.Graphql.Encode(e)
+		}
 	}
 	{
-		if s.Path.Set {
-			e.FieldStart("path")
-			s.Path.Encode(e)
+		e.FieldStart("hosts")
+		e.ArrStart()
+		for _, elem := range s.Hosts {
+			e.Str(elem)
+		}
+		e.ArrEnd()
+	}
+	{
+		if s.Mcp.Set {
+			e.FieldStart("mcp")
+			s.Mcp.Encode(e)
+		}
+	}
+	{
+		if s.Methods != nil {
+			e.FieldStart("methods")
+			e.ArrStart()
+			for _, elem := range s.Methods {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.Paths != nil {
+			e.FieldStart("paths")
+			e.ArrStart()
+			for _, elem := range s.Paths {
+				e.Str(elem)
+			}
+			e.ArrEnd()
 		}
 	}
 }
 
-var jsonFieldsNameOfSecretRoute = [3]string{
+var jsonFieldsNameOfSecretRoute = [6]string{
 	0: "blocked",
-	1: "host",
-	2: "path",
+	1: "graphql",
+	2: "hosts",
+	3: "mcp",
+	4: "methods",
+	5: "paths",
 }
 
 // Decode decodes SecretRoute from json.
@@ -52963,27 +53183,83 @@ func (s *SecretRoute) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"blocked\"")
 			}
-		case "host":
-			requiredBitSet[0] |= 1 << 1
+		case "graphql":
 			if err := func() error {
-				v, err := d.Str()
-				s.Host = string(v)
-				if err != nil {
+				s.Graphql.Reset()
+				if err := s.Graphql.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"host\"")
+				return errors.Wrap(err, "decode field \"graphql\"")
 			}
-		case "path":
+		case "hosts":
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
-				s.Path.Reset()
-				if err := s.Path.Decode(d); err != nil {
+				s.Hosts = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Hosts = append(s.Hosts, elem)
+					return nil
+				}); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"path\"")
+				return errors.Wrap(err, "decode field \"hosts\"")
+			}
+		case "mcp":
+			if err := func() error {
+				s.Mcp.Reset()
+				if err := s.Mcp.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"mcp\"")
+			}
+		case "methods":
+			if err := func() error {
+				s.Methods = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Methods = append(s.Methods, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"methods\"")
+			}
+		case "paths":
+			if err := func() error {
+				s.Paths = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Paths = append(s.Paths, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"paths\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -52995,7 +53271,7 @@ func (s *SecretRoute) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000010,
+		0b00000100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -53042,6 +53318,152 @@ func (s *SecretRoute) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *SecretRouteGraphQL) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SecretRouteGraphQL) encodeFields(e *jx.Encoder) {
+	{
+		if s.Fields != nil {
+			e.FieldStart("fields")
+			e.ArrStart()
+			for _, elem := range s.Fields {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.Operations != nil {
+			e.FieldStart("operations")
+			e.ArrStart()
+			for _, elem := range s.Operations {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
+}
+
+var jsonFieldsNameOfSecretRouteGraphQL = [2]string{
+	0: "fields",
+	1: "operations",
+}
+
+// Decode decodes SecretRouteGraphQL from json.
+func (s *SecretRouteGraphQL) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretRouteGraphQL to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "fields":
+			if err := func() error {
+				s.Fields = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Fields = append(s.Fields, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"fields\"")
+			}
+		case "operations":
+			if err := func() error {
+				s.Operations = make([]SecretRouteGraphQLOperationsItem, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem SecretRouteGraphQLOperationsItem
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Operations = append(s.Operations, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"operations\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SecretRouteGraphQL")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SecretRouteGraphQL) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretRouteGraphQL) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SecretRouteGraphQLOperationsItem as json.
+func (s SecretRouteGraphQLOperationsItem) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SecretRouteGraphQLOperationsItem from json.
+func (s *SecretRouteGraphQLOperationsItem) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretRouteGraphQLOperationsItem to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SecretRouteGraphQLOperationsItem(v) {
+	case SecretRouteGraphQLOperationsItemQuery:
+		*s = SecretRouteGraphQLOperationsItemQuery
+	case SecretRouteGraphQLOperationsItemMutation:
+		*s = SecretRouteGraphQLOperationsItemMutation
+	case SecretRouteGraphQLOperationsItemSubscription:
+		*s = SecretRouteGraphQLOperationsItemSubscription
+	default:
+		*s = SecretRouteGraphQLOperationsItem(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SecretRouteGraphQLOperationsItem) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretRouteGraphQLOperationsItem) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *SecretRouteInput) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -53057,21 +53479,54 @@ func (s *SecretRouteInput) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("host")
-		e.Str(s.Host)
+		if s.Graphql.Set {
+			e.FieldStart("graphql")
+			s.Graphql.Encode(e)
+		}
 	}
 	{
-		if s.Path.Set {
-			e.FieldStart("path")
-			s.Path.Encode(e)
+		e.FieldStart("hosts")
+		e.ArrStart()
+		for _, elem := range s.Hosts {
+			e.Str(elem)
+		}
+		e.ArrEnd()
+	}
+	{
+		if s.Mcp.Set {
+			e.FieldStart("mcp")
+			s.Mcp.Encode(e)
+		}
+	}
+	{
+		if s.Methods != nil {
+			e.FieldStart("methods")
+			e.ArrStart()
+			for _, elem := range s.Methods {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.Paths != nil {
+			e.FieldStart("paths")
+			e.ArrStart()
+			for _, elem := range s.Paths {
+				e.Str(elem)
+			}
+			e.ArrEnd()
 		}
 	}
 }
 
-var jsonFieldsNameOfSecretRouteInput = [3]string{
+var jsonFieldsNameOfSecretRouteInput = [6]string{
 	0: "blocked",
-	1: "host",
-	2: "path",
+	1: "graphql",
+	2: "hosts",
+	3: "mcp",
+	4: "methods",
+	5: "paths",
 }
 
 // Decode decodes SecretRouteInput from json.
@@ -53093,27 +53548,83 @@ func (s *SecretRouteInput) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"blocked\"")
 			}
-		case "host":
-			requiredBitSet[0] |= 1 << 1
+		case "graphql":
 			if err := func() error {
-				v, err := d.Str()
-				s.Host = string(v)
-				if err != nil {
+				s.Graphql.Reset()
+				if err := s.Graphql.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"host\"")
+				return errors.Wrap(err, "decode field \"graphql\"")
 			}
-		case "path":
+		case "hosts":
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
-				s.Path.Reset()
-				if err := s.Path.Decode(d); err != nil {
+				s.Hosts = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Hosts = append(s.Hosts, elem)
+					return nil
+				}); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"path\"")
+				return errors.Wrap(err, "decode field \"hosts\"")
+			}
+		case "mcp":
+			if err := func() error {
+				s.Mcp.Reset()
+				if err := s.Mcp.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"mcp\"")
+			}
+		case "methods":
+			if err := func() error {
+				s.Methods = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Methods = append(s.Methods, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"methods\"")
+			}
+		case "paths":
+			if err := func() error {
+				s.Paths = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Paths = append(s.Paths, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"paths\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -53125,7 +53636,7 @@ func (s *SecretRouteInput) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000010,
+		0b00000100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -53167,6 +53678,82 @@ func (s *SecretRouteInput) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SecretRouteInput) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SecretRouteMCP) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SecretRouteMCP) encodeFields(e *jx.Encoder) {
+	{
+		if s.Tools != nil {
+			e.FieldStart("tools")
+			e.ArrStart()
+			for _, elem := range s.Tools {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+}
+
+var jsonFieldsNameOfSecretRouteMCP = [1]string{
+	0: "tools",
+}
+
+// Decode decodes SecretRouteMCP from json.
+func (s *SecretRouteMCP) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretRouteMCP to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "tools":
+			if err := func() error {
+				s.Tools = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Tools = append(s.Tools, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tools\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SecretRouteMCP")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SecretRouteMCP) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretRouteMCP) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

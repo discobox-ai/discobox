@@ -2,7 +2,17 @@
 
 This package owns the versioned harness export, immutable candidate, redacted
 preview, and acknowledged handoff contracts (ADR 26-10-26-573). It has no IO.
-Definitions originate in registered bundle metadata. A sandbox export cannot
+Definitions originate in registered bundle metadata.
+
+It also owns the route a harness bundle declares (`Route`, a
+`secretroute.Route`): for a secret the image declares (`harness.Secret.Routes`)
+and for the secret a save-back provider writes alike. A bundle built before
+routes named host patterns declares `{host, path}`, and a route a judge read
+also a `use`; that shape reads through `secretroute.FromLegacy` (h and `*.h`,
+p and below, a use as blocked) until the bundle is rebuilt. A legacy route
+`FromLegacy` cannot convert is refused, so the bundle does not load — failing
+closed its own way — where the server's stored routes and the pool's old file,
+which must still be read, go through `secretroute.FromLegacyList`. A sandbox export cannot
 extend the provider set, refresh endpoint, settings exclusions, or credential paths.
 
 Validate before accepting a candidate or exposing its files as a preview.

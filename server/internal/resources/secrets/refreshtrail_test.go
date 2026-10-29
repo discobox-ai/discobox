@@ -17,7 +17,7 @@ func staleToken(t *testing.T, st *store.Store, name, sandboxID, sentinel string)
 	t.Helper()
 	sec := &model.Secret{
 		ProjectID: "project-1", Name: name, Type: model.SecretTypeToken,
-		Routes:        []model.SecretRoute{{Host: "*"}},
+		Routes:        []model.SecretRoute{{Hosts: []string{"*"}}},
 		MaxBindingTTL: 3600, EncryptedValue: mustTokenValue(t, "old-"+name),
 		TTL: 300, RefreshCommand: []string{"gh", "auth", "token"},
 	}

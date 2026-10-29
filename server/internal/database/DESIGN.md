@@ -93,6 +93,24 @@ by what it is looking for and is idempotent:
    again over the sandbox and variable alone; then the `judge` and
    `ruleRequest` reconcile marks, the `credential_verdicts` and
    `approval_rules` tables, and the columns only the judge read are dropped.
+   Both retirements read and write routes in the shape they were stored in
+   (`legacyRoute`: a host covering the hosts beneath it, a path prefix), and
+   write a binding's or a request's in the shape routes have now; then
+   `upgradeRouteShapes` converts every stored route still in the old shape
+   (ADR 26-10-27-880 §4, §8) — `secrets.routes`, `secret_bindings.routes`,
+   `secret_requests.routes`, the snapshot in `secret_binding_events.binding`,
+   and the routes inside `harness_configs.secrets` and
+   `harness_configs.save_back` — each list through
+   `secretroute.FromLegacyList`, the pool's rule for its own old file: a route
+   `FromLegacy` converts is converted (h is h and `*.h`, p is `p/**`); one it
+   refuses is dropped when open, blocks its path cut back before the segment
+   no path can spell when blocked, and makes its list refuse everything when
+   blocked on a host no route can name; and a list that had routes and
+   converts to none refuses everything too (`secretroute.RefusingList`,
+   `*=blocked`, since an empty binding list inherits its secret's). A list whose every route is in the new shape is left alone; each
+   converted row commits with the sentinel delivery of the discoboxes holding a
+   converted secret or binding marked, and is logged, as is every route not
+   converted exactly.
    Each step is logged per row and finds nothing once done,
    dropping retired tables and columns (including the pool prepull condition and
    its `poolImages` dirty rows, and the pool bootstrap token table,

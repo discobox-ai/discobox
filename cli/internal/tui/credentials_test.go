@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/cli/internal/lifetime"
-
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // The credential inbox is an interruption budget: an agent can ask at any
@@ -26,7 +26,7 @@ func waitingRequest() CredentialRequest {
 		SandboxID:     "sbx_one",
 		Name:          "github",
 		EnvVar:        "GH_TOKEN",
-		Routes:        []SecretRoute{{Host: "api.github.com"}},
+		Routes:        []secretroute.Route{{Hosts: []string{"api.github.com"}}},
 		Justification: "the task asks me to open a PR",
 		Created:       time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC),
 	}
@@ -37,8 +37,8 @@ func sourceWithRequest(t *testing.T) (*Model, *fakeSource) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{waitingRequest()}
 	ds.projectSecrets = []Secret{
-		{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}},
-		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []SecretRoute{{Host: "api.openai.com"}}},
+		{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}},
+		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.openai.com"}}}},
 	}
 	return newTestModel(t, ds), ds
 }
@@ -168,9 +168,9 @@ func TestTheLikeliestSecretIsOfferedFirst(t *testing.T) {
 	req := waitingRequest()
 	ds.requests = []CredentialRequest{req}
 	ds.projectSecrets = []Secret{
-		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []SecretRoute{{Host: "api.openai.com"}}},
-		{ID: "sec_loose", Name: "anywhere token", Type: "bearer", Routes: []SecretRoute{{Host: "*"}}},
-		{ID: "sec_gh", Name: "github", Type: "bearer", Routes: []SecretRoute{{Host: "github.com"}}},
+		{ID: "sec_openai", Name: "OpenAI key", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.openai.com"}}}},
+		{ID: "sec_loose", Name: "anywhere token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"*"}}}},
+		{ID: "sec_gh", Name: "github", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"github.com"}}}},
 	}
 	m := newTestModel(t, ds)
 
@@ -343,7 +343,7 @@ func TestTheLifetimeStepOpensOnWhatTheAgentAskedFor(t *testing.T) {
 	req := waitingRequest()
 	req.AskedTTL = 4 * time.Hour
 	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -379,7 +379,7 @@ func TestALifetimeAskedForThatIsAPresetIsOfferedOnce(t *testing.T) {
 	req := waitingRequest()
 	req.AskedTTL = lifetime.Week
 	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -402,7 +402,7 @@ func TestAnAskThatCannotBeARowOpensOnTheDefault(t *testing.T) {
 	req := waitingRequest()
 	req.AskedTTL = 290 * time.Millisecond
 	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))
@@ -574,7 +574,7 @@ func TestTheLeaderAnswersOnItsOwnKey(t *testing.T) {
 	}
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{waitingRequest()}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the banner", func() bool { return m.bannerTop() == 1 })
 
@@ -626,7 +626,7 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{waitingRequest()}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the banner", func() bool { return m.bannerTop() == 1 })
 
@@ -837,7 +837,7 @@ func TestARequestCardShowsTheRawRequest(t *testing.T) {
 	req.Raw = "{\n  \"id\": \"sreq_1\",\n  \"name\": \"github\"\n}"
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{req}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 	m := newTestModel(t, ds)
 
 	send(t, m, keyPress("tab"), keyPress(credentialsKey))

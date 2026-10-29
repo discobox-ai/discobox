@@ -1487,58 +1487,86 @@ type Secret struct {
 
 func (Secret) TableName() string { return "secrets" }
 
-// SecretRoute is one place a secret may be sent (ADR 26-10-02-924): a host
-// and everything beneath it, or `*` for every host (ADR 26-10-27-939), and
-// within it an optional path prefix matched on whole segments. A blocked route
-// refuses every request it is the most specific route for within its list
-// (ADR 26-10-27-880 §4).
-type SecretRoute struct {
-	Host    string `json:"host" doc:"Host the route covers, and every host beneath it; * covers every host"`
-	Path    string `json:"path,omitempty" doc:"Path prefix matched on whole segments; empty is the whole host"`
-	Blocked bool   `json:"blocked,omitempty" doc:"Refuse every request this route is the most specific route for"`
-}
+// SecretRoute is one place a secret may be sent: the route shape of
+// pkg/secretroute (ADR 26-10-27-880 §4), stored as that package encodes it.
+// Hosts are exact names, `*.suffix` for the hosts strictly beneath a suffix,
+// or `*` for every host (ADR 26-10-27-939); methods, path globs and a GraphQL
+// or MCP block narrow it. A blocked route refuses every request it is the
+// most specific route for within its list.
+type SecretRoute = secretroute.Route
 
 // ReplaceRoutes sets the secret's routes to routes, in order, normalized.
-// Repeats collapse. A route with no host or a malformed path is an error.
+// Repeats collapse. A route secretroute.Normalize refuses is an error.
 // changed reports whether anything moved.
 func (s *Secret) ReplaceRoutes(routes []SecretRoute) (changed bool, err error) {
 	out, err := NormalizeRoutes(routes)
 	if err != nil {
 		return false, err
 	}
-	changed = !slices.Equal(out, s.Routes)
+	changed = !SameRoutes(out, s.Routes)
 	s.Routes = out
 	return changed, nil
 }
 
-// NormalizeRoutes is a route list as it is stored: each route normalized, in
-// order, repeats collapsed. A route with no host or a malformed path is an
-// error rather than dropped: whoever wrote it meant somewhere.
+// NormalizeRoutes is a route list as it is stored: each route normalized
+// (secretroute.Normalize), in order, repeats collapsed. A route Normalize
+// refuses is an error rather than dropped: whoever wrote it meant somewhere.
 func NormalizeRoutes(routes []SecretRoute) ([]SecretRoute, error) {
 	var out []SecretRoute
-	seen := map[SecretRoute]bool{}
+	seen := map[string]bool{}
 	for _, route := range routes {
-		host, path, err := secretroute.Normalize(route.Host, route.Path)
+		next, err := secretroute.Normalize(route)
 		if err != nil {
 			return nil, err
 		}
-		next := SecretRoute{Host: host, Path: path, Blocked: route.Blocked}
-		if seen[next] {
+		// A normalized route's canonical form is the route: Format of a
+		// normalized route round-trips through Parse.
+		key := secretroute.Format(next)
+		if seen[key] {
 			continue
 		}
-		seen[next] = true
+		seen[key] = true
 		out = append(out, next)
 	}
 	return out, nil
 }
 
-// ProxyRoutes is a route list as the pool proxy enforces it.
-func ProxyRoutes(routes []SecretRoute) []secretroute.Route {
-	out := make([]secretroute.Route, 0, len(routes))
+// OpenRouteHosts are the host patterns the open routes of a list name, in
+// order, each once: where a credential held to the list may be sent, as the
+// agent credentials protocol speaks of it.
+func OpenRouteHosts(routes []SecretRoute) []string {
+	var out []string
 	for _, route := range routes {
-		out = append(out, secretroute.Route{Host: route.Host, Path: route.Path, Blocked: route.Blocked})
+		if route.Blocked {
+			continue
+		}
+		for _, host := range route.Hosts {
+			if !slices.Contains(out, host) {
+				out = append(out, host)
+			}
+		}
 	}
 	return out
+}
+
+// SameRouteSet reports whether two normalized route lists hold the same
+// routes, in any order.
+func SameRouteSet(a, b []SecretRoute) bool {
+	key := func(routes []SecretRoute) []string {
+		out := make([]string, 0, len(routes))
+		for _, route := range routes {
+			out = append(out, secretroute.Format(route))
+		}
+		slices.Sort(out)
+		return slices.Compact(out)
+	}
+	return slices.Equal(key(a), key(b))
+}
+
+// SameRoutes reports whether two normalized route lists are the same routes
+// in the same order.
+func SameRoutes(a, b []SecretRoute) bool {
+	return slices.EqualFunc(a, b, func(x, y SecretRoute) bool { return secretroute.Format(x) == secretroute.Format(y) })
 }
 
 // DefaultRefreshTTL is the lifetime a token takes when it names a refresh
@@ -1706,18 +1734,6 @@ type SecretRequest struct {
 	UpdatedAt time.Time  `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
-}
-
-// Hosts are the hosts the request's routes name, in order: what the agent
-// credentials protocol speaks.
-func (r *SecretRequest) Hosts() []string {
-	var out []string
-	for _, route := range r.Routes {
-		if !slices.Contains(out, route.Host) {
-			out = append(out, route.Host)
-		}
-	}
-	return out
 }
 
 // Delegates reports whether the request asks to give the credential on rather

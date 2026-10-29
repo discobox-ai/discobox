@@ -7,6 +7,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/secretroute"
+
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -225,7 +227,10 @@ func (a *App) newAdminBindingCreateCommand() *cobra.Command {
 		Long: `Create a secret binding, as the API takes one: a secret by name or ID, a
 target kind (project, harnessConfig or sandbox) and, for any but the project, its
 ID. --as names the variable a use binding is delivered in; --delegate makes it
-a binding to give on, and --use=false one only given on.`,
+a binding to give on, and --use=false one only given on. --route narrows the
+secret's routes for this binding; left out, it goes where the secret's go.
+
+` + routeHelp,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			kind := apiclientgen.CreateSecretBindingBodyTargetKind(targetKind)
@@ -273,7 +278,7 @@ a binding to give on, and --use=false one only given on.`,
 	cmd.Flags().StringVar(&envVar, "as", "", "The variable a use binding is delivered in")
 	cmd.Flags().BoolVar(&use, "use", true, "Deliver it to use (default true unless --delegate)")
 	cmd.Flags().BoolVar(&delegate, "delegate", false, "Let the target give it to the discoboxes it creates")
-	cmd.Flags().StringArrayVar(&routes, "route", nil, "A route narrowing the secret's, as HOST[/PATH][=blocked] or '*'; one per flag, repeat for more")
+	cmd.Flags().StringArrayVar(&routes, "route", nil, "A route narrowing the secret's, as "+secretroute.Syntax+"; one per flag, repeat for more")
 	cmd.Flags().Var(ttl, "for", "How long it lasts (e.g. 1h, 2w, forever); the secret's limit when omitted")
 	_ = cmd.MarkFlagRequired("secret")
 	_ = cmd.MarkFlagRequired("target-kind")
@@ -288,7 +293,11 @@ func (a *App) newAdminBindingUpdateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update BINDING_ID [--route ROUTE]... [--clear-route] [--for LIFETIME] [--as VAR] [--use=BOOL] [--delegate=BOOL]",
 		Short: "Change a secret binding's routes, lifetime, variable or purpose",
-		Args:  cobra.ExactArgs(1),
+		Long: `Change a secret binding by ID. --route replaces its routes, and --clear-route
+removes them, so it goes where its secret's go.
+
+` + routeHelp,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if clearRoutes && len(routes) > 0 {
 				return fmt.Errorf("--clear-route and --route say opposite things; give one")
@@ -340,7 +349,7 @@ func (a *App) newAdminBindingUpdateCommand() *cobra.Command {
 			return a.writeSecretBinding(cmd, binding)
 		},
 	}
-	cmd.Flags().StringArrayVar(&routes, "route", nil, "Replace its routes with these, each HOST[/PATH][=blocked] or '*'; one per flag, repeat for more")
+	cmd.Flags().StringArrayVar(&routes, "route", nil, "Replace its routes with these, each "+secretroute.Syntax+"; one per flag, repeat for more")
 	cmd.Flags().BoolVar(&clearRoutes, "clear-route", false, "Remove its routes, so it goes where its secret's go")
 	cmd.Flags().Var(ttl, "for", "How long it lasts from now (e.g. 1h, 2w, forever)")
 	cmd.Flags().StringVar(&envVar, "as", "", "The variable it is delivered in")

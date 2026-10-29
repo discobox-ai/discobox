@@ -2,12 +2,14 @@ package cli
 
 import (
 	"bytes"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/spf13/pflag"
 
-	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/apiroute"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 func TestSecretRoutesFlagsReplaceOrClear(t *testing.T) {
@@ -24,26 +26,25 @@ func TestSecretRoutesFlagsReplaceOrClear(t *testing.T) {
 		t.Fatalf("ok = %t, err = %v, want the routes left alone", ok, err)
 	}
 	routes, ok, err := secretRoutesFlags(newFlags(
-		"--route", "GitHubCopilot.com",
+		"--route", "GitHubCopilot.com,*.GitHubCopilot.com",
 		"--route", "githubcopilot.com/mcp/=blocked",
-		"--route", "github.com = blocked "))
-	if !ok || err != nil || len(routes) != 3 {
-		t.Fatalf("routes = %#v, ok = %t, err = %v, want all three", routes, ok, err)
+		"--route", "github.com = blocked ",
+		"--route", "GET,HEAD api.github.com/repos/*/*/pulls/**,/user",
+		"--route", "api.github.com/graphql graphql=mutation:createPullRequest,addComment"))
+	if !ok || err != nil || len(routes) != 5 {
+		t.Fatalf("routes = %#v, ok = %t, err = %v, want all five", routes, ok, err)
 	}
-	type described struct {
-		host, path string
-		blocked    bool
-	}
-	describe := func(route apimodel.SecretRouteInput) described {
-		return described{route.Host, route.Path.Or(""), route.Blocked.Or(false)}
-	}
-	for i, want := range []described{
-		{"githubcopilot.com", "", false},
-		{"githubcopilot.com", "/mcp", true},
-		{"github.com", "", true},
+	// A comma is the route's own: between its hosts, methods, paths or
+	// fields, never a second route.
+	for i, want := range []secretroute.Route{
+		{Hosts: []string{"*.githubcopilot.com", "githubcopilot.com"}},
+		{Hosts: []string{"githubcopilot.com"}, Paths: []string{"/mcp"}, Blocked: true},
+		{Hosts: []string{"github.com"}, Blocked: true},
+		{Hosts: []string{"api.github.com"}, Methods: []string{"GET", "HEAD"}, Paths: []string{"/repos/*/*/pulls/**", "/user"}},
+		{Hosts: []string{"api.github.com"}, Paths: []string{"/graphql"}, GraphQL: &secretroute.GraphQL{Operations: []string{"mutation"}, Fields: []string{"addComment", "createPullRequest"}}},
 	} {
-		if got := describe(routes[i]); got != want {
-			t.Fatalf("route %d = %+v, want %+v", i, got, want)
+		if got := routes[i]; !reflect.DeepEqual(got, apiroute.Input(want)) {
+			t.Fatalf("route %d = %+v, want %+v", i, got, apiroute.Input(want))
 		}
 	}
 	if routes, ok, err := secretRoutesFlags(newFlags("--clear-route")); !ok || err != nil || routes == nil || len(routes) != 0 {
@@ -62,7 +63,7 @@ func TestSecretRoutesFlagsReplaceOrClear(t *testing.T) {
 	if refused := runCLIRefused(t, "http://127.0.0.1:1", "secret", "update", "github", "--clear-route=false", "--route", "github.com"); strings.Contains(refused, "cannot be used together") {
 		t.Fatalf("--clear-route=false with --route = %q, want it let through", refused)
 	}
-	for _, bad := range []string{"=blocked", "/mcp", "github.com/a//b", "github.com/a b", "github.com=read-only queries"} {
+	for _, bad := range []string{"=blocked", "/mcp", "github.com/a//b", "github.com/a b", "github.com=read-only queries", "api.github.com graphql", "api.github.com/a/**/b", "api.*.github.com"} {
 		if _, _, err := secretRoutesFlags(newFlags("--route", bad)); err == nil {
 			t.Fatalf("--route %q succeeded, want it refused", bad)
 		}

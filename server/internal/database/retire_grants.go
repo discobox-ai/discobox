@@ -175,11 +175,9 @@ func moveSecretHostsToRoutes(db *gorm.DB) error {
 		return err
 	}
 	for _, row := range rows {
-		var routes []model.SecretRoute
-		if text := strings.TrimSpace(row.Routes); text != "" && text != "null" {
-			if err := json.Unmarshal([]byte(text), &routes); err != nil {
-				return fmt.Errorf("secret %s routes: %w", row.ID, err)
-			}
+		routes, err := decodeLegacyRoutes(row.Routes)
+		if err != nil {
+			return fmt.Errorf("secret %s routes: %w", row.ID, err)
 		}
 		next, changed := routesFromHost(hostscope.Normalize(row.Host), routes)
 		if !changed {
@@ -206,16 +204,16 @@ func moveSecretHostsToRoutes(db *gorm.DB) error {
 // alone: the host when it had no routes; its routes within the host when it
 // had both — one above the host is narrowed to it, one beside it went nowhere
 // and goes; `*` when it had neither. changed reports whether routes moved.
-func routesFromHost(host string, routes []model.SecretRoute) ([]model.SecretRoute, bool) {
+func routesFromHost(host string, routes []legacyRoute) ([]legacyRoute, bool) {
 	switch {
 	case host == "" && len(routes) == 0:
-		return []model.SecretRoute{{Host: secretroute.AnyHost}}, true
+		return []legacyRoute{{Host: secretroute.AnyHost}}, true
 	case host == "":
 		return routes, false
 	case len(routes) == 0:
-		return []model.SecretRoute{{Host: host}}, true
+		return []legacyRoute{{Host: host}}, true
 	}
-	var out []model.SecretRoute
+	var out []legacyRoute
 	for _, route := range routes {
 		routeHost := hostscope.Normalize(route.Host)
 		switch {
@@ -250,7 +248,7 @@ func routesFromHost(host string, routes []model.SecretRoute) ([]model.SecretRout
 // host itself, the narrowed route wins only where its path is the longer one,
 // so it outranks the block only where its path lies within the block's; above
 // host, the narrowed route has more labels and wins wherever their paths meet.
-func outranksOnNarrowing(route model.SecretRoute, routeHost, host string, routes []model.SecretRoute) bool {
+func outranksOnNarrowing(route legacyRoute, routeHost, host string, routes []legacyRoute) bool {
 	for _, other := range routes {
 		otherHost := hostscope.Normalize(other.Host)
 		if !other.Blocked || otherHost == secretroute.AnyHost || !hostscope.Covers(otherHost, host) {
@@ -259,14 +257,14 @@ func outranksOnNarrowing(route model.SecretRoute, routeHost, host string, routes
 		if hostLabels(otherHost) <= hostLabels(routeHost) {
 			continue
 		}
-		within := secretroute.PathCovers(other.Path, route.Path)
+		within := legacyPathCovers(other.Path, route.Path)
 		if otherHost == host {
 			if within {
 				return true
 			}
 			continue
 		}
-		if within || secretroute.PathCovers(route.Path, other.Path) {
+		if within || legacyPathCovers(route.Path, other.Path) {
 			return true
 		}
 	}
@@ -335,9 +333,9 @@ func readRetiredGrants(db *gorm.DB, now time.Time) ([]retiredGrant, error) {
 		// and a grant left with no host it named authorized nothing, and is
 		// not read as one naming none.
 		if named := len(grant.Hosts); named > 0 {
-			var hosts []model.SecretRoute
+			var hosts []legacyRoute
 			for _, host := range grant.Hosts {
-				hosts = append(hosts, model.SecretRoute{Host: host})
+				hosts = append(hosts, legacyRoute{Host: host})
 			}
 			grant.Hosts = nil
 			for _, route := range upgradeRoutes("grant "+grant.ID, hosts) {
@@ -381,19 +379,19 @@ func columnTime(value any) *time.Time {
 	return nil
 }
 
-// upgradeRoutes are routes the upgrade writes, read as every route write is
-// (secretroute.Normalize): one that no route can be — a host that is no host
-// name, a control character — is dropped and logged rather than stored, and
-// a list left empty sends nowhere, which widens nothing.
-func upgradeRoutes(what string, routes []model.SecretRoute) []model.SecretRoute {
-	out := make([]model.SecretRoute, 0, len(routes))
+// upgradeRoutes are legacy routes the upgrade reads, read as every legacy
+// route was written (normalizeLegacyRoute): one that no route could be — a
+// host that is no host name, a control character — is dropped and logged
+// rather than carried on, and a list left empty sends nowhere, which widens
+// nothing.
+func upgradeRoutes(what string, routes []legacyRoute) []legacyRoute {
+	out := make([]legacyRoute, 0, len(routes))
 	for _, route := range routes {
-		host, path, err := secretroute.Normalize(route.Host, route.Path)
+		next, err := normalizeLegacyRoute(route)
 		if err != nil {
 			log.Printf("dropped route %q%s of %s: %v", route.Host, route.Path, what, err)
 			continue
 		}
-		next := model.SecretRoute{Host: host, Path: path, Blocked: route.Blocked}
 		if !slices.Contains(out, next) {
 			out = append(out, next)
 		}
@@ -401,17 +399,19 @@ func upgradeRoutes(what string, routes []model.SecretRoute) []model.SecretRoute 
 	return out
 }
 
-// grantRoutes are the routes a binding made from a grant carries: one per
-// host it named, `*` for a grant that named none (ADR 26-10-27-939 §3).
+// grantRoutes are the routes a binding made from a grant carries: each host
+// it named as it covered it, the host and every host beneath it
+// (upgradeLegacyRoute), and `*` for a grant that named none (ADR 26-10-27-939
+// §3).
 func grantRoutes(grant retiredGrant) []model.SecretRoute {
 	if len(grant.Hosts) == 0 {
-		return []model.SecretRoute{{Host: secretroute.AnyHost}}
+		return []model.SecretRoute{{Hosts: []string{secretroute.AnyHost}}}
 	}
-	var out []model.SecretRoute
+	var legacy []legacyRoute
 	for _, host := range hostscope.List(grant.Hosts...) {
-		out = append(out, model.SecretRoute{Host: host})
+		legacy = append(legacy, legacyRoute{Host: host})
 	}
-	return out
+	return upgradeLegacyRoutes("grant "+grant.ID, legacy, nil)
 }
 
 // coveringGrant is what the live use grants of secretID covering a target,
@@ -715,11 +715,9 @@ func reaskForSentinel(tx *gorm.DB, rowID, projectID, sandboxID, secretID, envNam
 		return err
 	}
 	if len(secrets) == 1 {
-		var routes []model.SecretRoute
-		if text := strings.TrimSpace(secrets[0].Routes); text != "" && text != "null" {
-			if err := json.Unmarshal([]byte(text), &routes); err != nil {
-				return err
-			}
+		routes, err := decodeLegacyRoutes(secrets[0].Routes)
+		if err != nil {
+			return err
 		}
 		requestID, err := id.New(id.PrefixSecretRequest)
 		if err != nil {
@@ -737,15 +735,16 @@ func reaskForSentinel(tx *gorm.DB, rowID, projectID, sandboxID, secretID, envNam
 
 // insertUpgradeRequest writes a pending request in whichever shape the table
 // has at this point of the upgrade: the old one still carries a type and a
-// list of hosts, which the request's routes become later on.
-func insertUpgradeRequest(tx *gorm.DB, requestID, projectID, sandboxID, name, envName string, routes []model.SecretRoute, justification string) error {
+// list of hosts, which the request's routes become later on. Its routes are
+// written in the shape routes have now.
+func insertUpgradeRequest(tx *gorm.DB, requestID, projectID, sandboxID, name, envName string, routes []legacyRoute, justification string) error {
 	migrator := tx.Migrator()
 	columns := map[string]any{
 		"id": requestID, "project_id": projectID, "requested_by": "agent:" + sandboxID, "sandbox_id": sandboxID,
 		"name": name, "env_name": envName, "justification": justification, "purpose": model.SecretPurposeUse,
 		"status": model.SecretRequestStatusPending, "created_at": time.Now().UTC(), "updated_at": time.Now().UTC(),
 	}
-	encodedRoutes, err := json.Marshal(routes)
+	encodedRoutes, err := json.Marshal(upgradeLegacyRoutes("request "+requestID, routes, nil))
 	if err != nil {
 		return err
 	}
@@ -813,12 +812,12 @@ func moveRetiredRequests(db *gorm.DB, grantBindings map[string]string) error {
 					return err
 				}
 			}
-			var routes []model.SecretRoute
+			var routes []legacyRoute
 			for _, host := range hosts {
-				routes = append(routes, model.SecretRoute{Host: host})
+				routes = append(routes, legacyRoute{Host: host})
 			}
-			routes = upgradeRoutes("request "+requestID, routes)
-			encoded, err := json.Marshal(routes)
+			what := "request " + requestID
+			encoded, err := json.Marshal(upgradeLegacyRoutes(what, upgradeRoutes(what, routes), nil))
 			if err != nil {
 				return err
 			}

@@ -1205,9 +1205,16 @@ func poolSentinelRoutes(in map[string][][]secretroute.Route) map[string][][]pool
 		for _, routes := range lists {
 			list := make([]poolclient.SentinelRoute, 0, len(routes))
 			for _, route := range routes {
-				item := poolclient.SentinelRoute{Host: route.Host}
-				if route.Path != "" {
-					item.Path = poolclient.NewOptString(route.Path)
+				item := poolclient.SentinelRoute{Hosts: route.Hosts, Methods: route.Methods, Paths: route.Paths}
+				if route.GraphQL != nil {
+					block := poolclient.SentinelRouteGraphQL{Fields: route.GraphQL.Fields}
+					for _, operation := range route.GraphQL.Operations {
+						block.Operations = append(block.Operations, poolclient.SentinelRouteGraphQLOperationsItem(operation))
+					}
+					item.Graphql = poolclient.NewOptSentinelRouteGraphQL(block)
+				}
+				if route.MCP != nil {
+					item.Mcp = poolclient.NewOptSentinelRouteMCP(poolclient.SentinelRouteMCP{Tools: route.MCP.Tools})
 				}
 				if route.Blocked {
 					item.Blocked = poolclient.NewOptBool(true)

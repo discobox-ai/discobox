@@ -23,7 +23,7 @@ func githubBinding(secret string) serverapi.SandboxBindingInput {
 	return serverapi.SandboxBindingInput{
 		Secret: secret,
 		EnvVar: serverapi.NewOptString("GH_TOKEN"),
-		Routes: []serverapi.SecretRouteInput{{Host: "github.com"}},
+		Routes: []serverapi.SecretRouteInput{{Hosts: []string{"github.com"}}},
 	}
 }
 
@@ -35,7 +35,7 @@ func createGitHubSecret(ctx context.Context, t *testing.T, svc interface {
 		Name:   "github",
 		Type:   serverapi.CreateSecretBodyTypeToken,
 		Value:  serverapi.SecretValue{Token: serverapi.NewOptString("ghp_realrealrealrealrealrealrealreal12")},
-		Routes: serverapi.NewOptNilSecretRouteInputArray([]serverapi.SecretRouteInput{{Host: "*"}}),
+		Routes: serverapi.NewOptNilSecretRouteInputArray([]serverapi.SecretRouteInput{{Hosts: []string{"*"}}}),
 	})
 	if err != nil {
 		t.Fatalf("create secret: %v", err)
@@ -102,7 +102,7 @@ func delegateToLead(t *testing.T, st *store.Store, projectID string, secret *mod
 	ensureLead(t, st, projectID)
 	binding := &model.SecretBinding{
 		ProjectID: projectID, SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: "sbx-lead",
-		Delegate: true, Routes: []model.SecretRoute{{Host: "github.com"}}, CreatedBy: "user-1",
+		Delegate: true, Routes: []model.SecretRoute{{Hosts: []string{"github.com"}}}, CreatedBy: "user-1",
 	}
 	if lifetime > 0 {
 		expires := time.Now().UTC().Add(lifetime)
@@ -170,7 +170,7 @@ func TestACreateThatCannotMakeItsBindingsCreatesNothing(t *testing.T) {
 	noVariable := githubBinding(secret.ID)
 	noVariable.EnvVar = serverapi.OptString{}
 	badRoute := githubBinding(secret.ID)
-	badRoute.Routes = []serverapi.SecretRouteInput{{Host: " "}}
+	badRoute.Routes = []serverapi.SecretRouteInput{{Hosts: []string{" "}}}
 	other := createSecretNamed(ctx, t, svc, projectID, "gitlab")
 	twoForOneVariable := githubBinding(other.ID)
 

@@ -178,11 +178,11 @@ func TestMigrateRetiresSecretGrants(t *testing.T) {
 			secrets[row.ID] = row
 		}
 		for id, want := range map[string][]model.SecretRoute{
-			"sec_host": {{Host: "api.github.com"}},
-			"sec_none": {{Host: "*"}},
+			"sec_host": {upgraded("api.github.com", "", false)},
+			"sec_none": {upgraded("*", "", false)},
 			// Narrowed to the host, never widened: the route above it is
 			// brought down to it, the one beside it goes.
-			"sec_both": {{Host: "api.gitlab.com", Path: "/api"}, {Host: "api.gitlab.com", Path: "/v4", Blocked: true}},
+			"sec_both": {upgraded("api.gitlab.com", "/api", false), upgraded("api.gitlab.com", "/v4", true)},
 		} {
 			if got := secrets[id].Routes; !reflect.DeepEqual(got, want) {
 				t.Fatalf("run %d: %s routes = %+v, want %+v", run, id, got, want)
@@ -208,12 +208,12 @@ func TestMigrateRetiresSecretGrants(t *testing.T) {
 		}
 		harness := byID["bind_covered"]
 		if harness.TargetKind != model.SecretBindingTargetHarnessConfig || harness.TargetID != hc || !harness.Use || harness.EnvName != "GH_TOKEN" ||
-			!reflect.DeepEqual(harness.Routes, []model.SecretRoute{{Host: "api.github.com"}}) || harness.ExpiresAt == nil || !harness.ExpiresAt.Equal(live) {
+			!reflect.DeepEqual(harness.Routes, []model.SecretRoute{upgraded("api.github.com", "", false)}) || harness.ExpiresAt == nil || !harness.ExpiresAt.Equal(live) {
 			t.Fatalf("run %d: harness binding = %+v", run, harness)
 		}
 		extra := byID["bind_extra"]
 		if extra.TargetKind != model.SecretBindingTargetSandbox || extra.TargetID != "sbx-1" || extra.EnvName != "EXTRA_KEY" ||
-			!reflect.DeepEqual(extra.Routes, []model.SecretRoute{{Host: "*"}}) || extra.ExpiresAt != nil {
+			!reflect.DeepEqual(extra.Routes, []model.SecretRoute{upgraded("*", "", false)}) || extra.ExpiresAt != nil {
 			t.Fatalf("run %d: wildcard grant's binding = %+v, want `*` and no expiry", run, extra)
 		}
 		delegate := byID["bind_delegate"]
@@ -262,7 +262,7 @@ func TestMigrateRetiresSecretGrants(t *testing.T) {
 			t.Fatalf("run %d: the proxy's own request survived", run)
 		}
 		ask := requestByID["req_ask"]
-		if ask.Status != model.SecretRequestStatusPending || ask.TTL != 600 || !reflect.DeepEqual(ask.Routes, []model.SecretRoute{{Host: "api.github.com"}}) {
+		if ask.Status != model.SecretRequestStatusPending || ask.TTL != 600 || !reflect.DeepEqual(ask.Routes, []model.SecretRoute{upgraded("api.github.com", "", false)}) {
 			t.Fatalf("run %d: agent request = %+v", run, ask)
 		}
 		approved := requestByID["req_approved"]
@@ -374,14 +374,14 @@ func TestMigrateMergesTheGrantsOfOneVariable(t *testing.T) {
 	if err := write.First(&gh, "id = ?", "bind_gh").Error; err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(gh.Routes, []model.SecretRoute{{Host: "api.github.com"}, {Host: "uploads.github.com"}}) ||
+	if !reflect.DeepEqual(gh.Routes, []model.SecretRoute{upgraded("api.github.com", "", false), upgraded("uploads.github.com", "", false)}) ||
 		gh.ExpiresAt == nil || !gh.ExpiresAt.Equal(sooner) {
 		t.Fatalf("binding = %+v, want both grants' hosts and the earliest expiry", gh)
 	}
 	if err := write.First(&anyBinding, "id = ?", "bind_any").Error; err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(anyBinding.Routes, []model.SecretRoute{{Host: "*"}}) || anyBinding.ExpiresAt != nil {
+	if !reflect.DeepEqual(anyBinding.Routes, []model.SecretRoute{upgraded("*", "", false)}) || anyBinding.ExpiresAt != nil {
 		t.Fatalf("binding = %+v, want `*` since one grant named no host", anyBinding)
 	}
 	if !strings.Contains(logged.String(), "covered by 2 grants (grant_api, grant_uploads)") {
@@ -409,7 +409,7 @@ func TestMigrateNarrowingNeverUnblocks(t *testing.T) {
 	if err := write.First(&secret, "id = ?", "sec_x").Error; err != nil {
 		t.Fatal(err)
 	}
-	want := []model.SecretRoute{{Host: "a.b.com", Path: "/x", Blocked: true}, {Host: "a.b.com", Path: "/z"}}
+	want := []model.SecretRoute{upgraded("a.b.com", "/x", true), upgraded("a.b.com", "/z", false)}
 	if !reflect.DeepEqual(secret.Routes, want) {
 		t.Fatalf("routes = %+v, want %+v: /x/y would have outranked the blocked /x", secret.Routes, want)
 	}
@@ -417,7 +417,7 @@ func TestMigrateNarrowingNeverUnblocks(t *testing.T) {
 	if err := write.First(&kept, "id = ?", "sec_kept").Error; err != nil {
 		t.Fatal(err)
 	}
-	if want := []model.SecretRoute{{Host: "api.x.example"}, {Host: "api.x.example", Path: "/admin", Blocked: true}}; !reflect.DeepEqual(kept.Routes, want) {
+	if want := []model.SecretRoute{upgraded("api.x.example", "", false), upgraded("api.x.example", "/admin", true)}; !reflect.DeepEqual(kept.Routes, want) {
 		t.Fatalf("routes = %+v, want %+v: the block still answers for /admin, and /foo stays allowed", kept.Routes, want)
 	}
 }
@@ -486,7 +486,7 @@ func TestMigrateMergesDuplicateDelegations(t *testing.T) {
 				}
 			}
 			if partial {
-				if err := db.Write.Create(&model.SecretBinding{ID: "bind_a", ProjectID: "project-1", SecretID: "sec_dup", TargetKind: model.SecretBindingTargetSandbox, TargetID: "sbx-parent", Delegate: true, Routes: []model.SecretRoute{{Host: "github.com"}}, ExpiresAt: &late, CreatedBy: model.SecretBindingActorSystem}).Error; err != nil {
+				if err := db.Write.Create(&model.SecretBinding{ID: "bind_a", ProjectID: "project-1", SecretID: "sec_dup", TargetKind: model.SecretBindingTargetSandbox, TargetID: "sbx-parent", Delegate: true, Routes: []model.SecretRoute{upgraded("github.com", "", false)}, ExpiresAt: &late, CreatedBy: model.SecretBindingActorSystem}).Error; err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -502,7 +502,7 @@ func TestMigrateMergesDuplicateDelegations(t *testing.T) {
 					t.Fatalf("bindings: %+v", bindings)
 				}
 				got := bindings[0]
-				if got.ID != "bind_a" || !got.Delegate || got.Use || got.ExpiresAt == nil || !got.ExpiresAt.Equal(early) || !reflect.DeepEqual(got.Routes, []model.SecretRoute{{Host: "github.com"}, {Host: "gitlab.com"}}) {
+				if got.ID != "bind_a" || !got.Delegate || got.Use || got.ExpiresAt == nil || !got.ExpiresAt.Equal(early) || !reflect.DeepEqual(got.Routes, []model.SecretRoute{upgraded("github.com", "", false), upgraded("gitlab.com", "", false)}) {
 					t.Fatalf("binding: %+v", got)
 				}
 				var requests []model.SecretRequest

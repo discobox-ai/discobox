@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // onNewCredentialForm is whether the card up is the new-secret form a request
@@ -47,7 +48,7 @@ func TestATakenNameIsOfferedAsTheFirstFreeOne(t *testing.T) {
 	t.Parallel()
 	m, ds := sourceWithRequest(t)
 	ds.mu.Lock()
-	ds.projectSecrets = append(ds.projectSecrets, Secret{ID: "sec_dupe", Name: "github", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}})
+	ds.projectSecrets = append(ds.projectSecrets, Secret{ID: "sec_dupe", Name: "github", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}})
 	ds.mu.Unlock()
 	toNewCredential(t, m, time.Hour)
 	if got := m.dialog.form.value("name"); got != "github-2" {
@@ -76,7 +77,7 @@ func TestANewCredentialForAnyOtherAskIsFilledFromIt(t *testing.T) {
 	}
 	f.set("token", "ghp_typedbyahuman")
 	send(t, m, keyPress("enter"))
-	if len(ds.createdSecrets) != 1 || ds.createdSecrets[0].Name != "github" || len(ds.createdSecrets[0].Routes) != 1 || ds.createdSecrets[0].Routes[0].Host != "api.github.com" ||
+	if len(ds.createdSecrets) != 1 || ds.createdSecrets[0].Name != "github" || len(ds.createdSecrets[0].Routes) != 1 || ds.createdSecrets[0].Routes[0].Hosts[0] != "api.github.com" ||
 		ds.createdSecrets[0].Value.Token != "ghp_typedbyahuman" {
 		t.Fatalf("created = %#v, want it shaped by the request", ds.createdSecrets)
 	}

@@ -84,7 +84,8 @@ flowchart LR
 
 A `SecretRequest` is only a question an agent asked through the agent
 credentials protocol (ADR 0031): a credential name, a variable for a use,
-routes (one per host it named), a lifetime, a justification and a purpose. No
+routes (one to each exact host it named, and each typed route it named, read
+by `secretroute.Parse`), a lifetime, a justification and a purpose. No
 other species exists: a sentinel exists only because a binding does, so the
 proxy never asks. Refresh requests are their own record
 ([below](#a-token-may-expire-and-suggest-its-renewal)).
@@ -107,8 +108,10 @@ and `ListSecretRequests` filters the listing with `store.OwnedBy`
 
 The lifetime an agent asks for is bounded at `agentcreds.MaxGrantTTLSeconds`
 — thirty days — and an ask outside `1..max` is a 400: an ask becomes the answer
-a human is shown already chosen. An agent's ask is deduplicated per sandbox,
-variable, purpose, set of hosts in any order, name and lifetime.
+a human is shown already chosen. An ask names a host or a route, and a route
+that does not parse is a 400 naming it. An agent's ask is deduplicated per
+sandbox, variable, purpose, set of routes in any order (each host asked for
+being one), name and lifetime.
 
 ## Delegation
 
@@ -137,8 +140,8 @@ A create may give the new discobox bindings (`CreateSandboxBody.bindings`):
 them in the transaction that stores the discobox
 (`StoreSandboxBindingsTx`), then materializes its sentinels, so a create that
 cannot make them all creates nothing. Inline secrets (`config.secrets`, a
-value) are the sandbox service's: an anonymous secret routed to the host given,
-else `*` (ADR 26-10-27-939 §2), and a use binding of it.
+value) are the sandbox service's: an anonymous secret routed to the exact host
+given, else `*` (ADR 26-10-27-939 §2), and a use binding of it.
 
 ## The agent credentials broker
 
@@ -148,8 +151,8 @@ point re-derives the sandbox from the calling pool. Nothing here returns a
 value.
 
 - **`ListSandboxCredentials`** — the sandbox's effective use bindings, each in
-  its variable, with the hosts of the narrowest routes it is held to and its
-  expiry, and its live delegate bindings with no variable.
+  its variable, with the host patterns the open routes of the narrowest list
+  it is held to name (`model.OpenRouteHosts`) and its expiry, and its live delegate bindings with no variable.
 - **`CreateSandboxCredentialRequest`** — records the ask and returns at once.
 - **`GetSandboxCredentialRequest`** — a sandbox's own request and, once
   approved, the binding it made while it stands.
@@ -308,8 +311,9 @@ flowchart LR
 ## A secret's routes say where it may go
 
 `Secret.Routes` (ADR 26-10-02-924, ADR 26-10-27-939) say where the credential
-may be sent. Each is a host with an optional path prefix, and may be blocked;
-`*` covers every host and is the least specific route. A secret with no routes
+may be sent. Each is `secretroute.Route` (ADR 26-10-27-880 §4): host
+patterns, and optionally methods, path globs and a GraphQL or MCP block, open
+or blocked; `*` covers every host and is the least specific route. A secret with no routes
 is sent nowhere: `*` is how a person says anywhere. A binding may narrow them
 with routes of its own, and a child is held to its parent's too.
 
@@ -320,8 +324,13 @@ with routes of its own, and a child is held to its parent's too.
   allows (`secretroute.HostAllowed`), from a binding that stands
   (`standingBinding`: present, a use of the sentinel's secret, on a level
   covering the sandbox, live, under a live parent).
-- **`model.NormalizeRoutes` normalizes and dedupes**, and
-  `Secret.ReplaceRoutes` reports whether anything moved.
+- **`model.NormalizeRoutes` normalizes and dedupes** every route written —
+  a secret's, a binding's, a request's or an approval's, a harness's declared
+  ones, an inline secret's — through `secretroute.Normalize`, and
+  `Secret.ReplaceRoutes` reports whether anything moved. The API's route
+  types convert in one place (`services.SecretRoutesToModel`,
+  `SecretRoutesFromModel`); `model.SecretRoute` is `secretroute.Route`, so the
+  lists the pool is sent and resolve checks are the stored ones.
 - **A change reaches running discoboxes level-triggered.** `UpdateSecret`
   marks every discobox holding the secret in the same transaction
   (`MarkSecretHoldersDirtyTx`), and so does `DeleteSecret`.
@@ -343,13 +352,15 @@ not what stands. A harness's own credential carries no limit: configure binds
 it with no expiry, and `liftConfiguredSecretGrantLimits` zeroes the old 3600
 column default on configure-created secrets.
 
-## What a host scope covers
+## What a route's host covers
 
-A route's host is a **scope**, read by [`hostscope`](../../../../pkg/hostscope)
-and [`secretroute`](../../../../pkg/secretroute): it covers itself and
-everything beneath it, never its parent; `*` covers everything. Hosts are
-stored through `hostscope.Normalize` (lowercased, no port), the form the proxy
-reports.
+A route's host is a pattern read by [`secretroute`](../../../../pkg/secretroute)
+(ADR 26-10-27-880 §4, ADR 26-10-27-939): an exact name covers itself alone,
+`*.suffix` the hosts strictly beneath the suffix, and `*` everything. Hosts are
+stored lowercased with no port (`hostscope.Normalize`), the form the proxy
+reports. A route stored before patterns, whose host covered the hosts beneath
+it, was converted by the upgrade without widening (`database`'s
+`upgradeRouteShapes`).
 
 ## A refused credential is recorded, and only the unfixable kind
 

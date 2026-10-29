@@ -148,6 +148,15 @@ type AuthorizeRequest struct {
 	Host   string
 	URL    string
 	Header http.Header
+	// Body is the request body for a route's protocol block, or a `_method`
+	// its methods must allow, to read (secretroute.Request.Body): called
+	// lazily and at most once, it returns
+	// the body decoded from its Content-Encoding and true, or false when the
+	// body is past the proxy's limit, of undeclared length, unreadable, in
+	// another encoding, or the request upgrades its connection. Reading it
+	// does not consume it: the request is sent with the body it arrived with.
+	// Nil is no body available.
+	Body func() ([]byte, bool)
 }
 
 // Verdict is an authorizer's answer. A request it does not allow is never

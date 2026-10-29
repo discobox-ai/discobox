@@ -16,3 +16,9 @@
   as refused on every running sandbox until the control plane pushed again,
   and a new file's could not be told from it. An old file's reads as `*`, as
   it was enforced (ADR 26-10-27-939).
+- A route of an older SecretsFile the new shape cannot say is converted to
+  something that refuses at least what it refused, never dropped if it was
+  blocked. A blocked route is a carve-out: dropped, or replaced by a block less
+  specific than the open route it was carved from (a host-wide block loses to
+  an open route with a path), it allows what it refused. Test the conversion
+  with a request the old block refused under a more specific open route.

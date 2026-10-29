@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // A refresh request asks for a new value of a token the project holds
@@ -28,7 +30,7 @@ func sourceWithRefresh(t *testing.T) (*Model, *fakeSource) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{refreshRequest()}
 	ds.projectSecrets = []Secret{{
-		ID: "sec_gh", Name: "github", Type: "token", Routes: []SecretRoute{{Host: "github.com"}},
+		ID: "sec_gh", Name: "github", Type: "token", Routes: []secretroute.Route{{Hosts: []string{"github.com"}}},
 		RefreshCommand: ghCommand, ValueTTL: 5 * time.Minute,
 	}}
 	return newTestModel(t, ds), ds
@@ -255,7 +257,7 @@ func TestAnExchangeCredentialOpensOnItsFields(t *testing.T) {
 	}
 	send(t, m, keyPress("esc"))
 
-	secret := Secret{ID: "sec_bx", Name: "boxd", Type: "exchange", Routes: []SecretRoute{{Host: "boxd.sh"}},
+	secret := Secret{ID: "sec_bx", Name: "boxd", Type: "exchange", Routes: []secretroute.Route{{Hosts: []string{"boxd.sh"}}},
 		Exchange: &SecretExchange{URL: "https://app.boxd.sh/api/v1/auth/token", Fields: []string{"api_key", "org"}}}
 	drain(t, m, m.editSecretForm("", secret), 0)
 	f := m.dialog.form
@@ -286,7 +288,7 @@ func TestASecretFromACommandIsNamedByItAndNotOfferedTwice(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 	ds.mu.Lock()
 	ds.projectSecrets = append(ds.projectSecrets, Secret{
-		ID: "sec_ghcmd", Name: "github", Type: "token", Routes: []SecretRoute{{Host: "github.com"}}, RefreshCommand: ghCommand,
+		ID: "sec_ghcmd", Name: "github", Type: "token", Routes: []secretroute.Route{{Hosts: []string{"github.com"}}}, RefreshCommand: ghCommand,
 	})
 	ds.mu.Unlock()
 	send(t, m, credentialsLoadedMsg{requests: ds.requests})

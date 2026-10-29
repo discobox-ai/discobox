@@ -342,24 +342,10 @@ func (s *Service) ListBoundSecrets(ctx context.Context, projectID, targetKind, t
 			continue
 		}
 		out = append(out, services.BoundSecret{Binding: applied.Binding, SecretName: secret.Name,
-			RouteLists: bindingRouteLists(secret, &applied.Binding, applied.Parent),
+			RouteLists: store.RouteLists(secret, &applied.Binding, applied.Parent),
 			ExpiresAt:  bindingExpiry(&applied.Binding, applied.Parent)})
 	}
 	return out, nil
-}
-
-// bindingRouteLists are the lists of routes a credential is held to under a
-// binding, as stored: the secret's, then the binding's and its parent's when
-// they have any.
-func bindingRouteLists(secret *model.Secret, binding, parent *model.SecretBinding) [][]model.SecretRoute {
-	lists := [][]model.SecretRoute{secret.Routes}
-	if len(binding.Routes) > 0 {
-		lists = append(lists, binding.Routes)
-	}
-	if parent != nil && len(parent.Routes) > 0 {
-		lists = append(lists, parent.Routes)
-	}
-	return lists
 }
 
 // lookupTarget resolves a binding target named by name or ID to its ID. A

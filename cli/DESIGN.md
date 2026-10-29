@@ -22,6 +22,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local TCP listeners and UDP sockets kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/localpty` | Running one of this CLI's own commands on a pty of its own for a console pane: `creack/pty` on Unix, ConPTY on Windows (ADR 0065). Sets `DISCOBOX_PARENT_PID` on the child. |
 | `internal/lifetime` | How long a binding lasts, said the way people say it: the presets an approval offers, the words every length-of-time flag parses (`Flag`: `--for`, `--ttl`, `--max-binding-ttl`, `--expires-in`, and `--since` counting back), and how one is read back. Owned here because the window's picker and the flags have to mean the same thing by "1 week". Zero is forever. |
+| `internal/apiroute` | A secret route between the API's shape and `secretroute.Route`, the one reading of a route (ADR 26-10-27-880 §4). The CLI and the console parse, print and edit routes as `secretroute.Route`; this is the one place the two shapes meet, so a field added to a route is carried in one place. |
 | `internal/secretenv` | The variable a binding that names none is delivered in: the secret's name upper-snaked (`github` is `GITHUB`, `npm-token` is `NPM_TOKEN`). Shared by `--bind`, `secret bind` and the console's binding form, so the three agree on which variable a secret lands in. |
 | `internal/refreshcmd` | Running the command a token suggests for its renewal (ADR 26-09-25-122): an argument vector split as a person types it, run with no shell, no stdin, a deadline, and a bound on output, printed value trimmed. Shared by `discobox secret refresh`/`create` and the console's data source, so the command a person was shown is run one way everywhere. |
 | `internal/clipimage` | The images a paste means on this machine: the OS clipboard's (osascript, wl-paste/xclip, PowerShell from Windows and WSL) and the image files a pasted path names. The console carries them into a discobox. |
@@ -1285,12 +1286,27 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
 - **A secret is bound, never granted** ([ADR 26-10-27-880](../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)).
   No command or flag says "grant". A binding is spelled one way, by the
   person's verbs and the raw ones alike: its variable `--as VAR`, its routes
-  `--route HOST[/PATH][=blocked]` (or `*`), one per flag, its lifetime
-  `--for LIFETIME`. `secret bind`, `unbind` and `bound` name their target as a
+  `--route ROUTE`, one per flag, its lifetime `--for LIFETIME`.
+  `secret bind`, `unbind` and `bound` name their target as a
   `[DISCOBOX]` argument, `--harness` or `--project-wide`; `admin binding`
   names it by `--target-kind`/`--target` ID. `--ttl` is only a token's
   staleness (`secret create`) and a trust's lifetime. `--bind`'s
-  `@ROUTE,…` stays a list, being one argument.
+  `@ROUTE,…` stays a list, being one argument, so each route in it is
+  hosts-only.
+- **A route is typed one way** (ADR 26-10-27-880 §4):
+  `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`, read
+  by `secretroute.Parse` and printed by `secretroute.Format`, so a route reads
+  back as it was typed. A host is exact; `*.h` is the hosts beneath h and `*`
+  any host (ADR 26-10-27-939). A comma belongs to the route — between its
+  methods, hosts, paths, fields or tools — so `--route` takes one route per
+  flag and routes said on one line are joined by `; `. Every `--route` flag's
+  usage says the syntax (`secretroute.Syntax`, never a copy; discobox-access, which cannot import it, keeps one the test holds to it) and its command's help explains it
+  with examples (`routeHelp`, `route_help.go`). The API's route and
+  `secretroute.Route` meet in one place, `internal/apiroute`; the console
+  holds `secretroute.Route` itself. `--bind`'s and `--delegate`'s
+  `@ROUTE,…` (and `--from-json`'s `routes`) are hosts-only — a host,
+  `*.suffix` or `*`, optionally `=blocked` — and a richer route is refused
+  there with `secret bind --route` named. `-s KEY@HOST`'s host is exact.
 - **A command's flag never takes a root flag's name.** `--project` is the root's
   "which project", so the project as a target is `--project-wide`
   (`command_conventions_test.go` checks every command).
@@ -2913,7 +2929,8 @@ the inbox: `secret refresh SECRET --run | --value | --dismiss` answers it.
 
 `discobox run` and `admin box create` bind at create:
 `--bind SECRET[:VAR][@ROUTE,…]` a use binding (VAR defaulting to
-`secretenv.Name`), `--delegate SECRET[@ROUTE,…]` one to give on, both through
+`secretenv.Name`), `--delegate SECRET[@ROUTE,…]` one to give on, each ROUTE
+hosts-only (`sandboxcreate.ParseRoutes`), both through
 `sandboxcreate.ParseBindings` into `CreateSandboxBody.bindings`. The secret is
 sent as written; the server reads a name or an ID. A secret given by ID with
 no VAR is looked up and named after its name (`NameBindingVariables`), so
@@ -2921,7 +2938,8 @@ no VAR is looked up and named after its name (`NameBindingVariables`), so
 and parses them in its own create. A discobox creating one binds only what a
 delegate binding it holds covers; the server checks that.
 `-s KEY[=VALUE|=@FILE][@HOST]` is always a new secret's value, never an
-existing secret's name: an anonymous secret routed to HOST, else `*`, and a use
+existing secret's name: an anonymous secret routed to HOST — exact, or
+`*.suffix` — else `*`, and a use
 binding in KEY (`sandboxcreate.EnvAndSecretsFromOptions`). The value is read
 from where it already is — `$KEY` from the client's shell when nothing follows
 KEY, a file after `=@` (one trailing newline dropped, `~` expanded) — and taken

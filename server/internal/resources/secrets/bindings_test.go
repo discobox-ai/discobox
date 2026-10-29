@@ -46,12 +46,12 @@ func TestCreateSecretBindingIsShapedAndLimited(t *testing.T) {
 			t.Errorf("%s = %v, want %d", name, err, tc.want)
 		}
 	}
-	binding, err := bind(services.CreateSecretBindingBody{EnvVar: serverapi.NewOptString("GH_TOKEN"), Routes: []serverapi.SecretRouteInput{{Host: "api.github.com"}}})
+	binding, err := bind(services.CreateSecretBindingBody{EnvVar: serverapi.NewOptString("GH_TOKEN"), Routes: []serverapi.SecretRouteInput{{Hosts: []string{"api.github.com"}}}})
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}
 	if binding.TargetID != testSandboxID || !binding.Use || binding.SecretName != "github" || binding.CreatedBy != "user-1" || binding.ExpiresAt == nil ||
-		time.Until(*binding.ExpiresAt) > time.Hour || !reflect.DeepEqual(binding.Routes, []model.SecretRoute{{Host: "api.github.com"}}) {
+		time.Until(*binding.ExpiresAt) > time.Hour || !reflect.DeepEqual(binding.Routes, []model.SecretRoute{{Hosts: []string{"api.github.com"}}}) {
 		t.Fatalf("binding = %+v, want a use on the sandbox lasting the secret's hour", binding)
 	}
 	if _, err := bind(services.CreateSecretBindingBody{EnvVar: serverapi.NewOptString("GH_TOKEN")}); !isStatus(err, http.StatusConflict) {
@@ -96,7 +96,7 @@ func TestBoundSecretsResolveTheNarrowest(t *testing.T) {
 	secret := createBearerSecret(ctx, t, svc)
 	mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetProject, TargetID: "project-1", Use: true, EnvName: "GH"})
 	own := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: testSandboxID, Use: true, EnvName: "GH",
-		Routes: []model.SecretRoute{{Host: "api.github.com"}}})
+		Routes: []model.SecretRoute{{Hosts: []string{"api.github.com"}}}})
 	delegate := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetProject, TargetID: "project-1", Delegate: true})
 
 	bound, err := svc.ListBoundSecrets(ctx, "project-1", model.SecretBindingTargetSandbox, "sandbox")
@@ -104,7 +104,7 @@ func TestBoundSecretsResolveTheNarrowest(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(bound) != 2 || bound[0].Binding.ID != own.ID || bound[1].Binding.ID != delegate.ID || bound[0].SecretName != "github" ||
-		!reflect.DeepEqual(bound[0].RouteLists, [][]model.SecretRoute{{{Host: "github.com"}}, {{Host: "api.github.com"}}}) {
+		!reflect.DeepEqual(bound[0].RouteLists, [][]model.SecretRoute{{{Hosts: []string{"github.com"}}}, {{Hosts: []string{"api.github.com"}}}}) {
 		t.Fatalf("bound = %+v, want its own GH over the project's, and the project's delegation", bound)
 	}
 }
@@ -210,7 +210,7 @@ func TestChangingAParentReachesItsChildren(t *testing.T) {
 	parent := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: leadID, Delegate: true})
 	child := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: testSandboxID, Use: true, EnvName: "GH", ParentID: parent.ID})
 	if _, err := svc.UpdateSecretBinding(ctx, "project-1", parent.ID, services.UpdateSecretBindingBody{
-		Routes: []serverapi.SecretRouteInput{{Host: "github.com", Path: serverapi.NewOptString("/admin"), Blocked: serverapi.NewOptBool(true)}, {Host: "github.com"}},
+		Routes: []serverapi.SecretRouteInput{{Hosts: []string{"github.com"}, Paths: []string{"/admin"}, Blocked: serverapi.NewOptBool(true)}, {Hosts: []string{"github.com"}}},
 	}); err != nil {
 		t.Fatal(err)
 	}

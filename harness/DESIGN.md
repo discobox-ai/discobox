@@ -697,7 +697,11 @@ force a re-login, and should verify it first — it may have been revoked since.
 **A secret may declare routes** (`Secret.Routes`,
 [ADR 26-10-02-924](../docs/adr/26-10-02-924-a-secret-may-carry-routes-and-every-request-it-is-sent-in-must-fall-on-one.md)):
 where the harness itself sends the credential, the image's alone. Each route
-is a host, an optional path prefix, and whether it is blocked. Configure
+is a `secretroute.Route` (ADR 26-10-27-880 §4) — host patterns (a host covers
+itself alone; `*.h` the hosts beneath it), and optionally methods, path globs
+and a GraphQL or MCP block — and whether it is blocked; one declared in the
+shape before host patterns reads as it was meant (`harnesscapture.Route`,
+through `secretroute.FromLegacy`) until its image is rebuilt. Configure
 writes the routes onto the secret it creates. An image declaring different
 ones re-syncs them, while a secret a person bound is theirs to route. Every
 request carrying the secret's sentinel must fall on one, and the most specific

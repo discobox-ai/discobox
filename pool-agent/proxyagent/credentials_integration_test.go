@@ -101,8 +101,8 @@ func TestASentinelIsHeldToItsRoutesOnRealTraffic(t *testing.T) {
 	defer controlPlane.Close()
 
 	server, material := startRoutedProxy(ctx, t, controlPlane.URL, sentinel, [][]secretroute.Route{{
-		{Host: originHost},
-		{Host: originHost, Path: "/admin", Blocked: true},
+		{Hosts: []string{originHost}},
+		{Hosts: []string{originHost}, Paths: []string{"/admin/**"}, Blocked: true},
 	}})
 	client := proxyClient(t, server, material)
 	get := func(path string) int {

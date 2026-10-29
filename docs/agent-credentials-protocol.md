@@ -105,7 +105,7 @@ GET /v1/credentials
 ```
 
 `list` never returns values. `envVar` is where the credential is delivered,
-`hosts` where it may be sent, and `expiresAt` when the approval lapses; absent,
+`hosts` the hosts of the routes it may be sent on, and `expiresAt` when the approval lapses; absent,
 it does not expire on its own. A credential with `purpose` `delegate` is one
 the caller may give the sandboxes it creates, and is not delivered to the
 caller itself, so it has no `envVar`.
@@ -120,8 +120,11 @@ POST /v1/credentials/requests
 {
   "name": "github",
   "envVar": "GITHUB_TOKEN",
-  "hosts": ["api.github.com"],
-  "justification": "The task asks me to open a PR with the fix.",
+  "routes": [
+    "GET api.github.com/repos/discobox-ai/discobox/**",
+    "api.github.com/graphql graphql=query"
+  ],
+  "justification": "The task asks me to read the PR's checks.",
   "grantTTLSeconds": 14400
 }
 ```
@@ -130,13 +133,51 @@ POST /v1/credentials/requests
 { "requestId": "req_1a2b…", "status": "pending", "purpose": "use" }
 ```
 
-`name` is the credential asked for, `envVar` the variable it is wanted in, and
-`hosts` the destinations it will be sent to: one, or several for a credential
-one tool sends to more than one site — Copilot CLI sends one GitHub token to
-`api.github.com` and to `githubcopilot.com`. Each covers the hosts beneath it
-([ADR 26-10-02-393](adr/26-10-02-393-a-credential-request-and-its-grant-may-name-several-hosts.md));
-in Discobox each becomes a route of the binding asked for, which the approver
-may narrow. `name` and `hosts` are required, and `envVar` to use the
+`name` is the credential asked for and `envVar` the variable it is wanted in.
+`hosts` and `routes` are where it will be sent; an ask names at least one of
+either, and may name both. A host is shorthand for a route to that exact host
+and no host beneath it — `*.github.com` asks for the names beneath
+`github.com`, and `*` alone for any host
+([ADR 26-10-27-939](adr/26-10-27-939-a-route-may-name-any-host.md)). Several
+destinations are for a credential one tool sends to more than one site —
+Copilot CLI sends one GitHub token to `api.github.com` and to
+`githubcopilot.com`
+([ADR 26-10-02-393](adr/26-10-02-393-a-credential-request-and-its-grant-may-name-several-hosts.md)).
+
+A route narrows a destination to what the agent will do there, in one typed
+string
+([ADR 26-10-27-880](adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md) §4):
+
+```
+[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]
+```
+
+- `METHODS`, optional: upper-case methods joined by commas (`GET`,
+  `GET,HEAD`). Absent is any method.
+- `HOSTS`: comma-separated host patterns as above, up to the first `/`.
+- `PATHS`, optional: from the first `/`; several are joined by `,` followed
+  by `/` (`api.github.com/a/**,/b`). Each is matched against the whole
+  request path, segment by segment: `*` is exactly one segment, `**` (only as
+  the last) zero or more, anything else literal, compared ignoring case
+  (`/repos/acme/**` also allows `/Repos/ACME/...`). Absent is any path. A
+  `:port` in a host is dropped, so a host is every port of it.
+- `graphql=OPS[:FIELDS]`: the GraphQL operation types allowed (`query`,
+  `mutation`, `subscription`, comma-separated), and optionally the root fields
+  every operation may select, each optionally ending in `*`. The document is
+  parsed; `operationName` is never read.
+- `mcp=TOOLS`: the MCP tools a `tools/call` may name, each optionally ending
+  in `*`; the protocol's own methods (`initialize`, `ping`, `tools/list`,
+  notifications) pass.
+- `=blocked` at the end marks a carve-out: the route refuses what it is the
+  most specific route for.
+
+`api.github.com`, `*`, `GET api.github.com/repos/*/*/pulls/**`,
+`api.github.com/graphql graphql=mutation:createPullRequest` and
+`api.github.com/repos/*/*/pulls/*/merge=blocked` are all routes. In Discobox
+each host and route becomes a route of the binding asked for, which the
+approver may edit; a route that does not parse makes the ask `invalid`.
+
+`name` and a destination are required, and `envVar` to use the
 credential — an ask to delegate names none; an ask without them is `invalid`. A body that still
 names a destination as `host`, as a client that predates `hosts` sends, is
 `invalid` rather than read without it; an empty `host` is no destination.
@@ -157,7 +198,7 @@ other, never both. Only a person answers an ask to delegate. Any other value is
 `invalid`. The answer, and every poll of it, carries the `purpose` the
 implementation recorded.
 
-A second ask for the same `envVar`, hosts (in any order) and `purpose` while
+A second ask for the same `envVar`, hosts and routes (each in any order) and `purpose` while
 one is still pending returns that pending request rather than a new one.
 
 Approval is human-latency, so `request` is **asynchronous**: it answers
@@ -315,8 +356,8 @@ discobox-access request --json <<'JSON'
 {
   "name": "github",
   "envVar": "GITHUB_TOKEN",
-  "hosts": ["api.github.com"],
-  "justification": "the user's task asks me to open a PR",
+  "routes": ["GET api.github.com/repos/discobox-ai/discobox/**"],
+  "justification": "the user's task asks me to read the repository's issues",
   "wait": true
 }
 JSON

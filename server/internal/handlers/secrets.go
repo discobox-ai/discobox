@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"slices"
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -287,7 +286,7 @@ func credentialBrokerPrincipal(ctx context.Context) (auth.Principal, error) {
 
 // agentCredentialRequestStatus is a request as the protocol reports it. Once
 // granted it carries what the sandbox now holds, as the approver chose it: the
-// hosts of the binding's routes — else its secret's — and its lifetime, and
+// hosts the open routes of the binding name — else its secret's — and its lifetime, and
 // for a use the variable its sentinel is in. name is the credential's name
 // then.
 func agentCredentialRequestStatus(req *model.SecretRequest, binding *model.SecretBinding, secret *model.Secret, name string) *apimodel.SandboxCredentialRequestStatus {
@@ -302,11 +301,9 @@ func agentCredentialRequestStatus(req *model.SecretRequest, binding *model.Secre
 		if len(routes) == 0 && secret != nil {
 			routes = secret.Routes
 		}
-		hosts := []string{}
-		for _, route := range routes {
-			if !route.Blocked && !slices.Contains(hosts, route.Host) {
-				hosts = append(hosts, route.Host)
-			}
+		hosts := model.OpenRouteHosts(routes)
+		if hosts == nil {
+			hosts = []string{}
 		}
 		resp.SetHosts(hosts)
 		if binding.Use && req.EnvName != "" {

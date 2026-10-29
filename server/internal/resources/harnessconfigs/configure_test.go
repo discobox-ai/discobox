@@ -119,12 +119,12 @@ func TestPreviousConfigurationCarriesNoSecretValues(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	mine := &model.Secret{ProjectID: "project-1", Name: "configured", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "api.example.com"}}, EncryptedValue: []byte(`{"token":"s3cr3t"}`)}
+	mine := &model.Secret{ProjectID: "project-1", Name: "configured", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Hosts: []string{"api.example.com"}}}, EncryptedValue: []byte(`{"token":"s3cr3t"}`)}
 	if err := st.CreateSecret(ctx, mine); err != nil {
 		t.Fatalf("create configured secret: %v", err)
 	}
 	// A secret the user bound by hand is not the configure flow's to replay.
-	theirs := &model.Secret{ProjectID: "project-1", Name: "hand-bound", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "other.example.com"}}, EncryptedValue: []byte(`{"token":"theirs"}`)}
+	theirs := &model.Secret{ProjectID: "project-1", Name: "hand-bound", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Hosts: []string{"other.example.com"}}}, EncryptedValue: []byte(`{"token":"theirs"}`)}
 	if err := st.CreateSecret(ctx, theirs); err != nil {
 		t.Fatalf("create hand-bound secret: %v", err)
 	}
@@ -298,11 +298,11 @@ func TestDeconfigureRemovesOnlyConfigureCreatedAssets(t *testing.T) {
 	st := newTestStore(t)
 
 	// A secret the configure flow created, and one the user owns independently.
-	configured := &model.Secret{ProjectID: "project-1", Name: "from-configure", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "configure.example.com"}}, EncryptedValue: []byte(`{"token":"t"}`)}
+	configured := &model.Secret{ProjectID: "project-1", Name: "from-configure", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Hosts: []string{"configure.example.com"}}}, EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := st.CreateSecret(ctx, configured); err != nil {
 		t.Fatalf("create configured secret: %v", err)
 	}
-	unrelated := &model.Secret{ProjectID: "project-1", Name: "user-owned", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "user.example.com"}}, EncryptedValue: []byte(`{"token":"t"}`)}
+	unrelated := &model.Secret{ProjectID: "project-1", Name: "user-owned", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Hosts: []string{"user.example.com"}}}, EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := st.CreateSecret(ctx, unrelated); err != nil {
 		t.Fatalf("create unrelated secret: %v", err)
 	}
@@ -640,7 +640,7 @@ func TestApplyConfigureOutputReplacesPreviousGeneration(t *testing.T) {
 	}
 	// With no host and no routes declared, it may go anywhere (ADR
 	// 26-10-27-939 §2), and the harness config binds it for use.
-	if !reflect.DeepEqual(created.Routes, []model.SecretRoute{{Host: "*"}}) {
+	if !reflect.DeepEqual(created.Routes, []model.SecretRoute{{Hosts: []string{"*"}}}) {
 		t.Fatalf("routes = %+v, want *", created.Routes)
 	}
 	bindings, err := st.ListTargetUseBindings(ctx, "project-1", model.SecretBindingTargetHarnessConfig, config.ID)
@@ -658,7 +658,7 @@ func TestApplyConfigureOutputUpdatesBoundSecretInPlace(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "old.example.com"}}, EncryptedValue: []byte(`{"token":"old"}`)}
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Hosts: []string{"old.example.com"}}}, EncryptedValue: []byte(`{"token":"old"}`)}
 	if err := st.CreateSecret(ctx, previous); err != nil {
 		t.Fatalf("create previous secret: %v", err)
 	}
@@ -695,7 +695,7 @@ func TestApplyConfigureOutputUpdatesBoundSecretInPlace(t *testing.T) {
 	if string(updated.EncryptedValue) != `{"token":"new"}` {
 		t.Fatalf("value = %q, want the new value", updated.EncryptedValue)
 	}
-	if !reflect.DeepEqual(updated.Routes, []model.SecretRoute{{Host: "old.example.com"}}) {
+	if !reflect.DeepEqual(updated.Routes, []model.SecretRoute{{Hosts: []string{"old.example.com"}}}) {
 		t.Fatalf("routes = %+v, want the routes it had kept", updated.Routes)
 	}
 	bindings, err := st.ListTargetUseBindings(ctx, "project-1", model.SecretBindingTargetHarnessConfig, config.ID)
@@ -1103,7 +1103,7 @@ func TestApplyConfigureOutputClearsARefusedCredential(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "api.example.com"}}, EncryptedValue: []byte(`{"token":"dead"}`)}
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Hosts: []string{"api.example.com"}}}, EncryptedValue: []byte(`{"token":"dead"}`)}
 	if err := st.CreateSecret(ctx, previous); err != nil {
 		t.Fatalf("create previous secret: %v", err)
 	}
@@ -1218,8 +1218,8 @@ func TestApplyConfigureOutputWritesDeclaredRoutesOntoTheSecret(t *testing.T) {
 		ProjectID: "project-1", Slug: "copilot", Name: "GitHub Copilot",
 		Image: "img:1", RunCommand: []string{"copilot"},
 		Secrets: []model.HarnessConfigSecret{{Name: "COPILOT_GITHUB_TOKEN", Routes: []model.SecretRoute{
-			{Host: "githubcopilot.com"},
-			{Host: "github.com", Blocked: true},
+			{Hosts: []string{"githubcopilot.com"}},
+			{Hosts: []string{"github.com"}, Blocked: true},
 		}}},
 	}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
@@ -1241,8 +1241,7 @@ func TestApplyConfigureOutputWritesDeclaredRoutesOntoTheSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(secret.Routes) != 2 || secret.Routes[0] != (model.SecretRoute{Host: "githubcopilot.com"}) ||
-		secret.Routes[1] != (model.SecretRoute{Host: "github.com", Blocked: true}) {
+	if !reflect.DeepEqual(secret.Routes, []model.SecretRoute{{Hosts: []string{"githubcopilot.com"}}, {Hosts: []string{"github.com"}, Blocked: true}}) {
 		t.Fatalf("routes = %+v, want the declared ones, the blocked one blocked", secret.Routes)
 	}
 	kept := secret.Routes[1]
@@ -1250,7 +1249,7 @@ func TestApplyConfigureOutputWritesDeclaredRoutesOntoTheSecret(t *testing.T) {
 		t.Fatalf("marked = %v, want none: the secret was minted with its routes, before anything held it", got)
 	}
 
-	config.Secrets[0].Routes = append(config.Secrets[0].Routes, model.SecretRoute{Host: "githubcopilot.com", Path: "/mcp", Blocked: true})
+	config.Secrets[0].Routes = append(config.Secrets[0].Routes, model.SecretRoute{Hosts: []string{"githubcopilot.com"}, Paths: []string{"/mcp"}, Blocked: true})
 	if err := st.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
 		return svc.syncConfiguredSecretRoutes(ctx, txStore, txDB, config)
 	}); err != nil {
@@ -1259,7 +1258,7 @@ func TestApplyConfigureOutputWritesDeclaredRoutesOntoTheSecret(t *testing.T) {
 	if secret, err = st.GetSecret(ctx, "project-1", secretID); err != nil {
 		t.Fatal(err)
 	}
-	if len(secret.Routes) != 3 || secret.Routes[1] != kept || secret.Routes[2].Path != "/mcp" {
+	if len(secret.Routes) != 3 || !reflect.DeepEqual(secret.Routes[1], kept) || !slices.Equal(secret.Routes[2].Paths, []string{"/mcp"}) {
 		t.Fatalf("routes = %+v, want the unchanged ones kept and the new one added", secret.Routes)
 	}
 	if got := runtime.marked; len(got) != 1 || got[0] != secretID {

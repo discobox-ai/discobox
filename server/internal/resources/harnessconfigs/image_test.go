@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -90,13 +91,14 @@ func TestParseImageMetadataRejectsInvalidSecrets(t *testing.T) {
 // A declared route must name a host, and a path that is a path: one that
 // does not would be refused when configure writes it onto the secret.
 func TestParseImageMetadataRejectsABadRoute(t *testing.T) {
-	for name, route := range map[string]harness.SecretRoute{
-		"no host":       {Path: "/mcp"},
-		"relative path": {Host: "github.com", Path: "mcp"},
+	for name, route := range map[string]harnesscapture.Route{
+		"no host":       {Paths: []string{"/mcp"}},
+		"a glob host":   {Hosts: []string{"git*hub.com"}},
+		"relative path": {Hosts: []string{"github.com"}, Paths: []string{"mcp"}},
 	} {
 		label, err := json.Marshal(harness.ImageMetadata{Harness: &harness.Image{
 			ID: "bad", Name: "Bad", RunCommand: []string{"bad"},
-			Secrets: []harness.Secret{{Name: "TOKEN", Routes: []harness.SecretRoute{route}}},
+			Secrets: []harness.Secret{{Name: "TOKEN", Routes: []harnesscapture.Route{route}}},
 		}})
 		if err != nil {
 			t.Fatal(err)

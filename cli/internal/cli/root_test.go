@@ -625,8 +625,8 @@ func TestSecretCreateCommandSendsSecretValue(t *testing.T) {
 		t.Fatalf("execute secret create: %v", err)
 	}
 	wantRoutes := []any{
-		map[string]any{"host": "githubcopilot.com"},
-		map[string]any{"host": "github.com", "path": "/repos", "blocked": true},
+		map[string]any{"hosts": []any{"githubcopilot.com"}},
+		map[string]any{"hosts": []any{"github.com"}, "paths": []any{"/repos"}, "blocked": true},
 	}
 	if !reflect.DeepEqual(posted["routes"], wantRoutes) {
 		t.Fatalf("posted routes = %#v, want both --route values in order", posted["routes"])

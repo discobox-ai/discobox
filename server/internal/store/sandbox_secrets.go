@@ -193,15 +193,16 @@ func (s *Store) bindingRouteLists(ctx context.Context, projectID, bindingID, sec
 }
 
 // RouteLists are the route lists a credential is held to under binding, and
-// parent when it was handed on under one: the secret's always, and the
-// binding's and the parent's when they have any.
+// parent when it was handed on under one: the secret's always, first, and the
+// binding's and the parent's when they have any. It is the one builder of
+// them: what the pool is sent, what resolve checks, and what a listing shows.
 func RouteLists(secret *model.Secret, binding, parent *model.SecretBinding) [][]secretroute.Route {
-	lists := [][]secretroute.Route{model.ProxyRoutes(secret.Routes)}
+	lists := [][]secretroute.Route{secret.Routes}
 	if len(binding.Routes) > 0 {
-		lists = append(lists, model.ProxyRoutes(binding.Routes))
+		lists = append(lists, binding.Routes)
 	}
 	if parent != nil && len(parent.Routes) > 0 {
-		lists = append(lists, model.ProxyRoutes(parent.Routes))
+		lists = append(lists, parent.Routes)
 	}
 	return lists
 }

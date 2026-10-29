@@ -88,15 +88,15 @@ func TestTheAnswerSaysTheTokenAndWhenItGoesStale(t *testing.T) {
 }
 
 func TestARecipeIsHeldToTheSecretsRoutes(t *testing.T) {
-	for _, routes := range [][]model.SecretRoute{{{Host: "boxd.sh"}}, {{Host: "*"}}} {
+	for _, routes := range [][]model.SecretRoute{{{Hosts: []string{"*.boxd.sh"}}}, {{Hosts: []string{"app.boxd.sh"}}}, {{Hosts: []string{"*"}}}} {
 		if err := checkRecipe(boxdRecipe(), routes); err != nil {
 			t.Fatalf("boxd's recipe under %+v: %v", routes, err)
 		}
 	}
-	for host, want := range map[string]string{"": "has routes", "example.com": "outside the secret's routes", "api.boxd.sh": "outside"} {
+	for host, want := range map[string]string{"": "has routes", "example.com": "outside the secret's routes", "api.boxd.sh": "outside", "boxd.sh": "outside"} {
 		var routes []model.SecretRoute
 		if host != "" {
-			routes = []model.SecretRoute{{Host: host}}
+			routes = []model.SecretRoute{{Hosts: []string{host}}}
 		}
 		if err := checkRecipe(boxdRecipe(), routes); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("routes %q = %v, want %q", host, err, want)

@@ -114,15 +114,6 @@ func TestSpecificityAnyIsTheClosest(t *testing.T) {
 	}
 }
 
-func TestSameSet(t *testing.T) {
-	if !hostscope.SameSet([]string{"a.example.com", "b.example.com"}, []string{"B.example.com", "a.example.com"}) {
-		t.Error("the same hosts in another order are the same set")
-	}
-	if hostscope.SameSet([]string{"a.example.com"}, []string{"a.example.com", "b.example.com"}) {
-		t.Error("a subset is not the same set")
-	}
-}
-
 func TestCoversEvery(t *testing.T) {
 	scopes := []string{"github.com", "githubcopilot.com"}
 	if !hostscope.CoversEvery(scopes, []string{"api.github.com", "api.githubcopilot.com"}) {

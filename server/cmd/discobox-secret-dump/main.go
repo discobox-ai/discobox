@@ -160,8 +160,8 @@ func printValue(_ string, v *model.SecretValue) {
 // dumpRoutes writes a secret's routes the way a person writes them.
 func dumpRoutes(routes []model.SecretRoute) string {
 	parts := make([]string, 0, len(routes))
-	for _, route := range model.ProxyRoutes(routes) {
+	for _, route := range routes {
 		parts = append(parts, secretroute.Format(route))
 	}
-	return strings.Join(parts, ",")
+	return strings.Join(parts, "; ")
 }

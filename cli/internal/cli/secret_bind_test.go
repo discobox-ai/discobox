@@ -15,7 +15,7 @@ import (
 )
 
 const bindTestSecretJSON = `{"id":"sec_1github","projectId":"project-1","name":"github","type":"token","maxBindingTTLSeconds":0,` +
-	`"routes":[{"host":"api.github.com"}],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
+	`"routes":[{"hosts":["api.github.com"]}],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
 
 const bindTestUseBinding = `{"id":"sbd_1","projectId":"project-1","secretId":"sec_1github","secretName":"github",` +
 	`"targetKind":"project","targetId":"project-1","use":true,"delegate":false,"envVar":"GH_TOKEN","routes":[],` +
@@ -47,7 +47,7 @@ func bindTestServerListing(t *testing.T, posted *map[string]any, deleted *[]stri
 			use := envVar != ""
 			_, _ = w.Write([]byte(`{"id":"sbd_1","projectId":"project-1","secretId":"sec_1github","secretName":"github",` +
 				`"targetKind":"project","targetId":"project-1","use":` + map[bool]string{true: "true", false: "false"}[use] +
-				`,"delegate":false,"envVar":"` + envVar + `","routes":[{"host":"api.github.com","path":"/repos/acme"}],` +
+				`,"delegate":false,"envVar":"` + envVar + `","routes":[{"hosts":["api.github.com"],"paths":["/repos/acme/**"]}],` +
 				`"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets/sec_1github":
 			_, _ = w.Write([]byte(bindTestSecretJSON))
@@ -71,7 +71,7 @@ func bindTestServerListing(t *testing.T, posted *map[string]any, deleted *[]stri
 				t.Fatalf("bound query = %s, want the project", r.URL.RawQuery)
 			}
 			_, _ = w.Write([]byte(`{"boundSecrets":[{"secretId":"sec_1github","secretName":"github","bindingId":"sbd_1","from":"project",` +
-				`"fromId":"project-1","use":true,"delegate":false,"envVar":"GH_TOKEN","routes":[[{"host":"api.github.com"}],[{"host":"api.github.com","path":"/repos/acme"}]]}]}`))
+				`"fromId":"project-1","use":true,"delegate":false,"envVar":"GH_TOKEN","routes":[[{"hosts":["api.github.com"]}],[{"hosts":["api.github.com"],"paths":["/repos/acme/**"]}]]}]}`))
 		default:
 			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
 		}
@@ -97,18 +97,18 @@ func TestSecretBindSaysWhatItDid(t *testing.T) {
 	var posted map[string]any
 	server := bindTestServer(t, &posted, new([]string))
 
-	out, err := runBindCommand(t, server, "bind", "github", "--project-wide", "--as", "GH_TOKEN", "--route", "api.github.com/repos/acme", "--for", "forever")
+	out, err := runBindCommand(t, server, "bind", "github", "--project-wide", "--as", "GH_TOKEN", "--route", "api.github.com/repos/acme/**", "--for", "forever")
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}
 	want := map[string]any{
 		"secret": "github", "targetKind": "project", "use": true, "envVar": "GH_TOKEN",
-		"routes": []any{map[string]any{"host": "api.github.com", "path": "/repos/acme"}}, "ttlSeconds": float64(0),
+		"routes": []any{map[string]any{"hosts": []any{"api.github.com"}, "paths": []any{"/repos/acme/**"}}}, "ttlSeconds": float64(0),
 	}
 	if !reflect.DeepEqual(posted, want) {
 		t.Fatalf("posted = %#v, want %#v", posted, want)
 	}
-	if !strings.Contains(out, "github is now GH_TOKEN in every discobox of the project, sent to api.github.com/repos/acme (within the secret's api.github.com); it never lapses.") {
+	if !strings.Contains(out, "github is now GH_TOKEN in every discobox of the project, sent to api.github.com/repos/acme/** (within the secret's api.github.com); it never lapses.") {
 		t.Fatalf("output = %q, want the sentence", out)
 	}
 	if strings.Contains(out, "sbd_1") || strings.Contains(out, "discobox-access env") {
@@ -162,7 +162,7 @@ func TestSecretBoundShowsTheResolvedView(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bound: %v", err)
 	}
-	for _, want := range []string{"VARIABLE", "GH_TOKEN", "github", "project", "api.github.com/repos/acme within api.github.com", "forever"} {
+	for _, want := range []string{"VARIABLE", "GH_TOKEN", "github", "project", "api.github.com/repos/acme/** within api.github.com", "forever"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output = %q, want %q", out, want)
 		}
@@ -176,7 +176,7 @@ func TestSecretRequestApproveFailsWhenRefused(t *testing.T) {
 		if r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests" {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"secretRequests":[{"id":"sreq_1","projectId":"project-1","requestedBy":"agent","status":"pending",` +
-				`"routes":[{"host":"api.github.com"}],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}]}`))
+				`"routes":[{"hosts":["api.github.com"]}],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}]}`))
 			return
 		}
 		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/secret-requests/sreq_1/approve" {
@@ -235,7 +235,7 @@ func TestSecretBoundNamesAndEscapes(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/bound-secrets":
 			_, _ = w.Write([]byte(`{"boundSecrets":[{"secretId":"sec_1github","secretName":"github","bindingId":"sbd_1","from":"sandbox",` +
-				`"fromId":"sbx_nfkv7n8v46gvn7t2","use":true,"delegate":false,"envVar":"EVIL\u001b[2J","routes":[[{"host":"x\u001b]0;pwned\u0007.example"}]]}]}`))
+				`"fromId":"sbx_nfkv7n8v46gvn7t2","use":true,"delegate":false,"envVar":"EVIL\u001b[2J","routes":[[{"hosts":["x\u001b]0;pwned\u0007.example"]}]]}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/sandboxes/sbx_nfkv7n8v46gvn7t2":
 			_, _ = w.Write([]byte(`{"id":"sbx_nfkv7n8v46gvn7t2","projectId":"project-1","createdByUserId":"user-1","displayName":"childbox",` +
 				`"config":{"name":"childbox","image":""},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},` +
@@ -259,7 +259,7 @@ func TestSecretBoundNamesAndEscapes(t *testing.T) {
 }
 
 // --route is one route per flag everywhere, read as `secret create --route`
-// reads one; a comma-joined list is refused rather than read as a host.
+// reads one; a comma inside it is the route's own, joining its hosts.
 func TestApproveTakesOneRoutePerFlag(t *testing.T) {
 	var approved map[string]any
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
@@ -284,12 +284,17 @@ func TestApproveTakesOneRoutePerFlag(t *testing.T) {
 	if _, err := runBindCommand(t, server, "request", "approve", "sreq_1", "--route", "api.github.com", "--route", "github.com/repos=blocked"); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
-	want := []any{map[string]any{"host": "api.github.com"}, map[string]any{"host": "github.com", "path": "/repos", "blocked": true}}
+	want := []any{map[string]any{"hosts": []any{"api.github.com"}}, map[string]any{"hosts": []any{"github.com"}, "paths": []any{"/repos"}, "blocked": true}}
 	if !reflect.DeepEqual(approved["routes"], want) {
 		t.Fatalf("routes = %#v, want %#v", approved["routes"], want)
 	}
-	if _, err := runBindCommand(t, server, "request", "approve", "sreq_1", "--route", "a.example,b.example"); err == nil {
-		t.Fatal("a comma-joined --route was accepted")
+	// A comma belongs to the route: two hosts of one route, not two routes.
+	if _, err := runBindCommand(t, server, "request", "approve", "sreq_1", "--route", "a.example,b.example"); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	want = []any{map[string]any{"hosts": []any{"a.example", "b.example"}}}
+	if !reflect.DeepEqual(approved["routes"], want) {
+		t.Fatalf("routes = %#v, want %#v", approved["routes"], want)
 	}
 }
 
@@ -332,14 +337,14 @@ func TestApproveSaysWhatWasGranted(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests":
 			_, _ = w.Write([]byte(`{"secretRequests":[{"id":"sreq_1","projectId":"project-1","requestedBy":"agent","status":"pending",` +
-				`"routes":[{"host":"172.17.0.1"}],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}]}`))
+				`"routes":[{"hosts":["172.17.0.1"]}],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-requests/sreq_1/approve":
 			_, _ = w.Write([]byte(`{"id":"sreq_1","projectId":"project-1","requestedBy":"agent","status":"approved","sandboxId":"sbx_nfkv7n8v46gvn7t2",` +
-				`"bindingId":"sbd_1","routes":[{"host":"172.17.0.1"}],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
+				`"bindingId":"sbd_1","routes":[{"hosts":["172.17.0.1"]}],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-bindings/sbd_1":
 			_, _ = w.Write([]byte(`{"id":"sbd_1","projectId":"project-1","secretId":"sec_1github","secretName":"github",` +
 				`"targetKind":"sandbox","targetId":"sbx_nfkv7n8v46gvn7t2","use":true,"delegate":false,"envVar":"GH_TOKEN",` +
-				`"routes":[{"host":"172.17.0.1","path":"/ok"}],"expiresAt":"2999-01-01T00:00:00Z",` +
+				`"routes":[{"hosts":["172.17.0.1"],"paths":["/ok"]}],"expiresAt":"2999-01-01T00:00:00Z",` +
 				`"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets/sec_1github":
 			_, _ = w.Write([]byte(bindTestSecretJSON))

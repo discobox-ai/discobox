@@ -787,6 +787,7 @@ func (h *httpProxy) authorizeSwap(req *http.Request, meta *requestMeta, client c
 		Host:      req.Host,
 		URL:       preURL,
 		Header:    preSwapHeader,
+		Body:      routeBody(req),
 	})
 	if err == nil && verdict.Allow {
 		return nil
@@ -1024,6 +1025,7 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 		Host:      req.Host,
 		URL:       meta.url(req),
 		Header:    meta.preSwapHeader,
+		Body:      retryRouteBody(meta.preSwapHeader, meta.retryBody),
 	})
 	if err != nil || !verdict.Allow {
 		// Not an answer to the sandbox: the request has already been sent and

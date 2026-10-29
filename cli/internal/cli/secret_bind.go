@@ -10,6 +10,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/secretroute"
+
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
@@ -108,8 +110,7 @@ or every discobox of the project (--project-wide).
 --as names the environment variable it is delivered in: a sentinel that the
 discobox's pool exchanges for the value on the way out. Left out, it is the
 secret's name upper-snaked: github is GITHUB, npm-token is NPM_TOKEN. --route narrows where it
-may be sent for this binding, each HOST[/PATH][=blocked] or '*'; left out, it
-goes where the secret's routes say. --for is how long the binding lasts, within
+may be sent for this binding; left out, it goes where the secret's routes say. --for is how long the binding lasts, within
 the secret's limit.
 
 --delegate lets the discobox give the secret, to use, to the discoboxes it
@@ -117,10 +118,12 @@ creates: by answering their requests, or when it creates them. With --as as
 well, it uses the secret too; without, it is delivered nothing itself.
 
 For one discobox and one variable, the narrowest binding wins: a discobox's own
-over its harness config's, and that over the project's.`,
+over its harness config's, and that over the project's.
+
+` + routeHelp,
 		Example: `  discobox secret bind github mybox --as GH_TOKEN
   discobox secret bind github --harness claude-code --as GH_TOKEN --for forever
-  discobox secret bind github --project-wide --as GH_TOKEN --route api.github.com/repos/acme
+  discobox secret bind github --project-wide --as GH_TOKEN --route 'api.github.com/repos/acme/**'
   discobox secret bind github lead --delegate --for 8h`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -175,7 +178,7 @@ over its harness config's, and that over the project's.`,
 		},
 	}
 	cmd.Flags().StringVar(&as, "as", "", "The environment variable to deliver it in (default the secret's name upper-snaked)")
-	cmd.Flags().StringArrayVar(&routes, "route", nil, "Where it may be sent for this binding, narrowing the secret's routes, as HOST[/PATH][=blocked] or '*'; one per flag, repeat for more")
+	cmd.Flags().StringArrayVar(&routes, "route", nil, "Where it may be sent for this binding, narrowing the secret's routes, as "+secretroute.Syntax+"; one per flag, repeat for more")
 	cmd.Flags().Var(lasts, "for", bindingLifetimeFlagUsage)
 	cmd.Flags().BoolVar(&delegate, "delegate", false, "Let the discobox give the secret to the discoboxes it creates; a person's to set")
 	target.add(cmd, "bind it to")

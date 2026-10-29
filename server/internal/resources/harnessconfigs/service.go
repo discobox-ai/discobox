@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -836,7 +837,7 @@ func sameSecretDeclarations(a, b []model.HarnessConfigSecret) bool {
 			slices.EqualFunc(x.RejectionScope, y.RejectionScope, func(p, q model.HarnessSecretRejectionRule) bool {
 				return p.Host == q.Host && slices.Equal(p.Paths, q.Paths)
 			}) &&
-			slices.Equal(x.Routes, y.Routes)
+			model.SameRoutes(x.Routes, y.Routes)
 	})
 }
 
@@ -854,11 +855,15 @@ func rejectionScope(rules []harness.RejectionRule) []model.HarnessSecretRejectio
 }
 
 // declaredRoutes are the routes an image declares for a secret, as the
-// config records them.
-func declaredRoutes(routes []harness.SecretRoute) []model.SecretRoute {
+// config records them: normalized, which the image's validation already
+// checked they are.
+func declaredRoutes(routes []harnesscapture.Route) []model.SecretRoute {
 	var out []model.SecretRoute
 	for _, route := range routes {
-		out = append(out, model.SecretRoute{Host: route.Host, Path: route.Path, Blocked: route.Blocked})
+		out = append(out, model.SecretRoute(route))
+	}
+	if normalized, err := model.NormalizeRoutes(out); err == nil {
+		return normalized
 	}
 	return out
 }

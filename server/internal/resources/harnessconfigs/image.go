@@ -615,7 +615,7 @@ func validateImageMetadata(metadata harness.ImageMetadata, goos, source string) 
 			}
 		}
 		for _, route := range secret.Routes {
-			if _, _, err := secretroute.Normalize(route.Host, route.Path); err != nil {
+			if _, err := secretroute.Normalize(secretroute.Route(route)); err != nil {
 				return fmt.Errorf("%s secret %q declares a bad route: %w", source, name, err)
 			}
 		}

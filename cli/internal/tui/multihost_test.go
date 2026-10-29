@@ -1,17 +1,21 @@
 package tui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/discobox-ai/discobox/pkg/secretroute"
+)
 
 // A request is shown with every route it asks for, and a trust with its
 // endpoint alone.
 func TestARequestIsShownWithEveryRouteItAsksFor(t *testing.T) {
 	for _, tc := range []struct {
-		routes []SecretRoute
+		routes []secretroute.Route
 		where  string
 	}{
-		{[]SecretRoute{{Host: "api.github.com"}}, "api.github.com"},
-		{[]SecretRoute{{Host: "api.github.com"}, {Host: "uploads.github.com", Path: "/repos"}}, "api.github.com, uploads.github.com/repos"},
-		{[]SecretRoute{{Host: "*"}}, "*"},
+		{[]secretroute.Route{{Hosts: []string{"api.github.com"}}}, "api.github.com"},
+		{[]secretroute.Route{{Hosts: []string{"api.github.com"}}, {Hosts: []string{"uploads.github.com"}, Paths: []string{"/repos"}}}, "api.github.com; uploads.github.com/repos"},
+		{[]secretroute.Route{{Hosts: []string{"*"}}}, "*"},
 	} {
 		if got := (CredentialRequest{Routes: tc.routes}).where(); got != tc.where {
 			t.Errorf("where(%v) = %q, want %q", tc.routes, got, tc.where)
@@ -26,7 +30,7 @@ func TestARequestIsShownWithEveryRouteItAsksFor(t *testing.T) {
 // is offered, since the binding an approval makes is held to the secret's
 // routes and the request's both.
 func TestThePickerOffersTheSecretNamedAsAskedFirst(t *testing.T) {
-	req := CredentialRequest{Name: "github", Routes: []SecretRoute{{Host: "api.github.com"}}}
+	req := CredentialRequest{Name: "github", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}
 	other := Secret{ID: "sec-other", Name: "openai"}
 	named := Secret{ID: "sec-named", Name: "github"}
 	got := secretsForRequest([]Secret{other, named}, req)

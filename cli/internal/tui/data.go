@@ -1487,7 +1487,7 @@ type CredentialRequest struct {
 	// Routes are where a credential request asks the credential to be sent;
 	// Host is a trust's endpoint.
 	Host          string
-	Routes        []SecretRoute
+	Routes        []secretroute.Route
 	Justification string
 	// Raw is the request as the server sent it, as indented JSON.
 	Raw string
@@ -1594,7 +1594,7 @@ type Secret struct {
 	// Routes are where it may be sent, whoever holds it (ADR 26-10-27-880
 	// §4): every request it is sent in must fall on one, the most specific
 	// deciding. Empty sends it nowhere; `*` is any host (ADR 26-10-27-939).
-	Routes  []SecretRoute
+	Routes  []secretroute.Route
 	Created time.Time
 	Updated time.Time
 
@@ -1662,7 +1662,7 @@ type NewBinding struct {
 	Delegate bool
 	EnvVar   string
 	// Routes narrow the secret's for this binding; none inherits them.
-	Routes []SecretRoute
+	Routes []secretroute.Route
 	// TTLSeconds is how long it lasts. Zero asks for one that never lapses,
 	// which a secret carrying a limit refuses.
 	TTLSeconds int64
@@ -1682,7 +1682,7 @@ type SecretBinding struct {
 	Delegate bool
 	EnvVar   string
 	// Routes narrow the secret's; none inherits them.
-	Routes []SecretRoute
+	Routes []secretroute.Route
 	// ParentID is the delegation a discobox handed this on under; removing
 	// that one removes this.
 	ParentID  string
@@ -1748,7 +1748,7 @@ type NewSecret struct {
 	MaxTTLSeconds int64
 
 	// Routes are where it may be sent, whoever holds it; at least one.
-	Routes []SecretRoute
+	Routes []secretroute.Route
 
 	// RefreshCommand makes the token one got from a command: when Value has no
 	// token, the data source runs it here for the first one, and it is what a
@@ -1808,17 +1808,7 @@ type SecretUpdate struct {
 	// to reading it from the value.
 	Format *string
 	// Routes replaces where it may be sent; empty sends it nowhere.
-	Routes *[]SecretRoute
-}
-
-// SecretRoute is one place a secret may be sent: a host and everything
-// beneath it, or every host for `*`, narrowed to a path prefix when Path is
-// set. A blocked route refuses every request it is the most specific route
-// for.
-type SecretRoute struct {
-	Host    string
-	Path    string
-	Blocked bool
+	Routes *[]secretroute.Route
 }
 
 // Approval is what a person decided about a request: which secret answers it,
@@ -2485,11 +2475,13 @@ func (r CredentialRequest) where() string {
 	return r.Host
 }
 
-// routesText is routes as a person types them, comma-joined.
-func routesText(routes []SecretRoute) string {
+// routesText is routes as a person types them, each as secretroute.Format
+// writes it, joined by "; ": a comma is part of a route, between its hosts,
+// methods, paths, fields or tools.
+func routesText(routes []secretroute.Route) string {
 	out := make([]string, 0, len(routes))
 	for _, route := range routes {
-		out = append(out, secretroute.Format(secretroute.Route{Host: route.Host, Path: route.Path, Blocked: route.Blocked}))
+		out = append(out, secretroute.Format(route))
 	}
-	return strings.Join(out, ", ")
+	return strings.Join(out, "; ")
 }

@@ -2397,27 +2397,60 @@ func (s *HarnessCaptureRoute) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *HarnessCaptureRoute) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("host")
-		e.Str(s.Host)
-	}
-	{
-		if s.Path.Set {
-			e.FieldStart("path")
-			s.Path.Encode(e)
+		if s.Blocked.Set {
+			e.FieldStart("blocked")
+			s.Blocked.Encode(e)
 		}
 	}
 	{
-		if s.Use.Set {
-			e.FieldStart("use")
-			s.Use.Encode(e)
+		if s.Graphql.Set {
+			e.FieldStart("graphql")
+			s.Graphql.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("hosts")
+		e.ArrStart()
+		for _, elem := range s.Hosts {
+			e.Str(elem)
+		}
+		e.ArrEnd()
+	}
+	{
+		if s.Mcp.Set {
+			e.FieldStart("mcp")
+			s.Mcp.Encode(e)
+		}
+	}
+	{
+		if s.Methods != nil {
+			e.FieldStart("methods")
+			e.ArrStart()
+			for _, elem := range s.Methods {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.Paths != nil {
+			e.FieldStart("paths")
+			e.ArrStart()
+			for _, elem := range s.Paths {
+				e.Str(elem)
+			}
+			e.ArrEnd()
 		}
 	}
 }
 
-var jsonFieldsNameOfHarnessCaptureRoute = [3]string{
-	0: "host",
-	1: "path",
-	2: "use",
+var jsonFieldsNameOfHarnessCaptureRoute = [6]string{
+	0: "blocked",
+	1: "graphql",
+	2: "hosts",
+	3: "mcp",
+	4: "methods",
+	5: "paths",
 }
 
 // Decode decodes HarnessCaptureRoute from json.
@@ -2429,37 +2462,93 @@ func (s *HarnessCaptureRoute) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "host":
-			requiredBitSet[0] |= 1 << 0
+		case "blocked":
 			if err := func() error {
-				v, err := d.Str()
-				s.Host = string(v)
-				if err != nil {
+				s.Blocked.Reset()
+				if err := s.Blocked.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"host\"")
+				return errors.Wrap(err, "decode field \"blocked\"")
 			}
-		case "path":
+		case "graphql":
 			if err := func() error {
-				s.Path.Reset()
-				if err := s.Path.Decode(d); err != nil {
+				s.Graphql.Reset()
+				if err := s.Graphql.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"path\"")
+				return errors.Wrap(err, "decode field \"graphql\"")
 			}
-		case "use":
+		case "hosts":
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
-				s.Use.Reset()
-				if err := s.Use.Decode(d); err != nil {
+				s.Hosts = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Hosts = append(s.Hosts, elem)
+					return nil
+				}); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"use\"")
+				return errors.Wrap(err, "decode field \"hosts\"")
+			}
+		case "mcp":
+			if err := func() error {
+				s.Mcp.Reset()
+				if err := s.Mcp.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"mcp\"")
+			}
+		case "methods":
+			if err := func() error {
+				s.Methods = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Methods = append(s.Methods, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"methods\"")
+			}
+		case "paths":
+			if err := func() error {
+				s.Paths = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Paths = append(s.Paths, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"paths\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -2471,7 +2560,7 @@ func (s *HarnessCaptureRoute) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000001,
+		0b00000100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -5571,6 +5660,72 @@ func (s OptSandboxUser) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptSandboxUser) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SentinelRouteGraphQL as json.
+func (o OptSentinelRouteGraphQL) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SentinelRouteGraphQL from json.
+func (o *OptSentinelRouteGraphQL) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSentinelRouteGraphQL to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSentinelRouteGraphQL) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSentinelRouteGraphQL) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SentinelRouteMCP as json.
+func (o OptSentinelRouteMCP) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SentinelRouteMCP from json.
+func (o *OptSentinelRouteMCP) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSentinelRouteMCP to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSentinelRouteMCP) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSentinelRouteMCP) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -11959,21 +12114,54 @@ func (s *SentinelRoute) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("host")
-		e.Str(s.Host)
+		if s.Graphql.Set {
+			e.FieldStart("graphql")
+			s.Graphql.Encode(e)
+		}
 	}
 	{
-		if s.Path.Set {
-			e.FieldStart("path")
-			s.Path.Encode(e)
+		e.FieldStart("hosts")
+		e.ArrStart()
+		for _, elem := range s.Hosts {
+			e.Str(elem)
+		}
+		e.ArrEnd()
+	}
+	{
+		if s.Mcp.Set {
+			e.FieldStart("mcp")
+			s.Mcp.Encode(e)
+		}
+	}
+	{
+		if s.Methods != nil {
+			e.FieldStart("methods")
+			e.ArrStart()
+			for _, elem := range s.Methods {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.Paths != nil {
+			e.FieldStart("paths")
+			e.ArrStart()
+			for _, elem := range s.Paths {
+				e.Str(elem)
+			}
+			e.ArrEnd()
 		}
 	}
 }
 
-var jsonFieldsNameOfSentinelRoute = [3]string{
+var jsonFieldsNameOfSentinelRoute = [6]string{
 	0: "blocked",
-	1: "host",
-	2: "path",
+	1: "graphql",
+	2: "hosts",
+	3: "mcp",
+	4: "methods",
+	5: "paths",
 }
 
 // Decode decodes SentinelRoute from json.
@@ -11995,27 +12183,83 @@ func (s *SentinelRoute) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"blocked\"")
 			}
-		case "host":
-			requiredBitSet[0] |= 1 << 1
+		case "graphql":
 			if err := func() error {
-				v, err := d.Str()
-				s.Host = string(v)
-				if err != nil {
+				s.Graphql.Reset()
+				if err := s.Graphql.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"host\"")
+				return errors.Wrap(err, "decode field \"graphql\"")
 			}
-		case "path":
+		case "hosts":
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
-				s.Path.Reset()
-				if err := s.Path.Decode(d); err != nil {
+				s.Hosts = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Hosts = append(s.Hosts, elem)
+					return nil
+				}); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"path\"")
+				return errors.Wrap(err, "decode field \"hosts\"")
+			}
+		case "mcp":
+			if err := func() error {
+				s.Mcp.Reset()
+				if err := s.Mcp.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"mcp\"")
+			}
+		case "methods":
+			if err := func() error {
+				s.Methods = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Methods = append(s.Methods, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"methods\"")
+			}
+		case "paths":
+			if err := func() error {
+				s.Paths = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Paths = append(s.Paths, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"paths\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -12027,7 +12271,7 @@ func (s *SentinelRoute) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000010,
+		0b00000100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -12069,6 +12313,228 @@ func (s *SentinelRoute) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SentinelRoute) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SentinelRouteGraphQL) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SentinelRouteGraphQL) encodeFields(e *jx.Encoder) {
+	{
+		if s.Fields != nil {
+			e.FieldStart("fields")
+			e.ArrStart()
+			for _, elem := range s.Fields {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.Operations != nil {
+			e.FieldStart("operations")
+			e.ArrStart()
+			for _, elem := range s.Operations {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
+}
+
+var jsonFieldsNameOfSentinelRouteGraphQL = [2]string{
+	0: "fields",
+	1: "operations",
+}
+
+// Decode decodes SentinelRouteGraphQL from json.
+func (s *SentinelRouteGraphQL) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SentinelRouteGraphQL to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "fields":
+			if err := func() error {
+				s.Fields = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Fields = append(s.Fields, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"fields\"")
+			}
+		case "operations":
+			if err := func() error {
+				s.Operations = make([]SentinelRouteGraphQLOperationsItem, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem SentinelRouteGraphQLOperationsItem
+					if err := elem.Decode(d); err != nil {
+						return err
+					}
+					s.Operations = append(s.Operations, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"operations\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SentinelRouteGraphQL")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SentinelRouteGraphQL) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SentinelRouteGraphQL) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SentinelRouteGraphQLOperationsItem as json.
+func (s SentinelRouteGraphQLOperationsItem) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SentinelRouteGraphQLOperationsItem from json.
+func (s *SentinelRouteGraphQLOperationsItem) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SentinelRouteGraphQLOperationsItem to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SentinelRouteGraphQLOperationsItem(v) {
+	case SentinelRouteGraphQLOperationsItemQuery:
+		*s = SentinelRouteGraphQLOperationsItemQuery
+	case SentinelRouteGraphQLOperationsItemMutation:
+		*s = SentinelRouteGraphQLOperationsItemMutation
+	case SentinelRouteGraphQLOperationsItemSubscription:
+		*s = SentinelRouteGraphQLOperationsItemSubscription
+	default:
+		*s = SentinelRouteGraphQLOperationsItem(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SentinelRouteGraphQLOperationsItem) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SentinelRouteGraphQLOperationsItem) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SentinelRouteMCP) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SentinelRouteMCP) encodeFields(e *jx.Encoder) {
+	{
+		if s.Tools != nil {
+			e.FieldStart("tools")
+			e.ArrStart()
+			for _, elem := range s.Tools {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+}
+
+var jsonFieldsNameOfSentinelRouteMCP = [1]string{
+	0: "tools",
+}
+
+// Decode decodes SentinelRouteMCP from json.
+func (s *SentinelRouteMCP) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SentinelRouteMCP to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "tools":
+			if err := func() error {
+				s.Tools = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Tools = append(s.Tools, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tools\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SentinelRouteMCP")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SentinelRouteMCP) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SentinelRouteMCP) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

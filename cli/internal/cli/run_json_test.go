@@ -208,8 +208,11 @@ func routeHostsOf(binding map[string]any) []string {
 	routes, _ := binding["routes"].([]any)
 	for _, route := range routes {
 		if route, ok := route.(map[string]any); ok {
-			if host, ok := route["host"].(string); ok {
-				out = append(out, host)
+			hosts, _ := route["hosts"].([]any)
+			for _, host := range hosts {
+				if host, ok := host.(string); ok {
+					out = append(out, host)
+				}
 			}
 		}
 	}

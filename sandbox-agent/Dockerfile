@@ -35,6 +35,7 @@ COPY pkg/sandboxservices ./pkg/sandboxservices
 COPY pkg/sandboxshell ./pkg/sandboxshell
 COPY pkg/sandboxtree ./pkg/sandboxtree
 COPY pkg/sandboxuser ./pkg/sandboxuser
+COPY pkg/secretroute ./pkg/secretroute
 COPY pkg/sourcecache ./pkg/sourcecache
 COPY pkg/sourceref ./pkg/sourceref
 COPY pkg/tarsums ./pkg/tarsums

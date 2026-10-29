@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode"
@@ -9,14 +12,17 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // The command tree spells the same thing the same way everywhere: removing is
 // `rm`, listing is `ls`, a group is named in the singular, a discobox is a
 // DISCOBOX argument, a list flag is emptied by --clear-<flag>, a secret is
 // bound rather than granted, a binding's words are --as, --route, --for and
-// --project-wide, no command's flag reuses a root flag's name, and help reads
-// as sentences. A new command that breaks one of these is caught here rather than
+// --project-wide, a --route is the one typed route and its command's help
+// explains it, no command's flag reuses a root flag's name, and help reads as
+// sentences. A new command that breaks one of these is caught here rather than
 // in the next review of the whole tree.
 func TestCommandConventions(t *testing.T) {
 	// A plural group the cleanup has not decided on yet: a root command the
@@ -68,6 +74,25 @@ func TestCommandConventions(t *testing.T) {
 				}
 			}
 		}
+		// A route is spelled one way (secretroute.Parse): every --route says
+		// the syntax and its command's help explains it, and nothing says a
+		// route is HOST[/PATH], or that a host covers the hosts beneath it —
+		// a host is exact, *.h is beneath h (ADR 26-10-27-880 §4).
+		if flag := cmd.Flags().Lookup("route"); flag != nil {
+			if !strings.Contains(flag.Usage, secretroute.Syntax) {
+				t.Errorf("%s: --route's usage %q does not say a route is %s", path, flag.Usage, secretroute.Syntax)
+			}
+			if !strings.Contains(cmd.Long, routeHelp) {
+				t.Errorf("%s: takes --route but its help does not explain a route (routeHelp)", path)
+			}
+		}
+		help := cmd.Long
+		cmd.Flags().VisitAll(func(flag *pflag.Flag) { help += "\n" + flag.Usage })
+		for _, old := range []string{"HOST[/PATH]", "covers itself", "and the hosts beneath it"} {
+			if strings.Contains(help, old) {
+				t.Errorf("%s: help says %q; a route is %s and a host is exact", path, old, secretroute.Syntax)
+			}
+		}
 		// A command's own flag never takes a root flag's name: it would shadow
 		// it, and `--project acme` would stop meaning which project.
 		if cmd != root {
@@ -106,6 +131,31 @@ func TestCommandConventions(t *testing.T) {
 			t.Errorf("%s: Short %q does not start with a capital letter", path, cmd.Short)
 		}
 	})
+}
+
+// The help that explains a route says the grammar secretroute.Parse reads,
+// by value: the CLI's and the console's take it from secretroute.Syntax, and
+// discobox-access, which may depend on nothing but agentcreds (ADR 0031),
+// keeps a copy this checks is still the same string.
+func TestRouteHelpSaysTheGrammarParseReads(t *testing.T) {
+	if !strings.Contains(routeHelp, secretroute.Syntax) {
+		t.Errorf("routeHelp does not say a route is %s", secretroute.Syntax)
+	}
+	for _, example := range []string{"*", "api.github.com", "GET api.github.com/repos/*/*/pulls/**", "api.github.com/graphql graphql=mutation:createPullRequest", "api.github.com/repos/*/*/pulls/*/merge=blocked"} {
+		if !strings.Contains(routeHelp, example) {
+			t.Errorf("routeHelp lacks the example %q", example)
+		}
+		if _, err := secretroute.Parse(example); err != nil {
+			t.Errorf("routeHelp's example %q does not parse: %v", example, err)
+		}
+	}
+	access, err := os.ReadFile(filepath.Join("..", "..", "..", "access", "commands.go"))
+	if err != nil {
+		t.Fatalf("read discobox-access's commands: %v", err)
+	}
+	if !strings.Contains(string(access), "const routeSyntax = "+strconv.Quote(secretroute.Syntax)) {
+		t.Errorf("access/commands.go's routeSyntax is not secretroute.Syntax, %q: change the copy with it", secretroute.Syntax)
+	}
 }
 
 func walkCommands(cmd *cobra.Command, visit func(*cobra.Command)) {

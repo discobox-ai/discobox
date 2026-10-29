@@ -12,9 +12,9 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/apiroute"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
-	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -154,9 +154,8 @@ with --field, a value of - reading stdin:
 The server exchanges it at once, refusing a key the provider refuses, and a
 discobox is only ever handed the short-lived token.
 
-Every secret says where it may be sent, with --route: a host and the hosts
-beneath it, a path prefix on it, or '*' for anywhere. A secret with no routes is
-sent nowhere.
+Every secret says where it may be sent, with --route, '*' for anywhere. A
+secret with no routes is sent nowhere.
 
 A token can be given as a value (--token) or got from a command on this
 machine (--refresh-command), which is run now for the first value and offered
@@ -164,7 +163,9 @@ to whoever renews the token when it goes stale.
 
 A sentinel stands in for the secret inside a discobox, shaped like the value so
 a client that checks a key's prefix accepts it. --format sets that shape when
-reading it from the value gets it wrong, and is kept when the value changes.`, RunE: func(cmd *cobra.Command, _ []string) error {
+reading it from the value gets it wrong, and is kept when the value changes.
+
+` + routeHelp, RunE: func(cmd *cobra.Command, _ []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -224,7 +225,11 @@ func (a *App) newSecretUpdateCommand() *cobra.Command {
 	ttl := lifetime.NewFlag()
 	var value secretValueOptions
 	var renewal secretRenewalOptions
-	cmd := &cobra.Command{Use: "update SECRET", Short: "Update a secret", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "update SECRET", Short: "Update a secret", Long: `Update a secret: its name, value, renewal, sentinel format, binding limit
+or routes. --route replaces every route the secret has; --clear-route leaves
+it none, so it is sent nowhere.
+
+` + routeHelp, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -373,9 +378,11 @@ in the variable it asked for, or delegated to it when it asked to delegate.
 
 --secret names the secret that answers it when the request named one that is
 not a project secret's name, or to choose another. --route narrows where it may be
-sent, each HOST[/PATH][=blocked] or '*'; left out, the binding is held to the
-hosts the request named. --for is how long it lasts; left out, what the request
-asked for, else an hour, within the secret's limit.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+sent; left out, the binding is held to the routes the request named. --for is
+how long it lasts; left out, what the request asked for, else an hour, within
+the secret's limit.
+
+` + routeHelp, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -427,7 +434,7 @@ asked for, else an hour, within the secret's limit.`, Args: cobra.ExactArgs(1), 
 		return a.writeApprovedBinding(cmd, client, projectID, request, bindingID)
 	}}
 	cmd.Flags().StringVar(&secretRef, "secret", "", "The secret that answers the request, by name or ID")
-	cmd.Flags().StringArrayVar(&routes, "route", nil, "Where it may be sent, narrowing the secret's routes, as HOST[/PATH][=blocked] or '*'; one per flag, repeat for more (default the hosts the request named)")
+	cmd.Flags().StringArrayVar(&routes, "route", nil, "Where it may be sent, narrowing the secret's routes, as "+secretroute.Syntax+"; one per flag, repeat for more (default the routes the request named)")
 	cmd.Flags().Var(lifetimeFlag, "for", bindingLifetimeApproveFlagUsage)
 	return cmd
 }
@@ -458,22 +465,17 @@ func (a *App) writeApprovedBinding(cmd *cobra.Command, client *apiclientgen.Clie
 }
 
 // routeFlagValues reads a repeatable --route flag into what the API takes:
-// one route per flag, read by secretroute.Parse as `secret create --route`
-// reads one. None is nil, which leaves the list out and the server its
-// default.
+// one route per flag, read by secretroute.Parse — commas belong to the route,
+// between its methods, hosts, paths, fields or tools. None is nil, which
+// leaves the list out and the server its default.
 func routeFlagValues(flag string, values []string) ([]apimodel.SecretRouteInput, error) {
 	var routes []apimodel.SecretRouteInput
 	for _, value := range values {
-		// A comma is no part of a host, and one here is a list written where
-		// the flag takes one route (`--bind`'s @ROUTE,… is the list form).
-		if strings.Contains(value, ",") {
-			return nil, fmt.Errorf("%s %q: one route per %s; repeat the flag for another", flag, value, flag)
-		}
 		route, err := secretroute.Parse(value)
 		if err != nil {
-			return nil, fmt.Errorf("%s %q: %w", flag, value, err)
+			return nil, fmt.Errorf("%s: %w", flag, err)
 		}
-		routes = append(routes, sandboxcreate.RouteInput(route))
+		routes = append(routes, apiroute.Input(route))
 	}
 	return routes, nil
 }
@@ -567,13 +569,13 @@ func createSecretBody(flags *pflag.FlagSet, name, secretType string, ttl *lifeti
 		return nil, err
 	}
 	if !ok || len(routes) == 0 {
-		return nil, fmt.Errorf("say where the secret may be sent with --route HOST[/PATH], repeated for more, or --route '*' for anywhere")
+		return nil, fmt.Errorf("say where the secret may be sent with --route ROUTE, repeated for more, or --route '*' for anywhere; see --help for a route's form")
 	}
 	body.SetRoutes(apiclientgen.NewOptNilSecretRouteInputArray(routes))
 	return body, nil
 }
 
-const secretRouteFlagUsage = "Where the secret may be sent, whoever holds it, as HOST[/PATH][=blocked] or '*' for any host: a host covers itself and every host beneath it, a path is a prefix on whole segments, and a blocked route refuses every request it is the most specific route for. Every request it is sent in must fall on one; the most specific decides (repeatable)"
+const secretRouteFlagUsage = "Where the secret may be sent, whoever holds it, as " + secretroute.Syntax + ", or '*' for any host: a host is exact, *.h is the hosts beneath h. Every request it is sent in must fall on one; the most specific decides (repeatable)"
 
 // secretRoutesFlags reads --route, and --clear-route where the command has
 // it. ok reports whether either was given; --clear-route is an empty list,

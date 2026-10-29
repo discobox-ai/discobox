@@ -1,298 +1,253 @@
 package secretroute
 
 import (
-	"slices"
+	"fmt"
+	"reflect"
+	"strings"
 	"testing"
 )
 
 func TestNormalize(t *testing.T) {
 	for _, tc := range []struct {
-		host, path         string
-		wantHost, wantPath string
-		wantErr            bool
+		name    string
+		in      Route
+		want    Route
+		wantErr string
 	}{
-		{host: "GitHub.com", wantHost: "github.com"},
-		{host: "github.com:443", path: "/", wantHost: "github.com"},
-		{host: "github.com", path: "/mcp/", wantHost: "github.com", wantPath: "/mcp"},
-		{host: "github.com", path: " /mcp/readonly ", wantHost: "github.com", wantPath: "/mcp/readonly"},
-		{host: " ", wantErr: true},
-		{host: "github.com/x", wantErr: true},
-		{host: "github.com", path: "mcp", wantErr: true},
-		{host: "github.com", path: "/mcp?x=1", wantErr: true},
-		{host: "github.com", path: "/a//b", wantErr: true},
-		{host: "github.com", path: "/a/../b", wantErr: true},
+		{
+			name: "lower-cases, sorts and dedupes",
+			in: Route{
+				Hosts:   []string{"GitHub.com:443", "*.GitHub.com", "github.com"},
+				Methods: []string{"post", " GET", "POST"},
+				Paths:   []string{"/b/", "/a/**", "/b"},
+			},
+			want: Route{Hosts: []string{"*.github.com", "github.com"}, Methods: []string{"GET", "POST"}, Paths: []string{"/a/**", "/b"}},
+		},
+		{name: "any host", in: Route{Hosts: []string{"*"}}, want: Route{Hosts: []string{"*"}}},
+		{name: "root path stays", in: Route{Hosts: []string{"x.test"}, Paths: []string{"/"}}, want: Route{Hosts: []string{"x.test"}, Paths: []string{"/"}}},
+		{
+			name: "graphql operations lower-cased, fields sorted",
+			in:   Route{Hosts: []string{"x.test"}, GraphQL: &GraphQL{Operations: []string{"Mutation", "query", "query"}, Fields: []string{"viewer", "create*"}}},
+			want: Route{Hosts: []string{"x.test"}, GraphQL: &GraphQL{Operations: []string{"mutation", "query"}, Fields: []string{"create*", "viewer"}}},
+		},
+		{
+			name: "a * field or tool is every one",
+			in:   Route{Hosts: []string{"x.test"}, GraphQL: &GraphQL{Fields: []string{"viewer", "*"}}},
+			want: Route{Hosts: []string{"x.test"}, GraphQL: &GraphQL{}},
+		},
+		{
+			name: "mcp tools",
+			in:   Route{Hosts: []string{"x.test"}, MCP: &MCP{Tools: []string{"get_*", "search_code", "a.b/c-d"}}},
+			want: Route{Hosts: []string{"x.test"}, MCP: &MCP{Tools: []string{"a.b/c-d", "get_*", "search_code"}}},
+		},
+		{name: "no hosts", in: Route{}, wantErr: "must name a host"},
+		{name: "empty host", in: Route{Hosts: []string{" "}}, wantErr: "must name a host"},
+		{name: "wildcard inside", in: Route{Hosts: []string{"api.*.com"}}, wantErr: "may hold *"},
+		{name: "wildcard twice", in: Route{Hosts: []string{"*.*.com"}}, wantErr: "may hold *"},
+		{name: "wildcard suffix", in: Route{Hosts: []string{"github.*"}}, wantErr: "may hold *"},
+		{name: "bare *.", in: Route{Hosts: []string{"*."}}, wantErr: "must name a host"},
+		{name: "host with path", in: Route{Hosts: []string{"github.com/x"}}, wantErr: "not a host name"},
+		{name: "host with comma", in: Route{Hosts: []string{"a.com,b.com"}}, wantErr: "not a host name"},
+		{name: "empty label", in: Route{Hosts: []string{"a..com"}}, wantErr: "empty label"},
+		{name: "method", in: Route{Hosts: []string{"x.test"}, Methods: []string{"GE T"}}, wantErr: "not an HTTP method"},
+		{name: "relative path", in: Route{Hosts: []string{"x.test"}, Paths: []string{"mcp"}}, wantErr: "must start with /"},
+		{name: "query in path", in: Route{Hosts: []string{"x.test"}, Paths: []string{"/mcp?x=1"}}, wantErr: "plain path"},
+		{name: "= in path", in: Route{Hosts: []string{"x.test"}, Paths: []string{"/a=b"}}, wantErr: "plain path"},
+		{name: "path separator in path", in: Route{Hosts: []string{"x.test"}, Paths: []string{"/a,/b"}}, wantErr: "plain path"},
+		{name: "empty segment", in: Route{Hosts: []string{"x.test"}, Paths: []string{"/a//b"}}, wantErr: "empty segment"},
+		{name: "dot segment", in: Route{Hosts: []string{"x.test"}, Paths: []string{"/a/../b"}}, wantErr: `".." segment`},
+		{name: "** not last", in: Route{Hosts: []string{"x.test"}, Paths: []string{"/a/**/b"}}, wantErr: "** before"},
+		{name: "* inside a segment", in: Route{Hosts: []string{"x.test"}, Paths: []string{"/a/b*"}}, wantErr: "inside a segment"},
+		{name: "graphql operation", in: Route{Hosts: []string{"x.test"}, GraphQL: &GraphQL{Operations: []string{"fragment"}}}, wantErr: "query, mutation or subscription"},
+		{name: "graphql field", in: Route{Hosts: []string{"x.test"}, GraphQL: &GraphQL{Fields: []string{"a*b"}}}, wantErr: "GraphQL field"},
+		{name: "mcp tool", in: Route{Hosts: []string{"x.test"}, MCP: &MCP{Tools: []string{"a b"}}}, wantErr: "MCP tool"},
+		{name: "both protocols", in: Route{Hosts: []string{"x.test"}, GraphQL: &GraphQL{}, MCP: &MCP{}}, wantErr: "not both"},
 	} {
-		host, path, err := Normalize(tc.host, tc.path)
-		if (err != nil) != tc.wantErr {
-			t.Fatalf("Normalize(%q, %q) error = %v, want error %v", tc.host, tc.path, err, tc.wantErr)
-		}
-		if host != tc.wantHost || path != tc.wantPath {
-			t.Fatalf("Normalize(%q, %q) = %q, %q; want %q, %q", tc.host, tc.path, host, path, tc.wantHost, tc.wantPath)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Normalize(tc.in)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("Normalize(%+v) error = %v, want one containing %q", tc.in, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Normalize(%+v): %v", tc.in, err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("Normalize(%+v) = %+v, want %+v", tc.in, got, tc.want)
+			}
+		})
 	}
 }
 
-func TestParse(t *testing.T) {
+func TestParseAndFormat(t *testing.T) {
 	for _, tc := range []struct {
-		text    string
-		want    Route
-		wantErr bool
+		text      string
+		want      Route
+		canonical string // Format(want), when it differs from text
 	}{
-		{text: "githubcopilot.com", want: Route{Host: "githubcopilot.com"}},
-		{text: "githubcopilot.com/mcp/readonly", want: Route{Host: "githubcopilot.com", Path: "/mcp/readonly"}},
-		{text: "githubcopilot.com/mcp=blocked", want: Route{Host: "githubcopilot.com", Path: "/mcp", Blocked: true}},
-		{text: " github.com = blocked ", want: Route{Host: "github.com", Blocked: true}},
-		// What a route once carried after its "=" is refused, not read as
-		// blocked or dropped: either would change what the person meant.
-		{text: "github.com=read-only queries", wantErr: true},
-		{text: "=blocked", wantErr: true},
-		{text: "", wantErr: true},
+		{text: "*", want: Route{Hosts: []string{"*"}}},
+		{text: "api.github.com", want: Route{Hosts: []string{"api.github.com"}}},
+		{text: "api.github.com/x=blocked", want: Route{Hosts: []string{"api.github.com"}, Paths: []string{"/x"}, Blocked: true}},
+		{text: " github.com = blocked ", want: Route{Hosts: []string{"github.com"}, Blocked: true}, canonical: "github.com=blocked"},
+		{text: "x.test/a,/", want: Route{Hosts: []string{"x.test"}, Paths: []string{"/", "/a"}}, canonical: "x.test/,/a"},
+		{text: "*/v1", want: Route{Hosts: []string{"*"}, Paths: []string{"/v1"}}},
+		{text: "GitHub.com,*.github.com", want: Route{Hosts: []string{"*.github.com", "github.com"}}, canonical: "*.github.com,github.com"},
+		{
+			text: "github.com/discobox-ai/discobox.git/**,/discobox-ai/discobox/**",
+			want: Route{Hosts: []string{"github.com"}, Paths: []string{"/discobox-ai/discobox.git/**", "/discobox-ai/discobox/**"}},
+		},
+		{text: "GET api.github.com/repos/discobox-ai/discobox/**", want: Route{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}, Paths: []string{"/repos/discobox-ai/discobox/**"}}},
+		{text: "HEAD,GET api.github.com", want: Route{Hosts: []string{"api.github.com"}, Methods: []string{"GET", "HEAD"}}, canonical: "GET,HEAD api.github.com"},
+		{text: "api.github.com/graphql graphql=query", want: Route{Hosts: []string{"api.github.com"}, Paths: []string{"/graphql"}, GraphQL: &GraphQL{Operations: []string{"query"}}}},
+		{
+			text:      "api.github.com/graphql graphql=mutation:createPullRequest,addComment",
+			want:      Route{Hosts: []string{"api.github.com"}, Paths: []string{"/graphql"}, GraphQL: &GraphQL{Operations: []string{"mutation"}, Fields: []string{"addComment", "createPullRequest"}}},
+			canonical: "api.github.com/graphql graphql=mutation:addComment,createPullRequest",
+		},
+		{text: "x.test graphql=*", want: Route{Hosts: []string{"x.test"}, GraphQL: &GraphQL{}}},
+		{text: "x.test graphql=*:viewer", want: Route{Hosts: []string{"x.test"}, GraphQL: &GraphQL{Fields: []string{"viewer"}}}},
+		{text: "x.test graphql=query,mutation,*", want: Route{Hosts: []string{"x.test"}, GraphQL: &GraphQL{}}, canonical: "x.test graphql=*"},
+		{text: "x.test graphql=mutation:delete*=blocked", want: Route{Hosts: []string{"x.test"}, GraphQL: &GraphQL{Operations: []string{"mutation"}, Fields: []string{"delete*"}}, Blocked: true}},
+		{text: "api.githubcopilot.com/mcp mcp=get_*,search_code", want: Route{Hosts: []string{"api.githubcopilot.com"}, Paths: []string{"/mcp"}, MCP: &MCP{Tools: []string{"get_*", "search_code"}}}},
+		{text: "x.test mcp=*", want: Route{Hosts: []string{"x.test"}, MCP: &MCP{}}},
+		{text: "x.test mcp=*=blocked", want: Route{Hosts: []string{"x.test"}, MCP: &MCP{}, Blocked: true}},
+		// A tool named "blocked" reads as written, and a blocked route
+		// calling it carries the suffix after it.
+		{text: "x.test mcp=blocked", want: Route{Hosts: []string{"x.test"}, MCP: &MCP{Tools: []string{"blocked"}}}},
+		{text: "x.test mcp=blocked=blocked", want: Route{Hosts: []string{"x.test"}, MCP: &MCP{Tools: []string{"blocked"}}, Blocked: true}},
+		{text: "x.test graphql=query:blocked", want: Route{Hosts: []string{"x.test"}, GraphQL: &GraphQL{Operations: []string{"query"}, Fields: []string{"blocked"}}}},
+		{text: "POST x.test/a/*/b mcp=run=blocked", want: Route{Hosts: []string{"x.test"}, Methods: []string{"POST"}, Paths: []string{"/a/*/b"}, MCP: &MCP{Tools: []string{"run"}}, Blocked: true}},
 	} {
 		got, err := Parse(tc.text)
-		if (err != nil) != tc.wantErr {
-			t.Fatalf("Parse(%q) error = %v, want error %v", tc.text, err, tc.wantErr)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", tc.text, err)
 		}
-		if got != tc.want {
+		if !reflect.DeepEqual(got, tc.want) {
 			t.Fatalf("Parse(%q) = %+v, want %+v", tc.text, got, tc.want)
 		}
-		if !tc.wantErr {
-			if again, err := Parse(Format(got)); err != nil || again != got {
-				t.Fatalf("Format did not round-trip %q: %+v, %v", tc.text, again, err)
-			}
+		canonical := tc.canonical
+		if canonical == "" {
+			canonical = tc.text
+		}
+		if formatted := Format(got); formatted != canonical {
+			t.Fatalf("Format(Parse(%q)) = %q, want %q", tc.text, formatted, canonical)
+		}
+		if again, err := Parse(Format(got)); err != nil || !reflect.DeepEqual(again, got) {
+			t.Fatalf("Format did not round-trip %q: %+v, %v", tc.text, again, err)
 		}
 	}
 }
 
-func TestPathCoversWholeSegments(t *testing.T) {
+func TestParseRefuses(t *testing.T) {
 	for _, tc := range []struct {
-		prefix, path string
-		want         bool
+		text, wantErr string
 	}{
-		{"", "/anything", true},
-		{"/mcp", "/mcp", true},
-		{"/mcp", "/mcp/", true},
-		{"/mcp", "/mcp/readonly", true},
-		{"/mcp", "/MCP/readonly", true},
-		{"/mcp", "/mcpx", false},
-		{"/mcp", "/", false},
-		{"/mcp/readonly", "/mcp", false},
+		{"", "must name a host"},
+		{"=blocked", "must name a host"},
+		// What a route once carried after its "=" is refused, not read as
+		// blocked or dropped: either would change what the person meant.
+		{"github.com=read-only queries", "no longer carries a use"},
+		{"github.com=read-only", "no longer carries a use"},
+		{"*.github.com/a*", "inside a segment"},
+		{"api.*.com", "may hold *"},
+		{"get api.github.com", "methods are upper case: GET"},
+		{"x.test foo=bar", "not part of a route"},
+		{"x.test graphql", "graphql=OPS"},
+		{"x.test graphql=", "graphql=OPS"},
+		{"x.test graphql=query:", "graphql=OPS:FIELDS"},
+		{"x.test graphql=read", "query, mutation or subscription"},
+		{"x.test graphql=query graphql=mutation", "one graphql="},
+		{"x.test mcp", "mcp=TOOLS"},
+		{"x.test mcp=a,,b", "mcp=TOOLS"},
+		{"x.test mcp=a mcp=b", "one mcp="},
+		{"x.test mcp=a graphql=query", "not both"},
+		{"x.test/a,//b", "empty segment"},
+		{"GET,,POST x.test", "not an HTTP method"},
+		{"evil\x1b]0;x\x07.com", "not a host name"},
+		{"github.com/a\x1b[2Jb", "plain path"},
+		{"github.com/\u009b31m", "plain path"},
 	} {
-		if got := PathCovers(tc.prefix, tc.path); got != tc.want {
-			t.Fatalf("PathCovers(%q, %q) = %v, want %v", tc.prefix, tc.path, got, tc.want)
+		_, err := Parse(tc.text)
+		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Fatalf("Parse(%q) error = %v, want one containing %q", tc.text, err, tc.wantErr)
 		}
 	}
 }
 
-func TestRequestPathsResolveDotSegments(t *testing.T) {
-	for raw, want := range map[string][]string{
-		"https://x.test":                       {"/"},
-		"https://x.test/mcp/readonly?q=1":      {"/mcp/readonly"},
-		"https://x.test/mcp/readonly/../write": {"/mcp/write"},
-		"https://x.test/mcp/%2e%2e/write":      {"/write"},
-		"https://x.test/mcp/readonly/":         {"/mcp/readonly"},
-		"/relative/only":                       {"/relative/only"},
-		"https://x.test/%zz":                   {"/"},
-		// An encoded "/" is read both ways: decoded, and kept in its segment
-		// as a server routing on the path as sent would keep it.
-		"https://x.test/mcp/x%2F..%2Freadonly":            {"/mcp/readonly", "/mcp/x%2F..%2Freadonly"},
-		"https://x.test/mcp/readonly/a%2F..%2F..%2Fwrite": {"/mcp/write", "/mcp/readonly/a%2F..%2F..%2Fwrite"},
+// A lone word is the hosts, unless it is an HTTP method, which a person
+// typed where a host belongs.
+func TestALoneWordIsHosts(t *testing.T) {
+	for _, host := range []string{"localhost", "intranet", "GITBOX"} {
+		if got, err := Parse(host); err != nil || len(got.Hosts) != 1 || got.Hosts[0] != strings.ToLower(host) {
+			t.Fatalf("Parse(%q) = %+v, %v", host, got, err)
+		}
+	}
+	for text, want := range map[string]string{
+		"GET":          "GET is a method; a route needs a host: `GET api.example.com/...`",
+		"delete":       "DELETE is a method; a route needs a host: `DELETE api.example.com/...`",
+		"Options":      "OPTIONS is a method",
+		"POST=blocked": "POST is a method",
+		"GET,POST":     "GET,POST are methods; a route needs a host: `GET,POST api.example.com/...`",
+		"get,Head":     "GET,HEAD are methods",
 	} {
-		if got := RequestPaths(raw); !slices.Equal(got, want) {
-			t.Fatalf("RequestPaths(%q) = %q, want %q", raw, got, want)
+		if _, err := Parse(text); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("Parse(%q) error = %v, want one containing %q", text, err, want)
 		}
 	}
 }
 
-func TestMatchPicksTheMostSpecificRoute(t *testing.T) {
-	routes := []Route{
-		{Host: "githubcopilot.com"},
-		{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
-		{Host: "githubcopilot.com", Path: "/mcp/readonly"},
-		{Host: "github.com", Blocked: true},
-		{Host: "api.github.com", Path: "/copilot_internal"},
-		{Host: "api.github.com", Path: "/copilot_internal", Blocked: true},
-	}
-	ids := func(got []Route) []string {
-		var out []string
-		for _, route := range got {
-			out = append(out, Format(route))
+// Methods are upper case; a list of method names in any other case is told
+// so rather than read as hosts.
+func TestMethodsAreUpperCase(t *testing.T) {
+	for text, want := range map[string]string{
+		"POST,get api.github.com": "methods are upper case: POST,GET",
+		"get api.github.com":      "methods are upper case: GET",
+		"Put,Patch x.test/a":      "methods are upper case: PUT,PATCH",
+	} {
+		if _, err := Parse(text); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("Parse(%q) error = %v, want one containing %q", text, err, want)
 		}
-		return out
 	}
+}
+
+// A Parse error names the text it refused once.
+func TestParseErrorsNameTheTextOnce(t *testing.T) {
+	for _, text := range []string{"api.*.com=blocked", "x.test foo=bar", "x.test mcp=a graphql=query", "get api.github.com", "GET"} {
+		_, err := Parse(text)
+		if err == nil {
+			t.Fatalf("Parse(%q) accepted it", text)
+		}
+		prefix := fmt.Sprintf("route %q: ", text)
+		if !strings.HasPrefix(err.Error(), prefix) || strings.Count(err.Error(), fmt.Sprintf("%q", text)) != 1 {
+			t.Fatalf("Parse(%q) error = %q, want it to start %q and name the text once", text, err, prefix)
+		}
+	}
+}
+
+func TestFromLegacy(t *testing.T) {
 	for _, tc := range []struct {
 		host, path string
-		want       []string
+		blocked    bool
+		want       Route
+		wantErr    bool
 	}{
-		{"api.individual.githubcopilot.com", "/v1/messages", []string{"githubcopilot.com"}},
-		{"api.individual.githubcopilot.com", "/mcp", []string{"githubcopilot.com/mcp=blocked"}},
-		{"api.individual.githubcopilot.com", "/mcp/readonly", []string{"githubcopilot.com/mcp/readonly"}},
-		{"api.individual.githubcopilot.com", "/mcpx", []string{"githubcopilot.com"}},
-		// The host's labels decide before the path does: api.github.com's
-		// route is closer than github.com's, whatever their paths.
-		{"api.github.com", "/copilot_internal/user", []string{"api.github.com/copilot_internal", "api.github.com/copilot_internal=blocked"}},
-		{"api.github.com", "/repos/x/y", []string{"github.com=blocked"}},
-		{"example.com", "/", nil},
-		{"github.com.evil.test", "/", nil},
+		{host: "GitHub.com", want: Route{Hosts: []string{"*.github.com", "github.com"}}},
+		{host: "*", want: Route{Hosts: []string{"*"}}},
+		{host: "*", path: "/v1", want: Route{Hosts: []string{"*"}, Paths: []string{"/v1/**"}}},
+		{host: "githubcopilot.com", path: "/mcp/", blocked: true, want: Route{Hosts: []string{"*.githubcopilot.com", "githubcopilot.com"}, Paths: []string{"/mcp/**"}, Blocked: true}},
+		{host: "x.test", path: "/", want: Route{Hosts: []string{"*.x.test", "x.test"}}},
+		{host: "x.test", path: "/a/*", wantErr: true},
+		{host: "*.x.test", wantErr: true},
+		{host: "", wantErr: true},
 	} {
-		if got := ids(Match(routes, tc.host, tc.path)); !slices.Equal(got, tc.want) {
-			t.Fatalf("Match(%s%s) = %v, want %v", tc.host, tc.path, got, tc.want)
+		got, err := FromLegacy(tc.host, tc.path, tc.blocked)
+		if (err != nil) != tc.wantErr {
+			t.Fatalf("FromLegacy(%q, %q) error = %v, want error %v", tc.host, tc.path, err, tc.wantErr)
 		}
-	}
-}
-
-func TestAHostRouteBeatsAShorterHostWithALongerPath(t *testing.T) {
-	routes := []Route{
-		{Host: "github.com", Path: "/a/b/c", Blocked: true},
-		{Host: "api.github.com"},
-	}
-	got := Match(routes, "api.github.com", "/a/b/c")
-	if len(got) != 1 || got[0].Host != "api.github.com" {
-		t.Fatalf("Match = %v, want the api.github.com route", got)
-	}
-}
-
-func TestDecide(t *testing.T) {
-	routes := []Route{
-		{Host: "githubcopilot.com"},
-		{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
-		{Host: "githubcopilot.com", Path: "/mcp/readonly"},
-		{Host: "api.github.com", Path: "/copilot_internal"},
-		{Host: "api.github.com", Path: "/copilot_internal", Blocked: true},
-	}
-	for _, tc := range []struct {
-		host, url string
-		allowed   bool
-	}{
-		{"api.individual.githubcopilot.com", "https://api.individual.githubcopilot.com/v1/messages", true},
-		{"api.individual.githubcopilot.com", "https://api.individual.githubcopilot.com/mcp", false},
-		{"api.individual.githubcopilot.com", "https://api.individual.githubcopilot.com/mcp/readonly/x", true},
-		// A path that steps out of the open prefix lands on the blocked one.
-		{"api.individual.githubcopilot.com", "https://api.individual.githubcopilot.com/mcp/readonly/../write", false},
-		// Read as sent, the encoded slash keeps it inside /mcp/readonly;
-		// decoded, it is /mcp, which is blocked. Both readings must pass.
-		{"api.individual.githubcopilot.com", "https://api.individual.githubcopilot.com/mcp/readonly%2F..%2F..%2Fmcp", false},
-		// A tie with a blocked route refuses.
-		{"api.github.com", "https://api.github.com/copilot_internal/user", false},
-		{"example.com", "https://example.com/", false},
-	} {
-		allowed, reason := Decide([][]Route{routes}, tc.host, tc.url)
-		if allowed != tc.allowed {
-			t.Fatalf("Decide(%s) = %v (%s), want %v", tc.url, allowed, reason, tc.allowed)
-		}
-		if !allowed && reason == "" {
-			t.Fatalf("Decide(%s) refused without a reason", tc.url)
-		}
-	}
-}
-
-// A credential is sent where its routes say and only there: no routes, or no
-// lists at all, allows nothing (ADR 26-10-27-880 §1).
-func TestDecideAllowsNothingWithoutRoutes(t *testing.T) {
-	for _, lists := range [][][]Route{nil, {}, {nil}, {{{Host: "example.com"}}, {}}} {
-		if allowed, reason := Decide(lists, "example.com", "https://example.com/"); allowed || reason == "" {
-			t.Fatalf("Decide(%v) = %v %q, want a refusal", lists, allowed, reason)
-		}
-	}
-}
-
-// Every list must allow: a binding narrows its secret, and a parent narrows
-// the binding handed on under it. No list unblocks what another blocks.
-func TestDecideHoldsARequestToEveryList(t *testing.T) {
-	secret := []Route{{Host: "github.com"}, {Host: "github.com", Path: "/admin", Blocked: true}}
-	binding := []Route{{Host: "api.github.com", Path: "/repos/acme"}}
-	parent := []Route{{Host: AnyHost}}
-	lists := [][]Route{secret, binding, parent}
-	for _, tc := range []struct {
-		host, url string
-		allowed   bool
-	}{
-		{"api.github.com", "https://api.github.com/repos/acme/web/pulls", true},
-		{"api.github.com", "https://api.github.com/repos/other/web", false}, // off the binding
-		{"github.com", "https://github.com/admin", false},                   // off the binding, and blocked by the secret
-	} {
-		if allowed, reason := Decide(lists, tc.host, tc.url); allowed != tc.allowed {
-			t.Fatalf("Decide(%s) = %v (%s), want %v", tc.url, allowed, reason, tc.allowed)
-		}
-	}
-	// A binding's open route cannot reopen a path its secret blocks.
-	reopen := [][]Route{secret, {{Host: "github.com", Path: "/admin"}}}
-	if allowed, _ := Decide(reopen, "github.com", "https://github.com/admin/x"); allowed {
-		t.Fatal("a binding reopened a path its secret blocks")
-	}
-}
-
-// AnyHost covers every host, and is the least specific route: a route naming
-// a host answers for what it covers, open or blocked.
-func TestAnyHostIsTheLeastSpecificRoute(t *testing.T) {
-	routes := []Route{{Host: AnyHost}, {Host: "internal.example", Blocked: true}}
-	if allowed, _ := Decide([][]Route{routes}, "registry.npmjs.org", "https://registry.npmjs.org/x"); !allowed {
-		t.Fatal("* did not cover an unnamed host")
-	}
-	if allowed, _ := Decide([][]Route{routes}, "ci.internal.example", "https://ci.internal.example/"); allowed {
-		t.Fatal("a named blocked route lost to *")
-	}
-	got, err := Parse("*/v1")
-	if err != nil || got != (Route{Host: AnyHost, Path: "/v1"}) {
-		t.Fatalf("Parse(*/v1) = %+v, %v", got, err)
-	}
-	for _, bad := range []string{"*.github.com", "api.*.com"} {
-		if _, err := Parse(bad); err == nil {
-			t.Fatalf("Parse(%q) accepted a wildcard inside a host", bad)
-		}
-	}
-}
-
-func TestHostAllowed(t *testing.T) {
-	lists := [][]Route{
-		{{Host: "github.com"}, {Host: "github.com", Path: "/admin", Blocked: true}},
-		{{Host: "api.github.com"}},
-	}
-	if !HostAllowed(lists, "api.github.com") {
-		t.Fatal("a host every list opens was refused")
-	}
-	if HostAllowed(lists, "uploads.github.com") {
-		t.Fatal("a host one list does not open was allowed")
-	}
-	if HostAllowed(nil, "api.github.com") || HostAllowed([][]Route{{}}, "api.github.com") {
-		t.Fatal("no routes allowed a host")
-	}
-	if HostAllowed([][]Route{{{Host: "api.github.com", Blocked: true}}}, "api.github.com") {
-		t.Fatal("a host only a blocked route covers was allowed")
-	}
-	// A host-wide blocked route shuts its host against a wider open one, as
-	// Decide refuses every path there; a blocked path leaves the rest open.
-	shut := [][]Route{{{Host: "github.com"}, {Host: "uploads.github.com", Blocked: true}}}
-	if HostAllowed(shut, "uploads.github.com") {
-		t.Fatal("a host its own blocked route shuts was allowed")
-	}
-	if !HostAllowed(shut, "api.github.com") {
-		t.Fatal("a sibling host the blocked route does not cover was refused")
-	}
-	partly := [][]Route{{{Host: "github.com"}, {Host: "uploads.github.com", Path: "/x", Blocked: true}}}
-	if !HostAllowed(partly, "uploads.github.com") {
-		t.Fatal("a host with only a path blocked was refused")
-	}
-	// An open path on a host-wide blocked host still opens that path, as
-	// Decide allows it, so the value is handed out for it.
-	path := [][]Route{{{Host: "github.com", Blocked: true}, {Host: "github.com", Path: "/acme"}}}
-	if !HostAllowed(path, "github.com") {
-		t.Fatal("a host whose open path outranks its block was refused")
-	}
-	if allowed, _ := Decide(path, "github.com", "https://github.com/acme/web"); !allowed {
-		t.Fatal("Decide refused the open path HostAllowed admitted")
-	}
-	reopened := [][]Route{{{Host: AnyHost, Blocked: true}, {Host: "api.github.com"}}}
-	if !HostAllowed(reopened, "api.github.com") || HostAllowed(reopened, "example.com") {
-		t.Fatal("a named open route under a blocked * was not read as the most specific")
-	}
-}
-
-// A route is shown to whoever approves or reads it, so it may not carry a
-// control character that would move their terminal.
-func TestARouteRefusesControlCharacters(t *testing.T) {
-	for _, bad := range []string{"evil\x1b]0;x\x07.com", "github.com/a\x1b[2Jb", "github.com/\u009b31m"} {
-		if _, err := Parse(bad); err == nil {
-			t.Fatalf("Parse(%q) accepted a control character", bad)
+		if err == nil && !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("FromLegacy(%q, %q) = %+v, want %+v", tc.host, tc.path, got, tc.want)
 		}
 	}
 }

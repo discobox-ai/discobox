@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,8 @@ type fakeService struct {
 	gotAudit        agentcreds.AuditQuery
 	exchanges       []agentcreds.AuditExchange
 	environment     map[string]string
+	// requestErr is what Request answers with, as a service refusing the ask.
+	requestErr error
 }
 
 func (f *fakeService) Environment(context.Context) (map[string]string, error) {
@@ -51,6 +54,9 @@ func (f *fakeService) List(context.Context) ([]agentcreds.Credential, error) {
 
 func (f *fakeService) Request(_ context.Context, body agentcreds.RequestBody) (agentcreds.RequestStatus, error) {
 	f.gotRequest = body
+	if f.requestErr != nil {
+		return agentcreds.RequestStatus{}, f.requestErr
+	}
 	status := agentcreds.RequestStatus{RequestID: "sreq_1", Status: agentcreds.StatusPending}
 	if !f.predatesPurpose {
 		status.Purpose = cmp.Or(body.Purpose, agentcreds.PurposeUse)
@@ -182,7 +188,7 @@ func TestListSaysWhereEachCredentialIs(t *testing.T) {
 func TestListWithNothingSaysHowToAsk(t *testing.T) {
 	serve(t, &fakeService{})
 	stdout, _, code := capture(t, "", func() int { return Run([]string{"list"}) })
-	if code != exitOK || !strings.Contains(stdout, "No credentials are granted") || !strings.Contains(stdout, "request --name NAME --env-var VAR --hosts") {
+	if code != exitOK || !strings.Contains(stdout, "No credentials are granted") || !strings.Contains(stdout, "request --name NAME --env-var VAR --route") {
 		t.Fatalf("exit = %d, stdout %q", code, stdout)
 	}
 }
@@ -478,6 +484,48 @@ func TestRequestNamesSeveralHosts(t *testing.T) {
 	}
 	if got := strings.Join(svc.gotRequest.Hosts, ","); got != "api.github.com,githubcopilot.com" {
 		t.Fatalf("hosts = %q, want both as written", got)
+	}
+}
+
+// A request asks for routes: --route takes one each, a comma being the
+// route's own, and --json takes them as a list, each sent as written.
+func TestRequestAsksForRoutes(t *testing.T) {
+	svc := &fakeService{}
+	serve(t, svc)
+
+	routes := []string{"GET,HEAD api.github.com/repos/acme/web/**,/user", "api.github.com/graphql graphql=mutation:createPullRequest,addComment"}
+	full := []string{"request", "--name", "github", "--env-var", "GH_TOKEN", "--route", routes[0], "--route", routes[1]}
+	if _, stderr, code := capture(t, "", func() int { return Run(full) }); code != exitOK {
+		t.Fatalf("exit = %d, want 0: %s", code, stderr)
+	}
+	if !slices.Equal(svc.gotRequest.Routes, routes) || svc.gotRequest.Hosts != nil {
+		t.Fatalf("request = %#v, want the routes as written and no hosts", svc.gotRequest)
+	}
+
+	svc.gotRequest = agentcreds.RequestBody{}
+	body := `{"name":"github","envVar":"GH_TOKEN","routes":["GET api.github.com/repos/acme/web/**"],"hosts":["uploads.github.com"]}`
+	if _, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) }); code != exitOK {
+		t.Fatalf("exit = %d, want 0: %s", code, stderr)
+	}
+	if !slices.Equal(svc.gotRequest.Routes, []string{"GET api.github.com/repos/acme/web/**"}) || !slices.Equal(svc.gotRequest.Hosts, []string{"uploads.github.com"}) {
+		t.Fatalf("request = %#v, want routes and hosts both", svc.gotRequest)
+	}
+
+	// A route that does not parse is the service's to refuse — this client
+	// has no parser of its own (ADR 0031) — and its refusal reaches the agent
+	// whole, naming the route, with the code it branches on.
+	bad := "api.github.com graphql"
+	svc.requestErr = fmt.Errorf("%w: route %q: graphql=OPS needs a comma list", agentcreds.ErrInvalid, bad)
+	body = `{"name":"github","envVar":"GH_TOKEN","routes":["` + bad + `"]}`
+	_, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) })
+	if code != exitError || !strings.Contains(stderr, `"code":"invalid"`) || !strings.Contains(stderr, bad) {
+		t.Fatalf("exit = %d, stderr %q; want the service's invalid, naming the route", code, stderr)
+	}
+	_, stderr, code = capture(t, "", func() int {
+		return Run([]string{"request", "--name", "github", "--env-var", "GH_TOKEN", "--route", bad})
+	})
+	if code != exitError || !strings.Contains(stderr, bad) {
+		t.Fatalf("exit = %d, stderr %q; want the service's refusal, naming the route", code, stderr)
 	}
 }
 

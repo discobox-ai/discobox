@@ -34,7 +34,7 @@ func runList(ctx context.Context, args []string) int {
 	out.emit(agentcreds.ListResponse{Credentials: credentials}, func(w io.Writer) {
 		if len(credentials) == 0 {
 			fmt.Fprintln(w, "No credentials are granted to this sandbox.")
-			fmt.Fprintf(w, "Ask for one with: %s request --name NAME --env-var VAR --hosts HOST[,HOST...] --justification \"what for\"\n", Name)
+			fmt.Fprintf(w, "Ask for one with: %s request --name NAME --env-var VAR --route ROUTE... --justification \"what for\"\n", Name)
 			return
 		}
 		for _, credential := range credentials {
@@ -111,7 +111,8 @@ func expiry(expiresAt *time.Time) string {
 type requestInput struct {
 	Name            string   `json:"name"`
 	EnvVar          string   `json:"envVar"`
-	Hosts           []string `json:"hosts"`
+	Hosts           []string `json:"hosts,omitempty"`
+	Routes          []string `json:"routes,omitempty"`
 	Justification   string   `json:"justification,omitempty"`
 	GrantTTLSeconds int64    `json:"grantTTLSeconds,omitempty"`
 	Purpose         string   `json:"purpose,omitempty"`
@@ -123,6 +124,7 @@ func runRequest(ctx context.Context, args []string) int {
 	var (
 		input      requestInput
 		hosts      hostList
+		routes     routeList
 		structured bool
 		timeout    time.Duration
 		ttl        time.Duration
@@ -132,7 +134,8 @@ func runRequest(ctx context.Context, args []string) int {
 	flags.BoolVar(&structured, "json", false, "read the request as JSON on stdin and emit JSON")
 	flags.StringVar(&input.Name, "name", "", "credential name (e.g. github)")
 	flags.StringVar(&input.EnvVar, "env-var", "", "environment variable to deliver it in")
-	flags.Var(&hosts, "hosts", "destination hosts it will be sent to, comma-separated or repeated")
+	flags.Var(&hosts, "hosts", "exact hosts it will be sent to, comma-separated or repeated; *.example.com is the hosts beneath example.com")
+	flags.Var(&routes, "route", "a route it will be sent on, "+routeSyntax+"; repeat for more")
 	flags.StringVar(&input.Justification, "justification", "", "why you need it: the task and its target")
 	flags.DurationVar(&ttl, "ttl", 0, "how long you ask to keep it (e.g. 30m, 4h); the approver may choose otherwise")
 	flags.BoolVar(&delegate, "delegate", false, "ask to give it to the discoboxes you create, not to use it yourself")
@@ -143,7 +146,7 @@ func runRequest(ctx context.Context, args []string) int {
 	}
 	out := newEmitter(structured)
 	if rest := flags.Args(); len(rest) > 0 {
-		return usageError(out, "unexpected argument %q: name the credential with --name, its variable with --env-var and where it goes with --hosts", rest[0])
+		return usageError(out, "unexpected argument %q: name the credential with --name, its variable with --env-var and where it goes with --route or --hosts", rest[0])
 	}
 
 	if structured {
@@ -159,7 +162,7 @@ func runRequest(ctx context.Context, args []string) int {
 			timeout = time.Duration(input.TimeoutSeconds) * time.Second
 		}
 	} else {
-		input.Hosts = hosts
+		input.Hosts, input.Routes = hosts, routes
 		// Refused here rather than rounded: a lifetime truncated to zero
 		// seconds would go out as no ask at all.
 		if ttl < 0 || ttl%time.Second != 0 {
@@ -177,9 +180,10 @@ func runRequest(ctx context.Context, args []string) int {
 		return usageError(out, "name the variable to deliver it in with --env-var (\"envVar\" in --json), such as GITHUB_TOKEN")
 	case strings.TrimSpace(input.EnvVar) != "" && input.Purpose == agentcreds.PurposeDelegate:
 		return usageError(out, "a delegation is delivered to nothing here, so it names no --env-var (\"envVar\" in --json)")
-	case len(input.Hosts) == 0:
-		return usageError(out, "name where it will be sent with --hosts (\"hosts\" in --json), such as github.com,api.github.com")
+	case len(input.Hosts) == 0 && len(input.Routes) == 0:
+		return usageError(out, "name where it will be sent with --route (\"routes\" in --json), such as 'GET api.github.com/repos/acme/web/**', or --hosts (\"hosts\")")
 	}
+
 	switch input.Purpose {
 	case "", agentcreds.PurposeUse, agentcreds.PurposeDelegate:
 	default:
@@ -197,6 +201,7 @@ func runRequest(ctx context.Context, args []string) int {
 		Name:            input.Name,
 		EnvVar:          input.EnvVar,
 		Hosts:           input.Hosts,
+		Routes:          input.Routes,
 		Justification:   input.Justification,
 		GrantTTLSeconds: input.GrantTTLSeconds,
 		Purpose:         input.Purpose,
@@ -266,6 +271,27 @@ func readRequestBody(stdin *os.File) (requestInput, error) {
 	}
 	return input, nil
 }
+
+// routeList is --route: one route per flag, since a comma belongs to the
+// route, between its methods, hosts, paths, fields or tools. A route is sent
+// as written and read by the service, which refuses one that does not parse
+// as invalid, naming it: this module depends only on agentcreds (ADR 0031),
+// so it has no parser of its own to check one with.
+type routeList []string
+
+func (r *routeList) String() string { return strings.Join(*r, "; ") }
+
+func (r *routeList) Set(value string) error {
+	if value = strings.TrimSpace(value); value != "" {
+		*r = append(*r, value)
+	}
+	return nil
+}
+
+// routeSyntax is a route's typed form, a copy of secretroute.Syntax: this
+// module cannot import secretroute (ADR 0031), so the CLI's conventions test
+// checks that this file holds secretroute.Syntax verbatim.
+const routeSyntax = "[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]"
 
 // hostList is --hosts: comma-separated, repeatable, or both, with empties
 // dropped, so --hosts a,b and --hosts a --hosts b ask for the same thing.
