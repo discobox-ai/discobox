@@ -138,7 +138,7 @@ func TestWaitForRequestPollsUntilSettled(t *testing.T) {
 	if status.Status != agentcreds.StatusPending {
 		t.Fatalf("request returned %q, want an unsettled request", status.Status)
 	}
-	settled, err := client.WaitForRequest(context.Background(), status.RequestID, time.Millisecond)
+	settled, err := client.WaitForRequest(context.Background(), agentcreds.RequestStatus{RequestID: status.RequestID}, time.Millisecond)
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
@@ -207,5 +207,80 @@ func TestEnvironmentReportsTheDeliveredVariables(t *testing.T) {
 	empty, err := newTestClient(t, &fakeService{}).Environment(context.Background())
 	if err != nil || empty == nil || len(empty) != 0 {
 		t.Fatalf("environment with none = %v, %v; want an empty map", empty, err)
+	}
+}
+
+// waitServer answers a request's status from answers, one per poll, repeating
+// the last; an answer of 0 is a pending status, any other number an error
+// status the service answered with.
+func waitServer(t *testing.T, answers ...int) *agentcreds.Client {
+	t.Helper()
+	var polls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		code := answers[min(polls, len(answers)-1)]
+		polls++
+		w.Header().Set("Content-Type", "application/json")
+		switch code {
+		case 0:
+			_, _ = w.Write([]byte(`{"requestId":"req-1","status":"pending"}`))
+		case http.StatusOK:
+			_, _ = w.Write([]byte(`{"requestId":"req-1","status":"granted"}`))
+		default:
+			w.WriteHeader(code)
+			_, _ = w.Write([]byte(`{"error":"x"}`))
+		}
+	}))
+	t.Cleanup(server.Close)
+	return agentcreds.NewClient(server.URL)
+}
+
+// A poll that fails says nothing about the request, which is still waiting on
+// a person: the wait polls through it rather than ending on it.
+func TestWaitForRequestPollsThroughAFailedPoll(t *testing.T) {
+	client := waitServer(t, http.StatusBadGateway, 0, http.StatusGatewayTimeout, http.StatusOK)
+	status, err := client.WaitForRequest(context.Background(), agentcreds.RequestStatus{RequestID: "req-1"}, time.Millisecond)
+	if err != nil || status.Status != agentcreds.StatusGranted {
+		t.Fatalf("wait = %+v, %v; want granted after the failed polls", status, err)
+	}
+}
+
+// A wait that ends before the answer comes answers with the request still
+// pending, not with an error: the request outlives the wait.
+func TestWaitForRequestThatEndsFirstIsPending(t *testing.T) {
+	client := waitServer(t, 0, http.StatusBadGateway)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	status, err := client.WaitForRequest(ctx, agentcreds.RequestStatus{RequestID: "req-1"}, time.Millisecond)
+	if err != nil || status.Status != agentcreds.StatusPending || status.RequestID != "req-1" {
+		t.Fatalf("wait = %+v, %v; want req-1 pending and no error", status, err)
+	}
+}
+
+// What another poll would only repeat ends the wait: an unknown request, one
+// the caller may not see, or a refused call. So does a wait that never read a
+// status at all.
+func TestWaitForRequestEndsOnWhatAPollWouldRepeat(t *testing.T) {
+	for _, code := range []int{http.StatusNotFound, http.StatusForbidden, http.StatusBadRequest} {
+		_, err := waitServer(t, code).WaitForRequest(context.Background(), agentcreds.RequestStatus{RequestID: "req-1"}, time.Millisecond)
+		if err == nil {
+			t.Fatalf("wait on %d answered no error", code)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := waitServer(t, http.StatusBadGateway).WaitForRequest(ctx, agentcreds.RequestStatus{RequestID: "req-1"}, time.Millisecond); err == nil {
+		t.Fatal("a wait that never read a status answered no error")
+	}
+}
+
+// A wait that starts from the status that created the request ends pending on
+// it even when no poll ever answers.
+func TestWaitForRequestEndsOnWhatItStartedWith(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	known := agentcreds.RequestStatus{RequestID: "req-1", Status: agentcreds.StatusPending}
+	status, err := waitServer(t, http.StatusBadGateway).WaitForRequest(ctx, known, time.Millisecond)
+	if err != nil || status != known {
+		t.Fatalf("wait = %+v, %v; want %+v and no error", status, err, known)
 	}
 }

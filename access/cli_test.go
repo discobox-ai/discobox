@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http/httptest"
@@ -557,5 +558,30 @@ func TestEnvPrintsExportsAShellEvaluates(t *testing.T) {
 	}
 	if _, _, code := capture(t, "", func() int { return Run([]string{"env", "GH_TOKEN"}) }); code != exitUsage {
 		t.Fatalf("exit = %d, want a usage error for an argument", code)
+	}
+}
+
+// `request --wait` that runs out of time before the answer exits exitPending,
+// never 0: a script that asks and then runs on `&&` must not go on unapproved.
+// A request that never waited still exits 0 with the request pending.
+func TestRequestWaitThatRunsOutIsPending(t *testing.T) {
+	serve(t, &fakeService{status: agentcreds.RequestStatus{RequestID: "sreq_1", Status: agentcreds.StatusPending}})
+	stdout, stderr, code := capture(t, "", func() int { return Run(append(askFlags, "--wait", "--timeout", "20ms")) })
+	if code != exitPending || !strings.Contains(stdout, "sreq_1 pending") || !strings.Contains(stderr, "wait --json request 'sreq_1'") {
+		t.Fatalf("exit %d, stdout %q, stderr %q; want exit %d, the request pending and how to resume", code, stdout, stderr, exitPending)
+	}
+	if _, _, code := capture(t, "", func() int { return Run(askFlags) }); code != exitOK {
+		t.Fatalf("request without --wait exit = %d, want 0", code)
+	}
+}
+
+// The outage this wait is for: the request is created, then every poll fails.
+// The request is still open, as its creation said, so `request --wait` ends
+// pending with the resume command and exit 3, not as a failure.
+func TestRequestWaitThroughAnOutageIsPending(t *testing.T) {
+	serve(t, &fakeService{statusErr: errors.New("the relay dropped the call")})
+	stdout, stderr, code := capture(t, "", func() int { return Run(append(askFlags, "--wait", "--timeout", "50ms")) })
+	if code != exitPending || !strings.Contains(stdout, "sreq_1 pending") || !strings.Contains(stderr, "wait --json request 'sreq_1'") {
+		t.Fatalf("exit %d, stdout %q, stderr %q; want exit %d, the request pending and how to resume", code, stdout, stderr, exitPending)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -121,8 +122,10 @@ func (c *Client) AuditHTTP(ctx context.Context, query AuditQuery) ([]AuditExchan
 	return out.Exchanges, nil
 }
 
-func (c *Client) WaitForTrustRequest(ctx context.Context, requestID string, interval time.Duration) (TrustRequestStatus, error) {
-	return waitFor(ctx, interval, func() (TrustRequestStatus, bool, error) {
+// WaitForTrustRequest is WaitForRequest for a trust request.
+func (c *Client) WaitForTrustRequest(ctx context.Context, known TrustRequestStatus, interval time.Duration) (TrustRequestStatus, error) {
+	requestID := known.RequestID
+	return waitFor(ctx, known, known.Status != "", interval, func() (TrustRequestStatus, bool, error) {
 		status, err := c.TrustRequestStatus(ctx, requestID)
 		return status, status.Settled(), err
 	})
@@ -131,31 +134,66 @@ func (c *Client) WaitForTrustRequest(ctx context.Context, requestID string, inte
 // WaitForRequest polls a request until it settles or ctx is done. Blocking is
 // the client's job, not the protocol's: approval can take minutes or never
 // come, so a long-held connection through the relay chain would be the fragile
-// part rather than the poll.
-func (c *Client) WaitForRequest(ctx context.Context, requestID string, interval time.Duration) (RequestStatus, error) {
-	return waitFor(ctx, interval, func() (RequestStatus, bool, error) {
+// part rather than the poll. known is what the caller already holds for the
+// request: the answer that created it, or only its ID to resume one. See
+// waitFor for what it answers when ctx ends first, and which poll failures it
+// waits through.
+func (c *Client) WaitForRequest(ctx context.Context, known RequestStatus, interval time.Duration) (RequestStatus, error) {
+	requestID := known.RequestID
+	return waitFor(ctx, known, known.Status != "", interval, func() (RequestStatus, bool, error) {
 		status, err := c.RequestStatus(ctx, requestID)
 		return status, status.Settled(), err
 	})
 }
 
-// waitFor polls until poll reports a settled answer, poll fails, or ctx is
-// done.
-func waitFor[T any](ctx context.Context, interval time.Duration, poll func() (T, bool, error)) (T, error) {
+// waitFor polls until poll reports a settled answer or a failure that another
+// poll would only repeat, or ctx is done.
+//
+// A poll that fails for any other reason — it timed out, the relay dropped
+// it, the service answered 5xx — says nothing about the request, which is
+// still waiting on a person: it is polled again. A request outlives any one
+// wait, so a wait that ends before the answer comes is not a failure either:
+// it answers with the last status it knew, still pending, for the caller to
+// report as such and resume later — the one it started with (known, when
+// read) if no poll answered. Only a wait that never knew a status answers
+// with an error.
+func waitFor[T any](ctx context.Context, known T, read bool, interval time.Duration, poll func() (T, bool, error)) (T, error) {
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
+	last := known
+	var lastErr error
 	for {
 		status, settled, err := poll()
-		if err != nil || settled {
+		switch {
+		case err == nil && settled:
+			return status, nil
+		case err == nil:
+			last, read = status, true
+		case permanent(err):
 			return status, err
+		default:
+			lastErr = err
 		}
 		select {
 		case <-ctx.Done():
-			return status, ctx.Err()
+			if read {
+				return last, nil
+			}
+			if lastErr != nil {
+				return last, lastErr
+			}
+			return last, ctx.Err()
 		case <-time.After(interval):
 		}
 	}
+}
+
+// permanent reports whether a poll failure would only be repeated by polling
+// again: the service does not know the request, will not show it to this
+// caller, or refuses the call itself.
+func permanent(err error) bool {
+	return errors.Is(err, ErrNotFound) || errors.Is(err, ErrDenied) || errors.Is(err, ErrInvalid)
 }
 
 // callTimeout bounds every call but a use, which waits for UseTimeout.

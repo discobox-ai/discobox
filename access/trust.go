@@ -112,7 +112,7 @@ func runTrust(ctx context.Context, args []string) int {
 		waitCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		out.pending("trust", status.RequestID, true)
-		settled, err := client.WaitForTrustRequest(waitCtx, status.RequestID, 2*time.Second)
+		settled, err := client.WaitForTrustRequest(waitCtx, status, 2*time.Second)
 		if err != nil {
 			return out.report(err)
 		}
@@ -124,7 +124,7 @@ func runTrust(ctx context.Context, args []string) int {
 		status = settled
 	}
 
-	return out.trustStatus(status)
+	return waited(out.trustStatus(status), input.Wait && !status.Settled())
 }
 
 func (out *emitter) trustStatus(status agentcreds.TrustRequestStatus) int {

@@ -5,6 +5,8 @@ import (
 	"flag"
 	"strings"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/agentcreds"
 )
 
 // runWait resumes an existing request. The kind is explicit because request
@@ -34,15 +36,15 @@ func runWait(ctx context.Context, args []string) int {
 	client := newClient()
 	out.pending(kind, requestID, true)
 	if kind == "trust" {
-		status, err := client.WaitForTrustRequest(waitCtx, requestID, 2*time.Second)
+		status, err := client.WaitForTrustRequest(waitCtx, agentcreds.TrustRequestStatus{RequestID: requestID}, 2*time.Second)
 		if err != nil {
 			return out.report(err)
 		}
-		return out.trustStatus(status)
+		return waited(out.trustStatus(status), !status.Settled())
 	}
-	status, err := client.WaitForRequest(waitCtx, requestID, 2*time.Second)
+	status, err := client.WaitForRequest(waitCtx, agentcreds.RequestStatus{RequestID: requestID}, 2*time.Second)
 	if err != nil {
 		return out.report(err)
 	}
-	return out.requestStatus(status)
+	return waited(out.requestStatus(status), !status.Settled())
 }

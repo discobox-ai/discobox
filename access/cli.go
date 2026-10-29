@@ -51,6 +51,11 @@ const (
 	exitOK    = 0
 	exitError = 1
 	exitUsage = 2
+	// exitPending is a wait that ended before the request was answered. It
+	// is neither approval nor failure: the request is still open, and the
+	// output says how to resume. A script that runs on `&&` must not take it
+	// for approval.
+	exitPending = 3
 )
 
 // debugHTTP is set by --debug for one Run: every call to the credentials
@@ -202,7 +207,9 @@ func usage(w io.Writer) {
 
   %[1]s wait [--json] [--timeout 1h] request|trust REQUEST_ID
       Wait for an existing credential or trust request by ID without creating
-      another. Flags precede the kind and ID. Denial exits non-zero.
+      another. Flags precede the kind and ID. Denial exits 1; a wait that
+      runs out with the request still pending prints it pending and exits 3
+      (wait again on the same ID). A failed poll does not end the wait.
 
       While waiting, keep monitoring the running execution even if your shell
       tool yields a session ID. Resume the authorized task after approval;
