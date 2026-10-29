@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -109,7 +110,10 @@ func TestTheRegistryAdmitsOnlyThePoolBuilder(t *testing.T) {
 	root := prepare(t)
 	cfg := read(t, root, buildkitagent.ConfigFile)
 	dir := buildkitagent.RegistryTLSDir(root, "proj", "pool")
-	if !strings.Contains(cfg, `[registry."`+buildkitagent.RegistryHost+`"]`) || !strings.Contains(cfg, "keypair") || !strings.Contains(cfg, dir) {
+	// Quoted paths spell the directory as a quoted string does: on Windows,
+	// with its separators escaped.
+	quotedDir := strings.Trim(strconv.Quote(dir), `"`)
+	if !strings.Contains(cfg, `[registry."`+buildkitagent.RegistryHost+`"]`) || !strings.Contains(cfg, "keypair") || !strings.Contains(cfg, quotedDir) {
 		t.Errorf("buildkitd presents no certificate to the registry:\n%s", cfg)
 	}
 	// Left unsaid, buildkitd speaks plaintext to a loopback registry.
@@ -118,7 +122,7 @@ func TestTheRegistryAdmitsOnlyThePoolBuilder(t *testing.T) {
 	}
 	env := read(t, root, buildkitagent.RegistryEnvironmentFile)
 	for _, name := range []string{"REGISTRY_HTTP_TLS_CERTIFICATE", "REGISTRY_HTTP_TLS_KEY", "REGISTRY_HTTP_TLS_CLIENTCAS"} {
-		if !strings.Contains(lineFor(t, env, name), dir) {
+		if line := lineFor(t, env, name); !strings.Contains(line, dir) && !strings.Contains(line, quotedDir) {
 			t.Errorf("%s does not name the registry's own material:\n%s", name, env)
 		}
 	}
