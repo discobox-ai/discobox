@@ -478,13 +478,3 @@ func validName(name string) bool {
 	}
 	return true
 }
-
-// ReadValue reads the value kept at path, for a process started with it in
-// its environment.
-func ReadValue(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
