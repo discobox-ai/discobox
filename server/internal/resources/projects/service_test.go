@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -145,7 +146,7 @@ func seedSourceProject(ctx context.Context, t *testing.T, st *store.Store) *mode
 	}
 	if err := st.CreateSecretBinding(ctx, &model.SecretBinding{
 		ProjectID: project.ID, SecretID: secret.ID, TargetKind: model.SecretBindingTargetHarnessConfig, TargetID: config.ID,
-		Use: true, EnvName: "CODEX_TOKEN", Routes: []model.SecretRoute{{Host: "api.openai.com"}},
+		Use: true, EnvName: "CODEX_TOKEN", Routes: []model.SecretRoute{{Hosts: []string{"api.openai.com"}}},
 	}, store.BindingChange{Actor: "user-1"}); err != nil {
 		t.Fatalf("bind secret: %v", err)
 	}
@@ -283,7 +284,7 @@ func TestCreateProjectCopiesProvidersPoolsAndConfiguredHarnesses(t *testing.T) {
 		t.Fatalf("list bindings: %v", err)
 	}
 	if len(bindings) != 1 || bindings[0].SecretID != secrets[0].ID || bindings[0].EnvName != "CODEX_TOKEN" ||
-		len(bindings[0].Routes) != 1 || bindings[0].Routes[0].Host != "api.openai.com" {
+		len(bindings[0].Routes) != 1 || !slices.Equal(bindings[0].Routes[0].Hosts, []string{"api.openai.com"}) {
 		t.Fatalf("bindings = %#v; want one pointing at the copied secret, with its routes", bindings)
 	}
 }

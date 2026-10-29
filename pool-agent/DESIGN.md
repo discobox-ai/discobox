@@ -1760,17 +1760,34 @@ flowchart LR
   of them reaches a sandbox as an update. The watcher stages the new lists
   beside those of any sentinel leaving before it moves the sentinel set, so no
   sentinel is ever swappable without its lists. `Authorize` holds the request
-  to every list of every sentinel with `secretroute.Decide`: in each list,
-  every reading of its path (`secretroute.RequestPaths`: decoded, and with an
-  encoded `/` kept in its segment) must fall on a route, and the most specific
-  routes it falls on must not be blocked. A list never unblocks what another
-  blocks, `*` covers every host (ADR 26-10-27-939), and a sentinel with no
-  lists is sent nowhere.
-- **SecretsFile is versioned** (`secretsDoc.Version`, 2 since route lists). A
-  file with no version is read as its writer meant it (`readSecretsDoc`): one
-  route list a sentinel, a route stored with a judge's use as blocked, and a
-  sentinel it held to no route as held to any host — what that pool enforced —
-  until the control plane pushes the sentinel's lists. A blocked route is what a route a judge used to read
+  — its method, host, URL, headers (for the method overrides they carry) and
+  the body the proxy hands it — to every list of
+  every sentinel with `secretroute.Decide`: in each list, every reading of its
+  path (`secretroute.RequestPaths`: decoded, and with an encoded `/` kept in
+  its segment) must fall on a route whose hosts, methods (every one the
+  request names, overrides included), paths and GraphQL or MCP block all
+  match, and the most specific routes it falls on must not be
+  blocked. A list never unblocks what another blocks, `*` covers every host
+  (ADR 26-10-27-939), and a sentinel with no lists is sent nowhere.
+- **Routes are written normalized** (`UpsertSandboxSentinels`,
+  `secretroute.Normalize`). One that does not normalize — the control plane
+  validates every route, so only a pool of another version meets one — fails
+  closed: an open one is left out, and a blocked one, or a list left with
+  none, makes the list a blocked `*` alone, which refuses everything.
+- **SecretsFile is versioned** (`secretsDoc.Version`, 3 since routes took ADR
+  26-10-27-880 §4's shape), and `readSecretsDoc` reads each version as its
+  writer meant it. Before 3 a route was one host covering the hosts beneath
+  it and one path prefix, read through `secretroute.FromLegacyList` (§8),
+  as the control plane reads its own stored routes: a route `FromLegacy`
+  refuses — a path holding `*`, literal then and a glob now, or `=` — fails
+  closed. An open one is left out; a blocked one blocks its path cut back
+  before the segment no route can say, which outranks every open route it was
+  a carve-out from; and a blocked one on a host that does not read, or a
+  list left with no routes, makes the list a blocked `*` alone
+  (`RefusingList`). Each route not converted exactly is logged. A file with no version also has one route list a sentinel, a route
+  stored with a judge's use as blocked, and a sentinel it held to no route as
+  held to any host — what that pool enforced — until the control plane pushes
+  the sentinel's lists. A blocked route is what a route a judge used to read
   became, so removing the judge sent nothing on it unjudged
   ([ADR 26-10-27-880](../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)).
   A refusal says which, and the proxy records it as `route: <reason>`.

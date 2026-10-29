@@ -34,7 +34,7 @@ func checkRecipe(recipe *model.ExchangeRecipe, routes []model.SecretRoute) error
 		problems = append(problems, fmt.Sprintf("url %q is not an https URL", recipe.URL))
 	case len(routes) == 0:
 		problems = append(problems, "an exchange secret has routes, and its url must sit inside them: give it some")
-	case !secretroute.HostAllowed([][]secretroute.Route{model.ProxyRoutes(routes)}, hostscope.Normalize(u.Hostname())):
+	case !secretroute.HostAllowed([][]secretroute.Route{routes}, hostscope.Normalize(u.Hostname())):
 		problems = append(problems, fmt.Sprintf("url host %s is outside the secret's routes: a key is only sent where its token may go", u.Hostname()))
 	}
 	if len(recipe.Fields) == 0 {

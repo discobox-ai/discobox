@@ -4,12 +4,14 @@ import (
 	"context"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"gorm.io/gorm"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -54,7 +56,7 @@ func TestAgentCredentialRequestIsPendingAndRecordsWhatWasAsked(t *testing.T) {
 	if req.Status != model.SecretRequestStatusPending {
 		t.Fatalf("status = %q, want pending", req.Status)
 	}
-	if req.Name != "github" || req.EnvName != "GITHUB_TOKEN" || !reflect.DeepEqual(req.Routes, []model.SecretRoute{{Host: "api.github.com"}}) ||
+	if req.Name != "github" || req.EnvName != "GITHUB_TOKEN" || !reflect.DeepEqual(req.Routes, []model.SecretRoute{{Hosts: []string{"api.github.com"}}}) ||
 		req.Justification == "" || req.Purpose != model.SecretPurposeUse || req.RequestedBy != "agent:"+testSandboxID {
 		t.Fatalf("request = %#v, want the ask recorded verbatim, one route per host", req)
 	}
@@ -113,6 +115,48 @@ func TestAgentCredentialRequestReusesAnOpenAsk(t *testing.T) {
 	}
 }
 
+// An agent asks with routes beside hosts: each host is one route to that
+// exact host, and each route is read in the typed form. An ask that names
+// neither, or a route that does not parse, is refused naming it; and an ask
+// repeats an open one when it asks for the same routes in any order.
+func TestAgentCredentialRequestAsksWithRoutes(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, _ := newAgentCredentialService(t)
+	ask := func(hosts, routes []string) (*model.SecretRequest, error) {
+		return svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+			SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Hosts: hosts, Routes: routes,
+		})
+	}
+	first, err := ask([]string{"uploads.github.com"}, []string{"GET api.github.com/repos/acme/web/**", "api.github.com/graphql graphql=query"})
+	if err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+	want := []model.SecretRoute{
+		{Hosts: []string{"uploads.github.com"}},
+		{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}, Paths: []string{"/repos/acme/web/**"}},
+		{Hosts: []string{"api.github.com"}, Paths: []string{"/graphql"}, GraphQL: &secretroute.GraphQL{Operations: []string{"query"}}},
+	}
+	if !reflect.DeepEqual(first.Routes, want) {
+		t.Fatalf("routes = %+v, want %+v", first.Routes, want)
+	}
+	again, err := ask(nil, []string{"api.github.com/graphql graphql=query", "uploads.github.com", "GET api.github.com/repos/acme/web/**"})
+	if err != nil || again.ID != first.ID {
+		t.Fatalf("the same routes in another order = %+v, %v; want the open %s", again, err, first.ID)
+	}
+	other, err := ask(nil, []string{"api.github.com/graphql graphql=mutation"})
+	if err != nil || other.ID == first.ID {
+		t.Fatalf("other routes = %+v, %v; want a request of their own", other, err)
+	}
+
+	if _, err := ask(nil, nil); !isStatus(err, http.StatusBadRequest) {
+		t.Fatalf("an ask naming no destination = %v, want 400", err)
+	}
+	_, err = ask(nil, []string{"api.github.com/x graphql=delete"})
+	if !isStatus(err, http.StatusBadRequest) || !strings.Contains(err.Error(), "api.github.com/x graphql=delete") {
+		t.Fatalf("a route that does not parse = %v, want 400 naming it", err)
+	}
+}
+
 // A person's approval binds the secret on the discobox that asked, in the
 // variable it named and to the routes it asked for, records who decided and
 // what it made, and marks the discobox to be sent it — all at once.
@@ -137,7 +181,7 @@ func TestApprovingAnAgentRequestBindsTheSecretOnTheSandbox(t *testing.T) {
 	}
 	if binding.TargetKind != model.SecretBindingTargetSandbox || binding.TargetID != testSandboxID || !binding.Use || binding.Delegate ||
 		binding.EnvName != "GITHUB_TOKEN" || binding.RequestID != req.ID || binding.CreatedBy != "user-1" ||
-		!reflect.DeepEqual(binding.Routes, []model.SecretRoute{{Host: "api.github.com"}}) {
+		!reflect.DeepEqual(binding.Routes, []model.SecretRoute{{Hosts: []string{"api.github.com"}}}) {
 		t.Fatalf("binding = %+v", binding)
 	}
 	if len(marks.bindings) != 1 || marks.bindings[0].ID != binding.ID {
@@ -207,7 +251,7 @@ func TestGrantedCredentialIsListedForItsSandbox(t *testing.T) {
 	secret := createRoutedSecret(ctx, t, svc, "github", "github.com", 0)
 	project := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetProject, TargetID: "project-1", Use: true, EnvName: "GH_TOKEN"})
 	delegate := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: testSandboxID, Delegate: true,
-		Routes: []model.SecretRoute{{Host: "api.github.com"}}})
+		Routes: []model.SecretRoute{{Hosts: []string{"api.github.com"}}}})
 
 	credentials, err := svc.ListSandboxCredentials(ctx, testPoolID, testSandboxID)
 	if err != nil {

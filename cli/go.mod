@@ -71,7 +71,9 @@ require (
 	github.com/ogen-go/ogen v1.20.3 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
+	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
+	github.com/vektah/gqlparser/v2 v2.5.32 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect
 	github.com/yuin/goldmark v1.7.13 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect

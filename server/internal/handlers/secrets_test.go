@@ -140,7 +140,7 @@ func (fakeSecretService) ListSecretBindingEvents(context.Context, string, svcapi
 
 func (fakeSecretService) ListBoundSecrets(context.Context, string, string, string) ([]svcapi.BoundSecret, error) {
 	binding := fakeSecretBinding()
-	return []svcapi.BoundSecret{{Binding: binding, SecretName: "github", RouteLists: [][]model.SecretRoute{{{Host: "*"}}, binding.Routes}}}, nil
+	return []svcapi.BoundSecret{{Binding: binding, SecretName: "github", RouteLists: [][]model.SecretRoute{{{Hosts: []string{"*"}}}, binding.Routes}}}, nil
 }
 
 func (fakeSecretService) ResolveSandboxSecret(context.Context, string, string, string, string) (*model.SandboxSecretResolution, error) {
@@ -174,7 +174,7 @@ func fakeSecret() model.Secret {
 		ProjectID:      "project-1",
 		Name:           "github",
 		Type:           model.SecretTypeToken,
-		Routes:         []model.SecretRoute{{Host: "github.com"}},
+		Routes:         []model.SecretRoute{{Hosts: []string{"github.com"}}},
 		MaxBindingTTL:  3600,
 		EncryptedValue: []byte(`{"token":"encrypted-token"}`),
 		CreatedAt:      now,
@@ -188,7 +188,7 @@ func fakeSecretRequest() model.SecretRequest {
 		ID:          "request-1",
 		ProjectID:   "project-1",
 		RequestedBy: "user-1",
-		Routes:      []model.SecretRoute{{Host: "api.github.com"}, {Host: "api.githubcopilot.com"}},
+		Routes:      []model.SecretRoute{{Hosts: []string{"api.github.com"}}, {Hosts: []string{"api.githubcopilot.com"}}},
 		SecretID:    "secret-1",
 		Status:      model.SecretRequestStatusApproved,
 		BindingID:   "bind-1",
@@ -208,7 +208,7 @@ func fakeSecretBinding() model.SecretBinding {
 		TargetID:   "sb-1",
 		Use:        true,
 		EnvName:    "GH_TOKEN",
-		Routes:     []model.SecretRoute{{Host: "api.github.com"}, {Host: "api.githubcopilot.com"}},
+		Routes:     []model.SecretRoute{{Hosts: []string{"api.github.com"}}, {Hosts: []string{"api.githubcopilot.com"}}},
 		CreatedBy:  "user-1",
 		CreatedAt:  now,
 		UpdatedAt:  now,
@@ -275,7 +275,7 @@ func TestSecretBindingsAndRequestsCarryTheirRoutes(t *testing.T) {
 	hosts := func(routes []serverapi.SecretRoute) []string {
 		var out []string
 		for _, route := range routes {
-			out = append(out, route.Host)
+			out = append(out, route.Hosts...)
 		}
 		return out
 	}
@@ -301,7 +301,7 @@ func TestSecretBindingsAndRequestsCarryTheirRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	bound := boundRes.(*serverapi.ListBoundSecretsBody).BoundSecrets
-	if len(bound) != 1 || len(bound[0].Routes) != 2 || bound[0].Routes[0][0].Host != "*" || bound[0].From != serverapi.BoundSecretFromSandbox {
+	if len(bound) != 1 || len(bound[0].Routes) != 2 || !slices.Equal(bound[0].Routes[0][0].Hosts, []string{"*"}) || bound[0].From != serverapi.BoundSecretFromSandbox {
 		t.Fatalf("bound = %+v, want the secret's list then the binding's", bound)
 	}
 	deleteRes, err := h.DeleteSecretBinding(ctx, serverapi.DeleteSecretBindingParams{ProjectId: "project-1", BindingId: "bind-1"})
@@ -335,7 +335,7 @@ func TestSecretBindingsAndRequestsCarryTheirRoutes(t *testing.T) {
 func TestSandboxCredentialRequestStatusCarriesWhatWasGranted(t *testing.T) {
 	approved := &model.SecretRequest{ID: "sreq-1", Status: model.SecretRequestStatusApproved, Name: "asked", EnvName: "GH_TOKEN"}
 	expires := time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC)
-	timed := agentCredentialRequestStatus(approved, &model.SecretBinding{Use: true, Routes: []model.SecretRoute{{Host: "api.github.com"}}, ExpiresAt: &expires}, nil, "github")
+	timed := agentCredentialRequestStatus(approved, &model.SecretBinding{Use: true, Routes: []model.SecretRoute{{Hosts: []string{"api.github.com"}}}, ExpiresAt: &expires}, nil, "github")
 	if got, ok := timed.ExpiresAt.Get(); !ok || !got.Equal(expires) {
 		t.Fatalf("expiresAt = %v (set %v), want %v", got, ok, expires)
 	}
@@ -344,7 +344,7 @@ func TestSandboxCredentialRequestStatusCarriesWhatWasGranted(t *testing.T) {
 		t.Fatalf("status = %+v, want the grant's name, variable and hosts", timed)
 	}
 
-	forever := agentCredentialRequestStatus(approved, &model.SecretBinding{Use: true}, &model.Secret{Routes: []model.SecretRoute{{Host: "github.com"}}}, "github")
+	forever := agentCredentialRequestStatus(approved, &model.SecretBinding{Use: true}, &model.Secret{Routes: []model.SecretRoute{{Hosts: []string{"github.com"}}}}, "github")
 	if !slices.Equal(forever.Hosts, []string{"github.com"}) {
 		t.Fatalf("hosts = %v, want the secret's when the binding names none", forever.Hosts)
 	}
@@ -353,7 +353,7 @@ func TestSandboxCredentialRequestStatusCarriesWhatWasGranted(t *testing.T) {
 	}
 
 	delegated := &model.SecretRequest{ID: "sreq-2", Status: model.SecretRequestStatusApproved, Name: "github", EnvName: "X", Purpose: model.SecretPurposeDelegate}
-	status := agentCredentialRequestStatus(delegated, &model.SecretBinding{Delegate: true, Routes: []model.SecretRoute{{Host: "github.com"}}}, nil, "github")
+	status := agentCredentialRequestStatus(delegated, &model.SecretBinding{Delegate: true, Routes: []model.SecretRoute{{Hosts: []string{"github.com"}}}}, nil, "github")
 	if status.EnvVar.IsSet() || status.Purpose != serverapi.SandboxCredentialRequestStatusPurposeDelegate {
 		t.Fatalf("status = %+v, want a delegation in no variable", status)
 	}
@@ -403,7 +403,7 @@ func TestAHarnessConfigWithABlockedCaptureRouteSerializes(t *testing.T) {
 	config := model.HarnessConfig{ID: "hc-1", ProjectID: "project-1", Slug: "codex", Name: "Codex", SaveBack: &harnesscapture.Definition{
 		Version: 1, ExportCommand: []string{"export"}, HandoffCommand: []string{"handoff"}, Settings: []harnesscapture.Setting{}, Watch: []string{"~/.codex"},
 		Providers: []harnesscapture.Provider{{ID: "vendor", EnvName: "API_KEY", Types: []string{"token"},
-			Routes: []harnesscapture.Route{{Host: "api.vendor.example"}, {Host: "api.vendor.example", Path: "/admin", Blocked: true}}}},
+			Routes: []harnesscapture.Route{{Hosts: []string{"api.vendor.example"}}, {Hosts: []string{"api.vendor.example"}, Paths: []string{"/admin"}, Blocked: true}}}},
 	}}
 	body, err := svcapi.Convert[apimodel.HarnessConfig](config)
 	if err != nil {

@@ -3,6 +3,7 @@ package copilot
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/harness/internal/featuretest"
 	"github.com/discobox-ai/discobox/harness/internal/launchertest"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -236,10 +238,10 @@ type imageManifest struct {
 		RelaunchCommand []string       `json:"relaunchCommand"`
 		Files           []harness.File `json:"files"`
 		Secrets         []struct {
-			Name     string                `json:"name"`
-			Required bool                  `json:"required"`
-			Delivery string                `json:"delivery"`
-			Routes   []harness.SecretRoute `json:"routes"`
+			Name     string                 `json:"name"`
+			Required bool                   `json:"required"`
+			Delivery string                 `json:"delivery"`
+			Routes   []harnesscapture.Route `json:"routes"`
 		} `json:"secrets"`
 		Config struct {
 			Ports []harness.ConfigPort `json:"ports"`
@@ -259,11 +261,14 @@ func TestTheTokensRoutesSendCopilotsOwnTrafficAndBlockTheRest(t *testing.T) {
 			continue
 		}
 		for i, route := range secret.Routes {
-			host, path, err := secretroute.Normalize(route.Host, route.Path)
+			normalized, err := secretroute.Normalize(secretroute.Route(route))
 			if err != nil {
 				t.Fatalf("route %d: %v", i, err)
 			}
-			routes = append(routes, secretroute.Route{Host: host, Path: path, Blocked: route.Blocked})
+			if !reflect.DeepEqual(normalized, secretroute.Route(route)) {
+				t.Fatalf("route %d = %+v, want it written as it normalizes, %+v", i, route, normalized)
+			}
+			routes = append(routes, normalized)
 		}
 	}
 	for _, tc := range []struct {
@@ -283,12 +288,13 @@ func TestTheTokensRoutesSendCopilotsOwnTrafficAndBlockTheRest(t *testing.T) {
 		{"https://github.com/org/repo", false},
 	} {
 		host := strings.SplitN(strings.TrimPrefix(tc.url, "https://"), "/", 2)[0]
-		if allowed, reason := secretroute.Decide([][]secretroute.Route{routes}, host, tc.url); allowed != tc.allowed {
+		request := secretroute.Request{Method: "POST", Host: host, URL: tc.url}
+		if allowed, reason := secretroute.Decide([][]secretroute.Route{routes}, request); allowed != tc.allowed {
 			t.Fatalf("%s: allowed = %v (%s), want %v", tc.url, allowed, reason, tc.allowed)
 		}
 	}
-	if matched := secretroute.Match(routes, "example.com", "/"); len(matched) != 0 {
-		t.Fatalf("example.com: matched %+v, want no route", matched)
+	if secretroute.HostAllowed([][]secretroute.Route{routes}, "example.com") {
+		t.Fatal("example.com: allowed, want no route to it")
 	}
 }
 

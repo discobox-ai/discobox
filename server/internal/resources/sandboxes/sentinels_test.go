@@ -3,6 +3,7 @@ package sandboxes
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/discobox-ai/discobox/pkg/secretroute"
@@ -17,7 +18,7 @@ func sentinelFixture(t *testing.T) (*Service, *recordingProvider, *model.Secret)
 	svc, rec := newAssignFixture(t)
 	st := svc.store
 	sec := bearerSecret(t, st, "github", "")
-	if _, err := sec.ReplaceRoutes([]model.SecretRoute{{Host: "github.com"}}); err != nil {
+	if _, err := sec.ReplaceRoutes([]model.SecretRoute{{Hosts: []string{"github.com"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.UpdateSecret(ctx, sec); err != nil {
@@ -62,7 +63,7 @@ func TestSentinelDeliveryRetriesWithoutFailingTheSandbox(t *testing.T) {
 	if len(rec.updated) != 1 || len(rec.updated[0]) != 1 || rec.updated[0][0] != "SENT-1" {
 		t.Fatalf("updated = %v, want the sentinel set delivered on the retry", rec.updated)
 	}
-	if got := rec.routes[0]["SENT-1"]; len(got) != 1 || len(got[0]) != 1 || got[0][0].Host != "github.com" {
+	if got := rec.routes[0]["SENT-1"]; len(got) != 1 || len(got[0]) != 1 || !slices.Equal(got[0][0].Hosts, []string{"github.com"}) {
 		t.Fatalf("routes = %v, want the secret's routes delivered with it", rec.routes)
 	}
 }
@@ -123,7 +124,7 @@ func TestASendThatCarriedStaleRoutesMarksTheDeliveryAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	sec := bearerSecret(t, st, "github", "")
-	if _, err := sec.ReplaceRoutes([]model.SecretRoute{{Host: "github.com"}}); err != nil {
+	if _, err := sec.ReplaceRoutes([]model.SecretRoute{{Hosts: []string{"github.com"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.UpdateSecret(ctx, sec); err != nil {
@@ -134,7 +135,7 @@ func TestASendThatCarriedStaleRoutesMarksTheDeliveryAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current := map[string][][]secretroute.Route{"SENT-1": {{{Host: "github.com"}}}}
+	current := map[string][][]secretroute.Route{"SENT-1": {{{Hosts: []string{"github.com"}}}}}
 	if err := markSentinelsIfStale(ctx, st, svc.engine, sb, current); err != nil {
 		t.Fatal(err)
 	}

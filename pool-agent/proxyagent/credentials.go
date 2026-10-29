@@ -63,7 +63,8 @@ type createCredentialRequestDoc struct {
 	SandboxID       string   `json:"sandboxId"`
 	Name            string   `json:"name"`
 	EnvVar          string   `json:"envVar,omitempty"`
-	Hosts           []string `json:"hosts"`
+	Hosts           []string `json:"hosts,omitempty"`
+	Routes          []string `json:"routes,omitempty"`
 	Justification   string   `json:"justification,omitempty"`
 	GrantTTLSeconds int64    `json:"grantTTLSeconds,omitempty"`
 	Purpose         string   `json:"purpose,omitempty"`
@@ -235,6 +236,7 @@ func (b *credentialBroker) Request(ctx context.Context, body agentcreds.RequestB
 		Name:            body.Name,
 		EnvVar:          body.EnvVar,
 		Hosts:           body.Hosts,
+		Routes:          body.Routes,
 		Justification:   body.Justification,
 		GrantTTLSeconds: body.GrantTTLSeconds,
 		Purpose:         body.Purpose,

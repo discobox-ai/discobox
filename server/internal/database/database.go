@@ -174,6 +174,11 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := retireSecretGrants(write); err != nil {
 		return err
 	}
+	// After the two retirements above, which read routes in the shape they
+	// were stored in.
+	if err := upgradeRouteShapes(write); err != nil {
+		return err
+	}
 	if err := retireHarnessImages(write); err != nil {
 		return err
 	}

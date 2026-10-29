@@ -132,18 +132,7 @@ func (h *Handler) ListBoundSecrets(ctx context.Context, params serverapi.ListBou
 			out.ExpiresAt = serverapi.NewOptDateTime(*item.ExpiresAt)
 		}
 		for _, list := range item.RouteLists {
-			routes := make([]apimodel.SecretRoute, 0, len(list))
-			for _, route := range list {
-				api := apimodel.SecretRoute{Host: route.Host}
-				if route.Path != "" {
-					api.Path = serverapi.NewOptString(route.Path)
-				}
-				if route.Blocked {
-					api.Blocked = serverapi.NewOptBool(true)
-				}
-				routes = append(routes, api)
-			}
-			out.Routes = append(out.Routes, routes)
+			out.Routes = append(out.Routes, services.SecretRoutesFromModel(list))
 		}
 		body.BoundSecrets = append(body.BoundSecrets, out)
 	}

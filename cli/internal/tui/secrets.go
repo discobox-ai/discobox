@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -743,7 +742,9 @@ func describeSecret(secret Secret, now time.Time) []section {
 		if i > 0 {
 			label = "or route"
 		}
-		where := route.Host + route.Path
+		open := route
+		open.Blocked = false
+		where := secretroute.Format(open)
 		value, tone := where+" · allowed", toneDim
 		if route.Blocked {
 			value, tone = where+" · blocked", toneAccent
@@ -1103,7 +1104,7 @@ func ttlSeconds(f *form, key string) (int64, bool) {
 //
 // routes are the routes the card opens on: an existing secret's own, or the
 // ones a request asks for.
-func secretForm(existing *Secret, routes []SecretRoute) *form {
+func secretForm(existing *Secret, routes []secretroute.Route) *form {
 	const what, value = "the credential", "what it is"
 	editing := existing != nil
 	oauth := func(f *form) bool { return f.chosen("kind") == "oauth" }
@@ -1312,22 +1313,23 @@ func secretForm(existing *Secret, routes []SecretRoute) *form {
 }
 
 // secretRouteRows are the rows a secret's routes are typed in: one per route
-// it has, and one empty for another. A route is HOST[/PATH][=blocked], each on
-// its own row; emptying a row removes that route.
-func secretRouteRows(section string, routes []SecretRoute) []formRow {
+// it has, and one empty for another. A route is typed as secretroute.Parse
+// reads one (secretroute.Syntax), each on its own row; emptying a row removes that
+// route.
+func secretRouteRows(section string, routes []secretroute.Route) []formRow {
 	rows := make([]formRow, 0, len(routes)+1)
-	for i, route := range append(append([]SecretRoute(nil), routes...), SecretRoute{}) {
+	for i := range len(routes) + 1 {
 		label := "route"
 		if i > 0 {
 			label = "or route"
 		}
 		value := ""
-		if route.Host != "" {
-			value = secretroute.Format(secretroute.Route{Host: route.Host, Path: route.Path, Blocked: route.Blocked})
+		if i < len(routes) {
+			value = secretroute.Format(routes[i])
 		}
-		row := textRow(secretRouteKey+strconv.Itoa(i), label, "e.g. githubcopilot.com/mcp=blocked", value)
+		row := textRow(secretRouteKey+strconv.Itoa(i), label, "e.g. GET api.github.com/repos/*/*/pulls/**", value)
 		row.section = section
-		row.hint = "HOST[/PATH][=blocked], or * for any host: every request it is sent in must fall on one, the most specific deciding; a blocked one refuses · a secret with none is sent nowhere"
+		row.hint = secretroute.Syntax + " · a host is exact, *.h is beneath h, * for any host · =blocked refuses · with none it is sent nowhere"
 		if i == len(routes) && i > 0 {
 			row.input.Placeholder = "another route (optional)"
 		}
@@ -1341,7 +1343,7 @@ const secretRouteKey = "route:"
 
 // formRoutes are the routes typed on the card, in order, empty rows dropped.
 // why is set, naming the row, when one is not a route.
-func formRoutes(f *form) (routes []SecretRoute, why string) {
+func formRoutes(f *form) (routes []secretroute.Route, why string) {
 	for _, row := range f.rows {
 		if !strings.HasPrefix(row.key, secretRouteKey) {
 			continue
@@ -1352,9 +1354,9 @@ func formRoutes(f *form) (routes []SecretRoute, why string) {
 		}
 		route, err := secretroute.Parse(text)
 		if err != nil {
-			return nil, fmt.Sprintf("route %q: %v", text, err)
+			return nil, err.Error()
 		}
-		routes = append(routes, SecretRoute{Host: route.Host, Path: route.Path, Blocked: route.Blocked})
+		routes = append(routes, route)
 	}
 	return routes, ""
 }
@@ -1543,9 +1545,9 @@ func (m *Model) editSecretForm(server string, secret Secret) tea.Cmd {
 			f.err = why
 			return nil
 		}
-		if !slices.Equal(routes, was.Routes) {
+		if routesText(routes) != routesText(was.Routes) {
 			if routes == nil {
-				routes = []SecretRoute{}
+				routes = []secretroute.Route{}
 			}
 			update.Routes = &routes
 		}

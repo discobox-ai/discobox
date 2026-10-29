@@ -5,13 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/pkg/hostscope"
-
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/hostscope"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/services"
@@ -68,7 +67,7 @@ func (s *Service) ListSandboxCredentials(ctx context.Context, poolID, sandboxID 
 }
 
 // sandboxCredential is a binding as the protocol lists it: the hosts are
-// those of the narrowest routes it is held to — the binding's when it has
+// those the open routes name of the narrowest list it is held to — the binding's when it has
 // any, else its parent's, else the secret's.
 func sandboxCredential(secret *model.Secret, applied store.EffectiveBinding, purpose string) services.SandboxCredential {
 	routes := secret.Routes
@@ -78,17 +77,11 @@ func sandboxCredential(secret *model.Secret, applied store.EffectiveBinding, pur
 	case applied.Parent != nil && len(applied.Parent.Routes) > 0:
 		routes = applied.Parent.Routes
 	}
-	var hosts []string
-	for _, route := range routes {
-		if !route.Blocked && !slices.Contains(hosts, route.Host) {
-			hosts = append(hosts, route.Host)
-		}
-	}
 	credential := services.SandboxCredential{
 		Name:      secret.Name,
 		SecretID:  secret.ID,
 		BindingID: applied.Binding.ID,
-		Hosts:     hosts,
+		Hosts:     model.OpenRouteHosts(routes),
 		Purpose:   purpose,
 		ExpiresAt: bindingExpiry(&applied.Binding, applied.Parent),
 	}
@@ -105,8 +98,8 @@ func sandboxCredential(secret *model.Secret, applied store.EffectiveBinding, pur
 //
 // An identical pending ask is reused rather than duplicated, so an agent that
 // retries produces one inbox item instead of a pile. Identical means approving
-// either would grant the same thing: the same variable, hosts, purpose and
-// lifetime. The justification is left out; it argues for a grant and does not
+// either would grant the same thing: the same variable, routes (each host
+// asked for being one), purpose and lifetime. The justification is left out; it argues for a grant and does not
 // change which one approval mints, so a retry reworded is still a retry.
 func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID string, input services.CreateSandboxCredentialRequestBody) (*model.SecretRequest, error) {
 	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, strings.TrimSpace(input.SandboxId))
@@ -120,7 +113,6 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	}
 	name := strings.TrimSpace(input.Name)
 	envName := strings.TrimSpace(input.EnvVar.Or(""))
-	hosts := hostscope.List(input.Hosts...)
 	if name == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential name is required")
 	}
@@ -134,21 +126,16 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	case purpose == model.SecretPurposeUse && !services.EnvVarNamePattern.MatchString(envName):
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a valid environment variable name")
 	}
-	// A host is mandatory: the request's routes are what an approval binds
-	// unless the approver names others, and an agent says where it means to
-	// send what it asks for (ADR 0031 §5).
-	if len(hosts) == 0 {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a destination host")
+	// A destination is mandatory: the request's routes are what an approval
+	// binds unless the approver names others, and an agent says where it
+	// means to send what it asks for (ADR 0031 §5).
+	hosts := hostscope.List(input.Hosts...)
+	if len(hosts) == 0 && len(input.Routes) == 0 {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a destination: a host or a route")
 	}
-	// Each host is a route, read as every route is written: a host that is
-	// no host name, or `*` inside one, is refused here rather than stored.
-	routes := make([]model.SecretRoute, 0, len(hosts))
-	for _, host := range hosts {
-		routes = append(routes, model.SecretRoute{Host: host})
-	}
-	routes, err = model.NormalizeRoutes(routes)
+	routes, err := requestedRoutes(hosts, input.Routes)
 	if err != nil {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+		return nil, err
 	}
 	// The lifetime asked for is recorded, not checked against any secret: which
 	// secret answers the request is the approval's choice, and so is whether
@@ -166,7 +153,7 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 			fmt.Sprintf("a requested grant lifetime runs from 1 second to %d (thirty days); leave it out to ask for nothing in particular", int64(agentcreds.MaxGrantTTLSeconds)))
 	}
 
-	pending, err := s.store.FindPendingAgentCredentialRequests(ctx, sandbox.ProjectID, sandbox.ID, envName, hosts, purpose)
+	pending, err := s.store.FindPendingAgentCredentialRequests(ctx, sandbox.ProjectID, sandbox.ID, envName, routes, purpose)
 	if err != nil {
 		return nil, err
 	}
@@ -227,6 +214,29 @@ func (s *Service) GetSandboxCredentialRequest(ctx context.Context, poolID, sandb
 		return req, nil, nil
 	}
 	return req, binding, nil
+}
+
+// requestedRoutes are the routes an ask names, read as every route is written:
+// each host one route to that exact host, and each route in the typed form
+// (secretroute.Parse). A host that is no host name, or a route that does not
+// parse, refuses the ask, naming it, rather than being stored.
+func requestedRoutes(hosts, typed []string) ([]model.SecretRoute, error) {
+	routes := make([]model.SecretRoute, 0, len(hosts)+len(typed))
+	for _, host := range hosts {
+		routes = append(routes, model.SecretRoute{Hosts: []string{host}})
+	}
+	for _, text := range typed {
+		route, err := secretroute.Parse(text)
+		if err != nil {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+		}
+		routes = append(routes, route)
+	}
+	routes, err := model.NormalizeRoutes(routes)
+	if err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	return routes, nil
 }
 
 // requestPurpose reads what a credential is asked for. Nothing named is use.

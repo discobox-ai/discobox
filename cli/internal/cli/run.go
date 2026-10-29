@@ -213,14 +213,18 @@ turns run.userSkills off.
 is: KEY takes $KEY from this shell, KEY=@FILE reads FILE (one trailing newline
 dropped). KEY=VALUE takes the value itself, which then sits in shell history
 and the process list. It is sent anywhere unless @HOST follows: KEY@HOST,
-KEY=@FILE@HOST, KEY=VALUE@HOST send it to HOST and the hosts beneath it alone.
+KEY=@FILE@HOST, KEY=VALUE@HOST send it to HOST alone, which is exact ('*.HOST'
+for the hosts beneath it).
 
 --bind binds a project secret to the new discobox, SECRET[:VAR][@ROUTE,...]:
 the discobox receives a sentinel in VAR — the secret's name upper-snaked when
 left out, so github is GITHUB — which its pool swaps for the value where the
-secret's routes allow, narrowed by any ROUTE given (HOST[/PATH][=blocked] or
-'*'), as Copilot CLI's GitHub token is:
-github:COPILOT_GITHUB_TOKEN@api.github.com,githubcopilot.com. --delegate
+secret's routes allow, narrowed by any ROUTE given — each a host, exact,
+'*.suffix' for the hosts beneath suffix or '*' for any, optionally =blocked —
+as Copilot CLI's GitHub token is:
+'github:COPILOT_GITHUB_TOKEN@api.github.com,*.githubcopilot.com'. A route
+with methods, paths or a protocol is bound with 'discobox secret bind
+--route'. --delegate
 SECRET[@ROUTE,...] lets the new discobox give the secret to the discoboxes it
 creates instead. In --from-json, "bindings" lists them. A discobox creating one
 binds only what it may delegate, and delegates nothing.

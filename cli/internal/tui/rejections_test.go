@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // The band's whole first job: say which credential was refused and where.
@@ -187,7 +188,7 @@ func TestPressingTheRefusedBandOpensTheHarnessSetup(t *testing.T) {
 func TestPressingTheRefusedBandOpensTheSecretCard(t *testing.T) {
 	t.Parallel()
 	m, ds := workspaceWithRejection(t, secretRejection())
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "token", Routes: []SecretRoute{{Host: "api.github.com"}}}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "token", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 
 	drain(t, m, m.openRejectedRemedy(m.paneBox), 0)
 
@@ -203,8 +204,8 @@ func TestTheSecretsScreenMarksARefusedCredential(t *testing.T) {
 	t.Parallel()
 	m, _ := workspaceWithRejection(t, secretRejection())
 	m.secrets.setAll([]Secret{
-		{ID: "sec_gh", Name: "GitHub token", Routes: []SecretRoute{{Host: "api.github.com"}}},
-		{ID: "sec_openai", Name: "OpenAI key", Routes: []SecretRoute{{Host: "api.openai.com"}}},
+		{ID: "sec_gh", Name: "GitHub token", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}},
+		{ID: "sec_openai", Name: "OpenAI key", Routes: []secretroute.Route{{Hosts: []string{"api.openai.com"}}}},
 	})
 	m.secrets.width, m.secrets.height = 100, 4
 

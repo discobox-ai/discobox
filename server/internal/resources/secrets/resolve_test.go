@@ -84,7 +84,7 @@ func mustSecret(t *testing.T, st *store.Store, name, token string) *model.Secret
 	t.Helper()
 	sec := &model.Secret{
 		ProjectID: "project-1", Name: name, Type: model.SecretTypeToken,
-		Routes:        []model.SecretRoute{{Host: "*"}},
+		Routes:        []model.SecretRoute{{Hosts: []string{"*"}}},
 		MaxBindingTTL: 3600, EncryptedValue: mustTokenValue(t, token),
 	}
 	if err := st.CreateSecret(context.Background(), sec); err != nil {
@@ -253,7 +253,7 @@ func TestResolveSandboxSecretHoldsToEveryRouteList(t *testing.T) {
 	sec := mustSecret(t, st, "narrowed", "real-token")
 	createSandbox(t, st, "sb-1", "pool-1")
 	binding := mustDeliver(t, st, "sb-1", sec.ID, "TOKEN", "SENTINEL-N")
-	binding.Routes = []model.SecretRoute{{Host: "api.example.com"}}
+	binding.Routes = []model.SecretRoute{{Hosts: []string{"api.example.com"}}}
 	if err := st.UpdateSecretBinding(ctx, binding, store.BindingChange{Actor: "user-1"}); err != nil {
 		t.Fatal(err)
 	}

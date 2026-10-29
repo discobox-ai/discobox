@@ -160,14 +160,20 @@ const (
 //
 // Purpose is PurposeUse or PurposeDelegate; empty asks for PurposeUse.
 //
-// Hosts are where the credential will be sent, one or several
-// (ADR 26-10-02-393).
+// Hosts and Routes are where the credential will be sent; an ask names at
+// least one of either. A host is shorthand for one route to that exact host
+// and no host beneath it (ADR 26-10-02-393). A route is the typed form
+// `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`
+// (ADR 26-10-27-880 §4), such as `GET api.github.com/repos/o/r/**` or
+// `api.github.com/graphql graphql=query`; the protocol carries it as written
+// and the implementation reads it.
 //
 // Justification is shown to the person answering; nothing evaluates it.
 type RequestBody struct {
 	Name            string   `json:"name"`
 	EnvVar          string   `json:"envVar,omitempty"`
-	Hosts           []string `json:"hosts"`
+	Hosts           []string `json:"hosts,omitempty"`
+	Routes          []string `json:"routes,omitempty"`
 	Justification   string   `json:"justification,omitempty"`
 	GrantTTLSeconds int64    `json:"grantTTLSeconds,omitempty"`
 	Purpose         string   `json:"purpose,omitempty"`

@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // openAuditScreen opens the workspace on the first discobox and the audit
@@ -524,7 +525,7 @@ func TestTheBannerKeysAnswerOverTheAuditScreen(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.requests = []CredentialRequest{waitingRequest()}
-	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []SecretRoute{{Host: "api.github.com"}}}}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 	d, m, _ := openAuditScreen(t, ds)
 	deliverAudit(d, ds, AuditUpdate{Records: auditRecords("first", "second", "third"), Polled: true})
 	d.wait("the banner", func() bool { return m.bannerShowing() != bannerNone })

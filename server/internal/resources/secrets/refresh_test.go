@@ -24,7 +24,7 @@ func renewableFixture(t *testing.T, writtenAt time.Time) (*resourcesecrets.Servi
 	svc, st, db := newResolveFixtureDB(t)
 	createSandbox(t, st, "sb-1", "pool-1")
 	sec := &model.Secret{
-		ProjectID: "project-1", Name: "github", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Host: "github.com"}},
+		ProjectID: "project-1", Name: "github", Type: model.SecretTypeToken, Routes: []model.SecretRoute{{Hosts: []string{"github.com", "*.github.com"}}},
 		MaxBindingTTL: 3600, EncryptedValue: mustTokenValue(t, "gho_old"),
 		TTL: 300, RefreshCommand: []string{"gh", "auth", "token"},
 	}

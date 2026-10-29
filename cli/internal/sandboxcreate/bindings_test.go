@@ -11,7 +11,7 @@ import (
 // on. Anything else is refused with the shape it should have had.
 func TestBindAndDelegateFlagsBecomeTheNewDiscoboxsBindings(t *testing.T) {
 	got, err := ParseBindings(
-		[]string{"github:GH_TOKEN@api.github.com/repos/acme,github.com/admin=blocked", "npm:NPM_TOKEN"},
+		[]string{"github:GH_TOKEN@api.github.com,*.github.com,gist.github.com=blocked", "npm:NPM_TOKEN"},
 		[]string{"github@api.github.com"},
 	)
 	if err != nil {
@@ -21,8 +21,9 @@ func TestBindAndDelegateFlagsBecomeTheNewDiscoboxsBindings(t *testing.T) {
 		t.Fatalf("bindings = %+v, want three", got)
 	}
 	gh := got[0]
-	if gh.Secret != "github" || gh.EnvVar.Or("") != "GH_TOKEN" || len(gh.Routes) != 2 ||
-		gh.Routes[0].Host != "api.github.com" || gh.Routes[0].Path.Or("") != "/repos/acme" || !gh.Routes[1].Blocked.Or(false) {
+	if gh.Secret != "github" || gh.EnvVar.Or("") != "GH_TOKEN" || len(gh.Routes) != 3 ||
+		gh.Routes[0].Hosts[0] != "api.github.com" || gh.Routes[1].Hosts[0] != "*.github.com" || gh.Routes[1].Blocked.Or(false) ||
+		gh.Routes[2].Hosts[0] != "gist.github.com" || !gh.Routes[2].Blocked.Or(false) {
 		t.Fatalf("github binding = %+v", gh)
 	}
 	if npm := got[1]; npm.Secret != "npm" || npm.Routes != nil {
@@ -54,7 +55,7 @@ func TestAVariableIsBoundOnce(t *testing.T) {
 // `*` is a route to any host (ADR 26-10-27-939).
 func TestABindingMayRouteAnywhere(t *testing.T) {
 	got, err := ParseBindings([]string{"openai:OPENAI_API_KEY@*"}, nil)
-	if err != nil || len(got[0].Routes) != 1 || got[0].Routes[0].Host != "*" {
+	if err != nil || len(got[0].Routes) != 1 || got[0].Routes[0].Hosts[0] != "*" {
 		t.Fatalf("bindings = %+v, %v; want one * route", got, err)
 	}
 }

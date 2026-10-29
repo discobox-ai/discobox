@@ -15,40 +15,48 @@
         "required": true,
         "routes": [
           {
-            "host": "githubcopilot.com"
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ]
           },
           {
-            "host": "githubcopilot.com",
-            "path": "/v1/messages"
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ],
+            "paths": [
+              "/agents/swe/internal/memory/**",
+              "/mcp/readonly/**",
+              "/v1/messages/**"
+            ]
           },
           {
-            "host": "githubcopilot.com",
-            "path": "/mcp/readonly"
+            "hosts": [
+              "*.api.github.com",
+              "api.github.com"
+            ],
+            "paths": [
+              "/copilot_internal/**",
+              "/repos/github/copilot-cli/releases/**"
+            ]
           },
           {
-            "host": "githubcopilot.com",
-            "path": "/agents/swe/internal/memory"
-          },
-          {
-            "host": "api.github.com",
-            "path": "/copilot_internal"
-          },
-          {
-            "host": "api.github.com",
-            "path": "/repos/github/copilot-cli/releases"
-          },
-          {
-            "host": "githubcopilot.com",
-            "path": "/mcp",
+            "hosts": [
+              "*.githubcopilot.com",
+              "githubcopilot.com"
+            ],
+            "paths": [
+              "/agents/**",
+              "/mcp/**"
+            ],
             "blocked": true
           },
           {
-            "host": "githubcopilot.com",
-            "path": "/agents",
-            "blocked": true
-          },
-          {
-            "host": "github.com",
+            "hosts": [
+              "*.github.com",
+              "github.com"
+            ],
             "blocked": true
           }
         ]
@@ -89,40 +97,48 @@
           ],
           "routes": [
             {
-              "host": "githubcopilot.com"
+              "hosts": [
+                "*.githubcopilot.com",
+                "githubcopilot.com"
+              ]
             },
             {
-              "host": "githubcopilot.com",
-              "path": "/v1/messages"
+              "hosts": [
+                "*.githubcopilot.com",
+                "githubcopilot.com"
+              ],
+              "paths": [
+                "/agents/swe/internal/memory/**",
+                "/mcp/readonly/**",
+                "/v1/messages/**"
+              ]
             },
             {
-              "host": "githubcopilot.com",
-              "path": "/mcp/readonly"
+              "hosts": [
+                "*.api.github.com",
+                "api.github.com"
+              ],
+              "paths": [
+                "/copilot_internal/**",
+                "/repos/github/copilot-cli/releases/**"
+              ]
             },
             {
-              "host": "githubcopilot.com",
-              "path": "/agents/swe/internal/memory"
-            },
-            {
-              "host": "api.github.com",
-              "path": "/copilot_internal"
-            },
-            {
-              "host": "api.github.com",
-              "path": "/repos/github/copilot-cli/releases"
-            },
-            {
-              "host": "githubcopilot.com",
-              "path": "/mcp",
+              "hosts": [
+                "*.githubcopilot.com",
+                "githubcopilot.com"
+              ],
+              "paths": [
+                "/agents/**",
+                "/mcp/**"
+              ],
               "blocked": true
             },
             {
-              "host": "githubcopilot.com",
-              "path": "/agents",
-              "blocked": true
-            },
-            {
-              "host": "github.com",
+              "hosts": [
+                "*.github.com",
+                "github.com"
+              ],
               "blocked": true
             }
           ]

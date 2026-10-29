@@ -455,7 +455,29 @@ Key properties:
   (`eachValue`) but walk it twice, so a request carrying a sentinel pays the
   base64 scan over its header values twice; for a harness that is every call
   to its model API, and it is the price of not resolving a credential before
-  something agreed to the request. A request to a host the client trusts by a
+  something agreed to the request.
+- **A route may read the body** (`AuthorizeRequest.Body`, `routeBody`): a
+  route's GraphQL or MCP block matches what the body does, and a route's
+  methods match every method the request names, on a POST a `_method` in a
+  form, JSON or Content-Type-less body included (ADR 26-10-27-880 §4). The
+  authorizer is handed a function, not bytes, and the body is read only when
+  it is called — when a candidate route has a protocol block, or has methods
+  and the request is a POST whose body may carry a `_method` — and at most
+  once. The request's headers are handed over too, for the method overrides
+  they carry. It reads up to `routeBodyLimit` (1 MiB; the audit spools
+  a body whole and has no limit to share), decodes gzip or deflate, and puts
+  what it read back in front of the rest, so the request is sent, and the
+  retry buffer and the audit spool that wrap the body after it record, the
+  body exactly as the sandbox sent it. A body it cannot read — past the limit
+  before or after decoding, in another or a stacked encoding, of undeclared
+  length, or on a request that upgrades its connection — answers false. What
+  a route makes of a body it cannot read is the engine's to say, not the
+  proxy's: see `pkg/secretroute/REVIEW.md` ("unreadable, never unparsable").
+  A body of undeclared length is never read ahead, for the reason the retry
+  gives (a stream whose sender waits on the response), so a chunked or
+  HTTP/2 body without a `Content-Length` always answers false. The `401`
+  retry is authorized over the body it resends, from its buffer.
+- A request to a host the client trusts by a
   pin is authorized like any other: the pin decides which certificate is
   believed, and nothing about what is sent (ADR 26-10-27-880 §10).
 - **The gate host never reaches the internet** (`Secrets.GateHost`,

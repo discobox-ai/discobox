@@ -7,6 +7,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/apiroute"
 	"github.com/discobox-ai/discobox/cli/internal/secretenv"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	idpkg "github.com/discobox-ai/x/id"
@@ -18,7 +19,8 @@ import (
 // A --bind is SECRET[:VAR][@ROUTE,...]: the secret, the variable the new
 // discobox receives its sentinel in — the secret's name upper-snaked when none
 // is named (secretenv.Name) — and routes that narrow the secret's for this
-// binding, each HOST[/PATH][=blocked] or `*`. A secret given by ID with no
+// binding, each a host (exact, `*.suffix` or `*`), optionally =blocked
+// (ParseRoutes). A secret given by ID with no
 // VAR is left unnamed here, for NameBindingVariables to name after the
 // secret's name rather than its ID. A --delegate is
 // SECRET[@ROUTE,...]: the new discobox may give the secret to the discoboxes
@@ -118,9 +120,12 @@ func NameBindingVariables(ctx context.Context, client secretReader, projectID st
 	return nil
 }
 
-// ParseRoutes reads comma-joined routes, each as secretroute.Parse reads one,
-// into what the API takes. An empty value is no routes: the binding inherits
-// its secret's.
+// ParseRoutes reads --bind's and --delegate's @ROUTE,... into what the API
+// takes: comma-joined routes that each name one host — exact, `*.suffix` for
+// the hosts beneath suffix, or `*` — optionally `=blocked`. The comma is the
+// list's, so a route here is hosts-only; one with methods, paths or a
+// protocol is made with `secret bind --route`. An empty value is no routes:
+// the binding inherits its secret's.
 func ParseRoutes(value string) ([]apimodel.SecretRouteInput, error) {
 	var out []apimodel.SecretRouteInput
 	for _, text := range strings.Split(value, ",") {
@@ -131,19 +136,10 @@ func ParseRoutes(value string) ([]apimodel.SecretRouteInput, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, RouteInput(route))
+		if len(route.Methods) > 0 || len(route.Paths) > 0 || route.GraphQL != nil || route.MCP != nil {
+			return nil, fmt.Errorf("route %q: a route here is a host, `*.suffix` or `*`, optionally =blocked; bind one with methods, paths or a protocol with `discobox secret bind --route`", strings.TrimSpace(text))
+		}
+		out = append(out, apiroute.Input(route))
 	}
 	return out, nil
-}
-
-// RouteInput is a parsed route as the API takes it.
-func RouteInput(route secretroute.Route) apimodel.SecretRouteInput {
-	in := apimodel.SecretRouteInput{Host: route.Host}
-	if route.Path != "" {
-		in.Path = apiclientgen.NewOptString(route.Path)
-	}
-	if route.Blocked {
-		in.Blocked = apiclientgen.NewOptBool(true)
-	}
-	return in
 }

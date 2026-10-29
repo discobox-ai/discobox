@@ -74,8 +74,8 @@ func inlineSandboxBindings(ctx context.Context, projectID string, sandbox *model
 	return secrets, bindings, nil
 }
 
-// anonymousSecret is an inline value as a secret of its own, sent to host, or
-// anywhere when none is given.
+// anonymousSecret is an inline value as a secret of its own, sent to host
+// alone — a route to that exact host — or anywhere when none is given.
 func anonymousSecret(projectID, value, host string) (*model.Secret, error) {
 	secretID, err := id.New(id.PrefixSecret)
 	if err != nil {
@@ -86,9 +86,9 @@ func anonymousSecret(projectID, value, host string) (*model.Secret, error) {
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "invalid secret value")
 	}
-	route := model.SecretRoute{Host: secretroute.AnyHost}
+	route := model.SecretRoute{Hosts: []string{secretroute.AnyHost}}
 	if host != "" {
-		route.Host = host
+		route.Hosts = []string{host}
 	}
 	routes, err := model.NormalizeRoutes([]model.SecretRoute{route})
 	if err != nil {

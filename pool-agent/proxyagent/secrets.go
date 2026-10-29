@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"os"
@@ -71,16 +72,21 @@ type resolveContext struct {
 // pool-agent process. The proxy unit only reads the file.
 var secretsFileMu sync.Mutex
 
-// secretsDocVersion is the shape this pool agent writes SecretsFile in. 2 is
-// a sentinel held to route lists (ADR 26-10-27-880 §4), and no lists sending
-// it nowhere. A document with no version was written before: one route list a
-// sentinel, and a sentinel with none held to no route at all (readSecretsDoc).
-const secretsDocVersion = 2
+// secretsDocVersion is the shape this pool agent writes SecretsFile in. 3 is
+// a sentinel held to route lists of the route shape of ADR 26-10-27-880 §4:
+// host patterns, methods, path globs and protocol blocks. 2 held it to route
+// lists of one host covering the hosts beneath it and one path prefix, and a
+// sentinel with no lists was sent nowhere. A document with no version was
+// written before that: one route list a sentinel, and a sentinel with none
+// held to no route at all. readSecretsDoc reads each as its writer meant it.
+const secretsDocVersion = 3
 
 // UpsertSandboxSentinels registers a sandbox's sentinel set with the proxy by
 // updating SecretsFile, with the route lists each sentinel is held to (ADR
 // 26-10-27-880 §4). Passing an empty set removes the sandbox entry. A
-// sentinel routes names no lists for is sent nowhere.
+// sentinel routes names no lists for is sent nowhere. Each route is written
+// normalized (secretroute.Normalize), and one that does not normalize is held
+// as heldList says: never as anything wider than it was.
 func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxID string, sentinels []string, routes map[string][][]secretroute.Route) error {
 	return updateSecretsDoc(root, projectID, poolID, func(doc *secretsDoc) {
 		if len(sentinels) == 0 {
@@ -90,9 +96,14 @@ func UpsertSandboxSentinels(root layout.Root, projectID, poolID string, sandboxI
 		}
 		held := map[string][][]secretroute.Route{}
 		for _, sentinel := range sentinels {
-			if held[sentinel] = routes[sentinel]; len(held[sentinel]) == 0 {
-				delete(held, sentinel)
+			if len(routes[sentinel]) == 0 {
+				continue
 			}
+			lists := make([][]secretroute.Route, 0, len(routes[sentinel]))
+			for _, list := range routes[sentinel] {
+				lists = append(lists, heldList(list))
+			}
+			held[sentinel] = lists
 		}
 		if len(held) == 0 {
 			delete(doc.Routes, sandboxID)
@@ -198,48 +209,89 @@ type secretsDocOnDisk struct {
 	Routes map[string]map[string]json.RawMessage `json:"routes,omitempty"`
 }
 
-// persistedRoute is a route as written to SecretsFile. UseID is what a pool
-// agent from before ADR 26-10-27-880 wrote for a route a judge read: a request
-// on one was sent only on the judge's yes. It reads as blocked, so a pool
-// upgraded under a running sandbox never sends one unjudged before the control
-// plane pushes the route again.
-type persistedRoute struct {
-	secretroute.Route
-	UseID string `json:"useId,omitempty"`
+// heldList is one route list as the proxy holds a sentinel to it, every route
+// normalized. A route that does not normalize — the control plane validates
+// every route it writes, so this is a pool newer or older than what wrote it —
+// fails closed rather than being dropped open: an open one is left out, which
+// allows less, and a blocked one makes the list secretroute.RefusingList,
+// since dropping it would allow what it was a carve-out from and no narrower
+// block can be told to cover what an unreadable one did. A list that had
+// routes and keeps none is RefusingList too, as the control plane writes it.
+func heldList(routes []secretroute.Route) []secretroute.Route {
+	out := make([]secretroute.Route, 0, len(routes))
+	for _, route := range routes {
+		normalized, err := secretroute.Normalize(route)
+		switch {
+		case err == nil:
+			out = append(out, normalized)
+		case route.Blocked:
+			return secretroute.RefusingList()
+		}
+	}
+	if len(routes) > 0 && len(out) == 0 {
+		return secretroute.RefusingList()
+	}
+	return out
 }
 
-func (r persistedRoute) route() secretroute.Route {
-	route := r.Route
-	if strings.TrimSpace(r.UseID) != "" {
-		route.Blocked = true
-	}
-	return route
+// legacyRoute is a route as a pool agent before version 3 wrote it to
+// SecretsFile: one host, which covered every host beneath it, and one path
+// prefix. UseID is what a pool agent from before ADR 26-10-27-880 wrote for a
+// route a judge read: a request on one was sent only on the judge's yes, so
+// it reads as blocked, and a pool upgraded under a running sandbox never
+// sends one unjudged before the control plane pushes the route again.
+type legacyRoute struct {
+	Host    string `json:"host"`
+	Path    string `json:"path,omitempty"`
+	Blocked bool   `json:"blocked,omitempty"`
+	UseID   string `json:"useId,omitempty"`
 }
 
 // persistedLists reads one sentinel's routes as the document's version wrote
-// them: route lists from version 2, one list before it.
-func persistedLists(version int, raw json.RawMessage) ([][]secretroute.Route, error) {
-	var lists [][]persistedRoute
+// them: route lists from version 3; legacy route lists from version 2, and
+// one legacy list before it, each read through secretroute.FromLegacyList as
+// the control plane reads its own stored routes, so a list reads the same on
+// either side (ADR 26-10-27-880 §8). Notes say what of a legacy list was not
+// converted exactly.
+func persistedLists(version int, raw json.RawMessage) ([][]secretroute.Route, []string, error) {
 	if version >= secretsDocVersion {
+		var lists [][]secretroute.Route
 		if err := json.Unmarshal(raw, &lists); err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		return lists, nil, nil
+	}
+	var lists [][]legacyRoute
+	if version == 2 {
+		if err := json.Unmarshal(raw, &lists); err != nil {
+			return nil, nil, err
 		}
 	} else {
-		var one []persistedRoute
+		var one []legacyRoute
 		if err := json.Unmarshal(raw, &one); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		lists = [][]persistedRoute{one}
+		lists = [][]legacyRoute{one}
 	}
 	out := make([][]secretroute.Route, 0, len(lists))
+	var notes []string
 	for _, list := range lists {
-		routes := make([]secretroute.Route, 0, len(list))
+		legacy := make([]secretroute.LegacyRoute, 0, len(list))
 		for _, route := range list {
-			routes = append(routes, route.route())
+			legacy = append(legacy, secretroute.LegacyRoute{
+				Host:    route.Host,
+				Path:    route.Path,
+				Blocked: route.Blocked || strings.TrimSpace(route.UseID) != "",
+			})
 		}
-		out = append(out, routes)
+		converted, listNotes := secretroute.FromLegacyList(legacy, nil)
+		if converted == nil {
+			converted = []secretroute.Route{}
+		}
+		out = append(out, converted)
+		notes = append(notes, listNotes...)
 	}
-	return out, nil
+	return out, notes, nil
 }
 
 // anyHost is the route list a sentinel from a document before version 2 is
@@ -247,7 +299,7 @@ func persistedLists(version int, raw json.RawMessage) ([][]secretroute.Route, er
 // to none, so it reads as held to any host (ADR 26-10-27-939) until the
 // control plane pushes its lists, rather than as sent nowhere. The control
 // plane still hands its value out only for a host its routes allow.
-var anyHost = [][]secretroute.Route{{{Host: secretroute.AnyHost}}}
+var anyHost = [][]secretroute.Route{{{Hosts: []string{secretroute.AnyHost}}}}
 
 func readSecretsDoc(path string) (secretsDoc, error) {
 	data, err := os.ReadFile(path)
@@ -274,14 +326,17 @@ func readSecretsDoc(path string) (secretsDoc, error) {
 	}
 	for sandboxID, sentinels := range onDisk.Routes {
 		for sentinel, raw := range sentinels {
-			lists, err := persistedLists(doc.Version, raw)
+			lists, notes, err := persistedLists(doc.Version, raw)
 			if err != nil {
 				return secretsDoc{}, fmt.Errorf("parse %s: routes of a sentinel of %s: %w", path, sandboxID, err)
+			}
+			for _, note := range notes {
+				slog.Warn("a legacy route of a sentinel did not convert exactly (ADR 26-10-27-880 §8)", "file", path, "sandbox", sandboxID, "note", note)
 			}
 			set(sandboxID, sentinel, lists)
 		}
 	}
-	if doc.Version < secretsDocVersion {
+	if doc.Version < 2 {
 		for sandboxID, sentinels := range doc.Clients {
 			for _, sentinel := range sentinels {
 				if _, ok := doc.Routes[sandboxID][sentinel]; !ok {
@@ -568,7 +623,13 @@ func (r *secretResolver) Report(ctx context.Context, req proxy.SecretReportReque
 // plane.
 func (r *secretResolver) Authorize(_ context.Context, req proxy.SecretAuthorizeRequest) (proxy.SecretVerdict, error) {
 	for _, sentinel := range req.Sentinels {
-		if allowed, reason := secretroute.Decide(r.heldRoutes(req.ClientID, sentinel), req.Host, req.URL); !allowed {
+		if allowed, reason := secretroute.Decide(r.heldRoutes(req.ClientID, sentinel), secretroute.Request{
+			Method: req.Method,
+			Host:   req.Host,
+			URL:    req.URL,
+			Header: req.Header,
+			Body:   req.Body,
+		}); !allowed {
 			return proxy.SecretVerdict{Reason: reason}, nil
 		}
 	}

@@ -708,14 +708,14 @@ func TestMigrateMovesSecretHostsToLists(t *testing.T) {
 	if err := write.First(&binding, "id = ?", "bind_1").Error; err != nil {
 		t.Fatalf("read binding: %v", err)
 	}
-	if !reflect.DeepEqual(binding.Routes, []model.SecretRoute{{Host: "api.github.com"}}) {
+	if !reflect.DeepEqual(binding.Routes, []model.SecretRoute{upgraded("api.github.com", "", false)}) {
 		t.Errorf("routes = %+v, want [api.github.com], lowercased to what the proxy reports", binding.Routes)
 	}
 	var req model.SecretRequest
 	if err := write.First(&req, "id = ?", "req_old").Error; err != nil {
 		t.Fatalf("read request: %v", err)
 	}
-	if !reflect.DeepEqual(req.Routes, []model.SecretRoute{{Host: "api.github.com"}}) {
+	if !reflect.DeepEqual(req.Routes, []model.SecretRoute{upgraded("api.github.com", "", false)}) {
 		t.Errorf("request routes = %+v, want [api.github.com]", req.Routes)
 	}
 }

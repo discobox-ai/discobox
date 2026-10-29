@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // The secrets screen is the operator's side of the credential inbox: what the
@@ -29,12 +30,12 @@ func secretsFixture(t *testing.T) (*Model, *fakeSource) {
 	t.Helper()
 	ds := newFakeSource(testSandboxes()...)
 	ds.projectSecrets = []Secret{
-		{ID: "sec_gh", Name: "gh", Type: "bearer", Routes: []SecretRoute{{Host: "github.com"}}, MaxTTL: time.Hour},
+		{ID: "sec_gh", Name: "gh", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"github.com"}}}, MaxTTL: time.Hour},
 		{ID: "sec_loose", Name: "OpenAI key", Type: "bearer", MaxTTL: time.Hour},
 	}
 	ds.projectBindings = []SecretBinding{
 		{ID: "binding_1", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, EnvVar: "GH_TOKEN",
-			Routes: []SecretRoute{{Host: "api.github.com"}}, CreatedBy: "user:alice", Created: time.Now().Add(-time.Minute)},
+			Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}, CreatedBy: "user:alice", Created: time.Now().Add(-time.Minute)},
 		{ID: "binding_2", SecretID: "sec_gh", TargetKind: BindingProject, Use: true, EnvVar: "GITHUB"},
 	}
 	m := newTestModel(t, ds)
@@ -212,7 +213,7 @@ func TestANewSecretIsNamedRoutedAndStoredMasked(t *testing.T) {
 		t.Fatalf("created = %#v, want one", ds.createdSecrets)
 	}
 	got := ds.createdSecrets[0]
-	if got.Name != "npm" || len(got.Routes) != 1 || got.Routes[0].Host != "registry.npmjs.org" || got.Value.Token != "npm_typedbyahuman" {
+	if got.Name != "npm" || len(got.Routes) != 1 || got.Routes[0].Hosts[0] != "registry.npmjs.org" || got.Value.Token != "npm_typedbyahuman" {
 		t.Fatalf("stored = %#v, want what was typed", got)
 	}
 }
@@ -336,7 +337,7 @@ func TestReplacingAnOAuthValueTakesAllOfIt(t *testing.T) {
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
 	ds.projectSecrets = []Secret{{
-		ID: "sec_oauth", Name: "claude", Type: "oauth", Routes: []SecretRoute{{Host: "api.anthropic.com"}},
+		ID: "sec_oauth", Name: "claude", Type: "oauth", Routes: []secretroute.Route{{Hosts: []string{"api.anthropic.com"}}},
 		//nolint:gosec // A token endpoint, which is a URL rather than a credential.
 		OAuth: &SecretOAuth{TokenURL: "https://console.anthropic.com/v1/oauth/token"},
 	}}
@@ -512,7 +513,7 @@ func TestTheNewSecretFormIsAnsweredWithTheKeyboard(t *testing.T) {
 		t.Fatalf("created = %#v, want one", ds.createdSecrets)
 	}
 	got := ds.createdSecrets[0]
-	if got.Name != "npm" || got.Type != "token" || len(got.Routes) != 1 || got.Routes[0].Host != "registry.npmjs.org" || got.Value.Token != "npm_typedbyahuman" {
+	if got.Name != "npm" || got.Type != "token" || len(got.Routes) != 1 || got.Routes[0].Hosts[0] != "registry.npmjs.org" || got.Value.Token != "npm_typedbyahuman" {
 		t.Fatalf("stored = %#v, want what was typed", got)
 	}
 	// The limit is set as the credential is stored rather than left to a second
@@ -549,7 +550,7 @@ func TestATokenIsPastedIntoTheSecretItAnswers(t *testing.T) {
 		t.Fatalf("created = %#v, want the secret the pasted answers describe", ds.createdSecrets)
 	}
 	got := ds.createdSecrets[0]
-	if len(got.Routes) != 1 || got.Routes[0].Host != "registry.npmjs.org" || got.Value.Token != token {
+	if len(got.Routes) != 1 || got.Routes[0].Hosts[0] != "registry.npmjs.org" || got.Value.Token != token {
 		t.Fatalf("created = {Routes: %v, Value: %q (%d chars)}, want the pasted route and the whole pasted token (%d chars)",
 			got.Routes, got.Value.Token, len(got.Value.Token), len(token))
 	}
@@ -612,7 +613,7 @@ func TestABindingIsOneFormWithEveryAnswerOnIt(t *testing.T) {
 	if got.SecretID != "sec_gh" || got.TargetKind != BindingSandbox || got.TargetID != testSandboxes()[0].ID {
 		t.Fatalf("binding = %#v, want it on the chosen discobox", got)
 	}
-	if got.EnvVar != "GH_TOKEN" || len(got.Routes) != 1 || got.Routes[0].Host != "api.github.com" || got.TTLSeconds != 900 {
+	if got.EnvVar != "GH_TOKEN" || len(got.Routes) != 1 || got.Routes[0].Hosts[0] != "api.github.com" || got.TTLSeconds != 900 {
 		t.Fatalf("binding = %#v, want the variable, route and lifetime that were answered", got)
 	}
 	if !got.Use || got.Delegate {
@@ -830,7 +831,7 @@ func TestEnterOnARequestAnswersThatOne(t *testing.T) {
 	m, ds := secretsFixture(t)
 	older, newer := waitingRequest(), waitingRequest()
 	older.ID, older.Created = "sreq_older", older.Created.Add(-time.Hour)
-	newer.ID, newer.Name, newer.Routes = "sreq_newer", "npm", []SecretRoute{{Host: "registry.npmjs.org"}}
+	newer.ID, newer.Name, newer.Routes = "sreq_newer", "npm", []secretroute.Route{{Hosts: []string{"registry.npmjs.org"}}}
 	ds.mu.Lock()
 	ds.requests = []CredentialRequest{older, newer}
 	ds.mu.Unlock()
@@ -978,7 +979,7 @@ func TestOpeningAnOAuthSecretShowsWhatItIs(t *testing.T) {
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
 	ds.projectSecrets = []Secret{{
-		ID: "sec_oauth", Name: "claude", Type: "oauth", Routes: []SecretRoute{{Host: "api.anthropic.com"}}, MaxTTL: time.Hour,
+		ID: "sec_oauth", Name: "claude", Type: "oauth", Routes: []secretroute.Route{{Hosts: []string{"api.anthropic.com"}}}, MaxTTL: time.Hour,
 		//nolint:gosec // A token endpoint, which is a URL rather than a credential.
 		OAuth: &SecretOAuth{
 			TokenURL:             "https://console.anthropic.com/v1/oauth/token",

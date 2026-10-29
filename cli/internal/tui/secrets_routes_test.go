@@ -1,10 +1,12 @@
 package tui
 
 import (
-	"slices"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // routesFixture is the secrets screen over one token carrying three routes and
@@ -14,10 +16,10 @@ func routesFixture(t *testing.T) (*Model, *fakeSource) {
 	m, ds := secretsFixture(t)
 	ds.mu.Lock()
 	ds.projectSecrets = []Secret{
-		{ID: "sec_routed", Name: "copilot", Type: "token", MaxTTL: time.Hour, Routes: []SecretRoute{
-			{Host: "githubcopilot.com"},
-			{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
-			{Host: "github.com", Blocked: true},
+		{ID: "sec_routed", Name: "copilot", Type: "token", MaxTTL: time.Hour, Routes: []secretroute.Route{
+			{Hosts: []string{"githubcopilot.com"}},
+			{Hosts: []string{"githubcopilot.com"}, Paths: []string{"/mcp"}, Blocked: true},
+			{Hosts: []string{"github.com"}, Blocked: true},
 		}},
 		{ID: "sec_plain", Name: "github", Type: "token", MaxTTL: time.Hour},
 	}
@@ -62,11 +64,11 @@ func TestRoutesAreEditedRowByRow(t *testing.T) {
 	clearRow(t, m, secretRouteKey+"2")
 	typeInto(t, m, secretRouteKey+"3", "api.github.com/repos/ = blocked")
 	drain(t, m, submitForm(t, m), 0)
-	want := []SecretRoute{
-		{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
-		{Host: "api.github.com", Path: "/repos", Blocked: true},
+	want := []secretroute.Route{
+		{Hosts: []string{"githubcopilot.com"}, Paths: []string{"/mcp"}, Blocked: true},
+		{Hosts: []string{"api.github.com"}, Paths: []string{"/repos"}, Blocked: true},
 	}
-	if len(ds.updated) != 1 || ds.updated[0].Routes == nil || !slices.Equal(*ds.updated[0].Routes, want) {
+	if len(ds.updated) != 1 || ds.updated[0].Routes == nil || !reflect.DeepEqual(*ds.updated[0].Routes, want) {
 		t.Fatalf("updated = %#v, want routes %#v", ds.updated, want)
 	}
 }
@@ -114,7 +116,8 @@ func TestAMalformedRouteKeepsTheCardUp(t *testing.T) {
 	}
 }
 
-// A new secret may be stored with a route.
+// A new secret may be stored with a route, in the whole typed syntax: methods,
+// several hosts, paths and a protocol block.
 func TestANewSecretTakesARoute(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
@@ -122,10 +125,15 @@ func TestANewSecretTakesARoute(t *testing.T) {
 	send(t, m, keyPress("n"))
 	typeInto(t, m, "name", "github")
 	typeInto(t, m, "token", "ghp_example")
-	typeInto(t, m, secretRouteKey+"0", "github.com")
+	typeInto(t, m, secretRouteKey+"0", "POST api.github.com,*.github.com/graphql graphql=mutation:createPullRequest")
 	drain(t, m, submitForm(t, m), 0)
-	want := []SecretRoute{{Host: "github.com"}}
-	if len(ds.createdSecrets) != 1 || !slices.Equal(ds.createdSecrets[0].Routes, want) {
+	want := []secretroute.Route{{
+		Hosts:   []string{"*.github.com", "api.github.com"},
+		Methods: []string{"POST"},
+		Paths:   []string{"/graphql"},
+		GraphQL: &secretroute.GraphQL{Operations: []string{"mutation"}, Fields: []string{"createPullRequest"}},
+	}}
+	if len(ds.createdSecrets) != 1 || !reflect.DeepEqual(ds.createdSecrets[0].Routes, want) {
 		t.Fatalf("created = %#v, want the route sent with it", ds.createdSecrets)
 	}
 }

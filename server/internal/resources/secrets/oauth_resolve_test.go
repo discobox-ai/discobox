@@ -71,7 +71,7 @@ func mustOAuthSecret(t *testing.T, st *store.Store, name string, val model.Secre
 	}
 	sec := &model.Secret{
 		ProjectID: "project-1", Name: name, Type: model.SecretTypeOAuth,
-		Routes:        []model.SecretRoute{{Host: "*"}},
+		Routes:        []model.SecretRoute{{Hosts: []string{"*"}}},
 		MaxBindingTTL: 3600, EncryptedValue: b,
 	}
 	if err := st.CreateSecret(context.Background(), sec); err != nil {

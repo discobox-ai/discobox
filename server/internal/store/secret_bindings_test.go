@@ -34,7 +34,7 @@ func bindingFixture(t *testing.T) (*store.Store, *model.Sandbox, *model.Sandbox,
 		sandboxes = append(sandboxes, sandbox)
 	}
 	secret := &model.Secret{ID: "sec-1", ProjectID: "project-1", Name: "github", Type: model.SecretTypeToken,
-		Routes: []model.SecretRoute{{Host: "github.com"}}, EncryptedValue: []byte(`{"token":"t"}`)}
+		Routes: []model.SecretRoute{{Hosts: []string{"github.com"}}}, EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := s.CreateSecret(ctx, secret); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestSentinelRouteListsCoverEverySentinel(t *testing.T) {
 	ctx := context.Background()
 	s, sb1, sb2, secret := bindingFixture(t)
 	parent := createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb1.ID, Delegate: true,
-		Routes: []model.SecretRoute{{Host: "api.github.com"}}})
+		Routes: []model.SecretRoute{{Hosts: []string{"api.github.com"}}}})
 	child := createBinding(t, s, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: sb2.ID, Use: true, EnvName: "GH_TOKEN", ParentID: parent.ID})
 	rows := []model.SandboxSecret{
 		{SecretID: secret.ID, BindingID: child.ID, Sentinel: "S-CHILD"},
@@ -128,7 +128,7 @@ func TestSentinelRouteListsCoverEverySentinel(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string][][]secretroute.Route{
-		"S-CHILD": {{{Host: "github.com"}}, {{Host: "api.github.com"}}},
+		"S-CHILD": {{{Hosts: []string{"github.com"}}}, {{Hosts: []string{"api.github.com"}}}},
 		"S-GONE":  {{}},
 		"S-NONE":  {{}},
 	}
@@ -210,7 +210,7 @@ func TestBindingEventsNameTheSecret(t *testing.T) {
 	if err := s.CreateSecretBinding(ctx, binding, store.BindingChange{Actor: "user-1"}); err != nil {
 		t.Fatal(err)
 	}
-	binding.Routes = []model.SecretRoute{{Host: "api.github.com"}}
+	binding.Routes = []model.SecretRoute{{Hosts: []string{"api.github.com"}}}
 	if err := s.UpdateSecretBinding(ctx, binding, store.BindingChange{Actor: "user-1"}); err != nil {
 		t.Fatal(err)
 	}

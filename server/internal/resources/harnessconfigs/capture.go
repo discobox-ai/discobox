@@ -354,7 +354,7 @@ func (s *Service) applyCapturedCredential(ctx context.Context, tx *store.Store, 
 	// anywhere (ADR 26-10-27-939 §2).
 	routes := make([]model.SecretRoute, 0, len(provider.Routes))
 	for _, route := range provider.Routes {
-		routes = append(routes, model.SecretRoute{Host: route.Host, Path: route.Path, Blocked: route.Blocked})
+		routes = append(routes, model.SecretRoute(route))
 	}
 	if len(routes) == 0 && !owned {
 		routes = configuredRoutes(&model.HarnessConfig{}, "", hostscope.Normalize(provider.Host))

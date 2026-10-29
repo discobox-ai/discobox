@@ -24,7 +24,7 @@ func captureFixture(t *testing.T) (*Service, *model.HarnessConfig, harnesscaptur
 func captureFixtureStore(t *testing.T, st *store.Store) (*Service, *model.HarnessConfig, harnesscapture.Candidate) {
 	t.Helper()
 	ctx := context.Background()
-	cfg := &model.HarnessConfig{ID: "hc-capture", ProjectID: "project-1", Name: "Capture", ManifestDigest: "sha256:fixture", SaveBack: &harnesscapture.Definition{Version: 1, Watch: []string{"~/.fixture"}, ExportCommand: []string{"/bin/export"}, HandoffCommand: []string{"/bin/handoff"}, Providers: []harnesscapture.Provider{{ID: "fixture", EnvName: "API_TOKEN", Types: []string{"token"}, Host: "api.example.com", Routes: []harnesscapture.Route{{Host: "api.example.com"}}}}, Settings: []harnesscapture.Setting{{Path: "~/.fixture", Format: "json", Exclude: []string{"apiKey", "api_key", "env"}}}}}
+	cfg := &model.HarnessConfig{ID: "hc-capture", ProjectID: "project-1", Name: "Capture", ManifestDigest: "sha256:fixture", SaveBack: &harnesscapture.Definition{Version: 1, Watch: []string{"~/.fixture"}, ExportCommand: []string{"/bin/export"}, HandoffCommand: []string{"/bin/handoff"}, Providers: []harnesscapture.Provider{{ID: "fixture", EnvName: "API_TOKEN", Types: []string{"token"}, Host: "api.example.com", Routes: []harnesscapture.Route{{Hosts: []string{"api.example.com"}}}}}, Settings: []harnesscapture.Setting{{Path: "~/.fixture", Format: "json", Exclude: []string{"apiKey", "api_key", "env"}}}}}
 	if err := st.CreateHarnessConfig(ctx, cfg); err != nil {
 		t.Fatal(err)
 	}

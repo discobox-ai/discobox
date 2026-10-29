@@ -1,16 +1,13 @@
 // Package hostscope answers one question, the same way everywhere it is asked:
 // does this scope cover this destination?
 //
-// A credential's authorization is written as a host — the host a grant is
-// limited to, the host a secret belongs to, the host an approved use named —
-// and every place that compares one of those against the destination the
-// proxy actually observed goes through this package: the control plane's
-// grant lookup and its secret match, the check that a resolved secret's host
-// covers the destination, the host a secret route covers, and the check that
-// a grant may not point a secret at a host it does not belong to. They
-// must agree. A rule that is subtly different in one of them is either a
-// credential that stops working for no visible reason or one that travels
-// somewhere nobody approved.
+// A host is normalized here (Normalize, List) the one way every side spells
+// a destination: the control plane stores hosts so, and the proxy reports
+// them so. A scope covers itself and everything beneath it; what still reads
+// that rule is the proxy's match of a request against a credential's report
+// scope (ADR 26-10-13-595). A secret route's host does not: it covers itself
+// alone, and `*.h` is how a route names the hosts beneath h (pkg/secretroute,
+// ADR 26-10-27-880 §4), so a route is never matched with Covers.
 package hostscope
 
 import (
@@ -168,18 +165,4 @@ func SpecificityAny(scopes []string, host string) int {
 		best = min(best, Specificity(scope, host))
 	}
 	return best
-}
-
-// SameSet reports whether two lists name the same hosts, in any order.
-func SameSet(a, b []string) bool {
-	a, b = List(a...), List(b...)
-	if len(a) != len(b) {
-		return false
-	}
-	for _, host := range a {
-		if !slices.Contains(b, host) {
-			return false
-		}
-	}
-	return true
 }

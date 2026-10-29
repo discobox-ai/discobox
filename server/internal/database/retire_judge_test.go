@@ -165,10 +165,10 @@ func TestMigrateRetiresTheCredentialJudge(t *testing.T) {
 			t.Fatalf("run %d: read secret: %v", run, err)
 		}
 		wantRoutes := []model.SecretRoute{
-			{Host: "githubcopilot.com"},
-			{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
+			upgraded("githubcopilot.com", "", false),
+			upgraded("githubcopilot.com", "/mcp", true),
 			// A use ID with no use was never judged, and stays open.
-			{Host: "github.com"},
+			upgraded("github.com", "", false),
 		}
 		if !reflect.DeepEqual(secret.Routes, wantRoutes) {
 			t.Fatalf("run %d: routes = %+v, want %+v", run, secret.Routes, wantRoutes)
@@ -188,7 +188,7 @@ func TestMigrateRetiresTheCredentialJudge(t *testing.T) {
 			t.Fatalf("run %d: list bindings: %v", run, err)
 		}
 		if len(bindings) != 1 || bindings[0].ID != "bind_ss-injected" || bindings[0].TargetID != "sbx-1" ||
-			!reflect.DeepEqual(bindings[0].Routes, []model.SecretRoute{{Host: "github.com"}}) {
+			!reflect.DeepEqual(bindings[0].Routes, []model.SecretRoute{upgraded("github.com", "", false)}) {
 			t.Fatalf("run %d: bindings = %+v, want the standing grant's", run, bindings)
 		}
 		var sentinels []string
@@ -215,12 +215,12 @@ func TestMigrateRetiresTheCredentialJudge(t *testing.T) {
 		}
 		delegate, use := requests[0], requests[1]
 		if use.SandboxID != "sbx-1" || use.Status != model.SecretRequestStatusPending || use.Purpose != model.SecretPurposeUse ||
-			use.Name != "github" || use.EnvName != "GH_TOKEN" || !reflect.DeepEqual(use.Routes, []model.SecretRoute{{Host: "api.github.com"}}) ||
+			use.Name != "github" || use.EnvName != "GH_TOKEN" || !reflect.DeepEqual(use.Routes, []model.SecretRoute{upgraded("api.github.com", "", false)}) ||
 			!strings.Contains(use.Justification, "open a PR") {
 			t.Fatalf("run %d: use request = %+v", run, use)
 		}
 		if delegate.Purpose != model.SecretPurposeDelegate || delegate.Status != model.SecretRequestStatusPending ||
-			!reflect.DeepEqual(delegate.Routes, []model.SecretRoute{{Host: "github.com"}}) {
+			!reflect.DeepEqual(delegate.Routes, []model.SecretRoute{upgraded("github.com", "", false)}) {
 			t.Fatalf("run %d: delegate request = %+v", run, delegate)
 		}
 

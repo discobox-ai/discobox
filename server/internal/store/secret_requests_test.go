@@ -14,7 +14,7 @@ func TestListSecretRequestsStatusFilter(t *testing.T) {
 	for _, st := range []string{model.SecretRequestStatusPending, model.SecretRequestStatusPending, model.SecretRequestStatusApproved} {
 		if err := s.CreateSecretRequest(ctx, &model.SecretRequest{
 			ProjectID: "project-1", RequestedBy: "sandbox:sb-1", SandboxID: "sb-1",
-			Routes: []model.SecretRoute{{Host: "api.example.com"}}, Status: st,
+			Routes: []model.SecretRoute{{Hosts: []string{"api.example.com"}}}, Status: st,
 		}); err != nil {
 			t.Fatalf("create request: %v", err)
 		}
@@ -53,7 +53,7 @@ func TestDeletingASandboxDeniesItsOpenRequests(t *testing.T) {
 	request := func(sandboxID, status string) string {
 		req := &model.SecretRequest{
 			ProjectID: "project-1", RequestedBy: "agent:" + sandboxID, SandboxID: sandboxID,
-			Routes: []model.SecretRoute{{Host: "api.example.com"}}, Status: status,
+			Routes: []model.SecretRoute{{Hosts: []string{"api.example.com"}}}, Status: status,
 		}
 		if err := s.CreateSecretRequest(ctx, req); err != nil {
 			t.Fatalf("create request: %v", err)

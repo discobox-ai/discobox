@@ -431,5 +431,5 @@ func hostRoutes(host string) apigen.OptNilSecretRouteInputArray {
 	if host == "" {
 		return apigen.OptNilSecretRouteInputArray{}
 	}
-	return apigen.NewOptNilSecretRouteInputArray([]apigen.SecretRouteInput{{Host: host}})
+	return apigen.NewOptNilSecretRouteInputArray([]apigen.SecretRouteInput{{Hosts: []string{host}}})
 }

@@ -11,7 +11,6 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/discobox-ai/discobox/pkg/hostscope"
 	"github.com/discobox-ai/discobox/pkg/secretformat"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
@@ -545,18 +544,18 @@ func (s *Store) CreateSecretRequest(ctx context.Context, req *model.SecretReques
 }
 
 // FindPendingAgentCredentialRequests returns the open protocol-originated
-// requests for a sandbox's environment variable, destination hosts, and
-// purpose, newest first. The purpose is part of the key because it changes
+// requests for a sandbox's environment variable, routes, and purpose, newest
+// first. The purpose is part of the key because it changes
 // what approving the request mints: an ask to delegate is not a retry of an
-// ask to use. The hosts
-// are compared as a set (ADR 26-10-02-393 §3): approving either of two asks
-// listing them in another order grants the same thing.
+// ask to use. The routes — each host asked for being one — are compared as a
+// set (ADR 26-10-02-393 §3): approving either of two asks listing them in
+// another order grants the same thing.
 //
-// It keys on (sandbox, env, hosts) rather than on the secret the way the
+// It keys on (sandbox, env, routes) rather than on the secret the way the
 // reactive path does, because a protocol request names no secret: choosing one
 // is part of the approval. Which of them, if any, a new ask repeats is the
 // caller's to decide from what each asks for.
-func (s *Store) FindPendingAgentCredentialRequests(ctx context.Context, projectID, sandboxID, envName string, hosts []string, purpose string) ([]model.SecretRequest, error) {
+func (s *Store) FindPendingAgentCredentialRequests(ctx context.Context, projectID, sandboxID, envName string, routes []model.SecretRoute, purpose string) ([]model.SecretRequest, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
@@ -570,7 +569,7 @@ func (s *Store) FindPendingAgentCredentialRequests(ctx context.Context, projectI
 	}
 	out := found[:0]
 	for _, req := range found {
-		if hostscope.SameSet(req.Hosts(), hosts) {
+		if model.SameRouteSet(req.Routes, routes) {
 			out = append(out, req)
 		}
 	}

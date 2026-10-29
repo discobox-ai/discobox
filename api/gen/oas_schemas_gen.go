@@ -195,7 +195,7 @@ func (s *ApprovalRequestKind) UnmarshalText(data []byte) error {
 type ApproveSecretRequestBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Routes the binding is approved for, narrowing the secret's; omitted takes the hosts the request
+	// Routes the binding is approved for, narrowing the secret's; omitted takes the routes the request
 	// asked for.
 	Routes []SecretRouteInput `json:"routes"`
 	// Secret ID selected by the approver. A person must name one. A discobox approver answers with the
@@ -1266,9 +1266,16 @@ type CreateSandboxCredentialRequestBody struct {
 	// approver starts from, not a term. 0 or absent asks for nothing in particular; forever cannot be
 	// asked for, and neither can a span longer than the ceiling.
 	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
-	// Destination hosts the credential will be sent to (ADR 26-10-02-393). At least one is required, and
-	// each becomes a route of the binding approving the request makes, unless the approver names others.
+	// Destination hosts the credential will be sent to (ADR 26-10-02-393), each shorthand for a route to
+	// that exact host and no host beneath it. Hosts and routes together name at least one destination,
+	// and each becomes a route of the binding approving the request makes, unless the approver names
+	// others.
 	Hosts []string `json:"hosts"`
+	// Routes the credential will be sent on, each in the typed form `[METHODS ]HOSTS[PATHS][
+	// graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]` (ADR 26-10-27-880 §4), such as `GET api.github.
+	// com/repos/o/r/**` or `api.github.com/graphql graphql=query`. A route that does not parse refuses
+	// the request.
+	Routes []string `json:"routes"`
 	// What the agent asks the credential for, one or the other and never both. use (the default) asks to
 	// use it. delegate asks to delegate it to other discoboxes; approving it makes a delegate binding,
 	// which delivers nothing to the asking discobox.
@@ -1299,6 +1306,11 @@ func (s *CreateSandboxCredentialRequestBody) GetGrantTTLSeconds() OptInt64 {
 // GetHosts returns the value of Hosts.
 func (s *CreateSandboxCredentialRequestBody) GetHosts() []string {
 	return s.Hosts
+}
+
+// GetRoutes returns the value of Routes.
+func (s *CreateSandboxCredentialRequestBody) GetRoutes() []string {
+	return s.Routes
 }
 
 // GetPurpose returns the value of Purpose.
@@ -1339,6 +1351,11 @@ func (s *CreateSandboxCredentialRequestBody) SetGrantTTLSeconds(val OptInt64) {
 // SetHosts sets the value of Hosts.
 func (s *CreateSandboxCredentialRequestBody) SetHosts(val []string) {
 	s.Hosts = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *CreateSandboxCredentialRequestBody) SetRoutes(val []string) {
+	s.Routes = val
 }
 
 // SetPurpose sets the value of Purpose.
@@ -5009,13 +5026,33 @@ func (s *HarnessCaptureProvider) SetTypes(val []string) {
 	s.Types = val
 }
 
+// A route a harness's captured secret is bound with, in SecretRoute's shape.
 // Ref: #/components/schemas/HarnessCaptureRoute
 type HarnessCaptureRoute struct {
-	// Refuse every request on this route; a more specific route still answers for the paths beneath it
-	// (ADR 26-10-27-880 §4).
-	Blocked OptBool   `json:"blocked"`
-	Host    string    `json:"host"`
-	Path    OptString `json:"path"`
+	// Refuse every request this route is the most specific route for; a more specific route of the same
+	// list still answers for what it covers (ADR 26-10-27-880 §4).
+	Blocked OptBool               `json:"blocked"`
+	Graphql OptSecretRouteGraphQL `json:"graphql"`
+	// Hosts the route covers, each an exact name, `*.suffix` for every name strictly beneath suffix but
+	// not suffix itself, or `*` alone for any host (ADR 26-10-27-939). A :port is dropped, so a host is
+	// every port of it. A host covers no host beneath it; `*.h` says that.
+	Hosts []string          `json:"hosts"`
+	Mcp   OptSecretRouteMCP `json:"mcp"`
+	// HTTP methods the route covers, upper case; empty is any method. A request names its request line's
+	// method and every method it overrides it with: the X-HTTP-Method-Override, X-HTTP-Method and
+	// X-Method-Override headers, and _method in its URL, plus, on a POST only, _method in a URL-encoded
+	// form body, a body with no Content-Type (read as a form), or the top level of a JSON object body.
+	// An open route matches only when every one is among methods; of a POST body it ignores only a JSON
+	// body it could not read at all (too large, of undeclared length, in an unknown encoding) and a
+	// multipart body, and refuses a form or untyped body it could not read and any body it read but
+	// could not parse unambiguously. A blocked route matches when any one is among methods, or when a
+	// POST body that may name one cannot be read or parsed. So a _method hidden in an unreadable JSON or
+	// multipart POST is caught only by a blocked method route.
+	Methods []string `json:"methods"`
+	// Path patterns, each matched against the whole request path one segment at a time: `*` is exactly
+	// one segment, `**` as the last segment is zero or more, anything else is literal, compared ignoring
+	// case (so /repos/acme/** also allows /Repos/ACME/...). Empty is any path.
+	Paths []string `json:"paths"`
 }
 
 // GetBlocked returns the value of Blocked.
@@ -5023,14 +5060,29 @@ func (s *HarnessCaptureRoute) GetBlocked() OptBool {
 	return s.Blocked
 }
 
-// GetHost returns the value of Host.
-func (s *HarnessCaptureRoute) GetHost() string {
-	return s.Host
+// GetGraphql returns the value of Graphql.
+func (s *HarnessCaptureRoute) GetGraphql() OptSecretRouteGraphQL {
+	return s.Graphql
 }
 
-// GetPath returns the value of Path.
-func (s *HarnessCaptureRoute) GetPath() OptString {
-	return s.Path
+// GetHosts returns the value of Hosts.
+func (s *HarnessCaptureRoute) GetHosts() []string {
+	return s.Hosts
+}
+
+// GetMcp returns the value of Mcp.
+func (s *HarnessCaptureRoute) GetMcp() OptSecretRouteMCP {
+	return s.Mcp
+}
+
+// GetMethods returns the value of Methods.
+func (s *HarnessCaptureRoute) GetMethods() []string {
+	return s.Methods
+}
+
+// GetPaths returns the value of Paths.
+func (s *HarnessCaptureRoute) GetPaths() []string {
+	return s.Paths
 }
 
 // SetBlocked sets the value of Blocked.
@@ -5038,14 +5090,29 @@ func (s *HarnessCaptureRoute) SetBlocked(val OptBool) {
 	s.Blocked = val
 }
 
-// SetHost sets the value of Host.
-func (s *HarnessCaptureRoute) SetHost(val string) {
-	s.Host = val
+// SetGraphql sets the value of Graphql.
+func (s *HarnessCaptureRoute) SetGraphql(val OptSecretRouteGraphQL) {
+	s.Graphql = val
 }
 
-// SetPath sets the value of Path.
-func (s *HarnessCaptureRoute) SetPath(val OptString) {
-	s.Path = val
+// SetHosts sets the value of Hosts.
+func (s *HarnessCaptureRoute) SetHosts(val []string) {
+	s.Hosts = val
+}
+
+// SetMcp sets the value of Mcp.
+func (s *HarnessCaptureRoute) SetMcp(val OptSecretRouteMCP) {
+	s.Mcp = val
+}
+
+// SetMethods sets the value of Methods.
+func (s *HarnessCaptureRoute) SetMethods(val []string) {
+	s.Methods = val
+}
+
+// SetPaths sets the value of Paths.
+func (s *HarnessCaptureRoute) SetPaths(val []string) {
+	s.Paths = val
 }
 
 // Ref: #/components/schemas/HarnessCaptureSetting
@@ -15350,6 +15417,98 @@ func (o OptSecretRequestPurpose) Or(d SecretRequestPurpose) SecretRequestPurpose
 	return d
 }
 
+// NewOptSecretRouteGraphQL returns new OptSecretRouteGraphQL with value set to v.
+func NewOptSecretRouteGraphQL(v SecretRouteGraphQL) OptSecretRouteGraphQL {
+	return OptSecretRouteGraphQL{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRouteGraphQL is optional SecretRouteGraphQL.
+type OptSecretRouteGraphQL struct {
+	Value SecretRouteGraphQL
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRouteGraphQL was set.
+func (o OptSecretRouteGraphQL) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRouteGraphQL) Reset() {
+	var v SecretRouteGraphQL
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRouteGraphQL) SetTo(v SecretRouteGraphQL) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRouteGraphQL) Get() (v SecretRouteGraphQL, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRouteGraphQL) Or(d SecretRouteGraphQL) SecretRouteGraphQL {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretRouteMCP returns new OptSecretRouteMCP with value set to v.
+func NewOptSecretRouteMCP(v SecretRouteMCP) OptSecretRouteMCP {
+	return OptSecretRouteMCP{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRouteMCP is optional SecretRouteMCP.
+type OptSecretRouteMCP struct {
+	Value SecretRouteMCP
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRouteMCP was set.
+func (o OptSecretRouteMCP) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRouteMCP) Reset() {
+	var v SecretRouteMCP
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRouteMCP) SetTo(v SecretRouteMCP) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRouteMCP) Get() (v SecretRouteMCP, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRouteMCP) Or(d SecretRouteMCP) SecretRouteMCP {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSecretValue returns new OptSecretValue with value set to v.
 func NewOptSecretValue(v SecretValue) OptSecretValue {
 	return OptSecretValue{
@@ -23908,7 +24067,8 @@ type SandboxCredential struct {
 	EnvVar string `json:"envVar"`
 	// When the binding lapses; empty never expires.
 	ExpiresAt OptDateTime `json:"expiresAt"`
-	// Hosts the credential may be sent to; a destination any of them covers (ADR 26-10-02-393).
+	// Host patterns of the routes the credential may be sent on: exact names, `*.suffix` for the names
+	// strictly beneath suffix, or `*` for any host (ADR 26-10-27-939).
 	Hosts []string `json:"hosts"`
 	// Credential name.
 	Name string `json:"name"`
@@ -30787,16 +30947,36 @@ func (s *SecretRequestStatus) UnmarshalText(data []byte) error {
 	}
 }
 
-// Where a secret may be sent. The most specific route covering a request decides it.
+// Where a secret may be sent (ADR 26-10-27-880 §4). A request falls on the route when its host,
+// method, path and protocol block all match; the most specific route of a list a request falls on
+// decides it, host first, then path, and a blocked one among the most specific refuses.
 // Ref: #/components/schemas/SecretRoute
 type SecretRoute struct {
-	// Refuse every request on this route; a more specific route still answers for the paths beneath it.
-	// A route a judge used to read became one, so removing the judge widened nothing (ADR 26-10-27-880).
-	Blocked OptBool `json:"blocked"`
-	// Host the route covers, and every host beneath it.
-	Host string `json:"host"`
-	// Path prefix matched on whole segments; empty is the whole host.
-	Path OptString `json:"path"`
+	// Refuse every request this route is the most specific route for; a more specific route of the same
+	// list still answers for what it covers (ADR 26-10-27-880 §4). A route a judge used to read became
+	// one, so removing the judge widened nothing (ADR 26-10-27-880).
+	Blocked OptBool               `json:"blocked"`
+	Graphql OptSecretRouteGraphQL `json:"graphql"`
+	// Hosts the route covers, each an exact name, `*.suffix` for every name strictly beneath suffix but
+	// not suffix itself, or `*` alone for any host (ADR 26-10-27-939). A :port is dropped, so a host is
+	// every port of it. A host covers no host beneath it; `*.h` says that.
+	Hosts []string          `json:"hosts"`
+	Mcp   OptSecretRouteMCP `json:"mcp"`
+	// HTTP methods the route covers, upper case; empty is any method. A request names its request line's
+	// method and every method it overrides it with: the X-HTTP-Method-Override, X-HTTP-Method and
+	// X-Method-Override headers, and _method in its URL, plus, on a POST only, _method in a URL-encoded
+	// form body, a body with no Content-Type (read as a form), or the top level of a JSON object body.
+	// An open route matches only when every one is among methods; of a POST body it ignores only a JSON
+	// body it could not read at all (too large, of undeclared length, in an unknown encoding) and a
+	// multipart body, and refuses a form or untyped body it could not read and any body it read but
+	// could not parse unambiguously. A blocked route matches when any one is among methods, or when a
+	// POST body that may name one cannot be read or parsed. So a _method hidden in an unreadable JSON or
+	// multipart POST is caught only by a blocked method route.
+	Methods []string `json:"methods"`
+	// Path patterns, each matched against the whole request path one segment at a time: `*` is exactly
+	// one segment, `**` as the last segment is zero or more, anything else is literal, compared ignoring
+	// case (so /repos/acme/** also allows /Repos/ACME/...). Empty is any path.
+	Paths []string `json:"paths"`
 }
 
 // GetBlocked returns the value of Blocked.
@@ -30804,14 +30984,29 @@ func (s *SecretRoute) GetBlocked() OptBool {
 	return s.Blocked
 }
 
-// GetHost returns the value of Host.
-func (s *SecretRoute) GetHost() string {
-	return s.Host
+// GetGraphql returns the value of Graphql.
+func (s *SecretRoute) GetGraphql() OptSecretRouteGraphQL {
+	return s.Graphql
 }
 
-// GetPath returns the value of Path.
-func (s *SecretRoute) GetPath() OptString {
-	return s.Path
+// GetHosts returns the value of Hosts.
+func (s *SecretRoute) GetHosts() []string {
+	return s.Hosts
+}
+
+// GetMcp returns the value of Mcp.
+func (s *SecretRoute) GetMcp() OptSecretRouteMCP {
+	return s.Mcp
+}
+
+// GetMethods returns the value of Methods.
+func (s *SecretRoute) GetMethods() []string {
+	return s.Methods
+}
+
+// GetPaths returns the value of Paths.
+func (s *SecretRoute) GetPaths() []string {
+	return s.Paths
 }
 
 // SetBlocked sets the value of Blocked.
@@ -30819,26 +31014,147 @@ func (s *SecretRoute) SetBlocked(val OptBool) {
 	s.Blocked = val
 }
 
-// SetHost sets the value of Host.
-func (s *SecretRoute) SetHost(val string) {
-	s.Host = val
+// SetGraphql sets the value of Graphql.
+func (s *SecretRoute) SetGraphql(val OptSecretRouteGraphQL) {
+	s.Graphql = val
 }
 
-// SetPath sets the value of Path.
-func (s *SecretRoute) SetPath(val OptString) {
-	s.Path = val
+// SetHosts sets the value of Hosts.
+func (s *SecretRoute) SetHosts(val []string) {
+	s.Hosts = val
 }
 
-// Where a secret may be sent, as written. A host covers itself and every host beneath it; a path is
-// a prefix matched on whole segments.
+// SetMcp sets the value of Mcp.
+func (s *SecretRoute) SetMcp(val OptSecretRouteMCP) {
+	s.Mcp = val
+}
+
+// SetMethods sets the value of Methods.
+func (s *SecretRoute) SetMethods(val []string) {
+	s.Methods = val
+}
+
+// SetPaths sets the value of Paths.
+func (s *SecretRoute) SetPaths(val []string) {
+	s.Paths = val
+}
+
+// Narrows a route to GraphQL requests by their parsed documents (ADR 26-10-27-880 §4): the body's,
+// a JSON object {query, ...} or a batch of them, and any query in the URL's query string;
+// operationName is never read, and root fragment spreads are expanded. Matching is asymmetric, so a
+// carve-out cannot be stepped around. An open route matches only when every operation is readable
+// and matches, its type among operations and every root field among fields; a persisted query with
+// no document, or a body past the capture limit, unparsable, in an encoding the proxy cannot decode,
+// or on an upgraded connection, does not match. A blocked route matches when any one operation
+// matches, its type among operations and any root field among fields, or when the documents cannot
+// be read for any of those reasons: a blocked GraphQL route refuses every request on its hosts and
+// paths whose body cannot be read.
+// Ref: #/components/schemas/SecretRouteGraphQL
+type SecretRouteGraphQL struct {
+	// Root field names every operation's root fields must be among, aliases resolved and root fragment
+	// spreads expanded; a name may end in one `*`. Empty is any field.
+	Fields []string `json:"fields"`
+	// Operation types every operation must be one of; empty is any.
+	Operations []SecretRouteGraphQLOperationsItem `json:"operations"`
+}
+
+// GetFields returns the value of Fields.
+func (s *SecretRouteGraphQL) GetFields() []string {
+	return s.Fields
+}
+
+// GetOperations returns the value of Operations.
+func (s *SecretRouteGraphQL) GetOperations() []SecretRouteGraphQLOperationsItem {
+	return s.Operations
+}
+
+// SetFields sets the value of Fields.
+func (s *SecretRouteGraphQL) SetFields(val []string) {
+	s.Fields = val
+}
+
+// SetOperations sets the value of Operations.
+func (s *SecretRouteGraphQL) SetOperations(val []SecretRouteGraphQLOperationsItem) {
+	s.Operations = val
+}
+
+type SecretRouteGraphQLOperationsItem string
+
+const (
+	SecretRouteGraphQLOperationsItemQuery        SecretRouteGraphQLOperationsItem = "query"
+	SecretRouteGraphQLOperationsItemMutation     SecretRouteGraphQLOperationsItem = "mutation"
+	SecretRouteGraphQLOperationsItemSubscription SecretRouteGraphQLOperationsItem = "subscription"
+)
+
+// AllValues returns all SecretRouteGraphQLOperationsItem values.
+func (SecretRouteGraphQLOperationsItem) AllValues() []SecretRouteGraphQLOperationsItem {
+	return []SecretRouteGraphQLOperationsItem{
+		SecretRouteGraphQLOperationsItemQuery,
+		SecretRouteGraphQLOperationsItemMutation,
+		SecretRouteGraphQLOperationsItemSubscription,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRouteGraphQLOperationsItem) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRouteGraphQLOperationsItemQuery:
+		return []byte(s), nil
+	case SecretRouteGraphQLOperationsItemMutation:
+		return []byte(s), nil
+	case SecretRouteGraphQLOperationsItemSubscription:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRouteGraphQLOperationsItem) UnmarshalText(data []byte) error {
+	switch SecretRouteGraphQLOperationsItem(data) {
+	case SecretRouteGraphQLOperationsItemQuery:
+		*s = SecretRouteGraphQLOperationsItemQuery
+		return nil
+	case SecretRouteGraphQLOperationsItemMutation:
+		*s = SecretRouteGraphQLOperationsItemMutation
+		return nil
+	case SecretRouteGraphQLOperationsItemSubscription:
+		*s = SecretRouteGraphQLOperationsItemSubscription
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Where a secret may be sent, as written (ADR 26-10-27-880 §4). A request falls on the route when
+// its host, method, path and protocol block all match; the most specific route of a list a request
+// falls on decides it, host first, then path, and a blocked one among the most specific refuses.
 // Ref: #/components/schemas/SecretRouteInput
 type SecretRouteInput struct {
-	// Refuse every request on this route; a more specific route still answers for the paths beneath it.
-	Blocked OptBool `json:"blocked"`
-	// Host the route covers, and every host beneath it.
-	Host string `json:"host"`
-	// Optional path prefix, starting with /, matched on whole segments; empty is the whole host.
-	Path OptString `json:"path"`
+	// Refuse every request this route is the most specific route for; a more specific route of the same
+	// list still answers for what it covers (ADR 26-10-27-880 §4).
+	Blocked OptBool               `json:"blocked"`
+	Graphql OptSecretRouteGraphQL `json:"graphql"`
+	// Hosts the route covers, each an exact name, `*.suffix` for every name strictly beneath suffix but
+	// not suffix itself, or `*` alone for any host (ADR 26-10-27-939). A :port is dropped, so a host is
+	// every port of it. A host covers no host beneath it; `*.h` says that.
+	Hosts []string          `json:"hosts"`
+	Mcp   OptSecretRouteMCP `json:"mcp"`
+	// HTTP methods the route covers, upper case; empty is any method. A request names its request line's
+	// method and every method it overrides it with: the X-HTTP-Method-Override, X-HTTP-Method and
+	// X-Method-Override headers, and _method in its URL, plus, on a POST only, _method in a URL-encoded
+	// form body, a body with no Content-Type (read as a form), or the top level of a JSON object body.
+	// An open route matches only when every one is among methods; of a POST body it ignores only a JSON
+	// body it could not read at all (too large, of undeclared length, in an unknown encoding) and a
+	// multipart body, and refuses a form or untyped body it could not read and any body it read but
+	// could not parse unambiguously. A blocked route matches when any one is among methods, or when a
+	// POST body that may name one cannot be read or parsed. So a _method hidden in an unreadable JSON or
+	// multipart POST is caught only by a blocked method route.
+	Methods []string `json:"methods"`
+	// Path patterns, each matched against the whole request path one segment at a time: `*` is exactly
+	// one segment, `**` as the last segment is zero or more, anything else is literal, compared ignoring
+	// case (so /repos/acme/** also allows /Repos/ACME/...). Empty is any path.
+	Paths []string `json:"paths"`
 }
 
 // GetBlocked returns the value of Blocked.
@@ -30846,14 +31162,29 @@ func (s *SecretRouteInput) GetBlocked() OptBool {
 	return s.Blocked
 }
 
-// GetHost returns the value of Host.
-func (s *SecretRouteInput) GetHost() string {
-	return s.Host
+// GetGraphql returns the value of Graphql.
+func (s *SecretRouteInput) GetGraphql() OptSecretRouteGraphQL {
+	return s.Graphql
 }
 
-// GetPath returns the value of Path.
-func (s *SecretRouteInput) GetPath() OptString {
-	return s.Path
+// GetHosts returns the value of Hosts.
+func (s *SecretRouteInput) GetHosts() []string {
+	return s.Hosts
+}
+
+// GetMcp returns the value of Mcp.
+func (s *SecretRouteInput) GetMcp() OptSecretRouteMCP {
+	return s.Mcp
+}
+
+// GetMethods returns the value of Methods.
+func (s *SecretRouteInput) GetMethods() []string {
+	return s.Methods
+}
+
+// GetPaths returns the value of Paths.
+func (s *SecretRouteInput) GetPaths() []string {
+	return s.Paths
 }
 
 // SetBlocked sets the value of Blocked.
@@ -30861,14 +31192,55 @@ func (s *SecretRouteInput) SetBlocked(val OptBool) {
 	s.Blocked = val
 }
 
-// SetHost sets the value of Host.
-func (s *SecretRouteInput) SetHost(val string) {
-	s.Host = val
+// SetGraphql sets the value of Graphql.
+func (s *SecretRouteInput) SetGraphql(val OptSecretRouteGraphQL) {
+	s.Graphql = val
 }
 
-// SetPath sets the value of Path.
-func (s *SecretRouteInput) SetPath(val OptString) {
-	s.Path = val
+// SetHosts sets the value of Hosts.
+func (s *SecretRouteInput) SetHosts(val []string) {
+	s.Hosts = val
+}
+
+// SetMcp sets the value of Mcp.
+func (s *SecretRouteInput) SetMcp(val OptSecretRouteMCP) {
+	s.Mcp = val
+}
+
+// SetMethods sets the value of Methods.
+func (s *SecretRouteInput) SetMethods(val []string) {
+	s.Methods = val
+}
+
+// SetPaths sets the value of Paths.
+func (s *SecretRouteInput) SetPaths(val []string) {
+	s.Paths = val
+}
+
+// Narrows a route to MCP JSON-RPC requests (ADR 26-10-27-880 §4): the body, one JSON-RPC 2.0
+// message or a batch of them. Matching is asymmetric, so a carve-out cannot be stepped around. An
+// open route matches only when every message is readable and is a tools/call whose params.name is
+// among tools, a protocol method (initialize, ping, tools/list, notifications/*), or a response to a
+// request of the server's; a GET that opens the server's stream or a DELETE that ends the session,
+// each with an empty body, matches too, since neither calls a tool. Any other method, or a body past
+// the capture limit, unparsable, in an encoding the proxy cannot decode, or on an upgraded
+// connection, does not match. A blocked route matches when any one message is a tools/call of a tool
+// among tools, or when the body cannot be read for any of those reasons: a blocked MCP route refuses
+// every request on its hosts and paths whose body cannot be read.
+// Ref: #/components/schemas/SecretRouteMCP
+type SecretRouteMCP struct {
+	// Tool names a tools/call may name; a name may end in one `*`. Empty is any tool.
+	Tools []string `json:"tools"`
+}
+
+// GetTools returns the value of Tools.
+func (s *SecretRouteMCP) GetTools() []string {
+	return s.Tools
+}
+
+// SetTools sets the value of Tools.
+func (s *SecretRouteMCP) SetTools(val []string) {
+	s.Tools = val
 }
 
 // Secret type.

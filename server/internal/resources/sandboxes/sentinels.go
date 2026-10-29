@@ -97,7 +97,7 @@ func markSentinelsIfStale(ctx context.Context, st *store.Store, engine *reconcil
 	if err != nil {
 		return err
 	}
-	if maps.EqualFunc(sent, current, func(a, b [][]secretroute.Route) bool { return slices.EqualFunc(a, b, slices.Equal) }) {
+	if maps.EqualFunc(sent, current, func(a, b [][]secretroute.Route) bool { return slices.EqualFunc(a, b, model.SameRoutes) }) {
 		return nil
 	}
 	return engine.MarkDirty(ctx, SentinelsResourceType, SandboxDirtyID(sb.ProjectID, sb.ID))

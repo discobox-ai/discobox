@@ -70,15 +70,11 @@ func (s *Service) SetSecretHolders(holders SecretHolders) {
 	s.holders = holders
 }
 
-// routesFrom reads the routes a body names (ADR 26-10-02-924, ADR
-// 26-10-27-939). A route without a host, or with a malformed path, is refused
-// rather than dropped: a person who wrote one meant somewhere.
+// routesFrom reads the routes a body names (ADR 26-10-27-880 §4, ADR
+// 26-10-27-939). A route secretroute.Normalize refuses is refused rather than
+// dropped: a person who wrote one meant somewhere.
 func routesFrom(input []apigen.SecretRouteInput) ([]model.SecretRoute, error) {
-	routes := make([]model.SecretRoute, 0, len(input))
-	for _, route := range input {
-		routes = append(routes, model.SecretRoute{Host: route.Host, Path: route.Path.Or(""), Blocked: route.Blocked.Or(false)})
-	}
-	normalized, err := model.NormalizeRoutes(routes)
+	normalized, err := model.NormalizeRoutes(services.SecretRoutesToModel(input))
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}

@@ -209,11 +209,13 @@ func TestARoutePersistedWithAUseReadsBlocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	want := [][]secretroute.Route{{
-		{Host: "githubcopilot.com"},
-		{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
-		{Host: "github.com", Blocked: true},
-	}}
+	// Each host covered the hosts beneath it, and each path the paths
+	// beneath it (secretroute.FromLegacy).
+	want := [][]secretroute.Route{parsedRoutes(t,
+		"githubcopilot.com,*.githubcopilot.com",
+		"githubcopilot.com,*.githubcopilot.com/mcp/**=blocked",
+		"github.com,*.github.com=blocked",
+	)}
 	if got := doc.Routes["sb-1"]["SENT"]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("routes = %+v, want %+v", got, want)
 	}
@@ -254,7 +256,7 @@ func TestAnUnroutedSentinelReadsAsItsDocumentMeantIt(t *testing.T) {
 	if got := doc.Routes["sb-1"]["SENT-PLAIN"]; !reflect.DeepEqual(got, anyHost) {
 		t.Fatalf("an unrouted sentinel of an old document = %+v, want any host", got)
 	}
-	if got := doc.Routes["sb-1"]["SENT-ROUTED"]; !reflect.DeepEqual(got, [][]secretroute.Route{{{Host: "github.com"}}}) {
+	if got := doc.Routes["sb-1"]["SENT-ROUTED"]; !reflect.DeepEqual(got, [][]secretroute.Route{parsedRoutes(t, "github.com,*.github.com")}) {
 		t.Fatalf("a routed sentinel of an old document = %+v, want its one list", got)
 	}
 
@@ -286,14 +288,14 @@ func TestAnUnroutedSentinelReadsAsItsDocumentMeantIt(t *testing.T) {
 func TestAuthorizeHoldsARequestToItsSentinelsRouteLists(t *testing.T) {
 	r := &secretResolver{}
 	r.setSentinelRoutes(map[string]map[string][][]secretroute.Route{"sb-1": {
-		"SENT-COPILOT": {{
-			{Host: "githubcopilot.com"},
-			{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
-		}},
+		"SENT-COPILOT": {parsedRoutes(t,
+			"*.githubcopilot.com",
+			"*.githubcopilot.com/mcp/**=blocked",
+		)},
 		// A secret open to any host, narrowed by its binding.
 		"SENT-NARROWED": {
-			{{Host: secretroute.AnyHost}},
-			{{Host: "api.github.com", Path: "/repos/acme"}},
+			parsedRoutes(t, "*"),
+			parsedRoutes(t, "api.github.com/repos/acme/**"),
 		},
 	}})
 	for _, tc := range []struct {
@@ -336,8 +338,8 @@ func TestAuthorizeHoldsARequestToItsSentinelsRouteLists(t *testing.T) {
 func TestUpsertSandboxSentinelsKeepsRoutesOfHeldSentinels(t *testing.T) {
 	root := withTestRoot(t)
 	routes := map[string][][]secretroute.Route{
-		"SENT-A":    {{{Host: "github.com", Blocked: true}}, {{Host: "api.github.com"}}},
-		"SENT-GONE": {{{Host: "example.com"}}},
+		"SENT-A":    {parsedRoutes(t, "github.com=blocked"), parsedRoutes(t, "api.github.com")},
+		"SENT-GONE": {parsedRoutes(t, "example.com")},
 	}
 	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT-A", "SENT-B"}, routes); err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -366,10 +368,10 @@ func TestUpsertSandboxSentinelsKeepsRoutesOfHeldSentinels(t *testing.T) {
 // own until it is gone.
 func TestStagedRoutesCoverSentinelsArrivingAndLeaving(t *testing.T) {
 	r := &secretResolver{}
-	leaving := [][]secretroute.Route{{{Host: "github.com", Path: "/old"}}}
+	leaving := [][]secretroute.Route{parsedRoutes(t, "github.com/old/**")}
 	r.setSentinelRoutes(map[string]map[string][][]secretroute.Route{"sb-1": {"SENT-OLD": leaving}})
 
-	arriving := [][]secretroute.Route{{{Host: "githubcopilot.com"}}}
+	arriving := [][]secretroute.Route{parsedRoutes(t, "githubcopilot.com")}
 	next := map[string]map[string][][]secretroute.Route{"sb-1": {"SENT-NEW": arriving}}
 	r.stageSentinelRoutes(next)
 	if got := r.heldRoutes("sb-1", "SENT-NEW"); !reflect.DeepEqual(got, arriving) {
@@ -385,5 +387,191 @@ func TestStagedRoutesCoverSentinelsArrivingAndLeaving(t *testing.T) {
 	r.setSentinelRoutes(next)
 	if got := r.heldRoutes("sb-1", "SENT-OLD"); len(got) != 0 {
 		t.Fatalf("leaving lists = %#v, want them dropped once the set has moved", got)
+	}
+}
+
+// parsedRoutes reads routes in the typed form a person writes them.
+func parsedRoutes(t *testing.T, texts ...string) []secretroute.Route {
+	t.Helper()
+	routes := make([]secretroute.Route, 0, len(texts))
+	for _, text := range texts {
+		route, err := secretroute.Parse(text)
+		if err != nil {
+			t.Fatalf("parse %q: %v", text, err)
+		}
+		routes = append(routes, route)
+	}
+	return routes
+}
+
+// A version 2 document's route lists read through secretroute.FromLegacy,
+// each kept apart. A legacy route the new shape cannot say — a path holding
+// `*`, literal then and a glob now — fails closed: an open one is left out, a
+// blocked one blocks its path cut back before the `*`, outranking the open
+// route it was a carve-out from, and a blocked one whose host does not read
+// either makes its list refuse everything (secretroute.FromLegacyList).
+// None is dropped open.
+func TestAVersion2DocumentReadsThroughFromLegacy(t *testing.T) {
+	root := withTestRoot(t)
+	path := root.ProxySecretsFile(testProjectID, testPoolID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := `{"version":2,"clients":{"sb-1":["SENT","SENT-BAD-HOST"]},"routes":{"sb-1":{` +
+		`"SENT":[` +
+		`[{"host":"*"}],` +
+		`[{"host":"api.github.com","path":"/repos/acme/"},` +
+		`{"host":"api.github.com","path":"/repos/acme/web/*","blocked":true},` +
+		`{"host":"api.github.com","path":"/orgs/*"}]],` +
+		`"SENT-BAD-HOST":[[{"host":"github.com"},{"host":"git*hub.com","path":"/x*","blocked":true}]]` +
+		`}}}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := readSecretsDoc(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	want := [][]secretroute.Route{
+		parsedRoutes(t, "*"),
+		parsedRoutes(t,
+			"api.github.com,*.api.github.com/repos/acme/**",
+			"api.github.com,*.api.github.com/repos/acme/web/**=blocked",
+		),
+	}
+	if got := doc.Routes["sb-1"]["SENT"]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("routes = %+v, want %+v", got, want)
+	}
+	if got := doc.Routes["sb-1"]["SENT-BAD-HOST"]; !reflect.DeepEqual(got, [][]secretroute.Route{parsedRoutes(t, "*=blocked")}) {
+		t.Fatalf("a list with an unreadable blocked route = %+v, want one refusing every request", got)
+	}
+
+	r := &secretResolver{}
+	r.setSentinelRoutes(doc.Routes)
+	for _, tc := range []struct {
+		sentinel, url string
+	}{
+		{"SENT", "https://api.github.com/repos/acme/web/settings"},
+		{"SENT", "https://api.github.com/repos/acme/web/*/x"},
+		{"SENT", "https://api.github.com/orgs/acme"},
+		{"SENT-BAD-HOST", "https://github.com/"},
+	} {
+		host, _ := strings.CutPrefix(tc.url, "https://")
+		host, _, _ = strings.Cut(host, "/")
+		if verdict, _ := r.Authorize(context.Background(), proxy.SecretAuthorizeRequest{
+			ClientID: "sb-1", Sentinels: []string{tc.sentinel}, Method: http.MethodGet, Host: host, URL: tc.url,
+		}); verdict.Allow {
+			t.Fatalf("%s to %s was allowed after a legacy route it fell under could not be read", tc.sentinel, tc.url)
+		}
+	}
+
+	// Rewritten by this pool, the document is version 3 and reads the same.
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-2", []string{"OTHER"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if doc, err = readSecretsDoc(path); err != nil || doc.Version != secretsDocVersion || !reflect.DeepEqual(doc.Routes["sb-1"]["SENT"], want) {
+		t.Fatalf("after a rewrite: version %d, routes = %+v (%v), want %+v", doc.Version, doc.Routes["sb-1"]["SENT"], err, want)
+	}
+}
+
+// A route is written normalized, and one that does not normalize fails
+// closed: an open one is left out, and a blocked one refuses its whole list,
+// since no narrower block can be known to cover what it did.
+func TestUpsertSandboxSentinelsHoldsAnUnreadableRouteClosed(t *testing.T) {
+	root := withTestRoot(t)
+	routes := map[string][][]secretroute.Route{"SENT": {
+		{
+			{Hosts: []string{"API.GitHub.com"}, Methods: []string{"get"}},
+			{Hosts: []string{"api.github.com"}, Paths: []string{"no-slash"}},
+		},
+		{
+			{Hosts: []string{"uploads.github.com"}},
+			{Hosts: []string{"uploads.github.com"}, Paths: []string{"no-slash"}, Blocked: true},
+		},
+	}}
+	if err := UpsertSandboxSentinels(root, testProjectID, testPoolID, "sb-1", []string{"SENT"}, routes); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	doc, err := readSecretsDoc(root.ProxySecretsFile(testProjectID, testPoolID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]secretroute.Route{parsedRoutes(t, "GET api.github.com"), parsedRoutes(t, "*=blocked")}
+	if got := doc.Routes["sb-1"]["SENT"]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("routes = %+v, want %+v", got, want)
+	}
+}
+
+// A route's protocol block is matched against the request body the proxy
+// hands the authorizer: a GraphQL query is allowed and a mutation refused
+// under a route to queries alone, and a body that cannot be read matches no
+// open route.
+func TestAuthorizeMatchesAProtocolBlockOnTheBody(t *testing.T) {
+	r := &secretResolver{}
+	r.setSentinelRoutes(map[string]map[string][][]secretroute.Route{"sb-1": {
+		"SENT": {parsedRoutes(t, "api.x.test/graphql graphql=query")},
+	}})
+	authorize := func(body func() ([]byte, bool)) bool {
+		t.Helper()
+		verdict, err := r.Authorize(context.Background(), proxy.SecretAuthorizeRequest{
+			ClientID: "sb-1", Sentinels: []string{"SENT"}, Method: http.MethodPost,
+			Host: "api.x.test", URL: "https://api.x.test/graphql", Body: body,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return verdict.Allow
+	}
+	body := func(text string) func() ([]byte, bool) {
+		return func() ([]byte, bool) { return []byte(text), true }
+	}
+	if !authorize(body(`{"query":"query { viewer { login } }"}`)) {
+		t.Fatal("a query was refused under a route to queries")
+	}
+	if authorize(body(`{"query":"mutation { deleteRepository(input: {}) { clientMutationId } }"}`)) {
+		t.Fatal("a mutation was allowed under a route to queries")
+	}
+	if authorize(func() ([]byte, bool) { return nil, false }) {
+		t.Fatal("a body past the limit was allowed under a protocol route")
+	}
+	if authorize(nil) {
+		t.Fatal("no body was allowed under a protocol route")
+	}
+}
+
+// The authorizer holds a request to the method its headers name besides its
+// request line: a POST overriding itself to DELETE falls on the route that
+// blocks DELETE.
+func TestAuthorizeReadsAMethodOverride(t *testing.T) {
+	r := &secretResolver{}
+	r.setSentinelRoutes(map[string]map[string][][]secretroute.Route{"sb-1": {
+		"SENT": {parsedRoutes(t, "api.x.test/**", "DELETE api.x.test/repos/a=blocked")},
+	}})
+	authorize := func(header http.Header) bool {
+		t.Helper()
+		verdict, err := r.Authorize(context.Background(), proxy.SecretAuthorizeRequest{
+			ClientID: "sb-1", Sentinels: []string{"SENT"}, Method: http.MethodPost,
+			Host: "api.x.test", URL: "https://api.x.test/repos/a", Header: header,
+			Body: func() ([]byte, bool) { return []byte(`{}`), true },
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return verdict.Allow
+	}
+	if authorize(http.Header{"Content-Type": {"application/json"}, "X-Http-Method-Override": {"DELETE"}}) {
+		t.Fatal("a POST overridden to DELETE was allowed under a route blocking DELETE")
+	}
+	if !authorize(http.Header{"Content-Type": {"application/json"}}) {
+		t.Fatal("a plain JSON POST was refused")
+	}
+}
+
+// A pushed list none of whose routes normalizes refuses every request rather
+// than reading as no list.
+func TestHeldListOfNothingReadableRefuses(t *testing.T) {
+	got := heldList([]secretroute.Route{{Hosts: []string{"api.github.com"}, Paths: []string{"no-slash"}}})
+	if !reflect.DeepEqual(got, secretroute.RefusingList()) {
+		t.Fatalf("heldList = %+v, want RefusingList", got)
 	}
 }

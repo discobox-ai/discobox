@@ -178,13 +178,17 @@ every binding standing on it along with it. The value rows say
 
 **A secret's routes are one row each** (`secretRouteRows`), straight under
 its name and kind, with one empty row after them for another. Each is typed as
-the CLI's `--route` takes it, `HOST[/PATH][=blocked]` or `*` for any host
-(ADR 26-10-27-939), through `secretroute.Parse`. A row that is not a route is
-refused on the card. A new secret is refused with none — it would be sent
+the CLI's `--route` takes it,
+`[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`, a host
+exact and `*.h` the hosts beneath h, `*` any host (ADR 26-10-27-880 §4,
+ADR 26-10-27-939), through `secretroute.Parse`, and shown through
+`secretroute.Format`; the window holds routes as `secretroute.Route`, with no
+type of its own. A row that is not a route is refused on the card. A new secret is refused with none — it would be sent
 nowhere — as `discobox secret create` refuses one. Emptying a row drops that
 route, and emptying them all on an edit clears them (ADR 26-10-02-924). The
 detail card lists each route as `allowed` or `blocked`, and says `nowhere` for
-a secret with none (ADR 26-10-27-880).
+a secret with none (ADR 26-10-27-880). Routes said on one line are joined by
+`; `, since a comma is part of a route.
 
 The **kind** is the one row an existing credential locks: a token and an oauth
 credential are stored and renewed differently, and the server has no answer for

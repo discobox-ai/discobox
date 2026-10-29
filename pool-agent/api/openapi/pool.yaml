@@ -153,15 +153,33 @@ components:
             type: object
         HarnessCaptureRoute:
             additionalProperties: false
+            description: A route a harness's captured secret is bound with, in SentinelRoute's shape.
             properties:
-                host:
-                    type: string
-                path:
-                    type: string
-                use:
-                    type: string
+                blocked:
+                    description: Refuse every request this route is the most specific route for; a more specific route of the same list still answers for what it covers (ADR 26-10-27-880 §4)
+                    type: boolean
+                graphql:
+                    $ref: '#/components/schemas/SentinelRouteGraphQL'
+                hosts:
+                    description: "Hosts the route covers, each an exact name, `*.suffix` for every name strictly beneath suffix but not suffix itself, or `*` alone for any host (ADR 26-10-27-939). A :port is dropped, so a host is every port of it. A host covers no host beneath it; `*.h` says that."
+                    items:
+                        type: string
+                    minItems: 1
+                    type: array
+                mcp:
+                    $ref: '#/components/schemas/SentinelRouteMCP'
+                methods:
+                    description: "HTTP methods the route covers, upper case; empty is any method. A request names its request line's method and every method it overrides it with: the X-HTTP-Method-Override, X-HTTP-Method and X-Method-Override headers, and _method in its URL, plus, on a POST only, _method in a URL-encoded form body, a body with no Content-Type (read as a form), or the top level of a JSON object body. An open route matches only when every one is among methods; of a POST body it ignores only a JSON body it could not read at all (too large, of undeclared length, in an unknown encoding) and a multipart body, and refuses a form or untyped body it could not read and any body it read but could not parse unambiguously. A blocked route matches when any one is among methods, or when a POST body that may name one cannot be read or parsed. So a _method hidden in an unreadable JSON or multipart POST is caught only by a blocked method route."
+                    items:
+                        type: string
+                    type: array
+                paths:
+                    description: "Path patterns, each matched against the whole request path one segment at a time: `*` is exactly one segment, `**` as the last segment is zero or more, anything else is literal, compared ignoring case (so /repos/acme/** also allows /Repos/ACME/...). Empty is any path."
+                    items:
+                        type: string
+                    type: array
             required:
-                - host
+                - hosts
             type: object
         HarnessCaptureSetting:
             additionalProperties: false
@@ -549,17 +567,62 @@ components:
             type: object
         SentinelRoute:
             additionalProperties: false
-            description: Where a secret may be sent (ADR 26-10-02-924). A host covers itself and every host beneath it, and `*` covers every host (ADR 26-10-27-939); a path is a prefix matched on whole segments.
+            description: "Where a secret may be sent (ADR 26-10-02-924, ADR 26-10-27-880 §4). A request falls on the route when its host, method, path and protocol block all match; the most specific route of a list a request falls on decides it, host first, then path, and a blocked one among the most specific refuses."
             properties:
                 blocked:
-                    description: Refuse every request on this route; a more specific route still answers for the paths beneath it
+                    description: Refuse every request this route is the most specific route for; a more specific route of the same list still answers for what it covers (ADR 26-10-27-880 §4)
                     type: boolean
-                host:
-                    type: string
-                path:
-                    type: string
+                graphql:
+                    $ref: '#/components/schemas/SentinelRouteGraphQL'
+                hosts:
+                    description: "Hosts the route covers, each an exact name, `*.suffix` for every name strictly beneath suffix but not suffix itself, or `*` alone for any host (ADR 26-10-27-939). A :port is dropped, so a host is every port of it. A host covers no host beneath it; `*.h` says that."
+                    items:
+                        type: string
+                    minItems: 1
+                    type: array
+                mcp:
+                    $ref: '#/components/schemas/SentinelRouteMCP'
+                methods:
+                    description: "HTTP methods the route covers, upper case; empty is any method. A request names its request line's method and every method it overrides it with: the X-HTTP-Method-Override, X-HTTP-Method and X-Method-Override headers, and _method in its URL, plus, on a POST only, _method in a URL-encoded form body, a body with no Content-Type (read as a form), or the top level of a JSON object body. An open route matches only when every one is among methods; of a POST body it ignores only a JSON body it could not read at all (too large, of undeclared length, in an unknown encoding) and a multipart body, and refuses a form or untyped body it could not read and any body it read but could not parse unambiguously. A blocked route matches when any one is among methods, or when a POST body that may name one cannot be read or parsed. So a _method hidden in an unreadable JSON or multipart POST is caught only by a blocked method route."
+                    items:
+                        type: string
+                    type: array
+                paths:
+                    description: "Path patterns, each matched against the whole request path one segment at a time: `*` is exactly one segment, `**` as the last segment is zero or more, anything else is literal, compared ignoring case (so /repos/acme/** also allows /Repos/ACME/...). Empty is any path."
+                    items:
+                        type: string
+                    type: array
             required:
-                - host
+                - hosts
+            type: object
+        SentinelRouteGraphQL:
+            additionalProperties: false
+            description: "Narrows a route to GraphQL requests by their parsed documents (ADR 26-10-27-880 §4): the body's, a JSON object {query, ...} or a batch of them, and any query in the URL's query string; operationName is never read, and root fragment spreads are expanded. Matching is asymmetric, so a carve-out cannot be stepped around. An open route matches only when every operation is readable and matches, its type among operations and every root field among fields; a persisted query with no document, or a body past the capture limit, unparsable, in an encoding the proxy cannot decode, or on an upgraded connection, does not match. A blocked route matches when any one operation matches, its type among operations and any root field among fields, or when the documents cannot be read for any of those reasons: a blocked GraphQL route refuses every request on its hosts and paths whose body cannot be read."
+            properties:
+                fields:
+                    description: "Root field names every operation's root fields must be among, aliases resolved and root fragment spreads expanded; a name may end in one `*`. Empty is any field."
+                    items:
+                        type: string
+                    type: array
+                operations:
+                    description: Operation types every operation must be one of; empty is any.
+                    items:
+                        enum:
+                            - query
+                            - mutation
+                            - subscription
+                        type: string
+                    type: array
+            type: object
+        SentinelRouteMCP:
+            additionalProperties: false
+            description: "Narrows a route to MCP JSON-RPC requests (ADR 26-10-27-880 §4): the body, one JSON-RPC 2.0 message or a batch of them. Matching is asymmetric, so a carve-out cannot be stepped around. An open route matches only when every message is readable and is a tools/call whose params.name is among tools, a protocol method (initialize, ping, tools/list, notifications/*), or a response to a request of the server's; a GET that opens the server's stream or a DELETE that ends the session, each with an empty body, matches too, since neither calls a tool. Any other method, or a body past the capture limit, unparsable, in an encoding the proxy cannot decode, or on an upgraded connection, does not match. A blocked route matches when any one message is a tools/call of a tool among tools, or when the body cannot be read for any of those reasons: a blocked MCP route refuses every request on its hosts and paths whose body cannot be read."
+            properties:
+                tools:
+                    description: "Tool names a tools/call may name; a name may end in one `*`. Empty is any tool."
+                    items:
+                        type: string
+                    type: array
             type: object
         Gateway:
             additionalProperties: false

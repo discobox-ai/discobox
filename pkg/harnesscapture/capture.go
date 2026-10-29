@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 const Version = 1
@@ -49,29 +51,49 @@ type OAuth struct {
 	Encoding string `json:"encoding,omitempty"`
 }
 
-// Route is one place a saved credential may be sent, as the harness declares
-// it for the secret save-back writes. A blocked route refuses the requests it
-// is the most specific route for (ADR 26-10-27-880 §4).
-type Route struct {
-	Host    string `json:"host"`
-	Path    string `json:"path,omitempty"`
-	Blocked bool   `json:"blocked,omitempty"`
-}
+// Route is one place a credential may be sent, as a harness bundle declares
+// it: for a secret its image declares, and for the secret a save-back
+// provider writes. It is a route of pkg/secretroute (ADR 26-10-27-880 §4),
+// and a blocked one refuses the requests it is the most specific route for.
+type Route secretroute.Route
 
-// UnmarshalJSON reads a declared route. One that still carries a use — the
-// shape it had while a judge read it — is blocked: the use was its only limit,
-// and nothing reads it any more (ADR 26-10-27-880 §8).
+// UnmarshalJSON reads a declared route. A bundle built before routes named
+// host patterns declares {host, path} instead, and an older pinned bundle, or
+// a person's own, keeps declaring it until rebuilt: that is read as it was
+// meant (secretroute.FromLegacy), the host and every host beneath it and the
+// path and everything beneath it. One that still carries a use — the shape it
+// had while a judge read it — is blocked: the use was its only limit, and
+// nothing reads it any more (ADR 26-10-27-880 §8). A legacy route
+// FromLegacy cannot say without widening is refused.
 func (r *Route) UnmarshalJSON(data []byte) error {
 	var declared struct {
-		Host    string `json:"host"`
-		Path    string `json:"path"`
-		Blocked bool   `json:"blocked"`
-		Use     string `json:"use"`
+		Hosts []string `json:"hosts"`
+		Host  *string  `json:"host"`
+		Path  string   `json:"path"`
+		Use   string   `json:"use"`
 	}
 	if err := json.Unmarshal(data, &declared); err != nil {
 		return err
 	}
-	*r = Route{Host: declared.Host, Path: declared.Path, Blocked: declared.Blocked || strings.TrimSpace(declared.Use) != ""}
+	if declared.Hosts == nil && declared.Host != nil {
+		var legacy struct {
+			Blocked bool `json:"blocked"`
+		}
+		if err := json.Unmarshal(data, &legacy); err != nil {
+			return err
+		}
+		route, err := secretroute.FromLegacy(*declared.Host, declared.Path, legacy.Blocked || strings.TrimSpace(declared.Use) != "")
+		if err != nil {
+			return err
+		}
+		*r = Route(route)
+		return nil
+	}
+	var route secretroute.Route
+	if err := json.Unmarshal(data, &route); err != nil {
+		return err
+	}
+	*r = Route(route)
 	return nil
 }
 

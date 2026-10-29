@@ -40,8 +40,8 @@ shape, so they deliberately do not get the same interface.
 
 | Operation | Input | Why |
 | --- | --- | --- |
-| `list` | nothing | The credentials the sandbox holds: name, the variable it is delivered in, its hosts, its lifetime, and whether it is a delegation (delivered nowhere; given to the discoboxes the sandbox creates). |
-| `request` | flags (`--name`, `--env-var`, `--hosts`, `--justification`, `--ttl`, `--delegate`, `--wait`, `--timeout`), or JSON on stdin (`--json`) | Carries free text — a justification — through a shell that reads quotes and apostrophes as syntax. Name, at least one host, and — to use it, never to delegate it — a variable are required and refused here before anything is sent. |
+| `list` | nothing | The credentials the sandbox holds: name, the variable it is delivered in, the hosts of its routes, its lifetime, and whether it is a delegation (delivered nowhere; given to the discoboxes the sandbox creates). |
+| `request` | flags (`--name`, `--env-var`, `--route`, `--hosts`, `--justification`, `--ttl`, `--delegate`, `--wait`, `--timeout`), or JSON on stdin (`--json`) | Carries free text — a justification — through a shell that reads quotes and apostrophes as syntax. Name, at least one route or host, and — to use it, never to delegate it — a variable are required and refused here before anything is sent. A route is the typed form `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`, one per `--route` since a comma is the route's own, sent as written: the service parses them and refuses one that does not parse as `invalid`, naming it, which this client prints as it prints any refusal — it has no route parser of its own, since that would be a dependency (above). The grammar in its help is a copy of `secretroute.Syntax`, which the CLI's conventions test holds it to. A host is exact (`*.h` for the hosts beneath h), and `--hosts` is shorthand for one route to each. |
 | `trust` | a host argument and flags (`--justification`, `--ca-file`, `--ttl`, `--wait`), or JSON on stdin (`--json`) | The protocol's trust verb (ADR 0149): ask for a host whose certificate the egress refuses to be trusted for this sandbox. A trust only pins a certificate for that one endpoint; what is sent there is not its question (ADR 26-10-27-880 §10). |
 | `env` | nothing | The protocol's environment verb: every credential variable and what is delivered in it now, as `export` lines a POSIX shell evaluates (`eval "$(discobox-access env)"`), each value single-quoted so the shell reads none of it. A harness's tool shell inherits the environment the harness was launched with, so a credential granted mid-session reaches the agent only this way. The values are sentinels, never credentials. |
 | `trusts` | nothing | — |
@@ -95,7 +95,7 @@ Timeouts end the local wait, not the service-owned request. Resuming a trust
 request returns the status available from the service; only the original
 `trust --wait` can preserve certificate-chain metadata from its creation call.
 
-A granted request reports the credential as the approver chose it — the hosts
+A granted request reports the credential as the approver chose it — the routes
 and lifetime may differ from the ask — and that it is in its variable for
 every command started from then on.
 

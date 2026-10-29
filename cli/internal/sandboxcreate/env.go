@@ -149,16 +149,20 @@ func splitHostless(arg string) (key, rest string) {
 }
 
 // inlineSecretHost reads the host after an inline secret's last @: empty is
-// none, sent anywhere. A host is a name with a dot in it, localhost, or `*` —
-// a word with no dot is far likelier the tail of a password than a host, and
+// none, sent anywhere. A host is a name with a dot in it, localhost, or `*`,
+// and is exact: `*.suffix` is the hosts beneath suffix. A word with no dot is far likelier the tail of a password than a host, and
 // is refused rather than taken for one.
 func inlineSecretHost(text string) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", nil
 	}
-	host, routePath, err := secretroute.Normalize(text, "")
-	if err != nil || routePath != "" || (host != secretroute.AnyHost && host != "localhost" && !strings.Contains(host, ".")) {
+	route, err := secretroute.Normalize(secretroute.Route{Hosts: []string{text}})
+	if err != nil {
+		return "", fmt.Errorf("%q after the last @ is not a host", text)
+	}
+	host := route.Hosts[0]
+	if host != secretroute.AnyHost && host != "localhost" && !strings.Contains(host, ".") {
 		return "", fmt.Errorf("%q after the last @ is not a host", text)
 	}
 	return host, nil

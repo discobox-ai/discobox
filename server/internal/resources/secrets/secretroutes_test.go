@@ -2,6 +2,7 @@ package secrets_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
@@ -13,9 +14,9 @@ import (
 )
 
 func routeInput(host, path string, blocked bool) apigen.SecretRouteInput {
-	in := apigen.SecretRouteInput{Host: host}
+	in := apigen.SecretRouteInput{Hosts: []string{host}}
 	if path != "" {
-		in.Path = apigen.NewOptString(path)
+		in.Paths = []string{path}
 	}
 	if blocked {
 		in.Blocked = apigen.NewOptBool(true)
@@ -38,9 +39,15 @@ func secretRouteFixture(t *testing.T) (*resourcesecrets.Service, *store.Store, *
 		Type:  apigen.CreateSecretBodyTypeToken,
 		Value: apigen.SecretValue{Token: apigen.NewOptString("real-token")},
 		Routes: routes(
-			routeInput("GitHubCopilot.com", "/", false),
+			routeInput("GitHubCopilot.com", "", false),
 			routeInput("githubcopilot.com", "/mcp/", true),
 			routeInput("github.com", "", true),
+			apigen.SecretRouteInput{
+				Hosts: []string{"API.github.com"}, Methods: []string{"post"}, Paths: []string{"/graphql"},
+				Graphql: apigen.NewOptSecretRouteGraphQL(apigen.SecretRouteGraphQL{
+					Operations: []apigen.SecretRouteGraphQLOperationsItem{apigen.SecretRouteGraphQLOperationsItemQuery},
+				}),
+			},
 		),
 	})
 	if err != nil {
@@ -68,18 +75,18 @@ func sentinelRoutes(t *testing.T, st *store.Store) map[string][][]secretroute.Ro
 
 func TestASecretsRoutesAreNormalized(t *testing.T) {
 	_, _, sec := secretRouteFixture(t)
-	want := []model.SecretRoute{
-		{Host: "githubcopilot.com"},
-		{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
-		{Host: "github.com", Blocked: true},
-	}
-	if len(sec.Routes) != len(want) {
+	if want := fixtureRoutes(); !reflect.DeepEqual(sec.Routes, want) {
 		t.Fatalf("routes = %+v, want %+v", sec.Routes, want)
 	}
-	for i := range want {
-		if sec.Routes[i] != want[i] {
-			t.Fatalf("routes = %+v, want %+v", sec.Routes, want)
-		}
+}
+
+// fixtureRoutes are secretRouteFixture's routes, normalized.
+func fixtureRoutes() []model.SecretRoute {
+	return []model.SecretRoute{
+		{Hosts: []string{"githubcopilot.com"}},
+		{Hosts: []string{"githubcopilot.com"}, Paths: []string{"/mcp"}, Blocked: true},
+		{Hosts: []string{"github.com"}, Blocked: true},
+		{Hosts: []string{"api.github.com"}, Methods: []string{"POST"}, Paths: []string{"/graphql"}, GraphQL: &secretroute.GraphQL{Operations: []string{"query"}}},
 	}
 }
 
@@ -101,7 +108,7 @@ func TestAChangeToASecretsRoutesReachesItsHolders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if len(updated.Routes) != 2 || updated.Routes[1] != (model.SecretRoute{Host: "github.com"}) {
+	if len(updated.Routes) != 2 || !reflect.DeepEqual(updated.Routes[1], model.SecretRoute{Hosts: []string{"github.com"}}) {
 		t.Fatalf("routes = %+v, want the repeat dropped and github.com unblocked", updated.Routes)
 	}
 	if len(marks.secrets) != 1 || marks.secrets[0] != sec.ID {
@@ -120,7 +127,7 @@ func TestAChangeToASecretsRoutesReachesItsHolders(t *testing.T) {
 		t.Fatalf("routes = %+v, err = %v, want an empty list to clear them", cleared.Routes, err)
 	}
 
-	for _, bad := range []apigen.SecretRouteInput{routeInput(" ", "", false), routeInput("github.com", "mcp", false)} {
+	for _, bad := range []apigen.SecretRouteInput{routeInput(" ", "", false), routeInput("github.com", "mcp", false), routeInput("git*hub.com", "", false)} {
 		if _, err := svc.UpdateSecret(ctx, "project-1", sec.ID, services.UpdateSecretBody{Routes: routes(bad)}); err == nil {
 			t.Fatalf("update with route %+v succeeded, want it refused", bad)
 		}
@@ -135,18 +142,7 @@ func TestAnInjectedSecretIsHeldToItsRoutes(t *testing.T) {
 	if len(lists) != 1 {
 		t.Fatalf("route lists = %+v, want the secret's alone", lists)
 	}
-	got := lists[0]
-	want := []secretroute.Route{
-		{Host: "githubcopilot.com"},
-		{Host: "githubcopilot.com", Path: "/mcp", Blocked: true},
-		{Host: "github.com", Blocked: true},
-	}
-	if len(got) != len(want) {
+	if got, want := lists[0], fixtureRoutes(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("sentinel routes = %+v, want %+v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("sentinel routes = %+v, want %+v", got, want)
-		}
 	}
 }

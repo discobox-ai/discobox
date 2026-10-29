@@ -44,3 +44,29 @@ func TestARequestNamingHostIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// Routes travel beside hosts as the typed strings the agent wrote; the
+// protocol carries them unread, and an ask naming only routes names no hosts.
+func TestARequestCarriesRoutes(t *testing.T) {
+	svc := &fakeService{}
+	server := httptest.NewServer(agentcreds.NewHandler(svc))
+	t.Cleanup(server.Close)
+	client := agentcreds.NewClient(server.URL)
+	routes := []string{"GET api.github.com/repos/o/r/**", "api.github.com/graphql graphql=query"}
+	if _, err := client.Request(context.Background(), agentcreds.RequestBody{Name: "github", EnvVar: "GH_TOKEN", Routes: routes}); err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if got := svc.gotRequest.Routes; len(got) != 2 || got[0] != routes[0] || got[1] != routes[1] {
+		t.Fatalf("routes = %q, want %q", got, routes)
+	}
+	if svc.gotRequest.Hosts != nil {
+		t.Fatalf("hosts = %q, want none", svc.gotRequest.Hosts)
+	}
+	encoded, err := json.Marshal(agentcreds.RequestBody{Name: "github", Routes: routes})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(encoded), `"hosts"`) {
+		t.Fatalf("encoded = %s, want no hosts field", encoded)
+	}
+}

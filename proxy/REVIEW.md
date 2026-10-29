@@ -120,6 +120,11 @@
   HTTP/2 every body is a stream, and a bidirectional gRPC call waits on the
   response before it sends more; anything that needs the body whole copies it
   as it passes, as the retry does.
+- Whatever reads a request body before it is sent — the route body
+  (`routeBody`) — puts back exactly what it read in front of the rest, and is
+  bounded before and after decoding. A body a protocol route cannot read
+  answers false, never an empty or partial body: an open route must not match
+  what nobody read.
 - A rejection is reported off the request path, never on it, and never more
   than once per `(client, sentinel, host)` per cooldown. Reporting state belongs
   to the proxy, not the `Swapper`: the `Swapper` forgets a sentinel that leaves

@@ -638,33 +638,38 @@ func (s *Service) bindHarnessSecret(ctx context.Context, txStore *store.Store, t
 
 // configuredRoutes are where a secret the configure flow or a save-back
 // stores may go: the routes the image declares for its variable, else the
-// host the command named, else anywhere (ADR 26-10-27-939 §2).
+// host the command named — that exact host — else anywhere (ADR 26-10-27-939
+// §2).
 func configuredRoutes(config *model.HarnessConfig, envName, host string) []model.SecretRoute {
 	if declared := declaredRoutesByEnv(config)[envName]; len(declared) > 0 {
 		return declared
 	}
 	if host != "" {
-		return []model.SecretRoute{{Host: host}}
+		return []model.SecretRoute{{Hosts: []string{host}}}
 	}
-	return []model.SecretRoute{{Host: secretroute.AnyHost}}
+	return []model.SecretRoute{{Hosts: []string{secretroute.AnyHost}}}
 }
 
-// secretHost is the one host a secret's routes name, for the configure
-// command's metadata, which speaks of one; empty when they name none or more
-// than one.
+// secretHost is the one host a secret's routes send to, for the configure
+// command's metadata, which speaks of one: the one exact name the open routes
+// name, when every other host pattern they name is the hosts beneath it;
+// empty when they name none, more than one, or any other pattern.
 func secretHost(secret *model.Secret) string {
+	patterns := model.OpenRouteHosts(secret.Routes)
 	host := ""
-	for _, route := range secret.Routes {
-		if route.Blocked {
+	for _, pattern := range patterns {
+		if strings.HasPrefix(pattern, "*") {
 			continue
 		}
-		if host != "" && host != route.Host {
+		if host != "" {
 			return ""
 		}
-		host = route.Host
+		host = pattern
 	}
-	if host == secretroute.AnyHost {
-		return ""
+	for _, pattern := range patterns {
+		if strings.HasPrefix(pattern, "*") && pattern != "*."+host {
+			return ""
+		}
 	}
 	return host
 }

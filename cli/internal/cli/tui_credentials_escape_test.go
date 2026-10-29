@@ -6,6 +6,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // What an agent wrote reaches the console escaped: a request's name,
@@ -13,7 +14,12 @@ import (
 // onto a binding. The window draws what it is given (cli/REVIEW.md).
 func TestTheConsoleGetsAgentTextEscaped(t *testing.T) {
 	const evil = "\x1b]0;pwned\a"
-	route := apimodel.SecretRoute{Host: "x" + evil + ".example", Path: apiclientgen.NewOptString("/p" + evil)}
+	route := apimodel.SecretRoute{
+		Hosts:   []string{"x" + evil + ".example"},
+		Methods: []string{"GET" + evil},
+		Paths:   []string{"/p" + evil},
+		Graphql: apiclientgen.NewOptSecretRouteGraphQL(apimodel.SecretRouteGraphQL{Fields: []string{"f" + evil}}),
+	}
 
 	req := toTUICredentialRequest(apimodel.SecretRequest{
 		ID:            "sreq_1",
@@ -32,11 +38,9 @@ func TestTheConsoleGetsAgentTextEscaped(t *testing.T) {
 		"request name":     req.Name,
 		"request variable": req.EnvVar,
 		"request reason":   req.Justification,
-		"request host":     req.Routes[0].Host,
-		"request path":     req.Routes[0].Path,
+		"request route":    secretroute.Format(req.Routes[0]),
 		"binding variable": binding.EnvVar,
-		"binding host":     binding.Routes[0].Host,
-		"binding path":     binding.Routes[0].Path,
+		"binding route":    secretroute.Format(binding.Routes[0]),
 	} {
 		if strings.ContainsAny(text, "\x1b\a") {
 			t.Errorf("%s = %q, want it escaped", what, text)

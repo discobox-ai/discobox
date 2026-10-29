@@ -10,10 +10,12 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/apiroute"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
 // The window's half of the credential inbox: the requests waiting on a person,
@@ -217,12 +219,32 @@ func toTUIRefreshRequest(r apimodel.SecretRefreshRequest) tui.CredentialRequest 
 // tuiRoutes are routes as the window holds them, escaped: a request's are the
 // asking agent's, and a child binding's come from the discobox that asked or
 // delegated (cli/REVIEW.md).
-func tuiRoutes(routes []apimodel.SecretRoute) []tui.SecretRoute {
-	var out []tui.SecretRoute
-	for _, route := range routes {
-		out = append(out, tui.SecretRoute{Host: terminalSafe(route.Host), Path: terminalSafe(route.Path.Or("")), Blocked: route.Blocked.Or(false)})
+func tuiRoutes(routes []apimodel.SecretRoute) []secretroute.Route {
+	out := apiroute.Routes(routes)
+	for i := range out {
+		out[i] = terminalSafeRoute(out[i])
 	}
 	return out
+}
+
+// terminalSafeRoute is route with every word in it escaped: hosts, methods,
+// paths, and the GraphQL fields and MCP tools it names.
+func terminalSafeRoute(route secretroute.Route) secretroute.Route {
+	safe := func(words []string) []string {
+		var out []string
+		for _, word := range words {
+			out = append(out, terminalSafe(word))
+		}
+		return out
+	}
+	route.Hosts, route.Methods, route.Paths = safe(route.Hosts), safe(route.Methods), safe(route.Paths)
+	if route.GraphQL != nil {
+		route.GraphQL = &secretroute.GraphQL{Operations: safe(route.GraphQL.Operations), Fields: safe(route.GraphQL.Fields)}
+	}
+	if route.MCP != nil {
+		route.MCP = &secretroute.MCP{Tools: safe(route.MCP.Tools)}
+	}
+	return route
 }
 
 // requestJSON is a request as the server sent it, for the window to show.
@@ -387,9 +409,7 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 				row.Exchange.TokenExpiresAt = time.UnixMilli(expires).UTC()
 			}
 		}
-		for _, route := range s.Routes.Or(nil) {
-			row.Routes = append(row.Routes, tui.SecretRoute{Host: route.Host, Path: route.Path.Or(""), Blocked: route.Blocked.Or(false)})
-		}
+		row.Routes = apiroute.Routes(s.Routes.Or(nil))
 		row.Format = s.Format.Or("")
 		row.FormatSet = s.FormatSet.Or(false)
 		row.RefreshCommand = s.RefreshCommand.Or(nil)
@@ -425,7 +445,7 @@ func (d *apiDataSource) CreateSecret(ctx context.Context, server string, secret 
 		body.SetTtlSeconds(apiclientgen.NewOptInt64(*secret.ValueTTLSeconds))
 	}
 	if len(secret.Routes) > 0 {
-		body.SetRoutes(apiclientgen.NewOptNilSecretRouteInputArray(secretRouteInputs(secret.Routes)))
+		body.SetRoutes(apiclientgen.NewOptNilSecretRouteInputArray(apiroute.Inputs(secret.Routes)))
 	}
 	if format := strings.TrimSpace(secret.Format); format != "" {
 		body.SetFormat(apiclientgen.NewOptString(format))
@@ -512,7 +532,7 @@ func (d *apiDataSource) UpdateSecret(ctx context.Context, server, secretID strin
 		body.SetFormat(apiclientgen.NewOptString(strings.TrimSpace(*update.Format)))
 	}
 	if update.Routes != nil {
-		body.SetRoutes(apiclientgen.NewOptNilSecretRouteInputArray(secretRouteInputs(*update.Routes)))
+		body.SetRoutes(apiclientgen.NewOptNilSecretRouteInputArray(apiroute.Inputs(*update.Routes)))
 	}
 	res, err := d.client.UpdateSecret(ctx, body, apiclientgen.UpdateSecretParams{
 		ProjectId: d.projectID,
@@ -711,7 +731,7 @@ func (d *apiDataSource) CreateBinding(ctx context.Context, server string, bindin
 		body.SetEnvVar(apiclientgen.NewOptString(binding.EnvVar))
 	}
 	if len(binding.Routes) > 0 {
-		body.Routes = secretRouteInputs(binding.Routes)
+		body.Routes = apiroute.Inputs(binding.Routes)
 	}
 	// Said even when zero: the window asked how long it lasts and was
 	// answered, and zero is the answer "never expires" — dropping it would
@@ -763,21 +783,4 @@ func (d *apiDataSource) DeleteSecret(ctx context.Context, server, secretID strin
 		return err
 	}
 	return expectNoContent[apiclientgen.DeleteSecretNoContent](res)
-}
-
-// secretRouteInputs are a card's routes as the API takes them; an empty list
-// stays empty rather than nil, since that is what clears them.
-func secretRouteInputs(routes []tui.SecretRoute) []apimodel.SecretRouteInput {
-	inputs := make([]apimodel.SecretRouteInput, 0, len(routes))
-	for _, route := range routes {
-		input := apimodel.SecretRouteInput{Host: route.Host}
-		if route.Path != "" {
-			input.SetPath(apiclientgen.NewOptString(route.Path))
-		}
-		if route.Blocked {
-			input.SetBlocked(apiclientgen.NewOptBool(true))
-		}
-		inputs = append(inputs, input)
-	}
-	return inputs
 }

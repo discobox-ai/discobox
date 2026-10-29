@@ -17,6 +17,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/apiroute"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
@@ -1224,10 +1225,11 @@ func routesText(routes []apimodel.SecretRoute) string {
 		return "nowhere"
 	}
 	out := make([]string, 0, len(routes))
-	for _, route := range routes {
-		out = append(out, secretroute.Format(secretroute.Route{Host: route.Host, Path: route.Path.Or(""), Blocked: route.Blocked.Or(false)}))
+	for _, route := range apiroute.Routes(routes) {
+		out = append(out, secretroute.Format(route))
 	}
-	// Escaped here, for every caller: a request's routes and a child
-	// binding's are a discobox's own words (cli/REVIEW.md).
-	return terminalSafe(strings.Join(out, ", "))
+	// Joined by "; ", since a comma is part of a route. Escaped here, for
+	// every caller: a request's routes and a child binding's are a
+	// discobox's own words (cli/REVIEW.md).
+	return terminalSafe(strings.Join(out, "; "))
 }

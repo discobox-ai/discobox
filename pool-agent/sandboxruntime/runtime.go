@@ -1606,13 +1606,34 @@ func proxySentinelRoutes(in map[string][][]workerapimodel.SentinelRoute) map[str
 		for _, list := range lists {
 			routes := make([]secretroute.Route, 0, len(list))
 			for _, route := range list {
-				routes = append(routes, secretroute.Route{Host: route.Host, Path: route.Path.Or(""), Blocked: route.Blocked.Or(false)})
+				routes = append(routes, sentinelRoute(route))
 			}
 			converted = append(converted, routes)
 		}
 		out[sentinel] = converted
 	}
 	return out
+}
+
+// sentinelRoute is one route the control plane sent, field for field. The
+// proxy normalizes it where it is written (proxyagent.UpsertSandboxSentinels).
+func sentinelRoute(in workerapimodel.SentinelRoute) secretroute.Route {
+	route := secretroute.Route{
+		Hosts:   in.Hosts,
+		Methods: in.Methods,
+		Paths:   in.Paths,
+		Blocked: in.Blocked.Or(false),
+	}
+	if graphql, ok := in.Graphql.Get(); ok {
+		route.GraphQL = &secretroute.GraphQL{Fields: graphql.Fields}
+		for _, operation := range graphql.Operations {
+			route.GraphQL.Operations = append(route.GraphQL.Operations, string(operation))
+		}
+	}
+	if mcp, ok := in.Mcp.Get(); ok {
+		route.MCP = &secretroute.MCP{Tools: mcp.Tools}
+	}
+	return route
 }
 
 func (r *sandboxCore) UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error) {

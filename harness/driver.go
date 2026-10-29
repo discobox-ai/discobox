@@ -2,7 +2,6 @@
 package harness
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -218,8 +217,9 @@ type File struct {
 // request.
 //
 // Routes are where the harness itself sends this credential (ADR
-// 26-10-02-924): a request carrying it must fall on one, and the most specific
-// covering it must not be blocked. Configure writes them onto the secret it
+// 26-10-02-924, ADR 26-10-27-880 §4): a request carrying it must fall on one,
+// and the most specific covering it must not be blocked. A route declared in
+// the shape before host patterns reads as it was meant (harnesscapture.Route). Configure writes them onto the secret it
 // creates; they are the image's alone, and a configure flow cannot add to them
 // or change them.
 type Secret struct {
@@ -228,7 +228,7 @@ type Secret struct {
 	OneOfGroup     string
 	Delivery       string
 	RejectionScope []RejectionRule
-	Routes         []SecretRoute `json:",omitempty"`
+	Routes         []harnesscapture.Route `json:",omitempty"`
 }
 
 // RejectionRule is one host of a Secret's RejectionScope, and the paths on it.
@@ -261,35 +261,6 @@ func (r RejectionRule) Validate() error {
 			return fmt.Errorf("rejectionScope path %q must be an absolute path with no query", path)
 		}
 	}
-	return nil
-}
-
-// SecretRoute is one place a harness sends a credential: a host and every
-// host beneath it, within it an optional path prefix matched on whole
-// segments. A blocked route refuses every request it is the most specific
-// route for (ADR 26-10-27-880).
-type SecretRoute struct {
-	Host    string
-	Path    string `json:",omitempty"`
-	Blocked bool   `json:",omitempty"`
-}
-
-// UnmarshalJSON reads a route an image declares. A route that still carries a
-// use — the shape images had while a judge read it — is blocked: the use was
-// its only limit, and nothing reads it any more, so taking it as a plain
-// route would open what the image kept judged (ADR 26-10-27-880 §8). An older
-// pinned bundle, or a person's own image, keeps declaring it until rebuilt.
-func (r *SecretRoute) UnmarshalJSON(data []byte) error {
-	var declared struct {
-		Host    string
-		Path    string
-		Blocked bool
-		Use     string
-	}
-	if err := json.Unmarshal(data, &declared); err != nil {
-		return err
-	}
-	*r = SecretRoute{Host: declared.Host, Path: declared.Path, Blocked: declared.Blocked || strings.TrimSpace(declared.Use) != ""}
 	return nil
 }
 
