@@ -74,14 +74,24 @@ this skill has already asked — rebase and force-push with a lease to
 - **Ask for GitHub now, in one request**, so nobody is asked again mid-run.
   Fill in `<slug>` and the one-line `<change>` before sending. Check
   `discobox-access list` first and ask only if no credential in `GH_TOKEN`
-  covers `github.com`:
+  is sent to `github.com` and `api.github.com`:
 
   ```bash
   discobox-access request --json <<'EOF'
   {
     "name": "github",
     "envVar": "GH_TOKEN",
-    "hosts": ["github.com"],
+    "routes": [
+      "github.com/discobox-ai/discobox.git/**,/discobox-ai/discobox/**",
+      "GET api.github.com/repos/discobox-ai/discobox/**",
+      "api.github.com/graphql graphql=query",
+      "api.github.com/graphql graphql=mutation:markPullRequestReadyForReview",
+      "POST api.github.com/repos/discobox-ai/discobox/pulls",
+      "PATCH api.github.com/repos/discobox-ai/discobox/pulls/*",
+      "POST api.github.com/repos/discobox-ai/discobox/pulls/*/comments/*/replies",
+      "POST api.github.com/repos/discobox-ai/discobox/issues/*/comments",
+      "POST api.github.com/repos/discobox-ai/discobox/actions/runs/*/rerun-failed-jobs"
+    ],
     "justification": "I am delivering <change> in discobox-ai/discobox as a pull request from discobox/<slug>: push that branch, open the PR into main, get CI green, answer review comments, and keep it mergeable until a human merges it. I will not push any other branch, force-push without a lease, merge, close anything, or touch labels, issues, workflows or secrets.",
     "grantTTLSeconds": 259200,
     "wait": true
@@ -89,9 +99,24 @@ this skill has already asked — rebase and force-push with a lease to
   EOF
   ```
 
-  What is approved is the token itself, on every GitHub host: nothing holds a command
-  to the job but this skill, so the justification says what the run will and
-  will not do, and the run keeps to it. Run it in the background and keep its
+  What is approved is these routes, and the egress holds every request
+  carrying the token to them. They stop merging (there is no merge route,
+  REST or GraphQL), deleting a branch or ref through the API, dispatching a
+  workflow, any host but `github.com` and `api.github.com`, and any REST or git
+  write to another repository. They do not stop, and the approver should read
+  it so: the GraphQL queries read every repository the token can see;
+  `markPullRequestReadyForReview` works on any pull request the token can
+  write, in any repository; the REST `PATCH` of a pull request can change its
+  title, base or state — close it — as well as its body, since a route cannot
+  read a REST body; the comment and reply routes reach every issue and pull
+  request of this repository; and a git push writes whichever branch it names,
+  a force-push or a delete included. Those are this skill's to keep — push
+  `discobox/<slug>` and nothing else, edit only this PR's body — and `main`'s branch
+  protection covers a push to `main`. A step refused with a `route:` reason
+  (`discobox-access audit --blocked`) is outside what was approved: stop and
+  say so rather than working around it. The
+  justification says what the run will and will not do, and the run keeps
+  to it. Run it in the background and keep its
   request ID, so a tool time limit does not lose it (`discobox-access wait
   --json request <id>` resumes), and start implementing while it waits —
   unless there is an issue: then only read the code until the issue and its
@@ -265,9 +290,12 @@ gh pr checks <pr> --repo discobox-ai/discobox --json name,bucket
   recomputing — check again before acting.
 - **A new review, review comment or PR comment** from anyone — read a
   review's body as well as its threads, and answer every finding, each thread
-  on that thread. A review's body can hold findings with no thread of their
+  on that thread (`gh api -X POST
+  repos/discobox-ai/discobox/pulls/<pr>/comments/<comment-id>/replies -f
+  body=...`). A review's body can hold findings with no thread of their
   own (a `CHANGES_REQUESTED` with no inline comment); answer those together in
-  one PR comment (`gh pr comment`):
+  one PR comment (`gh api -X POST
+  repos/discobox-ai/discobox/issues/<pr>/comments -F body=@<file>`):
   - right → fix it, and reply with what changed and the commit;
   - wrong, out of scope, or against what was agreed → reply with why, briefly;
   - a finding already answered, raised again → reply with a link to that

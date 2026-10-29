@@ -31,14 +31,25 @@ before ADR 26-10-10-545, `origin` is the pool and `upstream` is that remote.
 Check `git remote -v`, and do not push to any of them by name: every GitHub call
 goes through a GitHub credential, with the URL spelled out. `deliver-issue` and
 `develop` ask for their own up front; check `discobox-access list` and
-request one only when no credential in `GH_TOKEN` covers `github.com`:
+request one only when no credential in `GH_TOKEN` is sent to `github.com`
+and `api.github.com`:
 
 ```bash
 discobox-access request --json <<'EOF'
 {
   "name": "github",
   "envVar": "GH_TOKEN",
-  "hosts": ["github.com"],
+  "routes": [
+    "github.com/discobox-ai/discobox.git/**,/discobox-ai/discobox/**",
+    "GET api.github.com/repos/discobox-ai/discobox/**",
+    "api.github.com/graphql graphql=query",
+    "api.github.com/graphql graphql=mutation:markPullRequestReadyForReview",
+    "POST api.github.com/repos/discobox-ai/discobox/pulls",
+    "PATCH api.github.com/repos/discobox-ai/discobox/pulls/*",
+    "POST api.github.com/repos/discobox-ai/discobox/pulls/*/comments/*/replies",
+    "POST api.github.com/repos/discobox-ai/discobox/issues/*/comments",
+    "POST api.github.com/repos/discobox-ai/discobox/actions/runs/*/rerun-failed-jobs"
+  ],
   "justification": "the user asked me to open a pull request for my local commits in discobox-ai/discobox from branch <branch> into main and get its CI green. I will push only that branch, never force-push without a lease, merge or close anything, or touch labels, issues, workflows or secrets.",
   "grantTTLSeconds": 14400,
   "wait": true
@@ -46,9 +57,39 @@ discobox-access request --json <<'EOF'
 EOF
 ```
 
+Each route is one call this skill makes: git fetch and push of this
+repository (`info/refs`, `git-upload-pack`, `git-receive-pack`); `gh`'s reads,
+through REST `GET`s and GraphQL queries (`gh pr list`, `view`, `checks`); the
+PR opened and its body edited over REST, `POST …/pulls` and `PATCH
+…/pulls/<pr>`, because a REST route is held to this repository and GraphQL's
+`createPullRequest`/`updatePullRequest` act on any repository by node ID;
+`gh pr ready`'s `markPullRequestReadyForReview`, which has no REST form; and
+the REST comment, review-comment reply and `gh run rerun --failed`
+(`rerun-failed-jobs`). `gh pr create`, `gh pr edit` and `gh pr comment` run
+GraphQL mutations that are not routed, so they are refused: use the `gh api`
+forms in §2.
+
+What is approved is these routes, and the egress holds every request
+carrying the token to them. They stop merging (there is no merge route,
+REST or GraphQL), deleting a branch or ref through the API, dispatching a
+workflow, any host but `github.com` and `api.github.com`, and any REST or git
+write to another repository. They do not stop, and the approver should read
+it so: the GraphQL queries read every repository the token can see;
+`markPullRequestReadyForReview` works on any pull request the token can
+write, in any repository; the REST `PATCH` of a pull request can change its
+title, base or state — close it — as well as its body, since a route cannot
+read a REST body; the comment and reply routes reach every issue and pull
+request of this repository; and a git push writes whichever branch it names,
+a force-push or a delete included. Those are this skill's to keep — push
+`<branch>` and nothing else, edit only this PR's body — and `main`'s branch
+protection covers a push to `main`. A step refused with a `route:` reason
+(`discobox-access audit --blocked`) is outside what was approved: stop and
+say so rather than working around it.
+
 Name the branch in the justification (§1 picks it): the person approving reads
-it, and what is approved is the whole token, so pushing anything else is this run
-breaking its word. `GH_TOKEN` holds the credential's sentinel in every command
+it, and what a route cannot say is which branch a push writes, so pushing
+anything else is this run breaking its word; `main`'s branch protection
+covers a push to `main`. `GH_TOKEN` holds the credential's sentinel in every command
 started after it was granted; a shell started before that takes it up with
 `eval "$(discobox-access env)"`. `gh` reads it as it is. Git takes it through a
 one-shot credential helper:
@@ -94,12 +135,12 @@ Push `HEAD:refs/heads/<branch>` as in §0. Then find or open the PR:
 
 ```bash
 gh pr list --repo discobox-ai/discobox --head <branch> --state open --json number,url
-gh pr create --repo discobox-ai/discobox --base main --head <branch> --draft \
-  --title "<conventional subject>" --body-file <scratchpad>/pr-body.md
+gh api -X POST repos/discobox-ai/discobox/pulls -f base=main -f head=<branch> -F draft=true \
+  -f title="<conventional subject>" -F body=@<scratchpad>/pr-body.md --jq '.number, .html_url'
 ```
 
-One PR per branch: if one is open, update its body with `gh pr edit
---body-file` instead. Draft until green, so nobody reviews a PR CI has not
+One PR per branch: if one is open, update its body instead, with `gh api -X
+PATCH repos/discobox-ai/discobox/pulls/<pr> -F body=@<scratchpad>/pr-body.md`. Draft until green, so nobody reviews a PR CI has not
 passed.
 
 Inside a discobox, tag the box `pr=<pr>` as soon as the PR exists — and

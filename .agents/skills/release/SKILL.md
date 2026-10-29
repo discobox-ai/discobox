@@ -138,10 +138,12 @@ wrong repo, this is why.
 
 ### Inside a discobox: ask for access once, up front
 
-Every GitHub step in this skill runs on one `GH_TOKEN` with host `github.com`:
-`git push` over https, and every `gh` call, which goes to `api.github.com` and
-is covered by the same credential. Ask for all of it in one request, so the human
-answers once and the release then runs without them.
+Every GitHub step in this skill runs on one `GH_TOKEN`: `git push` over https
+to `github.com`, and every `gh` call, which goes to `api.github.com`. A host
+is exact, so the request names both, each narrowed to what the release does
+there: pushing `main` and the tag to this repository, and reading it, its CI
+and the tap. Ask for all of it in one request, so the human answers once and
+the release then runs without them.
 
 1. **Settle the version first.** The justification names it, and a version
    changed after it is granted is a second request. If the user did not name one and it is
@@ -154,7 +156,12 @@ discobox-access request --json <<'EOF'
 {
   "name": "github",
   "envVar": "GH_TOKEN",
-  "hosts": ["github.com"],
+  "routes": [
+    "github.com/discobox-ai/discobox.git/**,/discobox-ai/discobox/**",
+    "GET api.github.com/repos/discobox-ai/discobox/**",
+    "GET api.github.com/repos/discobox-ai/homebrew-tap/**",
+    "api.github.com/graphql graphql=query"
+  ],
   "justification": "Cutting discobox release vX.Y.Z with the /release skill: push main of discobox-ai/discobox, watch CI until it is green, create tag vX.Y.Z on the green commit, then read the release and the dev Homebrew formula in discobox-ai/homebrew-tap. git uses the token over https to github.com and gh uses it against api.github.com. I will not force-push, delete or move a branch or tag, change a release, write to the tap, or read secrets. Needed for about two hours, since CI can take several rounds.",
   "grantTTLSeconds": 7200,
   "wait": true,
@@ -183,7 +190,13 @@ it down:
 
 Deliberately left out: `brew:refresh`, `brew:publish`, deleting a pushed tag,
 and promoting (§7). Each is a failure path or a human's decision, and the moment
-one is needed is a moment the human should be looking anyway. Ask then.
+one is needed is a moment the human should be looking anyway. Ask then. None
+has a route here: every API route is a `GET` or a GraphQL query, so `gh`
+writes nothing, though the GraphQL queries read every repository the token
+can see. The git route is held to this repository but not to a ref: a push
+can write, force or delete any branch or tag of it, so which refs a push
+writes is the justification's — `main` and the tag, never a delete or a
+force — and `main`'s branch protection covers `main`.
 
 ## 1. Land the work
 
@@ -494,6 +507,14 @@ waiting:
 ```bash
 gh workflow run promote.yml --repo discobox-ai/discobox -f tag=vX.Y.Z
 ```
+
+Inside a discobox this is a request of its own, asked when the user asks for
+the promotion and named with the version, since the release token routes no
+write through `gh`: `GET api.github.com/repos/discobox-ai/discobox/**`, and
+`PATCH api.github.com/repos/discobox-ai/discobox/releases/*` for `gh release
+edit`, plus `POST
+api.github.com/repos/discobox-ai/discobox/actions/workflows/*/dispatches` only
+when the dispatch below is needed.
 
 Four things to know before running any of it:
 

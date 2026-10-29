@@ -177,7 +177,9 @@ and that the process started after the build (no `ps` in the image: walk
   create`, then `d secret bind <secret> <box> --as ENV`, or a request from the
   box approved from outside (below); a command started after the binding
   carries it in its variable. Nothing judges it; its secret's routes
-  (`d secret update --route HOST[/PATH][=blocked]`, `*` for any host) and the
+  (`d secret update --route ROUTE`, one per flag: `[METHODS ]HOSTS[PATHS][
+  graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`, a host exact, `*.h` beneath
+  it, `*` any host; `d secret create --help` explains it) and the
   binding's (`--route`) are what refuse it — every list must allow a request.
 - A harness credential's 401 (the refused-credential band, a harness secret's
   `rejectionScope`) needs a box of a harness that declares secrets, which is

@@ -102,3 +102,13 @@ Global review expectations:
   as callers: deleting only `NewStatusErrorOfKind` left the whole problem-kind
   mechanism and `secrets.Redact` in place, unreachable from anything real
   (ADR 26-10-27-880).
+- A skill's (or doc's) claim about what a credential's routes allow or stop is
+  checked against what each route actually matches, not against what the
+  skill means to do with it: a REST route reads no body, so `PATCH …/pulls/*`
+  can close a PR as well as edit its body; a GraphQL mutation's arguments are
+  not routed, so `updatePullRequest` closes PRs and every node-ID mutation
+  acts on any repository the token can write; `graphql=query` reads every
+  repository the token can see; and a git push route is held to a repository,
+  never to a ref. A skill once told approvers "nothing that closes is routed"
+  over `updatePullRequest`. Say what the routes stop and what they do not,
+  and keep repository-scoped writes on REST where REST has them.
