@@ -116,10 +116,11 @@ func startSecretProxy(ctx context.Context, t *testing.T, sentinel string, resolv
 		t.Fatalf("PrepareCertificates() error = %v", err)
 	}
 	cfg := Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   filepath.Join(dir, "audit.db"),
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               filepath.Join(dir, "audit.db"),
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
 		Secrets: SecretsConfig{
 			Clients: []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{sentinel}}},
 		},

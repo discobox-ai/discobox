@@ -128,11 +128,12 @@ func startGRPCProxy(ctx context.Context, t *testing.T, origin net.Addr) (net.Add
 		t.Fatalf("PrepareCertificates() error = %v", err)
 	}
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   filepath.Join(dir, "audit.db"),
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
-		Secrets:       SecretsConfig{Clients: []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{grpcSentinel}}}},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               filepath.Join(dir, "audit.db"),
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
+		Secrets:                   SecretsConfig{Clients: []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{grpcSentinel}}}},
 	}, prepared.Bundle, stubResolver{value: grpcRealValue})
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)

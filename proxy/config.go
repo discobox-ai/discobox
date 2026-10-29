@@ -47,6 +47,13 @@ type Config struct {
 	// variable. Exemptions matter even when an upstream exists: the proxy
 	// reaches its own control plane and loopback services directly.
 	UpstreamNoProxy string
+
+	// AllowLoopbackDestinations lets a client's request reach this host's own
+	// loopback. Never set in a pool: the proxy runs beside services that
+	// listen on the pool's loopback for the pool alone, and no sandbox's
+	// egress may reach them (ADR 26-10-29-160 §3). Only tests set it, for
+	// upstreams they serve on loopback. Startup-only.
+	AllowLoopbackDestinations bool
 }
 
 // SecretsConfig controls runtime sentinel secret swapping. The real values are

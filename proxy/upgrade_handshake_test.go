@@ -82,10 +82,11 @@ func TestHTTPProxyMITMUpgradeHandshakeIsNotFragmented(t *testing.T) {
 		t.Fatalf("PrepareCertificates() error = %v", err)
 	}
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   filepath.Join(dir, "audit.db"),
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16, StreamDir: filepath.Join(dir, "streams")},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               filepath.Join(dir, "audit.db"),
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16, StreamDir: filepath.Join(dir, "streams")},
 	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)

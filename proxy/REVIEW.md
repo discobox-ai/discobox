@@ -21,6 +21,10 @@
 - Do not sweep the response cache by age. Its entries are content-addressed and
   bounded by the LRU byte ceiling; anything that puts a file in the cache
   directory must be describable by the index, or it leaks past that ceiling.
+- Every dial to a client's destination goes through `destinationDialer`
+  (`httpProxy.destinations`), never a `net.Dialer` of its own: it is what keeps
+  a sandbox off the pool's own loopback (ADR 26-10-29-160 §3). A transport for
+  client traffic is a clone of the proxy's `Tr`, which carries it.
 - Preserve mTLS as the pool host proxy client identity boundary. Do not accept
   client identity from sandbox-supplied headers.
 - Anything in a sandbox that reaches a pool service dials through

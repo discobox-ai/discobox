@@ -57,10 +57,11 @@ func newTrustFixture(t *testing.T, deny string) *trustFixture {
 	}
 	asked := &[]secrets.AuthorizeRequest{}
 	cfg := Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   filepath.Join(dir, "audit.db"),
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               filepath.Join(dir, "audit.db"),
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
 	}
 	server, err := NewServer(ctx, cfg, prepared.Bundle, stubResolver{asked: asked, deny: deny})
 	if err != nil {
@@ -309,10 +310,11 @@ func TestProbeTLSSaysWhichUpstreamItWentThrough(t *testing.T) {
 		t.Fatal(err)
 	}
 	server, err := NewServer(context.Background(), Config{
-		ListenAddress:   "127.0.0.1:0",
-		CertDir:         prepared.Bundle.Dir,
-		UpstreamProxy:   upstream.URL,
-		UpstreamNoProxy: "example.invalid",
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		UpstreamProxy:             upstream.URL,
+		UpstreamNoProxy:           "example.invalid",
 	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -414,10 +416,11 @@ func TestHTTPProxyNamesTheUpstreamProxyThatFailed(t *testing.T) {
 	}
 	upstreamURL := "http://" + upstream.Addr().String()
 	server, err := NewServer(context.Background(), Config{
-		ListenAddress:   "127.0.0.1:0",
-		CertDir:         prepared.Bundle.Dir,
-		UpstreamProxy:   upstreamURL,
-		UpstreamNoProxy: "example.invalid",
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		UpstreamProxy:             upstreamURL,
+		UpstreamNoProxy:           "example.invalid",
 	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatal(err)

@@ -28,10 +28,11 @@ func dnsAuditFixture(t *testing.T) (*ControlClient, string, ed25519.PrivateKey) 
 		t.Fatal(err)
 	}
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   filepath.Join(dir, "audit.db"),
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               filepath.Join(dir, "audit.db"),
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
 		Control: ControlConfig{
 			TrustPublicKey: base64.StdEncoding.EncodeToString(publicKey),
 			ProjectID:      "project-1",
