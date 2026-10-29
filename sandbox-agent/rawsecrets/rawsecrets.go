@@ -392,8 +392,25 @@ func (h *Holder) clear() {
 
 func (h *Holder) removeLocked(name string) error {
 	delete(h.held, name)
-	if err := os.Remove(h.Path(name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := removeKept(h.Path(name)); err != nil {
 		return fmt.Errorf("remove raw secret %s: %w", name, err)
+	}
+	return nil
+}
+
+// removeKept removes a kept value's file, which is read-only: Linux removes
+// it as it is, and Windows only once it is writable again. Gone already is
+// removed.
+func removeKept(path string) error {
+	err := os.Remove(path)
+	if err == nil || errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if chmodErr := os.Chmod(path, 0o600); chmodErr != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	return nil
 }
@@ -435,7 +452,14 @@ func (h *Holder) write(name, value string) error {
 		return err
 	}
 	if err := os.Rename(tmp.Name(), h.Path(name)); err != nil {
-		return fmt.Errorf("write raw secret %s: %w", name, err)
+		// Linux replaces a read-only file in place; Windows refuses to rename
+		// over one, so the old file goes first there.
+		if rmErr := removeKept(h.Path(name)); rmErr != nil {
+			return fmt.Errorf("write raw secret %s: %w", name, err)
+		}
+		if err := os.Rename(tmp.Name(), h.Path(name)); err != nil {
+			return fmt.Errorf("write raw secret %s: %w", name, err)
+		}
 	}
 	return nil
 }
