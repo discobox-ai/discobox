@@ -107,7 +107,8 @@ transport helpers where OpenAPI does not model the stream.
   written when the command was `new`.
 - **An entire prompt of `-` is composed before creation.** With terminal
   stdin, `tui.ComposePrompt` opens an inline multiline field on stderr (also for
-  `-d` and `--raw`): Enter adds a newline, Ctrl-D submits, Esc/Ctrl-C cancels,
+  `-d` and `--raw`): Enter (or Ctrl-D) submits, Shift-Enter and the other
+  modified Enters add a newline, Esc/Ctrl-C cancels,
   and Alt-E uses the console's external editor round trip. With nonterminal
   stdin, the prompt is read verbatim as one argument, retaining newlines.
   Empty or whitespace-only input cancels before creating anything. `-` among

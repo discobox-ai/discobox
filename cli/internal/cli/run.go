@@ -104,7 +104,7 @@ explicitly. This is the only command that makes a discobox: the bare "discobox"
 takes no prompt and none of these flags.
 
 Use - as the entire prompt to write it without shell escaping. At a terminal,
-it opens a multiline composer: Enter adds a newline, Ctrl-D submits, Esc or
+it opens a multiline composer: Enter submits, Shift-Enter adds a newline, Esc or
 Ctrl-C cancels, and Alt-E opens $VISUAL/$EDITOR. With piped stdin, - reads the
 prompt from stdin instead. An empty or whitespace-only prompt cancels the run.
 Esc asks for confirmation before discarding a nonempty prompt.

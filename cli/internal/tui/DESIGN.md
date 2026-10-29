@@ -2526,11 +2526,11 @@ Ctrl-Enter as the traditional line-feed control byte.
 
 `ComposePrompt` (`compose.go`) is the server-independent field `run SOURCE -`
 opens before its normal creation flow, including detached and raw runs. It
-uses the same textarea word keymap and external-editor round trip, with Enter
-for newlines and Ctrl-D to submit. Esc/Ctrl-C returns no prompt; it owns no
-console draft or session state. It draws inline on the supplied writer (the
-command's stderr), leaving stdout for the run's output and the preceding
-shell history visible. The textarea starts at two rows and grows with wrapped
+uses the same textarea word keymap, newline keys, and external-editor round
+trip; Enter submits, and so does Ctrl-D, which the footer does not advertise.
+Esc/Ctrl-C returns no prompt; it owns no console draft or session state. It
+draws inline on the supplied writer (the command's stderr), leaving stdout for
+the run's output and the preceding shell history visible. The textarea starts at two rows and grows with wrapped
 content up to the terminal height, then scrolls. Its viewport limit never
 limits the prompt's content. Leaving the composer clears its rows.
 Esc on a nonempty buffer asks before discarding: `y` exits, `n` or Esc keeps

@@ -79,13 +79,17 @@ func (m *promptComposer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			m.done = true
 			return m, tea.Quit
-		case "ctrl+d":
+		case "enter", "ctrl+d":
+			// Ctrl-D is accepted unadvertised for hands used to it as EOF.
 			m.submitted = m.text.Value()
 			m.done = true
 			return m, tea.Quit
 		case "alt+e", "f2":
 			return m, editPrompt(m.ctx, m.text.Value())
-		case "enter", "shift+enter", "ctrl+enter", "alt+enter", "ctrl+j":
+		case "shift+enter", "ctrl+enter", "alt+enter", "ctrl+j":
+			// Modified Enter writes a newline, as in the console's prompt.
+			// Remapped terminals send Shift-Enter as Alt-Enter, and legacy
+			// ones send Ctrl-Enter as Ctrl-J.
 			m.text.InsertString("\n")
 			return m, nil
 		}
@@ -131,7 +135,7 @@ func (m *promptComposer) footer() string {
 	if m.discard {
 		b.WriteString("Discard this prompt? y discard · n/Esc keep editing")
 	} else {
-		b.WriteString("Enter newline · Ctrl-D submit · Esc cancel · Alt-E editor")
+		b.WriteString("Enter submit · Shift-Enter newline · Esc cancel · Alt-E editor")
 	}
 	if m.status != "" {
 		b.WriteString("\n" + m.status)
