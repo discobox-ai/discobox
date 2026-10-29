@@ -121,29 +121,67 @@ cmd_retire() { # retire <issue>|<discobox-id> [merged]: a triage box has no issu
 }
 
 # A worker's ask is approved here only when it is the one its own skill asks for (deliver-issue §0,
-# triage-issue §0): to use GitHub in GH_TOKEN, at github.com and nowhere else. The server binds it
-# to the worker under this lead's delegate binding — the same secret, held to the delegation's routes
-# too, a lifetime it outlasts — and refuses one from a box this lead did not create. Anything else goes to the lead to read, as
-# NEEDS LEAD.
+# triage-issue §0): to use GitHub in GH_TOKEN, on exactly the routes that skill names. The server
+# binds it to the worker under this lead's delegate binding — the same secret, held to the
+# delegation's routes too, a lifetime it outlasts — and refuses one from a box this lead did not
+# create. Anything else goes to the lead to read, as NEEDS LEAD.
+#
+# The routes are each skill's, in the canonical form `secretroute.Format` writes (lists sorted),
+# which route_text below rebuilds from the server's JSON. Change them with the skills' requests.
+DELIVER_ROUTES=(
+	'github.com/discobox-ai/discobox.git/**,/discobox-ai/discobox/**'
+	'GET api.github.com/repos/discobox-ai/discobox/**'
+	'api.github.com/graphql graphql=query'
+	'api.github.com/graphql graphql=mutation:markPullRequestReadyForReview'
+	'POST api.github.com/repos/discobox-ai/discobox/pulls'
+	'PATCH api.github.com/repos/discobox-ai/discobox/pulls/*'
+	'POST api.github.com/repos/discobox-ai/discobox/pulls/*/comments/*/replies'
+	'POST api.github.com/repos/discobox-ai/discobox/issues/*/comments'
+	'POST api.github.com/repos/discobox-ai/discobox/actions/runs/*/rerun-failed-jobs'
+)
+TRIAGE_ROUTES=(
+	'GET api.github.com/repos/discobox-ai/discobox/**'
+	'GET api.github.com/search/issues'
+	'api.github.com/graphql graphql=query'
+	'POST api.github.com/repos/discobox-ai/discobox/issues/*/labels'
+	'DELETE api.github.com/repos/discobox-ai/discobox/issues/*/labels/**'
+	'POST api.github.com/repos/discobox-ai/discobox/issues/*/comments'
+)
+
+# route_set: routes, one per line on stdin, as one sorted line joined by " ; ".
+route_set() { LC_ALL=C sort -u | awk 'NR > 1 { printf " ; " } { printf "%s", $0 } END { print "" }'; }
+
 cmd_approve() { # approve pending GitHub use requests from workers, once each
 	local reqs
 	reqs=$(discobox secret request ls -o json </dev/null 2>/dev/null |
-		jq -r '.secretRequests[]? | select(.status=="pending")
-			| "\(.id) \(.sandboxId) \(.purpose // "use") \(.envName // "-") \((.routes // []) | map(.host + (.path // "")) | sort | join(","))"')
-	while read -r rid sid purpose env hosts; do
+		jq -r '
+			def list($l): ($l // []) | join(",");
+			def route_text: (if (.methods // []) == [] then "" else list(.methods) + " " end)
+				+ list(.hosts) + list(.paths)
+				+ (if .graphql then " graphql=" + (if (.graphql.operations // []) == [] then "*" else list(.graphql.operations) end)
+					+ (if (.graphql.fields // []) == [] then "" else ":" + list(.graphql.fields) end) else "" end)
+				+ (if .mcp then " mcp=" + (if (.mcp.tools // []) == [] then "*" else list(.mcp.tools) end) else "" end)
+				+ (if .blocked then "=blocked" else "" end);
+			.secretRequests[]? | select(.status=="pending")
+			| "\(.id) \(.sandboxId) \(.purpose // "use") \(.envName // "-") \((.routes // []) | map(route_text) | join("\u001f"))"')
+	local deliver triage
+	deliver=$(printf '%s\n' "${DELIVER_ROUTES[@]}" | route_set)
+	triage=$(printf '%s\n' "${TRIAGE_ROUTES[@]}" | route_set)
+	while IFS=' ' read -r rid sid purpose env routes; do
 		[ -z "$rid" ] && continue
 		grep -qx "$rid" "$ORCH_DIR/tried.txt" && continue
 		echo "$rid" >>"$ORCH_DIR/tried.txt"
 		local n; n=$(awk -v s="$sid" '$2==s{print $1}' "$W")
 		[ -z "$n" ] && n=$(awk -v s="$sid" '$1==s{print "t"$2}' "$T")
-		if [ -n "$n" ] && [ "$purpose" = use ] && [ "$env" = GH_TOKEN ] && [ "$hosts" = github.com ]; then
+		routes=$(printf '%s' "$routes" | tr '\037' '\n' | route_set)
+		if [ -n "$n" ] && [ "$purpose" = use ] && [ "$env" = GH_TOKEN ] && { [ "$routes" = "$deliver" ] || [ "$routes" = "$triage" ]; }; then
 			local res status=0
 			res=$(discobox secret request approve "$rid" </dev/null 2>&1) || status=$?
 			res=$(printf '%s' "$res" | tail -3 | head -1 | cut -c1-300)
 			echo "$(date -u +%FT%H:%M) approve $rid for #$n: $res" >>"$ORCH_DIR/approvals.log"
 			if [ "$status" = 0 ]; then echo "approved #$n $rid"; else echo "REFUSED #$n $rid: $res"; fi
 		else
-			echo "NEEDS LEAD: $rid from $sid ($purpose $env at $hosts): not the ask its skill makes; read it"
+			echo "NEEDS LEAD: $rid from $sid ($purpose $env on $routes): not the ask its skill makes; read it"
 		fi
 	done <<<"$reqs"
 }

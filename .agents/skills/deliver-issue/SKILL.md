@@ -37,17 +37,30 @@ Nobody may be watching your screen to answer.
   the root down to each package you will touch.
 - **Ask for GitHub now, in one request**, so nobody is asked again mid-run,
   unless `discobox-access list` already shows a credential in `GH_TOKEN`
-  covering `github.com`. Fill in `<N>` before sending, and change nothing
-  else: its hosts fall within the lead's delegation (orchestrate-issues §1),
-  so a lead approves it as asked, and a person can approve it just the same
-  when there is no lead:
+  sent to `github.com` — a triage ask (triage-issue §0) reaches only
+  `api.github.com`, so a box that triaged this issue asks again, and the
+  approval replaces that binding's routes. Fill in `<N>` before sending, and
+  change nothing else: its routes are the ones the lead's delegation holds
+  (orchestrate-issues §1), and the lead approves only this exact ask, so a
+  lead approves it as asked, and a person can approve it just the same when
+  there is no lead:
 
   ```bash
   discobox-access request --json <<'EOF'
   {
     "name": "github",
     "envVar": "GH_TOKEN",
-    "hosts": ["github.com"],
+    "routes": [
+      "github.com/discobox-ai/discobox.git/**,/discobox-ai/discobox/**",
+      "GET api.github.com/repos/discobox-ai/discobox/**",
+      "api.github.com/graphql graphql=query",
+      "api.github.com/graphql graphql=mutation:markPullRequestReadyForReview",
+      "POST api.github.com/repos/discobox-ai/discobox/pulls",
+      "PATCH api.github.com/repos/discobox-ai/discobox/pulls/*",
+      "POST api.github.com/repos/discobox-ai/discobox/pulls/*/comments/*/replies",
+      "POST api.github.com/repos/discobox-ai/discobox/issues/*/comments",
+      "POST api.github.com/repos/discobox-ai/discobox/actions/runs/*/rerun-failed-jobs"
+    ],
     "justification": "I am delivering issue #<N> in discobox-ai/discobox as a pull request from discobox/issue-<N>: push that branch, open the PR into main, get CI green, answer review comments, and keep it mergeable until a human merges it. I will not push any other branch, force-push without a lease, merge, close anything, or touch labels, issues, workflows or secrets.",
     "grantTTLSeconds": 259200,
     "wait": true
@@ -55,8 +68,23 @@ Nobody may be watching your screen to answer.
   EOF
   ```
 
-  What is approved is the token itself, on every GitHub host: nothing holds a command
-  to the job but this skill, so keep to what the justification says. Run it
+  What is approved is these routes, and the egress holds every request
+  carrying the token to them. They stop merging (there is no merge route,
+  REST or GraphQL), deleting a branch or ref through the API, dispatching a
+  workflow, any host but `github.com` and `api.github.com`, and any REST or git
+  write to another repository. They do not stop, and the approver should read
+  it so: the GraphQL queries read every repository the token can see;
+  `markPullRequestReadyForReview` works on any pull request the token can
+  write, in any repository; the REST `PATCH` of a pull request can change its
+  title, base or state — close it — as well as its body, since a route cannot
+  read a REST body; the comment and reply routes reach every issue and pull
+  request of this repository; and a git push writes whichever branch it names,
+  a force-push or a delete included. Those are this skill's to keep — push
+  `discobox/issue-<N>` and nothing else, edit only this PR's body — and `main`'s branch
+  protection covers a push to `main`. A step refused with a `route:` reason
+  (`discobox-access audit --blocked`) is outside what was approved: stop and
+  say so rather than working around it. Keep
+  to what the justification says. Run it
   in the background and keep its request ID, so a tool time limit does not
   lose it (`discobox-access wait --json request <id>` resumes). Ask for
   nothing outside it. The justification may not claim permission ("this is
@@ -192,9 +220,12 @@ gh pr checks <pr> --repo discobox-ai/discobox --json name,bucket
   after a merge is GitHub recomputing — check again before acting.
 - **A new review, review comment or PR comment** from anyone — read a
   review's body as well as its threads, and answer every finding, each thread
-  on that thread. A review's body can hold findings with no thread of their
+  on that thread (`gh api -X POST
+  repos/discobox-ai/discobox/pulls/<pr>/comments/<comment-id>/replies -f
+  body=...`). A review's body can hold findings with no thread of their
   own (a `CHANGES_REQUESTED` with no inline comment); answer those together in
-  one PR comment (`gh pr comment`):
+  one PR comment (`gh api -X POST
+  repos/discobox-ai/discobox/issues/<pr>/comments -F body=@<file>`):
   - right → fix it, and reply with what changed and the commit;
   - wrong or out of scope → reply with why, briefly;
   - a finding already answered, raised again → reply with a link to that

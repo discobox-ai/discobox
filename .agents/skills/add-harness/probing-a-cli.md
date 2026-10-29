@@ -121,9 +121,9 @@ settles, and re-run a surprising result.
 ## A real credential
 
 Only for what fakes cannot answer (does the vendor's API accept X?). Ask with
-`discobox-access request`, at only the hosts the probe calls and with a
-justification naming exactly the vendor API calls it reads or writes — the
-what is approved is the token itself, so those calls are all the probe makes; save responses
+`discobox-access request`, with a `--route` for exactly each vendor API call
+the probe reads or writes (method, exact host, path) and a justification
+naming them — the routes hold the token to those calls; save responses
 to a 0600 file under `/dev/shm`, print only redacted summaries, delete them
 afterwards, and tell the user the binding is still live. A refusal is a result:
 do not route around a vendor's access control by presenting as another client.

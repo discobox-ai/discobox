@@ -56,7 +56,12 @@ discobox-access request --json <<'EOF'
 {
   "name": "github",
   "envVar": "GH_TOKEN",
-  "hosts": ["github.com"],
+  "routes": [
+    "GET api.github.com/repos/discobox-ai/discobox/**",
+    "api.github.com/graphql graphql=query",
+    "POST api.github.com/repos/discobox-ai/discobox/issues",
+    "POST api.github.com/repos/discobox-ai/discobox/issues/*/comments"
+  ],
   "justification": "I track the pull requests my worker discoboxes open in discobox-ai/discobox and main's CI, find the untriaged issues I hand them, and file and comment on the issues I hand them. I will not push, merge, close or edit anything, or read secrets.",
   "grantTTLSeconds": 604800,
   "wait": true
@@ -66,8 +71,8 @@ EOF
 
 **GitHub, to delegate** — what workers may be given: a delegate binding of
 the same credential on this box. One holds every worker's ask, delivering and
-triaging alike (deliver-issue §0, triage-issue §0, which ask for `GH_TOKEN` at
-`github.com`): when this box approves a worker's ask, the server binds the
+triaging alike (deliver-issue §0, triage-issue §0, each asking for `GH_TOKEN`
+on its own routes), so its routes are both asks' together: when this box approves a worker's ask, the server binds the
 credential to the worker under the delegation — only for a worker this box
 created, ending no later than the delegation, and held to the delegation's
 routes as well as its own (ADR 26-10-27-880 §3). Only a person makes one. The
@@ -78,7 +83,20 @@ user may already have, with `discobox secret bind github <this box> --delegate`
 discobox-access request --json <<'EOF'
 {
   "name": "github",
-  "hosts": ["github.com"],
+  "routes": [
+    "github.com/discobox-ai/discobox.git/**,/discobox-ai/discobox/**",
+    "GET api.github.com/repos/discobox-ai/discobox/**",
+    "GET api.github.com/search/issues",
+    "api.github.com/graphql graphql=query",
+    "api.github.com/graphql graphql=mutation:markPullRequestReadyForReview",
+    "POST api.github.com/repos/discobox-ai/discobox/pulls",
+    "PATCH api.github.com/repos/discobox-ai/discobox/pulls/*",
+    "POST api.github.com/repos/discobox-ai/discobox/pulls/*/comments/*/replies",
+    "POST api.github.com/repos/discobox-ai/discobox/issues/*/comments",
+    "POST api.github.com/repos/discobox-ai/discobox/issues/*/labels",
+    "DELETE api.github.com/repos/discobox-ai/discobox/issues/*/labels/**",
+    "POST api.github.com/repos/discobox-ai/discobox/actions/runs/*/rerun-failed-jobs"
+  ],
   "purpose": "delegate",
   "justification": "each worker discobox I create either triages one issue in discobox-ai/discobox (reads, labels and comments on it) or delivers one issue as a pull request from discobox/issue-<n> into main, answers its reviews, and keeps it mergeable until a human merges it. Needs contents:write, pull-requests:write and actions:write (and workflow scope if a change touches .github/workflows).",
   "grantTTLSeconds": 604800,
@@ -87,8 +105,22 @@ discobox-access request --json <<'EOF'
 EOF
 ```
 
-A binding is the token itself, so what each justification says is what this
-run and its workers keep to; nothing else holds them to it. A request that waits is
+A binding is held to its routes, and a worker's to the delegation's as well
+as its own. Nothing granted here merges (no merge route, REST or GraphQL),
+deletes a branch or ref through the API, dispatches a workflow, or writes to
+another repository over REST or git. What the routes do not stop, and the
+person approving should read it so: the GraphQL queries and issue search
+read every repository the token can see; `markPullRequestReadyForReview`
+works on any pull request the token can write, in any repository; the REST
+`PATCH` of a pull request can change its state — close it — since a route
+cannot read a REST body; the label, comment and reply routes reach every
+issue and pull request of this repository; and a git push writes whichever
+branch it names, a force-push or a delete included. Those — which branch a
+worker pushes, which PR it edits, which issue it labels — are what each
+justification says, and what this run and its workers keep to; `main`'s
+branch protection covers a push to `main`. Change the
+delegation's routes and the workers' asks together: a worker's route the
+delegation lacks is refused under it. A request that waits is
 held by a tool time limit: run it in the background and keep its request ID
 (do not filter the `progress` line out), so `discobox-access wait --json
 request <id>` can resume it. `GH_TOKEN` reaches commands started after the
@@ -151,8 +183,9 @@ exits on:
   every PR that went `dirty` rebase.
 
 - **A request** — `approve` answers each worker's GitHub request once, when it
-  is the ask its skill makes: to use `GH_TOKEN` at `github.com` (deliver-issue
-  §0, triage-issue §0). The server makes the worker's binding under your
+  is the ask its skill makes: to use `GH_TOKEN` on exactly the routes deliver-issue
+  §0 or triage-issue §0 names (`orchestrate.sh` holds both lists; change them
+  with the skills). The server makes the worker's binding under your
   delegation — the same credential, held to the delegation's routes too, a
   lifetime it outlasts — and fits the lifetime to it. Anything else comes back to you as `NEEDS LEAD`, and so does
   a refusal: read it (`discobox secret request get <id>`), and approve it only
