@@ -29,12 +29,20 @@ type PoolHostConfig struct {
 	// is plain HTTP either way: the hop that needed authenticating was the
 	// sandbox's, and the proxy has done that. A listener that takes
 	// PoolClientHeader as the only word on who is asking belongs on a
-	// socket: a loopback port is one a sandbox can send its own header to as
-	// ordinary egress, from this proxy's network namespace.
+	// socket: this proxy sends a sandbox's ordinary egress from the pool's
+	// network namespace, so a loopback port is out of a sandbox's reach only
+	// by destinationDialer's refusal, one check, where no egress can name a
+	// socket at all.
 	Upstream string
 	// ReadOnly refuses every method but GET and HEAD at the proxy, so a write
 	// never reaches the upstream at all.
 	ReadOnly bool
+	// UnspooledBodies is a host whose bodies are the pool's own bulk content
+	// — the build registry's layers (ADR 26-10-29-160 §4): neither a
+	// request's body nor a response's is spooled to the audit, whose byte
+	// budget would spend itself on them. Each exchange is still audited as a
+	// row.
+	UnspooledBodies bool
 }
 
 // PoolClientHeader is, on a request forwarded to a PoolHostConfig's Upstream,
@@ -56,10 +64,11 @@ type poolHosts struct {
 // poolHost is one host the pool answers, and where it forwards to: base, the
 // upstream's HTTP base URL, reached by client over the upstream's transport.
 type poolHost struct {
-	host     string
-	base     string
-	client   *http.Client
-	readOnly bool
+	host            string
+	base            string
+	client          *http.Client
+	readOnly        bool
+	unspooledBodies bool
 }
 
 func newPoolHosts(configs []PoolHostConfig) (*poolHosts, error) {
@@ -92,7 +101,8 @@ func newPoolHosts(configs []PoolHostConfig) (*poolHosts, error) {
 					return http.ErrUseLastResponse
 				},
 			},
-			readOnly: cfg.ReadOnly,
+			readOnly:        cfg.ReadOnly,
+			unspooledBodies: cfg.UnspooledBodies,
 		}
 	}
 	if len(hosts) == 0 {
@@ -128,9 +138,13 @@ func (h *poolHost) targetFor(in *url.URL) (string, error) {
 // servePoolHost forwards a request for a pool host to the pool's listener for
 // it as the client its certificate names, and answers with what that listener
 // says. The response goes back through the ordinary response path, which
-// audits it like any other exchange; only a request the proxy itself refuses
-// is recorded here, as blocked.
+// audits it like any other exchange, but never caches it; only a request the
+// proxy itself refuses is recorded here, as blocked.
+//
+// A pool host's request body is never spooled: it is forwarded here, before
+// the request-body capture every other request goes through.
 func (h *httpProxy) servePoolHost(req *http.Request, meta *requestMeta, client clientIdentity, host *poolHost) *http.Response {
+	meta.poolHost = host
 	refuse := func(status int, reason string) *http.Response {
 		meta.answered = true
 		meta.span.SetAttributes(attribute.Bool("proxy.blocked", true), attribute.Int("http.response.status_code", status))

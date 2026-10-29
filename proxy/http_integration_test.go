@@ -129,9 +129,10 @@ func TestHTTPProxySecretSentinelSwapAndAudit(t *testing.T) {
 
 	dbPath := filepath.Join(dir, "audit.db")
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   dbPath,
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               dbPath,
 		Recording: RecordingConfig{
 			Enabled:   true,
 			QueueSize: 16,
@@ -253,10 +254,11 @@ func TestHTTPProxyRouteRefusesASwappedRequest(t *testing.T) {
 	var resolved atomic.Int64
 	dbPath := filepath.Join(dir, "audit.db")
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   dbPath,
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               dbPath,
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
 		Secrets: SecretsConfig{Clients: []SecretClient{{
 			ClientID:  "sandbox-1",
 			Sentinels: []string{sentinel},
@@ -376,11 +378,12 @@ func TestHTTPProxyRecordsAHostItRefusesOnce(t *testing.T) {
 	}
 	dbPath := filepath.Join(dir, "audit.db")
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   dbPath,
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
-		Allowlist:     AllowlistConfig{Clients: map[string][]string{"sandbox-1": {"only.allowed.example.com"}}},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               dbPath,
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
+		Allowlist:                 AllowlistConfig{Clients: map[string][]string{"sandbox-1": {"only.allowed.example.com"}}},
 	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
@@ -449,10 +452,11 @@ func TestHTTPProxySecretSentinelDeniedForOtherHost(t *testing.T) {
 	}
 
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   filepath.Join(dir, "audit.db"),
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               filepath.Join(dir, "audit.db"),
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
 		Secrets: SecretsConfig{
 			Clients: []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{sentinel}}},
 		},
@@ -515,9 +519,10 @@ func TestHTTPProxyCapturesFullBodies(t *testing.T) {
 	dbPath := filepath.Join(dir, "audit.db")
 	bodyDir := filepath.Join(dir, "bodies")
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   dbPath,
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               dbPath,
 		Recording: RecordingConfig{
 			Enabled:   true,
 			QueueSize: 16,
@@ -654,9 +659,10 @@ func TestHTTPProxyRecordsCachedResponseBodyByReference(t *testing.T) {
 	dbPath := filepath.Join(dir, "audit.db")
 	bodyDir := filepath.Join(dir, "bodies")
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   dbPath,
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               dbPath,
 		Cache: CacheConfig{
 			Enabled:      true,
 			Dir:          filepath.Join(dir, "cache"),
@@ -788,10 +794,11 @@ func TestHTTPProxyUpgradeAudit(t *testing.T) {
 	}
 	dbPath := filepath.Join(dir, "audit.db")
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   dbPath,
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16, StreamDir: filepath.Join(dir, "streams")},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               dbPath,
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16, StreamDir: filepath.Join(dir, "streams")},
 	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
@@ -892,9 +899,10 @@ func TestLocalForwarderHTTPToWorkerProxy(t *testing.T) {
 
 	dbPath := filepath.Join(dir, "audit.db")
 	worker, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   dbPath,
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               dbPath,
 		Recording: RecordingConfig{
 			Enabled:   true,
 			QueueSize: 16,
@@ -1026,9 +1034,10 @@ func TestHTTPProxyUpgradeEarlyClientBytes(t *testing.T) {
 		t.Fatalf("PrepareCertificates() error = %v", err)
 	}
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   filepath.Join(dir, "audit.db"),
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               filepath.Join(dir, "audit.db"),
 	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
@@ -1408,10 +1417,11 @@ func TestHTTPProxySecretSwapOverMITM(t *testing.T) {
 		t.Fatalf("PrepareCertificates() error = %v", err)
 	}
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   filepath.Join(dir, "audit.db"),
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               filepath.Join(dir, "audit.db"),
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
 		Secrets: SecretsConfig{
 			Clients: []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{sentinel}}},
 		},
@@ -1530,10 +1540,11 @@ func TestHTTPProxySecretSentinelSwapInBasicAuth(t *testing.T) {
 
 	dbPath := filepath.Join(dir, "audit.db")
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   dbPath,
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               dbPath,
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
 		Secrets: SecretsConfig{
 			Clients: []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{sentinel}}},
 		},
@@ -1675,10 +1686,11 @@ func TestHTTPProxyBodilessResponsesKeepTheConnectionInSync(t *testing.T) {
 		t.Fatalf("PrepareCertificates() error = %v", err)
 	}
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   filepath.Join(dir, "audit.db"),
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               filepath.Join(dir, "audit.db"),
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
 		Cache: CacheConfig{
 			Enabled:      true,
 			Dir:          filepath.Join(dir, "cache"),
@@ -1853,10 +1865,11 @@ func startTunnelProxy(ctx context.Context, t *testing.T, origin *url.URL, resolv
 		t.Fatalf("PrepareCertificates() error = %v", err)
 	}
 	cfg := Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   filepath.Join(dir, "audit.db"),
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               filepath.Join(dir, "audit.db"),
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
 	}
 	if sentinel != "" {
 		cfg.Secrets = SecretsConfig{Clients: []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{sentinel}}}}

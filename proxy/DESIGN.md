@@ -161,11 +161,11 @@ sandbox ([ADR 0126](../docs/adr/0126-a-sandbox-does-not-share-a-host-or-a-filesy
   and new CA trusted side by side while every leaf is re-signed; it is built
   before the first CA nears that window, not here.
 
-The output registry needs no client authentication while it stays on the
-Docker pool's private network: its unguessable repository names (ADR 0047)
-are what protect it there. 0126 §7 requires authenticated pulls and deletions
-only once a registry is reachable off that network; that is built with the
-first backend that puts it there, not before.
+The build registry is reached at `registry.discobox.internal`, one of the pool
+hosts below, which forwards it as the sandbox the client certificate names to
+a front that admits only that sandbox's namespace (ADR 26-10-29-160). That is
+0126 §7's authenticated pull and deletion; the registry itself listens on the
+pool's loopback, which this proxy refuses as a destination.
 
 ## Persistence
 
@@ -494,9 +494,11 @@ Key properties:
   the placeholder when a credential does not resolve; this one fails closed.
 - **The pool's own hosts never reach the internet either** (`Config.PoolHosts`,
   `poolhosts.go`): its Git origins
-  ([ADR 26-10-08-561](../docs/adr/26-10-08-561-a-sandbox-reaches-its-origins-at-a-host-its-pool-proxy-answers.md))
-  and its bundle assets
-  ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §13).
+  ([ADR 26-10-08-561](../docs/adr/26-10-08-561-a-sandbox-reaches-its-origins-at-a-host-its-pool-proxy-answers.md)),
+  its bundle assets
+  ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md) §13)
+  and its build registry
+  ([ADR 26-10-29-160](../docs/adr/26-10-29-160-a-sandbox-reaches-its-pools-build-registry-at-a-host-its-pool-proxy-answers.md)).
   A CONNECT to one is intercepted whatever the allowlist says, like the gate
   host's, and a request for it is forwarded — its path and query, and nothing
   else of where it was sent — to that host's `Upstream`, with
@@ -504,14 +506,37 @@ Key properties:
   whatever the sandbox sent under that name. Its own `Authorization` goes with
   it: that is the token an origin listener decides on. A `ReadOnly` host
   (assets) refuses anything but GET and HEAD with a 405 before the upstream
-  sees it. No swap, no cache, no gateway; the response is audited on the
-  ordinary response path, and an unreachable upstream is a 502. An `Upstream`
+  sees it. No swap, no cache — neither looked up nor stored
+  (`requestMeta.poolHost`): the content is already on the pool's disk — and
+  no gateway; the response is audited on the ordinary response path, and an
+  unreachable upstream is a 502. A request body is never spooled. An
+  `UnspooledBodies` host (the registry) spools no response body either: its
+  layers would spend the audit's byte budget (ADR 26-10-08-698) on build
+  output, so its exchanges are rows without bodies. An `Upstream`
   is a [`wire`](../pkg/wire) URL: the pool points origins at a loopback listener
   of its agent's, which also takes the pool's sandbox token, and assets at a
   Unix socket. This proxy sends a sandbox's ordinary egress from the same
-  network namespace, so a loopback port is one a sandbox can reach with a
-  `PoolClientHeader` of its own; a listener that decides on that header alone
-  belongs on a socket.
+  network namespace, so a loopback port is kept from a sandbox sending a
+  `PoolClientHeader` of its own only by the loopback refusal below; a listener
+  that decides on that header alone belongs on a socket, which no egress can
+  name.
+- **No sandbox reaches the pool's own loopback through the proxy**
+  (`destinationDialer`, `dial.go`;
+  [ADR 26-10-29-160](../docs/adr/26-10-29-160-a-sandbox-reaches-its-pools-build-registry-at-a-host-its-pool-proxy-answers.md) §3).
+  The proxy shares the pool's network namespace with services that listen on
+  its loopback for the pool alone — the build registry, which the pool hosts
+  front. Every upstream a client's request is dialed to — HTTP, a MITM'd or
+  passthrough `CONNECT`, SOCKS, and the pinned and h2c transports, which are
+  clones of the proxy's own — is refused when the address the dialer actually
+  connects to, after resolution, is loopback or unspecified in either family
+  (IPv4-mapped included), so a name that resolves there is refused as surely
+  as the literal. An HTTP request is answered 403 and audited once as blocked;
+  a SOCKS connect fails. The upstream proxy's own hop is exempt: in a pool
+  nested in a sandbox it is that sandbox's forwarder on loopback, and what
+  goes through it is resolved there. The pool hosts and the gate dial their
+  own upstreams on transports of their own. `Config.AllowLoopbackDestinations`
+  turns the refusal off, for tests whose upstreams are on loopback; a pool
+  never sets it.
 - **A request the proxy refuses is its own answer** (`requestMeta.answered`):
   it is audited once, as blocked, and the response path neither records it
   again nor reads it as the upstream's word on a credential.

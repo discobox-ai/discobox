@@ -28,9 +28,12 @@ import (
 )
 
 type httpProxy struct {
-	proxy  *goproxy.ProxyHttpServer
-	certs  *CertificateBundle
-	filter *filter.Filter
+	proxy *goproxy.ProxyHttpServer
+	// destinations dials every upstream a client's request goes to, and
+	// refuses the pool's own loopback (destinationDialer).
+	destinations *destinationDialer
+	certs        *CertificateBundle
+	filter       *filter.Filter
 	// gateways is each client's gateways (ADR 26-10-16-470), replaced whole
 	// by ApplyConfig.
 	gateways map[string]*gateway.Table
@@ -67,6 +70,10 @@ type requestMeta struct {
 	start    time.Time
 	client   clientIdentity
 	cacheHit bool
+	// poolHost is the pool host that answered the request (servePoolHost),
+	// whose response is never cached, and whose body is not spooled when
+	// the host's bodies are unspooled.
+	poolHost *poolHost
 	// answered is a request the proxy refused and answered itself, and has
 	// already recorded as blocked. Its response is the proxy's own, so the
 	// response path neither records it again nor treats it as the upstream's
@@ -223,7 +230,12 @@ func newHTTPProxy(certs *CertificateBundle, flt *filter.Filter, gateways map[str
 	h := &httpProxy{
 		proxy: p, certs: certs, filter: flt, gateways: gateways, resolver: resolver, gatewayValues: newGatewayValues(),
 		swapper: swapper, cache: c, audit: recorder, ids: map[string]clientIdentity{},
+		destinations: &destinationDialer{},
 	}
+	// Every upstream a client's request goes to is dialed here, the upstream
+	// proxy's hop aside (applyUpstreamProxy). The pinned and h2c transports
+	// are clones of this one, so they dial the same way.
+	p.Tr.DialContext = h.destinations.DialContext
 	h.reports = newCredentialReporter(swapper.Report)
 	h.setupMITM()
 	h.setupHandlers()
@@ -550,7 +562,9 @@ func (h *httpProxy) setupHandlers() {
 		}
 
 		var store *cache.StreamingPut
-		if matcher := h.cache.Matcher(); matcher != nil && matcher.ShouldCache(ctx.Req) && matcher.ShouldCacheResponse(resp) {
+		// A pool host's content is the pool's own, already on its disk: a
+		// cache entry would only store it twice.
+		if matcher := h.cache.Matcher(); meta.poolHost == nil && matcher != nil && matcher.ShouldCache(ctx.Req) && matcher.ShouldCacheResponse(resp) {
 			key := matcher.GenerateKey(ctx.Req)
 			meta.cacheKey = key
 			_, cacheSpan := proxyTracer().Start(meta.ctx, "proxy.cache.store.start", trace.WithAttributes(attribute.String("proxy.cache.key", key)))
@@ -569,7 +583,7 @@ func (h *httpProxy) setupHandlers() {
 			bodyRecord *audit.BodyRecord
 			bodySpool  *audit.BodySpool
 		)
-		if store == nil {
+		if store == nil && (meta.poolHost == nil || !meta.poolHost.unspooledBodies) {
 			var err error
 			bodyRecord, bodySpool, err = h.beginResponseBody(meta)
 			if err != nil {

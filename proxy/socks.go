@@ -21,9 +21,10 @@ type socksProxy struct {
 	ids    map[string]clientIdentity
 }
 
-func newSOCKSProxy(flt *filter.Filter, recorder *audit.Recorder) *socksProxy {
+func newSOCKSProxy(flt *filter.Filter, recorder *audit.Recorder, dial func(ctx context.Context, network, addr string) (net.Conn, error)) *socksProxy {
 	s := &socksProxy{filter: flt, ids: map[string]clientIdentity{}}
 	s.server = socks5.NewServer(
+		socks5.WithDial(dial),
 		socks5.WithRule(&socksRule{audit: recorder, identities: s}),
 		socks5.WithAuthMethods([]socks5.Authenticator{socks5.NoAuthAuthenticator{}}),
 		socks5.WithLogger(socksLogger{}),

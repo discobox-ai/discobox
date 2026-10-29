@@ -329,6 +329,8 @@ func (h *httpProxy) roundTrip(req *http.Request, ctx *goproxy.ProxyCtx) (*http.R
 	switch {
 	case err == nil || meta == nil:
 		return resp, err
+	case errors.Is(err, errOwnLoopback):
+		return h.refuseOwnLoopback(req, outbound, meta, err), nil
 	case untrustedCertificate(err):
 		return h.refuseUntrusted(req, outbound, meta, err), nil
 	default:

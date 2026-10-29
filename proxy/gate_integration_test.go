@@ -76,10 +76,11 @@ func TestHTTPProxyGateHostIsAnsweredByTheGateAlone(t *testing.T) {
 	resolver := &gateResolver{}
 	dbPath := filepath.Join(dir, "audit.db")
 	server, err := NewServer(ctx, Config{
-		ListenAddress: "127.0.0.1:0",
-		CertDir:       prepared.Bundle.Dir,
-		DatabaseDSN:   dbPath,
-		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		ListenAddress:             "127.0.0.1:0",
+		AllowLoopbackDestinations: true,
+		CertDir:                   prepared.Bundle.Dir,
+		DatabaseDSN:               dbPath,
+		Recording:                 RecordingConfig{Enabled: true, QueueSize: 16},
 		// An allowlist that admits nothing but an unrelated host: the gate
 		// host is not the allowlist's to refuse.
 		Allowlist: AllowlistConfig{Clients: map[string][]string{"sandbox-1": {"only.allowed.example.com"}}},

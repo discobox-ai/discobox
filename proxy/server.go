@@ -97,6 +97,7 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 		closed:      make(chan struct{}),
 	}
 	s.http = newHTTPProxy(certs, s.filter, buildGatewayTables(cfg.Gateways), resolver, swapper, c, recorder)
+	s.http.destinations.allowLoopback = cfg.AllowLoopbackDestinations
 	if s.http.poolHosts, err = newPoolHosts(cfg.PoolHosts); err != nil {
 		return nil, err
 	}
@@ -113,7 +114,7 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolv
 	}
 	s.http.setTrusts(trusts)
 	s.http.h2c = cleartextHTTP2Transport(s.http.proxy.Tr)
-	s.socks = newSOCKSProxy(s.filter, recorder)
+	s.socks = newSOCKSProxy(s.filter, recorder, s.http.destinations.DialContext)
 	return s, nil
 }
 

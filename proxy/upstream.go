@@ -105,6 +105,10 @@ func applyUpstreamProxy(h *httpProxy, upstream *url.URL, noProxy string) {
 		return proxyFunc(req.URL)
 	}
 
+	// The upstream proxy is this proxy's own hop, which the destination
+	// dialer lets through even on loopback; the destinations behind it are
+	// resolved there.
+	h.destinations.via = proxyDialAddress(upstream)
 	viaProxy := h.proxy.NewConnectDialToProxy(upstream.String())
 	direct := h.proxy.ConnectDial
 	h.proxy.ConnectDial = func(network, addr string) (net.Conn, error) {
@@ -115,7 +119,7 @@ func applyUpstreamProxy(h *httpProxy, upstream *url.URL, noProxy string) {
 			// goproxy's ConnectDial carries no context, and the tunnel it
 			// dials lives as long as the CONNECT itself, so there is nothing
 			// narrower than Background to hand the dialer.
-			return (&net.Dialer{}).DialContext(context.Background(), network, addr)
+			return h.proxy.Tr.DialContext(context.Background(), network, addr)
 		}
 		return viaProxy(network, addr)
 	}
