@@ -14,18 +14,42 @@ func TestPromptComposerMultiline(t *testing.T) {
 	m := newPromptComposer(t.Context())
 	m.Init()
 	m.Update(tea.PasteMsg{Content: "Keep 'quotes' and $vars"})
-	_, cmd := m.Update(keyPress("enter"))
+	_, cmd := m.Update(keyPress("shift+enter"))
 	if cmd != nil {
-		t.Fatal("Enter must add a newline without submitting")
+		t.Fatal("Shift-Enter must add a newline without submitting")
 	}
 	m.Update(tea.PasteMsg{Content: "second line\n\nlast line"})
 	want := "Keep 'quotes' and $vars\nsecond line\n\nlast line"
 	if m.text.Value() != want {
 		t.Fatalf("buffer = %q, want %q", m.text.Value(), want)
 	}
-	_, cmd = m.Update(keyPress("ctrl+d"))
+	_, cmd = m.Update(keyPress("enter"))
 	if cmd == nil || m.submitted != want {
-		t.Fatalf("Ctrl-D: submitted=%q, quit=%v", m.submitted, cmd != nil)
+		t.Fatalf("Enter: submitted=%q, quit=%v", m.submitted, cmd != nil)
+	}
+}
+
+func TestPromptComposerSubmitKeys(t *testing.T) {
+	for _, k := range []string{"enter", "ctrl+d"} {
+		t.Run(k, func(t *testing.T) {
+			m := newPromptComposer(t.Context())
+			m.text.SetValue("run this")
+			_, cmd := m.Update(keyPress(k))
+			if cmd == nil || m.submitted != "run this" {
+				t.Fatalf("%s: submitted=%q, quit=%v", k, m.submitted, cmd != nil)
+			}
+		})
+	}
+	for _, k := range []string{"shift+enter", "ctrl+enter", "alt+enter", "ctrl+j"} {
+		t.Run(k, func(t *testing.T) {
+			m := newPromptComposer(t.Context())
+			m.text.SetValue("first")
+			m.text.CursorEnd()
+			_, cmd := m.Update(keyPress(k))
+			if cmd != nil || m.submitted != "" || m.text.Value() != "first\n" {
+				t.Fatalf("%s: value=%q, submitted=%q", k, m.text.Value(), m.submitted)
+			}
+		})
 	}
 }
 
@@ -99,7 +123,7 @@ func TestPromptComposerNarrowFooter(t *testing.T) {
 			}
 		}
 		footer := strings.ReplaceAll(m.footer(), "\n", "")
-		want := "Ctrl-D submit"
+		want := "Enter submit"
 		if confirm {
 			want = "n/Esc keep editing"
 		}
