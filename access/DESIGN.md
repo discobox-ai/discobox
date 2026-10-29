@@ -76,9 +76,11 @@ Rules the shape depends on:
   lines are plain text even under `--json`.
 - **Exit status is meaningful.** `0` success, `1` the call failed, `2` the
   invocation could not be parsed (bad flags, a missing name, variable or
-  host, an unreadable `--json` body). A `--wait` that settles as *denied*
-  exits non-zero: the call completed, but the answer was no, and a
-  shell-driven agent reads a zero as approval.
+  host, an unreadable `--json` body), `3` a wait that ended with the request
+  still pending (resume it on the same ID). A `--wait` that settles as
+  *denied* exits non-zero, and so does one that runs out: the call completed,
+  but the answer was no or not yet, and a shell-driven agent reads a zero as
+  approval.
 - **A lifetime is asked for, never set.** `--ttl` (`grantTTLSeconds`) is the
   answer a human is shown already chosen; a fraction of a second, a negative,
   or one over thirty days is refused rather than rounded or trimmed.
@@ -91,7 +93,13 @@ also in JSON mode: a `progress` envelope on stderr carries the request kind,
 ID, whether this process is waiting, and instructions to keep monitoring the
 execution across tool yields. stdout remains a single result. A request made
 without waiting emits the same notice with the exact command to resume it.
-Timeouts end the local wait, not the service-owned request. Resuming a trust
+Timeouts end the local wait, not the service-owned request: a wait that runs
+out answers with the request still pending on stdout, the resume command on
+stderr, and exit status 3, so it is never taken for approval (0) or failure
+(1). A poll that fails without saying anything about the request — it timed
+out, the relay dropped it, the service answered 5xx — is polled through; only
+not found, denied or invalid end a wait early (`agentcreds.waitFor`).
+Resuming a trust
 request returns the status available from the service; only the original
 `trust --wait` can preserve certificate-chain metadata from its creation call.
 

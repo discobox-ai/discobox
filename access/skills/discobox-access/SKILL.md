@@ -29,8 +29,9 @@ While approval is pending, provide occasional progress updates and continue
 independent work when useful. Do not end your turn merely to announce that
 access was requested, and do not ask the user to say "continue". After
 approval, automatically resume the authorized task. Stop waiting only when the
-request resolves, the command reports an actual timeout or failure, or the
-user cancels. Elapsed time is never approval.
+request resolves, the command fails (exit 1), or the user cancels. A wait that
+runs out (exit 3, the request still `pending`) is not an answer: wait again on
+the same ID. Elapsed time is never approval.
 
 If the running execution is lost, resume waiting on the existing request ID;
 do not create a replacement request:
@@ -42,7 +43,9 @@ discobox-access wait --json trust treq_7f3a2b
 
 Flags go before the request kind and ID. `--timeout 1h` controls the wait
 (default one hour). A timeout stops waiting; it does not cancel the request or
-deny it. A denial is final: report it rather than requesting the same access
+deny it. A wait that runs out prints the request as `pending`, says how to
+resume, and exits 3 — wait again on the same ID. A brief network or relay
+failure while waiting does not end the wait; it keeps polling. A denial is final: report it rather than requesting the same access
 again. Pending notices appear on stderr, including in JSON mode; stdout holds
 the result.
 
@@ -379,7 +382,8 @@ Failures go to stderr, with `--json` as `{"error":{"code":"...","message":"..."}
 | `unavailable` | the service could not answer | retry once, then tell the user |
 
 Exit status: `0` fine, `1` the call failed or the answer was no, `2` you
-invoked it wrongly.
+invoked it wrongly, `3` a wait ran out with the request still pending — wait
+again on the same ID.
 
 To see exactly what was sent and answered, put `--debug` before the command
 (`discobox-access --debug request ...`): every call to the credentials service

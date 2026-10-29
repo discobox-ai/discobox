@@ -221,14 +221,23 @@ func runRequest(ctx context.Context, args []string) int {
 		waitCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		out.pending("request", status.RequestID, true)
-		settled, err := client.WaitForRequest(waitCtx, status.RequestID, 2*time.Second)
+		settled, err := client.WaitForRequest(waitCtx, status, 2*time.Second)
 		if err != nil {
 			return out.report(err)
 		}
 		status = settled
 	}
 
-	return out.requestStatus(status)
+	return waited(out.requestStatus(status), input.Wait && !status.Settled())
+}
+
+// waited is a status's exit code, except that a wait which ended with the
+// request still unanswered exits exitPending.
+func waited(code int, stillPending bool) int {
+	if stillPending && code == exitOK {
+		return exitPending
+	}
+	return code
 }
 
 func (out *emitter) requestStatus(status agentcreds.RequestStatus) int {

@@ -87,28 +87,37 @@ func assertProgress(t *testing.T, stderr, kind, id string, waiting bool) {
 	}
 }
 
+// A wait that ends before the answer comes is not approval and not failure:
+// the request is still open. It says so on stdout, says how to resume, and
+// exits exitPending, so a script that runs on `&&` does not go on as if it
+// had been approved.
 func TestWaitTimeoutDoesNotReportApproval(t *testing.T) {
 	for _, kind := range []string{"request", "trust"} {
 		t.Run(kind, func(t *testing.T) {
-			svc := &fakeService{status: agentcreds.RequestStatus{Status: agentcreds.StatusPending}, trustPolls: []agentcreds.TrustRequestStatus{{Status: agentcreds.StatusPending}}}
+			svc := &fakeService{
+				status:     agentcreds.RequestStatus{RequestID: "existing", Status: agentcreds.StatusPending},
+				trustPolls: []agentcreds.TrustRequestStatus{{RequestID: "existing", Status: agentcreds.StatusPending}},
+			}
 			serve(t, svc)
 			stdout, stderr, code := capture(t, "", func() int { return Run([]string{"wait", "--json", "--timeout", "20ms", kind, "existing"}) })
-			if code != exitError || stdout != "" {
-				t.Fatalf("exit %d, stdout %q, stderr %s", code, stdout, stderr)
+			var result struct {
+				RequestID string `json:"requestId"`
+				Status    string `json:"status"`
+			}
+			if code != exitPending || json.Unmarshal([]byte(stdout), &result) != nil || result.Status != agentcreds.StatusPending || result.RequestID != "existing" {
+				t.Fatalf("exit %d, stdout %q, stderr %s; want exit %d and the request pending", code, stdout, stderr, exitPending)
 			}
 			dec := json.NewDecoder(strings.NewReader(stderr))
-			var progress struct {
-				Progress progressBody `json:"progress"`
-			}
-			var failure errorEnvelope
-			if err := dec.Decode(&progress); err != nil {
-				t.Fatal(err)
-			}
-			if err := dec.Decode(&failure); err != nil {
-				t.Fatal(err)
-			}
-			if progress.Progress.RequestID != "existing" || failure.Error.Code == "" {
-				t.Fatalf("progress %#v, failure %#v", progress, failure)
+			for _, waiting := range []bool{true, false} {
+				var event struct {
+					Progress progressBody `json:"progress"`
+				}
+				if err := dec.Decode(&event); err != nil {
+					t.Fatalf("stderr %s: %v", stderr, err)
+				}
+				if event.Progress.RequestID != "existing" || event.Progress.Waiting != waiting || !strings.Contains(event.Progress.Message, "wait --json "+kind+" 'existing'") {
+					t.Fatalf("progress %#v, want waiting=%v with the resume command", event.Progress, waiting)
+				}
 			}
 		})
 	}
