@@ -27016,8 +27016,6 @@ type SandboxRuntimeConfigProxy struct {
 	// This sandbox's PEM client private key. Required on delivery; never returned, so a document read
 	// back omits it.
 	ClientKey OptString `json:"clientKey"`
-	// The sandbox's namespace in the pool build registry.
-	RegistryNamespace OptString `json:"registryNamespace"`
 }
 
 // GetMtlsCa returns the value of MtlsCa.
@@ -27040,11 +27038,6 @@ func (s *SandboxRuntimeConfigProxy) GetClientKey() OptString {
 	return s.ClientKey
 }
 
-// GetRegistryNamespace returns the value of RegistryNamespace.
-func (s *SandboxRuntimeConfigProxy) GetRegistryNamespace() OptString {
-	return s.RegistryNamespace
-}
-
 // SetMtlsCa sets the value of MtlsCa.
 func (s *SandboxRuntimeConfigProxy) SetMtlsCa(val string) {
 	s.MtlsCa = val
@@ -27063,11 +27056,6 @@ func (s *SandboxRuntimeConfigProxy) SetClientCert(val string) {
 // SetClientKey sets the value of ClientKey.
 func (s *SandboxRuntimeConfigProxy) SetClientKey(val OptString) {
 	s.ClientKey = val
-}
-
-// SetRegistryNamespace sets the value of RegistryNamespace.
-func (s *SandboxRuntimeConfigProxy) SetRegistryNamespace(val OptString) {
-	s.RegistryNamespace = val
 }
 
 // The sandbox's secret-bound environment, env name to sentinel. Sentinels only; a resolved value

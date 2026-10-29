@@ -46,9 +46,6 @@ func TestRuntimeConfigValidate(t *testing.T) {
 		"proxy CA that is not PEM": {func(c *RuntimeConfig) {
 			c.Proxy = &RuntimeProxy{MTLSCA: "not a certificate"}
 		}, "proxy.mtlsCa"},
-		"bad registry namespace": {func(c *RuntimeConfig) {
-			c.Proxy = &RuntimeProxy{RegistryNamespace: "Has/Slash"}
-		}, "registryNamespace"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc := valid

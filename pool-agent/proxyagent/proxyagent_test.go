@@ -20,9 +20,8 @@ func materialRecord(root layout.Root, projectID, poolID, sandboxID string) strin
 }
 
 // The material is delivered in the sandbox's runtime-config document, not
-// staged for it: what comes back is the sandbox's keypair, the pool's public
-// CAs and its registry namespace, and nothing of the CAs' private keys
-// (ADR 26-10-08-127 §1).
+// staged for it: what comes back is the sandbox's keypair and the pool's
+// public CAs, and nothing of the CAs' private keys (ADR 26-10-08-127 §1).
 func TestEnsureSandboxMaterialDeliversClientOnly(t *testing.T) {
 	root := withTestRoot(t)
 
@@ -38,9 +37,6 @@ func TestEnsureSandboxMaterialDeliversClientOnly(t *testing.T) {
 	}
 	if !strings.Contains(proxy.ClientKey, "PRIVATE KEY") {
 		t.Fatal("the sandbox's client key is missing")
-	}
-	if proxy.RegistryNamespace == "" || strings.ContainsAny(proxy.RegistryNamespace, " \n") {
-		t.Fatalf("registry namespace = %q", proxy.RegistryNamespace)
 	}
 	doc := sandboxconfig.RuntimeConfig{Revision: 1, Proxy: &proxy}
 	if err := doc.Validate(sandboxpath.Paths{}); err != nil {
@@ -89,9 +85,9 @@ func TestPoolEndpointsNameThePoolsServices(t *testing.T) {
 	}
 }
 
-// A pool behind an edge names a tunnel through it for every service, and only
-// that; the mTLS inside is still verified for the pool's own name. It names no
-// builder, whose results come back through a registry no tunnel carries.
+// A pool behind an edge names a tunnel through it for every service, its
+// builder's included, and only that; the mTLS inside is still verified for the
+// pool's own name (ADR 26-10-29-160 §5).
 func TestPoolEndpointsBehindAnEdgeAreTunnels(t *testing.T) {
 	got := PoolEndpoints("wss://pool.example.com")
 	//nolint:gosec // G101: service URLs, not credentials.
@@ -99,6 +95,7 @@ func TestPoolEndpointsBehindAnEdgeAreTunnels(t *testing.T) {
 		Proxy:       "wss://pool.example.com/tunnel/proxy",
 		Credentials: "wss://pool.example.com/tunnel/credentials",
 		DNS:         "wss://pool.example.com/tunnel/dns",
+		BuildKit:    "wss://pool.example.com/tunnel/buildkit",
 		ServerName:  "discobox-pool-proxy",
 	}
 	if got != want {

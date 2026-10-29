@@ -350,6 +350,14 @@ func (r Root) ProxyAssetsSocket(projectID, poolID string) string {
 	return r.join(r.ProxyPool(projectID, poolID), "assets.sock")
 }
 
+// ProxyRegistrySocket is the Unix socket the pool's registry front serves on,
+// which the proxy forwards registry.discobox.internal to (ADR 26-10-29-160
+// §1). A socket for ProxyAssetsSocket's reason: the front decides on the
+// proxy's client header alone.
+func (r Root) ProxyRegistrySocket(projectID, poolID string) string {
+	return r.join(r.ProxyPool(projectID, poolID), "registry.sock")
+}
+
 // ProxyPoolSandboxes is where one pool stages each sandbox's proxy material.
 func (r Root) ProxyPoolSandboxes(projectID, poolID string) string {
 	return r.join(r.ProxyPool(projectID, poolID), "sandboxes")

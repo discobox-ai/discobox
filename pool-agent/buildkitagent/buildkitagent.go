@@ -41,21 +41,31 @@ const (
 	// RegistryEnvironmentFile is read by the registry systemd unit.
 	RegistryEnvironmentFile = "/etc/discobox/registry.env"
 
-	// RegistryListen is where the pool registry binds. It is reachable by every
-	// sandbox in the pool over the pool's network: a Docker pool's per-pool
-	// internal network, or the provider's network a machine pool's machines
-	// share, which no machine outside the pool is on.
-	RegistryListen = "0.0.0.0:5000"
+	// RegistryListen is where the pool registry binds: the pool's loopback
+	// alone, where buildkitd pushes to it and the front forwards to it, over
+	// mTLS with the pool builder's certificate (registrytls.go). No sandbox
+	// reaches it but through the front (ADR 26-10-29-160 §3): the proxy
+	// refuses its own loopback, and the registry admits no other client.
+	RegistryListen = registryIP + ":5000"
 
-	// RegistryServerName mirrors proxyagent.ServerName. The pool container is
-	// already aliased to that name on the sandbox network, so the registry
-	// needs no second alias. It is duplicated rather than imported to keep this
-	// package independent of the proxy wiring.
-	RegistryServerName = "discobox-pool-proxy"
+	// registryIP is the registry's address, which its server certificate
+	// names.
+	registryIP = "127.0.0.1"
 
-	// RegistryHost is what a sandbox and buildkitd both name when pushing or
-	// pulling build output.
-	RegistryHost = RegistryServerName + ":5000"
+	// RegistryHost is what buildkitd names the registry by. A sandbox names it
+	// RegistryFrontHost instead, and the mediator rewrites one to the other
+	// (rewriteSolve).
+	RegistryHost = RegistryListen
+
+	// RegistryFrontHost mirrors proxyagent.RegistryHost: the host a sandbox
+	// pulls and pushes by, which its pool proxy forwards to the front. It is
+	// duplicated rather than imported to keep this package independent of the
+	// proxy wiring.
+	RegistryFrontHost = "registry.discobox.internal"
+
+	// PoolServerName mirrors proxyagent.ServerName, the name the pool's
+	// services answer to, for the same reason.
+	PoolServerName = "discobox-pool-proxy"
 
 	// RealRunc is the runc binary shipped by the BuildKit image. The pool's runc
 	// wrapper execs this, NOT "runc": a wrapper that cannot find its real runc
@@ -71,11 +81,6 @@ const (
 	// all interfaces so sandboxes reach it over the per-pool internal network,
 	// on the same alias the proxy already answers to.
 	MediatorListen = "0.0.0.0:17081"
-
-	// MediatorURL is what a sandbox's buildx builder is pointed at. The
-	// ServerName on the pool's certificate is that alias, so the mTLS name check
-	// holds regardless of the pool's address.
-	MediatorURL = "tcp://" + RegistryServerName + ":17081"
 
 	// BuildForwarderPort is the port a per-build forwarder binds on the build
 	// step's OWN loopback. Every build uses the same port because each has its
@@ -182,14 +187,18 @@ func Prepare(root layout.Root, projectID, poolID, mitmCASource string) error {
 	if err := os.MkdirAll(root.System(path.Dir(ConfigFile)), 0o755); err != nil {
 		return err
 	}
+	registryTLS, err := ensureRegistryTLS(root, projectID, poolID)
+	if err != nil {
+		return err
+	}
 	// Only buildkitd reads this, and it runs as root in the pool container.
-	if err := os.WriteFile(root.System(ConfigFile), []byte(renderConfig()), 0o600); err != nil {
+	if err := os.WriteFile(root.System(ConfigFile), []byte(renderConfig(registryTLS)), 0o600); err != nil {
 		return fmt.Errorf("write buildkitd config: %w", err)
 	}
 	if err := os.WriteFile(root.System(UnitEnvironmentFile), []byte(renderUnitEnvironment(stateRoot, projectID, poolID)), 0o600); err != nil {
 		return fmt.Errorf("write buildkitd unit environment: %w", err)
 	}
-	if err := os.WriteFile(root.System(RegistryEnvironmentFile), []byte(renderRegistryEnvironment(registryRoot)), 0o600); err != nil {
+	if err := os.WriteFile(root.System(RegistryEnvironmentFile), []byte(renderRegistryEnvironment(registryRoot, registryTLS)), 0o600); err != nil {
 		return fmt.Errorf("write registry unit environment: %w", err)
 	}
 	if err := stageMITMCA(root, mitmCASource); err != nil {
@@ -222,18 +231,20 @@ func stageMITMCA(root layout.Root, source string) error {
 // renderConfig is the TOML buildkitd reads. Only settings with no command-line
 // equivalent live here; everything the unit can pass as a flag is passed as a
 // flag, so the unit stays the single readable description of how buildkitd runs.
-func renderConfig() string {
-	// The pool registry speaks plaintext HTTP. It is only reachable over the
-	// pool's network. On a Docker pool that is the sandboxes' internal network,
-	// which has no route off-box, and TLS would mean a server certificate for a
-	// hop that cannot leave the host; on a machine pool the hop crosses the
-	// driver's network between the pool's machines, which only they are on
-	// (ADR 26-10-27-767).
+func renderConfig(registryTLS *registryTLS) string {
+	// The pool registry is reached at RegistryHost over mTLS. The keypair is
+	// buildkitd's for that host alone: a build that names the registry any
+	// other way presents nothing, and is refused (registrytls.go). `http =
+	// false` is said, not left out: buildkitd speaks plaintext to a loopback
+	// host it is told nothing about, which the registry's TLS answers 400.
 	return fmt.Sprintf(`# Rendered by pool-agent. Do not edit.
-[registry."%s"]
-  http = true
-  insecure = true
-`, RegistryHost)
+[registry.%q]
+  http = false
+  ca = [%q]
+  [[registry.%q.keypair]]
+    key = %q
+    cert = %q
+`, RegistryHost, registryTLS.CA, RegistryHost, registryTLS.ClientKey, registryTLS.ClientCert)
 }
 
 // renderUnitEnvironment is separated from the write so its contents can be
@@ -261,9 +272,19 @@ func renderUnitEnvironment(stateRoot, projectID, poolID string) string {
 	return b.String()
 }
 
-func renderRegistryEnvironment(registryRoot string) string {
+func renderRegistryEnvironment(registryRoot string, registryTLS *registryTLS) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "REGISTRY_HTTP_ADDR=%s\n", RegistryListen)
+	// mTLS, admitting the pool builder's certificate alone (registrytls.go).
+	// The client CAs are a list, which the registry reads from its
+	// environment as YAML.
+	fmt.Fprintf(&b, "REGISTRY_HTTP_TLS_CERTIFICATE=%s\n", registryTLS.ServerCert)
+	fmt.Fprintf(&b, "REGISTRY_HTTP_TLS_KEY=%s\n", registryTLS.ServerKey)
+	fmt.Fprintf(&b, "REGISTRY_HTTP_TLS_CLIENTCAS=[%q]\n", registryTLS.CA)
+	// Its clients reach it at two names — buildkitd at RegistryHost, a
+	// sandbox at RegistryFrontHost through its proxy and the front — so an
+	// upload's Location names no host, and each follows it where it already is.
+	b.WriteString("REGISTRY_HTTP_RELATIVEURLS=true\n")
 	fmt.Fprintf(&b, "REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=%s\n", registryRoot)
 	// Deletes are what makes garbage collection possible at all; without this
 	// the registry grows without bound and only a wipe reclaims anything.
@@ -280,10 +301,8 @@ func renderRegistryEnvironment(registryRoot string) string {
 // proxy is the only way out, a registry that cannot resolve its upstream fails
 // as an opaque 404 rather than a connection error.
 //
-// The pool registry is excepted. It is a pool-internal hop with no route
-// off-box, and proxying it is worse than pointless: the MITM proxy answers a
-// plaintext registry's port over TLS, so every push fails on an `EOF` from a
-// URL the builder never spelled as `https`.
+// The pool registry needs no exception: it is on loopback, which Go's proxy
+// selection never sends through a proxy whatever NO_PROXY says.
 func proxyEnvironment(environ []string) string {
 	wanted := map[string]bool{
 		"HTTP_PROXY": true, "HTTPS_PROXY": true, "ALL_PROXY": true,
@@ -292,38 +311,14 @@ func proxyEnvironment(environ []string) string {
 		"SSL_CERT_FILE": true, "SSL_CERT_DIR": true,
 	}
 	var b strings.Builder
-	seen := map[string]bool{}
 	for _, entry := range environ {
 		name, value, ok := strings.Cut(entry, "=")
 		if !ok || !wanted[name] || strings.TrimSpace(value) == "" {
 			continue
 		}
-		if name == "NO_PROXY" || name == "no_proxy" {
-			value = withRegistryBypass(value)
-			seen[name] = true
-		}
 		fmt.Fprintf(&b, "%s=%s\n", name, value)
 	}
-	// A pool that handed this process no NO_PROXY still needs the registry
-	// bypassed, so the variable is written rather than merely amended.
-	for _, name := range []string{"NO_PROXY", "no_proxy"} {
-		if !seen[name] {
-			fmt.Fprintf(&b, "%s=%s\n", name, RegistryServerName)
-		}
-	}
 	return b.String()
-}
-
-// withRegistryBypass adds the pool registry's host to a NO_PROXY value. Go
-// matches a hostname entry against the request's host with the port ignored, so
-// the bare name covers the registry and every other port the pool answers on.
-func withRegistryBypass(value string) string {
-	for _, entry := range strings.Split(value, ",") {
-		if strings.EqualFold(strings.TrimSpace(entry), RegistryServerName) {
-			return value
-		}
-	}
-	return value + "," + RegistryServerName
 }
 
 // readFile is a thin wrapper so mediator.go reads through the same test-root

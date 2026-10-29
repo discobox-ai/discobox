@@ -40,6 +40,7 @@ func TestSandboxEgressRestrictsOnlyThatSandbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := proxy.DefaultConfig()
+	cfg.AllowLoopbackDestinations = true
 	cfg.ListenAddress = "127.0.0.1:0"
 	cfg.CertDir = bundle.Dir
 	cfg.DatabaseDSN = filepath.Join(root.Dir(), testProjectID+"-audit.db")
@@ -113,6 +114,7 @@ func TestPolicyFileIsLoadedBeforeServing(t *testing.T) {
 		t.Fatalf("prepare bundle: %v", err)
 	}
 	cfg := proxy.DefaultConfig()
+	cfg.AllowLoopbackDestinations = true
 	cfg.ListenAddress = "127.0.0.1:0"
 	cfg.CertDir = bundle.Dir
 	cfg.DatabaseDSN = filepath.Join(root.Dir(), testProjectID+"-audit.db")

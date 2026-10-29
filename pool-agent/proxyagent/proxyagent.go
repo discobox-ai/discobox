@@ -70,19 +70,17 @@ const (
 	// boot-time trust step adds the MITM CA to it via update-ca-certificates.
 	SystemCABundle = "/etc/ssl/certs/ca-certificates.crt"
 
-	// RegistryNamespaceFile is the sandbox's namespace in the pool build
-	// registry, kept in the sandbox's durable tree (RegistryNamespacePath) and
-	// delivered in its runtime-config document.
-	RegistryNamespaceFile = "registry-namespace"
-
 	// BuildkitMediatorURL is the pool endpoint the sandbox's BuildKit
 	// forwarder dials. The forwarder exists because the client cannot present
 	// the mTLS certificate itself: buildx runs as the sandbox user, the client
 	// key is root's, and the forwarder holds it and speaks plaintext to the
-	// sandbox's own loopback (sandboxconfig.SandboxBuildKitListenAddress). The port
-	// mirrors buildkitagent.MediatorListen; it is duplicated rather than
-	// imported to keep the proxy wiring independent of the builder's.
-	BuildkitMediatorURL = "https://" + ServerName + ":17081"
+	// sandbox's own loopback (sandboxconfig.SandboxBuildKitListenAddress).
+	BuildkitMediatorURL = "https://" + ServerName + ":" + mediatorPort
+
+	// mediatorPort mirrors buildkitagent.MediatorListen's port; it is
+	// duplicated rather than imported to keep the proxy wiring independent of
+	// the builder's. TestBootstrapNamesTheMediatorsPort holds the two together.
+	mediatorPort = "17081"
 
 	// UnitEnvironmentFile is read by the proxy systemd unit. The pool agent
 	// process writes it so the unit, which runs with a clean systemd
@@ -294,14 +292,17 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 	// The discobox API's host, which this proxy never sends to the internet:
 	// the resolver's gate answers it from the control plane (ADR 0140 §2).
 	cfg.Secrets.GateHost = GateHost
-	// The sandboxes' Git origins and their bundle assets, which this proxy
-	// never sends to the internet either: it forwards each to the agent's
-	// listener for it as the sandbox the client certificate names (ADR
-	// 26-10-08-561, ADR 26-10-16-423 §13). Assets are read-only, and on a
-	// socket no box can name (AssetsHost).
+	// The sandboxes' Git origins, their bundle assets and their build
+	// registry, which this proxy never sends to the internet either: it
+	// forwards each to the pool's listener for it as the sandbox the client
+	// certificate names (ADR 26-10-08-561, ADR 26-10-16-423 §13, ADR
+	// 26-10-29-160). Assets are read-only, and assets and the registry are on
+	// sockets no box can name (AssetsHost, RegistryHost). A registry body is
+	// a layer, already on the pool's disk, so none is spooled (§4).
 	cfg.PoolHosts = []proxy.PoolHostConfig{
 		{Host: OriginsHost, Upstream: "http://" + OriginsListenAddress},
 		{Host: AssetsHost, Upstream: wire.UnixURL(root.ProxyAssetsSocket(projectID, poolID)), ReadOnly: true},
+		{Host: RegistryHost, Upstream: wire.UnixURL(root.ProxyRegistrySocket(projectID, poolID)), UnspooledBodies: true},
 	}
 
 	// The resolver fetches real secret values from the control plane using the
@@ -380,9 +381,9 @@ func RunProxy(ctx context.Context, root layout.Root, logger *slog.Logger) error 
 // trust its runtime-config document delivers, and the env its bootstrap
 // carries.
 type SandboxMaterial struct {
-	// Proxy is the sandbox's client keypair, the pool's CAs and the sandbox's
-	// registry namespace — the dynamic half, delivered in the runtime-config
-	// document rather than placed in the sandbox (ADR 26-10-08-127 §1).
+	// Proxy is the sandbox's client keypair and the pool's CAs — the dynamic
+	// half, delivered in the runtime-config document rather than placed in the
+	// sandbox (ADR 26-10-08-127 §1).
 	Proxy sandboxconfig.RuntimeProxy
 	// Env holds the proxy-related environment variables injected into the
 	// sandbox so its processes route outbound traffic through the local
@@ -403,11 +404,11 @@ type SandboxMaterial struct {
 // verified for ServerName all the same.
 func PoolEndpoints(tunnelURL string) sandboxconfig.PoolEndpoints {
 	if tunnelURL != "" {
-		// No BuildKit: see tunnelServices.
 		return sandboxconfig.PoolEndpoints{
 			Proxy:       tunnelURL + tunnelProxyPath,
 			Credentials: tunnelURL + tunnelCredentialsPath,
 			DNS:         tunnelURL + tunnelDNSPath,
+			BuildKit:    tunnelURL + tunnelBuildKitPath,
 			ServerName:  ServerName,
 		}
 	}
@@ -536,9 +537,9 @@ func materialModTime(root layout.Root, projectID, poolID, id string) (time.Time,
 }
 
 // EnsureSandboxMaterial issues (or reuses) a client certificate for sandboxID
-// and returns it with the pool's CAs and the sandbox's registry namespace, for
-// its runtime-config document. Nothing is staged for the sandbox to read: the
-// sandbox is delivered the material and writes it itself (ADR 0126 §§1, 3).
+// and returns it with the pool's CAs, for its runtime-config document. Nothing
+// is staged for the sandbox to read: the sandbox is delivered the material and
+// writes it itself (ADR 0126 §§1, 3).
 //
 // The per-sandbox directory under PoolSandboxMaterialRoot is still made: it is
 // this pool's record of which sandboxes it has issued material for, which the
@@ -581,17 +582,6 @@ func EnsureSandboxMaterial(root layout.Root, projectID, poolID, sandboxID string
 		if *piece.into, err = read(piece.path); err != nil {
 			return nil, err
 		}
-	}
-
-	// Minted in the sandbox's durable tree, so an archive that drops the
-	// material record does not drop the namespace with it. See
-	// RegistryNamespacePath.
-	durableNamespace := RegistryNamespacePath(root, projectID, poolID, sandboxID)
-	if err := ensureRegistryNamespace(durableNamespace); err != nil {
-		return nil, err
-	}
-	if out.RegistryNamespace, err = ReadRegistryNamespace(durableNamespace); err != nil {
-		return nil, err
 	}
 
 	proxyURL := "http://" + sandboxconfig.SandboxEgressListenAddress

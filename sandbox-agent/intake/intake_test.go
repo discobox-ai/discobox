@@ -111,11 +111,10 @@ func testDocument(t *testing.T, revision int64) sandboxconfig.RuntimeConfig {
 		Agent:     sandboxconfig.RuntimeAgent{IdleTimeout: "45m0s"},
 		SecretEnv: map[string]string{"GH_TOKEN": "discobox-sentinel-1"},
 		Proxy: &sandboxconfig.RuntimeProxy{
-			MTLSCA:            pki.ca,
-			MITMCA:            pki.ca,
-			ClientCert:        pki.cert,
-			ClientKey:         pki.key,
-			RegistryNamespace: "ns-0123abcd",
+			MTLSCA:     pki.ca,
+			MITMCA:     pki.ca,
+			ClientCert: pki.cert,
+			ClientKey:  pki.key,
 		},
 		Sources: []sandboxconfig.RuntimeSource{{
 			Slug:      "primary",
@@ -229,9 +228,6 @@ func TestApplyWritesTheFilesTheReadersRead(t *testing.T) {
 		t.Fatalf("client key not written")
 	}
 	assertMode(t, filepath.Join(layout.ProxyDir, clientKeyFile), 0o600)
-	if got := readFile(t, filepath.Join(layout.ProxyDir, registryNamespaceFile)); got != "ns-0123abcd\n" {
-		t.Fatalf("registry namespace = %q", got)
-	}
 	var egress bridgeFile
 	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(layout.ProxyDir, egressBridgeFile))), &egress); err != nil {
 		t.Fatal(err)
@@ -409,6 +405,31 @@ func TestApplyThatFailsLeavesThePreviousStateIntact(t *testing.T) {
 	}
 }
 
+// The registry namespace an older pool delivered is gone once a document is
+// applied: a sandbox's namespace is its ID now (ADR 26-10-29-160 §2), and a
+// file still naming the old one would only mislead.
+func TestApplyRemovesAnOlderPoolsRegistryNamespace(t *testing.T) {
+	layout := testLayout(t)
+	writeManifest(t, layout)
+	in, err := openIntake(layout, testOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(layout.ProxyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(layout.ProxyDir, registryNamespaceFile)
+	if err := os.WriteFile(legacy, []byte("sbx-0123abcd\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := in.Apply(context.Background(), testDocument(t, 1)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatalf("%s survived the apply: %v", legacy, err)
+	}
+}
+
 // A replacement that fails part-way puts back every target replaced before it.
 func TestReplaceFailureRestoresEarlierTargets(t *testing.T) {
 	layout := testLayout(t)
@@ -424,7 +445,6 @@ func TestReplaceFailureRestoresEarlierTargets(t *testing.T) {
 
 	next := testDocument(t, 2)
 	next.SecretEnv = map[string]string{"NEXT": "discobox-sentinel-next"}
-	next.Proxy.RegistryNamespace = ""
 	body, tail, err := in.plan(next, true)
 	if err != nil {
 		t.Fatal(err)

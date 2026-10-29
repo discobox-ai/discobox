@@ -1879,11 +1879,9 @@ func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID stri
 	if err := proxyagent.RemoveSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID); err != nil {
 		return err
 	}
-	// Before the tree goes, since the tree is what names them: every image this
-	// sandbox published into the pool registry to build from (ADR 0047) is
-	// removed with it. A purge that left them would leave repositories nothing
-	// can name — the namespace is unguessable and its only record was here — and
-	// so nothing could ever clean up.
+	// Before the tree goes, since the tree holds the namespace an older pool
+	// minted: every image this sandbox published into the pool registry to
+	// build from (ADR 0047), and every build's result, is removed with it.
 	if err := r.removePublishedImages(sandboxID); err != nil {
 		return err
 	}
@@ -1893,18 +1891,26 @@ func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID stri
 	return nil
 }
 
-// removePublishedImages drops the sandbox's registry namespace and everything
-// under it. A sandbox that never built has no namespace staged, which is not an
-// error: there is nothing of its to remove.
-func (r *DockerSandboxRuntime) removePublishedImages(sandboxID string) error {
-	namespace, err := proxyagent.ReadRegistryNamespace(proxyagent.RegistryNamespacePath(r.root, r.projectID, r.poolID, sandboxID))
+// legacyRegistryNamespaceFile is where a pool before ADR 26-10-29-160 kept the
+// unguessable namespace it minted a sandbox, in the sandbox's durable tree.
+const legacyRegistryNamespaceFile = "registry-namespace"
+
+// removePublishedImages drops the sandbox's registry namespace, which is its
+// ID (ADR 26-10-29-160 §2), and everything under it; and the namespace an
+// older pool minted it, if its tree still names one, since nothing else ever
+// will. A sandbox that never built has nothing there, which is not an error.
+func (r *sandboxCore) removePublishedImages(sandboxID string) error {
+	if err := buildkitagent.RemoveRegistryNamespace(r.root, r.projectID, r.poolID, sandboxID); err != nil {
+		return err
+	}
+	legacy, err := os.ReadFile(filepath.Join(r.sandboxRoot(sandboxID), legacyRegistryNamespaceFile))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
-	return buildkitagent.RemoveRegistryNamespace(r.root, r.projectID, r.poolID, namespace)
+	return buildkitagent.RemoveRegistryNamespace(r.root, r.projectID, r.poolID, strings.TrimSpace(string(legacy)))
 }
 
 const (

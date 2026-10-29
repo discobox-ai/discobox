@@ -18,7 +18,7 @@ func TestListenAssetsReplacesAStaleSocket(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	socket := filepath.Join(dir, "proxy", "assets.sock")
-	first, err := listenAssets(socket)
+	first, err := listenProxySocket(socket)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestListenAssetsReplacesAStaleSocket(t *testing.T) {
 		l.SetUnlinkOnClose(false)
 	}
 	_ = first.Close()
-	second, err := listenAssets(socket)
+	second, err := listenProxySocket(socket)
 	if err != nil {
 		t.Fatalf("listen over a stale socket: %v", err)
 	}

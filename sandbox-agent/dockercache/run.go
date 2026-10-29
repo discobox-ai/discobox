@@ -37,7 +37,7 @@ func Run(args []string) int {
 	// The pool builder has no access to this daemon's image store, so a base
 	// image that only exists here is published and redirected first. See
 	// localbase.go.
-	a.Argv = append(a.Argv, localBaseContexts(ctx, args)...)
+	a.Argv = append(a.Argv, localBaseContexts(ctx, args, a.Namespace)...)
 	return buildViaRegistry(ctx, a)
 }
 
@@ -66,7 +66,7 @@ func buildViaRegistry(ctx context.Context, a Args) int {
 	// and it is dropped however this returns. On success the image survives
 	// under the user's own tags, so dropping this one leaves `docker images`
 	// looking exactly as it would after a local build. On failure it would
-	// otherwise stay behind as a discobox-build/<hex>:build entry that names a
+	// otherwise stay behind as a <namespace>/discobox-build/<hex>:build entry that names a
 	// whole image and that nothing will ever clean up.
 	//
 	// An untagged build keeps it. Nothing else names the image, and removing an
@@ -212,12 +212,12 @@ func runQuiet(ctx context.Context, args ...string) int {
 // newRegistryRef returns a reference unique to one build. It is synthesized
 // rather than derived from the user's tag so that no tag syntax — a tag naming
 // another registry, most of all — has to be rewritten to be pushable here.
-func newRegistryRef() string {
+func newRegistryRef(namespace string) string {
 	var raw [8]byte
 	if _, err := rand.Read(raw[:]); err != nil {
-		return fmt.Sprintf("%s/%s/fallback:build", PoolRegistry, buildRepo)
+		return fmt.Sprintf("%s/%s/%s/fallback:build", PoolRegistry, namespace, buildRepo)
 	}
-	return fmt.Sprintf("%s/%s/%s:build", PoolRegistry, buildRepo, hex.EncodeToString(raw[:]))
+	return fmt.Sprintf("%s/%s/%s/%s:build", PoolRegistry, namespace, buildRepo, hex.EncodeToString(raw[:]))
 }
 
 // execDirect replaces this process with the real docker CLI.

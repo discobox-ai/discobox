@@ -1075,6 +1075,11 @@ func (r *MachineSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID str
 	if err := proxyagent.RemoveSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID); err != nil {
 		return err
 	}
+	// A machine pool's sandboxes build on it like any pool's (ADR
+	// 26-10-27-767), so a purge takes their images with them here too.
+	if err := r.removePublishedImages(sandboxID); err != nil {
+		return err
+	}
 	if err := os.RemoveAll(r.sandboxRoot(sandboxID)); err != nil {
 		return fmt.Errorf("remove sandbox data for %s: %w", sandboxID, err)
 	}

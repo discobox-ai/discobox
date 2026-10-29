@@ -44,6 +44,7 @@ func startRoutedProxy(ctx context.Context, t *testing.T, controlPlaneURL, sentin
 		t.Fatalf("register sentinel: %v", err)
 	}
 	cfg := proxy.DefaultConfig()
+	cfg.AllowLoopbackDestinations = true
 	cfg.ListenAddress = "127.0.0.1:0"
 	cfg.CertDir = bundle.Dir
 	cfg.DatabaseDSN = filepath.Join(root.Dir(), testProjectID+"-audit.db")

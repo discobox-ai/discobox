@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -530,7 +531,7 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 	var assetHandler http.Handler
 	if assets != nil {
 		socket := root.ProxyAssetsSocket(bootstrap.ProjectID, bootstrap.PoolID)
-		if assetListener, err = listenAssets(socket); err != nil {
+		if assetListener, err = listenProxySocket(socket); err != nil {
 			return fmt.Errorf("listen for sandbox assets on %s: %w", socket, err)
 		}
 		defer func() { _ = assetListener.Close() }()
@@ -624,12 +625,16 @@ func meminfoBytes(key string) int64 {
 	return 0
 }
 
-// RunBuildkitMediator serves the pool's BuildKit mediator. It is the entrypoint
-// for the mediator systemd unit inside the pool container.
+// RunBuildkitMediator serves the pool's BuildKit mediator, and the registry
+// front beside it. It is the entrypoint for the mediator systemd unit inside
+// the pool container.
 //
-// It is the only route from a sandbox to buildkitd, and it terminates mTLS with
-// the same certificate bundle the proxy uses, so a build is attributed to the
-// sandbox whose client certificate opened the connection (ADR 0044 decision 2).
+// The mediator is the only route from a sandbox to buildkitd, and it
+// terminates mTLS with the same certificate bundle the proxy uses, so a build
+// is attributed to the sandbox whose client certificate opened the connection
+// (ADR 0044 decision 2). The front is the only route from a sandbox to the
+// registry those builds push to, as the sandbox the proxy names (ADR
+// 26-10-29-160 §2); the two are the builder's, and stand and fall with it.
 func RunBuildkitMediator(ctx context.Context, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
@@ -658,18 +663,52 @@ func RunBuildkitMediator(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", buildkitagent.MediatorListen, err)
 	}
-	logger.Info("buildkit mediator serving", "addr", buildkitagent.MediatorListen)
-	return mediator.Serve(ctx, listener, tlsConfig)
+	socket := layout.Container().ProxyRegistrySocket(projectID, poolID)
+	frontListener, err := listenProxySocket(socket)
+	if err != nil {
+		_ = listener.Close()
+		return fmt.Errorf("listen for the registry front on %s: %w", socket, err)
+	}
+	registryTLS, err := buildkitagent.RegistryClientTLS(layout.Container(), projectID, poolID)
+	if err != nil {
+		_ = listener.Close()
+		_ = frontListener.Close()
+		return err
+	}
+	front := &http.Server{
+		Handler: buildkitagent.NewRegistryFront(&url.URL{Scheme: "https", Host: buildkitagent.RegistryHost},
+			&http.Transport{Proxy: nil, TLSClientConfig: registryTLS, ForceAttemptHTTP2: false}, logger),
+		ReadHeaderTimeout: 30 * time.Second,
+	}
+	frontDone := make(chan error, 1)
+	go func() {
+		logger.Info("registry front serving", "socket", socket)
+		frontDone <- front.Serve(frontListener)
+	}()
+	mediatorDone := make(chan error, 1)
+	go func() {
+		logger.Info("buildkit mediator serving", "addr", buildkitagent.MediatorListen)
+		mediatorDone <- mediator.Serve(ctx, listener, tlsConfig)
+	}()
+	select {
+	case err := <-mediatorDone:
+		_ = front.Close()
+		return err
+	case err := <-frontDone:
+		// The mediator drains on ctx alone, so a front that stopped first takes
+		// the unit down hard, and systemd brings both back.
+		_ = listener.Close()
+		return fmt.Errorf("registry front stopped: %w", err)
+	}
 }
 
 // ensurePoolName names the pool's own host by its server name
-// (proxyagent.ServerName) in hostsFile, unless a line there already does: the
-// builder pushes to the pool registry, over plaintext HTTP, and a build
-// step's forwarder dials the pool proxy, by that name, and both listen on
+// (proxyagent.ServerName) in hostsFile, unless a line there already does: a
+// build step's forwarder dials the pool proxy by that name, which listens on
 // every interface of this host. It never asks DNS: a resolver that answered
-// the name would choose where every build's output goes. A pool machine's
-// network has no alias for it; a Docker pool's container has one, and
-// loopback reaches the same services.
+// the name would be handed every build's egress, with its sandbox's
+// certificate. A pool machine's network has no alias for it; a Docker pool's
+// container has one, and loopback reaches the same services.
 func ensurePoolName(hostsFile string) error {
 	data, err := os.ReadFile(hostsFile) //nolint:gosec // G304: the host's /etc/hosts
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -694,10 +733,11 @@ func ensurePoolName(hostsFile string) error {
 	return nil
 }
 
-// listenAssets binds the asset cache's socket, replacing one an earlier agent
-// left, readable and writable by root alone: the proxy unit is root, and
-// nothing else in the pool has a reason to reach it.
-func listenAssets(socket string) (net.Listener, error) {
+// listenProxySocket binds a socket the pool proxy forwards a pool host to (the
+// asset cache's, the registry front's), replacing one an earlier process left,
+// readable and writable by root alone: the proxy unit is root, and nothing else
+// in the pool has a reason to reach it.
+func listenProxySocket(socket string) (net.Listener, error) {
 	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
 		return nil, err
 	}

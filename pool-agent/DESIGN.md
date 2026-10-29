@@ -1222,9 +1222,9 @@ fetching what it lacks from the server's pool asset routes once
 
 - **A socket, not a loopback port.** The listener's only word on who is asking
   is that header. The proxy sends a sandbox's ordinary egress from this
-  network namespace, so a loopback port is one a box can reach through its
-  proxy with a header of its own; a socket path, root's alone, is one it
-  cannot name. The origins listener is on loopback because it also takes the
+  network namespace, so a loopback port is kept from a box sending a header
+  of its own only by the proxy's refusal of its loopback (ADR 26-10-29-160
+  §3); a socket path, root's alone, is one no egress can name. The origins listener is on loopback because it also takes the
   pool's sandbox token.
 
 ```mermaid
@@ -1389,9 +1389,9 @@ flowchart LR
   and the create's `provisionEgress`. Every sandbox of one plan shares one snapshot.
 - **A build is anonymous.** Its proxy identity is its own
   (`layout.SnapshotIDPrefix`), with a client certificate, and an asset record
-  of the plan's pins and a registry namespace (`RegistryNamespacePath`) in its
-  own tree, `layout.Root.Snapshot` — never a sandbox's tree, so neither the
-  control plane nor any sandbox sweep sees it — and the egress
+  of the plan's pins in its own tree, `layout.Root.Snapshot` — never a
+  sandbox's tree, so neither the control plane nor any sandbox sweep sees
+  it — and the egress
   policy the server sends as `provisionEgress`: every level of ADR
   26-10-01-032 but the sandbox's own. Its `agentlayer.SnapshotPlan` names no
   account, source, secret, gateway, sentinel or credentials endpoint. The
@@ -1512,6 +1512,7 @@ flowchart LR
         tun -->|"/tunnel/proxy, from 127.0.0.2"| p["pool proxy :17080"]
         tun -->|"/tunnel/credentials"| c["credentials :17083"]
         tun -->|"/tunnel/dns"| d["dnsforward :17085"]
+        tun -->|"/tunnel/buildkit"| m["mediator :17081"]
     end
     dialer -. "mTLS, client cert = sandbox, end to end" .-> p
 ```
@@ -1522,10 +1523,10 @@ flowchart LR
   the edge. The agent reads it once: `proxyagent.PoolEndpoints` then names
   `<url>/tunnel/<service>` for every endpoint in each bootstrap, and nothing
   else, and the unit environment file hands it to the proxy unit.
-- It names no BuildKit endpoint. A build's results come back through the pool
-  registry, which is unauthenticated and protected only by the pool's private
-  network (ADR 0126 §7), so no tunnel carries it, and a pool behind an edge is
-  a pool with no builder.
+- Its BuildKit endpoint is a tunnel to the mediator like the rest. A build's
+  results come back through `registry.discobox.internal`, which the proxy's
+  tunnel already carries with the sandbox's certificate, so a pool behind an
+  edge builds like any other (ADR 26-10-29-160 §5).
 - The proxy unit serves the tunnels in plain HTTP on `0.0.0.0:17090`
   (`serveTunnels`): the edge holds the public certificate. Each stream is
   spliced onto that service's own mTLS listener on loopback, from
@@ -1576,9 +1577,8 @@ flowchart LR
   (client ID = sandbox ID, the proxy tenant boundary) and injects the
   `HTTP(S)_PROXY`/CA environment into both the container and the sandbox
   manifest so `sandbox-agent`-spawned terminals and execs are proxied. The
-  public CAs, that keypair and the registry namespace are not staged into the
-  sandbox: they travel in its runtime-config document, and the sandbox's intake
-  writes them under `/etc/discobox/proxy`, renders its bridge configs from them,
+  public CAs and that keypair are not staged into the sandbox: they travel in
+  its runtime-config document, and the sandbox's intake writes them under `/etc/discobox/proxy`, renders its bridge configs from them,
   the pool endpoints in its bootstrap and its own listen addresses, and starts
   the units that read them ([Sandbox Runtime Config](#sandbox-runtime-config)).
   `proxyagent`'s per-sandbox directory is now only this pool's record of which
@@ -1926,9 +1926,11 @@ flowchart LR
         end
         wrap -.->|"createRuntime / poststop"| fwd
         fwd -->|"mTLS as the owning sandbox"| wproxy["pool proxy :17080"]
-        bkd -->|"push"| reg["registry :5000"]
+        bkd -->|"push, mTLS"| reg["registry 127.0.0.1:5000"]
+        front["registry front (socket)"] -->|"the sandbox's namespace only"| reg
+        pproxy["pool proxy :17080"] -->|"registry.discobox.internal, as the sandbox"| front
     end
-    cli -->|"pull result"| reg
+    cli -->|"pull result, HTTPS through its egress"| pproxy
 ```
 
 Each boundary does one job:
@@ -1955,30 +1957,45 @@ Each boundary does one job:
   sandbox's own containers use: a pool-side build container has no manifest.
   Without it a build fails on `npm install` with "unable to verify the first
   certificate" while curl in the same `RUN` step succeeds.
+- **A sandbox reaches the registry as itself, in its own namespace**
+  ([ADR 26-10-29-160](../docs/adr/26-10-29-160-a-sandbox-reaches-its-pools-build-registry-at-a-host-its-pool-proxy-answers.md)).
+  It names `registry.discobox.internal`, a pool host its proxy forwards to the
+  registry front (`buildkitagent.RegistryFront`) on
+  `layout.ProxyRegistrySocket`, with the sandbox its certificate names in
+  `proxy.PoolClientHeader`. The front admits `/v2/` and repositories under
+  `<sandboxID>/` alone, refusing everything else with a 403 the registry never
+  sees — the catalog, another sandbox's repositories, a path that is not
+  clean — and drops a blob mount from outside the namespace, so the registry
+  opens a plain upload instead; a form body, which the registry would read a
+  mount from too, is refused. The registry binds the pool's loopback alone and
+  speaks mTLS there, admitting only the pool builder's certificate
+  (`registrytls.go`, a CA of its own under `layout.PoolBuild`), which
+  buildkitd presents for `127.0.0.1:5000` alone and the front presents; the
+  proxy refuses its own loopback as a destination besides. The front runs in
+  the mediator unit: both are the builder's.
+- **The mediator binds a build to the same namespace.** A sandbox names every
+  image at the registry by `registry.discobox.internal/<sandboxID>/…`; the
+  mediator (`bindToNamespace`, `bindGatewaySolve`) rewrites that to
+  `127.0.0.1:5000/<sandboxID>/…` where buildkitd reaches it — in image
+  exports, registry cache imports and exports, and a frontend's
+  `cache-imports`/`cache-from` — and refuses a solve that names another
+  namespace there, the registry's address itself, or an image export anywhere
+  else. The source policy it adds to every build converts the namespace's
+  names for every image the build reads, frontend-resolved bases included, and
+  denies the registry's address for any other namespace after the sandbox's
+  own rules. mTLS is what makes this an exact match: any other name for the
+  registry's address presents no certificate. A custom frontend's own solves
+  never pass the mediator, so one can still name a peer's build cache as a
+  cache import; the ADR states that cost and the token authentication that
+  would close it.
 - **A purge takes the sandbox's published images with it.** `DeleteSandbox`
-  removes the sandbox's registry namespace and every repository under it, before
-  removing the durable tree — because the tree is what names them. The namespace
-  is unguessable and kept nowhere else, so a purge that skipped this would leave
-  repositories nothing could ever name, and therefore nothing could ever clean
-  up. There is no repository-delete in the distribution API, so the names go by
-  removing the directory registry:2 keeps them in; the blobs are reclaimed by
-  the registry's own garbage collection, a pass over shared content that is not
-  one sandbox's purge to run.
-- **The namespace lives in the durable tree, not the issued material.** The
-  material is disposable — archiving deletes it and creation issues it again —
-  but the repositories the namespace names are not. An unarchive that minted a
-  fresh one would orphan everything published under the old one. The durable
-  tree has the lifetime wanted: it survives archive, and purge removes it.
-- **Each sandbox gets a registry namespace of its own.** The pool registry has
-  no authentication, so a repository path is a capability: build output is
-  protected only by `discobox-build/<random hex>` being unguessable. A sandbox's
-  namespace for publishing its local base images is therefore an unguessable
-  token, minted once per sandbox and delivered with the rest of its proxy
-  material in its runtime-config document, which the sandbox writes as
-  `/etc/discobox/proxy/registry-namespace` — not the sandbox ID, which a peer
-  can derive. It is
-  world-readable inside the sandbox, whose own user is the tenant it belongs to.
-  See ADR 0047.
+  removes the `<sandboxID>` namespace and every repository under it — the
+  builds' results and its published bases — and, for a sandbox an older pool
+  served, the unguessable namespace that pool minted, whose name its durable
+  tree still holds. There is no repository-delete in the distribution API, so
+  the names go by removing the directory registry:2 keeps them in; the blobs
+  are reclaimed by the registry's own garbage collection, a pass over shared
+  content that is not one sandbox's purge to run.
 - **A stop drains the builds it is carrying.** A build is one long-lived stream
   through the mediator, so stopping the server closes it and the client sees
   `Unavailable: error reading from server: EOF` with nothing to resume from.
@@ -2013,8 +2030,9 @@ Each boundary does one job:
   `runcca` package. It needs no identity — there is one pool-wide MITM CA — so
   it needs none of the above.
 - **Results travel by registry, not `--load`.** buildkitd pushes to a pool-local
-  `registry:2`; the sandbox's shim pulls the result back and applies the user's
-  tags. Both ends of a registry are content-addressed, so a cached rebuild moves
+  `registry:2`; the sandbox's shim pulls the result back through its proxy and
+  applies the user's tags. The proxy neither caches the registry host nor
+  spools its bodies to the audit: the blobs are already on the pool's disk. Both ends of a registry are content-addressed, so a cached rebuild moves
   only what is missing, where `--load` reships the whole image every time.
 
 buildkitd and the registry both reach upstreams through the same pool proxy as
@@ -2023,13 +2041,11 @@ container exists, so nothing injected into a spec could cover them. The proxy's
 blob cache is what makes those pulls cheap across the pool — see
 [proxy/DESIGN.md](../proxy/DESIGN.md).
 
-The pool registry is the one exception, and both units carry it in `NO_PROXY`.
-It is a pool-internal hop with no route off-box, and proxying it means the MITM
-proxy answering a plaintext registry's port over TLS: every push then fails on
-an `EOF` from a URL nothing spelled as `https`, which reads as a broken registry
-rather than a routing mistake. Declaring the registry plaintext in
-`buildkitd.toml` does not help, because a proxied request never arrives as
-plaintext whatever the client believes.
+The pool registry is the one exception, and needs no `NO_PROXY` entry: it is on
+loopback, which Go's proxy selection never sends through a proxy.
+`buildkitd.toml` gives buildkitd its CA and client keypair for that address
+alone. The registry answers with relative
+upload locations, since buildkitd and a sandbox reach it at different names.
 
 `buildkitd`'s state root is wiped of its `net` directory on every start
 (`ExecStartPre`). Netns files are nsfs bind mounts; after a container restart

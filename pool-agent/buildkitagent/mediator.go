@@ -15,11 +15,13 @@ import (
 	controlapi "github.com/moby/buildkit/api/services/control"
 	gatewayapi "github.com/moby/buildkit/frontend/gateway/pb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -290,6 +292,10 @@ func (m *Mediator) rewriteSolve(data []byte, id string) ([]byte, error) {
 		return nil, fmt.Errorf("decode solve from %s: %w", id, err)
 	}
 	req.Entitlements = stripInsecure(req.Entitlements)
+	if err := bindToNamespace(&req, id); err != nil {
+		m.logger.Warn("build refused", "sandbox", id, "ref", req.Ref, "error", err)
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
 	m.logger.Info("build accepted", "sandbox", id, "ref", req.Ref, "frontend", req.Frontend)
 	out, err := proto.Marshal(&req)
 	if err != nil {
@@ -309,6 +315,10 @@ func (m *Mediator) rewriteGatewaySolve(data []byte, id string) ([]byte, error) {
 	// where a build's options actually arrive. The equivalent fields on
 	// Control/Solve are empty for a buildx client.
 	req.FrontendOpt = withBuildProxy(req.FrontendOpt, id)
+	if err := bindGatewaySolve(&req, id); err != nil {
+		m.logger.Warn("build refused", "sandbox", id, "error", err)
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
 	out, err := proto.Marshal(&req)
 	if err != nil {
 		return nil, fmt.Errorf("encode gateway solve for %s: %w", id, err)

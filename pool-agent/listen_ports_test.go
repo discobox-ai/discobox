@@ -2,6 +2,7 @@ package poolagent
 
 import (
 	"net"
+	"net/url"
 	"testing"
 
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
@@ -40,5 +41,22 @@ func TestPoolListenAddressesAreDistinct(t *testing.T) {
 			continue
 		}
 		seen[port] = l.owner
+	}
+}
+
+// The sandbox's bootstrap names the mediator by a port proxyagent spells
+// itself, and the tunnel splices onto that port too; both have to be the one
+// the mediator unit binds.
+func TestBootstrapNamesTheMediatorsPort(t *testing.T) {
+	named, err := url.Parse(proxyagent.BuildkitMediatorURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, port, err := net.SplitHostPort(buildkitagent.MediatorListen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if named.Port() != port {
+		t.Fatalf("BuildkitMediatorURL names port %s, the mediator binds %s", named.Port(), port)
 	}
 }

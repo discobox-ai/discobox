@@ -1579,9 +1579,6 @@ components:
                 mtlsCa:
                     description: PEM CA the pool's mTLS endpoints present certificates from.
                     type: string
-                registryNamespace:
-                    description: The sandbox's namespace in the pool build registry.
-                    type: string
             required:
                 - mtlsCa
                 - mitmCa

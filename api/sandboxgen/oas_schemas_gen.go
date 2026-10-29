@@ -6863,8 +6863,6 @@ type SandboxRuntimeConfigProxy struct {
 	MitmCa string `json:"mitmCa"`
 	// PEM CA the pool's mTLS endpoints present certificates from.
 	MtlsCa string `json:"mtlsCa"`
-	// The sandbox's namespace in the pool build registry.
-	RegistryNamespace OptString `json:"registryNamespace"`
 }
 
 // GetClientCert returns the value of ClientCert.
@@ -6887,11 +6885,6 @@ func (s *SandboxRuntimeConfigProxy) GetMtlsCa() string {
 	return s.MtlsCa
 }
 
-// GetRegistryNamespace returns the value of RegistryNamespace.
-func (s *SandboxRuntimeConfigProxy) GetRegistryNamespace() OptString {
-	return s.RegistryNamespace
-}
-
 // SetClientCert sets the value of ClientCert.
 func (s *SandboxRuntimeConfigProxy) SetClientCert(val string) {
 	s.ClientCert = val
@@ -6910,11 +6903,6 @@ func (s *SandboxRuntimeConfigProxy) SetMitmCa(val string) {
 // SetMtlsCa sets the value of MtlsCa.
 func (s *SandboxRuntimeConfigProxy) SetMtlsCa(val string) {
 	s.MtlsCa = val
-}
-
-// SetRegistryNamespace sets the value of RegistryNamespace.
-func (s *SandboxRuntimeConfigProxy) SetRegistryNamespace(val OptString) {
-	s.RegistryNamespace = val
 }
 
 // The sandbox's secret-bound environment, env name to sentinel. Sentinels only; a resolved value

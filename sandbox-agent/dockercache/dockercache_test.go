@@ -13,6 +13,10 @@ import (
 
 // withMaterial stages the forwarder config pool-agent writes for a sandbox
 // whose pool runs a builder, which is what makes one reachable at all.
+// testSandboxID is the sandbox withMaterial's bootstrap names, and so its
+// namespace in the pool registry.
+const testSandboxID = "sbx_abc123"
+
 func withMaterial(t *testing.T) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "bridge-buildkit.json")
@@ -21,6 +25,18 @@ func withMaterial(t *testing.T) {
 	}
 	dockercache.SetBridgeConfigPath(path)
 	t.Cleanup(func() { dockercache.SetBridgeConfigPath(filepath.Join(t.TempDir(), "absent")) })
+	withManifest(t, `{"sandboxId": "`+testSandboxID+`"}`)
+}
+
+// withManifest stages the sandbox's bootstrap as manifest.
+func withManifest(t *testing.T, manifest string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "sandbox.json")
+	if err := os.WriteFile(path, []byte(manifest), 0o600); err != nil {
+		t.Fatalf("stage sandbox.json: %v", err)
+	}
+	dockercache.SetManifestPath(path)
+	t.Cleanup(func() { dockercache.SetManifestPath(filepath.Join(t.TempDir(), "absent")) })
 }
 
 func argvAfterDocker(t *testing.T, got dockercache.Args) []string {
@@ -59,8 +75,20 @@ func TestBuildIsPointedAtThePoolBuilder(t *testing.T) {
 	if !slices.Contains(argv, "--push") || !slices.Contains(argv, got.RegistryRef) {
 		t.Errorf("build does not push to the pool registry: %v", argv)
 	}
-	if !strings.HasPrefix(got.RegistryRef, dockercache.PoolRegistry+"/") {
-		t.Errorf("registry reference is not in the pool registry: %q", got.RegistryRef)
+	// The pool registry's front admits a sandbox to its own namespace alone,
+	// which is its ID (ADR 26-10-29-160 §2).
+	if !strings.HasPrefix(got.RegistryRef, dockercache.PoolRegistry+"/"+testSandboxID+"/") {
+		t.Errorf("registry reference is not in the sandbox's namespace: %q", got.RegistryRef)
+	}
+}
+
+// A sandbox whose bootstrap names no sandbox has no namespace to push to, so
+// nothing could come back from the pool: the build is left to run here.
+func TestABuildWithNoNamespaceIsLeftAlone(t *testing.T) {
+	withMaterial(t)
+	withManifest(t, `{}`)
+	if got := dockercache.Rewrite([]string{"build", "-t", "app:1", "."}); got.Rewritten {
+		t.Fatalf("a sandbox with no namespace had its build rewritten: %v", got.Argv)
 	}
 }
 

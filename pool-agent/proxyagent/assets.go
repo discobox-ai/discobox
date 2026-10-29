@@ -10,6 +10,7 @@ package proxyagent
 //
 // The pool agent serves it on a Unix socket (layout.ProxyAssetsSocket), not
 // a loopback port as the origins are: the listener takes the sandbox from
-// the proxy's client header alone, and a loopback port is one a box can send
-// its own header to as ordinary egress through the proxy.
+// the proxy's client header alone, and a loopback port is kept from a box
+// sending its own header as ordinary egress only by the proxy's refusal of its
+// loopback, where no egress can name a socket.
 const AssetsHost = "assets.discobox.internal"

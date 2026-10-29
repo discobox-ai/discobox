@@ -55,14 +55,15 @@ const (
 // bounds what it splices itself (maxTunnels).
 var TunnelSource = netip.MustParseAddr("127.0.0.2")
 
-// The path of each service on the tunnel listener. The pool's builder has
-// none: its results come back through the pool registry, which no tunnel
-// carries, so a pool behind an edge names no BuildKit endpoint (ADR
-// 26-10-23-719 §5).
+// The path of each service on the tunnel listener. The builder's is the
+// mediator's: a build's results come back through the registry host, which the
+// proxy's tunnel already carries, so a pool behind an edge builds like any
+// other (ADR 26-10-29-160 §5).
 const (
 	tunnelProxyPath       = "/tunnel/proxy"
 	tunnelCredentialsPath = "/tunnel/credentials" //nolint:gosec // G101: a URL path, not a credential.
 	tunnelDNSPath         = "/tunnel/dns"
+	tunnelBuildKitPath    = "/tunnel/buildkit"
 )
 
 // tunnelServices names each service a tunnel reaches by its path, and the
@@ -73,6 +74,7 @@ var tunnelServices = map[string]string{
 	tunnelProxyPath:       loopback(ListenAddress),
 	tunnelCredentialsPath: loopback(CredentialsListenAddress),
 	tunnelDNSPath:         loopback(DNSListenAddress),
+	tunnelBuildKitPath:    net.JoinHostPort("127.0.0.1", mediatorPort),
 }
 
 // loopback is the port of a listen address on this container's loopback.

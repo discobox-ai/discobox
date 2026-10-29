@@ -1,5 +1,5 @@
-# Pool build-output registry. This is a store, not a cache: sandboxes push
-# build results here and pull them back, replacing `--load`'s whole-image
+# Pool build-output registry. This is a store, not a cache: builds push their
+# results here and sandboxes pull them back, replacing `--load`'s whole-image
 # tarball with a content-addressed transfer (ADR 0030 decision 11).
 #
 # Caching *upstream* pulls is a different job and belongs to the proxy
@@ -23,7 +23,12 @@ storage:
   # uploading the layer and publishes a manifest naming content that is gone.
   # Every stat goes to the filesystem instead, which on local disk is cheap.
 http:
-  addr: 0.0.0.0:5000
+  # The pool's loopback alone: buildkitd pushes here, and a sandbox reaches it
+  # only through the registry front its proxy forwards to (ADR 26-10-29-160).
+  addr: 127.0.0.1:5000
+  # Its clients name it two ways — buildkitd by this address, a sandbox as
+  # registry.discobox.internal — so an upload's Location names no host.
+  relativeurls: true
   headers:
     X-Content-Type-Options: [nosniff]
 health:
