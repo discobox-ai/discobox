@@ -176,7 +176,7 @@ func TestRelayDialsUnixURLWithMTLS(t *testing.T) {
 	// The loopback endpoint every process in the sandbox reaches serves the
 	// protocol alone: the raw values are the agent's own call.
 	recorder := httptest.NewRecorder()
-	agentcreds.NewHandler(relay).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, sandboxconfig.RawSecretsRoute, nil))
+	agentcreds.NewHandler(relay).ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, sandboxconfig.RawSecretsRoute, nil))
 	if recorder.Code == http.StatusOK || strings.Contains(recorder.Body.String(), "raw-for-") {
 		t.Fatalf("loopback endpoint answered the raw secrets route: %d %s", recorder.Code, recorder.Body.String())
 	}

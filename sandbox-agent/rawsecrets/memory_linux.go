@@ -12,7 +12,7 @@ func onMemory(dir string) error {
 	if err := unix.Statfs(dir, &fs); err != nil {
 		return err
 	}
-	switch int64(fs.Type) {
+	switch fs.Type {
 	case unix.TMPFS_MAGIC, unix.RAMFS_MAGIC:
 		return nil
 	}
