@@ -514,11 +514,45 @@ func rawDeliveryText(delivery string) string {
 
 // lifetimeChosen is where the two kinds of answer part: a new credential still
 // needs its value, and an existing one is approved with.
-func (m *Model) lifetimeChosen(a approval, _ func() tea.Cmd) tea.Cmd {
+func (m *Model) lifetimeChosen(a approval, again func() tea.Cmd) tea.Cmd {
 	if a.fresh {
 		return m.askNewCredentialForm(a)
 	}
+	if a.secret.AllowRaw && !a.req.Delegate {
+		return m.askDelivery(a, again)
+	}
 	return m.finishApproval(a)
+}
+
+// askDelivery asks, of a secret that allows it, whether the discobox is handed
+// a placeholder or the value itself (ADR 26-10-27-840 §2). The request never
+// asks for the value, so the placeholder is first and the cursor starts
+// there: the value is something a person reaches for, not a default. back is
+// the lifetime card.
+func (m *Model) askDelivery(a approval, back func() tea.Cmd) tea.Cmd {
+	variable := a.req.EnvVar
+	if variable == "" {
+		variable = "its variable"
+	}
+	items := []action{
+		{key: "sentinel", press: "p", label: "A placeholder", detail: "its pool swaps in the value on the way out, on the secret's routes; the discobox never holds it", enabled: true},
+		{key: "env", press: "e", label: "The value itself, in " + variable, detail: "for a program that signs with it, or sends it where the pool cannot swap it", enabled: true},
+		{key: "file", press: "f", label: "The value itself, in a file", detail: "in memory, never on a disk; its path in " + variable, enabled: true},
+	}
+	d := actionsDialog("How is it handed over?", "", items, func(result string) tea.Cmd {
+		next := a
+		next.raw = ""
+		if result == "env" || result == "file" {
+			next.raw = result
+		}
+		return m.finishApproval(next)
+	})
+	d.sections = []section{bindingSection(a)}
+	d.answerLabel = "does the discobox get a placeholder, or the value itself?"
+	d.footer = "the value itself is refused off its routes, but the discobox can send it anywhere"
+	d.onCancel = back
+	m.dialog = d
+	return nil
 }
 
 // credentialAsk is the request as a person needs to read it: who is asking, for
@@ -735,6 +769,9 @@ type approval struct {
 	// lifetime.
 	fresh bool
 	ttl   time.Duration
+	// raw is the delivery the person chose for the value itself, empty for a
+	// sentinel (ADR 26-10-27-840 §2).
+	raw string
 }
 
 // toRequest is the way back to the request card: where Esc goes from the first
@@ -765,6 +802,10 @@ func (m *Model) finishApproval(a approval) tea.Cmd {
 		RequestID:  a.req.ID,
 		SecretID:   a.secret.ID,
 		TTLSeconds: lifetime.Seconds(a.ttl),
+		Raw:        a.raw,
+	}
+	if a.raw != "" {
+		what = "approving the value itself for " + lifetime.Label(a.ttl) + "…"
 	}
 	m.dialog = statusDialog("Credential request", what)
 	return func() tea.Msg {

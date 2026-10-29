@@ -155,8 +155,8 @@ const (
 )
 
 // How a credential is delivered when the caller holds its value rather than
-// a placeholder for it, as list reports it. Only a person delivers one so; a
-// request never asks for it. Empty is a placeholder.
+// a placeholder for it, as list and a granted request report it. Only a
+// person delivers one so; a request never asks for it. Empty is a placeholder.
 const (
 	// RawEnv puts the value in the variable.
 	RawEnv = "env"

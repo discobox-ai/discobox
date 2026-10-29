@@ -96,10 +96,12 @@ for a program that signs with it or sends it where a swap cannot reach.
   bindings that stand (`deleteRawBindingsTx`), each recorded and its holders
   marked.
 - **Only a person, and nothing asks.** A discobox may neither allow raw on a
-  secret (`guardAllowRaw`) nor make or create-with a raw binding, and no
-  request asks for raw, so no approval makes one or extends one: approving
-  a request for a variable a raw binding delivers is a 409
-  (`putRequestedBinding`), and a person renews the binding itself. A raw binding on a harness config or the
+  secret (`guardAllowRaw`) nor make, create-with or approve a raw binding,
+  and no request asks for raw. A person approving may grant the value itself
+  (`ApproveSecretRequestBody.raw`, held to `checkRawBinding`); an approval
+  extends a standing raw binding only when it grants the value again, and a
+  sentinel approval of a variable a raw binding delivers is a 409
+  (`putRequestedBinding`). A raw binding on a harness config or the
   project reaches the discoboxes a discobox created there too, which ADR
   26-10-27-840 §2 accepts.
 - **The handle is a sentinel the sandbox never sees.** A raw binding
@@ -134,8 +136,8 @@ its event, the holders' mark and the request's decision (`DecidedBy`,
 `DecidedAt`, `BindingID`) are one transaction (`commitApproval`). A variable
 the discobox already holds with another secret is a 409, never taken over; one
 holding the same secret is extended (`putRequestedBinding`), unless that
-binding is raw, which is a 409 too: a person renews a raw binding itself
-([above](#a-raw-binding-hands-over-the-value)).
+binding is raw and the approval does not grant the value again, which is a
+409 too ([above](#a-raw-binding-hands-over-the-value)).
 
 Deleting a sandbox closes its open requests as denied: the agent waiting on
 the answer is gone. A discobox sees and answers only the requests filed by a

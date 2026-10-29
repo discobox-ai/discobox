@@ -242,7 +242,13 @@ func (out *emitter) requestStatus(status agentcreds.RequestStatus) int {
 		if status.Credential != nil {
 			fmt.Fprint(w, "  ")
 			writeCredential(w, *status.Credential)
-			if status.Credential.Purpose != agentcreds.PurposeDelegate {
+			switch {
+			case status.Credential.Purpose == agentcreds.PurposeDelegate:
+			case status.Credential.Raw == agentcreds.RawFile:
+				fmt.Fprintf(w, "  (a person handed over the value itself: %s holds the path of a file with it, for every command you start from now on, within seconds; send it only where it is meant to go)\n", status.Credential.EnvVar)
+			case status.Credential.Raw == agentcreds.RawEnv:
+				fmt.Fprintf(w, "  (a person handed over the value itself: it is in %s for every command you start from now on, within seconds, and not in a shell already running; send it only where it is meant to go)\n", status.Credential.EnvVar)
+			default:
 				fmt.Fprintf(w, "  (in %s for every command you start from now on)\n", status.Credential.EnvVar)
 			}
 		}

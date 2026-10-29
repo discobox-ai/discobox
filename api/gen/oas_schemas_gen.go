@@ -195,6 +195,10 @@ func (s *ApprovalRequestKind) UnmarshalText(data []byte) error {
 type ApproveSecretRequestBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Grant the value itself rather than a sentinel (ADR 26-10-27-840): env in the variable the request
+	// named, file the path of a file holding it there. A person's choice alone - no request asks for it
+	// - and only of a secret that allows raw. Absent grants a sentinel.
+	Raw OptApproveSecretRequestBodyRaw `json:"raw"`
 	// Routes the binding is approved for, narrowing the secret's; omitted takes the routes the request
 	// asked for.
 	Routes []SecretRouteInput `json:"routes"`
@@ -210,6 +214,11 @@ type ApproveSecretRequestBody struct {
 // GetSchema returns the value of Schema.
 func (s *ApproveSecretRequestBody) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetRaw returns the value of Raw.
+func (s *ApproveSecretRequestBody) GetRaw() OptApproveSecretRequestBodyRaw {
+	return s.Raw
 }
 
 // GetRoutes returns the value of Routes.
@@ -232,6 +241,11 @@ func (s *ApproveSecretRequestBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
+// SetRaw sets the value of Raw.
+func (s *ApproveSecretRequestBody) SetRaw(val OptApproveSecretRequestBodyRaw) {
+	s.Raw = val
+}
+
 // SetRoutes sets the value of Routes.
 func (s *ApproveSecretRequestBody) SetRoutes(val []SecretRouteInput) {
 	s.Routes = val
@@ -245,6 +259,50 @@ func (s *ApproveSecretRequestBody) SetSecretId(val OptString) {
 // SetTtlSeconds sets the value of TtlSeconds.
 func (s *ApproveSecretRequestBody) SetTtlSeconds(val OptInt64) {
 	s.TtlSeconds = val
+}
+
+// Grant the value itself rather than a sentinel (ADR 26-10-27-840): env in the variable the request
+// named, file the path of a file holding it there. A person's choice alone - no request asks for it
+// - and only of a secret that allows raw. Absent grants a sentinel.
+type ApproveSecretRequestBodyRaw string
+
+const (
+	ApproveSecretRequestBodyRawEnv  ApproveSecretRequestBodyRaw = "env"
+	ApproveSecretRequestBodyRawFile ApproveSecretRequestBodyRaw = "file"
+)
+
+// AllValues returns all ApproveSecretRequestBodyRaw values.
+func (ApproveSecretRequestBodyRaw) AllValues() []ApproveSecretRequestBodyRaw {
+	return []ApproveSecretRequestBodyRaw{
+		ApproveSecretRequestBodyRawEnv,
+		ApproveSecretRequestBodyRawFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApproveSecretRequestBodyRaw) MarshalText() ([]byte, error) {
+	switch s {
+	case ApproveSecretRequestBodyRawEnv:
+		return []byte(s), nil
+	case ApproveSecretRequestBodyRawFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApproveSecretRequestBodyRaw) UnmarshalText(data []byte) error {
+	switch ApproveSecretRequestBodyRaw(data) {
+	case ApproveSecretRequestBodyRawEnv:
+		*s = ApproveSecretRequestBodyRawEnv
+		return nil
+	case ApproveSecretRequestBodyRawFile:
+		*s = ApproveSecretRequestBodyRawFile
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/ApproveTrustRequestBody
@@ -8879,6 +8937,52 @@ func (s *ObservedCertificate) SetSubject(val string) {
 	s.Subject = val
 }
 
+// NewOptApproveSecretRequestBodyRaw returns new OptApproveSecretRequestBodyRaw with value set to v.
+func NewOptApproveSecretRequestBodyRaw(v ApproveSecretRequestBodyRaw) OptApproveSecretRequestBodyRaw {
+	return OptApproveSecretRequestBodyRaw{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptApproveSecretRequestBodyRaw is optional ApproveSecretRequestBodyRaw.
+type OptApproveSecretRequestBodyRaw struct {
+	Value ApproveSecretRequestBodyRaw
+	Set   bool
+}
+
+// IsSet returns true if OptApproveSecretRequestBodyRaw was set.
+func (o OptApproveSecretRequestBodyRaw) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptApproveSecretRequestBodyRaw) Reset() {
+	var v ApproveSecretRequestBodyRaw
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptApproveSecretRequestBodyRaw) SetTo(v ApproveSecretRequestBodyRaw) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptApproveSecretRequestBodyRaw) Get() (v ApproveSecretRequestBodyRaw, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptApproveSecretRequestBodyRaw) Or(d ApproveSecretRequestBodyRaw) ApproveSecretRequestBodyRaw {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptBool returns new OptBool with value set to v.
 func NewOptBool(v bool) OptBool {
 	return OptBool{
@@ -14266,6 +14370,52 @@ func (o OptSandboxCredentialRaw) Get() (v SandboxCredentialRaw, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxCredentialRaw) Or(d SandboxCredentialRaw) SandboxCredentialRaw {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxCredentialRequestStatusRaw returns new OptSandboxCredentialRequestStatusRaw with value set to v.
+func NewOptSandboxCredentialRequestStatusRaw(v SandboxCredentialRequestStatusRaw) OptSandboxCredentialRequestStatusRaw {
+	return OptSandboxCredentialRequestStatusRaw{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCredentialRequestStatusRaw is optional SandboxCredentialRequestStatusRaw.
+type OptSandboxCredentialRequestStatusRaw struct {
+	Value SandboxCredentialRequestStatusRaw
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCredentialRequestStatusRaw was set.
+func (o OptSandboxCredentialRequestStatusRaw) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCredentialRequestStatusRaw) Reset() {
+	var v SandboxCredentialRequestStatusRaw
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCredentialRequestStatusRaw) SetTo(v SandboxCredentialRequestStatusRaw) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCredentialRequestStatusRaw) Get() (v SandboxCredentialRequestStatusRaw, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCredentialRequestStatusRaw) Or(d SandboxCredentialRequestStatusRaw) SandboxCredentialRequestStatusRaw {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -24872,6 +25022,9 @@ type SandboxCredentialRequestStatus struct {
 	// What the request asks the credential for. A delegate binding lets the sandbox give the credential
 	// to the discoboxes it creates, and delivers nothing to the sandbox itself.
 	Purpose SandboxCredentialRequestStatusPurpose `json:"purpose"`
+	// Once granted, the person approving handed over the value itself rather than a sentinel (ADR
+	// 26-10-27-840): in envVar (env), or the path of a file holding it there (file).
+	Raw OptSandboxCredentialRequestStatusRaw `json:"raw"`
 	// Request ID to poll.
 	RequestId string `json:"requestId"`
 	// Request status.
@@ -24906,6 +25059,11 @@ func (s *SandboxCredentialRequestStatus) GetName() OptString {
 // GetPurpose returns the value of Purpose.
 func (s *SandboxCredentialRequestStatus) GetPurpose() SandboxCredentialRequestStatusPurpose {
 	return s.Purpose
+}
+
+// GetRaw returns the value of Raw.
+func (s *SandboxCredentialRequestStatus) GetRaw() OptSandboxCredentialRequestStatusRaw {
+	return s.Raw
 }
 
 // GetRequestId returns the value of RequestId.
@@ -24946,6 +25104,11 @@ func (s *SandboxCredentialRequestStatus) SetName(val OptString) {
 // SetPurpose sets the value of Purpose.
 func (s *SandboxCredentialRequestStatus) SetPurpose(val SandboxCredentialRequestStatusPurpose) {
 	s.Purpose = val
+}
+
+// SetRaw sets the value of Raw.
+func (s *SandboxCredentialRequestStatus) SetRaw(val OptSandboxCredentialRequestStatusRaw) {
+	s.Raw = val
 }
 
 // SetRequestId sets the value of RequestId.
@@ -24998,6 +25161,49 @@ func (s *SandboxCredentialRequestStatusPurpose) UnmarshalText(data []byte) error
 		return nil
 	case SandboxCredentialRequestStatusPurposeDelegate:
 		*s = SandboxCredentialRequestStatusPurposeDelegate
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Once granted, the person approving handed over the value itself rather than a sentinel (ADR
+// 26-10-27-840): in envVar (env), or the path of a file holding it there (file).
+type SandboxCredentialRequestStatusRaw string
+
+const (
+	SandboxCredentialRequestStatusRawEnv  SandboxCredentialRequestStatusRaw = "env"
+	SandboxCredentialRequestStatusRawFile SandboxCredentialRequestStatusRaw = "file"
+)
+
+// AllValues returns all SandboxCredentialRequestStatusRaw values.
+func (SandboxCredentialRequestStatusRaw) AllValues() []SandboxCredentialRequestStatusRaw {
+	return []SandboxCredentialRequestStatusRaw{
+		SandboxCredentialRequestStatusRawEnv,
+		SandboxCredentialRequestStatusRawFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxCredentialRequestStatusRaw) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxCredentialRequestStatusRawEnv:
+		return []byte(s), nil
+	case SandboxCredentialRequestStatusRawFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxCredentialRequestStatusRaw) UnmarshalText(data []byte) error {
+	switch SandboxCredentialRequestStatusRaw(data) {
+	case SandboxCredentialRequestStatusRawEnv:
+		*s = SandboxCredentialRequestStatusRawEnv
+		return nil
+	case SandboxCredentialRequestStatusRawFile:
+		*s = SandboxCredentialRequestStatusRawFile
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

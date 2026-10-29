@@ -463,7 +463,10 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "a binding's lifetime is a number of seconds; 0 is forever")
 	}
 	secretRef := strings.TrimSpace(input.SecretId.Or(""))
-	write := &approvalWrite{req: req, routes: routes, ttl: ttl, ttlNamed: ttlNamed, actor: principal.Actor()}
+	// The value itself is the approver's choice, never the ask's (ADR
+	// 26-10-27-840 §2); checkRawBinding decides whether this approver may
+	// make it, as it does for every binding write.
+	write := &approvalWrite{req: req, routes: routes, raw: string(input.Raw.Or("")), ttl: ttl, ttlNamed: ttlNamed, actor: principal.Actor()}
 	if approverIsSandbox {
 		if req.Delegates() {
 			return nil, apperrors.NewStatusError(http.StatusForbidden,
@@ -501,6 +504,9 @@ type approvalWrite struct {
 	req    *model.SecretRequest
 	secret *model.Secret
 	routes []model.SecretRoute
+	// raw is the delivery the approver chose for the value itself, empty for
+	// a sentinel (ADR 26-10-27-840 §2).
+	raw string
 	// ttl is the lifetime the approver named, read only when ttlNamed.
 	ttl      int64
 	ttlNamed bool
@@ -539,6 +545,7 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 			Use:        !req.Delegates(),
 			Delegate:   req.Delegates(),
 			Routes:     a.routes,
+			Raw:        a.raw,
 			RequestID:  req.ID,
 			CreatedBy:  a.actor,
 		}
@@ -556,6 +563,9 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 			binding.ParentID = parent.ID
 		}
 		if err := guardBindingTTL(secret, ttl); err != nil {
+			return err
+		}
+		if err := checkRawBinding(ctx, binding, secret); err != nil {
 			return err
 		}
 		binding.ExpiresAt = expiryAt(now, ttl)
@@ -580,10 +590,11 @@ func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 // putRequestedBinding stores the binding an approval makes, or extends the
 // one already standing for the same thing: a use of the same secret in the
 // same variable, or a delegate binding of the same secret, takes the
-// approval's routes and lifetime. A raw binding is never extended: a person
-// made it raw, the approver is shown a sentinel ask, and renewing it would
-// widen a handover nobody looked at (ADR 26-10-27-840 §2). A variable already holding another
-// credential on the discobox is refused rather than taken over, since swapping
+// approval's routes, lifetime and delivery. A raw binding is extended only by
+// an approval that grants the value again, as a person chose it: renewing a
+// handover through a sentinel approval would widen what nobody looked at (ADR
+// 26-10-27-840 §2). A variable already holding another credential on the
+// discobox is refused rather than taken over, since swapping
 // the credential under a variable something already uses is the surprise this
 // must not spring.
 func (s *Service) putRequestedBinding(ctx context.Context, txStore *store.Store, txDB *gorm.DB, binding *model.SecretBinding, change store.BindingChange) (*model.SecretBinding, error) {
@@ -602,15 +613,22 @@ func (s *Service) putRequestedBinding(ctx context.Context, txStore *store.Store,
 			return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
 				"%s already holds another credential in this discobox; approve the request with that secret, or ask for another variable", binding.EnvName))
 		}
-		if standing.Raw != "" {
+		if standing.Raw != "" && standing.Raw != binding.Raw {
+			if !binding.Use {
+				return nil, apperrors.NewStatusError(http.StatusConflict,
+					"this discobox already holds the value itself under the binding that delegates it; change that binding (admin binding update) rather than approving a delegation over it")
+			}
 			return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
-				"%s holds this credential's value itself in this discobox, which a person bound; a person renews it on the binding, not by approving a request", binding.EnvName))
+				"%s holds this credential's value itself in this discobox; renew it by granting the value again (raw %s), or on the binding", binding.EnvName, standing.Raw))
 		}
 		if standing.ParentID != binding.ParentID {
 			return nil, apperrors.NewStatusError(http.StatusConflict,
 				"this discobox already holds that credential under another binding; remove it first")
 		}
 		standing.Routes, standing.ExpiresAt = binding.Routes, binding.ExpiresAt
+		if binding.Use {
+			standing.Raw = binding.Raw
+		}
 		if err := txStore.UpdateSecretBinding(ctx, standing, change); err != nil {
 			return nil, err
 		}

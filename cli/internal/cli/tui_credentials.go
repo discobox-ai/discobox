@@ -379,12 +379,13 @@ func (d *apiDataSource) Secrets(ctx context.Context, server string) ([]tui.Secre
 	out := make([]tui.Secret, 0, len(secrets))
 	for _, s := range secrets {
 		row := tui.Secret{
-			ID:      s.ID,
-			Name:    s.Name,
-			Type:    string(s.Type),
-			MaxTTL:  time.Duration(s.MaxBindingTTLSeconds) * time.Second,
-			Created: s.CreatedAt,
-			Updated: s.UpdatedAt,
+			ID:       s.ID,
+			Name:     s.Name,
+			Type:     string(s.Type),
+			MaxTTL:   time.Duration(s.MaxBindingTTLSeconds) * time.Second,
+			AllowRaw: s.AllowRaw.Or(false),
+			Created:  s.CreatedAt,
+			Updated:  s.UpdatedAt,
 		}
 		if oauth, ok := s.OAuth.Get(); ok {
 			row.OAuth = &tui.SecretOAuth{
@@ -558,6 +559,9 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	// making.
 	body := &apimodel.ApproveSecretRequestBody{SecretId: apiclientgen.NewOptString(approval.SecretID)}
 	body.SetTtlSeconds(apiclientgen.NewOptInt64(approval.TTLSeconds))
+	if approval.Raw != "" {
+		body.SetRaw(apiclientgen.NewOptApproveSecretRequestBodyRaw(apiclientgen.ApproveSecretRequestBodyRaw(approval.Raw)))
+	}
 	res, err := d.client.ApproveSecretRequest(ctx, body, apiclientgen.ApproveSecretRequestParams{
 		ProjectId: d.projectID,
 		RequestId: approval.RequestID,

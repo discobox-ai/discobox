@@ -39,6 +39,8 @@ var yamlEnumAliases = map[string]string{
 	"CreateSandboxCredentialRequestBody.purpose": "SecretRequest.purpose",
 	"CreateSecretBindingBody.raw":                "SecretBinding.raw",
 	"SandboxBindingInput.raw":                    "SecretBinding.raw",
+	"ApproveSecretRequestBody.raw":               "SecretBinding.raw",
+	"SandboxCredentialRequestStatus.raw":         "SecretBinding.raw",
 	"SandboxCredential.raw":                      "SecretBinding.raw",
 	"SandboxCredential.purpose":                  "SecretRequest.purpose",
 	"SandboxCredentialRequestStatus.purpose":     "SecretRequest.purpose",

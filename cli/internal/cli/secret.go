@@ -373,6 +373,7 @@ func (a *App) newSecretRequestGetCommand() *cobra.Command {
 
 func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	var secretRef string
+	var raw rawFlag
 	var routes []string
 	lifetimeFlag := lifetime.NewFlag()
 	cmd := &cobra.Command{Use: "approve REQUEST_ID", Short: "Approve a secret request, binding the secret to the discobox that asked", Long: `Approve a secret request: the secret is bound to the discobox that asked,
@@ -383,6 +384,13 @@ not a project secret's name, or to choose another. --route narrows where it may 
 sent; left out, the binding is held to the routes the request named. --for is
 how long it lasts; left out, what the request asked for, else an hour, within
 the secret's limit.
+
+--raw grants the value itself rather than a sentinel, for a program that
+signs with it or sends it where an exchange cannot reach: env puts it in the
+variable, file the path of a file in memory holding it. It is yours to choose
+— a request never asks for it — and the secret must allow it (secret update
+--allow-raw). The discobox can then send the value anywhere; its pool only
+refuses a request carrying it off its routes.
 
 ` + routeHelp, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
@@ -418,6 +426,9 @@ the secret's limit.
 		if seconds, given := lifetimeFlag.Seconds(); given {
 			body.SetTtlSeconds(apiclientgen.NewOptInt64(seconds))
 		}
+		if raw.set {
+			body.SetRaw(apiclientgen.NewOptApproveSecretRequestBodyRaw(apiclientgen.ApproveSecretRequestBodyRaw(raw.value)))
+		}
 		res, err := client.ApproveSecretRequest(cmd.Context(), body, apiclientgen.ApproveSecretRequestParams{ProjectId: projectID, RequestId: requestID})
 		if err != nil {
 			return err
@@ -438,6 +449,7 @@ the secret's limit.
 	cmd.Flags().StringVar(&secretRef, "secret", "", "The secret that answers the request, by name or ID")
 	cmd.Flags().StringArrayVar(&routes, "route", nil, "Where it may be sent, narrowing the secret's routes, as "+secretroute.Syntax+"; one per flag, repeat for more (default the routes the request named)")
 	cmd.Flags().Var(lifetimeFlag, "for", bindingLifetimeApproveFlagUsage)
+	cmd.Flags().Var(&raw, "raw", "Grant the value itself: env (in the variable) or file (a file whose path is in it); left out, a sentinel")
 	return cmd
 }
 
@@ -584,7 +596,7 @@ func createSecretBody(flags *pflag.FlagSet, name, secretType string, ttl *lifeti
 	return body, nil
 }
 
-const allowRawFlagUsage = "Let a person bind the value itself to a discobox (secret bind --raw), rather than only a sentinel its pool exchanges"
+const allowRawFlagUsage = "Let a person hand a discobox the value itself (secret bind --raw, secret request approve --raw), rather than only a sentinel its pool exchanges"
 
 const secretRouteFlagUsage = "Where the secret may be sent, whoever holds it, as " + secretroute.Syntax + ", or '*' for any host: a host is exact, *.h is the hosts beneath h. Every request it is sent in must fall on one; the most specific decides (repeatable)"
 

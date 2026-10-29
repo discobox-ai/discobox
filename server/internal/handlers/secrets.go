@@ -339,6 +339,9 @@ func agentCredentialRequestStatus(req *model.SecretRequest, binding *model.Secre
 		if binding.Use && req.EnvName != "" {
 			resp.SetEnvVar(serverapi.NewOptString(req.EnvName))
 		}
+		if binding.Use && binding.Raw != "" {
+			resp.SetRaw(serverapi.NewOptSandboxCredentialRequestStatusRaw(serverapi.SandboxCredentialRequestStatusRaw(binding.Raw)))
+		}
 		if binding.ExpiresAt != nil {
 			resp.SetExpiresAt(serverapi.NewOptDateTime(*binding.ExpiresAt))
 		}

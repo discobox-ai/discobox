@@ -110,7 +110,7 @@ it does not expire on its own. A credential with `purpose` `delegate` is one
 the caller may give the sandboxes it creates, and is not delivered to the
 caller itself, so it has no `envVar`. `raw` (`env` or `file`) says a person
 handed over the value itself in `envVar`, or the path of a file holding it,
-rather than a placeholder; no request asks for that
+rather than a placeholder; no request asks for that, it is the approver's choice
 ([ADR 26-10-27-840](adr/26-10-27-840-a-binding-may-hand-over-the-raw-value-held-in-memory-and-watched-for-at-the-proxy.md)).
 
 ## `request` — ask for something new
@@ -218,7 +218,8 @@ GET /v1/credentials/requests/{requestId}
 
 `status` is one of `pending`, `granted`, `denied`. `credential` is present once
 granted, as `list` reports it — the hosts and lifetime the approver chose,
-which need not be the ones asked for. In Discobox a request may also be
+which need not be the ones asked for, and `raw` when the approver chose to
+hand over the value itself rather than a placeholder. In Discobox a request may also be
 answered by the sandbox that created the caller, when it holds a delegate
 binding of that credential; the protocol is the same either way. Discobox
 reports an approval whose binding has since been removed as `denied`, and a

@@ -96,7 +96,8 @@ func (a *App) resolveBindingTarget(cmd *cobra.Command, discobox string, flags bi
 }
 
 func (a *App) newSecretBindCommand() *cobra.Command {
-	var as, raw string
+	var as string
+	var raw rawFlag
 	var routes []string
 	var delegate bool
 	var target bindingTargetFlags
@@ -164,14 +165,11 @@ over its harness config's, and that over the project's.
 			if delegate {
 				body.SetDelegate(apiclientgen.NewOptBool(true))
 			}
-			if raw != "" {
-				if raw != string(apiclientgen.CreateSecretBindingBodyRawEnv) && raw != string(apiclientgen.CreateSecretBindingBodyRawFile) {
-					return fmt.Errorf("--raw is env or file, not %q", raw)
-				}
+			if raw.set {
 				if as == "" {
 					return fmt.Errorf("--raw hands the value over to use, so it needs a variable (--as)")
 				}
-				body.SetRaw(apiclientgen.NewOptCreateSecretBindingBodyRaw(apiclientgen.CreateSecretBindingBodyRaw(raw)))
+				body.SetRaw(apiclientgen.NewOptCreateSecretBindingBodyRaw(apiclientgen.CreateSecretBindingBodyRaw(raw.value)))
 			}
 			if seconds, given := lasts.Seconds(); given {
 				body.SetTtlSeconds(apiclientgen.NewOptInt64(seconds))
@@ -197,7 +195,7 @@ over its harness config's, and that over the project's.
 	cmd.Flags().StringVar(&as, "as", "", "The environment variable to deliver it in (default the secret's name upper-snaked)")
 	cmd.Flags().StringArrayVar(&routes, "route", nil, "Where it may be sent for this binding, narrowing the secret's routes, as "+secretroute.Syntax+"; one per flag, repeat for more")
 	cmd.Flags().Var(lasts, "for", bindingLifetimeFlagUsage)
-	cmd.Flags().StringVar(&raw, "raw", "", "Hand over the value itself: env (in the variable) or file (a file whose path is in it)")
+	cmd.Flags().Var(&raw, "raw", "Hand over the value itself: env (in the variable) or file (a file whose path is in it); left out, a sentinel")
 	cmd.Flags().BoolVar(&delegate, "delegate", false, "Let the discobox give the secret to the discoboxes it creates; a person's to set")
 	target.add(cmd, "bind it to")
 	return cmd

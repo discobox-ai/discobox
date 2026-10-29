@@ -187,6 +187,24 @@ func (s *ApproveSecretRequestBody) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if value, ok := s.Raw.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "raw",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		var failures []validate.FieldError
 		for i, elem := range s.Routes {
 			if err := func() error {
@@ -243,6 +261,17 @@ func (s *ApproveSecretRequestBody) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s ApproveSecretRequestBodyRaw) Validate() error {
+	switch s {
+	case "env":
+		return nil
+	case "file":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *ApproveTrustRequestBody) Validate() error {
@@ -6976,6 +7005,24 @@ func (s *SandboxCredentialRequestStatus) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Raw.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "raw",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Status.Validate(); err != nil {
 			return err
 		}
@@ -6997,6 +7044,17 @@ func (s SandboxCredentialRequestStatusPurpose) Validate() error {
 	case "use":
 		return nil
 	case "delegate":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s SandboxCredentialRequestStatusRaw) Validate() error {
+	switch s {
+	case "env":
+		return nil
+	case "file":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

@@ -85,6 +85,9 @@ type credentialRequestStatusDoc struct {
 	Name      string     `json:"name,omitempty"`
 	EnvVar    string     `json:"envVar,omitempty"`
 	Hosts     []string   `json:"hosts,omitempty"`
+	// Raw is, once granted, the delivery of the value itself the approver
+	// chose (ADR 26-10-27-840 §2), so the agent is told it holds the value.
+	Raw string `json:"raw,omitempty"`
 }
 
 func (c *controlPlaneCredentials) list(ctx context.Context, sandboxID string) ([]credentialDoc, error) {
@@ -285,6 +288,7 @@ func (d credentialRequestStatusDoc) protocol() agentcreds.RequestStatus {
 			EnvVar:    d.EnvVar,
 			Hosts:     d.Hosts,
 			Purpose:   d.Purpose,
+			Raw:       d.Raw,
 			ExpiresAt: d.ExpiresAt,
 		}
 	}

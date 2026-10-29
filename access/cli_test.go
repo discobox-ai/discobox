@@ -435,6 +435,24 @@ func TestWaitReportsWhatWasGranted(t *testing.T) {
 	}
 }
 
+// A request a person granted the value itself says so, and where the value
+// is, rather than promising a placeholder (ADR 26-10-27-840 §2).
+func TestWaitSaysAGrantIsTheValueItself(t *testing.T) {
+	granted := &agentcreds.Credential{Name: "aws", EnvVar: "AWS_KEY_FILE", Hosts: []string{"amazonaws.com"}, Raw: agentcreds.RawFile}
+	serve(t, &fakeService{requestPolls: []agentcreds.RequestStatus{
+		{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Purpose: agentcreds.PurposeUse, Credential: granted},
+	}})
+	stdout, stderr, code := capture(t, "", func() int { return Run(append(askFlags, "--wait", "--timeout", "10s")) })
+	if code != exitOK {
+		t.Fatalf("exit = %d, stderr %s", code, stderr)
+	}
+	for _, want := range []string{"AWS_KEY_FILE, the path of a file holding the value", "a person handed over the value itself: AWS_KEY_FILE holds the path of a file with it"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout lacks %q:\n%s", want, stdout)
+		}
+	}
+}
+
 func TestWaitOnADeniedRequestExitsNonZero(t *testing.T) {
 	serve(t, &fakeService{status: agentcreds.RequestStatus{RequestID: "sreq_1", Status: agentcreds.StatusDenied}})
 

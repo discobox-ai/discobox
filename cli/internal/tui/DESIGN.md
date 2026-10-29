@@ -366,7 +366,10 @@ it is the letter of the thing it does.
 env var, the routes it asks to be sent to, and why the agent says it needs it —
 and collects two answers, one per step: which secret answers it (a project
 secret, a credential typed in on the spot, or a denial), then how long the
-binding lasts. Everything else follows the request on the server, which is what
+binding lasts — and, for a secret that allows raw, a third: a placeholder,
+which the cursor opens on, or the value itself in the variable or a file
+(`askDelivery`, ADR 26-10-27-840 §2). No request asks for the value, so it is
+only ever the person's choice. Everything else follows the request on the server, which is what
 keeps this and `discobox secret request approve` the same act: approving an ask
 to use binds the secret to the discobox in the variable it asked for, held to
 the routes it asked for within the secret's own (ADR 26-10-27-880). `r` shows
