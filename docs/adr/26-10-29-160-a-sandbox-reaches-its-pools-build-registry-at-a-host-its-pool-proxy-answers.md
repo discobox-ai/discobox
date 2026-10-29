@@ -1,6 +1,12 @@
 # 26-10-29-160 — A sandbox reaches its pool's build registry at a host its pool proxy answers
 
-- **Status**: Proposed
+- **Status**: Proposed (would supersede
+  [0044](0044-builds-run-on-a-pool-shared-buildkit.md) §11's "a sandbox can
+  pull images built by its peers",
+  [0047](0047-local-base-images-resolve-through-a-per-sandbox-registry-namespace.md)
+  §2's secret namespace, and
+  [26-10-23-719](26-10-23-719-a-sandbox-may-reach-its-pool-through-a-websocket-tunnel-with-its-mtls-inside.md)
+  §5's "`BuildKit` does not" and its deferral of builds behind an edge)
 - **Date**: 2026-10-29
 - **Relates to**:
   [0044](0044-builds-run-on-a-pool-shared-buildkit.md) §11 (build output
@@ -78,6 +84,15 @@ a 403 before the registry sees it, the catalog included.
   certificate and rewrites each solve; it refuses a solve whose image export
   names a repository outside that sandbox's namespace, so no sandbox can have
   the builder write into another's.
+- **A build reads and writes the registry within that namespace alone.**
+  Every reference a solve names at the registry — an image export, a registry
+  cache import or export, a frontend's `cache-imports` or `cache-from` — is
+  rewritten from `registry.discobox.internal/<sandbox>/` to where buildkitd
+  reaches the registry, and refused outside the namespace or when it names the
+  registry's address itself. A source policy the mediator adds to each build
+  does the same for every image the build reads: it converts the namespace's
+  names, and denies the registry's address for any other namespace, after the
+  sandbox's own rules so none of them can allow it.
 - **A sandbox no longer pulls its peers' results** (0044 §11's "a sandbox can
   pull images built by its peers"). The shared solver cache is untouched, so a
   peer's build still makes the same build cheap; only reading another
@@ -89,6 +104,24 @@ a 403 before the registry sees it, the catalog included.
 The registry listens on the pool's loopback alone, where buildkitd pushes to
 it. It is no longer reached on `0.0.0.0:5000` by anything on the pool's
 network: the front is the only way a sandbox reaches it.
+
+The registry speaks mTLS there and admits one client certificate, the pool
+builder's, from a CA of its own: buildkitd presents it, configured for the
+registry's address alone, and the front presents it. buildkitd resolves any
+name a build gives it, and any name that resolves to loopback reaches the
+registry's port; without the certificate it is refused, so the registry's
+address is the one name a build can reach it by, and §2's binding is an exact
+match on it rather than a guess at every alias.
+
+Loopback alone is not that, because the pool proxy sends a sandbox's ordinary
+egress from the pool's own network namespace: a request for
+`127.0.0.1:5000`, or for any name that resolves there, reaches the registry
+around the front. So the pool proxy refuses its own loopback as a
+destination. It checks the address it actually dials, after resolution, so no
+name reaches what an address may not; an unspecified address (`0.0.0.0`, `::`)
+is refused with it. The pool's own hosts are not destinations: the proxy
+forwards those to their upstreams itself (§1). An upstream proxy the pool
+chains through is not one either.
 
 ### 4. The registry host is not cached, and its bodies are not spooled
 
@@ -127,6 +160,18 @@ behind an edge.
 - **Keep the registry off the tunnel** (719 §5 as it stands). A pool reached
   only through an edge, or a machine pool reached at a URL that is not a
   private address, has no builder.
+- **Put the registry on a Unix socket**, where no egress can name it.
+  buildkitd pushes to a registry by host and port and has no socket
+  transport, so the registry stays on a port, and the proxy refuses the
+  loopback it is on (§3).
+- **Token authentication at the registry**, scoped per sandbox by tokens the
+  front issues and a build fetches through its session. It would hold the
+  registry to the namespace on every path, a custom frontend's included (see
+  Consequences), but buildkit shares a cached registry authorization between
+  sessions that present the same credentials, so each sandbox would need
+  credentials of its own as well. Deferred: revisit if custom frontends are
+  to be held to the namespace, or a sandbox ID stops being something a peer
+  could not use against it.
 - **Keep the secret namespace beside the authentication.** Once the front
   decides by certificate, a guessed or leaked token reaches nothing, and the
   secret is only one more thing to stage.
@@ -146,6 +191,18 @@ behind an edge.
   build output is transient, so nothing is migrated; the old repositories are
   removed with the rest of their sandbox's namespace or by the registry's
   garbage collection.
+- A sandbox reaches nothing on its pool's loopback through the proxy. None
+  had reason to: its own loopback is in its `NO_PROXY`, and the pool's
+  services it does reach are the pool hosts, the gate and its mTLS
+  endpoints.
+- The mediator's binding covers what a solve it forwards names, and the
+  source policy every image the build reads. A custom frontend (`# syntax=`)
+  runs inside buildkitd and makes solves of its own that never reach the
+  mediator: one could name another namespace's registry cache in a cache
+  import there, which buildkitd reads with the pool builder's certificate. A
+  sandbox ID is not a secret, so a sandbox that knows a peer's could read the
+  peer's build cache that way — and, where the peer exported its cache inline,
+  the layers a matching cache key leads to — but write nothing.
 - 0126 §7's registry clause is met: the registry is reached over a
   connection carrying the sandbox's certificate, and authorizes by it.
 - 0047's secret namespace and 0044 §11's cross-sandbox pull are superseded;
