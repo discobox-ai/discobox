@@ -856,3 +856,44 @@ func TestARequestCardShowsTheRawRequest(t *testing.T) {
 		t.Fatalf("esc left %s, want the request card", describe(m.dialog))
 	}
 }
+
+// A secret that allows raw asks, after the lifetime, whether the discobox is
+// handed a placeholder or the value itself — the person's choice, since no
+// request asks (ADR 26-10-27-840 §2). The placeholder is where it opens, and
+// a secret that does not allow raw asks nothing more.
+func TestARawSecretAsksHowItIsHandedOver(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.projectSecrets[0].AllowRaw = true
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, time.Hour)
+	if m.dialog == nil || m.dialog.title != "How is it handed over?" {
+		t.Fatalf("dialog = %s, want the step asking how it is handed over", describe(m.dialog))
+	}
+	if m.dialog.items[m.dialog.cursor].key != "sentinel" {
+		t.Fatalf("cursor on %q, want the placeholder", m.dialog.items[m.dialog.cursor].key)
+	}
+	if len(ds.approvals) != 0 {
+		t.Fatalf("approved before the delivery was chosen: %#v", ds.approvals)
+	}
+	drain(t, m, m.dialog.action("file"), 0)
+	if len(ds.approvals) != 1 || ds.approvals[0].Raw != "file" {
+		t.Fatalf("approvals = %#v, want one granting the value in a file", ds.approvals)
+	}
+}
+
+func TestAPlaceholderIsGrantedWhenChosen(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	ds.projectSecrets[0].AllowRaw = true
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, time.Hour)
+	drain(t, m, m.dialog.action("sentinel"), 0)
+	if len(ds.approvals) != 1 || ds.approvals[0].Raw != "" {
+		t.Fatalf("approvals = %#v, want one granting a placeholder", ds.approvals)
+	}
+}

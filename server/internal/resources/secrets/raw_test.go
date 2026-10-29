@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
@@ -82,9 +83,9 @@ func TestADiscoboxNeverHandsAValueOnRaw(t *testing.T) {
 	}
 }
 
-// An approval never renews a raw binding: the ask a person approves is for a
+// A sentinel approval never renews a raw binding: the ask a person approves is for a
 // sentinel, and extending the handover would widen what nobody looked at.
-func TestAnApprovalNeverRenewsARawBinding(t *testing.T) {
+func TestASentinelApprovalNeverRenewsARawBinding(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
@@ -202,5 +203,91 @@ func TestARawDeliveryIsRecordedOnlyWhileTheRowIsRaw(t *testing.T) {
 	}
 	if err := st.RecordRawDelivery(ctx, &stale, binding.ID, secret.Revision); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("recording a delivery for a row no longer raw = %v, want not found", err)
+	}
+}
+
+// A person may grant a request the value itself, of a secret that allows it
+// (ADR 26-10-27-840 §2); a discobox may not, and granting it raw again renews
+// a raw binding.
+func TestAPersonMayGrantARequestRaw(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	ask := func() *model.SecretRequest {
+		t.Helper()
+		req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+			SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString("GH_TOKEN"), Hosts: []string{"github.com"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return req
+	}
+	raw := services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID), Raw: serverapi.NewOptApproveSecretRequestBodyRaw(serverapi.ApproveSecretRequestBodyRawFile)}
+	req := ask()
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, raw); !isStatus(err, http.StatusForbidden) {
+		t.Fatalf("granting raw of a secret that does not allow it = %v, want 403", err)
+	}
+	allowRaw(ctx, t, svc, secret)
+	mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: leadID, Delegate: true})
+	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{Raw: raw.Raw}); !isStatus(err, http.StatusForbidden) {
+		t.Fatalf("a discobox granting raw = %v, want 403", err)
+	}
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := st.SecretBindingByExactID(ctx, "project-1", approved.BindingID)
+	if err != nil || binding.Raw != "file" || binding.RequestID != req.ID {
+		t.Fatalf("approved binding = %+v, %v, want a raw file binding answering the request", binding, err)
+	}
+	again, err := svc.ApproveSecretRequest(ctx, "project-1", ask().ID, raw)
+	if err != nil || again.BindingID != binding.ID {
+		t.Fatalf("granting raw again = %+v, %v, want the raw binding renewed", again, err)
+	}
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", ask().ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); !isStatus(err, http.StatusConflict) {
+		t.Fatalf("a sentinel approval over the raw binding = %v, want 409", err)
+	}
+}
+
+// A request to delegate is delivered nothing, so it is granted no raw value.
+func TestADelegationIsGrantedNoRawValue(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, _ := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	allowRaw(ctx, t, svc, secret)
+	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId: testSandboxID, Name: "github", Hosts: []string{"github.com"},
+		Purpose: serverapi.NewOptCreateSandboxCredentialRequestBodyPurpose(serverapi.CreateSandboxCredentialRequestBodyPurposeDelegate),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		SecretId: serverapi.NewOptString(secret.ID), Raw: serverapi.NewOptApproveSecretRequestBodyRaw(serverapi.ApproveSecretRequestBodyRawEnv),
+	}); !isStatus(err, http.StatusBadRequest) {
+		t.Fatalf("granting a delegation raw = %v, want 400", err)
+	}
+}
+
+// A delegation approved over a binding that both holds the value and
+// delegates it is refused, pointing at the binding rather than at a raw grant
+// a delegation cannot take.
+func TestADelegationOverARawBindingPointsAtTheBinding(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	allowRaw(ctx, t, svc, secret)
+	mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: testSandboxID, Use: true, Delegate: true, EnvName: "GH_TOKEN", Raw: "env"})
+	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
+		SandboxId: testSandboxID, Name: "github", Hosts: []string{"github.com"},
+		Purpose: serverapi.NewOptCreateSandboxCredentialRequestBodyPurpose(serverapi.CreateSandboxCredentialRequestBodyPurposeDelegate),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
+	if !isStatus(err, http.StatusConflict) || !strings.Contains(err.Error(), "admin binding update") {
+		t.Fatalf("a delegation over a raw binding = %v, want a 409 pointing at the binding", err)
 	}
 }

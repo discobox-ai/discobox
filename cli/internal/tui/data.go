@@ -1591,6 +1591,9 @@ type Secret struct {
 	// takes when nobody names one. Zero is no limit: bindings of this
 	// credential may then last forever.
 	MaxTTL time.Duration
+	// AllowRaw is whether a person may hand a discobox its value itself
+	// (ADR 26-10-27-840 §1), which an approval then offers.
+	AllowRaw bool
 	// Routes are where it may be sent, whoever holds it (ADR 26-10-27-880
 	// §4): every request it is sent in must fall on one, the most specific
 	// deciding. Empty sends it nowhere; `*` is any host (ADR 26-10-27-939).
@@ -1825,6 +1828,9 @@ type Approval struct {
 	// that left it out was making a binding whose lifetime nobody on this side
 	// had seen. See credentials.go.
 	TTLSeconds int64
+	// Raw grants the value itself, "env" or "file", rather than a sentinel:
+	// the person's choice, never the request's (ADR 26-10-27-840 §2).
+	Raw string
 }
 
 // SourcePush is what one of a discobox's push-delivered sources did when the

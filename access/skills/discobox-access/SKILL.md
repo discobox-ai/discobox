@@ -162,7 +162,8 @@ fields. An unknown field is refused, so a
 typo cannot drop your justification.
 
 A granted request says what you now hold, as the person chose it — the routes
-and lifetime may differ from your ask.
+and lifetime may differ from your ask, and the person may have handed over the
+real value rather than the stand-in, which the answer says (§3).
 
 ## 3. Use it
 

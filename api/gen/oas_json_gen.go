@@ -397,6 +397,12 @@ func (s *ApproveSecretRequestBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Raw.Set {
+			e.FieldStart("raw")
+			s.Raw.Encode(e)
+		}
+	}
+	{
 		if s.Routes != nil {
 			e.FieldStart("routes")
 			e.ArrStart()
@@ -420,11 +426,12 @@ func (s *ApproveSecretRequestBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfApproveSecretRequestBody = [4]string{
+var jsonFieldsNameOfApproveSecretRequestBody = [5]string{
 	0: "$schema",
-	1: "routes",
-	2: "secretId",
-	3: "ttlSeconds",
+	1: "raw",
+	2: "routes",
+	3: "secretId",
+	4: "ttlSeconds",
 }
 
 // Decode decodes ApproveSecretRequestBody from json.
@@ -444,6 +451,16 @@ func (s *ApproveSecretRequestBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
+			}
+		case "raw":
+			if err := func() error {
+				s.Raw.Reset()
+				if err := s.Raw.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"raw\"")
 			}
 		case "routes":
 			if err := func() error {
@@ -502,6 +519,46 @@ func (s *ApproveSecretRequestBody) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *ApproveSecretRequestBody) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ApproveSecretRequestBodyRaw as json.
+func (s ApproveSecretRequestBodyRaw) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ApproveSecretRequestBodyRaw from json.
+func (s *ApproveSecretRequestBodyRaw) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApproveSecretRequestBodyRaw to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ApproveSecretRequestBodyRaw(v) {
+	case ApproveSecretRequestBodyRawEnv:
+		*s = ApproveSecretRequestBodyRawEnv
+	case ApproveSecretRequestBodyRawFile:
+		*s = ApproveSecretRequestBodyRawFile
+	default:
+		*s = ApproveSecretRequestBodyRaw(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ApproveSecretRequestBodyRaw) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApproveSecretRequestBodyRaw) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -18443,6 +18500,39 @@ func (s *ObservedCertificate) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes ApproveSecretRequestBodyRaw as json.
+func (o OptApproveSecretRequestBodyRaw) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes ApproveSecretRequestBodyRaw from json.
+func (o *OptApproveSecretRequestBodyRaw) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptApproveSecretRequestBodyRaw to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptApproveSecretRequestBodyRaw) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptApproveSecretRequestBodyRaw) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes bool as json.
 func (o OptBool) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -22324,6 +22414,39 @@ func (s OptSandboxCredentialRaw) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptSandboxCredentialRaw) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxCredentialRequestStatusRaw as json.
+func (o OptSandboxCredentialRequestStatusRaw) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes SandboxCredentialRequestStatusRaw from json.
+func (o *OptSandboxCredentialRequestStatusRaw) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxCredentialRequestStatusRaw to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxCredentialRequestStatusRaw) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxCredentialRequestStatusRaw) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -40654,6 +40777,12 @@ func (s *SandboxCredentialRequestStatus) encodeFields(e *jx.Encoder) {
 		s.Purpose.Encode(e)
 	}
 	{
+		if s.Raw.Set {
+			e.FieldStart("raw")
+			s.Raw.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("requestId")
 		e.Str(s.RequestId)
 	}
@@ -40663,15 +40792,16 @@ func (s *SandboxCredentialRequestStatus) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxCredentialRequestStatus = [8]string{
+var jsonFieldsNameOfSandboxCredentialRequestStatus = [9]string{
 	0: "$schema",
 	1: "envVar",
 	2: "expiresAt",
 	3: "hosts",
 	4: "name",
 	5: "purpose",
-	6: "requestId",
-	7: "status",
+	6: "raw",
+	7: "requestId",
+	8: "status",
 }
 
 // Decode decodes SandboxCredentialRequestStatus from json.
@@ -40679,7 +40809,7 @@ func (s *SandboxCredentialRequestStatus) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode SandboxCredentialRequestStatus to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -40752,8 +40882,18 @@ func (s *SandboxCredentialRequestStatus) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"purpose\"")
 			}
+		case "raw":
+			if err := func() error {
+				s.Raw.Reset()
+				if err := s.Raw.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"raw\"")
+			}
 		case "requestId":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.RequestId = string(v)
@@ -40765,7 +40905,7 @@ func (s *SandboxCredentialRequestStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"requestId\"")
 			}
 		case "status":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -40783,8 +40923,9 @@ func (s *SandboxCredentialRequestStatus) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b11100000,
+	for i, mask := range [2]uint8{
+		0b10100000,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -40866,6 +41007,46 @@ func (s SandboxCredentialRequestStatusPurpose) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxCredentialRequestStatusPurpose) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxCredentialRequestStatusRaw as json.
+func (s SandboxCredentialRequestStatusRaw) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SandboxCredentialRequestStatusRaw from json.
+func (s *SandboxCredentialRequestStatusRaw) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxCredentialRequestStatusRaw to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SandboxCredentialRequestStatusRaw(v) {
+	case SandboxCredentialRequestStatusRawEnv:
+		*s = SandboxCredentialRequestStatusRawEnv
+	case SandboxCredentialRequestStatusRawFile:
+		*s = SandboxCredentialRequestStatusRawFile
+	default:
+		*s = SandboxCredentialRequestStatusRaw(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxCredentialRequestStatusRaw) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxCredentialRequestStatusRaw) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

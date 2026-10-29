@@ -4697,6 +4697,12 @@ components:
                         - use
                         - delegate
                     type: string
+                raw:
+                    description: "Once granted, the person approving handed over the value itself rather than a sentinel (ADR 26-10-27-840): in envVar (env), or the path of a file holding it there (file)."
+                    enum:
+                        - env
+                        - file
+                    type: string
                 requestId:
                     description: Request ID to poll
                     type: string
@@ -5748,6 +5754,12 @@ components:
                     example: https://example.com/schemas/ApproveSecretRequestBody.json
                     format: uri
                     readOnly: true
+                    type: string
+                raw:
+                    description: "Grant the value itself rather than a sentinel (ADR 26-10-27-840): env in the variable the request named, file the path of a file holding it there. A person's choice alone - no request asks for it - and only of a secret that allows raw. Absent grants a sentinel."
+                    enum:
+                        - env
+                        - file
                     type: string
                 routes:
                     description: Routes the binding is approved for, narrowing the secret's; omitted takes the routes the request asked for

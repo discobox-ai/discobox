@@ -158,6 +158,20 @@ func TestListSaysACredentialIsHeldRaw(t *testing.T) {
 	}
 }
 
+// A request a person granted raw says so once granted (ADR 26-10-27-840 §2),
+// so the agent waiting on it knows its variable holds the value or a file's
+// path rather than a placeholder.
+func TestAGrantedRequestSaysItWasGrantedRaw(t *testing.T) {
+	granted := credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Name: "aws", EnvVar: "AWS_SECRET_ACCESS_KEY", Raw: agentcreds.RawEnv}.protocol()
+	if granted.Credential == nil || granted.Credential.Raw != agentcreds.RawEnv {
+		t.Fatalf("granted = %+v, want the credential held raw in its variable", granted)
+	}
+	pending := credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusPending, Raw: agentcreds.RawEnv}.protocol()
+	if pending.Credential != nil {
+		t.Fatalf("pending = %+v, want no credential before it is granted", pending)
+	}
+}
+
 // A refusal reaches the sandbox as a refusal, in the control plane's words,
 // rather than as an outage two hops away.
 func TestAControlPlaneRefusalIsADenial(t *testing.T) {
