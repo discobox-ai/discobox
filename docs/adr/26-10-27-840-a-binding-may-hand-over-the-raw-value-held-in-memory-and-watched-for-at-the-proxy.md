@@ -49,10 +49,13 @@ of that is acceptable for a raw value, so it cannot ride the sentinel path.
 
 ### 2. Only a person makes a binding raw, and nothing asks for it
 
-A raw binding is written only by a person: directly, or at create. No request
-asks for raw, so no approval makes one, and none extends one: a request for
-a variable a raw binding delivers is refused, since the approver is shown a
-sentinel ask, and a person renews the raw binding itself. A `Delegate` holder hands on `Use` without `Raw`
+A raw binding is written only by a person: directly, at create, or by
+choosing to grant a request the value itself when approving it. No request
+asks for raw: the approver is shown a sentinel ask, and the value is their
+choice, offered only for a secret that allows it. An approval extends a raw
+binding only when it grants the value again; a sentinel approval of a
+variable a raw binding delivers is refused, since renewing the handover
+through it would widen what nobody looked at. A `Delegate` holder hands on `Use` without `Raw`
 (§3 of 26-10-27-880 stays the only way a sandbox gives a binding), and a
 binding written under a parent is never raw. A raw value cannot be taken back
 once seen, so who saw it is a person's decision.
@@ -162,6 +165,12 @@ match rather than by swap; a refusal names the binding.
 - **An agent may ask for raw.** A request is how an agent gets what it was
   not given; a raw value is one a person decides to give. Letting an agent
   ask turns the decision into an approval of its words.
+- **No approval grants raw** (as this ADR first read once requests lost
+  raw). A program's need for the value is usually found when its agent asks
+  for the credential; making the person who answers bind again by hand to
+  give what they already decided to give adds a step and no control. The
+  approver chooses, as they choose the secret and the lifetime; what keeps it
+  a choice is that the request cannot ask.
 - **Deliver the value with the runtime-config document.** The document is
   recorded where it is decided and where it is applied, and redelivered from
   the record; carrying a value it never records would special-case its
