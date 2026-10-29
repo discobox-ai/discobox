@@ -218,15 +218,29 @@ its secret blocks, and a person reading any one list reads all it allows.
 Protocol matching reads what the request does, never what it says it does:
 
 - **GraphQL** matches the parsed document's operation type and root fields,
-  with root fragment spreads expanded. `operationName` is never read. Batched
-  bodies match only if every operation does. A persisted-query hash with no
-  document does not match.
+  with root fragment spreads expanded, read from the body and from a `query`
+  in the URL alike. `operationName` is never read. A persisted-query hash
+  with no document is unreadable.
 - **MCP** constrains `tools/call` by `params.name`. The protocol's own methods
-  (`initialize`, `tools/list`, `ping`, `notifications/*`) are allowed under a
-  route that names tools. JSON-RPC batches match only if every call does.
+  (`initialize`, `tools/list`, `ping`, `notifications/*`), JSON-RPC responses
+  to the server's own requests, and the empty GET and DELETE that open and
+  end a session call no tool and are allowed under a route that names tools.
+- **Methods** are read from the request line and from every method override a
+  server may honour instead: `X-HTTP-Method-Override` and its variants, a
+  `_method` in the query, and on a POST a `_method` in a form body, a body
+  with no Content-Type, or a JSON body. A JSON or multipart POST body that
+  cannot be read at all counts against blocked method routes only, so a large
+  request is not refused under an open one; a body read but ambiguous, and an
+  unreadable form, refuse open routes too (unreadable, never unparsable).
 - A route with a protocol block needs the body. A body past the capture limit,
-  one that does not parse, or one in an encoding the proxy cannot decode,
-  does not match. Upgraded connections do not match a protocol block.
+  one that does not parse, one in an encoding the proxy cannot decode, or an
+  upgraded connection is unreadable.
+- Open and blocked routes read what they cannot settle in opposite
+  directions, so neither can be stepped around: an open route matches only
+  when every operation, call and method falls inside it and the body was
+  read; a blocked route matches when any one does, or when the body is
+  unreadable. A batch mixing a query with a mutation is refused under
+  `graphql=mutation=blocked`, and so is a body too large to read.
 
 Patterns stay that small on purpose: literal values with `*.` host prefixes,
 segment globs, and at most a trailing `*` in a tool or field name.
