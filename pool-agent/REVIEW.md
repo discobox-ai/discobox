@@ -250,11 +250,14 @@ durable state asks the same question.
 - **A listener that takes `proxy.PoolClientHeader` as its only word on who is
   asking is on a socket, never a loopback port.** The proxy strips and sets
   the header only on the pool-host path; it sends a sandbox's ordinary egress
-  from the pool's network namespace, so a box can reach a loopback port
-  through its proxy with a header of its own and be answered as another
-  sandbox. The asset cache is on `layout.ProxyAssetsSocket` for this reason
-  (#265's review). The origins listener may stay on loopback only because it
-  also requires the pool's sandbox token for the sandbox it names.
+  from the pool's network namespace, so only its refusal of its own loopback
+  (ADR 26-10-29-160 §3) keeps a box from reaching a loopback port with a
+  header of its own and being answered as another sandbox. That is one check;
+  a socket no egress can name is the boundary. The asset cache
+  (`layout.ProxyAssetsSocket`, #265's review) and the registry front
+  (`layout.ProxyRegistrySocket`) are on sockets for this reason. The origins
+  listener may stay on loopback only because it also requires the pool's
+  sandbox token for the sandbox it names.
 - **Nothing keyed on a loopback source trusts it, or caps it as no caller.**
   For the same reason, 127.0.0.1 is any sandbox's own egress: a limit or a
   trust keyed by source address must treat it as one untrusted caller. The
@@ -265,6 +268,29 @@ durable state asks the same question.
 - **The pool cache and the server's asset store read a bundle the same way.**
   Manifest parsing, a pin's reach and the damaged-blob rule live in
   `imagecache`; a change to one store's reading belongs there, not in a copy.
+
+## The pool registry
+
+- **Every registry reference a solve names is bound to the caller's
+  namespace** (`bindToNamespace`, `bindGatewaySolve`): a new place a solve can
+  name an image or a cache — an exporter, a cache entry, a frontend attribute
+  — goes through `bindRef` or the source policy. A sandbox ID is not a secret,
+  so one reference left unbound is a write into, or read of, a peer's
+  namespace (#380's review).
+- **Binding by name is enough only while the registry admits the pool
+  builder's certificate alone, and buildkitd presents it for `RegistryHost`
+  alone** (`registrytls.go`). That is what makes every other name for the
+  registry's address reach nothing, so `bindRef` can match the one address
+  exactly. Giving buildkitd's keypair a second host, declaring the registry
+  `http`/`insecure` again, dropping its client CAs, or signing a second client
+  from its CA each reopens cross-sandbox reads and writes without touching the
+  binding.
+- **Every runtime's `DeleteSandbox` runs every shared purge step.** The
+  sandbox's policy, its proxy material, its registry namespace
+  (`sandboxCore.removePublishedImages`) and its tree are each removed by both
+  the Docker and the machine runtime; a step added for one is added to the
+  other. The machine runtime once skipped the registry namespace the Docker
+  runtime removed, though both pools build.
 
 ## Snapshots
 
@@ -361,6 +387,7 @@ never this runtime's to remove.
   wrapper) is judged against that. Nothing on the builder's path may assume
   a Docker pool's network either — the pool's name resolves on a pool
   machine only through `ensurePoolName`, which this path has missed once
-  already — and that name is the hosts file's, never a resolver's: the
-  registry it names is plaintext and unauthenticated, so whoever answers it
-  receives every build's output.
+  already — and that name is the hosts file's, never a resolver's: a build
+  step's forwarder dials the pool proxy by it with the owning sandbox's
+  client certificate, so whoever answers it is handed that sandbox's egress.
+  The registry is not named that way: buildkitd pushes to it on loopback.

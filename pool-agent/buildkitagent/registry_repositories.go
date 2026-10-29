@@ -25,21 +25,28 @@ import (
 // directory per repository name.
 const registryRepositoriesDir = "docker/registry/v2/repositories"
 
-// repositoryNamespacePattern is a single repository path component, matching
-// what proxyagent mints. It is re-checked here because this value chooses a
-// directory to delete recursively: a namespace carrying a separator or a `..`
-// would name a tree that is not the sandbox's.
-var repositoryNamespacePattern = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`)
+// repositoryNamespacePattern is a single repository path component: a sandbox
+// ID, which is a sandbox's namespace (ADR 26-10-29-160 §2), as the
+// distribution spec's grammar allows one. It is checked wherever a namespace
+// is taken from something a sandbox names, and here because this value
+// chooses a directory to delete recursively: a namespace carrying a separator
+// or a `..` would name a tree that is not the sandbox's.
+var repositoryNamespacePattern = regexp.MustCompile(`^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*$`)
 
-// RemoveRegistryNamespace deletes every repository a sandbox published under
-// its namespace. It is idempotent: a sandbox that never built has no directory,
-// and that is not an error.
+// validNamespace reports whether a sandbox ID can be a registry namespace.
+func validNamespace(namespace string) bool {
+	return repositoryNamespacePattern.MatchString(namespace)
+}
+
+// RemoveRegistryNamespace deletes every repository published under a
+// namespace: a sandbox's, which is its ID. It is idempotent: a sandbox that
+// never built has no directory, and that is not an error.
 func RemoveRegistryNamespace(root layout.Root, projectID, poolID, namespace string) error {
 	namespace = strings.TrimSpace(namespace)
 	if namespace == "" {
 		return nil
 	}
-	if !repositoryNamespacePattern.MatchString(namespace) {
+	if !validNamespace(namespace) {
 		return fmt.Errorf("registry namespace %q is not a repository path component", namespace)
 	}
 	dir := filepath.Join(RegistryRoot(root, projectID, poolID), registryRepositoriesDir, namespace)

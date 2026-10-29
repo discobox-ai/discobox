@@ -29,7 +29,7 @@ import (
 // PoolProxyURL mirrors proxyagent.PoolProxyURL. It is duplicated rather than
 // imported for the same reason the rest of this package duplicates it: the
 // builder's wiring does not depend on the proxy's.
-const PoolProxyURL = "https://" + RegistryServerName + ":17080"
+const PoolProxyURL = "https://" + PoolServerName + ":17080"
 
 // BuildProxyAddress is where a per-build forwarder listens, inside the build
 // step's own network namespace. Everything that binds, injects, or recognizes

@@ -12460,20 +12460,13 @@ func (s *SandboxRuntimeConfigProxy) encodeFields(e *jx.Encoder) {
 		e.FieldStart("mtlsCa")
 		e.Str(s.MtlsCa)
 	}
-	{
-		if s.RegistryNamespace.Set {
-			e.FieldStart("registryNamespace")
-			s.RegistryNamespace.Encode(e)
-		}
-	}
 }
 
-var jsonFieldsNameOfSandboxRuntimeConfigProxy = [5]string{
+var jsonFieldsNameOfSandboxRuntimeConfigProxy = [4]string{
 	0: "clientCert",
 	1: "clientKey",
 	2: "mitmCa",
 	3: "mtlsCa",
-	4: "registryNamespace",
 }
 
 // Decode decodes SandboxRuntimeConfigProxy from json.
@@ -12530,16 +12523,6 @@ func (s *SandboxRuntimeConfigProxy) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"mtlsCa\"")
-			}
-		case "registryNamespace":
-			if err := func() error {
-				s.RegistryNamespace.Reset()
-				if err := s.RegistryNamespace.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"registryNamespace\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

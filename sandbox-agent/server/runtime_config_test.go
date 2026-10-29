@@ -262,11 +262,10 @@ func TestRuntimeConfigWireRoundTrip(t *testing.T) {
 		Agent:     sandboxconfig.RuntimeAgent{IdleTimeout: "1h0m0s", ControlPlanePower: true},
 		SecretEnv: map[string]string{"A": "sentinel-a"},
 		Proxy: &sandboxconfig.RuntimeProxy{
-			MTLSCA:            "mtls",
-			MITMCA:            "mitm",
-			ClientCert:        "cert",
-			ClientKey:         "key",
-			RegistryNamespace: "ns",
+			MTLSCA:     "mtls",
+			MITMCA:     "mitm",
+			ClientCert: "cert",
+			ClientKey:  "key",
 		},
 		Sources: []sandboxconfig.RuntimeSource{{Slug: "primary", Target: "/workspace", OriginURL: "https://pool/o", OriginToken: "token", Commit: "abc", Delivered: true}},
 	}

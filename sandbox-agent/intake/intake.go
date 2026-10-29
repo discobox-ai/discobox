@@ -397,7 +397,11 @@ const (
 	egressBridgeFile       = "bridge.json"
 	nestedDockerBridgeFile = "bridge-docker.json"
 	buildKitBridgeFile     = "bridge-buildkit.json"
-	registryNamespaceFile  = "registry-namespace"
+	// registryNamespaceFile held the unguessable registry namespace a pool
+	// before ADR 26-10-29-160 minted. Nothing delivers it now — a sandbox's
+	// namespace is its ID — and it is named only so an older sandbox's is
+	// removed.
+	registryNamespaceFile = "registry-namespace"
 )
 
 // proxyFileNames is every file the proxy directory may hold, so that what a
@@ -468,10 +472,6 @@ func proxyFiles(dir string, pool *sandboxconfig.PoolEndpoints, proxy *sandboxcon
 				}
 				files[name] = op{data: data, mode: 0o600}
 			}
-		}
-		if proxy.RegistryNamespace != "" {
-			//nolint:gosec // readable inside the sandbox by design, as the pool staged it.
-			files[registryNamespaceFile] = op{data: []byte(proxy.RegistryNamespace + "\n"), mode: 0o644}
 		}
 	}
 	ops := make([]op, 0, len(proxyFileNames))

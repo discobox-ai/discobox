@@ -101,11 +101,11 @@ func TestAReferenceNamingARegistryIsLeftAlone(t *testing.T) {
 }
 
 func TestTheNamespacedReferenceKeepsTheNameAndTag(t *testing.T) {
-	got, err := namespacedRef("sbx-abc123", "discobox-sandbox-agent:local")
+	got, err := namespacedRef("sbx_abc123", "discobox-sandbox-agent:local")
 	if err != nil {
 		t.Fatalf("namespacedRef: %v", err)
 	}
-	want := PoolRegistry + "/sbx-abc123/discobox-sandbox-agent:local"
+	want := PoolRegistry + "/sbx_abc123/discobox-sandbox-agent:local"
 	if got != want {
 		t.Fatalf("ref = %q, want %q", got, want)
 	}
@@ -114,21 +114,21 @@ func TestTheNamespacedReferenceKeepsTheNameAndTag(t *testing.T) {
 // An unqualified name with a path is flattened rather than becoming a
 // namespace inside the sandbox's own.
 func TestAPathInTheNameIsFlattened(t *testing.T) {
-	got, err := namespacedRef("sbx-abc123", "team/thing:local")
+	got, err := namespacedRef("sbx_abc123", "team/thing:local")
 	if err != nil {
 		t.Fatalf("namespacedRef: %v", err)
 	}
-	if want := PoolRegistry + "/sbx-abc123/team_thing:local"; got != want {
+	if want := PoolRegistry + "/sbx_abc123/team_thing:local"; got != want {
 		t.Fatalf("ref = %q, want %q", got, want)
 	}
 }
 
 func TestAnUntaggedBaseGetsLatest(t *testing.T) {
-	got, err := namespacedRef("sbx-abc123", "myimage")
+	got, err := namespacedRef("sbx_abc123", "myimage")
 	if err != nil {
 		t.Fatalf("namespacedRef: %v", err)
 	}
-	if want := PoolRegistry + "/sbx-abc123/myimage:latest"; got != want {
+	if want := PoolRegistry + "/sbx_abc123/myimage:latest"; got != want {
 		t.Fatalf("ref = %q, want %q", got, want)
 	}
 }
@@ -160,14 +160,11 @@ func TestBuildArgsAreReadInBothSpellings(t *testing.T) {
 	}
 }
 
-// A sandbox with no namespace staged gets no redirects: the pool has not given
-// this sandbox a place to publish to, and a build is better off unchanged than
-// pointed somewhere that does not exist.
+// A sandbox with no namespace gets no redirects: it has no place to publish
+// to, and a build is better off unchanged than pointed somewhere that does not
+// exist.
 func TestWithoutANamespaceNothingIsRedirected(t *testing.T) {
-	namespacePath = filepath.Join(t.TempDir(), "absent")
-	t.Cleanup(func() { namespacePath = registryNamespaceFile })
-
-	if got := localBaseContexts(t.Context(), []string{"build", "."}); got != nil {
+	if got := localBaseContexts(t.Context(), []string{"build", "."}, ""); got != nil {
 		t.Fatalf("contexts = %v, want none without a namespace", got)
 	}
 }
@@ -175,14 +172,9 @@ func TestWithoutANamespaceNothingIsRedirected(t *testing.T) {
 // A Dockerfile that cannot be read is not a build to interfere with.
 func TestAnUnreadableDockerfileIsLeftAlone(t *testing.T) {
 	dir := t.TempDir()
-	namespacePath = filepath.Join(dir, "ns")
-	if err := os.WriteFile(namespacePath, []byte("sbx-abc123\n"), 0o600); err != nil {
-		t.Fatalf("stage namespace: %v", err)
-	}
-	t.Cleanup(func() { namespacePath = registryNamespaceFile })
 
 	args := []string{"build", "-f", filepath.Join(dir, "nope.Dockerfile"), dir}
-	if got := localBaseContexts(t.Context(), args); got != nil {
+	if got := localBaseContexts(t.Context(), args, "sbx_abc123"); got != nil {
 		t.Fatalf("contexts = %v, want none for a Dockerfile that is not there", got)
 	}
 }
@@ -191,17 +183,12 @@ func TestAnUnreadableDockerfileIsLeftAlone(t *testing.T) {
 // where they come from and the pool builder can reach the same place.
 func TestARemoteOnlyBuildPublishesNothing(t *testing.T) {
 	dir := t.TempDir()
-	namespacePath = filepath.Join(dir, "ns")
-	if err := os.WriteFile(namespacePath, []byte("sbx-abc123\n"), 0o600); err != nil {
-		t.Fatalf("stage namespace: %v", err)
-	}
-	t.Cleanup(func() { namespacePath = registryNamespaceFile })
 
 	dockerfile := filepath.Join(dir, "Dockerfile")
 	if err := os.WriteFile(dockerfile, []byte("FROM ghcr.io/example/thing:v1\nRUN true\n"), 0o600); err != nil {
 		t.Fatalf("stage Dockerfile: %v", err)
 	}
-	if got := localBaseContexts(t.Context(), []string{"build", "-f", dockerfile, dir}); got != nil {
+	if got := localBaseContexts(t.Context(), []string{"build", "-f", dockerfile, dir}, "sbx_abc123"); got != nil {
 		t.Fatalf("contexts = %v, want none for a base that names its registry", got)
 	}
 }

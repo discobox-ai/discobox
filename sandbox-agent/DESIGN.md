@@ -667,6 +667,13 @@ side is in [pool-agent/DESIGN.md](../pool-agent/DESIGN.md)). The pieces here:
 - `dockercache` rewrites `docker build` onto a buildx `remote` instance and
   brings the result back through the pool registry. It pushes to a name
   synthesized per build, pulls it back, and applies the user's tags locally.
+  The registry is `registry.discobox.internal`, a host the pool proxy answers
+  ([ADR 26-10-29-160](../docs/adr/26-10-29-160-a-sandbox-reaches-its-pools-build-registry-at-a-host-its-pool-proxy-answers.md)):
+  dockerd reaches it over HTTPS through the egress proxy like any registry,
+  trusting the MITM CA it already trusts, and is admitted to this sandbox's
+  namespace alone — its ID, which the shim reads from `sandbox.json`. Every
+  name the shim pushes or points a build at is under it; with no ID to read,
+  the build is left to run here.
   Attestations are disabled unless asked for: buildx attests provenance
   whenever the output is a registry, and that provenance describes the build
   rather than its result, so identical content would otherwise get a different
@@ -698,8 +705,6 @@ side is in [pool-agent/DESIGN.md](../pool-agent/DESIGN.md)). The pieces here:
   `127.0.0.1:17082` to the pool mediator over mTLS — for the same reason the
   proxy bridge exists at all: buildx would otherwise need the sandbox's client
   certificate, and the sandbox user cannot read a key only root should hold.
-- `daemon.json` marks the pool registry insecure, because it speaks plaintext
-  HTTP over a network with no route off-box.
 - `daemon.json` names the DNS stub's address (`sandboxconfig.SandboxDNSAddress`)
   as the nested containers' name server. The sandbox's own `nameserver` is
   Docker's loopback `127.0.0.11`, which the nested daemon discards, so its

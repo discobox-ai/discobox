@@ -26,9 +26,13 @@ package dockercache
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandbox-agent/proxyenv"
 )
 
 // realDocker is the docker CLI this shim wraps. The shim installs as
@@ -63,18 +67,28 @@ const (
 	// daemon what it already holds. A registry is content-addressed at both
 	// ends: the push uploads only blobs the registry lacks, and the pull fetches
 	// only blobs this daemon lacks.
-	PoolRegistry = "discobox-pool-proxy:5000"
+	//
+	// It is a host the pool proxy answers, reached over HTTPS through the
+	// egress proxy like anything else, which admits this sandbox to its own
+	// namespace alone: the sandbox ID (ADR 26-10-29-160).
+	PoolRegistry = "registry.discobox.internal"
 
-	// buildRepo is the repository every build's result is pushed to. A push
-	// needs a name and the user's own tag cannot serve as one — it may already
-	// name a registry this pool cannot reach, or one they did not mean to
-	// publish to — so a reference is synthesized here per build.
+	// buildRepo is the repository every build's result is pushed to, under
+	// the sandbox's namespace. A push needs a name and the user's own tag
+	// cannot serve as one — it may already name a registry this pool cannot
+	// reach, or one they did not mean to publish to — so a reference is
+	// synthesized here per build.
 	//
 	// The leading component may not start with `_`: a repository path component
 	// must begin with an alphanumeric, and a name that violates the reference
 	// grammar is rejected by the client before any build starts.
 	buildRepo = "discobox-build"
 )
+
+// manifestPath is the sandbox's bootstrap, which names the sandbox and so its
+// namespace in the pool registry. It is a variable only so tests can point it
+// at a fixture; production never reassigns it.
+var manifestPath = proxyenv.DefaultSandboxJSON
 
 // bridgeConfigPath locates the forwarder's config. It is a variable only so
 // tests can point it at a fixture; production never reassigns it.
@@ -94,6 +108,9 @@ type Args struct {
 	// RegistryRef is the synthesized reference this build pushes to and is
 	// pulled back from.
 	RegistryRef string
+	// Namespace is this sandbox's namespace in the pool registry, which
+	// RegistryRef and any local base the build is pointed at are under.
+	Namespace string
 	// Tags are the tags the user asked for, applied locally after the pull.
 	Tags []string
 	// Quiet reports that the user asked for `-q`, whose whole contract is the
@@ -124,6 +141,12 @@ func Rewrite(args []string) Args {
 		// is worse than sharing a cache, but far better than failing.
 		return pass()
 	}
+	namespace := registryNamespace()
+	if namespace == "" {
+		// Nowhere in the pool registry this sandbox may push to, so nowhere
+		// its result could come back from.
+		return pass()
+	}
 
 	// An explicit output is the user saying where the result goes; pushing it
 	// somewhere of our choosing as well would be wrong.
@@ -132,7 +155,7 @@ func Rewrite(args []string) Args {
 	}
 
 	tags, rest := splitTags(args[idx+1:])
-	ref := newRegistryRef()
+	ref := newRegistryRef(namespace)
 	rewritten := make([]string, 0, len(args)+8)
 	rewritten = append(rewritten, args[:idx]...)
 	// `docker build` is an alias for `docker buildx build`, but it pins the
@@ -155,6 +178,7 @@ func Rewrite(args []string) Args {
 		Argv:        append([]string{dockerCLI}, rewritten...),
 		Rewritten:   true,
 		RegistryRef: ref,
+		Namespace:   namespace,
 		Tags:        tags,
 		Quiet:       hasQuietFlag(args[idx:]),
 		IIDFile:     iidFile(args[idx:]),
@@ -216,6 +240,20 @@ func quietInShortCluster(cluster string) bool {
 		}
 	}
 	return false
+}
+
+// registryNamespace is this sandbox's namespace in the pool registry: its ID,
+// as its bootstrap names it, or "" when that cannot be read.
+func registryNamespace() string {
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return ""
+	}
+	var manifest sandboxconfig.Config
+	if json.Unmarshal(data, &manifest) != nil {
+		return ""
+	}
+	return strings.TrimSpace(manifest.SandboxID)
 }
 
 // poolBuilderAvailable reports whether this sandbox's pool runs a builder. The

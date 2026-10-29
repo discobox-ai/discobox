@@ -1,11 +1,14 @@
 package buildkitagent_test
 
 import (
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
+
+	"golang.org/x/net/http/httpproxy"
 
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
@@ -99,15 +102,28 @@ func TestRegistryStoresBlobsUnderItsOwnPoolRootAndAllowsDeletes(t *testing.T) {
 	}
 }
 
-func TestBuilderTreatsThePoolRegistryAsPlaintext(t *testing.T) {
+// The registry is reached over mTLS with the pool builder's certificate, which
+// buildkitd presents for the registry's own address alone, and the registry
+// admits no client without it (ADR 26-10-29-160 §3).
+func TestTheRegistryAdmitsOnlyThePoolBuilder(t *testing.T) {
 	root := prepare(t)
 	cfg := read(t, root, buildkitagent.ConfigFile)
-
-	// The pool registry has no TLS: it is reachable only over the per-pool
-	// internal network. buildkitd defaults to HTTPS, so without this every push
-	// fails with a TLS handshake error against a plaintext listener.
-	if !strings.Contains(cfg, buildkitagent.RegistryHost) || !strings.Contains(cfg, "http = true") {
-		t.Errorf("pool registry is not declared plaintext:\n%s", cfg)
+	dir := buildkitagent.RegistryTLSDir(root, "proj", "pool")
+	if !strings.Contains(cfg, `[registry."`+buildkitagent.RegistryHost+`"]`) || !strings.Contains(cfg, "keypair") || !strings.Contains(cfg, dir) {
+		t.Errorf("buildkitd presents no certificate to the registry:\n%s", cfg)
+	}
+	// Left unsaid, buildkitd speaks plaintext to a loopback registry.
+	if !strings.Contains(cfg, "http = false") || strings.Contains(cfg, "insecure") {
+		t.Errorf("buildkitd reaches the registry in plaintext:\n%s", cfg)
+	}
+	env := read(t, root, buildkitagent.RegistryEnvironmentFile)
+	for _, name := range []string{"REGISTRY_HTTP_TLS_CERTIFICATE", "REGISTRY_HTTP_TLS_KEY", "REGISTRY_HTTP_TLS_CLIENTCAS"} {
+		if !strings.Contains(lineFor(t, env, name), dir) {
+			t.Errorf("%s does not name the registry's own material:\n%s", name, env)
+		}
+	}
+	if _, err := buildkitagent.RegistryClientTLS(root, "proj", "pool"); err != nil {
+		t.Fatalf("the front cannot load the pool builder's certificate: %v", err)
 	}
 }
 
@@ -126,51 +142,35 @@ func TestPrepareForwardsProxyEnvironmentToBothUnits(t *testing.T) {
 	}
 }
 
-func TestThePoolRegistryIsNeverReachedThroughTheProxy(t *testing.T) {
-	// NO_PROXY and no_proxy are two variables in the guest this runs in, and
-	// both are conventionally set — which is why proxyEnvironment carries both
-	// spellings. Windows environment names are case-insensitive, so the second
-	// Setenv below overwrites the first and the premise cannot be staged there.
-	if runtime.GOOS == "windows" {
-		t.Skip("NO_PROXY and no_proxy are one variable on Windows; the pool agent runs in the Linux guest")
-	}
-	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:17008")
-	t.Setenv("NO_PROXY", "127.0.0.1,localhost")
-	t.Setenv("no_proxy", "127.0.0.1,localhost")
+// The registry leaves the pool's network: it binds loopback alone, and the
+// front is how a sandbox reaches it (ADR 26-10-29-160 §3). Its upload
+// locations name no host, since buildkitd and a sandbox reach it at different
+// ones.
+func TestThePoolRegistryListensOnLoopbackAlone(t *testing.T) {
 	root := prepare(t)
+	env := read(t, root, buildkitagent.RegistryEnvironmentFile)
 
-	// Declaring the registry plaintext is not enough on its own: a proxied
-	// request never reaches it as plaintext. The MITM proxy answers the
-	// registry's port over TLS, so a push fails with `EOF` against a URL the
-	// builder never spelled as https — which reads as a broken registry rather
-	// than as a routing mistake.
-	for _, file := range []string{buildkitagent.UnitEnvironmentFile, buildkitagent.RegistryEnvironmentFile} {
-		body := read(t, root, file)
-		for _, name := range []string{"NO_PROXY", "no_proxy"} {
-			line := lineFor(t, body, name)
-			if !strings.Contains(line, buildkitagent.RegistryServerName) {
-				t.Errorf("%s: %s does not bypass the pool registry: %q", file, name, line)
-			}
-			if !strings.Contains(line, "127.0.0.1") {
-				t.Errorf("%s: %s dropped what the pool already bypassed: %q", file, name, line)
-			}
-		}
+	addr := strings.TrimPrefix(lineFor(t, env, "REGISTRY_HTTP_ADDR"), "REGISTRY_HTTP_ADDR=")
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		t.Errorf("the registry binds %s, which is not loopback", addr)
+	}
+	if lineFor(t, env, "REGISTRY_HTTP_RELATIVEURLS") != "REGISTRY_HTTP_RELATIVEURLS=true" {
+		t.Errorf("upload locations name a host:\n%s", env)
 	}
 }
 
-func TestTheRegistryIsBypassedEvenWithNoInheritedNoProxy(t *testing.T) {
-	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:17008")
-	t.Setenv("NO_PROXY", "")
-	t.Setenv("no_proxy", "")
-	root := prepare(t)
-
-	// A pool that set no NO_PROXY at all still must not proxy its own
-	// registry, so the variable is written rather than only amended.
-	for _, name := range []string{"NO_PROXY", "no_proxy"} {
-		line := lineFor(t, read(t, root, buildkitagent.UnitEnvironmentFile), name)
-		if !strings.Contains(line, buildkitagent.RegistryServerName) {
-			t.Errorf("%s does not bypass the pool registry: %q", name, line)
-		}
+// The builder pushes to the registry directly whatever proxy it inherited:
+// Go's proxy selection never proxies loopback, which is what lets the units
+// carry the agent's proxy environment with no exception for the registry.
+func TestThePoolRegistryIsNeverReachedThroughTheProxy(t *testing.T) {
+	proxyFor := (&httpproxy.Config{HTTPProxy: "http://127.0.0.1:17008", HTTPSProxy: "http://127.0.0.1:17008"}).ProxyFunc()
+	via, err := proxyFor(&url.URL{Scheme: "http", Host: buildkitagent.RegistryHost})
+	if err != nil || via != nil {
+		t.Fatalf("a push to %s goes through %v (%v)", buildkitagent.RegistryHost, via, err)
 	}
 }
 

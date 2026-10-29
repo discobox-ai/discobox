@@ -240,8 +240,8 @@ sandbox, delivered as one revisioned document to the sandbox agent's
 - **Contents.** `Agent` — the sandbox-agent settings the pool may change
   (`idleTimeout`, applied to the running agent when delivered). `SecretEnv` —
   env name to sentinel, never a resolved value (the Secrets rule above is
-  unchanged). `Proxy` — the CAs, the sandbox's client keypair (the key is
-  delivered, never read back) and the registry namespace: the credential only.
+  unchanged). `Proxy` — the CAs and the sandbox's client keypair (the key is
+  delivered, never read back): the credential only.
   Where the pool is comes from the bootstrap and where the sandbox listens is
   its own, so the document carries no bridge; the sandbox renders its bridge
   configs from the three. `Sources` — per source, its in-sandbox `Target`

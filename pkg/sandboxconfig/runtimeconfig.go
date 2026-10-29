@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -114,8 +113,6 @@ type RuntimeProxy struct {
 	// back: a document the sandbox keeps or answers with leaves it out.
 	ClientCert string `json:"clientCert"`
 	ClientKey  string `json:"clientKey,omitempty"`
-	// RegistryNamespace is the sandbox's namespace in the pool build registry.
-	RegistryNamespace string `json:"registryNamespace,omitempty"`
 }
 
 // RuntimeSource is one of the sandbox's sources as the pool sees it: where its
@@ -169,10 +166,6 @@ func (c RuntimeConfig) SameDocument(other RuntimeConfig) bool {
 	b, errB := json.Marshal(other)
 	return errA == nil && errB == nil && bytes.Equal(a, b)
 }
-
-// registryNamespacePattern is a single repository path component, which is all
-// a registry namespace may be.
-var registryNamespacePattern = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`)
 
 // Validate refuses a document the sandbox could not apply whole. Everything a
 // delivery can be wrong about is checked here, before anything is written, so
@@ -246,9 +239,6 @@ func (p RuntimeProxy) validate() error {
 	// out.
 	if _, err := tls.X509KeyPair([]byte(p.ClientCert), []byte(p.ClientKey)); err != nil {
 		errs = append(errs, fmt.Errorf("proxy client keypair: %w", err))
-	}
-	if p.RegistryNamespace != "" && !registryNamespacePattern.MatchString(p.RegistryNamespace) {
-		errs = append(errs, fmt.Errorf("proxy.registryNamespace %q is not a repository path component", p.RegistryNamespace))
 	}
 	return errors.Join(errs...)
 }

@@ -5,6 +5,9 @@ import "context"
 // SetBridgeConfigPath points the forwarder-config check at a fixture.
 func SetBridgeConfigPath(path string) { bridgeConfigPath = path }
 
+// SetManifestPath points the sandbox's bootstrap at a fixture.
+func SetManifestPath(path string) { manifestPath = path }
+
 // DockerCLI is the docker binary the shim runs, for tests asserting on argv.
 func DockerCLI() string { return dockerCLI }
 

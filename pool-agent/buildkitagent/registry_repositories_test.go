@@ -19,20 +19,21 @@ func stageRepository(t *testing.T, root layout.Root, projectID, poolID, name str
 	return dir
 }
 
-// A purge takes the sandbox's published images with it. Nothing else can name
-// them: the namespace is unguessable and its only record went with the sandbox.
+// A purge takes the sandbox's published images with it, and its builds'
+// results: all are under its namespace, which is its ID.
 func TestRemoveRegistryNamespaceTakesEveryRepositoryUnderIt(t *testing.T) {
 	root := layout.ContainerAt(t.TempDir())
-	mine := stageRepository(t, root, "project-1", "pool-1", "sbx-abc123/discobox-sandbox-agent")
-	alsoMine := stageRepository(t, root, "project-1", "pool-1", "sbx-abc123/some-base")
-	neighbor := stageRepository(t, root, "project-1", "pool-1", "sbx-def456/discobox-sandbox-agent")
+	mine := stageRepository(t, root, "project-1", "pool-1", "sbx_abc123/discobox-sandbox-agent")
+	alsoMine := stageRepository(t, root, "project-1", "pool-1", "sbx_abc123/some-base")
+	neighbor := stageRepository(t, root, "project-1", "pool-1", "sbx_def456/discobox-sandbox-agent")
 	shared := stageRepository(t, root, "project-1", "pool-1", "discobox-build/abc")
+	mineToo := stageRepository(t, root, "project-1", "pool-1", "sbx_abc123/discobox-build/0123")
 
-	if err := RemoveRegistryNamespace(root, "project-1", "pool-1", "sbx-abc123"); err != nil {
+	if err := RemoveRegistryNamespace(root, "project-1", "pool-1", "sbx_abc123"); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
 
-	for _, gone := range []string{mine, alsoMine} {
+	for _, gone := range []string{mine, alsoMine, mineToo} {
 		if _, err := os.Stat(gone); !os.IsNotExist(err) {
 			t.Fatalf("%s survived the purge", gone)
 		}
@@ -48,7 +49,7 @@ func TestRemoveRegistryNamespaceTakesEveryRepositoryUnderIt(t *testing.T) {
 // on it.
 func TestRemoveRegistryNamespaceIsIdempotent(t *testing.T) {
 	root := layout.ContainerAt(t.TempDir())
-	if err := RemoveRegistryNamespace(root, "project-1", "pool-1", "sbx-neverbuilt"); err != nil {
+	if err := RemoveRegistryNamespace(root, "project-1", "pool-1", "sbx_neverbuilt"); err != nil {
 		t.Fatalf("removing a namespace that was never used: %v", err)
 	}
 	if err := RemoveRegistryNamespace(root, "project-1", "pool-1", ""); err != nil {

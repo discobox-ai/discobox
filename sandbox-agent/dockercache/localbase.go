@@ -21,9 +21,10 @@ import (
 // to Hub, where it does not exist. That is the one way a pool-shared build
 // visibly is not a local one.
 //
-// So the shim publishes those bases into this sandbox's registry namespace and
-// points the build at them with `--build-context`, which BuildKit's dockerfile
-// frontend resolves *before* it resolves an image. Nothing about the Dockerfile
+// So the shim publishes those bases into this sandbox's registry namespace —
+// its ID, the only one the pool's registry front admits it to — and points the
+// build at them with `--build-context`, which BuildKit's dockerfile frontend
+// resolves *before* it resolves an image. Nothing about the Dockerfile
 // or the command line changes. See ADR 0047.
 //
 // It is done here rather than in the mediator because the mediator cannot see
@@ -31,23 +32,14 @@ import (
 // LLB inside the daemon, so the solve carries no source list (ADR 0044). The
 // shim has the Dockerfile and the local image list; the mediator has neither.
 
-// registryNamespaceFile is the sandbox's namespace in the pool build registry,
-// staged by pool-agent with the rest of its proxy material.
-const registryNamespaceFile = "/etc/discobox/proxy/registry-namespace"
-
-// namespacePath is a variable only so tests can point it at a fixture;
-// production never reassigns it.
-var namespacePath = registryNamespaceFile
-
 // localBaseContexts returns the `--build-context` arguments that point this
 // build's local base images at the pool registry, publishing each one first.
 //
 // Everything here degrades to nothing. A build whose bases are all remote, a
-// sandbox with no namespace staged, an unreadable Dockerfile: each returns no
+// sandbox with no namespace, an unreadable Dockerfile: each returns no
 // arguments and leaves the build exactly as it was, because the alternative to
 // redirecting a base is the behavior that shipped before this existed.
-func localBaseContexts(ctx context.Context, args []string) []string {
-	namespace := readNamespace()
+func localBaseContexts(ctx context.Context, args []string, namespace string) []string {
 	if namespace == "" {
 		return nil
 	}
@@ -67,14 +59,6 @@ func localBaseContexts(ctx context.Context, args []string) []string {
 		out = append(out, "--build-context", base+"=docker-image://"+published)
 	}
 	return out
-}
-
-func readNamespace() string {
-	data, err := os.ReadFile(namespacePath)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
 }
 
 // dockerfilePath is the Dockerfile this build reads: what -f names, else the

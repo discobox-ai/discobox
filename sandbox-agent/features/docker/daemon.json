@@ -3,5 +3,5 @@
   "features": {
     "containerd-snapshotter": true
   },
-  "insecure-registries": ["discobox-pool-proxy:5000"]
+  "insecure-registries": null
 }

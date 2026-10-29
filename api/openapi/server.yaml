@@ -2609,9 +2609,6 @@ components:
                 clientKey:
                     description: This sandbox's PEM client private key. Required on delivery; never returned, so a document read back omits it.
                     type: string
-                registryNamespace:
-                    description: The sandbox's namespace in the pool build registry.
-                    type: string
             required:
                 - mtlsCa
                 - mitmCa

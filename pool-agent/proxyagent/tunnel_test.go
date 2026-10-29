@@ -68,6 +68,7 @@ func TestTunnelServicesSpliceOntoThePoolsOwnListeners(t *testing.T) {
 		tunnelProxyPath:       "127.0.0.1:17080",
 		tunnelCredentialsPath: "127.0.0.1:17083",
 		tunnelDNSPath:         "127.0.0.1:17085",
+		tunnelBuildKitPath:    "127.0.0.1:17081",
 	}
 	if len(tunnelServices) != len(want) {
 		t.Fatalf("tunnel services = %v, want %v", tunnelServices, want)

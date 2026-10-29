@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -25,6 +26,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
 	"github.com/discobox-ai/discobox/pool-agent/vmtest"
 
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
@@ -205,7 +207,12 @@ func TestMachineSandboxLifecycle(t *testing.T) {
 		t.Fatalf("cache clears = %d, want 1", got)
 	}
 
-	// Delete: confirmed only once the machine is gone.
+	// Delete: confirmed only once the machine is gone, and the images the
+	// sandbox's builds left in the pool registry go with it.
+	published := filepath.Join(buildkitagent.RegistryRoot(r.root, r.projectID, r.poolID), "docker/registry/v2/repositories/sbx_1/discobox-build/0123")
+	if err := os.MkdirAll(published, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := r.DeleteSandbox(ctx, "sbx_1"); err != nil {
 		t.Fatal(err)
 	}
@@ -214,6 +221,9 @@ func TestMachineSandboxLifecycle(t *testing.T) {
 	}
 	if r.hostsSandbox("sbx_1") {
 		t.Fatal("the sandbox's tree outlived its delete")
+	}
+	if _, err := os.Stat(published); !os.IsNotExist(err) {
+		t.Fatalf("the sandbox's build result outlived its delete: %v", err)
 	}
 	if _, err := r.GetSandbox(ctx, "sbx_1"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleted sandbox: %v, want not found", err)
