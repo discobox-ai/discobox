@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, a Docker pool's box (provisioning, enrollment, an in-place re-apply) and the server's release manifest export, the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, a pool's box or its bundle, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, a Docker pool's box (provisioning, enrollment, an in-place re-apply) and the server's release manifest export, a pool build (`docker build` in a box through the shared builder, its registry at `registry.discobox.internal`, a build through a tunnel), the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`) via a headless agent in an isolated HOME. The generic `verify` skill (`.agents/skills/verify`) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, a pool's box or its bundle, or a skill.
 ---
 
 # Verifying the console
@@ -1056,6 +1056,39 @@ agent, runs `provision identity`, enrolls the key, and runs `provision apply`.
   REGISTRY=ghcr.io/example RELEASE_REPO=example/discobox --dry` and run its
   `go run -ldflags=... ./server/cmd/discobox-server manifest`. Never run
   `discobox-server` with any other argument to "try" a flag: it starts a server.
+
+# Verifying a pool build (the shared builder and its registry)
+
+`docker build` in a `-H shell` box goes to the pool's buildkitd through the
+mediator, and the result comes back from `registry.discobox.internal` (ADR
+26-10-29-160). The dev loop re-applies the pool bundle in place on a change to
+`pool-agent/`; wait until `docker exec <pool> grep -q '<new string>'
+/etc/discobox/buildkitd.toml` (or the unit's binary) and the units'
+`ActiveEnterTimestamp` is after it.
+
+- A fresh box has dockerd socket-activated: `systemctl is-active docker`
+  reads `inactive` until the first `docker` call; just build.
+- `d shell <box> -- sh -c 'docker build -t x . && docker run --rm x'`; the
+  pull shows as `registry.discobox.internal` rows in `d admin audit http
+  --discobox <box>`. A build failing on `HEAD http://127.0.0.1:5000/...: 400`
+  is buildkitd talking plaintext to the TLS registry: its toml lost
+  `http = false`.
+- Probes worth running from the box: `curl -x $HTTP_PROXY --noproxy ''
+  http://127.0.0.1:5000/v2/` (403 from the proxy), `https://registry.discobox.internal/v2/_catalog`
+  and another sandbox's path (403 from the front), `FROM
+  127.0.0.1:5000/<other>/x` (denied by policy), `docker buildx build
+  --builder discobox-pool --cache-to type=registry,ref=127.0.0.1:5000/<other>/c`
+  (PermissionDenied).
+- A name that resolves to loopback (`localtest.me`) leaves the dev pool
+  through its upstream proxy (the outer discobox, `172.17.0.1:17008`) and
+  reaches the *outer* pool, whose registry is older code: a `200 {}` there is
+  not the dev pool's.
+- Through a tunnel: the edge recipe above, plus a copy of
+  `bridge-buildkit.json` with `wss://localhost:8443/tunnel/buildkit` and its
+  own `listenAddress` run as a second `proxy-bridge`, `docker buildx create
+  --name tun --driver remote tcp://<that address>`, then `docker buildx build
+  --builder tun --push -t registry.discobox.internal/<box id>/t:1 .`.
+- `d admin box purge <box>` removes `<pool build>/registry/docker/registry/v2/repositories/<box id>`.
 
 # Verifying a machine pool (`MachineSandboxRuntime`, the `vm` provider)
 
