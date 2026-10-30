@@ -5,7 +5,7 @@
 # opencode 2 keeps credentials as rows in its SQLite database, which the
 # configure flow cannot deliver as a file. What it delivers instead is
 # opencode's own interchange format — `opencode auth export` output, with each
-# provider's sentinel in place of its secret — as a templated harness file,
+# provider's sentinel in place of its secret — as a resolved credential document,
 # and this script imports it through `opencode auth import`, opencode's
 # supported write path.
 #

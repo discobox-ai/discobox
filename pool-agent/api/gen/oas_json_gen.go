@@ -1912,19 +1912,12 @@ func (s *HarnessCaptureFile) encodeFields(e *jx.Encoder) {
 		e.FieldStart("path")
 		e.Str(s.Path)
 	}
-	{
-		if s.Template.Set {
-			e.FieldStart("template")
-			s.Template.Encode(e)
-		}
-	}
 }
 
-var jsonFieldsNameOfHarnessCaptureFile = [4]string{
+var jsonFieldsNameOfHarnessCaptureFile = [3]string{
 	0: "content",
 	1: "createOnly",
 	2: "path",
-	3: "template",
 }
 
 // Decode decodes HarnessCaptureFile from json.
@@ -1969,16 +1962,6 @@ func (s *HarnessCaptureFile) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"path\"")
-			}
-		case "template":
-			if err := func() error {
-				s.Template.Reset()
-				if err := s.Template.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"template\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -2616,12 +2599,6 @@ func (s *HarnessCaptureSetting) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *HarnessCaptureSetting) encodeFields(e *jx.Encoder) {
 	{
-		if s.TemplateSuffix.Set {
-			e.FieldStart("templateSuffix")
-			s.TemplateSuffix.Encode(e)
-		}
-	}
-	{
 		if s.CreateOnly.Set {
 			e.FieldStart("createOnly")
 			s.CreateOnly.Encode(e)
@@ -2653,13 +2630,12 @@ func (s *HarnessCaptureSetting) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessCaptureSetting = [6]string{
-	0: "templateSuffix",
-	1: "createOnly",
-	2: "exclude",
-	3: "fields",
-	4: "format",
-	5: "path",
+var jsonFieldsNameOfHarnessCaptureSetting = [5]string{
+	0: "createOnly",
+	1: "exclude",
+	2: "fields",
+	3: "format",
+	4: "path",
 }
 
 // Decode decodes HarnessCaptureSetting from json.
@@ -2671,16 +2647,6 @@ func (s *HarnessCaptureSetting) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "templateSuffix":
-			if err := func() error {
-				s.TemplateSuffix.Reset()
-				if err := s.TemplateSuffix.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"templateSuffix\"")
-			}
 		case "createOnly":
 			if err := func() error {
 				s.CreateOnly.Reset()
@@ -2721,7 +2687,7 @@ func (s *HarnessCaptureSetting) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"fields\"")
 			}
 		case "format":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.Format = string(v)
@@ -2733,7 +2699,7 @@ func (s *HarnessCaptureSetting) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"format\"")
 			}
 		case "path":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Path = string(v)
@@ -2754,7 +2720,7 @@ func (s *HarnessCaptureSetting) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00110000,
+		0b00011000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -2879,19 +2845,12 @@ func (s *HarnessConfigFile) encodeFields(e *jx.Encoder) {
 			s.CreateOnly.Encode(e)
 		}
 	}
-	{
-		if s.Template.Set {
-			e.FieldStart("template")
-			s.Template.Encode(e)
-		}
-	}
 }
 
-var jsonFieldsNameOfHarnessConfigFile = [4]string{
+var jsonFieldsNameOfHarnessConfigFile = [3]string{
 	0: "content",
 	1: "path",
 	2: "createOnly",
-	3: "template",
 }
 
 // Decode decodes HarnessConfigFile from json.
@@ -2936,16 +2895,6 @@ func (s *HarnessConfigFile) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"createOnly\"")
-			}
-		case "template":
-			if err := func() error {
-				s.Template.Reset()
-				if err := s.Template.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"template\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

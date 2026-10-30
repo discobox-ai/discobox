@@ -20,7 +20,7 @@ const hash = (x) =>
     .createHash("sha256")
     .update(JSON.stringify(canonical(x)))
     .digest("hex");
-const template = (name) => `{{ .secrets.${name} }}`;
+const reference = (name) => ({ $secret: name });
 const json = (x) => JSON.stringify(x, null, 2) + "\n";
 const credentialPath = {
   pi: ".pi/agent/auth.json",
@@ -89,13 +89,23 @@ function command(bin, args, input) {
     stdio: ["pipe", "pipe", "ignore"],
   });
 }
+function resolveReferences(value, sentinels) {
+  if (value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 1 && typeof value.$secret === "string") {
+    const sentinel = sentinels[value.$secret];
+    if (!sentinel) throw Error("missing credential binding");
+    return sentinel;
+  }
+  if (Array.isArray(value)) return value.map(v => resolveReferences(v, sentinels));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,resolveReferences(v,sentinels)]));
+  return value;
+}
 function load(id, input) {
   const p = credentialPath[id];
   if (input.baselineOnly)
-    return JSON.parse(
+    return resolveReferences(JSON.parse(
       (input.baseline?.files || []).find((f) => f.path === p)?.content ||
         (id === "opencode" ? "[]" : "{}"),
-    );
+    ), input.sentinels || {});
   if (id === "omp") return JSON.parse(command("omp", ["auth", "export"], ""));
   if (id === "opencode")
     return JSON.parse(
@@ -194,7 +204,7 @@ function cleanValue(value) {
     "projectId",
     "methodID",
   ])
-    if (["string", "number"].includes(typeof value[k])) out[k] = value[k];
+    if (["string", "number"].includes(typeof value[k]) || (["key", "access", "refresh"].includes(k) && value[k] && Object.keys(value[k]).length === 1 && typeof value[k].$secret === "string")) out[k] = value[k];
   if (value.metadata && typeof value.metadata === "object") {
     const metadata = {};
     for (const key of ["accountID", "email"])
@@ -225,7 +235,7 @@ function previous(input, definition, id, normalizer) {
   const names = knownBindings(input);
   const replace = (value) => {
     if (typeof value === "string" && names.has(value))
-      return template(names.get(value));
+      return reference(names.get(value));
     if (Array.isArray(value)) return value.map(replace);
     if (value && typeof value === "object")
       return Object.fromEntries(
@@ -251,9 +261,8 @@ function previous(input, definition, id, normalizer) {
       continue;
     }
     for (const e of rows) {
-      const match = String(material(id, e)).match(
-        /\{\{\s*\.secrets\.([\w]+)\s*\}\}/,
-      );
+      const name = material(id, e)?.$secret;
+      const match = name ? [null, name] : null;
       if (!match) continue;
       const p = definition.providers.find((p) => p.id === e.provider);
       if (!p) continue;
@@ -274,7 +283,7 @@ function previous(input, definition, id, normalizer) {
   return { files, secrets };
 }
 // Reconsideration combines the immutable selected local entries with the
-// current server templates. It never consults the working sandbox's files.
+// current server documents. It never consults the working sandbox's files.
 function reconsider(id, definition, normalizer, input) {
   const request = input.reconsider;
   const selected = new Map(
@@ -283,7 +292,7 @@ function reconsider(id, definition, normalizer, input) {
       .map((c) => [c.envName, c]),
   );
   const current = request.current.files || [];
-  // A replacement login usually keeps the existing delivery template byte-for-
+  // A replacement login usually keeps the existing delivery reference byte-for-
   // byte, so it is absent from the candidate's file diff. Reconstruct the
   // immutable local projection from delivered provenance plus that diff.
   const localByPath = new Map(
@@ -298,22 +307,11 @@ function reconsider(id, definition, normalizer, input) {
   const virtual = {};
   const found = new Set();
   const envOf = (raw) =>
-    JSON.stringify(raw).match(/\{\{\s*\.secrets\.(\w+)\s*\}\}/)?.[1];
+    JSON.stringify(raw).match(/"\$secret"\s*:\s*"(\w+)"/)?.[1];
   for (const p of definition.credentialFiles) {
     if (id === "copilot") continue;
-    const rows = (file, baseline) => {
+    const rows = (file) => {
       if (!file) return [];
-      // This bundle seed is a Go template, including conditionals and a
-      // working-directory key. Only its API-key binding participates here.
-      if (id === "claude-code" && p === ".claude.json" && file.template) {
-        const binding = file.content.match(
-          /"primaryApiKey"\s*:\s*\{\{\s*\.secrets\.(\w+)\s*\|\s*json\s*\}\}/,
-        );
-        if (binding)
-          return baseline.secretRevisions?.[binding[1]]
-            ? [{ provider: "anthropic-key", raw: template(binding[1]) }]
-            : [];
-      }
       const doc = JSON.parse(file.content);
       if (id === "claude-code" && p === ".claude.json")
         return doc.primaryApiKey
@@ -322,11 +320,11 @@ function reconsider(id, definition, normalizer, input) {
       return entries(id, doc, normalizer);
     };
     const byEnv = new Map();
-    for (const e of rows(current.find((f) => f.path === p), request.current)) {
+    for (const e of rows(current.find((f) => f.path === p))) {
       const name = envOf(e.raw);
       if (name) byEnv.set(name, e);
     }
-    for (const e of rows(local.find((f) => f.path === p), request.candidate.baseline || {})) {
+    for (const e of rows(local.find((f) => f.path === p))) {
       const name = envOf(e.raw);
       if (!selected.has(name)) continue;
       if (id === "codex") byEnv.clear();
@@ -359,14 +357,11 @@ function reconsider(id, definition, normalizer, input) {
             };
     combined.push({
       path: p,
-      content: json(document).replace(
-        /\{\{\s*\.secrets\.(\w+)\s*\}\}/g,
-        (_, name) => virtual[name],
-      ),
+      content: json(resolveReferences(document, virtual)),
     });
   }
   if (id !== "copilot" && [...selected.keys()].some((name) => !found.has(name)))
-    throw Error("selected credential has no captured template");
+    throw Error("selected credential has no captured reference");
   const out = capture(id, definition, normalizer, {
     version: 1,
     baselineOnly: true,
@@ -378,8 +373,7 @@ function reconsider(id, definition, normalizer, input) {
   out.files = out.files.filter((f) =>
     definition.credentialFiles.includes(f.path),
   );
-  // An OAuth-only config still carries the conditional API-key seed. Keep
-  // that file verbatim without inventing a credential for an unbound branch.
+  // Preserve any literal onboarding-only document without inventing a login.
   if (id === "claude-code" && !out.files.some((f) => f.path === ".claude.json")) {
     const seed = current.find((f) => f.path === ".claude.json");
     if (seed) out.files.push(seed);
@@ -416,24 +410,6 @@ function capture(id, definition, normalizer, input) {
         : read(spec.path);
       if (content === undefined) continue;
       const normalize = (body, delivered = false) => {
-        if (id === "codex" && spec.path === ".codex/config.toml") {
-          // Normal exports receive unrendered delivery baselines. Remove only
-          // the exact generated trust block, never evaluate template syntax or
-          // accept it from a local file. Saved configs use the registered suffix
-          // directly; the initial bundled config wraps it in this conditional.
-          if (delivered && spec.templateSuffix) {
-            const conditional =
-              "{{- if .workingDir }}\n\n" +
-              spec.templateSuffix +
-              "{{- end }}\n";
-            for (const suffix of [conditional, spec.templateSuffix]) {
-              if (body.endsWith(suffix)) {
-                body = body.slice(0, -suffix.length);
-                break;
-              }
-            }
-          }
-        }
         // pi's first-run release marker is bookkeeping, not user intent.
         if (id === "pi" && spec.path === ".pi/agent/settings.json") {
           const settings = JSON.parse(body);
@@ -480,8 +456,7 @@ function capture(id, definition, normalizer, input) {
       }
       output.files.push({
         path: spec.path,
-        content: got.content + (spec.templateSuffix || ""),
-        ...(spec.templateSuffix ? { template: true } : {}),
+        content: got.content,
         createOnly: !!spec.createOnly,
       });
     } catch (e) {
@@ -510,10 +485,10 @@ function capture(id, definition, normalizer, input) {
   if (id === "claude-code")
     try {
       const state = input.baselineOnly
-        ? JSON.parse(
+        ? resolveReferences(JSON.parse(
             (input.baseline?.files || []).find((f) => f.path === ".claude.json")
               ?.content || "{}",
-          )
+          ), input.sentinels || {})
         : JSON.parse(read(".claude.json"));
       if (state.primaryApiKey)
         source.push({
@@ -633,7 +608,7 @@ function capture(id, definition, normalizer, input) {
   } else
     for (const e of accepted) {
       const envName = e.prov.envName,
-        t = template(envName);
+        t = reference(envName);
       let item = {
         provider: e.provider,
         envName,
@@ -664,7 +639,7 @@ function capture(id, definition, normalizer, input) {
         output.protectedPaths.push(...definition.credentialFiles);
       }
     }
-  const templates = [];
+  const documents = [];
   for (const item of plans) {
     const e = accepted.find(
       (e) =>
@@ -687,32 +662,32 @@ function capture(id, definition, normalizer, input) {
     };
     if (!keep) credential.value = item.value;
     output.credentials.push(credential);
-    templates.push({ ...item, source: e });
+    documents.push({ ...item, source: e });
   }
-  if (templates.length) {
+  if (documents.length) {
     if (id === "pi")
       output.files.push({
         path: p,
-        template: true,
+
         content: json(
-          Object.fromEntries(templates.map((t) => [t.provider, t.entry])),
+          Object.fromEntries(documents.map((t) => [t.provider, t.entry])),
         ),
       });
     if (id === "omp")
       output.files.push({
         path: p,
-        template: true,
+
         content: json({
           version: 1,
-          credentials: templates.map((t) => t.entry),
+          credentials: documents.map((t) => t.entry),
         }),
       });
     if (id === "opencode")
       output.files.push({
         path: p,
-        template: true,
+
         content: json(
-          templates.map((t) => ({
+          documents.map((t) => ({
             ...t.entry,
             id: "cred_discobox_" + t.provider,
             active: true,
@@ -721,10 +696,10 @@ function capture(id, definition, normalizer, input) {
         ),
       });
     if (id === "claude-code")
-      for (const t of templates)
+      for (const t of documents)
         output.files.push({
           path: t.provider === "anthropic" ? p : ".claude.json",
-          template: true,
+
           ...(t.provider === "anthropic-key" ? { createOnly: true } : {}),
           content: json(
             t.provider === "anthropic"
@@ -733,10 +708,10 @@ function capture(id, definition, normalizer, input) {
           ),
         });
     if (id === "codex") {
-      const t = templates[0];
+      const t = documents[0];
       output.files.push({
         path: p,
-        template: true,
+
         content: json(
           t.provider === "openai-key"
             ? { OPENAI_API_KEY: t.entry }
@@ -901,7 +876,7 @@ function handoff(id, input, normalizer) {
     let wanted;
     if (id !== "copilot") {
       if (!targetFile) return finish("retryable-failure");
-      const target = JSON.parse(targetFile.content);
+      const target = resolveReferences(JSON.parse(targetFile.content), input.sentinels || {});
       wanted =
         id === "claude-code" && c.provider === "anthropic-key"
           ? target.primaryApiKey
@@ -1069,6 +1044,27 @@ function guard(id, definition, normalizer) {
     !result.protectedPaths.length && result.credentials.every((c) => c.keep)
   );
 }
+// Trust and onboarding are sandbox-local state. Merge only owned fields;
+// user preferences and a newer local login remain untouched.
+function initialize(id) {
+  if (id !== "claude-code") throw Error("unsupported initialization");
+  let state = {};
+  try { state = JSON.parse(read(".claude.json")); }
+  catch (e) { if (e.code !== "ENOENT") throw e; }
+  if (!state || typeof state !== "object" || Array.isArray(state)) throw Error("invalid local state");
+  // Install the API-key sentinel from the same current context the agent
+  // publishes for credential import guards, preserving a newer local login.
+  let context = {};
+  try { context = JSON.parse(read(".config/discobox/harness-sentinels.json")); }
+  catch(e) { if(e.code !== "ENOENT") throw e; }
+  const key = context.sentinels?.ANTHROPIC_API_KEY;
+  if (key && (!state.primaryApiKey || (context.knownSentinels?.ANTHROPIC_API_KEY || []).includes(state.primaryApiKey))) state.primaryApiKey = key;
+  state.hasCompletedOnboarding = true;
+  state.hasSeenAutoDefaultNudge = true;
+  state.projects ||= {};
+  state.projects[process.cwd()] = { ...state.projects[process.cwd()], hasTrustDialogAccepted: true };
+  atomic(".claude.json", json(state));
+}
 function main() {
   const [id, metadata, mode] = process.argv.slice(2);
   const definition = JSON.parse(fs.readFileSync(metadata, "utf8")).harness
@@ -1081,6 +1077,7 @@ function main() {
   } catch (e) {
     if (e.code !== "MODULE_NOT_FOUND") throw e;
   }
+  if (mode === "init") { initialize(id); return; }
   if (mode === "guard") {
     process.exitCode = guard(id, definition, normalizer) ? 0 : 1;
     return;
@@ -1115,4 +1112,4 @@ if (require.main === module)
       process.stdout.write('{"state":"retryable-failure"}');
     else process.exitCode = 1;
   }
-module.exports = { capture, handoff, entries, material, guard };
+module.exports = { capture, handoff, entries, material, guard, initialize, resolveReferences };

@@ -4,7 +4,7 @@ const { test } = require("node:test"),
   fs = require("fs"),
   os = require("os"),
   path = require("path");
-const { capture, handoff, guard } = require("./runtime.cjs");
+const { capture, handoff, guard, resolveReferences, initialize } = require("./runtime.cjs");
 const { project } = require("./settings.cjs");
 function fixture(id) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "capture-test-"));
@@ -32,14 +32,10 @@ function fixture(id) {
     },
   };
 }
-const render = (files, sentinels) =>
-  files.map((f) => ({
-    ...f,
-    content: f.content.replace(
-      /\{\{\s*\.secrets\.(\w+)\s*\}\}/g,
-      (_, k) => sentinels[k],
-    ),
-  }));
+const render = (files, sentinels) => files.map(f => {
+ try { return {...f, content: JSON.stringify(resolveReferences(JSON.parse(f.content),sentinels))}; }
+ catch(e) { if(f.path.endsWith(".toml"))return f; throw e; }
+});
 test("pi exports renewable login and safe settings, then recognizes delivered sentinel", () => {
   const f = fixture("pi");
   try {
@@ -321,7 +317,7 @@ test("OMP normalization keeps account bindings across export order", () => {
                 credential: {
                   type: "oauth",
                   accountId: "a",
-                  access: `{{ .secrets.${base} }}`,
+                  access: { $secret: base },
                   refresh: "placeholder",
                 },
               },
@@ -330,7 +326,7 @@ test("OMP normalization keeps account bindings across export order", () => {
                 credential: {
                   type: "oauth",
                   accountId: "b",
-                  access: `{{ .secrets.${base}_2 }}`,
+                  access: { $secret: base + "_2" },
                   refresh: "placeholder",
                 },
               },
@@ -476,22 +472,15 @@ test("native DB capture and handoff use exports/imports; launch guard preserves 
 test("Codex captures edits from actual rendered bundle config and retains portable trust", () => {
   const f = fixture("codex");
   try {
-    const baseline = require("../codex-cli/image.json").harness.files.find(
-      (f) => f.path === ".codex/config.toml",
-    );
-    assert(baseline);
-    const rendered = baseline.content
-      .replace("{{- if .workingDir }}", "")
-      .replace("{{- end }}", "")
-      .replace("{{ .workingDir | json }}", JSON.stringify("/source/project"));
+    const rendered = '[projects."/source/project"]\ntrust_level = "trusted"\n';
     f.write(".codex/config.toml", 'model = "new-model"\n' + rendered);
     const out = f.run(),
       config = out.files.find((f) => f.path === ".codex/config.toml");
     assert(config);
-    assert.equal(config.template, true);
+    assert.equal(config.template, undefined);
     assert(config.content.includes('model = "new-model"'));
     assert(!config.content.includes("/source/project"));
-    assert(config.content.endsWith(f.definition.settings[0].templateSuffix));
+    assert(!config.content.includes("[projects."));
     assert(
       !out.diagnostics.some(
         (d) => d.path === ".codex/config.toml" && d.code === "partial",
@@ -661,7 +650,7 @@ test("reconsider rebuilds shared auth from current entries plus only selected im
       out.files.find((f) => f.path === ".pi/agent/auth.json").content,
     );
     assert.equal(auth.anthropic.type, "api_key");
-    assert.equal(auth.anthropic.key, "{{ .secrets.PI_ANTHROPIC_CREDENTIAL }}");
+    assert.deepEqual(auth.anthropic.key, { $secret: "PI_ANTHROPIC_CREDENTIAL" });
     assert.equal(
       out.credentials.find((c) => c.envName === "PI_ANTHROPIC_CREDENTIAL").keep,
       true,
@@ -690,7 +679,7 @@ test("OMP reconsider preserves current account binding while replacing only sele
       provider: "anthropic",
       credential: {
         type: "api_key",
-        key: `{{ .secrets.${name} }}`,
+        key: { $secret: name },
         accountId: account,
       },
     });
@@ -698,7 +687,6 @@ test("OMP reconsider preserves current account binding while replacing only sele
       files: [
         {
           path: p,
-          template: true,
           content: JSON.stringify({
             version: 1,
             credentials: [
@@ -711,7 +699,6 @@ test("OMP reconsider preserves current account binding while replacing only sele
     };
     const file = {
       path: p,
-      template: true,
       content: JSON.stringify({
         version: 1,
         credentials: [
@@ -821,7 +808,6 @@ test("native DB export recognizes an old sentinel alias and still captures a sub
   try {
     const template = {
       path: ".config/discobox/opencode-credentials.json",
-      template: true,
       content: JSON.stringify([
         {
           id: "cred_discobox_openai",
@@ -1056,13 +1042,8 @@ test("Codex empty settings compare unrendered delivery templates without evaluat
   const f = fixture("codex");
   try {
     const p = ".codex/config.toml";
-    const bundled = require("../codex-cli/image.json").harness.files.find(
-      (file) => file.path === p,
-    );
-    const trustOnly = bundled.content
-      .replace("{{- if .workingDir }}", "")
-      .replace("{{- end }}", "")
-      .replace("{{ .workingDir | json }}", JSON.stringify("/source/project"));
+    const bundled = {path:p,content:""};
+    const trustOnly = '[projects."/source/project"]\ntrust_level = "trusted"\n';
     const run = (baseline) => f.run({ ...f.input, baseline: { files: [baseline] } });
     const config = (output) => output.files.find((file) => file.path === p);
     const noPartial = (output) => assert(!output.diagnostics.some(
@@ -1086,14 +1067,14 @@ test("Codex empty settings compare unrendered delivery templates without evaluat
     }]) {
       const cleared = run(baseline);
       noPartial(cleared);
-      assert.equal(config(cleared).content.trimStart(), f.definition.settings[0].templateSuffix);
+      assert.equal(config(cleared).content.trim(), "");
       const converged = run(config(cleared));
       noPartial(converged);
       assert.equal(config(converged), undefined);
     }
 
     f.write(p, bundled.content);
-    assert(run(bundled).diagnostics.some((d) => d.path === p && d.code === "partial"));
+    noPartial(run(bundled));
     f.write(p, trustOnly);
     const unknown = run({ ...bundled, content: '{{ if .unknown }}\n' + bundled.content });
     assert(unknown.diagnostics.some((d) => d.path === p && d.code === "partial"));
@@ -1171,8 +1152,8 @@ test("Codex parses local project tables without corrupting multiline strings", (
   assert.equal(result.diagnostics.length,0);
   f.write(p, 'developer_instructions = "{{ .secrets.OTHER }}"\n');
   const unsafe=f.run();
-  assert(!unsafe.files.some(file=>file.path===p));
-  assert(unsafe.diagnostics.some(d=>d.path===p&&d.code==="partial"));
+  assert(unsafe.files.find(file=>file.path===p).content.includes("{{ .secrets.OTHER }}"));
+  assert.equal(unsafe.diagnostics.length,0);
  } finally { f.close(); }
 });
 
@@ -1197,16 +1178,17 @@ test("Claude signed-out OAuth is restorable but an unrecognized login stays prot
   } finally { f.close(); }
 });
 
-test("Claude reconsider accepts the bundle's real Go template with and without a bound API key", () => {
+test("Claude reconsider preserves literal onboarding state with and without a bound API key", () => {
   const f = fixture("claude-code");
   try {
     f.write(".claude/.credentials.json", { claudeAiOauth: {
       accessToken: "replacement-token", refreshToken: "replacement-refresh", expiresAt: 123,
     } });
     const captured = f.run();
-    const seed = require("../claude-code/image.json").harness.files.find(f => f.path === ".claude.json");
-    const files = [...captured.files, seed];
     for (const bound of [false, true]) {
+      const seed = { path: ".claude.json", content: JSON.stringify({hasCompletedOnboarding: true,
+        ...(bound ? { primaryApiKey: {$secret: "ANTHROPIC_API_KEY"} } : {})}) };
+      const files = [...captured.files, seed];
       const baseline = { files, secretRevisions: {
         CLAUDE_CODE_OAUTH_TOKEN: "oauth-revision",
         ...(bound ? { ANTHROPIC_API_KEY: "key-revision" } : {}),
@@ -1231,4 +1213,20 @@ test("exporter CLI failures report a fixed reason without input contents", () =>
   assert.equal(result.status, 1);
   assert.equal(result.stderr, "discobox-capture: invalid-json\n");
   assert.equal(result.stdout, "");
+});
+
+test("Claude initialization preserves a local login and preferences across restarts", () => {
+ const f=fixture("claude-code");
+ try {
+  f.write(".claude.json",{primaryApiKey:"newer-local-key",customPreference:true,projects:{"/another":{hasTrustDialogAccepted:true}}});
+  initialize("claude-code");initialize("claude-code");
+  const state=JSON.parse(fs.readFileSync(path.join(f.home,".claude.json"),"utf8"));
+  assert.equal(state.primaryApiKey,"newer-local-key");assert.equal(state.customPreference,true);
+  assert.equal(state.projects[process.cwd()].hasTrustDialogAccepted,true);
+  assert.equal(state.projects["/another"].hasTrustDialogAccepted,true);
+  assert.equal(state.hasCompletedOnboarding,true);assert.equal(state.hasSeenAutoDefaultNudge,true);
+  f.write(".claude.json","{broken");
+  assert.throws(()=>initialize("claude-code"));
+  assert.equal(fs.readFileSync(path.join(f.home,".claude.json"),"utf8"),"{broken");
+ }finally{f.close();}
 });

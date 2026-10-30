@@ -215,8 +215,6 @@ components:
                     type: boolean
                 path:
                     type: string
-                template:
-                    type: boolean
             required:
                 - path
                 - content
@@ -310,8 +308,6 @@ components:
         HarnessCaptureSetting:
             additionalProperties: false
             properties:
-                templateSuffix:
-                    type: string
                 createOnly:
                     type: boolean
                 exclude:
@@ -774,9 +770,6 @@ components:
                     type: string
                 createOnly:
                     description: Do not overwrite this file if it already exists
-                    type: boolean
-                template:
-                    description: Render file content against the public sandbox configuration before writing
                     type: boolean
             required:
                 - path

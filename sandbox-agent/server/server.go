@@ -79,7 +79,6 @@ type Config struct {
 	Sources             []sandboxconfig.Source
 	Skills              sandboxconfig.Skills
 	SkillsSources       []sandboxconfig.SkillsSource
-	SandboxConfig       map[string]any
 	Installer           terminal.Installer
 	ExecUnitManager     execs.UnitManager
 	ExecAuditRecorder   execs.AuditRecorder
@@ -140,7 +139,6 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 		Sources:               cfg.Sources,
 		Skills:                cfg.Skills,
 		SkillsSources:         cfg.SkillsSources,
-		SandboxConfig:         cfg.SandboxConfig,
 	}
 }
 
@@ -244,7 +242,6 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		CaptureRecoveryDir: config.CaptureRecoveryDir(cfg.DatabasePath),
 		Execs:              execManager,
 		Harness:            cfg.Harness,
-		SandboxConfig:      cfg.SandboxConfig,
 		WorkingRoot:        cfg.WorkingRoot,
 		RuntimeDir:         cfg.RuntimeDir,
 		SecretEnv:          cfg.SecretEnv,

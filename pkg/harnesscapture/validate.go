@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -19,15 +18,6 @@ import (
 // The resulting JSON is canonical regardless of the input format. Exporters
 // preserve the harness's file format; validation compares its parsed structure.
 func NormalizeSettings(s Setting, content string) (map[string]any, error) {
-	if s.TemplateSuffix != "" {
-		if !strings.HasSuffix(content, s.TemplateSuffix) {
-			return nil, errors.New("settings lack registered template suffix")
-		}
-		content = strings.TrimSuffix(content, s.TemplateSuffix)
-		if strings.Contains(content, "{{") {
-			return nil, errors.New("settings prefix contains an unregistered template action")
-		}
-	}
 	var value map[string]any
 	switch s.Format {
 	case "json", "jsonc":
@@ -151,7 +141,7 @@ func (d Definition) ValidateFiles(files []File) error {
 			}
 		}
 		if setting != nil {
-			if f.Template != (setting.TemplateSuffix != "") || f.CreateOnly != setting.CreateOnly {
+			if f.CreateOnly != setting.CreateOnly {
 				return errors.New("invalid portable settings flags")
 			}
 			if _, err := NormalizeSettings(*setting, f.Content); err != nil {
@@ -159,7 +149,7 @@ func (d Definition) ValidateFiles(files []File) error {
 			}
 			continue
 		}
-		if !slices.Contains(d.CredentialFiles, f.Path) || !f.Template {
+		if !slices.Contains(d.CredentialFiles, f.Path) {
 			return errors.New("capture file is not registered")
 		}
 		var credentialSchema *Setting
@@ -174,7 +164,7 @@ func (d Definition) ValidateFiles(files []File) error {
 		}
 		var document any
 		if err := json.Unmarshal([]byte(f.Content), &document); err != nil {
-			return errors.New("credential template must be JSON")
+			return errors.New("credential document must be JSON")
 		}
 		if err := d.validateCredentialTree(document, "", credentialSchema.Fields); err != nil {
 			return err
@@ -264,19 +254,24 @@ func (d Definition) ValidateCandidate(c Candidate) error {
 	return nil
 }
 
-var secretTemplate = regexp.MustCompile(`^\{\{\s*\.secrets\.([A-Z_][A-Z0-9_]*)\s*\}\}$`)
+// SecretReference recognizes a single, explicit credential binding. It never
+// evaluates strings or reads arbitrary sandbox configuration.
+func SecretReference(v any) (string, bool) {
+	ref, ok := v.(map[string]any)
+	if !ok || len(ref) != 1 {
+		return "", false
+	}
+	name, ok := ref["$secret"].(string)
+	return name, ok && envPattern.MatchString(name)
+}
 
 func (d Definition) secretPlaceholder(v any) bool {
-	s, ok := v.(string)
+	name, ok := SecretReference(v)
 	if !ok {
 		return false
 	}
-	m := secretTemplate.FindStringSubmatch(s)
-	if len(m) != 2 {
-		return false
-	}
 	for _, p := range d.Providers {
-		if _, ok := d.Provider(p.ID, m[1]); ok {
+		if _, ok := d.Provider(p.ID, name); ok {
 			return true
 		}
 	}
@@ -319,7 +314,7 @@ func (d Definition) validateCredentialTree(v any, field string, fields map[strin
 			valid = safeIDToken(v)
 		}
 		if !valid {
-			return errors.New("invalid credential template leaf")
+			return errors.New("invalid credential document leaf")
 		}
 		return nil
 	}
@@ -345,7 +340,7 @@ func (d Definition) validateCredentialTree(v any, field string, fields map[strin
 			}
 		}
 	default:
-		return errors.New("credential template contains unregistered fields")
+		return errors.New("credential document contains unregistered fields")
 	}
 	return nil
 }

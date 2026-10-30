@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -137,7 +138,7 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := liftConfiguredSecretGrantLimits(write); err != nil {
 		return err
 	}
-	if err := retrustConfiguredCodexWorkingDir(write); err != nil {
+	if err := migrateHarnessFileBindings(write); err != nil {
 		return err
 	}
 	if err := migrateLibkrunProviderType(write); err != nil {
@@ -672,71 +673,48 @@ func liftConfiguredSecretGrantLimits(db *gorm.DB) error {
 // limit was never chosen, and it is only ever read as that.
 const defaultGrantTTLSecondsBeforeItWasACeiling = 3600
 
-// retrustConfiguredCodexWorkingDir moves the trust stanza in a codex harness's
-// captured config.toml from the primary source's target to `workingDir`, the
-// directory the sandbox's terminals start in.
-//
-// The configure flow returns config.toml as a configured file, and a configured
-// file overlays the image's by path. A config configured before trust followed
-// the working directory therefore kept the stanza that ranges over `sources`,
-// whatever image it ran: a sandbox with no source rendered no trust, and codex
-// opened on its trust screen for the workspace it was already sitting in, until
-// somebody reconfigured the harness.
-//
-// Only the exact stanza that configure flow wrote is replaced, so a file somebody
-// has edited around it is still fixed and one they rewrote is left as they left
-// it. It runs on every start. The stanza it writes carries the old one as its
-// fallback, so a file already holding it is skipped rather than matched again;
-// once every file is, it writes nothing. updated_at is left alone: a migration is
-// not an edit anybody made.
-func retrustConfiguredCodexWorkingDir(db *gorm.DB) error {
-	if !db.Migrator().HasTable(&model.HarnessConfig{}) {
-		return nil
-	}
-	var configs []model.HarnessConfig
-	if err := db.Select("id", "configured_files").Find(&configs).Error; err != nil {
-		return err
-	}
-	for _, config := range configs {
-		changed := false
-		for i, file := range config.ConfiguredFiles {
-			if file.Path != codexConfigPath || !file.Template ||
-				!strings.Contains(file.Content, codexSourceTrustStanza) ||
-				strings.Contains(file.Content, codexWorkingDirTrustStanza) {
-				continue
+// migrateHarnessFileBindings upgrades durable harness files in place. A
+// transaction preserves every old document if any unsupported template fails.
+func migrateHarnessFileBindings(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, column := range []string{"files", "configured_files", "save_back"} {
+			var rows []struct {
+				ID   string
+				Data string
 			}
-			config.ConfiguredFiles[i].Content = strings.ReplaceAll(file.Content, codexSourceTrustStanza, codexWorkingDirTrustStanza)
-			changed = true
+			if err := tx.Table("harness_configs").Select("id, " + column + " AS data").Where(column + " IS NOT NULL").Find(&rows).Error; err != nil {
+				return err
+			}
+			for _, row := range rows {
+				next, err := harnesscapture.UpgradeLegacyJSON([]byte(row.Data))
+				if err != nil {
+					return fmt.Errorf("upgrade harness %s %s: %w", row.ID, column, err)
+				}
+				if string(next) != row.Data {
+					if err := tx.Table("harness_configs").Where("id = ?", row.ID).UpdateColumn(column, string(next)).Error; err != nil {
+						return err
+					}
+				}
+			}
 		}
-		if !changed {
-			continue
+		var receipts []struct{ ProjectID, SandboxID, HarnessConfigID, CandidateID, Baseline string }
+		if err := tx.Table("harness_capture_receipts").Select("project_id,sandbox_id,harness_config_id,candidate_id,baseline").Find(&receipts).Error; err != nil {
+			return err
 		}
-		if err := db.Model(&model.HarnessConfig{ID: config.ID}).
-			Select("configured_files").
-			UpdateColumns(model.HarnessConfig{ConfiguredFiles: config.ConfiguredFiles}).Error; err != nil {
-			return fmt.Errorf("retrust codex working directory for harness config %s: %w", config.ID, err)
+		for _, row := range receipts {
+			next, err := harnesscapture.UpgradeLegacyJSON([]byte(row.Baseline))
+			if err != nil {
+				return err
+			}
+			if string(next) != row.Baseline {
+				if err := tx.Table("harness_capture_receipts").Where("project_id = ? AND sandbox_id = ? AND harness_config_id = ? AND candidate_id = ?", row.ProjectID, row.SandboxID, row.HarnessConfigID, row.CandidateID).UpdateColumn("baseline", string(next)).Error; err != nil {
+					return err
+				}
+			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
-
-// codexConfigPath is where the codex harness's configure flow captures its
-// settings, relative to the harness's home.
-const codexConfigPath = ".codex/config.toml"
-
-// codexSourceTrustStanza is the stanza harness/codex-cli/configure.sh appended to
-// a captured config.toml before trust followed the working directory. It is only
-// ever read as the evidence of a file written then.
-const codexSourceTrustStanza = "{{- range .sources }}{{- if eq .slug \"primary\" }}\n[projects.{{ .target | json }}]\ntrust_level = \"trusted\"\n{{- end }}{{- end }}"
-
-// codexWorkingDirTrustStanza is what replaces it: trust `workingDir`, and where
-// the agent predates that key, the primary source's target as the old stanza did.
-//
-// It is not the stanza configure.sh appends now, which trusts nothing on such an
-// agent. That script's output comes back from the image that sets the key; this
-// one lands in every stored config whatever image it names, and a config on an
-// older image must not lose the trust it had.
-const codexWorkingDirTrustStanza = "{{- if .workingDir }}\n[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n{{- else }}" + codexSourceTrustStanza + "{{- end }}"
 
 // migrateLibkrunProviderType preserves provider and pool identities while
 // replacing the pre-release local-vm backend name with its implementation name.

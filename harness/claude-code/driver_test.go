@@ -192,7 +192,7 @@ func TestDefinitionConfigure(t *testing.T) {
 	// and the parser rejects it. Dotted field access has no quotes to escape;
 	// `index .secrets "NAME"` does, and would break every sandbox launch while
 	// still letting configure report success.
-	if !strings.Contains(script, "{{ .secrets.${") {
+	if !strings.Contains(script, "$secret:") {
 		t.Fatalf("configure script does not build the credentials template by field access: %s", script)
 	}
 	if strings.Contains(script, `index .secrets`) {
@@ -467,28 +467,14 @@ func TestEveryPublishedEventIsItsOwnCanonicalName(t *testing.T) {
 // has not seen Claude Code's offer to make auto mode the default opens on that
 // offer instead, whose first choice switches bypass off. The template marks it
 // seen, so a sandbox starts in the mode its settings say.
-func TestImageStartsPastTheAutoModeOffer(t *testing.T) {
-	raw, err := os.ReadFile("image.json")
+func TestLauncherInitializesLocalState(t *testing.T) {
+	raw, err := os.ReadFile("launch.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var image harness.ImageMetadata
-	if err := json.Unmarshal(raw, &image); err != nil {
-		t.Fatal(err)
+	if !strings.Contains(string(raw), "claude-code-capture init") {
+		t.Fatal("launcher does not initialize local trust and onboarding")
 	}
-	if image.Harness == nil {
-		t.Fatal("image.json declares no harness")
-	}
-	for _, file := range image.Harness.Files {
-		if file.Path != ".claude.json" {
-			continue
-		}
-		if !strings.Contains(file.Content, `"hasSeenAutoDefaultNudge": true`) {
-			t.Fatalf(".claude.json template = %s, want hasSeenAutoDefaultNudge set", file.Content)
-		}
-		return
-	}
-	t.Fatal("image.json declares no .claude.json template")
 }
 
 // Anthropic's API takes one login at many endpoints, and only inference answers

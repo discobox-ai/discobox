@@ -41,6 +41,8 @@ set -eu
 HARNESS_CAPTURE_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 export HARNESS_CAPTURE_DIR
 
+/usr/local/libexec/discobox/claude-code-capture init
+
 PREVIOUS_CONFIG=/run/discobox/configure/harness-previous-config.json
 OUTPUT=/run/discobox/configure/harness-configure.json
 CREDENTIALS_FILE="$HOME/.claude/.credentials.json"
@@ -221,7 +223,7 @@ seed_previous_credential() {
 	[ -n "$SEEDED_SENTINEL" ] || return 0
 	if [ "$PREVIOUS_ENV" = "$OAUTH_ENV" ]; then
 		# Replay the credentials file the last run captured, with the sentinel in
-		# place of its template action, so the seeded session carries the same
+		# place of its secret reference, so the seeded session carries the same
 		# scopes the real login had. Without them Claude Code would limit itself
 		# to inference and the user would see a downgraded session that the
 		# credential does not actually deserve.
@@ -464,7 +466,7 @@ write_output() {
 		// out of the real login (extract_oauth_payload) are replayed here.
 		//
 		// What lands in the file is the **sentinel**, not the credential: the
-		// content is a template, and each sandbox renders its own sentinel into
+		// content is a reference, and each sandbox renders its own sentinel into
 		// it. The proxy swaps it outbound exactly as it did for the env var, so
 		// no credential is written to a file anywhere.
 		//
@@ -476,7 +478,7 @@ write_output() {
 		// the field must be present, and it is never reachable.
 		const { credentialsFile } = require(require('path').join(process.env.HARNESS_CAPTURE_DIR, 'claude-code-normalize.cjs'));
 
-		if (payload && Array.isArray(payload.scopes) && payload.scopes.length) {
+		if (payload) {
 			files.push(credentialsFile(payload));
 		} else if (secret.usePrevious) {
 			// Keeping the previous credential keeps what was captured with it:
@@ -494,6 +496,9 @@ write_output() {
 				// just limited to inference until the next full reconfigure.
 			}
 		}
+        if (secret.envName === 'ANTHROPIC_API_KEY') {
+          files.push({path: '.claude.json', createOnly: true, content: JSON.stringify({primaryApiKey: {$secret: 'ANTHROPIC_API_KEY'}, hasCompletedOnboarding: true})});
+        }
 		fs.writeFileSync(process.env.CLAUDE_CONFIGURE_OUTPUT, JSON.stringify({ files, secrets: [secret] }));
 	NODE_EOF
 }

@@ -68,4 +68,5 @@ if [ -d "$SOURCE_DATA" ]; then
 	fi
 fi
 
+/usr/local/libexec/discobox/claude-code-capture init
 exec claude "$@"

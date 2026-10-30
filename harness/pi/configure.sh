@@ -27,7 +27,7 @@
 # reported rather than refused (see verify_default_model).
 #
 # No credential is exported as an environment variable. The script returns
-# auth.json as a templated harness file with each provider's sentinel in place
+# auth.json as a credential document with each provider's sentinel in place
 # of its secret — the same delivery the codex image uses for its own.
 #
 # It also returns pi's settings as the user left them (settings.json: the
@@ -93,7 +93,7 @@ else
 fi
 
 # seed_previous_credentials writes, to $WORK/seed.json, the auth.json a
-# previous run captured with each PREV_ sentinel in place of its template
+# previous run captured with each PREV_ sentinel in place of its reference
 # action, so the session below opens already signed in.
 #
 # This is what lets a reconfigure be about anything else. Reconfigure is usually
@@ -121,19 +121,19 @@ seed_previous_credentials() {
 			previous = {};
 		}
 		const kept = (previous.files || []).find((f) => f && f.path === process.env.PI_CONFIGURE_AUTH_PATH);
-		let template = {};
+		let reference = {};
 		try {
-			template = JSON.parse(kept && typeof kept.content === 'string' ? kept.content : '{}') || {};
+			reference = JSON.parse(kept && typeof kept.content === 'string' ? kept.content : '{}') || {};
 		} catch (err) {
-			template = {};
+			reference = {};
 		}
-		const action = /\{\{\s*\.secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
+		const action = /"\$secret"\s*:\s*"([A-Za-z_][A-Za-z0-9_]*)"/g;
 		const seeded = {};
-		for (const [provider, entry] of Object.entries(template)) {
+		for (const [provider, entry] of Object.entries(reference)) {
 			const text = JSON.stringify(entry);
 			const names = [...text.matchAll(action)].map((m) => m[1]);
 			if (names.length === 0 || names.some((name) => !process.env['PREV_' + name])) continue;
-			seeded[provider] = JSON.parse(text.replace(action, (_, name) => process.env['PREV_' + name]));
+			seeded[provider] = JSON.parse(text, (key, value) => value && typeof value === 'object' && Object.keys(value).length === 1 && typeof value.$secret === 'string' ? process.env['PREV_' + value.$secret] : value);
 		}
 		if (Object.keys(seeded).length > 0) {
 			fs.writeFileSync(process.env.PI_CONFIGURE_SEED, JSON.stringify(seeded, null, 2) + '\n', { mode: 0o600 });
@@ -305,12 +305,12 @@ write_output() {
 		const files = [];
 		if (plan.length > 0) {
 			// The sentinel lands in the file, not the credential: the content is
-			// a template, and each sandbox renders its own sentinels into it.
+			// a reference, and each sandbox renders its own sentinels into it.
 			const auth = {};
 			for (const item of plan) auth[item.provider] = item.entry;
 			files.push({
 				path: process.env.PI_CONFIGURE_AUTH_PATH,
-				template: true,
+
 				content: JSON.stringify(auth, null, 2) + '\n',
 			});
 		}

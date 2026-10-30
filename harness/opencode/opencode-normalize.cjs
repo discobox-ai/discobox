@@ -10,8 +10,8 @@ exports.normalize = function (
   const placeholder = "discobox-refresh-happens-in-the-control-plane";
 
   // The previous run's entries and secret types, by the env name each
-  // entry's template action names.
-  const action = /\{\{\s*\.secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/;
+  // entry's secret reference names.
+  const action = /"\$secret"\s*:\s*"([A-Za-z_][A-Za-z0-9_]*)"/;
   const previousEntries = new Map();
   try {
     for (const entry of JSON.parse(
@@ -101,18 +101,14 @@ exports.normalize = function (
       });
       continue;
     }
-    // Dotted field access, never a quoted map key: this content is JSON,
-    // so a quote inside a template action is escaped into the file itself
-    // and Go's template parser rejects it — which breaks every sandbox
-    // launch while configure still reports success. An env name is
-    // always a valid template field name, so there is nothing to quote.
-    const template = `{{ .secrets.${envName} }}`;
+    // Explicit JSON data binds this credential to its sandbox sentinel.
+    const reference = { $secret: envName };
     const item = { envName, provider, kept: false };
     let delivered;
     if (value.type === "key") {
       item.type = "token";
       item.value = { token: value.key };
-      delivered = { ...value, key: template };
+      delivered = { ...value, key: reference };
     } else {
       const spec = oauthRefresh[provider];
       if (spec && value.refresh && value.refresh !== value.access) {
@@ -132,7 +128,7 @@ exports.normalize = function (
         // to, since a sentinel does not go stale.
         delivered = {
           ...value,
-          access: template,
+          access: reference,
           refresh: placeholder,
           expires: farFuture,
         };
@@ -145,10 +141,10 @@ exports.normalize = function (
         // the placeholder.
         delivered = {
           ...value,
-          access: template,
+          access: reference,
           refresh:
             value.refresh === value.access
-              ? template
+              ? reference
               : value.refresh
                 ? placeholder
                 : value.refresh,

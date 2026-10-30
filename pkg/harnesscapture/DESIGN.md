@@ -27,6 +27,8 @@ credential and local paths. The exporter applies those same exclusions before
 returning files; server validation is independent of the sandbox. Exclusions
 match object path segments (`*` one, `**` any depth). Legacy scalar-allowlist
 definitions require a metadata refresh rather than silently dropping protection.
-Credential templates permit only
-registered metadata leaves and exact sentinel references. Provider OAuth metadata
+Credential documents permit only registered metadata leaves and exact JSON
+secret references (`{"$secret":"ENV_NAME"}`). Only declared credential files
+resolve those objects; ordinary settings are literal, including template-like
+strings. Missing or unregistered bindings fail without writing empty tokens. Provider OAuth metadata
 is authoritative; captured metadata cannot redirect a refresh request.

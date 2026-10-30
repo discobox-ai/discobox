@@ -19,7 +19,7 @@ normalizers. Configure still owns onboarding and verification.
 Export is noninteractive JSON over stdin/stdout. It preserves ordinary settings,
 omits the harness-declared credential/local paths, and converts supported local
 logins to secret values plus safe
-credential templates. Unknown providers, credential commands, unsafe metadata,
+credential documents. Unknown providers, credential commands, unsafe metadata,
 and malformed inputs produce value-free diagnostics and protect local credential
 files. Cleared Claude OAuth tokens represent sign-out and leave delivery
 restorable; a
@@ -29,18 +29,17 @@ log; exception messages and stacks never leave the exporter. Omission never
 revokes a login. `BaselineOnly` reads the delivered,
 rendered baseline, not current disk settings. Current sentinels and privately supplied prior aliases become `keep`
 bindings. An old delivered alias remains a reference while runtime reminting
-converges; its exported template names the binding, so ordinary repair can install
+converges; its exported document names the binding, so ordinary repair can install
 the current sentinel. A sentinel belonging to another provider is never new
 secret material.
 Sentinels have vendor-compatible shapes, so only exact membership can identify
 them; the server also rejects values matching its assignments.
 
 Reconsideration is a pure projection of the immutable candidate and the current
-server templates (including the Claude bundle seed's templated API-key binding):
-only selected credentials replace entries, while other current
+server credential documents: only selected credentials replace entries, while other current
 bindings remain. It never reads a newer local login. A shared credential document
 is rebuilt together with its binding selection; portable file selection cannot
-separately select an auth template.
+separately select an auth document.
 
 Settings preserve unknown preferences, nested objects, arrays, hooks and custom
 provider configuration rather than maintaining a second copy of each vendor's
@@ -49,7 +48,7 @@ preference schema. Each manifest names known credential-bearing paths to exclude
 state such as trust and recent-model history. Exclusion patterns match actual
 object path segments, with `*` for one and `**` for any depth. This is known-shape
 normalization, not a scanner for secrets embedded in arbitrary strings.
-Credential files still use strict schemas and sentinel templates; they are never
+Credential files still use strict schemas and sentinel references; they are never
 ordinary settings. Recognized exclusions do not themselves create diagnostics.
 JSON/JSONC accepts comments and trailing commas where the CLI does. TOML and YAML
 use the pinned `smol-toml` and `yaml` parsers, bundled into `settings.cjs` by
@@ -59,11 +58,14 @@ harness, so export
 requires no package installation. Parse failures retain prior state. Older
 settings allowlist definitions require a harness metadata refresh; they are not
 silently treated as unrestricted documents.
-Codex removes parsed local-project tables in configure and capture, then appends
-its registered literal template suffix so each consuming sandbox trusts its own
-working directory. Literal `{{` directives in the ordinary settings prefix are
-rejected rather than evaluated as delivery templates.
-The server permits only that exact suffix and validates the portable prefix.
+Portable settings are literal files. Codex excludes parsed local-project tables
+and supplies workspace trust as a process configuration override in its launcher
+and configure flow. Claude's initializer merges onboarding and trust into local
+state while preserving other fields. Neither exports trust into shared settings.
+Credential documents use exact JSON objects `{"$secret":"ENV_NAME"}` at registered
+secret leaves. The installer substitutes current sentinels using JSON encoding;
+there is no template language or access to arbitrary sandbox configuration.
+Literal template-like text in preferences remains ordinary text.
 
 Handoff runs only after durable acceptance. A digest of the exact captured entry
 prevents overwriting a newer login; already-applied entries are idempotent. File
@@ -785,10 +787,10 @@ there once the user leaves the session (`/exit` or Ctrl-D).
   - `primaryApiKey` in `~/.claude.json` — an Anthropic Console account login
     writes its long-lived managed key here. The script returns it as a plain
     `token` secret (`ANTHROPIC_API_KEY`), and a later sandbox gets its sentinel
-    back **in the same field it was read from**. That rendering lives in the
-    image's own `.claude.json` template rather than coming back from configure:
-    unlike the subscription credential there is no captured metadata to replay,
-    only the sentinel, so nothing needs to be carried across.
+    back **in the same field it was read from**, through a credential document
+    whose `primaryApiKey` is an explicit secret reference. Startup also initializes
+    this field from the current sentinel context when absent or carrying a known
+    old alias; it preserves a newer local login.
 
   Neither credential is exported as an environment variable. Both are declared
   `delivery: file` (`harness.SecretDeliveryFile`), so the sentinel is minted and
@@ -803,31 +805,12 @@ there once the user leaves the session (`/exit` or Ctrl-D).
   retry. A candidate that fails verification is cleared
   (`clear_captured_credential`) before the retry, so a stale artifact from an
   earlier attempt in the same sandbox can't be mistaken for a fresh one.
-- Directory trust is the image's `.claude.json` template and nothing else. It
-  trusts `.workingDir` — the directory the sandbox's terminals start in — so the
-  configure sandbox, which has no source, opens on login rather than on the
-  trust dialog for the workspace it is already sitting in. The script writes no
-  trust map of its own: what it wrote would belong to a sandbox that is deleted
-  minutes later, and `.claude.json` is not returned as a harness file. That is
-  what makes this harness the simple case — nothing a configure run captures
-  can overlay the template, unlike codex's `config.toml` below.
-- `.claude.json` is `createOnly`, and home is a persistent data volume, so the
-  template settles trust for a sandbox's **first** launch only. A sandbox that
-  already has a `.claude.json` keeps it; upgrading its image does not rewrite
-  it, and a change to the template reaches it only as one trust dialog, which
-  Claude Code then records itself. Nothing repairs the file in place:
-  `createOnly` says the harness owns the file after the first write, and
-  reaching back into it is what that flag exists to forbid.
-- The image's baseline `.claude/settings.json` sets
-  `permissions.defaultMode: bypassPermissions`, which Claude Code refuses to
-  honor as root. That is why the configure sandbox runs as a non-root account
-  (`harness.ConfigureUserName`, uid `ConfigureUserUID`) rather than the image's
-  root — see `resources/harnessconfigs/DESIGN.md` → Configured lifecycle.
-  The `.claude.json` template also sets `hasSeenAutoDefaultNudge`. With that
-  default mode, Claude Code otherwise opens on an offer to make auto mode the
-  default, whose preselected answer switches bypass off;
-  `skipDangerousModePermissionPrompt` does not cover it. Like trust, it reaches
-  only a sandbox's first `.claude.json`.
+- The launcher and configure flow run `claude-code-capture init`. It merges
+  onboarding, the auto-mode nudge marker, and trust for the actual current
+  directory into `.claude.json`, preserving other projects, preferences and
+  newer local credentials. Malformed state is left intact and startup fails.
+- `.claude/settings.json` remains literal, with the bypass-permission defaults.
+  Claude refuses bypass as root, so configure runs as the sandbox account.
 - Every path ends in a `claude -p` check with only the chosen variable in the
   environment (and the credentials file moved aside), so a credential that
   cannot actually talk to the API never reaches a `HarnessConfig`. The script
@@ -874,7 +857,7 @@ image's `unavailable` message.
   (only `codex exec` honors `CODEX_API_KEY`), and a ChatGPT token has no
   variable to be read from in the first place. `~/.codex/auth.json` is the one
   delivery both halves of the harness agree on, so the flow returns it as a
-  templated harness file with the sentinel in the credential's place.
+  credential document with the sentinel in the credential's place.
 - An **API key** sign-in leaves `{"OPENAI_API_KEY": "sk-…"}`, stored as a plain
   `token` secret (`OPENAI_API_KEY`).
 - A **ChatGPT** sign-in leaves `tokens.{id_token, access_token, refresh_token,
@@ -896,7 +879,7 @@ image's `unavailable` message.
     `subscriptionType`, the same non-secret "what this grant is" metadata
     claude-code records scopes as.
 - Reconfigure seeds the previous auth.json back with the `PREV_` sentinel in
-  place of its template action, so the session opens **already signed in** and
+  place of its secret reference, so the session opens **already signed in** and
   changing a model or theme costs no re-authentication. Detection is the same
   comparison claude-code makes: a value equal to the seeded sentinel proves
   nothing re-authenticated and comes back as `usePrevious`.
@@ -906,44 +889,21 @@ image's `unavailable` message.
     says so and offers to start codex again rather than reporting a missed step.
   - Whatever the script does *not* seed, it removes. A configured harness
     delivers its own auth.json into the configure sandbox like any other file,
-    but its template renders against secrets this sandbox does not have (they
-    arrive `PREV_`-prefixed), so what lands is a credential-shaped file with
-    nothing behind it — which codex reads as "signed in", skipping the sign-in
-    screen the user came for. For the same reason the image declares **no**
-    baseline auth.json: an empty one authenticates every sandbox with nothing.
+    but configure seeds its own credential from `PREV_` bindings instead of
+    installing run-mode credential documents. There is no baseline auth.json.
 - Verification runs `codex exec` against the auth.json as it stands, which is
   exactly what a run sandbox will do. There is no environment variable to point
   codex at one credential instead of another, so the file is the subject of the
   check and the environment is scrubbed of the variables `codex exec` would
   otherwise prefer over it.
-- It returns **two files**: that auth.json, and `~/.codex/config.toml` as the
-  user left it. Codex keeps settings and directory trust in one file, so
-  returning it verbatim would make this throwaway sandbox's trust map the
-  harness's. The `[projects]` tables are stripped and one templated stanza put
-  back — the same one the image declares, trusting `.workingDir`, the directory
-  the sandbox's terminals start in.
-  - The stanza is **guarded** on `.workingDir` rather than rendered bare. Unlike
-    claude's, this file is persisted in the harness config and delivered to
-    whatever sandbox uses it, which may run an image whose agent does not set
-    that key; bare, `missingkey=zero` renders `[projects.null]` — valid TOML
-    that silently trusts a project named `null`. Guarded, it degrades to no
-    trust, a visible failure.
-  - The script still trusts the workspace before launching (`ensure_workspace_trusted`).
-    A configured harness delivers its captured `config.toml` into the configure
-    sandbox, and a captured copy whose stanza does not follow `.workingDir`
-    shadows the image's fixed template — in the very run that would refresh it.
-    Whatever the script writes is stripped back out by `write_output`, so the
-    returned file is the fixed one either way.
-  - `ConfiguredFiles` overlay the image's `Files` by path, so fixing the image
-    fixes nothing for a config already captured. The stanza this script used to
-    write — trusting the primary source's target, so a source-less sandbox
-    trusted nothing — is rewritten onto `.workingDir` in stored configs at
-    server start (`server/internal/database` → `retrustConfiguredCodexWorkingDir`),
-    keeping the old stanza as the fallback where `.workingDir` is unset: a
-    stored config can name an image whose agent predates the key, and must not
-    lose the trust it had. Changing the stanza again needs the same: a
-    migration for each stanza it replaces, including that one, or every config
-    captured before keeps it.
+- It returns a credential document for `auth.json` and literal user preferences
+  for `~/.codex/config.toml`, excluding parsed `[projects]` tables. Both the
+  launcher and configure pass `-c projects.<JSON-quoted cwd>.trust_level="trusted"`.
+  Trust never needs to be appended to the user's file or persisted centrally.
+- Existing stored trust suffixes and credential references are converted in
+  place by the server migration. Old sandbox bootstraps and capture checkpoints
+  use the same bounded conversion on read. Unknown executable templates fail
+  explicitly; migration never evaluates them or discards user preferences.
 
 ### OpenCode
 
@@ -980,7 +940,7 @@ that declares none. See
   (GitHub Copilot; DigitalOcean and Snowflake, which cannot be renewed from
   here) is a `token` holding its access token, and the script says when it
   expires.
-- **Delivery is the export as a templated harness file**,
+- **Delivery is the export as a credential document**,
   `.config/discobox/opencode-credentials.json`: each entry under the image's
   own id, `cred_discobox_<provider>`, with the sentinel in place of its key or
   access token, `refresh` a placeholder that can never be spent (or the
@@ -1137,7 +1097,7 @@ The image declares no secrets.
   images are renewed with, xAI form-encoded — is an `oauth` secret; any other
   login is a `token` holding its access token, and the script says when it
   expires, or that it has — kept or new.
-- **Delivery is the export document as a templated harness file**,
+- **Delivery is the export document as a credential document**,
   `.config/discobox/omp-credentials.json`, with sentinels in place of keys and
   access tokens, `refresh` a placeholder (or the sentinel, for GitHub Copilot,
   which stores its token in both), and `expires` far future where the control
@@ -1201,7 +1161,7 @@ read of what it stored ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harne
   token of about 30 minutes, which it keeps in `access`. That exchange runs in
   the sandbox, through the proxy, so the real Copilot token lands in the
   sandbox's `auth.json`; the GitHub token does not.
-- **Delivery is auth.json as a templated harness file**, with sentinels in
+- **Delivery is auth.json as a credential document**, with sentinels in
   place of keys and access tokens, `refresh` a placeholder and `expires` far
   future where the control plane renews; a Copilot entry carries the sentinel
   in `refresh`, a placeholder `access` and `expires` zero, so pi exchanges
