@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -96,7 +97,11 @@ func plainDial(address string) Dialer {
 func getThrough(t *testing.T, dial Dialer) (string, error) {
 	t.Helper()
 	client := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) { return dial(ctx) }}}
-	resp, err := client.Get("http://agent/healthz")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://agent/healthz", nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -194,6 +199,9 @@ func TestBootstrapTreeCarriesTheAgentsKeypairWhereItServesTLS(t *testing.T) {
 // host, and the sandbox can write that volume: a link it planted is refused or
 // replaced, never followed out of it.
 func TestPlaceAgentTLSFollowsNoLinkOutOfTheVolume(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no pool agent writes a config volume on Windows, whose links and modes are not POSIX's")
+	}
 	keypair := sandboxconfig.AgentTLS{Cert: "cert", Key: "key"}
 	outside := t.TempDir()
 	target := filepath.Join(outside, "target")

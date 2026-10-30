@@ -102,7 +102,8 @@ func (a *authority) place(t *testing.T, dir, name string, serial int64) {
 // serve serves the agent's API over TLS with keypair and returns its address.
 func serve(t *testing.T, keypair *Keypair) string {
 	t.Helper()
-	inner, err := net.Listen("tcp", "127.0.0.1:0")
+	var listenConfig net.ListenConfig
+	inner, err := listenConfig.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,11 +116,25 @@ func serve(t *testing.T, keypair *Keypair) string {
 	return inner.Addr().String()
 }
 
-func tlsClient(ca *authority, serverName string) *http.Client {
-	return &http.Client{Transport: &http.Transport{
+// getTLS asks the agent at address over TLS, verifying it for serverName
+// against ca, and returns the connection's state.
+func getTLS(t *testing.T, ca *authority, serverName, address string) (*tls.ConnectionState, error) {
+	t.Helper()
+	client := &http.Client{Transport: &http.Transport{
 		TLSClientConfig:   &tls.Config{RootCAs: ca.pool, ServerName: serverName, MinVersion: tls.VersionTLS12},
 		DisableKeepAlives: true,
 	}}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://"+address+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.TLS, nil
 }
 
 // The agent serves its API over TLS with the keypair its pool placed,
@@ -130,12 +145,10 @@ func TestTheAgentServesTheKeypairItsPoolPlaced(t *testing.T) {
 	ca.place(t, dir, "sbx-1.sandbox.discobox.internal", 2)
 	address := serve(t, NewKeypair(dir))
 
-	resp, err := tlsClient(ca, "sbx-1.sandbox.discobox.internal").Get("https://" + address + "/")
-	if err != nil {
+	if _, err := getTLS(t, ca, "sbx-1.sandbox.discobox.internal", address); err != nil {
 		t.Fatalf("TLS to the agent: %v", err)
 	}
-	_ = resp.Body.Close()
-	if _, err := tlsClient(ca, "sbx-2.sandbox.discobox.internal").Get("https://" + address + "/"); err == nil {
+	if _, err := getTLS(t, ca, "sbx-2.sandbox.discobox.internal", address); err == nil {
 		t.Fatal("a pool meaning to reach sbx-2 accepted sbx-1's agent")
 	}
 }
@@ -150,12 +163,11 @@ func TestARenewedKeypairIsServedFromTheNextHandshake(t *testing.T) {
 	address := serve(t, NewKeypair(dir))
 	serial := func() int64 {
 		t.Helper()
-		resp, err := tlsClient(ca, "sbx-1.sandbox.discobox.internal").Get("https://" + address + "/")
+		state, err := getTLS(t, ca, "sbx-1.sandbox.discobox.internal", address)
 		if err != nil {
 			t.Fatal(err)
 		}
-		_ = resp.Body.Close()
-		return resp.TLS.PeerCertificates[0].SerialNumber.Int64()
+		return state.PeerCertificates[0].SerialNumber.Int64()
 	}
 	if got := serial(); got != 2 {
 		t.Fatalf("served serial %d, want 2", got)
@@ -176,7 +188,7 @@ func TestARenewedKeypairIsServedFromTheNextHandshake(t *testing.T) {
 // than serving anything else.
 func TestWithoutAKeypairNoTLSIsServed(t *testing.T) {
 	address := serve(t, NewKeypair(filepath.Join(t.TempDir(), "absent")))
-	if _, err := tlsClient(newAuthority(t), "sbx-1.sandbox.discobox.internal").Get("https://" + address + "/"); err == nil {
+	if _, err := getTLS(t, newAuthority(t), "sbx-1.sandbox.discobox.internal", address); err == nil {
 		t.Fatal("TLS was served with no keypair")
 	}
 }

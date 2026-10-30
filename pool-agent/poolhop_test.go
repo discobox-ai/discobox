@@ -62,7 +62,7 @@ func TestPoolHopOfAMachinePoolOnANetworkIsDirect(t *testing.T) {
 	}
 }
 
-// A machine pool reached only at its public URL, an edge, is tunnelled to
+// A machine pool reached only at its public URL, an edge, is tunneled to
 // through it, its sandboxes' machines reach that host alone, and its agents
 // serve plain HTTP, which is all an edge speaks to them, whatever the pool
 // sets.
