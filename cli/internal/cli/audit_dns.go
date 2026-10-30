@@ -155,7 +155,7 @@ characters escaped.`,
 			header := true
 			return readAudit(cmd.Context(), []auditSource[apimodel.DNSAuditQuery]{source}, a.auditReadOptions(cmd, sinceAt, limit, follow), func(queries []apimodel.DNSAuditQuery) error {
 				if a.output == "json" {
-					return writeTerminalSafeJSONLines(cmd, queries)
+					return writeTerminalSafeJSONLines(cmd.OutOrStdout(), queries)
 				}
 				err := table.write(cmd.OutOrStdout(), queries, header, follow)
 				header = false

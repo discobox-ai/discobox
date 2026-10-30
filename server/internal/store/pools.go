@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -288,7 +287,7 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, hosts platf
 // Its readers poll: the client for its status line, and an attach waiting on a
 // sandbox hosted here, which reads the advancing timestamp as proof that a slow
 // host is still coming up rather than stalled (ADR 0081).
-func (s *Store) RecordPoolProvisionProgress(ctx context.Context, poolID string, progress json.RawMessage, observedAt time.Time) error {
+func (s *Store) RecordPoolProvisionProgress(ctx context.Context, poolID string, progress model.RawJSON, observedAt time.Time) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
@@ -307,7 +306,7 @@ func (s *Store) RecordPoolProvisionProgress(ctx context.Context, poolID string, 
 // progress writers above: this is telemetry arriving on its own schedule
 // against a row the pool's reconcile also writes, and every other column on it
 // belongs to somebody else.
-func (s *Store) RecordPoolResources(ctx context.Context, poolID string, resources json.RawMessage, reportedAt time.Time) error {
+func (s *Store) RecordPoolResources(ctx context.Context, poolID string, resources model.RawJSON, reportedAt time.Time) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err

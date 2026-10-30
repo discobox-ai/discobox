@@ -59,6 +59,12 @@ var yamlEnumAliases = map[string]string{
 	// The failure reason sits on the embedded ResourceLifecycle beside the
 	// message it classifies, and the API carries it inside the runtime object.
 	"SandboxRuntime.errorReason": "ResourceLifecycle.errorReason",
+	// A sandbox event's projection carries the sandbox's own fields
+	// (ADR 26-10-30-868 §3).
+	"SandboxEvent.desiredState": "ResourceLifecycle.desiredState",
+	"SandboxEvent.state":        "ResourceLifecycle.state",
+	"SandboxEvent.runtimeState": "Sandbox.runtimeState",
+	"SandboxEvent.errorReason":  "ResourceLifecycle.errorReason",
 }
 
 // yamlOwnedEnums lists contract enums with no authoritative Go model tag, with
@@ -73,6 +79,7 @@ var yamlOwnedEnums = map[string]string{
 	"Pool.health":                            "derived by Pool.Health from heartbeat freshness and reported readiness",
 	"RefreshSecretBody.via":                  "a narrowing of SecretRefreshAnswer.via: a client says it ran the command or a person entered the value; update is recorded only for an ordinary write",
 	"Job.status":                             "job status values are owned by the orchestration module; model.Job.Status is untagged text",
+	"ProjectEventReset.reason":               "why an event stream did not resume, owned by the stream (services.ProjectEventReset*); nothing stores it",
 	// Both axes now diverge per resource, which is what a single embedded tag
 	// cannot express: the shared tag is the union, and each resource's schema
 	// narrows it (ADR 0017 §2, ADR 0022 §1).

@@ -54,7 +54,7 @@ type Config struct {
 	AgentPort        int                    `json:"agentPort,omitempty"`
 }
 
-func Decode(data json.RawMessage) (Config, error) {
+func Decode(data []byte) (Config, error) {
 	return poolruntime.DecodeConfig[Config](data, ProviderType)
 }
 

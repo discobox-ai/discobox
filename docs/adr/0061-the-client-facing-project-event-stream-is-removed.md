@@ -1,6 +1,6 @@
 # 0061 — The client-facing project event stream is removed
 
-- **Status**: Accepted
+- **Status**: Accepted (its removal of the client-facing stream and `discobox events` narrowed by [26-10-30-868](26-10-30-868-a-projects-events-are-a-retained-log-streamed-over-sse-and-sandbox-changes-are-the-first.md), which builds the stream "When something needs this back" asks for)
 - **Date**: 2026-08-19
 - **Relates to**: [ADR 0060](0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md),
   which declined to build on this stream and is why its state was examined at

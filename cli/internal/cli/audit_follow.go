@@ -10,8 +10,6 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
-
-	"github.com/spf13/cobra"
 )
 
 // auditFollowInterval is how long a follower waits between polls. A variable so
@@ -755,7 +753,7 @@ func (o *auditOnce) changed(message string) bool {
 
 // writeTerminalSafeJSONLine writes value as one line of compact JSON, escaped
 // as writeTerminalSafeJSON escapes it, for a follow's stream of records.
-func writeTerminalSafeJSONLine(cmd *cobra.Command, value any) error {
+func writeTerminalSafeJSONLine(out io.Writer, value any) error {
 	var indented bytes.Buffer
 	if err := writeTerminalSafeJSON(&indented, value); err != nil {
 		return err
@@ -765,14 +763,14 @@ func writeTerminalSafeJSONLine(cmd *cobra.Command, value any) error {
 		return err
 	}
 	line.WriteByte('\n')
-	_, err := cmd.OutOrStdout().Write(line.Bytes())
+	_, err := out.Write(line.Bytes())
 	return err
 }
 
 // writeTerminalSafeJSONLines writes each record as its own line.
-func writeTerminalSafeJSONLines[T any](cmd *cobra.Command, records []T) error {
+func writeTerminalSafeJSONLines[T any](out io.Writer, records []T) error {
 	for _, record := range records {
-		if err := writeTerminalSafeJSONLine(cmd, &record); err != nil {
+		if err := writeTerminalSafeJSONLine(out, &record); err != nil {
 			return err
 		}
 	}

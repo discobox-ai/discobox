@@ -189,7 +189,12 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := retireHarnessImages(write); err != nil {
 		return err
 	}
-	return rekeySandboxOrigins(write)
+	if err := rekeySandboxOrigins(write); err != nil {
+		return err
+	}
+	// Last, so the projection it records is of the rows every step above has
+	// finished with.
+	return startProjectEventLog(write)
 }
 
 // retireHarnessImages takes the runnable images off the harness configs that

@@ -223,6 +223,7 @@ See "%[1]s run --help" for everything run takes.`, name),
 
 	cmd.AddCommand(app.newRunCommand())
 	cmd.AddCommand(app.newListCommand())
+	cmd.AddCommand(app.newEventsCommand())
 	cmd.AddCommand(app.newRemoveCommand())
 	for _, action := range sandboxLifecycles {
 		cmd.AddCommand(app.newLifecycleCommand(action))

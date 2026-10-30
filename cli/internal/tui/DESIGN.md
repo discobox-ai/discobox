@@ -323,8 +323,9 @@ chosen; minutes to a day, not a binding's weeks and months), which the edit card
 changes for any token.
 
 **It is polled, not pushed.** The requests are read on the same 5s tick as the
-listing; there is no client-facing event stream to subscribe to
-([ADR 0061](../../../docs/adr/0061-the-client-facing-project-event-stream-is-removed.md)),
+listing; the project event stream carries sandbox changes, not credential
+requests
+([ADR 26-10-30-868](../../../docs/adr/26-10-30-868-a-projects-events-are-a-retained-log-streamed-over-sse-and-sandbox-changes-are-the-first.md)),
 and an approval is answered on human time anyway. One read serves both the row
 and the workspace: `setCredentialRequests` indexes by discobox and stamps the
 count onto the rows, so the draw stays a pure function of what the list holds.

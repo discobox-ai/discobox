@@ -77,7 +77,7 @@ that most recently needed the value.`,
 			header := true
 			return readAudit(cmd.Context(), []auditSource[apimodel.SecretRefreshEvent]{source}, a.auditReadOptions(cmd, sinceAt, limit, follow), func(events []apimodel.SecretRefreshEvent) error {
 				if a.output == "json" {
-					return writeTerminalSafeJSONLines(cmd, events)
+					return writeTerminalSafeJSONLines(cmd.OutOrStdout(), events)
 				}
 				err := table.write(cmd.OutOrStdout(), events, header, follow)
 				header = false

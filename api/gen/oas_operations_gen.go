@@ -159,6 +159,7 @@ const (
 	StatSandboxFileOperation                       OperationName = "StatSandboxFile"
 	StopSandboxOperation                           OperationName = "StopSandbox"
 	StopSandboxServiceOperation                    OperationName = "StopSandboxService"
+	StreamProjectEventsOperation                   OperationName = "StreamProjectEvents"
 	StreamSandboxExecResourcesOperation            OperationName = "StreamSandboxExecResources"
 	SuspendSandboxOperation                        OperationName = "SuspendSandbox"
 	UnarchiveSandboxOperation                      OperationName = "UnarchiveSandbox"

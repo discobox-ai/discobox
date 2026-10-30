@@ -489,7 +489,7 @@ func TestAPoolResourceBlobFromAnotherVersionDoesNotFailThePoolRead(t *testing.T)
 	ctx := context.Background()
 	// A shape no current schema describes, as an older or newer agent might
 	// have written it.
-	stale := json.RawMessage(`{"reportedAt":"2026-01-01T00:00:00Z","somethingElse":{"gone":1}}`)
+	stale := model.RawJSON(`{"reportedAt":"2026-01-01T00:00:00Z","somethingElse":{"gone":1}}`)
 	if err := svc.store.RecordPoolResources(ctx, "pool-a", stale, time.Now().UTC()); err != nil {
 		t.Fatalf("record stale resources: %v", err)
 	}

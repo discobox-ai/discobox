@@ -67,7 +67,7 @@ type Config struct {
 	DeliverProviderKey bool `json:"deliverProviderKey,omitempty"`
 }
 
-func Decode(data json.RawMessage) (Config, error) {
+func Decode(data []byte) (Config, error) {
 	return poolruntime.DecodeConfig[Config](data, ProviderType)
 }
 

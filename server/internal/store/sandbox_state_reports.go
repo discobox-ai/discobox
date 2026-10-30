@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -81,6 +80,7 @@ func (s *Store) ApplySandboxStateReports(ctx context.Context, batch SandboxState
 		if err != nil {
 			return err
 		}
+		var written []string
 		for i := range hosted {
 			sandbox := &hosted[i]
 			// An archived sandbox has no container by intent, so every complete
@@ -126,11 +126,19 @@ func (s *Store) ApplySandboxStateReports(ctx context.Context, batch SandboxState
 				Updates(sandbox).Error; err != nil {
 				return err
 			}
+			written = append(written, sandbox.ID)
 			if missing || previous != sandbox.RuntimeState {
 				changed = append(changed, SandboxObservation{Sandbox: *sandbox, RuntimeMissing: missing})
 			}
 		}
-		return nil
+		// Every row written is compared, not only those whose power moved by
+		// the read above: that read took no lock, and a batch accepted on a
+		// stale one can write back a state another batch has just recorded
+		// the opposite of, which "previous" would call no change. The compare
+		// is against what the last event recorded, under the lock the write
+		// took, so the complete sync's restamp of an unchanged box writes no
+		// event (ADR 26-10-30-868 §4).
+		return txStore.recordSandboxChanges(ctx, tx, model.ProjectEventSandboxUpdated, written...)
 	})
 	if err != nil {
 		return nil, err
@@ -169,7 +177,7 @@ func (s *Store) listSandboxesForPool(ctx context.Context, tx *gorm.DB, projectID
 // SandboxProgressReport is one report of provisioning progress on one sandbox.
 type SandboxProgressReport struct {
 	SandboxID string
-	Progress  json.RawMessage
+	Progress  model.RawJSON
 }
 
 // ApplySandboxProgressReports records provisioning progress.

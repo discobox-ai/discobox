@@ -52,6 +52,7 @@ sequenceDiagram
     Store->>DB: txStore writes resource state (generation bump, intent)
     Service->>Engine: MarkDirtyTx(txDB, type, id)
     Engine->>DB: write dirty mark
+    Store->>DB: append queued project events (counter row, last lock)
     DB-->>Store: commit
 ```
 
@@ -59,9 +60,41 @@ Use a transaction only where two statements must commit together: intent plus
 its dirty mark, a create plus its secret assignments, a delete plus its
 cascades (`DeleteProject`, `DeleteSecret`, `DeleteSandbox`,
 `DeleteHarnessConfig`), a state-report batch. A mutation that is a single
-statement does not need one. Nothing is published on commit: a waiting caller
+statement does not need one, except a sandbox write that can move what its
+events project (below). Nothing is published on commit: a waiting caller
 re-reads the rows rather than being told
 ([ADR 0081](../../../docs/adr/0081-project-events-are-not-persisted-and-the-wait-polls.md)).
+
+## Project Event Log
+
+A project's events are rows of `project_event_log`, written in the
+transaction of the change they record and streamed to clients
+([ADR 26-10-30-868](../../../docs/adr/26-10-30-868-a-projects-events-are-a-retained-log-streamed-over-sse-and-sandbox-changes-are-the-first.md)).
+
+- **Sandbox events follow the projection.** `model.Sandbox.EventProjection` is
+  what a sandbox event carries. Every writer of a projected column —
+  `CreateSandbox`, `UpdateSandbox`, `ApplySandboxStateReports`,
+  `UpdateSandboxAgentStatus`, `DeleteSandbox` — runs in a transaction (`writeTx`:
+  the caller's, or its own) and calls `recordSandboxChanges` after its write,
+  which reads the projection back under the row lock the write took, compares it
+  with `recorded_projection`, and queues an event only when it moved. It is
+  handed every row the writer wrote, never a subset the writer judged changed
+  from a read without that lock (the state report's batch read is one). A new
+  writer of a projected column does the same; a writer of anything else does
+  not, and a migration step that writes one re-records the projection
+  (`database/REVIEW.md`).
+- **Events are appended last.** They are queued on the transaction
+  (`eventQueue`) and appended when the outermost `Transaction`'s callback returns,
+  just before commit; a savepoint that rolls back drops its own. Appending takes
+  the IDs by incrementing the one counter row (`project_event_counter`), whose
+  lock is held to commit, so IDs commit in ID order — and it must be the last
+  lock a transaction takes, or a transaction holding it could wait on a row
+  whose holder waits for it.
+- **The log is read on the write handle** (`logRead`), never a replica: a
+  stream's catch-up and its node's tailer must see one order of commits.
+- **Retention** (`PruneProjectEvents`) removes a prefix of the log by ID and
+  records the last ID removed (`pruned_through`); a Last-Event-ID below it is
+  known to be gone. `DeleteProject` deletes the project's events with it.
 
 ## Conditional Writes
 
@@ -118,6 +151,10 @@ save silently replays a stale value.
   omits both (`sandboxWakeColumns`) and only `CancelSandboxWakeTx` and
   `SetSandboxWakeIfEpoch` write them. The latter writes only on the epoch its
   caller read, which every cancellation moves.
+- A sandbox's `recorded_projection` is written only by `recordSandboxChanges`,
+  beside the event that carries it, and by the upgrade that records it for a
+  sandbox from before the log; `UpdateSandbox` omits it
+  (`sandboxRecordedProjectionColumn`).
 - Agent telemetry is written as narrow column updates, never a row `Save`:
   `UpdateSandboxAgentStatus`, `UpdateSandboxResources`,
   `RecordPoolProvisionProgress`, `RecordPoolResources`.
@@ -192,6 +229,7 @@ Keep files split by resource area:
 | `projects.go`, `users.go` | Projects, members, per-user defaults, users, project user keys. |
 | `harness_configs.go` | Harness configs. |
 | `sandboxes.go` | Sandbox desired-state persistence, reconcile scans, archive expiry, agent-status/resource telemetry. |
+| `project_events.go` | The project event log: the event queue, `recordSandboxChanges`, ordered ID allocation, the log's reads, and retention. |
 | `sandbox_state_reports.go` | Pool-agent state and provisioning-progress reports (the observed columns' only writer). |
 | `providers.go` | Provider instance persistence. |
 | `pools.go` | Pool persistence: CRUD, enrollment (the key a pool's maker read from its box) and heartbeats (the first registers it), telemetry, the schedulable-pool placement gate, and pool-scoped sandbox counts. |

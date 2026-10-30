@@ -192,6 +192,31 @@ Two things are the handler's own:
   of an idle followed log blocks until the next line, which may never come, so
   the handler cannot wait to notice on its next write.
 
+### Project Event Stream
+
+`/projects/{projectId}/events` is hand-wired for the same reason as the host
+logs: the generated scaffold copies a `text/event-stream` body in one piece and
+flushes nothing. The operation is in the OpenAPI document for its contract
+(`stream-project-events`, `SandboxEvent`, `ProjectEventReset`), with a handler
+stub the router never reaches. Project authorization is the generated routes',
+by path; the sandbox role does not include it (ADR 26-10-30-868, Deferred).
+
+The handler only frames what `services.EventService` hands it
+([ADR 26-10-30-868](../docs/adr/26-10-30-868-a-projects-events-are-a-retained-log-streamed-over-sse-and-sandbox-changes-are-the-first.md)):
+
+- The first frame is `retry` with the `id` the stream starts after. An id with
+  no data still sets a client's last event ID, so one that drops before any
+  event resumes from there instead of replaying its history.
+- A `reset` frame, with no id, follows when the Last-Event-ID could not be
+  resumed from. Then one frame per event (`id`, `event`, one `data` line),
+  flushed as written, and a `: keepalive` comment after 15 idle seconds,
+  with the stream's `Through` ID when it has nothing waiting, so a quiet
+  project's client does not keep its connect-time ID until retention expires
+  it.
+- A stream that fell behind ends the response. The client resumes from its
+  last id and loses nothing. Errors before the first frame are
+  `application/problem+json`, as on the generated routes.
+
 ### Pool Guest Image
 
 `POST /api/projects/{projectId}/pools/{poolId}/guest-image` is hand-wired beside

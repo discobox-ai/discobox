@@ -70,7 +70,7 @@ are recorded.
 			header := true
 			return readAudit(cmd.Context(), []auditSource[apimodel.HarnessHookLog]{source}, a.auditReadOptions(cmd, sinceAt, limit, follow), func(hooks []apimodel.HarnessHookLog) error {
 				if a.output == "json" {
-					return writeTerminalSafeJSONLines(cmd, hooks)
+					return writeTerminalSafeJSONLines(cmd.OutOrStdout(), hooks)
 				}
 				err := table.write(cmd.OutOrStdout(), hooks, header, follow)
 				header = false
@@ -132,7 +132,7 @@ last --limit oldest first and keep printing events as they are recorded.
 			header := true
 			return readAudit(cmd.Context(), []auditSource[apimodel.SandboxExecEvent]{source}, a.auditReadOptions(cmd, sinceAt, limit, follow), func(events []apimodel.SandboxExecEvent) error {
 				if a.output == "json" {
-					return writeTerminalSafeJSONLines(cmd, events)
+					return writeTerminalSafeJSONLines(cmd.OutOrStdout(), events)
 				}
 				err := table.write(cmd.OutOrStdout(), events, header, follow)
 				header = false

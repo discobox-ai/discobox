@@ -1,6 +1,6 @@
 # 0081 — Project events are not persisted, and the attach wait polls
 
-- **Status**: Accepted
+- **Status**: Accepted (its removal of the store's event machinery narrowed by [26-10-30-868](26-10-30-868-a-projects-events-are-a-retained-log-streamed-over-sse-and-sandbox-changes-are-the-first.md): a transaction's event queue returns, to write the project event log)
 - **Date**: 2026-09-01
 - **Settles**: [ADR 0061](0061-the-client-facing-project-event-stream-is-removed.md),
   which removed the client-facing stream and deferred this: "no reader of the

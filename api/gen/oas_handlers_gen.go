@@ -23372,6 +23372,168 @@ func (s *Server) handleStopSandboxServiceRequest(args [3]string, argsEscaped boo
 	}
 }
 
+// handleStreamProjectEventsRequest handles stream-project-events operation.
+//
+// The project's events as a server-sent event stream (ADR 26-10-30-868). Each event is a frame with
+// an id, an event type and one line of JSON data. The types are sandbox.created, sandbox.updated
+// (the sandbox's state, power or agent state changed; archiving and restoring are updates whose
+// desiredState and state say so) and sandbox.deleted, each with a SandboxEvent as its data. More
+// kinds may be added, each with its own <resource>. prefix; a client ignores a type it does not know.
+// With no Last-Event-ID the stream replays the project's last `history` events, then continues live.
+// With a Last-Event-ID the log still holds it continues after that event and `history` is ignored.
+// With one the log no longer holds (events are kept for 24 hours) or never gave out, it first sends
+// a `reset` event, with a ProjectEventReset as its data and no id, and then behaves as a stream with
+// no Last-Event-ID. The server sends `retry` once and a comment every 15 seconds while it is idle. A
+// stream whose client cannot keep up is ended; the client resumes with the last id it read and loses
+// nothing.
+//
+// GET /projects/{projectId}/events
+func (s *Server) handleStreamProjectEventsRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("stream-project-events"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/events"),
+	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), StreamProjectEventsOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: StreamProjectEventsOperation,
+			ID:   "stream-project-events",
+		}
+	)
+	params, err := decodeStreamProjectEventsParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response StreamProjectEventsRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    StreamProjectEventsOperation,
+			OperationSummary: "Stream the project's events",
+			OperationID:      "stream-project-events",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "projectId",
+					In:   "path",
+				}: params.ProjectId,
+				{
+					Name: "history",
+					In:   "query",
+				}: params.History,
+				{
+					Name: "Last-Event-ID",
+					In:   "header",
+				}: params.LastEventID,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = StreamProjectEventsParams
+			Response = StreamProjectEventsRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackStreamProjectEventsParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.StreamProjectEvents(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.StreamProjectEvents(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeStreamProjectEventsResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
 // handleStreamSandboxExecResourcesRequest handles stream-sandbox-exec-resources operation.
 //
 // Stream opaque resource snapshots for a sandbox exec.

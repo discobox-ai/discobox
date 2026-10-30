@@ -17,5 +17,7 @@
 - A reconciler never marks the resource it is reconciling (`ErrSelfMark`); to
   run again later it returns `Result.RequeueAt`/`RequeueAfter`.
 - Provider operations return runtime state for the reconciler to persist; they
-  do not write resource rows. Nothing publishes change events — there is no
-  event broker (ADR 0081) — so a waiter polls the rows.
+  do not write resource rows. Nothing in the process publishes change events
+  — there is no event broker (ADR 0081) — so a waiter polls the rows. The
+  project event log (ADR 26-10-30-868) is written by the store for clients,
+  and its own tailer polls it too.

@@ -35,7 +35,7 @@ func CurrentTerminalHarness(record json.RawMessage, harnessID string) (json.RawM
 	return json.Marshal(fields)
 }
 
-func sandboxAgentStatusCurrentHarness(status json.RawMessage, harnessID string) (json.RawMessage, error) {
+func sandboxAgentStatusCurrentHarness(status []byte, harnessID string) ([]byte, error) {
 	if harnessID == "" {
 		return status, nil
 	}

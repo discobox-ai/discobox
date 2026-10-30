@@ -613,6 +613,10 @@ type StopSandboxServiceRes interface {
 	stopSandboxServiceRes()
 }
 
+type StreamProjectEventsRes interface {
+	streamProjectEventsRes()
+}
+
 type StreamSandboxExecResourcesRes interface {
 	streamSandboxExecResourcesRes()
 }
