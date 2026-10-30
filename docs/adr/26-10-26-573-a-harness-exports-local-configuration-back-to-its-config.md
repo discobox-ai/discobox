@@ -4,7 +4,7 @@
   originating sandbox, 26-10-14-718 §2 for pending local credentials, and
   26-10-15-848 §3 for pending and accepted local credentials; §3's
   harness-config grant superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md), where a grant is a
-  harness-config binding; §3's conflict-resolution requirement narrowed by [26-10-30-775](26-10-30-775-a-user-can-force-save-a-reviewed-harness-candidate.md))
+  harness-config binding; §3's conflict-resolution requirement narrowed by [26-10-30-775](26-10-30-775-a-user-can-force-save-a-reviewed-harness-candidate.md); §§1, 4, 6, 7 file-template and Codex trust-template mechanisms superseded by [26-10-30-457](26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md))
 - **Date**: 2026-10-26
 
 ## Context
