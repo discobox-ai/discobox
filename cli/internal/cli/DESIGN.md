@@ -3,7 +3,17 @@
 
 `admin harness changes SANDBOX` previews the immutable candidate the sandbox captured.
 Only the server's validated portable settings and credential identities reach
-this command. `admin harness save SANDBOX CANDIDATE` commits that exact candidate;
+this command. Each changed file prints as `add`, `update`, `remove` or `reset`
+(a removal that falls back to the harness's own file) and its unified diff
+hunks from the preview's `previous` to its `file` — what the server says a
+save replaces and leaves — so a reviewer reads what changes, not the whole
+result; the console's review card draws the same hunks (`harnessChangeDiff`).
+A side that is JSON is re-indented as the exporters write it (`diffText`)
+before the comparison: `previous` is stored as it shipped, often on one line,
+and `file` is exporter output, so byte for byte every line would differ.
+Past `harnessDiffLines` the file is shown replaced whole, so a box cannot make
+the comparison cost the client unbounded memory.
+`admin harness save SANDBOX CANDIDATE` commits that exact candidate;
 repeating it retries acknowledgment. `admin harness reconsider` requires explicit
 `--keep-file` and `--replace-credential` selections before creating a new
 candidate against current revisions. `admin harness discard` leaves local files alone.

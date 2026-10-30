@@ -434,18 +434,27 @@ func diffLine(st *styles, line string) string { return diffPart(st, line, line) 
 
 // diffPart colors text as part of the diff line it was wrapped out of.
 func diffPart(st *styles, line, text string) string {
-	switch {
-	case strings.HasPrefix(line, "@@"):
-		return st.info.Render(text)
-	case strings.HasPrefix(line, "+"):
-		return st.add.Render(text)
-	case strings.HasPrefix(line, "-"):
-		return st.del.Render(text)
-	case strings.HasPrefix(line, `\`):
-		// "\ No newline at end of file"
-		return st.dimText.Render(text)
+	if style := diffStyle(line); style != nil {
+		return style(st).Render(text)
 	}
 	return text
+}
+
+// diffStyle is the style a unified diff line is drawn in, by what its first
+// column says; nil for a line of context, which is drawn as it is.
+func diffStyle(line string) func(*styles) lipgloss.Style {
+	switch {
+	case strings.HasPrefix(line, "@@"):
+		return func(st *styles) lipgloss.Style { return st.info }
+	case strings.HasPrefix(line, "+"):
+		return func(st *styles) lipgloss.Style { return st.add }
+	case strings.HasPrefix(line, "-"):
+		return func(st *styles) lipgloss.Style { return st.del }
+	case strings.HasPrefix(line, `\`):
+		// "\ No newline at end of file"
+		return func(st *styles) lipgloss.Style { return st.dimText }
+	}
+	return nil
 }
 
 // wheel is the wheel over the tab's conversation.

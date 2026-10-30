@@ -7,11 +7,12 @@ import (
 
 func TestHarnessChangesReviewSavesDisplayedCandidate(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
-	ds.harnessChanges = HarnessChanges{CandidateID: "reviewed", State: "pending", Files: []HarnessChangedFile{{Path: ".claude/settings.json", Content: `{"theme":"light"}`}}, Credentials: []string{"anthropic ANTHROPIC_API_KEY (oauth)"}}
+	ds.harnessChanges = HarnessChanges{CandidateID: "reviewed", State: "pending", Files: []HarnessChangedFile{{Path: ".claude/settings.json", Action: "update", Diff: "@@ -1 +1 @@\n-{\"theme\":\"dark\"}\n+{\"theme\":\"light\"}"}}, Credentials: []string{"anthropic ANTHROPIC_API_KEY (oauth)"}}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("H"))
-	if m.dialog == nil || !strings.Contains(m.dialog.body, `"theme":"light"`) || !strings.Contains(m.dialog.body, "ANTHROPIC_API_KEY") {
-		t.Fatalf("review did not show settings and credential identities: %#v", m.dialog)
+	card := dialogText(m)
+	if !strings.Contains(card, `+{"theme":"light"}`) || !strings.Contains(card, `-{"theme":"dark"}`) || !strings.Contains(card, "update .claude/settings.json") || !strings.Contains(card, "ANTHROPIC_API_KEY") {
+		t.Fatalf("review did not show the settings diff and credential identities:\n%s", card)
 	}
 	ds.mu.Lock()
 	ds.harnessChanges.CandidateID = "new-login"
@@ -42,14 +43,14 @@ func TestHarnessDiagnosticOnlyCanBeDiscardedButNotSaved(t *testing.T) {
 
 func TestHarnessChangesRefreshIsExplicit(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
-	ds.harnessChanges = HarnessChanges{CandidateID: "old", State: "pending", Files: []HarnessChangedFile{{Path: "old.json", Content: "old"}}}
+	ds.harnessChanges = HarnessChanges{CandidateID: "old", State: "pending", Files: []HarnessChangedFile{{Path: "old.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+old"}}}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("H"))
 	ds.mu.Lock()
-	ds.harnessChanges = HarnessChanges{CandidateID: "new", State: "pending", Files: []HarnessChangedFile{{Path: "new.json", Content: "new"}}}
+	ds.harnessChanges = HarnessChanges{CandidateID: "new", State: "pending", Files: []HarnessChangedFile{{Path: "new.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+new"}}}
 	ds.mu.Unlock()
 	send(t, m, keyPress("r"))
-	if m.dialog == nil || !strings.Contains(m.dialog.body, "new.json") {
+	if !strings.Contains(dialogText(m), "new.json") {
 		t.Fatal("refresh did not show new candidate")
 	}
 	send(t, m, keyPress("s"))
@@ -60,7 +61,7 @@ func TestHarnessChangesRefreshIsExplicit(t *testing.T) {
 
 func TestWorkspaceLeaderOpensHarnessReview(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
-	ds.harnessChanges = HarnessChanges{CandidateID: "workspace-review", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Content: "{}"}}}
+	ds.harnessChanges = HarnessChanges{CandidateID: "workspace-review", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "add", Diff: "@@ -0,0 +1 @@\n+{}"}}}
 	d, m, term := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
 	d.key("H")
@@ -83,9 +84,9 @@ func TestHarnessReviewScrollsEverySettingsField(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	var content strings.Builder
 	for n := 0; n < 100; n++ {
-		content.WriteString("field-" + itoa(n) + ": value\n")
+		content.WriteString("+field-" + itoa(n) + ": value\n")
 	}
-	ds.harnessChanges = HarnessChanges{CandidateID: "long-review", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Content: content.String()}}}
+	ds.harnessChanges = HarnessChanges{CandidateID: "long-review", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "add", Diff: "@@ -0,0 +1,100 @@\n" + content.String()}}}
 	m := newTestModel(t, ds)
 	send(t, m, keyPress("tab"), keyPress("H"))
 	var seen strings.Builder
