@@ -219,3 +219,5 @@ The migration updates registered/configured files, save-back metadata and receip
 baselines in one transaction, preserving modification times and credential
 bindings. Unknown executable content leaves the stored documents intact and
 fails migration explicitly.
+
+Literal settings and explicit credential references follow [ADR 26-10-30-457](../../../docs/adr/26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md).

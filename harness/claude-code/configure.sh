@@ -244,7 +244,7 @@ seed_previous_credential() {
 			let blob = null;
 			if (kept && typeof kept.content === 'string') {
 				try {
-					blob = (JSON.parse(kept.content.replace(/\{\{[^}]*\}\}/g, process.env.CLAUDE_CONFIGURE_SENTINEL)) || {}).claudeAiOauth || null;
+					blob = (JSON.parse(kept.content) || {}).claudeAiOauth || null;
 				} catch (err) {
 					blob = null;
 				}
