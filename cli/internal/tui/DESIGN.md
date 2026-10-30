@@ -3239,6 +3239,8 @@ A selected sandbox with a pending harness capture offers `H` to review it; the
 same action is in its action menu and on the workspace leader plus `H`. Agent errors, blocking questions, and
 provisioning still take precedence in the row. The review card displays the
 server's validated settings and credential identities, never secret values.
+Each changed file is a section of colored unified diff hunks (`diffStyle`, shared
+with the pull view), as the data source computes them.
 Long settings scroll with PgUp/PgDn while save/discard actions remain visible.
 Save and discard retain the exact displayed candidate ID. A diagnostic-only
 candidate cannot be saved; refresh explicitly reads a new preview. Conflicts

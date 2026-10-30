@@ -46,6 +46,17 @@
   text, and a raw JSON view through `writeTerminalSafeJSON`, not an encoder
   that passes C1 controls and bidirectional overrides. Twice one form was
   escaped while the other reached the screen.
+- **Bound the work done on text from a box.** A diff, parse or layout run over
+  content a sandbox supplied has a cost bound, not only escaped output: a
+  line-by-line diff's memory grows with lines times edits, and a settings
+  file under the 2 MiB capture limit was enough to exhaust the client.
+  Bound the output, not only the input: re-indenting JSON grows by depth
+  times values, and a 118 KB document indented to a gigabyte — the same
+  mistake, made twice in one function.
+- **Compare a harness file's stored and exported forms by content, not
+  bytes.** A preview's `previous` is the stored file as the bundle shipped
+  it and its `file` is exporter output; laid out differently, a one-setting
+  change diffs as the whole file. The first fix compared them byte for byte.
 - **The status line owns its row while it is up.** Anything else written to that
   stream goes through `print`, `note`, or `suspend`; written past it, a line
   comes out with the spinner glued to its front.

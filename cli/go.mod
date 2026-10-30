@@ -19,6 +19,7 @@ require (
 	github.com/discobox-ai/discobox/termpane v0.0.0
 	github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906
 	github.com/go-faster/jx v1.2.0
+	github.com/hexops/gotextdiff v1.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	golang.org/x/crypto v0.58.0
