@@ -1,11 +1,9 @@
 package cli
 
 import (
-	"encoding/json"
-	"time"
-
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/agentstatus"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
@@ -20,11 +18,9 @@ import (
 // latched error displays as `error`, and its agent is still there to be
 // blocked.
 //
-// The sessions are decoded through a local struct, the server's display
-// name's way (services.SandboxDisplayName): the payload is whatever the box's
-// agent sent, and the generated schema type refuses the fields a newer agent
-// adds. The fields below are the contract, SandboxAgentProgramStatus in
-// server.yaml. A state or kind this client does not know reads as none.
+// Which session that is, and which states and kinds count, is
+// agentstatus.PrimaryProgram's rule, the one the server's events read too
+// (ADR 26-10-30-868 §3), so a listing and an event never disagree.
 //
 // Its text is the program's, made displayable here: control characters,
 // bidirectional overrides and invisible formatting never reach a terminal.
@@ -36,62 +32,25 @@ func sandboxProgramStatus(sb apimodel.Sandbox) (programstatus.Status, bool) {
 	if !ok {
 		return programstatus.Status{}, false
 	}
-	raw, ok := agentStatus["sessions"]
+	sessions, ok := agentStatus["sessions"]
 	if !ok {
 		return programstatus.Status{}, false
 	}
-	var sessions []struct {
-		Primary       bool      `json:"primary"`
-		StartedAt     time.Time `json:"startedAt"`
-		ProgramStatus *struct {
-			State      string    `json:"state"`
-			Kind       string    `json:"kind"`
-			Progress   *int      `json:"progress"`
-			App        string    `json:"app"`
-			Title      string    `json:"title"`
-			Msg        string    `json:"msg"`
-			ReportedAt time.Time `json:"reportedAt"`
-		} `json:"programStatus"`
-	}
-	if err := json.Unmarshal(raw, &sessions); err != nil {
+	status := make([]byte, 0, len(sessions)+len(`{"sessions":}`))
+	status = append(append(append(status, `{"sessions":`...), sessions...), '}')
+	program, ok := agentstatus.PrimaryProgram(status)
+	if !ok {
 		return programstatus.Status{}, false
 	}
-	var (
-		found     programstatus.Status
-		startedAt time.Time
-		foundOK   bool
-	)
-	for _, session := range sessions {
-		reported := session.ProgramStatus
-		if !session.Primary || reported == nil || !knownState(programstatus.State(reported.State)) {
-			continue
-		}
-		if foundOK && !session.StartedAt.After(startedAt) {
-			continue
-		}
-		found = programstatus.Status{
-			State:      programstatus.State(reported.State),
-			Progress:   reported.Progress,
-			App:        terminalSafe(reported.App),
-			Title:      terminalSafe(programstatus.Displayable(reported.Title, programstatus.MaxTitle)),
-			Msg:        terminalSafe(programstatus.Displayable(reported.Msg, programstatus.MaxMsg)),
-			ReportedAt: reported.ReportedAt,
-		}
-		switch kind := programstatus.Kind(reported.Kind); kind {
-		case programstatus.Permission, programstatus.Question, programstatus.Auth:
-			found.Kind = kind
-		}
-		startedAt, foundOK = session.StartedAt, true
-	}
-	return found, foundOK
-}
-
-func knownState(state programstatus.State) bool {
-	switch state {
-	case programstatus.Idle, programstatus.Working, programstatus.Done, programstatus.Blocked, programstatus.Error:
-		return true
-	}
-	return false
+	return programstatus.Status{
+		State:      program.State,
+		Kind:       program.Kind,
+		Progress:   program.Progress,
+		App:        terminalSafe(program.App),
+		Title:      terminalSafe(programstatus.Displayable(program.Title, programstatus.MaxTitle)),
+		Msg:        terminalSafe(programstatus.Displayable(program.Msg, programstatus.MaxMsg)),
+		ReportedAt: program.ReportedAt,
+	}, true
 }
 
 // programStatusColumn is the AGENT column of `discobox ls`: the state, a
