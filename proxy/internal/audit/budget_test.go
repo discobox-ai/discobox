@@ -225,7 +225,7 @@ func TestBudgetCutsAStreamOnAFrameBoundary(t *testing.T) {
 	// Deep enough that no chunk below is dropped.
 	recorder.ConfigureStreamSpool(filepath.Join(dir, "streams"), 64)
 
-	record, session, err := recorder.BeginUpgradeStream("sbx-1", "websocket")
+	record, session, err := recorder.BeginUpgradeStream("sbx-1", "opaque", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestBudgetCutsAStreamOnAFrameBoundary(t *testing.T) {
 	if _, err := recorder.EnforceBudget(context.Background()); err != nil {
 		t.Fatalf("EnforceBudget() error = %v", err)
 	}
-	header := int64(len(upgradeStreamFileMagic) + 1 + 8 + 2 + len(record.SessionID) + 2 + len("websocket"))
+	header := int64(len(upgradeStreamFileMagic) + 1 + 8 + 2 + len(record.SessionID) + 2 + len("opaque"))
 	frame := int64(streamDataFrameOverhead + len(payload))
 	want := header + (500-header)/frame*frame
 	if got := fileSize(t, path); got != want {

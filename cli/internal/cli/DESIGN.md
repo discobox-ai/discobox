@@ -27,3 +27,15 @@ Harness update requests carry the revision read before editing. The editor keeps
 that revision while open and does not reload it at save time; a concurrent
 save-back or configuration edit returns a conflict instead of replacing a newer
 file bucket. The ordinary update command reads config and egress together once.
+
+## WebSocket audit recordings
+
+The existing HTTP audit stream action renders `discobox-websocket-messages-v1`
+through `pkg/wsrecord`: timestamp, sent/received direction, type and decoded
+payload, with binary and control payloads in hex. Text is escaped for the
+terminal; application JSON is kept in its original layout to bound expansion.
+The console caps rendered output like other body recordings. A terminal's
+`admin audit http --body … --part stream` renders the same messages; piped
+output preserves the binary artifact for saving. Legacy raw upgrade spools
+remain readable as recorded bytes. Capture diagnostics and partial final
+records are displayed explicitly.

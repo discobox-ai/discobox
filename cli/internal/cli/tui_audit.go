@@ -116,7 +116,7 @@ func (d *apiDataSource) AuditBody(ctx context.Context, sandboxID, recordID, part
 	}
 	var body, spooled bytes.Buffer
 	shown := &cappedWriter{w: &body, room: auditBodyShown}
-	err = d.app.writeHTTPAuditArtifact(ctx, shown, &spooled, false, d.projectID, pool, sandboxID, id, part)
+	err = d.app.writeHTTPAuditArtifact(ctx, shown, &spooled, false, true, d.projectID, pool, sandboxID, id, part)
 	if err != nil && !errors.Is(err, errCapped) {
 		return "", err
 	}

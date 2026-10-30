@@ -543,7 +543,7 @@ func (h *httpProxy) setupHandlers() {
 				attribute.Int("http.response.status_code", resp.StatusCode),
 			)
 			if body, ok := resp.Body.(io.ReadWriteCloser); ok {
-				streamRecord, stream, err := h.audit.BeginUpgradeStream(meta.client.ID, upgradedProtocol)
+				streamRecord, stream, err := h.audit.BeginUpgradeStream(meta.client.ID, upgradedProtocol, strings.Join(resp.Header.Values("Sec-WebSocket-Extensions"), ","))
 				if err != nil {
 					meta.cacheError = err.Error()
 					recordSpanError(meta.span, err)

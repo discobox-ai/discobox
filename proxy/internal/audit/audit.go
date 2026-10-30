@@ -349,11 +349,11 @@ func (r *Recorder) ConfigureBodySpool(dir string) {
 }
 
 // BeginUpgradeStream starts asynchronous raw upgraded-stream spooling.
-func (r *Recorder) BeginUpgradeStream(clientID, upgradeType string) (*StreamRecord, *StreamSession, error) {
+func (r *Recorder) BeginUpgradeStream(clientID, upgradeType, extensions string) (*StreamRecord, *StreamSession, error) {
 	if r == nil || !r.enabled || r.streamDir == "" {
 		return nil, nil, nil
 	}
-	record, session, err := BeginUpgradeStream(r.streamDir, clientID, upgradeType, r.streamQueueSize, &r.streamWg)
+	record, session, err := beginUpgradeStream(r.streamDir, clientID, upgradeType, extensions, r.streamQueueSize, &r.streamWg)
 	if err != nil || record == nil {
 		return record, session, err
 	}
@@ -362,6 +362,7 @@ func (r *Recorder) BeginUpgradeStream(clientID, upgradeType string) (*StreamReco
 	}
 	session.onClose = r.trackSpool(record.File)
 	session.onWrite = r.addSpoolBytes
+	go session.run()
 	return record, session, nil
 }
 
