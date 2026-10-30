@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -989,5 +990,44 @@ func TestRecoversPersistedPartialBaselineWithoutFalseCandidate(t *testing.T) {
 	}
 	if len(s.capture.state.Normalized.Files) != 1 || s.capture.state.Normalized.Files[0].Content != file.Content {
 		t.Fatal("recovery did not normalize original delivered files")
+	}
+}
+
+func TestCaptureCommandLogsOnlyFixedDiagnosticCodes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX command runner")
+	}
+	home := t.TempDir()
+	manager, err := execs.NewManagerWithConfig(execs.ManagerConfig{WorkingRoot: home, RuntimeDir: filepath.Join(home, "runtime"), Units: &fakeUnits{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &captureManager{execs: manager, home: home}
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	defer slog.SetDefault(previous)
+	for _, tc := range []struct {
+		stderr string
+		logged bool
+	}{
+		{"discobox-capture: invalid-json", true},
+		{"discobox-capture: file-unavailable", true},
+		{"discobox-capture: operation-failed", true},
+		{"private-token-do-not-log", false},
+		{"discobox-capture: invalid-json private-token-do-not-log", false},
+	} {
+		logs.Reset()
+		program := filepath.Join(home, "fail.sh")
+		if err := os.WriteFile(program, []byte("#!/bin/sh\nprintf '%s' '"+tc.stderr+"' >&2\nexit 1\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		err := m.command(t.Context(), []string{program}, struct{}{}, &struct{}{})
+		if err == nil || err.Error() != "harness capture command failed" {
+			t.Fatalf("unexpected error %v", err)
+		}
+		if (logs.Len() > 0) != tc.logged || strings.Contains(logs.String(), "private-token") {
+			t.Fatalf("unexpected diagnostic log: %s", logs.String())
+		}
 	}
 }

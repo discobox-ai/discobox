@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -152,7 +153,8 @@ func readCaptureFile(path string) ([]byte, error) {
 }
 
 // command never enters exec audit/history: stdout and stdin carry real tokens.
-// Both pipes are bounded, stderr is discarded and errors contain no output.
+// Both pipes are bounded. Only fixed exporter diagnostic codes reach the log;
+// errors and all other stderr contain no output.
 func (m *captureManager) command(ctx context.Context, argv []string, input, output any) error {
 	data, err := json.Marshal(input)
 	if err != nil || len(data) > hc.MaxBytes {
@@ -164,6 +166,13 @@ func (m *captureManager) command(ctx context.Context, argv []string, input, outp
 	// override; a copied install environment would pin old sentinels.
 	out, err := m.execs.RunOnce(ctx, execs.OnceRequest{Command: argv, Stdin: data, Env: map[string]string{"HOME": m.home}, Dir: m.home, MaxOutput: hc.MaxBytes})
 	if err != nil {
+		var failure *execs.OnceFailure
+		if errors.As(err, &failure) {
+			switch failure.Stderr {
+			case "discobox-capture: invalid-json", "discobox-capture: file-unavailable", "discobox-capture: operation-failed":
+				slog.Warn("harness capture command failed", "reason", strings.TrimPrefix(failure.Stderr, "discobox-capture: "))
+			}
+		}
 		return errors.New("harness capture command failed")
 	}
 	if err = json.Unmarshal(out, output); err != nil {

@@ -21,7 +21,12 @@ omits the harness-declared credential/local paths, and converts supported local
 logins to secret values plus safe
 credential templates. Unknown providers, credential commands, unsafe metadata,
 and malformed inputs produce value-free diagnostics and protect local credential
-files. Omission never revokes a login. `BaselineOnly` reads the delivered,
+files. Cleared Claude OAuth tokens represent sign-out and leave delivery
+restorable; a
+remaining refresh token or unsupported local login stays protected. Exporter
+failures emit fixed diagnostic codes, which the agent alone allowlists into its
+log; exception messages and stacks never leave the exporter. Omission never
+revokes a login. `BaselineOnly` reads the delivered,
 rendered baseline, not current disk settings. Current sentinels and privately supplied prior aliases become `keep`
 bindings. An old delivered alias remains a reference while runtime reminting
 converges; its exported template names the binding, so ordinary repair can install
@@ -31,7 +36,8 @@ Sentinels have vendor-compatible shapes, so only exact membership can identify
 them; the server also rejects values matching its assignments.
 
 Reconsideration is a pure projection of the immutable candidate and the current
-server templates: only selected credentials replace entries, while other current
+server templates (including the Claude bundle seed's templated API-key binding):
+only selected credentials replace entries, while other current
 bindings remain. It never reads a newer local login. A shared credential document
 is rebuilt together with its binding selection; portable file selection cannot
 separately select an auth template.
