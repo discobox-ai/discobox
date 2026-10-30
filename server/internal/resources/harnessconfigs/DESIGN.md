@@ -499,6 +499,12 @@ only an authenticated user can ask this service to fetch its credential payload.
 Private capture and acknowledgment calls use explicit agent scopes and are not
 proxied as user routes.
 
+A preview's file changes are described from the stored config, never from the
+sandbox (`describeCapturePreview`): `previous` is the file a save replaces —
+the configured file over the bundle's, at the current revision — and a
+removal's `file` is the bundle's own file it falls back to. Clients diff the
+two; the agent's candidate and its size limits are untouched by them.
+
 `commitCapture` locks the config and bound secret rows, checks the candidate's
 config revision, manifest digest and binding/value revisions, then commits a
 patch to `ConfiguredFiles`, owned secrets, harness-config bindings, the origin's

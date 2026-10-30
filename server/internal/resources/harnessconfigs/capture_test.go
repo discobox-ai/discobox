@@ -285,3 +285,48 @@ func TestCaptureTemplateRequiresBoundOrNewCredential(t *testing.T) {
 		})
 	}
 }
+
+// A preview's before is what the server stores, not anything the sandbox says:
+// the configured file over the bundle's, and a removal's after is the
+// bundle's own file it falls back to.
+func TestCapturePreviewIsDescribedFromStoredConfig(t *testing.T) {
+	s, cfg, _ := captureFixture(t)
+	ctx := context.Background()
+	cfg.Files = []model.HarnessConfigFile{{Path: "~/.fixture", Content: `{"theme":"bundle"}`}, {Path: "~/.bundled", Content: `{"a":1}`}}
+	cfg.ConfiguredFiles = []model.HarnessConfigFile{{Path: "~/.fixture", Content: `{"theme":"dark"}`}}
+	if err := s.store.UpdateHarnessConfig(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	forged := &harnesscapture.File{Path: "~/.fixture", Content: `{"theme":"forged"}`}
+	p := harnesscapture.Preview{Files: []harnesscapture.FileChange{
+		{Path: "~/.fixture", File: &harnesscapture.File{Path: "~/.fixture", Content: `{"theme":"light"}`}, Previous: forged},
+		{Path: "~/.new", File: &harnesscapture.File{Path: "~/.new", Content: `{}`}},
+		{Path: "~/.bundled", Remove: true},
+		{Path: "~/.gone", Remove: true},
+	}}
+	if err := s.describeCapturePreview(ctx, cfg.ProjectID, "sbx-capture", &p); err != nil {
+		t.Fatal(err)
+	}
+	content := func(f *harnesscapture.File) string {
+		if f == nil {
+			return "<none>"
+		}
+		return f.Content
+	}
+	for _, tc := range []struct {
+		change           harnesscapture.FileChange
+		previous, result string
+	}{
+		{p.Files[0], `{"theme":"dark"}`, `{"theme":"light"}`},
+		{p.Files[1], "<none>", `{}`},
+		{p.Files[2], `{"a":1}`, `{"a":1}`},
+		{p.Files[3], "<none>", "<none>"},
+	} {
+		if got := content(tc.change.Previous); got != tc.previous {
+			t.Errorf("%s previous = %s, want %s", tc.change.Path, got, tc.previous)
+		}
+		if got := content(tc.change.File); got != tc.result {
+			t.Errorf("%s file = %s, want %s", tc.change.Path, got, tc.result)
+		}
+	}
+}

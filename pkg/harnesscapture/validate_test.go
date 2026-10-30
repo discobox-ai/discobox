@@ -105,3 +105,18 @@ func mustJSON(t *testing.T, value any) []byte {
 	}
 	return result
 }
+
+// Previous is the control plane's to fill on a preview; a candidate that
+// carries one came from somewhere it should not have.
+func TestCandidateRefusesPreviousFile(t *testing.T) {
+	d := Definition{Settings: []Setting{{Path: "settings.json", Format: "json"}}}
+	file := &File{Path: "settings.json", Content: `{"theme":"light"}`}
+	c := Candidate{ID: "c", Baseline: Baseline{HarnessConfigID: "h"}, WriteRevision: 1, Files: []FileChange{{Path: "settings.json", File: file}}}
+	if err := d.ValidateCandidate(c); err != nil {
+		t.Fatal(err)
+	}
+	c.Files[0].Previous = &File{Path: "settings.json", Content: `{"theme":"dark"}`}
+	if err := d.ValidateCandidate(c); err == nil {
+		t.Fatal("candidate carrying a previous file accepted")
+	}
+}

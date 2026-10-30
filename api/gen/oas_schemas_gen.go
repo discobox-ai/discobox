@@ -4871,11 +4871,16 @@ func (s *HarnessCaptureFile) SetTemplate(val OptBool) {
 	s.Template = val
 }
 
+// One file a candidate writes (file) or removes (remove). A sandbox never sends previous, nor file
+// on a removal. On a preview the server serves, previous is the file a save replaces (the configured
+// file over the bundle's, at the current revision), and a removal's file is the bundle's own file it
+// falls back to, when it ships one; both are for display and never applied.
 // Ref: #/components/schemas/HarnessCaptureFileChange
 type HarnessCaptureFileChange struct {
-	File   OptHarnessCaptureFile `json:"file"`
-	Path   string                `json:"path"`
-	Remove OptBool               `json:"remove"`
+	File     OptHarnessCaptureFile `json:"file"`
+	Path     string                `json:"path"`
+	Previous OptHarnessCaptureFile `json:"previous"`
+	Remove   OptBool               `json:"remove"`
 }
 
 // GetFile returns the value of File.
@@ -4886,6 +4891,11 @@ func (s *HarnessCaptureFileChange) GetFile() OptHarnessCaptureFile {
 // GetPath returns the value of Path.
 func (s *HarnessCaptureFileChange) GetPath() string {
 	return s.Path
+}
+
+// GetPrevious returns the value of Previous.
+func (s *HarnessCaptureFileChange) GetPrevious() OptHarnessCaptureFile {
+	return s.Previous
 }
 
 // GetRemove returns the value of Remove.
@@ -4901,6 +4911,11 @@ func (s *HarnessCaptureFileChange) SetFile(val OptHarnessCaptureFile) {
 // SetPath sets the value of Path.
 func (s *HarnessCaptureFileChange) SetPath(val string) {
 	s.Path = val
+}
+
+// SetPrevious sets the value of Previous.
+func (s *HarnessCaptureFileChange) SetPrevious(val OptHarnessCaptureFile) {
+	s.Previous = val
 }
 
 // SetRemove sets the value of Remove.

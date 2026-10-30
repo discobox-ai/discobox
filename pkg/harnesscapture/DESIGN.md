@@ -16,6 +16,8 @@ which must still be read, go through `secretroute.FromLegacyList`. A sandbox exp
 extend the provider set, refresh endpoint, settings exclusions, or credential paths.
 
 Validate before accepting a candidate or exposing its files as a preview.
+`FileChange.Previous` is the control plane's, set on a preview from its stored
+config; a candidate carrying one is invalid.
 Credential objects and exporter output are private; never log them. Public
 candidate IDs are random, never hashes of credential material. Delivery baselines
 and conditional write revisions have different meanings and remain separate.

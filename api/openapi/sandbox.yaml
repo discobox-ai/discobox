@@ -181,11 +181,14 @@ components:
             type: object
         HarnessCaptureFileChange:
             additionalProperties: false
+            description: One file a candidate writes (file) or removes (remove). A sandbox never sends previous, nor file on a removal. On a preview the server serves, previous is the file a save replaces (the configured file over the bundle's, at the current revision), and a removal's file is the bundle's own file it falls back to, when it ships one; both are for display and never applied.
             properties:
                 file:
                     $ref: '#/components/schemas/HarnessCaptureFile'
                 path:
                     type: string
+                previous:
+                    $ref: '#/components/schemas/HarnessCaptureFile'
                 remove:
                     type: boolean
             required:
