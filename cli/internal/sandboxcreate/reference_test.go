@@ -269,3 +269,96 @@ func newNamedRunSourceTestRepo(t *testing.T, name string) string {
 	git("commit", "-m", "base")
 	return repo
 }
+
+// A remote primary source is cloned under the working root by its
+// repository's name, so the discobox's directory says what is in it.
+func TestBuildPromptSandboxBodyPlacesARemotePrimaryByItsName(t *testing.T) {
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
+		Source:       "file://" + filepath.ToSlash(newNamedRunSourceTestRepo(t, "app")),
+		IncludeDirty: IncludeDirtyNever,
+	})
+	if err != nil {
+		t.Fatalf("build prompt sandbox body: %v", err)
+	}
+	defer local.Close()
+
+	source, _ := body.Config.Source.Get()
+	destination, _ := source.Destination.Get()
+	if destination.Directory.Or("") != "/workspace/app" || destination.WorkingDirectory.Or("") != "/workspace/app" {
+		t.Fatalf("destination = %v, want the repository's name under the working root", destination)
+	}
+}
+
+// A remote primary source is placed by name only while nothing else of the
+// create claims that name: an included source of the same name keeps the
+// directory it is known by, and the primary takes the default one, still
+// starting in the subdirectory it asked for.
+func TestBuildPromptSandboxBodyMovesARemotePrimaryOffAnIncludedSourcesName(t *testing.T) {
+	repo := newNamedRunSourceTestRepo(t, "app")
+	if err := os.MkdirAll(filepath.Join(repo, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	primary := "file://" + filepath.ToSlash(repo)
+	reference := "file://" + filepath.ToSlash(newNamedRunSourceTestRepo(t, "app"))
+
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
+		Source:       primary + "//sub",
+		Include:      []string{reference},
+		IncludeDirty: IncludeDirtyNever,
+	})
+	if err != nil {
+		t.Fatalf("build prompt sandbox body: %v", err)
+	}
+	defer local.Close()
+
+	references, _ := body.Config.SourceCodeReferences.Get()
+	if _, ok := references["/workspace/app"]; !ok || len(references) != 1 {
+		t.Fatalf("references = %v, want the included source at /workspace/app", references)
+	}
+	source, _ := body.Config.Source.Get()
+	destination, _ := source.Destination.Get()
+	if destination.Directory.Or("") != "/workspace/source" || destination.WorkingDirectory.Or("") != "/workspace/source/sub" {
+		t.Fatalf("destination = %v, want the primary moved to /workspace/source, starting in sub", destination)
+	}
+}
+
+// A repository named after a directory the working root holds for something
+// else is not placed there.
+func TestRemoteRunDestinationAvoidsTheSkillsSourcesDirectory(t *testing.T) {
+	for url, want := range map[string]string{
+		"https://github.com/discobox-ai/discobox":           "/workspace/discobox",
+		"https://github.com/discobox-ai/discobox.git":       "/workspace/discobox",
+		"git@github.com:acme/My_Repo.git":                   "/workspace/my-repo",
+		"https://github.com/acme/" + skillsSourcesDirectory: "/workspace/source",
+	} {
+		if got := remoteRunDestination(linuxSandbox, url); got.Directory != want || got.WorkingDirectory != want {
+			t.Errorf("remoteRunDestination(%s) = %#v, want %s", url, got, want)
+		}
+	}
+}
+
+// An --include of the remote primary's own repository is a second checkout the
+// caller asked for — another ref of it, say — and not the primary itself: it
+// takes the name, and the primary moves, as it always could.
+func TestBuildPromptSandboxBodyIncludesTheRemotePrimarysOwnRepository(t *testing.T) {
+	remote := "file://" + filepath.ToSlash(newNamedRunSourceTestRepo(t, "app"))
+
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
+		Source:       remote,
+		Include:      []string{remote + "@HEAD"},
+		IncludeDirty: IncludeDirtyNever,
+	})
+	if err != nil {
+		t.Fatalf("build prompt sandbox body: %v", err)
+	}
+	defer local.Close()
+
+	references, _ := body.Config.SourceCodeReferences.Get()
+	if _, ok := references["/workspace/app"]; !ok || len(references) != 1 {
+		t.Fatalf("references = %v, want the included checkout at /workspace/app", references)
+	}
+	source, _ := body.Config.Source.Get()
+	if destination, _ := source.Destination.Get(); destination.Directory.Or("") != "/workspace/source" {
+		t.Fatalf("destination = %v, want the primary moved to /workspace/source", destination)
+	}
+}

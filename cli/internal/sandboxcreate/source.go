@@ -34,8 +34,8 @@ const (
 	runSourceRefTypeCommit = "commit"
 	runSnapshotRefPrefix   = "refs/discobox/run/"
 	// defaultRunSourceName is the subdirectory of the sandbox's working root a
-	// source with no host path of its own to keep goes in, and where the
-	// discobox starts (defaultRunSourceDir).
+	// local source with no host path of its own to keep goes in, and a remote
+	// one whose name cannot be its directory (defaultRunSourceDir).
 	defaultRunSourceName = "source"
 	defaultRemoteBranch  = "HEAD"
 	// wslDriveRoot is where WSL mounts the Windows drives, and so where a
@@ -786,7 +786,7 @@ func resolveRemoteRunSource(ctx context.Context, source, ref string, explicitRef
 		Workspace: resolvedRunSourceWorkspace{
 			Mode: runWorkspaceModeClean,
 		},
-		Destination: defaultRunDestination(sandbox),
+		Destination: remoteRunDestination(sandbox, source),
 	}, nil
 }
 
@@ -1186,9 +1186,71 @@ func defaultRunDestination(sandbox platform.Platform) resolvedRunSourceDestinati
 	return resolvedRunSourceDestination{Directory: dir, WorkingDirectory: dir}
 }
 
-// defaultRunSourceDir is where a source with no host path of its own to keep
-// goes: a subdirectory of the sandbox's working root, where the discobox
-// starts. Derived from the sandbox platform's working root rather than spelled
+// remoteRunDestination is where a remote primary source is cloned: by its
+// repository's name under the sandbox's working root, so
+// github.com/discobox-ai/discobox lands at /workspace/discobox. It is the
+// directory the same repository would take as an --include
+// (referenceDestination), which is what lets yieldPrimaryDirectory see the two
+// meet. A name that slugs to nothing, or that is a directory the working root
+// already holds for something else, takes the default directory instead; so
+// does one another source of the same create claims.
+func remoteRunDestination(sandbox platform.Platform, url string) resolvedRunSourceDestination {
+	dir, name := referenceDestination(sandbox, resolvedRunSource{URL: url}, referencePlacement{})
+	if slug := slugifySource(name); slug == "" || slug == skillsSourcesDirectory {
+		return defaultRunDestination(sandbox)
+	}
+	return resolvedRunSourceDestination{Directory: dir, WorkingDirectory: dir}
+}
+
+// placedByName reports whether the primary source sits where it does only by
+// its repository's name, and so gives that directory up to another source
+// that claims it: a remote one not already at the default directory.
+func (s resolvedRunSource) placedByName(sandbox platform.Platform) bool {
+	return s.URL != "" && s.Destination.Directory != defaultRunSourceDir(sandbox)
+}
+
+// heldAgainst is the directory the primary source holds against a reference:
+// its own, unless it is placed by name and the reference is not the primary
+// itself, which it gives that directory up to. Only a declared source can be
+// the primary itself — a repository's settings may declare every repository
+// of a set, its own included — so the caller says (itself). An --include is
+// always a source the caller asked for in its own right, even of the same
+// repository at another ref.
+func (s resolvedRunSource) heldAgainst(sandbox platform.Platform, itself bool) string {
+	if s.placedByName(sandbox) && !itself {
+		return ""
+	}
+	return s.Destination.Directory
+}
+
+// yieldPrimaryDirectory moves a primary source placed by name to the default
+// directory when a reference other than the primary itself (heldAgainst)
+// landed on that name, keeping the subdirectory the harness starts in. The reference wins because
+// its directory is the one it is known by: a declared source is found at it,
+// and an --include named it.
+func yieldPrimaryDirectory(primary *resolvedRunSource, references apiclientgen.SandboxCreateConfigSourceCodeReferences, sandbox platform.Platform) error {
+	if !primary.placedByName(sandbox) {
+		return nil
+	}
+	dir := primary.Destination.Directory
+	if _, claimed := references[dir]; !claimed {
+		return nil
+	}
+	fallback := defaultRunSourceDir(sandbox)
+	if _, claimed := references[fallback]; claimed {
+		return fmt.Errorf("source %s lands at %s, and other sources already are at both %s and %s", primary.URL, dir, dir, fallback)
+	}
+	primary.Destination = resolvedRunSourceDestination{
+		Directory:        fallback,
+		WorkingDirectory: fallback + strings.TrimPrefix(primary.Destination.WorkingDirectory, dir),
+	}
+	return nil
+}
+
+// defaultRunSourceDir is where a local source with no host path of its own to
+// keep goes, and a remote one that cannot be placed by its name
+// (remoteRunDestination, yieldPrimaryDirectory): a subdirectory of the
+// sandbox's working root. Derived from the sandbox platform's working root rather than spelled
 // out, because a destination this names is explicit in the create request and
 // so overrides pool-agent's own default: a CLI that spelled the root itself
 // would keep checking out under the old one while the sandbox worked in the
@@ -1206,8 +1268,7 @@ func defaultRunSourceDir(sandbox platform.Platform) string {
 // (e.g. symlinked paths).
 //
 // A repository whose host path is not one a sandbox may hold is placed at the
-// default location instead, as a remote source always has been (ADR 26-09-09-044 §2 on
-// source host paths). That is a placement, not a refusal: the host directory is
+// default location instead (ADR 26-09-09-044 §2 on source host paths). That is a placement, not a refusal: the host directory is
 // the caller's, the mount point inside the sandbox is ours, and only the second
 // one can collide with the sandbox's own operating system.
 func localRunDestination(sandbox platform.Platform, repoRoot, sourceDir string) resolvedRunSourceDestination {

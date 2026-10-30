@@ -216,17 +216,21 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	// (ADR 0077 §1).
 	if source.resolved() {
 		local.add("", source)
+	}
+	skillsRepos := append(slices.Clone(opts.ProjectSkills), skillsArgs.Repositories...)
+	if err := setSourceCodeReferences(ctx, body, local, opts, &source, sourceOptions, skillsRepos); err != nil {
+		local.Close()
+		return nil, nil, err
+	}
+	// Filed after the references, which may move a primary source placed by
+	// name off a directory one of them claims (yieldPrimaryDirectory).
+	if source.resolved() {
 		apiSource, err := source.apiGitSource()
 		if err != nil {
 			local.Close()
 			return nil, nil, err
 		}
 		body.Config.SetSource(apiclientgen.NewOptGitSource(*apiSource))
-	}
-	skillsRepos := append(slices.Clone(opts.ProjectSkills), skillsArgs.Repositories...)
-	if err := setSourceCodeReferences(ctx, body, local, opts, source, sourceOptions, skillsRepos); err != nil {
-		local.Close()
-		return nil, nil, err
 	}
 	resolvedOrigin, err := origin.Resolve()
 	if err != nil {
@@ -258,7 +262,10 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 // The reference key is the sandbox directory the source lands in, so two
 // sources that would land on top of each other are refused rather than silently
 // collapsed into one — including a reference that resolves to the primary
-// source's own directory.
+// source's own directory, unless the primary is a remote one placed there only
+// by its name, when the primary moves to the default directory instead
+// (heldAgainst, yieldPrimaryDirectory) — except for a declared source naming
+// the primary's own repository, which is the primary itself and is skipped.
 //
 // The skills repositories of --skills come last, each a reference marked for
 // its skills (setSkillsSources).
@@ -266,8 +273,8 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 // The same settings say which of the box's features the repository turns off,
 // which the request carries too: the client is their reader, as it is the
 // sources' (ADR 26-10-16-423 §11).
-func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBody, local *LocalSources, opts PromptOptions, primary resolvedRunSource, sourceOptions runSourceOptions, skillsRepos []SkillsRepository) error {
-	settings, err := declaredPromptSettings(ctx, opts, primary)
+func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBody, local *LocalSources, opts PromptOptions, primary *resolvedRunSource, sourceOptions runSourceOptions, skillsRepos []SkillsRepository) error {
+	settings, err := declaredPromptSettings(ctx, opts, *primary)
 	if err != nil {
 		return err
 	}
@@ -303,7 +310,7 @@ func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBo
 		if !reference.Resolved.resolved() {
 			continue
 		}
-		if taken(references, primary, reference.Key) {
+		if taken(references, primary.heldAgainst(opts.Platform, false), reference.Key) {
 			reference.Resolved.close()
 			return fmt.Errorf("--include %s resolves to %s, which is already included", arg, reference.Key)
 		}
@@ -331,7 +338,7 @@ func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBo
 		if !reference.Resolved.resolved() {
 			continue
 		}
-		if taken(references, primary, reference.Key) {
+		if taken(references, primary.heldAgainst(opts.Platform, sameGitRemote(primary.URL, reference.Resolved.URL)), reference.Key) {
 			// Already brought in by --include, or the sandbox's own source. The
 			// declaration asked for it to be there, and it is.
 			reference.Resolved.close()
@@ -346,9 +353,16 @@ func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBo
 	if len(references) > 0 {
 		body.Config.SetSourceCodeReferences(apiclientgen.NewOptSandboxCreateConfigSourceCodeReferences(references))
 	}
-	return setSkillsSources(ctx, &body.Config, references, local, skillsRepos, sourceOptions, used, func(key string) bool {
-		return taken(references, primary, key)
-	})
+	// A skills source is placed under its own directory, never by name beside
+	// the primary, so what the primary holds against it is what it holds
+	// against any other repository.
+	held := primary.heldAgainst(opts.Platform, false)
+	if err := setSkillsSources(ctx, &body.Config, references, local, skillsRepos, sourceOptions, used, func(key string) bool {
+		return taken(references, held, key)
+	}); err != nil {
+		return err
+	}
+	return yieldPrimaryDirectory(primary, references, opts.Platform)
 }
 
 // resolveNamedReference resolves one extra source and builds its API shape, so
@@ -373,12 +387,12 @@ func resolveNamedReference(ctx context.Context, arg string, placement referenceP
 }
 
 // taken reports whether something already occupies the sandbox directory a
-// reference wants.
-func taken(references apiclientgen.SandboxCreateConfigSourceCodeReferences, primary resolvedRunSource, key string) bool {
+// reference wants: another reference, or held, the primary source's.
+func taken(references apiclientgen.SandboxCreateConfigSourceCodeReferences, held, key string) bool {
 	if _, ok := references[key]; ok {
 		return true
 	}
-	return key == primary.Destination.Directory
+	return held != "" && key == held
 }
 
 // declaredSettings is what the client reads of the primary source's

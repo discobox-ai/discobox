@@ -349,7 +349,8 @@ func TestResolveRunSourceStartsInItsPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
-	if remote.Destination.Directory != "/workspace/source" || remote.Destination.WorkingDirectory != "/workspace/source/nested/work" {
+	name := slugifySource(filepath.Base(repo))
+	if remote.Destination.Directory != "/workspace/"+name || remote.Destination.WorkingDirectory != "/workspace/"+name+"/nested/work" {
 		t.Fatalf("destination = %#v, want the checkout with the harness in nested/work", remote.Destination)
 	}
 	if remote.Checkout.Commit == "" {
