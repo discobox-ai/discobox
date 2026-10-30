@@ -1148,7 +1148,7 @@ func (m *Model) tabbedEdge(col *column, shells bool, left int, control string, e
 	labels := make([]string, col.len())
 	widths := make([]int, col.len())
 	for i := range col.panes {
-		labels[i] = col.label(i, base)
+		labels[i] = col.label(i, base, m.paneName(col.panes[i]))
 		widths[i] = len([]rune(labels[i])) + 4 // brackets and their padding
 	}
 

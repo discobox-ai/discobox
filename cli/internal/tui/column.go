@@ -109,11 +109,11 @@ func (c *column) closeAll() {
 	c.panes, c.active = nil, 0
 }
 
-// label is one pane's tab: the key it answers to behind the leader, what it is
-// running, and whether it is over. See tabKey for base.
-func (c *column) label(i, base int) string {
+// label is one pane's tab: the key it answers to behind the leader, its name
+// (Model.paneName), and whether it is over. See tabKey for base.
+func (c *column) label(i, base int, name string) string {
 	p := c.panes[i]
-	name := fmt.Sprintf("%s %s", c.tabKey(i, base), p.name())
+	name = fmt.Sprintf("%s %s", c.tabKey(i, base), name)
 	if p.exited {
 		name += " ·done"
 	}

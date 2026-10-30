@@ -3751,6 +3751,10 @@ func (m *Model) headerHints() []hint {
 // inside this window and already looking at; renaming the window after it would
 // churn the tab you find it by.
 //
+// A name the discobox was given outranks the terminal's title here as it does
+// on the primary's tab (paneName), and is read off the listing, so a rename
+// reaches the title bar without waiting on the program to retitle itself.
+//
 // With no primary it is empty, which leaves the title as whatever started this
 // window set it: a launcher with nothing running in it has nothing to say that
 // the terminal's own title does not already.
@@ -3764,9 +3768,13 @@ func (m *Model) windowTitle() string {
 	if p == nil {
 		return ""
 	}
-	title := strings.TrimSpace(p.term.Title())
+	box := m.currentBox()
+	title := box.GivenName
 	if title == "" {
-		title = displayName(p.sandbox)
+		title = strings.TrimSpace(p.term.Title())
+	}
+	if title == "" {
+		title = displayName(box)
 	}
 	return m.statusTitlePrefix() + title
 }
