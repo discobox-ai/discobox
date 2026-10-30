@@ -9002,6 +9002,12 @@ func (s *HarnessCaptureFileChange) encodeFields(e *jx.Encoder) {
 		e.Str(s.Path)
 	}
 	{
+		if s.Previous.Set {
+			e.FieldStart("previous")
+			s.Previous.Encode(e)
+		}
+	}
+	{
 		if s.Remove.Set {
 			e.FieldStart("remove")
 			s.Remove.Encode(e)
@@ -9009,10 +9015,11 @@ func (s *HarnessCaptureFileChange) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessCaptureFileChange = [3]string{
+var jsonFieldsNameOfHarnessCaptureFileChange = [4]string{
 	0: "file",
 	1: "path",
-	2: "remove",
+	2: "previous",
+	3: "remove",
 }
 
 // Decode decodes HarnessCaptureFileChange from json.
@@ -9045,6 +9052,16 @@ func (s *HarnessCaptureFileChange) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"path\"")
+			}
+		case "previous":
+			if err := func() error {
+				s.Previous.Reset()
+				if err := s.Previous.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"previous\"")
 			}
 		case "remove":
 			if err := func() error {

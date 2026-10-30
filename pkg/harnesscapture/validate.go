@@ -194,7 +194,7 @@ func (d Definition) ValidateCandidate(c Candidate) error {
 	seen := map[string]bool{}
 	files := []File{}
 	for _, change := range c.Files {
-		if !HomePath(change.Path) || seen[change.Path] {
+		if !HomePath(change.Path) || seen[change.Path] || change.Previous != nil {
 			return errors.New("invalid capture file change")
 		}
 		seen[change.Path] = true

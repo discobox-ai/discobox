@@ -87,7 +87,53 @@ func (s *Service) sendCaptureRequest(ctx context.Context, projectID, sandboxID, 
 		return apperrors.NewStatusError(http.StatusBadGateway, "invalid harness capture response")
 	}
 	if preview, ok := output.(*harnesscapture.Preview); ok {
-		return s.validateCapturePreview(ctx, projectID, sandboxID, preview)
+		if err := s.validateCapturePreview(ctx, projectID, sandboxID, preview); err != nil {
+			return err
+		}
+		return s.describeCapturePreview(ctx, projectID, sandboxID, preview)
+	}
+	return nil
+}
+
+// describeCapturePreview sets each change's before and after from the stored
+// configuration, so a client can show what a save changes rather than only
+// what it writes. Previous is the file a save replaces: the configured file
+// over the bundle's, at the current revision, whatever the sandbox was
+// delivered. A removal drops the configured file, so its after is the bundle's
+// own file at that path, when it ships one. Nothing here is applied.
+func (s *Service) describeCapturePreview(ctx context.Context, projectID, sandboxID string, p *harnesscapture.Preview) error {
+	if len(p.Files) == 0 {
+		return nil
+	}
+	box, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return err
+	}
+	if box.HarnessConfigID == nil {
+		return captureConflict()
+	}
+	cfg, err := s.store.GetHarnessConfig(ctx, projectID, *box.HarnessConfigID)
+	if err != nil {
+		return err
+	}
+	current, err := s.store.CaptureBaseline(ctx, projectID, cfg.ID)
+	if err != nil {
+		return err
+	}
+	for i := range p.Files {
+		change := &p.Files[i]
+		change.Previous = nil
+		if n := slices.IndexFunc(current.Files, func(f harnesscapture.File) bool { return f.Path == change.Path }); n >= 0 {
+			previous := current.Files[n]
+			change.Previous = &previous
+		}
+		if !change.Remove {
+			continue
+		}
+		if n := slices.IndexFunc(cfg.Files, func(f model.HarnessConfigFile) bool { return f.Path == change.Path }); n >= 0 {
+			f := cfg.Files[n]
+			change.File = &harnesscapture.File{Path: f.Path, Content: f.Content, CreateOnly: f.CreateOnly, Template: f.Template}
+		}
 	}
 	return nil
 }
