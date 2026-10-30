@@ -36,7 +36,7 @@ func CleanStringList(values []string) []string {
 	return out
 }
 
-func DecodeConfig[T any](data json.RawMessage, providerType string) (T, error) {
+func DecodeConfig[T any](data []byte, providerType string) (T, error) {
 	var cfg T
 	if len(data) > 0 {
 		if err := json.Unmarshal(data, &cfg); err != nil {

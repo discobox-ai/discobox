@@ -307,10 +307,10 @@ func (ProjectMember) TableName() string { return "project_members" }
 // ServerState stores generic server settings and one-time state flags. Delete a
 // row to allow its associated initialization to run again.
 type ServerState struct {
-	Key       string          `gorm:"primaryKey;type:text" json:"key" doc:"State key"`
-	Value     json.RawMessage `gorm:"column:value;type:text" json:"value,omitempty" doc:"State value"`
-	CreatedAt time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	Key       string    `gorm:"primaryKey;type:text" json:"key" doc:"State key"`
+	Value     RawJSON   `gorm:"column:value;type:text" json:"value,omitempty" doc:"State value"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 }
 
 func (ServerState) TableName() string { return "server_state" }
@@ -722,14 +722,14 @@ type Pool struct {
 	AvailableCPUVCPUs     float64            `gorm:"column:available_cpu_vcpus;not null;default:0" json:"availableCpuVcpus" doc:"Agent-reported available CPU capacity in vCPUs"`
 	AvailableMemoryBytes  int64              `gorm:"column:available_memory_bytes;not null;default:0" json:"availableMemoryBytes" doc:"Agent-reported available memory capacity in bytes"`
 	AvailableStorageBytes int64              `gorm:"column:available_storage_bytes;not null;default:0" json:"availableStorageBytes" doc:"Agent-reported available storage capacity in bytes"`
-	Conditions            json.RawMessage    `gorm:"column:conditions;type:text" json:"conditions,omitempty" doc:"Opaque agent-reported condition details for display"`
+	Conditions            RawJSON            `gorm:"column:conditions;type:text" json:"conditions,omitempty" doc:"Opaque agent-reported condition details for display"`
 	// ProvisionProgress is what the provider driver is doing to bring this host
 	// up, for a client whose sandbox is waiting for a pool to take it. Unlike
 	// Conditions it is not agent-reported: the phases it names — fetching a VM
 	// image, booting the machine, pulling the pool's image — all happen
 	// before there is an agent to report anything.
-	ProvisionProgress   json.RawMessage `gorm:"column:provision_progress;type:text" json:"provisionProgress,omitempty" doc:"Latest provisioning progress reported by the provider driver, such as a VM image fetch or an image pull in flight"`
-	ProvisionProgressAt *time.Time      `gorm:"column:provision_progress_at" json:"provisionProgressAt,omitempty" doc:"When ProvisionProgress was observed" format:"date-time"`
+	ProvisionProgress   RawJSON    `gorm:"column:provision_progress;type:text" json:"provisionProgress,omitempty" doc:"Latest provisioning progress reported by the provider driver, such as a VM image fetch or an image pull in flight"`
+	ProvisionProgressAt *time.Time `gorm:"column:provision_progress_at" json:"provisionProgressAt,omitempty" doc:"When ProvisionProgress was observed" format:"date-time"`
 	// Resources is what this pool is consuming, reported by its agent every
 	// resource-report interval (ADR 0071, resource accounting). It is the pool's own totals plus its
 	// disk, and it is telemetry rather than a scheduling input: what placement
@@ -738,9 +738,9 @@ type Pool struct {
 	// Overhead — the load that is not any sandbox — is `cpu.vcpus` here minus
 	// the sum of the sandboxes' own, and is derived by whoever reads it rather
 	// than stored, so it can never disagree with its operands.
-	Resources           json.RawMessage `gorm:"column:resources;type:text" json:"resources,omitempty" doc:"Latest pool-wide CPU, memory and disk consumption reported by the pool agent. Telemetry, not a scheduling input."`
-	ResourcesReportedAt *time.Time      `gorm:"column:resources_reported_at" json:"resourcesReportedAt,omitempty" doc:"When Resources was reported" format:"date-time"`
-	RuntimeState        json.RawMessage `gorm:"column:runtime_state;type:text" json:"-" doc:"Internal provider runtime state; may contain boot material and must not be serialized"`
+	Resources           RawJSON    `gorm:"column:resources;type:text" json:"resources,omitempty" doc:"Latest pool-wide CPU, memory and disk consumption reported by the pool agent. Telemetry, not a scheduling input."`
+	ResourcesReportedAt *time.Time `gorm:"column:resources_reported_at" json:"resourcesReportedAt,omitempty" doc:"When Resources was reported" format:"date-time"`
+	RuntimeState        RawJSON    `gorm:"column:runtime_state;type:text" json:"-" doc:"Internal provider runtime state; may contain boot material and must not be serialized"`
 	// HostCredential is the provider credential the pool's host holds, which
 	// its provider writes when it places one (ADR 26-10-23-551 §4, 0126's
 	// Consequence): a pool whose host can reach the provider's account says
@@ -1104,7 +1104,7 @@ type Sandbox struct {
 	SourceDeliveredAt        *time.Time                      `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`
 	AppliedCommits           []AppliedSourceCommit           `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful discobox apply runs that landed this sandbox's commits on a host. Client-reported; append-only."`
 	OriginKey                *string                         `gorm:"column:origin_key;type:text;index" json:"-" doc:"Where the sandbox belongs on the client that created it: SandboxOriginKey of its origin and primary source. Indexed; what listings filter on."`
-	ProviderState            json.RawMessage                 `gorm:"column:provider_state;type:text" json:"providerState,omitempty" doc:"Non-secret provider state"`
+	ProviderState            RawJSON                         `gorm:"column:provider_state;type:text" json:"providerState,omitempty" doc:"Non-secret provider state"`
 	// RepairGeneration marks one generation as a repair (ADR 0035): when it
 	// equals Generation, ensure tears the runtime down (provider Archive:
 	// container and disposable state dropped, durable tree kept) before the
@@ -1154,8 +1154,8 @@ type Sandbox struct {
 	// by the hosting pool-agent (ADR 0030) — a distinct channel from
 	// StateReportedAt above, which is pool-agent's own observed container power
 	// state (ADR 0017 §10).
-	AgentStatus           json.RawMessage `gorm:"column:agent_status;type:text" json:"agentStatus,omitempty" doc:"Latest sandbox-agent-reported git/session/connection status, pushed periodically by the hosting pool-agent"`
-	AgentStatusObservedAt *time.Time      `gorm:"column:agent_status_observed_at" json:"agentStatusObservedAt,omitempty" doc:"When AgentStatus was observed by sandbox-agent" format:"date-time"`
+	AgentStatus           RawJSON    `gorm:"column:agent_status;type:text" json:"agentStatus,omitempty" doc:"Latest sandbox-agent-reported git/session/connection status, pushed periodically by the hosting pool-agent"`
+	AgentStatusObservedAt *time.Time `gorm:"column:agent_status_observed_at" json:"agentStatusObservedAt,omitempty" doc:"When AgentStatus was observed by sandbox-agent" format:"date-time"`
 	// ProvisionProgress is work underway on a sandbox that has no state
 	// transition to announce it — an image pull, above all (ADR 0039). It is an
 	// observation like the two channels above, reported by the hosting
@@ -1163,8 +1163,8 @@ type Sandbox struct {
 	//
 	// It is transient by nature: a pull that finished is history, and the
 	// record keeps only the last report rather than a series.
-	ProvisionProgress   json.RawMessage `gorm:"column:provision_progress;type:text" json:"provisionProgress,omitempty" doc:"Latest provisioning progress reported by the hosting pool-agent, such as an image pull in flight"`
-	ProvisionProgressAt *time.Time      `gorm:"column:provision_progress_at" json:"provisionProgressAt,omitempty" doc:"When ProvisionProgress was observed" format:"date-time"`
+	ProvisionProgress   RawJSON    `gorm:"column:provision_progress;type:text" json:"provisionProgress,omitempty" doc:"Latest provisioning progress reported by the hosting pool-agent, such as an image pull in flight"`
+	ProvisionProgressAt *time.Time `gorm:"column:provision_progress_at" json:"provisionProgressAt,omitempty" doc:"When ProvisionProgress was observed" format:"date-time"`
 	// Resources is this sandbox's CPU, memory and disk consumption, computed by
 	// the hosting pool agent and pushed on its own channel (ADR 0071, resource accounting) — a third
 	// observation channel alongside AgentStatus above and RuntimeState.
@@ -1173,8 +1173,8 @@ type Sandbox struct {
 	// and only with those: one agent polls all of its own sandboxes on one tick
 	// and differences them over that same window, while another pool's agent
 	// ticks on its own schedule.
-	Resources           json.RawMessage `gorm:"column:resources;type:text" json:"resources,omitempty" doc:"Latest CPU, memory and disk consumption for this sandbox, computed by the hosting pool agent"`
-	ResourcesObservedAt *time.Time      `gorm:"column:resources_observed_at" json:"resourcesObservedAt,omitempty" doc:"When Resources was observed" format:"date-time"`
+	Resources           RawJSON    `gorm:"column:resources;type:text" json:"resources,omitempty" doc:"Latest CPU, memory and disk consumption for this sandbox, computed by the hosting pool agent"`
+	ResourcesObservedAt *time.Time `gorm:"column:resources_observed_at" json:"resourcesObservedAt,omitempty" doc:"When Resources was observed" format:"date-time"`
 	// Tags are a copy of the sandbox's tags, which live with its description
 	// in the meta file inside the sandbox (ADR 0136). The copy is what a
 	// listing filters on and what a stopped sandbox is read as; the file is
@@ -1291,15 +1291,15 @@ func (s *Sandbox) BeforeCreate(_ *gorm.DB) error {
 // Config is for non-secret settings only. Secret material should be encrypted
 // into EncryptedConfig or another secret store before this model is persisted.
 type SandboxProviderInstance struct {
-	ID              string          `gorm:"primaryKey;type:text" json:"id" doc:"Stable provider instance ID"`
-	ProjectID       string          `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	Type            string          `gorm:"column:type;not null;type:text;index" json:"type" doc:"Provider type"`
-	Name            string          `gorm:"column:name;not null;type:text" json:"name" doc:"Provider display name" maxLength:"200"`
-	Config          json.RawMessage `gorm:"column:config;type:text" json:"config,omitempty" doc:"Non-secret provider configuration"`
-	EncryptedConfig []byte          `gorm:"column:encrypted_config" json:"-"`
-	Disabled        bool            `gorm:"column:disabled;not null;default:false" json:"disabled" doc:"Whether this provider is disabled"`
-	CreatedAt       time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt       time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ID              string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable provider instance ID"`
+	ProjectID       string    `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	Type            string    `gorm:"column:type;not null;type:text;index" json:"type" doc:"Provider type"`
+	Name            string    `gorm:"column:name;not null;type:text" json:"name" doc:"Provider display name" maxLength:"200"`
+	Config          RawJSON   `gorm:"column:config;type:text" json:"config,omitempty" doc:"Non-secret provider configuration"`
+	EncryptedConfig []byte    `gorm:"column:encrypted_config" json:"-"`
+	Disabled        bool      `gorm:"column:disabled;not null;default:false" json:"disabled" doc:"Whether this provider is disabled"`
+	CreatedAt       time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 	Pools   []Pool   `gorm:"foreignKey:ProviderInstanceID" json:"pools,omitempty" doc:"Pools backed by this provider instance"`

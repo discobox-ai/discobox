@@ -3,7 +3,6 @@ package store_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
@@ -344,7 +343,7 @@ func TestUpdateSandboxAgentStatusRoundTrip(t *testing.T) {
 	}
 
 	observedAt := time.Now().UTC().Truncate(time.Second)
-	payload := json.RawMessage(`{"sessions":[{"state":"running"}]}`)
+	payload := model.RawJSON(`{"sessions":[{"state":"running"}]}`)
 	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, payload, observedAt, nil); err != nil {
 		t.Fatalf("update agent status: %v", err)
 	}
@@ -369,7 +368,7 @@ func TestUpdateSandboxAgentStatusUnknownSandboxReturnsNotFound(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
-	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", "does-not-exist", json.RawMessage(`{}`), time.Now().UTC(), nil); !errors.Is(err, store.ErrNotFound) {
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", "does-not-exist", model.RawJSON(`{}`), time.Now().UTC(), nil); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("update agent status for unknown sandbox = %v, want ErrNotFound", err)
 	}
 }
@@ -391,7 +390,7 @@ func TestUpdateSandboxAgentStatusComposesWithConcurrentFieldUpdates(t *testing.T
 	}
 
 	observedAt := time.Now().UTC().Truncate(time.Second)
-	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, json.RawMessage(`{"sessions":[]}`), observedAt, nil); err != nil {
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, model.RawJSON(`{"sessions":[]}`), observedAt, nil); err != nil {
 		t.Fatalf("update agent status: %v", err)
 	}
 
@@ -472,7 +471,7 @@ func TestUpdateSandboxAgentStatusLastActiveOnlyMovesForward(t *testing.T) {
 	}
 
 	first := time.Date(2026, 8, 13, 10, 0, 0, 0, time.UTC)
-	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, json.RawMessage(`{}`), first, &first); err != nil {
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, model.RawJSON(`{}`), first, &first); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	got, err := s.GetSandbox(ctx, "project-1", sandbox.ID)
@@ -484,7 +483,7 @@ func TestUpdateSandboxAgentStatusLastActiveOnlyMovesForward(t *testing.T) {
 	}
 
 	earlier := first.Add(-time.Hour)
-	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, json.RawMessage(`{}`), earlier, &earlier); err != nil {
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, model.RawJSON(`{}`), earlier, &earlier); err != nil {
 		t.Fatalf("update older: %v", err)
 	}
 	if got, err = s.GetSandbox(ctx, "project-1", sandbox.ID); err != nil || !got.LastActiveAt.Equal(first) {
@@ -492,14 +491,14 @@ func TestUpdateSandboxAgentStatusLastActiveOnlyMovesForward(t *testing.T) {
 	}
 
 	later := first.Add(time.Hour)
-	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, json.RawMessage(`{}`), later, &later); err != nil {
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, model.RawJSON(`{}`), later, &later); err != nil {
 		t.Fatalf("update newer: %v", err)
 	}
 	if got, err = s.GetSandbox(ctx, "project-1", sandbox.ID); err != nil || !got.LastActiveAt.Equal(later) {
 		t.Fatalf("lastActiveAt = %v (err %v), want %v", got.LastActiveAt, err, later)
 	}
 
-	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, json.RawMessage(`{}`), later, nil); err != nil {
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, model.RawJSON(`{}`), later, nil); err != nil {
 		t.Fatalf("update without access: %v", err)
 	}
 	if got, err = s.GetSandbox(ctx, "project-1", sandbox.ID); err != nil || !got.LastActiveAt.Equal(later) {

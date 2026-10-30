@@ -211,7 +211,7 @@ func defaultSandboxProviderForOS(projectID, providerID string) *model.SandboxPro
 	return provider
 }
 
-func defaultDockerProviderConfig() json.RawMessage {
+func defaultDockerProviderConfig() model.RawJSON {
 	config := map[string]any{
 		"bindDockerSocket": "/var/run/docker.sock",
 		"agentPort":        providerdocker.DefaultAgentPort(),

@@ -2,7 +2,6 @@ package sandboxes
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -62,7 +61,7 @@ func progressFixture(t *testing.T) (context.Context, *Service, *store.Store) {
 func TestProgressReportIsRecorded(t *testing.T) {
 	ctx, service, appStore := progressFixture(t)
 
-	payload := json.RawMessage(`{"pull":{"image":"ghcr.io/example/sandbox:latest","current":50,"total":100,"layers":3,"layersComplete":1}}`)
+	payload := model.RawJSON(`{"pull":{"image":"ghcr.io/example/sandbox:latest","current":50,"total":100,"layers":3,"layersComplete":1}}`)
 	at := time.Now().UTC()
 	err := service.ReportSandboxProgress(ctx, "pool-1", at, []store.SandboxProgressReport{
 		{SandboxID: "sandbox-1", Progress: payload},
@@ -94,7 +93,7 @@ func TestProgressReportIgnoresSandboxesThePoolDoesNotHost(t *testing.T) {
 	ctx, service, appStore := progressFixture(t)
 
 	err := service.ReportSandboxProgress(ctx, "pool-1", time.Now().UTC(), []store.SandboxProgressReport{
-		{SandboxID: "sandbox-does-not-exist", Progress: json.RawMessage(`{"pull":{"image":"img"}}`)},
+		{SandboxID: "sandbox-does-not-exist", Progress: model.RawJSON(`{"pull":{"image":"img"}}`)},
 	})
 	if err != nil {
 		t.Fatalf("ReportSandboxProgress: %v", err)

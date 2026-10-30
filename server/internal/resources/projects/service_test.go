@@ -2,7 +2,6 @@ package projects_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -33,7 +32,7 @@ func (s stubProviders) CreateSandboxProviderInstance(ctx context.Context, projec
 		ProjectID: projectID,
 		Type:      input.Type,
 		Name:      input.Name,
-		Config:    json.RawMessage(input.Config),
+		Config:    model.RawJSON(input.Config),
 	}
 	if err := s.st.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		return nil, err
@@ -124,7 +123,7 @@ func seedSourceProject(ctx context.Context, t *testing.T, st *store.Store) *mode
 	if _, err := st.CreateProjectMemberIfNotExists(ctx, &model.ProjectMember{ProjectID: project.ID, UserID: testUserID, Role: "owner"}); err != nil {
 		t.Fatalf("create membership: %v", err)
 	}
-	provider := &model.SandboxProviderInstance{ProjectID: project.ID, Type: "docker", Name: "Docker", Config: json.RawMessage(`{"agentPort":1234}`)}
+	provider := &model.SandboxProviderInstance{ProjectID: project.ID, Type: "docker", Name: "Docker", Config: model.RawJSON(`{"agentPort":1234}`)}
 	if err := st.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}

@@ -627,7 +627,7 @@ func (s *routerTestServices) CreateSandboxProviderInstance(_ context.Context, pr
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	now := time.Now().UTC()
-	provider := model.SandboxProviderInstance{ID: id.NewString(id.PrefixSandboxProvider), ProjectID: projectID, Type: input.Type, Name: input.Name, Config: services.RawMessage(input.Config), CreatedAt: now, UpdatedAt: now}
+	provider := model.SandboxProviderInstance{ID: id.NewString(id.PrefixSandboxProvider), ProjectID: projectID, Type: input.Type, Name: input.Name, Config: model.RawJSON(services.RawMessage(input.Config)), CreatedAt: now, UpdatedAt: now}
 	s.providers[provider.ID] = provider
 	return &provider, nil
 }
@@ -730,7 +730,7 @@ func (s *routerTestServices) UpdateSandboxProviderInstance(_ context.Context, pr
 		provider.Name = name
 	}
 	if len(input.Config) > 0 {
-		provider.Config = services.RawMessage(input.Config)
+		provider.Config = model.RawJSON(services.RawMessage(input.Config))
 	}
 	if disabled, ok := input.Disabled.Get(); ok {
 		provider.Disabled = disabled

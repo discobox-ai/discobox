@@ -553,7 +553,7 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 // (an attach, a keystroke, or a client attached at observation); it only ever
 // moves last_active_at forward, so a late or re-delivered report cannot walk
 // real activity back.
-func (s *Store) UpdateSandboxAgentStatus(ctx context.Context, projectID, sandboxID string, status json.RawMessage, observedAt time.Time, lastActiveAt *time.Time) error {
+func (s *Store) UpdateSandboxAgentStatus(ctx context.Context, projectID, sandboxID string, status model.RawJSON, observedAt time.Time, lastActiveAt *time.Time) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
@@ -638,7 +638,7 @@ func (s *Store) UpdateSandboxMeta(ctx context.Context, projectID, sandboxID stri
 // burns CPU with nobody watching — and letting it move that column would keep
 // an abandoned sandbox looking active for as long as something was spinning
 // inside it.
-func (s *Store) UpdateSandboxResources(ctx context.Context, projectID, sandboxID string, resources json.RawMessage, observedAt time.Time) error {
+func (s *Store) UpdateSandboxResources(ctx context.Context, projectID, sandboxID string, resources model.RawJSON, observedAt time.Time) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err

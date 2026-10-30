@@ -161,7 +161,7 @@ func reportedPowerDown(sb *model.Sandbox) (PowerDownReason, bool) {
 // sleep request is pending, which wins, and idle when the sandbox reports
 // itself idle. A sandbox whose power the control plane does not hold reports
 // neither.
-func powerDownAsked(agentStatus json.RawMessage) (PowerDownReason, bool) {
+func powerDownAsked(agentStatus []byte) (PowerDownReason, bool) {
 	if len(agentStatus) == 0 {
 		return "", false
 	}
