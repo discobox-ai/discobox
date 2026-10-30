@@ -637,3 +637,37 @@ func TestADeclaredSourceIgnoresADirectoryThatIsNoCheckout(t *testing.T) {
 		t.Fatalf("resolved to %q (local %v), want the checkout beside the source", arg, report.Local)
 	}
 }
+
+// A remote primary whose settings declare its own repository — a set of
+// repositories sharing one settings file — keeps its directory: the
+// declaration names the primary itself, not a second clone to make room for.
+func TestARemotePrimaryDeclaringItselfKeepsItsName(t *testing.T) {
+	const remote = "https://git.invalid/acme/app"
+	repo := newRunSourceTestRepoIn(t, t.TempDir(), "app")
+	git := runSourceTestGit(t, repo)
+	declareSources(t, repo, map[string]string{"app": remote})
+	git("add", ".discobox")
+	git("commit", "-m", "settings")
+	git("config", "uploadpack.allowFilter", "true")
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "url.file://"+filepath.ToSlash(repo)+".insteadOf")
+	t.Setenv("GIT_CONFIG_VALUE_0", remote)
+
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Platform: linuxSandbox,
+		Source:       remote,
+		IncludeDirty: IncludeDirtyNever,
+	})
+	if err != nil {
+		t.Fatalf("build prompt sandbox body: %v", err)
+	}
+	defer local.Close()
+
+	if references, ok := body.Config.SourceCodeReferences.Get(); ok && len(references) > 0 {
+		t.Fatalf("references = %v, want the self-declaration skipped as the primary itself", references)
+	}
+	source, _ := body.Config.Source.Get()
+	destination, _ := source.Destination.Get()
+	if destination.Directory.Or("") != "/workspace/app" {
+		t.Fatalf("destination = %v, want the primary kept at /workspace/app", destination)
+	}
+}

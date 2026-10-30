@@ -85,7 +85,15 @@ sandbox create requests.
   where a source with no host path goes: the primary at `/workspace/source`, a
   reference at `/workspace/<name>` (a declared one at the sibling path its
   checkout would have had), with the requested subdirectory honored by
-  its position within the repository. The destination is a mount target — the
+  its position within the repository. A **remote** primary is placed by its
+  repository's name, `/workspace/<name>` (`remoteRunDestination`), unless that
+  name slugs to nothing or is `skill-sources`; a reference that lands on the
+  same directory keeps it and the primary moves to `/workspace/source`
+  (`yieldPrimaryDirectory`), so the primary's directory is settled only after
+  every reference is, and filed on the request then. A declared source naming
+  the primary's own repository is the primary itself and is skipped, as it is
+  for a local primary (`heldAgainst`); an `-i` of it, at any ref, is a second
+  checkout and takes the name. The destination is a mount target — the
   sandbox-agent binds `/.discobox/sources/<slug>` onto it — and the sandbox is a
   systemd machine that owns some of those directories: a source targeted at
   `/tmp` is mounted onto a tmpfs systemd puts there during boot, so the discobox
