@@ -1519,8 +1519,9 @@ A tab strip is laid into its box's top border (`tabbedEdge`, a `titledEdge`
 with several titles), so it costs no grid row and both halves come out the same
 height. Tabs are titled by the application's own title, else the session's
 command basename, else its harness, else its id tail — the primary by its
-action, since the virtual id names no session — and each carries the number it
-answers to. The visible tab is lit and never clipped, and an overgrown strip
+action, since the virtual id names no session, and by the name the discobox was
+given ahead of all of those (`Model.paneName`, below) — and each carries the
+number it answers to. The visible tab is lit and never clipped, and an overgrown strip
 shows a window around it with an ellipsis at the clipped end. Hidden tabs keep
 emulating off-screen at their drawn size, so flipping to one shows where it is
 now.
@@ -2270,15 +2271,22 @@ Detaching returns to the list with the cursor still on the sandbox it was
 opened on.
 
 The title an application sets goes two places: its own pane's top border
-(`titledEdge`), which says what that terminal is running, and the real
-terminal's own title bar (`windowTitle` → `View.WindowTitle`), which is how you
-find the window among the others you have open. The title bar
-always carries the primary terminal's title — never the focused tab's or
-the overlay's — because it is read from outside the window, where what matters
-is which discobox this is and what its agent is doing; a tab or a report is
-something you are doing inside the window and already looking at. With no
-primary the terminal's title is left exactly as the shell that started the
-window left it. On a terminal that does not know OSC 7501 the title is led by the
+(`titledEdge`), which says what that terminal is running unless a given name
+takes its place (below), and the real terminal's own title bar (`windowTitle` → `View.WindowTitle`), which is how you
+find the window among the others you have open. The title bar follows the
+primary terminal — never the focused tab or the overlay — because it is read
+from outside the window, where what matters is which discobox this is and what
+its agent is doing; a tab or a report is something you are doing inside the
+window and already looking at. A name the discobox was given
+(`Sandbox.GivenName`) comes first in both: the primary's border is that name,
+else what `pane.name` says (`Model.paneName`), and the title bar is that name,
+else the primary's title, else the box's display name (`windowTitle`); ADR
+26-10-12-026 has a set name show in the console and the window title. The given name is read off the listing rather than the
+pane's snapshot, so a name written into the box's meta shows within a poll
+whether or not the program retitles itself, and while it is set the harness's
+title is on screen only inside the program. With no primary the terminal's
+title is left exactly as the shell that started the window left it. On a
+terminal that does not know OSC 7501 the title is led by the
 primary box's status glyph (see the agent glyph section above). Messages the window does not handle fall through to the pane, because the
 terminal's output arrives as `termpane`'s own unexported messages and nothing
 here can name them.

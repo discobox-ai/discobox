@@ -1068,6 +1068,50 @@ func TestTheTerminalTitleFollowsThePrimaryPane(t *testing.T) {
 	}
 }
 
+// A name the discobox was given outranks its harness's title on the primary's
+// tab and in the window title, and reaches both from the listing: one written
+// into the box's meta shows within a poll, without the program retitling itself.
+func TestAGivenNameFollowsTheListingOntoThePrimary(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+	term.send("\x1b]2;go test ./...\x07")
+	d.wait("the title", func() bool { return m.View().WindowTitle == "go test ./..." })
+
+	// What the server reports once the box's meta file names it.
+	if err := ds.Rename(t.Context(), m.paneBox.ID, "Reaper race"); err != nil {
+		t.Fatal(err)
+	}
+	d.dispatch(tickMsg{})
+	d.wait("the given name", func() bool { return m.View().WindowTitle == "Reaper race" })
+	if frame := frameText(m); !strings.Contains(frame, "Reaper race") || strings.Contains(frame, "go test ./...") {
+		t.Fatalf("the primary's edge should wear the given name in place of the title:\n%s", frame)
+	}
+
+	// The harness retitling itself does not take the name back.
+	term.send("\x1b]2;go vet ./...\x07")
+	d.wait("the new title", func() bool { return strings.TrimSpace(m.primary().term.Title()) == "go vet ./..." })
+	if got := m.View().WindowTitle; got != "Reaper race" {
+		t.Fatalf("title = %q, want the given name", got)
+	}
+	if frame := frameText(m); !strings.Contains(frame, "Reaper race") || strings.Contains(frame, "go vet ./...") {
+		t.Fatalf("the primary's edge should keep the given name over a new title:\n%s", frame)
+	}
+
+	// With a second pane the primary's tab in the strip wears it too.
+	d.key("ctrl+a")
+	d.key("s")
+	d.wait("the shell", func() bool { return m.shells.len() == 1 })
+	d.wait("the primary's tab", func() bool { return strings.Contains(frameText(m), "0 Reaper race") })
+
+	// Cleared, the harness's title is back.
+	if err := ds.Rename(t.Context(), m.paneBox.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	d.dispatch(tickMsg{})
+	d.wait("the title back", func() bool { return m.View().WindowTitle == "go vet ./..." })
+}
+
 // A shell tab is something you are doing inside this window, so it never takes
 // the window's name: the title bar is read from outside, where what matters is
 // which discobox this is and what its agent is doing.

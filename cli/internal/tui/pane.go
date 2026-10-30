@@ -222,6 +222,24 @@ func (p *pane) name() string {
 	return string(p.action)
 }
 
+// paneName is what to call a pane on screen. The primary terminal answers to
+// the name the discobox was given when it has one, the way the listing and the
+// window title do (ADR 26-10-12-026: a set name shows in "the console and the
+// window title"): the harness titles its session as it goes, and a name a
+// person or the agent chose outranks that. The harness's title is then on
+// screen only inside the program itself. It is read off the listing rather
+// than the snapshot the pane was opened on, so a name written into the box's
+// meta reaches the tab within a poll whether or not the program retitles
+// itself. Every other pane is what its program says it is (pane.name).
+func (m *Model) paneName(p *pane) string {
+	if p.primary {
+		if name := m.currentBox().GivenName; name != "" {
+			return name
+		}
+	}
+	return p.name()
+}
+
 // detachHint is how to get out of the workspace, as the key lists spell it.
 //
 // It is the same in every pane, and Ctrl-C is not it. Taking Ctrl-C as "back
@@ -1996,8 +2014,9 @@ func (f paneHeaderFields) render(m *Model, left, right string, w int) string {
 // banner rather than given a line of its own. The id rather than the name,
 // because the id is what you would type at a shell to act on this one, and
 // muted rather than foreground, because it is there to be looked up when
-// wanted rather than read on every glance. What each pane is running is in its
-// own border.
+// wanted rather than read on every glance. Each pane's border says what to
+// call it (paneName): what it is running, or for the primary of a discobox
+// that has been given a name, that name.
 //
 // The git position, its state spelled out, and the diffstat are the list's own
 // columns, drawn by the list's own functions in the list's own colors, and read
@@ -2205,7 +2224,7 @@ func (m *Model) viewColumnBox(col *column, shells bool, left, width int, focused
 	// they are worked out once: drawing them records where they landed, and a
 	// second span for the same button is a click target nothing needs.
 	control := m.columnControls(edge, p, shells, left, width)
-	top := titledEdge(m.st, edge, p.name(), control, inner)
+	top := titledEdge(m.st, edge, m.paneName(p), control, inner)
 	if len(m.panes()) > 1 {
 		top = m.tabbedEdge(col, shells, left, control, edge, inner)
 	}
