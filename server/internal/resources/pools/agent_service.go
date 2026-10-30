@@ -369,7 +369,7 @@ func (s *Service) ReportPoolResources(ctx context.Context, poolID string, input 
 		// agent sent.
 		var encoder jx.Encoder
 		entry.Encode(&encoder)
-		resources := json.RawMessage(encoder.Bytes())
+		resources := model.RawJSON(encoder.Bytes())
 		// A sandbox that reported no counters still reported its disk, and its
 		// entry has no observation time of its own; the report's own time is
 		// what makes it possible to tell fresh accounting from stale.
@@ -396,12 +396,12 @@ func (s *Service) ReportPoolResources(ctx context.Context, poolID string, input 
 // Encoded through the generated encoder rather than encoding/json: an ogen
 // optional field writes nothing at all when unset, which encoding/json rejects
 // as truncated output.
-func encodePoolResourceReport(reportedAt time.Time, input services.ReportPoolResourcesBody) json.RawMessage {
+func encodePoolResourceReport(reportedAt time.Time, input services.ReportPoolResourcesBody) model.RawJSON {
 	report := input.Report
 	report.ReportedAt = reportedAt
 	var encoder jx.Encoder
 	report.Encode(&encoder)
-	return json.RawMessage(encoder.Bytes())
+	return model.RawJSON(encoder.Bytes())
 }
 
 // reportedLastAccess is the newest client access the status payload carries:

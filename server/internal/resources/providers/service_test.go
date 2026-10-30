@@ -2,7 +2,6 @@ package providers_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -128,7 +127,7 @@ func newImmutableFixture(t *testing.T) (*resourceproviders.Service, *store.Store
 		{Key: "driver", Label: "Driver", Type: "string", Immutable: true},
 		{Key: "size", Label: "Size", Type: "string"},
 	}})
-	instance := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "machines", Name: "machines", Config: json.RawMessage(`{"driver":"boxd","size":"s"}`)}
+	instance := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "machines", Name: "machines", Config: model.RawJSON(`{"driver":"boxd","size":"s"}`)}
 	if err := appStore.CreateSandboxProviderInstance(context.Background(), instance); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}

@@ -31,7 +31,7 @@ func eventData(t *testing.T, event model.SandboxEvent) model.SandboxEventData {
 	return data
 }
 
-func agentStatusWithProgram(state, kind, msg string) json.RawMessage {
+func agentStatusWithProgram(state, kind, msg string) model.RawJSON {
 	program := map[string]any{"state": state, "app": "claude-code", "msg": msg, "reportedAt": time.Now().UTC()}
 	if kind != "" {
 		program["kind"] = kind

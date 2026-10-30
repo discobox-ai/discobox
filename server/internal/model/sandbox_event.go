@@ -1,7 +1,6 @@
 package model
 
 import (
-	"encoding/json"
 	"time"
 )
 
@@ -22,12 +21,12 @@ const (
 // order of Seq is the order the events committed in (§3): a reader that has
 // seen one has seen every event before it.
 type SandboxEvent struct {
-	Seq       int64           `gorm:"column:seq;primaryKey;autoIncrement:false;index:idx_sandbox_event_project_seq,priority:2"`
-	ProjectID string          `gorm:"column:project_id;not null;type:text;index:idx_sandbox_event_project_seq,priority:1"`
-	SandboxID string          `gorm:"column:sandbox_id;not null;type:text;index"`
-	Type      string          `gorm:"column:type;not null;type:text"`
-	Data      json.RawMessage `gorm:"column:data;not null;type:text"`
-	At        time.Time       `gorm:"column:at;not null;index"`
+	Seq       int64     `gorm:"column:seq;primaryKey;autoIncrement:false;index:idx_sandbox_event_project_seq,priority:2"`
+	ProjectID string    `gorm:"column:project_id;not null;type:text;index:idx_sandbox_event_project_seq,priority:1"`
+	SandboxID string    `gorm:"column:sandbox_id;not null;type:text;index"`
+	Type      string    `gorm:"column:type;not null;type:text"`
+	Data      RawJSON   `gorm:"column:data;not null;type:text"`
+	At        time.Time `gorm:"column:at;not null;index"`
 }
 
 func (SandboxEvent) TableName() string { return "sandbox_events" }

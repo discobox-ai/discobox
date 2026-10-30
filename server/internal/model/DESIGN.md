@@ -38,6 +38,14 @@ completion timestamp and require no backfill (ADR 26-10-23-948).
 | `SandboxEventLog` | The event stream's one row: `Head`, the last `Seq` handed out, whose row lock orders the events, and `PrunedThrough`, the highest retention removed. |
 | `Job` | Non-persisted, read-only API view of a pending reconcile mark. |
 
+## JSON Columns
+
+A JSON document kept verbatim — an agent's status, a provider's config, a
+pool's resources, an event's payload — is a `RawJSON` field on a `text`
+column. It encodes as the document itself, like `json.RawMessage`, so the API's
+JSON round-trip carries it unchanged, and it scans from the string Postgres's
+driver hands over as well as the bytes SQLite's does.
+
 ## Persistence Scope
 
 Discobox uses one application database/schema. `model.AllModels()` is the single

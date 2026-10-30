@@ -566,7 +566,7 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 // The program status in it is what a sandbox event reports of the program, so
 // the write is recorded like any other (ADR 26-10-29-316 §2): almost every
 // report leaves that as it was, and records nothing.
-func (s *Store) UpdateSandboxAgentStatus(ctx context.Context, projectID, sandboxID string, status json.RawMessage, observedAt time.Time, lastActiveAt *time.Time) error {
+func (s *Store) UpdateSandboxAgentStatus(ctx context.Context, projectID, sandboxID string, status model.RawJSON, observedAt time.Time, lastActiveAt *time.Time) error {
 	columns := map[string]any{
 		"agent_status":             status,
 		"agent_status_observed_at": observedAt,
@@ -650,7 +650,7 @@ func (s *Store) UpdateSandboxMeta(ctx context.Context, projectID, sandboxID stri
 // burns CPU with nobody watching — and letting it move that column would keep
 // an abandoned sandbox looking active for as long as something was spinning
 // inside it.
-func (s *Store) UpdateSandboxResources(ctx context.Context, projectID, sandboxID string, resources json.RawMessage, observedAt time.Time) error {
+func (s *Store) UpdateSandboxResources(ctx context.Context, projectID, sandboxID string, resources model.RawJSON, observedAt time.Time) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err

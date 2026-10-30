@@ -131,7 +131,7 @@ func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID s
 	if err := manager.ValidateProviderConfig(input.Type, services.RawMessage(input.Config)); err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
-	provider := &model.SandboxProviderInstance{ProjectID: projectID, Type: input.Type, Name: input.Name, Config: services.RawMessage(input.Config)}
+	provider := &model.SandboxProviderInstance{ProjectID: projectID, Type: input.Type, Name: input.Name, Config: model.RawJSON(services.RawMessage(input.Config))}
 	if err := s.store.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, 
 		if err := s.refuseImmutableChange(ctx, provider, config); err != nil {
 			return nil, err
 		}
-		provider.Config = config
+		provider.Config = model.RawJSON(config)
 	}
 	if disabled, ok := input.Disabled.Get(); ok {
 		provider.Disabled = disabled
@@ -228,7 +228,7 @@ func (s *Service) refuseImmutableChange(ctx context.Context, provider *model.San
 
 // configValue is one top-level field of a provider config, compacted, so that
 // formatting does not read as a change. An absent field is empty.
-func configValue(config json.RawMessage, key string) (string, error) {
+func configValue(config []byte, key string) (string, error) {
 	if len(config) == 0 {
 		return "", nil
 	}

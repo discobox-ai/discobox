@@ -52,7 +52,7 @@ type Config struct {
 // HostMount aliases the engine host mount type for provider configuration.
 type HostMount = dockerworker.HostMount
 
-func Decode(data json.RawMessage) (Config, error) {
+func Decode(data []byte) (Config, error) {
 	return poolruntime.DecodeConfig[Config](data, ProviderType)
 }
 
