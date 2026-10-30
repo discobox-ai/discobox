@@ -8141,6 +8141,7 @@ paths:
         post:
             operationId: save-sandbox-harness-config-changes
             summary: Save sandbox harness config changes.
+            description: Revision conflicts return 409 with problem type urn:discobox:harness-config-revision-conflict and can be retried with force. Other conflicts require the recovery described in the response.
             tags: [Harness Config Save Back]
             parameters:
                 - in: path
@@ -8153,6 +8154,11 @@ paths:
                   required: true
                   schema:
                     type: string
+                - in: query
+                  name: force
+                  description: Overwrite config and credential changes despite stale revisions. Candidate identity, manifest and validation checks still apply.
+                  schema:
+                    type: boolean
             requestBody:
                 required: true
                 content:

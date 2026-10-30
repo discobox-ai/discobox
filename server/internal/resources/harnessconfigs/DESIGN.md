@@ -540,3 +540,8 @@ request time cannot hide an intervening save. Configure captures its
 starting revision and bound-secret revisions and commits transactionally only
 while both still match. Deconfigure and manual binding mutations also advance
 the config revision, so an older local capture cannot resurrect removed state.
+
+An explicit force save bypasses config and secret revision conflicts while the
+same transaction locks the current rows. It retains identity, manifest and
+candidate validation, applies only the candidate patch and records the usual
+idempotency receipt.

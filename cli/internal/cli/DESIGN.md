@@ -28,6 +28,12 @@ that revision while open and does not reload it at save time; a concurrent
 save-back or configuration edit returns a conflict instead of replacing a newer
 file bucket. The ordinary update command reads config and egress together once.
 
+Harness save-back accepts an explicit force option to bypass config and secret
+revision conflicts for the reviewed candidate. Identity, manifest and candidate
+validation still apply; unrelated files remain intact. The console offers an
+overwrite confirmation after a save conflict and retries the displayed candidate
+with force only after confirmation. CLI: `admin harness save --force`.
+
 ## WebSocket audit recordings
 
 The existing HTTP audit stream action renders `discobox-websocket-messages-v1`

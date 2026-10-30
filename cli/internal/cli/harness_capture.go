@@ -220,12 +220,13 @@ func (a *App) newHarnessChangesCommand() *cobra.Command {
 	return cmd
 }
 func (a *App) newHarnessSaveCommand() *cobra.Command {
-	return &cobra.Command{Use: "save SANDBOX CANDIDATE", Short: "Save a reviewed candidate as the harness defaults and shared credentials", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+	var force bool
+	cmd := &cobra.Command{Use: "save SANDBOX CANDIDATE", Short: "Save a reviewed candidate as the harness defaults and shared credentials", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		project, box, client, err := a.sandboxRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
-		res, err := client.SaveSandboxHarnessConfigChanges(cmd.Context(), &api.HarnessConfigCandidateRequest{CandidateId: args[1]}, api.SaveSandboxHarnessConfigChangesParams{ProjectId: project, SandboxId: box})
+		res, err := client.SaveSandboxHarnessConfigChanges(cmd.Context(), &api.HarnessConfigCandidateRequest{CandidateId: args[1]}, api.SaveSandboxHarnessConfigChangesParams{ProjectId: project, SandboxId: box, Force: api.NewOptBool(force)})
 		if err != nil {
 			return err
 		}
@@ -239,6 +240,8 @@ func (a *App) newHarnessSaveCommand() *cobra.Command {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s (revision %d)\n", terminalSafe(result.State), result.ConfigRevision)
 		return nil
 	}}
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite shared config and credentials despite revision conflicts")
+	return cmd
 }
 func (a *App) newHarnessDiscardCommand() *cobra.Command {
 	return &cobra.Command{Use: "discard SANDBOX CANDIDATE", Short: "Discard a pending candidate without changing local files or shared defaults", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {

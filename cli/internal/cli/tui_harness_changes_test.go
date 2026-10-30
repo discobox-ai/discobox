@@ -1,13 +1,19 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	api "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 )
 
 func TestHarnessPreviewEscapesUntrustedDisplayData(t *testing.T) {
@@ -118,5 +124,48 @@ func TestHarnessChangesAcceptsProjectAndServerFlags(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "changes SANDBOX") {
 		t.Fatalf("wrong command: %s", output.String())
+	}
+}
+
+func TestSaveHarnessChangesOffersForceOnlyForRevisionConflicts(t *testing.T) {
+	for _, tc := range []struct {
+		name, problemType, detail string
+		conflict                  bool
+	}{
+		{"revision", harnesscapture.RevisionConflictType, "revision changed", true},
+		{"manifest", "about:blank", "upgrade or recreate the sandbox", false},
+		{"candidate", "about:blank", "harness capture request was refused", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.UserAgent() == "discobox-sandbox-agent (port probe)" {
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+				if r.URL.Query().Get("force") != "true" {
+					t.Error("force option was lost")
+				}
+				var body api.HarnessConfigCandidateRequest
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				if body.CandidateId != "reviewed" {
+					t.Error("candidate changed")
+				}
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(409)
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": 409, "title": "Conflict", "detail": tc.detail, "type": tc.problemType})
+			}))
+			defer server.Close()
+			client, err := api.NewClient(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ds := &apiDataSource{client: client, projectID: "project-1"}
+			_, err = ds.SaveHarnessChanges(context.Background(), "box", "reviewed", true)
+			if err == nil || errors.Is(err, tui.ErrHarnessChangesConflict) != tc.conflict || !strings.Contains(err.Error(), tc.detail) {
+				t.Fatalf("wrong conflict classification: %v", err)
+			}
+		})
 	}
 }

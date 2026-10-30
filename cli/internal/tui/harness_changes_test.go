@@ -113,3 +113,33 @@ func TestHarnessReviewScrollsEverySettingsField(t *testing.T) {
 		t.Fatalf("writes=%v", ds.harnessChangesWrites)
 	}
 }
+
+func TestHarnessChangesConflictRequiresConfirmation(t *testing.T) {
+	for _, confirm := range []bool{false, true} {
+		t.Run(map[bool]string{false: "cancel", true: "overwrite"}[confirm], func(t *testing.T) {
+			ds := newFakeSource(testSandboxes()...)
+			ds.harnessChanges = HarnessChanges{CandidateID: "reviewed", State: "pending", Files: []HarnessChangedFile{{Path: "settings.json", Action: "update"}}}
+			ds.harnessChangesSaveErr = ErrHarnessChangesConflict
+			m := newTestModel(t, ds)
+			send(t, m, keyPress("tab"), keyPress("H"), keyPress("s"))
+			if !strings.Contains(dialogText(m), "Overwrite harness changes?") {
+				t.Fatalf("missing confirmation: %s", dialogText(m))
+			}
+			if len(ds.harnessChangesWrites) != 1 || ds.harnessChangesForces[0] {
+				t.Fatal("forced without confirmation")
+			}
+			ds.harnessChanges.CandidateID = "new-candidate"
+			if confirm {
+				send(t, m, keyPress("enter"))
+				if len(ds.harnessChangesWrites) != 2 || ds.harnessChangesWrites[1] != "save sbx_one reviewed" || !ds.harnessChangesForces[1] {
+					t.Fatalf("wrong retry: %v %v", ds.harnessChangesWrites, ds.harnessChangesForces)
+				}
+			} else {
+				send(t, m, keyPress("esc"))
+				if len(ds.harnessChangesWrites) != 1 {
+					t.Fatal("saved after cancellation")
+				}
+			}
+		})
+	}
+}

@@ -272,7 +272,7 @@ func (*captureJanitorRuntime) AcquireSandboxHTTPClientForServer(context.Context,
 func TestCaptureDeliveryFailureDoesNotBlockConfigureJanitor(t *testing.T) {
 	svc, cfg, candidate := captureFixture(t)
 	ctx := context.Background()
-	if _, err := svc.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, candidate); err != nil {
+	if _, err := svc.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, candidate, false); err != nil {
 		t.Fatal(err)
 	}
 	runtime := &captureJanitorRuntime{}
@@ -309,7 +309,7 @@ func TestCaptureOutcomeReachesOriginAfterRemoteEdit(t *testing.T) {
 			ctx := context.Background()
 			runtime := &captureDeliveryRuntime{Service: sandboxes.NewService(st, nil, "user-1", nil), store: st}
 			svc.sandboxes = runtime
-			receipt, err := svc.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, candidate)
+			receipt, err := svc.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, candidate, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -390,7 +390,7 @@ func TestCaptureDefinitionConflictIsActionableWithoutEchoingAgentBody(t *testing
 	if err := svc.store.UpdateHarnessConfig(ctx, cfg); err != nil {
 		t.Fatal(err)
 	}
-	_, err := svc.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, candidate)
+	_, err := svc.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, candidate, false)
 	if err == nil || !strings.Contains(err.Error(), "upgrade or recreate") {
 		t.Fatalf("manifest change lacked recovery instruction: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestCaptureTransportUsesResolvedSandboxIdentity(t *testing.T) {
 func TestDeferredCaptureHandoffKeepsServerReceiptPending(t *testing.T) {
 	svc, cfg, candidate := captureFixture(t)
 	ctx := t.Context()
-	receipt, err := svc.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, candidate)
+	receipt, err := svc.commitCapture(ctx, cfg.ProjectID, "sbx-capture", cfg.ID, candidate, false)
 	if err != nil {
 		t.Fatal(err)
 	}
