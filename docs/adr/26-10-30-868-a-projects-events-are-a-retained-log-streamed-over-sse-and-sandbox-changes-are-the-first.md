@@ -1,6 +1,6 @@
 # 26-10-30-868 — A project's events are a retained log streamed over SSE, and sandbox changes are the first
 
-- **Status**: Accepted
+- **Status**: Accepted (narrows [0061](0061-the-client-facing-project-event-stream-is-removed.md)'s removal of the client-facing stream and `discobox events`, and [0081](0081-project-events-are-not-persisted-and-the-wait-polls.md)'s removal of the store's event machinery)
 - **Date**: 2026-10-30
 - **Relates to**:
   [0061](0061-the-client-facing-project-event-stream-is-removed.md) (the last
@@ -43,9 +43,17 @@ list-then-watch framing.
   it. `history` is ignored.
 - With a `Last-Event-ID` the log no longer holds — pruned (§6), or ahead of
   the log — it sends `reset`, then behaves as a connect with no ID.
-- Every frame has `id:` (except comments and `reset`), `event:`, and one JSON
-  `data:` line. The server sends `retry: 2000` once and a `:` comment every
-  15 seconds while it is idle, so proxies keep the stream open.
+- Every event frame has `id:`, `event:`, and one JSON `data:` line; `reset`
+  has no `id:`. The first frame is `retry: 2000` with the `id:` the stream
+  starts after, and a `:` comment is sent every 15 seconds while it is idle,
+  so proxies keep the stream open. When the stream has nothing waiting the
+  comment carries an `id:` too, of where it now stands in the whole log. An
+  `id:` with no data still sets a client's last event ID (as `EventSource`
+  does), so a client that drops before any event, or watches a quiet project
+  for longer than retention, still resumes from where it was.
+- A stream catching up that retention overtakes — it removed events after the
+  stream's cursor — ends rather than skipping them; the client's resume then
+  gets the `reset` that says so.
 
 Its visibility is the project's: a person with access to the project sees
 every event in it. It is not in the sandbox role (Deferred).
@@ -83,11 +91,14 @@ and nothing else:
 - `sandboxId`, `projectId`, `name`
 - `desiredState`, `state` — existence: create, ready, failed, archive, restore
 - `runtimeState` — power: `starting`, `running`, `stopping`, `stopped`,
-  `suspended`, or empty before any report
+  `suspended`; absent before any report
 - `agent` — `{state, kind}` from the primary terminal's `programStatus`
   (26-10-16-424): `idle`, `working`, `done`, `blocked`, `error`, and `kind`
-  when blocked; null when it reports none
-- `errorReason`
+  when blocked; null when it reports none, and whenever the sandbox is not
+  running, since a stopped box keeps the last status its agent posted. Which
+  session is the primary terminal's is the rule the CLI's listings read it
+  by, one shared function, so an event and a listing never disagree.
+- `errorReason`, absent when there is none
 - `at` — when the change was recorded
 
 A client that wants more re-reads the sandbox. Archive is not its own event
@@ -103,12 +114,22 @@ an ADR that decides its projection the way this one does, not a drive-by edit.
 
 ### 4. An event is written when the projection changes, in the writing transaction
 
-Every store writer that can move a projected field computes the projection
-before and after, inside its own transaction, and appends an event only if the
-two differ: `CreateSandbox`, `UpdateSandbox`, `ApplySandboxStateReports`,
-`UpdateSandboxAgentStatus`, `DeleteSandbox`. The event commits with the change
-or not at all, so the log never claims a state the row does not hold and never
+Every store writer that can move a projected field — `CreateSandbox`,
+`UpdateSandbox`, `ApplySandboxStateReports`, `UpdateSandboxAgentStatus`,
+`DeleteSandbox` — runs in a transaction and, after its write, reads the
+projection back under the row lock that write took and compares it with the
+projection the sandbox's last event recorded. That is kept on the sandbox row
+itself (`recorded_projection`, written only beside an event), not recomputed
+from a read before the write: a read without the lock can be stale by the time
+the write lands, and a compare against it would call a change no change. An
+event is appended only if the two differ. The event commits with the change or
+not at all, so the log never claims a state the row does not hold and never
 misses one it does.
+
+A sandbox from before the log has no recorded projection. The upgrade records
+its current one without writing an event, so its first write after the upgrade
+announces no change that did not happen. A migration step that later writes a
+projected column re-records the projection the same way.
 
 So the loud writers stay quiet. A 60-second state restamp, a heartbeat, a pull
 progress report, a resource sample, and an agent-status tick whose primary
@@ -141,7 +162,9 @@ retention window.
 
 Each node runs one tailer per database, polling `id > last` every 500ms (0081's
 interval) and handing new events to that node's open streams, each filtered to
-its project. A stream whose client cannot keep up is **closed, never thinned**.
+its project. It runs only while a stream is open. The log is read on the
+primary, never a read replica: a stream's catch-up and the tailer must see one
+order of commits. A stream whose client cannot keep up is **closed, never thinned**.
 Its client reconnects with its `Last-Event-ID` and loses nothing. That is the
 difference from 0061's broker, whose full buffer silently dropped events.
 
@@ -209,15 +232,19 @@ proxies and `curl` untouched.
 
 ## Consequences
 
-- One new table pair (`project_event_log`, and the counter row), added by
-  migration. Existing databases get an empty log: history starts at upgrade.
-- The five writers in §4 gain a projection compare and a conditional insert.
+- One new table pair (`project_event_log`, and the counter row) and one new
+  sandbox column (`recorded_projection`), added by migration, which makes the
+  counter row and records every existing sandbox's projection. Existing
+  databases get an empty log: history starts at upgrade.
+- The five writers in §4 gain a read-back, a compare and a conditional insert.
   A new writer of a projected field must do the same, and a store test pins
   that each one emits and that the restamp, heartbeat and progress paths do
   not.
-- Every node polls one indexed query every 500ms whether or not anyone is
-  streaming. The tailer could start lazily with the first stream; that is an
-  implementation choice.
+- A node polls one indexed query every 500ms while it has a stream open.
+- A server from before this change writing the same database, as in a rolling
+  upgrade, records no events and no projection. Its changes are announced late
+  or not at all, and a sandbox it creates gets no `sandbox.created`, until
+  every node runs this version.
 - A slow consumer reconnects rather than stalling the tailer.
 - A future kind adds its types, its payload schema and its writers' compares.
   The route, table, IDs, retention and tailer are unchanged.
