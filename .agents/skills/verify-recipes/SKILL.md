@@ -63,6 +63,20 @@ so filter it out). Ctrl-C at the welcome screen quits it normally.
   $S/discobox ./cli/cmd/discobox`, and expect the image watcher to fail on
   that path until the replace names a pushed version.
 
+# Verifying harness save-back (`admin harness changes`, the console's `H` card)
+
+The dev server's `claude-code` harness is usually configured already
+(`d admin harness list`). `d run -d -H claude-code --no-source` makes a box
+(no `--name`); there is no `d exec`: run commands in it with
+`d shell <sbx> -- sh -c '...'`. Edit `~/.claude/settings.json` there, wait
+~10s for the watcher, then `d admin harness changes <sbx>` (`-o json` shows
+the preview's `previous` and `file`). In the console the list starts on the
+prompt: `Down` to the boxes, then `H`; `r` in the card re-reads it. Deleting
+the file gives a removal (`reset` when the bundle ships one). A file the
+exporter cannot read (very deep nesting) comes back `capture-incomplete`
+rather than as a change. Put the file back as delivered and the preview
+returns to `clean`; `d admin box purge <sbx> </dev/null` when done.
+
 # Verifying what a box's program reports (OSC 7501, terminal queries)
 
 No attach needed: drive a `d run -d -H shell --no-source` box's primary with
