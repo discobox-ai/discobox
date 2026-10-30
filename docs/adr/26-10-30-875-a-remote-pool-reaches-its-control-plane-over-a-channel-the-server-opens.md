@@ -1,6 +1,6 @@
 # 26-10-30-875 — A remote pool reaches its control plane over a channel the server opens to it
 
-- **Status**: Proposed (would supersede
+- **Status**: Accepted (supersedes
   [26-10-24-953](26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
   §2's and §4's pool `apply` fetching its bundles from the asset routes, and
   §3's pool `apply` as a client of them)

@@ -1,7 +1,9 @@
 # 26-10-24-953 — Every box is provisioned from an ordered list of bundles, and a pool is a box
 
 - **Status**: Accepted (its deferral of a pool that turns its features off
-  superseded by [26-10-27-767](26-10-27-767-a-machine-pool-runs-what-every-pool-runs.md))
+  superseded by [26-10-27-767](26-10-27-767-a-machine-pool-runs-what-every-pool-runs.md);
+  §§2–4's pool `apply` fetching its bundles from the asset routes superseded by
+  [26-10-30-875](26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md))
 - **Date**: 2026-10-24
 - **Supersedes**:
   [26-10-23-551](26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md)
