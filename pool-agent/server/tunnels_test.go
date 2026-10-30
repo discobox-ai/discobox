@@ -28,7 +28,7 @@ func TestRouterServesTunnelsOnlyWhereTheyAreGiven(t *testing.T) {
 		want    int
 	}{
 		{name: "none", want: http.StatusUnauthorized},
-		{name: "given", tunnels: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		{name: "given", tunnels: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusTeapot)
 		}), want: http.StatusTeapot},
 	} {
@@ -39,7 +39,7 @@ func TestRouterServesTunnelsOnlyWhereTheyAreGiven(t *testing.T) {
 				t.Fatal(err)
 			}
 			recorder := httptest.NewRecorder()
-			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/tunnel/proxy", nil))
+			router.ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/tunnel/proxy", nil))
 			if recorder.Code != tc.want {
 				t.Fatalf("GET /tunnel/proxy = %d, want %d", recorder.Code, tc.want)
 			}
