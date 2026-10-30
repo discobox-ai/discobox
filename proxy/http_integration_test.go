@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/pkg/wsrecord"
 	"github.com/discobox-ai/discobox/proxy/bridge"
 	"github.com/discobox-ai/discobox/proxy/internal/audit"
 	"github.com/discobox-ai/discobox/proxy/internal/secrets"
@@ -779,13 +779,13 @@ func TestHTTPProxyUpgradeAudit(t *testing.T) {
 		defer conn.Close()
 		_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n")
 		_ = rw.Flush()
-		buf := make([]byte, 4)
+		buf := make([]byte, 10)
 		if _, err := io.ReadFull(rw, buf); err != nil {
 			originErrCh <- err
 			return
 		}
 		originErrCh <- nil
-		_, _ = rw.WriteString("pong")
+		_, _ = rw.WriteString("\x81\x04pong")
 		_ = rw.Flush()
 	})
 	defer origin.Close()
@@ -836,10 +836,10 @@ func TestHTTPProxyUpgradeAudit(t *testing.T) {
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
-	if _, err := conn.Write([]byte("ping")); err != nil {
+	if _, err := conn.Write([]byte("\x81\x84\x01\x02\x03\x04qkmc")); err != nil {
 		t.Fatalf("write upgraded bytes: %v", err)
 	}
-	got := make([]byte, 4)
+	got := make([]byte, 6)
 	if _, err := io.ReadFull(reader, got); err != nil {
 		select {
 		case originErr := <-originErrCh:
@@ -848,7 +848,7 @@ func TestHTTPProxyUpgradeAudit(t *testing.T) {
 		}
 		t.Fatalf("read upgraded bytes: %v", err)
 	}
-	if string(got) != "pong" {
+	if string(got) != "\x81\x04pong" {
 		t.Fatalf("upgrade response = %q", got)
 	}
 	_ = conn.Close()
@@ -859,11 +859,24 @@ func TestHTTPProxyUpgradeAudit(t *testing.T) {
 	if exchange.UpgradeC2SBytes < 4 || exchange.UpgradeS2CBytes < 4 {
 		t.Fatalf("upgrade bytes c2s=%d s2c=%d", exchange.UpgradeC2SBytes, exchange.UpgradeS2CBytes)
 	}
-	if exchange.StreamFile == "" || exchange.StreamFormat != audit.UpgradeStreamFormatRawFrames {
+	if exchange.StreamFile == "" || exchange.StreamFormat != wsrecord.Format {
 		t.Fatalf("stream metadata file=%q format=%q", exchange.StreamFile, exchange.StreamFormat)
 	}
 	streamPath := filepath.Join(dir, "streams", filepath.FromSlash(exchange.StreamFile))
-	streamBytes := waitForStreamSpool(t, streamPath, []byte("ping"), []byte("pong"))
+	streamBytes, err := os.ReadFile(streamPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spool := bytes.NewReader(streamBytes)
+	if err := wsrecord.ReadHeader(spool); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"ping", "pong"} {
+		record, err := wsrecord.Read(spool)
+		if err != nil || record.Opcode != wsrecord.Text || string(record.Payload) != want {
+			t.Fatalf("message=%v err=%v want=%s", record, err, want)
+		}
+	}
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/audit/http/"+exchange.ID.String()+"/stream?client_id=sandbox-1", nil)
 	rec := httptest.NewRecorder()
 	server.ControlHandler().ServeHTTP(rec, req)
@@ -1181,39 +1194,6 @@ func waitForHTTPExchange(t *testing.T, dsn, query string, args ...any) audit.HTT
 	return audit.HTTPExchange{}
 }
 
-// waitForStreamSpool reads the spool until it holds every payload. The exchange
-// row and the spool file are finished by different goroutines and the row lands
-// first, so a read taken as soon as the row appears can catch the file
-// mid-flush — which fails as a spool that is simply missing the bytes.
-func waitForStreamSpool(t *testing.T, path string, payloads ...[]byte) []byte {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	var last []byte
-	for time.Now().Before(deadline) {
-		data, err := os.ReadFile(path)
-		if err != nil && !os.IsNotExist(err) {
-			t.Fatalf("read stream spool: %v", err)
-		}
-		if err == nil {
-			last = data
-			recorded := streamSpoolPayloads(data)
-			complete := true
-			for _, payload := range payloads {
-				if !streamSpoolHasPayload(recorded, payload) {
-					complete = false
-					break
-				}
-			}
-			if complete {
-				return data
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for the stream spool to hold the upgraded payloads; got %q", last)
-	return nil
-}
-
 func closeProxyServer(t *testing.T, server *Server, errCh <-chan error) func() {
 	t.Helper()
 	var closeOnce sync.Once
@@ -1291,74 +1271,6 @@ func assertSpoolFile(t *testing.T, path, want string) {
 	if string(got) != want {
 		t.Fatalf("spool file %s = %q, want %q", path, got, want)
 	}
-}
-
-// streamSpoolPayloads reassembles what a spool file recorded, one stream per
-// direction.
-//
-// A frame is not a payload boundary: a chunk is whatever one read returned, so
-// four bytes written together arrive as "p" and "ing" when part of them was
-// already in the request parser's buffer and the rest was still on the wire.
-// Searching the file for the bytes as written would make the test depend on
-// that split, which nothing promises.
-//
-// The format is the one streams.go writes: a header of the magic, a version
-// byte, a timestamp, and two length-prefixed strings, then frames of a type
-// byte, a timestamp, a direction, a length and the payload. Every integer is
-// big-endian. A short read returns what has been parsed so far, since the
-// caller polls a file that is still being written.
-func streamSpoolPayloads(data []byte) map[byte][]byte {
-	recorded := map[byte][]byte{}
-	read := func(n int) []byte {
-		if len(data) < n {
-			data = nil
-			return nil
-		}
-		taken := data[:n]
-		data = data[n:]
-		return taken
-	}
-	if magic := read(4); string(magic) != "DBS1" {
-		return recorded
-	}
-	read(1) // version
-	read(8) // started at
-	if length := read(2); length != nil {
-		read(int(binary.BigEndian.Uint16(length))) // session id
-	}
-	if length := read(2); length != nil {
-		read(int(binary.BigEndian.Uint16(length))) // upgrade type
-	}
-	for len(data) > 0 {
-		frameType := read(1)
-		if frameType == nil {
-			break
-		}
-		if frameType[0] != 1 { // a summary frame, which ends the file
-			break
-		}
-		read(8) // timestamp
-		direction := read(1)
-		length := read(4)
-		if direction == nil || length == nil {
-			break
-		}
-		payload := read(int(binary.BigEndian.Uint32(length)))
-		if payload == nil {
-			break
-		}
-		recorded[direction[0]] = append(recorded[direction[0]], payload...)
-	}
-	return recorded
-}
-
-func streamSpoolHasPayload(recorded map[byte][]byte, payload []byte) bool {
-	for _, stream := range recorded {
-		if bytes.Contains(stream, payload) {
-			return true
-		}
-	}
-	return false
 }
 
 func dialProxyMTLS(ctx context.Context, t *testing.T, addr string, material ClientMaterial) net.Conn {

@@ -27,6 +27,9 @@ func auditBodyServer(t *testing.T, bodies map[string]string) *apiDataSource {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
+			if strings.HasSuffix(r.URL.Path, "/stream") && strings.HasPrefix(body, "DBW1") {
+				w.Header().Set(httpAuditFormatHeader, "discobox-websocket-messages-v1")
+			}
 			_, _ = w.Write([]byte(body))
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)

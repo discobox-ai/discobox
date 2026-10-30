@@ -174,7 +174,7 @@ with non-printing characters escaped.`,
 					return err
 				}
 				out := cmd.OutOrStdout()
-				return a.writeHTTPAuditArtifact(cmd.Context(), out, cmd.ErrOrStderr(), isTerminalStream(out), projectID, pool, query.params.SandboxId.Or(""), id, part)
+				return a.writeHTTPAuditArtifact(cmd.Context(), out, cmd.ErrOrStderr(), isTerminalStream(out), isTerminalStream(out), projectID, pool, query.params.SandboxId.Or(""), id, part)
 			}
 			if host != "" {
 				query.params.Host = apiclientgen.NewOptString(host)

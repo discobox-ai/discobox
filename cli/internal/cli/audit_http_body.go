@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/discobox-ai/discobox/pkg/auditid"
+	"github.com/discobox-ai/discobox/pkg/wsrecord"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -39,7 +40,7 @@ const httpAuditTruncatedHeader = "X-Discobox-Audit-Truncated"
 // that is not as raw bytes. It is read from a hand-wired route rather than the
 // generated client, because a body is an unbounded stream the generated client
 // would buffer.
-func (a *App) writeHTTPAuditArtifact(ctx context.Context, out, errOut io.Writer, safe bool, projectID, poolID, sandboxID string, id auditid.ExchangeID, part string) error {
+func (a *App) writeHTTPAuditArtifact(ctx context.Context, out, errOut io.Writer, safe, renderStream bool, projectID, poolID, sandboxID string, id auditid.ExchangeID, part string) error {
 	artifact := map[string]string{
 		httpAuditPartResponse: "response-body",
 		httpAuditPartRequest:  "request-body",
@@ -81,7 +82,9 @@ func (a *App) writeHTTPAuditArtifact(ctx context.Context, out, errOut io.Writer,
 		_, _ = fmt.Fprintf(errOut, "recorded as %s\n", terminalSafe(format))
 	}
 	body := &countingReader{Reader: resp.Body}
-	if safe {
+	if renderStream && part == httpAuditPartStream && resp.Header.Get(httpAuditFormatHeader) == wsrecord.Format {
+		err = renderWebSocketRecording(out, body)
+	} else if safe {
 		// What a service answered a discobox is display data like everything
 		// else it recorded (ADR 0130 §6), and a body is the likeliest place
 		// for bytes a terminal would act on.

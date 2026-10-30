@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/discobox-ai/discobox/pkg/wsrecord"
 )
 
 // truncatedSuffix names the marker a truncated spool file is given beside it.
@@ -388,6 +390,9 @@ func streamCut(root *os.Root, path string, head int64) (int64, error) {
 	}
 	defer func() { _ = file.Close() }()
 	reader := bufio.NewReader(file)
+	if magic, err := reader.Peek(4); err == nil && string(magic) == "DBW1" {
+		return wsrecord.Cut(reader, head)
+	}
 	// Magic, version, start time, then two length-prefixed strings.
 	offset := int64(len(upgradeStreamFileMagic) + 1 + 8)
 	if _, err := reader.Discard(int(offset)); err != nil {

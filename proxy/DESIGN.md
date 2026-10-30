@@ -296,10 +296,34 @@ and has since been reclaimed.
 
 ## Upgraded Streams
 
-HTTP 101 upgrades are supported as generic upgraded streams. The proxy preserves
-the upgraded tunnel, spools raw bidirectional payload frames to disk, and audits
-protocol type, spool file metadata, drop counters, and client-to-server and
-server-to-client byte counts. Raw upgraded payloads are not persisted to SQLite.
+HTTP 101 upgrades preserve the tunnel and record its authenticated client,
+protocol, byte counts, and capture file. Generic upgrades retain raw chunks in
+`discobox-upgrade-stream-v1`. WebSocket upgrades instead capture complete sent
+and received messages in [`wsrecord`](../pkg/wsrecord/DESIGN.md)'s
+`discobox-websocket-messages-v1` format: text, binary, ping, pong and close,
+with observation timestamps. The existing stream artifact route serves either
+format; the console renders WebSocket messages from that artifact.
+
+Capture observes RFC 6455 version 13 on the HTTP/1.1 upgrade path, including
+masking, fragmentation, and interleaved control frames. Negotiated RFC 7692
+`permessage-deflate` is decoded per direction, including context takeover.
+Application protocols remain opaque: messages are not paired into requests
+and responses. HTTP/2 and HTTP/3 WebSocket establishment are outside this path.
+
+The bounded asynchronous stream worker decodes before applying the client's
+redactor, so masked, compressed and fragmented values are redacted as whole
+messages. Wire bytes are forwarded unchanged. Each wire frame, assembled
+compressed message and expanded message is bounded to 16 MiB; queued wire bytes
+are bounded to 8 MiB per connection as well as the existing queue count.
+Unknown extensions, invalid frames, excessive message sizes or lost queue bytes
+produce capture diagnostics, never a forwarding failure. A direction stops
+parsing after an error; loss in the shared queue stops further capture of both
+directions because neither framing nor compression state can be trusted.
+
+Decoded spools live in the existing stream tree and use the same open-file
+tracking, retention, byte budget and client-scoped retrieval. Budget truncation
+keeps whole records. The connection audit row is still finalized when the
+connection ends; this change adds no live message index or per-message SQL rows.
 
 The 101 handshake response must reach the client **as one write**, not one per
 header fragment. A WebSocket client parses that response itself, before any
@@ -326,9 +350,9 @@ one write and is what says whether the fork is still needed. Upstream is fixing
 only the MITM half (elazarl/goproxy#805), so that landing does not retire the
 fork on its own.
 
-A frame in a stream spool is therefore not a payload boundary either: a write
+A frame in a legacy raw stream spool is therefore not a payload boundary either: a write
 can be recorded as two chunks when part of it came from the parser's buffer and
-the rest from the wire. Anything asserting on a spool reassembles the direction
+the rest from the wire. Anything asserting on a raw spool reassembles the direction
 first.
 
 ## Hop-by-hop Headers
@@ -714,8 +738,9 @@ flowchart LR
   given each client's `RawSet`: every row's URL, forwarded URL, reason, cache
   key and headers are redacted when recorded (copies; the live request is
   untouched), and every body spool is redacted as it is written, holding back
-  the bytes a value could straddle until the next write or close. A stream
-  spool is redacted per chunk. Span attributes that carry request text —
+  the bytes a value could straddle until the next write or close. A generic
+  raw stream spool is redacted per chunk; WebSocket spools are redacted after
+  assembling and decompressing each message. Span attributes that carry request text —
   `url.full`, `proxy.gateway.forwarded_url`, `proxy.cache.key` — are redacted
   too.
 - **What it does not catch**: another encoding, a value split, hashed or

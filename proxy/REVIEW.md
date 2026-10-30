@@ -174,3 +174,9 @@
 - A request that carried a raw value is kept out of the response cache, both
   read and write: anything derived from the request that lands on the pool's
   disk — a cache key, an entry's metadata — can hold the value.
+- A decoded WebSocket spool stops writing after its first storage failure,
+  across both directions, and counts the lost capture bytes. Appending after
+  a partial record makes later messages look like the missing payload.
+- A message record with a complete header but a missing nonempty payload is
+  truncated, not clean EOF. Normalize that `io.ReadFull` EOF so the viewer
+  cannot silently omit an interrupted message.

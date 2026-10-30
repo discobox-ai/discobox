@@ -35,6 +35,7 @@ COPY pkg/tarsums ./pkg/tarsums
 COPY pkg/vsock ./pkg/vsock
 COPY pkg/wire ./pkg/wire
 COPY pkg/wstunnel ./pkg/wstunnel
+COPY pkg/wsrecord ./pkg/wsrecord
 COPY pool-agent/go.mod pool-agent/go.sum ./pool-agent/
 COPY pool-agent/cmd ./pool-agent/cmd
 COPY pool-agent ./pool-agent

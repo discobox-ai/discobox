@@ -125,6 +125,7 @@ COPY pkg/sourcecache ./pkg/sourcecache
 COPY pkg/sourceref ./pkg/sourceref
 COPY pkg/tools ./pkg/tools
 COPY pkg/version ./pkg/version
+COPY pkg/wsrecord ./pkg/wsrecord
 COPY termpane ./termpane
 COPY cli ./cli
 
