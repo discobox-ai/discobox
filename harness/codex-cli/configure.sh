@@ -231,7 +231,8 @@ seed_previous_credential() {
 	seeded=$(CODEX_CONFIGURE_PREVIOUS="$PREVIOUS_CONFIG" \
 		CODEX_CONFIGURE_AUTH_PATH="$AUTH_PATH" \
 		CODEX_CONFIGURE_AUTH_FILE="$AUTH_FILE" \
-		CODEX_CONFIGURE_SENTINEL="$SEEDED_SENTINEL" node <<-'NODE_EOF'
+		CODEX_CONFIGURE_SENTINEL="$SEEDED_SENTINEL" \
+		CODEX_CONFIGURE_ENV_NAME="$PREVIOUS_ENV" node <<-'NODE_EOF'
 		const fs = require('fs');
 		const nodePath = require('path');
 		let previous = {};
@@ -245,9 +246,12 @@ seed_previous_credential() {
 			process.stdout.write('');
 			process.exit(0);
 		}
-		const content = kept.content.replace(/\{\{[^}]*\}\}/g, process.env.CODEX_CONFIGURE_SENTINEL);
-		try {
-			JSON.parse(content);
+        let content;
+        try {
+          const { resolveReferences } = require(nodePath.join(process.env.HARNESS_CAPTURE_DIR, 'harness-capture/runtime.cjs'));
+          content = JSON.stringify(resolveReferences(JSON.parse(kept.content), {
+            [process.env.CODEX_CONFIGURE_ENV_NAME]: process.env.CODEX_CONFIGURE_SENTINEL,
+          }));
 		} catch (err) {
 			process.stdout.write('');
 			process.exit(0);

@@ -60,8 +60,8 @@ settings allowlist definitions require a harness metadata refresh; they are not
 silently treated as unrestricted documents.
 Portable settings are literal files. Codex excludes parsed local-project tables
 and supplies workspace trust as a process configuration override in its launcher
-and configure flow. Claude's initializer merges onboarding and trust into local
-state while preserving other fields. Neither exports trust into shared settings.
+and configure flow. Claude's initializer takes the capture lock while merging onboarding and trust
+into local state, preserving other fields and serializing with credential handoff. Neither exports trust into shared settings.
 Credential documents use exact JSON objects `{"$secret":"ENV_NAME"}` at registered
 secret leaves. The installer substitutes current sentinels using JSON encoding;
 there is no template language or access to arbitrary sandbox configuration.
@@ -1191,3 +1191,5 @@ read of what it stored ([ADR 26-10-15-259](../docs/adr/26-10-15-259-the-pi-harne
   1456 (Radius) and an ephemeral one for OpenRouter. Each browser sign-in also
   takes the redirect URL pasted back; Copilot, xAI, Kimi and Meta sign in by
   device code.
+
+Literal settings and explicit credential references follow [ADR 26-10-30-457](../docs/adr/26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md).
