@@ -7,18 +7,18 @@ import (
 )
 
 // ReferencedSecrets names sentinel variables used by validated credential
-// templates. Storage owners must also check these variables have bindings; a
+// documents. Storage owners must also check these variables have bindings; a
 // registered provider declaration alone does not supply a credential.
 func (d Definition) ReferencedSecrets(files []File) ([]string, error) {
 	refs := map[string]bool{}
 	var visit func(any)
 	visit = func(value any) {
 		switch v := value.(type) {
-		case string:
-			if m := secretTemplate.FindStringSubmatch(v); len(m) == 2 {
-				refs[m[1]] = true
-			}
 		case map[string]any:
+			if name, ok := SecretReference(v); ok {
+				refs[name] = true
+				return
+			}
 			for _, child := range v {
 				visit(child)
 			}
@@ -34,7 +34,7 @@ func (d Definition) ReferencedSecrets(files []File) ([]string, error) {
 		}
 		var tree any
 		if err := json.Unmarshal([]byte(file.Content), &tree); err != nil {
-			return nil, errors.New("invalid credential template")
+			return nil, errors.New("invalid credential document")
 		}
 		visit(tree)
 	}

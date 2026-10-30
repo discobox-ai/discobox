@@ -48,6 +48,17 @@ func RunLauncher(t *testing.T, agent string, paths map[string]string, args []str
 	for from, to := range rewrites {
 		rewritten = strings.ReplaceAll(rewritten, from, to)
 	}
+	if agent == "claude" {
+		captureDir, err := filepath.Abs("../capture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		metadata, err := filepath.Abs("image.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rewritten = strings.ReplaceAll(rewritten, "/usr/local/libexec/discobox/claude-code-capture init", "node "+captureDir+"/runtime.cjs claude-code "+metadata+" init")
+	}
 	launcher := filepath.Join(dir, "launch.sh")
 	if err := os.WriteFile(launcher, []byte(rewritten), 0o600); err != nil {
 		t.Fatal(err)

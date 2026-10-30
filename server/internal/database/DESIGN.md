@@ -212,3 +212,10 @@ instead of inferring provenance and later deleting an explicit binding. Only
 newly materialized harness bindings carry provenance and are replaced on a switch.
 Legacy assignments therefore keep sandbox-override precedence until explicitly
 changed, including when their env name matches the newly selected harness.
+
+Harness file upgrades convert only known shipped trust suffixes and exact legacy
+credential references, without executing templates (`migrateHarnessFileBindings`).
+The migration updates registered/configured files, save-back metadata and receipt
+baselines in one transaction, preserving modification times and credential
+bindings. Unknown executable content leaves the stored documents intact and
+fails migration explicitly.

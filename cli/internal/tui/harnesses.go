@@ -710,9 +710,6 @@ func harnessFileDetail(file HarnessFile) string {
 	if file.CreateOnly {
 		notes = append(notes, "create-only")
 	}
-	if file.Template {
-		notes = append(notes, "template")
-	}
 	return strings.Join(notes, " · ")
 }
 

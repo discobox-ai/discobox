@@ -4840,7 +4840,6 @@ type HarnessCaptureFile struct {
 	Content    string  `json:"content"`
 	CreateOnly OptBool `json:"createOnly"`
 	Path       string  `json:"path"`
-	Template   OptBool `json:"template"`
 }
 
 // GetContent returns the value of Content.
@@ -4858,11 +4857,6 @@ func (s *HarnessCaptureFile) GetPath() string {
 	return s.Path
 }
 
-// GetTemplate returns the value of Template.
-func (s *HarnessCaptureFile) GetTemplate() OptBool {
-	return s.Template
-}
-
 // SetContent sets the value of Content.
 func (s *HarnessCaptureFile) SetContent(val string) {
 	s.Content = val
@@ -4876,11 +4870,6 @@ func (s *HarnessCaptureFile) SetCreateOnly(val OptBool) {
 // SetPath sets the value of Path.
 func (s *HarnessCaptureFile) SetPath(val string) {
 	s.Path = val
-}
-
-// SetTemplate sets the value of Template.
-func (s *HarnessCaptureFile) SetTemplate(val OptBool) {
-	s.Template = val
 }
 
 // One file a candidate writes (file) or removes (remove). A sandbox never sends previous, nor file
@@ -5144,19 +5133,13 @@ func (s *HarnessCaptureRoute) SetPaths(val []string) {
 
 // Ref: #/components/schemas/HarnessCaptureSetting
 type HarnessCaptureSetting struct {
-	TemplateSuffix OptString `json:"templateSuffix"`
-	CreateOnly     OptBool   `json:"createOnly"`
+	CreateOnly OptBool `json:"createOnly"`
 	// Known credential and local paths omitted from ordinary settings; * matches one object path segment
 	// and ** any depth.
 	Exclude []string                       `json:"exclude"`
 	Fields  OptHarnessCaptureSettingFields `json:"fields"`
 	Format  string                         `json:"format"`
 	Path    string                         `json:"path"`
-}
-
-// GetTemplateSuffix returns the value of TemplateSuffix.
-func (s *HarnessCaptureSetting) GetTemplateSuffix() OptString {
-	return s.TemplateSuffix
 }
 
 // GetCreateOnly returns the value of CreateOnly.
@@ -5182,11 +5165,6 @@ func (s *HarnessCaptureSetting) GetFormat() string {
 // GetPath returns the value of Path.
 func (s *HarnessCaptureSetting) GetPath() string {
 	return s.Path
-}
-
-// SetTemplateSuffix sets the value of TemplateSuffix.
-func (s *HarnessCaptureSetting) SetTemplateSuffix(val OptString) {
-	s.TemplateSuffix = val
 }
 
 // SetCreateOnly sets the value of CreateOnly.
@@ -5954,8 +5932,6 @@ type HarnessConfigFile struct {
 	Path string `json:"path"`
 	// Do not overwrite this file if it already exists.
 	CreateOnly OptBool `json:"createOnly"`
-	// Render file content against the public sandbox configuration before writing.
-	Template OptBool `json:"template"`
 }
 
 // GetContent returns the value of Content.
@@ -5973,11 +5949,6 @@ func (s *HarnessConfigFile) GetCreateOnly() OptBool {
 	return s.CreateOnly
 }
 
-// GetTemplate returns the value of Template.
-func (s *HarnessConfigFile) GetTemplate() OptBool {
-	return s.Template
-}
-
 // SetContent sets the value of Content.
 func (s *HarnessConfigFile) SetContent(val string) {
 	s.Content = val
@@ -5991,11 +5962,6 @@ func (s *HarnessConfigFile) SetPath(val string) {
 // SetCreateOnly sets the value of CreateOnly.
 func (s *HarnessConfigFile) SetCreateOnly(val OptBool) {
 	s.CreateOnly = val
-}
-
-// SetTemplate sets the value of Template.
-func (s *HarnessConfigFile) SetTemplate(val OptBool) {
-	s.Template = val
 }
 
 // A local port a harness's configure flow needs bound at the same number on the user's machine and

@@ -104,21 +104,19 @@ func (r *Route) UnmarshalJSON(data []byte) error {
 
 // Setting identifies a configuration document. Settings preserve all fields
 // except Exclude paths (segments support * and ** wildcards). Fields is used
-// only for credential-template schemas, whose leaves remain explicitly typed.
+// only for credential-document schemas, whose leaves remain explicitly typed.
 type Setting struct {
-	TemplateSuffix string            `json:"templateSuffix,omitempty"`
-	Path           string            `json:"path"`
-	Format         string            `json:"format"`
-	Fields         map[string]string `json:"fields,omitempty"`
-	Exclude        []string          `json:"exclude,omitempty"`
-	CreateOnly     bool              `json:"createOnly,omitempty"`
+	Path       string            `json:"path"`
+	Format     string            `json:"format"`
+	Fields     map[string]string `json:"fields,omitempty"`
+	Exclude    []string          `json:"exclude,omitempty"`
+	CreateOnly bool              `json:"createOnly,omitempty"`
 }
 
 type File struct {
 	Path       string `json:"path"`
 	Content    string `json:"content"`
 	CreateOnly bool   `json:"createOnly,omitempty"`
-	Template   bool   `json:"template,omitempty"`
 }
 
 // Credential carries newly observed material or a reference to a delivered
@@ -170,7 +168,6 @@ type ExportInput struct {
 	Baseline       Baseline            `json:"baseline"`
 	BaselineOnly   bool                `json:"baselineOnly,omitempty"`
 	Sentinels      map[string]string   `json:"sentinels"`
-	WorkingDir     string              `json:"workingDir"`
 }
 
 // FileChange is one file a candidate writes or removes. A sandbox never sends
@@ -217,7 +214,7 @@ type Preview struct {
 }
 
 // Handoff is delivered only after the server has committed this candidate.
-// Files are the accepted credential templates rendered with Sentinels by the
+// Files are the accepted credential documents rendered with Sentinels by the
 // sandbox, never resolved values from the server.
 type Handoff struct {
 	Version     int               `json:"version"`

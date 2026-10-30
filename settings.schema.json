@@ -50,10 +50,6 @@
           "path": {
             "description": "The file's path, relative to the sandbox user's home directory.",
             "type": "string"
-          },
-          "template": {
-            "description": "Render the content against the public sandbox configuration before writing it.",
-            "type": "boolean"
           }
         },
         "required": [

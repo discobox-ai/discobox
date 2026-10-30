@@ -5,13 +5,7 @@
     "id": "codex",
     "name": "Codex",
     "description": "OpenAI Codex coding harness.",
-    "files": [
-      {
-        "path": ".codex/config.toml",
-        "template": true,
-        "content": "# Managed by Discobox. Policy defaults (approval, sandbox) are the image's\n# system layer, /etc/codex/config.toml, which this file may override.\n{{- if .workingDir }}\n\n[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n{{- end }}\n"
-      }
-    ],
+    "files": [],
     "secrets": [
       {
         "name": "OPENAI_API_KEY",
@@ -77,7 +71,6 @@
         {
           "path": ".codex/config.toml",
           "format": "toml",
-          "templateSuffix": "[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n",
           "exclude": [
             "projects",
             "api_key",

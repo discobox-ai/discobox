@@ -1443,19 +1443,12 @@ func (s *HarnessCaptureFile) encodeFields(e *jx.Encoder) {
 		e.FieldStart("path")
 		e.Str(s.Path)
 	}
-	{
-		if s.Template.Set {
-			e.FieldStart("template")
-			s.Template.Encode(e)
-		}
-	}
 }
 
-var jsonFieldsNameOfHarnessCaptureFile = [4]string{
+var jsonFieldsNameOfHarnessCaptureFile = [3]string{
 	0: "content",
 	1: "createOnly",
 	2: "path",
-	3: "template",
 }
 
 // Decode decodes HarnessCaptureFile from json.
@@ -1500,16 +1493,6 @@ func (s *HarnessCaptureFile) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"path\"")
-			}
-		case "template":
-			if err := func() error {
-				s.Template.Reset()
-				if err := s.Template.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"template\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

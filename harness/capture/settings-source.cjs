@@ -62,8 +62,6 @@ function parse(text, format) {
   throw Error("unsupported settings format");
 }
 function project(text, spec) {
-  if (spec.templateSuffix && text.includes("{{"))
-    throw Error("literal template directives require a non-templated settings file");
   if (spec.fields && Object.keys(spec.fields).length)
     throw Error("legacy settings schema: refresh harness metadata");
   const source = parse(text, spec.format), unsupported = [];

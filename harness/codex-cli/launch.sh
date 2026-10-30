@@ -26,6 +26,10 @@ else
 	fi
 fi
 
+# Workspace trust is process-local; portable user settings contain no paths.
+TRUST_KEY=$(node -e 'process.stdout.write(JSON.stringify(process.cwd()))')
+set -- -c "projects.$TRUST_KEY.trust_level=\"trusted\"" "$@"
+
 # Codex copies to the native clipboard first and writes OSC 52 to its terminal
 # only when it sees an SSH (or tmux) session. The image's DISPLAY=:0 gives it a
 # native clipboard that works — the box's own X server, which nothing outside

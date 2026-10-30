@@ -25,7 +25,7 @@ func captureFixture(t *testing.T) (*Service, *hc.Export, *string) {
 	t.Helper()
 	home := t.TempDir()
 	state := t.TempDir()
-	d := hc.Definition{Version: 1, Watch: []string{"settings.json", "auth.json"}, CredentialFiles: []string{"auth.json"}, ExportCommand: []string{"/export"}, HandoffCommand: []string{"/handoff"}, Settings: []hc.Setting{{Path: "settings.json", Format: "json", Exclude: []string{"apiKey", "env"}}}, Providers: []hc.Provider{{ID: "test", EnvName: "TOKEN", Types: []string{"token"}}}}
+	d := hc.Definition{CredentialSettings: []hc.Setting{{Path: "auth.json", Format: "json", Fields: map[string]string{"token": "secret"}}}, Version: 1, Watch: []string{"settings.json", "auth.json"}, CredentialFiles: []string{"auth.json"}, ExportCommand: []string{"/export"}, HandoffCommand: []string{"/handoff"}, Settings: []hc.Setting{{Path: "settings.json", Format: "json", Exclude: []string{"apiKey", "env"}}}, Providers: []hc.Provider{{ID: "test", EnvName: "TOKEN", Types: []string{"token"}}}}
 	baseline := hc.File{Path: "settings.json", Content: `{"model":"old"}`}
 	observed := &hc.Export{Version: 1, Files: []hc.File{{Path: "settings.json", Content: `{"model":"new"}`}}}
 	outcome := "applied"
@@ -111,7 +111,7 @@ func TestCapturePreservesCredentialBeforeAckAndRestartsHandoff(t *testing.T) {
 		t.Fatal("preview leaked private material")
 	}
 	*outcome = "retryable-failure"
-	ack := hc.Acknowledgment{CandidateID: p.CandidateID, Baseline: hc.Baseline{HarnessConfigID: "config", ConfigRevision: 2, Files: observed.Files}, Files: []hc.File{{Path: "auth.json", Template: true, Content: `{"token":{{json .secrets.TOKEN}}}`}}, Sentinels: map[string]string{"TOKEN": "sentinel-new"}}
+	ack := hc.Acknowledgment{CandidateID: p.CandidateID, Baseline: hc.Baseline{HarnessConfigID: "config", ConfigRevision: 2, Files: observed.Files}, Files: []hc.File{{Path: "auth.json", Content: `{"token":{"$secret":"TOKEN"}}`}}, Sentinels: map[string]string{"TOKEN": "sentinel-new"}}
 	p, err = s.AcknowledgeHarnessConfig(ctx, ack)
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +205,7 @@ func TestFailedExporterPreventsInstallationOverwrite(t *testing.T) {
 	if err := os.WriteFile(file, []byte("partial-secret"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	i := FileInstaller{Capture: s.capture, HomeDirectory: s.capture.home}
+	i := FileInstaller{Definition: &s.capture.definition, Capture: s.capture, HomeDirectory: s.capture.home}
 	err := i.EnsureInstalled(context.Background(), config.Harness{Files: []config.HarnessFile{{Path: "auth.json", Content: "sentinel"}}}, "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -297,7 +297,7 @@ func TestTerminalRecreationPreservesDeletedSettings(t *testing.T) {
 	s, observed, _ := captureFixture(t)
 	s.capture.state.Installed = true
 	observed.Files = nil
-	i := FileInstaller{Capture: s.capture, HomeDirectory: s.capture.home}
+	i := FileInstaller{Definition: &s.capture.definition, Capture: s.capture, HomeDirectory: s.capture.home}
 	if err := i.EnsureInstalled(context.Background(), config.Harness{Files: []config.HarnessFile{{Path: "settings.json", Content: `{"model":"old"}`}}}, "", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +448,7 @@ func TestReconsiderCouplesCredentialAndDeliveryWithoutKeepFile(t *testing.T) {
 	s, observed, _ := captureFixture(t)
 	ctx := t.Context()
 	s.capture.definition.CredentialSettings = []hc.Setting{{Path: "auth.json", Format: "json", Fields: map[string]string{"token": "secret"}}}
-	auth := hc.File{Path: "auth.json", Template: true, Content: `{"token":"{{ .secrets.TOKEN }}"}`}
+	auth := hc.File{Path: "auth.json", Content: `{"token":{"$secret":"TOKEN"}}`}
 	observed.Files = append(observed.Files, auth)
 	credential := hc.Credential{Provider: "test", EnvName: "TOKEN", Type: "token", Generation: "captured", Value: json.RawMessage(`{"token":"immutable-login"}`)}
 	observed.Credentials = []hc.Credential{credential}
@@ -558,7 +558,7 @@ func testReconsiderUsesRealHarnessCredentialProjection(t *testing.T, inherited b
 	}
 	s.capture.definition = manifest.Harness.SaveBack
 	s.capture.state.Baseline.Files = nil
-	observed.Files = []hc.File{{Path: ".pi/agent/auth.json", Template: true, Content: `{"anthropic":{"type":"api_key","key":"{{ .secrets.PI_ANTHROPIC_CREDENTIAL }}"},"openai":{"type":"api_key","key":"{{ .secrets.PI_OPENAI_CREDENTIAL }}"}}`}}
+	observed.Files = []hc.File{{Path: ".pi/agent/auth.json", Content: `{"anthropic":{"type":"api_key","key":{"$secret":"PI_ANTHROPIC_CREDENTIAL"}},"openai":{"type":"api_key","key":{"$secret":"PI_OPENAI_CREDENTIAL"}}}`}}
 	if inherited {
 		s.capture.state.Baseline.Files = slices.Clone(observed.Files)
 	}
@@ -593,7 +593,7 @@ func testReconsiderUsesRealHarnessCredentialProjection(t *testing.T, inherited b
 	if p.State != "pending" {
 		t.Fatalf("capture state %s", p.State)
 	}
-	current := hc.Baseline{HarnessConfigID: "config", ConfigRevision: 2, Files: []hc.File{{Path: ".pi/agent/auth.json", Template: true, Content: `{"google":{"type":"api_key","key":"{{ .secrets.PI_GOOGLE_CREDENTIAL }}"}}`}}}
+	current := hc.Baseline{HarnessConfigID: "config", ConfigRevision: 2, Files: []hc.File{{Path: ".pi/agent/auth.json", Content: `{"google":{"type":"api_key","key":{"$secret":"PI_GOOGLE_CREDENTIAL"}}}`}}}
 	next, err := s.ReconsiderHarnessConfig(ctx, hc.Reconsideration{Current: current, Selection: hc.Selection{CandidateID: p.CandidateID, ReplaceCredentials: []string{"PI_OPENAI_CREDENTIAL"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -769,7 +769,7 @@ func TestAcknowledgedSentinelYieldsToNewRuntimeDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	auth := hc.File{Path: "auth.json", Content: `{"token":"{{ .secrets.TOKEN }}"}`, Template: true}
+	auth := hc.File{Path: "auth.json", Content: `{"token":{"$secret":"TOKEN"}}`}
 	_, err = s.AcknowledgeHarnessConfig(ctx, hc.Acknowledgment{CandidateID: first.CandidateID, Baseline: hc.Baseline{HarnessConfigID: "config", ConfigRevision: 2}, Files: []hc.File{auth}, Sentinels: map[string]string{"TOKEN": "accepted"}})
 	if err != nil {
 		t.Fatal(err)
@@ -789,8 +789,8 @@ func TestAcknowledgedSentinelYieldsToNewRuntimeDelivery(t *testing.T) {
 		t.Fatal("runtime catch-up retained ack override")
 	}
 	live["TOKEN"] = "reminted"
-	installer := FileInstaller{Capture: s.capture, HomeDirectory: s.capture.home, Secrets: s.capture.secrets}
-	h := config.Harness{Files: []config.HarnessFile{{Path: "auth.json", Content: auth.Content, Template: true}}}
+	installer := FileInstaller{Definition: &s.capture.definition, Capture: s.capture, HomeDirectory: s.capture.home, Secrets: s.capture.secrets}
+	h := config.Harness{Files: []config.HarnessFile{{Path: "auth.json", Content: auth.Content}}}
 	if _, err = installer.RestoreSecretFiles(ctx, h, nil); err != nil {
 		t.Fatal(err)
 	}

@@ -463,16 +463,12 @@ Delete is refused (409) while any sandbox still references the config.
   `internal/store`.
 - Keep transport DTO conversion in `internal/handlers`; this package may use
   generated DTO aliases from `internal/services`.
-- Harness config files are literal by default. Files marked `template` are
-  rendered inside the sandbox against the public `SandboxConfig` JSON shape plus
-  the two keys the installer resolves — `secrets` (env name -> sentinel) and
-  `workingDir` (the directory this sandbox's terminals start in); configs must
-  not invent a parallel set of runtime variables beyond those.
-- A harness that gates work on directory trust renders `workingDir`, never the
-  primary source's `target` out of `sources`. A sandbox created with no source
-  has no primary target, and such a template renders no trust at all — which is
-  a harness that opens on its own trust prompt for the directory it was just
-  launched in. See `sandbox-agent/DESIGN.md`.
+- Harness settings files are literal. Declared credential JSON documents use
+  exact `{"$secret":"ENV_NAME"}` references at schema-registered secret leaves;
+  only the sandbox resolves these to current sentinels. There is no executable
+  file templating or public-config rendering context.
+- Launchers and configure commands own directory trust and onboarding using the
+  actual working directory. Shared preferences never carry those local paths.
 - `SandboxRuntime` is this package's whole seam onto sandboxes, and it carries
   configure's sandbox lifecycle and caller-authorized access; server-authorized
   delivery of committed capture receipts; and config-change fan-outs that rebind
@@ -525,7 +521,7 @@ does the agent install sentinels. An acknowledgment failure reports
 an explicit server-only write scope without waking a stopped origin or asking
 for its credentials again. The receipt and dirty mark survive restart. An
 unrelated settings or name edit still permits the accepted handoff with
-current conditional revisions and the receipt's templates. A changed manifest,
+current conditional revisions and the receipt's credential documents. A changed manifest,
 harness or binding identity instead sends an explicit superseded acknowledgment:
 the origin releases retained accepted credentials without installing stale
 sentinels. The receipt is terminal only after the origin accepts that outcome.

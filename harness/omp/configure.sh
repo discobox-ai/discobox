@@ -20,7 +20,7 @@
 # rather than refused (see verify_default_model).
 #
 # No credential is exported as an environment variable. The script returns the
-# export document as a templated harness file with each credential's sentinel
+# export document as a credential document with each credential's sentinel
 # in place of its secret, which the image's launcher imports into omp at every
 # launch.
 #
@@ -89,7 +89,7 @@ else
 fi
 
 # seed_previous_credentials writes, to $WORK/seed.json, the export document a
-# previous run captured with each PREV_ sentinel in place of its template
+# previous run captured with each PREV_ sentinel in place of its reference
 # action, so the session below opens already signed in.
 #
 # This is what lets a reconfigure be about anything else. Reconfigure is usually
@@ -118,19 +118,19 @@ seed_previous_credentials() {
 			previous = {};
 		}
 		const kept = (previous.files || []).find((f) => f && f.path === process.env.OMP_CONFIGURE_CREDENTIALS_PATH);
-		let template = {};
+		let reference = {};
 		try {
-			template = JSON.parse(kept && typeof kept.content === 'string' ? kept.content : '{}') || {};
+			reference = JSON.parse(kept && typeof kept.content === 'string' ? kept.content : '{}') || {};
 		} catch (err) {
-			template = {};
+			reference = {};
 		}
-		const action = /\{\{\s*\.secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
+		const action = /"\$secret"\s*:\s*"([A-Za-z_][A-Za-z0-9_]*)"/g;
 		const credentials = [];
-		for (const entry of Array.isArray(template.credentials) ? template.credentials : []) {
+		for (const entry of Array.isArray(reference.credentials) ? reference.credentials : []) {
 			const text = JSON.stringify(entry);
 			const names = [...text.matchAll(action)].map((m) => m[1]);
 			if (names.length === 0 || names.some((name) => !process.env['PREV_' + name])) continue;
-			credentials.push(JSON.parse(text.replace(action, (_, name) => process.env['PREV_' + name])));
+			credentials.push(JSON.parse(text, (key, value) => value && typeof value === 'object' && Object.keys(value).length === 1 && typeof value.$secret === 'string' ? process.env['PREV_' + value.$secret] : value));
 		}
 		if (credentials.length > 0) {
 			fs.writeFileSync(process.env.OMP_CONFIGURE_SEED, JSON.stringify({ version: 1, credentials }), { mode: 0o600 });
@@ -302,10 +302,10 @@ write_output() {
 		const files = [];
 		if (plan.length > 0) {
 			// The sentinel lands in the file, not the credential: the content is
-			// a template, and each sandbox renders its own sentinels into it.
+			// a reference, and each sandbox renders its own sentinels into it.
 			files.push({
 				path: process.env.OMP_CONFIGURE_CREDENTIALS_PATH,
-				template: true,
+
 				content: JSON.stringify({ version: 1, credentials: plan.map((item) => item.entry) }, null, 2) + '\n',
 			});
 		}

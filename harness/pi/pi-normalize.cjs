@@ -6,8 +6,8 @@ exports.normalize = function (auth, previous = {}, sentinels = {}, definition) {
   const copilotAccess = "discobox-copilot-token-is-exchanged-in-the-sandbox";
 
   // The previous run's entries and secrets, by the env name each entry's
-  // template action names.
-  const action = /\{\{\s*\.secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/;
+  // secret reference names.
+  const action = /"\$secret"\s*:\s*"([A-Za-z_][A-Za-z0-9_]*)"/;
   const previousEntries = new Map();
   const kept = (previous.files || []).find(
     (f) => f && f.path === ".pi/agent/auth.json",
@@ -128,17 +128,13 @@ exports.normalize = function (auth, previous = {}, sentinels = {}, definition) {
       );
       continue;
     }
-    // Dotted field access, never a quoted map key: this content is JSON,
-    // so a quote inside a template action is escaped into the file itself
-    // and Go's template parser rejects it — which breaks every sandbox
-    // launch while configure still reports success. An env name is
-    // always a valid template field name, so there is nothing to quote.
-    const template = `{{ .secrets.${envName} }}`;
+    // Explicit JSON data binds this credential to its sandbox sentinel.
+    const reference = { $secret: envName };
     const item = { envName, provider, kept: false };
     if (value.type === "api_key") {
       item.type = "token";
       item.value = { token: value.key };
-      item.entry = { ...value, key: template };
+      item.entry = { ...value, key: reference };
     } else if (copilot) {
       // The GitHub token alone is the secret, bound to the one host it
       // is exchanged at. The Copilot token it buys lasts half an hour,
@@ -150,7 +146,7 @@ exports.normalize = function (auth, previous = {}, sentinels = {}, definition) {
       item.entry = {
         ...value,
         access: copilotAccess,
-        refresh: template,
+        refresh: reference,
         expires: 0,
       };
     } else if (value.type === "oauth") {
@@ -172,7 +168,7 @@ exports.normalize = function (auth, previous = {}, sentinels = {}, definition) {
         // to, since a sentinel does not go stale.
         item.entry = {
           ...value,
-          access: template,
+          access: reference,
           refresh: placeholder,
           expires: farFuture,
         };
@@ -181,10 +177,10 @@ exports.normalize = function (auth, previous = {}, sentinels = {}, definition) {
         item.value = { token: value.access };
         item.entry = {
           ...value,
-          access: template,
+          access: reference,
           refresh:
             value.refresh === value.access
-              ? template
+              ? reference
               : value.refresh
                 ? placeholder
                 : value.refresh,

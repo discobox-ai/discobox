@@ -23,7 +23,7 @@
 # is reported rather than refused (see verify_default_model).
 #
 # No credential is exported as an environment variable. The script returns the
-# export as a templated harness file with each provider's sentinel in place of
+# export as a credential document with each provider's sentinel in place of
 # its secret, which the launcher imports into a sandbox's store
 # (opencode-credentials sync).
 #
@@ -96,7 +96,7 @@ else
 fi
 
 # previous_entries writes $WORK/previous.json: the credential entries a
-# previous run returned, as import entries with their template actions still
+# previous run returned, as import entries with their secret references still
 # in them. They are read the way the launcher reads what a sandbox was
 # delivered — so a configuration made under ADR 0127, which returned opencode
 # 1's auth.json instead, is read as one too.
@@ -141,7 +141,7 @@ previous_entries() {
 # out, and opens signed out, which is the one case a sign-in is unavoidable.
 #
 # A configured harness delivers its files into this sandbox like any other,
-# but their templates render against secrets this sandbox does not have (they
+# but their references resolve against secrets this sandbox does not have (they
 # arrive PREV_-prefixed), so what lands describes credentials with nothing
 # behind them. An opencode 1 auth.json among them is removed; opencode 2 does
 # not read it, and nothing should mistake it for a sign-in.
@@ -153,13 +153,13 @@ seed_previous_credentials() {
 		OPENCODE_CONFIGURE_SEEDED="$WORK/seeded.txt" node <<-'NODE_EOF'
 		const fs = require('fs');
 		const entries = JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIGURE_PREVIOUS_ENTRIES, 'utf8'));
-		const action = /\{\{\s*\.secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
+		const action = /"\$secret"\s*:\s*"([A-Za-z_][A-Za-z0-9_]*)"/g;
 		const seeded = [];
 		for (const entry of entries) {
 			const text = JSON.stringify(entry);
 			const names = [...text.matchAll(action)].map((m) => m[1]);
 			if (names.length === 0 || names.some((name) => !process.env['PREV_' + name])) continue;
-			seeded.push(JSON.parse(text.replace(action, (_, name) => process.env['PREV_' + name])));
+			seeded.push(JSON.parse(text, (key, value) => value && typeof value === 'object' && Object.keys(value).length === 1 && typeof value.$secret === 'string' ? process.env['PREV_' + value.$secret] : value));
 		}
 		fs.writeFileSync(process.env.OPENCODE_CONFIGURE_SEED, JSON.stringify(seeded));
 		fs.writeFileSync(process.env.OPENCODE_CONFIGURE_SEEDED, seeded.map((e) => e.integrationID).join(', '));
@@ -355,10 +355,10 @@ write_output() {
 		const files = [];
 		if (plan.length > 0) {
 			// The sentinel lands in the file, not the credential: the content is
-			// a template, and each sandbox renders its own sentinels into it.
+			// a reference, and each sandbox renders its own sentinels into it.
 			files.push({
 				path: process.env.OPENCODE_CONFIGURE_CREDENTIALS_PATH,
-				template: true,
+
 				content: JSON.stringify(JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIGURE_DELIVERED, 'utf8')), null, 2) + '\n',
 			});
 		}

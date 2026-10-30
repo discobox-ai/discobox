@@ -56,9 +56,8 @@ type Config struct {
 	// Skills on that same launch (ADR 26-10-14-294 §3).
 	SkillsSources []sandboxconfig.SkillsSource `json:"skillsSources,omitempty"`
 	// Features turns the box's features off by name (ADR 26-10-16-423 §4).
-	Features      map[string]sandboxconfig.Feature `json:"features,omitempty"`
-	SandboxConfig map[string]any                   `json:"-"`
-	Resources     ResourceConfig                   `json:"resources"`
+	Features  map[string]sandboxconfig.Feature `json:"features,omitempty"`
+	Resources ResourceConfig                   `json:"resources"`
 	// PoolPublicKey verifies the tokens the pool signs to deliver runtime-config
 	// documents, and nothing else (ADR 26-10-08-127 §3). Empty for a sandbox no
 	// pool delivers to.
@@ -123,7 +122,6 @@ type HarnessFile struct {
 	Path       string `json:"path"`
 	Content    string `json:"content"`
 	CreateOnly bool   `json:"createOnly,omitempty"`
-	Template   bool   `json:"template,omitempty"`
 }
 
 type ResourceConfig struct {
@@ -154,6 +152,11 @@ func Load(path string) (Config, error) {
 }
 
 func unmarshalConfig(data []byte, cfg *Config) error {
+	var err error
+	data, err = harnesscapture.UpgradeLegacyJSON(data)
+	if err != nil {
+		return err
+	}
 	var effective sandboxconfig.Config
 	if err := json.Unmarshal(data, &effective); err != nil {
 		return err
@@ -161,15 +164,7 @@ func unmarshalConfig(data []byte, cfg *Config) error {
 	if strings.TrimSpace(effective.APIVersion) != sandboxconfig.APIVersion {
 		return fmt.Errorf("apiVersion = %q, want %q", effective.APIVersion, sandboxconfig.APIVersion)
 	}
-	// The whole document also becomes the harness file template data (ADR
-	// 0012's Effective(Document) fields, decoded generically): harness image
-	// files marked "template": true render against it.
-	var templateData map[string]any
-	if err := json.Unmarshal(data, &templateData); err != nil {
-		return fmt.Errorf("decode template data: %w", err)
-	}
 	*cfg = configFromEffective(effective)
-	cfg.SandboxConfig = templateData
 	return nil
 }
 
@@ -296,7 +291,6 @@ func harnessFilesFromEffective(in []sandboxconfig.File) []HarnessFile {
 			Path:       file.Path,
 			Content:    file.Content,
 			CreateOnly: file.CreateOnly,
-			Template:   file.Template,
 		})
 	}
 	return out

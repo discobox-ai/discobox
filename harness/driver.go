@@ -2,6 +2,7 @@
 package harness
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -193,7 +194,16 @@ type File struct {
 	Path       string
 	Content    string
 	CreateOnly bool
-	Template   bool
+}
+
+// UnmarshalJSON rejects retired executable file attributes in bundle metadata.
+// A bundle must explicitly adopt literal files rather than silently delivering
+// legacy template source as configuration.
+func (f *File) UnmarshalJSON(data []byte) error {
+	type plain File
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode((*plain)(f))
 }
 
 // Secret declares an environment variable the harness expects, and whether it is
@@ -272,7 +282,7 @@ const (
 	// SecretDeliveryFile means the harness reads this credential from a file
 	// the harness config installs, and the variable is deliberately **not**
 	// exported. The sentinel is still minted and still published to the
-	// sandbox's secret map, so a templated file can place it (`.secrets.NAME`);
+	// sandbox's secret map, so a credential document can bind it by name;
 	// only the environment export is withheld.
 	//
 	// Withholding it is the point, not a tidiness preference. A CLI that reads

@@ -13,7 +13,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"text/template"
+
+	"github.com/discobox-ai/discobox/harness/internal/credentialtest"
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/harness/internal/featuretest"
@@ -43,7 +44,7 @@ func TestDefinitionConfigure(t *testing.T) {
 		"usePrevious",
 		// The credentials template is JSON, so a quote inside a template action
 		// arrives at the renderer backslash-escaped and the parser rejects it.
-		"{{ .secrets.${envName} }}",
+		"$secret: envName",
 		// Every retry is a person asking for one.
 		"confirm_retry",
 	} {
@@ -109,7 +110,7 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 	// until a configure run returns its own copy — so it is rewritten on every
 	// launch rather than kept from the first, or an edit would never land.
 	if len(image.Harness.Files) != 1 || image.Harness.Files[0].Path != settingsPath ||
-		image.Harness.Files[0].CreateOnly || image.Harness.Files[0].Template {
+		image.Harness.Files[0].CreateOnly {
 		t.Fatalf("manifest files = %+v, want only the settings file, plain", image.Harness.Files)
 	}
 	var settings map[string]any
@@ -730,8 +731,8 @@ func TestConfigureReconfiguresAnOpencode1Configuration(t *testing.T) {
 			"path":     ".local/share/opencode/auth.json",
 			"template": true,
 			"content": `{
-  "openai": {"type": "oauth", "refresh": "discobox-refresh-happens-in-the-control-plane", "access": "{{ .secrets.OPENCODE_OPENAI_CREDENTIAL }}", "expires": 4102444800000, "accountId": "acct-1"},
-  "zai": {"type": "api", "key": "{{ .secrets.OPENCODE_ZAI_CREDENTIAL }}"}
+  "openai": {"type": "oauth", "refresh": "discobox-refresh-happens-in-the-control-plane", "access": {"$secret":"OPENCODE_OPENAI_CREDENTIAL"}, "expires": 4102444800000, "accountId": "acct-1"},
+  "zai": {"type": "api", "key": {"$secret":"OPENCODE_ZAI_CREDENTIAL"}}
 }`,
 		}},
 		"secrets": []map[string]any{
@@ -1145,21 +1146,11 @@ func (o configureOutput) file(path string) (map[string]any, bool) {
 func (o configureOutput) renderCredentials(t *testing.T, sentinels map[string]string) string {
 	t.Helper()
 	file, ok := o.file(credentialsPath)
-	if !ok || file["template"] != true {
-		t.Fatalf("no templated credentials file in %v", o.Files)
+	if !ok {
+		t.Fatal("missing credential document")
 	}
-	tmpl, err := template.New("credentials").Funcs(template.FuncMap{"json": func(v any) (string, error) {
-		raw, err := json.Marshal(v)
-		return string(raw), err
-	}}).Option("missingkey=zero").Parse(file["content"].(string))
-	if err != nil {
-		t.Fatalf("credentials template does not parse: %v", err)
-	}
-	var rendered bytes.Buffer
-	if err := tmpl.Execute(&rendered, map[string]any{"secrets": sentinels}); err != nil {
-		t.Fatal(err)
-	}
-	return rendered.String()
+	rendered := credentialtest.Resolve(t, file["path"].(string), file["content"].(string), sentinels)
+	return rendered
 }
 
 // stripValues is what the control plane seeds as the previous configuration:
