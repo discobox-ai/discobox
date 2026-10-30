@@ -125,7 +125,7 @@ func (st *sandboxEventStream) replayState(ctx context.Context) ([]services.Sandb
 
 func streamEvent(event model.SandboxEvent) services.SandboxStreamEvent {
 	seq := event.Seq
-	return services.SandboxStreamEvent{ID: &seq, Type: event.Type, Data: event.Data}
+	return services.SandboxStreamEvent{ID: &seq, Type: event.Type, Data: json.RawMessage(event.Data)}
 }
 
 // SandboxEventPruneResourceType is the reconcile resource that applies the

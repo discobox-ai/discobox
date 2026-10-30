@@ -264,7 +264,7 @@ func sandboxEventData(sandbox *model.Sandbox, at time.Time) model.SandboxEventDa
 // primaryProgramStatus is the program status of the primary session, by the
 // rule `discobox ls` reads it by (programstatus.PrimaryPosted). A kind is
 // reported only of a blocked program, as the contract says.
-func primaryProgramStatus(status json.RawMessage) *model.SandboxEventProgram {
+func primaryProgramStatus(status []byte) *model.SandboxEventProgram {
 	if len(status) == 0 {
 		return nil
 	}

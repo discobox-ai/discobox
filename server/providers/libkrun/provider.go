@@ -117,7 +117,7 @@ type Config struct {
 	CacheDiskGiB     int64  `json:"cacheDiskGiB,omitempty"`
 }
 
-func Decode(data json.RawMessage) (Config, error) {
+func Decode(data []byte) (Config, error) {
 	return poolruntime.DecodeConfig[Config](data, ProviderType)
 }
 

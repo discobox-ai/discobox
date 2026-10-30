@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -192,7 +191,7 @@ func (s *Store) listSandboxesForPool(ctx context.Context, tx *gorm.DB, projectID
 // SandboxProgressReport is one report of provisioning progress on one sandbox.
 type SandboxProgressReport struct {
 	SandboxID string
-	Progress  json.RawMessage
+	Progress  model.RawJSON
 }
 
 // ApplySandboxProgressReports records provisioning progress.

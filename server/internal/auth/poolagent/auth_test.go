@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -107,13 +106,13 @@ func (s *memoryStore) GetServerState(_ context.Context, key string) (*model.Serv
 		return nil, store.ErrNotFound
 	}
 	copied := *state
-	copied.Value = append(json.RawMessage(nil), state.Value...)
+	copied.Value = append(model.RawJSON(nil), state.Value...)
 	return &copied, nil
 }
 
 func (s *memoryStore) CreateServerState(_ context.Context, state *model.ServerState) error {
 	copied := *state
-	copied.Value = append(json.RawMessage(nil), state.Value...)
+	copied.Value = append(model.RawJSON(nil), state.Value...)
 	s.state[state.Key] = &copied
 	return nil
 }
