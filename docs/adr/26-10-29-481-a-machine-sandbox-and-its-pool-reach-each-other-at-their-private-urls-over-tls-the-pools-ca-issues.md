@@ -1,6 +1,10 @@
 # 26-10-29-481 — A machine sandbox and its pool reach each other at their private URLs, over TLS the pool's CA issues, and the sandbox reaches nothing else
 
-- **Status**: Proposed
+- **Status**: Accepted (§§2–3 amended 2026-10-30, before anything shipped
+  against it: a sandbox reaches its pool by a name discobox resolves itself,
+  and the agent's TLS is a pool's setting, on unless the pool disables it;
+  narrows [26-10-27-345](26-10-27-345-a-machine-sandbox-is-made-again-in-place-and-its-bootstrap-names-where-its-agent-listens.md)
+  §2's one URL the pool reaches a machine sandbox's agent at)
 - **Date**: 2026-10-29
 - **Relates to**:
   [0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)
@@ -77,33 +81,59 @@ machine's. A driver whose `PrivateURL` is empty cannot carry a machine pool.
 The pool derives its sandboxes' endpoints from its private URL, and they say
 which transport by scheme, as 719 made them:
 
-- **A direct path** (`PrivateURL != URL`): `https://<address>:<port>` for the
-  proxy, credentials, DNS and BuildKit, verified as `discobox-pool-proxy` by
-  the endpoints' `ServerName`. The address is an IP literal: the pool agent
-  resolves its private URL's host on its own machine, so a sandbox needs no
-  name and no DNS to reach its pool.
+- **A direct path** (`PrivateURL != URL`): `https://discobox-pool-proxy:<port>`
+  for the proxy, credentials, DNS and BuildKit, as on a Docker pool.
 - **No path but the public URL** (`PrivateURL == URL`, an edge):
   `wss://<host>/tunnel/<service>`, the 719 tunnel, served at the pool's
   service, since that is all an edge reaches. Whether a build goes through it
   is 26-10-29-160's.
 
+**The names are discobox's own.** A URL and the certificate it is verified
+against name a private name discobox issues — `discobox-pool-proxy` for the
+pool, and for each sandbox's agent a name under `sandbox.discobox.internal`
+(§3) — never the provider's name for a machine or its address. Discobox keeps
+its own answer for each, as a private DNS would: a sandbox's bootstrap carries
+the provider's host its pool's name stands for (boxd's `<pool>.boxd`), which
+its bridges dial in the name's place and resolve through the provider at each
+dial, so an address that moves is followed. A Docker pool's name is its
+container's alias on the pool's network, so its sandboxes are given no
+answer and resolve it as they always have.
+
 ### 3. The sandbox agent serves TLS the pool's CA issues
 
 The pool's mTLS CA, which already signs its proxy's server certificate and
 every sandbox's client certificate, signs a server certificate for each
-sandbox agent, naming the sandbox. The agent serves its API over TLS with it,
-and the pool verifies the certificate against that CA and for the sandbox it
-meant to reach. TLS says who answered; the tokens still say what a caller may
+sandbox agent, for the sandbox's private name (`<sandbox ID, as a DNS
+label>.sandbox.discobox.internal`, §2). The agent serves its API over TLS with
+it, and the pool verifies the certificate against that CA and for the sandbox
+it meant to reach, wherever it dialed: a container's address, a machine's
+provider host. TLS says who answered; the tokens still say what a caller may
 do.
 
 - **On every runtime**, a Docker pool's sandboxes included.
-- **The keypair is placed before the agent first starts**, with the sandbox's
-  bootstrap: a machine's place step, a container's config. It is renewed in
-  the runtime-config document as a client certificate is, and like the client
-  key it is delivered and never kept in an exported tree.
-- **Behind an edge** (§2's second form), the edge speaks HTTP to the agent, so
-  the agent serves plain HTTP there, as the bootstrap says, and the pool's
-  only assurance is the edge's TLS and its tokens.
+- **A pool's setting, on by default.** A pool serves its sandboxes' agents over
+  TLS unless it sets `disableAgentEndpointTls`; a pool made from now on does
+  not, and an upgrade sets it on every pool made before, so a pool's sandboxes
+  keep what they were made with. The pool agent is told it in its bootstrap,
+  and tells each sandbox in the sandbox's bootstrap whether its agent serves
+  TLS alone or plain HTTP alone: every box of a pool is the same, and the pool
+  needs to learn nothing from an agent before it sends one anything. A pool
+  reached through an edge (§2's second form) serves plain HTTP whatever it
+  sets: the edge speaks HTTP to the agent, and the pool's only assurance is
+  the edge's TLS and its tokens.
+- **A sandbox is dialed as its bootstrap told it**, recorded with it, so a
+  pool whose setting changes reaches the sandboxes it already made as before.
+  A sandbox takes the setting when its box is made again: a machine at its
+  next start, which places its bootstrap again, a container when it is
+  replaced. Nothing does that for every sandbox when the setting changes; the
+  one reason to change it is a pool made before this that is to serve TLS, and
+  its sandboxes are restarted, or made again, by hand.
+- **The keypair is placed before the agent first starts**, beside the
+  sandbox's bootstrap, and again at every start: a machine's place step, a
+  container's config volume, through a root that does not follow what the
+  sandbox planted there. It is renewed in the runtime-config document as a
+  client certificate is. Like the client key it is never kept in an exported
+  tree.
 
 ### 4. Every sandbox machine is fenced to its pool at create
 
@@ -121,9 +151,9 @@ gives the pool a private URL; the condition that keeps it unschedulable goes.
 ## Alternatives rejected
 
 - **Name the pool `discobox-pool-proxy` in each sandbox machine's hosts file**
-  (767's wording). It needs the same address, as one more file placed in a
-  guest whose root can change it; `ServerName` already keeps the certificate's
-  name apart from the address dialed.
+  (767's wording). A hosts file holds an address, fixed when it is written, in
+  a guest whose root can change it; the bootstrap's answer is the provider's
+  host, resolved at each dial.
 - **Always the tunnel.** One endpoint form, but every byte through WebSocket
   framing and a splice where the machines already have a direct path.
 - **Keep reaching a sandbox at its public URL.** The pool's traffic to its own
@@ -137,18 +167,41 @@ gives the pool a private URL; the condition that keeps it unschedulable goes.
   already holds one its sandboxes trust, renews from it without a restart, and
   is the only party that dials a sandbox's agent.
 - **`isolated` alone as the fence.** It leaves a boxd machine's internet on.
+- **The agent says it serves TLS, and the pool dials TLS once it has**, as
+  `controlPlanePower` is learned (as this section first said, before anything
+  shipped against it). Every path that delivers a document before the status
+  poll — a boot, a resume, settling sources — would deliver its first one,
+  with the sandbox's client key, in plain HTTP, and a peer answering at the
+  sandbox's address first could hold the pool to plain HTTP. A setting the
+  pool owns needs nothing learned.
+- **A verified TLS probe before the first delivery**, recorded for the agent
+  layer. It would learn without the status, and still be held to plain HTTP
+  by a peer that answers the probe with something else.
+- **The pool's address, or the provider's name, in the endpoints and
+  certificates.** An address fixed in a sandbox's bootstrap at create is
+  wrong once the pool's machine moves, and a provider's name is the
+  provider's: the names discobox verifies are its own.
 
 ## Consequences
 
 - disco-vm is bumped to a version with ADR 26-10-29-129.
 - The pool's bootstrap gains the pool machine's private URL; the machine
-  runtime dials a sandbox's private URL instead of its public one, and the
-  Docker runtime dials its containers over TLS.
-- The sandbox agent gains a TLS listener and its certificate material; the
-  pool issues, places and renews it.
-- A sandbox whose agent predates this serves plain HTTP. The pool records
-  which a sandbox's bootstrap asked for and dials that, so it reaches the
-  sandbox until its pins move.
+  runtime dials a sandbox's private URL instead of its public one, and both
+  runtimes dial an agent over TLS where their pool serves it.
+- The sandbox agent serves TLS or plain HTTP, as its bootstrap says, with
+  certificate material the pool issues, places and renews.
+- Pools gain `disableAgentEndpointTls`, and an upgrade sets it on every pool
+  that exists. A pool's bootstrap moves with it, so a pool whose setting
+  changes is placed again and its agent restarted, a Docker pool's as a
+  machine pool's. So does every pool once on the upgrade itself: its
+  bootstrap now names the setting, and a Docker pool's record of what it
+  placed held no placement to compare against. The release that brings it
+  moves the pool's bundles too, which restarts the agent and proxy anyway;
+  running sandboxes are not restarted.
+- A sandbox pinned to an agent that predates this, in a pool that serves TLS,
+  is unreachable: it ignores the bootstrap's word. A pool made from now on
+  pins none; a pool made before is the one that would, and it keeps plain
+  HTTP until its setting is changed.
 - A machine pool behind an edge serves the 719 tunnel at its service.
 - 551 §5's precondition is met, and machine pools schedule.
 
