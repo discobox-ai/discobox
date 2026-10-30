@@ -161,14 +161,14 @@ func TestStatusReporterStopsOnContextCancel(t *testing.T) {
 
 // A machine pool runs its driver's images, and its capacity is its driver's:
 // none of the pool machine's own CPU and memory is reported, and the runtime
-// condition names the driver and its limits (ADR 26-10-23-551 §3). It
-// schedules nothing while a machine's egress is not held to the pool's proxy
-// (§5).
+// condition names the driver, its limits and how its sandboxes reach it (ADR
+// 26-10-23-551 §3). It schedules: a driver that cannot fence a sandbox's
+// machine to its pool never gets this far (ADR 26-10-29-481 §4).
 func TestStatusReporterReportsAMachinePoolsDriver(t *testing.T) {
 	client := newRecordingStatusClient()
 	bootstrap, identity, logger := testReporterArgs()
 	bootstrap.Runtime, bootstrap.Driver = RuntimeMachine, "boxd"
-	status := machinePoolStatus("boxd", machine.Capabilities{Isolation: true, MaxRunning: map[machine.OS]int{machine.Linux: 4}})
+	status := machinePoolStatus("boxd", machine.Capabilities{Isolation: true, Egress: true, MaxRunning: map[machine.OS]int{machine.Linux: 4}}, hopDirect)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -180,8 +180,8 @@ func TestStatusReporterReportsAMachinePoolsDriver(t *testing.T) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	call := client.calls[0]
-	if !call.Ready || call.Schedulable {
-		t.Fatalf("report = ready %t schedulable %t, want a ready pool that schedules nothing", call.Ready, call.Schedulable)
+	if !call.Ready || !call.Schedulable {
+		t.Fatalf("report = ready %t schedulable %t, want a ready pool that schedules", call.Ready, call.Schedulable)
 	}
 	if call.ImageKind != platform.VM("boxd") {
 		t.Fatalf("image kind = %v, want %v", call.ImageKind, platform.VM("boxd"))
@@ -194,7 +194,7 @@ func TestStatusReporterReportsAMachinePoolsDriver(t *testing.T) {
 		t.Fatalf("conditions = %#v, want a map", call.Conditions)
 	}
 	runtime, ok := conditions["runtime"].(map[string]any)
-	if !ok || runtime["kind"] != "machine" || runtime["driver"] != "boxd" || runtime["status"] != "unavailable" || runtime["isolation"] != true {
-		t.Fatalf("runtime condition = %#v, want the machine runtime on boxd, unavailable, isolating", conditions["runtime"])
+	if !ok || runtime["kind"] != "machine" || runtime["driver"] != "boxd" || runtime["status"] != "ready" || runtime["isolation"] != true || runtime["egress"] != true || runtime["hop"] != hopDirect {
+		t.Fatalf("runtime condition = %#v, want the machine runtime on boxd, ready, isolating and fencing, reached directly", conditions["runtime"])
 	}
 }

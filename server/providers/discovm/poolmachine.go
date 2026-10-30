@@ -2,8 +2,6 @@ package discovm
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,7 +21,6 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
-	"github.com/discobox-ai/discobox/pool-agent/bundle"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/transport"
@@ -108,25 +105,29 @@ type poolRuntimeState struct {
 	// Project is the disco-vm project the pool makes its sandboxes' machines
 	// in, which is also the network the pool's machine and theirs share.
 	Project string `json:"project,omitempty"`
-	// Box is the agent and the bundles placed.
+	// Box is the agent, the bundles and the placement placed.
 	Box poolruntime.BoxRecord `json:"box,omitzero"`
-	// Placement fingerprints the bootstrap and environment placed: what the
-	// provider's configuration says of the pool (its control plane URL, its
-	// base, its policy), which a box made before the configuration moved is
-	// provisioned again for.
-	Placement string `json:"placement,omitempty"`
 	// Key is the provisioning key placed, without its secret.
 	Key *poolKeyRecord `json:"key,omitempty"`
 }
 
 func decodeRuntimeState(pool *model.Pool) poolRuntimeState {
-	var state poolRuntimeState
+	var state struct {
+		poolRuntimeState
+		// Placement is where a record from before the box's record held its
+		// placement kept it, which is read so that record's pool is not
+		// placed again over nothing.
+		Placement string `json:"placement,omitempty"`
+	}
 	if len(pool.RuntimeState) > 0 {
 		// A record that does not read is a record lost: it costs a placement,
 		// not a key, since the pool's keys are found by name.
 		_ = json.Unmarshal(pool.RuntimeState, &state)
 	}
-	return state
+	if state.Box.Placement == "" {
+		state.Box.Placement = state.Placement
+	}
+	return state.poolRuntimeState
 }
 
 // poolProject is the pool's own disco-vm project, derived from its ID within
@@ -296,11 +297,11 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		}
 		return err
 	}
-	fingerprint, err := placementFingerprint(placement)
+	current, err := record.Box.Current(placement)
 	if err != nil {
 		return err
 	}
-	if !force && record.Box.SameBundles(placement.Box) && record.Placement == fingerprint {
+	if !force && current {
 		return nil
 	}
 	// The apply restarts the agent the moved bundles carry, so placement is
@@ -319,41 +320,13 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		}
 		return fmt.Errorf("provision pool %s's machine: %w", pool.ID, err)
 	}
-	if provisioned && record.Placement != fingerprint {
-		// The units read the bootstrap and environment once, at start, and
-		// apply restarts only what moved bundles move: a moved placement
-		// reaches the running agent and its proxy by restarting them.
-		if err := restartPoolUnits(ctx, guest); err != nil {
+	if provisioned && record.Box.Placement != box.Placement {
+		if err := poolruntime.RestartPoolUnits(ctx, guest); err != nil {
 			return fmt.Errorf("restart pool %s's agent on its new placement: %w", pool.ID, err)
 		}
 	}
-	record.Box, record.Placement = box, fingerprint
+	record.Box = box
 	return h.writeState(pool, record)
-}
-
-// restartPoolUnits restarts the pool's agent and its proxy, where they run.
-func restartPoolUnits(ctx context.Context, guest machine.Guest) error {
-	var stderr strings.Builder
-	code, err := machine.Run(ctx, guest, machine.ExecRequest{Argv: append([]string{"systemctl", "try-restart"}, bundle.BootstrapUnits...)}, nil, io.Discard, &stderr)
-	if err == nil && code != 0 {
-		err = fmt.Errorf("systemctl exited with status %d: %s", code, strings.TrimSpace(stderr.String()))
-	}
-	return err
-}
-
-// placementFingerprint is what of a placement is not its bundles: the
-// bootstrap and the agent's environment, which move with the provider's
-// configuration rather than with a release.
-func placementFingerprint(placement poolruntime.BoxPlacement) (string, error) {
-	data, err := json.Marshal(struct {
-		Bootstrap poolagent.Bootstrap `json:"bootstrap"`
-		Env       map[string]string   `json:"env"`
-	}{placement.Bootstrap, placement.Env})
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:]), nil
 }
 
 // create makes the pool's machine from the base, on the pool's network alone,
@@ -395,6 +368,16 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 	bootstrap.MachineProject = project
 	bootstrap.MachineBase = h.base
 	bootstrap.MachineNetwork = project
+	// Where the server reaches the pool's agent, and where its sandboxes'
+	// machines reach the pool, from which the agent derives their endpoints
+	// and their fence (ADR 26-10-29-481 §§1–2). A driver with no path between
+	// its machines has no private URL, and carries no pool.
+	if bootstrap.PublicURL, err = h.engine.URL(ctx, inst); err != nil {
+		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's public URL: %w", pool.ID, err)
+	}
+	if bootstrap.PrivateURL, err = h.engine.PrivateURL(ctx, inst); err != nil {
+		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's machine's private URL: %w", pool.ID, err)
+	}
 	if err := bootstrap.Validate(); err != nil {
 		return poolruntime.BoxPlacement{}, fmt.Errorf("pool %s's bootstrap: %w", pool.ID, err)
 	}

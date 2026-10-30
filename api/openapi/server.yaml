@@ -2618,6 +2618,22 @@ components:
                 controlPlanePower:
                     description: True when the control plane powers the sandbox - it reports idle, sleep and wake rather than powering itself off (ADR 26-10-16-337 §8). Sent only to a sandbox whose status advertised controlPlanePower, because an older agent refuses the whole document over a field it does not know.
                     type: boolean
+                tls:
+                    $ref: '#/components/schemas/SandboxRuntimeConfigAgentTLS'
+                    description: Renews the keypair the agent serves its API over TLS with (ADR 26-10-29-481 §3). Sent only to a sandbox whose bootstrap told its agent to serve TLS, which is new enough to know the field. Absent leaves the keypair the agent holds.
+            type: object
+        SandboxRuntimeConfigAgentTLS:
+            additionalProperties: false
+            description: The keypair a sandbox agent serves its API over TLS with, which its pool's mTLS CA signed for the sandbox's private name, so the pool knows which sandbox answered.
+            properties:
+                cert:
+                    description: The PEM server certificate.
+                    type: string
+                key:
+                    description: The PEM private key. Required on delivery; never returned, so a document read back omits it.
+                    type: string
+            required:
+                - cert
             type: object
         SandboxRuntimeConfigProxy:
             additionalProperties: false
@@ -3712,6 +3728,9 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                disableAgentEndpointTls:
+                    description: Reach the pool's sandboxes' agents over plain HTTP instead of TLS the pool's CA issues (ADR 26-10-29-481 §3). Off for a pool made now; on for every pool made before TLS was the default. A change reaches a sandbox when its box is next made - a VM sandbox at its next start, a container when it is replaced.
+                    type: boolean
                 cpuVcpus:
                     description: vCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host.
                     format: double
@@ -3889,6 +3908,9 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                disableAgentEndpointTls:
+                    description: Reach the pool's sandboxes' agents over plain HTTP instead of TLS the pool's CA issues (ADR 26-10-29-481 §3). Off by default.
+                    type: boolean
                 cpuVcpus:
                     description: vCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host.
                     format: double
@@ -3924,6 +3946,9 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                disableAgentEndpointTls:
+                    description: Changes whether the pool reaches its sandboxes' agents over plain HTTP instead of TLS. The pool's host is placed again with it; a sandbox takes it when its box is next made - a VM sandbox at its next start, a container when it is replaced - and is reached as it was made until then.
+                    type: boolean
                 cpuVcpus:
                     description: vCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host.
                     format: double

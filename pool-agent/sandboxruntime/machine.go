@@ -57,6 +57,10 @@ type MachineSandboxRuntimeConfig struct {
 	ProjectID             string
 	PoolID                string
 	ControlPlanePublicKey string
+	// AgentTLS has every sandbox serve its agent's API over TLS, the pool's
+	// setting, which a machine takes at its next start (ADR 26-10-29-481
+	// §3).
+	AgentTLS bool
 	// Root is where the runtime reads and writes pool state.
 	Root layout.Root
 	// Engine is the pool's own disco-vm engine, in the pool's project.
@@ -71,6 +75,11 @@ type MachineSandboxRuntimeConfig struct {
 	// Network is the provider's network the pool's machine and its sandboxes'
 	// machines share, and no other machine of the provider's.
 	Network string
+	// Egress fences what every sandbox's machine reaches beyond Network, set
+	// and read back by the driver before a create returns (ADR 26-10-29-481
+	// §4). Nil leaves the driver's default, which only a test runtime does; a
+	// driver that cannot fence is refused for it.
+	Egress *machine.Egress
 	// SandboxIdleTimeout is how long a sandbox runs idle before it powers
 	// itself off (ADR 0108). Zero leaves the sandbox-agent's default.
 	SandboxIdleTimeout time.Duration
@@ -94,6 +103,7 @@ type MachineSandboxRuntime struct {
 	base    string
 	isolate bool
 	network string
+	egress  *machine.Egress
 	// observed is each sandbox's power state as the runtime last saw it,
 	// which answers what must not wait on the driver (RunningSandboxIDsInMode)
 	// and what the driver cannot say for now (an unreachable service).
@@ -118,12 +128,16 @@ func NewMachineSandboxRuntime(cfg MachineSandboxRuntimeConfig) (*MachineSandboxR
 			return nil, errors.New("an isolated sandbox machine needs the pool's network, or it reaches nothing")
 		}
 	}
+	if cfg.Egress != nil && !cfg.Engine.Driver.Capabilities().Egress {
+		return nil, fmt.Errorf("the %s driver cannot fence a sandbox's machine's egress to its pool (ADR 26-10-29-481 §4)", cfg.Engine.Driver.Name())
+	}
 	r := &MachineSandboxRuntime{
 		sandboxCore: sandboxCore{
 			paths:                 sandboxpath.For(cfg.Platform),
 			projectID:             cfg.ProjectID,
 			poolID:                cfg.PoolID,
 			controlPlanePublicKey: cfg.ControlPlanePublicKey,
+			agentTLS:              cfg.AgentTLS,
 			sandboxIdleTimeout:    cfg.SandboxIdleTimeout,
 			poolEndpoints:         cfg.PoolEndpoints,
 			identityKey:           cfg.IdentityKey,
@@ -135,6 +149,7 @@ func NewMachineSandboxRuntime(cfg MachineSandboxRuntimeConfig) (*MachineSandboxR
 		base:    strings.TrimSpace(cfg.Base),
 		isolate: cfg.Isolate,
 		network: strings.TrimSpace(cfg.Network),
+		egress:  cfg.Egress,
 	}
 	r.boxes = r
 	return r, nil
@@ -577,6 +592,7 @@ func (r *MachineSandboxRuntime) buildMachine(ctx context.Context, sandboxID stri
 		return nil, false, err
 	}
 	doc.Runtime.AgentRuntime.ListenAddress = listen
+	doc.Runtime.AgentRuntime.TLS = r.agentTLS
 	// Recorded beside the tree, as a container's are, so the credentials
 	// broker is told the sandbox's variables without reading sandbox.json
 	// back (publishCredentialEnvironment).
@@ -716,7 +732,10 @@ func (r *MachineSandboxRuntime) takesRuntimeConfig(_ context.Context, sandboxID 
 // found by its name.
 func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID string) (machine.Instance, error) {
 	inst, err := r.instance(ctx, sandboxID)
-	if err == nil || !errors.Is(err, ErrNotFound) {
+	if err == nil {
+		return inst, r.fenced(inst)
+	}
+	if !errors.Is(err, ErrNotFound) {
 		return inst, err
 	}
 	name, err := machineName(sandboxID)
@@ -727,13 +746,16 @@ func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID st
 	if err != nil {
 		return machine.Instance{}, err
 	}
-	opts := engine.CreateOptions{Name: name}
+	opts := engine.CreateOptions{Name: name, Egress: r.egress}
 	if r.isolate {
 		opts.Isolated, opts.Networks = true, []string{r.network}
 	}
 	inst, err = r.engine.Create(ctx, base, opts)
 	if errors.Is(err, machine.ErrExists) {
-		return r.instance(ctx, sandboxID)
+		if inst, err = r.instance(ctx, sandboxID); err != nil {
+			return inst, err
+		}
+		return inst, r.fenced(inst)
 	}
 	if err != nil {
 		// A create past the provider's quota fails here, and says so (ADR
@@ -741,6 +763,36 @@ func (r *MachineSandboxRuntime) ensureInstance(ctx context.Context, sandboxID st
 		return machine.Instance{}, fmt.Errorf("create sandbox %s's machine from %s: %w", sandboxID, base, err)
 	}
 	return inst, nil
+}
+
+// fenced refuses a machine found by name whose egress its driver does not
+// report as the runtime's fence: one made before the fence, or by hand,
+// would let its sandbox reach around the pool's proxy (ADR 26-10-29-481 §4).
+// A machine the runtime makes is fenced by its create, which reads the fence
+// back before it returns.
+func (r *MachineSandboxRuntime) fenced(inst machine.Instance) error {
+	if r.egress == nil || sameEgress(inst.Egress, r.egress) {
+		return nil
+	}
+	return fmt.Errorf("sandbox machine %s is not fenced to its pool as this pool fences its sandboxes; delete the sandbox's machine so it is made again", inst.Name)
+}
+
+// sameEgress reports whether a machine's fence, as its driver reports it, is
+// want: nil is no fence, and the allowed hosts compare as a set.
+func sameEgress(got, want *machine.Egress) bool {
+	if got == nil || want == nil {
+		return got == want
+	}
+	allowed := make(map[string]bool, len(got.Allow))
+	for _, host := range got.Allow {
+		allowed[strings.ToLower(host)] = true
+	}
+	for _, host := range want.Allow {
+		if !allowed[strings.ToLower(host)] {
+			return false
+		}
+	}
+	return len(allowed) == len(want.Allow)
 }
 
 // baseRef is the ID of the driver's base a sandbox's machine boots: the
@@ -801,9 +853,30 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 	if !ok {
 		return false, fmt.Errorf("sandbox %s is pinned to %v, and this pool has no asset cache to place its agent from", sandboxID, pins)
 	}
+	// A machine takes the pool's setting at every start, since its bootstrap
+	// is placed again: a bootstrap that moved with it restarts the machine
+	// onto it below (ADR 26-10-29-481 §3).
+	if record.Bootstrap.Runtime.AgentRuntime.TLS != r.agentTLS {
+		record.Bootstrap.Runtime.AgentRuntime.TLS = r.agentTLS
+		if err := r.writeMachineRecord(sandboxID, record); err != nil {
+			return false, err
+		}
+	}
 	bootstrap, bootstrapDigest, err := renderBootstrap(record)
 	if err != nil {
 		return false, err
+	}
+	// The keypair the agent serves its API over TLS with goes beside it, the
+	// one the pool holds now, so a start places one due for renewal anew. It
+	// is no part of the bootstrap's digest: a renewed keypair moves nothing
+	// the machine must restart for.
+	var keypair *sandboxconfig.AgentTLS
+	if r.agentTLS {
+		material, err := proxyagent.EnsureSandboxMaterial(r.root, r.projectID, r.poolID, sandboxID)
+		if err != nil {
+			return false, err
+		}
+		keypair = &material.Agent
 	}
 	placed, had, err := r.readPlaced(sandboxID)
 	if err != nil {
@@ -814,7 +887,7 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 	if err != nil {
 		return false, err
 	}
-	if err := guest.CopyTo(ctx, "/", bootstrapTree(bootstrap)); err != nil {
+	if err := guest.CopyTo(ctx, "/", bootstrapTree(bootstrap, keypair)); err != nil {
 		return false, fmt.Errorf("place sandbox %s's bootstrap: %w", sandboxID, err)
 	}
 	reader, writer := io.Pipe()
@@ -834,7 +907,11 @@ func (r *MachineSandboxRuntime) place(ctx context.Context, sandboxID string, ins
 		return false, fmt.Errorf("provision sandbox %s's machine: %w", sandboxID, err)
 	}
 	moved := had && (placed.Layer != agent.Digest || !samePins(placed.Pins, pins) || placed.Bootstrap != bootstrapDigest)
-	return moved, r.writePlaced(sandboxID, placedRecord{Container: inst.ID, Layer: agent.Digest, Pins: pins, Bootstrap: bootstrapDigest})
+	if err := r.writePlaced(sandboxID, placedRecord{Container: inst.ID, Layer: agent.Digest, Pins: pins, Bootstrap: bootstrapDigest}); err != nil {
+		return false, err
+	}
+	// How the pool reaches the agent is what the bootstrap just placed says.
+	return moved, r.recordAgentTLS(sandboxID, record.Bootstrap.Runtime.AgentRuntime.TLS)
 }
 
 // renderBootstrap is sandbox.json as record's bootstrap renders it, and its
@@ -878,8 +955,10 @@ func (r *MachineSandboxRuntime) placementCurrent(ctx context.Context, sandboxID,
 
 // bootstrapTree is sandbox.json where the agent reads it, as a tar placed at
 // the machine's root: public, since the sandbox user reads it, and holding no
-// secret (its runtime-config document is what carries them).
-func bootstrapTree(data []byte) io.Reader {
+// secret (its runtime-config document is what carries them). Beside it is the
+// keypair the agent serves its API over TLS with, where it does, its key
+// root's alone.
+func bootstrapTree(data []byte, keypair *sandboxconfig.AgentTLS) io.Reader {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	epoch := time.Unix(0, 0)
@@ -888,13 +967,22 @@ func bootstrapTree(data []byte) io.Reader {
 	}
 	_ = tw.WriteHeader(&tar.Header{Name: "etc/discobox/" + sandboxDocumentName, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(data)), ModTime: epoch})
 	_, _ = tw.Write(data)
+	if keypair != nil {
+		agentTLSDir := "etc/discobox/" + sandboxconfig.AgentTLSDirName + "/"
+		_ = tw.WriteHeader(&tar.Header{Name: agentTLSDir, Typeflag: tar.TypeDir, Mode: 0o755, ModTime: epoch})
+		for _, file := range agentTLSFiles(*keypair) {
+			_ = tw.WriteHeader(&tar.Header{Name: agentTLSDir + file.name, Typeflag: tar.TypeReg, Mode: int64(file.mode), Size: int64(len(file.data)), ModTime: epoch})
+			_, _ = tw.Write(file.data)
+		}
+	}
 	_ = tw.Close()
 	return &buf
 }
 
-// SandboxDialer reaches the sandbox agent at its machine's one URL. A
-// machine has one service, which is the agent's, so no other port in it is
-// reached this way.
+// SandboxDialer reaches the sandbox agent at its machine's private URL, where
+// its pool's machine reaches it (ADR 26-10-29-481 §1), over TLS where its
+// bootstrap told it to serve TLS (§3). A machine has one service, which is
+// the agent's, so no other port in it is reached this way.
 func (r *MachineSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID string, port int) (Dialer, error) {
 	if port != SandboxAgentPort {
 		return nil, fmt.Errorf("%w: a machine sandbox is reached at its agent alone, not at port %d", ErrUnsupported, port)
@@ -907,6 +995,9 @@ func (r *MachineSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID str
 	if err != nil {
 		return nil, err
 	}
+	if dial, err = r.agentDialer(sandboxID, dial); err != nil {
+		return nil, err
+	}
 	return func(ctx context.Context) (net.Conn, error) {
 		conn, err := dial(ctx)
 		if err != nil {
@@ -917,7 +1008,9 @@ func (r *MachineSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID str
 	}, nil
 }
 
-// agentURL is the URL of the sandbox's machine while it runs.
+// agentURL is the private URL of the sandbox's machine while it runs: a
+// direct path on the pool's network, or its public URL where the driver
+// gives its machines no other.
 func (r *MachineSandboxRuntime) agentURL(ctx context.Context, sandboxID string) (string, error) {
 	if value, ok := r.urls.Load(sandboxID); ok {
 		if target, ok := value.(string); ok {
@@ -931,7 +1024,7 @@ func (r *MachineSandboxRuntime) agentURL(ctx context.Context, sandboxID string) 
 	if err != nil {
 		return "", err
 	}
-	target, err := r.engine.URL(ctx, inst)
+	target, err := r.engine.PrivateURL(ctx, inst)
 	if err != nil {
 		return "", err
 	}

@@ -191,6 +191,8 @@ func (s *Service) copyPools(ctx context.Context, source *model.Project, project 
 			CpuVcpus:           serverapi.NewOptFloat64(sourcePool.CPUVCPUs),
 			MemoryBytes:        serverapi.NewOptInt64(sourcePool.MemoryBytes),
 			StorageBytes:       serverapi.NewOptInt64(sourcePool.StorageBytes),
+			// A copy reaches its sandboxes' agents as the pool it copies does.
+			DisableAgentEndpointTls: serverapi.NewOptBool(sourcePool.DisableAgentEndpointTLS),
 		})
 		if err != nil {
 			return fmt.Errorf("%s: %w", sourcePool.Name, err)

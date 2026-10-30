@@ -24,14 +24,12 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/netip"
-	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -66,21 +64,17 @@ const (
 	minUDPSize = 512
 )
 
-// Config is the subset of bridge.json the stub needs.
+// Config is the stub's settings, which LoadConfig reads from the egress
+// bridge config (bridge.File).
 type Config struct {
 	// ListenAddress is where the stub listens: the DNS server the sandbox
 	// container was created with.
-	ListenAddress netip.AddrPort `json:"dnsListenAddress"`
-	// Server is the pool's DNS-over-TLS endpoint, a wire URL as every other
-	// pool endpoint is. A bare host:port, which a bootstrap from before that
-	// names, is TCP: https://host:port.
-	Server string `json:"dnsServer"`
-	// ServerName is the name the pool's certificate is verified as. Empty
-	// takes Server's host, which only a TCP endpoint has.
-	ServerName     string `json:"serverName"`
-	MTLSCAPath     string `json:"mtlsCaPath"`
-	ClientCertPath string `json:"clientCertPath"`
-	ClientKeyPath  string `json:"clientKeyPath"`
+	ListenAddress netip.AddrPort
+	// Pool is how the stub reaches the pool's DNS-over-TLS server, as the
+	// bridge config gives it (File.Dial). Its URL is a wire URL as every
+	// other pool endpoint is; a bare host:port, which a bootstrap from before
+	// that names, is TCP: https://host:port.
+	Pool bridge.DialConfig
 }
 
 // ErrNoDNS reports a bridge config from a pool that serves no DNS.
@@ -88,18 +82,20 @@ var ErrNoDNS = errors.New("the pool serves its sandboxes no DNS")
 
 // LoadConfig reads the stub's settings from the egress bridge config.
 func LoadConfig(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	file, err := bridge.LoadFile(path)
 	if err != nil {
 		return Config{}, err
 	}
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("parse %s: %w", path, err)
+	cfg := Config{Pool: file.Dial(file.DNSServer)}
+	if file.DNSListenAddress != "" {
+		if cfg.ListenAddress, err = netip.ParseAddrPort(file.DNSListenAddress); err != nil {
+			return Config{}, fmt.Errorf("%s dnsListenAddress: %w", path, err)
+		}
 	}
-	if cfg.Server == "" && !cfg.ListenAddress.IsValid() {
+	if cfg.Pool.URL == "" && !cfg.ListenAddress.IsValid() {
 		return Config{}, ErrNoDNS
 	}
-	if cfg.Server == "" || !cfg.ListenAddress.IsValid() {
+	if cfg.Pool.URL == "" || !cfg.ListenAddress.IsValid() {
 		return Config{}, fmt.Errorf("%s names only one of dnsServer and dnsListenAddress", path)
 	}
 	return cfg, nil
@@ -109,17 +105,11 @@ func LoadConfig(path string) (Config, error) {
 // whenever the intake replaces it, so a renewed certificate reaches the stub's
 // next connection.
 func (c Config) Dialer() (*bridge.Dialer, error) {
-	server := c.Server
-	if !strings.Contains(server, "://") {
-		server = "https://" + server
+	pool := c.Pool
+	if !strings.Contains(pool.URL, "://") {
+		pool.URL = "https://" + pool.URL
 	}
-	return bridge.NewDialer(bridge.DialConfig{
-		URL:            server,
-		ServerName:     c.ServerName,
-		MTLSCAPath:     c.MTLSCAPath,
-		ClientCertPath: c.ClientCertPath,
-		ClientKeyPath:  c.ClientKeyPath,
-	})
+	return bridge.NewDialer(pool)
 }
 
 // ClaimAddress puts addr on the sandbox's loopback, so the stub can listen on

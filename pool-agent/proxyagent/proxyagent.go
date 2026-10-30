@@ -7,6 +7,8 @@ package proxyagent
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -385,6 +387,11 @@ type SandboxMaterial struct {
 	// half, delivered in the runtime-config document rather than placed in the
 	// sandbox (ADR 26-10-08-127 §1).
 	Proxy sandboxconfig.RuntimeProxy
+	// Agent is the keypair the sandbox's agent serves its API over TLS with,
+	// which this pool's mTLS CA signed for the sandbox's private name (ADR
+	// 26-10-29-481 §3): placed beside its bootstrap before its agent starts,
+	// and renewed in its document, where its bootstrap told it to serve TLS.
+	Agent sandboxconfig.AgentTLS
 	// Env holds the proxy-related environment variables injected into the
 	// sandbox so its processes route outbound traffic through the local
 	// forwarder and trust the MITM CA.
@@ -456,11 +463,17 @@ func RemoveSandboxMaterial(root layout.Root, projectID, poolID, sandboxID string
 	if err := os.RemoveAll(materialDir); err != nil {
 		errs = append(errs, fmt.Errorf("remove sandbox proxy material: %w", err))
 	}
-	// The client certificate is keyed by the globally unique sandbox ID, so
-	// removing it by ID never touches another pool's material.
+	// The client certificate and the agent's server certificate are keyed by
+	// the globally unique sandbox ID — the server certificate by the private
+	// name made of it — so removing them never touches another pool's
+	// material.
 	clientCertDir := filepath.Join(root.ProxyCerts(projectID, poolID), "clients", sandboxID)
 	if err := os.RemoveAll(clientCertDir); err != nil {
 		errs = append(errs, fmt.Errorf("remove sandbox proxy client certificate: %w", err))
+	}
+	agentCertDir := filepath.Join(root.ProxyCerts(projectID, poolID), "servers", sandboxconfig.AgentServerName(sandboxID))
+	if err := os.RemoveAll(agentCertDir); err != nil {
+		errs = append(errs, fmt.Errorf("remove sandbox agent server certificate: %w", err))
 	}
 	return errors.Join(errs...)
 }
@@ -556,11 +569,15 @@ func EnsureSandboxMaterial(root layout.Root, projectID, poolID, sandboxID string
 	if err != nil {
 		return nil, fmt.Errorf("ensure sandbox proxy certificate: %w", err)
 	}
+	agent, err := proxy.EnsureServerCertificate(bundle, sandboxconfig.AgentServerName(sandboxID), clientCertValidity, clientCertRenewBefore)
+	if err != nil {
+		return nil, fmt.Errorf("ensure sandbox agent certificate: %w", err)
+	}
 	if err := os.MkdirAll(filepath.Join(PoolSandboxMaterialRoot(root, projectID, poolID), sandboxID), 0o755); err != nil {
 		return nil, fmt.Errorf("create sandbox proxy material record: %w", err)
 	}
 
-	// Only the public CAs and this sandbox's client keypair. Never the CA
+	// Only the public CAs and this sandbox's own keypairs. Never the CA
 	// private keys or other sandboxes' material.
 	read := func(path string) (string, error) {
 		data, err := os.ReadFile(path)
@@ -570,6 +587,7 @@ func EnsureSandboxMaterial(root layout.Root, projectID, poolID, sandboxID string
 		return string(data), nil
 	}
 	var out sandboxconfig.RuntimeProxy
+	var agentTLS sandboxconfig.AgentTLS
 	for _, piece := range []struct {
 		into *string
 		path string
@@ -578,6 +596,8 @@ func EnsureSandboxMaterial(root layout.Root, projectID, poolID, sandboxID string
 		{&out.MITMCA, bundle.MITMCAPath},
 		{&out.ClientCert, material.ClientCertPath},
 		{&out.ClientKey, material.ClientKeyPath},
+		{&agentTLS.Cert, agent.CertPath},
+		{&agentTLS.Key, agent.KeyPath},
 	} {
 		if *piece.into, err = read(piece.path); err != nil {
 			return nil, err
@@ -655,5 +675,26 @@ func EnsureSandboxMaterial(root layout.Root, projectID, poolID, sandboxID string
 	// derives its own systemd EnvironmentFile from sandbox.json's Env/ProxyEnvs
 	// at boot. See sandbox-agent's proxyenv package and
 	// discobox-render-proxy-env.service.
-	return &SandboxMaterial{Proxy: out, Env: env}, nil
+	return &SandboxMaterial{Proxy: out, Agent: agentTLS, Env: env}, nil
+}
+
+// SandboxAgentTLSConfig is how the pool speaks TLS to a sandbox's agent: the
+// agent's certificate verified against this pool's mTLS CA, for the sandbox's
+// private name, wherever the pool dialed it, so a connection reaches that
+// sandbox's agent or fails (ADR 26-10-29-481 §3). The CA is read on every call, so a renewed one is trusted from the
+// next.
+func SandboxAgentTLSConfig(root layout.Root, projectID, poolID, sandboxID string) (*tls.Config, error) {
+	if err := validateMaterialScope(projectID, poolID, sandboxID); err != nil {
+		return nil, err
+	}
+	path := proxy.MTLSCAPath(root.ProxyCerts(projectID, poolID))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read the pool's mTLS CA: %w", err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(data) {
+		return nil, fmt.Errorf("the pool's mTLS CA at %s holds no certificate", path)
+	}
+	return &tls.Config{RootCAs: roots, ServerName: sandboxconfig.AgentServerName(sandboxID), MinVersion: tls.VersionTLS12}, nil
 }

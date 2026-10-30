@@ -323,6 +323,12 @@ func TestFakePoolMachineIsMadeThePoolsBox(t *testing.T) {
 		!strings.HasPrefix(bootstrap.AgentListenURL, "http://") {
 		t.Fatalf("bootstrap = %+v, want the machine runtime on the pool's project and network, listening where the service does", bootstrap)
 	}
+	// Both of the machine's URLs, as its driver gives them: the fake
+	// driver's machines share a loopback, so its private URL is its public
+	// one (ADR 26-10-29-481 §1).
+	if !strings.HasPrefix(bootstrap.PublicURL, "http://127.0.0.1:") || bootstrap.PrivateURL != bootstrap.PublicURL {
+		t.Fatalf("bootstrap URLs = public %q private %q, want the fake machine's loopback URL as both", bootstrap.PublicURL, bootstrap.PrivateURL)
+	}
 	key := driver.lastKey(t)
 	if !key.Issued || key.Driver != "fake" || key.Secret == "" || !strings.HasPrefix(key.Name, project+"-") {
 		t.Fatalf("provisioning key = %v issued %v, want one the driver issued for the pool", key, key.Issued)
@@ -411,8 +417,12 @@ func TestFakePoolMachineIsReadopted(t *testing.T) {
 	if err := r.EnsurePool(ctx, nil, nil, pool, maker, begin); err != nil {
 		t.Fatal(err)
 	}
-	if r.engine.State(ctx, inst) != engine.Running || begun != 1 || driver.applies() != 2 || len(driver.created) != 1 || pool.State != model.PoolStateRegistering {
-		t.Fatalf("a stopped machine: state %s, begun %d, applies %d, created %d, pool %q; want it started, nothing placed", r.engine.State(ctx, inst), begun, driver.applies(), len(driver.created), pool.State)
+	// The fake driver's URLs are its shim's loopback port, which moves at
+	// every start (disco-vm ADR 0005 §2), and the bootstrap names them, so
+	// the started machine is placed again with its new ones. A driver whose
+	// URLs stay put, as boxd's do, places nothing.
+	if r.engine.State(ctx, inst) != engine.Running || begun != 1 || driver.applies() != 3 || len(driver.created) != 1 || pool.State != model.PoolStateRegistering {
+		t.Fatalf("a stopped machine: state %s, begun %d, applies %d, created %d, pool %q; want it started in place, placed again with the URLs it moved to", r.engine.State(ctx, inst), begun, driver.applies(), len(driver.created), pool.State)
 	}
 
 	if err := r.engine.Remove(ctx, inst, true); err != nil {
@@ -423,7 +433,7 @@ func TestFakePoolMachineIsReadopted(t *testing.T) {
 		t.Fatal(err)
 	}
 	ids := issuedKeys(t, r, pool)
-	if len(driver.created) != 2 || driver.applies() != 3 || len(ids) != 1 || ids[0] == oldKey || recordOf(t, pool).Key.ID != ids[0] {
+	if len(driver.created) != 2 || driver.applies() != 4 || len(ids) != 1 || ids[0] == oldKey || recordOf(t, pool).Key.ID != ids[0] {
 		t.Fatalf("a lost machine: created %d, applies %d, keys %v (old %s); want it made again with a new key alone", len(driver.created), driver.applies(), ids, oldKey)
 	}
 }
@@ -724,5 +734,19 @@ func TestFakePoolMachineProviderKeyIsReplacedOrWithdrawn(t *testing.T) {
 	}
 	if recordOf(t, pool).Key != nil || pool.HostCredential == nil || pool.HostCredential.Key != "" {
 		t.Fatalf("record %+v, credential %+v; want no key shown", recordOf(t, pool).Key, pool.HostCredential)
+	}
+}
+
+// A record from before the box's record held its placement kept it beside
+// the box; it is read so that pool is not placed again over nothing.
+func TestDecodeRuntimeStateReadsAPlacementKeptBesideTheBox(t *testing.T) {
+	pool := &model.Pool{RuntimeState: []byte(`{"instance":"i-1","box":{"agent":"discobox-agent@sha256:a"},"placement":"fingerprint-1"}`)}
+	state := decodeRuntimeState(pool)
+	if state.Box.Placement != "fingerprint-1" || state.Box.Agent != "discobox-agent@sha256:a" || state.Instance != "i-1" {
+		t.Fatalf("state = %+v, want the placement kept beside the box read into it", state)
+	}
+	pool.RuntimeState = []byte(`{"instance":"i-1","box":{"placement":"fingerprint-2"},"placement":"fingerprint-1"}`)
+	if state := decodeRuntimeState(pool); state.Box.Placement != "fingerprint-2" {
+		t.Fatalf("placement = %q, want the box's own over the one beside it", state.Box.Placement)
 	}
 }

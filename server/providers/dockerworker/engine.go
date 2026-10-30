@@ -572,9 +572,12 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, lease *DockerClientLea
 	return inst, record, true, nil
 }
 
-// applyMovedPoolBundles applies a pool's moved bundles in its running box, as
-// a moved pin restarts a sandbox rather than rebuilding it: the box keeps its
-// disk, its key and what it provisioned (ADR 26-10-24-953 §5).
+// applyMovedPoolBundles applies a pool's moved bundles, or its moved
+// placement, in its running box, as a moved pin restarts a sandbox rather
+// than rebuilding it: the box keeps its disk, its key and what it
+// provisioned (ADR 26-10-24-953 §5). A moved placement — a pool setting its
+// agent is told in its bootstrap, such as disableAgentEndpointTls — restarts
+// the agent and its proxy, which read it once, at start.
 //
 // It never fails the reconcile of a running pool: a release that does not
 // resolve right now (a registry unreachable after a server restart), or an
@@ -589,7 +592,12 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 		slog.WarnContext(ctx, "keeping the pool's box as it is: what it is made of does not resolve", "pool", pool.ID, "error", err)
 		return recorded, nil
 	}
-	if recorded.SameBundles(box) {
+	placement := poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv()}
+	current, err := recorded.Current(placement)
+	if err != nil {
+		return recorded, err
+	}
+	if current {
 		return recorded, nil
 	}
 	// The apply restarts the agent the moved bundles carry, so placement is
@@ -597,10 +605,17 @@ func (e *Engine) applyMovedPoolBundles(ctx context.Context, cli *client.Client, 
 	if err := begin(ctx); err != nil {
 		return recorded, err
 	}
-	record, err := poolruntime.ProvisionBox(ctx, containerGuest{cli: cli, container: containerID}, maker, poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: box, Env: e.poolPolicyEnv()})
+	guest := containerGuest{cli: cli, container: containerID}
+	record, err := poolruntime.ProvisionBox(ctx, guest, maker, placement)
 	if err != nil {
 		slog.WarnContext(ctx, "keeping the pool's box as it is: its moved bundles did not apply", "pool", pool.ID, "error", err)
 		return recorded, nil
+	}
+	if recorded.Placement != record.Placement {
+		if err := poolruntime.RestartPoolUnits(ctx, guest); err != nil {
+			slog.WarnContext(ctx, "the pool's agent did not restart on its new placement; the next reconcile places it again", "pool", pool.ID, "error", err)
+			return recorded, nil
+		}
 	}
 	return record, nil
 }

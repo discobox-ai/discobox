@@ -158,7 +158,12 @@ provider's `controlPlaneUrl`, and where the agent listens: the driver's
 `Service.Listen` for the machine, which its one URL reaches (ADR
 26-10-27-345 §2's rule, for the pool agent). The pool agent is reached at that
 URL (`acquireAgentClient`, `Engine.URL`): boxd's public HTTPS URL, the same
-across stop and start.
+across stop and start. The bootstrap also names the machine's public and
+private URLs (`Engine.URL`, `Engine.PrivateURL`), from which the agent derives
+where its sandboxes reach it and what fences them (ADR 26-10-29-481 §§1–2);
+a driver whose machines have no private URL carries no pool. They are in the
+placement's fingerprint, so a machine whose URLs moved with a start — a local
+driver's loopback port — is placed again with its new ones; boxd's stay put.
 
 `converge` runs on every reconcile, against the provider's own record on the
 pool's row (`poolRuntimeState` in `RuntimeState`: the machine, the pool's
@@ -171,12 +176,16 @@ never against anything the machine reports (551 §1):
 - a stopped machine is started on the disk it kept; the agent starts from the
   units `apply` enabled, on the key it holds;
 - a key due for renewal is replaced (below);
-- moved bundles, or a moved bootstrap or policy (`Placement`, a fingerprint
-  of what the provider's configuration says of the pool: its
-  `controlPlaneUrl`, its base, its policy), are applied again in the running
-  machine. `apply` restarts what moved bundles move; a moved placement
-  restarts the agent and proxy, which read it once at start
-  (`restartPoolUnits`). A running pool whose moved bundles do not resolve or apply
+- moved bundles, or a moved bootstrap or policy (the box record's
+  `Placement`, `poolruntime.PlacementFingerprint` of what the provider's
+  configuration and the pool's own settings say of it: its
+  `controlPlaneUrl`, its base, its policy, its machine's URLs, its
+  `disableAgentEndpointTls`), are applied again in the running machine.
+  `apply` restarts what moved bundles move; a moved placement restarts the
+  agent and proxy, which read it once at start
+  (`poolruntime.RestartPoolUnits`), as a Docker pool's are. A record from
+  before the box's record held its placement kept it beside the box, and is
+  read from there. A running pool whose moved bundles do not resolve or apply
   keeps what it last provisioned and is tried again, as a Docker pool is
   (953 §5); a new or restarted machine's failure fails the reconcile.
 

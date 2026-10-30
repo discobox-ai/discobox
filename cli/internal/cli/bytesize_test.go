@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 // A size takes the units docker's --memory takes, all binary, and a bare
@@ -59,5 +62,54 @@ func TestPoolUpdateTakesMemoryWithAUnit(t *testing.T) {
 	runCLI(t, server.URL, "admin", "pool", "update", "pool-1", "--memory", "8g", "--storage", "100GiB")
 	if sent["memoryBytes"] != float64(8<<30) || sent["storageBytes"] != float64(100<<30) {
 		t.Fatalf("update body = %#v, want 8 GiB of memory and 100 GiB of storage", sent)
+	}
+}
+
+// A pool update says whether the pool reaches its agents over TLS only when
+// the flag is given, so an update about something else leaves it alone.
+func TestPoolUpdateSendsTheAgentTLSSettingOnlyWhenGiven(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want any
+	}{
+		{args: []string{"--memory", "8g"}},
+		{args: []string{"--disable-agent-endpoint-tls"}, want: true},
+		{args: []string{"--disable-agent-endpoint-tls=false"}, want: false},
+	} {
+		var sent map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/pools":
+				_, _ = io.WriteString(w, `{"pools":[`+poolWithResources+`]}`)
+			case r.Method == http.MethodPatch && r.URL.Path == "/projects/project-1/pools/pool-1":
+				if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+					t.Errorf("decode body: %v", err)
+				}
+				_, _ = io.WriteString(w, poolWithResources)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		runCLI(t, server.URL, append([]string{"admin", "pool", "update", "pool-1"}, tc.args...)...)
+		server.Close()
+		if got, ok := sent["disableAgentEndpointTls"]; got != tc.want || ok != (tc.want != nil) {
+			t.Errorf("%v: disableAgentEndpointTls = %v (sent %v), want %v", tc.args, got, ok, tc.want)
+		}
+	}
+}
+
+func TestFormatPoolAgentTLS(t *testing.T) {
+	for _, tc := range []struct {
+		pool apimodel.Pool
+		want string
+	}{
+		{pool: apimodel.Pool{}, want: "off"},
+		{pool: apimodel.Pool{DisableAgentEndpointTls: apiclientgen.NewOptBool(false)}, want: "on"},
+		{pool: apimodel.Pool{DisableAgentEndpointTls: apiclientgen.NewOptBool(true)}, want: "off"},
+	} {
+		if got := formatPoolAgentTLS(tc.pool); got != tc.want {
+			t.Errorf("formatPoolAgentTLS(%+v) = %q, want %q", tc.pool.DisableAgentEndpointTls, got, tc.want)
+		}
 	}
 }

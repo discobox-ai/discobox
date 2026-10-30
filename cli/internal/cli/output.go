@@ -384,6 +384,7 @@ func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
 	fmt.Fprintf(tw, "READY\t%t\n", pool.Ready)
 	fmt.Fprintf(tw, "SCHEDULABLE\t%t\n", pool.Schedulable)
 	fmt.Fprintf(tw, "CAPACITY\t%s\n", formatPoolCapacity(*pool))
+	fmt.Fprintf(tw, "AGENT TLS\t%s\n", formatPoolAgentTLS(*pool))
 	if credential, ok := pool.HostCredential.Get(); ok {
 		fmt.Fprintf(tw, "HOST CREDENTIAL\t%s\n", formatPoolHostCredential(credential, time.Now()))
 	}
@@ -1235,4 +1236,15 @@ func routesText(routes []apimodel.SecretRoute) string {
 	// every caller: a request's routes and a child binding's are a
 	// discobox's own words (cli/REVIEW.md).
 	return terminalSafe(strings.Join(out, "; "))
+}
+
+// formatPoolAgentTLS is how the pool reaches its discoboxes' agents (ADR
+// 26-10-29-481 §3). A server from before the setting says nothing, and its
+// pools reach them over plain HTTP.
+func formatPoolAgentTLS(pool apimodel.Pool) string {
+	disabled, ok := pool.DisableAgentEndpointTls.Get()
+	if !ok || disabled {
+		return "off"
+	}
+	return "on"
 }

@@ -640,6 +640,13 @@ type PoolManifest struct {
 	CPUVCPUs     float64 `gorm:"column:cpu_vcpus;not null;default:0" json:"cpuVcpus" doc:"vCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host."`
 	MemoryBytes  int64   `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Memory for the pool's VM in bytes. Only a provider that sizes a VM per pool accepts it; zero leaves the size to the provider's configuration, then the host."`
 	StorageBytes int64   `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Storage for the pool in bytes. Only a provider that acts on it accepts it, and none does today; zero is unset."`
+	// DisableAgentEndpointTLS has the pool reach its sandboxes' agents over
+	// plain HTTP rather than TLS its CA issues (ADR 26-10-29-481 §3). It is
+	// off for a pool made now, and an upgrade turned it on for every pool made
+	// before, whose sandboxes were made with plain HTTP. It is in the manifest:
+	// the pool's agent is told it in its bootstrap, so a change places the
+	// pool's host again.
+	DisableAgentEndpointTLS bool `gorm:"column:disable_agent_endpoint_tls;not null;default:false" json:"disableAgentEndpointTls" doc:"Reach the pool's sandboxes' agents over plain HTTP instead of TLS the pool's CA issues. Off for a pool made now; on for every pool made before TLS was the default. A change reaches a sandbox when its box is next made - a VM sandbox at its next start, a container when it is replaced."`
 }
 
 // PoolHostCredential is a credential of its provider's that a pool's host

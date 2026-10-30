@@ -41,8 +41,13 @@ by what it is looking for and is idempotent:
 
 1. Pre-`AutoMigrate` repairs, for changes `AutoMigrate` would fail on or get
    wrong: deduplicate sandbox names within a project, clear `NULL`
-   `sandboxes.runtime_state`, drop an index whose column set changed, and rename
-   a column rather than let `AutoMigrate` add a new one beside it.
+   `sandboxes.runtime_state`, drop an index whose column set changed, rename
+   a column rather than let `AutoMigrate` add a new one beside it, and add
+   `pools.disable_agent_endpoint_tls` set on every pool that exists, in one
+   transaction (`addPoolAgentEndpointTLSSetting`, ADR 26-10-29-481 §3): a pool
+   made before agent TLS was the default keeps the plain HTTP its sandboxes
+   were made with, and nothing tells it from a pool made since once the
+   column exists.
 2. `AutoMigrate(model.AllModels()...)`.
 3. Post-`AutoMigrate` data migrations, which need the new columns/constraints:
    index widening, value rewrites (secret types and hosts, provider types, the trust stanza in

@@ -20,10 +20,12 @@ type fakeMaker struct {
 	box      sandbox.PoolBox
 	boxErr   error
 	enrolled bool
+	// disableTLS is the pool's setting its agent is told in its bootstrap.
+	disableTLS bool
 }
 
 func (m *fakeMaker) Bootstrap(context.Context) (poolagent.Bootstrap, error) {
-	return poolagent.Bootstrap{ProjectID: "project-1", PoolID: "pool-1"}, nil
+	return poolagent.Bootstrap{ProjectID: "project-1", PoolID: "pool-1", DisableAgentEndpointTLS: m.disableTLS}, nil
 }
 
 func (m *fakeMaker) Box(context.Context, imagecache.Platform) (sandbox.PoolBox, error) {
@@ -75,11 +77,27 @@ func TestApplyMovedPoolBundlesKeepsARunningBox(t *testing.T) {
 	}
 
 	same := &fakeMaker{box: sandbox.PoolBox{Bundles: []sandbox.BundlePin{{Name: "discobox-pool-agent-bundle", Digest: "sha256:b"}}}}
+	bootstrap, err := engine.poolBootstrap(context.Background(), pool, same)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded.Placement, err = poolruntime.PlacementFingerprint(poolruntime.BoxPlacement{Bootstrap: bootstrap, Box: same.box, Env: engine.poolPolicyEnv()})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := engine.applyMovedPoolBundles(context.Background(), cli, "container-1", pool, same, recorded, begin); err != nil || began {
-		t.Fatalf("unmoved bundles: began %v, err %v; want nothing done", began, err)
+		t.Fatalf("unmoved bundles and placement: began %v, err %v; want nothing done", began, err)
 	}
 
+	// The same bundles under a moved placement — a pool setting its agent is
+	// told in its bootstrap — is provisioned again.
 	superseded := errors.New("pool generation changed")
+	flipped := &fakeMaker{box: same.box, disableTLS: true}
+	_, err = engine.applyMovedPoolBundles(context.Background(), cli, "container-1", pool, flipped, recorded, func(context.Context) error { return superseded })
+	if !errors.Is(err, superseded) {
+		t.Fatalf("a moved placement: err %v; want it provisioned again, which begin stopped", err)
+	}
+
 	moved := &fakeMaker{box: sandbox.PoolBox{Bundles: []sandbox.BundlePin{{Name: "discobox-pool-agent-bundle", Digest: "sha256:c"}}}}
 	_, err = engine.applyMovedPoolBundles(context.Background(), cli, "container-1", pool, moved, recorded, func(context.Context) error { return superseded })
 	if !errors.Is(err, superseded) || moved.enrolled {

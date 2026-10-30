@@ -75,6 +75,9 @@ func (s *Service) CreatePool(ctx context.Context, projectID string, input servic
 			CPUVCPUs:           input.CpuVcpus.Or(0),
 			MemoryBytes:        input.MemoryBytes.Or(0),
 			StorageBytes:       input.StorageBytes.Or(0),
+			// TLS to its sandboxes' agents unless the pool opts out (ADR
+			// 26-10-29-481 §3).
+			DisableAgentEndpointTLS: input.DisableAgentEndpointTls.Or(false),
 		},
 	}
 	if err := s.store.CreatePool(ctx, pool); err != nil {
@@ -125,6 +128,11 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 	}
 	if value, ok := input.StorageBytes.Get(); ok {
 		pool.StorageBytes = value
+	}
+	// The pool's host is placed again with it; each sandbox takes it when its
+	// box is next made (ADR 26-10-29-481 §3).
+	if value, ok := input.DisableAgentEndpointTls.Get(); ok {
+		pool.DisableAgentEndpointTLS = value
 	}
 	egressChanged := false
 	if level, ok := input.Egress.Get(); ok {

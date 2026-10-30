@@ -118,3 +118,23 @@ func TestProviderAwaitsRuntimeConfigWhenItNamesAPoolKey(t *testing.T) {
 		t.Fatal("a bootstrap naming a pool key does not await a runtime config")
 	}
 }
+
+// Both sides keep a document without its private keys, and leave the one
+// they were given whole.
+func TestWithoutPrivateKeysTakesOutEveryPrivateKey(t *testing.T) {
+	doc := RuntimeConfig{
+		Revision: 1,
+		Agent:    RuntimeAgent{TLS: &AgentTLS{Cert: "agent cert", Key: "agent key"}},
+		Proxy:    &RuntimeProxy{ClientCert: "client cert", ClientKey: "client key"},
+	}
+	kept := doc.WithoutPrivateKeys()
+	if kept.Proxy.ClientKey != "" || kept.Agent.TLS.Key != "" {
+		t.Fatalf("kept = %+v / %+v, want no private key", kept.Proxy, kept.Agent.TLS)
+	}
+	if kept.Proxy.ClientCert != "client cert" || kept.Agent.TLS.Cert != "agent cert" {
+		t.Fatal("taking the keys out took a certificate with them")
+	}
+	if doc.Proxy.ClientKey != "client key" || doc.Agent.TLS.Key != "agent key" {
+		t.Fatal("taking the keys out changed the document it was given")
+	}
+}

@@ -121,13 +121,7 @@ func TestForwarderDialsUnixURLWithMTLS(t *testing.T) {
 	url := unixPool(t, prepared.Bundle)
 	material := prepared.Clients["sandbox-1"]
 
-	forwarder, err := bridge.New(context.Background(), bridge.Config{
-		WorkerProxyURL: url,
-		ServerName:     poolServerName,
-		MTLSCAPath:     material.MTLSCAPath,
-		ClientCertPath: material.ClientCertPath,
-		ClientKeyPath:  material.ClientKeyPath,
-	})
+	forwarder, err := bridge.New(context.Background(), bridge.Config{Pool: dialConfig(material, url, poolServerName)})
 	if err != nil {
 		t.Fatalf("bridge.New: %v", err)
 	}
@@ -248,5 +242,51 @@ func TestNewDialerURLs(t *testing.T) {
 				t.Fatalf("ServerURL = %q, want %q", got, tt.wantServer)
 			}
 		})
+	}
+}
+
+// An https URL names the pool by its private name, and the address answers
+// for it: the dialer dials the address, keeping the URL's port, and still
+// verifies the pool's certificate for the name (ADR 26-10-29-481 §2).
+func TestDialerDialsTheAddressThatAnswersForTheName(t *testing.T) {
+	prepared := poolMaterial(t)
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	servePool(t, listener, prepared.Bundle)
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "https://" + net.JoinHostPort(poolServerName, port)
+
+	cfg := dialConfig(prepared.Clients["sandbox-1"], url, "")
+	cfg.Address = "127.0.0.1"
+	dialer, err := bridge.NewDialer(cfg)
+	if err != nil {
+		t.Fatalf("NewDialer: %v", err)
+	}
+	if dialer.ServerName() != poolServerName || dialer.TransportHost() != "127.0.0.1" {
+		t.Fatalf("server name %q, transport host %q; want the pool's name verified and the address dialed", dialer.ServerName(), dialer.TransportHost())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := dialer.Dial(ctx)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, identity, _ := readIdentity(t, conn); identity != "sandbox-1" {
+		t.Fatalf("pool saw client %q, want sandbox-1", identity)
+	}
+
+	for _, other := range []string{"vsock://2:17080", "wss://edge.example.com"} {
+		cfg := dialConfig(prepared.Clients["sandbox-1"], other, poolServerName)
+		cfg.Address = "127.0.0.1"
+		if _, err := bridge.NewDialer(cfg); err == nil || !strings.Contains(err.Error(), "an https URL's name alone") {
+			t.Errorf("NewDialer(%q) with an address = %v, want it refused", other, err)
+		}
 	}
 }

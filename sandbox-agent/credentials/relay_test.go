@@ -23,6 +23,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/wire"
+	"github.com/discobox-ai/discobox/proxy/bridge"
 )
 
 const poolServerName = "discobox-pool-proxy"
@@ -140,7 +141,7 @@ func TestRelayDialsUnixURLWithMTLS(t *testing.T) {
 	go func() { _ = server.ServeTLS(listener, "", "") }()
 	t.Cleanup(func() { _ = server.Close() })
 
-	config, err := json.Marshal(bridgeConfig{
+	config, err := json.Marshal(bridge.File{
 		CredentialsURL: wire.UnixURL(socket),
 		ServerName:     poolServerName,
 		MTLSCAPath:     filepath.Join(dir, "mtls-ca.crt"),

@@ -23,7 +23,7 @@ func (h *handler) GetSandboxRuntimeConfig(_ context.Context, _ sandboxapi.GetSan
 	if !ok {
 		return nil, statusError{status: http.StatusNotFound, message: "no runtime config has been applied"}
 	}
-	return runtimeConfigToWire(intake.WithoutClientKey(applied))
+	return runtimeConfigToWire(applied.WithoutPrivateKeys())
 }
 
 // PutSandboxRuntimeConfig applies a delivered document and answers with the
@@ -72,7 +72,7 @@ func (h *handler) PutSandboxRuntimeConfig(ctx context.Context, req *sandboxapi.S
 	if h.sourceConverger != nil {
 		h.sourceConverger.Converge(held)
 	}
-	return runtimeConfigToWire(intake.WithoutClientKey(held))
+	return runtimeConfigToWire(held.WithoutPrivateKeys())
 }
 
 // GetSandboxSourceProjectLayer answers with a materialized source's project

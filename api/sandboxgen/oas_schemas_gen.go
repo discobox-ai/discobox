@@ -2748,6 +2748,52 @@ func (o OptSandboxMetaTags) Or(d SandboxMetaTags) SandboxMetaTags {
 	return d
 }
 
+// NewOptSandboxRuntimeConfigAgentTLS returns new OptSandboxRuntimeConfigAgentTLS with value set to v.
+func NewOptSandboxRuntimeConfigAgentTLS(v SandboxRuntimeConfigAgentTLS) OptSandboxRuntimeConfigAgentTLS {
+	return OptSandboxRuntimeConfigAgentTLS{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxRuntimeConfigAgentTLS is optional SandboxRuntimeConfigAgentTLS.
+type OptSandboxRuntimeConfigAgentTLS struct {
+	Value SandboxRuntimeConfigAgentTLS
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxRuntimeConfigAgentTLS was set.
+func (o OptSandboxRuntimeConfigAgentTLS) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxRuntimeConfigAgentTLS) Reset() {
+	var v SandboxRuntimeConfigAgentTLS
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxRuntimeConfigAgentTLS) SetTo(v SandboxRuntimeConfigAgentTLS) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxRuntimeConfigAgentTLS) Get() (v SandboxRuntimeConfigAgentTLS, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxRuntimeConfigAgentTLS) Or(d SandboxRuntimeConfigAgentTLS) SandboxRuntimeConfigAgentTLS {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxRuntimeConfigProxy returns new OptSandboxRuntimeConfigProxy with value set to v.
 func NewOptSandboxRuntimeConfigProxy(v SandboxRuntimeConfigProxy) OptSandboxRuntimeConfigProxy {
 	return OptSandboxRuntimeConfigProxy{
@@ -6917,6 +6963,10 @@ type SandboxRuntimeConfigAgent struct {
 	// The pool's idle timeout as a Go duration. Empty leaves the sandbox on its default. Takes effect
 	// when applied.
 	IdleTimeout OptString `json:"idleTimeout"`
+	// Renews the keypair the agent serves its API over TLS with (ADR 26-10-29-481 §3). Sent only to a
+	// sandbox whose bootstrap told its agent to serve TLS, which is new enough to know the field. Absent
+	// leaves the keypair the agent holds.
+	TLS OptSandboxRuntimeConfigAgentTLS `json:"tls"`
 }
 
 // GetControlPlanePower returns the value of ControlPlanePower.
@@ -6929,6 +6979,11 @@ func (s *SandboxRuntimeConfigAgent) GetIdleTimeout() OptString {
 	return s.IdleTimeout
 }
 
+// GetTLS returns the value of TLS.
+func (s *SandboxRuntimeConfigAgent) GetTLS() OptSandboxRuntimeConfigAgentTLS {
+	return s.TLS
+}
+
 // SetControlPlanePower sets the value of ControlPlanePower.
 func (s *SandboxRuntimeConfigAgent) SetControlPlanePower(val OptBool) {
 	s.ControlPlanePower = val
@@ -6937,6 +6992,41 @@ func (s *SandboxRuntimeConfigAgent) SetControlPlanePower(val OptBool) {
 // SetIdleTimeout sets the value of IdleTimeout.
 func (s *SandboxRuntimeConfigAgent) SetIdleTimeout(val OptString) {
 	s.IdleTimeout = val
+}
+
+// SetTLS sets the value of TLS.
+func (s *SandboxRuntimeConfigAgent) SetTLS(val OptSandboxRuntimeConfigAgentTLS) {
+	s.TLS = val
+}
+
+// The keypair a sandbox agent serves its API over TLS with, which its pool's mTLS CA signed for the
+// sandbox's private name, so the pool knows which sandbox answered.
+// Ref: #/components/schemas/SandboxRuntimeConfigAgentTLS
+type SandboxRuntimeConfigAgentTLS struct {
+	// The PEM server certificate.
+	Cert string `json:"cert"`
+	// The PEM private key. Required on delivery; never returned, so a document read back omits it.
+	Key OptString `json:"key"`
+}
+
+// GetCert returns the value of Cert.
+func (s *SandboxRuntimeConfigAgentTLS) GetCert() string {
+	return s.Cert
+}
+
+// GetKey returns the value of Key.
+func (s *SandboxRuntimeConfigAgentTLS) GetKey() OptString {
+	return s.Key
+}
+
+// SetCert sets the value of Cert.
+func (s *SandboxRuntimeConfigAgentTLS) SetCert(val string) {
+	s.Cert = val
+}
+
+// SetKey sets the value of Key.
+func (s *SandboxRuntimeConfigAgentTLS) SetKey(val OptString) {
+	s.Key = val
 }
 
 // The credential and trust for the sandbox's hop to its pool. Where the pool is comes from the

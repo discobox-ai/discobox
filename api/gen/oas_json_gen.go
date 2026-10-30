@@ -1894,6 +1894,12 @@ func (s *CreatePoolBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.DisableAgentEndpointTls.Set {
+			e.FieldStart("disableAgentEndpointTls")
+			s.DisableAgentEndpointTls.Encode(e)
+		}
+	}
+	{
 		if s.CpuVcpus.Set {
 			e.FieldStart("cpuVcpus")
 			s.CpuVcpus.Encode(e)
@@ -1921,13 +1927,14 @@ func (s *CreatePoolBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreatePoolBody = [6]string{
+var jsonFieldsNameOfCreatePoolBody = [7]string{
 	0: "$schema",
-	1: "cpuVcpus",
-	2: "memoryBytes",
-	3: "name",
-	4: "providerInstanceId",
-	5: "storageBytes",
+	1: "disableAgentEndpointTls",
+	2: "cpuVcpus",
+	3: "memoryBytes",
+	4: "name",
+	5: "providerInstanceId",
+	6: "storageBytes",
 }
 
 // Decode decodes CreatePoolBody from json.
@@ -1948,6 +1955,16 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
+			}
+		case "disableAgentEndpointTls":
+			if err := func() error {
+				s.DisableAgentEndpointTls.Reset()
+				if err := s.DisableAgentEndpointTls.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"disableAgentEndpointTls\"")
 			}
 		case "cpuVcpus":
 			if err := func() error {
@@ -1970,7 +1987,7 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"memoryBytes\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -1982,7 +1999,7 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "providerInstanceId":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.ProviderInstanceId = string(v)
@@ -2013,7 +2030,7 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011000,
+		0b00110000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -22785,6 +22802,39 @@ func (s *OptSandboxPullProgress) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxRuntimeConfigAgentTLS as json.
+func (o OptSandboxRuntimeConfigAgentTLS) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxRuntimeConfigAgentTLS from json.
+func (o *OptSandboxRuntimeConfigAgentTLS) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxRuntimeConfigAgentTLS to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxRuntimeConfigAgentTLS) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxRuntimeConfigAgentTLS) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxRuntimeConfigProxy as json.
 func (o OptSandboxRuntimeConfigProxy) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -24233,6 +24283,12 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.DisableAgentEndpointTls.Set {
+			e.FieldStart("disableAgentEndpointTls")
+			s.DisableAgentEndpointTls.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("cpuVcpus")
 		e.Float64(s.CpuVcpus)
 	}
@@ -24412,45 +24468,46 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPool = [38]string{
+var jsonFieldsNameOfPool = [39]string{
 	0:  "egress",
 	1:  "$schema",
-	2:  "cpuVcpus",
-	3:  "createdAt",
-	4:  "id",
-	5:  "imageKind",
-	6:  "memoryBytes",
-	7:  "name",
-	8:  "platform",
-	9:  "projectId",
-	10: "providerInstance",
-	11: "providerInstanceId",
-	12: "storageBytes",
-	13: "health",
-	14: "ready",
-	15: "schedulable",
-	16: "degraded",
-	17: "hostCredential",
-	18: "provisionProgress",
-	19: "provisionProgressAt",
-	20: "availableCpuVcpus",
-	21: "availableMemoryBytes",
-	22: "availableStorageBytes",
-	23: "conditions",
-	24: "resources",
-	25: "resourcesReportedAt",
-	26: "desiredState",
-	27: "state",
-	28: "stateChangedAt",
-	29: "generation",
-	30: "observedGeneration",
-	31: "errorMessage",
-	32: "keyType",
-	33: "publicKey",
-	34: "registeredAt",
-	35: "lastSeenAt",
-	36: "revokedAt",
-	37: "updatedAt",
+	2:  "disableAgentEndpointTls",
+	3:  "cpuVcpus",
+	4:  "createdAt",
+	5:  "id",
+	6:  "imageKind",
+	7:  "memoryBytes",
+	8:  "name",
+	9:  "platform",
+	10: "projectId",
+	11: "providerInstance",
+	12: "providerInstanceId",
+	13: "storageBytes",
+	14: "health",
+	15: "ready",
+	16: "schedulable",
+	17: "degraded",
+	18: "hostCredential",
+	19: "provisionProgress",
+	20: "provisionProgressAt",
+	21: "availableCpuVcpus",
+	22: "availableMemoryBytes",
+	23: "availableStorageBytes",
+	24: "conditions",
+	25: "resources",
+	26: "resourcesReportedAt",
+	27: "desiredState",
+	28: "state",
+	29: "stateChangedAt",
+	30: "generation",
+	31: "observedGeneration",
+	32: "errorMessage",
+	33: "keyType",
+	34: "publicKey",
+	35: "registeredAt",
+	36: "lastSeenAt",
+	37: "revokedAt",
+	38: "updatedAt",
 }
 
 // Decode decodes Pool from json.
@@ -24483,8 +24540,18 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
+		case "disableAgentEndpointTls":
+			if err := func() error {
+				s.DisableAgentEndpointTls.Reset()
+				if err := s.DisableAgentEndpointTls.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"disableAgentEndpointTls\"")
+			}
 		case "cpuVcpus":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Float64()
 				s.CpuVcpus = float64(v)
@@ -24496,7 +24563,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"cpuVcpus\"")
 			}
 		case "createdAt":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -24508,7 +24575,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdAt\"")
 			}
 		case "id":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -24530,7 +24597,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"imageKind\"")
 			}
 		case "memoryBytes":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Int64()
 				s.MemoryBytes = int64(v)
@@ -24542,7 +24609,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"memoryBytes\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -24564,7 +24631,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"platform\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -24586,7 +24653,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"providerInstance\"")
 			}
 		case "providerInstanceId":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.ProviderInstanceId = string(v)
@@ -24598,7 +24665,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"providerInstanceId\"")
 			}
 		case "storageBytes":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.StorageBytes = int64(v)
@@ -24620,7 +24687,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"health\"")
 			}
 		case "ready":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := d.Bool()
 				s.Ready = bool(v)
@@ -24632,7 +24699,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"ready\"")
 			}
 		case "schedulable":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := d.Bool()
 				s.Schedulable = bool(v)
@@ -24644,7 +24711,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"schedulable\"")
 			}
 		case "degraded":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := d.Bool()
 				s.Degraded = bool(v)
@@ -24686,7 +24753,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"provisionProgressAt\"")
 			}
 		case "availableCpuVcpus":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				v, err := d.Float64()
 				s.AvailableCpuVcpus = float64(v)
@@ -24698,7 +24765,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableCpuVcpus\"")
 			}
 		case "availableMemoryBytes":
-			requiredBitSet[2] |= 1 << 5
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableMemoryBytes = int64(v)
@@ -24710,7 +24777,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableMemoryBytes\"")
 			}
 		case "availableStorageBytes":
-			requiredBitSet[2] |= 1 << 6
+			requiredBitSet[2] |= 1 << 7
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableStorageBytes = int64(v)
@@ -24753,7 +24820,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resourcesReportedAt\"")
 			}
 		case "desiredState":
-			requiredBitSet[3] |= 1 << 2
+			requiredBitSet[3] |= 1 << 3
 			if err := func() error {
 				if err := s.DesiredState.Decode(d); err != nil {
 					return err
@@ -24763,7 +24830,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"desiredState\"")
 			}
 		case "state":
-			requiredBitSet[3] |= 1 << 3
+			requiredBitSet[3] |= 1 << 4
 			if err := func() error {
 				if err := s.State.Decode(d); err != nil {
 					return err
@@ -24783,7 +24850,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"stateChangedAt\"")
 			}
 		case "generation":
-			requiredBitSet[3] |= 1 << 5
+			requiredBitSet[3] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.Generation = int64(v)
@@ -24795,7 +24862,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"generation\"")
 			}
 		case "observedGeneration":
-			requiredBitSet[3] |= 1 << 6
+			requiredBitSet[3] |= 1 << 7
 			if err := func() error {
 				v, err := d.Int64()
 				s.ObservedGeneration = int64(v)
@@ -24867,7 +24934,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"revokedAt\"")
 			}
 		case "updatedAt":
-			requiredBitSet[4] |= 1 << 5
+			requiredBitSet[4] |= 1 << 6
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -24888,11 +24955,11 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [5]uint8{
-		0b11011100,
-		0b11011010,
-		0b01110001,
-		0b01101100,
-		0b00100000,
+		0b10111000,
+		0b10110101,
+		0b11100011,
+		0b11011000,
+		0b01000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -47011,11 +47078,18 @@ func (s *SandboxRuntimeConfigAgent) encodeFields(e *jx.Encoder) {
 			s.ControlPlanePower.Encode(e)
 		}
 	}
+	{
+		if s.TLS.Set {
+			e.FieldStart("tls")
+			s.TLS.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfSandboxRuntimeConfigAgent = [2]string{
+var jsonFieldsNameOfSandboxRuntimeConfigAgent = [3]string{
 	0: "idleTimeout",
 	1: "controlPlanePower",
+	2: "tls",
 }
 
 // Decode decodes SandboxRuntimeConfigAgent from json.
@@ -47046,6 +47120,16 @@ func (s *SandboxRuntimeConfigAgent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"controlPlanePower\"")
 			}
+		case "tls":
+			if err := func() error {
+				s.TLS.Reset()
+				if err := s.TLS.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tls\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -47066,6 +47150,119 @@ func (s *SandboxRuntimeConfigAgent) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxRuntimeConfigAgent) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxRuntimeConfigAgentTLS) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxRuntimeConfigAgentTLS) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("cert")
+		e.Str(s.Cert)
+	}
+	{
+		if s.Key.Set {
+			e.FieldStart("key")
+			s.Key.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxRuntimeConfigAgentTLS = [2]string{
+	0: "cert",
+	1: "key",
+}
+
+// Decode decodes SandboxRuntimeConfigAgentTLS from json.
+func (s *SandboxRuntimeConfigAgentTLS) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxRuntimeConfigAgentTLS to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "cert":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Cert = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cert\"")
+			}
+		case "key":
+			if err := func() error {
+				s.Key.Reset()
+				if err := s.Key.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"key\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxRuntimeConfigAgentTLS")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxRuntimeConfigAgentTLS) {
+					name = jsonFieldsNameOfSandboxRuntimeConfigAgentTLS[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxRuntimeConfigAgentTLS) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxRuntimeConfigAgentTLS) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -56339,6 +56536,12 @@ func (s *UpdatePoolBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.DisableAgentEndpointTls.Set {
+			e.FieldStart("disableAgentEndpointTls")
+			s.DisableAgentEndpointTls.Encode(e)
+		}
+	}
+	{
 		if s.CpuVcpus.Set {
 			e.FieldStart("cpuVcpus")
 			s.CpuVcpus.Encode(e)
@@ -56364,13 +56567,14 @@ func (s *UpdatePoolBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdatePoolBody = [6]string{
+var jsonFieldsNameOfUpdatePoolBody = [7]string{
 	0: "egress",
 	1: "$schema",
-	2: "cpuVcpus",
-	3: "memoryBytes",
-	4: "name",
-	5: "storageBytes",
+	2: "disableAgentEndpointTls",
+	3: "cpuVcpus",
+	4: "memoryBytes",
+	5: "name",
+	6: "storageBytes",
 }
 
 // Decode decodes UpdatePoolBody from json.
@@ -56400,6 +56604,16 @@ func (s *UpdatePoolBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
+			}
+		case "disableAgentEndpointTls":
+			if err := func() error {
+				s.DisableAgentEndpointTls.Reset()
+				if err := s.DisableAgentEndpointTls.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"disableAgentEndpointTls\"")
 			}
 		case "cpuVcpus":
 			if err := func() error {

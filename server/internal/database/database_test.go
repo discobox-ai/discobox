@@ -1728,3 +1728,58 @@ func TestHarnessCaptureMigrationPreservesConfig(t *testing.T) {
 		t.Fatal("missing receipt table")
 	}
 }
+
+// A pool made before agent TLS was the default keeps the plain HTTP its
+// sandboxes were made with; one made after gets TLS, and a later start
+// touches neither (ADR 26-10-29-481 §3).
+func TestMigrateKeepsExistingPoolsOnPlainAgentEndpoints(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{Driver: gormdb.DriverSQLite, DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	project := model.Project{ID: "project-1", Name: "project"}
+	if err := db.Write.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	provider := model.SandboxProviderInstance{ID: "provider-1", ProjectID: project.ID, Name: "provider", Type: "docker"}
+	if err := db.Write.Create(&provider).Error; err != nil {
+		t.Fatal(err)
+	}
+	old := model.Pool{ID: "pool-old", ProjectID: project.ID, PoolManifest: model.PoolManifest{ProviderInstanceID: provider.ID, Name: "old"}}
+	if err := db.Write.Create(&old).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The schema that row was written under: no setting.
+	if err := db.Write.Exec("ALTER TABLE pools DROP COLUMN disable_agent_endpoint_tls").Error; err != nil {
+		t.Fatalf("drop pools.disable_agent_endpoint_tls: %v", err)
+	}
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fresh := model.Pool{ID: "pool-new", ProjectID: project.ID, PoolManifest: model.PoolManifest{ProviderInstanceID: provider.ID, Name: "new"}}
+	if err := db.Write.Create(&fresh).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotOld, gotFresh model.Pool
+	if err := db.Write.First(&gotOld, "id = ?", old.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Write.First(&gotFresh, "id = ?", fresh.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !gotOld.DisableAgentEndpointTLS {
+		t.Error("a pool from before the setting serves its agents over TLS; want it kept on plain HTTP")
+	}
+	if gotFresh.DisableAgentEndpointTLS {
+		t.Error("a pool made since the setting is on plain HTTP; want TLS by default")
+	}
+}

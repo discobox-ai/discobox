@@ -577,11 +577,12 @@ func TestBuildSandboxDocumentOverlaysConfiguredFilesOntoRuntimeLayer(t *testing.
 }
 
 func TestWriteSandboxManifestIsWorldReadable(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sandbox.json")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sandbox.json")
 	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeSandboxManifest(path, []byte("new")); err != nil {
+	if err := writeSandboxManifest(dir, []byte("new")); err != nil {
 		t.Fatalf("write sandbox manifest: %v", err)
 	}
 	info, err := os.Stat(path)
@@ -596,6 +597,34 @@ func TestWriteSandboxManifestIsWorldReadable(t *testing.T) {
 		if got, want := info.Mode().Perm(), os.FileMode(0o644); got != want {
 			t.Fatalf("sandbox manifest mode = %04o, want %04o", got, want)
 		}
+	}
+}
+
+// The config volume is the sandbox's to write, and is reused when its
+// container is replaced: a link it planted at sandbox.json is replaced, not
+// followed onto the host the pool agent writes as root.
+func TestWriteSandboxManifestReplacesAPlantedLink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no pool agent writes a config volume on Windows")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "host-file")
+	if err := os.WriteFile(target, []byte("host file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"sandbox.json", "sandbox.json.tmp"} {
+		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writeSandboxManifest(dir, []byte("new")); err != nil {
+		t.Fatalf("write sandbox manifest over planted links: %v", err)
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != "host file" {
+		t.Fatalf("the host file a link named = %q, %v; want it untouched", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(dir, "sandbox.json")); err != nil || string(got) != "new" {
+		t.Fatalf("sandbox.json = %q, %v; want the manifest written in the volume", got, err)
 	}
 }
 

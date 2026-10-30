@@ -16,6 +16,9 @@ type poolOptions struct {
 	cpuVCPUs float64
 	memory   byteSizeFlag
 	storage  byteSizeFlag
+	// disableAgentEndpointTLS has the pool reach its sandboxes' agents over
+	// plain HTTP rather than TLS (ADR 26-10-29-481 §3).
+	disableAgentEndpointTLS bool
 }
 
 func (a *App) newPoolCommand() *cobra.Command {
@@ -119,6 +122,9 @@ time and cannot be moved.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Comm
 		if cmd.Flags().Changed("storage") {
 			body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storage.bytes))
 		}
+		if cmd.Flags().Changed("disable-agent-endpoint-tls") {
+			body.SetDisableAgentEndpointTls(apiclientgen.NewOptBool(opts.disableAgentEndpointTLS))
+		}
 		poolRes, err := client.CreatePool(cmd.Context(), body, apiclientgen.CreatePoolParams{ProjectId: projectID})
 		if err != nil {
 			return err
@@ -170,6 +176,9 @@ base-image pulls are not filtered by any level (ADR 26-10-01-032 §7).
 		}
 		if cmd.Flags().Changed("storage") {
 			body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storage.bytes))
+		}
+		if cmd.Flags().Changed("disable-agent-endpoint-tls") {
+			body.SetDisableAgentEndpointTls(apiclientgen.NewOptBool(opts.disableAgentEndpointTLS))
 		}
 		level, ok, err := egressOpts.update(cmd, func() (apimodel.EgressPolicy, error) {
 			res, err := client.GetPool(cmd.Context(), apiclientgen.GetPoolParams{ProjectId: projectID, PoolId: poolID})
@@ -286,6 +295,7 @@ func addPoolAttributeFlags(cmd *cobra.Command, opts *poolOptions) {
 	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "vCPUs for the pool's VM, on providers that size a VM per pool (0 = provider and host default)")
 	cmd.Flags().Var(&opts.memory, "memory", "Memory for the pool's VM, such as 8g or 512m, on providers that size a VM per pool (0 = provider and host default)")
 	cmd.Flags().Var(&opts.storage, "storage", "Storage for the pool, such as 100g; no provider accepts it today (0 = unset)")
+	cmd.Flags().BoolVar(&opts.disableAgentEndpointTLS, "disable-agent-endpoint-tls", false, "Reach the pool's discoboxes' agents over plain HTTP instead of TLS; a discobox takes a change when its box is next made (a VM discobox at its next start, a container when it is replaced)")
 }
 
 func (a *App) newPoolDeleteCommand() *cobra.Command {

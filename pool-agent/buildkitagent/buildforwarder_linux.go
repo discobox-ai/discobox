@@ -90,12 +90,12 @@ func ServeBuildForwarder(ctx context.Context, root layout.Root, containerID, san
 	if err != nil {
 		return err
 	}
-	forwarder, err := bridge.New(ctx, bridge.Config{
-		WorkerProxyURL: PoolProxyURL,
+	forwarder, err := bridge.New(ctx, bridge.Config{Pool: bridge.DialConfig{
+		URL:            PoolProxyURL,
 		MTLSCAPath:     filepath.Join(root.ProxyCerts(projectID, poolID), "mtls-ca.crt"),
 		ClientCertPath: filepath.Join(certDir, "client.crt"),
 		ClientKeyPath:  filepath.Join(certDir, "client.key"),
-	})
+	}})
 	if err != nil {
 		_ = listener.Close()
 		return fmt.Errorf("build forwarder for %s: %w", sandboxID, err)

@@ -32,6 +32,11 @@ type sandboxCore struct {
 	projectID             string
 	poolID                string
 	controlPlanePublicKey string
+	// agentTLS is whether this pool's sandboxes' agents serve their API over
+	// TLS, which it tells each in its bootstrap as it is made (ADR
+	// 26-10-29-481 §3). A sandbox already made is reached as it was made
+	// (agentServesTLS).
+	agentTLS bool
 	// root is where this pool's state is, as this process sees it.
 	root layout.Root
 	// gitCache is this pool's cache of Git: one repository per remote, a

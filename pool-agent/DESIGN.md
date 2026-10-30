@@ -55,9 +55,14 @@ applies it, laying and starting the agent's unit.
    URL each, and the scheme alone picks the transport ([`wire`](../pkg/wire),
    in the root module). The bootstrap also names the sandbox runtime: `docker`
    (the default) or `machine`, with its disco-vm driver, the disco-vm project
-   its sandboxes' machines are made in, the base they boot and the provider
-   network they share with the pool's machine.
-2. The agent writes the proxy unit's environment and prepares the proxy CA
+   its sandboxes' machines are made in, the base they boot, the provider
+   network they share with the pool's machine, and that machine's public and
+   private URLs. Every pool's bootstrap says whether it reaches its sandboxes'
+   agents over TLS (`disableAgentEndpointTls`; [The Agent's
+   TLS](#the-agents-tls)).
+2. The agent settles how its sandboxes reach it (`resolvePoolHop`, see
+   [The Hop](#the-hop)) and writes the proxy unit's environment, with the
+   tunnel URL of a pool reached through an edge, and prepares the proxy CA
    bundle and control key, names its own host by the pool's server name in
    `/etc/hosts` (`ensurePoolName`, never DNS), and renders the
    BuildKit/registry configuration, on every pool. It starts the child systemd namespace — only as PID 1 in a
@@ -76,8 +81,10 @@ applies it, laying and starting the agent's unit.
    plane stamps `RegisteredAt` on a pool's first heartbeat.
 6. The agent starts the proxy unit's resolve-token refresher. A Docker pool
    builds its Docker sandbox runtime and starts that runtime's image reclaim
-   loop. A machine pool opens its own disco-vm engine before its first report
-   and builds the machine runtime on it ([Machine Sandboxes](#machine-sandboxes)).
+   loop. A machine pool opens its own disco-vm engine before its first report,
+   refuses a driver that cannot isolate and fence a sandbox's machine
+   (`requireMachineFence`), and builds the machine runtime on it
+   ([Machine Sandboxes](#machine-sandboxes)).
 7. `Serve`, handed the runtime as `sandboxruntime.Runtime`, starts the state,
    progress, tree-reaper, status-poll and resource loops and the proxy-material
    reclaim loop, and finally the pool-local HTTP server.
@@ -112,8 +119,8 @@ pool from before platforms hosts. Beside it, it declares the kind of image the p
 runs (`poolStatus.imageKind`, ADR 26-10-09-106 §4): `oci` for a Docker pool,
 whose sandboxes are containers, and `vm/<driver>` for a machine pool, which
 reports none of its own machine's CPU and memory as capacity — its sandboxes
-run on its driver — and names the driver's limits (`maxRunning`, `isolation`)
-in its `runtime` condition instead, beside why it schedules nothing
+run on its driver — and names the driver's limits (`maxRunning`, `isolation`,
+`egress`) and its hop (`direct` or `edge`) in its `runtime` condition instead
 ([Machine Sandboxes](#machine-sandboxes)). The same platform is the runtime's
 (`DockerSandboxRuntimeConfig.Platform`), and every path the runtime names inside
 a sandbox — a source's target, the user's home, the working directory, the
@@ -289,11 +296,48 @@ flowchart LR
   for the agent's answer as long as the call may take: a refusal is answered
   before any of the document is sent, whatever its size. Upgrades
   (exec attach, tunnels) carry on over the dialed connection.
+- Where a sandbox's bootstrap told its agent to serve TLS, the dial to its
+  agent speaks TLS ([The Agent's TLS](#the-agents-tls)); every other port is
+  the sandbox's own, and stays as the runtime dials it.
 - The connection is never an authority. The sandbox agent validates its own
   token on every request — the status poll's `status:read` and `inventory:read` token (ADR 0030),
   the proxy's downstream `Authorization`, the pool-signed runtime-config
   token — and a lost connection is not a
   power-state signal: power state comes from the runtime's own channel below.
+
+### The Agent's TLS
+
+A pool reaches its sandboxes' agents over TLS unless the pool sets
+`disableAgentEndpointTls` — a pool's own setting, off for a pool made now and
+turned on by the upgrade for every pool made before
+([ADR 26-10-29-481](../docs/adr/26-10-29-481-a-machine-sandbox-and-its-pool-reach-each-other-at-their-private-urls-over-tls-the-pools-ca-issues.md)
+§3). The bootstrap tells the agent (`Bootstrap.DisableAgentEndpointTLS`); a
+pool reached through an edge serves plain HTTP whatever it sets, since the
+edge speaks HTTP to its sandboxes' agents (`poolHop.agentTLS`). On every
+runtime:
+
+- **The bootstrap says it.** Each sandbox's bootstrap tells its agent to serve
+  TLS alone or plain HTTP alone (`sandboxconfig.AgentRuntime.TLS`), and the
+  pool records what it told it in the sandbox's tree (`agent-tls.json`), which
+  is how the agent is dialed (`agentDialer`): over TLS verified against the
+  pool's CA for the sandbox's private name (`sandboxconfig.AgentServerName`,
+  `proxyagent.SandboxAgentTLSConfig`), wherever it was dialed, or plain. A
+  sandbox with no record was made before the setting, with plain HTTP. Nothing
+  is learned from an agent before it is sent anything.
+- **A sandbox takes the setting when its box is made again.** A container
+  takes it when it is replaced; a machine at its next start, since its place
+  step places its bootstrap again and a moved bootstrap restarts it. Until
+  then it is reached as it was made.
+- **The keypair** is issued with the rest of the sandbox's material
+  (`proxyagent.EnsureSandboxMaterial`, `Agent`) for its private name, kept under
+  the pool's certificates by that name and removed with its client
+  certificate. It is placed before the agent starts, at every start: a
+  container's in its config volume (`placeAgentKeypair`, in `placeAgent`),
+  through an `os.Root`, since the sandbox can write that volume; a machine's in
+  the tree its place step copies, outside the bootstrap's digest, so a renewal
+  restarts nothing. The runtime-config document renews it (`agent.tls`) for an
+  agent told to serve TLS, and for no other: one told plain HTTP may predate
+  the field.
 
 ## Sandbox Runtime Config
 
@@ -320,8 +364,11 @@ flowchart LR
 
 - **Bootstrap** (`writeSandboxHarnessConfig`): the create-time config, the
   control plane's and the pool's public keys (`provider.publicKeys`), and where
-  the pool serves the sandbox (`provider.pool`, `proxyagent.PoolEndpoints`). No
-  private key, no secret, no idle timeout. It also removes a readiness marker
+  the pool serves the sandbox (`provider.pool`, `proxyagent.PoolEndpoints`),
+  and whether its agent serves TLS (`agentRuntime.tls`, [The Agent's
+  TLS](#the-agents-tls)). No private key, no secret, no idle timeout. It is
+  written through an `os.Root` (`writeRootFile`), since the sandbox can write
+  the volume, which a replaced container's successor reuses. It also removes a readiness marker
   left from an earlier container, so a new one's gate waits for its own agent.
   The config and secrets binds are writable inside the sandbox, because its
   agent is now what writes them.
@@ -335,8 +382,11 @@ flowchart LR
   for a sandbox whose last status advertised `autostop.controlPlanePower`
   (`handsOverPower`), because an agent that predates the field refuses the
   whole document over it; before the poll has reached a sandbox since this
-  agent started, the recorded value stands ([ADR 26-10-16-337](../docs/adr/26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md) §8). The record never
-  holds the client key; delivery adds it from the proxy material.
+  agent started, the recorded value stands ([ADR 26-10-16-337](../docs/adr/26-10-16-337-a-discobox-asks-to-sleep-and-names-when-to-wake.md) §8). `agent.tls`
+  renews the agent's keypair, for a sandbox whose bootstrap told its agent to
+  serve TLS alone ([The Agent's TLS](#the-agents-tls)). The
+  record never holds a private key; delivery adds each from the proxy
+  material.
   `project-layer.json` beside it is the project layer the pool decided for the
   bootstrap and the slug it is read from — never `_provenance` read back from a
   file the sandbox can write.
@@ -859,7 +909,7 @@ error. Only boxd is linked.
 
 ```mermaid
 flowchart LR
-    create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom the driver's base\n(isolated, on the pool's network)"]
+    create["CreateSandbox"] --> inst["machine named by the sandbox ID\nfrom the driver's base\n(isolated, on the pool's network,\nfenced to the pool)"]
     inst --> start["startLocked: engine.Start"]
     start --> place["place: sandbox.json,\nagentlayer.Archive, then\ndiscobox-provision apply"]
     place -->|"placed before with something else"| restart["restart the machine"]
@@ -869,8 +919,13 @@ flowchart LR
 
 - **One machine per sandbox**, named by its ID in disco-vm's spelling
   (`sbx_1` → `sbx-1`), so a create that was lost is found by name. A machine
-  is made `Isolated` on `MachineNetwork` (ADR 26-10-23-551 §4); a driver that
-  cannot isolate one is refused.
+  is made `Isolated` on `MachineNetwork` (ADR 26-10-23-551 §4) and fenced to
+  what the pool's hop reaches (`Egress`; [The Hop](#the-hop)), which the
+  driver sets and reads back before the create returns, so the fence holds
+  before anything is placed. A driver that cannot isolate or fence is
+  refused, and a machine found by name whose fence its driver reports
+  otherwise — made before the fence, or by hand — is refused rather than run
+  (`fenced`).
 - **Every start places**: sandbox.json at `/etc/discobox`, the agent layer
   when the pool's record does not say it is there, the units and the pins, then
   runs `discobox-provision apply` through the provisioner. A machine keeps its
@@ -881,8 +936,9 @@ flowchart LR
   (ADR 26-10-27-345 §2): the instance's TCP `Service.Listen` is written into
   sandbox.json as the agent's listen address, since the driver gives an
   instance the same one at every boot, and the
-  pool reaches the agent at the instance's one URL (`SandboxDialer`: TLS for an
-  `https` URL). No other port of a machine is reached.
+  pool reaches the agent at the instance's private URL (`SandboxDialer`,
+  `Engine.PrivateURL`: TLS for an `https` URL), on the pool's network rather
+  than through the provider's edge. No other port of a machine is reached.
 - **Power is the engine's.** State is read from the driver; one it cannot be
   asked for keeps the state last seen, since a lost connection is not a stop.
   The state channel polls (no event stream), and a poll that cannot read every
@@ -907,10 +963,28 @@ flowchart LR
   tree nor a held sandbox names, once it has been so for the trees' retention
   (its clock under the pool's `machine-orphans`). A machine of any other name
   is left alone.
-- **It schedules nothing.** Isolating a machine bounds what its provider gives
-  it, not its egress, so the pool reports itself unschedulable, with a
-  `runtime` condition saying why, while nothing holds a machine's way out to
-  the pool's proxy (ADR 26-10-23-551 §5).
+
+### The Hop
+
+A machine pool is reached the way a Docker pool is
+([ADR 26-10-29-481](../docs/adr/26-10-29-481-a-machine-sandbox-and-its-pool-reach-each-other-at-their-private-urls-over-tls-the-pools-ca-issues.md)):
+its agent and proxy unit run on its box, and its sandboxes reach the proxy,
+credentials, DNS and the mediator over mTLS with their client certificates,
+verified as `discobox-pool-proxy`. Only the address under them is the
+driver's: the server writes the pool machine's public and private URLs into
+the bootstrap, and `resolvePoolHop` derives from them, once, at start:
+
+| the pool's private URL | its sandboxes' endpoints | a sandbox machine's fence |
+| --- | --- | --- |
+| not its public URL: a direct path | `https://discobox-pool-proxy:<port>`, as on a Docker pool, with the private URL's host as discobox's answer for the name (`PoolEndpoints.Address`), which the sandbox's bridges dial in its place and resolve through the provider at each dial | nothing beyond the pool's network |
+| its public URL: an edge | `wss://<host>/tunnel/<service>`, the tunnel of [Pools Behind An Edge](#pools-behind-an-edge), carried from the agent's own listener to the tunnel listener (`TunnelForwarder`), since an edge reaches that port alone | the edge's host alone |
+
+The names are discobox's own, as a private DNS would answer them: the
+provider's name for the pool's machine, and its address, are never in an
+endpoint or a certificate. The pool's own machine keeps its internet: its
+proxy is the sandboxes' way out. A Docker pool's hop is its name on the pool's
+network, which Docker's DNS answers, or the edge its environment names, and
+its network is its fence.
 
 ## Clearing the Pool's Caches
 
@@ -1037,7 +1111,10 @@ listener. Outbound calls — status, state and resource reports,
 proxy secret resolution — use `wire.HTTPClient` on the control-plane URL, which
 dials TCP, host CID 2 over VSOCK, or the Unix socket `discobox-cp-relay` serves
 in a wslc guest. HTTP routes and authentication are identical across
-transports.
+transports. A machine pool reached only through an edge also serves its
+sandboxes' tunnels on that listener (`/tunnel/*`, `Config.Tunnels`), the one
+port its edge reaches, carried to the proxy unit's tunnel listener with no
+token: the mTLS inside each stream names the caller ([The Hop](#the-hop)).
 
 The pool agent must reject requests whose `{project_id}` or `{pool_id}` do
 not match its bootstrap identity. It must also reject sandbox operation requests
@@ -1518,9 +1595,11 @@ flowchart LR
 ```
 
 - `DISCOBOX_POOL_TUNNEL_URL` on the pool container (a `wss` URL with no path)
-  turns it on. No provider sets it yet: the one that places a pool's
-  sandboxes off its network sets it, per pool, and exposes the listener to
-  the edge. The agent reads it once: `proxyagent.PoolEndpoints` then names
+  turns it on. No provider sets it on a Docker pool yet: the one that places a
+  pool's sandboxes off its network sets it, per pool, and exposes the
+  listener to the edge. A machine pool whose driver gives its machines no
+  path but its public URL takes the URL from its bootstrap instead
+  ([The Hop](#the-hop)). The agent reads it once: `proxyagent.PoolEndpoints` then names
   `<url>/tunnel/<service>` for every endpoint in each bootstrap, and nothing
   else, and the unit environment file hands it to the proxy unit.
 - Its BuildKit endpoint is a tunnel to the mediator like the rest. A build's

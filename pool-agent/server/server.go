@@ -55,10 +55,19 @@ type Config struct {
 	// port (layout.ProxyAssetsSocket).
 	AssetListener net.Listener
 	Assets        http.Handler
+	// Tunnels, when set, serves /tunnel/ on Listener: the tunnels of a
+	// machine pool's sandboxes that reach it only through an edge, which
+	// forwards to this listener alone, carried on to the proxy unit's tunnel
+	// listener (ADR 26-10-29-481 §2). Nothing names a caller until the mTLS
+	// inside a stream completes there, so it takes no token here.
+	Tunnels http.Handler
 }
 
 func NewRouter(cfg Config) (*chi.Mux, error) {
 	router := chi.NewRouter()
+	if cfg.Tunnels != nil {
+		router.Handle("/tunnel/*", cfg.Tunnels)
+	}
 	router.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})

@@ -47,14 +47,10 @@ type Forwarder struct {
 // Config controls a sandbox-local forwarder.
 type Config struct {
 	ListenAddress string
-	// WorkerProxyURL is the pool proxy, in DialConfig.URL's vocabulary.
-	WorkerProxyURL string
-	// ServerName is the name the pool proxy's certificate is verified as; see
-	// DialConfig.ServerName.
-	ServerName     string
-	MTLSCAPath     string
-	ClientCertPath string
-	ClientKeyPath  string
+	// Pool is how the forwarder reaches the pool proxy: its URL, the name
+	// its certificate is verified as, discobox's answer for that name, and
+	// the sandbox's material. A bridge config gives it whole (File.Dial).
+	Pool DialConfig
 
 	// LocalSubnets lists, as CIDRs, the networks this host is directly
 	// connected to. A connection whose first request is an HTTP proxy request
@@ -76,13 +72,7 @@ func New(ctx context.Context, cfg Config) (*Forwarder, error) {
 	if cfg.ListenAddress == "" {
 		cfg.ListenAddress = "127.0.0.1:0"
 	}
-	worker, err := NewDialer(DialConfig{
-		URL:            cfg.WorkerProxyURL,
-		ServerName:     cfg.ServerName,
-		MTLSCAPath:     cfg.MTLSCAPath,
-		ClientCertPath: cfg.ClientCertPath,
-		ClientKeyPath:  cfg.ClientKeyPath,
-	})
+	worker, err := NewDialer(cfg.Pool)
 	if err != nil {
 		return nil, err
 	}

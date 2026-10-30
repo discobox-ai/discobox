@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/netip"
 	"net/url"
 	"os"
@@ -115,6 +116,19 @@ func ValidateTunnelURL(value string) error {
 		return fmt.Errorf("%q must name only a host and port: the pool adds each service's path", value)
 	}
 	return nil
+}
+
+// TunnelForwarder carries tunnels that reach the pool agent's own listener on
+// to the tunnel listener: a machine pool its sandboxes reach only through an
+// edge, which forwards to the agent's one port and nothing else (ADR
+// 26-10-29-481 §2). Each tunnel's upgrade and stream pass through unread, so
+// the mTLS inside still ends at its service.
+func TunnelForwarder() http.Handler {
+	target := &url.URL{Scheme: "http", Host: loopback(TunnelListenAddress)}
+	return &httputil.ReverseProxy{Rewrite: func(r *httputil.ProxyRequest) {
+		r.SetURL(target)
+		r.Out.Host = r.In.Host
+	}}
 }
 
 // serveTunnels accepts the edge's tunnels until ctx ends, splicing each stream

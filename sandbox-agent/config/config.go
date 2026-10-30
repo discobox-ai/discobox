@@ -28,15 +28,18 @@ const (
 // via sandboxconfig.Effective before writing the file (ADR 0012 §8);
 // sandbox-agent reads it once, statically, and never merges anything itself.
 type Config struct {
-	Identity              Identity          `json:"identity"`
-	ControlPlanePublicKey string            `json:"controlPlanePublicKey"`
-	ListenAddress         string            `json:"listenAddress"`
-	WorkingRoot           string            `json:"workingRoot"`
-	ExecDefaults          ExecDefaults      `json:"execDefaults,omitempty"`
-	RuntimeDir            string            `json:"runtimeDir"`
-	DatabasePath          string            `json:"databasePath"`
-	Env                   map[string]string `json:"env,omitempty"`
-	Prompt                []string          `json:"prompt,omitempty"`
+	Identity              Identity `json:"identity"`
+	ControlPlanePublicKey string   `json:"controlPlanePublicKey"`
+	ListenAddress         string   `json:"listenAddress"`
+	// TLS serves the agent's API over TLS alone, as its pool reaches it (ADR
+	// 26-10-29-481 §3); unset serves plain HTTP alone.
+	TLS          bool              `json:"tls,omitempty"`
+	WorkingRoot  string            `json:"workingRoot"`
+	ExecDefaults ExecDefaults      `json:"execDefaults,omitempty"`
+	RuntimeDir   string            `json:"runtimeDir"`
+	DatabasePath string            `json:"databasePath"`
+	Env          map[string]string `json:"env,omitempty"`
+	Prompt       []string          `json:"prompt,omitempty"`
 	// Description is the one the sandbox was created with, which seeds its
 	// meta file when it has none (ADR 0136).
 	Description string `json:"description,omitempty"`
@@ -199,6 +202,7 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 		Pool:                  effective.Provider.Pool,
 		AwaitsRuntimeConfig:   effective.Provider.AwaitsRuntimeConfig(),
 		ListenAddress:         effective.AgentRuntime.ListenAddress,
+		TLS:                   effective.AgentRuntime.TLS,
 		WorkingRoot:           effective.WorkingRoot(sandboxPaths),
 		RuntimeDir:            effective.AgentRuntime.RuntimeDir,
 		DatabasePath:          effective.AgentRuntime.DatabasePath,

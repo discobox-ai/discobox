@@ -111,7 +111,7 @@ func (r *sandboxCore) readRuntimeConfig(sandboxID string) (sandboxconfig.Runtime
 }
 
 func (r *sandboxCore) writeRuntimeConfig(sandboxID string, doc sandboxconfig.RuntimeConfig) error {
-	data, err := json.MarshalIndent(runtimeConfigRecord{Document: withoutClientKey(doc)}, "", "  ")
+	data, err := json.MarshalIndent(runtimeConfigRecord{Document: doc.WithoutPrivateKeys()}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -173,11 +173,21 @@ func (r *sandboxCore) decideRuntimeConfig(sandboxID string, change func(*sandbox
 	}
 	proxy := material.Proxy
 	next.Proxy = &proxy
+	// Renewed for an agent its bootstrap told to serve TLS, which is new
+	// enough to know the field (ADR 26-10-29-481 §3).
+	serves, err := r.agentServesTLS(sandboxID)
+	if err != nil {
+		return sandboxconfig.RuntimeConfig{}, err
+	}
+	if serves {
+		keypair := material.Agent
+		next.Agent.TLS = &keypair
+	}
 	if err := r.refreshOriginTokens(sandboxID, &next); err != nil {
 		return sandboxconfig.RuntimeConfig{}, err
 	}
 	next.Revision = recorded.Revision
-	if !ok || !withoutClientKey(next).SameDocument(withoutClientKey(recorded)) {
+	if !ok || !next.WithoutPrivateKeys().SameDocument(recorded.WithoutPrivateKeys()) {
 		next.Revision = recorded.Revision + 1
 		if err := r.writeRuntimeConfig(sandboxID, next); err != nil {
 			return sandboxconfig.RuntimeConfig{}, fmt.Errorf("record runtime config: %w", err)
@@ -538,14 +548,4 @@ func cloneRuntimeConfig(doc sandboxconfig.RuntimeConfig) (sandboxconfig.RuntimeC
 // its bootstrap: standard base64.
 func encodePublicKey(key ed25519.PublicKey) string {
 	return base64.StdEncoding.EncodeToString(key)
-}
-
-func withoutClientKey(doc sandboxconfig.RuntimeConfig) sandboxconfig.RuntimeConfig {
-	if doc.Proxy == nil {
-		return doc
-	}
-	proxy := *doc.Proxy
-	proxy.ClientKey = ""
-	doc.Proxy = &proxy
-	return doc
 }

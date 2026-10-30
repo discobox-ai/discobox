@@ -1,6 +1,8 @@
 package proxyagent
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,9 +40,24 @@ func TestEnsureSandboxMaterialDeliversClientOnly(t *testing.T) {
 	if !strings.Contains(proxy.ClientKey, "PRIVATE KEY") {
 		t.Fatal("the sandbox's client key is missing")
 	}
-	doc := sandboxconfig.RuntimeConfig{Revision: 1, Proxy: &proxy}
+	// The agent's keypair is signed for the sandbox's ID, verifiable against
+	// the pool's CA as the pool dials it (ADR 26-10-29-481 §3).
+	agent := material.Agent
+	doc := sandboxconfig.RuntimeConfig{Revision: 1, Proxy: &proxy, Agent: sandboxconfig.RuntimeAgent{TLS: &agent}}
 	if err := doc.Validate(sandboxpath.Paths{}); err != nil {
 		t.Fatalf("the material does not make a valid document: %v", err)
+	}
+	config, err := SandboxAgentTLSConfig(root, "project-1", "pool-1", "sandbox-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode([]byte(agent.Cert))
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := leaf.Verify(x509.VerifyOptions{DNSName: config.ServerName, Roots: config.RootCAs, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}); err != nil {
+		t.Fatalf("the agent's certificate does not verify as the pool dials it: %v", err)
 	}
 	// Nothing is staged for the sandbox to read; the directory is only the
 	// reaper's record.
@@ -103,7 +120,7 @@ func TestPoolEndpointsBehindAnEdgeAreTunnels(t *testing.T) {
 	}
 }
 
-func TestRemoveSandboxMaterialDeletesStagedFilesAndClientCert(t *testing.T) {
+func TestRemoveSandboxMaterialDeletesStagedFilesAndCerts(t *testing.T) {
 	root := withTestRoot(t)
 
 	if _, err := EnsureSandboxMaterial(root, "project-1", "pool-1", "sandbox-1"); err != nil {
@@ -111,7 +128,8 @@ func TestRemoveSandboxMaterialDeletesStagedFilesAndClientCert(t *testing.T) {
 	}
 	materialDir := materialRecord(root, "project-1", "pool-1", "sandbox-1")
 	clientCertDir := filepath.Join(root.ProxyCerts("project-1", "pool-1"), "clients", "sandbox-1")
-	for _, dir := range []string{materialDir, clientCertDir} {
+	agentCertDir := filepath.Join(root.ProxyCerts("project-1", "pool-1"), "servers", sandboxconfig.AgentServerName("sandbox-1"))
+	for _, dir := range []string{materialDir, clientCertDir, agentCertDir} {
 		if _, err := os.Stat(dir); err != nil {
 			t.Fatalf("expected %q to exist before removal: %v", dir, err)
 		}
@@ -120,7 +138,7 @@ func TestRemoveSandboxMaterialDeletesStagedFilesAndClientCert(t *testing.T) {
 	if err := RemoveSandboxMaterial(root, "project-1", "pool-1", "sandbox-1"); err != nil {
 		t.Fatalf("RemoveSandboxMaterial(root, ) error = %v", err)
 	}
-	for _, dir := range []string{materialDir, clientCertDir} {
+	for _, dir := range []string{materialDir, clientCertDir, agentCertDir} {
 		if _, err := os.Stat(dir); !os.IsNotExist(err) {
 			t.Fatalf("expected %q removed, stat err = %v", dir, err)
 		}

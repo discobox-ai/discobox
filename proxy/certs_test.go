@@ -133,3 +133,59 @@ func TestPrepareCertificatesReissuesServerCertWhenHostsChange(t *testing.T) {
 		t.Fatalf("server certificate lost a retained host: %v", err)
 	}
 }
+
+// A server certificate the mTLS CA signs for a name verifies against that CA
+// for that name alone, is reused while it is far from its expiry, and is
+// reissued within renewBefore of it.
+func TestEnsureServerCertificate(t *testing.T) {
+	prepared, err := PrepareCertificates(PrepareOptions{Dir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+	bundle := prepared.Bundle
+	first, err := EnsureServerCertificate(bundle, "sbx_1", 2*time.Hour, time.Hour)
+	if err != nil {
+		t.Fatalf("EnsureServerCertificate() error = %v", err)
+	}
+	pair, err := tls.LoadX509KeyPair(first.CertPath, first.KeyPath)
+	if err != nil {
+		t.Fatalf("server certificate not loadable: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(bundle.MTLSCA.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	if _, err := leaf.Verify(x509.VerifyOptions{DNSName: "sbx_1", Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}); err != nil {
+		t.Fatalf("verify for its own name: %v", err)
+	}
+	if _, err := leaf.Verify(x509.VerifyOptions{DNSName: "sbx_2", Roots: roots}); err == nil {
+		t.Fatal("the certificate verified for another sandbox's name")
+	}
+
+	again, err := EnsureServerCertificate(bundle, "sbx_1", 2*time.Hour, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.ExpiresAt.Equal(first.ExpiresAt) {
+		t.Fatalf("a certificate far from expiry was reissued: %v, then %v", first.ExpiresAt, again.ExpiresAt)
+	}
+	renewed, err := EnsureServerCertificate(bundle, "sbx_1", 3*time.Hour, 3*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !renewed.ExpiresAt.After(first.ExpiresAt) {
+		t.Fatalf("a certificate within renewBefore of expiry was kept: %v, then %v", first.ExpiresAt, renewed.ExpiresAt)
+	}
+
+	for _, name := range []string{"", ".", "..", "a/b"} {
+		if _, err := EnsureServerCertificate(bundle, name, time.Hour, 0); err == nil {
+			t.Errorf("EnsureServerCertificate(%q) issued, want refused", name)
+		}
+	}
+}

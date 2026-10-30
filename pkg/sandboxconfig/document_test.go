@@ -100,3 +100,16 @@ func TestWorkingRootFallsBackToThePlatformDefault(t *testing.T) {
 		})
 	}
 }
+
+// A sandbox's agent is named in discobox's own private domain, its ID spelled
+// as a DNS label (ADR 26-10-29-481 §3).
+func TestAgentServerName(t *testing.T) {
+	for id, want := range map[string]string{
+		"sbx_01HXYZ":  "sbx-01hxyz.sandbox.discobox.internal",
+		" sandbox-1 ": "sandbox-1.sandbox.discobox.internal",
+	} {
+		if got := AgentServerName(id); got != want {
+			t.Errorf("AgentServerName(%q) = %q, want %q", id, got, want)
+		}
+	}
+}
