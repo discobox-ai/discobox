@@ -56,10 +56,12 @@ type timerMsg struct {
 // for, so a test can assert on the command a key press turned into rather than
 // on the frame it drew.
 type fakeSource struct {
-	harnessChanges       HarnessChanges
-	harnessChangesWrites []string
-	resources            Resources
-	mu                   sync.Mutex
+	harnessChanges        HarnessChanges
+	harnessChangesWrites  []string
+	harnessChangesSaveErr error
+	harnessChangesForces  []bool
+	resources             Resources
+	mu                    sync.Mutex
 	// skills is what the skills screen lists, and skillsErr what an add
 	// fails with.
 	skills    []SkillsEntry
@@ -2164,10 +2166,14 @@ func (f *fakeSource) HarnessChanges(_ context.Context, id string) (HarnessChange
 	f.onServer = append(f.onServer, "HarnessChanges@"+id)
 	return f.harnessChanges, nil
 }
-func (f *fakeSource) SaveHarnessChanges(_ context.Context, id, candidate string) (string, error) {
+func (f *fakeSource) SaveHarnessChanges(_ context.Context, id, candidate string, force bool) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.harnessChangesWrites = append(f.harnessChangesWrites, "save "+id+" "+candidate)
+	f.harnessChangesForces = append(f.harnessChangesForces, force)
+	if !force {
+		return "", f.harnessChangesSaveErr
+	}
 	return "saved", nil
 }
 func (f *fakeSource) DiscardHarnessChanges(_ context.Context, id, candidate string) (string, error) {

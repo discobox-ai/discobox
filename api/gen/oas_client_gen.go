@@ -1000,7 +1000,8 @@ type Invoker interface {
 	ResumeSandboxAutostop(ctx context.Context, params ResumeSandboxAutostopParams) (ResumeSandboxAutostopRes, error)
 	// SaveSandboxHarnessConfigChanges invokes save-sandbox-harness-config-changes operation.
 	//
-	// Save sandbox harness config changes.
+	// Revision conflicts return 409 with problem type urn:discobox:harness-config-revision-conflict and
+	// can be retried with force. Other conflicts require the recovery described in the response.
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
 	SaveSandboxHarnessConfigChanges(ctx context.Context, request *HarnessConfigCandidateRequest, params SaveSandboxHarnessConfigChangesParams) (SaveSandboxHarnessConfigChangesRes, error)
@@ -17860,7 +17861,8 @@ func (c *Client) sendResumeSandboxAutostop(ctx context.Context, params ResumeSan
 
 // SaveSandboxHarnessConfigChanges invokes save-sandbox-harness-config-changes operation.
 //
-// Save sandbox harness config changes.
+// Revision conflicts return 409 with problem type urn:discobox:harness-config-revision-conflict and
+// can be retried with force. Other conflicts require the recovery described in the response.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
 func (c *Client) SaveSandboxHarnessConfigChanges(ctx context.Context, request *HarnessConfigCandidateRequest, params SaveSandboxHarnessConfigChangesParams) (SaveSandboxHarnessConfigChangesRes, error) {
@@ -17946,6 +17948,27 @@ func (c *Client) sendSaveSandboxHarnessConfigChanges(ctx context.Context, reques
 	}
 	pathParts[4] = "/harness-config-changes/save"
 	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "force" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "force",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Force.Get(); ok {
+				return e.EncodeValue(conv.BoolToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
 
 	stage = "EncodeRequest"
 	r, err := ht.NewRequest(ctx, "POST", u)

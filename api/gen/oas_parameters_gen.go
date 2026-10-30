@@ -19433,6 +19433,9 @@ func decodeResumeSandboxAutostopParams(args [2]string, argsEscaped bool, r *http
 type SaveSandboxHarnessConfigChangesParams struct {
 	ProjectId string
 	SandboxId string
+	// Overwrite config and credential changes despite stale revisions. Candidate identity, manifest and
+	// validation checks still apply.
+	Force OptBool `json:",omitempty,omitzero"`
 }
 
 func unpackSaveSandboxHarnessConfigChangesParams(packed middleware.Parameters) (params SaveSandboxHarnessConfigChangesParams) {
@@ -19450,10 +19453,20 @@ func unpackSaveSandboxHarnessConfigChangesParams(packed middleware.Parameters) (
 		}
 		params.SandboxId = packed[key].(string)
 	}
+	{
+		key := middleware.ParameterKey{
+			Name: "force",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Force = v.(OptBool)
+		}
+	}
 	return params
 }
 
 func decodeSaveSandboxHarnessConfigChangesParams(args [2]string, argsEscaped bool, r *http.Request) (params SaveSandboxHarnessConfigChangesParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
 	// Decode path: projectId.
 	if err := func() error {
 		param := args[0]
@@ -19541,6 +19554,47 @@ func decodeSaveSandboxHarnessConfigChangesParams(args [2]string, argsEscaped boo
 		return params, &ogenerrors.DecodeParamError{
 			Name: "sandboxId",
 			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: force.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "force",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotForceVal bool
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToBool(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotForceVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Force.SetTo(paramsDotForceVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "force",
+			In:   "query",
 			Err:  err,
 		}
 	}

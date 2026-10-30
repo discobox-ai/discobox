@@ -21676,7 +21676,8 @@ func (s *Server) handleResumeSandboxAutostopRequest(args [2]string, argsEscaped 
 
 // handleSaveSandboxHarnessConfigChangesRequest handles save-sandbox-harness-config-changes operation.
 //
-// Save sandbox harness config changes.
+// Revision conflicts return 409 with problem type urn:discobox:harness-config-revision-conflict and
+// can be retried with force. Other conflicts require the recovery described in the response.
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
 func (s *Server) handleSaveSandboxHarnessConfigChangesRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -21796,6 +21797,10 @@ func (s *Server) handleSaveSandboxHarnessConfigChangesRequest(args [2]string, ar
 					Name: "sandboxId",
 					In:   "path",
 				}: params.SandboxId,
+				{
+					Name: "force",
+					In:   "query",
+				}: params.Force,
 			},
 			Raw: r,
 		}

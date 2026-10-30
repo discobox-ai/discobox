@@ -3254,6 +3254,7 @@ Each changed file is a section of colored unified diff hunks (`diffStyle`, share
 with the pull view), as the data source computes them.
 Long settings scroll with PgUp/PgDn while save/discard actions remain visible.
 Save and discard retain the exact displayed candidate ID. A diagnostic-only
-candidate cannot be saved; refresh explicitly reads a new preview. Conflicts
-remain explicit and direct the user to `admin harness reconsider` selections.
-Nothing saves automatically.
+candidate cannot be saved; refresh explicitly reads a new preview. Revision conflicts
+open an overwrite confirmation; accepting retries that exact candidate with
+force, and cancelling sends no retry. Other conflicts retain the server
+recovery instructions. Nothing saves automatically.

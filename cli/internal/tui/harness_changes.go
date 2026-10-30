@@ -1,11 +1,14 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 )
+
+var ErrHarnessChangesConflict = errors.New("shared harness configuration changed")
 
 const harnessChangesKey = "H"
 
@@ -36,8 +39,12 @@ type harnessChangesLoadedMsg struct {
 }
 
 type harnessChangesDoneMsg struct {
-	state string
-	err   error
+	box         Sandbox
+	candidateID string
+	save        bool
+	force       bool
+	state       string
+	err         error
 }
 
 func (m *Model) reviewHarnessChanges(box Sandbox) tea.Cmd {
@@ -106,11 +113,11 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 			var state string
 			var err error
 			if key == "s" {
-				state, err = m.ds.SaveHarnessChanges(m.ctx, msg.box.ID, c.CandidateID)
+				state, err = m.ds.SaveHarnessChanges(m.ctx, msg.box.ID, c.CandidateID, false)
 			} else {
 				state, err = m.ds.DiscardHarnessChanges(m.ctx, msg.box.ID, c.CandidateID)
 			}
-			return harnessChangesDoneMsg{state: state, err: err}
+			return harnessChangesDoneMsg{state: state, err: err, box: msg.box, candidateID: c.CandidateID, save: key == "s"}
 		}
 	})
 	m.dialog.sections = sections
@@ -118,8 +125,17 @@ func (m *Model) showHarnessChanges(msg harnessChangesLoadedMsg) tea.Cmd {
 }
 
 func (m *Model) harnessChangesDone(msg harnessChangesDoneMsg) tea.Cmd {
+	if msg.save && !msg.force && errors.Is(msg.err, ErrHarnessChangesConflict) {
+		m.dialog = confirmDialog("Overwrite harness changes?", "Shared harness defaults or credentials changed since this candidate was captured. Saving will overwrite conflicting changes with the reviewed candidate.\n\nOverwrite those changes?", func(string) tea.Cmd {
+			return func() tea.Msg {
+				state, err := m.ds.SaveHarnessChanges(m.ctx, msg.box.ID, msg.candidateID, true)
+				return harnessChangesDoneMsg{state: state, err: err, box: msg.box, candidateID: msg.candidateID, save: true, force: true}
+			}
+		})
+		return nil
+	}
 	if msg.err != nil {
-		m.dialog = errorDialog("Harness changes", msg.err.Error()+"\n\nReopen the preview to inspect current changes. Conflicts require an explicit reconsider selection with discobox admin harness reconsider.")
+		m.dialog = errorDialog("Harness changes", msg.err.Error()+"\n\nReopen the preview to inspect current changes.")
 		return nil
 	}
 	return tea.Batch(m.refresh(), m.report(false, "harness changes: %s", msg.state))

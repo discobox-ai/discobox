@@ -981,7 +981,8 @@ type Handler interface {
 	ResumeSandboxAutostop(ctx context.Context, params ResumeSandboxAutostopParams) (ResumeSandboxAutostopRes, error)
 	// SaveSandboxHarnessConfigChanges implements save-sandbox-harness-config-changes operation.
 	//
-	// Save sandbox harness config changes.
+	// Revision conflicts return 409 with problem type urn:discobox:harness-config-revision-conflict and
+	// can be retried with force. Other conflicts require the recovery described in the response.
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes/save
 	SaveSandboxHarnessConfigChanges(ctx context.Context, req *HarnessConfigCandidateRequest, params SaveSandboxHarnessConfigChangesParams) (SaveSandboxHarnessConfigChangesRes, error)

@@ -6,6 +6,7 @@ import (
 
 	api "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 )
 
 func (d *apiDataSource) HarnessChanges(ctx context.Context, sandboxID string) (tui.HarnessChanges, error) {
@@ -43,11 +44,14 @@ func toTUIHarnessChanges(p *api.HarnessConfigChanges) tui.HarnessChanges {
 	return c
 }
 
-func (d *apiDataSource) SaveHarnessChanges(ctx context.Context, sandboxID, candidateID string) (string, error) {
+func (d *apiDataSource) SaveHarnessChanges(ctx context.Context, sandboxID, candidateID string, force bool) (string, error) {
 	d = d.at(sandboxID)
-	res, err := d.client.SaveSandboxHarnessConfigChanges(ctx, &api.HarnessConfigCandidateRequest{CandidateId: candidateID}, api.SaveSandboxHarnessConfigChangesParams{ProjectId: d.projectID, SandboxId: sandboxID})
+	res, err := d.client.SaveSandboxHarnessConfigChanges(ctx, &api.HarnessConfigCandidateRequest{CandidateId: candidateID}, api.SaveSandboxHarnessConfigChangesParams{ProjectId: d.projectID, SandboxId: sandboxID, Force: api.NewOptBool(force)})
 	if err != nil {
 		return "", fmt.Errorf("%s", terminalSafe(err.Error()))
+	}
+	if problem, ok := res.(*api.ErrorModelStatusCode); ok && problem.StatusCode == 409 && problem.Response.Type.Value.String() == harnesscapture.RevisionConflictType {
+		return "", fmt.Errorf("%w: %s", tui.ErrHarnessChangesConflict, terminalSafe(responseError(res).Error()))
 	}
 	result, err := expectResponse[api.HarnessConfigSaveResult](res)
 	if err != nil {
