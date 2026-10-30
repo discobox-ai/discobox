@@ -206,7 +206,7 @@ are missing from the timeline.`,
 					return nil
 				}
 				if a.output == "json" {
-					return writeTerminalSafeJSONLines(cmd, records)
+					return writeTerminalSafeJSONLines(cmd.OutOrStdout(), records)
 				}
 				err := table.write(cmd.OutOrStdout(), records, header, follow)
 				header = false

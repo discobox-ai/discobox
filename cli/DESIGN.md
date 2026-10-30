@@ -1731,8 +1731,8 @@ instead (below).
   — and it arrives in the same array, with no addresses and a `declared` mark.
   Nothing here treats it specially: a port with no reported address is dialed at
   the default host, which is the answer for a published or activated one.
-- The listing is polled rather than streamed. There is no project event stream
-  to subscribe to (ADR 0061), and the ports themselves reach
+- The listing is polled rather than streamed. The project event stream carries
+  no ports (ADR 26-10-30-868), and the ports themselves reach
   the control plane on the sandbox-agent's own cadence (ADR 0046), which is what
   bounds freshness either way.
 
@@ -1811,6 +1811,30 @@ tool rather than only as a screenful:
 - `--tail` defaults to 200 rather than to everything. A guest console log spans
   every boot the pool has ever had, and the operator running this almost always
   means the most recent one; `--tail 0` asks for the whole thing.
+
+## Project Events (`discobox events`)
+
+`discobox events [--history N]` follows the project's event stream
+([ADR 26-10-30-868](../docs/adr/26-10-30-868-a-projects-events-are-a-retained-log-streamed-over-sse-and-sandbox-changes-are-the-first.md)
+§8) until interrupted. It is a plain SSE read, like `admin pool logs`, because
+the generated client buffers a `text/event-stream` body whole.
+
+- **It resumes.** `readServerSentEvents` keeps the last event ID as the HTML
+  standard does, the server's opening id-only frame included, and the
+  server's `retry`. A dropped connection reconnects after that delay with
+  `Last-Event-ID`, so nothing is missed or printed twice. A response the
+  server ends (a stream that fell behind) resumes quietly; a refusal (a 4xx,
+  or no stream ever opened) is the command's error rather than a reconnect
+  loop.
+- **One line an event.** A sandbox event prints its time, type, name, state,
+  power and agent; a type it does not know prints by type alone, which is the
+  forward-compatibility rule the stream documents. With `-o json` each event
+  is printed as received, `{"id","event","data"}`, one per line, for `jq`. A
+  `reset` goes to stderr, saying why the stream started over.
+- **The payload is decoded locally** (`sandboxEventData`): ogen emits no type
+  for a schema only a `text/event-stream` body carries. The server pins its
+  model to the `SandboxEvent` schema field for field
+  (`server/internal/model/project_event_test.go`).
 
 ## Terminal I/O (`discobox admin terminal screen|input|wait`)
 

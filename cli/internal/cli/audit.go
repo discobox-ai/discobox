@@ -216,7 +216,7 @@ with non-printing characters escaped.`,
 			header := true
 			return readAudit(cmd.Context(), []auditSource[apimodel.HTTPAuditExchange]{source}, a.auditReadOptions(cmd, sinceAt, limit, follow), func(exchanges []apimodel.HTTPAuditExchange) error {
 				if a.output == "json" {
-					return writeTerminalSafeJSONLines(cmd, exchanges)
+					return writeTerminalSafeJSONLines(cmd.OutOrStdout(), exchanges)
 				}
 				err := table.write(cmd.OutOrStdout(), exchanges, header, follow)
 				header = false
