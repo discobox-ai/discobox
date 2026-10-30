@@ -1134,8 +1134,13 @@ type Sandbox struct {
 	// recorded for it, and any explicit intent moves the generation on. It stays after the repair lands, because landing clears the failure
 	// that explains why the container was rebuilt, and is replaced by the next.
 	AutomaticRepair *AutomaticRepair `gorm:"column:automatic_repair;type:text;serializer:json" json:"automaticRepair,omitempty" doc:"The last repair recorded automatically for this sandbox, when one has been"`
-	SecretState     []byte           `gorm:"column:secret_state" json:"-"`
-	LastActiveAt    *time.Time       `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
+	// RecordedProjection is the projection the sandbox's last event carried
+	// (ADR 26-10-30-868 §4), which a write compares with to decide whether it
+	// changed anything a monitor watches. Written only with an event, by the
+	// store's event recorder; UpdateSandbox omits it.
+	RecordedProjection string     `gorm:"column:recorded_projection;not null;type:text;default:''" json:"-"`
+	SecretState        []byte     `gorm:"column:secret_state" json:"-"`
+	LastActiveAt       *time.Time `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
 	// RuntimeState is the power axis: what the container is doing, as observed
 	// by the pool agent hosting it. Store.ApplySandboxStateReports is its only
 	// writer, and Store.UpdateSandbox omits it so no other path can carry a
@@ -2100,5 +2105,7 @@ func AllModels() []any {
 		&SecretRejection{},
 		&HostTrustRequest{},
 		&HostTrust{},
+		&ProjectEvent{},
+		&ProjectEventCounter{},
 	}
 }

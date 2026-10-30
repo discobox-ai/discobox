@@ -25,6 +25,9 @@ type Store struct {
 	read    *gorm.DB
 	txWrite *gorm.DB
 	txRead  *gorm.DB
+	// events is the queue of the transaction txWrite belongs to, appended
+	// when its outermost Transaction commits (project_events.go).
+	events *eventQueue
 
 	sealer secrets.Sealer
 }
@@ -86,7 +89,7 @@ func (s *Store) resolve(_ context.Context) (*gorm.DB, *gorm.DB, error) {
 	return s.write, read, nil
 }
 
-func (s *Store) withTx(write, read *gorm.DB) *Store {
+func (s *Store) withTx(write, read *gorm.DB, events *eventQueue) *Store {
 	if read == nil {
 		read = write
 	}
@@ -95,6 +98,7 @@ func (s *Store) withTx(write, read *gorm.DB) *Store {
 		read:    s.read,
 		txWrite: write,
 		txRead:  read,
+		events:  events,
 		sealer:  s.sealer,
 	}
 }

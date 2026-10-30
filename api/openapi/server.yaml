@@ -4184,6 +4184,105 @@ components:
                 - createdAt
                 - updatedAt
             type: object
+        ProjectEventReset:
+            additionalProperties: false
+            description: The data of a reset event, sent when a stream could not resume from the Last-Event-ID it was given and starts as one given none.
+            properties:
+                reason:
+                    description: expired - retention has removed the event; unknown - the log never gave out that id.
+                    enum:
+                        - expired
+                        - unknown
+                    type: string
+            required:
+                - reason
+            type: object
+        SandboxEvent:
+            additionalProperties: false
+            description: The data of a sandbox.created, sandbox.updated or sandbox.deleted event - the state of the sandbox a monitor watches, as it stood when the change was recorded (ADR 26-10-30-868 §3). An event is written exactly when one of these fields changes. A sandbox.deleted event carries the sandbox's last state.
+            properties:
+                sandboxId:
+                    description: Sandbox ID
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                name:
+                    description: Sandbox name, unique within its project
+                    type: string
+                desiredState:
+                    description: Requested existence. archived is an archived sandbox, or one being archived.
+                    enum:
+                        - present
+                        - archived
+                        - deleted
+                    type: string
+                state:
+                    description: Existence state, written by the sandbox's reconciler
+                    enum:
+                        - pending
+                        - awaiting_source
+                        - registering
+                        - ready
+                        - active
+                        - offline
+                        - archived
+                        - deleted
+                        - failed
+                    type: string
+                runtimeState:
+                    description: Observed power state, reported by the pool agent hosting the sandbox. Absent until one has reported.
+                    enum:
+                        - starting
+                        - running
+                        - stopping
+                        - stopped
+                        - suspended
+                    type: string
+                agent:
+                    $ref: '#/components/schemas/SandboxEventAgent'
+                errorReason:
+                    description: Machine-readable reason the sandbox failed, absent when it has not or nothing classifies the failure
+                    enum:
+                        - image_unavailable
+                    type: string
+                at:
+                    description: When the change was recorded
+                    format: date-time
+                    type: string
+            required:
+                - sandboxId
+                - projectId
+                - name
+                - desiredState
+                - state
+                - agent
+                - at
+            type: object
+        SandboxEventAgent:
+            additionalProperties: false
+            description: What the program in the sandbox's primary terminal last reported of itself over OSC 7501 (ADR 26-10-16-424). Null when it reports nothing, and whenever the sandbox is not running.
+            nullable: true
+            properties:
+                state:
+                    description: idle is waiting for the next instruction, working is busy, done is finished with a result not yet seen, blocked is waiting on a person, error is failed and stopped.
+                    enum:
+                        - idle
+                        - working
+                        - done
+                        - blocked
+                        - error
+                    type: string
+                kind:
+                    description: What a blocked program needs from the person. Absent when the program did not say, and for every other state.
+                    enum:
+                        - permission
+                        - question
+                        - auth
+                    type: string
+            required:
+                - state
+            type: object
         ProviderConfigField:
             additionalProperties: false
             properties:
@@ -8396,6 +8495,56 @@ paths:
             summary: What a project, harness config or discobox holds, resolved
             tags:
                 - Secrets
+    /projects/{projectId}/events:
+        get:
+            description: |-
+                The project's events as a server-sent event stream (ADR 26-10-30-868). Each event is a frame with an id, an event type and one line of JSON data. The types are sandbox.created, sandbox.updated (the sandbox's state, power or agent state changed; archiving and restoring are updates whose desiredState and state say so) and sandbox.deleted, each with a SandboxEvent as its data. More kinds may be added, each with its own <resource>. prefix; a client ignores a type it does not know.
+
+                With no Last-Event-ID the stream replays the project's last `history` events, then continues live. With a Last-Event-ID the log still holds it continues after that event and `history` is ignored. With one the log no longer holds (events are kept for 24 hours) or never gave out, it first sends a `reset` event, with a ProjectEventReset as its data and no id, and then behaves as a stream with no Last-Event-ID. The server sends `retry` once and a comment every 15 seconds while it is idle. A stream whose client cannot keep up is ended; the client resumes with the last id it read and loses nothing.
+            operationId: stream-project-events
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: How many past events to replay when the stream has no Last-Event-ID the log holds
+                  in: query
+                  name: history
+                  required: false
+                  schema:
+                    default: 100
+                    description: How many past events to replay when the stream has no Last-Event-ID the log holds
+                    format: int64
+                    maximum: 1000
+                    minimum: 0
+                    type: integer
+                - description: The id of the last event the client read, which the stream continues after
+                  in: header
+                  name: Last-Event-ID
+                  required: false
+                  schema:
+                    description: The id of the last event the client read, which the stream continues after
+                    type: string
+            responses:
+                200:
+                    content:
+                        text/event-stream:
+                            schema:
+                                type: string
+                    description: The project's event stream
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Stream the project's events
+            tags:
+                - Events
     /projects/{projectId}/jobs:
         get:
             operationId: list-jobs

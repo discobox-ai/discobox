@@ -1517,6 +1517,26 @@ func (UnimplementedHandler) StopSandboxService(ctx context.Context, params StopS
 	return r, ht.ErrNotImplemented
 }
 
+// StreamProjectEvents implements stream-project-events operation.
+//
+// The project's events as a server-sent event stream (ADR 26-10-30-868). Each event is a frame with
+// an id, an event type and one line of JSON data. The types are sandbox.created, sandbox.updated
+// (the sandbox's state, power or agent state changed; archiving and restoring are updates whose
+// desiredState and state say so) and sandbox.deleted, each with a SandboxEvent as its data. More
+// kinds may be added, each with its own <resource>. prefix; a client ignores a type it does not know.
+// With no Last-Event-ID the stream replays the project's last `history` events, then continues live.
+// With a Last-Event-ID the log still holds it continues after that event and `history` is ignored.
+// With one the log no longer holds (events are kept for 24 hours) or never gave out, it first sends
+// a `reset` event, with a ProjectEventReset as its data and no id, and then behaves as a stream with
+// no Last-Event-ID. The server sends `retry` once and a comment every 15 seconds while it is idle. A
+// stream whose client cannot keep up is ended; the client resumes with the last id it read and loses
+// nothing.
+//
+// GET /projects/{projectId}/events
+func (UnimplementedHandler) StreamProjectEvents(ctx context.Context, params StreamProjectEventsParams) (r StreamProjectEventsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // StreamSandboxExecResources implements stream-sandbox-exec-resources operation.
 //
 // Stream opaque resource snapshots for a sandbox exec.

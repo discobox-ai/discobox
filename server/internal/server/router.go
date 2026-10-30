@@ -146,6 +146,7 @@ func NewRouter(svc services.Services) (*chi.Mux, error) {
 	registerPoolLogsRoutes(router, svc.Pools)
 	registerPoolHTTPAuditRoutes(router, svc.Pools)
 	registerPoolGuestImageRoutes(router, svc.Pools)
+	registerProjectEventRoutes(router, svc.Events)
 	generated, err := handlers.NewServer(svc)
 	if err != nil {
 		return nil, err
@@ -243,6 +244,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		Gateways:       appServices,
 		Peers:          appServices,
 		Assets:         appServices.Assets(),
+		Events:         appServices.Events(),
 	}
 	authenticators := []auth.Authenticator{
 		// First, so a forwarded sandbox call can never reach the default user.
@@ -279,6 +281,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	registerPoolLogsRoutes(router, appServices)
 	registerPoolHTTPAuditRoutes(router, appServices)
 	registerPoolGuestImageRoutes(router, appServices)
+	registerProjectEventRoutes(router, appServices.Events())
 	generated, err := handlers.NewServer(svc)
 	if err != nil {
 		return nil, services.Services{}, nil, nil, err

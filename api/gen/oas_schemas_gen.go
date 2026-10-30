@@ -2834,6 +2834,7 @@ func (*ErrorModelStatusCode) setDefaultPoolRes()                        {}
 func (*ErrorModelStatusCode) setDefaultProjectRes()                     {}
 func (*ErrorModelStatusCode) startSandboxRes()                          {}
 func (*ErrorModelStatusCode) stopSandboxRes()                           {}
+func (*ErrorModelStatusCode) streamProjectEventsRes()                   {}
 func (*ErrorModelStatusCode) suspendSandboxRes()                        {}
 func (*ErrorModelStatusCode) unarchiveSandboxRes()                      {}
 func (*ErrorModelStatusCode) unsetDefaultHarnessConfigRes()             {}
@@ -32799,6 +32800,22 @@ func (s *StopSandboxBody) SetSchema(val OptURI) {
 func (s *StopSandboxBody) SetForce(val OptBool) {
 	s.Force = val
 }
+
+type StreamProjectEventsOK struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s StreamProjectEventsOK) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+func (*StreamProjectEventsOK) streamProjectEventsRes() {}
 
 type StreamSandboxExecResourcesOK struct {
 	Data io.Reader

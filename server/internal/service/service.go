@@ -15,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/assets"
+	"github.com/discobox-ai/discobox/server/internal/resources/events"
 	"github.com/discobox-ai/discobox/server/internal/resources/gateways"
 	"github.com/discobox-ai/discobox/server/internal/resources/harnessconfigs"
 	resourcejobs "github.com/discobox-ai/discobox/server/internal/resources/jobs"
@@ -63,6 +64,7 @@ type Service struct {
 	secrets          *secrets.Service
 	assets           *assets.Service
 	gateways         *gateways.Service
+	events           *events.Service
 }
 
 type Options struct {
@@ -220,6 +222,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		secrets:          secretService,
 		assets:           assetService,
 		gateways:         gatewayService,
+		events:           events.NewService(store),
 	}
 }
 
@@ -301,6 +304,10 @@ func (s *Service) registerReconcilers() error {
 	if err := s.engine.Register(store.BindingExpiryResourceType, s.secrets.NewBindingExpiryReconciler()); err != nil {
 		return err
 	}
+	// Prunes the project event log past retention (ADR 26-10-30-868 §6).
+	if err := s.engine.Register(events.RetentionResourceType, s.events.NewRetentionReconciler()); err != nil {
+		return err
+	}
 	return s.poolControlPlane.RegisterJobs(s.SandboxProviderManager())
 }
 
@@ -310,6 +317,9 @@ func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {
 
 // Assets is the asset API's service, which only a pool reaches.
 func (s *Service) Assets() *assets.Service { return s.assets }
+
+// Events is the project event stream's service (ADR 26-10-30-868).
+func (s *Service) Events() *events.Service { return s.events }
 
 // reconcileEveryPool marks every pool for a reconcile, which provisions a
 // pool's box again in place when its bundles moved (ADR 26-10-24-953 §5).

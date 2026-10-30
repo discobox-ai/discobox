@@ -3,6 +3,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
 
@@ -553,6 +554,60 @@ type BoundSecret struct {
 // importing internal/store.
 type SecretRefreshFilter = store.SecretRefreshFilter
 
+// EventService opens a project's event stream (ADR 26-10-30-868): a
+// retained log, resumed from the last event a client saw.
+type EventService interface {
+	// OpenProjectEvents opens the project's stream. With a LastEventID the
+	// log still holds it continues after it; with none it starts with the
+	// project's last History events; with one the log no longer holds it
+	// does what no ID does, and the stream's Reset says why.
+	OpenProjectEvents(ctx context.Context, projectID string, start ProjectEventStart) (ProjectEventStream, error)
+}
+
+// ProjectEventStart is where a project event stream starts.
+type ProjectEventStart struct {
+	// LastEventID is the SSE Last-Event-ID the client sent, or empty.
+	LastEventID string
+	// History is how many past events a stream with no usable LastEventID
+	// replays before it goes live.
+	History int
+}
+
+// Why a stream did not resume from the Last-Event-ID it was given.
+const (
+	// ProjectEventResetExpired is an ID retention has removed.
+	ProjectEventResetExpired = "expired"
+	// ProjectEventResetUnknown is an ID the log never gave out.
+	ProjectEventResetUnknown = "unknown"
+)
+
+// ErrProjectEventStreamBehind ends a stream whose reader fell too far behind
+// the live log to be kept up. Nothing is lost: the client resumes from the
+// last event it read.
+var ErrProjectEventStreamBehind = errors.New("the event stream fell behind; resume from the last event read")
+
+// ProjectEventStream is one client's open stream.
+type ProjectEventStream interface {
+	// Reset is why the stream did not resume from the Last-Event-ID it was
+	// given (a ProjectEventReset value), or empty when it did or was given
+	// none.
+	Reset() string
+	// Position is the ID the stream continues after once its history is
+	// replayed: the Last-Event-ID it resumed from, or the log's head. The
+	// stream's first frame carries it, so a client that reads no event
+	// before it drops still resumes from where it started.
+	Position() int64
+	// Through is, for a stream with nothing waiting to be passed on, an ID
+	// past which nothing of the project has been missed; the stream's idle
+	// keepalive carries it. It reports false while anything waits.
+	Through() (int64, bool)
+	// Next blocks until the next event or until ctx ends. It returns
+	// ErrProjectEventStreamBehind when the stream cannot be kept up.
+	Next(ctx context.Context) (model.ProjectEvent, error)
+	// Close releases the stream.
+	Close()
+}
+
 // SSHKeyService manages project-scoped SSH keys that authorize SSH access to
 // that project's sandboxes (ADR 0024 §5).
 type SSHKeyService interface {
@@ -685,6 +740,8 @@ type Services struct {
 	SkillsSources  SkillsSourceService
 	Gateways       GatewayService
 	Peers          PeerService
+	// Events is served by GET /projects/{projectId}/events.
+	Events EventService
 	// Assets answers a pool's reads of the bundles in its scope (ADR
 	// 26-10-16-423 §13). Only a pool reaches it.
 	Assets AssetService

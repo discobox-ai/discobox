@@ -258,10 +258,6 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string,
 }
 
 func (s *Store) CreateSandbox(ctx context.Context, sandbox *model.Sandbox) error {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
 	// The names listings read in place of the skills (sandboxSkillColumns).
 	sandbox.SkillNames = nil
 	if len(sandbox.Skills) > 0 {
@@ -271,7 +267,12 @@ func (s *Store) CreateSandbox(ctx context.Context, sandbox *model.Sandbox) error
 	if err != nil {
 		return err
 	}
-	return write.Create(persisted).Error
+	return s.writeTx(ctx, func(txStore *Store, tx *gorm.DB) error {
+		if err := tx.Create(persisted).Error; err != nil {
+			return err
+		}
+		return txStore.recordSandboxChanges(ctx, tx, model.ProjectEventSandboxCreated, persisted.ID)
+	})
 }
 
 // GetSandboxByID looks a sandbox up by its globally unique ID alone, for
@@ -429,7 +430,11 @@ const sandboxDiscoboxAPIColumn = "discobox_api"
 const sandboxAttachedHarnessColumn = "attached_harness_config_ids"
 
 // sandboxOmittedColumns is what UpdateSandbox never writes.
-var sandboxOmittedColumns = append(append(append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...), sandboxWakeColumns...), sandboxDiscoboxAPIColumn, sandboxAttachedHarnessColumn)
+var sandboxOmittedColumns = append(append(append(append(append(append(append([]string(nil), observedSandboxColumns...), sandboxMetaColumns...), sandboxPlatformColumns...), sandboxSkillColumns...), sandboxEgressColumns...), sandboxWakeColumns...), sandboxDiscoboxAPIColumn, sandboxAttachedHarnessColumn, sandboxRecordedProjectionColumn)
+
+// sandboxRecordedProjectionColumn is the projection the sandbox's last event
+// carried, written only beside that event (recordSandboxChanges).
+const sandboxRecordedProjectionColumn = "recorded_projection"
 
 // CancelSandboxWakeTx is what every power instruction from outside writes: no
 // scheduled start, and a new epoch, whether or not a wake was set — the race
@@ -513,30 +518,30 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 		}
 	}
 
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
 	persisted, err := s.sealSandboxForWrite(ctx, sandbox)
 	if err != nil {
 		return err
 	}
-	if opts.generation == nil {
-		return write.Omit(sandboxOmittedColumns...).Save(persisted).Error
-	}
-
-	result := write.Model(&model.Sandbox{}).
-		Where("project_id = ? AND id = ? AND generation = ?", sandbox.ProjectID, sandbox.ID, *opts.generation).
-		Select("*").
-		Omit(sandboxOmittedColumns...).
-		Updates(persisted)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return ErrGenerationConflict
-	}
-	return nil
+	return s.writeTx(ctx, func(txStore *Store, tx *gorm.DB) error {
+		if opts.generation == nil {
+			if err := tx.Omit(sandboxOmittedColumns...).Save(persisted).Error; err != nil {
+				return err
+			}
+		} else {
+			result := tx.Model(&model.Sandbox{}).
+				Where("project_id = ? AND id = ? AND generation = ?", sandbox.ProjectID, sandbox.ID, *opts.generation).
+				Select("*").
+				Omit(sandboxOmittedColumns...).
+				Updates(persisted)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return ErrGenerationConflict
+			}
+		}
+		return txStore.recordSandboxChanges(ctx, tx, model.ProjectEventSandboxUpdated, sandbox.ID)
+	})
 }
 
 // UpdateSandboxAgentStatus writes only the two agent-status columns, pushed
@@ -554,10 +559,6 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 // moves last_active_at forward, so a late or re-delivered report cannot walk
 // real activity back.
 func (s *Store) UpdateSandboxAgentStatus(ctx context.Context, projectID, sandboxID string, status model.RawJSON, observedAt time.Time, lastActiveAt *time.Time) error {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
 	columns := map[string]any{
 		"agent_status":             status,
 		"agent_status_observed_at": observedAt,
@@ -567,16 +568,20 @@ func (s *Store) UpdateSandboxAgentStatus(ctx context.Context, projectID, sandbox
 			"CASE WHEN last_active_at IS NULL OR last_active_at < ? THEN ? ELSE last_active_at END",
 			*lastActiveAt, *lastActiveAt)
 	}
-	result := write.WithContext(ctx).Model(&model.Sandbox{}).
-		Where("project_id = ? AND id = ?", projectID, sandboxID).
-		UpdateColumns(columns)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	// The primary program's state is projected, so a report that moves it is
+	// an event (ADR 26-10-30-868 §4); one that repeats it writes none.
+	return s.writeTx(ctx, func(txStore *Store, tx *gorm.DB) error {
+		result := tx.Model(&model.Sandbox{}).
+			Where("project_id = ? AND id = ?", projectID, sandboxID).
+			UpdateColumns(columns)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return txStore.recordSandboxChanges(ctx, tx, model.ProjectEventSandboxUpdated, sandboxID)
+	})
 }
 
 // UpdateSandboxMeta records the name, description and tags a sandbox reported
@@ -702,7 +707,10 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 		if err := denySandboxSecretRequestsTx(tx, projectID, sandbox.ID); err != nil {
 			return err
 		}
-		return tx.Delete(sandbox).Error
+		if err := tx.Delete(sandbox).Error; err != nil {
+			return err
+		}
+		return txStore.queueSandboxEvent(model.ProjectEventSandboxDeleted, sandbox)
 	})
 }
 

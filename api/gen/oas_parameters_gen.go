@@ -20980,6 +20980,211 @@ func decodeStopSandboxServiceParams(args [3]string, argsEscaped bool, r *http.Re
 	return params, nil
 }
 
+// StreamProjectEventsParams is parameters of stream-project-events operation.
+type StreamProjectEventsParams struct {
+	// Project ID.
+	ProjectId string
+	// How many past events to replay when the stream has no Last-Event-ID the log holds.
+	History OptInt64 `json:",omitempty,omitzero"`
+	// The id of the last event the client read, which the stream continues after.
+	LastEventID OptString `json:",omitempty,omitzero"`
+}
+
+func unpackStreamProjectEventsParams(packed middleware.Parameters) (params StreamProjectEventsParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "history",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.History = v.(OptInt64)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "Last-Event-ID",
+			In:   "header",
+		}
+		if v, ok := packed[key]; ok {
+			params.LastEventID = v.(OptString)
+		}
+	}
+	return params
+}
+
+func decodeStreamProjectEventsParams(args [1]string, argsEscaped bool, r *http.Request) (params StreamProjectEventsParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	h := uri.NewHeaderDecoder(r.Header)
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Set default value for query: history.
+	{
+		val := int64(100)
+		params.History.SetTo(val)
+	}
+	// Decode query: history.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "history",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotHistoryVal int64
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToInt64(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotHistoryVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.History.SetTo(paramsDotHistoryVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.History.Get(); ok {
+					if err := func() error {
+						if err := (validate.Int{
+							MinSet:        true,
+							Min:           0,
+							MaxSet:        true,
+							Max:           1000,
+							MinExclusive:  false,
+							MaxExclusive:  false,
+							MultipleOfSet: false,
+							MultipleOf:    0,
+							Pattern:       nil,
+						}).Validate(int64(value)); err != nil {
+							return errors.Wrap(err, "int")
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "history",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode header: Last-Event-ID.
+	if err := func() error {
+		cfg := uri.HeaderParameterDecodingConfig{
+			Name:    "Last-Event-ID",
+			Explode: false,
+		}
+		if err := h.HasParam(cfg); err == nil {
+			if err := h.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotLastEventIDVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotLastEventIDVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.LastEventID.SetTo(paramsDotLastEventIDVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "Last-Event-ID",
+			In:   "header",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // StreamSandboxExecResourcesParams is parameters of stream-sandbox-exec-resources operation.
 type StreamSandboxExecResourcesParams struct {
 	// Project that owns the sandbox.
