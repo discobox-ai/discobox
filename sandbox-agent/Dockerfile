@@ -94,6 +94,7 @@ WORKDIR /src
 
 COPY go.mod go.sum ./
 COPY pkg/agentcreds ./pkg/agentcreds
+COPY pkg/agentstatus ./pkg/agentstatus
 COPY api ./api
 COPY pkg/auditid ./pkg/auditid
 COPY pkg/configfile ./pkg/configfile
