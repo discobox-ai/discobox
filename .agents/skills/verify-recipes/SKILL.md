@@ -1040,6 +1040,31 @@ d shell <sbx_id> -- sh -c 'ls -ln ~/notes/a.md' </dev/null   # owned by the user
   harness after purging its archived `configure-*` boxes, which hold it.
 
 
+# Verifying a sandbox agent's TLS (`disableAgentEndpointTls`, `agent-tls`)
+
+The dev pool was made before the setting, so the migration left it on plain
+HTTP (`d admin pool get <id>` shows `AGENT TLS off`); a pool made with `d admin
+pool create <name> --provider <the Default pool's provider>` serves TLS.
+Start a box in it with `d run -d -H shell --no-source --pool <name>`.
+
+- What the box was told: `jq .agentRuntime.tls /etc/discobox/sandbox.json` in
+  the box's container, its keypair in `/etc/discobox/agent-tls/` (key 0600),
+  and the pool's record `…/sandboxes/<sbx>/agent-tls.json` inside
+  `discobox-vm-<pool>`. The pool's own word is
+  `/etc/discobox/pool-agent/bootstrap.json` there.
+- The agent from its pool (this box is not on the pool's sandbox network; the
+  pool container is, and has curl): `curl --cacert
+  /var/lib/discobox/proxy/projects/*/pools/<pool>/certs/mtls-ca.crt --resolve
+  <sbx-id-with-hyphens>.sandbox.discobox.internal:3003:<ip>
+  https://<that name>:3003/healthz`; plain HTTP to a TLS agent answers 400, and
+  another sandbox's name fails with curl exit 60.
+- The pool reaching it end to end: `d admin terminal input <id> primary
+  'echo X' Enter`, then `d admin terminal screen <id> primary`.
+- A flip: `d admin pool update <name> --disable-agent-endpoint-tls`; the
+  pool's container keeps its ID and start time, its bootstrap gains the
+  field, and `systemctl show -p ActiveEnterTimestamp discobox-pool-agent` moves.
+  A box already made keeps how it was made until it is replaced.
+
 # Verifying a Docker pool's box (`dockerworker/poolbox.go`, the pool bundle)
 
 The dev pool is the box (ADR 26-10-24-953): its container
