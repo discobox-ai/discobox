@@ -34,8 +34,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8 h1:lFJ79i3hZemgcTAIDZUs4yeeTMEx4XWzbm3wvSDWim0=
 github.com/discobox-ai/goproxy v0.0.0-20260912041536-a9c9419932d8/go.mod h1:THdE5ix2clxX9lZzcICPpZ67d6CdrPZxdOYsNgU5e30=
-github.com/discobox-ai/vm v0.0.0-20261024143000-c88c4006b1be h1:C2trDvhF0YtsLzaIZc18hi3wy0mpCqbQddjBGB5LSSE=
-github.com/discobox-ai/vm v0.0.0-20261024143000-c88c4006b1be/go.mod h1:F6YGd79UJxLT28eNSmMpxksr8aYQ5Ap7bE8TQfs2+s0=
+github.com/discobox-ai/vm v0.0.0-20261029213234-678e006675ed h1:RbIJ97wOHk7BFI1SDWkj7uVjKct4V3e/PtMOR0Aag2A=
+github.com/discobox-ai/vm v0.0.0-20261029213234-678e006675ed/go.mod h1:F6YGd79UJxLT28eNSmMpxksr8aYQ5Ap7bE8TQfs2+s0=
 github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906 h1:EwLFWyk7Xr5nauNLUpQr6dmIjlBa2SVTM1WiQqwIe/A=
 github.com/discobox-ai/x v0.0.0-20260928053835-39c36487e906/go.mod h1:ozoGHzU8woLHyDsmXikg5H1raf07miXC7vg51QtkQew=
 github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5QvfrDyIgxBk=
