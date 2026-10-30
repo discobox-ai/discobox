@@ -301,8 +301,19 @@ function reconsider(id, definition, normalizer, input) {
     JSON.stringify(raw).match(/\{\{\s*\.secrets\.(\w+)\s*\}\}/)?.[1];
   for (const p of definition.credentialFiles) {
     if (id === "copilot") continue;
-    const rows = (file) => {
+    const rows = (file, baseline) => {
       if (!file) return [];
+      // This bundle seed is a Go template, including conditionals and a
+      // working-directory key. Only its API-key binding participates here.
+      if (id === "claude-code" && p === ".claude.json" && file.template) {
+        const binding = file.content.match(
+          /"primaryApiKey"\s*:\s*\{\{\s*\.secrets\.(\w+)\s*\|\s*json\s*\}\}/,
+        );
+        if (binding)
+          return baseline.secretRevisions?.[binding[1]]
+            ? [{ provider: "anthropic-key", raw: template(binding[1]) }]
+            : [];
+      }
       const doc = JSON.parse(file.content);
       if (id === "claude-code" && p === ".claude.json")
         return doc.primaryApiKey
@@ -311,11 +322,11 @@ function reconsider(id, definition, normalizer, input) {
       return entries(id, doc, normalizer);
     };
     const byEnv = new Map();
-    for (const e of rows(current.find((f) => f.path === p))) {
+    for (const e of rows(current.find((f) => f.path === p), request.current)) {
       const name = envOf(e.raw);
       if (name) byEnv.set(name, e);
     }
-    for (const e of rows(local.find((f) => f.path === p))) {
+    for (const e of rows(local.find((f) => f.path === p), request.candidate.baseline || {})) {
       const name = envOf(e.raw);
       if (!selected.has(name)) continue;
       if (id === "codex") byEnv.clear();
@@ -367,6 +378,12 @@ function reconsider(id, definition, normalizer, input) {
   out.files = out.files.filter((f) =>
     definition.credentialFiles.includes(f.path),
   );
+  // An OAuth-only config still carries the conditional API-key seed. Keep
+  // that file verbatim without inventing a credential for an unbound branch.
+  if (id === "claude-code" && !out.files.some((f) => f.path === ".claude.json")) {
+    const seed = current.find((f) => f.path === ".claude.json");
+    if (seed) out.files.push(seed);
+  }
   out.credentials = out.credentials.filter((c) => !selected.has(c.envName));
   out.credentials.push(...selected.values());
   return out;
@@ -532,6 +549,15 @@ function capture(id, definition, normalizer, input) {
   for (const e of source) {
     const prov = definition.providers.find((p) => p.id === e.provider),
       token = material(id, e);
+    // Claude Code clears both tokens after signing out. There is no local
+    // login to preserve, so let the file installer restore delivery.
+    if (
+      id === "claude-code" &&
+      e.provider === "anthropic" &&
+      (token === "" || token == null) &&
+      (e.value.refreshToken === "" || e.value.refreshToken == null)
+    )
+      continue;
     const unsupported =
       !prov ||
       typeof token !== "string" ||
@@ -1075,7 +1101,16 @@ function main() {
 if (require.main === module)
   try {
     main();
-  } catch {
+  } catch (error) {
+    // Never print exception messages or stacks: parsers and child processes
+    // can embed credential contents. The agent accepts only these fixed codes.
+    const reason =
+      error instanceof SyntaxError
+        ? "invalid-json"
+        : ["ENOENT", "EACCES", "EPERM"].includes(error?.code)
+          ? "file-unavailable"
+          : "operation-failed";
+    process.stderr.write(`discobox-capture: ${reason}\n`);
     if (process.argv.at(-1) === "handoff")
       process.stdout.write('{"state":"retryable-failure"}');
     else process.exitCode = 1;

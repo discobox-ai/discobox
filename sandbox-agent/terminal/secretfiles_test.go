@@ -1,15 +1,19 @@
 package terminal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	hc "github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
@@ -54,7 +58,7 @@ func credentialsInstaller(home string) FileInstaller {
 // emptied, everything else kept.
 //
 //nolint:gosec // Emptied fields, which is the whole point of the fixture.
-const loggedOutCredentials = `{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":0,"scopes":["user:inference"],"subscriptionType":"max"}}`
+const loggedOutCredentials = `{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":0,"scopes":["user:inference"],"subscriptionType":"max","subscriptionTypeSource":"oauth","rateLimitTier":"default_claude_ai"}}`
 
 func TestRestoreSecretFilesRewritesClearedCredential(t *testing.T) {
 	home := t.TempDir()
@@ -276,5 +280,71 @@ func TestWatchSecretFilesReconcilesOnStart(t *testing.T) {
 	cancel()
 	if n := installer.calls.Load(); n == 0 {
 		t.Fatal("WatchSecretFiles did not reconcile on start")
+	}
+}
+
+// Exercise the real exporter and capture protection before the restore, the
+// interaction that previously left a running sandbox signed out forever.
+func TestRestoreSecretFilesWithClaudeCapture(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node required for built-in exporter")
+	}
+	root, err := filepath.Abs("../../harness")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, local := range []bool{false, true} {
+		t.Run(fmt.Sprint("local-login=", local), func(t *testing.T) {
+			home := t.TempDir()
+			installer := credentialsInstaller(home)
+			harness := credentialsHarness()
+			if err := installer.EnsureInstalled(t.Context(), harness, "", nil); err != nil {
+				t.Fatal(err)
+			}
+			content := loggedOutCredentials
+			if local {
+				content = `{"claudeAiOauth":{"accessToken":"!unrecognized-login","refreshToken":"local-refresh"}}`
+			}
+			filename := filepath.Join(home, credentialsPath)
+			if err := os.WriteFile(filename, []byte(content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			//nolint:gosec // Runs the checked-in exporter with fixed fixture paths.
+			cmd := exec.CommandContext(t.Context(), node, filepath.Join(root, "capture/runtime.cjs"), "claude-code", filepath.Join(root, "claude-code/image.json"), "export")
+			cmd.Env = append(os.Environ(), "HOME="+home)
+			cmd.Stdin = bytes.NewBufferString(`{"version":1,"baseline":{"files":[]},"sentinels":{}}`)
+			data, err := cmd.Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var observed hc.Export
+			if err := json.Unmarshal(data, &observed); err != nil {
+				t.Fatal(err)
+			}
+			service, export, _ := captureFixture(t)
+			*export = observed
+			service.capture.home = home
+			service.capture.secrets = installer.Secrets
+			service.capture.state.Baseline.Files = nil
+			service.capture.definition.Watch = []string{credentialsPath}
+			service.capture.definition.CredentialFiles = []string{credentialsPath}
+			installer.Capture = service.capture
+			restored, err := installer.RestoreSecretFiles(t.Context(), harness, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err = os.ReadFile(filename)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if local {
+				if len(restored) != 0 || string(data) != content {
+					t.Fatal("local login was overwritten")
+				}
+			} else if len(restored) != 1 || !bytes.Contains(data, []byte("sk-ant-oat01-sentinel")) {
+				t.Fatal("signed-out credential was not restored")
+			}
+		})
 	}
 }

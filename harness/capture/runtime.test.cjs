@@ -1175,3 +1175,60 @@ test("Codex parses local project tables without corrupting multiline strings", (
   assert(unsafe.diagnostics.some(d=>d.path===p&&d.code==="partial"));
  } finally { f.close(); }
 });
+
+
+test("Claude signed-out OAuth is restorable but an unrecognized login stays protected", () => {
+  const f = fixture("claude-code");
+  try {
+    const signedOut = { accessToken: "", refreshToken: "", expiresAt: 0,
+      subscriptionTypeSource: "oauth", rateLimitTier: "default_claude_ai" };
+    f.write(".claude/.credentials.json", { claudeAiOauth: signedOut });
+    const out = f.run();
+    assert.deepEqual(out.protectedPaths, []);
+    assert.deepEqual(out.credentials, []);
+    assert.deepEqual(out.diagnostics, []);
+    for (const oauth of [
+      { ...signedOut, accessToken: "!unrecognized-login" },
+      { ...signedOut, refreshToken: "local-refresh-token" },
+    ]) {
+      f.write(".claude/.credentials.json", { claudeAiOauth: oauth });
+      assert(f.run().protectedPaths.includes(".claude/.credentials.json"));
+    }
+  } finally { f.close(); }
+});
+
+test("Claude reconsider accepts the bundle's real Go template with and without a bound API key", () => {
+  const f = fixture("claude-code");
+  try {
+    f.write(".claude/.credentials.json", { claudeAiOauth: {
+      accessToken: "replacement-token", refreshToken: "replacement-refresh", expiresAt: 123,
+    } });
+    const captured = f.run();
+    const seed = require("../claude-code/image.json").harness.files.find(f => f.path === ".claude.json");
+    const files = [...captured.files, seed];
+    for (const bound of [false, true]) {
+      const baseline = { files, secretRevisions: {
+        CLAUDE_CODE_OAUTH_TOKEN: "oauth-revision",
+        ...(bound ? { ANTHROPIC_API_KEY: "key-revision" } : {}),
+      } };
+      const projected = f.run({ ...f.input, reconsider: {
+        candidate: { id: "claude-replacement", baseline, files: [], credentials: captured.credentials },
+        current: baseline, replaceCredentials: ["CLAUDE_CODE_OAUTH_TOKEN"],
+      } });
+      assert.deepEqual(projected.credentials.find(c => c.envName === "CLAUDE_CODE_OAUTH_TOKEN"), captured.credentials[0]);
+      assert(projected.files.some(f => f.path === ".claude/.credentials.json"));
+      assert.equal(projected.credentials.some(c => c.envName === "ANTHROPIC_API_KEY" && c.keep), bound);
+      if (!bound) assert.deepEqual(projected.files.find(f => f.path === ".claude.json"), seed);
+    }
+  } finally { f.close(); }
+});
+
+test("exporter CLI failures report a fixed reason without input contents", () => {
+  const cp = require("child_process");
+  const result = cp.spawnSync(process.execPath, [path.join(__dirname, "runtime.cjs"),
+    "claude-code", path.join(__dirname, "../claude-code/image.json"), "export"],
+    { input: '{"private-token":"do-not-log", broken}', encoding: "utf8" });
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr, "discobox-capture: invalid-json\n");
+  assert.equal(result.stdout, "");
+});
