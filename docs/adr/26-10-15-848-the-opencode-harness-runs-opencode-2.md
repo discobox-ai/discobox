@@ -1,7 +1,7 @@
 # 26-10-15-848 — The opencode harness runs opencode 2
 
 - **Status**: Accepted (§3 narrowed for pending and accepted local credentials by
-  [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md); §6 superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md))
+  [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md); §6 superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md); §3 credential-template representation superseded by [26-10-30-457](26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md))
 - **Date**: 2026-10-15
 - **Supersedes**: [0127](0127-the-opencode-harness-runs-opencode-1.md) §1
   and §2, and its rejection of opencode 2; its §3, §4's choice of judge model,

@@ -1,6 +1,6 @@
 # 0059 — A rejected swapped credential is retried once, and the delivered file is restored
 
-- **Status**: Accepted
+- **Status**: Accepted (sandbox credential-file rendering mechanism superseded by [26-10-30-457](26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md))
 - **Date**: 2026-08-19
 
 ## Context
