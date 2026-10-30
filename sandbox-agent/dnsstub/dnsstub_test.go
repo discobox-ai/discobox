@@ -19,6 +19,7 @@ import (
 	"golang.org/x/net/dns/dnsmessage"
 
 	"github.com/discobox-ai/discobox/proxy"
+	"github.com/discobox-ai/discobox/proxy/bridge"
 )
 
 // fakePool is the pool's DNS-over-TLS endpoint: it answers every query with
@@ -70,10 +71,12 @@ func newPKI(t *testing.T) pki {
 	}
 	client := prepared.Clients["sbx_a"]
 	cfg := Config{
-		ListenAddress:  netip.MustParseAddrPort("127.0.0.1:0"),
-		MTLSCAPath:     prepared.Bundle.MTLSCAPath,
-		ClientCertPath: client.ClientCertPath,
-		ClientKeyPath:  client.ClientKeyPath,
+		ListenAddress: netip.MustParseAddrPort("127.0.0.1:0"),
+		Pool: bridge.DialConfig{
+			MTLSCAPath:     prepared.Bundle.MTLSCAPath,
+			ClientCertPath: client.ClientCertPath,
+			ClientKeyPath:  client.ClientKeyPath,
+		},
 	}
 	return pki{
 		server: &tls.Config{
@@ -179,8 +182,8 @@ func startStub(t *testing.T, p pki, poolAddr, poolHost string) (udp, tcp string)
 	t.Helper()
 	// The stub dials the pool by name; in a sandbox Docker's resolver answers
 	// it, here the test dials the address and verifies the name.
-	p.config.Server = poolAddr
-	p.config.ServerName = poolHost
+	p.config.Pool.URL = poolAddr
+	p.config.Pool.ServerName = poolHost
 	dialer, err := p.config.Dialer()
 	if err != nil {
 		t.Fatal(err)
@@ -387,12 +390,14 @@ func TestLoadConfig(t *testing.T) {
 				"dnsServer":"https://discobox-pool-proxy:17085","dnsListenAddress":"169.254.53.53:53","serverName":"discobox-pool-proxy",
 				"mtlsCaPath":"/etc/discobox/proxy/mtls-ca.crt","clientCertPath":"/etc/discobox/proxy/client.crt","clientKeyPath":"/etc/discobox/proxy/client.key"}`,
 			want: Config{
-				ListenAddress:  netip.MustParseAddrPort("169.254.53.53:53"),
-				Server:         "https://discobox-pool-proxy:17085",
-				ServerName:     "discobox-pool-proxy",
-				MTLSCAPath:     "/etc/discobox/proxy/mtls-ca.crt",
-				ClientCertPath: "/etc/discobox/proxy/client.crt",
-				ClientKeyPath:  "/etc/discobox/proxy/client.key",
+				ListenAddress: netip.MustParseAddrPort("169.254.53.53:53"),
+				Pool: bridge.DialConfig{
+					URL:            "https://discobox-pool-proxy:17085",
+					ServerName:     "discobox-pool-proxy",
+					MTLSCAPath:     "/etc/discobox/proxy/mtls-ca.crt",
+					ClientCertPath: "/etc/discobox/proxy/client.crt",
+					ClientKeyPath:  "/etc/discobox/proxy/client.key",
+				},
 			},
 		},
 		{name: "older pool", content: `{"listenAddress":"127.0.0.1:17008"}`, wantErr: ErrNoDNS},
@@ -463,7 +468,7 @@ func TestConfigDialer(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := p.config
-			cfg.Server, cfg.ServerName = tc.server, tc.serverName
+			cfg.Pool.URL, cfg.Pool.ServerName = tc.server, tc.serverName
 			dialer, err := cfg.Dialer()
 			if err != nil {
 				t.Fatal(err)

@@ -102,6 +102,56 @@ func LoadCertificateBundle(dir string) (*CertificateBundle, error) {
 	return ensureBundle(dir, []string{"127.0.0.1", "localhost"}, 10*365*24*time.Hour, 30*24*time.Hour)
 }
 
+// ServerMaterial is a server keypair the mTLS CA signed for one name.
+type ServerMaterial struct {
+	Name      string
+	CertPath  string
+	KeyPath   string
+	ExpiresAt time.Time
+}
+
+// EnsureServerCertificate creates or reuses a server certificate the mTLS CA
+// signs for name: a server the pool dials and verifies against that CA, such
+// as a sandbox's agent, which it verifies as the sandbox's private name (ADR
+// 26-10-29-481 §3). It is kept under the bundle by name, so name must be a
+// single path segment, and reissued within renewBefore of its expiry.
+func EnsureServerCertificate(bundle *CertificateBundle, name string, validity, renewBefore time.Duration) (ServerMaterial, error) {
+	if bundle == nil {
+		return ServerMaterial{}, fmt.Errorf("certificate bundle is required")
+	}
+	if name == "" || name != filepath.Base(name) || name == "." || name == ".." {
+		return ServerMaterial{}, fmt.Errorf("server name %q is not a single path segment", name)
+	}
+	dir := filepath.Join(bundle.Dir, "servers", name)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return ServerMaterial{}, fmt.Errorf("create server cert dir: %w", err)
+	}
+	certPath := filepath.Join(dir, "server.crt")
+	keyPath := filepath.Join(dir, "server.key")
+	_, leaf, ok := loadUsableKeyPair(certPath, keyPath, renewBefore)
+	if !ok || !certCoversHosts(leaf, []string{name}) {
+		mtlsCA, err := parseLeaf(bundle.MTLSCA)
+		if err != nil {
+			return ServerMaterial{}, err
+		}
+		if err := generateSignedCert(certPath, keyPath, signedCertOptions{
+			CommonName: name,
+			Hosts:      []string{name},
+			Parent:     &bundle.MTLSCA,
+			ParentCert: mtlsCA,
+			Usage:      []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			Validity:   validity,
+		}); err != nil {
+			return ServerMaterial{}, fmt.Errorf("generate server certificate: %w", err)
+		}
+		_, leaf, ok = loadUsableKeyPair(certPath, keyPath, 0)
+		if !ok {
+			return ServerMaterial{}, fmt.Errorf("generated server certificate is not usable")
+		}
+	}
+	return ServerMaterial{Name: name, CertPath: certPath, KeyPath: keyPath, ExpiresAt: leaf.NotAfter.UTC()}, nil
+}
+
 // EnsureClientCertificate creates or reuses a per-client mTLS certificate.
 func EnsureClientCertificate(bundle *CertificateBundle, clientID, proxyURL, noProxy string, validity, renewBefore time.Duration) (ClientMaterial, error) {
 	if bundle == nil {
@@ -237,6 +287,14 @@ func ensureBundle(dir string, serverHosts []string, validity, renewBefore time.D
 		ServerCert:     serverPair,
 		ClientCAPool:   pool,
 	}, nil
+}
+
+// MTLSCAPath is where a bundle prepared in dir keeps its mTLS CA's
+// certificate, for a client that verifies a server the CA signed without
+// preparing the bundle itself.
+func MTLSCAPath(dir string) string {
+	certPath, _ := certPaths(dir, mtlsCAName)
+	return certPath
 }
 
 func certPaths(dir, name string) (string, string) {

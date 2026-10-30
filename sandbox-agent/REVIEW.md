@@ -578,3 +578,16 @@ user waits on every single start.
   `awaitRawSecrets` first). The hold for raw secrets lives there, so a start
   path of its own would launch before the pool has answered for the raw
   secrets the applied document names, and run without them for good.
+
+## Bridge configs
+
+- A bridge config (`bridge.json` and its siblings in the proxy material
+  directory) is rendered and decoded as `proxy/bridge.File`, and a reader
+  dials the pool through `File.Dial`, whose `bridge.DialConfig` it holds
+  whole — the forwarder's `bridge.Config.Pool`, the DNS stub's
+  `dnsstub.Config.Pool` — never a struct of its own, nor the dial's fields
+  copied out one by one. Why: four
+  hand-written copies once each had to learn `address`, and a reader that
+  missed it would decode the file without error and dial
+  `discobox-pool-proxy`, which nothing on a machine resolves — a bridge that
+  fails on machine pools alone.

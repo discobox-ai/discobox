@@ -241,3 +241,37 @@ func TestLoadReadsTheSandboxsSkills(t *testing.T) {
 		t.Fatalf("skills = %#v, want foo with its executable script", cfg.Skills)
 	}
 }
+
+// The bootstrap says whether the agent serves its API over TLS, its pool's
+// setting (ADR 26-10-29-481 §3); one that says nothing serves plain HTTP.
+func TestLoadReadsWhetherTheAgentServesTLS(t *testing.T) {
+	for _, tc := range []struct {
+		runtime string
+		want    bool
+	}{
+		{runtime: `{"listenAddress": ":3003"}`},
+		{runtime: `{"listenAddress": ":3003", "tls": true}`, want: true},
+	} {
+		path := filepath.Join(t.TempDir(), "sandbox.json")
+		if err := os.WriteFile(path, []byte(`{
+			"apiVersion": "discobox.dev/sandbox/v1",
+			"sandboxId": "sandbox-file",
+			"agentRuntime": `+tc.runtime+`,
+			"provider": {
+				"kind": "discobox-pool",
+				"projectId": "project-file",
+				"poolId": "pool-file",
+				"publicKeys": {"controlPlane": "`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`"}
+			}
+		}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("load %s: %v", tc.runtime, err)
+		}
+		if cfg.TLS != tc.want {
+			t.Errorf("runtime %s: TLS = %t, want %t", tc.runtime, cfg.TLS, tc.want)
+		}
+	}
+}

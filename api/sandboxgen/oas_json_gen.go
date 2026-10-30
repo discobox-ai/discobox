@@ -4201,6 +4201,39 @@ func (s *OptSandboxMetaTags) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxRuntimeConfigAgentTLS as json.
+func (o OptSandboxRuntimeConfigAgentTLS) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxRuntimeConfigAgentTLS from json.
+func (o *OptSandboxRuntimeConfigAgentTLS) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxRuntimeConfigAgentTLS to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxRuntimeConfigAgentTLS) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxRuntimeConfigAgentTLS) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxRuntimeConfigProxy as json.
 func (o OptSandboxRuntimeConfigProxy) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -12459,11 +12492,18 @@ func (s *SandboxRuntimeConfigAgent) encodeFields(e *jx.Encoder) {
 			s.IdleTimeout.Encode(e)
 		}
 	}
+	{
+		if s.TLS.Set {
+			e.FieldStart("tls")
+			s.TLS.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfSandboxRuntimeConfigAgent = [2]string{
+var jsonFieldsNameOfSandboxRuntimeConfigAgent = [3]string{
 	0: "controlPlanePower",
 	1: "idleTimeout",
+	2: "tls",
 }
 
 // Decode decodes SandboxRuntimeConfigAgent from json.
@@ -12494,6 +12534,16 @@ func (s *SandboxRuntimeConfigAgent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"idleTimeout\"")
 			}
+		case "tls":
+			if err := func() error {
+				s.TLS.Reset()
+				if err := s.TLS.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tls\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -12514,6 +12564,119 @@ func (s *SandboxRuntimeConfigAgent) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxRuntimeConfigAgent) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxRuntimeConfigAgentTLS) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxRuntimeConfigAgentTLS) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("cert")
+		e.Str(s.Cert)
+	}
+	{
+		if s.Key.Set {
+			e.FieldStart("key")
+			s.Key.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxRuntimeConfigAgentTLS = [2]string{
+	0: "cert",
+	1: "key",
+}
+
+// Decode decodes SandboxRuntimeConfigAgentTLS from json.
+func (s *SandboxRuntimeConfigAgentTLS) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxRuntimeConfigAgentTLS to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "cert":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Cert = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cert\"")
+			}
+		case "key":
+			if err := func() error {
+				s.Key.Reset()
+				if err := s.Key.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"key\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxRuntimeConfigAgentTLS")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxRuntimeConfigAgentTLS) {
+					name = jsonFieldsNameOfSandboxRuntimeConfigAgentTLS[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxRuntimeConfigAgentTLS) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxRuntimeConfigAgentTLS) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

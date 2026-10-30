@@ -949,6 +949,9 @@ func (s *CreatePeerBody) SetName(val OptString) {
 type CreatePoolBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Reach the pool's sandboxes' agents over plain HTTP instead of TLS the pool's CA issues (ADR
+	// 26-10-29-481 §3). Off by default.
+	DisableAgentEndpointTls OptBool `json:"disableAgentEndpointTls"`
 	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
 	// to the provider's configuration, then the host.
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
@@ -967,6 +970,11 @@ type CreatePoolBody struct {
 // GetSchema returns the value of Schema.
 func (s *CreatePoolBody) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetDisableAgentEndpointTls returns the value of DisableAgentEndpointTls.
+func (s *CreatePoolBody) GetDisableAgentEndpointTls() OptBool {
+	return s.DisableAgentEndpointTls
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -997,6 +1005,11 @@ func (s *CreatePoolBody) GetStorageBytes() OptInt64 {
 // SetSchema sets the value of Schema.
 func (s *CreatePoolBody) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetDisableAgentEndpointTls sets the value of DisableAgentEndpointTls.
+func (s *CreatePoolBody) SetDisableAgentEndpointTls(val OptBool) {
+	s.DisableAgentEndpointTls = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.
@@ -14897,6 +14910,52 @@ func (o OptSandboxPullProgress) Or(d SandboxPullProgress) SandboxPullProgress {
 	return d
 }
 
+// NewOptSandboxRuntimeConfigAgentTLS returns new OptSandboxRuntimeConfigAgentTLS with value set to v.
+func NewOptSandboxRuntimeConfigAgentTLS(v SandboxRuntimeConfigAgentTLS) OptSandboxRuntimeConfigAgentTLS {
+	return OptSandboxRuntimeConfigAgentTLS{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxRuntimeConfigAgentTLS is optional SandboxRuntimeConfigAgentTLS.
+type OptSandboxRuntimeConfigAgentTLS struct {
+	Value SandboxRuntimeConfigAgentTLS
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxRuntimeConfigAgentTLS was set.
+func (o OptSandboxRuntimeConfigAgentTLS) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxRuntimeConfigAgentTLS) Reset() {
+	var v SandboxRuntimeConfigAgentTLS
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxRuntimeConfigAgentTLS) SetTo(v SandboxRuntimeConfigAgentTLS) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxRuntimeConfigAgentTLS) Get() (v SandboxRuntimeConfigAgentTLS, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxRuntimeConfigAgentTLS) Or(d SandboxRuntimeConfigAgentTLS) SandboxRuntimeConfigAgentTLS {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxRuntimeConfigProxy returns new OptSandboxRuntimeConfigProxy with value set to v.
 func NewOptSandboxRuntimeConfigProxy(v SandboxRuntimeConfigProxy) OptSandboxRuntimeConfigProxy {
 	return OptSandboxRuntimeConfigProxy{
@@ -16670,6 +16729,11 @@ type Pool struct {
 	Egress OptEgressPolicy `json:"egress"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Reach the pool's sandboxes' agents over plain HTTP instead of TLS the pool's CA issues (ADR
+	// 26-10-29-481 §3). Off for a pool made now; on for every pool made before TLS was the default. A
+	// change reaches a sandbox when its box is next made - a VM sandbox at its next start, a container
+	// when it is replaced.
+	DisableAgentEndpointTls OptBool `json:"disableAgentEndpointTls"`
 	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
 	// to the provider's configuration, then the host.
 	CpuVcpus float64 `json:"cpuVcpus"`
@@ -16764,6 +16828,11 @@ func (s *Pool) GetEgress() OptEgressPolicy {
 // GetSchema returns the value of Schema.
 func (s *Pool) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetDisableAgentEndpointTls returns the value of DisableAgentEndpointTls.
+func (s *Pool) GetDisableAgentEndpointTls() OptBool {
+	return s.DisableAgentEndpointTls
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -16954,6 +17023,11 @@ func (s *Pool) SetEgress(val OptEgressPolicy) {
 // SetSchema sets the value of Schema.
 func (s *Pool) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetDisableAgentEndpointTls sets the value of DisableAgentEndpointTls.
+func (s *Pool) SetDisableAgentEndpointTls(val OptBool) {
+	s.DisableAgentEndpointTls = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.
@@ -27881,6 +27955,10 @@ type SandboxRuntimeConfigAgent struct {
 	// powering itself off (ADR 26-10-16-337 §8). Sent only to a sandbox whose status advertised
 	// controlPlanePower, because an older agent refuses the whole document over a field it does not know.
 	ControlPlanePower OptBool `json:"controlPlanePower"`
+	// Renews the keypair the agent serves its API over TLS with (ADR 26-10-29-481 §3). Sent only to a
+	// sandbox whose bootstrap told its agent to serve TLS, which is new enough to know the field. Absent
+	// leaves the keypair the agent holds.
+	TLS OptSandboxRuntimeConfigAgentTLS `json:"tls"`
 }
 
 // GetIdleTimeout returns the value of IdleTimeout.
@@ -27893,6 +27971,11 @@ func (s *SandboxRuntimeConfigAgent) GetControlPlanePower() OptBool {
 	return s.ControlPlanePower
 }
 
+// GetTLS returns the value of TLS.
+func (s *SandboxRuntimeConfigAgent) GetTLS() OptSandboxRuntimeConfigAgentTLS {
+	return s.TLS
+}
+
 // SetIdleTimeout sets the value of IdleTimeout.
 func (s *SandboxRuntimeConfigAgent) SetIdleTimeout(val OptString) {
 	s.IdleTimeout = val
@@ -27901,6 +27984,41 @@ func (s *SandboxRuntimeConfigAgent) SetIdleTimeout(val OptString) {
 // SetControlPlanePower sets the value of ControlPlanePower.
 func (s *SandboxRuntimeConfigAgent) SetControlPlanePower(val OptBool) {
 	s.ControlPlanePower = val
+}
+
+// SetTLS sets the value of TLS.
+func (s *SandboxRuntimeConfigAgent) SetTLS(val OptSandboxRuntimeConfigAgentTLS) {
+	s.TLS = val
+}
+
+// The keypair a sandbox agent serves its API over TLS with, which its pool's mTLS CA signed for the
+// sandbox's private name, so the pool knows which sandbox answered.
+// Ref: #/components/schemas/SandboxRuntimeConfigAgentTLS
+type SandboxRuntimeConfigAgentTLS struct {
+	// The PEM server certificate.
+	Cert string `json:"cert"`
+	// The PEM private key. Required on delivery; never returned, so a document read back omits it.
+	Key OptString `json:"key"`
+}
+
+// GetCert returns the value of Cert.
+func (s *SandboxRuntimeConfigAgentTLS) GetCert() string {
+	return s.Cert
+}
+
+// GetKey returns the value of Key.
+func (s *SandboxRuntimeConfigAgentTLS) GetKey() OptString {
+	return s.Key
+}
+
+// SetCert sets the value of Cert.
+func (s *SandboxRuntimeConfigAgentTLS) SetCert(val string) {
+	s.Cert = val
+}
+
+// SetKey sets the value of Key.
+func (s *SandboxRuntimeConfigAgentTLS) SetKey(val OptString) {
+	s.Key = val
 }
 
 // The credential and trust for the sandbox's hop to its pool. Where the pool is comes from the
@@ -32930,6 +33048,10 @@ type UpdatePoolBody struct {
 	Egress OptEgressPolicy `json:"egress"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Changes whether the pool reaches its sandboxes' agents over plain HTTP instead of TLS. The pool's
+	// host is placed again with it; a sandbox takes it when its box is next made - a VM sandbox at its
+	// next start, a container when it is replaced - and is reached as it was made until then.
+	DisableAgentEndpointTls OptBool `json:"disableAgentEndpointTls"`
 	// VCPUs for the pool's VM. Only a provider that sizes a VM per pool accepts it; zero leaves the size
 	// to the provider's configuration, then the host.
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
@@ -32951,6 +33073,11 @@ func (s *UpdatePoolBody) GetEgress() OptEgressPolicy {
 // GetSchema returns the value of Schema.
 func (s *UpdatePoolBody) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetDisableAgentEndpointTls returns the value of DisableAgentEndpointTls.
+func (s *UpdatePoolBody) GetDisableAgentEndpointTls() OptBool {
+	return s.DisableAgentEndpointTls
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -32981,6 +33108,11 @@ func (s *UpdatePoolBody) SetEgress(val OptEgressPolicy) {
 // SetSchema sets the value of Schema.
 func (s *UpdatePoolBody) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetDisableAgentEndpointTls sets the value of DisableAgentEndpointTls.
+func (s *UpdatePoolBody) SetDisableAgentEndpointTls(val OptBool) {
+	s.DisableAgentEndpointTls = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.

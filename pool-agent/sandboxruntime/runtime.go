@@ -385,6 +385,9 @@ type DockerSandboxRuntimeConfig struct {
 	ProjectID             string
 	PoolID                string
 	ControlPlanePublicKey string
+	// AgentTLS has every sandbox made from now on serve its agent's API over
+	// TLS, the pool's setting (ADR 26-10-29-481 §3).
+	AgentTLS bool
 	// Root is where the runtime reads and writes pool state: the pool
 	// container's, layout.Container().
 	Root layout.Root
@@ -426,6 +429,7 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 			projectID:             cfg.ProjectID,
 			poolID:                cfg.PoolID,
 			controlPlanePublicKey: cfg.ControlPlanePublicKey,
+			agentTLS:              cfg.AgentTLS,
 			sandboxIdleTimeout:    cfg.SandboxIdleTimeout,
 			poolEndpoints:         cfg.PoolEndpoints,
 			identityKey:           cfg.IdentityKey,
@@ -1222,6 +1226,7 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 	if err != nil {
 		return err
 	}
+	doc.Runtime.AgentRuntime.TLS = r.agentTLS
 	// Recorded beside the tree from what the control plane sent, so nothing
 	// later has to read sandbox.json back to know it.
 	if err := r.recordFileSecrets(sandboxID, doc.Image.Secrets); err != nil {
@@ -1231,8 +1236,13 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(configDir, sandboxDocumentName)
-	if err := writeSandboxManifest(path, data); err != nil {
+	if err := writeSandboxManifest(configDir, data); err != nil {
+		return err
+	}
+	// What the bootstrap told the agent is how the pool reaches it, whatever
+	// the pool's setting is later; the keypair it serves with is placed at
+	// every start (placeAgent).
+	if err := r.recordAgentTLS(sandboxID, r.agentTLS); err != nil {
 		return err
 	}
 	// A readiness marker left in the volume by an earlier container — or by
@@ -1263,14 +1273,41 @@ func marshalSandboxDocument(doc sandboxconfig.Document) ([]byte, error) {
 	return json.MarshalIndent(&sandboxDocumentFile{Config: cfg, Provenance: provenance}, "", "  ")
 }
 
-func writeSandboxManifest(path string, data []byte) error {
-	//nolint:gosec // sandbox.json is a public runtime contract consumed by the unprivileged sandbox user.
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+// writeSandboxManifest writes sandbox.json into the sandbox's config volume
+// on this side, configDir: public, since the sandbox user reads it. The
+// volume is the sandbox's to write while it runs, and is reused when its
+// container is replaced, so it is written through a root (writeRootFile).
+func writeSandboxManifest(configDir string, data []byte) error {
+	root, err := os.OpenRoot(configDir)
+	if err != nil {
 		return err
 	}
-	// WriteFile applies its mode only when creating a file. Enforce the public
-	// manifest mode when replacing a sandbox.json previously created as 0600.
-	return os.Chmod(path, 0o644)
+	defer root.Close()
+	return writeRootFile(root, sandboxDocumentName, data, 0o644)
+}
+
+// writeRootFile writes data to name in root at mode, as root on the host,
+// into a directory a sandbox can write: staged beside the target and renamed
+// over it, so a link the sandbox planted at either name is replaced rather
+// than followed, and root refuses one on the way to it that leaves it.
+func writeRootFile(root *os.Root, name string, data []byte, mode os.FileMode) error {
+	tmp := name + ".tmp"
+	if err := root.Remove(tmp); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	_, werr := f.Write(data)
+	if err := errors.Join(werr, f.Close()); err != nil {
+		return err
+	}
+	// The create's mode is masked by the umask.
+	if err := root.Chmod(tmp, mode); err != nil {
+		return err
+	}
+	return root.Rename(tmp, name)
 }
 
 // documentHarnessSecrets carries the harness's declared credentials onto the
@@ -2545,7 +2582,13 @@ func (r *DockerSandboxRuntime) SandboxDialer(ctx context.Context, sandboxID stri
 	if err != nil {
 		return nil, err
 	}
-	return containerDialer(sandboxID, inspect.Container, port)
+	dial, err := containerDialer(sandboxID, inspect.Container, port)
+	if err != nil || port != SandboxAgentPort {
+		return dial, err
+	}
+	// Over TLS where its bootstrap told the agent to serve TLS (ADR
+	// 26-10-29-481 §3); every other port is the sandbox's own.
+	return r.agentDialer(sandboxID, dial)
 }
 
 // containerDialer reaches a port in a sandbox container at its address on the
@@ -2610,6 +2653,9 @@ func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxI
 			// address that cannot change while it runs. It is the dial
 			// SandboxDialer hands everyone else.
 			dial, dialErr := containerDialer(sandboxID, inspect.Container, SandboxAgentPort)
+			if dialErr == nil {
+				dial, dialErr = r.agentDialer(sandboxID, dial)
+			}
 			if dialErr != nil {
 				lastErr = dialErr
 			} else {

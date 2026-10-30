@@ -133,10 +133,16 @@ func (r *sandboxCore) extractAgent(ctx context.Context, sandboxID, digest, path 
 }
 
 // placeAgent places the agent in the sandbox's container before it starts:
-// the layer when the pool has not placed it in this container, and its units
-// and pins always, recording what it placed (placedRecord). A sandbox whose
-// pool places no agent in it (applied) is left as it is.
+// the keypair it serves its API over TLS with where it does, the layer when
+// the pool has not placed it in this container, and its units and pins
+// always, recording what it placed (placedRecord). A sandbox whose pool
+// places no agent in it (applied) is left as it is but for its keypair.
 func (r *DockerSandboxRuntime) placeAgent(ctx context.Context, sandboxID, containerID string) error {
+	// The keypair the agent serves its API over TLS with, at every start, so
+	// one renewed while the sandbox was down is the one it serves.
+	if err := r.placeAgentKeypair(sandboxID); err != nil {
+		return err
+	}
 	pins, ok, err := r.deliveredPins(sandboxID)
 	if err != nil || !ok {
 		return err

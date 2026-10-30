@@ -34,6 +34,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxpath"
+	"github.com/discobox-ai/discobox/proxy/bridge"
 )
 
 // Layout is where a document's files land.
@@ -42,6 +43,9 @@ type Layout struct {
 	ConfigDir string
 	// ProxyDir holds the proxy material and the bridge configs that name it.
 	ProxyDir string
+	// AgentTLSDir holds the keypair the agent serves its API over TLS with
+	// (sandboxconfig.AgentTLS), which the pool placed and a document renews.
+	AgentTLSDir string
 	// SecretsPath is the resolved-secrets file secretswatch watches.
 	SecretsPath string
 	// StatePath is where the last applied document is kept. It holds the
@@ -60,6 +64,7 @@ func DefaultLayout() Layout {
 	return Layout{
 		ConfigDir:   sandboxconfig.SandboxConfigDir,
 		ProxyDir:    filepath.Join(sandboxconfig.SandboxConfigDir, "proxy"),
+		AgentTLSDir: filepath.Join(sandboxconfig.SandboxConfigDir, sandboxconfig.AgentTLSDirName),
 		SecretsPath: "/run/discobox/secrets/secrets.json",
 		StatePath:   "/var/lib/discobox/runtime-config.json",
 		// The agent runs inside the sandbox, so its own platform is the
@@ -165,14 +170,21 @@ func Open(ctx context.Context, cfg Config) (*Intake, error) {
 		return in, fmt.Errorf("kept runtime config %s was applied for %+v, not this sandbox (%+v); not restored", layout.StatePath, file.Owner, owner)
 	}
 	kept := file.Document
-	// The kept document carries no client key (see plan); the key is the one
-	// already in the proxy directory, which is its only copy on disk.
+	// The kept document carries no private key (see plan); each is the one
+	// already where its readers read it, its only copy on disk.
 	if kept.Proxy != nil && kept.Proxy.ClientKey == "" {
 		key, err := os.ReadFile(filepath.Join(layout.ProxyDir, clientKeyFile))
 		if err != nil {
 			return in, fmt.Errorf("read the client key the kept runtime config names: %w", err)
 		}
 		kept.Proxy.ClientKey = string(key)
+	}
+	if kept.Agent.TLS != nil && kept.Agent.TLS.Key == "" {
+		key, err := os.ReadFile(filepath.Join(layout.AgentTLSDir, sandboxconfig.AgentTLSKeyName))
+		if err != nil {
+			return in, fmt.Errorf("read the agent's TLS key the kept runtime config names: %w", err)
+		}
+		kept.Agent.TLS.Key = string(key)
 	}
 	if err := kept.Validate(layout.Paths); err != nil {
 		return in, fmt.Errorf("kept runtime config %s: %w", layout.StatePath, err)
@@ -314,6 +326,7 @@ func (in *Intake) plan(doc sandboxconfig.RuntimeConfig, keep bool) ([]op, []op, 
 		return nil, nil, err
 	}
 	ops = append(ops, proxyOps...)
+	ops = append(ops, agentTLSFiles(in.layout.AgentTLSDir, doc.Agent.TLS)...)
 	secrets, err := secretsFile(in.layout.SecretsPath, doc.SecretEnv)
 	if err != nil {
 		return nil, nil, err
@@ -322,9 +335,10 @@ func (in *Intake) plan(doc sandboxconfig.RuntimeConfig, keep bool) ([]op, []op, 
 	var tail []op
 	if keep {
 		// /var/lib/discobox is a data volume, which an export carries, so the
-		// kept document leaves the client key out: client.key in the proxy
-		// directory stays the one copy, and a restore reads it from there.
-		state, err := json.MarshalIndent(keptDocument{Owner: in.owner, Document: WithoutClientKey(doc)}, "", "  ")
+		// kept document leaves the private keys out: client.key in the proxy
+		// directory and the agent's TLS key stay the one copy each, and a
+		// restore reads them from there.
+		state, err := json.MarshalIndent(keptDocument{Owner: in.owner, Document: doc.WithoutPrivateKeys()}, "", "  ")
 		if err != nil {
 			return nil, nil, err
 		}
@@ -411,20 +425,6 @@ var proxyFileNames = []string{
 	egressBridgeFile, nestedDockerBridgeFile, buildKitBridgeFile, registryNamespaceFile,
 }
 
-// bridgeFile is the bridge config as the forwarders, the DNS stub and the
-// credentials relay decode it.
-type bridgeFile struct {
-	ListenAddress    string `json:"listenAddress"`
-	UpstreamURL      string `json:"workerProxyUrl"`
-	ServerName       string `json:"serverName,omitempty"`
-	CredentialsURL   string `json:"credentialsUrl,omitempty"`
-	DNSServer        string `json:"dnsServer,omitempty"`
-	DNSListenAddress string `json:"dnsListenAddress,omitempty"`
-	MTLSCAPath       string `json:"mtlsCaPath"`
-	ClientCertPath   string `json:"clientCertPath"`
-	ClientKeyPath    string `json:"clientKeyPath"`
-}
-
 // proxyFiles renders the proxy material into dir, and each bridge config from
 // its three parts: where the pool serves it (pool, from the bootstrap), where
 // this sandbox listens for it (sandboxconfig's constants), and the credential
@@ -442,7 +442,7 @@ func proxyFiles(dir string, pool *sandboxconfig.PoolEndpoints, proxy *sandboxcon
 		files[clientCertFile] = op{data: []byte(proxy.ClientCert), mode: 0o644}
 		files[clientKeyFile] = op{data: []byte(proxy.ClientKey), mode: 0o600}
 		if pool != nil && pool.Proxy != "" {
-			egress := bridgeFile{
+			egress := bridge.File{
 				ListenAddress:  sandboxconfig.SandboxEgressListenAddress,
 				UpstreamURL:    pool.Proxy,
 				CredentialsURL: pool.Credentials,
@@ -451,18 +451,19 @@ func proxyFiles(dir string, pool *sandboxconfig.PoolEndpoints, proxy *sandboxcon
 				egress.DNSServer = pool.DNS
 				egress.DNSListenAddress = sandboxconfig.SandboxDNSListenAddress
 			}
-			bridges := map[string]bridgeFile{
+			bridges := map[string]bridge.File{
 				egressBridgeFile:       egress,
 				nestedDockerBridgeFile: {UpstreamURL: pool.Proxy},
 			}
 			if pool.BuildKit != "" {
-				bridges[buildKitBridgeFile] = bridgeFile{
+				bridges[buildKitBridgeFile] = bridge.File{
 					ListenAddress: sandboxconfig.SandboxBuildKitListenAddress,
 					UpstreamURL:   pool.BuildKit,
 				}
 			}
 			for name, bridge := range bridges {
 				bridge.ServerName = pool.ServerName
+				bridge.Address = pool.Address
 				bridge.MTLSCAPath = filepath.Join(dir, mtlsCAFile)
 				bridge.ClientCertPath = filepath.Join(dir, clientCertFile)
 				bridge.ClientKeyPath = filepath.Join(dir, clientKeyFile)
@@ -486,15 +487,17 @@ func proxyFiles(dir string, pool *sandboxconfig.PoolEndpoints, proxy *sandboxcon
 	return ops, nil
 }
 
-// WithoutClientKey is doc with the sandbox's client private key removed: what
-// is kept on disk beside it and what is answered to a caller, neither of which
-// needs the key, which only the bridges read and only from client.key.
-func WithoutClientKey(doc sandboxconfig.RuntimeConfig) sandboxconfig.RuntimeConfig {
-	if doc.Proxy == nil {
-		return doc
+// agentTLSFiles writes the agent's renewed keypair where it serves it from.
+// A document that renews none leaves the keypair the pool placed: unlike the
+// proxy material, the keypair arrives before any document does, placed at
+// every start.
+func agentTLSFiles(dir string, keypair *sandboxconfig.AgentTLS) []op {
+	if keypair == nil {
+		return nil
 	}
-	proxy := *doc.Proxy
-	proxy.ClientKey = ""
-	doc.Proxy = &proxy
-	return doc
+	return []op{
+		//nolint:gosec // a server certificate is public.
+		{path: filepath.Join(dir, sandboxconfig.AgentTLSCertName), data: []byte(keypair.Cert), mode: 0o644, dirMode: 0o755},
+		{path: filepath.Join(dir, sandboxconfig.AgentTLSKeyName), data: []byte(keypair.Key), mode: 0o600, dirMode: 0o755},
+	}
 }

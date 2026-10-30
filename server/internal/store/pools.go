@@ -76,7 +76,7 @@ func (s *Store) UpdatePool(ctx context.Context, pool *model.Pool) error {
 	if err != nil {
 		return err
 	}
-	return write.Model(pool).Select("name", "cpu_vcpus", "memory_bytes", "storage_bytes", "egress", "updated_at").Updates(pool).Error
+	return write.Model(pool).Select("name", "cpu_vcpus", "memory_bytes", "storage_bytes", "disable_agent_endpoint_tls", "egress", "updated_at").Updates(pool).Error
 }
 
 func (s *Store) DeletePool(ctx context.Context, projectID, poolID string) error {

@@ -45,16 +45,6 @@ const (
 // sibling sandbox.
 const ListenAddress = agentcreds.DefaultAddress
 
-// bridgeConfig is the subset of the pool-written bridge config this package
-// needs. The file is shared with the proxy bridge, which reads the rest.
-type bridgeConfig struct {
-	CredentialsURL string `json:"credentialsUrl"`
-	ServerName     string `json:"serverName"`
-	MTLSCAPath     string `json:"mtlsCaPath"`
-	ClientCertPath string `json:"clientCertPath"`
-	ClientKeyPath  string `json:"clientKeyPath"`
-}
-
 // Relay implements the protocol by forwarding to the pool. Every method is a
 // pass-through: interpreting a request here would be interpreting it on the
 // untrusted side of the boundary.
@@ -120,25 +110,15 @@ func stampOf(paths ...string) materialStamp {
 // load builds the protocol client from the bridge config at path, and stamps
 // the files it read.
 func load(path string) (*poolClient, materialStamp, error) {
-	data, err := os.ReadFile(path)
+	cfg, err := bridge.LoadFile(path)
 	if err != nil {
 		return nil, materialStamp{}, fmt.Errorf("read proxy material: %w", err)
-	}
-	var cfg bridgeConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, materialStamp{}, fmt.Errorf("parse %s: %w", path, err)
 	}
 	if cfg.CredentialsURL == "" {
 		return nil, materialStamp{}, fmt.Errorf("%s names no pool credentials endpoint", path)
 	}
 	stamp := stampOf(path, cfg.MTLSCAPath, cfg.ClientCertPath, cfg.ClientKeyPath)
-	pool, err := bridge.NewDialer(bridge.DialConfig{
-		URL:            cfg.CredentialsURL,
-		ServerName:     cfg.ServerName,
-		MTLSCAPath:     cfg.MTLSCAPath,
-		ClientCertPath: cfg.ClientCertPath,
-		ClientKeyPath:  cfg.ClientKeyPath,
-	})
+	pool, err := bridge.NewDialer(cfg.Dial(cfg.CredentialsURL))
 	if err != nil {
 		return nil, materialStamp{}, fmt.Errorf("pool credentials endpoint: %w", err)
 	}
@@ -169,12 +149,8 @@ func (r *Relay) current() *poolClient {
 	if r.path == "" {
 		return r.client
 	}
-	data, err := os.ReadFile(r.path)
+	cfg, err := bridge.LoadFile(r.path)
 	if err != nil {
-		return r.client
-	}
-	var cfg bridgeConfig
-	if json.Unmarshal(data, &cfg) != nil {
 		return r.client
 	}
 	if stampOf(r.path, cfg.MTLSCAPath, cfg.ClientCertPath, cfg.ClientKeyPath) == r.built {

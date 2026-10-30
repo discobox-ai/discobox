@@ -62,7 +62,14 @@ sandbox reaches a pool service — the bridge, and the credentials relay in
   §4). `wss://edge/tunnel/<service>` opens a [`wstunnel`](../pkg/wstunnel)
   stream through an HTTPS edge that terminates TLS, for a pool reachable only
   behind one ([ADR 26-10-23-719](../docs/adr/26-10-23-719-a-sandbox-may-reach-its-pool-through-a-websocket-tunnel-with-its-mtls-inside.md)).
-  `http` is refused: nothing speaks plaintext to the pool.
+  `http` is refused: nothing speaks plaintext to the pool. An https URL names
+  the pool by discobox's private name; `address` in `bridge.json`, when the
+  pool states one, is discobox's own answer for that name — a machine pool's
+  provider host — which is dialed in its place, keeping the port, and
+  resolved at each dial ([ADR 26-10-29-481](../docs/adr/26-10-29-481-a-machine-sandbox-and-its-pool-reach-each-other-at-their-private-urls-over-tls-the-pools-ca-issues.md)
+  §2). It answers an https URL's name alone. Every bridge config is
+  written and read as one type, `bridge.File`, and dialed through
+  `File.Dial`, so a field the intake writes reaches every reader.
 - **mTLS**, identical on every transport. The client certificate's common name
   stays the tenant identity, so the proxy is unchanged and learns nothing about
   hypervisors or edges. The pool's certificate is verified against
@@ -115,6 +122,11 @@ Certificate preparation is independent of running the proxy:
 - Pool server certificate: presented by the pool host proxy listener.
 - Client certificates: issued per sandbox/client identity (CN = client ID) and
   delivered in the sandbox's runtime-config document by pool-agent.
+- Server certificates (`EnsureServerCertificate`): the mTLS CA signs one for a
+  name the pool dials and verifies, a sandbox's agent by its private name
+  (`<sandbox>.sandbox.discobox.internal`, ADR 26-10-29-481 §3), kept under `servers/<name>` and reissued within
+  `RenewBefore` of expiry. `MTLSCAPath` names the CA a client verifies them
+  against.
 
 `PrepareCertificates` creates or reuses this material — reissuing anything within
 `RenewBefore` of expiry, and the server certificate when it no longer covers

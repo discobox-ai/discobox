@@ -712,3 +712,152 @@ func TestMachineRunningWithoutItsPlacementIsPlacedAgain(t *testing.T) {
 		t.Fatalf("placement record = %v, %v; want it written again", ok, err)
 	}
 }
+
+// fencingDriver is the fake driver as one that fences a machine's egress: it
+// lists Egress, keeps each machine's fence itself, since the fake driver
+// refuses one, and reports it as the provider would.
+type fencingDriver struct {
+	machine.Driver
+	mu     sync.Mutex
+	fences map[string]*machine.Egress
+}
+
+func (d *fencingDriver) Capabilities() machine.Capabilities {
+	caps := d.Driver.Capabilities()
+	caps.Egress = true
+	return caps
+}
+
+func (d *fencingDriver) Create(ctx context.Context, spec machine.InstanceSpec) (machine.Instance, error) {
+	fence := spec.Egress
+	spec.Egress = nil
+	inst, err := d.Driver.Create(ctx, spec)
+	if err != nil {
+		return inst, err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.fences[inst.Name] = fence
+	inst.Egress = fence
+	return inst, nil
+}
+
+func (d *fencingDriver) Instance(ctx context.Context, name string) (machine.Instance, error) {
+	inst, err := d.Driver.Instance(ctx, name)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	inst.Egress = d.fences[inst.Name]
+	return inst, err
+}
+
+// A sandbox's machine is made with the pool's fence, which the driver sets
+// before the create returns; one found by name that is not fenced so, made
+// before the fence or by hand, is refused rather than run (ADR 26-10-29-481
+// §4).
+func TestMachineCreateFencesTheMachine(t *testing.T) {
+	ctx := context.Background()
+	driver := &fencingDriver{Driver: vmtest.FakeDriver(t, t.TempDir(), machineTestProject, nil), fences: map[string]*machine.Egress{}}
+	e, err := engine.Open(driver, machineTestProject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		instances, _ := driver.Instances(context.Background())
+		for _, inst := range instances {
+			_ = e.Remove(context.Background(), inst, true)
+		}
+	})
+	fence := &machine.Egress{}
+	r, err := NewMachineSandboxRuntime(MachineSandboxRuntimeConfig{Engine: e, Egress: fence, Root: layout.ContainerAt(t.TempDir())})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inst, err := r.ensureInstance(ctx, "sbx_fenced")
+	if err != nil {
+		t.Fatalf("ensure a fenced machine: %v", err)
+	}
+	if got := driver.fences[inst.Name]; got == nil || len(got.Allow) != 0 {
+		t.Fatalf("the machine was made with fence %+v, want one that reaches nothing beyond its network", got)
+	}
+	if _, err := r.ensureInstance(ctx, "sbx_fenced"); err != nil {
+		t.Fatalf("find the fenced machine again: %v", err)
+	}
+
+	base, err := r.baseRef(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Create(ctx, base, engine.CreateOptions{Name: "sbx-open"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.ensureInstance(ctx, "sbx_open"); err == nil || !strings.Contains(err.Error(), "not fenced") {
+		t.Fatalf("ensure a machine made without the fence = %v, want it refused", err)
+	}
+}
+
+// A runtime asked to fence its sandboxes' machines refuses a driver that
+// cannot (ADR 26-10-29-481 §4).
+func TestMachineRuntimeRefusesADriverThatCannotFence(t *testing.T) {
+	e, err := engine.Open(vmtest.FakeDriver(t, t.TempDir(), machineTestProject, nil), machineTestProject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = NewMachineSandboxRuntime(MachineSandboxRuntimeConfig{Engine: e, Egress: &machine.Egress{}, Root: layout.ContainerAt(t.TempDir())})
+	if err == nil || !strings.Contains(err.Error(), "cannot fence") {
+		t.Fatalf("runtime on the fake driver, fenced = %v, want refused", err)
+	}
+}
+
+func TestSameEgressComparesAllowedHostsAsASet(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		got, want *machine.Egress
+		same      bool
+	}{
+		{name: "both unfenced", same: true},
+		{name: "unfenced is not fenced", want: &machine.Egress{}},
+		{name: "fenced to nothing", got: &machine.Egress{}, want: &machine.Egress{}, same: true},
+		{name: "in any order and case", got: &machine.Egress{Allow: []string{"B.example", "a.example"}}, want: &machine.Egress{Allow: []string{"a.example", "b.example"}}, same: true},
+		{name: "a host more", got: &machine.Egress{Allow: []string{"a.example", "b.example"}}, want: &machine.Egress{Allow: []string{"a.example"}}},
+		{name: "a host fewer", got: &machine.Egress{Allow: []string{"a.example"}}, want: &machine.Egress{Allow: []string{"a.example", "b.example"}}},
+	} {
+		if got := sameEgress(tc.got, tc.want); got != tc.same {
+			t.Errorf("%s: sameEgress = %t, want %t", tc.name, got, tc.same)
+		}
+	}
+}
+
+// A machine is reached as its bootstrap told its agent: its pool turning TLS
+// on rewrites nothing of a running machine, which takes the setting when its
+// next start places its bootstrap again (ADR 26-10-29-481 §3).
+func TestARunningMachineIsReachedAsItWasMade(t *testing.T) {
+	f := newMachineFixture(t)
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_1")); err != nil {
+		t.Fatal(err)
+	}
+	if serves, err := r.agentServesTLS("sbx_1"); err != nil || serves {
+		t.Fatalf("agentServesTLS = %v, %v; want a machine made plain reached plain", serves, err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current, err := r.placementCurrent(ctx, "sbx_1", inst.ID); err != nil || !current {
+		t.Fatalf("placementCurrent = %v, %v; want the machine as it was placed", current, err)
+	}
+
+	r.agentTLS = true
+	record, _, err := r.readMachineRecord("sbx_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Bootstrap.Runtime.AgentRuntime.TLS {
+		t.Fatal("turning the pool's TLS on rewrote a running machine's bootstrap")
+	}
+	if serves, err := r.agentServesTLS("sbx_1"); err != nil || serves {
+		t.Fatalf("agentServesTLS = %v, %v; want a running machine still reached as it was made", serves, err)
+	}
+}

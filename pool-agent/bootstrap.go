@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -97,6 +98,18 @@ type Bootstrap struct {
 	// which every sandbox's machine is made isolated on (ADR 26-10-23-551
 	// §4). A driver that isolates machines needs one.
 	MachineNetwork string `json:"machineNetwork,omitempty"`
+	// PublicURL and PrivateURL are where the pool's own machine is reached,
+	// as its driver gives them (disco-vm ADR 26-10-29-129): the public URL
+	// from outside the provider, the private one by the pool's sandboxes'
+	// machines. A RuntimeMachine pool derives its sandboxes' endpoints from
+	// them (ADR 26-10-29-481 §2): a private URL that differs from the public
+	// one is a direct path, one that does not is an edge.
+	PublicURL  string `json:"publicUrl,omitempty"`
+	PrivateURL string `json:"privateUrl,omitempty"`
+	// DisableAgentEndpointTLS has the pool reach its sandboxes' agents over
+	// plain HTTP rather than TLS its CA issues, the pool's own setting (ADR
+	// 26-10-29-481 §3). The pool tells each sandbox in its bootstrap.
+	DisableAgentEndpointTLS bool `json:"disableAgentEndpointTls,omitempty"`
 }
 
 // EffectiveRuntime is the runtime the bootstrap names, RuntimeDocker when it
@@ -106,6 +119,13 @@ func (b Bootstrap) EffectiveRuntime() Runtime {
 		return RuntimeDocker
 	}
 	return b.Runtime
+}
+
+// reachedThroughEdge reports a machine pool whose sandboxes reach it only at
+// its public URL, an edge: its driver gives its machines no other path (ADR
+// 26-10-29-481 §2).
+func (b Bootstrap) reachedThroughEdge() bool {
+	return b.EffectiveRuntime() == RuntimeMachine && b.PrivateURL == b.PublicURL
 }
 
 // Validate checks the required pool bootstrap fields.
@@ -131,8 +151,8 @@ func (b Bootstrap) Validate() error {
 		if b.Driver != "" {
 			return fmt.Errorf("driver %q is for the %s runtime; this pool's is %s", b.Driver, RuntimeMachine, RuntimeDocker)
 		}
-		if b.MachineProject != "" || b.MachineBase != "" || b.MachineNetwork != "" {
-			return fmt.Errorf("a machine project, base and network are for the %s runtime; this pool's is %s", RuntimeMachine, RuntimeDocker)
+		if b.MachineProject != "" || b.MachineBase != "" || b.MachineNetwork != "" || b.PublicURL != "" || b.PrivateURL != "" {
+			return fmt.Errorf("a machine project, base, network and URLs are for the %s runtime; this pool's is %s", RuntimeMachine, RuntimeDocker)
 		}
 	case RuntimeMachine:
 		if strings.TrimSpace(b.Driver) == "" {
@@ -141,8 +161,37 @@ func (b Bootstrap) Validate() error {
 		if err := machine.ValidateProject(b.MachineProject); err != nil {
 			return fmt.Errorf("the %s runtime's machine project: %w", RuntimeMachine, err)
 		}
+		// A driver with no path between its machines cannot carry a machine
+		// pool: its sandboxes could not reach it (ADR 26-10-29-481 §1).
+		for _, u := range []struct{ name, value string }{{"public", b.PublicURL}, {"private", b.PrivateURL}} {
+			if err := validateMachineURL(u.value); err != nil {
+				return fmt.Errorf("the %s runtime's %s URL: %w", RuntimeMachine, u.name, err)
+			}
+		}
 	default:
 		return fmt.Errorf("unknown pool runtime %q", b.Runtime)
+	}
+	return nil
+}
+
+// validateMachineURL checks a URL a driver gives a pool's machine: http or
+// https, naming a host, and nothing after it but a root path.
+func validateMachineURL(value string) error {
+	if strings.TrimSpace(value) == "" {
+		return errors.New("is required: the provider writes it from its driver")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return err
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("%q is neither http nor https", value)
+	}
+	if parsed.Hostname() == "" {
+		return fmt.Errorf("%q names no host", value)
+	}
+	if strings.Trim(parsed.Path, "/") != "" || parsed.RawQuery != "" || parsed.User != nil {
+		return fmt.Errorf("%q names more than a host and port", value)
 	}
 	return nil
 }

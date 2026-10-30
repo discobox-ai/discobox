@@ -51,8 +51,14 @@ Rule of thumb: on the create path, walk only what this agent wrote.
 
 ## Nothing is written into a sandbox after create
 
-The pool's only write into a sandbox's config volume is the bootstrap, before
-its container exists. Everything after that — secrets, proxy material, the idle
+The pool's writes into a sandbox's config volume are the bootstrap, before
+its container exists, and the keypair its agent serves TLS with, before each
+start (ADR 26-10-29-481 §3). Both go through an `os.Root`
+(`writeRootFile`): the volume is the sandbox's to write, and is reused when its
+container is replaced, so a link it planted at `sandbox.json`, `agent-tls` or
+a `.tmp` beside either is replaced or refused, never followed onto the host
+the pool agent writes as root. Both writes followed links once; anything else
+the pool writes there goes through the same root. Everything after that — secrets, proxy material, the idle
 timeout, readiness — is a change to the runtime-config record
 (`decideRuntimeConfig`) and a delivery, never a file. And nothing the pool
 decides is read back from the sandbox's volumes, which the sandbox can write:
@@ -66,10 +72,12 @@ read back twice (`recordedSandboxUser`, and the credential environment before
 
 A machine is the exception, and only for what it boots on: a machine can be
 copied into only while it runs, so `MachineSandboxRuntime.place` copies
-sandbox.json, the agent layer, its units and its pins into a running machine at
-every start, and restarts it when they moved (ADR 26-10-24-953 §2, ADR
-26-10-27-345). Nothing else is written into a machine either: no record of the
-pool's, and nothing into the sandbox's own files.
+sandbox.json, the agent's TLS keypair where it serves TLS, the agent layer,
+its units and its pins into a running machine at every start, and restarts it
+when what it boots on moved (ADR 26-10-24-953 §2, ADR 26-10-27-345, ADR
+26-10-29-481 §3). The keypair is no part of what moved: the agent reads it
+afresh for every handshake. Nothing else is written into a machine either: no
+record of the pool's, and nothing into the sandbox's own files.
 
 The one other write is the agent's placement in a delivered sandbox's
 container, before each start and never into a running one: the agent layer,
@@ -369,7 +377,11 @@ never this runtime's to remove.
 
 - The agent's API can be on a public URL (a boxd pool machine's, ADR
   26-10-09-106 §3). Only `/healthz`, `/readyz` and `/metadata` answer without
-  a token, and they change nothing and say nothing secret; every operation of
+  a token, and they change nothing and say nothing secret — and `/tunnel/*`
+  on a machine pool reached only through an edge (`Config.Tunnels`, ADR
+  26-10-29-481 §2), which is spliced onto the proxy unit's tunnel listener and
+  names no caller until the mTLS inside a stream completes at its service. A
+  tunnel path that reaches anything not behind that mTLS is a finding; every operation of
   the generated API has a scope in `requiredPoolOperationScope`, and an
   operation added without one is reachable with any token minted for the
   pool. A request proxied into a sandbox never carries the token that
@@ -391,3 +403,22 @@ never this runtime's to remove.
   step's forwarder dials the pool proxy by it with the owning sandbox's
   client certificate, so whoever answers it is handed that sandbox's egress.
   The registry is not named that way: buildkitd pushes to it on loopback.
+
+## The sandbox agent's TLS
+
+- How the pool reaches a sandbox's agent is what that sandbox's bootstrap told
+  it, recorded when it was written (`agent-tls.json`, ADR 26-10-29-481 §3),
+  never what the agent says of itself and never the pool's current setting.
+  Why: every path that delivers a runtime-config document — a boot, a resume,
+  settling sources — runs before any status poll, and the first document
+  carries the sandbox's client key; learning TLS from the agent once sent that
+  document in plain HTTP to whatever answered first.
+- What a runtime-config document holds that is private is taken out by
+  `sandboxconfig.RuntimeConfig.WithoutPrivateKeys`, on both sides. Why: the
+  pool and the sandbox once each had a hand-written copy, and a key added to
+  the document and missed in one copy is a key kept on a data volume an export
+  carries, or answered to a caller.
+- A keypair the agent serves is placed at every start, not only when its box
+  is made. Why: a certificate that expired while its sandbox was down, with no
+  start placing a renewed one, locks the pool out of that sandbox for good.
+

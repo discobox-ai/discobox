@@ -259,7 +259,7 @@ func TestRuntimeConfigWithoutAnIntake(t *testing.T) {
 func TestRuntimeConfigWireRoundTrip(t *testing.T) {
 	full := sandboxconfig.RuntimeConfig{
 		Revision:   7,
-		Agent:      sandboxconfig.RuntimeAgent{IdleTimeout: "1h0m0s", ControlPlanePower: true},
+		Agent:      sandboxconfig.RuntimeAgent{IdleTimeout: "1h0m0s", ControlPlanePower: true, TLS: &sandboxconfig.AgentTLS{Cert: "agent-cert", Key: "agent-key"}},
 		SecretEnv:  map[string]string{"A": "sentinel-a"},
 		RawSecrets: map[string]string{"API_KEY": sandboxconfig.RawDeliveryEnv, "PEM": sandboxconfig.RawDeliveryFile},
 		Proxy: &sandboxconfig.RuntimeProxy{
@@ -314,9 +314,13 @@ func assertEveryFieldSet(t *testing.T, v reflect.Value, path string) {
 	}
 }
 
-func TestRuntimeConfigNeverAnswersWithTheClientKey(t *testing.T) {
-	doc := sandboxconfig.RuntimeConfig{Revision: 1, Proxy: &sandboxconfig.RuntimeProxy{ClientCert: "cert", ClientKey: "key"}}
-	wire, err := runtimeConfigToWire(intake.WithoutClientKey(doc))
+func TestRuntimeConfigNeverAnswersWithAPrivateKey(t *testing.T) {
+	doc := sandboxconfig.RuntimeConfig{
+		Revision: 1,
+		Agent:    sandboxconfig.RuntimeAgent{TLS: &sandboxconfig.AgentTLS{Cert: "agent-cert", Key: "agent-key"}},
+		Proxy:    &sandboxconfig.RuntimeProxy{ClientCert: "cert", ClientKey: "key"},
+	}
+	wire, err := runtimeConfigToWire(doc.WithoutPrivateKeys())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,10 +328,13 @@ func TestRuntimeConfigNeverAnswersWithTheClientKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(data, []byte("clientKey")) {
-		t.Fatalf("answered document carries the client key: %s", data)
+	if bytes.Contains(data, []byte("clientKey")) || bytes.Contains(data, []byte("agent-key")) {
+		t.Fatalf("answered document carries a private key: %s", data)
 	}
-	if doc.Proxy.ClientKey != "key" {
+	if !bytes.Contains(data, []byte("agent-cert")) {
+		t.Fatalf("answered document lost the agent's certificate: %s", data)
+	}
+	if doc.Proxy.ClientKey != "key" || doc.Agent.TLS.Key != "agent-key" {
 		t.Fatal("redacting the answer changed the held document")
 	}
 }

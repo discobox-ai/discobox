@@ -126,8 +126,10 @@ the box's provisioning turns each one off.
 `sandbox.json` is the sandbox's **static** half, its bootstrap: placed before
 the agent exists and never rewritten, it holds identity, public keys to trust
 (`ControlPlanePublicKeyName`, `PoolPublicKeyName`), where the pool is
-(`PoolEndpoints`), and the create-time config — and no private key, secret or
-idle timeout. Everything that can change while the sandbox exists is its
+(`PoolEndpoints`: its private name, and `Address`, discobox's own answer for
+that name where the sandbox's runtime gives it none), whether the agent serves
+its API over TLS (`AgentRuntime.TLS`, as the private name `AgentServerName`),
+and the create-time config — and no private key, secret or idle timeout. Everything that can change while the sandbox exists is its
 **dynamic** half, the `RuntimeConfig` below. Where the sandbox listens for its
 pool (`SandboxEgressListenAddress` and its siblings) is neither: it is the
 sandbox's own, a constant here so the pool can make the two settings that must
@@ -246,7 +248,13 @@ sandbox, delivered as one revisioned document to the sandbox agent's
 `sandbox.json` and its layers above remain the create-time placement.
 
 - **Contents.** `Agent` — the sandbox-agent settings the pool may change
-  (`idleTimeout`, applied to the running agent when delivered). `SecretEnv` —
+  (`idleTimeout`, applied to the running agent when delivered; `tls`, the
+  renewed keypair the agent serves its API over TLS with, `AgentTLS`, sent only
+  to an agent its bootstrap told to serve TLS (`AgentRuntime.TLS`), its key
+  delivered and never read back, and placed beside the bootstrap in
+  `AgentTLSDirName` before the agent starts, ADR 26-10-29-481 §3). What is
+  private is taken out by `WithoutPrivateKeys`, which the pool's record and the
+  sandbox's kept and answered documents all go through. `SecretEnv` —
   env name to sentinel, never a resolved value (the Secrets rule above is
   unchanged). `Proxy` — the CAs and the sandbox's client keypair (the key is
   delivered, never read back): the credential only.

@@ -25,6 +25,10 @@ type DialConfig struct {
 	// unix URL does not. A wss URL's host is the edge's, never the pool's, so
 	// it needs one too.
 	ServerName string
+	// Address is dialed in place of an https URL's host, keeping its port:
+	// discobox's own answer for the private name the URL names, a provider's
+	// host resolved at each dial (ADR 26-10-29-481 §2). Empty dials the host.
+	Address string
 
 	MTLSCAPath     string
 	ClientCertPath string
@@ -79,7 +83,14 @@ func NewDialer(cfg DialConfig) (*Dialer, error) {
 		address = endpoint.Host
 		serverURL = endpoint.BaseURL()
 		transportHost = host
+		if answer := strings.TrimSpace(cfg.Address); answer != "" {
+			address = net.JoinHostPort(answer, port)
+			transportHost = answer
+		}
 	case "wss":
+		if cfg.Address != "" {
+			return nil, fmt.Errorf("pool URL %q is a tunnel through an edge; an address answers an https URL's name alone", cfg.URL)
+		}
 		if serverName == "" {
 			return nil, fmt.Errorf("pool URL %q names the edge, not the pool; a server name to verify the pool's certificate as is required", cfg.URL)
 		}
@@ -90,6 +101,9 @@ func NewDialer(cfg DialConfig) (*Dialer, error) {
 		}
 		tunnel = wstunnel.NewClient(endpoint.Raw, nil)
 	case "vsock", "unix":
+		if cfg.Address != "" {
+			return nil, fmt.Errorf("pool URL %q names no host; an address answers an https URL's name alone", cfg.URL)
+		}
 		if serverName == "" {
 			return nil, fmt.Errorf("pool URL %q names no host to verify the pool's certificate as; a server name is required", cfg.URL)
 		}

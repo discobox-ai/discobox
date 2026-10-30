@@ -1576,6 +1576,22 @@ components:
                 idleTimeout:
                     description: The pool's idle timeout as a Go duration. Empty leaves the sandbox on its default. Takes effect when applied.
                     type: string
+                tls:
+                    $ref: '#/components/schemas/SandboxRuntimeConfigAgentTLS'
+                    description: Renews the keypair the agent serves its API over TLS with (ADR 26-10-29-481 §3). Sent only to a sandbox whose bootstrap told its agent to serve TLS, which is new enough to know the field. Absent leaves the keypair the agent holds.
+            type: object
+        SandboxRuntimeConfigAgentTLS:
+            additionalProperties: false
+            description: The keypair a sandbox agent serves its API over TLS with, which its pool's mTLS CA signed for the sandbox's private name, so the pool knows which sandbox answered.
+            properties:
+                cert:
+                    description: The PEM server certificate.
+                    type: string
+                key:
+                    description: The PEM private key. Required on delivery; never returned, so a document read back omits it.
+                    type: string
+            required:
+                - cert
             type: object
         SandboxRuntimeConfigProxy:
             additionalProperties: false

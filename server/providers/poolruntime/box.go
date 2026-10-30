@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,12 +36,53 @@ import (
 // machine.
 
 // BoxRecord is what a provider placed in a pool's box, kept with the pool's
-// runtime state, the server's own record: a box whose bundles moved since is
-// provisioned again, in place. The agent alone moving provisions nothing (ADR
-// 26-10-24-953 §5): it is the provisioner, not what the pool runs.
+// runtime state, the server's own record: a box whose bundles or placement
+// moved since is provisioned again, in place. The agent alone moving
+// provisions nothing (ADR 26-10-24-953 §5): it is the provisioner, not what
+// the pool runs.
 type BoxRecord struct {
 	Agent   string   `json:"agent,omitempty"`
 	Bundles []string `json:"bundles,omitempty"`
+	// Placement fingerprints the bootstrap and environment placed: what the
+	// provider's configuration and the pool's own settings say of the pool,
+	// which move apart from a release (PlacementFingerprint).
+	Placement string `json:"placement,omitempty"`
+}
+
+// Current reports whether the record placed placement: its bundles, and its
+// bootstrap and environment.
+func (r BoxRecord) Current(placement BoxPlacement) (bool, error) {
+	fingerprint, err := PlacementFingerprint(placement)
+	if err != nil {
+		return false, err
+	}
+	return r.SameBundles(placement.Box) && r.Placement == fingerprint, nil
+}
+
+// PlacementFingerprint is what of a placement is not its bundles: the
+// bootstrap and the agent's environment.
+func PlacementFingerprint(placement BoxPlacement) (string, error) {
+	data, err := json.Marshal(struct {
+		Bootstrap poolagent.Bootstrap `json:"bootstrap"`
+		Env       map[string]string   `json:"env"`
+	}{placement.Bootstrap, placement.Env})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// RestartPoolUnits restarts the pool's agent and its proxy, where they run:
+// they read the bootstrap and environment once, at start, and apply restarts
+// only what moved bundles move, so a moved placement reaches them so.
+func RestartPoolUnits(ctx context.Context, guest machine.Guest) error {
+	var stderr strings.Builder
+	code, err := machine.Run(ctx, guest, machine.ExecRequest{Argv: append([]string{"systemctl", "try-restart"}, bundle.BootstrapUnits...)}, nil, io.Discard, &stderr)
+	if err == nil && code != 0 {
+		err = fmt.Errorf("systemctl exited with status %d: %s", code, strings.TrimSpace(stderr.String()))
+	}
+	return err
 }
 
 // SameBundles reports whether box pins the bundles the record placed.
@@ -55,13 +98,17 @@ func (r BoxRecord) SameBundles(box sandbox.PoolBox) bool {
 	return true
 }
 
-// RecordOf is the record of placing box.
-func RecordOf(box sandbox.PoolBox) BoxRecord {
-	record := BoxRecord{Agent: box.Agent.Name + "@" + box.Agent.Digest}
-	for _, pin := range box.Bundles {
+// RecordOf is the record of placing placement.
+func RecordOf(placement BoxPlacement) (BoxRecord, error) {
+	fingerprint, err := PlacementFingerprint(placement)
+	if err != nil {
+		return BoxRecord{}, err
+	}
+	record := BoxRecord{Agent: placement.Box.Agent.Name + "@" + placement.Box.Agent.Digest, Placement: fingerprint}
+	for _, pin := range placement.Box.Bundles {
 		record.Bundles = append(record.Bundles, pin.Name+"@"+pin.Digest)
 	}
-	return record
+	return record, nil
 }
 
 // BoxFile is a file placed in a pool's box, root's alone: the bootstrap and
@@ -163,7 +210,7 @@ func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, pla
 	if err != nil {
 		return BoxRecord{}, provisionError("provision the pool's box", applied, err)
 	}
-	return RecordOf(box), nil
+	return RecordOf(placement)
 }
 
 // PlaceBoxFiles places files in a running pool's box and runs nothing: what

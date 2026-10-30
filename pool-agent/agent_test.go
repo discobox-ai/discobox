@@ -84,6 +84,8 @@ func TestLoadReadsTheBootstrapFileUnderTheEnvironment(t *testing.T) {
 		Runtime:         poolagent.RuntimeMachine,
 		Driver:          "boxd",
 		MachineProject:  "pool-1",
+		PublicURL:       "https://pool-1.boxd.sh",
+		PrivateURL:      "http://pool-1.boxd:7302",
 	})
 	t.Setenv(poolagent.EnvBootstrapFile, path)
 	t.Setenv(poolagent.EnvControlPlaneURL, "")
@@ -141,21 +143,30 @@ func TestBootstrapValidatesItsRuntime(t *testing.T) {
 		runtime poolagent.Runtime
 		driver  string
 		project string
+		public  string
+		private string
 		wantErr string
 	}{
 		{name: "none is docker", runtime: ""},
 		{name: "docker", runtime: poolagent.RuntimeDocker},
 		{name: "docker with a driver", runtime: poolagent.RuntimeDocker, driver: "boxd", wantErr: "driver"},
-		{name: "machine", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1"},
+		{name: "machine", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1", public: "https://pool-1.boxd.sh", private: "http://pool-1.boxd:7302"},
+		{name: "machine behind an edge alone", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1", public: "https://pool-1.boxd.sh", private: "https://pool-1.boxd.sh"},
+		{name: "machine without a private URL", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1", public: "https://pool-1.boxd.sh", wantErr: "private URL"},
+		{name: "machine without a public URL", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1", private: "http://pool-1.boxd:7302", wantErr: "public URL"},
+		{name: "machine with a URL that is not http", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1", public: "https://pool-1.boxd.sh", private: "tcp://pool-1.boxd:7302", wantErr: "private URL"},
+		{name: "machine with a URL that names a path", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool-1", public: "https://pool-1.boxd.sh/agent", private: "http://pool-1.boxd:7302", wantErr: "public URL"},
 		{name: "machine without a driver", runtime: poolagent.RuntimeMachine, project: "pool-1", wantErr: "needs a driver"},
 		{name: "machine without a project", runtime: poolagent.RuntimeMachine, driver: "boxd", wantErr: "machine project"},
 		{name: "machine in a project disco-vm refuses", runtime: poolagent.RuntimeMachine, driver: "boxd", project: "pool_1", wantErr: "machine project"},
 		{name: "docker with a machine project", runtime: poolagent.RuntimeDocker, project: "pool-1", wantErr: "machine project"},
+		{name: "docker with a URL", runtime: poolagent.RuntimeDocker, private: "http://pool-1.boxd:7302", wantErr: "URLs"},
 		{name: "unknown", runtime: "podman", wantErr: "unknown pool runtime"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bootstrap := base
 			bootstrap.Runtime, bootstrap.Driver, bootstrap.MachineProject = tc.runtime, tc.driver, tc.project
+			bootstrap.PublicURL, bootstrap.PrivateURL = tc.public, tc.private
 			err := bootstrap.Validate()
 			if tc.wantErr == "" {
 				if err != nil {

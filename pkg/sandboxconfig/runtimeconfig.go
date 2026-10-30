@@ -90,6 +90,23 @@ type RuntimeAgent struct {
 	// whose status advertised it, because an agent that predates it refuses a
 	// whole delivery over a field it does not know.
 	ControlPlanePower bool `json:"controlPlanePower,omitempty"`
+	// TLS renews the keypair the agent serves its API with. The pool sets it
+	// only for a sandbox whose bootstrap told its agent to serve TLS
+	// (AgentRuntime.TLS), which is new enough to know the field; absent leaves
+	// the keypair the agent holds.
+	TLS *AgentTLS `json:"tls,omitempty"`
+}
+
+// AgentTLS is the keypair a sandbox's agent serves its API over TLS with,
+// which its pool's mTLS CA signed for the sandbox's private name
+// (AgentServerName), so the pool knows which sandbox answered (ADR
+// 26-10-29-481 §3). The pool places it in the config volume (AgentTLSDirName)
+// before the agent starts, at every start, and renews it
+// in the runtime-config document. The key is delivered and never read back: a
+// document the sandbox keeps or answers with leaves it out.
+type AgentTLS struct {
+	Cert string `json:"cert"`
+	Key  string `json:"key,omitempty"`
 }
 
 // IdleTimeoutDuration is IdleTimeout parsed, zero when it is empty or does not
@@ -165,6 +182,24 @@ func (c RuntimeConfig) SourcesDelivered() bool {
 	return true
 }
 
+// WithoutPrivateKeys is the document with the sandbox's private keys taken
+// out — its client key and its agent's TLS key: what the pool records and the
+// sandbox keeps or answers with, none of which needs them. Each key's one copy
+// is where its reader reads it, or the pool's own material.
+func (c RuntimeConfig) WithoutPrivateKeys() RuntimeConfig {
+	if c.Proxy != nil {
+		proxy := *c.Proxy
+		proxy.ClientKey = ""
+		c.Proxy = &proxy
+	}
+	if c.Agent.TLS != nil {
+		keypair := *c.Agent.TLS
+		keypair.Key = ""
+		c.Agent.TLS = &keypair
+	}
+	return c
+}
+
 // SameDocument reports whether two documents say the same thing, which is what
 // decides whether a second delivery under one revision is a retry or a
 // conflict. Absent and empty compare equal, as they read the same.
@@ -204,6 +239,11 @@ func (c RuntimeConfig) Validate(paths sandboxpath.Paths) error {
 	}
 	if c.Proxy != nil {
 		errs = append(errs, c.Proxy.validate())
+	}
+	if c.Agent.TLS != nil {
+		if _, err := tls.X509KeyPair([]byte(c.Agent.TLS.Cert), []byte(c.Agent.TLS.Key)); err != nil {
+			errs = append(errs, fmt.Errorf("agent tls keypair: %w", err))
+		}
 	}
 	seen := map[string]bool{}
 	for _, source := range c.Sources {

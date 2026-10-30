@@ -291,8 +291,11 @@ or the `vm` provider's machine: it places the agent, runs
 API with the box's key and applies every feature of them: a machine pool runs
 what a Docker pool runs (ADR 26-10-27-767). Each provider records what it
 placed with the pool's runtime state (`poolruntime.BoxRecord`); a pool whose
-pins moved since is provisioned again in its running box, and the agent alone
-moving provisions nothing (§5). What else a provider places for its agent
+pins or placement moved since — its bootstrap and environment, which carry the
+provider's configuration and the pool's own settings, such as
+`disableAgentEndpointTls` (`PlacementFingerprint`) — is provisioned again in
+its running box, its agent and proxy restarted for a moved placement
+(`RestartPoolUnits`), and the agent alone moving provisions nothing (§5). What else a provider places for its agent
 — the `vm` provider's provisioning key — goes in first
 (`poolruntime.PlaceBoxFiles`); see [discovm](discovm/DESIGN.md).
 

@@ -58,6 +58,9 @@ func (m *poolMaker) Bootstrap(ctx context.Context) (poolagent.Bootstrap, error) 
 		ProjectID:       m.project.ID,
 		PoolID:          m.pool.ID,
 		ControlPlaneKey: controlPlanePublicKey,
+		// How the pool reaches its sandboxes' agents, which the agent tells
+		// each sandbox (ADR 26-10-29-481 §3).
+		DisableAgentEndpointTLS: m.pool.DisableAgentEndpointTLS,
 	}, nil
 }
 

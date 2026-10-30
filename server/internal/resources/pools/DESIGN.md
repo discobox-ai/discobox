@@ -31,7 +31,11 @@ flowchart LR
   reconcile; update never touches `ProviderInstanceID` (immutable) and
   re-schedules the reconcile so size changes converge. Both refuse a non-zero
   size field the pool's provider does not declare in
-  `ProviderDefinition.PoolSizeFields` (`size.go`).
+  `ProviderDefinition.PoolSizeFields` (`size.go`). A pool reaches its
+  sandboxes' agents over TLS unless it sets `disableAgentEndpointTls`, at
+  create or later (ADR 26-10-29-481 §3); it is in the manifest, so the
+  reconcile places the pool's host again with it, and each sandbox takes it
+  when its box is next made.
   `SetDefaultPool`/`UnsetDefaultPool` point the project's `DefaultPoolID` at a
   pool or clear it (unset rejects a pool that is not the default). Delete
   requires the pool to be empty of sandboxes (assignment is immutable, so

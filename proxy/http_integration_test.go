@@ -932,11 +932,13 @@ func TestLocalForwarderHTTPToWorkerProxy(t *testing.T) {
 
 	clientMaterial := prepared.Clients["sandbox-1"]
 	local, err := bridge.New(ctx, bridge.Config{
-		ListenAddress:  "127.0.0.1:0",
-		WorkerProxyURL: "https://" + workerAddr.String(),
-		MTLSCAPath:     clientMaterial.MTLSCAPath,
-		ClientCertPath: clientMaterial.ClientCertPath,
-		ClientKeyPath:  clientMaterial.ClientKeyPath,
+		ListenAddress: "127.0.0.1:0",
+		Pool: bridge.DialConfig{
+			URL:            "https://" + workerAddr.String(),
+			MTLSCAPath:     clientMaterial.MTLSCAPath,
+			ClientCertPath: clientMaterial.ClientCertPath,
+			ClientKeyPath:  clientMaterial.ClientKeyPath,
+		},
 	})
 	if err != nil {
 		t.Fatalf("bridge.New() error = %v", err)

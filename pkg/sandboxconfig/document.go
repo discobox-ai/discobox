@@ -135,6 +135,12 @@ type PoolEndpoints struct {
 	// The URLs above are wire URLs whose scheme picks the transport, and a
 	// vsock or unix one has no host to take the name from (ADR 0144 §4).
 	ServerName string `json:"serverName,omitempty"`
+	// Address is discobox's own answer for the private name an https URL
+	// above names (ServerName): the provider's host the sandbox dials in its
+	// place, keeping the port, and resolves through its provider at each dial
+	// (ADR 26-10-29-481 §2). Empty resolves the name itself, as a Docker
+	// pool's sandboxes resolve its alias on the pool's network.
+	Address string `json:"address,omitempty"`
 }
 
 // The addresses the sandbox's own forwarders listen on. They are the
@@ -165,7 +171,11 @@ func (p Provider) AwaitsRuntimeConfig() bool {
 
 // AgentRuntime holds sandbox-agent daemon-local runtime settings.
 type AgentRuntime struct {
-	ListenAddress          string `json:"listenAddress"`
+	ListenAddress string `json:"listenAddress"`
+	// TLS serves the agent's API over TLS alone, with the keypair its pool
+	// placed in AgentTLSDirName, as its pool reaches it; unset serves plain
+	// HTTP alone. It is its pool's setting (ADR 26-10-29-481 §3).
+	TLS                    bool   `json:"tls,omitempty"`
 	WorkingRoot            string `json:"workingRoot"`
 	RuntimeDir             string `json:"runtimeDir"`
 	DatabasePath           string `json:"databasePath"`
@@ -425,6 +435,30 @@ func (c Config) WorkingRoot(paths sandboxpath.Paths) string {
 // the bind (sandbox-agent/boot); pool-agent writes the files behind it from the
 // host, and the mount is read-only so nothing inside can answer itself.
 const SandboxConfigDir = "/etc/discobox"
+
+// AgentTLSDirName is the directory in the config volume holding the keypair
+// the sandbox agent serves its API with (AgentTLS): AgentTLSCertName, public,
+// and AgentTLSKeyName, root's alone. The pool places it before the agent first
+// starts, and the agent reads it afresh for every handshake, so a renewed
+// keypair is served from the next connection (ADR 26-10-29-481 §3).
+const (
+	AgentTLSDirName  = "agent-tls"
+	AgentTLSCertName = "tls.crt"
+	AgentTLSKeyName  = "tls.key"
+)
+
+// agentNameDomain is the private domain discobox names sandboxes' agents in,
+// which no provider's DNS answers (ADR 26-10-29-481 §2).
+const agentNameDomain = "sandbox.discobox.internal"
+
+// AgentServerName is the private name a sandbox's agent serves its API as:
+// the name its certificate is issued for and its pool verifies, wherever the
+// pool dialed it (ADR 26-10-29-481 §3). The sandbox ID is spelled as a DNS
+// label: lower case, with hyphens for underscores.
+func AgentServerName(sandboxID string) string {
+	label := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(sandboxID)), "_", "-")
+	return label + "." + agentNameDomain
+}
 
 // SourcesReadyFileName is the file pool-agent creates in the config volume once
 // every one of the sandbox's sources is materialized and the document beside it

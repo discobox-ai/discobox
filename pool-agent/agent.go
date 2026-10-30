@@ -68,11 +68,15 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// proxy certificate bundle before the proxy unit starts so it and the
 	// per-sandbox client certificates share a consistent CA without racing on
 	// first-time generation.
-	tunnelURL, err := proxyagent.ConfiguredTunnelURL()
+	//
+	// How the sandboxes reach this pool is settled first: the proxy unit
+	// serves the tunnels of a pool reached through an edge (ADR 26-10-29-481
+	// §2).
+	hop, err := resolvePoolHop(bootstrap)
 	if err != nil {
 		return err
 	}
-	if err := proxyagent.WriteUnitEnvironment(root, bootstrap.HostMountPrefix, bootstrap.ControlPlaneURL, bootstrap.ProjectID, bootstrap.PoolID, tunnelURL); err != nil {
+	if err := proxyagent.WriteUnitEnvironment(root, bootstrap.HostMountPrefix, bootstrap.ControlPlaneURL, bootstrap.ProjectID, bootstrap.PoolID, hop.tunnelURL); err != nil {
 		return err
 	}
 	bundle, err := proxyagent.PrepareBundle(root, bootstrap.ProjectID, bootstrap.PoolID)
@@ -147,7 +151,14 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		if machines, err = openMachineEngine(root, bootstrap, poolbundle.ProvisioningKeyFile); err != nil {
 			return err
 		}
-		status = machinePoolStatus(bootstrap.Driver, machines.Driver.Capabilities())
+		// Refused before the first report: a pool whose sandboxes could
+		// reach around its proxy must never be scheduled (ADR 26-10-29-481
+		// §4).
+		capabilities := machines.Driver.Capabilities()
+		if err := requireMachineFence(bootstrap.Driver, capabilities); err != nil {
+			return err
+		}
+		status = machinePoolStatus(bootstrap.Driver, capabilities, hop.form)
 	}
 
 	// A first report the control plane refuses is a pool whose key it does
@@ -176,13 +187,13 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		Fetch:     assetClient.Fetch,
 	})
 	if machines != nil {
-		runtime, err := newMachineSandboxRuntime(root, bootstrap, machines, identity.PrivateKey, assets)
+		runtime, err := newMachineSandboxRuntime(root, bootstrap, hop, machines, identity.PrivateKey, assets)
 		if err != nil {
 			return err
 		}
 		return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets)
 	}
-	runtime, err := newDockerSandboxRuntime(root, bootstrap, identity.PrivateKey, assets)
+	runtime, err := newDockerSandboxRuntime(root, bootstrap, hop, identity.PrivateKey, assets)
 	if err != nil {
 		return err
 	}
@@ -199,17 +210,14 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 // is why the runtime is built only once the key is known to be this pool's.
 // Its asset cache is where the agent layer it places in a delivered sandbox
 // comes from.
-func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap, identityKey ed25519.PrivateKey, assets *assetcache.Cache) (*sandboxruntime.DockerSandboxRuntime, error) {
+func newDockerSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop, identityKey ed25519.PrivateKey, assets *assetcache.Cache) (*sandboxruntime.DockerSandboxRuntime, error) {
 	idleTimeout, err := sandboxruntime.ConfiguredSandboxIdleTimeout()
 	if err != nil {
 		return nil, err
 	}
-	tunnelURL, err := proxyagent.ConfiguredTunnelURL()
-	if err != nil {
-		return nil, err
-	}
 	return sandboxruntime.NewDockerSandboxRuntime(sandboxruntime.DockerSandboxRuntimeConfig{
-		PoolEndpoints:         proxyagent.PoolEndpoints(tunnelURL),
+		PoolEndpoints:         hop.endpoints,
+		AgentTLS:              hop.agentTLS,
 		ProjectID:             bootstrap.ProjectID,
 		PoolID:                bootstrap.PoolID,
 		ControlPlanePublicKey: bootstrap.ControlPlaneKey,
@@ -538,6 +546,13 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 		assetHandler = assets.Handler()
 		assets.StartSweeping(ctx, logger)
 	}
+	// A machine pool reached only through an edge is reached at this
+	// listener alone, so its sandboxes' tunnels arrive here too (ADR
+	// 26-10-29-481 §2).
+	var tunnels http.Handler
+	if bootstrap.reachedThroughEdge() {
+		tunnels = proxyagent.TunnelForwarder()
+	}
 	return poolserver.Serve(ctx, logger, poolserver.Config{
 		Identity: poolserver.Identity{
 			ProjectID: bootstrap.ProjectID,
@@ -552,6 +567,7 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 		OriginListener:        originListener,
 		AssetListener:         assetListener,
 		Assets:                assetHandler,
+		Tunnels:               tunnels,
 	})
 }
 

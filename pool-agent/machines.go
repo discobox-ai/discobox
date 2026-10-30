@@ -15,7 +15,6 @@ import (
 	"github.com/discobox-ai/discobox/pkg/layout"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pool-agent/assetcache"
-	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
@@ -62,18 +61,13 @@ func provisioningKeys(path, driver string) machine.KeySource {
 }
 
 // newMachineSandboxRuntime is a machine pool's runtime: sandboxes as machines
-// of its own engine, each made isolated on the pool's network wherever the
-// driver can isolate one, which a remote driver must (ADR 26-10-23-551 §4).
-func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, e *engine.Engine, identityKey ed25519.PrivateKey, assets *assetcache.Cache) (*sandboxruntime.MachineSandboxRuntime, error) {
+// of its own engine, each made isolated on the pool's network and fenced to
+// what its hop reaches (ADR 26-10-29-481 §4).
+func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, hop poolHop, e *engine.Engine, identityKey ed25519.PrivateKey, assets *assetcache.Cache) (*sandboxruntime.MachineSandboxRuntime, error) {
 	idleTimeout, err := sandboxruntime.ConfiguredSandboxIdleTimeout()
 	if err != nil {
 		return nil, err
 	}
-	tunnelURL, err := proxyagent.ConfiguredTunnelURL()
-	if err != nil {
-		return nil, err
-	}
-
 	return sandboxruntime.NewMachineSandboxRuntime(sandboxruntime.MachineSandboxRuntimeConfig{
 		ProjectID:             bootstrap.ProjectID,
 		PoolID:                bootstrap.PoolID,
@@ -83,8 +77,10 @@ func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, e *engine.E
 		Base:                  bootstrap.MachineBase,
 		Isolate:               true,
 		Network:               bootstrap.MachineNetwork,
+		Egress:                hop.egress,
 		SandboxIdleTimeout:    idleTimeout,
-		PoolEndpoints:         proxyagent.PoolEndpoints(tunnelURL),
+		PoolEndpoints:         hop.endpoints,
+		AgentTLS:              hop.agentTLS,
 		IdentityKey:           identityKey,
 		Platform:              hostedPlatform(),
 		AgentLayers:           assets,
@@ -93,24 +89,22 @@ func newMachineSandboxRuntime(root layout.Root, bootstrap Bootstrap, e *engine.E
 
 // machinePoolStatus is what a machine pool says of itself: it runs images
 // of its driver's kind (ADR 26-10-09-106 §4), and its capacity is the
-// driver's, which runs its sandboxes, not the pool's own machine's.
-//
-// It schedules nothing yet. Isolating a sandbox's machine strips what its
-// provider gives it, but bounds none of its egress: until a machine's only
-// way out is its pool's proxy (#129), a sandbox could reach the network
-// around the proxy's policy and audit, which ADR 26-10-23-551 §5 makes a
-// precondition of the first one.
-func machinePoolStatus(driver string, caps machine.Capabilities) poolStatus {
+// driver's, which runs its sandboxes, not the pool's own machine's. Its
+// runtime condition names the driver, its limits, and how its sandboxes reach
+// it. It schedules: an agent whose driver cannot fence a sandbox's machine to
+// its pool refused to start (requireMachineFence).
+func machinePoolStatus(driver string, caps machine.Capabilities, hop string) poolStatus {
 	return poolStatus{
-		schedulable: false,
+		schedulable: true,
 		imageKind:   platform.VM(driver),
 		runtime: map[string]any{
 			"kind":       string(RuntimeMachine),
 			"driver":     driver,
-			"status":     "unavailable",
-			"message":    "a machine sandbox's egress is not held to its pool's proxy yet, so this pool schedules nothing",
+			"status":     "ready",
+			"hop":        hop,
 			"maxRunning": caps.MaxRunning,
 			"isolation":  caps.Isolation,
+			"egress":     caps.Egress,
 		},
 	}
 }

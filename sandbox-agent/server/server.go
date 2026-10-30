@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -24,6 +25,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	sandboxtools "github.com/discobox-ai/discobox/pkg/tools"
+	"github.com/discobox-ai/discobox/sandbox-agent/agenttls"
 	"github.com/discobox-ai/discobox/sandbox-agent/autostop"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/credentials"
@@ -107,6 +109,9 @@ type Config struct {
 	// returns them (boot.ClearCaches). nil answers the cache-clear route that
 	// the agent clears nothing.
 	ClearCaches func() ([]string, error)
+	// TLS is the keypair the agent serves its API over TLS alone with, as its
+	// pool reaches it (ADR 26-10-29-481 §3). nil serves plain HTTP alone.
+	TLS *agenttls.Keypair
 }
 
 func ConfigFromHarnessConfig(cfg config.Config) Config {
@@ -758,10 +763,20 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		// websocket keepalive pings on attach tunnels.
 		IdleTimeout: 120 * time.Second,
 	}
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp", httpServer.Addr)
+	if err != nil {
+		return err
+	}
+	// As its pool reaches it: TLS alone or plain HTTP alone (ADR 26-10-29-481
+	// §3).
+	if cfg.TLS != nil {
+		listener = tls.NewListener(listener, agenttls.Config(cfg.TLS))
+	}
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("sandbox agent serving", "addr", httpServer.Addr)
-		errCh <- httpServer.ListenAndServe()
+		logger.Info("sandbox agent serving", "addr", httpServer.Addr, "tls", cfg.TLS != nil)
+		errCh <- httpServer.Serve(listener)
 	}()
 
 	select {

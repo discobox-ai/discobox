@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/proxy/bridge"
 )
 
 var testOwner = Owner{ProjectID: "prj_1", SandboxID: "sbx_1", PoolID: "pool_1"}
@@ -33,6 +34,7 @@ var testPool = &sandboxconfig.PoolEndpoints{
 	DNS:         "pool:853",
 	BuildKit:    "https://pool:17445",
 	ServerName:  "pool",
+	Address:     "pool-1.provider.internal",
 }
 
 func testConfig(layout Layout, owner Owner) Config {
@@ -49,6 +51,7 @@ func testLayout(t *testing.T) Layout {
 	return Layout{
 		ConfigDir:   filepath.Join(root, "etc"),
 		ProxyDir:    filepath.Join(root, "etc", "proxy"),
+		AgentTLSDir: filepath.Join(root, "etc", sandboxconfig.AgentTLSDirName),
 		SecretsPath: filepath.Join(root, "run", "secrets", "secrets.json"),
 		StatePath:   filepath.Join(root, "var", "runtime-config.json"),
 	}
@@ -228,21 +231,21 @@ func TestApplyWritesTheFilesTheReadersRead(t *testing.T) {
 		t.Fatalf("client key not written")
 	}
 	assertMode(t, filepath.Join(layout.ProxyDir, clientKeyFile), 0o600)
-	var egress bridgeFile
+	var egress bridge.File
 	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(layout.ProxyDir, egressBridgeFile))), &egress); err != nil {
 		t.Fatal(err)
 	}
 	// The pool's half from the bootstrap, the sandbox's own listeners, and the
 	// delivered credential where this sandbox keeps it (ADR 26-10-08-127 §4).
 	if egress.UpstreamURL != testPool.Proxy || egress.CredentialsURL != testPool.Credentials || egress.DNSServer != testPool.DNS ||
-		egress.ServerName != testPool.ServerName ||
+		egress.ServerName != testPool.ServerName || egress.Address != testPool.Address ||
 		egress.ListenAddress != sandboxconfig.SandboxEgressListenAddress ||
 		egress.DNSListenAddress != sandboxconfig.SandboxDNSListenAddress ||
 		egress.ClientKeyPath != filepath.Join(layout.ProxyDir, clientKeyFile) ||
 		egress.MTLSCAPath != filepath.Join(layout.ProxyDir, mtlsCAFile) {
 		t.Fatalf("egress bridge = %+v", egress)
 	}
-	var buildkit, docker bridgeFile
+	var buildkit, docker bridge.File
 	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(layout.ProxyDir, buildKitBridgeFile))), &buildkit); err != nil {
 		t.Fatal(err)
 	}
@@ -940,5 +943,74 @@ func TestWaitAppliedReturnsOnceADocumentIsDeliveredOrRestored(t *testing.T) {
 	}
 	if doc, err := restored.WaitApplied(early); err != nil || doc.Revision != 2 {
 		t.Fatalf("WaitApplied after a restart = %d, %v; want the kept revision 2", doc.Revision, err)
+	}
+}
+
+// The pool places the agent's keypair before any document arrives, so a
+// document that renews none leaves it; one that renews it replaces it where
+// the agent serves it from, and the kept document leaves its key out, the
+// file being its one copy, which a restart reads back (ADR 26-10-29-481 §3).
+func TestADocumentRenewsTheAgentsKeypairAndKeepsNoKey(t *testing.T) {
+	layout := testLayout(t)
+	writeManifest(t, layout)
+	certPath := filepath.Join(layout.AgentTLSDir, sandboxconfig.AgentTLSCertName)
+	keyPath := filepath.Join(layout.AgentTLSDir, sandboxconfig.AgentTLSKeyName)
+	if err := os.MkdirAll(layout.AgentTLSDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for path, data := range map[string]string{certPath: "placed cert", keyPath: "placed key"} {
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	in, err := openIntake(layout, testOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := in.Apply(context.Background(), testDocument(t, 1)); err != nil {
+		t.Fatal(err)
+	}
+	if readFile(t, certPath) != "placed cert" || readFile(t, keyPath) != "placed key" {
+		t.Fatal("a document that renews no keypair replaced the one the pool placed")
+	}
+
+	renewed := testDocument(t, 2)
+	pki := newTestPKI(t)
+	renewed.Agent.TLS = &sandboxconfig.AgentTLS{Cert: pki.cert, Key: pki.key}
+	if _, err := in.Apply(context.Background(), renewed); err != nil {
+		t.Fatal(err)
+	}
+	if readFile(t, certPath) != pki.cert || readFile(t, keyPath) != pki.key {
+		t.Fatal("the renewed keypair is not where the agent serves it from")
+	}
+	assertMode(t, keyPath, 0o600)
+	if strings.Contains(readFile(t, layout.StatePath), pki.key) {
+		t.Fatal("the kept document carries the agent's TLS key; the file must be its only copy on disk")
+	}
+
+	again, err := openIntake(layout, testOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, ok := again.Applied()
+	if !ok || !kept.SameDocument(renewed) {
+		t.Fatalf("kept document after restart = %+v, %v; want the renewed one, its key read back", kept.Agent, ok)
+	}
+}
+
+// A malformed keypair refuses the whole document before anything is written.
+func TestADocumentWithABrokenAgentKeypairIsRefused(t *testing.T) {
+	layout := testLayout(t)
+	in, err := openIntake(layout, testOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := testDocument(t, 1)
+	doc.Agent.TLS = &sandboxconfig.AgentTLS{Cert: "not a cert", Key: "not a key"}
+	if _, err := in.Apply(context.Background(), doc); err == nil || !strings.Contains(err.Error(), "agent tls keypair") {
+		t.Fatalf("apply a broken agent keypair = %v, want it refused", err)
+	}
+	if exists(layout.StatePath) {
+		t.Fatal("a refused document was kept")
 	}
 }

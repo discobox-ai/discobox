@@ -92,6 +92,13 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := deduplicateSecretNames(write); err != nil {
 		return err
 	}
+	// Before AutoMigrate too: the column is added here, with every pool that
+	// exists set to keep the plain HTTP its sandboxes were made with, in one
+	// transaction, since nothing tells a pool from before the column from one
+	// made since once it exists (ADR 26-10-29-481 §3).
+	if err := addPoolAgentEndpointTLSSetting(write); err != nil {
+		return err
+	}
 	// Read before AutoMigrate adds the columns, which is the one moment a row
 	// with no image kind is known to be one from before kinds.
 	backfillPoolKinds := addsImageKindColumn(write, &model.Pool{})
@@ -233,6 +240,25 @@ func columnText(value any) string {
 	default:
 		return fmt.Sprint(v)
 	}
+}
+
+// addPoolAgentEndpointTLSSetting adds pools' disable_agent_endpoint_tls and
+// sets it on every pool that exists, in one transaction: a pool made before
+// the setting reaches its sandboxes' agents over plain HTTP, and keeps doing
+// so, while one made after gets TLS by default. A start that dies part way
+// leaves neither, and the next adds both; once the column exists this does
+// nothing, so a pool made since is never touched.
+func addPoolAgentEndpointTLSSetting(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable(&model.Pool{}) || migrator.HasColumn(&model.Pool{}, "disable_agent_endpoint_tls") {
+		return nil
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Migrator().AddColumn(&model.Pool{}, "DisableAgentEndpointTLS"); err != nil {
+			return fmt.Errorf("add pools.disable_agent_endpoint_tls: %w", err)
+		}
+		return tx.Model(&model.Pool{}).Where("1 = 1").UpdateColumn("disable_agent_endpoint_tls", true).Error
+	})
 }
 
 // addsImageKindColumn reports whether the pools table predates image kinds

@@ -20,6 +20,7 @@ import (
 	"github.com/coreos/go-systemd/v22/activation"
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/proxy/bridge"
+	"github.com/discobox-ai/discobox/sandbox-agent/agenttls"
 	"github.com/discobox-ai/discobox/sandbox-agent/boot"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/desktop"
@@ -198,6 +199,12 @@ func run(name string, args []string) int {
 	serverConfig.RuntimeConfig = runtimeConfig
 	serverConfig.Provision = tracker
 	serverConfig.ClearCaches = func() ([]string, error) { return boot.ClearCaches(configPath) }
+	// Its pool serves its sandboxes' agents over TLS, with the keypair it
+	// placed and renews in the runtime-config document, or plain HTTP, as the
+	// bootstrap says (ADR 26-10-29-481 §3).
+	if cfg.TLS {
+		serverConfig.TLS = agenttls.NewKeypair(layout.AgentTLSDir)
+	}
 	if err := server.Serve(ctx, slog.Default(), serverConfig); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("serve sandbox agent", "error", err)
 		return 1
@@ -243,17 +250,6 @@ func runHookPublish(args []string) int {
 	return 0
 }
 
-// bridgeConfig mirrors the bridge config the runtime-config intake renders into
-// the sandbox's proxy material directory.
-type bridgeConfig struct {
-	ListenAddress  string `json:"listenAddress"`
-	WorkerProxyURL string `json:"workerProxyUrl"`
-	ServerName     string `json:"serverName"`
-	MTLSCAPath     string `json:"mtlsCaPath"`
-	ClientCertPath string `json:"clientCertPath"`
-	ClientKeyPath  string `json:"clientKeyPath"`
-}
-
 // runProxyBridge runs the sandbox-local forwarder that routes sandbox proxy
 // traffic to the pool proxy over mTLS.
 func runProxyBridge(args []string) int {
@@ -269,14 +265,9 @@ func runProxyBridge(args []string) int {
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
-	data, err := os.ReadFile(configPath)
+	cfg, err := bridge.LoadFile(configPath)
 	if err != nil {
 		slog.Error("read proxy bridge config", "error", err)
-		return 1
-	}
-	var cfg bridgeConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		slog.Error("parse proxy bridge config", "error", err)
 		return 1
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -321,13 +312,9 @@ func runProxyBridge(args []string) int {
 	}
 
 	forwarder, err := bridge.New(ctx, bridge.Config{
-		ListenAddress:  cfg.ListenAddress,
-		WorkerProxyURL: cfg.WorkerProxyURL,
-		ServerName:     cfg.ServerName,
-		MTLSCAPath:     cfg.MTLSCAPath,
-		ClientCertPath: cfg.ClientCertPath,
-		ClientKeyPath:  cfg.ClientKeyPath,
-		LocalSubnets:   nestedbridge.LocalSubnets,
+		ListenAddress: cfg.ListenAddress,
+		Pool:          cfg.Dial(cfg.UpstreamURL),
+		LocalSubnets:  nestedbridge.LocalSubnets,
 	})
 	if err != nil {
 		slog.Error("create proxy bridge", "error", err)
@@ -343,11 +330,11 @@ func runProxyBridge(args []string) int {
 	errCh := make(chan error, 1)
 	go func() {
 		if len(activationListeners) > 0 {
-			slog.Info("sandbox proxy bridge serving on activation socket", "addr", activationListeners[0].Addr(), "worker", cfg.WorkerProxyURL)
+			slog.Info("sandbox proxy bridge serving on activation socket", "addr", activationListeners[0].Addr(), "worker", cfg.UpstreamURL)
 			errCh <- forwarder.Serve(activationListeners[0])
 			return
 		}
-		slog.Info("sandbox proxy bridge serving", "addr", cfg.ListenAddress, "worker", cfg.WorkerProxyURL)
+		slog.Info("sandbox proxy bridge serving", "addr", cfg.ListenAddress, "worker", cfg.UpstreamURL)
 		errCh <- forwarder.ListenAndServe()
 	}()
 	select {

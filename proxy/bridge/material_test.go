@@ -98,13 +98,7 @@ func TestForwarderPresentsARenewedCertificateWithoutRestart(t *testing.T) {
 	prepared := poolMaterial(t)
 	url := unixPool(t, prepared.Bundle)
 	material := prepared.Clients["sandbox-1"]
-	forwarder, err := bridge.New(context.Background(), bridge.Config{
-		WorkerProxyURL: url,
-		ServerName:     poolServerName,
-		MTLSCAPath:     material.MTLSCAPath,
-		ClientCertPath: material.ClientCertPath,
-		ClientKeyPath:  material.ClientKeyPath,
-	})
+	forwarder, err := bridge.New(context.Background(), bridge.Config{Pool: dialConfig(material, url, poolServerName)})
 	if err != nil {
 		t.Fatalf("bridge.New: %v", err)
 	}

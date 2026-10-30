@@ -21,12 +21,8 @@ func localForwarder(t *testing.T, subnets ...string) net.Conn {
 	prepared := poolMaterial(t)
 	material := prepared.Clients["sandbox-1"]
 	forwarder, err := bridge.New(context.Background(), bridge.Config{
-		WorkerProxyURL: unixPool(t, prepared.Bundle),
-		ServerName:     poolServerName,
-		MTLSCAPath:     material.MTLSCAPath,
-		ClientCertPath: material.ClientCertPath,
-		ClientKeyPath:  material.ClientKeyPath,
-		LocalSubnets:   func() []string { return subnets },
+		Pool:         dialConfig(material, unixPool(t, prepared.Bundle), poolServerName),
+		LocalSubnets: func() []string { return subnets },
 	})
 	if err != nil {
 		t.Fatalf("bridge.New: %v", err)
