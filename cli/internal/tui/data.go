@@ -2484,13 +2484,31 @@ func (r CredentialRequest) where() string {
 	return r.Host
 }
 
+// whereRows is where, one route to a row, for a card's field: a column of
+// routes is read route by route, where a "; "-joined line of them is not.
+func (r CredentialRequest) whereRows() string {
+	if len(r.Routes) > 0 {
+		return routeRows(r.Routes)
+	}
+	return r.Host
+}
+
 // routesText is routes as a person types them, each as secretroute.Format
 // writes it, joined by "; ": a comma is part of a route, between its hosts,
 // methods, paths, fields or tools.
 func routesText(routes []secretroute.Route) string {
+	return strings.Join(formatRoutes(routes), "; ")
+}
+
+// routeRows is routes as routesText writes them, one to a row.
+func routeRows(routes []secretroute.Route) string {
+	return strings.Join(formatRoutes(routes), "\n")
+}
+
+func formatRoutes(routes []secretroute.Route) []string {
 	out := make([]string, 0, len(routes))
 	for _, route := range routes {
 		out = append(out, secretroute.Format(route))
 	}
-	return strings.Join(out, "; ")
+	return out
 }

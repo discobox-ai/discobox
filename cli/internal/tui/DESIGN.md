@@ -187,8 +187,9 @@ type of its own. A row that is not a route is refused on the card. A new secret 
 nowhere — as `discobox secret create` refuses one. Emptying a row drops that
 route, and emptying them all on an edit clears them (ADR 26-10-02-924). The
 detail card lists each route as `allowed` or `blocked`, and says `nowhere` for
-a secret with none (ADR 26-10-27-880). Routes said on one line are joined by
-`; `, since a comma is part of a route.
+a secret with none (ADR 26-10-27-880). A card's field lists routes one to a
+row (`routeRows`); routes said on one line — a list column, the banner — are
+joined by `; `, since a comma is part of a route.
 
 The **kind** is the one row an existing credential locks: a token and an oauth
 credential are stored and renewed differently, and the server has no answer for
