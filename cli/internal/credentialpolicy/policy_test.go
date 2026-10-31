@@ -3,6 +3,7 @@ package credentialpolicy
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -76,7 +77,7 @@ func TestPolicyRejectsInvalidDocuments(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			path := policyFile(t, body)
 			_, err := (References{{Path: path}}).Resolve()
-			if err == nil || !strings.Contains(err.Error(), path) {
+			if err == nil || !strings.Contains(err.Error(), strconv.Quote(path)) {
 				t.Fatalf("error=%v", err)
 			}
 		})
