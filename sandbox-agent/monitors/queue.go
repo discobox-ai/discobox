@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/sandbox-agent/sharedfile"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -88,7 +89,7 @@ func (q *Queue) add(ev Event, capped bool) (Event, error) {
 		if ev.Key != "" && other.Key == ev.Key {
 			// A pop that took it first leaves nothing to replace, and then it
 			// does not count: it was delivered.
-			if err := os.Remove(q.path(q.Pending, other.ID)); err == nil {
+			if err := sharedfile.Retry(func() error { return os.Remove(q.path(q.Pending, other.ID)) }, 0); err == nil {
 				ev.Count += max(other.Count, 1)
 			}
 			continue
@@ -236,7 +237,11 @@ func (q *Queue) list(dir string) ([]Event, error) {
 }
 
 func readEvent(path string) (Event, error) {
-	data, err := os.ReadFile(path)
+	var data []byte
+	err := sharedfile.Retry(func() (err error) {
+		data, err = os.ReadFile(path)
+		return err
+	}, 0)
 	if err != nil {
 		return Event{}, err
 	}
@@ -285,7 +290,7 @@ func (q *Queue) Pop(f Filter, limit int) ([]Event, error) {
 		if limit > 0 && len(out) == limit {
 			break
 		}
-		if err := os.Rename(q.path(q.Pending, ev.ID), q.path(q.Read, ev.ID)); err != nil {
+		if err := sharedfile.Retry(func() error { return os.Rename(q.path(q.Pending, ev.ID), q.path(q.Read, ev.ID)) }, 0); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
