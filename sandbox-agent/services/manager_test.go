@@ -2,12 +2,9 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,155 +17,10 @@ import (
 
 	"github.com/discobox-ai/discobox/pkg/sandboxservices"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs/execstest"
 	portspkg "github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/x/shorttmp"
 )
-
-// fakeUnits stands in for systemd, and for the shim systemd would start.
-//
-// The shim half is what matters: an exec is started by dialing the socket its
-// shim listens on, so a fake that only records the launch leaves every start
-// timing out. This binds that socket and answers the two requests the exec
-// layer makes of it — start and status — from a record it keeps, which is
-// exactly the shim's role.
-type fakeUnits struct {
-	starts []execs.StartRequest
-	stops  []string
-	// exit, when set, is what a launched process does instead of running: it is
-	// how a test says "this service ended on its own".
-	exit *int64
-
-	mu    sync.Mutex
-	shims map[string]*fakeShim
-}
-
-func newFakeUnits(t *testing.T) *fakeUnits {
-	units := &fakeUnits{shims: map[string]*fakeShim{}}
-	t.Cleanup(units.closeAll)
-	return units
-}
-
-func (f *fakeUnits) Start(_ context.Context, req execs.StartRequest) (execs.StartResult, error) {
-	f.mu.Lock()
-	f.starts = append(f.starts, req)
-	f.mu.Unlock()
-	// The record the shim publishes starts from the one the exec layer wrote
-	// before launching, so identity and metadata are the real ones.
-	record := readExecRecord(req.RuntimePath)
-	now := time.Now().UTC()
-	record.Unit = req.Unit
-	record.StartedAt = &now
-	record.PID = 4242
-	if f.exit != nil {
-		record.Status = execs.StatusExited
-		record.ExitCode = f.exit
-		record.ExitedAt = &now
-	} else {
-		record.Status = execs.StatusRunning
-	}
-	shim, err := newFakeShim(req.SocketPath, record)
-	if err != nil {
-		return execs.StartResult{}, err
-	}
-	f.mu.Lock()
-	// A relaunch reuses the socket path under a fresh unit generation, so
-	// whatever was listening there is gone by the time this binds.
-	if previous, ok := f.shims[req.Unit]; ok {
-		previous.close()
-	}
-	f.shims[req.Unit] = shim
-	f.mu.Unlock()
-	return execs.StartResult{Unit: req.Unit, PID: 4242}, nil
-}
-
-func (f *fakeUnits) Stop(_ context.Context, unit string) error {
-	f.mu.Lock()
-	f.stops = append(f.stops, unit)
-	defer f.mu.Unlock()
-	if shim, ok := f.shims[unit]; ok {
-		shim.close()
-		delete(f.shims, unit)
-	}
-	return nil
-}
-
-func (f *fakeUnits) Status(_ context.Context, unit string) (execs.UnitStatus, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	_, live := f.shims[unit]
-	return execs.UnitStatus{Unit: unit, Loaded: true, Active: live}, nil
-}
-
-func (f *fakeUnits) List(context.Context) ([]execs.UnitStatus, error) { return nil, nil }
-
-// Watch reports no unit changes: these tests drive the manager directly rather
-// than through the watcher.
-func (f *fakeUnits) Watch(ctx context.Context) (<-chan string, error) {
-	ch := make(chan string)
-	go func() {
-		<-ctx.Done()
-		close(ch)
-	}()
-	return ch, nil
-}
-
-func (f *fakeUnits) closeAll() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for unit, shim := range f.shims {
-		shim.close()
-		delete(f.shims, unit)
-	}
-}
-
-// fakeShim serves the exec shim's local socket API: the record it holds is what
-// start and status report.
-type fakeShim struct {
-	listener net.Listener
-	server   *http.Server
-}
-
-func newFakeShim(socketPath string, record execs.Exec) (*fakeShim, error) {
-	// A previous generation's socket file may still be on disk; the real shim
-	// has it removed for it before it binds.
-	_ = os.Remove(socketPath)
-	var config net.ListenConfig
-	listener, err := config.Listen(context.Background(), "unix", socketPath)
-	if err != nil {
-		return nil, err
-	}
-	body, err := json.Marshal(record)
-	if err != nil {
-		_ = listener.Close()
-		return nil, err
-	}
-	mux := http.NewServeMux()
-	answer := func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(body)
-	}
-	mux.HandleFunc("/start", answer)
-	mux.HandleFunc("/status", answer)
-	shim := &fakeShim{listener: listener, server: &http.Server{Handler: mux, ReadHeaderTimeout: time.Second}}
-	go func() { _ = shim.server.Serve(listener) }()
-	return shim, nil
-}
-
-func (s *fakeShim) close() {
-	_ = s.server.Close()
-	_ = s.listener.Close()
-}
-
-// readExecRecord reads the runtime file the exec layer wrote before launching.
-func readExecRecord(path string) execs.Exec {
-	var record execs.Exec
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return record
-	}
-	_ = json.Unmarshal(data, &record)
-	return record
-}
 
 // requireGuestPaths skips a test that hands the exec runtime a host path.
 //
@@ -184,11 +36,11 @@ func requireGuestPaths(t *testing.T) {
 	}
 }
 
-func newTestManager(t *testing.T) (*Manager, *fakeUnits, string) {
+func newTestManager(t *testing.T) (*Manager, *execstest.Units, string) {
 	t.Helper()
 	requireGuestPaths(t)
 	root := t.TempDir()
-	units := newFakeUnits(t)
+	units := execstest.NewUnits(t)
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
 		WorkingRoot: root,
 		RuntimeDir:  filepath.Join(shorttmp.Dir(t), "rt"),
@@ -227,10 +79,10 @@ func TestStartCreatesAPipeExecTaggedWithItsService(t *testing.T) {
 	if service.ExecID == "" {
 		t.Fatal("a started service must report the exec running it")
 	}
-	if len(units.starts) != 1 {
-		t.Fatalf("started %d units, want 1", len(units.starts))
+	if len(units.Starts) != 1 {
+		t.Fatalf("started %d units, want 1", len(units.Starts))
 	}
-	start := units.starts[0]
+	start := units.Starts[0]
 	if start.TTY {
 		t.Error("a service runs on pipes, not a PTY")
 	}
@@ -264,7 +116,7 @@ func TestStartCreatesAPipeExecTaggedWithItsService(t *testing.T) {
 func TestAServiceRunsInItsDeclaringRepositoryRoot(t *testing.T) {
 	requireGuestPaths(t)
 	root := t.TempDir()
-	units := newFakeUnits(t)
+	units := execstest.NewUnits(t)
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
 		WorkingRoot: root,
 		// A sandbox whose execs start somewhere else entirely.
@@ -291,7 +143,7 @@ func TestAServiceRunsInItsDeclaringRepositoryRoot(t *testing.T) {
 	if _, err := manager.Start(context.Background(), "api"); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	if got := units.starts[0].Workdir; got != root {
+	if got := units.Starts[0].Workdir; got != root {
 		t.Fatalf("workdir = %q, want the declaring root %q", got, root)
 	}
 
@@ -300,7 +152,7 @@ func TestAServiceRunsInItsDeclaringRepositoryRoot(t *testing.T) {
 	if _, err := manager.Restart(context.Background(), "api"); err != nil {
 		t.Fatalf("restart: %v", err)
 	}
-	if got := units.starts[1].Workdir; got != root {
+	if got := units.Starts[1].Workdir; got != root {
 		t.Fatalf("workdir after restart = %q, want %q", got, root)
 	}
 }
@@ -322,8 +174,8 @@ func TestStartIsIdempotentWhileRunning(t *testing.T) {
 	if first.ExecID != second.ExecID {
 		t.Fatalf("exec id changed on a second start: %q then %q", first.ExecID, second.ExecID)
 	}
-	if len(units.starts) != 1 {
-		t.Fatalf("started %d units, want 1: a running service must not be started twice", len(units.starts))
+	if len(units.Starts) != 1 {
+		t.Fatalf("started %d units, want 1: a running service must not be started twice", len(units.Starts))
 	}
 }
 
@@ -347,8 +199,8 @@ func TestStopKeepsTheRecordAndSaysItWasStopped(t *testing.T) {
 	if stopped.ExecID != started.ExecID {
 		t.Fatalf("stopping changed the exec id: %q then %q", started.ExecID, stopped.ExecID)
 	}
-	if len(units.stops) != 1 {
-		t.Fatalf("stopped %d units, want 1", len(units.stops))
+	if len(units.Stops) != 1 {
+		t.Fatalf("stopped %d units, want 1", len(units.Stops))
 	}
 	// And the listing agrees, which is what a second window would see.
 	listed, err := manager.List()
@@ -373,8 +225,8 @@ func TestStopUnstartedServiceSucceeds(t *testing.T) {
 	if service.Status != StatusStopped {
 		t.Fatalf("status = %q, want stopped", service.Status)
 	}
-	if len(units.stops) != 0 {
-		t.Fatalf("stopped %d units, want none", len(units.stops))
+	if len(units.Stops) != 0 {
+		t.Fatalf("stopped %d units, want none", len(units.Stops))
 	}
 }
 
@@ -398,13 +250,13 @@ func TestRestartKeepsTheExecID(t *testing.T) {
 	if restarted.Status != StatusRunning {
 		t.Fatalf("status = %q, want running", restarted.Status)
 	}
-	if len(units.starts) != 2 {
-		t.Fatalf("started %d units, want 2", len(units.starts))
+	if len(units.Starts) != 2 {
+		t.Fatalf("started %d units, want 2", len(units.Starts))
 	}
 	// Each run gets its own transient unit generation, which is what keeps the
 	// audit trail's unit references unambiguous.
-	if units.starts[0].Unit == units.starts[1].Unit {
-		t.Errorf("both runs used unit %q; a relaunch must take a fresh generation", units.starts[0].Unit)
+	if units.Starts[0].Unit == units.Starts[1].Unit {
+		t.Errorf("both runs used unit %q; a relaunch must take a fresh generation", units.Starts[0].Unit)
 	}
 }
 
@@ -421,11 +273,11 @@ func TestRestartStartsAStoppedService(t *testing.T) {
 	if service.Status != StatusRunning {
 		t.Fatalf("status = %q, want running", service.Status)
 	}
-	if len(units.stops) != 0 {
-		t.Fatalf("stopped %d units, want none: nothing was running", len(units.stops))
+	if len(units.Stops) != 0 {
+		t.Fatalf("stopped %d units, want none: nothing was running", len(units.Stops))
 	}
-	if len(units.starts) != 1 {
-		t.Fatalf("started %d units, want 1", len(units.starts))
+	if len(units.Starts) != 1 {
+		t.Fatalf("started %d units, want 1", len(units.Starts))
 	}
 }
 
@@ -442,7 +294,7 @@ func TestAServiceThatExitsStaysExited(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			manager, units, root := newTestManager(t)
-			units.exit = &tc.code
+			units.Exit = &tc.code
 			writeService(t, root, "10-api.sh", apiScript, 0o755)
 
 			if _, err := manager.Start(context.Background(), "api"); err != nil {
@@ -455,8 +307,8 @@ func TestAServiceThatExitsStaysExited(t *testing.T) {
 			if service.Status != tc.want {
 				t.Fatalf("status = %q, want %q", service.Status, tc.want)
 			}
-			if len(units.starts) != 1 {
-				t.Fatalf("started %d units, want 1: nothing restarts a service that ended", len(units.starts))
+			if len(units.Starts) != 1 {
+				t.Fatalf("started %d units, want 1: nothing restarts a service that ended", len(units.Starts))
 			}
 		})
 	}
@@ -474,8 +326,8 @@ func TestStartRefusesAnUnrunnableDeclaration(t *testing.T) {
 	if !strings.Contains(err.Error(), "not executable") {
 		t.Errorf("error = %v, want it to name the problem", err)
 	}
-	if len(units.starts) != 0 {
-		t.Fatalf("started %d units, want none", len(units.starts))
+	if len(units.Starts) != 0 {
+		t.Fatalf("started %d units, want none", len(units.Starts))
 	}
 }
 
@@ -507,8 +359,8 @@ func TestListSeesDeclarationsAddedWhileRunning(t *testing.T) {
 	if listed[1].ID != "late" || listed[1].Status != StatusStopped {
 		t.Fatalf("second service = %+v, want a stopped `late`", listed[1])
 	}
-	if len(units.starts) != 1 {
-		t.Fatalf("started %d units, want 1: listing must not start anything", len(units.starts))
+	if len(units.Starts) != 1 {
+		t.Fatalf("started %d units, want 1: listing must not start anything", len(units.Starts))
 	}
 }
 
@@ -523,8 +375,8 @@ func TestEnsureStartedStartsEveryRunnableService(t *testing.T) {
 	if err := manager.EnsureStarted(context.Background(), nil); err != nil {
 		t.Fatalf("ensure started: %v", err)
 	}
-	if len(units.starts) != 2 {
-		t.Fatalf("started %d units, want 2", len(units.starts))
+	if len(units.Starts) != 2 {
+		t.Fatalf("started %d units, want 2", len(units.Starts))
 	}
 	listed, err := manager.List()
 	if err != nil {
@@ -548,8 +400,8 @@ func TestEnsureStartedWithNoDeclarations(t *testing.T) {
 	if err := manager.EnsureStarted(context.Background(), nil); err != nil {
 		t.Fatalf("ensure started: %v", err)
 	}
-	if len(units.starts) != 0 {
-		t.Fatalf("started %d units, want none", len(units.starts))
+	if len(units.Starts) != 0 {
+		t.Fatalf("started %d units, want none", len(units.Starts))
 	}
 }
 
@@ -787,7 +639,7 @@ func TestFailedProvisioningPreventsServiceLaunchAndPreservesRunningService(t *te
 	if _, err := manager.Start(context.Background(), "api"); !errors.Is(err, failure) {
 		t.Fatalf("start: %v", err)
 	}
-	if len(units.starts) != 0 {
+	if len(units.Starts) != 0 {
 		t.Fatal("launched before provisioning")
 	}
 	manager.awaitFeatures = nil
@@ -802,7 +654,7 @@ func TestFailedProvisioningPreventsServiceLaunchAndPreservesRunningService(t *te
 	if _, err := manager.Restart(context.Background(), "api"); !errors.Is(err, failure) {
 		t.Fatalf("restart: %v", err)
 	}
-	if len(units.stops) != 0 || len(units.starts) != 1 {
+	if len(units.Stops) != 0 || len(units.Starts) != 1 {
 		t.Fatal("failed restart interrupted running service")
 	}
 }
@@ -932,8 +784,8 @@ func TestBootDiscoversImageServicesInstalledDuringProvisioning(t *testing.T) {
 			t.Errorf("%s: %+v, %v; want %s", id, service, err, want)
 		}
 	}
-	if len(units.starts) != 2 {
-		t.Fatalf("starts = %d, want early project plus late image", len(units.starts))
+	if len(units.Starts) != 2 {
+		t.Fatalf("starts = %d, want early project plus late image", len(units.Starts))
 	}
 }
 
@@ -952,7 +804,7 @@ func TestProvisioningWaitRechecksBuiltinOwner(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			starts := len(units.starts)
+			starts := len(units.Starts)
 			manager.awaitFeatures = func(context.Context, []string) error {
 				off.Store(true)
 				return nil
@@ -966,7 +818,7 @@ func TestProvisioningWaitRechecksBuiltinOwner(t *testing.T) {
 			if !errors.Is(err, ErrNotFound) {
 				t.Fatalf("%s after owner disabled: %v", operation, err)
 			}
-			if len(units.starts) != starts || len(units.stops) != 0 {
+			if len(units.Starts) != starts || len(units.Stops) != 0 {
 				t.Fatal("disabled builtin was launched or its existing run stopped")
 			}
 		})
