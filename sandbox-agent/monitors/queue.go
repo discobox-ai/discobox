@@ -32,11 +32,12 @@ const (
 const seqFile = ".seq"
 
 // Queue is the event queue: one file per event, `e<N>.json`, in Pending until
-// a pop renames it into Read.
+// a pop claims it into Read.
 //
 // It needs no lock and no server. An id is taken by hard-linking a written
 // file to its name, which fails when the name exists, so two writers can never
-// take one id; a pop is a rename, which only one of two pops can win.
+// take one id; a pop claims an event the same way, linking it into Read, so
+// only one of two pops can take it.
 type Queue struct {
 	Pending string
 	Read    string
@@ -87,9 +88,11 @@ func (q *Queue) add(ev Event, capped bool) (Event, error) {
 			continue
 		}
 		if ev.Key != "" && other.Key == ev.Key {
-			// A pop that took it first leaves nothing to replace, and then it
-			// does not count: it was delivered.
-			if err := sharedfile.Retry(func() error { return os.Remove(q.path(q.Pending, other.ID)) }, 0); err == nil {
+			// A pop that took it first leaves nothing to replace — or only the
+			// pending name of what it has already claimed into Read — and then
+			// it does not count: it was delivered.
+			err := sharedfile.Retry(func() error { return os.Remove(q.path(q.Pending, other.ID)) }, 0)
+			if _, claimed := os.Stat(q.path(q.Read, other.ID)); err == nil && claimed != nil {
 				ev.Count += max(other.Count, 1)
 			}
 			continue
@@ -132,6 +135,15 @@ func (q *Queue) write(ev Event) (Event, error) {
 	defer os.Remove(tmp.Name())
 	for {
 		ev.ID = "e" + strconv.FormatUint(seq, 10)
+		// An id a pop has claimed into Read is taken too: its pending name is
+		// gone, and a second event under it would be taken for the first. A
+		// claim landing between this look and the link below can still give
+		// two events one id; a pop that meets that settles it.
+
+		if _, err := os.Lstat(q.path(q.Read, ev.ID)); err == nil {
+			seq++
+			continue
+		}
 		data, err := json.Marshal(ev)
 		if err != nil {
 			tmp.Close()
@@ -272,8 +284,8 @@ func (q *Queue) Peek(f Filter, limit int) ([]Event, error) {
 	return out, nil
 }
 
-// Pop is Peek, taking what it returns: each event is renamed into Read, and
-// one another pop renamed first is not returned.
+// Pop is Peek, taking what it returns: each event is claimed into Read, and
+// one another pop claimed first is not returned.
 func (q *Queue) Pop(f Filter, limit int) ([]Event, error) {
 	candidates, err := q.Peek(f, 0)
 	if err != nil {
@@ -290,10 +302,22 @@ func (q *Queue) Pop(f Filter, limit int) ([]Event, error) {
 		if limit > 0 && len(out) == limit {
 			break
 		}
-		if err := sharedfile.Retry(func() error { return os.Rename(q.path(q.Pending, ev.ID), q.path(q.Read, ev.ID)) }, 0); err != nil {
+		// Claimed by hard-linking it into Read, which fails when the name is
+		// there already: of two pops, one wins on every platform. A rename
+		// would not do — on Windows it replaces the name it moves onto, and
+		// both pops would take the event.
+		pending, read := q.path(q.Pending, ev.ID), q.path(q.Read, ev.ID)
+		if err := sharedfile.Retry(func() error { return os.Link(pending, read) }, 0); err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				q.settle(pending, read)
+				continue
+			}
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
+			return out, err
+		}
+		if err := sharedfile.Retry(func() error { return os.Remove(pending) }, 0); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return out, err
 		}
 		// Read back what was taken: a newer event with its key may have
@@ -306,6 +330,43 @@ func (q *Queue) Pop(f Filter, limit int) ([]Event, error) {
 	}
 	q.prune()
 	return out, nil
+}
+
+// settle resolves a pending event whose id is already in Read. Either it is
+// the same file — claimed, and the claimer died before removing its pending
+// name, which would leave it pending for good and a waiting pop woken by it
+// forever — and the name goes; or it is another event that was given the id
+// while the claim was being made, and it is queued again under a new id
+// rather than removed: never lost, only renumbered.
+func (q *Queue) settle(pending, read string) {
+	pendingInfo, err := os.Lstat(pending)
+	if err != nil {
+		return
+	}
+	if readInfo, err := os.Lstat(read); err == nil && os.SameFile(pendingInfo, readInfo) {
+		_ = sharedfile.Retry(func() error { return os.Remove(pending) }, 0)
+		return
+	}
+	// Two pops can meet the same collision. Only the one whose remove of the
+	// pending name succeeds queues the event again, from a name of its own
+	// taken first; the other finds the name gone and leaves it.
+	held, err := os.CreateTemp(q.Pending, ".settle-*")
+	if err != nil {
+		return
+	}
+	heldName := held.Name()
+	held.Close()
+	_ = os.Remove(heldName)
+	defer os.Remove(heldName)
+	if os.Link(pending, heldName) != nil {
+		return
+	}
+	if sharedfile.Retry(func() error { return os.Remove(pending) }, 0) != nil {
+		return
+	}
+	if ev, err := readEvent(heldName); err == nil {
+		_, _ = q.write(ev)
+	}
 }
 
 // Count is how many events f selects are pending.

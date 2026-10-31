@@ -185,12 +185,14 @@ So a fresh harness session can inherit running instances and pending events it
 did not start. The image's skill tells the agent to run `discobox-monitor
 status` when it begins, and to disable what it no longer needs.
 
-### 6. Events are files; `pop` is a rename
+### 6. Events are files; `pop` is a claim by link
 
 The runner queues each event as `~/.discobox/events/pending/<id>.json`, written
 under a dot name and linked into place under its id, so two writers can never
-take one id. `pop` renames what it returns into
-`~/.discobox/events/read/`, so two concurrent pops never return one event, and
+take one id. `pop` claims what it returns the same way, hard-linking each into
+`~/.discobox/events/read/` and then removing its pending name, so two
+concurrent pops never return one event on any platform — a rename would
+not, since on Windows it replaces the name it lands on — and
 `read <id>` finds an event in either directory — the detail is still there
 after the header was popped. `read/` is pruned by age and count.
 
