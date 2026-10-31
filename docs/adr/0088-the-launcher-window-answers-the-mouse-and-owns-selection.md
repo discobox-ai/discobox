@@ -1,6 +1,6 @@
 # 0088 — The launcher window answers the mouse everywhere, and owns selection where it does
 
-- **Status**: Accepted
+- **Status**: Accepted (§4 and §2 superseded for the workspace tree by [26-10-31-319](26-10-31-319-a-press-on-a-workspace-tree-row-switches-to-it.md))
 - **Date**: 2026-09-02
 
 ## Context

@@ -242,7 +242,7 @@ func (m *Model) issueTab(repository string, number int) *pane {
 // issueOf is the pane a message is for, and its issue, while it is still open
 // on one.
 func (m *Model) issueOf(id int) (*pane, *issuePane) {
-	p := m.paneByID(id)
+	p := m.heldPane(id)
 	if p == nil || p.issue == nil {
 		return nil, nil
 	}

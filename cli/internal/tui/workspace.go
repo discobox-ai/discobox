@@ -94,12 +94,91 @@ type workspaceForwardMsg struct {
 // carries nothing: the header redraws from the forward itself.
 type workspaceForwardChangedMsg struct{ gen int }
 
+// workspace is one discobox's workspace: what a window holds for it while it
+// is open, and all of what has to survive for it to come back as it was left
+// when it is switched away from in the tree (parkWorkspace). Model embeds the
+// live one; the parked ones are kept whole beside it (Model.parked).
+//
+// What is not here is the live screen's alone and goes with the generation
+// that ran it — the opens in flight, the polls, the overlay, the audit.
+type workspace struct {
+	// paneBox is the discobox the workspace is showing. Every pane on it is
+	// that one, and so is everything the leader's keys act on.
+	paneBox Sandbox
+
+	terminals column
+	shells    column
+	// onShells is which of the two columns has the keys.
+	onShells bool
+	// maximized is whether one column has the whole window instead of the two
+	// sharing it. Which column that is follows the focus — onShells — so there
+	// is one visible box and it is always the one the keys go to. See
+	// toggleMaximized.
+	maximized bool
+	// ending is the exec ids this window has asked the server to kill, so the
+	// poll running behind the kill does not open the pane straight back up.
+	// Entries live for the workspace — exec ids are not reused, and the
+	// listings overlap, so no one answer is proof the kill has landed. See
+	// endPane.
+	ending map[string]bool
+	// forward holds the workspace's port forward while it is on screen: the
+	// local ports standing in for what the discobox is serving, which the
+	// header draws as arrows. A parked workspace has none. See workspace.go.
+	forward Forward
+	// pushHeld is the commit each source's automatic push failed on, keyed by
+	// slug, for as long as the workspace is open. A source is not pushed again
+	// while its branch still names the commit that was refused; see push.go.
+	pushHeld map[string]string
+	// pushGen is the generation the workspace's push loop runs under: the one
+	// it was opened in. It outlives the screen's own generation, because a
+	// parked workspace is still attached and so still pushes, and its loop
+	// carries on unbroken when it is shown again (pushLoop).
+	pushGen int
+	// toolShown is the tool with the whole window, or nil when the workspace
+	// is on screen. A tool's pane lives in the shells column, after the
+	// shells, whether or not it is showing: put away, it is a tab there like
+	// any other, still attached and still running. See tools.go.
+	toolShown *pane
+}
+
+// attached is every pane the workspace holds, either column.
+func (w *workspace) attached() []*pane {
+	return append(append([]*pane{}, w.terminals.panes...), w.shells.panes...)
+}
+
+// closeStreams lets go of everything the workspace holds — its panes'
+// streams and its port forward. Every session keeps running: this closes a
+// window onto them.
+func (w *workspace) closeStreams() {
+	w.terminals.closeAll()
+	// The tools go with the shells they sit after, and like every other
+	// session they keep running; the next attach picks them back up off the
+	// listing.
+	w.shells.closeAll()
+	if w.forward != nil {
+		// The local ports go with the screen that opened them. A forward left
+		// running behind a closed workspace is a listener nothing on screen
+		// accounts for.
+		_ = w.forward.Close()
+		w.forward = nil
+	}
+}
+
 // openFromList opens a terminal screen from the list, on the discobox under
 // the cursor. It replaces whatever was open: this is a different discobox, or
 // the same one started over, and either way what was on screen was about
 // something else.
 func (m *Model) openFromList(act Interaction, sandbox Sandbox) tea.Cmd {
-	m.closeWorkspace()
+	// The workspace on screen is parked rather than closed, so the tree can
+	// switch back to it without attaching again. See tree.go.
+	m.parkWorkspace()
+	if ws := m.parked[sandbox.ID]; ws != nil {
+		cmd := m.unparkWorkspace(ws)
+		if act == InteractShell {
+			cmd = tea.Batch(cmd, m.newShell())
+		}
+		return cmd
+	}
 	m.paneBox = sandbox
 	// The workspace is the screen either way; asking for a shell opens it
 	// with a fresh one, focused.
@@ -117,6 +196,15 @@ func (m *Model) openWorkspace(sandbox Sandbox, freshShell bool) tea.Cmd {
 	// one way the two ever meet.
 	m.harnessesOpen = false
 	m.busy = "attach…"
+	if m.attach == nil {
+		// The workspace is the screen from here, tree and all, while the
+		// attach waits; the keys are the leader's until a pane arrives.
+		m.wsOpening = true
+		m.listFront, m.treeExpanded = false, false
+		m.closePages()
+		m.focus = focusPane
+		m.prompt.Blur()
+	}
 	m.connecting = map[string]bool{}
 	m.ending = map[string]bool{}
 	// Nothing is held against a workspace that is only now opening: a refusal
@@ -124,6 +212,7 @@ func (m *Model) openWorkspace(sandbox Sandbox, freshShell bool) tea.Cmd {
 	// is try again. See push.go.
 	m.pushHeld = map[string]string{}
 	gen := m.wsGen
+	m.pushGen = gen
 	if sandbox.AwaitsDelivery {
 		return m.deliverSource(gen, sandbox, freshShell)
 	}
@@ -137,7 +226,7 @@ func (m *Model) attachWorkspace(gen int, sandbox Sandbox, freshShell bool) tea.C
 	// cold image pull is minutes (ADR 0039). Say what it is waiting for while
 	// it does; the watch reports nothing for a discobox that is already up, so
 	// attaching to a running one still shows only "attach…" (ADR 0060).
-	cmds := []tea.Cmd{m.listExecs(gen), m.listServices(gen), m.workspaceTick(gen), m.startForward(gen), m.watchProvisioning(sandbox.ID), m.autoPush(gen)}
+	cmds := []tea.Cmd{m.listExecs(gen), m.listServices(gen), m.workspaceTick(gen), m.startForward(gen), m.watchProvisioning(sandbox.ID), m.autoPush(sandbox.ID, gen)}
 	if freshShell {
 		cmds = append(cmds, m.newShell())
 	}
@@ -643,6 +732,9 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	m.busy = ""
 	delete(m.connecting, msg.exec.ID)
 	primary := msg.exec.ID == ExecPrimary
+	if primary {
+		m.wsOpening = false
+	}
 	terminal := primary || terminalExec(msg.exec) || msg.asked == InteractTerminal
 
 	// What this pane is, in the words the list uses: the primary is the
@@ -849,6 +941,8 @@ func (m *Model) endablePane(p *pane) (why string, ok bool) {
 		return "", true
 	case p == nil || p.execID == "":
 		return "nothing to end here", false
+	case p.primary && !m.detaches():
+		return "the primary terminal is the workspace — it keeps running when you switch away or quit", false
 	case p.primary:
 		return "the primary terminal is the workspace — " + m.detachHint() + " leaves it, and the session keeps running", false
 	case p.service != "":
@@ -927,22 +1021,26 @@ func (m *Model) endExecFailed(msg endExecFailedMsg) tea.Cmd {
 // overlay, the terminal, every tab — and every session keeps running. Bumping
 // the generation is what ends the poll and orphans any open still in flight.
 func (m *Model) closeWorkspace() {
+	m.wsOpening = false
+	m.listFront, m.treeExpanded = false, false
+	m.endLiveScreen()
+	m.closeStreams()
+	// The push loop ends with the workspace (pushLoop), and what it was
+	// holding against it goes too.
+	m.workspace = workspace{paneBox: m.paneBox}
+	m.leavePanes()
+}
+
+// endLiveScreen ends what only the workspace on screen runs, whether it is
+// being closed or parked: its generation, which ends its polls and orphans its
+// opens, and the overlay, audit and wait drawn over it.
+func (m *Model) endLiveScreen() {
 	m.wsGen++
 	m.connecting = nil
-	m.ending = nil
-	// The push loop ends with the generation, and what it was holding against
-	// this workspace goes with it.
-	m.pushHeld = nil
+	m.toolOpening = nil
 	m.closeAudit()
 	m.endNarration()
 	m.busy = ""
-	if m.forward != nil {
-		// The local ports go with the screen that opened them. A forward left
-		// running behind a closed workspace is a listener nothing on screen
-		// accounts for.
-		_ = m.forward.Close()
-		m.forward = nil
-	}
 	if m.overlay != nil {
 		_ = m.overlay.term.Close()
 		m.overlay = nil
@@ -952,16 +1050,6 @@ func (m *Model) closeWorkspace() {
 		// them with it. See dialog.over.
 		m.dialog = nil
 	}
-	m.terminals.closeAll()
-	// The tools go with the shells they sit after, and like every other
-	// session they keep running: this closes the window onto them, and the next
-	// attach picks them back up off the listing.
-	m.shells.closeAll()
-	m.toolShown = nil
-	m.toolOpening = nil
-	m.onShells = false
-	m.maximized = false
-	m.leavePanes()
 }
 
 // panes is the whole screen as one strip, left to right: the services, the
@@ -1033,6 +1121,12 @@ func (m *Model) focusOrdinal(n int) {
 func (m *Model) movePane(delta int) tea.Cmd {
 	at := m.paneOrdinal()
 	if at < 0 {
+		return nil
+	}
+	// Off the left edge is the tree.
+	if at+delta < 0 && m.treeAvailable() {
+		m.treeHidden = false
+		m.focusTree()
 		return nil
 	}
 	m.focusOrdinal(at + delta)

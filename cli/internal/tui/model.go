@@ -96,6 +96,30 @@ type Model struct {
 	width, height int
 	ready         bool
 
+	// screenWidth is the terminal's width; width is what the window draws in,
+	// which is less the workspace tree while it is up. See tree.go.
+	screenWidth int
+	// parked is every workspace switched away from, by discobox id, still
+	// attached; wsOpening is a workspace on its way up, before its primary.
+	parked    map[string]*workspace
+	wsOpening bool
+	// treeZones is the tree's own hit map. listFront is the list in the tree
+	// holding the keys while a workspace is open; treeExpanded is the list
+	// drawn as the whole home screen over it.
+	treeZones    zones
+	listFront    bool
+	treeExpanded bool
+	// treeHidden is the tree put away by its [x]; the leader's h off the
+	// leftmost pane brings it back.
+	treeHidden bool
+	// newOpen is whether the new discobox page is open. See tree.go.
+	newOpen bool
+	// cursorOn is the box syncListCursor last found in the list.
+	cursorOn string
+	// treeHoverX and treeHoverY are where the pointer rests over the tree,
+	// -1 when it is elsewhere.
+	treeHoverX, treeHoverY int
+
 	list *sandboxList
 	// resources is what Discobox has on this machine and what it is using,
 	// refreshed on the listing's beat and drawn in the header. Zero until the
@@ -159,43 +183,17 @@ type Model struct {
 	requestRows *requestList
 	table       secretsTable
 
-	// The workspace screen: the discobox's terminals on the left, the primary
-	// among them, and its shells as tabs on the right, both following the
-	// server. See workspace.go.
-	terminals column
-	shells    column
-	// onShells is which of the two columns has the keys.
-	onShells bool
-	// maximized is whether one column has the whole window instead of the two
-	// sharing it. Which column that is follows the focus — onShells — so there
-	// is one visible box and it is always the one the keys go to. See
-	// toggleMaximized.
-	maximized bool
+	// workspace is the open workspace screen, its fields promoted: the
+	// discobox's terminals on the left, the primary among them, and its shells
+	// as tabs on the right, both following the server. A workspace switched
+	// away from in the tree is the same value, parked. See workspace.go.
+	workspace
 	// connecting is the exec ids with an attach in flight, so a poll that
 	// still lists them does not open a second pane onto the same session.
 	connecting map[string]bool
-	// ending is the exec ids this window has asked the server to kill, so the
-	// poll running behind the kill does not open the pane straight back up.
-	// Entries live for the workspace — exec ids are not reused, and the
-	// listings overlap, so no one answer is proof the kill has landed. See
-	// endPane.
-	ending map[string]bool
 	// wsGen numbers workspaces. Detaching bumps it, and a poll tick or an
 	// open still in flight from the one that was left is stale and dropped.
 	wsGen int
-	// forward holds the workspace's port forward while it is open: the local
-	// ports standing in for what the discobox is serving, which the header
-	// draws as arrows. See workspace.go.
-	forward Forward
-	// pushHeld is the commit each source's automatic push failed on, keyed by
-	// slug, for as long as the workspace is open. A source is not pushed again
-	// while its branch still names the commit that was refused; see push.go.
-	pushHeld map[string]string
-	// toolShown is the tool with the whole window, or nil when the workspace
-	// is on screen. A tool's pane lives in the shells column, after the
-	// shells, whether or not it is showing: put away, it is a tab there like
-	// any other, still attached and still running. See tools.go.
-	toolShown *pane
 	// toolOpening is the tools with an attach in flight, keyed by tool id, so
 	// the poll and the picker cannot open two panes onto one session.
 	toolOpening map[string]bool
@@ -242,6 +240,8 @@ type Model struct {
 	// detaching, or the session ending — leaves the window, because there is
 	// no list behind it that anybody asked for. See WithAttach.
 	attach *Sandbox
+	// bareShown is whether the last layout was for the bare window.
+	bareShown bool
 	// exitErr is what an attach that never came up ends the window with. Run
 	// returns it, so the command that opened the window fails the way a plain
 	// attach fails rather than reporting on a status line nobody is left to
@@ -250,10 +250,7 @@ type Model struct {
 
 	// overlay is the command that has the screen over the workspace while it
 	// runs.
-	overlay *pane
-	// paneBox is the discobox the workspace is showing. Every pane on it is
-	// that one, and so is everything the leader's keys act on.
-	paneBox    Sandbox
+	overlay    *pane
 	nextPaneID int
 
 	// mouseSeized is whether the leader plus m has taken the mouse from the
@@ -551,6 +548,8 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 		noise:         newNoise(),
 		now:           time.Now,
 		hoverX:        -1,
+		treeHoverX:    -1,
+		treeHoverY:    -1,
 		hoverY:        -1,
 	}
 	m.chromeSel = selection.New(m.chromeGrid)
@@ -916,7 +915,35 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if mouse, ok := msg.(tea.MouseMsg); ok && m.treeShown() {
+		shifted, cmd, taken := m.treeMouse(mouse)
+		if taken {
+			if m.syncWidth() {
+				m.layout()
+			}
+			return m, cmd
+		}
+		msg = shifted
+	}
 	cmd := m.update(msg)
+	// The new discobox card is modal: nothing walks off its composer.
+	if m.newOpen && m.focus == focusList {
+		m.listFront = false
+		m.focus = focusPrompt
+		m.prompt.Focus()
+	}
+	// The compact tree draws no prompt, so a key that would have walked off
+	// the list into one stays on the list.
+	if m.listFront && !m.treeExpanded && m.focus == focusPrompt {
+		m.prompt.Blur()
+		m.focus = focusList
+	}
+	// The chrome comes and goes with the panes (bare.go), and the primary's
+	// size with it.
+	if bare := m.bare(); m.syncWidth() || bare != m.bareShown {
+		m.bareShown = bare
+		m.layout()
+	}
 	// Whatever just happened may have changed which pane is on screen, and a
 	// pane on screen is one being read. Doing it here rather than at each of
 	// the several places focus can move means no new way to move it can forget.
@@ -940,6 +967,8 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.screenWidth = msg.Width
+		m.syncWidth()
 		m.ready = true
 		// Columns mean nothing across a resize; see the panes' own clearing.
 		m.chromeSel.Clear()
@@ -1017,6 +1046,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// The rows are replaced wholesale, so the marks are stamped back onto
 		// them: the two reads land independently and either can be the later.
 		m.list.setPending(m.requests)
+		// A box opened before the listing had it — one just created — gets
+		// the tree's cursor once it lands.
+		if !m.listFront && m.cursorOn != m.paneBox.ID {
+			m.syncListCursor()
+		}
 		// What the project has been cut from is read off the same listing the
 		// filter's folders are, for the same reason: the sources worth offering
 		// are exactly the ones something is already sitting in.
@@ -1333,10 +1367,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return tea.Batch(m.listExecs(msg.gen), m.listServices(msg.gen), m.workspaceTick(msg.gen))
 
 	case autoPushTickMsg:
-		if msg.gen != m.wsGen {
-			return nil
-		}
-		return m.autoPush(msg.gen)
+		return m.autoPush(msg.box, msg.gen)
 
 	case autoPushedMsg:
 		return m.autoPushed(msg)
@@ -1368,6 +1399,15 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case runActionMsg:
 		return m.actOn(msg.key, msg.targets)
+
+	case boxMenuChoiceMsg:
+		switch msg.key {
+		case auditKey:
+			return m.openAudit()
+		case allBoxesKey:
+			return m.showAllBoxes()
+		}
+		return m.openTools()
 
 	case harnessesLoadedMsg:
 		return m.harnessesLoaded(msg)
@@ -1512,7 +1552,9 @@ func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
 	// drawn over it and owns every key, paste included. See updateKey.
 	case m.inPanes():
 		return m.updatePane(msg)
-	case m.harnessesOpen, m.secretsOpen, m.skillsOpen, m.submitting:
+	// Nor does the list in the tree, or the screen it has the keys from: the
+	// composer behind them is not drawn (updateKey, listHasKeys).
+	case m.harnessesOpen, m.secretsOpen, m.skillsOpen, m.submitting, m.listHasKeys():
 		return nil
 	}
 	before := m.promptState()
@@ -1673,6 +1715,50 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if keyName(msg) == paneQuitKey {
 			return m.closeWindow()
 		}
+		// The list in the tree has the keys: the leader's l goes back to the
+		// panes, and z swaps it for the whole home screen and back.
+		if m.listFront {
+			switch keyName(msg) {
+			case paneRightKey, "right", "ctrl+l", "ctrl+right":
+				m.backToPanes()
+				return nil
+			case paneZoomKey:
+				m.toggleTreeExpanded()
+				return nil
+			}
+		}
+		// A page right of the tree has no pane to own the leader either: h is
+		// the way to the tree, and ↑↓ switch boxes, as they do from a pane.
+		if m.pageUp() && !m.listFront && m.treeShown() {
+			if delta, ok := boxStep(keyName(msg)); ok {
+				return m.switchBox(delta)
+			}
+			switch keyName(msg) {
+			case paneLeftKey, "left", "ctrl+h", "ctrl+left":
+				m.focusTree()
+				return nil
+			case boxMenuKey:
+				if m.hasWorkspace() {
+					return m.boxMenu(m.paneBox)
+				}
+			}
+		}
+		// A workspace on its way up has no pane to own the leader, so the
+		// tree's keys are answered here until it does.
+		if m.wsOpening {
+			if delta, ok := boxStep(keyName(msg)); ok {
+				return m.switchBox(delta)
+			}
+			switch keyName(msg) {
+			case paneDetachAlt:
+				if !m.detaches() {
+					return nil
+				}
+				m.closeWorkspace()
+				m.layout()
+				return m.refresh()
+			}
+		}
 		// Over the audit screen the workspace's banner is still drawn, and it
 		// names its keys behind the leader; they mean here what they mean in
 		// the panes the screen covers, or the band would be a sentence rather
@@ -1692,6 +1778,9 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	} else if m.focus != focusPrompt && (!m.inPanes() || m.audit != nil) && keyName(msg) == m.leader() {
 		m.leaderArmed = true
 		return nil
+	}
+	if cmd, taken := m.treeKey(msg); taken {
+		return cmd
 	}
 	if keyName(msg) == "f1" {
 		m.dialog = m.helpDialog()
@@ -1771,7 +1860,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// them, so the configure terminal a harness opens sat there reading nothing
 	// while Enter went on meaning "reconfigure the highlighted harness" to the
 	// list underneath, restarting the flow the user was looking at.
-	if !m.inPanes() {
+	if !m.inPanes() && !m.listHasKeys() {
 		if m.harnessesOpen {
 			return m.updateHarnesses(msg)
 		}
@@ -3340,20 +3429,21 @@ const windowChrome = 12
 const promptMaxRows = 3
 
 func (m *Model) layout() {
+	m.syncWidth()
 	if m.width <= 0 || m.height <= 0 {
 		return
 	}
 	// The harnesses screen is a window of its own, and is measured whether or not
 	// it is up: it is opened by a key that can be pressed on any frame, and a
 	// list sized on the frame after that would open with no rows in it.
-	m.harnesses.width, m.harnesses.height = m.bodyWidth(), max(m.height-harnessesChrome, 0)
+	m.harnesses.width, m.harnesses.height = m.bodyWidth(), max(m.pageHeight()-harnessesChrome, 0)
 	m.harnesses.clamp()
-	m.skills.width, m.skills.height = m.bodyWidth(), max(m.height-skillsChrome, 0)
+	m.skills.width, m.skills.height = m.bodyWidth(), max(m.pageHeight()-skillsChrome, 0)
 	m.skills.clamp()
 	// The lower table takes what its rows need, up to a third of the screen:
 	// what is waiting is usually a line or two, and a fixed split would spend
 	// half the screen on "nothing is waiting".
-	secretsRoom := max(m.height-secretsChrome, 0)
+	secretsRoom := max(m.pageHeight()-secretsChrome, 0)
 	waiting := min(len(m.requestRows.all), max(secretsRoom/3, 1))
 	if waiting == 0 {
 		waiting = 1 // the empty state is a row too
@@ -3371,7 +3461,7 @@ func (m *Model) layout() {
 	// get, and the list underneath is not what you are looking at. Every pane
 	// is sized for the box it is drawn in, the hidden tabs included — flipping
 	// to one must show a screen drawn at the size it is shown at.
-	if m.inPanes() {
+	if m.workspaceShown() {
 		for _, p := range m.allPanes() {
 			p.term.SetSize(m.paneCells(m.paneWidthOf(p)))
 		}
@@ -3384,7 +3474,12 @@ func (m *Model) layout() {
 	// The composer grows with what is typed, one row at a time, the way
 	// Claude Code's does — and the list gives up a row for each one it takes.
 	// The width comes first: how tall the text is depends on where it wraps.
-	m.prompt.SetWidth(max(m.inner()-2, 10))
+	// The new discobox card holds it at a dialog's width.
+	if m.newOpen {
+		m.prompt.SetWidth(max(newCardInner(m.width)-2, 10))
+	} else {
+		m.prompt.SetWidth(max(m.inner()-2, 10))
+	}
 	promptH := m.prompt.Height()
 	// What the window costs before a single sandbox is drawn: the box's two
 	// edges, the header and the blank under it, the list title and the blank
@@ -3443,28 +3538,49 @@ func (m *Model) view() tea.View {
 	// The introduction is the window until it is dismissed, ahead of the screen
 	// it was opened on and ahead of any modal. See welcome.go.
 	if m.welcoming {
-		return tea.NewView(m.place(m.viewWelcome))
+		return tea.NewView(m.withTree(m.place(m.viewWelcome)))
 	}
 
 	// A modal is drawn in place of the window rather than over it, and closing
 	// it puts the window back. It carries its own border, so it needs none of
 	// the frame below.
 	if m.dialog != nil {
-		return tea.NewView(m.place(func() string { return m.dialog.view(m.st, &m.zones, m.width, m.height) }))
+		return tea.NewView(m.withTree(m.place(func() string { return m.dialog.view(m.st, &m.zones, m.width, m.height) })))
 	}
 	if m.optionsOpen {
-		return tea.NewView(m.place(func() string { return m.opts.view(m.st, &m.zones, m.width, m.prompt.Value()) }))
+		return tea.NewView(m.withTree(m.place(func() string { return m.opts.view(m.st, &m.zones, m.width, m.prompt.Value()) })))
 	}
 
+	// The new discobox card stands in place of the window the way a dialog
+	// does; a dialog it opens (the create card) stands in place of it.
+	if m.newOpen {
+		return tea.NewView(m.withTree(m.place(m.viewNewCard)))
+	}
 	// The header names the session; what is under it is a different kind of
 	// thing, and butted together they read as one block.
+	// A page beside the tree is drawn a row down (below), so what it marks
+	// is too.
+	if m.treeShown() && !m.workspaceShown() {
+		m.zones.push(0, 1)
+		defer m.zones.pop()
+	}
 	var content string
 	switch {
-	case m.inPanes():
+	case m.workspaceShown():
 		// A pane wears the border itself. Everything else — the header, what
 		// the sandbox is called, the keys — sits outside it, the way a caption
 		// sits outside the thing it captions.
 		content = m.viewPaneWindow()
+		if m.treeShown() {
+			// The tree goes on after the chrome is painted, so the window's
+			// own selection keeps the coordinates it measured in.
+			view := tea.NewView(lipgloss.JoinHorizontal(lipgloss.Top, m.viewTree(), m.paintChrome(content)))
+			if cursor := m.paneCursor(); cursor != nil && !m.listFront {
+				cursor.X += treeWidth
+				view.Cursor = cursor
+			}
+			return view
+		}
 	case m.harnessesOpen:
 		// The harnesses screen is the window while it is up, drawn in the same box
 		// with the same header: it is another list of things you act on, not a
@@ -3499,6 +3615,9 @@ func (m *Model) view() tea.View {
 
 		content = m.box(rows)
 	}
+	if m.treeShown() {
+		return tea.NewView(lipgloss.JoinHorizontal(lipgloss.Top, m.viewTree(), m.paintChrome(content)))
+	}
 	view := tea.NewView(m.paintChrome(content))
 	// The cursor belongs to whatever is drawing one. A pane places it where the
 	// sandbox put it; everywhere else the composer's own virtual cursor does
@@ -3507,6 +3626,15 @@ func (m *Model) view() tea.View {
 		view.Cursor = cursor
 	}
 	return view
+}
+
+// withTree puts the workspace tree beside a frame drawn for the window right
+// of it, when the tree is up. See tree.go.
+func (m *Model) withTree(frame string) string {
+	if !m.treeShown() {
+		return frame
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, m.viewTree(), frame)
 }
 
 // box draws the window's border around content already laid out at inner()
@@ -3521,15 +3649,27 @@ func (m *Model) view() tea.View {
 func (m *Model) box(rows []string) string {
 	inner := m.inner()
 	pad := strings.Repeat(" ", boxPad)
-	side := m.st.frame.Render("│")
+	// Beside the tree, a page whose keys the list has taken is framed as an
+	// unfocused pane is.
+	frame := m.st.frame
+	if m.listHasKeys() {
+		frame = m.st.rule
+	}
+	side := frame.Render("│")
 	edge := inner + 2*boxPad
 
 	out := make([]string, 0, len(rows)+2)
-	out = append(out, titledEdge(m.st, m.st.frame, "", "", edge))
+	// The expanded workspace tree is this screen, and wears the controls that
+	// put it back. See tree.go.
+	controls := ""
+	if m.treeExpanded {
+		controls = m.treeControls(frame, edge+2, 0)
+	}
+	out = append(out, titledEdge(m.st, frame, "", controls, edge))
 	for _, row := range rows {
 		out = append(out, side+pad+padANSI(row, inner)+pad+side)
 	}
-	out = append(out, m.st.frame.Render("╰"+strings.Repeat("─", edge)+"╯"))
+	out = append(out, frame.Render("╰"+strings.Repeat("─", edge)+"╯"))
 	return strings.Join(out, "\n")
 }
 
@@ -3618,7 +3758,8 @@ func centerOffset(outer, inner int) int {
 // threshold the list takes the whole row: decoration is the first thing a
 // narrow terminal should lose.
 func (m *Model) showLogo() bool {
-	return m.logo.height() > 0 && m.inner() >= minWidthForLogo
+	// Beside the tree the mark is the tree's, under the boxes. See viewTree.
+	return m.logo.height() > 0 && m.inner() >= minWidthForLogo && !m.treeShown()
 }
 
 func (m *Model) viewHeader(width int) string {
@@ -3644,6 +3785,11 @@ func (m *Model) viewHeader(width int) string {
 // the list is narrowed to, or the primary while it shows every server.
 func (m *Model) viewHeaderLeft() string {
 	out := m.viewHeaderBrand()
+	// Beside the tree the list's filter is the tree's; a config page's
+	// server picker stays here.
+	if m.treeShown() && !m.onConfigScreen() {
+		return out
+	}
 	// The filter opens when it is clicked. It is measured before it is shaded
 	// because styling costs no cells: the width the mark takes is the width
 	// either way, so the mark and the shading come off one walk.
@@ -3684,14 +3830,19 @@ const headerSep = "  ·  "
 // A pane owns the keyboard, so the ones the header offers everywhere else are
 // not among them; the one that is, is the way out.
 func (m *Model) headerHints() []hint {
-	if p := m.focusedPane(); p != nil {
+	// A workspace under the expanded list or a page is not what this header
+	// is over, so its keys are not the ones offered.
+	if p := m.focusedPane(); p != nil && m.workspaceShown() {
 		out := "detach"
 		if m.hasScreen(p) && p.tool != "" {
 			// The leader's way out of a screen is the same key; what it does
 			// here is put this window away, not leave the workspace.
 			out = "put away"
 		}
-		hints := []hint{pressing(m.detachHint()+" "+out, m.leader(), paneDetachAlt)}
+		var hints []hint
+		if out != "detach" || m.detaches() {
+			hints = append(hints, pressing(m.detachHint()+" "+out, m.leader(), paneDetachAlt))
+		}
 		// Quit is only worth its half of the row where it differs from detach.
 		// In a window that is one command's own the two do the same thing —
 		// the window goes, the discobox and everything in it carries on — and a
@@ -4061,8 +4212,9 @@ func (m *Model) hints() []hint {
 	// Only while the screen is the one on screen. A pane opened from it is
 	// drawn over it and takes the keys (updateKey), so offering the list's own
 	// keys under a configure terminal would be offering keys that no longer do
-	// what they say.
-	if !m.inPanes() {
+	// what they say. The list beside a page takes them the same way, so the
+	// keys offered are the list's (updateKey, listHasKeys).
+	if !m.inPanes() && !m.listHasKeys() {
 		if m.harnessesOpen {
 			return m.harnessHints()
 		}
@@ -4150,7 +4302,10 @@ func (m *Model) paneHints() []hint {
 		// The issue's own keys, then the way back to the panes beside it.
 		hints := issueHints(p.issue)
 		if !p.issue.composing {
-			hints = append(hints, says(leader+" ←/→ pane"), pressing(leader+" "+paneDetachAlt+" detach", leader, paneDetachAlt))
+			hints = append(hints, says(leader+" ←/→ pane"))
+			if m.detaches() {
+				hints = append(hints, pressing(leader+" "+paneDetachAlt+" detach", leader, paneDetachAlt))
+			}
 		}
 		return hints
 	}
@@ -4180,25 +4335,33 @@ func (m *Model) paneHints() []hint {
 	if p == m.overlay {
 		what, out = string(p.action), "close"
 	}
-	hints := []hint{
-		says("every key goes to " + what),
-		pressing(m.detachHint()+" "+out, leader, paneDetachAlt),
+	// Beside the tree there is no list to detach to: the workspace is
+	// left by switching boxes, and the window by quitting.
+	leave := []hint{pressing(m.detachHint()+" "+out, leader, paneDetachAlt)}
+	if out == "detach" && !m.detaches() {
+		leave = nil
+	}
+	// What can be done to the box itself — stop, rename, archive — is a
+	// menu away, offered where the reader is looking.
+	hints := append([]hint{pressing(leader+" "+boxMenuKey+" actions", leader, boxMenuKey)}, leave...)
+	// A screen over the workspace — the overlay, a tool — has the leader's
+	// menu key for itself (underScreen), so the menu is not offered there.
+	if m.hasScreen(p) {
+		hints = append([]hint{says("every key goes to " + what)}, leave...)
 	}
 	if p.service != "" {
 		// A service reads no input, so the line does not open by promising
 		// it every key. What it offers instead is what can be done to the
 		// service from the pane you are looking at — the two verbs that
 		// mean this service here rather than the discobox.
-		hints = []hint{
-			says("read-only"),
-			pressing(m.detachHint()+" "+out, leader, paneDetachAlt),
+		hints = append(append([]hint{says("read-only")}, leave...),
 			pressing(leader+" t stop", leader, "t"),
 			pressing(leader+" T start", leader, "T"),
 			// The one place the services menu is advertised. It is where
 			// restart lives, and where the services with no tab are, and
 			// a pane onto one is where you would think to look.
 			pressing(leader+" "+paneServicesKey+paneServicesMenuKey+" services", leader, paneServicesKey, paneServicesMenuKey),
-		}
+		)
 	}
 	if m.screenPane() != nil {
 		return hints
@@ -4300,7 +4463,16 @@ func (m *Model) helpDialog() *dialog { return m.readableDialog("Keys", m.helpTex
 // belongs in DESIGN.md; someone who opened this is looking for the key.
 func (m *Model) helpText() string {
 	leader := m.leader()
-	return strings.Join([]string{
+	// Beside the tree there is no list to detach to, so the key is not on
+	// offer (detaches).
+	detach := []string{}
+	if m.detaches() {
+		detach = []string{
+			"    " + leader + " " + paneDetachAlt + "       " + m.detachDescription() + ", leaving every",
+			"                   session running",
+		}
+	}
+	return strings.Join(slices.Concat([]string{
 		"The window opens on the first discobox, or in the prompt when there",
 		"are none. Tab cycles through the prompt, the discobox list, and the",
 		"filter above it, and ↑ climbs them in the same order.",
@@ -4469,6 +4641,23 @@ func (m *Model) helpText() string {
 		"  the list shows the discoboxes carrying every tag marked.",
 		"",
 		"───────────────────────────────────────────────────────────────",
+		"The list beside the workspace",
+		"",
+		"  On a window wide enough for it, the discobox list stays down the",
+		"  left of the workspace, and the box on the right is switched in",
+		"  place. A box switched away from keeps running and stays attached,",
+		"  so switching back is instant. Under the list are the harnesses,",
+		"  secrets and skills, which open on the right, and + new discobox.",
+		"",
+		"    " + leader + " h       to the list, from the leftmost pane; Esc back",
+		"    " + leader + " ↑ / ↓   the discobox above or below, or k and j",
+		"    " + leader + " " + paneZoomKey + "       on the list, the whole home screen and back",
+		"    n              on the list, a new discobox",
+		"",
+		"  Beside the list there is nothing to detach to: a box is left by",
+		"  switching to another, and the window by quitting.",
+		"",
+		"───────────────────────────────────────────────────────────────",
 		"The workspace screen",
 		"",
 		"  One discobox as the server has it: terminals on the left, shells",
@@ -4482,9 +4671,10 @@ func (m *Model) helpText() string {
 		"  numbered separately, S1, S2, in the order the repository declares",
 		"  them.",
 		"",
-		"    " + leader + " " + paneDetachAlt + "       " + m.detachDescription() + ", leaving every",
-		"                   session running",
+	}, detach, []string{
 		"    " + leader + " " + paneQuitKey + "       quit the window, leaving every session running",
+		"    " + leader + " " + boxMenuKey + "       the discobox's actions: tools, audit, rename,",
+		"                   stop, archive and the rest",
 		"    " + leader + " a       back to the primary terminal",
 		"    " + leader + " " + paneTerminalKey + "       another terminal beside the primary: a fresh",
 		"                   session of the harness this discobox runs",
@@ -4689,7 +4879,7 @@ func (m *Model) helpText() string {
 		"  has asked for it; " + m.paneMouseHint() + " takes it back.",
 		"",
 		"  Press Esc to close.",
-	}, "\n")
+	}), "\n")
 }
 
 // sandboxLabel is what to call a discobox on screen: its name when it has one,

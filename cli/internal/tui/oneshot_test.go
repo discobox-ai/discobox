@@ -42,15 +42,18 @@ func TestAnAttachOpensOnItsDiscobox(t *testing.T) {
 	term.send("hello from the discobox")
 	d.wait("output", func() bool { return strings.Contains(frameText(m), "hello from the discobox") })
 
-	// It is the workspace, not a bare stream: the discobox is named above it,
-	// and the way out is the one key that leaves — quit does the same thing
-	// here, so the header does not offer it as a second choice.
+	// With nothing but the primary in it the window is bare (bare.go): the
+	// terminal, and under it one line saying where it was cut from and the
+	// way out — the one key that leaves. Quit does the same thing here, so
+	// the line does not offer it as a second choice.
 	frame := plainFrame(m)
-	if !strings.Contains(frame, box.ID) {
-		t.Fatalf("the header should name the discobox:\n%s", frame)
+	lines := strings.Split(frame, "\n")
+	status := lines[len(lines)-1]
+	if !strings.Contains(status, "discobox") || !strings.Contains(status, box.Source) {
+		t.Fatalf("the status line should say where the discobox was cut from: %q", status)
 	}
-	if !strings.Contains(frame, "ctrl+a d detach") {
-		t.Fatalf("the header should say how to leave:\n%s", frame)
+	if !strings.Contains(status, "ctrl+a d detach") {
+		t.Fatalf("the status line should say how to leave: %q", status)
 	}
 	if strings.Contains(frame, "quit") {
 		t.Fatalf("quit is detach here, so it should not be offered beside it:\n%s", frame)
@@ -80,12 +83,13 @@ func TestDetachingAnAttachClosesTheWindow(t *testing.T) {
 	}
 }
 
-// The launcher's own detach is unchanged: it leaves the workspace and lands
-// back on the list it was opened from.
+// The launcher's own detach is unchanged on a console too narrow for the tree
+// beside the workspace: it leaves the workspace and lands back on the list it
+// was opened from.
 func TestDetachingTheLauncherKeepsTheWindow(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
+	d, m, _ := openNarrowWorkspace(t, ds, "enter")
 
 	d.key("ctrl+a")
 	d.key(paneDetachAlt)

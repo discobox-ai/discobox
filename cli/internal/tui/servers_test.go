@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -645,7 +647,7 @@ func TestTheConfigScreensAreTheHeadersServer(t *testing.T) {
 		}
 		send(t, m, keyPress(key))
 
-		if header := frame(m)[1]; !strings.Contains(header, "server beta") {
+		if header := ansi.Strip(windowLines(m)[0]); !strings.Contains(header, "server beta") {
 			t.Fatalf("%s: the screen does not say it is beta's: %q", key, header)
 		}
 		if _, ok := m.zones.find(hitFilter); !ok {
@@ -671,7 +673,7 @@ func TestTheConfigScreensNameThePrimaryFromEveryServer(t *testing.T) {
 	m := newTestModel(t, ds)
 	send(t, m, keyPress(secretsKey))
 
-	header := frame(m)[1]
+	header := ansi.Strip(windowLines(m)[0])
 	if !strings.Contains(header, "server alpha") || strings.Contains(header, allServers) {
 		t.Fatalf("header = %q, want it to name the primary", header)
 	}
@@ -709,8 +711,8 @@ func TestTheArrowsMoveTheConfigScreensServer(t *testing.T) {
 	if !strings.Contains(out, "beta token") || strings.Contains(out, "alpha token") {
 		t.Fatalf("after → the screen does not list beta's alone:\n%s", out)
 	}
-	if !strings.Contains(frame(m)[1], "server beta") {
-		t.Fatalf("header = %q, want beta named", frame(m)[1])
+	if header := ansi.Strip(windowLines(m)[0]); !strings.Contains(header, "server beta") {
+		t.Fatalf("header = %q, want beta named", header)
 	}
 	// Round, without stopping at every server.
 	send(t, m, keyPress("right"))

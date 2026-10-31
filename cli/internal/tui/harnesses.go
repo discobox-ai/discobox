@@ -872,11 +872,14 @@ func harnessFileLines(file HarnessFile) []string {
 const harnessesChrome = 8
 
 func (m *Model) viewHarnesses() string {
-	m.zones.push(bodyLeft+m.logoColumn(), headerTop+2)
+	m.zones.push(bodyLeft+m.logoColumn(), m.pageBodyTop())
 	body := m.harnesses.view(m.st, &m.zones)
 	m.zones.pop()
 	if m.showLogo() {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, m.logo.view(lipgloss.Height(body)), body)
+	}
+	if m.treeShown() {
+		return m.pageFrame(strings.Split(body, "\n"))
 	}
 
 	m.zones.push(bodyLeft, headerTop)

@@ -16,7 +16,13 @@ import (
 // its window is the screen.
 func openTool(t *testing.T, ds *fakeSource, key string) (*driver, *Model) {
 	t.Helper()
-	d, m, _ := openWorkspace(t, ds, "enter")
+	return openToolAt(t, ds, key, 120)
+}
+
+// openToolAt is openTool on a console width cells wide.
+func openToolAt(t *testing.T, ds *fakeSource, key string, width int) (*driver, *Model) {
+	t.Helper()
+	d, m, _ := openWorkspaceAt(t, ds, "enter", width)
 	d.key("ctrl+a")
 	d.key(toolsKey)
 	waitPicker(d, m)
@@ -38,7 +44,13 @@ func waitPicker(d *driver, m *Model) {
 // openPicker opens the workspace and puts the tools picker on screen.
 func openPicker(t *testing.T, ds *fakeSource) (*driver, *Model) {
 	t.Helper()
-	d, m, _ := openWorkspace(t, ds, "enter")
+	return openPickerAt(t, ds, 120)
+}
+
+// openPickerAt is openPicker on a console width cells wide.
+func openPickerAt(t *testing.T, ds *fakeSource, width int) (*driver, *Model) {
+	t.Helper()
+	d, m, _ := openWorkspaceAt(t, ds, "enter", width)
 	d.key("ctrl+a")
 	d.key(toolsKey)
 	waitPicker(d, m)
@@ -296,7 +308,7 @@ func TestAPutAwayToolsTabMaximizesAndCloses(t *testing.T) {
 	if zoom < 0 {
 		t.Fatal("the tool's tab should wear a [+]")
 	}
-	clickAt(d, zoom, 1)
+	clickWindow(d, zoom, 1)
 	if m.showingTool() != tool {
 		t.Fatal("[+] on the tool's tab should give it the window")
 	}
@@ -312,7 +324,7 @@ func TestAPutAwayToolsTabMaximizesAndCloses(t *testing.T) {
 	if end < 0 {
 		t.Fatal("the tool's tab should wear an [x]")
 	}
-	clickAt(d, end, 1)
+	clickWindow(d, end, 1)
 	d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
 	if m.toolPane(tools.DiffID) != nil || m.shells.len() != 0 {
 		t.Error("[x] on the tool's tab should take the tab with the session")
@@ -420,7 +432,7 @@ func TestTheToolWindowButtonsMinimizeAndClose(t *testing.T) {
 	d, m := openTool(t, ds, "d")
 
 	minimize, closeAt := buttonColumns(t, m)
-	clickAt(d, minimize, 1)
+	clickWindow(d, minimize, 1)
 	d.settle()
 	if m.showingTool() != nil {
 		t.Fatal("[-] should put the tool away")
@@ -431,7 +443,7 @@ func TestTheToolWindowButtonsMinimizeAndClose(t *testing.T) {
 
 	m.showTool(m.toolPane(tools.DiffID))
 	m.View()
-	clickAt(d, closeAt, 1)
+	clickWindow(d, closeAt, 1)
 	d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
 	if m.toolPane(tools.DiffID) != nil {
 		t.Error("[x] should close the tool as well as ending it")
@@ -493,12 +505,13 @@ func TestARunningToolIsPickedUpOnAttach(t *testing.T) {
 	}
 }
 
-// Detaching closes the window onto the tools the way it closes the window onto
-// everything else: the streams go, and the sessions keep running.
+// Detaching — on a console with no tree beside the workspace, where there is a
+// list to detach to — closes the window onto the tools the way it closes the
+// window onto everything else: the streams go, and the sessions keep running.
 func TestDetachingLeavesTheToolSessionsRunning(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	d, m := openTool(t, ds, "d")
+	d, m := openToolAt(t, ds, "d", narrowConsole)
 
 	d.key("ctrl+a")
 	d.key(paneDetachAlt) // put the tool away
@@ -620,7 +633,8 @@ func TestAnUneditedConfigReportsUnchanged(t *testing.T) {
 func TestTheFileListNamesEveryFileAndWhereItGoes(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
+	// Wide enough that the card beside the tree has room for the longest path.
+	d, m, _ := openWorkspaceAt(t, ds, "enter", wideConsole)
 
 	d.key("ctrl+a")
 	d.key(toolsKey)
@@ -661,8 +675,9 @@ func TestTheWorkspaceHintsOfferTheToolsPicker(t *testing.T) {
 // That row is one row and stays one row: it drops whole hints from the end
 // rather than wrapping onto a second, which would come out of the panes. The
 // dropping itself is statusKeys' (fitFields); what is asserted here is that the
-// workspace's own line survives it — no hint cut mid-word, and the way out never
-// among the casualties.
+// workspace's own line survives it — no hint cut mid-word, and the line's lead
+// never among the casualties: the box's actions beside the tree, and the way
+// out where there is a list to detach to.
 func TestTheHintsLineDropsRatherThanOverrunning(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
@@ -674,28 +689,37 @@ func TestTheHintsLineDropsRatherThanOverrunning(t *testing.T) {
 	d.key("s")
 	d.wait("a shell", func() bool { return m.shells.len() > 0 })
 
-	var narrowest string
-	for _, w := range []int{160, 120, 100, 80, 60} {
-		m.width = w
-		m.layout()
-		// The room the workspace actually gives the row; see viewPaneWindow.
-		room := max(max(w-2, 1)-2*boxPad, 1)
-		line := m.statusKeys(room)
-		if lipgloss.Width(line) > room {
-			t.Fatalf("at w=%d the line is %d cells wide, over the %d it has:\n%s",
-				w, lipgloss.Width(line), room, line)
-		}
-		// Whole fragments go, so no hint is ever left half-written.
-		for _, part := range strings.Split(line, hintSep) {
-			if strings.HasSuffix(part, "…") {
-				t.Errorf("at w=%d a hint was cut mid-word: %q", w, part)
+	narrowestAt := func(widths []int) string {
+		t.Helper()
+		var narrowest string
+		for _, w := range widths {
+			d.dispatch(sizeMsg(w, 40))
+			// The room the workspace actually gives the row; see
+			// viewPaneWindow. Beside the tree it is right of it.
+			room := max(max(m.width-2, 1)-2*boxPad, 1)
+			line := m.statusKeys(room)
+			if lipgloss.Width(line) > room {
+				t.Fatalf("at w=%d the line is %d cells wide, over the %d it has:\n%s",
+					w, lipgloss.Width(line), room, line)
 			}
+			// Whole fragments go, so no hint is ever left half-written.
+			for _, part := range strings.Split(line, hintSep) {
+				if strings.HasSuffix(part, "…") {
+					t.Errorf("at w=%d a hint was cut mid-word: %q", w, part)
+				}
+			}
+			narrowest = line
 		}
-		narrowest = line
+		return narrowest
 	}
-	// The way out is the one thing that never goes.
-	if !strings.Contains(narrowest, m.detachHint()) {
-		t.Errorf("the narrowest row lost the way out: %q", narrowest)
+	// Beside the tree the box's actions lead the line, and are the one thing
+	// that never goes: everything dropped is a menu away.
+	if got := narrowestAt([]int{200, 160, 140, 120, 100}); !strings.Contains(got, m.leader()+" "+boxMenuKey+" actions") {
+		t.Errorf("the narrowest row beside the tree lost the actions: %q", got)
+	}
+	// With no tree there is a list to detach to, and the way out never goes.
+	if got := narrowestAt([]int{narrowConsole, 70, 60}); !strings.Contains(got, m.detachHint()) {
+		t.Errorf("the narrowest row lost the way out: %q", got)
 	}
 }
 
@@ -709,7 +733,8 @@ func TestThePickerListsTheDiscoboxsCatalog(t *testing.T) {
 		Tool{ID: "review", Key: "d", Label: "review", Detail: "the repository's own reviewer"},
 		Tool{ID: "open", Key: "w", Label: "open", Detail: "open it here", Problem: "a tool that runs on your machine cannot be declared by the discobox's source"},
 	)
-	d, m := openPicker(t, ds)
+	// Wide enough that the card beside the tree has room for the reason.
+	d, m := openPickerAt(t, ds, wideConsole)
 
 	frame := frameText(m)
 	for _, want := range []string{"review", "the repository's own reviewer", "cannot be declared by the discobox's source"} {

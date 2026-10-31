@@ -474,7 +474,10 @@ func TestListLettersRunActions(t *testing.T) {
 	if !shelled {
 		t.Fatalf("execOpens = %v, want a shell in the box under the cursor", ds.execOpened())
 	}
-	// A shell keeps ctrl+c for itself, so the leader carries detach there.
+	// A shell keeps ctrl+c for itself, so the leader carries detach there —
+	// on a console with no tree beside the workspace, where there is a list
+	// to detach to.
+	send(t, m, sizeMsg(narrowConsole, 40))
 	send(t, m, keyPress("ctrl+a"), keyPress("d"))
 	send(t, m, keyPress("t"))
 	if len(ds.did) != 1 || ds.did[0] != "stop sbx_one" {
@@ -1113,10 +1116,13 @@ func TestLeaderReachesThePaneAndTheKeyLists(t *testing.T) {
 	d.key("enter")
 	d.wait("the pane", func() bool { return m.focus == focusPane })
 
-	if !strings.Contains(hintLine(m.hints()), "ctrl+b d detach") {
+	if !strings.Contains(hintLine(m.hints()), "ctrl+b . actions") {
 		t.Errorf("the key list should name the leader: %q", hintLine(m.hints()))
 	}
-	if !strings.Contains(m.helpText(), "ctrl+b d") {
+	if !strings.Contains(hintLine(m.headerHints()), "ctrl+b q quit") {
+		t.Errorf("the header should name the leader: %q", hintLine(m.headerHints()))
+	}
+	if !strings.Contains(m.helpText(), "ctrl+b q") {
 		t.Error("the help should name the leader")
 	}
 
@@ -1127,8 +1133,10 @@ func TestLeaderReachesThePaneAndTheKeyLists(t *testing.T) {
 		t.Fatalf("typed %q, want the default leader to reach the sandbox", got)
 	}
 	d.key("ctrl+b")
-	d.key("d")
-	d.wait("the workspace to close", func() bool { return !m.inPanes() })
+	d.key("q")
+	if !m.quit {
+		t.Fatal("the configured leader should quit the window")
+	}
 }
 
 // Tab goes round the window in the order it is drawn, bottom to top: the

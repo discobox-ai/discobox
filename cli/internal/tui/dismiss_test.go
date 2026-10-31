@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -133,7 +132,7 @@ func TestTheBandsCloseButtonDismissesIt(t *testing.T) {
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the banner drawn", func() bool { return m.banner.live })
 
-	top := frame(m)[m.banner.rows[0]]
+	top := windowLines(m)[m.banner.rows[0]]
 	if !strings.Contains(ansi.Strip(top), "✕") {
 		t.Fatalf("band = %q, want a dismiss button on it", ansi.Strip(top))
 	}
@@ -145,8 +144,7 @@ func TestTheBandsCloseButtonDismissesIt(t *testing.T) {
 	if !m.bannerCloseAt(x, y) || m.bannerCloseAt(m.banner.start+1, y) {
 		t.Fatal("the dismiss button's hit test is not the button")
 	}
-	d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
-	d.dispatch(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
+	clickWindow(d, x, y)
 	d.wait("the band gone", func() bool { return m.bannerShowing() == bannerNone })
 	if m.dialog != nil {
 		t.Fatalf("dialog = %s, want the dismiss to open nothing", describe(m.dialog))

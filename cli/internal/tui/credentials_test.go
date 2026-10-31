@@ -637,8 +637,8 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 	if len(span.rows) != 2 || span.rows[0] != 1 {
 		t.Fatalf("banner rows = %v, want one under the header and one above the keys", span.rows)
 	}
-	if span.rows[1] != len(frame(m))-3 {
-		t.Fatalf("the lower band is on row %d of a %d-row frame, want it just above the message and keys rows",
+	if span.rows[1] != len(frame(m))-2 {
+		t.Fatalf("the lower band is on row %d of a %d-row frame, want it just above the keys row",
 			span.rows[1], len(frame(m)))
 	}
 
@@ -651,8 +651,7 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 			t.Fatalf("row %d does not answer as the band", row)
 		}
 	}
-	d.dispatch(tea.MouseClickMsg{X: x, Y: span.rows[1], Button: tea.MouseLeft})
-	d.dispatch(tea.MouseReleaseMsg{X: x, Y: span.rows[1], Button: tea.MouseLeft})
+	clickWindow(d, x, span.rows[1])
 	// The secrets are read first, so the status dialog gives way to the question.
 	d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
 	if !strings.Contains(dialogText(m), "api.github.com") {
@@ -805,7 +804,8 @@ func TestTheWheelScrollsALongRequestCard(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
 	req := waitingRequest()
-	const last = "and that is the end of why"
+	// One word, so where the card happens to wrap cannot split it.
+	const last = "and-that-is-the-end-of-why"
 	req.Justification = strings.Repeat("the user asked me to keep four pull requests reviewed, green and rebased; ", 40) + last
 	ds.mu.Lock()
 	ds.requests = []CredentialRequest{req}
@@ -818,7 +818,7 @@ func TestTheWheelScrollsALongRequestCard(t *testing.T) {
 	}
 	_, y := at(t, m, "the user asked me")
 	for range 40 {
-		send(t, m, tea.MouseWheelMsg{X: m.width / 2, Y: y, Button: tea.MouseWheelDown})
+		send(t, m, toScreen(m, tea.MouseWheelMsg{X: m.width / 2, Y: y, Button: tea.MouseWheelDown}))
 	}
 	text := frameText(m)
 	if !strings.Contains(text, last) {

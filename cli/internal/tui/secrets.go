@@ -1775,7 +1775,7 @@ func (m *Model) viewSecrets() string {
 	// The credentials the project holds, and under them what is waiting on a
 	// person. They are read together: which secret answers this request is the
 	// question, and the answer is in the table above it.
-	m.zones.push(bodyLeft+m.logoColumn(), headerTop+2)
+	m.zones.push(bodyLeft+m.logoColumn(), m.pageBodyTop())
 	body := m.secrets.view(m.st, &m.zones, m.table == tableSecrets)
 	// Each lower table is pushed past everything drawn above it and the two
 	// blank rows between, so its rows are marked where they are actually
@@ -1797,9 +1797,12 @@ func (m *Model) viewSecrets() string {
 	// header and the blank under it, and the message and keys rows — rather
 	// than to secretsChrome, which also counts the tables' own title rows
 	// and so left the window two rows short of the terminal.
-	body = fillRows(body, max(m.height-6, 0))
+	body = fillRows(body, max(m.pageHeight()-6, 0))
 	if m.showLogo() {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, m.logo.view(lipgloss.Height(body)), body)
+	}
+	if m.treeShown() {
+		return m.pageFrame(strings.Split(body, "\n"))
 	}
 	m.zones.push(bodyLeft, headerTop)
 	rows := []string{m.viewHeader(m.inner()), ""}

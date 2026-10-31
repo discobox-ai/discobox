@@ -30,6 +30,9 @@ const (
 	colSelectedBG  = "24"  // a command will act on it
 	colBothBG      = "31"  // under the cursor and selected
 	colInactive    = "236"
+	// colGreyedOut is a surface a modal has taken the input from: still
+	// readable, plainly not pressable.
+	colGreyedOut = "238"
 	// The band behind the credential banner: a dark red the text keeps its own
 	// colors over, rather than the whole bar drawn in reverse video. Reversed
 	// red puts the terminal's background color on a red
@@ -116,6 +119,10 @@ type styles struct {
 	dimText lipgloss.Style
 	rule    lipgloss.Style
 	ruleOn  lipgloss.Style
+	// greyedOut is a surface a modal has taken the input from: still
+	// readable, plainly not pressable. It is drawn over the surface's text
+	// with its own colors stripped.
+	greyedOut lipgloss.Style
 
 	// frame is the border round the whole window, in the mark's own purple. It
 	// is a foreground color rather than a bordered style because the box is
@@ -201,6 +208,7 @@ func newStyles(color bool) *styles {
 	s.dimText = paint(colDim)
 	s.rule = paint(colInactive)
 	s.ruleOn = paint(colDim)
+	s.greyedOut = paint(colGreyedOut)
 
 	s.frame = paint(colMark)
 	s.statusOK = paint(colOK)

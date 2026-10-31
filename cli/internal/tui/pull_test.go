@@ -72,7 +72,13 @@ func pullSource() *fakeSource {
 // tab beside it, from the keyboard.
 func openPullPane(t *testing.T, ds *fakeSource) (*driver, *Model) {
 	t.Helper()
-	d, m, _ := openWorkspace(t, ds, "enter")
+	return openPullPaneAt(t, ds, wideConsole)
+}
+
+// openPullPaneAt is openPullPane on a console width cells wide.
+func openPullPaneAt(t *testing.T, ds *fakeSource, width int) (*driver, *Model) {
+	t.Helper()
+	d, m, _ := openWorkspaceAt(t, ds, "enter", width)
 	d.key(m.leader())
 	d.key(pullKey)
 	d.wait("the pull request", func() bool { return strings.Contains(plainFrame(m), "Reap only stopped boxes") })
@@ -84,7 +90,7 @@ func openPullPane(t *testing.T, ds *fakeSource) (*driver, *Model) {
 func TestClickingTheHeaderPullRequestOpensItAsATab(t *testing.T) {
 	t.Parallel()
 	ds := pullSource()
-	d, m, _ := openWorkspace(t, ds, "enter")
+	d, m, _ := openWorkspaceAt(t, ds, "enter", wideConsole)
 	d.wait("the header", func() bool { return strings.Contains(plainFrame(m), "issue #4 · PR #9") })
 	opened := make(chan string, 4)
 	m.openOS = func(url string) error { opened <- url; return nil }
@@ -273,7 +279,9 @@ func TestFilesChangedThatEndOnTheirOwnStayToBeRead(t *testing.T) {
 func TestFilesChangedThatDoNotStartAreGivenUpOn(t *testing.T) {
 	t.Parallel()
 	ds := pullSource()
-	d, m := openPullPane(t, ds)
+	// The message rides the focused box's bottom edge, which in a split is
+	// half the window: wide enough here for the whole of it.
+	d, m := openPullPaneAt(t, ds, 200)
 	p := issueTabOf(m)
 	v := p.issue
 	d.key("f")
@@ -335,7 +343,9 @@ func TestFilesChangedThatCannotBeOpenedSayWhy(t *testing.T) {
 	t.Parallel()
 	ds := pullSource()
 	ds.pullReviewErr = errors.New("the discobox is asleep")
-	d, m := openPullPane(t, ds)
+	// The message rides the focused box's bottom edge, which in a split is
+	// half the window: wide enough here for the whole of it.
+	d, m := openPullPaneAt(t, ds, 200)
 	v := issueTabOf(m).issue
 	d.key("f")
 	d.wait("the failure", func() bool { return !v.files })
@@ -892,7 +902,8 @@ func TestAPushWhileTheTabIsOpenIsSaid(t *testing.T) {
 func TestTheFilesChangedEndWithTheirTab(t *testing.T) {
 	t.Parallel()
 	ds := pullSource()
-	d, m := openPullPane(t, ds)
+	// Leaving the workspace is detaching, on a console with no tree beside it.
+	d, m := openPullPaneAt(t, ds, narrowConsole)
 	v := issueTabOf(m).issue
 	d.key("f")
 	d.wait("the files changed", func() bool { return strings.Contains(plainFrame(m), "reaper/reaper_test.go") })

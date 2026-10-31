@@ -457,6 +457,9 @@ func TestTheScreenIsAToggleAndEscapeLeavesIt(t *testing.T) {
 func TestTheScreenAnswersARequestNoDiscoboxOwns(t *testing.T) {
 	t.Parallel()
 	m, ds := secretsFixture(t)
+	// Wide enough that the page beside the tree keeps the column saying who
+	// asked.
+	send(t, m, sizeMsg(wideConsole, 40))
 	orphan := waitingRequest()
 	orphan.ID, orphan.SandboxID = "sreq_orphan", ""
 	orphan.Refresh = &RefreshAsk{SecretID: "sec_gh", Cause: "stale"}
@@ -1328,8 +1331,16 @@ func TestRequestsArrivingOnTheSecretsScreenAreDrawn(t *testing.T) {
 	if !strings.Contains(text, "30 waiting") {
 		t.Fatalf("the poll did not deliver the requests:\n%s", text)
 	}
-	// A third of a 40-row window's room is ten rows.
-	want := 10
+	// Beside the tree the page is framed as the workspace is, which leaves
+	// it a row more than the full window's screen had (pageHeight): a third
+	// of a 40-row window's room is then eleven rows.
+	if !m.treeShown() {
+		t.Fatal("the secrets screen should open beside the tree")
+	}
+	want := 11
+	if len(frame(m)) != m.height {
+		t.Fatalf("frame = %d rows, want the window's %d", len(frame(m)), m.height)
+	}
 	if got := strings.Count(text, "cred-"); got != want {
 		t.Fatalf("the requests table drew %d of 30 waiting requests, want %d:\n%s", got, want, text)
 	}

@@ -50,7 +50,9 @@ type filterRow struct {
 // filterDialog is the card, opened on the filter as it stands with the cursor
 // on the first choice marked.
 func (m *Model) filterDialog() *dialog {
-	p := &filterPicker{list: *m.list, config: m.onConfigScreen()}
+	// The tree's filter is the list's, whatever page is beside it.
+	config := m.onConfigScreen() && !m.listHasKeys()
+	p := &filterPicker{list: *m.list, config: config}
 	for i, row := range p.rows() {
 		if row.marked {
 			p.cursor = i
@@ -59,6 +61,7 @@ func (m *Model) filterDialog() *dialog {
 	}
 	title := "Show discoboxes"
 	switch {
+	case !config:
 	case m.harnessesOpen:
 		title = "Show harnesses on"
 	case m.secretsOpen:
@@ -368,6 +371,11 @@ func (m *Model) filterLabel() string {
 		}
 		return "server " + m.configServer()
 	}
+	return m.listFilterLabel()
+}
+
+// listFilterLabel is what the discobox list is narrowed to.
+func (m *Model) listFilterLabel() string {
 	var parts []string
 	if m.list.server != "" && m.manyServers() {
 		parts = append(parts, "server "+m.list.server)
@@ -387,11 +395,16 @@ func (m *Model) filterLabel() string {
 // viewFilter draws the header's filter: the line saying what the list is
 // narrowed to, with a caret after it that says it opens.
 func (m *Model) viewFilter(hovered bool) string {
-	label := m.filterLabel()
+	return m.styleFilter(m.filterLabel(), hovered, m.focus == focusFilter && !m.onConfigScreen())
+}
+
+// styleFilter draws a filter label as the control it is: the keyboard on
+// it, the pointer on it, or neither.
+func (m *Model) styleFilter(label string, hovered, focused bool) string {
 	if label == "" {
 		return ""
 	}
-	if m.focus == focusFilter && !m.onConfigScreen() {
+	if focused {
 		// The keyboard is already on it and it wears its own marks; the
 		// pointer resting there has nothing left to say.
 		return m.st.cursorName.Render(label) + m.st.key.Render(" ▾")

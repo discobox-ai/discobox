@@ -30,14 +30,35 @@ import (
 const autoPushEvery = refreshEvery
 
 // autoPushTickMsg asks for the next look. Like every workspace loop it carries
-// the generation it was scheduled under, so leaving the workspace ends it.
-type autoPushTickMsg struct{ gen int }
+// the generation it was scheduled under, so leaving the workspace ends it — and
+// the discobox it pushes, because a workspace switched away from in the tree
+// is still attached and keeps pushing under the generation it was parked with
+// (pushLoop).
+type autoPushTickMsg struct {
+	box string
+	gen int
+}
 
 // autoPushedMsg is one look, done: what each of the discobox's push-delivered
 // sources resolved to.
 type autoPushedMsg struct {
+	box    string
 	gen    int
 	pushes []SourcePush
+}
+
+// pushLoop is the workspace a push loop belongs to: the live one, or one
+// parked in the tree, which is still attached and so still pushes (ADR
+// 26-09-05-008 §1), and whether it is a parked one. It is nil once the
+// workspace is gone, which ends the loop.
+func (m *Model) pushLoop(box string, gen int) (ws *workspace, parked bool) {
+	if m.pushHeld != nil && box == m.paneBox.ID && gen == m.pushGen {
+		return &m.workspace, false
+	}
+	if ws := m.parked[box]; ws != nil && gen == ws.pushGen {
+		return ws, true
+	}
+	return nil, false
 }
 
 // autoPush sends whatever this machine has committed since the last look.
@@ -51,29 +72,32 @@ type autoPushedMsg struct {
 // clone-delivered source, an archived box — is skipped rather than ending the
 // loop, since the listing that answers Pushable is re-read on its own beat and
 // a starting discobox becomes pushable a few seconds in.
-func (m *Model) autoPush(gen int) tea.Cmd {
-	box := m.currentBox()
-	if !box.Pushable {
-		return m.autoPushTick(gen)
+func (m *Model) autoPush(id string, gen int) tea.Cmd {
+	ws, _ := m.pushLoop(id, gen)
+	if ws == nil {
+		return nil
 	}
-	ctx, ds, id := m.ctx, m.ds, box.ID
+	if !m.boxByID(id).Pushable {
+		return m.autoPushTick(id, gen)
+	}
+	ctx, ds := m.ctx, m.ds
 	// Copied, because the window goes on editing it while the push runs.
-	held := maps.Clone(m.pushHeld)
+	held := maps.Clone(ws.pushHeld)
 	return func() tea.Msg {
 		pushes, err := ds.PushSources(ctx, id, held)
 		if err != nil {
 			// The call failing as a whole is ambient work failing — the
 			// discobox could not be read, the git route could not be opened —
 			// and is dropped rather than reported. See autoPushed.
-			return autoPushedMsg{gen: gen}
+			return autoPushedMsg{box: id, gen: gen}
 		}
-		return autoPushedMsg{gen: gen, pushes: pushes}
+		return autoPushedMsg{box: id, gen: gen, pushes: pushes}
 	}
 }
 
-func (m *Model) autoPushTick(gen int) tea.Cmd {
+func (m *Model) autoPushTick(id string, gen int) tea.Cmd {
 	return tick(autoPushEvery, func(time.Time) tea.Msg {
-		return autoPushTickMsg{gen: gen}
+		return autoPushTickMsg{box: id, gen: gen}
 	})
 }
 
@@ -92,35 +116,42 @@ func (m *Model) autoPushTick(gen int) tea.Cmd {
 // cannot reach is a window you stop reading, and the listing beside it is
 // already failing visibly.
 func (m *Model) autoPushed(msg autoPushedMsg) tea.Cmd {
-	if msg.gen != m.wsGen {
+	ws, parked := m.pushLoop(msg.box, msg.gen)
+	if ws == nil {
 		return nil
 	}
+	held := ws.pushHeld
 	var moved []SourcePush
 	var failed []SourcePush
 	for _, push := range msg.pushes {
 		switch {
 		case push.Err != nil:
-			m.pushHeld[push.Slug] = push.Commit
+			held[push.Slug] = push.Commit
 			failed = append(failed, push)
 		case push.Pushed:
-			delete(m.pushHeld, push.Slug)
+			delete(held, push.Slug)
 			moved = append(moved, push)
 		case push.UpToDate:
 			// Already in the origin, which after a refusal means somebody
 			// answered it themselves. Nothing to say — but the hold goes, or
 			// this window would keep skipping the source until the next
 			// commit.
-			delete(m.pushHeld, push.Slug)
+			delete(held, push.Slug)
 		}
 	}
-	cmds := []tea.Cmd{m.autoPushTick(msg.gen)}
+	cmds := []tea.Cmd{m.autoPushTick(msg.box, msg.gen)}
+	// A parked box's report names it, since the box on screen is another.
+	who := ""
+	if parked {
+		who = sandboxLabel(m.boxByID(msg.box)) + ": "
+	}
 	// A failure outranks a push: with several sources, the one that did not go
 	// is the half of the answer somebody has to act on.
 	switch {
 	case len(failed) > 0:
-		cmds = append(cmds, m.report(true, "%s", pushFailure(failed)))
+		cmds = append(cmds, m.report(true, "%s%s", who, pushFailure(failed)))
 	case len(moved) > 0:
-		cmds = append(cmds, status("%s", pushedText(moved)))
+		cmds = append(cmds, status("%s%s", who, pushedText(moved)))
 	}
 	return tea.Batch(cmds...)
 }
