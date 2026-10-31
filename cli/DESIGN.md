@@ -987,7 +987,8 @@ it needs. The in-box skills teach these forms.
 Which *name* that is, is `nameMatch` (`internal/cli/shell.go`), and `rm` is the
 command that made the distinction necessary. The NAME column is
 `SandboxDisplayName`: the name the discobox was given when it has one
-(`discobox rename`), else the primary terminal's window title once something
+(`discobox rename`), followed by its program's OSC 7501 msg as `name: msg`;
+else that msg, else the primary terminal's window title once something
 has set one, and the configured name only until then — and the configured name is
 generated (`randomname.Generate`; `run` has no `--name`), so it is a string the
 listing has usually stopped printing.
@@ -1004,7 +1005,8 @@ listing has usually stopped printing.
   name while a server is silent. It
   matches the title as the table prints it as well as raw (`sandboxListedAs`):
   `writeSandboxes` collapses whitespace and cuts past `sandboxNameColumnWidth`,
-  and the cut form is the spelling on the user's screen.
+  and the cut form is the spelling on the user's screen. The given name alone
+  matches too, since the column shows it with the msg after it.
 
 A window title is not unique — two discoboxes running one agent commonly share
 it — so `listedName` leans on `sandboxesNamed` returning *every* match:
@@ -1408,10 +1410,13 @@ it takes the name's place, after an error and a blocked agent's text.
 
 The NAME a sandbox listing shows is `Sandbox.displayName`, computed by the
 server (`services.SandboxDisplayName`) and read verbatim here — `discobox ls`, the
-console, and any other client name a sandbox the same way because none of them
-derives it. A name set with `discobox rename` (the discobox's meta name,
-ADR 26-10-12-026) leads it, and resolves as any listed name does
-(`listedName`); `admin box update --name` still edits the configured name,
+console list, and any other client name a sandbox the same way because none of them
+derives it. The console's window title and primary tab are the exception: they
+apply the same rule (`sandboxmeta.Title`) to the msg the attached stream
+reported, which is newer than the poll's. A name set with `discobox rename` (the discobox's meta name,
+ADR 26-10-12-026) leads it, followed by the program's OSC 7501 msg while the
+box is running (ADR 26-10-31-618), and
+resolves alone as any listed name does (`listedName`); `admin box update --name` still edits the configured name,
 which `configuredName` arguments match.
 
 The console's row therefore carries both: `Sandbox.Name` is the display name

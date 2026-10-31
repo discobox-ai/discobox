@@ -9,6 +9,7 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 )
 
 // The window speaks OSC 7501 to the terminal it runs in for the discobox it
@@ -109,7 +110,7 @@ func (m *Model) focusedProgramStatus() (programstatus.Record, bool) {
 				return programstatus.Record{}, false
 			}
 			rec := status.Record()
-			rec.Title = displayName(box)
+			rec.Title = recordTitle(box)
 			return rec, true
 		}
 	case m.focus == focusList && m.list.current() != nil:
@@ -121,8 +122,40 @@ func (m *Model) focusedProgramStatus() (programstatus.Record, bool) {
 		return programstatus.Record{}, false
 	}
 	rec := box.Agent.Record()
-	rec.Title = displayName(box)
+	rec.Title = recordTitle(box)
 	return rec, true
+}
+
+// recordTitle is the title the window's record carries for box: what the box
+// is called without its program's words — the name it was given, else the
+// name it was configured with, else its ID (ADR 26-10-31-618). Never the
+// listing's name, which holds the msg (sandboxmeta.Title) or, with none, a
+// title the program wrote; the record carries the msg beside it already, and
+// would say it twice, or say it once from a poll that lags the stream.
+func recordTitle(box Sandbox) string {
+	switch {
+	case box.GivenName != "":
+		return box.GivenName
+	case box.ConfigName != "":
+		return box.ConfigName
+	default:
+		return box.ID
+	}
+}
+
+// primaryTitle is what the box in the workspace is called from the primary
+// terminal's side: the name it was given and the msg its program reports, as
+// "name: msg", and either alone when it has only one (sandboxmeta.Title). The
+// msg is focusedProgramStatus's, so it is the one the program said last, from
+// the stream or the poll, whichever is newer — the listing's name carries the
+// poll's, which lags what the pane has drawn. Empty when the box has neither,
+// the caller's cue to fall back to the terminal's title.
+func (m *Model) primaryTitle() string {
+	var msg string
+	if rec, ok := m.focusedProgramStatus(); ok {
+		msg = rec.Msg
+	}
+	return sandboxmeta.Title(m.currentBox().GivenName, msg)
 }
 
 // syncProgramStatus sends the focused box's status when it is not what was

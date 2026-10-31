@@ -6,10 +6,10 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
-// titledSandbox builds a sandbox named "generated-name" whose agent status
-// carries the given sessions payload, empty for no report at all.
+// titledSandbox builds a running sandbox named "generated-name" whose agent
+// status carries the given sessions payload, empty for no report at all.
 func titledSandbox(sessions string) *model.Sandbox {
-	sandbox := &model.Sandbox{ID: "sbx_abc12345000000p3", ProjectID: "p1", CreatedByUserID: "u1", Name: "generated-name"}
+	sandbox := &model.Sandbox{ID: "sbx_abc12345000000p3", ProjectID: "p1", CreatedByUserID: "u1", Name: "generated-name", RuntimeState: model.SandboxRuntimeStateRunning}
 	if sessions != "" {
 		sandbox.AgentStatus = []byte(`{"sources":[],"observedAt":"2026-08-12T00:00:00Z","sessions":` + sessions + `}`)
 	}
@@ -58,6 +58,33 @@ func TestSandboxDisplayName(t *testing.T) {
 			sessions: `[
 				{"terminalId":"exc_old","primary":true,"title":"old work","startedAt":"2026-08-10T00:00:00Z","state":"exited","attacherCount":0,"execStatus":"exited"},
 				{"terminalId":"exc_new","primary":true,"title":"new work","startedAt":"2026-08-12T00:00:00Z","state":"running","attacherCount":0,"execStatus":"running"}]`,
+			want: "new work",
+		},
+		{
+			// A harness that reports over OSC 7501 says what the session is
+			// in its msg and leaves its window title alone, so the msg
+			// stands where the title would.
+			name:     "primary reported a msg",
+			sessions: `[{"terminalId":"exc_1","primary":true,"title":"Claude Code","programStatus":{"app":"claude-code","state":"working","msg":"fix the reaper","reportedAt":"2026-08-12T00:00:00Z"},"attacherCount":0,"execStatus":"running"}]`,
+			want:     "fix the reaper",
+		},
+		{
+			name:     "primary reported a status with no msg",
+			sessions: `[{"terminalId":"exc_1","primary":true,"title":"Claude Code","programStatus":{"app":"claude-code","state":"idle","reportedAt":"2026-08-12T00:00:00Z"},"attacherCount":0,"execStatus":"running"}]`,
+			want:     "Claude Code",
+		},
+		{
+			// The msg is a program's text: what a terminal would act on is
+			// not part of a name.
+			name:     "msg is made displayable",
+			sessions: `[{"terminalId":"exc_1","primary":true,"programStatus":{"state":"working","msg":"fix\u0007 the\u202e reaper"},"attacherCount":0,"execStatus":"running"}]`,
+			want:     "fix the reaper",
+		},
+		{
+			name: "newest primary's msg wins over an older one's",
+			sessions: `[
+				{"terminalId":"exc_old","primary":true,"programStatus":{"state":"idle","msg":"old work"},"startedAt":"2026-08-10T00:00:00Z","attacherCount":0,"execStatus":"exited"},
+				{"terminalId":"exc_new","primary":true,"title":"new work","startedAt":"2026-08-12T00:00:00Z","attacherCount":0,"execStatus":"running"}]`,
 			want: "new work",
 		},
 		{
@@ -114,9 +141,29 @@ func TestSandboxDisplayNamePrefersTheMetaName(t *testing.T) {
 		t.Fatalf("meta = %+v, want the name, empty tags and no description", meta)
 	}
 
-	// Cleared, the title names it again.
+	// What the program reports as its msg follows the name it was given.
+	sandbox.AgentStatus = []byte(`{"sessions":[{"terminalId":"exc_1","primary":true,"title":"Claude Code","programStatus":{"app":"claude-code","state":"working","msg":"Commit files"},"attacherCount":0,"execStatus":"running"}]}`)
+	if got := SandboxDisplayName(sandbox); got != "Daily GH Check In: Commit files" {
+		t.Fatalf("display name with a msg = %q, want the name then the msg", got)
+	}
+
+	// A stopped box's row keeps the last status its agent posted; nothing is
+	// doing what it says, so the name stands alone.
+	sandbox.RuntimeState = model.SandboxRuntimeStateStopped
+	if got := SandboxDisplayName(sandbox); got != "Daily GH Check In" {
+		t.Fatalf("display name of a stopped box = %q, want the name alone", got)
+	}
+	sandbox.RuntimeState = model.SandboxRuntimeStateRunning
+
+	// Cleared, the msg names it again.
 	blank := " "
 	sandbox.MetaName = &blank
+	if got := SandboxDisplayName(sandbox); got != "Commit files" {
+		t.Fatalf("display name with no name set = %q, want the msg", got)
+	}
+
+	// With no msg either, the title does.
+	sandbox.AgentStatus = []byte(`{"sessions":[{"terminalId":"exc_1","primary":true,"title":"Commit files","attacherCount":0,"execStatus":"running"}]}`)
 	if got := SandboxDisplayName(sandbox); got != "Commit files" {
 		t.Fatalf("display name with no name set = %q, want the title", got)
 	}

@@ -1,6 +1,8 @@
 // Package sandboxmeta is the shape of a sandbox's meta — its name, its
 // description and its tags: the file inside the sandbox that holds them, the
-// rules each must satisfy, and the selector grammar a listing filters tags by.
+// rules each must satisfy, the selector grammar a listing filters tags by, and
+// how a set name heads what the sandbox's program reports in the name a
+// listing shows (Title, ADR 26-10-31-618).
 //
 // A sandbox's meta lives in the sandbox, in a JSON file at RelativePath under
 // the sandbox user's home. That file is the system of record: the agent in the
@@ -25,6 +27,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 )
 
 // RelativePath is where a sandbox's meta lives, relative to the sandbox user's
@@ -131,6 +135,28 @@ func NormalizeName(name string) string {
 		return r
 	}, name)
 	return strings.TrimSpace(name)
+}
+
+// Title is what a sandbox is called on screen when it has a name, or its
+// program reports a message, or both: the name, then the message, as
+// "name: msg" (ADR 26-10-31-618). The message is the msg the program in the primary terminal
+// last reported over OSC 7501 — a harness that speaks the protocol puts there
+// what it would otherwise have put in its window title (Claude Code's is the
+// session's title) — so it stands where the window title would, and a set
+// name heads it rather than hiding it. The message is made displayable
+// (programstatus.Displayable), since it is a program's free text. Empty when
+// there is neither, the caller's cue to fall back to the window title.
+func Title(name, msg string) string {
+	name = strings.TrimSpace(name)
+	msg = strings.TrimSpace(programstatus.Displayable(msg, programstatus.MaxMsg))
+	switch {
+	case name == "":
+		return msg
+	case msg == "":
+		return name
+	default:
+		return name + ": " + msg
+	}
 }
 
 // ValidateName checks a name. It is one line a listing draws in a column, so

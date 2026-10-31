@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -1110,6 +1111,38 @@ func TestAGivenNameFollowsTheListingOntoThePrimary(t *testing.T) {
 	}
 	d.dispatch(tickMsg{})
 	d.wait("the title back", func() bool { return m.View().WindowTitle == "go vet ./..." })
+}
+
+// What the primary's program reports as its msg (OSC 7501) stands where its
+// window title would, since a harness that speaks the protocol stops putting
+// its activity in the title, and follows the name the box was given as
+// "name: msg". The rename dialog still offers the name alone.
+func TestTheProgramsMsgFollowsTheGivenName(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+	term.send("\x1b]2;Claude Code\x07")
+	d.wait("the title", func() bool { return m.View().WindowTitle == "Claude Code" })
+
+	msg := base64.RawStdEncoding.EncodeToString([]byte("Fix the reaper race"))
+	term.send("\x1b]7501;state=working:app=claude-code:msg=" + msg + "\x1b\\")
+	d.wait("the msg", func() bool { return m.View().WindowTitle == "Fix the reaper race" })
+
+	if err := ds.Rename(t.Context(), m.paneBox.ID, "Reaper"); err != nil {
+		t.Fatal(err)
+	}
+	d.dispatch(tickMsg{})
+	d.wait("the given name and the msg", func() bool { return m.View().WindowTitle == "Reaper: Fix the reaper race" })
+	if frame := frameText(m); !strings.Contains(frame, "Reaper: Fix the reaper race") {
+		t.Fatalf("the primary's edge should wear the name and the msg:\n%s", frame)
+	}
+	if rec, ok := m.focusedProgramStatus(); !ok || rec.Title != "Reaper" || rec.Msg != "Fix the reaper race" {
+		t.Fatalf("record = %+v, %v; want the given name as its title beside the msg", rec, ok)
+	}
+
+	// With nothing reported, the name alone.
+	term.send("\x1b]7501;state=clear\x1b\\")
+	d.wait("the name alone", func() bool { return m.View().WindowTitle == "Reaper" })
 }
 
 // A shell tab is something you are doing inside this window, so it never takes

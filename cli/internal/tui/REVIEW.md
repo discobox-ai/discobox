@@ -158,3 +158,8 @@
   stale feed or dismissed question must release the worker with a decline.
   Return terminal ownership through `tea.ExecProcess`, and keep Git credential
   stdout captured by the delivery layer, never rendered.
+- Never pair the listing's name (`Sandbox.Name`) with a program's `msg`: it
+  can hold that msg (`sandboxmeta.Title`, ADR 26-10-31-618), so a record or
+  line that shows both says it twice, once from a poll that lags the stream.
+  Name a box without its program's words where the msg goes beside it
+  (`recordTitle`).

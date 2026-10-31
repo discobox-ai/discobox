@@ -182,3 +182,24 @@ func TestATerminalThatKnowsTheProtocolKeepsItsTitlePlain(t *testing.T) {
 		t.Fatalf("title = %q, want no glyph", got)
 	}
 }
+
+// The record names the box without its program's words: the listing's name
+// of a box nobody named is the msg itself (sandboxmeta.Title), which the
+// record already carries beside the title.
+func TestTheRecordsTitleIsNotTheMsgAgain(t *testing.T) {
+	box := Sandbox{
+		ID: "sbx_quiet", Name: "Fix the reaper race", ConfigName: "brave-otter", State: StateRunning,
+		Agent: programstatus.Status{State: programstatus.Working, Msg: "Fix the reaper race"},
+	}
+	if got := recordTitle(box); got != "brave-otter" {
+		t.Fatalf("title = %q, want the configured name", got)
+	}
+	box.GivenName = "Reaper"
+	if got := recordTitle(box); got != "Reaper" {
+		t.Fatalf("title = %q, want the given name", got)
+	}
+	box.GivenName, box.ConfigName = "", ""
+	if got := recordTitle(box); got != "sbx_quiet" {
+		t.Fatalf("title = %q, want the ID", got)
+	}
+}
