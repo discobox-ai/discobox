@@ -3,7 +3,9 @@
 - **Status**: Accepted (supersedes
   [26-10-24-953](26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
   §2's and §4's pool `apply` fetching its bundles from the asset routes, and
-  §3's pool `apply` as a client of them)
+  §3's pool `apply` as a client of them;
+  §1's HTTP upgrade narrowed to a binary WebSocket by
+  [26-10-31-152](26-10-31-152-the-control-plane-channel-is-a-websocket.md))
 - **Date**: 2026-10-30
 - **Relates to**:
   [0052](0052-iroh-is-an-optional-endpoint-scheme.md) §5 (nothing
