@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -82,7 +83,7 @@ func TestAProviderHoldsAChannelToItsPoolAndPushesItsStreams(t *testing.T) {
 	})
 	agentAPI := httptest.NewServer(mux)
 	t.Cleanup(agentAPI.Close)
-	socket := filepath.Join(t.TempDir(), "cp.sock")
+	socket := filepath.Join(shortTempDir(t), "cp.sock")
 	var listen net.ListenConfig
 	listener, err := listen.Listen(context.Background(), "unix", socket)
 	if err != nil {
@@ -175,4 +176,17 @@ func TestAPoolsBootstrapSaysWhetherItIsReachedOverAChannel(t *testing.T) {
 			t.Fatalf("channel %v: bootstrap names channel %v at %q, want %q", channel, bootstrap.ControlPlaneChannel, bootstrap.ControlPlaneURL, wantURL)
 		}
 	}
+}
+
+// shortTempDir is a temporary directory short enough to hold a Unix socket:
+// t.TempDir's path, under a CI runner's temporary root, can pass the ~100
+// bytes a socket path is limited to, and bind fails with "invalid argument".
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "cp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }

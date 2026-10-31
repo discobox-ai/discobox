@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -43,7 +44,7 @@ func agent(t *testing.T, poolKey ed25519.PrivateKey, controlPlane ed25519.Public
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	socket := filepath.Join(t.TempDir(), "cp.sock")
+	socket := filepath.Join(shortTempDir(t), "cp.sock")
 	var listen net.ListenConfig
 	listener, err := listen.Listen(t.Context(), "unix", socket)
 	if err != nil {
@@ -221,4 +222,17 @@ func TestTheChannelOpensThroughAnHTTP2Front(t *testing.T) {
 	if err := channel.Wait(ctx); err != nil {
 		t.Fatalf("Wait: %v", err)
 	}
+}
+
+// shortTempDir is a temporary directory short enough to hold a Unix socket:
+// t.TempDir's path, under a CI runner's temporary root, can pass the ~100
+// bytes a socket path is limited to, and bind fails with "invalid argument".
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "cp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
