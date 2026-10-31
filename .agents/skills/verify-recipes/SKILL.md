@@ -1,6 +1,6 @@
 ---
 name: verify-recipes
-description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, a Docker pool's box (provisioning, enrollment, an in-place re-apply) and the server's release manifest export, a pool build (`docker build` in a box through the shared builder, its registry at `registry.discobox.internal`, a build through a tunnel), the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), and a change to a skill (`.agents/skills`, or one from the discobox-ai/skills skills source) via a headless agent in an isolated HOME. The generic `verify` skill (from the discobox-ai/skills skills source) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, a pool's box or its bundle, or a skill.
+description: This repository's recipes for verifying a change at runtime inside a discobox — a CLI or console (TUI) change against the running `task dev` loop (opening the console in an isolated tmux, signalling it, forcing a real out-of-memory kill), the nested-Docker runc wrapper (runcca / the sandbox agent's `runc` personality) via docker run and kind, the pool proxy (`proxy/`) by driving traffic from a box of the dev pool, a pool behind a TLS-terminating edge (`wss` tunnels), the sandbox's DNS stub and nested-Docker name resolution, the runtime-config intake the pool delivers to its sandboxes, a pool route such as the asset API called as the dev pool (minting its assertion), a box's fetches from `assets.discobox.internal` (the pool's bundle cache), feature provisioning (bundle trees, provision.json, placeholders) in a dev box, a Docker pool's box (provisioning, enrollment, an in-place re-apply) and the server's release manifest export, a pool build (`docker build` in a box through the shared builder, its registry at `registry.discobox.internal`, a build through a tunnel), the files API (a box's `.../files/*` routes, curled through the dev server, and the CLI's and harness configure's uses of it), what a box's program reports over OSC 7501 (driving a primary terminal headless, real Claude Code in a dev box, a fake OSC-aware outer terminal for the console), the sandbox event stream (`discobox events` and its SSE route: resume, reset, a forced prune), and a change to a skill (`.agents/skills`, or one from the discobox-ai/skills skills source) via a headless agent in an isolated HOME. The generic `verify` skill (from the discobox-ai/skills skills source) reads it first and records what it learns here; Claude Code's built-in `/verify` does not know this name. Use when verifying a change to the discobox console, its terminal guard, anything reached from bare `./build/discobox`, the runc wrapper, the pool proxy, the DNS stub, the runtime-config intake, a pool route, a pool's box or its bundle, or a skill.
 ---
 
 # Verifying the console
@@ -105,6 +105,24 @@ lags it by the 15s poll). `d cp` scripts into `/tmp`.
   `\e]7501;?` (and DA1), logs every `\e]7501;` the console writes, and plays
   timed keys (`\x1b[A` focuses the list, `\r` opens a box, `\x01q` quits)
   and `os.system` calls (`d admin terminal input`) to change the box mid-run.
+
+# Verifying the sandbox event stream (`discobox events`, ADR 26-10-29-316)
+
+Follow it two ways at once: `curl -sN http://127.0.0.1:8080/api/projects/default/events > $S/raw.sse &`
+for the frames, and `d events` in a `tmux -L verify` pane for the CLI. Then
+drive a `d run -d -H shell --no-source` box through `stop`, `start`, `rm`
+and `admin box purge` (it takes `</dev/null`, no `--yes`).
+
+- A program state: `d cp` a script that holds the foreground (the OSC 7501
+  section above). Pairs are joined by `:`, not `;` —
+  `printf "\033]7501;state=%s:kind=%s:app=x\033\\" "$1" "$2"; sleep 3600` —
+  and a `;` report is dropped whole, silently.
+- Resume and reset: `curl -sN -H 'Last-Event-ID: N'`. To force a prune, age
+  the events in the dev database and wait for the sweep's scan (≤60s):
+  `sqlite3 .tmp/discobox/discobox.db "update sandbox_events set at = replace(at, '<today>', '<3 days ago>')"`,
+  then watch `select * from sandbox_event_log` for `pruned_through`.
+- An edit rebuilds and restarts the server under a running `d events`: it
+  should reconnect and print nothing twice.
 
 # Verifying the runc wrapper (runcca, the agent's `runc` personality)
 
