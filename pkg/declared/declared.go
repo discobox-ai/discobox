@@ -1,6 +1,7 @@
-// Package declared reads a directory of declared-by-file things: the services
-// and tools a sandbox image, a repository, or a person declares by dropping a
-// file in a directory (ADR 26-09-05-409, ADR 0125).
+// Package declared reads a directory of declared-by-file things: the services,
+// tools and monitors a sandbox image, a repository, or a person declares by
+// dropping a file in a directory (ADR 26-09-05-409, ADR 0125, ADR
+// 26-10-31-073).
 //
 // A file is one of two shapes, and which one is decided by its name:
 //
@@ -12,7 +13,7 @@
 // This package owns the shape: which files are declarations, what the id,
 // name and description are, and the problems that make a file unusable
 // whatever it declares. What the rest of the fields mean belongs to the reader
-// — services, tools — which is also what decides whether a problem stops the
+// — services, tools, monitors — which is also what decides whether a problem stops the
 // declaration from running.
 package declared
 

@@ -30,6 +30,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/files"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
+	"github.com/discobox-ai/discobox/sandbox-agent/monitors"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandbox-agent/proxyenv"
@@ -49,6 +50,7 @@ var personalities = map[string]func(args []string) int{
 	"discobox-hook-publish": runHookPublish,
 	"discobox-ca-anchor":    runCAAnchor,
 	"discobox-power":        runPower,
+	"discobox-monitor":      runMonitor,
 	// Waits for a feature, and is what a placeholder command runs.
 	"discobox-provision": runProvisionCommand,
 	// On a directory prepended to containerd's and dockerd's PATH.
@@ -73,6 +75,10 @@ func run(name string, args []string) int {
 	}
 	if len(args) > 0 && args[0] == "hook-publish" {
 		return runHookPublish(args[1:])
+	}
+	// What an enabled monitor instance's exec runs (ADR 26-10-31-073 §4).
+	if len(args) > 0 && args[0] == monitors.RunnerCommand {
+		return runMonitorRunner(args[1:])
 	}
 	if len(args) > 0 && args[0] == "exec-shim" {
 		return runExecShim(args[1:])

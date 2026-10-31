@@ -19,6 +19,7 @@ import (
 	"github.com/go-faster/jx"
 
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/pkg/agentlayer"
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 
@@ -34,6 +35,7 @@ import (
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/meta"
+	"github.com/discobox-ai/discobox/sandbox-agent/monitors"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandbox-agent/rawsecrets"
@@ -710,6 +712,17 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	if config.WorkedIn(cfg.HarnessMode) && built.services != nil {
 		go startDeclaredServices(ctx, logger, built.awaitSources, built.services.EnsureStarted)
 	}
+	// The monitors an agent enabled resume with the box (ADR 26-10-31-073
+	// §5), once the working tree a monitor runs in is there and the whole
+	// provisioning run, async features included, is over. A configure sandbox
+	// is not worked in, and runs none.
+	if config.WorkedIn(cfg.HarnessMode) {
+		if reconciler, err := newMonitorReconciler(execManager, logger); err != nil {
+			logger.Warn("sandbox agent monitors disabled", "error", err)
+		} else {
+			go runMonitors(ctx, logger, built.awaitSources, cfg.Provision, reconciler)
+		}
+	}
 	// Exec state converges on notifications rather than a poll (ADR 0115): the
 	// shim's own runtime write for an ordinary exit, and systemd's unit signals
 	// for an end it could not write.
@@ -851,6 +864,69 @@ func startDeclaredServices(ctx context.Context, logger *slog.Logger, await func(
 	default:
 		logger.Error("start sandbox services", "error", err)
 	}
+}
+
+// newMonitorReconciler wires the monitors' reconciler to the run user's home,
+// where instances and their events live, and to the agent at the path that
+// outlives an upgrade, which is what an instance's exec runs: an exec record
+// outlives the box's stop, and the layer os.Executable names may not.
+func newMonitorReconciler(execManager *execs.Manager, logger *slog.Logger) (*monitors.Reconciler, error) {
+	home, owner, err := runUserHome(execManager)
+	if err != nil {
+		return nil, err
+	}
+	executable, err := stableAgentPath()
+	if err != nil {
+		return nil, err
+	}
+	return &monitors.Reconciler{
+		Execs:      execManager,
+		Dirs:       monitors.HomeDirs(home),
+		Owner:      monitors.Owner{UID: owner.UID, GID: owner.GID},
+		Executable: executable,
+		Home:       home,
+		Logger:     logger,
+	}, nil
+}
+
+// stableAgentPath is this agent at a path that outlives an upgrade, for a
+// command an exec records and runs again: agentlayer.AgentPath where the box
+// runs its agent from the bundle store, whose old layers are swept; elsewhere
+// — a sandbox whose agent is not placed as layers, a macOS or Windows guest —
+// there is no layer to sweep, and the executable's own path is the stable one.
+func stableAgentPath() (string, error) {
+	if _, err := os.Stat(agentlayer.AgentPath); err == nil {
+		return agentlayer.AgentPath, nil
+	}
+	return os.Executable()
+}
+
+// runMonitors starts the reconciler once the sources are in place and the
+// whole provisioning run is over, async features included, as a service waits
+// by default: the image's monitors and the gh and jq they run on come from an
+// async feature. A provisioning failure is logged and does not hold monitors
+// back: one that needs the failed feature fails on its own, where the agent
+// sees it.
+func runMonitors(ctx context.Context, logger *slog.Logger, awaitSources func(context.Context) error, tracker *provision.Tracker, reconciler *monitors.Reconciler) {
+	if awaitSources != nil {
+		switch err := awaitSources(ctx); {
+		case err == nil:
+		case errors.Is(err, context.Canceled):
+			return
+		default:
+			logger.Error("wait for the sandbox to be ready before starting its monitors", "error", err)
+			return
+		}
+	}
+	if tracker != nil {
+		if err := tracker.AwaitFeatures(ctx, nil); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			logger.Warn("monitors start with provisioning failed", "error", err)
+		}
+	}
+	reconciler.Run(ctx)
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
