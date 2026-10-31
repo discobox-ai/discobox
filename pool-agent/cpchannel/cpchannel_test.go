@@ -1,6 +1,7 @@
 package cpchannel
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -9,8 +10,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,7 +139,7 @@ func TestTheChannelIsPinnedAtBothEnds(t *testing.T) {
 	}
 }
 
-func TestARequestThatIsNotAnUpgradeIsRefused(t *testing.T) {
+func TestARequestThatIsNotAWebSocketIsRefused(t *testing.T) {
 	serverKey, poolKey := newKey(t), newKey(t)
 	_, agentAPI, _ := agent(t, poolKey, public(serverKey))
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, agentAPI.URL+Path("proj", "pool"), nil)
@@ -190,7 +194,7 @@ func TestALocalConnectionWaitsForAChannel(t *testing.T) {
 }
 
 // A pool's front that is HTTPS and offers HTTP/2, as boxd's edge does, still
-// opens a channel: the upgrade is asked for over HTTP/1.1, which alone has one.
+// opens a channel: its WebSocket is asked for over HTTP/1.1, which alone has an Upgrade.
 func TestTheChannelOpensThroughAnHTTP2Front(t *testing.T) {
 	serverKey, poolKey := newKey(t), newKey(t)
 	channel, err := New(slog.New(slog.DiscardHandler), poolKey, public(serverKey))
@@ -222,6 +226,182 @@ func TestTheChannelOpensThroughAnHTTP2Front(t *testing.T) {
 	if err := channel.Wait(ctx); err != nil {
 		t.Fatalf("Wait: %v", err)
 	}
+}
+
+// websocketEdge is a TLS front offering HTTP/2 that reverse-proxies to
+// backend and forwards WebSockets alone, as a hosted edge does: an Upgrade to
+// anything else is refused before it reaches the backend.
+func websocketEdge(t *testing.T, backend string) *httptest.Server {
+	t.Helper()
+	target, err := url.Parse(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	edge := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if upgrade := r.Header.Get("Upgrade"); upgrade != "" && !strings.EqualFold(upgrade, "websocket") {
+			http.Error(w, "only WebSocket upgrades are forwarded", http.StatusBadRequest)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	edge.EnableHTTP2 = true
+	edge.StartTLS()
+	t.Cleanup(edge.Close)
+	return edge
+}
+
+// Through an edge that forwards WebSockets and refuses any other upgrade, the
+// channel opens, and carries traffic both ways over its TLS and cpmux: the
+// pool's connection reaches the server, and a reply bigger than any one TLS
+// record or WebSocket message comes back whole.
+func TestTheChannelOpensThroughAnEdgeThatForwardsOnlyWebSockets(t *testing.T) {
+	serverKey, poolKey := newKey(t), newKey(t)
+	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
+	edge := websocketEdge(t, agentAPI.URL)
+	transport, ok := edge.Client().Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("test server transport is %T", edge.Client().Transport)
+	}
+	transport.ForceAttemptHTTP2 = true
+
+	// The fixture is the edge it claims to be: an arbitrary upgrade is refused.
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, edge.URL+Path("proj", "pool"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "discobox-control-plane/1")
+	resp, err := (&http.Client{Transport: http1(transport)}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("the edge answered an arbitrary upgrade %s, want 400", resp.Status)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	conn, err := Dial(ctx, transport, edge.URL, "proj", "pool", "token", serverKey, public(poolKey))
+	if err != nil {
+		t.Fatalf("Dial through the edge: %v", err)
+	}
+	session, err := cpmux.Client(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	if err := channel.Wait(ctx); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+
+	reply := bytes.Repeat([]byte("0123456789abcdef"), 1<<16) // 1 MiB
+	accepted := make(chan string, 1)
+	go func() {
+		stream, target, err := session.Accept()
+		if err != nil {
+			accepted <- "accept: " + err.Error()
+			return
+		}
+		defer func() { _ = stream.Close() }()
+		buf := make([]byte, 4)
+		if _, err := io.ReadFull(stream, buf); err != nil {
+			accepted <- "read: " + err.Error()
+			return
+		}
+		if _, err := stream.Write(reply); err != nil {
+			accepted <- "write: " + err.Error()
+			return
+		}
+		accepted <- target + " " + string(buf)
+	}()
+
+	var dialer net.Dialer
+	local, err := dialer.DialContext(ctx, "unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = local.Close() }()
+	if _, err := local.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]byte, len(reply))
+	if _, err := io.ReadFull(local, got); err != nil {
+		t.Fatalf("read reply: %v", err)
+	}
+	if seen := <-accepted; seen != cpmux.TargetControlPlane+" ping" {
+		t.Fatalf("server saw %q", seen)
+	}
+	if !bytes.Equal(got, reply) {
+		t.Fatal("the reply came back altered")
+	}
+}
+
+// A channel that drops is replaced by the next one the server opens, and a
+// pool's connection made after the drop rides the new one.
+func TestANewChannelReplacesADroppedOne(t *testing.T) {
+	serverKey, poolKey := newKey(t), newKey(t)
+	channel, agentAPI, socket := agent(t, poolKey, public(serverKey))
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	first, err := Dial(ctx, http.DefaultTransport, agentAPI.URL, "proj", "pool", "token", serverKey, public(poolKey))
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	if _, err := cpmux.Client(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := channel.Wait(ctx); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	dropped := channel.installed()
+	_ = first.Close()
+
+	second, err := Dial(ctx, http.DefaultTransport, agentAPI.URL, "proj", "pool", "token", serverKey, public(poolKey))
+	if err != nil {
+		t.Fatalf("redial: %v", err)
+	}
+	session, err := cpmux.Client(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	// The client's TLS finishes before the pool's, so the pool may not have
+	// installed the new session yet: wait until it has replaced the old one.
+	for channel.installed() == dropped {
+		if ctx.Err() != nil {
+			t.Fatal("the pool never installed the new channel")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	var dialer net.Dialer
+	local, err := dialer.DialContext(ctx, "unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = local.Close() }()
+	if _, err := local.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	stream, _, err := session.Accept()
+	if err != nil {
+		t.Fatalf("Accept on the new channel: %v", err)
+	}
+	defer func() { _ = stream.Close() }()
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(stream, buf); err != nil || string(buf) != "ping" {
+		t.Fatalf("read %q, %v", buf, err)
+	}
+}
+
+// installed is the session the channel holds now.
+func (c *Channel) installed() *cpmux.Session {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.session
 }
 
 // shortTempDir is a temporary directory short enough to hold a Unix socket:
