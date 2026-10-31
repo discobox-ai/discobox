@@ -13,6 +13,8 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/apiroute"
+	"github.com/discobox-ai/discobox/cli/internal/credentialpolicy"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 )
 
@@ -222,6 +224,7 @@ func (a *App) newAdminBindingCreateCommand() *cobra.Command {
 	var raw rawFlag
 	var use, delegate bool
 	var routes []string
+	var policies credentialpolicy.References
 	ttl := lifetime.NewFlag()
 	cmd := &cobra.Command{
 		Use:   "create --secret SECRET --target-kind KIND [--target ID] [--as VAR] [--raw env|file] [--delegate]",
@@ -241,9 +244,19 @@ secret's routes for this binding; left out, it goes where the secret's go.
 			if err := kind.Validate(); err != nil {
 				return fmt.Errorf("--target-kind %q: want project, harnessConfig or sandbox", targetKind)
 			}
+			if len(policies) > 0 && len(routes) > 0 {
+				return fmt.Errorf("--policy and --route are mutually exclusive")
+			}
+			resolved, err := policies.Resolve()
+			if err != nil {
+				return err
+			}
 			parsed, err := routeFlagValues("--route", routes)
 			if err != nil {
 				return err
+			}
+			if len(policies) > 0 {
+				parsed = apiroute.Inputs(resolved)
 			}
 			projectID, client, err := a.adminBindingClient()
 			if err != nil {
@@ -286,6 +299,8 @@ secret's routes for this binding; left out, it goes where the secret's go.
 	cmd.Flags().Var(&raw, "raw", "Hand over the value itself: env, or file for a file whose path is in the variable; left out, a sentinel")
 	cmd.Flags().BoolVar(&use, "use", true, "Deliver it to use (default true unless --delegate)")
 	cmd.Flags().BoolVar(&delegate, "delegate", false, "Let the target give it to the discoboxes it creates")
+	cmd.Flags().Var(&policyValue{references: &policies}, "policy", "A credential policy FILE; repeat to merge routes. Following --policy-arg flags belong to this file")
+	cmd.Flags().Var(&policyValue{references: &policies, argument: true}, "policy-arg", "An argument NAME=VALUE for the preceding --policy; repeat for more")
 	cmd.Flags().StringArrayVar(&routes, "route", nil, "A route narrowing the secret's, as "+secretroute.Syntax+"; one per flag, repeat for more")
 	cmd.Flags().Var(ttl, "for", "How long it lasts (e.g. 1h, 2w, forever); the secret's limit when omitted")
 	_ = cmd.MarkFlagRequired("secret")
@@ -297,6 +312,7 @@ func (a *App) newAdminBindingUpdateCommand() *cobra.Command {
 	var envVar string
 	raw := rawFlag{canClear: true}
 	var routes []string
+	var policies credentialpolicy.References
 	var clearRoutes, use, delegate bool
 	ttl := lifetime.NewFlag()
 	cmd := &cobra.Command{
@@ -308,12 +324,22 @@ removes them, so it goes where its secret's go.
 ` + routeHelp,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if clearRoutes && len(routes) > 0 {
-				return fmt.Errorf("--clear-route and --route say opposite things; give one")
+			if clearRoutes && (len(routes) > 0 || len(policies) > 0) {
+				return fmt.Errorf("--clear-route, --route and --policy are mutually exclusive")
+			}
+			if len(policies) > 0 && len(routes) > 0 {
+				return fmt.Errorf("--policy and --route are mutually exclusive")
+			}
+			resolved, err := policies.Resolve()
+			if err != nil {
+				return err
 			}
 			parsed, err := routeFlagValues("--route", routes)
 			if err != nil {
 				return err
+			}
+			if len(policies) > 0 {
+				parsed = apiroute.Inputs(resolved)
 			}
 			body := &apimodel.UpdateSecretBindingBody{}
 			changed := false
@@ -345,7 +371,7 @@ removes them, so it goes where its secret's go.
 				changed = true
 			}
 			if !changed {
-				return fmt.Errorf("nothing to change: give --route, --clear-route, --for, --as, --raw, --use or --delegate")
+				return fmt.Errorf("nothing to change: give --policy, --route, --clear-route, --for, --as, --raw, --use or --delegate")
 			}
 			projectID, client, err := a.adminBindingClient()
 			if err != nil {
@@ -362,6 +388,8 @@ removes them, so it goes where its secret's go.
 			return a.writeSecretBinding(cmd, binding)
 		},
 	}
+	cmd.Flags().Var(&policyValue{references: &policies}, "policy", "A credential policy FILE; repeat to merge routes. Following --policy-arg flags belong to this file")
+	cmd.Flags().Var(&policyValue{references: &policies, argument: true}, "policy-arg", "An argument NAME=VALUE for the preceding --policy; repeat for more")
 	cmd.Flags().StringArrayVar(&routes, "route", nil, "Replace its routes with these, each "+secretroute.Syntax+"; one per flag, repeat for more")
 	cmd.Flags().BoolVar(&clearRoutes, "clear-route", false, "Remove its routes, so it goes where its secret's go")
 	cmd.Flags().Var(ttl, "for", "How long it lasts from now (e.g. 1h, 2w, forever)")

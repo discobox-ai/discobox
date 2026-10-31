@@ -45,3 +45,13 @@ The console caps rendered output like other body recordings. A terminal's
 output preserves the binary artifact for saving. Legacy raw upgrade spools
 remain readable as recorded bytes. Capture diagnostics and partial final
 records are displayed explicitly.
+
+## Credential policy files
+
+`secret bind` and `admin binding create/update` accept repeatable `--policy FILE`
+flags. Each following `--policy-arg NAME=VALUE` belongs to the preceding file.
+The client resolves files through `internal/credentialpolicy` before mutation,
+then submits one union of concrete routes. `--route` and `--clear-route` cannot
+be combined with policies. Updating a binding reapplies a snapshot explicitly;
+there is no live file reference. `run --bind` uses the same resolver through
+`internal/sandboxcreate` (ADR 26-10-30-584).
