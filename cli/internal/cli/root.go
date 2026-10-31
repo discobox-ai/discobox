@@ -234,7 +234,6 @@ See "%[1]s run --help" for everything run takes.`, name),
 	cmd.AddCommand(app.newCPCommand())
 	cmd.AddCommand(app.newAttachCommand())
 	cmd.AddCommand(app.newProxyCommand())
-	cmd.AddCommand(app.newApplyCommand())
 	cmd.AddCommand(app.newPushCommand())
 	cmd.AddCommand(app.newToolsCommand())
 	cmd.AddCommand(app.newConfigureCommand())

@@ -17,7 +17,6 @@ const (
 	ClearPoolCacheOperation                        OperationName = "ClearPoolCache"
 	ClearSandboxCacheOperation                     OperationName = "ClearSandboxCache"
 	CommitHarnessConfigConfigureOperation          OperationName = "CommitHarnessConfigConfigure"
-	CompleteSandboxApplyOperation                  OperationName = "CompleteSandboxApply"
 	CompleteSandboxSourcePushOperation             OperationName = "CompleteSandboxSourcePush"
 	ConfigureHarnessConfigOperation                OperationName = "ConfigureHarnessConfig"
 	ConfirmSandboxAutostopOperation                OperationName = "ConfirmSandboxAutostop"

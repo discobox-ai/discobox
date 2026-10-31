@@ -356,26 +356,6 @@ else: no phase, no completion call, and no server-side validation of what was
 pushed. The server never runs Git: it stays a byte proxy, as it is for the
 worktree route.
 
-## Applying Sandbox Commits to a Host (`discobox apply`)
-
-`discobox apply` (ADR 0014) pulls a sandbox's committed source changes onto the
-host working tree they started from. It fetches over the git-repositories
-proxy documented above, which serves read as well as write: `ScopeSandboxRead`
-permits fetch.
-
-- **`CompleteSandboxApply`** is a plain generated OpenAPI operation, not a
-  hand-wired proxy: the client reports a completed apply after it has already
-  landed the commits locally (cherry-pick + fast-forward happen entirely on
-  the client), and the server only records the result. It never verifies the
-  reported commits against the sandbox's actual Git state, matching
-  `CompleteSandboxSourcePush`'s same tradeoff.
-- The record is `Sandbox.AppliedCommits`, an append-only list
-  (`model.AppliedSourceCommit`: slug, sandbox-side commit, resulting host-side
-  commit, host ID, host path, timestamp), surfaced at `runtime.appliedCommits`.
-  It carries no lifecycle intent, so it persists through
-  `sandboxes.updateSandboxMetadata` rather than `recordSandboxIntent`:
-  nothing about desired or observed runtime state changes, so there is
-  nothing for the reconcile engine to act on.
 - `AcquireSandboxHTTPClient` is the one way into a sandbox, and takes what the
   request is for. For every use it checks that the sandbox exists and is not
   being deleted and that its pool has current ready health (`Pool.IsReady`).

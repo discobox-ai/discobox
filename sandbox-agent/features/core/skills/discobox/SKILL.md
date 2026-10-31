@@ -146,15 +146,8 @@ depends on when the box was created:
   remote under either name: not unless the user asked, and check its URL
   first.
 
-The user runs `discobox apply` on their side, which cherry-picks your commits
-onto their working tree with your commit boundaries preserved.
-
-- Commit in coherent pieces, with real messages.
-- **Leave the tree clean, not just the work committed.** `apply` skips a source
-  whose discobox tree is dirty, and skipping takes the committed work with it —
-  the user gets nothing from that source unless they know to re-run with
-  `--allow-dirty`. A stray scratch file blocks the whole change.
-- Do not print a patch to apply, or upload the diff anywhere.
+Commit in coherent pieces with real messages and leave the tree clean.
+Deliver work by pushing commits to the Git remote authorized for the task.
 
 To build on commits the user made since this box started, fetch them from
 the pool yourself — `git fetch discobox && git rebase discobox/<branch>`
@@ -391,7 +384,7 @@ echo 'check CI' > ~/.discobox/wake/.ci && touch -d '+45 min' ~/.discobox/wake/.c
 | `/nix/var/nix/profiles`, `/nix/var/nix/gcroots`, `/nix/var/nix/daemon-socket` | carved back out of the shared store; this box's own — your profile and roots, and the socket of this box's own `nix-daemon` |
 | `/home/linuxbrew/.linuxbrew` (what `brew install` puts there) | this box's own; the image's own tree shows through underneath it |
 
-None of your *work* outlives the box except the commits the user applies —
+None of your *work* outlives the box except the commits pushed to a remote —
 though the pool keeps what the cache rows hold, and the proxy keeps its record
 of what you sent. Deleting under a cache path reaches every box that shares that
 partition; your nix profile is not one of those, so `nix profile install` is
@@ -484,7 +477,6 @@ discobox restart    restart boxes
 discobox rename     name a box
 discobox attach     open a box's window
 discobox shell      a command, or a login shell, in a box
-discobox apply      cherry-pick a box's commits onto the working tree
 discobox push       push local commits into a box, to rebase there
 discobox proxy      forward a box's ports without the window open
 discobox cp         copy files in and out

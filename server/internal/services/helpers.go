@@ -343,9 +343,6 @@ func SandboxToAPI(sandbox *model.Sandbox, basis SandboxUpgradeBasis) (serverapi.
 	if sandbox.SourceDeliveredAt != nil {
 		runtime["sourceDeliveredAt"] = *sandbox.SourceDeliveredAt
 	}
-	if len(sandbox.AppliedCommits) > 0 {
-		runtime["appliedCommits"] = sandbox.AppliedCommits
-	}
 	if upgrade := SandboxUpgrade(sandbox, basis); upgrade != nil {
 		runtime["upgrade"] = upgrade
 	}

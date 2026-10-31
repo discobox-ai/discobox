@@ -100,7 +100,7 @@ func (s *sandboxService) startOnUse(need sandboxNeed, next http.Handler) http.Ha
 						return
 					}
 					// git prints a refused request's plain-text body to the
-					// person fetching, so this is also what `discobox apply`
+					// person fetching, so this is also what a Git client
 					// says when the sandbox holding the work will not start.
 					http.Error(w, fmt.Sprintf("start sandbox %q: %v; nothing in it can be reached until it starts, so if this persists run `discobox admin box repair %s`", sandboxID, err, sandboxID), http.StatusInternalServerError)
 					return

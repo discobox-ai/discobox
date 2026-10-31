@@ -4,7 +4,7 @@
 //
 // It runs on the alternate screen: it takes the whole terminal while it is up,
 // and leaves what was on screen before exactly as it was when it exits. Actions
-// that own the terminal — the command behind apply — suspend the window, which
+// that own the terminal, such as an editor, suspend the window, which
 // drops back to the primary screen and hands them the real streams; attach and
 // a shell are drawn in the window itself.
 package tui
@@ -1290,9 +1290,6 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		msg.opt.items = append(msg.opt.items, msg.source.Value)
 		return nil
 
-	case paneOpenedMsg:
-		return m.paneOpened(msg)
-
 	case configurePaneOpenedMsg:
 		return m.configurePaneOpened(msg)
 
@@ -2244,20 +2241,6 @@ func (m *Model) actions(targets []Sandbox) []action {
 		allArchived = allArchived && s.State == StateArchived
 	}
 	attachable := one && targets[0].attachable()
-	// Apply is drawn in a pane, which shows one discobox, and it runs git in
-	// the sandbox — so an archived one, which has no container to run it in,
-	// cannot take it however much it changed. A diffstat that has not come back
-	// yet is not the same answer as "nothing changed", so it stays available
-	// until it has.
-	applyable, applyWhy := one, "takes exactly one box"
-	if one {
-		switch box := targets[0]; {
-		case box.State == StateArchived:
-			applyable, applyWhy = false, "an archived box has no working tree to look at"
-		case !box.hasDiff() && box.Diff.Known:
-			applyable, applyWhy = false, "nothing has changed yet"
-		}
-	}
 	// The name is written into the box (ADR 26-10-12-026), which is started to
 	// take it. An archived one has nothing to start.
 	renameable, renameWhy := one, "takes exactly one box"
@@ -2270,8 +2253,6 @@ func (m *Model) actions(targets []Sandbox) []action {
 		{key: "s", press: "s", label: "shell", detail: "open a shell in the box", enabled: attachable,
 			why: attachWhy(one, targets)},
 		{key: harnessChangesKey, press: harnessChangesKey, label: "review config", detail: "review and save local settings and logins", enabled: one && targets[0].State == StateRunning, why: "takes one running box"},
-		{key: applyKey, press: applyKey, label: "apply", detail: "bring the changes back to " + m.session.Directory, enabled: applyable,
-			why: applyWhy},
 		{key: renameKey, press: renameKey, label: "rename", detail: "type a new name for the box", enabled: renameable,
 			why: renameWhy},
 		{key: "u", press: "u", label: "upgrade", detail: "re-pin to the current harness image", enabled: anyUpgrade,
@@ -2415,9 +2396,7 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 			}
 			return m.openFromList(action, box)
 		default:
-			// A command that runs and finishes takes the screen, over the
-			// workspace when there is one and over the list when there is not.
-			return m.openOverlay(action, box)
+			return nil
 		}
 	}
 
@@ -2468,9 +2447,8 @@ var verbs = map[string]Verb{
 }
 
 var interactions = map[string]Interaction{
-	"a":      InteractAttach,
-	"s":      InteractShell,
-	applyKey: InteractApply,
+	"a": InteractAttach,
+	"s": InteractShell,
 }
 
 // runVerb applies a lifecycle verb to every target, in one command: the window
@@ -3954,7 +3932,7 @@ func (r AutomaticRepair) note(now time.Time) string {
 // has: what just happened, or what is under way, or nothing.
 //
 // Every screen draws it, the workspace included. A command that failed there —
-// an apply that could not start, a key that could not do what it was pressed
+// a command that could not start, a key that could not do what it was pressed
 // for — has nowhere else to say so, and a report the screen it was made on
 // cannot show is a key that looks like it did nothing at all.
 //
@@ -4177,9 +4155,7 @@ func (m *Model) paneHints() []hint {
 		return hints
 	}
 	if p.exited {
-		// The same word the banner is using: a pane that failed says so at
-		// both ends of itself, rather than reporting the end of the stream
-		// as a result.
+		// Use the same completed-session status as the banner.
 		done := p.status
 		if done == "" {
 			done = "finished"
@@ -4408,7 +4384,6 @@ func (m *Model) helpText() string {
 		"    Enter  attach          s  shell",
 		"    v      open it in VS Code, in its own window",
 		"    z      open it in Zed, in its own window",
-		"    y      apply back to this directory",
 		"    u      upgrade to the current image",
 		"    R      repair — rebuild the discobox in place on the",
 		"           current image, keeping its workspace and changes",
@@ -4425,10 +4400,8 @@ func (m *Model) helpText() string {
 		"  cursor accept. Archiving is reversible and asks nothing; purge",
 		"  destroys the disk and asks first.",
 		"",
-		"  attach, shell and apply open a screen over the window and act on",
-		"  one discobox. apply stays up when it finishes so its report can be",
-		"  read; q closes it. vscode and zed are different: they edit the box",
-		"  over SSH in a separate window, and this one keeps running.",
+		"  attach and shell open a workspace on one discobox. vscode and zed",
+		"  edit the box over SSH in a separate window.",
 		"",
 		"  rename opens the current name for editing. Enter accepts, Esc",
 		"  cancels. The name you give a box replaces the title its harness",
@@ -4451,10 +4424,8 @@ func (m *Model) helpText() string {
 		"",
 		"      *  dirty      uncommitted changes, held only by the discobox.",
 		"                    Archiving now loses them",
-		"      ⇡  ready      committed work no apply has landed anywhere yet.",
-		"                    This is what an apply would bring back",
-		"      ✓  applied    the head commit is the last one applied back",
-		"         clean      as it was cut, with nothing to bring back",
+		"      ⇡  ready      clean committed work ahead of the spawn commit",
+		"         clean      as it was cut",
 		"         -          the agent has not reported yet",
 		"",
 		"  +N −N is lines added and deleted against the commit it was cut",
@@ -4569,7 +4540,6 @@ func (m *Model) helpText() string {
 		"                   connected and running",
 		"    " + m.paneMouseHint() + "       take the mouse from a box that is using it, to",
 		"                   select and copy; press again to give it back",
-		"    " + leader + " y       apply back to this directory",
 		"    " + leader + " u       upgrade      " + leader + " t / T   stop / start",
 		"    " + leader + " x / U   archive / unarchive",
 		"    " + leader + " R       repair",
@@ -4580,10 +4550,6 @@ func (m *Model) helpText() string {
 		"  Images paste from this machine. Ctrl-V or Alt-V in a harness",
 		"  terminal with an image on the clipboard, or a dragged image file,",
 		"  copies the image into the discobox and pastes its path there.",
-		"",
-		"  apply runs in the screen itself, and the terminals underneath stay",
-		"  connected and running. Every other command runs against the server",
-		"  and reports on the status line.",
 		"",
 		"  A shell or terminal that exits leaves its last screen up to be",
 		"  read. ↑ ↓, pgup, pgdn, g and G scroll output longer than the pane,",

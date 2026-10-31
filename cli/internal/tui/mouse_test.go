@@ -134,8 +134,8 @@ func TestAPressOnARowStartsNothing(t *testing.T) {
 	x, y := rowAt(t, m, boxes[0])
 	tap(t, m, x, y)
 
-	if len(ds.opens) > 0 {
-		t.Fatalf("one press opened %v; only the second should", ds.opens)
+	if opened := ds.execOpened(); len(opened) > 0 {
+		t.Fatalf("one press opened %v; only the second should", opened)
 	}
 }
 

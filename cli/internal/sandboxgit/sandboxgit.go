@@ -3,8 +3,8 @@
 // those requests, and the client-side refs that record what has been sent.
 //
 // It is shared by every direction that transport runs in — create's delivery
-// push (ADR 0001), `discobox apply`'s fetch (ADR 0014), and `discobox push`'s re-push
-// (ADR 0058) — so all three address a sandbox the same way.
+// push (ADR 0001) and `discobox push`'s re-push (ADR 0058), so both address a
+// sandbox the same way.
 package sandboxgit
 
 import (

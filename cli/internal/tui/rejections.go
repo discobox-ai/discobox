@@ -33,7 +33,7 @@ import (
 
 // rejectedKey is the band's key behind the leader: k, for the key that is not
 // working. The letters this window already spends are elsewhere — g is the
-// credential request, y apply — and this is neither of those. The
+// credential request. The
 // signed-out harness's band (uncredentialed.go) answers to it too: a key that
 // is not there is a key that is not working.
 const rejectedKey = "k"

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -10,69 +9,11 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
-// The commands that act on a discobox from this machine — apply — are not
-// terminals in the discobox. They run here, over the API.
-//
-// To draw one in a pane it is given a terminal of its own. The command runs as
-// a child process on a local pty sized to the pane, with that pty as its
-// controlling terminal, and the pane draws what comes back. Where the pty comes
-// from is localpty's problem, and differs by platform; see ADR 0065.
-//
-// The controlling terminal is the part that matters: anything the command
-// starts that reads its keys from the terminal reads them from the pty, and so
-// from the pane, rather than from the real terminal out from under the window.
-//
-// Running the command rather than reimplementing it is the point: what a pane
-// shows is `discobox apply`, with its own flag defaults and rendering, and not a
-// second answer that drifts from the one a shell gives.
-
 // localCommand is a command running on a pty of its own, presented as a
 // terminal a pane can draw.
 type localCommand struct {
 	localpty.PTY
-	events     chan tui.TerminalEvent
-	reportPath string
-}
-
-const applyReportPathEnv = "DISCOBOX_APPLY_REPORT_PATH"
-
-// openLocalCommand starts one of this CLI's own commands on a pty.
-func (d *apiDataSource) openLocalCommand(ctx context.Context, action tui.Interaction, sandboxID string, cols, rows int) (tui.Terminal, error) {
-	self, err := os.Executable()
-	if err != nil {
-		return nil, fmt.Errorf("find this program: %w", err)
-	}
-
-	args := d.app.globalFlags()
-	args = append(args, string(action), sandboxID)
-	env := append(os.Environ(), "DISCOBOX_TOKEN="+d.app.token)
-	var reportPath string
-	if action == tui.InteractApply {
-		report, err := os.CreateTemp("", "discobox-apply-report-*.json")
-		if err != nil {
-			return nil, fmt.Errorf("create apply result file: %w", err)
-		}
-		reportPath = report.Name()
-		if err := report.Close(); err != nil {
-			_ = os.Remove(reportPath)
-			return nil, fmt.Errorf("prepare apply result file: %w", err)
-		}
-		env = append(env, applyReportPathEnv+"="+reportPath)
-	}
-	pty, err := localpty.Start(ctx, localpty.Command{
-		Path: self,
-		Args: args,
-		// The token goes through the environment rather than the argument list,
-		// which every process on the machine can read.
-		Env: env,
-	}, cols, rows)
-	if err != nil {
-		if reportPath != "" {
-			_ = os.Remove(reportPath)
-		}
-		return nil, fmt.Errorf("start %s: %w", action, err)
-	}
-	return &localCommand{PTY: pty, events: make(chan tui.TerminalEvent), reportPath: reportPath}, nil
+	events chan tui.TerminalEvent
 }
 
 func (d *apiDataSource) openLocalHarnessConfigure(ctx context.Context, harnessID string, cols, rows int) (tui.Terminal, error) {
@@ -117,31 +58,6 @@ func (c *localCommand) ExitStatus() (int, bool) {
 		return 0, false
 	}
 	return reporter.ExitStatus()
-}
-
-// ApplyResult reads the private machine-readable copy emitted beside the
-// command's terminal report. Only apply commands have one.
-func (c *localCommand) ApplyResult() (tui.ApplyResult, bool) {
-	if c.reportPath == "" {
-		return tui.ApplyResult{}, false
-	}
-	data, err := os.ReadFile(c.reportPath)
-	if err != nil || len(data) == 0 {
-		return tui.ApplyResult{}, false
-	}
-	var result tui.ApplyResult
-	if err := json.Unmarshal(data, &result); err != nil {
-		return tui.ApplyResult{}, false
-	}
-	return result, true
-}
-
-func (c *localCommand) Close() error {
-	err := c.PTY.Close()
-	if c.reportPath != "" {
-		_ = os.Remove(c.reportPath)
-	}
-	return err
 }
 
 var _ tui.Terminal = (*localCommand)(nil)

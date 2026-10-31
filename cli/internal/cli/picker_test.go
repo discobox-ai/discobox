@@ -399,7 +399,7 @@ func TestSandboxPickerItemsSayWhereARowCameFrom(t *testing.T) {
 // discoboxes can be made on which one holds work rather than on the name alone.
 func TestSandboxPickerRowsCarryTheGitState(t *testing.T) {
 	running := func(id, agentSources string) apimodel.Sandbox {
-		sb := gitStateSandbox(t, spawnSHA, agentSources, nil)
+		sb := gitStateSandbox(t, spawnSHA, agentSources)
 		sb.ID = id
 		sb.DisplayName = id
 		sb.UpdatedAt = time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC)

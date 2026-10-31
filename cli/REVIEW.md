@@ -92,8 +92,7 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   resolved IDs only, so `attach mybox` sent a name to the server as an ID.
 - **A listed name never beats an ID-shaped reference.** The box writes its
   listed name (its meta name, its terminal's title), so a box named `01hq`
-  would take what was meant for the discobox whose ID begins that way: `apply`
-  its commits, `push` the user's source, `shell` their keystrokes.
+  would take what was meant for the discobox whose ID begins that way: `push` the user's source, `shell` their keystrokes.
   `matchSandboxName` refuses a name that is a short ID of another discobox;
   anything that matches a name keeps going through it. The check is only as
   good as the IDs it is given: with a server silent an ID-shaped name is
@@ -215,10 +214,6 @@ enforces the ones a tree walk can see. These are the ones it cannot:
   `{workdir.urlpath}` always begins with one, a drive path written
   `/C:/src/app`: a Windows path begins with its drive, and `C:\x@host` read as
   authority is another host.
-- **A command printed for the user to paste is not guarded yet.** `apply`'s
-  next steps put a sandbox directory into `git -C <dir>` unquoted. Quote it for
-  the user's shell before adding another such command, and do not treat this
-  section as covering them.
 
 ## Crossing into Windows from WSL
 
@@ -246,3 +241,7 @@ enforces the ones a tree walk can see. These are the ones it cannot:
 - A remote's URL path is decoded text. Render it through `terminalSafe` in
   credential consent, and reject controls before forming Git credential input:
   a declared repository can percent-encode OSC or CSI sequences in its URL.
+
+- Retiring a command must preserve tests for shared live UI behavior. Rewrite
+  fixtures using the remaining Git states instead of deleting the whole test:
+  removing Apply's state initially removed the workspace-header refresh check.

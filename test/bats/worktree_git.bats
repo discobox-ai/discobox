@@ -3,7 +3,7 @@
 #
 # The worktree Git route end to end (ADR 0126 §4): a discobox's own repository
 # is served by the sandbox agent inside it, and the control plane and the pool
-# agent only forward to it. `discobox apply` fetches through it, and a client
+# agent only forward to it. a Git client fetches through it, and a client
 # clones, pushes and fetches through it with plain git, against a real Docker
 # pool and a real sandbox.
 #
@@ -100,19 +100,6 @@ sandbox_container() {
   echo "discobox-sandbox-$DISCOBOX_BATS_POOL_ID-$DISCOBOX_BATS_SANDBOX_ID"
 }
 
-@test "discobox apply brings back a commit made in the discobox" {
-  run in_box 'echo from-box >box.txt && git add box.txt && git -c user.name=Box -c user.email=box@example.com commit -q -m "made in the box" && git rev-parse HEAD'
-  [ "$status" -eq 0 ]
-  local made="${lines[-1]}"
-
-  run bash -c "cd '$DISCOBOX_BATS_LOCAL' && HOME='$DISCOBOX_BATS_HOME' '$REPO_ROOT/build/discobox' --server '$DISCOBOX_BATS_SERVER' apply '$DISCOBOX_BATS_SANDBOX_ID'"
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"APPLIED 1 commit"* ]]
-  [ "$(cat "$DISCOBOX_BATS_LOCAL/box.txt")" = from-box ]
-  [ "$(git -C "$DISCOBOX_BATS_LOCAL" log -1 --format=%s)" = "made in the box" ]
-  [ -n "$made" ]
-}
 
 @test "the worktree route clones, takes a push into the checkout, and fetches" {
   local clone="$BATS_TEST_TMPDIR/clone"

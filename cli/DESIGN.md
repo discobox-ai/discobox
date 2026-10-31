@@ -12,12 +12,10 @@ transport helpers where OpenAPI does not model the stream.
 | `cmd/discobox-clipwatch` | The Windows clipboard helper the Linux CLI carries and runs from WSL (`internal/clipwatch`). Windows only. |
 | `internal/cli` | Cobra command tree, output formatting, local server resolution and auto-start, console API adapter, and the attach transports and policy layered on `pkg/execstream/client`. Staging itself is the root module's `serverstage`. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. See [`internal/sandboxcreate/DESIGN.md`](internal/sandboxcreate/DESIGN.md). |
-| `internal/sandboxapply` | `discobox apply`'s fetch: a source's sandbox commits fetched into the local repository under `refs/discobox/apply/<sandbox>/<slug>` (ADR 0014). |
-| `internal/gitapply` | Landing a fetched range on the local branch by cherry-pick in a disposable worktree (`Attempt`), and onto a repository with no commits (`AttemptRoot`, ADR 0084). |
-| `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create, apply and push. |
+| `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create and push. |
 | `internal/sandboxpush` | `discobox push`: sending a local source's commits into the origin on its pool that its sandbox fetches from, under a lease (ADR 0058), and resolving locally whether there is anything to send (ADR 26-09-05-008). |
 | `internal/origin` | Resolves the client host a sandbox is created from, and a directory's project root (its repository root). Host identity itself is shared, in the root module's `internal/hostid`. |
-| `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against. Shared by create (ADR 0083) and apply (ADR 0084), which both have to ask. |
+| `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against. Used by create (ADR 0083). |
 | `internal/tui` | The `discobox console` window: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local TCP listeners and UDP sockets kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/localpty` | Running one of this CLI's own commands on a pty of its own for a console pane: `creack/pty` on Unix, ConPTY on Windows (ADR 0065). Sets `DISCOBOX_PARENT_PID` on the child. |
@@ -42,19 +40,8 @@ transport helpers where OpenAPI does not model the stream.
   frontend contracts only; API and terminal adapters belong outside it.
 - `internal/cli` may adapt generated API clients and terminal transports to the
   console's interfaces, but must not become the owner of logic shared by frontends.
-- The console never reimplements a command, and never steps aside for one.
-  `apply` is drawn in an overlay pane from either screen — the list and the
-  workspace — and is the Cobra command itself, spawned as a child
-  `discobox apply <id>` on a local pty sized to the pane (`tui_local.go`). The pty
-  is the child's *controlling* terminal, so anything reading its keys from
-  `/dev/tty` reads them from the pane rather than from the real terminal, out
-  from under the window drawing it. The child inherits this invocation's
-  `--server` and `--project` (and an explicit `--auto-start-server`,
-  `App.globalFlags`); the token goes through the environment rather than the
-  argument list, which every process on the machine can read. A harness's
-  configure flow is drawn the same way: the harnesses screen's
-  `OpenHarnessConfigure` spawns `discobox admin harness configure <id>` in a
-  pane (`openLocalHarnessConfigure`).
+- Harness configuration runs the real `discobox admin harness configure <id>`
+  command in a local pty (`openLocalHarnessConfigure`).
 - Where that pty comes from is `internal/localpty`, whose `PTY` is everything a
   pane needs of one: read, write, resize, close, and `io.EOF` when the command
   exits. Unix opens a pty pair through `creack/pty`; Windows creates a
@@ -77,14 +64,6 @@ transport helpers where OpenAPI does not model the stream.
   child consumes the variable rather than reading it, so it reaches one process
   and not everything that process starts — above all the autolaunched server,
   a singleton whose whole point is to outlive the CLI that forked it.
-- What runs is therefore `discobox apply` with its own flag defaults and terminal
-  detection, not a second implementation that drifts from it. A console that
-  cannot be reproduced from a shell is the thing to avoid.
-- The child also writes its structured apply report to a private temporary file
-  named in its environment. The pane remains the ordinary human-readable
-  command output; the private copy lets the console's success dialog name every
-  destination and local commit without parsing terminal text or reimplementing
-  apply. The local terminal owns and removes that file when the pane closes.
 - **The command that makes a discobox is `run`, and `new`, `create`, `r` and
   `n` are its aliases.** It is one registration (`newRunCommand`), and help
   lists every spelling: each is what somebody reaching for "make a discobox"
@@ -210,8 +189,8 @@ transport helpers where OpenAPI does not model the stream.
   `discobox console --leader` overrides it for the console; nothing else takes a flag.
   It is one key for both the console's panes and a plain attach's detach chord.
 - Attach and shell are terminals rather than commands, and are drawn inside the
-  window by the `termpane` module. `apiDataSource.Open` handles only the local
-  commands above; a discobox's sessions come through `OpenExec` (an existing
+  window by the `termpane` module. A discobox's sessions come through
+  `OpenExec` (an existing
   exec) and `NewShell`/`NewTerminal`/`NewTool` (a new one), all of which end in
   `openFramedTerminal`: `framedTerminal` (`internal/cli/tui_terminal.go`)
   presents the reconnecting, replaying framed exec attach as the byte stream a
@@ -638,7 +617,7 @@ is an error rather than a lost convenience.
     is asked again after `unreachableServerRetry`.
 - **A discobox argument** goes through `selectSandbox`, which returns the App
   aimed at the discobox's server; its callers carry on with that App
-  (`applySelected`, `pushSelected`, `runToolInSelected`). A
+  (`pushSelected`, `runToolInSelected`). A
   `discobox://<server>/<discobox>` address (`endpoint.ParseSandboxAddress`) —
   or `discobox+http://<host>:<port>/<discobox>`, which is how a discobox on a
   plain-http server is named, a bare host being https (ADR 0116 §1) —
@@ -1462,7 +1441,7 @@ or the NAME `discobox ls` prints, an ID or a short ID, on every server
 ([Many Servers](#many-servers-adr-0116)). One that names nothing is an error.
 Only zero arguments fall back to a pick, so a `[DISCOBOX]` is optional only
 where nothing follows it but a `--` (`shell`, `tools`, `admin exec create`) or
-nothing at all (`attach`, `apply`, `push`, `proxy`, the `ls` of `admin exec`,
+nothing at all (`attach`, `push`, `proxy`, the `ls` of `admin exec`,
 `terminal` and `service`, `audit ls|hooks|execs`); a command with another
 positional requires it first (`admin terminal screen DISCOBOX TERMINAL_ID`)
 ([ADR 26-10-24-254](../docs/adr/26-10-24-254-a-discobox-is-one-positional-and-flags-take-one-type-each.md) §1). The pick:
@@ -1496,7 +1475,7 @@ positional requires it first (`admin terminal screen DISCOBOX TERMINAL_ID`)
   against an incomplete response. Name resolution still uses the configured
   name, as described above.
 - A row's detail is `discobox ls`'s answer in the same words: the runtime state,
-  the CHANGES word from `sandboxGitState.changes` (dirty, ready, applied,
+  the CHANGES word from `sandboxGitState.changes` (dirty, ready,
   clean), and when it was last touched — so the choice between two discoboxes
   can be made on which one holds work. The git word is dropped rather than drawn
   as `-` when no agent has reported: a blank cell reads as a column, a dash
@@ -2291,7 +2270,7 @@ same on every machine and takes no origin key. The directory `ls` runs in is
 not a filter there either.
 
 The commands that take a discobox by name or offer a pick — the pickers
-behind `attach`, `apply`, `push`, `proxy` and `tools`, `shell`, `cp`, and `rm`,
+behind `attach`, `push`, `proxy` and `tools`, `shell`, `cp`, and `rm`,
 `start`/`stop`/`restart`, `tag`, `rename` — list with no filter: the runtime
 ones less the archived, the lifecycle and meta ones with them. Which servers
 they ask is 0116 §4's and unchanged: the pickers, `shell`, `cp` and `tools`
@@ -2299,7 +2278,7 @@ every server; `rm`, the lifecycle commands, `tag` and `rename` the primary. The
 origin key narrows nothing in the CLI. In the console it is the folder of a
 discobox whose source is on no GitHub repository; one that is on GitHub sits in
 that repository's folder instead (`tui/folder.go`,
-[ADR 26-10-14-585](../docs/adr/26-10-14-585-a-console-folder-is-a-github-repository-and-servers-are-not-sections.md)). `apply` finds the checkout a discobox came from by its
+[ADR 26-10-14-585](../docs/adr/26-10-14-585-a-console-folder-is-a-github-repository-and-servers-are-not-sections.md)). `push` finds the checkout a discobox came from by its
 `Origin.HostId` and the source's `LocalDirectory`, not by the key.
 
 Host identity comes from `internal/hostid` in the root module. The server does
@@ -2411,7 +2390,7 @@ now — along with the workspace snapshot the create captured, and the whole set
 is reported complete, which starts the discobox. `sandboxcreate.DeliverSource`
 does the work in both directions; what a later delivery has to rebuild is the
 `LocalSources` a create carried in memory, which `NewLocalSources` files from
-each source's recorded `localDirectory` (or a `--dir` override, as `apply` and a
+each source's recorded `localDirectory` (or a `--dir` override, as a
 rebase-time push resolve it).
 
 Every source is resolved and checked before any of them is pushed
@@ -2825,8 +2804,7 @@ workspace, and the sandbox comes up with the files as uncommitted changes.
 - An empty directory is not asked about and not an error: it snapshots nothing
   and the sandbox starts on the empty commit at the directory's own path, which
   is the point of running in one — a project that does not exist yet, with
-  somewhere for `discobox apply` to bring the work home to, making the
-  repository there when it does (ADR 0139). Nothing was declined
+  a source to build and push to a Git remote. Nothing was declined
   there, so unlike a declined directory it keeps its source.
 - With no terminal there is nobody to ask and the directory is copied, the same
   way a dirty workspace is.
@@ -2863,8 +2841,7 @@ touched, so HEAD stays unborn and their first commit stays theirs.
   that starts empty, because `gitutil.CurrentWorkspaceTree` seeds its index from
   HEAD. `git add` fills it, honoring `.gitignore` and skipping `.git`, and the
   repository's real index — which may already hold paths staged for that first
-  commit — is untouched. Apply reads the same function to check nothing has
-  changed since ("Applying Into a Repository With No Commits" below).
+  commit — is untouched.
 - Nobody is asked, and `--include-dirty` does not decide it: the files are
   carried in either way. The directory question exists because a directory in
   no repository may be a home directory somebody ran in by accident, and `git
@@ -3150,181 +3127,8 @@ returns that address for the duration of the command. An `http(s)` endpoint is
 already addressable and is returned unchanged.
 
 Everything that shells out to git shares it — `sandboxcreate.DeliverSource`
-(push at create), `sandboxapply.FetchSource` (fetch at apply) and
-`sandboxpush.Push` (re-push) — so neither the local socket, which is the default endpoint, nor a peer address
+(push at create), `sandboxpush.Push` (re-push) — so neither the local socket, which is the default endpoint, nor a peer address
 is a server only half the CLI can reach.
-
-## Apply Output
-
-`discobox apply` (`internal/cli/apply.go`) performs git operations on the user's
-own repository, so its output is an account of those operations rather than a
-verdict. Every source reports the local repository and branch it lands on, the
-sandbox repository and fetch ref it comes from, the base commit and *why* that
-commit is the base (a prior recorded apply, or the merge base), each commit in
-the range with author and date, and — once landed — the local commit each
-sandbox commit became.
-
-In printed text the two sides are **local** (this machine's repository) and
-**sandbox**, never "host": the code and the API use "host" for machine identity
-too (`internal/hostid`, `Origin.HostId`), and a reader of the output has no way
-to tell the two senses apart. This is a wording rule for what users see —
-identifiers and JSON keys keep ADR 0014's `Host*` vocabulary.
-
-### Three Weights, One Palette
-
-Everything in the report having the same weight is what made an account of a
-git operation read as a wall of text. It is drawn in three:
-
-- **The plumbing is dim** — which repositories, which fetch ref, what is being
-  fetched, where the base came from, what is being cherry-picked. It is context,
-  and it is read only when something went wrong.
-- **The commits are bright**, under a bold count: they are the work, and they
-  are what the reader came for. `commitList` is what will land, with the author
-  and date dim in a column aligned across the list; `appliedList` is what did,
-  as `sandbox → local` so "what are these new commits on my branch" is
-  answerable without another command. `landed` closes it with the local range.
-- **The outcome is one marked, colored line** (`outcome` → `applyStatusMark`):
-  `✓` green applied, `✓` grey up-to-date, `⚠` amber blocked — nothing is broken,
-  something is yours to do — `✗` red for a conflict or an error. Each keeps its
-  status word in capitals, so the ending is findable by eye in a scrolled-back
-  terminal with or without color. `nextSteps` prints its commands in the
-  console's command color, because they are the part of a failed report meant
-  to be copied.
-
-Color is **written unconditionally and taken away by the writer**:
-`newApplyPrinter` wraps the command's output in a `colorprofile.Writer`, which
-strips every escape for a pipe or a file, drops color but keeps weight under
-`NO_COLOR`, and downsamples to what a 16-color terminal can show —
-`CLICOLOR_FORCE` still gets color into `less -R`. Honoring the stream in one
-place beats a `color` check at every call site, and it is why nothing in
-`apply_report.go` asks whether color is on. `TestColorAddsNothingButColor`
-holds the line: stripping the painted report has to give back the plain one
-exactly, so a terminal and a log file never show different output.
-
-Marks are not color and are never gated: `✓` in a pipe is still worth reading.
-The palette is the console's (`internal/tui/theme.go`) because apply is read
-inside a pane of that window as often as in a shell, and gold for a commit has
-to mean the same thing in both.
-
-The one thing measured off the terminal is width (`terminalWidth`, on the real
-stream — the wrapper is not a file): the rule that opens a source, and whether
-the commit list pads its subjects to a column at all. A report in a log file
-takes a fixed width rather than changing shape with whoever's window produced
-it.
-
-- `internal/cli/apply_report.go` owns the shape (`applyReport`) and its
-  rendering (`applyPrinter`). Text output renders from the same struct that
-  `-o json` emits, so the two can never describe different things. Call sites in
-  `apply.go` name what a line *is* — `note`, `commitsToApply`, `outcome` — and
-  never how it is drawn, so the report's weights stay in one file.
-- Every outcome is an `applyStatus` on the report, including failure:
-  `applyOneSource` returns a report instead of an error, so a failed source
-  keeps the context the run had already established rather than collapsing to
-  one error line. The command's returned error is only the closing verdict.
-- Failure statuses carry `nextSteps`: described sets of literal commands that
-  resolve them, runnable by a human or an agent as printed. More than one step
-  means alternatives, not a sequence — a dirty sandbox offers both committing
-  the work there and `--allow-dirty` — and each re-run is spelled out for that
-  source, `--dir` override included.
-- A source applies only into the directory the sandbox actually came from:
-  `resolveApplyHostDir` requires the sandbox's `Origin.HostId` to be this
-  machine's `hostid`, the source to have recorded a `LocalDirectory`, and that
-  directory to still exist. Each failure says which of those it was — another
-  machine, a remote-cloned source, a moved checkout — because "pass --dir" is
-  only actionable once you know why. `--dir` is the escape hatch and
-  deliberately skips the check, so the report records how the directory was
-  chosen (`hostPathOrigin`) and prints it under "chosen by".
-- Not knowing where a source would land only matters when it has commits to
-  land. When `resolveApplyHostDir` fails, `unplacedSource` reads the discobox's
-  tip with `sandboxapply.Tip` — `git ls-remote` over the same proxy, needing no
-  local clone — and compares it with `unplacedSourceBase`: the last apply's
-  commit, or the commit the source was created at (`baseOrigin:
-  "source-checkout"`). Equal means the discobox has committed nothing to that
-  source, and it ends `up-to-date` rather than failing; otherwise there is work
-  stranded, and the error says so and offers the `--dir` re-run. Without this, a
-  discobox carrying a source cloned from a remote would fail every apply of
-  every one of its sources, forever, over a source that had nothing to apply.
-  Why there is no directory is a field of the report (`hostPathError`), not
-  something the text output knows on its own: it is printed in the local repo
-  row's own place, before the working-tree check or anything else that could
-  end the source, so every outcome that path reaches — blocked, up-to-date,
-  stranded — explains the `--dir PATH` it hands back. A blocked source's
-  verdict is still its status alone, exactly as on the placed path. The
-  console decodes the same field (`tui.AppliedSource.RepositoryError`): this
-  is the one status that finishes a source successfully with no `hostPath`, so
-  its success dialog names why there is no repository rather than drawing the
-  row empty.
-  The escape needs a base commit to measure the tip against: a source created
-  from a URL and a *branch name* alone (`sandbox create --source-url --source-ref
-  main`, which records `checkout.refName` and no `checkout.commit`, unlike
-  `discobox run`, which resolves the SHA itself) has none, and still fails until
-  it is given `--dir` — the report says that is why rather than only that a
-  directory is missing.
-- A merge base that does not exist means the target repository shares no
-  history with the sandbox — almost always a `--dir` pointed at the wrong
-  repository — and is reported as that rather than as a git error. A source
-  that never had a shared history to begin with does not look for one; see
-  "Applying Into a Repository With No Commits" below.
-- `--allow-dirty` applies a source whose sandbox working tree is dirty. The
-  status check still runs and its entries are still reported (with
-  `dirtyIgnored`): the flag means the user chose to leave that work in the
-  sandbox, not that nobody needs to know it is there.
-- `sandboxDirtyBlocks` is that check, and both paths through a source make it
-  before deciding anything — including a source with no local directory, which
-  is blocked by a dirty working tree exactly like any other. A source is never
-  reported as having nothing to apply while uncommitted work sits in it. The
-  only thing the two paths differ on is the re-run they print: `applyRerun`
-  puts a `--dir` on it, the caller's or the `PATH` placeholder, so the way out
-  of being blocked does not fail the way the run that printed it did.
-- `--debug` additionally echoes every git command as it runs, via
-  `gitutil.WithTracer`, on stderr so it never interleaves into the report.
-  `gitutil` redacts credentials in traced arguments centrally, so no new git
-  call site can leak a token by forgetting to.
-
-### Applying Into a Repository With No Commits
-
-A discobox created from a repository that had no commits ("A Repository With No
-Commits" above) carries `noLocalCommits`, and that is what apply reads to handle
-the round trip back. See
-[ADR 0084](../docs/adr/0084-the-first-apply-into-a-repository-with-no-commits-is-its-history.md).
-
-- The base is the source's own `checkout.commit` — the empty base the discobox
-  started from — reported as `baseOrigin: "discobox-base"`. There is no merge
-  base to look for: such a repository shares no history with anything by
-  construction. This holds on every apply of that discobox, not only the first,
-  which is what lets a user who has since committed something of their own get
-  the discobox's commits cherry-picked on top of it.
-- While the local repository still has no commits, `gitapply.AttemptRoot` lands
-  them instead of `Attempt`. It cherry-picks onto an unborn HEAD of its own — a
-  scratch worktree detached at the empty base, then `git checkout --orphan` — so
-  the discobox's `discobox run empty base` is replayed away and the first
-  sandbox commit becomes the repository's root, authored by whoever wrote it.
-  The branch HEAD already names is then created at the applied tip and
-  `git reset --hard` fills the index and working tree.
-- That reset is guarded: the local working tree must still be exactly what the
-  discobox was created from — the workspace snapshot's tree, or the empty tree
-  for a discobox created from an empty repository. The snapshot ref is read from
-  the local repository and re-fetched from the discobox's origin if it has been
-  pruned, so a missing ref never reads as a changed working tree. A tree that
-  differs is `blocked`, with the differing paths in `localChanges` and a next
-  step that works: commit them, and the same range applies on top. The refusal
-  says which of the two reasons it is — a carried working tree that has changed
-  since, or files the discobox was never given — because only the first is the
-  user having done something, and "put it back the way the discobox found it"
-  is a way out of the first and an instruction to delete their files in the
-  second.
-- A discobox created from a directory in no repository ("A Directory That Is
-  Not a Repository" above) carries `noLocalRepository`, and comes home the same
-  way: apply `git init`s the directory, unborn on the discobox's
-  `checkout.refName`, and takes the path above — base included, on every apply.
-  The `.git` it made is removed again unless the commits land, so a refusal's
-  next steps start with `git init`, and a landed one reports
-  `createdRepository`. See
-  [ADR 0139](../docs/adr/0139-the-first-apply-into-a-directory-with-no-repository-makes-one.md).
-- `cli/internal/gitunborn` holds the two questions create and apply both ask —
-  whether HEAD is unborn, and what the working tree holds when there is no HEAD
-  to read it against — so neither can disagree with the other about what
-  `.gitignore` means.
 
 ## Harness Configure Step
 

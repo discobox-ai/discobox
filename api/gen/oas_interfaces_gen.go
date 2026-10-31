@@ -45,10 +45,6 @@ type CommitHarnessConfigConfigureRes interface {
 	commitHarnessConfigConfigureRes()
 }
 
-type CompleteSandboxApplyRes interface {
-	completeSandboxApplyRes()
-}
-
 type CompleteSandboxSourcePushRes interface {
 	completeSandboxSourcePushRes()
 }

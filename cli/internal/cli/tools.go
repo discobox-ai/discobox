@@ -298,7 +298,7 @@ func (a *App) toolSourceWorkdir(ctx context.Context, client *apiclientgen.Client
 // sourceSlugWorkdir is the directory the source named by slug lives at inside
 // sandbox.
 func sourceSlugWorkdir(sandbox *apimodel.Sandbox, slug string) (string, error) {
-	for _, entry := range applySources(sandbox) {
+	for _, entry := range sandboxSources(sandbox) {
 		if entry.slug != slug {
 			continue
 		}

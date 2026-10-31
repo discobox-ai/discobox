@@ -82,7 +82,7 @@ func TestTheGitRouteServesTheSandboxsOwnCheckout(t *testing.T) {
 	}
 
 	// And a commit made in the sandbox is what the next fetch brings back,
-	// which is all `discobox apply` asks of the route.
+	// which is all a Git client asks of the route.
 	made := writeAndCommit(t, g.worktree, "three\n", "three")
 	runGit(t, clone, "-c", bearer(g.token(ScopeSandboxRead)), "fetch", "-q", "origin")
 	if got := runGit(t, clone, "rev-parse", "origin/main"); got != made {

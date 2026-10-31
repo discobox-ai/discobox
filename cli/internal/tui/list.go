@@ -1324,8 +1324,6 @@ func gitStyle(st *styles, s Sandbox) lipgloss.Style {
 	switch {
 	case s.dirty():
 		return st.statusWA
-	case s.Git.Applied:
-		return st.add
 	case s.ahead():
 		return st.name
 	default:

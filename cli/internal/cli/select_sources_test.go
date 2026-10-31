@@ -23,7 +23,7 @@ func selectSourcesTestSandbox(skillsOnly bool) *apimodel.Sandbox {
 	return sandbox
 }
 
-// apply and diff act on the sources being worked on: a skills source is left
+// Push acts on the sources being worked on: a skills source is left
 // out unless it is named, and a sandbox with no other source says so.
 func TestSelectSourcesLeavesSkillsSourcesOutUnlessNamed(t *testing.T) {
 	sources, err := selectSources(selectSourcesTestSandbox(false), "")

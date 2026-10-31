@@ -64,9 +64,6 @@ func TestEnterRunsThePromptAndAttaches(t *testing.T) {
 	if len(opened) != 1 || !strings.HasPrefix(opened[0], "sbx_created primary ") {
 		t.Fatalf("execOpens = %v, want an attach on the new sandbox", opened)
 	}
-	if len(ds.opens) != 0 {
-		t.Fatalf("opens = %v, want no command drawn over it", ds.opens)
-	}
 	if m.prompt.Value() != "" {
 		t.Fatalf("the prompt should be spent, got %q", m.prompt.Value())
 	}
@@ -729,34 +726,6 @@ func TestUnavailableActionExplainsItself(t *testing.T) {
 	}
 	if !strings.Contains(m.dialog.view(m.st, &m.zones, 120, 40), "already on the current image") {
 		t.Fatal("the menu should keep upgrade, with the reason it is unavailable")
-	}
-}
-
-// Diff, apply and status run git inside the sandbox, so an archived one cannot
-// take them however much it changed — there is no container to run it in.
-func TestArchivedSandboxesCannotBeDiffed(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	m := newTestModel(t, ds)
-	// The archived discobox was cut from a repository URL, which is a folder
-	// of its own (ADR 0111), so every folder is shown to reach it.
-	showAllFolders(t, m)
-	send(t, m, keyPress("A"), keyPress("G"))
-
-	for _, a := range m.actions(m.list.targets()) {
-		switch a.key {
-		case "d", "y", "i":
-			if a.enabled {
-				t.Errorf("%s should not be offered on an archived sandbox", a.label)
-			}
-			if !strings.Contains(a.why, "no working tree") {
-				t.Errorf("%s should say why: %q", a.label, a.why)
-			}
-		}
-	}
-	send(t, m, keyPress("y"))
-	if len(ds.opens) != 0 {
-		t.Fatalf("nothing should have run, got %v", ds.opens)
 	}
 }
 

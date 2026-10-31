@@ -20,21 +20,6 @@ import (
 	"github.com/discobox-ai/discobox/pkg/tools"
 )
 
-// Open connects a terminal for one of this CLI's own commands — apply — drawn
-// in the launcher's overlay. The discobox's terminals come through OpenExec
-// and NewShell instead.
-func (d *apiDataSource) Open(ctx context.Context, action tui.Interaction, sandboxID string, cols, rows int) (tui.Terminal, error) {
-	d = d.at(sandboxID)
-	switch action {
-	case tui.InteractApply:
-		// These run on this machine rather than in the discobox; see
-		// tui_local.go.
-		return d.openLocalCommand(ctx, action, sandboxID, cols, rows)
-	default:
-		return nil, fmt.Errorf("%s is not a terminal", action)
-	}
-}
-
 // Execs is the sandbox's exec sessions as the workspace's tab strip needs
 // them.
 func (d *apiDataSource) Execs(ctx context.Context, sandboxID string) ([]tui.Exec, error) {
