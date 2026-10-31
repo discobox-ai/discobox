@@ -466,6 +466,12 @@ user waits on every single start.
   recorded that way exits 127 at every relaunch after an upgrade, and
   nothing says so. Only where there is no store — no layers to sweep — is
   the executable's own path the stable one.
+- **A file shared between processes by renaming it into place goes through
+  `sharedfile.Retry`**, never a retry of its own. On Windows a handle another
+  process holds refuses an open, a rename or a remove for a moment, and only
+  that — `ERROR_SHARING_VIOLATION`, `ERROR_ACCESS_DENIED` — is waited out; a
+  loop retrying every error reports a full disk as a busy file. The exec
+  runtime records and the monitors' queue each had their own once.
 - **An in-box command that prints text a third party wrote escapes its
   control characters**, as `cli/REVIEW.md` requires of text a discobox wrote.
   A monitor's events carry issue titles, comments and fetched pages verbatim,
