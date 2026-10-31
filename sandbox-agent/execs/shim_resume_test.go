@@ -127,6 +127,7 @@ func TestRunShimResumesTerminalInputAcrossPhysicalReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resumed.Close()
+	frames := drainFrames(resumed)
 
 	resize, err := frame.EncodeResize(80, 24)
 	if err != nil {
@@ -145,7 +146,7 @@ func TestRunShimResumesTerminalInputAcrossPhysicalReconnect(t *testing.T) {
 	if err := resumed.WriteFrame(frame.Input, []byte("before\n")); err != nil {
 		t.Fatal(err)
 	}
-	before := readResumedOutputUntil(t, resumed, []byte("<before>"))
+	before := readResumedOutputUntil(t, frames, []byte("<before>"))
 	if count := bytes.Count(before, []byte("<before>")); count != 1 {
 		t.Fatalf("pre-reconnect response count = %d, output %q", count, before)
 	}
@@ -167,7 +168,7 @@ func TestRunShimResumesTerminalInputAcrossPhysicalReconnect(t *testing.T) {
 	}
 	close(allowReplacement)
 
-	during := readResumedOutputUntil(t, resumed, []byte("<during>"))
+	during := readResumedOutputUntil(t, frames, []byte("<during>"))
 	if count := bytes.Count(during, []byte("<during>")); count != 1 {
 		t.Fatalf("replayed response count = %d, output %q", count, during)
 	}
@@ -183,7 +184,7 @@ func TestRunShimResumesTerminalInputAcrossPhysicalReconnect(t *testing.T) {
 	if err := resumed.WriteFrame(frame.Input, []byte("after\n")); err != nil {
 		t.Fatal(err)
 	}
-	after := readResumedOutputUntil(t, resumed, []byte("<after>"))
+	after := readResumedOutputUntil(t, frames, []byte("<after>"))
 	if count := bytes.Count(after, []byte("<after>")); count != 1 {
 		t.Fatalf("post-reconnect response count = %d, output %q", count, after)
 	}
@@ -191,7 +192,7 @@ func TestRunShimResumesTerminalInputAcrossPhysicalReconnect(t *testing.T) {
 	if err := resumed.WriteFrame(frame.Input, []byte("quit\n")); err != nil {
 		t.Fatal(err)
 	}
-	readResumedExit(t, resumed)
+	readResumedExit(t, frames)
 	_ = resumed.Close()
 	cancel()
 	if err := <-shimErr; err != nil && !errors.Is(err, context.Canceled) {
@@ -265,6 +266,7 @@ func TestRunShimReplacementStartsResumableAttachOver(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resumed.Close()
+	frames := drainFrames(resumed)
 
 	resize, err := frame.EncodeResize(80, 24)
 	if err != nil {
@@ -282,7 +284,7 @@ func TestRunShimReplacementStartsResumableAttachOver(t *testing.T) {
 	if err := resumed.WriteFrame(frame.Input, []byte("before\n")); err != nil {
 		t.Fatal(err)
 	}
-	readResumedOutputUntil(t, resumed, []byte("<before>"))
+	readResumedOutputUntil(t, frames, []byte("<before>"))
 	waitForAcknowledged(ctx, t, resumed)
 
 	// The sandbox goes away underneath the attach: the connection drops, input
@@ -324,14 +326,14 @@ func TestRunShimReplacementStartsResumableAttachOver(t *testing.T) {
 	if err := resumed.WriteFrame(frame.Input, []byte("after\n")); err != nil {
 		t.Fatal(err)
 	}
-	after := readResumedOutputUntil(t, resumed, []byte("<after>"))
+	after := readResumedOutputUntil(t, frames, []byte("<after>"))
 	if bytes.Contains(after, []byte("<during>")) {
 		t.Fatalf("replacement process received input its predecessor never applied: %q", after)
 	}
 	if err := resumed.WriteFrame(frame.Input, []byte("quit\n")); err != nil {
 		t.Fatal(err)
 	}
-	readResumedExit(t, resumed)
+	readResumedExit(t, frames)
 	_ = resumed.Close()
 	cancel()
 	if err := <-secondErr; err != nil && !errors.Is(err, context.Canceled) {
@@ -340,7 +342,10 @@ func TestRunShimReplacementStartsResumableAttachOver(t *testing.T) {
 }
 
 // waitForAcknowledged waits until the host has applied everything the client
-// has written, so a later disconnect cannot leave it to be retransmitted.
+// has written, so a later disconnect cannot leave it to be retransmitted. The
+// attach's frames must be drained meanwhile (drainFrames): the client takes an
+// acknowledgement in only while it reads, and the host may send the output an
+// action caused ahead of that action's acknowledgement.
 func waitForAcknowledged(ctx context.Context, t *testing.T, delivery execstream.Delivery) {
 	t.Helper()
 	for {
@@ -356,35 +361,65 @@ func waitForAcknowledged(ctx context.Context, t *testing.T, delivery execstream.
 	}
 }
 
-func readResumedOutputUntil(t *testing.T, conn execstream.Conn, needle []byte) []byte {
+type readResult struct {
+	frame frame.Frame
+	err   error
+}
+
+// drainFrames reads conn for as long as it stays open, as a real attach does,
+// so acknowledgements are taken in even while the test is not waiting on
+// output. The buffer only has to outlast the output these tests' processes
+// write between two reads of the test; it ends after the first read error.
+func drainFrames(conn execstream.Conn) <-chan readResult {
+	results := make(chan readResult, 64)
+	go func() {
+		defer close(results)
+		for {
+			next, err := conn.ReadFrame()
+			results <- readResult{frame: next, err: err}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	return results
+}
+
+func readResumedOutputUntil(t *testing.T, frames <-chan readResult, needle []byte) []byte {
 	t.Helper()
 	var output []byte
 	for !bytes.Contains(output, needle) {
-		next, err := conn.ReadFrame()
-		if err != nil {
-			t.Fatalf("read output before %q: %v", needle, err)
+		next, ok := <-frames
+		if !ok {
+			t.Fatalf("attach ended before output %q; got %q", needle, output)
 		}
-		switch next.Type {
+		if next.err != nil {
+			t.Fatalf("read output before %q: %v", needle, next.err)
+		}
+		switch next.frame.Type {
 		case frame.Stdout:
-			output = append(output, next.Payload...)
+			output = append(output, next.frame.Payload...)
 		case frame.Exit:
 			t.Fatalf("process exited before output %q; got %q", needle, output)
 		default:
-			t.Fatalf("unexpected frame type %d before output %q", next.Type, needle)
+			t.Fatalf("unexpected frame type %d before output %q", next.frame.Type, needle)
 		}
 	}
 	return output
 }
 
-func readResumedExit(t *testing.T, conn execstream.Conn) {
+func readResumedExit(t *testing.T, frames <-chan readResult) {
 	t.Helper()
 	for {
-		next, err := conn.ReadFrame()
-		if err != nil {
-			t.Fatalf("read exit frame: %v", err)
+		next, ok := <-frames
+		if !ok {
+			t.Fatal("attach ended before the exit frame")
 		}
-		if next.Type == frame.Exit {
-			exit, err := frame.DecodeExit(next.Payload)
+		if next.err != nil {
+			t.Fatalf("read exit frame: %v", next.err)
+		}
+		if next.frame.Type == frame.Exit {
+			exit, err := frame.DecodeExit(next.frame.Payload)
 			if err != nil {
 				t.Fatalf("decode exit: %v", err)
 			}

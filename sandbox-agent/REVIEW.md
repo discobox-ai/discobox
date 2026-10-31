@@ -255,6 +255,15 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   included. That coincidence is what the rules must not rely on, so
   reproducing it hides the bug.
 
+## Testing a resumable attach
+
+- **A test that waits on `Delivery.Positions` keeps the attach drained the
+  whole time** (`drainFrames` in `execs/shim_resume_test.go`), not only until
+  the output it expects. `resume.Conn` takes an `Ack` in only inside
+  `ReadFrame`, and the host may send the output an action caused before that
+  action's `Ack`, so a test that stops reading at that output and then polls
+  can wait forever for an `Ack` sitting unread (#417).
+
 ## Processes
 
 - Credentials must set supplementary groups explicitly. `NoSetGroups` leaves the
