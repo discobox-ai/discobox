@@ -1,6 +1,6 @@
 # 26-10-31-319 — A press on a workspace tree row switches to it
 
-- **Status**: Proposed (on acceptance: supersedes [0088](0088-the-launcher-window-answers-the-mouse-and-owns-selection.md) §4 and §2 for the workspace tree)
+- **Status**: Accepted (supersedes [0088](0088-the-launcher-window-answers-the-mouse-and-owns-selection.md) §4 and §2 for the workspace tree)
 - **Date**: 2026-10-31
 
 ## Context
