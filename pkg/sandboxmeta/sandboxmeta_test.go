@@ -261,3 +261,19 @@ func TestParseTag(t *testing.T) {
 		}
 	}
 }
+
+func TestTitle(t *testing.T) {
+	cases := []struct{ name, msg, want string }{
+		{"", "", ""},
+		{"  Daily check ", "", "Daily check"},
+		{"", " fix the reaper ", "fix the reaper"},
+		{"Daily check", "fix the reaper", "Daily check: fix the reaper"},
+		{"Daily check", "fix\x1b the\u202e reaper", "Daily check: fix the reaper"},
+		{"Daily check", "\x07", "Daily check"},
+	}
+	for _, tc := range cases {
+		if got := Title(tc.name, tc.msg); got != tc.want {
+			t.Errorf("Title(%q, %q) = %q, want %q", tc.name, tc.msg, got, tc.want)
+		}
+	}
+}

@@ -73,10 +73,11 @@ DISCOBOX is the NAME "discobox ls" shows, its ID, or a short prefix of that ID.`
 }
 
 // writeSandboxName prints what the discobox is listed as after a rename, or
-// with -o json its ID, the name its meta now holds, and that listed name. With
-// the name cleared the two differ: the listing falls back to the agent's
-// title. Both were written inside the discobox, so both are escaped for the
-// terminal.
+// with -o json its ID, the name its meta now holds, and that listed name. The
+// two differ while the program in the primary terminal reports a msg, which
+// follows the name ("name: msg", ADR 26-10-31-618), and with the name cleared,
+// when the listing falls back to that msg or the agent's title. Both were
+// written inside the discobox, so both are escaped for the terminal.
 func (a *App) writeSandboxName(cmd *cobra.Command, sandbox *apimodel.Sandbox) error {
 	if a.output == "json" {
 		var name string

@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/pkg/sandboxshell"
@@ -755,5 +756,24 @@ func TestMatchSandboxArgRefusesANameThatIsAnotherDiscoboxsShortID(t *testing.T) 
 	sandboxes = []apimodel.Sandbox{titledSandbox("sbx_h1ssjzhp60emtc2n", "calm-heron", "h1ss")}
 	if id, ok, err := matchSandboxArg("h1ss", sandboxes, listedName); err != nil || !ok || id != "sbx_h1ssjzhp60emtc2n" {
 		t.Fatalf("matchSandboxArg(h1ss) = %q %v %v, want its own discobox", id, ok, err)
+	}
+}
+
+// The listing shows a given name followed by what the box's program reports
+// ("name: msg"); the name alone, which is what was typed to give it, still
+// resolves under listedName, and not under configuredName.
+func TestMatchSandboxArgGivenNameMatchesUnderListedName(t *testing.T) {
+	sandbox := titledSandbox("sbx_h1ssjzhp60emtc2n", "brave-otter", "Reaper: Fix the reaper race")
+	sandbox.Meta = apiclientgen.NewOptSandboxMeta(apiclientgen.SandboxMeta{Name: apiclientgen.NewOptString("Reaper")})
+	sandboxes := []apimodel.Sandbox{sandbox}
+
+	for _, arg := range []string{"Reaper", "Reaper: Fix the reaper race"} {
+		id, ok, err := matchSandboxArg(arg, sandboxes, listedName)
+		if err != nil || !ok || id != "sbx_h1ssjzhp60emtc2n" {
+			t.Fatalf("matchSandboxArg(%q, listedName): id=%q ok=%v err=%v, want the named discobox", arg, id, ok, err)
+		}
+	}
+	if id, ok, err := matchSandboxArg("Reaper", sandboxes, configuredName); err != nil || ok {
+		t.Fatalf("matchSandboxArg(Reaper, configuredName): id=%q ok=%v err=%v, want no match", id, ok, err)
 	}
 }

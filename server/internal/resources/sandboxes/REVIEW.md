@@ -84,3 +84,8 @@
 - Keep pending target references protected from deletion, and publish an archive
   marker before clearing a pool fence. Either gap can strand an accepted switch
   or let an old runtime start after a failed archive.
+- Read a program's reported status off `agent_status` only for a running
+  sandbox. A stopped sandbox's row keeps the last report its agent posted and
+  is never rewritten, so a msg or state read from it describes nothing that is
+  happening; the display name drops the msg when the box is not running, as
+  the CLI's `sandboxProgramStatus` drops the whole status.

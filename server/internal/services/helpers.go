@@ -16,6 +16,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/sandboxuser"
 	"github.com/discobox-ai/discobox/proxy/egress"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -738,12 +739,18 @@ func SandboxDisplayState(sandbox *model.Sandbox) string {
 }
 
 // SandboxDisplayName is the name a listing shows for a sandbox: the name in
-// its meta when one is set (ADR 26-10-12-026 §3), then the window title its
-// primary terminal last set, the sandbox's own configured name until one has,
-// and the sandbox ID when it has no name either. The title is what the harness
-// says the work is about, which tells two sandboxes apart better than two
-// generated names do; a set name is what a person or the agent chose to call
-// it, which outranks what the harness happened to write.
+// its meta when one is set (ADR 26-10-12-026 §3), followed by what the program
+// in its primary terminal last reported as its msg (OSC 7501) when it reported
+// one while the sandbox is running, as "name: msg" (sandboxmeta.Title; ADR
+// 26-10-31-618). With no name set, the msg alone,
+// then the window title its primary terminal last set, the sandbox's own
+// configured name until one has, and the sandbox ID when it has no name
+// either. The title is what the harness says the work is about, which tells
+// two sandboxes apart better than two generated names do; a harness that
+// reports its status over OSC 7501 says that in the msg instead and leaves
+// its title alone, so the msg stands where the title would. A set name is
+// what a person or the agent chose to call it, which outranks what the
+// harness happened to write, and leads it.
 //
 // It is computed here, next to the display state it sits beside on the wire, so
 // every client names a sandbox the same way rather than each rediscovering the
@@ -752,10 +759,16 @@ func SandboxDisplayName(sandbox *model.Sandbox) string {
 	if sandbox == nil {
 		return ""
 	}
-	if name := sandboxMetaName(sandbox); name != "" {
+	title, msg := sandboxPrimaryTerminalTitleAndMsg(sandbox)
+	if sandbox.RuntimeState != model.SandboxRuntimeStateRunning {
+		// A stopped sandbox's row keeps the last status its agent posted,
+		// and nothing is doing what that msg says in a box that is off.
+		msg = ""
+	}
+	if name := sandboxmeta.Title(sandboxMetaName(sandbox), msg); name != "" {
 		return name
 	}
-	if title := sandboxPrimaryTerminalTitle(sandbox); title != "" {
+	if title != "" {
 		return title
 	}
 	if name := strings.TrimSpace(sandbox.Name); name != "" {
@@ -773,16 +786,17 @@ func sandboxMetaName(sandbox *model.Sandbox) string {
 	return strings.TrimSpace(*sandbox.MetaName)
 }
 
-// sandboxPrimaryTerminalTitle is the window title the sandbox's primary
-// terminal last set (OSC 0/2), as sandbox-agent reported it with the rest of
-// its status (ADR 0030) — already on the sandbox row, so naming a listing wakes
-// nothing. Empty when no primary session has titled itself, which is the
-// caller's cue to fall back to the configured name. Sessions live and ended
-// alike are on the record; the newest primary is the one whose title the user
-// last saw.
-func sandboxPrimaryTerminalTitle(sandbox *model.Sandbox) string {
+// sandboxPrimaryTerminalTitleAndMsg is the window title the sandbox's primary
+// terminal last set (OSC 0/2), and the msg its program last reported with its
+// status (OSC 7501), as sandbox-agent reported them with the rest of its status
+// (ADR 0030, ADR 26-10-16-424) — already on the sandbox row, so naming a
+// listing wakes nothing. Each is empty when no primary session has set one,
+// which is the caller's cue to fall back. Sessions live and ended alike are on
+// the record; the newest primary that set either is the one whose words the
+// user last saw, and both are read from that one session.
+func sandboxPrimaryTerminalTitleAndMsg(sandbox *model.Sandbox) (title, msg string) {
 	if len(sandbox.AgentStatus) == 0 {
-		return ""
+		return "", ""
 	}
 	// Decoded through a local struct rather than the generated schema type:
 	// the column is whatever sandbox-agent last wrote, and rows written by an
@@ -790,31 +804,37 @@ func sandboxPrimaryTerminalTitle(sandbox *model.Sandbox) string {
 	// generated type forbids those (additionalProperties: false), so decoding
 	// through it would fail the whole payload over a field nothing here reads
 	// — and a stopped sandbox's row is never rewritten, so that loss would be
-	// permanent. Only the three fields below are the contract.
+	// permanent. Only the fields below are the contract.
 	var status struct {
 		Sessions []struct {
-			Primary   bool      `json:"primary"`
-			Title     string    `json:"title"`
-			StartedAt time.Time `json:"startedAt"`
+			Primary       bool      `json:"primary"`
+			Title         string    `json:"title"`
+			StartedAt     time.Time `json:"startedAt"`
+			ProgramStatus *struct {
+				Msg string `json:"msg"`
+			} `json:"programStatus"`
 		} `json:"sessions"`
 	}
 	if err := json.Unmarshal(sandbox.AgentStatus, &status); err != nil {
-		return ""
+		return "", ""
 	}
-	title, startedAt := "", time.Time{}
+	found, startedAt := false, time.Time{}
 	for _, session := range status.Sessions {
 		if !session.Primary {
 			continue
 		}
-		sessionTitle := strings.TrimSpace(session.Title)
-		if sessionTitle == "" {
+		sessionTitle, sessionMsg := strings.TrimSpace(session.Title), ""
+		if session.ProgramStatus != nil {
+			sessionMsg = strings.TrimSpace(session.ProgramStatus.Msg)
+		}
+		if sessionTitle == "" && sessionMsg == "" {
 			continue
 		}
-		if title == "" || session.StartedAt.After(startedAt) {
-			title, startedAt = sessionTitle, session.StartedAt
+		if !found || session.StartedAt.After(startedAt) {
+			title, msg, startedAt, found = sessionTitle, sessionMsg, session.StartedAt, true
 		}
 	}
-	return title
+	return title, msg
 }
 
 func SandboxesToAPI(sandboxes []model.Sandbox, basis SandboxUpgradeBasis) ([]serverapi.Sandbox, error) {
