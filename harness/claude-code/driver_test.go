@@ -506,3 +506,33 @@ func TestImageScopesRejectionsToInference(t *testing.T) {
 		}
 	}
 }
+
+func TestLaunchInitializerPathsAreLiteral(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "source with spaces ' and $dollars")
+	work := filepath.Join(root, "harness", "claude-code")
+	capture := filepath.Join(root, "harness", "capture")
+	for _, dir := range []string{work, capture} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, file := range []struct{ source, target string }{
+		{"launch.sh", filepath.Join(work, "launch.sh")},
+		{"image.json", filepath.Join(work, "image.json")},
+		{"../capture/runtime.cjs", filepath.Join(capture, "runtime.cjs")},
+		{"../capture/settings.cjs", filepath.Join(capture, "settings.cjs")},
+	} {
+		data, err := os.ReadFile(file.source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file.target, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(work)
+	got := launchertest.RunLauncher(t, "claude", nil, []string{"fixture prompt"})
+	if !slices.Equal(got, []string{"fixture prompt"}) {
+		t.Fatalf("launcher argv = %#v", got)
+	}
+}
