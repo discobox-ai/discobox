@@ -2,7 +2,9 @@ package monitors
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -217,5 +219,62 @@ func TestParseLineTakesJSONOrAPlainLine(t *testing.T) {
 	ev, _ = ParseLine([]byte(`{"title":"t","body":"` + big + `"}`))
 	if !ev.BodyTruncated || len(ev.Body) > MaxBody || !strings.HasSuffix(ev.Body, "é") {
 		t.Fatalf("body of %d bytes, truncated %v", len(ev.Body), ev.BodyTruncated)
+	}
+}
+
+func TestAPopThatDiedMidClaimLeavesNothingPending(t *testing.T) {
+	q := testQueue(t)
+	if _, err := q.Add(Event{Instance: "a", Title: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	// Claimed into Read, and the pending name never removed.
+	if err := os.MkdirAll(q.Read, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(q.path(q.Pending, "e1"), q.path(q.Read, "e1")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := q.Pop(Filter{}, 0)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("pop = %+v, %v; want nothing, it was taken", got, err)
+	}
+	if n, _ := q.Count(Filter{}); n != 0 {
+		t.Fatalf("%d pending after the pop; the stale name should be gone", n)
+	}
+}
+
+func TestAnEventGivenAClaimedIDIsRenumberedNotLost(t *testing.T) {
+	q := testQueue(t)
+	if _, err := q.Add(Event{Instance: "a", Title: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.Pop(Filter{}, 0); err != nil {
+		t.Fatal(err)
+	}
+	// A writer that read the highest id before the pop claimed e1 links a
+	// different event under it.
+	other, err := json.Marshal(Event{ID: "e1", Instance: "a", Title: "second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(q.path(q.Pending, "e1"), other, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := q.Pop(Filter{}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 {
+		// Renumbered on this pop; the next one returns it.
+		got, err = q.Pop(Filter{}, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(got) != 1 || got[0].Title != "second" || got[0].ID == "e1" {
+		t.Fatalf("popped %+v; want the second event under a new id", got)
+	}
+	if first, err := q.Get("e1"); err != nil || first.Title != "first" {
+		t.Fatalf("e1 = %+v, %v; want the first event still readable", first, err)
 	}
 }

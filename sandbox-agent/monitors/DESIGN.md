@@ -14,7 +14,7 @@ flowchart LR
   Script -->|"stdout lines"| Runner
   Runner -->|"link e&lt;N&gt;.json"| Pending[("~/.discobox/events/pending")]
   Runner -->|"status.json, stderr.log"| State[("~/.discobox/monitors/state/NAME")]
-  CLI -->|"pop: rename"| Read[("~/.discobox/events/read")]
+  CLI -->|"pop: link, then remove"| Read[("~/.discobox/events/read")]
   Pending --> CLI
 ```
 
@@ -70,6 +70,12 @@ flowchart LR
   indentation from comment lines, so a nested block can't be written in a
   script. An `options:` key with nothing under it is a Problem, never "no
   options".
+- **A pop claims an event by hard-linking it into `read/`**, then removes
+  its pending name. The link fails when the name is there, so of two pops
+  one wins on every platform; a rename would not do, since on Windows it
+  replaces the name it moves onto and both pops would take the event. A
+  keyed event replacing a pending one that a pop has already claimed does
+  not count it.
 - **Ids come from the queue's own files, with no lock.**
   - An event is written under a dot name, then hard-linked to `e<N>.json`.
     The link fails if the name exists, and the writer moves on to `N+1`.
