@@ -2,6 +2,7 @@ package poolruntime
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,6 +36,9 @@ type fakePoolManager struct {
 	scheduledPoolID         string
 	scheduledRepairs        []string
 	scheduleUnblocks        bool
+	// issuerKey is what AgentIssuerKey answers: the server's key a
+	// control-plane channel's TLS presents.
+	issuerKey ed25519.PrivateKey
 
 	mu       sync.Mutex
 	progress []poolProgressReport
@@ -95,6 +99,10 @@ func (m *fakePoolManager) EnrollPool(_ context.Context, _ string, publicKey stri
 
 func (m *fakePoolManager) PoolBox(context.Context, imagecache.Platform) (sandbox.PoolBox, error) {
 	return sandbox.PoolBox{}, nil
+}
+
+func (m *fakePoolManager) AgentIssuerKey(context.Context) (ed25519.PrivateKey, error) {
+	return m.issuerKey, nil
 }
 
 func (m *fakePoolManager) EnsureAgentTrustKey(context.Context) (string, error) {
@@ -251,7 +259,7 @@ func (p *testRuntimeProvider) AcquirePoolAgentClient(context.Context, *model.Poo
 func TestPoolProviderCreateCallsPoolAgentRuntime(t *testing.T) {
 	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	runtimeSandbox, state, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
 		PoolID: "pool-1",
@@ -291,7 +299,7 @@ func TestPoolProviderCreateWaitsForSchedulablePool(t *testing.T) {
 	pool.Schedulable = false
 	pool.ObservedGeneration = pool.Generation - 1 // a retry is pending
 	manager := &fakePoolManager{pool: pool, schedulable: false, scheduleUnblocks: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	runtimeSandbox, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
 	if err != nil {
@@ -321,7 +329,7 @@ func TestPoolProviderCreateSurfacesSettledPoolFailure(t *testing.T) {
 	pool.Schedulable = false
 	pool.ErrorMessage = &message
 	manager := &fakePoolManager{pool: pool, schedulable: false}
-	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
 	if !errors.Is(err, sandbox.ErrNoSandboxCapacity) {
@@ -335,7 +343,7 @@ func TestPoolProviderCreateSurfacesSettledPoolFailure(t *testing.T) {
 func TestPoolProviderCreateWithExistingStateReusesPool(t *testing.T) {
 	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: false}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	state := poolRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "pool-runtime", Metadata: map[string]string{"pool_id": "pool-1"}})
 	runtimeSandbox, nextState, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, sandbox.CreateOptions{PoolID: "pool-1"})
@@ -352,7 +360,7 @@ func TestPoolProviderCreateWithExistingStateReusesPool(t *testing.T) {
 
 func TestPoolProviderCreateRejectsStateFromOtherPool(t *testing.T) {
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	state := poolRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"pool_id": "pool-2"}})
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, sandbox.CreateOptions{PoolID: "pool-1"})
@@ -373,7 +381,7 @@ func TestPoolProviderEnrollsOnlyWhenRuntimeIsCreated(t *testing.T) {
 
 	t.Run("drift check over a healthy runtime", func(t *testing.T) {
 		manager := &fakePoolManager{pool: pool}
-		provider := New(&testRuntimeProvider{}, sandbox.ProviderDefinition{Name: "test"}, manager)
+		provider := New(&testRuntimeProvider{}, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 		if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, pool, func(context.Context) error { return nil }); err != nil {
 			t.Fatalf("reconcile pool: %v", err)
 		}
@@ -384,7 +392,7 @@ func TestPoolProviderEnrollsOnlyWhenRuntimeIsCreated(t *testing.T) {
 
 	t.Run("runtime creation", func(t *testing.T) {
 		manager := &fakePoolManager{pool: pool}
-		provider := New(&testRuntimeProvider{createsRuntime: true}, sandbox.ProviderDefinition{Name: "test"}, manager)
+		provider := New(&testRuntimeProvider{createsRuntime: true}, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 		if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, pool, func(context.Context) error { return nil }); err != nil {
 			t.Fatalf("reconcile pool: %v", err)
 		}
@@ -401,7 +409,7 @@ func TestPoolProviderEnrollsOnlyWhenRuntimeIsCreated(t *testing.T) {
 func TestPoolProviderReachesANewSandboxAtThePoolItWasPlacedIn(t *testing.T) {
 	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
 	runtimeProvider.staticToken = true
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, &fakePoolManager{pool: activePool("pool-1")})
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, &fakePoolManager{pool: activePool("pool-1")}, nil)
 
 	lease, err := provider.AcquireHTTPClient(context.Background(),
 		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1", PoolID: "pool-1"}, nil, []string{poolagentauth.ScopeSandboxWrite}, sandbox.UseRead)
@@ -431,7 +439,7 @@ func TestPoolProviderAcquireHTTPClientReconcilesPoolAndRetries(t *testing.T) {
 	runtimeProvider.staticToken = true
 	runtimeProvider.acquireErrs = []error{sandbox.ErrNotFound}
 	manager := &fakePoolManager{pool: activePool("pool-1")}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 	state := poolRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"pool_id": "pool-1"}})
 
 	lease, err := provider.AcquireHTTPClient(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, []string{poolagentauth.ScopeSandboxRead}, sandbox.UseRead)
@@ -480,7 +488,7 @@ func TestPoolProviderCreateWaitsForAPoolHostThatIsComingBack(t *testing.T) {
 	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
 	runtimeProvider.acquireErrs = []error{notRunning, notRunning, notRunning}
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
 		PoolID: "pool-1",
@@ -508,7 +516,7 @@ func TestPoolProviderReportsWhyAPoolHostNeverCameBack(t *testing.T) {
 	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
 	runtimeProvider.unreachable = notRunning
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
 	if !errors.Is(err, notRunning) {
@@ -533,7 +541,7 @@ func TestPoolProviderStopsWaitingForASettledPoolFailure(t *testing.T) {
 	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
 	runtimeProvider.unreachable = errors.New(`pool "pool-1" container is exited`)
 	manager := &fakePoolManager{pool: pool, schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
 	var failure *sandbox.PoolFailure
@@ -558,7 +566,7 @@ func TestPoolProviderCreateGivesUpOnAHostAtTheCeiling(t *testing.T) {
 	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
 	runtimeProvider.unreachable = noPort
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	// Routine reconciles, stamping progress throughout.
 	stop := make(chan struct{})
@@ -599,7 +607,7 @@ func TestPoolProviderOnlyCreateWaitsForAPoolHost(t *testing.T) {
 	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
 	runtimeProvider.acquireErrs = []error{notRunning, notRunning, notRunning}
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 	state := poolRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"pool_id": "pool-1"}})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -633,7 +641,7 @@ func TestPoolProviderKeepsTheDriverRefusalWhenTheReconcileWaitRunsOut(t *testing
 	pool := activePool("pool-1")
 	pool.Generation, pool.ObservedGeneration = 2, 1
 	manager := &fakePoolManager{pool: pool, schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 	state := poolRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"pool_id": "pool-1"}})
 
 	_, err := provider.AcquireHTTPClient(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, []string{poolagentauth.ScopeSandboxRead}, sandbox.UseRead)
@@ -657,7 +665,7 @@ func TestPoolProviderMarksAPoolForReconcileOnceWhileItsHostIsDown(t *testing.T) 
 	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
 	runtimeProvider.unreachable = fmt.Errorf("pool %q: %w: container abc health check is starting", "pool-1", sandbox.ErrPoolNotReachable)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 	state := poolRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"pool_id": "pool-1"}})
 
 	for pass := range 3 {
@@ -711,7 +719,7 @@ func TestSchedulablePoolKeepsWaitingWhileTheDriverReportsProgress(t *testing.T) 
 	pool.Ready = false
 	pool.Schedulable = false
 	manager := &fakePoolManager{pool: pool, schedulable: false}
-	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	// The driver keeps stamping progress, the way an image pull does, and
 	// becomes schedulable well past the plain capacity budget.
@@ -755,7 +763,7 @@ func TestSchedulablePoolIgnoresProgressFromBeforeTheWait(t *testing.T) {
 	stamp := time.Now().Add(-time.Hour).UTC()
 	pool.ProvisionProgressAt = &stamp
 	manager := &fakePoolManager{pool: pool, schedulable: false}
-	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -782,7 +790,7 @@ func TestSchedulablePoolGivesUpOnASilentPool(t *testing.T) {
 	stamp := time.Now().UTC()
 	pool.ProvisionProgressAt = &stamp
 	manager := &fakePoolManager{pool: pool, schedulable: false}
-	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	sb := &model.Sandbox{ProjectID: "project-1", PoolID: "pool-1"}
 	_, err := provider.schedulablePool(context.Background(), sb)
@@ -797,7 +805,7 @@ func TestCaptureLeaseForwardsSandboxAgentAuthority(t *testing.T) {
 			runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
 			runtimeProvider.staticToken = true
 			manager := &fakePoolManager{pool: activePool("pool-1")}
-			provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+			provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 			state := poolRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"pool_id": "pool-1"}})
 			lease, err := provider.AcquireHTTPClient(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, []string{scope}, sandbox.UseAction)
 			if err != nil {

@@ -168,15 +168,19 @@ func TestNewDriverRequiresCommand(t *testing.T) {
 	}
 }
 
-func TestValidateRequiresCommandAndControlPlaneURL(t *testing.T) {
+// A command is required; a control plane URL is not: without one the server
+// opens a channel to each pool instead (ADR 26-10-30-875 §4).
+func TestValidateRequiresACommandAndNoControlPlaneURL(t *testing.T) {
 	if err := Validate([]byte(`{}`)); err == nil || !strings.Contains(err.Error(), "command") {
 		t.Fatalf("validate err = %v, want command required", err)
 	}
-	if err := Validate([]byte(`{"command":"/usr/local/bin/my-vm-driver"}`)); err == nil || !strings.Contains(err.Error(), "controlPlaneUrl") {
-		t.Fatalf("validate err = %v, want controlPlaneUrl required", err)
-	}
-	if err := Validate([]byte(`{"command":"/usr/local/bin/my-vm-driver","controlPlaneUrl":"https://control.example"}`)); err != nil {
-		t.Fatalf("validate err = %v, want valid config", err)
+	for _, config := range []string{
+		`{"command":"/usr/local/bin/my-vm-driver"}`,
+		`{"command":"/usr/local/bin/my-vm-driver","controlPlaneUrl":"https://control.example"}`,
+	} {
+		if err := Validate([]byte(config)); err != nil {
+			t.Fatalf("validate %s err = %v, want valid config", config, err)
+		}
 	}
 }
 

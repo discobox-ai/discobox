@@ -38,7 +38,7 @@ func TestPoolProviderClearCacheStopsRunningSandboxesThroughTheAgent(t *testing.T
 		}
 	}
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	stopped, err := provider.ClearCache(context.Background(), activePool("pool-1"))
 	if err != nil {
@@ -63,7 +63,7 @@ func TestPoolProviderClearCacheStopsRunningSandboxesThroughTheAgent(t *testing.T
 func TestPoolAgentClearCacheRequiresItsOwnScope(t *testing.T) {
 	runtimeProvider := newClearCacheRuntimeProvider(t, poolagentserver.ScopeSandboxRead, poolagentserver.ScopeSandboxWrite)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, err := provider.ClearCache(context.Background(), activePool("pool-1"))
 	if err == nil || !strings.Contains(err.Error(), "403") && !strings.Contains(err.Error(), "Forbidden") {
@@ -75,7 +75,7 @@ func TestPoolAgentClientClearCacheMintsTheCacheClearScope(t *testing.T) {
 	runtimeProvider := newClearCacheRuntimeProvider(t, poolagentserver.ScopePoolCacheClear)
 	runtimeProvider.staticToken = true
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, _ = provider.ClearCache(context.Background(), activePool("pool-1"))
 	if len(manager.agentTokenClaims) == 0 {

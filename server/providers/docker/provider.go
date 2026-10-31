@@ -92,7 +92,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 		_ = engine.Close()
 		return nil, err
 	}
-	return poolruntime.New(engine, Definition(), poolManager), nil
+	return poolruntime.New(engine, Definition(), poolManager, nil), nil
 }
 
 // daemonIsLocal reports whether the Docker daemon at daemonHost runs on this

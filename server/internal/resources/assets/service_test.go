@@ -667,3 +667,52 @@ func TestOnlyTheReleasesBundlesArePulledWithTheServersCredentials(t *testing.T) 
 		t.Fatalf("a project's bundle was pulled with the server's credentials")
 	}
 }
+
+// A pool's box is placed with its agent's layer and every manifest and layer
+// of its pool bundle the box's store reads for its platform, read from this
+// store, and nothing else is opened through it (ADR 26-10-30-875 §5).
+func TestAPoolsBoxIsPlacedWithEveryBlobOfItsPoolBundle(t *testing.T) {
+	f := newFixture(t)
+	const agentRef, poolRef = "ghcr.io/discobox-ai/discobox-agent:v1", "ghcr.io/discobox-ai/discobox-pool:v1"
+	agent := f.registry.image(t, "agent")
+	pool := f.registry.image(t, "pool")
+	f.registry.tags[agentRef] = agent.manifest
+	poolIndex, err := json.Marshal(map[string]any{"schemaVersion": 2, "mediaType": imagecache.MediaTypeOCIIndex, "manifests": []any{
+		map[string]any{"mediaType": imagecache.MediaTypeOCIManifest, "digest": f.other.manifest, "size": 1, "platform": map[string]any{"os": "linux", "architecture": "arm64"}},
+		map[string]any{"mediaType": imagecache.MediaTypeOCIManifest, "digest": pool.manifest, "size": 1, "platform": map[string]any{"os": "linux", "architecture": "amd64"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.registry.tags[poolRef] = f.registry.add(poolIndex)
+	f.service = newService(f.service.store, Options{Dir: f.dir, PlatformBundle: platformRef, AgentBundle: agentRef, PoolBundle: poolRef}, []source{f.registry}, []source{f.registry})
+
+	box, err := f.service.PoolBox(context.Background(), imagecache.Platform{OS: "linux", Architecture: "amd64"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if box.AgentLayer != agent.layer || len(box.Bundles) != 1 || box.Bundles[0].Name != "discobox-pool" || box.Bundles[0].Digest != f.registry.tags[poolRef] {
+		t.Fatalf("box = %+v", box)
+	}
+	want := []string{f.registry.tags[poolRef], pool.manifest, pool.layer}
+	if strings.Join(box.Blobs, " ") != strings.Join(want, " ") {
+		t.Fatalf("blobs = %q, want the index, the amd64 manifest and its layer %q", box.Blobs, want)
+	}
+	for _, digest := range append([]string{box.AgentLayer}, box.Blobs...) {
+		body, size, err := box.OpenBlob(context.Background(), digest)
+		if err != nil {
+			t.Fatalf("open %s: %v", digest, err)
+		}
+		data, err := io.ReadAll(body)
+		body.Close()
+		if err != nil || digestOf(data) != digest || int64(len(data)) != size {
+			t.Fatalf("open %s: read %d bytes as %s (%v), declared %d", digest, len(data), digestOf(data), err, size)
+		}
+	}
+	for _, digest := range []string{f.other.manifest, f.other.layer, agent.config} {
+		if body, _, err := box.OpenBlob(context.Background(), digest); err == nil {
+			body.Close()
+			t.Fatalf("opened %s, which no box's store reads", digest)
+		}
+	}
+}

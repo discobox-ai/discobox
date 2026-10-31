@@ -48,6 +48,10 @@ const (
 	// ScopePoolCacheClear authorizes stopping every sandbox on the pool and
 	// emptying its cache.
 	ScopePoolCacheClear = "pool:cache-clear"
+	// ScopePoolControlPlaneChannel authorizes opening the control-plane
+	// channel the server holds to a pool that does not dial it (ADR
+	// 26-10-30-875 §1).
+	ScopePoolControlPlaneChannel = "pool:control-plane-channel"
 )
 
 type signedTokenClaimsContextKey struct{}

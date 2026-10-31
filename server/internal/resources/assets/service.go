@@ -168,12 +168,14 @@ func latest(bundle *releasePins) model.BundlePin {
 	return model.BundlePin{Reference: bundle.ref, Digest: digest}
 }
 
-// PoolBox is what a pool's box is placed with (ADR 26-10-24-953 §2): the
-// release's agent bundle, its one layer for platform, and the release's pool
-// bundle as the pool's one pin. It fetches what the store lacks of the agent
-// bundle's manifests, and reads its layer only when OpenAgentLayer is called.
+// PoolBox is what a pool's box is placed with (ADR 26-10-24-953 §2, ADR
+// 26-10-30-875 §5): the release's agent bundle and its one layer for
+// platform, the release's pool bundle as the pool's one pin, and every
+// manifest and layer of it the box's content store reads for platform. It
+// fetches what the store lacks of both bundles' manifests, and reads a layer
+// only when OpenBlob is called.
 func (s *Service) PoolBox(ctx context.Context, platform imagecache.Platform) (sandbox.PoolBox, error) {
-	var pins []model.BundlePin
+	var pins []pin
 	for _, bundle := range []*releasePins{s.agent, s.pool} {
 		if bundle.ref == "" {
 			return sandbox.PoolBox{}, fmt.Errorf("this server names no %s, which every pool's box is placed with", bundle.what)
@@ -181,13 +183,20 @@ func (s *Service) PoolBox(ctx context.Context, platform imagecache.Platform) (sa
 		if _, err := bundle.pins(ctx, false); err != nil {
 			return sandbox.PoolBox{}, err
 		}
-		pin := latest(bundle)
-		if pin.Digest == "" {
+		resolved := latest(bundle)
+		if resolved.Digest == "" {
 			return sandbox.PoolBox{}, fmt.Errorf("the %s %s has not resolved", bundle.what, bundle.ref)
 		}
-		pins = append(pins, pin)
+		pins = append(pins, pin{ref: resolved.Reference, digest: resolved.Digest, release: true})
 	}
-	agent := pin{ref: pins[0].Reference, digest: pins[0].Digest, release: true}
+	agent, pool := pins[0], pins[1]
+	// owners is what pin each blob the box is placed with is fetched as, and
+	// whether it is a manifest.
+	type owner struct {
+		pin      pin
+		manifest bool
+	}
+	owners := map[string]owner{}
 	read, _, err := imagecache.ImageManifest(agent.digest, platform, func(digest string) (imagecache.Manifest, error) {
 		return s.manifest(ctx, agent, digest)
 	})
@@ -197,21 +206,47 @@ func (s *Service) PoolBox(ctx context.Context, platform imagecache.Platform) (sa
 	if len(read.Layers) != 1 {
 		return sandbox.PoolBox{}, fmt.Errorf("the agent bundle %s for %s is %d layers, not the agent's one", agent.ref, platform, len(read.Layers))
 	}
-	layer := read.Layers[0].Digest
+	agentLayer := read.Layers[0].Digest
+	owners[agentLayer] = owner{pin: agent}
+	var blobs []string
+	read, _, err = imagecache.ImageManifest(pool.digest, platform, func(digest string) (imagecache.Manifest, error) {
+		if _, ok := owners[digest]; !ok {
+			owners[digest] = owner{pin: pool, manifest: true}
+			blobs = append(blobs, digest)
+		}
+		return s.manifest(ctx, pool, digest)
+	})
+	if err != nil {
+		return sandbox.PoolBox{}, fmt.Errorf("the pool bundle %s for %s: %w", pool.ref, platform, err)
+	}
+	for _, layer := range read.Layers {
+		if !imagecache.IsDigest(layer.Digest) {
+			return sandbox.PoolBox{}, fmt.Errorf("the pool bundle %s for %s names a layer %q that is not a sha256 digest", pool.ref, platform, layer.Digest)
+		}
+		if _, ok := owners[layer.Digest]; !ok {
+			owners[layer.Digest] = owner{pin: pool}
+			blobs = append(blobs, layer.Digest)
+		}
+	}
 	return sandbox.PoolBox{
 		Agent:      sandbox.BundlePin{Name: agent.name(), Digest: agent.digest},
-		AgentLayer: layer,
-		OpenAgentLayer: func(ctx context.Context) (io.ReadCloser, error) {
-			if err := s.ensure(ctx, agent, layer, false); err != nil {
-				return nil, fmt.Errorf("fetch the agent layer %s: %w", layer, err)
+		AgentLayer: agentLayer,
+		Bundles:    []sandbox.BundlePin{{Name: pool.name(), Digest: pool.digest}},
+		Blobs:      blobs,
+		OpenBlob: func(ctx context.Context, digest string) (io.ReadCloser, int64, error) {
+			owner, ok := owners[digest]
+			if !ok {
+				return nil, 0, fmt.Errorf("%s is no blob of a pool's box", digest)
 			}
-			content, err := s.open(layer, "")
+			if err := s.ensure(ctx, owner.pin, digest, owner.manifest); err != nil {
+				return nil, 0, fmt.Errorf("fetch %s of %s: %w", digest, owner.pin.ref, err)
+			}
+			content, err := s.open(digest, "")
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
-			return content.Body, nil
+			return content.Body, content.Size, nil
 		},
-		Bundles: []sandbox.BundlePin{{Name: pins[1].Name(), Digest: pins[1].Digest}},
 	}, nil
 }
 

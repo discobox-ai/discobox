@@ -2,6 +2,7 @@ package pools
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -103,6 +104,13 @@ func (s *ControlPlane) EnsureAgentTrustKey(ctx context.Context) (string, error) 
 		return "", nil
 	}
 	return s.agentAuth.EnsureTrustKey(ctx)
+}
+
+func (s *ControlPlane) AgentIssuerKey(ctx context.Context) (ed25519.PrivateKey, error) {
+	if s.agentAuth == nil {
+		return nil, errors.New("this server signs no pool-agent requests")
+	}
+	return s.agentAuth.IssuerKey(ctx)
 }
 
 func (s *ControlPlane) CreateAgentToken(ctx context.Context, claims poolagentauth.TokenClaims) (string, error) {

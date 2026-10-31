@@ -20,7 +20,7 @@ flowchart LR
 `internal/server`'s `NewApp` installs both as chi middleware on the one router
 that serves every listener, in this order:
 
-- `Authentication(SandboxForwardAuthenticator, PoolAuthenticator, DiscobotAuthenticator, IrohPeerAuthenticator, DefaultUserAuthenticator)`,
+- `Authentication(SandboxForwardAuthenticator, PoolAuthenticator, CarrierPoolAuthenticator, DiscobotAuthenticator, IrohPeerAuthenticator, DefaultUserAuthenticator)`,
   with `DefaultUserAuthenticator` left out when `authRequired` is set
 - `Authorization(SandboxRoleAuthorizer, ProjectAuthorizer, PoolRouteAuthorizer, SSHConnectAuthorizer, AuthenticatedAuthorizer)`
 
@@ -77,6 +77,17 @@ Current authenticators:
   public key, and requires the signed `project_id` and `pool_id` claims to
   match the route pool. The principal carries the signed `PoolID` and
   `Scopes`. It must not trust the URL or body alone for pool identity.
+- `CarrierPoolAuthenticator` applies to every request on a pool's
+  control-plane stream: a connection the carrier hub served, which the
+  server's `ConnContext` tags with its pool (`WithCarrierPool`), whether a
+  local guest's (wslc, vz) or a remote pool's channel
+  ([ADR 26-10-30-875](../../../docs/adr/26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md)
+  §3). The two authenticators before it also hold such a request to its
+  stream's pool — an assertion or a forwarded call for another pool is a
+  401 — and this one refuses, with 401, whatever neither claimed. Nothing
+  after it may answer: the iroh peer's and the default user's principal is
+  the operator's, and a pool machine runs other people's code. Public paths
+  still answer, since they bypass both phases.
 - `DiscobotAuthenticator` applies to a request carrying a discobot assertion
   (`discobot.AssertionHeader`): discobot, the team-facing control plane in
   front of this server, vouching for the person the request is for
@@ -221,8 +232,9 @@ It is server-scoped, so there is no project membership to authorize on, and an
 enrolled peer authenticates as the default user rather than as a principal of
 its own — there is nothing narrower for it to be. ADR 0095 §1 accepts the
 consequence: this authorizes every principal the pipeline authenticates, on
-every listener the router serves, including the carrier hub a pool guest dials.
-Such a caller already holds `ScopeAll`, so no new scope is granted; what is new
+every listener the router serves; a pool guest's carrier stream is not one of
+them, since it never authenticates as a user. Such a caller already holds
+`ScopeAll`, so no new scope is granted; what is new
 is that it can mint a durable external credential, and that it can revoke every
 enrollment. `authorized_ids` is deliberately unreachable from the API and is
 what bounds that. Narrow this entry when a connection carries provenance to

@@ -18,7 +18,8 @@ import (
 type PoolMaker interface {
 	// Bootstrap is the pool's bootstrap: which pool it is and which control
 	// plane it trusts. It holds no credential. The provider fills in what is
-	// its own: the control plane URL as the box reaches it, the agent's
+	// its own: the control plane URL as the box reaches it, unless the
+	// bootstrap already names the control-plane channel's, and the agent's
 	// listener.
 	Bootstrap(ctx context.Context) (poolagent.Bootstrap, error)
 	// Box is the agent and the pool's bundles to place, the agent's layer for
@@ -35,9 +36,12 @@ type poolMaker struct {
 	manager PoolManager
 	project *model.Project
 	pool    *model.Pool
+	// channel says the control plane opens a channel to the pool rather than
+	// the pool dialing it (ADR 26-10-30-875 §§1–2).
+	channel bool
 }
 
-func newPoolMaker(manager PoolManager, project *model.Project, pool *model.Pool) (*poolMaker, error) {
+func newPoolMaker(manager PoolManager, project *model.Project, pool *model.Pool, channel bool) (*poolMaker, error) {
 	switch {
 	case manager == nil:
 		return nil, fmt.Errorf("pool manager is required")
@@ -46,7 +50,7 @@ func newPoolMaker(manager PoolManager, project *model.Project, pool *model.Pool)
 	case pool == nil:
 		return nil, fmt.Errorf("pool is required")
 	}
-	return &poolMaker{manager: manager, project: project, pool: pool}, nil
+	return &poolMaker{manager: manager, project: project, pool: pool, channel: channel}, nil
 }
 
 func (m *poolMaker) Bootstrap(ctx context.Context) (poolagent.Bootstrap, error) {
@@ -54,14 +58,21 @@ func (m *poolMaker) Bootstrap(ctx context.Context) (poolagent.Bootstrap, error) 
 	if err != nil {
 		return poolagent.Bootstrap{}, err
 	}
-	return poolagent.Bootstrap{
+	bootstrap := poolagent.Bootstrap{
 		ProjectID:       m.project.ID,
 		PoolID:          m.pool.ID,
 		ControlPlaneKey: controlPlanePublicKey,
 		// How the pool reaches its sandboxes' agents, which the agent tells
 		// each sandbox (ADR 26-10-29-481 §3).
 		DisableAgentEndpointTLS: m.pool.DisableAgentEndpointTLS,
-	}, nil
+	}
+	// A pool the control plane opens a channel to reaches it at the socket its
+	// agent serves the channel at, which no provider overrides.
+	if m.channel {
+		bootstrap.ControlPlaneChannel = true
+		bootstrap.ControlPlaneURL = poolagent.ControlPlaneChannelURL
+	}
+	return bootstrap, nil
 }
 
 func (m *poolMaker) Box(ctx context.Context, platform imagecache.Platform) (sandbox.PoolBox, error) {

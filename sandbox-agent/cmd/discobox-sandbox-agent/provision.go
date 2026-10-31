@@ -14,9 +14,8 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/agentlayer"
-	"github.com/discobox-ai/discobox/pkg/poolassets"
+	"github.com/discobox-ai/discobox/pkg/imagecache"
 	"github.com/discobox-ai/discobox/pkg/poolauth"
-	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/sandbox-agent/bundlestore"
 
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
@@ -31,12 +30,12 @@ import (
 //	discobox-provision wait FEATURE...           block until each is ready
 //	discobox-provision run FEATURE COMMAND ARG... a placeholder: wait, then exec
 //	discobox-provision identity --key PATH       the box's public key, made on demand
-//	discobox-provision apply [POOL FLAGS]         provision the box its maker placed
+//	discobox-provision apply [--pool]             provision the box its maker placed
 func runProvisionCommand(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	usage := func() int {
-		fmt.Fprintln(os.Stderr, "usage: discobox-provision wait FEATURE...\n       discobox-provision run FEATURE COMMAND [ARG...]\n       discobox-provision identity --key PATH\n       discobox-provision apply [--control-plane URL --project ID --pool ID --key PATH]")
+		fmt.Fprintln(os.Stderr, "usage: discobox-provision wait FEATURE...\n       discobox-provision run FEATURE COMMAND [ARG...]\n       discobox-provision identity --key PATH\n       discobox-provision apply [--pool]")
 		return 2
 	}
 	if len(args) == 0 {
@@ -63,21 +62,14 @@ func runProvisionCommand(args []string) int {
 		return provisionIdentity(*key, os.Stdout)
 	case "apply":
 		flags := flag.NewFlagSet("discobox-provision apply", flag.ContinueOnError)
-		var pool poolApply
-		flags.StringVar(&pool.controlPlane, "control-plane", "", "a pool's control plane URL, whose asset routes it fetches its bundles from")
-		flags.StringVar(&pool.project, "project", "", "the pool's project")
-		flags.StringVar(&pool.pool, "pool", "", "the pool")
-		flags.StringVar(&pool.key, "key", "", "the pool's identity key file, which discobox-provision identity made")
+		pool := flags.Bool("pool", false, "provision a pool's box from the bundles its maker placed")
 		if err := flags.Parse(args[1:]); err != nil || flags.NArg() != 0 {
 			return usage()
 		}
-		if pool == (poolApply{}) {
-			return applySandbox(ctx)
+		if *pool {
+			return applyPool(ctx)
 		}
-		if pool.controlPlane == "" || pool.project == "" || pool.pool == "" || pool.key == "" {
-			return usage()
-		}
-		return applyPool(ctx, pool)
+		return applySandbox(ctx)
 	}
 	return usage()
 }
@@ -101,32 +93,18 @@ func provisionIdentity(path string, out io.Writer) int {
 	return 0
 }
 
-// poolApply is what a pool's maker tells apply: where the pool's bundles are
-// fetched from, and as which pool, signing with the key identity made.
-type poolApply struct {
-	controlPlane string
-	project      string
-	pool         string
-	key          string
-}
-
-// applyPool provisions a pool's box from the pins its maker placed (ADR
-// 26-10-24-953 §2): it fetches each bundle from the server's asset routes as
-// the pool — enrolled before this runs, so its key is the pool's already —
-// and applies every feature, every step blocking, then exits. The pool agent
-// is what the pool's bundles lay and start; this never runs as the agent.
-func applyPool(ctx context.Context, pool poolApply) int {
+// applyPool provisions a pool's box from what its maker placed (ADR
+// 26-10-24-953 §2, ADR 26-10-30-875 §5): the pins, and every blob of their
+// bundles for the box's platform (agentlayer.PlacedDir), which it applies to
+// the box's content store with nothing fetched — it dials nothing, since it
+// runs before the pool agent and so before any channel to the control plane
+// — then applies every feature, every step blocking, and exits. The pool
+// agent is what the pool's bundles lay and start; this never runs as the
+// agent.
+func applyPool(ctx context.Context) int {
 	fail := func(err error) int {
 		fmt.Fprintln(os.Stderr, "discobox-provision:", err)
 		return 1
-	}
-	key, err := poolauth.LoadKey(pool.key)
-	if err != nil {
-		return fail(fmt.Errorf("the pool's identity key, which its maker enrolls before it applies: %w", err))
-	}
-	base, client, err := wire.HTTPClient(pool.controlPlane, 0)
-	if err != nil {
-		return fail(fmt.Errorf("control plane URL: %w", err))
 	}
 	pins, ok, err := placedPins()
 	if err != nil {
@@ -135,9 +113,15 @@ func applyPool(ctx context.Context, pool poolApply) int {
 	if !ok {
 		return fail(fmt.Errorf("the box has no pins (%s) to apply", agentlayer.PinsFile))
 	}
-	fetcher := &poolassets.Client{BaseURL: base, HTTP: client, ProjectID: pool.project, PoolID: pool.pool, Key: key}
-	if err := applyBundles(ctx, pins, fetcher); err != nil {
-		return fail(err)
+	store := &bundlestore.Store{Root: "/", Fetcher: bundlestore.PlacedFetcher{Root: "/"}, Platform: imagecache.PoolPlatform(), Logger: slog.Default()}
+	err = store.Apply(ctx, pins)
+	// Placed again whenever the box is provisioned, and held by the store
+	// once applied.
+	if removeErr := os.RemoveAll(agentlayer.PlacedDir); err == nil && removeErr != nil {
+		err = removeErr
+	}
+	if err != nil {
+		return fail(fmt.Errorf("apply the box's placed bundles: %w", err))
 	}
 	trees, err := bundlestore.Trees("/")
 	if err != nil {

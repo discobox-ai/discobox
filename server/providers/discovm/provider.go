@@ -24,6 +24,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/wire"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
@@ -55,8 +56,9 @@ type Config struct {
 	// engine calls with. A local driver has none.
 	APIKey string `json:"apiKey,omitempty"`
 	// ControlPlaneURL is where a remote driver's pool machine reaches this
-	// server. It is said, never guessed: a server no machine of the driver's
-	// can reach cannot run its pools.
+	// server, when it dials it. Empty, the server opens a channel to each
+	// pool machine instead, and needs no URL a machine can reach (ADR
+	// 26-10-30-875 §4).
 	ControlPlaneURL string `json:"controlPlaneUrl,omitempty"`
 	// DeliverProviderKey opts in to placing APIKey itself on a pool's machine
 	// when the driver cannot issue the pool a narrower key that expires (ADR
@@ -85,8 +87,8 @@ func Validate(data json.RawMessage) error {
 	return validateFor(cfg, isLocal(driver))
 }
 
-// validateFor checks what a driver of the kind needs: a remote driver its key
-// and the URL its pool machines reach this server at, a local one neither.
+// validateFor checks what a driver of the kind needs: a remote driver its key,
+// and any URL its pool machines reach this server at, a local one neither.
 func validateFor(cfg Config, local bool) error {
 	key, url := strings.TrimSpace(cfg.APIKey), strings.TrimSpace(cfg.ControlPlaneURL)
 	if local {
@@ -98,8 +100,10 @@ func validateFor(cfg Config, local bool) error {
 	if key == "" {
 		return fmt.Errorf("the %s driver needs its API key (apiKey)", cfg.Driver)
 	}
+	// With no URL the server opens a channel to each pool machine instead
+	// (ADR 26-10-30-875 §4).
 	if url == "" {
-		return fmt.Errorf("the %s driver needs the URL its pool machines reach this server at (controlPlaneUrl)", cfg.Driver)
+		return nil
 	}
 	endpoint, err := wire.Parse(url)
 	if err != nil {
@@ -111,7 +115,11 @@ func validateFor(cfg Config, local bool) error {
 	return nil
 }
 
-func FactoryWithPoolManager(poolManager poolruntime.PoolManager) sandbox.ProviderFactory {
+// FactoryWithPoolManager makes the provider's instances. hub is the server's
+// carrier hub, which a remote driver's pool with no controlPlaneUrl is reached
+// through (ADR 26-10-30-875); a local driver's pools reach this server on its
+// own host and never use it.
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager, hub *carrierhub.Hub) sandbox.ProviderFactory {
 	return func(_ context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
 		cfg, err := Decode(instance.Config)
 		if err != nil {
@@ -121,7 +129,13 @@ func FactoryWithPoolManager(poolManager poolruntime.PoolManager) sandbox.Provide
 		if err != nil {
 			return nil, err
 		}
-		return poolruntime.New(runtime, Definition(), poolManager), nil
+		var streams poolruntime.StreamSink
+		if !isLocal(runtime.engine.Driver) {
+			if streams, err = poolruntime.ControlPlaneStreams(ProviderType, cfg.ControlPlaneURL, hub); err != nil {
+				return nil, err
+			}
+		}
+		return poolruntime.New(runtime, Definition(), poolManager, streams), nil
 	}
 }
 
@@ -136,7 +150,7 @@ func Definition() sandbox.ProviderDefinition {
 			// that driver can reach it to remove it.
 			{Key: "driver", Label: "Driver", Type: "string", Required: true, Immutable: true, Description: "The VM driver to run machines on: vz on macOS, or boxd from any host."},
 			{Key: "apiKey", Label: "API Key", Type: "password", Description: "On a remote driver such as boxd, the key the server calls the driver's service with. Give discobox an org or account of its own: every pool of this provider can reach what the key reaches."},
-			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "https://discobox.example.com", Description: "On a remote driver such as boxd, where its pool machines reach this server. A server they cannot reach cannot run their pools."},
+			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "https://discobox.example.com", Description: "On a remote driver such as boxd, where its pool machines reach this server. Leave it empty and this server opens a channel to each pool machine instead, so it needs no public URL."},
 			{Key: "deliverProviderKey", Label: "Deliver Provider Key", Type: "boolean", Advanced: true, Description: "When the driver cannot issue a pool a narrower key that expires (boxd issues none from an API key), place this provider's own API key on the pool's machine instead. It reaches everything the key reaches, discobox never expires, renews or revokes it, and whoever reads it there keeps it: rotate it when a pool machine is lost or suspected. Without it such a pool is blocked."},
 			{Key: "base", Label: "Base", Type: "string", Description: "On a remote driver such as boxd, the ID of the driver's base a pool's machine and its sandboxes' machines boot from. Empty is the first base the driver lists: boxd's default image, or its oldest snapshot when the account has no default image, so name one there.", Advanced: true},
 		}, poolruntime.PoolPolicyConfigFields()...),

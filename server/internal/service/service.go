@@ -74,8 +74,9 @@ type Options struct {
 	// daemon builds. Harness seeding reads their labels, and the asset API
 	// serves them, from their layouts (ADR 26-10-16-423 §13).
 	DevelopmentBundles *devbundles.Set
-	// ControlPlaneStreams carries guest-initiated control-plane connections for
-	// backends that cannot be dialed inward.
+	// ControlPlaneStreams carries guest-initiated control-plane connections,
+	// each its pool's: for backends that cannot be dialed inward, and remote
+	// pools reached over a control-plane channel (ADR 26-10-30-875).
 	ControlPlaneStreams *carrierhub.Hub
 	// ListenEndpoints are the endpoints the server listens on; providers that
 	// dial the control plane inward derive their address from them. Empty means

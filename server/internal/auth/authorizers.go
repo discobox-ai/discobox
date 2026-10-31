@@ -469,12 +469,15 @@ var authenticatedAllowedPaths = []string{
 	// authenticates as the default user rather than as a principal of its own.
 	//
 	// This authorizes any authenticated principal, which today is every caller
-	// the pipeline sees, on every listener the router serves — the carrier hub
-	// included. ADR 0095 §1 (enrolled iroh IDs) accepts that knowingly and says why: such a caller
-	// already holds ScopeAll, so this grants no new scope, but it does let
-	// transient reach become a durable external credential, and it lets that
-	// caller revoke every enrollment. Narrow this the moment a connection has
-	// provenance to authorize on.
+	// the pipeline sees as a user, on every listener the router serves. A pool
+	// guest's carrier stream is not one: it is refused at authentication
+	// unless it is its pool's own request (CarrierPoolAuthenticator, ADR
+	// 26-10-30-875 §3). ADR 0095 §1 (enrolled iroh IDs) accepts the rest
+	// knowingly and says why: such a caller already holds ScopeAll, so this
+	// grants no new scope, but it does let transient reach become a durable
+	// external credential, and it lets that caller revoke every enrollment.
+	// Narrow this if a user principal ever needs to be told apart by the
+	// connection it arrived on.
 	"/peers",
 	"/peers/",
 	// This server's own peer ID (ADR 0098). Server-scoped like /peers, and

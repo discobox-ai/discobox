@@ -37,7 +37,7 @@ func TestCreateWaitsForPostRestartHeartbeat(t *testing.T) {
 	pool.RecordFailure(model.PoolStateOffline, "pool agent has not reported since the previous server run", "")
 	pool.UpdatedAt = now // unrelated writes cannot renew the previous verdict
 	manager := healthPoolManager{&fakePoolManager{pool: pool}}
-	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
@@ -69,7 +69,7 @@ func TestUnknownPoolTimeoutExplainsTheAgentWait(t *testing.T) {
 	poolCapacityWaitTimeout, poolCapacityPollInterval = 10*time.Millisecond, time.Millisecond
 	t.Cleanup(func() { poolCapacityWaitTimeout, poolCapacityPollInterval = oldTimeout, oldPoll })
 	manager := healthPoolManager{&fakePoolManager{pool: activePool("pool-1")}}
-	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 	_, err := provider.schedulablePool(context.Background(), &model.Sandbox{ProjectID: "project-1", PoolID: "pool-1"})
 	if err == nil || !strings.Contains(err.Error(), "timed out waiting for the pool agent to become ready") {
 		t.Fatalf("timeout = %v", err)

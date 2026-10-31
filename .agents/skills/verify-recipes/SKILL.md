@@ -1152,12 +1152,42 @@ mediator, and the result comes back from `registry.discobox.internal` (ADR
   --builder tun --push -t registry.discobox.internal/<box id>/t:1 .`.
 - `d admin box purge <box>` removes `<pool build>/registry/docker/registry/v2/repositories/<box id>`.
 
+# Verifying a pool reached over a control-plane channel (ADR 26-10-30-875)
+
+An `exec` provider with no `controlPlaneUrl` on this host's own Docker makes a
+real channel pool without boxd: the server must open the channel to the
+agent's published port, or the pool never registers.
+
+- Run the isolated server above with `DISCOBOX_ENV_FILE=<checkout>/.env` (the
+  dev bundles are local images only that env resolves), its own data dirs and
+  listeners in the environment, which win over the file.
+- The driver script: `ensure-vm`/`inspect-vm` print
+  `{"id":"local","status":"running","address":"127.0.0.1"}`,
+  `docker-endpoint` prints `unix:///var/run/docker.sock`, `harness-endpoint`
+  prints `http://127.0.0.1:<port>`, and the provider is
+  `admin provider create --type exec --config '{"command":["<script>"],"agentPort":<port>}'`.
+- Evidence: the server logs `pool control-plane channel open`, and the
+  pool's own box — its container `discobox-vm-<poolId>` on this host's
+  Docker, not a sandbox — shows the rest under `docker exec`: the agent's
+  `journalctl -u discobox-pool-agent` logs `waiting for the control plane to
+  open its channel` then `control-plane channel open`, and
+  `/etc/discobox/pool-agent/bootstrap.json` has `controlPlaneChannel: true`
+  and the socket URL. `docker exec <it> curl --unix-socket
+  /run/discobox/control-plane.sock http://cp/projects` is a 401 (`...reaches
+  only that pool's routes`), `/healthz` a 200.
+- Restart the server: the agent logs `control-plane channel closed`, then
+  `open` again within seconds, the same pid.
+
 # Verifying a machine pool (`MachineSandboxRuntime`, the `vm` provider)
 
 - A machine pool needs a remote driver: boxd and a key in the `vm`
-  provider's `apiKey`, and a `controlPlaneUrl` boxd's machines can reach,
-  which the dev loop is not; no credential a box can be given works as that
-  key (below). Its pool's lifecycle — create, key issue, renewal and
+  provider's `apiKey`; no credential a box can be given works as that key
+  (below). A `controlPlaneUrl` is needed only for a pool that should dial
+  out: without one the server opens a control-plane channel to the pool's
+  agent (ADR 26-10-30-875), so a dev loop with no public URL can run it. The
+  agent logs "waiting for the control plane to open its channel", then
+  "control-plane channel open"; the server logs "pool control-plane channel
+  open", and warns once a minute while one will not. Its pool's lifecycle — create, key issue, renewal and
   revocation, re-adoption, the blocked and opt-in paths — is driven on
   disco-vm's fake driver in `server/providers/discovm/poolmachine_test.go`,
   its sandboxes' in `pool-agent/sandboxruntime/machine_test.go`. What reaches a dev box is the
@@ -1188,8 +1218,10 @@ mediator, and the result comes back from `registry.discobox.internal` (ADR
   readable). An API key cannot issue keys, so such a run drives only the
   blocked and `deliverProviderKey` paths.
 - On an isolated server (above) with `controlPlaneUrl` a host boxd cannot
-  reach, a pool gets as far as `provision apply`'s bundle fetch: the machine
-  is made, keyed, placed and enrolled, which the console shows (`admin pool
+  reach, a pool gets as far as its agent's first call to the control plane:
+  the machine is made, keyed, placed, enrolled and provisioned (`provision
+  apply` dials nothing; the server placed the pool bundle), which the console
+  shows (`admin pool
   console <pool>` with `script -qec`, files under `/etc/discobox/pool-agent`).
   What boxd holds is read with a scratch `go run` (from `server/`) of
   `boxd.New(machine.Config{Project: "prov-…", Keys: …}).Instances`, which

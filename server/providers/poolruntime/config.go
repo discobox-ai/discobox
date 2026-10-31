@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
 )
 
 // StringList accepts either a JSON array of strings or a comma-separated string.
@@ -46,9 +48,16 @@ func DecodeConfig[T any](data json.RawMessage, providerType string) (T, error) {
 	return cfg, nil
 }
 
-func RequireControlPlaneURL(providerType, value string) error {
-	if strings.TrimSpace(value) == "" {
-		return fmt.Errorf("%s controlPlaneUrl is required", providerType)
+// ControlPlaneStreams is how a remote provider's pools reach their control
+// plane (ADR 26-10-30-875 §4). Given a controlPlaneUrl, they dial it, and it is
+// nil. Without one, the server opens a channel to each pool, and it is hub:
+// the carrier hub every stream the pools open on one is pushed to.
+func ControlPlaneStreams(providerType, controlPlaneURL string, hub *carrierhub.Hub) (StreamSink, error) {
+	if strings.TrimSpace(controlPlaneURL) != "" {
+		return nil, nil
 	}
-	return nil
+	if hub == nil {
+		return nil, fmt.Errorf("%s: this server cannot open control-plane channels to its pools, so it needs a controlPlaneUrl", providerType)
+	}
+	return hub, nil
 }

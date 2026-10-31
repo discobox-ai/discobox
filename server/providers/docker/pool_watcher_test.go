@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"crypto/ed25519"
 	"testing"
 	"time"
 
@@ -261,6 +262,10 @@ func (m *recordingPoolManager) EnrollPool(context.Context, string, string) error
 
 func (m *recordingPoolManager) PoolBox(context.Context, imagecache.Platform) (sandbox.PoolBox, error) {
 	return sandbox.PoolBox{}, nil
+}
+
+func (m *recordingPoolManager) AgentIssuerKey(context.Context) (ed25519.PrivateKey, error) {
+	return nil, nil
 }
 
 func (m *recordingPoolManager) EnsureAgentTrustKey(context.Context) (string, error) {

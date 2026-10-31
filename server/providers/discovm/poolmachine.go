@@ -359,7 +359,7 @@ func (h *poolMachine) placement(ctx context.Context, pool *model.Pool, inst engi
 	if err != nil {
 		return poolruntime.BoxPlacement{}, err
 	}
-	bootstrap.ControlPlaneURL = h.controlPlaneURL
+	bootstrap.ControlPlaneURL = firstNonEmpty(bootstrap.ControlPlaneURL, h.controlPlaneURL)
 	bootstrap.ProjectID = firstNonEmpty(bootstrap.ProjectID, pool.ProjectID)
 	bootstrap.PoolID = firstNonEmpty(bootstrap.PoolID, pool.ID)
 	bootstrap.AgentListenURL = listen

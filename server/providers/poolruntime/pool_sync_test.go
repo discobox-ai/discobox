@@ -34,7 +34,7 @@ func TestSyncKnownPoolsAcquiresAClientPerAttempt(t *testing.T) {
 	t.Cleanup(func() { poolSyncRetryBackoff = restore })
 
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	before := runtimeProvider.acquireCalls
 	err := provider.syncKnownPools(context.Background(), manager,
@@ -65,7 +65,7 @@ func TestSyncKnownPoolsDoesNotScheduleItsOwnPool(t *testing.T) {
 	t.Cleanup(func() { poolSyncRetryBackoff = restore })
 
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	err := provider.syncKnownPools(context.Background(), manager,
 		&model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"},

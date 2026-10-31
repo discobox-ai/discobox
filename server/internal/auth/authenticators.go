@@ -71,6 +71,9 @@ func (a PoolAuthenticator) Authenticate(r *http.Request) (Principal, bool, error
 	if claims.PoolID != pool.ID || claims.PoolID != routePoolID || claims.ProjectID != pool.ProjectID {
 		return Principal{}, false, errors.New("pool agent assertion identity does not match route")
 	}
+	if carrier, ok := carrierPoolFromContext(r.Context()); ok && carrier != pool.ID {
+		return Principal{}, false, errors.New("pool agent assertion is for another pool than this control-plane stream's")
+	}
 	return Principal{Type: PrincipalTypePool, PoolID: claims.PoolID, Scopes: claims.Scopes}, true, nil
 }
 
@@ -118,6 +121,9 @@ func (a SandboxForwardAuthenticator) Authenticate(r *http.Request) (Principal, b
 	if claims.PoolID != pool.ID || claims.ProjectID != pool.ProjectID || !claims.HasScope(poolauth.ScopeSandboxForward) {
 		return refuse("the pool's assertion does not allow forwarding")
 	}
+	if carrier, ok := carrierPoolFromContext(r.Context()); ok && carrier != pool.ID {
+		return refuse("the forwarding pool is not this control-plane stream's")
+	}
 	sandbox, err := a.Store.GetSandboxByID(r.Context(), sandboxID)
 	if err != nil || sandbox.PoolID != pool.ID || sandbox.ProjectID != pool.ProjectID {
 		return refuse("the pool does not host that sandbox")
@@ -129,6 +135,22 @@ func (a SandboxForwardAuthenticator) Authenticate(r *http.Request) (Principal, b
 		PoolID:    pool.ID,
 		UserID:    sandbox.CreatedByUserID,
 	}, true, nil
+}
+
+// CarrierPoolAuthenticator refuses any request on a pool's control-plane
+// stream that the pool and forwarded-sandbox authenticators before it did not
+// claim (ADR 26-10-30-875 §3). Such a stream was opened by a pool's guest, a
+// machine that runs other people's code, and nothing after this in the chain
+// may answer it: the iroh peer's and the default user's principal is the
+// operator's.
+type CarrierPoolAuthenticator struct{}
+
+func (CarrierPoolAuthenticator) Authenticate(r *http.Request) (Principal, bool, error) {
+	poolID, ok := carrierPoolFromContext(r.Context())
+	if !ok {
+		return Principal{}, false, nil
+	}
+	return Principal{}, false, fmt.Errorf("pool %s's control-plane stream reaches only that pool's routes", poolID)
 }
 
 // DiscobotAuthenticator authenticates a request discobot signed for a person

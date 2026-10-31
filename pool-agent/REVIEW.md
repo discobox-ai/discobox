@@ -422,3 +422,10 @@ never this runtime's to remove.
   is made. Why: a certificate that expired while its sandbox was down, with no
   start placing a renewed one, locks the pool out of that sandbox for good.
 
+## The control-plane channel
+
+- The channel's upgrade is asked for over HTTP/1.1 alone (`cpchannel.http1`),
+  with ALPN offering only `http/1.1`. Why: HTTP/2 has no Upgrade, and Go's
+  HTTP/2 client refuses any Upgrade but websocket's, so through any HTTPS
+  front that offers h2 the channel would never open, and a test against plain
+  `httptest` would not notice (`TestTheChannelOpensThroughAnHTTP2Front`).

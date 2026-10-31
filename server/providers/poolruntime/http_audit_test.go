@@ -124,7 +124,7 @@ func seedHTTPAuditRows(t *testing.T, dsn string) {
 func TestPoolProviderListHTTPAuditReadsTheProxyThroughTheAgent(t *testing.T) {
 	runtimeProvider := newHTTPAuditRuntimeProvider(t, poolagentserver.ScopeAuditRead)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 	ctx := context.Background()
 
 	all, err := provider.ListHTTPAudit(ctx, activePool("pool-1"), sandbox.HTTPAuditQuery{})
@@ -188,7 +188,7 @@ func TestPoolProviderListHTTPAuditReadsTheProxyThroughTheAgent(t *testing.T) {
 func TestPoolProviderGetsOneExchangeInFull(t *testing.T) {
 	runtimeProvider := newHTTPAuditRuntimeProvider(t, poolagentserver.ScopeAuditRead)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 	ctx := context.Background()
 
 	rows, err := provider.ListHTTPAudit(ctx, activePool("pool-1"), sandbox.HTTPAuditQuery{SandboxID: "sandbox-1"})
@@ -220,7 +220,7 @@ func TestPoolProviderGetsOneExchangeInFull(t *testing.T) {
 func TestPoolProviderOpensARecordedBodyThroughTheAgent(t *testing.T) {
 	runtimeProvider := newHTTPAuditRuntimeProvider(t, poolagentserver.ScopeAuditRead)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 	ctx := context.Background()
 
 	rows, err := provider.ListHTTPAudit(ctx, activePool("pool-1"), sandbox.HTTPAuditQuery{SandboxID: "sandbox-1"})
@@ -249,7 +249,7 @@ func TestPoolProviderOpensARecordedBodyThroughTheAgent(t *testing.T) {
 func TestPoolAgentHTTPAuditRequiresItsOwnScope(t *testing.T) {
 	runtimeProvider := newHTTPAuditRuntimeProvider(t, poolagentserver.ScopeSandboxRead, poolagentserver.ScopeSandboxWrite)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, err := provider.ListHTTPAudit(context.Background(), activePool("pool-1"), sandbox.HTTPAuditQuery{})
 	if err == nil || !strings.Contains(err.Error(), "403") && !strings.Contains(err.Error(), "Forbidden") {
@@ -263,7 +263,7 @@ func TestPoolAgentClientHTTPAuditMintsASandboxScopedAuditToken(t *testing.T) {
 	runtimeProvider := newHTTPAuditRuntimeProvider(t, poolagentserver.ScopeAuditRead)
 	runtimeProvider.staticToken = true
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, _ = provider.ListHTTPAudit(context.Background(), activePool("pool-1"), sandbox.HTTPAuditQuery{SandboxID: "sandbox-1"})
 	if len(manager.agentTokenClaims) == 0 {
@@ -284,7 +284,7 @@ func TestPoolAgentWithoutTheAuditRouteIsUnsupported(t *testing.T) {
 	runtimeProvider.baseURL = old.URL
 	runtimeProvider.client = old.Client()
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, err := provider.ListHTTPAudit(context.Background(), activePool("pool-1"), sandbox.HTTPAuditQuery{})
 	if !errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
@@ -299,7 +299,7 @@ func TestPoolProviderHTTPAuditDoesNotReconcileAnUnreachablePool(t *testing.T) {
 	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
 	runtimeProvider.unreachable = sandbox.ErrPoolNotReachable
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, err := provider.ListHTTPAudit(context.Background(), activePool("pool-1"), sandbox.HTTPAuditQuery{})
 	if !errors.Is(err, sandbox.ErrPoolNotReachable) {
@@ -338,7 +338,7 @@ func TestPoolProviderSeparatesAMissingRouteFromAMissingRecording(t *testing.T) {
 			runtimeProvider.baseURL = agent.URL
 			runtimeProvider.client = agent.Client()
 			manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-			provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+			provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 			_, err := provider.OpenHTTPAuditArtifact(context.Background(), activePool("pool-1"), "sandbox-1", 42, "response-body")
 			if tc.wantOldMiss && !errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
@@ -359,7 +359,7 @@ func TestPoolAgentClientDNSAuditMintsASandboxScopedAuditToken(t *testing.T) {
 	runtimeProvider := newHTTPAuditRuntimeProvider(t, poolagentserver.ScopeAuditRead)
 	runtimeProvider.staticToken = true
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, _ = provider.ListDNSAudit(context.Background(), activePool("pool-1"), sandbox.DNSAuditFilter{SandboxID: "sandbox-1"})
 	if len(manager.agentTokenClaims) == 0 {
@@ -377,7 +377,7 @@ func TestPoolAgentClientDNSAuditMintsASandboxScopedAuditToken(t *testing.T) {
 	oldAgent := newTestRuntimeProvider(t, "project-1", "pool-1")
 	oldAgent.baseURL = old.URL
 	oldAgent.client = old.Client()
-	oldProvider := New(oldAgent, sandbox.ProviderDefinition{Name: "test"}, &fakePoolManager{pool: activePool("pool-1"), schedulable: true})
+	oldProvider := New(oldAgent, sandbox.ProviderDefinition{Name: "test"}, &fakePoolManager{pool: activePool("pool-1"), schedulable: true}, nil)
 	if _, err := oldProvider.ListDNSAudit(context.Background(), activePool("pool-1"), sandbox.DNSAuditFilter{}); !errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
 		t.Fatalf("list dns audit against an agent without the route = %v, want ErrPoolAgentUnsupported", err)
 	}

@@ -58,7 +58,7 @@ var validPoolID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 // hands each one to the server, which serves the ordinary control-plane handler
 // over it; see server/internal/transport/carrierhub.
 type StreamSink interface {
-	Push(conn net.Conn, cancel <-chan struct{}) error
+	Push(poolID string, conn net.Conn, cancel <-chan struct{}) error
 }
 
 // DriverConfig configures the Virtualization.framework VM driver.
@@ -614,7 +614,7 @@ func (g *guestVM) serveControlPlane(ctx context.Context, poolID string, sink Str
 			_ = conn.Close()
 			continue
 		}
-		if err := sink.Push(conn, g.stopped); err != nil {
+		if err := sink.Push(poolID, conn, g.stopped); err != nil {
 			_ = conn.Close()
 		}
 	}

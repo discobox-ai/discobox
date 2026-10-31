@@ -70,11 +70,17 @@ const (
 // host network, vsock://2:3001 for a libkrun microVM, unix:///... for a guest
 // whose helper terminates the socket — with no transport-specific field here.
 type Bootstrap struct {
-	// ControlPlaneURL is where the agent reaches the control plane.
+	// ControlPlaneURL is where the agent reaches the control plane. A pool
+	// reached over a control-plane channel names ControlPlaneChannelURL.
 	ControlPlaneURL string `json:"controlPlaneUrl,omitempty"`
-	ProjectID       string `json:"projectId,omitempty"`
-	PoolID          string `json:"poolId,omitempty"`
-	ControlPlaneKey string `json:"controlPlanePublicKey,omitempty"`
+	// ControlPlaneChannel says the control plane opens a channel to this pool
+	// rather than the pool dialing it (ADR 26-10-30-875 §§1–2): the agent
+	// accepts it on its own listener and serves it to the pool's processes at
+	// ControlPlaneChannelURL, which ControlPlaneURL then names.
+	ControlPlaneChannel bool   `json:"controlPlaneChannel,omitempty"`
+	ProjectID           string `json:"projectId,omitempty"`
+	PoolID              string `json:"poolId,omitempty"`
+	ControlPlaneKey     string `json:"controlPlanePublicKey,omitempty"`
 	// AgentListenURL is where the agent's own HTTP server binds.
 	AgentListenURL  string `json:"agentListenUrl,omitempty"`
 	HostMountPrefix string `json:"hostMountPrefix,omitempty"`
@@ -112,6 +118,15 @@ type Bootstrap struct {
 	DisableAgentEndpointTLS bool `json:"disableAgentEndpointTls,omitempty"`
 }
 
+// ControlPlaneChannelSocket is where a pool reached over a control-plane
+// channel serves it to its own processes: the agent and the proxy unit, which
+// share this filesystem on every pool.
+const ControlPlaneChannelSocket = "/run/discobox/control-plane.sock"
+
+// ControlPlaneChannelURL is ControlPlaneChannelSocket as the URL the pool's
+// processes dial with pkg/wire.
+const ControlPlaneChannelURL = "unix://" + ControlPlaneChannelSocket
+
 // EffectiveRuntime is the runtime the bootstrap names, RuntimeDocker when it
 // names none.
 func (b Bootstrap) EffectiveRuntime() Runtime {
@@ -140,6 +155,9 @@ func (b Bootstrap) Validate() error {
 	// clear message, rather than at the first request.
 	if _, err := wire.Parse(b.ControlPlaneURL); err != nil {
 		return fmt.Errorf("control plane URL: %w", err)
+	}
+	if b.ControlPlaneChannel && b.ControlPlaneURL != ControlPlaneChannelURL {
+		return fmt.Errorf("a pool reached over a control-plane channel reaches it at %s, not %s", ControlPlaneChannelURL, b.ControlPlaneURL)
 	}
 	if listen := strings.TrimSpace(b.AgentListenURL); listen != "" {
 		if _, err := wire.Parse(listen); err != nil {

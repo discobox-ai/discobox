@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -31,8 +32,8 @@ import (
 // it; and its machines answer the two commands that make a pool's box. A fake
 // guest runs a command on the host, so the agent placed in it has nothing to
 // run as: `provision identity` and `provision apply` are answered here, once
-// the agent, its pins, the bootstrap and the key are checked to be in the
-// guest.
+// the agent, its pins, the bootstrap, the key and the pool bundle's placed
+// blob are checked to be in the guest.
 type poolTestDriver struct {
 	machine.Driver
 
@@ -140,7 +141,11 @@ func (m *poolTestMachine) Exec(ctx context.Context, req machine.ExecRequest) (ma
 		if m.driver.applyFails {
 			return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", "echo apply failed >&2; exit 3"}})
 		}
+		if len(req.Argv) != 4 || req.Argv[3] != "--pool" {
+			return m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", "echo apply was not asked for a pool >&2; exit 2"}})
+		}
 		check += ` && test -f "$root` + bundle.BootstrapFile + `" && test -f "$root` + bundle.ProvisioningKeyFile + `"`
+		check += ` && test "$(cat "$root` + agentlayer.PlacedBlob(testPoolBlob) + `")" = "` + testPoolBlobData + `"`
 		process, err := m.Machine.Exec(ctx, machine.ExecRequest{Argv: []string{"sh", "-c", check}})
 		if err != nil {
 			return nil, err
@@ -231,14 +236,29 @@ func (m *testMaker) Bootstrap(context.Context) (poolagent.Bootstrap, error) {
 	return poolagent.Bootstrap{ProjectID: "project-1", ControlPlaneKey: "control-plane-key"}, nil
 }
 
+// testPoolBlob is the one blob of the test pool bundle, which the box is
+// placed with: what of it the test reads is that it was placed, not what it
+// is.
+var testPoolBlob = "sha256:" + strings.Repeat("c", 64)
+
+const testPoolBlobData = "pool bundle blob"
+
 func (m *testMaker) Box(_ context.Context, platform imagecache.Platform) (sandbox.PoolBox, error) {
 	m.platform = platform
-	layer := agentLayer()
+	agentDigest := "sha256:" + strings.Repeat("b", 64)
+	blobs := map[string][]byte{agentDigest: agentLayer(), testPoolBlob: []byte(testPoolBlobData)}
 	return sandbox.PoolBox{
-		Agent:          sandbox.BundlePin{Name: "discobox-agent", Digest: "sha256:" + strings.Repeat("a", 64)},
-		AgentLayer:     "sha256:" + strings.Repeat("b", 64),
-		OpenAgentLayer: func(context.Context) (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(layer)), nil },
-		Bundles:        []sandbox.BundlePin{{Name: "discobox-pool", Digest: m.digest}},
+		Agent:      sandbox.BundlePin{Name: "discobox-agent", Digest: "sha256:" + strings.Repeat("a", 64)},
+		AgentLayer: agentDigest,
+		Bundles:    []sandbox.BundlePin{{Name: "discobox-pool", Digest: m.digest}},
+		Blobs:      []string{testPoolBlob},
+		OpenBlob: func(_ context.Context, digest string) (io.ReadCloser, int64, error) {
+			data, ok := blobs[digest]
+			if !ok {
+				return nil, 0, fmt.Errorf("no blob %s", digest)
+			}
+			return io.NopCloser(bytes.NewReader(data)), int64(len(data)), nil
+		},
 	}, nil
 }
 

@@ -29,10 +29,12 @@ import (
 
 // A pool's box is made the way a pool makes a sandbox's (ADR 26-10-24-953
 // §§2, 4), whatever the box is: this places the agent and the pool's pins in
-// it, has the box make its key and enrolls it, places the bootstrap, and runs
-// `discobox-provision apply`, which applies the pool bundle's features — the
-// agent and its proxy among them. Placing and running are the provisioner's,
-// over the box as a machine.Guest: a Docker pool's container, or a VM pool's
+// it, has the box make its key and enrolls it, places the bootstrap and the
+// pool's bundles, read from the server's own asset store (ADR 26-10-30-875
+// §5), and runs `discobox-provision apply`, which applies the pool bundle's
+// features — the agent and its proxy among them — fetching nothing. Placing
+// and running are the provisioner's, over the box as a machine.Guest: a
+// Docker pool's container, or a VM pool's
 // machine.
 
 // BoxRecord is what a provider placed in a pool's box, kept with the pool's
@@ -130,16 +132,17 @@ type BoxPlacement struct {
 	Env       map[string]string
 }
 
-// provisionTimeout bounds one provisioning of a pool's box: the pool
-// bundle's fetch and every one of its steps, blocking.
+// provisionTimeout bounds one provisioning of a pool's box: placing the pool
+// bundle and every one of its steps, blocking.
 const provisionTimeout = 15 * time.Minute
 
 // ProvisionBox makes the running box guest a pool's box, or makes it so
 // again: it places the agent and pins, enrolls the key the box makes or
-// already holds, places the bootstrap and the agent's environment, and
-// applies the pool's bundles. What else the agent reads (PlaceBoxFiles) is
-// placed before. Every step is idempotent,
-// so a box provisioned before is provisioned again in place, its key the same.
+// already holds, places the bootstrap and the agent's environment with every
+// blob of the pool's bundles (applyTree), and applies those bundles, which
+// the box fetches nothing for (ADR 26-10-30-875 §5). What else the agent
+// reads (PlaceBoxFiles) is placed before. Every step is idempotent, so a box
+// provisioned before is provisioned again in place, its key the same.
 func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, placement BoxPlacement) (BoxRecord, error) {
 	ctx, cancel := context.WithTimeout(ctx, provisionTimeout)
 	defer cancel()
@@ -150,7 +153,7 @@ func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, pla
 	}
 	defer func() { _ = os.RemoveAll(agentDir) }()
 	agentPath := filepath.Join(agentDir, "discobox-sandbox-agent")
-	layer, err := box.OpenAgentLayer(ctx)
+	layer, _, err := box.OpenBlob(ctx, box.AgentLayer)
 	if err != nil {
 		return BoxRecord{}, fmt.Errorf("read the agent bundle %s: %w", box.Agent.Name, err)
 	}
@@ -196,17 +199,13 @@ func ProvisionBox(ctx context.Context, guest machine.Guest, maker PoolMaker, pla
 	if err != nil {
 		return BoxRecord{}, err
 	}
+	tree := applyTree(ctx, files, box)
 	applied, err := provisioner.Provision(ctx, guest, provisioner.Plan{
-		Dir:  "/",
-		Tree: files,
-		Command: machine.ExecRequest{Argv: []string{
-			agentlayer.AgentPath, "provision", "apply",
-			"--control-plane", bootstrap.ControlPlaneURL,
-			"--project", bootstrap.ProjectID,
-			"--pool", bootstrap.PoolID,
-			"--key", keyPath,
-		}},
+		Dir:     "/",
+		Tree:    tree,
+		Command: machine.ExecRequest{Argv: []string{agentlayer.AgentPath, "provision", "apply", "--pool"}},
 	})
+	_ = tree.Close()
 	if err != nil {
 		return BoxRecord{}, provisionError("provision the pool's box", applied, err)
 	}
@@ -241,10 +240,10 @@ func lastLines(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-// bootstrapFiles is the tree of what the pool agent reads beside its bundle:
-// the bootstrap (bundle.BootstrapFile) and the policy it reads from its
+// bootstrapFiles is what the pool agent reads beside its bundle: the
+// bootstrap (bundle.BootstrapFile) and the policy it reads from its
 // environment (bundle.EnvironmentFile).
-func bootstrapFiles(placement BoxPlacement) (io.Reader, error) {
+func bootstrapFiles(placement BoxPlacement) ([]BoxFile, error) {
 	data, err := json.MarshalIndent(placement.Bootstrap, "", "  ")
 	if err != nil {
 		return nil, err
@@ -254,10 +253,53 @@ func bootstrapFiles(placement BoxPlacement) (io.Reader, error) {
 		env = append(env, key+"="+value+"\n")
 	}
 	sort.Strings(env)
-	return boxTree([]BoxFile{
+	return []BoxFile{
 		{Path: bundle.BootstrapFile, Data: data},
 		{Path: bundle.EnvironmentFile, Data: []byte(strings.Join(env, ""))},
-	})
+	}, nil
+}
+
+// applyTree is the tree `discobox-provision apply` applies: files, and every
+// blob of box's bundles the box's content store reads (box.Blobs), each at
+// agentlayer.PlacedBlob, read from the server's asset store as it is written
+// (ADR 26-10-30-875 §5). It streams: the caller closes it once it is placed,
+// or given up.
+func applyTree(ctx context.Context, files []BoxFile, box sandbox.PoolBox) io.ReadCloser {
+	reader, writer := io.Pipe()
+	go func() {
+		tw := tar.NewWriter(writer)
+		err := writeBoxFiles(tw, files)
+		if err == nil {
+			err = tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: strings.TrimPrefix(agentlayer.PlacedDir, "/") + "/", Mode: 0o700})
+		}
+		for _, digest := range box.Blobs {
+			if err != nil {
+				break
+			}
+			err = placeBlob(ctx, tw, box, digest)
+		}
+		if err == nil {
+			err = tw.Close()
+		}
+		writer.CloseWithError(err)
+	}()
+	return reader
+}
+
+// placeBlob writes the blob digest of box at agentlayer.PlacedBlob.
+func placeBlob(ctx context.Context, tw *tar.Writer, box sandbox.PoolBox, digest string) error {
+	body, size, err := box.OpenBlob(ctx, digest)
+	if err != nil {
+		return fmt.Errorf("read %s of the pool's bundles: %w", digest, err)
+	}
+	defer body.Close()
+	if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: strings.TrimPrefix(agentlayer.PlacedBlob(digest), "/"), Mode: 0o600, Size: size}); err != nil {
+		return err
+	}
+	if _, err := io.CopyN(tw, body, size); err != nil {
+		return fmt.Errorf("read %s of the pool's bundles: %w", digest, err)
+	}
+	return nil
 }
 
 // boxTree is files as a tar to place at "/", each root's alone, under the
@@ -265,26 +307,35 @@ func bootstrapFiles(placement BoxPlacement) (io.Reader, error) {
 func boxTree(files []BoxFile) (io.Reader, error) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	dirs := map[string]bool{}
-	for _, file := range files {
-		if !path.IsAbs(file.Path) {
-			return nil, fmt.Errorf("a pool's box file %q is not an absolute path", file.Path)
-		}
-		if dir := path.Dir(file.Path); !dirs[dir] {
-			dirs[dir] = true
-			if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: strings.TrimPrefix(dir, "/") + "/", Mode: 0o755}); err != nil {
-				return nil, err
-			}
-		}
-		if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: strings.TrimPrefix(file.Path, "/"), Mode: 0o600, Size: int64(len(file.Data))}); err != nil {
-			return nil, err
-		}
-		if _, err := tw.Write(file.Data); err != nil {
-			return nil, err
-		}
+	if err := writeBoxFiles(tw, files); err != nil {
+		return nil, err
 	}
 	if err := tw.Close(); err != nil {
 		return nil, err
 	}
 	return &buf, nil
+}
+
+// writeBoxFiles writes files to tw, each root's alone, under the directories
+// they name.
+func writeBoxFiles(tw *tar.Writer, files []BoxFile) error {
+	dirs := map[string]bool{}
+	for _, file := range files {
+		if !path.IsAbs(file.Path) {
+			return fmt.Errorf("a pool's box file %q is not an absolute path", file.Path)
+		}
+		if dir := path.Dir(file.Path); !dirs[dir] {
+			dirs[dir] = true
+			if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: strings.TrimPrefix(dir, "/") + "/", Mode: 0o755}); err != nil {
+				return err
+			}
+		}
+		if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: strings.TrimPrefix(file.Path, "/"), Mode: 0o600, Size: int64(len(file.Data))}); err != nil {
+			return err
+		}
+		if _, err := tw.Write(file.Data); err != nil {
+			return err
+		}
+	}
+	return nil
 }

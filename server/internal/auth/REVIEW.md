@@ -23,3 +23,13 @@
   key inside its own protocol before any channel exists. Do not widen this list
   further without the same "must work pre-auth and reveals nothing sensitive,
   or authenticates in-band" justification.
+- A pool's carrier stream is held to its pool's routes only because the
+  server's `connContext` sees a `*carrierhub.Conn` and tags it
+  (`WithCarrierPool`); a connection it does not recognize is served untagged,
+  and `CarrierPoolAuthenticator` steps aside. Anything that wraps the hub's
+  listener or its connections — TLS, a limit, metrics — must keep
+  `*carrierhub.Conn` visible to that type switch. Why: an untagged request from
+  a pool's guest, a machine running other people's code, falls through to the
+  default user with `ScopeAll` (ADR 26-10-30-875 §3);
+  `TestAPoolsControlPlaneStreamReachesOnlyThatPoolsRoutes` drives a real hub to
+  catch it.

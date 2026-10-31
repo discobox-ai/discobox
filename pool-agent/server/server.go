@@ -5,13 +5,9 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -37,12 +33,12 @@ type Config struct {
 	// the control plane's. It is the public half of the pool's identity key;
 	// nil accepts control-plane tokens alone.
 	SandboxTokenKey ed25519.PublicKey
-	Port            int
-	// Listener, when set, is served instead of a TCP listener on Port. The
-	// pool agent always sets it, binding DISCOBOX_AGENT_LISTEN_URL with
-	// wire.Listen: the URL's scheme picks the transport, VSOCK on libkrun and
-	// vz pools (so the agent opens no IP port) and TCP on the rest.
-	Listener net.Listener
+	// Front serves the agent's own listener, which the agent binds with
+	// wire.Listen from DISCOBOX_AGENT_LISTEN_URL: the URL's scheme picks the
+	// transport, VSOCK on libkrun and vz pools (so the agent opens no IP
+	// port) and TCP on the rest. It is started before the agent's first
+	// report, so a control-plane channel can be opened before it (StartFront).
+	Front *Front
 	// OriginListener, when set, serves the sandboxes' own fetches of their
 	// origins, which reach it through the pool proxy (ADR 26-10-08-561). It
 	// is loopback, and serves the git-origins route alone, to the sandbox
@@ -146,25 +142,12 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	port := cfg.Port
-	if port == 0 {
-		port = envInt("PORT", 3002)
+	if cfg.Front == nil {
+		return errors.New("the pool agent's listener is not being served")
 	}
-
 	router, err := NewRouter(cfg)
 	if err != nil {
 		return err
-	}
-	httpServer := &http.Server{
-		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           router,
-		ReadHeaderTimeout: 10 * time.Second,
-		// No ReadTimeout/WriteTimeout: those set absolute per-request conn
-		// deadlines that survive protocol upgrades (exec attach websockets
-		// proxied to the sandbox agent) and cut long-lived streams off
-		// mid-flight. Liveness comes from ReadHeaderTimeout, IdleTimeout, and
-		// websocket keepalive pings on attach tunnels.
-		IdleTimeout: 120 * time.Second,
 	}
 	errCh := make(chan error, 3)
 	var originServer *http.Server
@@ -190,21 +173,13 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 			errCh <- assetServer.Serve(cfg.AssetListener)
 		}()
 	}
-	go func() {
-		if cfg.Listener != nil {
-			logger.Info("pool agent serving", "addr", cfg.Listener.Addr())
-			errCh <- httpServer.Serve(cfg.Listener)
-			return
-		}
-		logger.Info("pool agent serving", "addr", httpServer.Addr)
-		errCh <- httpServer.ListenAndServe()
-	}()
+	go func() { errCh <- cfg.Front.serve(ctx, router) }()
 
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = httpServer.Shutdown(shutdownCtx)
+		_ = cfg.Front.Shutdown(shutdownCtx)
 		if originServer != nil {
 			_ = originServer.Shutdown(shutdownCtx)
 		}
@@ -218,16 +193,4 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		}
 		return err
 	}
-}
-
-func envInt(key string, fallback int) int {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return fallback
-	}
-	return parsed
 }

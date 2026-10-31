@@ -15,6 +15,7 @@ import (
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
@@ -69,17 +70,24 @@ func Validate(data json.RawMessage) error {
 	if accessSecret(cfg.SSHPrivateKey, cfg.SSHPrivateKeyEnv, "") == "" {
 		return fmt.Errorf("digitalocean sshPrivateKey or sshPrivateKeyEnv is required to reach worker Docker daemons")
 	}
-	return poolruntime.RequireControlPlaneURL(ProviderType, cfg.ControlPlaneURL)
+	return nil
 }
 
-func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) sandbox.ProviderFactory {
+// FactoryWithPoolManager makes the provider's instances. hub is the server's
+// carrier hub, which a pool with no controlPlaneUrl is reached through (ADR
+// 26-10-30-875).
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults, hub *carrierhub.Hub) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, poolManager, imageSync, serverDefaults)
+		return newFromInstance(ctx, instance, poolManager, imageSync, serverDefaults, hub)
 	}
 }
 
-func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
+func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults, hub *carrierhub.Hub) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
+	if err != nil {
+		return nil, err
+	}
+	streams, err := poolruntime.ControlPlaneStreams(ProviderType, cfg.ControlPlaneURL, hub)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +103,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		_ = driver.Close()
 		return nil, err
 	}
-	return poolruntime.New(engine, Definition(), poolManager), nil
+	return poolruntime.New(engine, Definition(), poolManager, streams), nil
 }
 
 func driverConfigFrom(cfg Config) DriverConfig {
@@ -167,7 +175,7 @@ func Definition() sandbox.ProviderDefinition {
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "token", Label: "API Token", Type: "password", CredentialProvider: "digitalocean", CredentialAuthType: "token"},
 			{Key: "tokenEnv", Label: "API Token Environment Variable", Type: "string", Placeholder: "DIGITALOCEAN_ACCESS_TOKEN", Description: "Environment variable containing the API token; use instead of token for local CLI workflows."},
-			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Required: true, Placeholder: "https://discobot.example.com"},
+			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "https://discobox.example.com", Description: "Where its pools reach this server. Leave it empty and this server opens a channel to each pool instead, so it needs no public URL."},
 			{Key: "sshKeys", Label: "SSH Keys", Type: "string", Required: true, Description: "SSH key IDs or fingerprints registered with DigitalOcean; must match the SSH private key."},
 			{Key: "sshPrivateKey", Label: "SSH Private Key", Type: "password", Description: "PEM private key used to reach the Droplet's Docker daemon over SSH."},
 			{Key: "sshPrivateKeyEnv", Label: "SSH Private Key Environment Variable", Type: "string", Description: "Environment variable containing the SSH private key; use instead of sshPrivateKey."},
