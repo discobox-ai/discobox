@@ -132,7 +132,7 @@ func (s *Service) describeCapturePreview(ctx context.Context, projectID, sandbox
 		}
 		if n := slices.IndexFunc(cfg.Files, func(f model.HarnessConfigFile) bool { return f.Path == change.Path }); n >= 0 {
 			f := cfg.Files[n]
-			change.File = &harnesscapture.File{Path: f.Path, Content: f.Content, CreateOnly: f.CreateOnly, Template: f.Template}
+			change.File = &harnesscapture.File{Path: f.Path, Content: f.Content, CreateOnly: f.CreateOnly}
 		}
 	}
 	return nil
@@ -290,7 +290,7 @@ func (s *Service) commitCapture(ctx context.Context, p, b, configID string, c ha
 				continue
 			}
 			f := change.File
-			file := model.HarnessConfigFile{Path: f.Path, Content: f.Content, CreateOnly: f.CreateOnly, Template: f.Template}
+			file := model.HarnessConfigFile{Path: f.Path, Content: f.Content, CreateOnly: f.CreateOnly}
 			if index >= 0 {
 				cfg.ConfiguredFiles[index] = file
 			} else {

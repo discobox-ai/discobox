@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"text/template"
 	"time"
 
 	"gorm.io/gorm"
@@ -990,7 +989,7 @@ func TestMigrateLiftsTheLimitOnConfiguredHarnessSecrets(t *testing.T) {
 // the primary source's target on an agent that sets no workingDir, wherever the
 // configure flow put it, and leaves what somebody rewrote by hand, and every
 // other harness's files, as they were.
-func TestMigrateRetrustsCodexConfiguredWorkingDir(t *testing.T) {
+func TestMigrateHarnessTemplatesToLiteralSettingsAndCredentialBindings(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{
 		Driver: gormdb.DriverSQLite,
@@ -1011,93 +1010,43 @@ func TestMigrateRetrustsCodexConfiguredWorkingDir(t *testing.T) {
 		t.Fatalf("create project: %v", err)
 	}
 
-	// As configure.sh wrote them: settings, a newline, then the stanza — or the
-	// stanza alone, its leading newline stripped, when there were no settings.
-	const oldStanza = "\n{{- range .sources }}{{- if eq .slug \"primary\" }}\n[projects.{{ .target | json }}]\ntrust_level = \"trusted\"\n{{- end }}{{- end }}\n"
-	const newStanza = "\n{{- if .workingDir }}\n[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n{{- else }}" +
-		"{{- range .sources }}{{- if eq .slug \"primary\" }}\n[projects.{{ .target | json }}]\ntrust_level = \"trusted\"\n{{- end }}{{- end }}" +
-		"{{- end }}\n"
-	const settings = "model = \"gpt-5\"\n"
-	const handWritten = "model = \"gpt-5\"\n\n[projects.\"/src\"]\ntrust_level = \"trusted\"\n"
-	auth := model.HarnessConfigFile{Path: ".codex/auth.json", Template: true, Content: `{"OPENAI_API_KEY": "{{ .secrets.OPENAI_API_KEY }}"}`}
+	const oldTrust = "\n{{- if .workingDir }}\n[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n{{- end }}\n"
 	stamp := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	seeds := map[string][]model.HarnessConfigFile{
-		"codex-settings": {{Path: ".codex/config.toml", Template: true, Content: settings + oldStanza}, auth},
-		"codex-bare":     {{Path: ".codex/config.toml", Template: true, Content: strings.TrimLeft(oldStanza, "\n")}},
-		"codex-by-hand":  {{Path: ".codex/config.toml", Template: true, Content: handWritten}},
-		"elsewhere":      {{Path: ".other/config.toml", Template: true, Content: settings + oldStanza}},
+	row := model.HarnessConfig{ID: "hc_legacy", ProjectID: "project-1", Slug: "legacy", Name: "Legacy", Image: "img:1", Configured: true}
+	if err := db.Write.Create(&row).Error; err != nil {
+		t.Fatal(err)
 	}
-	for slug, files := range seeds {
-		if err := db.Write.WithContext(ctx).Create(&model.HarnessConfig{
-			ID: "hc_" + slug, ProjectID: "project-1", Slug: slug, Name: slug, Image: "img:1",
-			Configured: true, ConfiguredFiles: files, UpdatedAt: stamp,
-		}).Error; err != nil {
-			t.Fatalf("seed %s: %v", slug, err)
-		}
-		if err := db.Write.WithContext(ctx).Model(&model.HarnessConfig{ID: "hc_" + slug}).UpdateColumn("updated_at", stamp).Error; err != nil {
-			t.Fatalf("stamp %s: %v", slug, err)
-		}
+	legacy := []map[string]any{
+		{"path": ".codex/config.toml", "template": true, "content": "model = \"saved\"\n" + oldTrust},
+		{"path": ".codex/auth.json", "template": true, "content": `{"OPENAI_API_KEY":"{{ .secrets.OPENAI_API_KEY }}"}`},
 	}
-
-	want := map[string][]model.HarnessConfigFile{
-		"codex-settings": {{Path: ".codex/config.toml", Template: true, Content: settings + newStanza}, auth},
-		"codex-bare":     {{Path: ".codex/config.toml", Template: true, Content: strings.TrimLeft(newStanza, "\n")}},
-		"codex-by-hand":  seeds["codex-by-hand"],
-		"elsewhere":      seeds["elsewhere"],
+	raw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// Twice: it runs on every start, and a second run finds nothing to do.
+	if err := db.Write.Model(&row).UpdateColumns(map[string]any{"configured_files": string(raw), "updated_at": stamp}).Error; err != nil {
+		t.Fatal(err)
+	}
 	for range 2 {
 		if err := db.Migrate(ctx); err != nil {
-			t.Fatalf("migrate: %v", err)
+			t.Fatal(err)
 		}
-		for slug, files := range want {
-			var got model.HarnessConfig
-			if err := db.Write.WithContext(ctx).First(&got, "id = ?", "hc_"+slug).Error; err != nil {
-				t.Fatalf("read %s: %v", slug, err)
-			}
-			if !reflect.DeepEqual(got.ConfiguredFiles, files) {
-				t.Fatalf("%s configured files = %#v, want %#v", slug, got.ConfiguredFiles, files)
-			}
-			if !got.UpdatedAt.Equal(stamp) {
-				t.Fatalf("%s updated_at = %v, want the %v it had: a migration is not an edit", slug, got.UpdatedAt, stamp)
-			}
+		var got model.HarnessConfig
+		if err := db.Write.First(&got, "id = ?", row.ID).Error; err != nil {
+			t.Fatal(err)
 		}
-	}
-
-	// What the migrated file renders to, the way sandbox-agent renders a harness
-	// file: the stored config may name an image whose agent predates workingDir,
-	// and there it must trust what the old stanza did rather than nothing.
-	primary := []any{map[string]any{"slug": "primary", "target": "/src"}}
-	renders := []struct {
-		name    string
-		context map[string]any
-		want    string
-	}{
-		{"current agent, no source", map[string]any{"workingDir": "/home/discobox", "sources": []any{}},
-			settings + "[projects.\"/home/discobox\"]\ntrust_level = \"trusted\"\n"},
-		{"current agent, source", map[string]any{"workingDir": "/src/app", "sources": primary},
-			settings + "[projects.\"/src/app\"]\ntrust_level = \"trusted\"\n"},
-		{"older agent, source", map[string]any{"sources": primary},
-			settings + "[projects.\"/src\"]\ntrust_level = \"trusted\"\n"},
-		{"older agent, no source", map[string]any{"sources": []any{}}, settings},
-	}
-	for _, render := range renders {
-		tmpl, err := template.New(render.name).
-			Funcs(template.FuncMap{"json": func(value any) (string, error) {
-				encoded, err := json.Marshal(value)
-				return string(encoded), err
-			}}).
-			Option("missingkey=zero").
-			Parse(want["codex-settings"][0].Content)
-		if err != nil {
-			t.Fatalf("%s: parse: %v", render.name, err)
+		if len(got.ConfiguredFiles) != 2 || got.ConfiguredFiles[0].Content != "model = \"saved\"\n" {
+			t.Fatalf("settings lost: %#v", got.ConfiguredFiles)
 		}
-		var rendered strings.Builder
-		if err := tmpl.Execute(&rendered, render.context); err != nil {
-			t.Fatalf("%s: render: %v", render.name, err)
+		var auth map[string]any
+		if err := json.Unmarshal([]byte(got.ConfiguredFiles[1].Content), &auth); err != nil {
+			t.Fatal(err)
 		}
-		if rendered.String() != render.want {
-			t.Fatalf("%s rendered %q, want %q", render.name, rendered.String(), render.want)
+		if !reflect.DeepEqual(auth["OPENAI_API_KEY"], map[string]any{"$secret": "OPENAI_API_KEY"}) { //nolint:gosec // A binding name, not a credential.
+			t.Fatalf("credential lost: %#v", auth)
+		}
+		if !got.UpdatedAt.Equal(stamp) {
+			t.Fatal("migration changed modification time")
 		}
 	}
 }

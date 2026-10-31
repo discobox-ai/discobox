@@ -92,8 +92,6 @@ components:
                     type: boolean
                 path:
                     type: string
-                template:
-                    type: boolean
             required:
                 - path
                 - content
@@ -184,8 +182,6 @@ components:
         HarnessCaptureSetting:
             additionalProperties: false
             properties:
-                templateSuffix:
-                    type: string
                 createOnly:
                     type: boolean
                 exclude:
@@ -413,9 +409,6 @@ components:
                 path:
                     type: string
                 createOnly:
-                    type: boolean
-                template:
-                    description: Render file content against the public sandbox configuration before writing
                     type: boolean
             required:
             - path

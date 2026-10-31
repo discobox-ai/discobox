@@ -178,10 +178,7 @@ func TestLoadDerivesExecDefaultsFromEffectiveConfig(t *testing.T) {
 	if started.Workdir != "/workspace/project/cmd/tool" || started.SourceRoot != "/workspace/project" {
 		t.Fatalf("exec defaults with a start directory = %q in %q", started.Workdir, started.SourceRoot)
 	}
-	sources, ok := cfg.SandboxConfig["sources"].([]any)
-	if !ok || len(sources) != 1 {
-		t.Fatalf("sandbox config sources = %#v, want the raw sources array as template data", cfg.SandboxConfig["sources"])
-	}
+
 }
 
 // validTestConfig is the minimum a sandbox manifest must carry to validate.

@@ -173,8 +173,6 @@ components:
                     type: boolean
                 path:
                     type: string
-                template:
-                    type: boolean
             required:
                 - path
                 - content

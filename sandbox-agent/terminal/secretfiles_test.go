@@ -27,7 +27,7 @@ const credentialsPath = ".claude/.credentials.json"
 //nolint:gosec // A template and a placeholder, not credentials.
 const credentialsTemplate = `{
   "claudeAiOauth": {
-    "accessToken": "{{ .secrets.CLAUDE_CODE_OAUTH_TOKEN }}",
+    "accessToken": {"$secret":"CLAUDE_CODE_OAUTH_TOKEN"},
     "refreshToken": "discobox-refresh-happens-in-the-control-plane",
     "expiresAt": 4102444800000,
     "scopes": ["user:inference"],
@@ -39,7 +39,7 @@ func credentialsHarness() config.Harness {
 	return config.Harness{
 		ID: "harness_test",
 		Files: []config.HarnessFile{
-			{Path: credentialsPath, Template: true, Content: credentialsTemplate},
+			{Path: credentialsPath, Content: credentialsTemplate},
 		},
 	}
 }
@@ -47,6 +47,7 @@ func credentialsHarness() config.Harness {
 func credentialsInstaller(home string) FileInstaller {
 	return FileInstaller{
 		HomeDirectory: home,
+		Definition:    imageHarnessForCredentials(),
 		Secrets: func() map[string]string {
 			//nolint:gosec // A sentinel, which is non-secret by construction.
 			return map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-sentinel"}
@@ -169,9 +170,9 @@ func TestRestoreSecretFilesIgnoresFilesWithoutASentinel(t *testing.T) {
 	harness := config.Harness{
 		ID: "harness_test",
 		Files: []config.HarnessFile{
-			{Path: ".claude/settings.json", Template: true, Content: `{"model":"opus"}`},
+			{Path: ".claude/settings.json", Content: `{"model":"opus"}`},
 			// createOnly says the sandbox owns the file after the first write.
-			{Path: ".claude/owned.json", Template: true, CreateOnly: true, Content: `{"t":"{{ .secrets.CLAUDE_CODE_OAUTH_TOKEN }}"}`},
+			{Path: ".claude/owned.json", CreateOnly: true, Content: `{"t":{"$secret":"CLAUDE_CODE_OAUTH_TOKEN"}}`},
 		},
 	}
 	ctx := context.Background()
@@ -347,4 +348,8 @@ func TestRestoreSecretFilesWithClaudeCapture(t *testing.T) {
 			}
 		})
 	}
+}
+
+func imageHarnessForCredentials() *hc.Definition {
+	return &hc.Definition{Providers: []hc.Provider{{ID: "anthropic", EnvName: "CLAUDE_CODE_OAUTH_TOKEN", Types: []string{"oauth"}}}, CredentialFiles: []string{credentialsPath}, CredentialSettings: []hc.Setting{{Path: credentialsPath, Fields: map[string]string{"claudeAiOauth.accessToken": "secret", "claudeAiOauth.refreshToken": "placeholder", "claudeAiOauth.expiresAt": "number", "claudeAiOauth.scopes": "string-array", "claudeAiOauth.subscriptionType": "string"}}}}
 }

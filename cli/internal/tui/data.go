@@ -679,7 +679,6 @@ type HarnessFile struct {
 	// image-declared file of the same path, which is why it is listed first.
 	Configured bool
 	CreateOnly bool
-	Template   bool
 }
 
 // ServiceVerb is a lifecycle action against one of a discobox's declared

@@ -75,7 +75,7 @@ func TestDefinitionConfigure(t *testing.T) {
 		"usePrevious",
 		// auth.json is JSON, so a quote inside a template action arrives at
 		// the renderer backslash-escaped and the parser rejects it.
-		"{{ .secrets.${envName} }}",
+		"$secret: envName",
 		// Every retry is a person asking for one.
 		"confirm_retry",
 	} {
@@ -121,7 +121,7 @@ func TestImageManifest(t *testing.T) {
 	for _, file := range image.Harness.Files {
 		// Rewritten on every launch rather than kept from the first, or an
 		// image's new extension would never land; it holds no sentinel.
-		if file.CreateOnly || file.Template {
+		if file.CreateOnly {
 			t.Errorf("file %s is createOnly or templated, want plain", file.Path)
 		}
 		files[file.Path] = file

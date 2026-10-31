@@ -10,8 +10,8 @@ func TestCredentialTemplatesRejectPlaintextAndUnknownLeaves(t *testing.T) {
 	for _, tc := range []struct {
 		content string
 		valid   bool
-	}{{`{"token":"{{ .secrets.API_KEY }}","account":"me"}`, true}, {`{"token":"real-secret"}`, false}, {`{"token":"{{ .secrets.OTHER }}"}`, false}, {`{"token":"{{ .secrets.API_KEY }}","hidden":"real-secret"}`, false}} {
-		err := d.ValidateFiles([]File{{Path: "auth.json", Content: tc.content, Template: true}})
+	}{{`{"token":{"$secret":"API_KEY"},"account":"me"}`, true}, {`{"token":"real-secret"}`, false}, {`{"token":{"$secret":"OTHER"}}`, false}, {`{"token":{"$secret":"API_KEY"},"hidden":"real-secret"}`, false}} {
+		err := d.ValidateFiles([]File{{Path: "auth.json", Content: tc.content}})
 		if (err == nil) != tc.valid {
 			t.Fatalf("template acceptance=%v, expected %v", err == nil, tc.valid)
 		}
@@ -45,9 +45,8 @@ func TestCaptureRejectsSandboxOAuthMetadata(t *testing.T) {
 }
 
 func TestPortableTrustSuffixIsRegisteredAndNotCapturedFromWorkspace(t *testing.T) {
-	suffix := "[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n"
-	d := Definition{Settings: []Setting{{Path: ".codex/config.toml", Format: "toml", Exclude: []string{"apiKey", "projects"}, TemplateSuffix: suffix}}}
-	f := File{Path: ".codex/config.toml", Content: "model = \"next\"\n" + suffix, Template: true}
+	d := Definition{Settings: []Setting{{Path: ".codex/config.toml", Format: "toml", Exclude: []string{"apiKey", "projects"}}}}
+	f := File{Path: ".codex/config.toml", Content: "model = \"next\"\n"}
 	if err := d.ValidateFiles([]File{f}); err != nil {
 		t.Fatal(err)
 	}
@@ -88,12 +87,12 @@ func TestSettingsExclusionsTraverseParserSpecificContainers(t *testing.T) {
 	}
 }
 
-func TestSettingsRejectUnregisteredTemplateActions(t *testing.T) {
-	const suffix = "[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n"
-	for _, action := range []string{"{{ .secrets.OTHER }}", "{{ .workingDir }}"} {
-		body := "developer_instructions = " + string(mustJSON(t, action)) + "\n" + suffix
-		if _, err := NormalizeSettings(Setting{Format: "toml", TemplateSuffix: suffix}, body); err == nil {
-			t.Fatal("accepted arbitrary template directive")
+func TestSettingsPreserveLiteralTemplateSyntax(t *testing.T) {
+	for _, value := range []string{"{{ .secrets.OTHER }}", "{{ .workingDir }}", "${NAME}"} {
+		body := "developer_instructions = " + string(mustJSON(t, value)) + "\n"
+		got, err := NormalizeSettings(Setting{Format: "toml"}, body)
+		if err != nil || got["developer_instructions"] != value {
+			t.Fatalf("literal preference: %v %v", got, err)
 		}
 	}
 }

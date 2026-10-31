@@ -311,7 +311,6 @@ type File struct {
 	Path       string `json:"path" doc:"The file's path, relative to the sandbox user's home directory."`
 	Content    string `json:"content" doc:"The file's content."`
 	CreateOnly bool   `json:"createOnly,omitempty" doc:"Leave the file alone when it already exists."`
-	Template   bool   `json:"template,omitempty" doc:"Render the content against the public sandbox configuration before writing it."`
 }
 
 // ImageLayer carries the immutable harness contract and defaults baked into

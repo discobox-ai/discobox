@@ -81,14 +81,14 @@ exports.oauthAuthFile = (tokens, envName = "CODEX_OAUTH_TOKEN") => {
   const idToken = `${b64url({ alg: "none", typ: "JWT" })}.${b64url(claims)}.discobox`;
   return {
     path: ".codex/auth.json",
-    template: true,
+
     content:
       JSON.stringify(
         {
           OPENAI_API_KEY: null,
           tokens: {
             id_token: idToken,
-            access_token: `{{ .secrets.${envName} }}`,
+            access_token: { $secret: envName },
             refresh_token: "discobox-refresh-happens-in-the-control-plane",
             account_id: tokens.accountId,
           },

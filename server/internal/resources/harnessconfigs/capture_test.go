@@ -195,7 +195,7 @@ func TestCaptureRejectsCredentialHiddenInTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.WriteRevision = cfg.Revision
-	c.Files = []harnesscapture.FileChange{{Path: "~/.auth.json", File: &harnesscapture.File{Path: "~/.auth.json", Template: true, Content: `{"token":"raw-stolen-secret"}`}}}
+	c.Files = []harnesscapture.FileChange{{Path: "~/.auth.json", File: &harnesscapture.File{Path: "~/.auth.json", Content: `{"token":"raw-stolen-secret"}`}}}
 	if _, err := s.commitCapture(context.Background(), cfg.ProjectID, "sbx-capture", cfg.ID, c, false); err == nil {
 		t.Fatal("raw secret template accepted")
 	}
@@ -259,7 +259,7 @@ func TestCaptureTemplateRequiresBoundOrNewCredential(t *testing.T) {
 				t.Fatal(err)
 			}
 			c.WriteRevision = cfg.Revision
-			c.Files = []harnesscapture.FileChange{{Path: "~/.auth.json", File: &harnesscapture.File{Path: "~/.auth.json", Template: true, Content: `{"token":"{{ .secrets.API_TOKEN }}"}`}}}
+			c.Files = []harnesscapture.FileChange{{Path: "~/.auth.json", File: &harnesscapture.File{Path: "~/.auth.json", Content: `{"token":{"$secret":"API_TOKEN"}}`}}}
 			if !supply {
 				c.Credentials = nil
 			}

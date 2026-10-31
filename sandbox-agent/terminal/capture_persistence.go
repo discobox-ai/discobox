@@ -27,7 +27,7 @@ type captureRecoveryFile struct {
 }
 
 // This explicit schema must never contain local observations or candidate
-// snapshots. Files here are delivered/committed configuration and templates.
+// snapshots. Files here are delivered/committed configuration and credential documents.
 const maxCaptureRecovery = 128
 
 type captureCheckpoint struct {
@@ -176,7 +176,7 @@ func (m *captureManager) loadCaptureState() error {
 		data, err := readCaptureFile(m.recoveryPath)
 		if err == nil {
 			checkpoint = new(captureCheckpoint)
-			if json.Unmarshal(data, checkpoint) != nil {
+			if unmarshalCaptureData(data, checkpoint) != nil {
 				return errors.New("invalid capture checkpoint")
 			}
 			m.state = checkpoint.state()
@@ -188,7 +188,7 @@ func (m *captureManager) loadCaptureState() error {
 		legacy := filepath.Join(filepath.Dir(m.recoveryPath), "state.json")
 		data, err = readCaptureFile(legacy)
 		if err == nil && checkpoint == nil {
-			if json.Unmarshal(data, &m.state) != nil {
+			if unmarshalCaptureData(data, &m.state) != nil {
 				return errors.New("invalid legacy capture state")
 			}
 			if err = m.persist(); err != nil {
@@ -209,7 +209,7 @@ func (m *captureManager) loadCaptureState() error {
 		return err
 	}
 	var state captureState
-	if json.Unmarshal(data, &state) != nil {
+	if unmarshalCaptureData(data, &state) != nil {
 		return errors.New("invalid private capture state")
 	}
 	if checkpoint == nil || state.Sequence == checkpoint.Sequence {
@@ -274,4 +274,12 @@ func (m *captureManager) finishUnrecoverableAcknowledgment(a hc.Acknowledgment) 
 		m.state.ReceiptPredecessors = nil
 	}
 	return m.persist()
+}
+
+func unmarshalCaptureData(data []byte, value any) error {
+	next, err := hc.UpgradeLegacyJSON(data)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(next, value)
 }

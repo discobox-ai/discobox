@@ -27,12 +27,12 @@ import (
 // of the sandbox, while the credential the file pointed at is still good.
 //
 // Restoring the file is what makes that recoverable: the sentinel is durable,
-// so re-rendering the template puts the harness back where it started. It does
+// so resolving the credential document puts the harness back where it started. It does
 // not un-log-out a running process — Claude Code caches that decision until it
 // restarts — but it makes the next launch a signed-in one instead of leaving
 // every launch after the first 401 logged out.
 //
-// The invariant is narrow on purpose: a templated file that rendered a sentinel
+// The invariant is narrow on purpose: a declared credential document resolved with a sentinel
 // must still contain it. Nothing else about the file is reconciled, so a
 // harness that legitimately rewrote its own settings keeps them.
 
@@ -95,7 +95,7 @@ func (s *Service) WatchSecretFiles(ctx context.Context, logger *slog.Logger) {
 	}
 }
 
-// RestoreSecretFiles re-renders every templated file whose rendered content
+// RestoreSecretFiles resolves every declared credential document whose installed content
 // carries a sentinel that the file on disk no longer contains.
 //
 // createOnly files are left alone. That flag says the sandbox owns the file
@@ -103,7 +103,7 @@ func (s *Service) WatchSecretFiles(ctx context.Context, logger *slog.Logger) {
 // harness it was handed to. A credential delivered that way is delivered once
 // by contract; reconciling it would break the contract rather than the bug.
 func (i FileInstaller) RestoreSecretFiles(ctx context.Context, harness config.Harness, env map[string]string) ([]string, error) {
-	if (len(harness.Files) == 0 || i.Secrets == nil) && i.Capture == nil {
+	if i.Definition == nil {
 		return nil, nil
 	}
 	release, err := i.Capture.guard(ctx)
@@ -111,12 +111,7 @@ func (i FileInstaller) RestoreSecretFiles(ctx context.Context, harness config.Ha
 		return nil, err
 	}
 	defer release()
-	var sentinels map[string]string
-	if i.Capture != nil {
-		sentinels = i.Capture.sentinels()
-	} else {
-		sentinels = i.Secrets()
-	}
+	sentinels := i.sentinels()
 	if len(sentinels) == 0 {
 		return nil, nil
 	}
@@ -128,14 +123,14 @@ func (i FileInstaller) RestoreSecretFiles(ctx context.Context, harness config.Ha
 
 	var restored []string
 	for _, file := range i.Capture.files(harness.Files) {
-		if !file.Template || file.CreateOnly || i.Capture.protect(file.Path, false) {
+		if !slices.Contains(i.Definition.CredentialFiles, file.Path) || file.CreateOnly || i.Capture.protect(file.Path, false) {
 			continue
 		}
 		path, err := homeRelativePath(home, file.Path)
 		if err != nil {
 			return restored, fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
 		}
-		content, err := renderHarnessFileTemplate(file.Path, file.Content, i.templateContext())
+		content, err := i.Definition.ResolveCredential(file.Path, file.Content, sentinels)
 		if err != nil {
 			return restored, fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
 		}
@@ -158,8 +153,8 @@ func (i FileInstaller) RestoreSecretFiles(ctx context.Context, harness config.Ha
 	return restored, nil
 }
 
-// deliveredSentinels is the set of sentinel values a rendered file actually
-// carries. A file that renders none is not a credential delivery and is never
+// deliveredSentinels is the set of sentinel values an installed file actually
+// carries. A file that resolves none is not a credential delivery and is never
 // restored.
 func deliveredSentinels(rendered string, sentinels map[string]string) []string {
 	var out []string

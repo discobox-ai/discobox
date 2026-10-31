@@ -75,7 +75,7 @@ the techniques.
 | What does it write on first run, and where? | volumes, caches | copilot unpacks 185 MB under `~/.cache` (already pool cache); pi downloads `fd` from GitHub into its home unless `fd` or `fdfind` is on PATH — install the distribution's package in the image |
 | Where does it copy to? | OSC 52 vs the box's own X clipboard | codex needed `SSH_CONNECTION`; copilot writes OSC 52 always |
 | Does it keep memories in a directory you can point elsewhere? | source-scoped memory | claude: managed setting; codex: bind mount; opencode/copilot: none |
-| Is the credential store a file at all? Is there an export/import? | delivery | omp: SQLite, but `omp auth export`/`import` is a published document — template that, import at launch |
+| Is the credential store a file at all? Is there an export/import? | delivery | omp: SQLite, but `omp auth export`/`import` is a published document — bind its secret leaves, import at launch |
 | Is there a system layer at all? Do settings layers merge lists or replace them? | where hooks and policy can live | omp: none; its `PI_CONFIG_FILES` overlay outranks the user but *replaces* any list it sets |
 | What does one-shot mode do with a non-terminal stdin? With several words? With `@word`, after `--` too? | `launch.sh`, configure's check | omp and pi `-p` wait for stdin to close; each word is its own message; `@x` attaches a file — `</dev/null`, and the prompt after `--`. pi reads `@x` as a file even after `--`: a prompt that starts with `@` gets a leading space, which pi sends as it is |
 | Does every provider's client honour `HTTPS_PROXY`? | a sandbox's egress is the proxy | pi installs undici's `EnvHttpProxyAgent` globally and every provider answered through the proxy; omp's Anthropic client reads only `PI_PROXY` and otherwise connects direct, hanging every request in a discobox; fakes on `127.0.0.1` never see this, so make one real request through the sandbox's proxy before §6. Derive such a variable from `HTTPS_PROXY` in the image (a `/etc/profile.d` file the scripts also source): a loopback proxy address written into `image.json` is rewritten by a build in a discobox |
@@ -101,7 +101,7 @@ Write these down before writing scripts; most become ADR sections.
    or prefers an env var that would defeat the file (claude-code, codex); the
    default env delivery when the CLI documents an env var for headless use
    and the stored-login file is its own churned state (copilot). A store that
-   is not a file is delivered as the CLI's own export document, templated, and
+   is not a file is delivered as the CLI's own export document, with explicit JSON secret references, and
    imported by the launcher — never write the database yourself. omp imports
    the whole document on every launch, since each import replaces that
    provider's key and that account's login; opencode 2's import never updates
@@ -166,8 +166,9 @@ lessons that each cost a bug:
 - With several accounts of one provider (omp), name each secret by which
   secret it is — its `PREV_` sentinel, then its account — never by its
   position in what the CLI exported; a re-login moves it.
-- Template harness files with dotted access (`{{ .secrets.NAME }}`), never
-  `index .secrets "NAME"` inside JSON.
+- Keep settings literal. Declare credential-file schemas and use explicit JSON
+  `{"$secret":"NAME"}` objects at secret leaves. Launchers own local trust and
+  onboarding; file templates and settings suffixes are unsupported.
 - Check what was *entered*, not which prompt it came in at. Copilot's PAT
   prompt takes any token Copilot accepts, gh's repo-scoped `gho_` included;
   a least-privilege prompt has to look at the token it got, warn on a broad

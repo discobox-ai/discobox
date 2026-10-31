@@ -670,7 +670,6 @@ type HarnessCaptureFile struct {
 	Content    string  `json:"content"`
 	CreateOnly OptBool `json:"createOnly"`
 	Path       string  `json:"path"`
-	Template   OptBool `json:"template"`
 }
 
 // GetContent returns the value of Content.
@@ -688,11 +687,6 @@ func (s *HarnessCaptureFile) GetPath() string {
 	return s.Path
 }
 
-// GetTemplate returns the value of Template.
-func (s *HarnessCaptureFile) GetTemplate() OptBool {
-	return s.Template
-}
-
 // SetContent sets the value of Content.
 func (s *HarnessCaptureFile) SetContent(val string) {
 	s.Content = val
@@ -706,11 +700,6 @@ func (s *HarnessCaptureFile) SetCreateOnly(val OptBool) {
 // SetPath sets the value of Path.
 func (s *HarnessCaptureFile) SetPath(val string) {
 	s.Path = val
-}
-
-// SetTemplate sets the value of Template.
-func (s *HarnessCaptureFile) SetTemplate(val OptBool) {
-	s.Template = val
 }
 
 // One file a candidate writes (file) or removes (remove). A sandbox never sends previous, nor file

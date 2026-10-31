@@ -65,7 +65,7 @@ func TestDefinitionConfigure(t *testing.T) {
 	// Dotted field access has no quotes to escape; `index .secrets "NAME"` does,
 	// and would break every sandbox launch while still letting configure report
 	// success.
-	if !strings.Contains(script, "{{ .secrets.${") {
+	if !strings.Contains(script, "$secret:") {
 		t.Fatalf("configure script does not build the credential template by field access: %s", script)
 	}
 	if strings.Contains(script, `index .secrets`) {
@@ -88,9 +88,6 @@ func TestDefinitionConfigure(t *testing.T) {
 	if !strings.Contains(script, "project(body, definition.settings.find") {
 		t.Fatalf("configure script returns the configure sandbox's own trust map: %s", script)
 	}
-	if !strings.Contains(script, `[projects.{{ .workingDir | json }}]`) {
-		t.Fatalf("configure script does not put the harness's own trust stanza back: %s", script)
-	}
 	// The captured config.toml overlays the image's by path, so a copy taken
 	// before trust followed the working directory shadows the fixed template --
 	// including in the configure sandbox that would refresh it. The script
@@ -100,9 +97,6 @@ func TestDefinitionConfigure(t *testing.T) {
 	}
 	// Guarded, because that persisted copy may be rendered by an agent with no
 	// workingDir: bare, it becomes [projects.null], which is valid TOML.
-	if !strings.Contains(script, `'{{- if .workingDir }}'`) {
-		t.Fatalf("configure script's trust stanza is unguarded, so an older agent renders [projects.null]: %s", script)
-	}
 	// Every retry is gated on a person asking for one. An attempt that fails
 	// without ever reaching the user -- codex refusing to start, say -- fails
 	// again the instant it is retried, so an ungated `continue` is a busy loop
@@ -365,7 +359,7 @@ func TestLaunchJoinsThePromptWords(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := launchertest.RunLauncher(t, "codex", nil, tc.args)
-			if !slices.Equal(got, tc.want) {
+			if len(got) < 2 || got[0] != "-c" || !strings.Contains(got[1], `.trust_level="trusted"`) || !slices.Equal(got[2:], tc.want) {
 				t.Fatalf("codex argv = %#v, want %#v", got, tc.want)
 			}
 		})
@@ -391,7 +385,7 @@ func TestLaunchKeysMemoriesByUID(t *testing.T) {
 	}
 	memories := filepath.Join(sourceData, "users", strconv.Itoa(os.Getuid()), "harnesses", "codex", "memories")
 
-	if got, want := launchertest.RunLauncher(t, "codex", map[string]string{launchertest.SourceDataPath: sourceData}, []string{"hi"}), []string{"hi"}; !slices.Equal(got, want) {
+	if got, want := launchertest.RunLauncher(t, "codex", map[string]string{launchertest.SourceDataPath: sourceData}, []string{"hi"}), []string{"hi"}; !slices.Equal(got[2:], want) {
 		t.Fatalf("codex argv = %#v, want %#v", got, want)
 	}
 	carried, err := os.ReadFile(filepath.Join(memories, "memory.md"))

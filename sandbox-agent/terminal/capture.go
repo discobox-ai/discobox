@@ -63,18 +63,17 @@ type captureState struct {
 }
 
 type captureManager struct {
-	published           atomic.Pointer[hc.Preview]
-	execs               *execs.Manager
-	mu                  sync.Mutex
-	definition          hc.Definition
-	state               captureState
-	path, home, workdir string
-	recoveryPath        string
-	user                *execs.User
-	secrets             func() map[string]string
-	sandbox             map[string]any
-	failed              bool
-	run                 func(context.Context, []string, any, any) error
+	published    atomic.Pointer[hc.Preview]
+	execs        *execs.Manager
+	mu           sync.Mutex
+	definition   hc.Definition
+	state        captureState
+	path, home   string
+	recoveryPath string
+	user         *execs.User
+	secrets      func() map[string]string
+	failed       bool
+	run          func(context.Context, []string, any, any) error
 }
 
 func newCaptureManager(s *Service, cfg ServiceConfig) (*captureManager, error) {
@@ -88,15 +87,11 @@ func newCaptureManager(s *Service, cfg ServiceConfig) (*captureManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	workdir, err := cfg.Execs.DefaultWorkdir()
-	if err != nil {
-		return nil, err
-	}
 	dir := cfg.CaptureStateDir
 	if dir == "" {
 		dir = CaptureStateDirectory
 	}
-	m := &captureManager{execs: cfg.Execs, definition: *cfg.Harness.SaveBack, path: filepath.Join(dir, "state.json"), home: home, workdir: workdir, user: s.defaultUser, secrets: cfg.SecretEnv, sandbox: cfg.SandboxConfig}
+	m := &captureManager{execs: cfg.Execs, definition: *cfg.Harness.SaveBack, path: filepath.Join(dir, "state.json"), home: home, user: s.defaultUser, secrets: cfg.SecretEnv}
 	if cfg.CaptureRecoveryDir != "" {
 		m.recoveryPath = filepath.Join(cfg.CaptureRecoveryDir, "checkpoint.json")
 	}
@@ -252,7 +247,7 @@ func (m *captureManager) refreshSentinels() error {
 	return nil
 }
 func (m *captureManager) input(baselineOnly bool) hc.ExportInput {
-	return hc.ExportInput{Version: hc.Version, Definition: m.definition, Baseline: m.state.Baseline, BaselineOnly: baselineOnly, Sentinels: m.sentinels(), KnownSentinels: m.state.KnownSentinels, WorkingDir: m.workdir}
+	return hc.ExportInput{Version: hc.Version, Definition: m.definition, Baseline: m.state.Baseline, BaselineOnly: baselineOnly, Sentinels: m.sentinels(), KnownSentinels: m.state.KnownSentinels}
 }
 func (m *captureManager) persist() error {
 	if err := m.persistCheckpoint(); err != nil {
@@ -388,25 +383,6 @@ func (m *captureManager) observe(ctx context.Context) error {
 			return err
 		}
 		input := m.input(true)
-		input.Baseline.Files = slices.Clone(input.Baseline.Files)
-		context := maps.Clone(m.sandbox)
-		if context == nil {
-			context = map[string]any{}
-		}
-		context["workingDir"] = m.workdir
-		context["secrets"] = m.sentinels()
-		for n := range input.Baseline.Files {
-			f := &input.Baseline.Files[n]
-			if !f.Template {
-				continue
-			}
-			content, err := renderHarnessFileTemplate(f.Path, f.Content, context)
-			if err != nil {
-				return errors.New("render delivered capture baseline")
-			}
-			f.Content = content
-			f.Template = false
-		}
 		var normalized hc.Export
 		if err := m.run(ctx, m.definition.ExportCommand, input, &normalized); err != nil {
 			return err
@@ -845,21 +821,12 @@ func (m *captureManager) handoff(ctx context.Context) error {
 		}
 	}
 	files := slices.Clone(a.Files)
-	tmpl := maps.Clone(m.sandbox)
-	if tmpl == nil {
-		tmpl = map[string]any{}
-	}
-	tmpl["workingDir"] = m.workdir
-	tmpl["secrets"] = a.Sentinels
 	for n := range files {
-		if files[n].Template {
-			content, err := renderHarnessFileTemplate(files[n].Path, files[n].Content, tmpl)
-			if err != nil {
-				return errors.New("render accepted credential template")
-			}
-			files[n].Content = content
-			files[n].Template = false
+		content, err := m.definition.ResolveCredential(files[n].Path, files[n].Content, a.Sentinels)
+		if err != nil {
+			return errors.New("resolve accepted credential document")
 		}
+		files[n].Content = content
 	}
 	var result hc.HandoffResult
 	if conflict {
@@ -914,7 +881,7 @@ func (m *captureManager) files(files []config.HarnessFile) []config.HarnessFile 
 	}
 	result := slices.Clone(files)
 	for _, f := range m.state.AcceptedFiles {
-		next := config.HarnessFile{Path: f.Path, Content: f.Content, Template: f.Template, CreateOnly: f.CreateOnly}
+		next := config.HarnessFile{Path: f.Path, Content: f.Content, CreateOnly: f.CreateOnly}
 		found := false
 		for n := range result {
 			if result[n].Path == f.Path {

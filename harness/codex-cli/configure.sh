@@ -70,13 +70,7 @@ OAUTH_ENV=CODEX_OAUTH_TOKEN
 # date simply never triggers.
 AUTH_LAST_REFRESH="2100-01-01T00:00:00Z"
 
-# The workspace the configure sandbox runs in. The image's config.toml template
-# trusts this sandbox's working directory on its own, but a harness configured
-# before overlays that template with the config.toml the last run captured —
-# and one captured before trust followed the working directory still asks for a
-# primary source this sandbox does not have. So the workspace is trusted here
-# too, or a reconfigure opens on the trust screen.
-WORKSPACE_DIR="${DISCOBOX_WORKING_ROOT:-/workspace}"
+
 
 # Holds the collected OAuth capture JSON (secret value plus the non-secret
 # account claims the delivered auth.json needs) between detection and
@@ -139,60 +133,10 @@ previous_env() {
 	NODE_EOF
 }
 
-# ensure_workspace_trusted marks the workspace (and the current directory) as
-# trusted in ~/.codex/config.toml, so the interactive `codex` launch below opens
-# on the sign-in screen instead of the trust screen. It rewrites only the
-# [projects] tables — the same ones write_output strips back out, since this
-# sandbox's trust map must not become the harness's.
-#
-# The image's own template already trusts the sandbox's working directory, so on
-# a first configure this changes nothing. It earns its place on the *re*configure:
-# the config.toml an earlier run captured overlays that template by path, and one
-# captured before trust followed the working directory asks for a primary source
-# a configure sandbox does not have. Without this, refreshing that stale copy
-# would mean first getting past the trust screen it causes.
+# Trust is a process override; portable user settings remain literal.
 ensure_workspace_trusted() {
-	CODEX_CONFIGURE_CONFIG_FILE="$CONFIG_FILE" \
-		CODEX_CONFIGURE_TRUST_DIRS="$WORKSPACE_DIR
-$PWD" node <<-'NODE_EOF'
-		const fs = require('fs');
-		const nodePath = require('path');
-		const file = process.env.CODEX_CONFIGURE_CONFIG_FILE;
-		let body = '';
-		try {
-			body = fs.readFileSync(file, 'utf8');
-		} catch (err) {
-			body = '';
-		}
-		// Dropping the existing [projects] tables first keeps this idempotent:
-		// TOML rejects a table defined twice, so a second run that simply
-		// appended would leave codex unable to read its own config.
-		const kept = [];
-		let dropping = false;
-		for (const line of body.split('\n')) {
-			const header = line.match(/^\s*\[\[?\s*([^\]]*?)\s*\]\]?\s*$/);
-			if (header) {
-				const name = header[1];
-				dropping = name === 'projects' || name.startsWith('projects.');
-				if (dropping) continue;
-			} else if (/^\s*projects\s*=/.test(line)) {
-				continue;
-			}
-			if (dropping) continue;
-			kept.push(line);
-		}
-		const dirs = [];
-		for (const dir of process.env.CODEX_CONFIGURE_TRUST_DIRS.split('\n')) {
-			const trimmed = (dir || '').trim();
-			if (trimmed && !dirs.includes(trimmed)) dirs.push(trimmed);
-		}
-		let out = kept.join('\n').replace(/\s+$/, '');
-		for (const dir of dirs) {
-			out += `\n\n[projects.${JSON.stringify(dir)}]\ntrust_level = "trusted"`;
-		}
-		fs.mkdirSync(nodePath.dirname(file), { recursive: true });
-		fs.writeFileSync(file, out.replace(/^\n+/, '') + '\n');
-	NODE_EOF
+    trust_key=$(node -e 'process.stdout.write(JSON.stringify(process.cwd()))')
+    export DISCOBOX_CODEX_TRUST="projects.$trust_key.trust_level=\"trusted\""
 }
 
 # extract_api_key reads the long-lived key an API key sign-in wrote to
@@ -269,13 +213,13 @@ clear_captured_credential() {
 # re-authenticated (see detect_credential).
 #
 # The seed is the auth.json the last run returned, replayed with the sentinel in
-# place of its template action, so it carries the same account claims the real
+# place of its secret reference, so it carries the same account claims the real
 # login had. A configuration made before this flow returned that file has
 # nothing to replay and simply opens signed out, which is the one case where a
 # sign-in is unavoidable.
 #
 # Whatever is not seeded is removed. A configured harness delivers its auth.json
-# into this sandbox like any other, but its template renders against secrets
+# into this sandbox like any other, but its references resolve against secrets
 # this sandbox does not have (they arrive PREV_-prefixed), so what lands is a
 # credential-shaped file with nothing behind it — and codex reads that as
 # "signed in", skipping the sign-in screen the user came here for.
@@ -287,7 +231,8 @@ seed_previous_credential() {
 	seeded=$(CODEX_CONFIGURE_PREVIOUS="$PREVIOUS_CONFIG" \
 		CODEX_CONFIGURE_AUTH_PATH="$AUTH_PATH" \
 		CODEX_CONFIGURE_AUTH_FILE="$AUTH_FILE" \
-		CODEX_CONFIGURE_SENTINEL="$SEEDED_SENTINEL" node <<-'NODE_EOF'
+		CODEX_CONFIGURE_SENTINEL="$SEEDED_SENTINEL" \
+		CODEX_CONFIGURE_ENV_NAME="$PREVIOUS_ENV" node <<-'NODE_EOF'
 		const fs = require('fs');
 		const nodePath = require('path');
 		let previous = {};
@@ -301,9 +246,12 @@ seed_previous_credential() {
 			process.stdout.write('');
 			process.exit(0);
 		}
-		const content = kept.content.replace(/\{\{[^}]*\}\}/g, process.env.CODEX_CONFIGURE_SENTINEL);
-		try {
-			JSON.parse(content);
+        let content;
+        try {
+          const { resolveReferences } = require(nodePath.join(process.env.HARNESS_CAPTURE_DIR, 'harness-capture/runtime.cjs'));
+          content = JSON.stringify(resolveReferences(JSON.parse(kept.content), {
+            [process.env.CODEX_CONFIGURE_ENV_NAME]: process.env.CODEX_CONFIGURE_SENTINEL,
+          }));
 		} catch (err) {
 			process.stdout.write('');
 			process.exit(0);
@@ -496,26 +444,7 @@ write_output() {
 			previous = {};
 		}
 
-		// Codex keeps settings and directory trust in one file, so returning it
-		// verbatim would make this throwaway sandbox's trust map the harness's.
-		// The [projects] tables are dropped and one templated stanza put back,
-		// which is the same thing the image's own config.toml declares: trust
-		// the directory the sandbox's terminals start in, whatever path that is.
-		//
-		// Guarded on `.workingDir` rather than rendered bare. This file is
-		// persisted and delivered to whatever sandbox uses this config, which
-		// may be running an image whose agent predates that key: under
-		// missingkey=zero it renders as `[projects.null]`, valid TOML that
-		// silently trusts a project named null. Absent trust is the older,
-		// visible failure, and is the one to degrade to.
-		const trustStanza = [
-			'',
-			'{{- if .workingDir }}',
-			'[projects.{{ .workingDir | json }}]',
-			'trust_level = "trusted"',
-			'{{- end }}',
-			'',
-		].join('\n');
+		// Workspace trust is local runtime state, excluded from portable settings.
 		const configFile = () => {
 			let body = '';
 			try {
@@ -529,8 +458,8 @@ write_output() {
 			const settings = project(body, definition.settings.find(s => s.path === '.codex/config.toml')).content;
 			return {
 				path: process.env.CODEX_CONFIGURE_CONFIG_PATH,
-				template: true,
-				content: `${settings}\n${trustStanza}`.replace(/^\n+/, ''),
+
+				content: settings,
 			};
 		};
 
@@ -539,21 +468,16 @@ write_output() {
 		// and a ChatGPT token has no variable to be read from in the first place.
 		//
 		// What lands in the file is the **sentinel**, not the credential: the
-		// content is a template, and each sandbox renders its own sentinel into
+		// content is a reference, and each sandbox renders its own sentinel into
 		// it. The proxy swaps it outbound, so no credential is written to a file
 		// anywhere.
 		//
-		// Dotted field access, never a quoted map key: this content is JSON, so a
-		// quote inside a template action is escaped into the file itself and Go's
-		// template parser rejects it ("unexpected \\ in operand") — which breaks
-		// every sandbox launch while configure still reports success. A secret's
-		// env name is always a valid template field name
-		// (HarnessConfigEnvVarNamePattern), so there is nothing to quote.
+		// Only the credential leaf is bound to a sandbox sentinel.
 		const apiKeyAuthFile = () => ({
 			path: process.env.CODEX_CONFIGURE_AUTH_PATH,
-			template: true,
+
 			content: JSON.stringify({
-				OPENAI_API_KEY: `{{ .secrets.${process.env.CODEX_CONFIGURE_API_KEY_ENV} }}`,
+				OPENAI_API_KEY: { $secret: process.env.CODEX_CONFIGURE_API_KEY_ENV },
 			}, null, 2) + '\n',
 		});
 
@@ -656,7 +580,8 @@ while [ -z "$ENV_NAME" ]; do
 
 	# codex needs a real TTY for its interactive UI; run it under script.
 	set +e
-	script -q -e -c 'codex' /dev/null
+    # shellcheck disable=SC2016 # script's child shell expands the exported override.
+	script -q -e -c 'codex -c "$DISCOBOX_CODEX_TRUST"' /dev/null
 	codex_status=$?
 	set -e
 	echo

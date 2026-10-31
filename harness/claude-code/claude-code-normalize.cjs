@@ -33,19 +33,12 @@ exports.oauth = function (oauth, provider) {
 };
 exports.credentialsFile = (oauth, envName = "CLAUDE_CODE_OAUTH_TOKEN") => ({
   path: ".claude/.credentials.json",
-  template: true,
+
   content: JSON.stringify(
     {
       claudeAiOauth: {
-        // Dotted field access, never a quoted map key. This whole
-        // object is JSON-encoded to become the file's content, so a
-        // quote inside a template action comes out backslash-escaped
-        // and Go's parser rejects it ("unexpected \\ in operand") —
-        // which breaks every sandbox launch while configure still
-        // reports success. A secret's env name is always a valid
-        // template field name (HarnessConfigEnvVarNamePattern), so
-        // there is nothing to quote.
-        accessToken: `{{ .secrets.${envName} }}`,
+        // Only this credential leaf is bound to a sentinel.
+        accessToken: { $secret: envName },
         refreshToken: "discobox-refresh-happens-in-the-control-plane",
         expiresAt: 4102444800000,
         scopes: oauth.scopes,

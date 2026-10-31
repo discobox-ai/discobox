@@ -1,7 +1,6 @@
 package omp
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -9,7 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"text/template"
+
+	"github.com/discobox-ai/discobox/harness/internal/credentialtest"
 )
 
 // stubOmp stands in for omp with the storage behavior measured against omp
@@ -223,17 +223,10 @@ func (o configureOutput) secret(t *testing.T, envName string) map[string]any {
 func (o configureOutput) renderCredentials(t *testing.T, sentinels map[string]string) (string, map[string]map[string]any) {
 	t.Helper()
 	file, ok := o.file(credentialsPath)
-	if !ok || file["template"] != true {
-		t.Fatalf("no templated credentials file in %v", o.Files)
+	if !ok {
+		t.Fatal("missing credential document")
 	}
-	tmpl, err := template.New("credentials").Option("missingkey=zero").Parse(file["content"].(string))
-	if err != nil {
-		t.Fatalf("credentials template does not parse: %v", err)
-	}
-	var rendered bytes.Buffer
-	if err := tmpl.Execute(&rendered, map[string]any{"secrets": sentinels}); err != nil {
-		t.Fatal(err)
-	}
+	rendered := credentialtest.Resolve(t, file["path"].(string), file["content"].(string), sentinels)
 	var doc struct {
 		Version     int `json:"version"`
 		Credentials []struct {
@@ -241,8 +234,8 @@ func (o configureOutput) renderCredentials(t *testing.T, sentinels map[string]st
 			Credential map[string]any `json:"credential"`
 		} `json:"credentials"`
 	}
-	if err := json.Unmarshal(rendered.Bytes(), &doc); err != nil {
-		t.Fatalf("rendered credentials are not JSON: %v\n%s", err, rendered.String())
+	if err := json.Unmarshal([]byte(rendered), &doc); err != nil {
+		t.Fatalf("rendered credentials are not JSON: %v\n%s", err, rendered)
 	}
 	if doc.Version != 1 {
 		t.Fatalf("rendered credentials are version %d, want omp's export version 1", doc.Version)
@@ -255,7 +248,7 @@ func (o configureOutput) renderCredentials(t *testing.T, sentinels map[string]st
 		}
 		entries[key] = c.Credential
 	}
-	return rendered.String(), entries
+	return rendered, entries
 }
 
 // stripValues is what the control plane seeds as the previous configuration:

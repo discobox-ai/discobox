@@ -10,8 +10,8 @@ exports.normalize = function (
   const placeholder = "discobox-refresh-happens-in-the-control-plane";
 
   // The previous run's entries and secret types, by the env name each
-  // entry's template action names.
-  const action = /\{\{\s*\.secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/;
+  // entry's secret reference names.
+  const action = /"\$secret"\s*:\s*"([A-Za-z_][A-Za-z0-9_]*)"/;
   const previousEntries = new Map();
   const kept = (previous.files || []).find(
     (f) => f && f.path === ".config/discobox/omp-credentials.json",
@@ -170,17 +170,13 @@ exports.normalize = function (
       });
       continue;
     }
-    // Dotted field access, never a quoted map key: this content is JSON,
-    // so a quote inside a template action is escaped into the file itself
-    // and Go's template parser rejects it — which breaks every sandbox
-    // launch while configure still reports success. An env name is
-    // always a valid template field name, so there is nothing to quote.
-    const template = `{{ .secrets.${envName} }}`;
+    // Explicit JSON data binds this credential to its sandbox sentinel.
+    const reference = { $secret: envName };
     const planned = { envName, provider, label, kept: false };
     if (value.type === "api_key") {
       planned.type = "token";
       planned.value = { token: value.key };
-      planned.entry = { provider, credential: { ...value, key: template } };
+      planned.entry = { provider, credential: { ...value, key: reference } };
     } else {
       const spec = oauthRefresh[provider];
       if (spec && value.refresh && value.refresh !== value.access) {
@@ -202,7 +198,7 @@ exports.normalize = function (
           provider,
           credential: {
             ...value,
-            access: template,
+            access: reference,
             refresh: placeholder,
             expires: farFuture,
           },
@@ -217,8 +213,8 @@ exports.normalize = function (
           provider,
           credential: {
             ...value,
-            access: template,
-            refresh: value.refresh === value.access ? template : placeholder,
+            access: reference,
+            refresh: value.refresh === value.access ? reference : placeholder,
           },
         };
         planned.notice = notice(provider, value);

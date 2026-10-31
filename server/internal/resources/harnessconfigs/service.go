@@ -776,7 +776,7 @@ func snapshotImageMetadata(config *model.HarnessConfig, inspected imageMetadata)
 	}
 	files := make([]model.HarnessConfigFile, 0, len(image.Files))
 	for _, file := range image.Files {
-		files = append(files, model.HarnessConfigFile{Path: file.Path, Content: file.Content, CreateOnly: file.CreateOnly, Template: file.Template})
+		files = append(files, model.HarnessConfigFile{Path: file.Path, Content: file.Content, CreateOnly: file.CreateOnly})
 	}
 	config.Files = files
 	config.Secrets = declaredSecrets(image)

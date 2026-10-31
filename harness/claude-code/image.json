@@ -28,12 +28,6 @@
     ],
     "files": [
       {
-        "path": ".claude.json",
-        "createOnly": true,
-        "template": true,
-        "content": "{\n  \"hasCompletedOnboarding\": true,\n  \"hasSeenAutoDefaultNudge\": true\n  {{- if .secrets.ANTHROPIC_API_KEY }},\n  \"primaryApiKey\": {{ .secrets.ANTHROPIC_API_KEY | json }}\n  {{- end }},\n  \"projects\": {\n    {{ .workingDir | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n}"
-      },
-      {
         "path": ".claude/settings.json",
         "content": "{\"theme\":\"dark\",\"skipDangerousModePermissionPrompt\":true,\"permissions\":{\"defaultMode\":\"bypassPermissions\"}}"
       }

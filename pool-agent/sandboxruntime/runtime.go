@@ -1340,7 +1340,6 @@ func documentFiles(files []workerapimodel.HarnessConfigFile) []sandboxconfig.Fil
 			Path:       file.Path,
 			Content:    file.Content,
 			CreateOnly: file.CreateOnly.Or(false),
-			Template:   file.Template.Or(false),
 		})
 	}
 	return out

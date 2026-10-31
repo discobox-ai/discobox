@@ -1,6 +1,6 @@
 # 26-10-15-259 — The pi harness delivers auth.json, refuses ChatGPT subscription logins, and lets pi exchange Copilot tokens in the sandbox
 
-- **Status**: Accepted (§5 superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md))
+- **Status**: Accepted (§5 superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md); §2 credential-template representation superseded by [26-10-30-457](26-10-30-457-harness-settings-are-literal-and-credentials-use-json-bindings.md))
 - **Date**: 2026-10-15
 
 ## Context

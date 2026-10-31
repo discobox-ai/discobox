@@ -748,7 +748,6 @@ func poolHarnessConfigFiles(files []model.HarnessConfigFile) poolclient.OptNilHa
 			Path:       file.Path,
 			Content:    file.Content,
 			CreateOnly: poolclient.NewOptBool(file.CreateOnly),
-			Template:   poolclient.NewOptBool(file.Template),
 		})
 	}
 	return poolclient.NewOptNilHarnessConfigFileArray(out)

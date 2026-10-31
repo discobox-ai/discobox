@@ -1,7 +1,6 @@
 package pi
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -9,7 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"text/template"
+
+	"github.com/discobox-ai/discobox/harness/internal/credentialtest"
 )
 
 // stubPi stands in for pi with the storage behavior measured against pi 1.2.0:
@@ -223,22 +223,15 @@ func (o configureOutput) secret(t *testing.T, envName string) map[string]any {
 func (o configureOutput) renderAuth(t *testing.T, sentinels map[string]string) (string, map[string]map[string]any) {
 	t.Helper()
 	file, ok := o.file(authPath)
-	if !ok || file["template"] != true {
-		t.Fatalf("no templated auth.json in %v", o.Files)
+	if !ok {
+		t.Fatal("missing credential document")
 	}
-	tmpl, err := template.New("auth").Option("missingkey=zero").Parse(file["content"].(string))
-	if err != nil {
-		t.Fatalf("auth.json template does not parse: %v", err)
-	}
-	var rendered bytes.Buffer
-	if err := tmpl.Execute(&rendered, map[string]any{"secrets": sentinels}); err != nil {
-		t.Fatal(err)
-	}
+	rendered := credentialtest.Resolve(t, file["path"].(string), file["content"].(string), sentinels)
 	entries := map[string]map[string]any{}
-	if err := json.Unmarshal(rendered.Bytes(), &entries); err != nil {
-		t.Fatalf("rendered auth.json is not JSON: %v\n%s", err, rendered.String())
+	if err := json.Unmarshal([]byte(rendered), &entries); err != nil {
+		t.Fatalf("rendered auth.json is not JSON: %v\n%s", err, rendered)
 	}
-	return rendered.String(), entries
+	return rendered, entries
 }
 
 // stripValues is what the control plane seeds as the previous configuration:

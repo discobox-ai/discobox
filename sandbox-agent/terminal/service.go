@@ -7,19 +7,17 @@
 package terminal
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
-	"text/template"
 
+	"github.com/discobox-ai/discobox/pkg/harnesscapture"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
@@ -72,7 +70,6 @@ type ServiceConfig struct {
 	// A zero-value Harness (empty ID) means the sandbox has no harness at all,
 	// which resolves to the shell fallback.
 	Harness            config.Harness
-	SandboxConfig      map[string]any
 	WorkingRoot        string
 	RuntimeDir         string
 	CaptureStateDir    string
@@ -211,23 +208,16 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		}
 	}
 	if s.installer == nil {
-		// Where this sandbox's terminals start, resolved by the exec layer that
-		// will start them rather than derived a second time here. A harness that
-		// has to be told which directory it may work in is told this one.
-		workingDir, err := cfg.Execs.DefaultWorkdir()
-		if err != nil {
-			return nil, fmt.Errorf("resolve default working directory: %w", err)
-		}
 		s.installer = CompositeInstaller{Installers: []Installer{
 			FileInstaller{
 				// The run user as the exec layer resolved it, not the manifest
 				// fields it was resolved from: a sandbox whose manifest names
 				// nobody still runs as somebody, and the files belong to them.
 				Capture:       s.capture,
+				Configure:     cfg.HarnessMode == config.HarnessModeConfig,
 				User:          defaultUser,
 				HomeDirectory: cfg.ExecDefaults.HomeDirectory,
-				SandboxConfig: cfg.SandboxConfig,
-				WorkingDir:    workingDir,
+				Definition:    cfg.Harness.SaveBack,
 				Secrets:       cfg.SecretEnv,
 			},
 		}}
@@ -994,36 +984,18 @@ func (i CompositeInstaller) RestoreSecretFiles(ctx context.Context, harness conf
 
 // FileInstaller writes a harness's configured files into its home directory.
 type FileInstaller struct {
-	Capture *captureManager
+	// Configure flows seed credentials themselves from the previous bindings.
+	Configure bool
+	Capture   *captureManager
 	// User is the run user, already resolved through every layer the exec
 	// path uses. Nil means the manifest named nobody and the harness inherits
 	// this process's identity, which is still an identity with a home.
 	User *execs.User
 	// HomeDirectory is the manifest's explicit home, when it carries one.
 	HomeDirectory string
-	SandboxConfig map[string]any
-	// WorkingDir is the directory this sandbox's terminals start in — the
-	// primary source's target when it has one, the working root when it does
-	// not — as the exec layer resolves it (execs.Manager.DefaultWorkdir).
-	//
-	// A harness that gates work on directory trust (Claude Code's trust
-	// dialog, codex's trust screen) is told to trust this, not the primary
-	// source's target. They are the same path in the ordinary case, and the
-	// difference is the whole point: a sandbox with no source has no primary
-	// target, and a harness told to trust nothing opens on a trust prompt
-	// instead of on the work.
-	WorkingDir string
-	// Secrets returns the sandbox's env-name -> sentinel map, so a templated
-	// file can place a sentinel where a harness expects to read a credential.
-	//
-	// It is read here rather than taken from the process environment on purpose:
-	// a harness that authenticates from a file has no reason to also carry the
-	// variable, and this is what lets that variable stop being exported. What
-	// lands in the file is a sentinel — non-secret by construction — which the
-	// proxy swaps on the way out, exactly as it does for the env-var form.
-	//
-	// Read fresh per install for the same reason the exec env is (ADR 0012 §3):
-	// the secrets file is refreshed independently of sandbox.json.
+	// Definition declares the credential files and their exact binding schema.
+	Definition *harnesscapture.Definition
+	// Secrets is the fresh sentinel map, including file-only credentials.
 	Secrets func() map[string]string
 }
 
@@ -1042,6 +1014,9 @@ func (i FileInstaller) EnsureInstalled(ctx context.Context, harness config.Harne
 	}
 	home = filepath.Clean(home)
 	for _, file := range i.Capture.files(harness.Files) {
+		if i.Configure && i.Definition != nil && slices.Contains(i.Definition.CredentialFiles, file.Path) {
+			continue
+		}
 		if i.Capture.protect(file.Path, true) {
 			continue
 		}
@@ -1050,10 +1025,10 @@ func (i FileInstaller) EnsureInstalled(ctx context.Context, harness config.Harne
 			return fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
 		}
 		content := file.Content
-		if file.Template {
-			content, err = renderHarnessFileTemplate(file.Path, content, i.templateContext())
+		if i.Definition != nil && slices.Contains(i.Definition.CredentialFiles, file.Path) {
+			content, err = i.Definition.ResolveCredential(file.Path, content, i.sentinels())
 			if err != nil {
-				return fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
+				return fmt.Errorf("resolve harness credential file %q: %w", file.Path, err)
 			}
 		}
 		if err := writeHarnessFile(path, content, file.CreateOnly, i.uid(), i.gid()); err != nil {
@@ -1067,49 +1042,14 @@ func (i FileInstaller) EnsureInstalled(ctx context.Context, harness config.Harne
 	return nil
 }
 
-// templateContext is the sandbox config a harness file renders against, plus
-// `secrets` — the env-name -> sentinel map — and `workingDir` under their own
-// keys. A copy, so the added keys never mutate the shared config, and so a
-// config that already carried either cannot shadow them silently.
-func (i FileInstaller) templateContext() map[string]any {
-	var sentinels map[string]string
+func (i FileInstaller) sentinels() map[string]string {
 	if i.Capture != nil {
-		sentinels = i.Capture.sentinels()
-	} else if i.Secrets != nil {
-		sentinels = i.Secrets()
+		return i.Capture.sentinels()
 	}
-	out := make(map[string]any, len(i.SandboxConfig)+2)
-	maps.Copy(out, i.SandboxConfig)
-	// Every sandbox has one, source or no source, so a template that needs the
-	// directory the harness runs in never has to go looking through `sources`
-	// for a stand-in that may not be there.
-	out["workingDir"] = i.WorkingDir
-	// Always present, even empty. A template that asks whether a credential
-	// exists (`{{ if .secrets.NAME }}`) must be able to ask: with the key
-	// missing entirely, that walk fails the render rather than answering "no",
-	// which would break a file the sandbox needs over a secret it does not
-	// have.
-	if sentinels == nil {
-		sentinels = map[string]string{}
+	if i.Secrets != nil {
+		return i.Secrets()
 	}
-	out["secrets"] = sentinels
-	return out
-}
-
-func renderHarnessFileTemplate(name, content string, sandboxConfig map[string]any) (string, error) {
-	jsonValue := func(value any) (string, error) {
-		encoded, err := json.Marshal(value)
-		return string(encoded), err
-	}
-	tmpl, err := template.New(name).Funcs(template.FuncMap{"json": jsonValue}).Option("missingkey=zero").Parse(content)
-	if err != nil {
-		return "", fmt.Errorf("parse template: %w", err)
-	}
-	var rendered bytes.Buffer
-	if err := tmpl.Execute(&rendered, sandboxConfig); err != nil {
-		return "", fmt.Errorf("render template: %w", err)
-	}
-	return rendered.String(), nil
+	return nil
 }
 
 // uid and gid are who the installed files belong to: the resolved run user,

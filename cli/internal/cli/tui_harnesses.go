@@ -113,7 +113,6 @@ func toTUIHarnessFile(file apimodel.HarnessConfigFile, configured bool) tui.Harn
 		Content:    file.Content,
 		Configured: configured,
 		CreateOnly: file.CreateOnly.Or(false),
-		Template:   file.Template.Or(false),
 	}
 }
 
