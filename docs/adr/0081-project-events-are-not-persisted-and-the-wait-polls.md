@@ -1,6 +1,6 @@
 # 0081 — Project events are not persisted, and the attach wait polls
 
-- **Status**: Accepted
+- **Status**: Accepted (Decision and Consequences narrowed for sandbox state by [26-10-29-316](26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md))
 - **Date**: 2026-09-01
 - **Settles**: [ADR 0061](0061-the-client-facing-project-event-stream-is-removed.md),
   which removed the client-facing stream and deferred this: "no reader of the
