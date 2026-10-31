@@ -226,16 +226,6 @@ pool_route() {
   [ "$status" -ne 0 ]
 }
 
-@test "discobox apply brings back a commit made in the discobox" {
-  run in_box 'echo from-box >box.txt && git add box.txt && git -c user.name=Box -c user.email=box@example.com commit -q -m "made in the box"'
-  [ "$status" -eq 0 ]
-
-  run bash -c "cd '$DISCOBOX_BATS_LOCAL' && HOME='$DISCOBOX_BATS_HOME' '$REPO_ROOT/build/discobox' --server '$DISCOBOX_BATS_SERVER' apply '$DISCOBOX_BATS_SANDBOX_ID'"
-  echo "$output"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"APPLIED 1 commit"* ]]
-  [ "$(cat "$DISCOBOX_BATS_LOCAL/box.txt")" = from-box ]
-}
 
 @test "a rebuild does not clone over the work in the checkout" {
   run in_box 'echo kept >uncommitted.txt && cat .git/discobox-materialized && git rev-parse HEAD'

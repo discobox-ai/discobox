@@ -218,7 +218,7 @@ func (a *App) pushSelected(cmd *cobra.Command, projectID, sandboxID string, clie
 // an error: every outcome is a status on the report, so a sandbox with several
 // sources reports them all rather than stopping at the first that has nothing to
 // send.
-func pushOneSource(ctx context.Context, projectID, sandboxID string, sandbox *apimodel.Sandbox, hostID, gitServerURL, token string, entry applySourceEntry, dirOverrides map[string]string, branch string, force, explicit bool) pushSourceReport {
+func pushOneSource(ctx context.Context, projectID, sandboxID string, sandbox *apimodel.Sandbox, hostID, gitServerURL, token string, entry sourceEntry, dirOverrides map[string]string, branch string, force, explicit bool) pushSourceReport {
 	report := pushSourceReport{Slug: entry.slug, Status: pushStatusError}
 	fail := func(format string, args ...any) pushSourceReport {
 		report.Status, report.Error = pushStatusError, fmt.Sprintf(format, args...)
@@ -234,7 +234,7 @@ func pushOneSource(ctx context.Context, projectID, sandboxID string, sandbox *ap
 		report.Status, report.Error = pushStatusSkipped, err.Error()
 		return report
 	}
-	hostDir, _, err := resolveApplyHostDir(sandbox, hostID, entry, dirOverrides)
+	hostDir, err := resolveSourceHostDir(sandbox, hostID, entry, dirOverrides)
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -334,7 +334,7 @@ func (a *App) deliverParkedSource(ctx context.Context, client *apiclientgen.Clie
 			sources = append(sources, pushSourceReport{Slug: entry.Slug, Status: pushStatusDelivered, Branch: deliveredBranch, Commit: commit})
 			continue
 		}
-		hostDir, _, err := resolveApplyHostDir(sandbox, hostID, applySourceEntry{slug: entry.Slug, source: entry.Source}, dirOverrides)
+		hostDir, err := resolveSourceHostDir(sandbox, hostID, sourceEntry{slug: entry.Slug, source: entry.Source}, dirOverrides)
 		if err != nil {
 			return nil, err
 		}

@@ -11,85 +11,6 @@ import (
 	"github.com/go-faster/jx"
 )
 
-// Records one successful discobox apply of a source's commits into a host working tree.
-// Client-declared provenance, like Origin, since the server cannot observe host-side Git state.
-// Ref: #/components/schemas/AppliedSourceCommit
-type AppliedSourceCommit struct {
-	// When this apply was recorded.
-	AppliedAt time.Time `json:"appliedAt"`
-	// Newest sandbox-side commit SHA that was cherry-picked.
-	Commit string `json:"commit"`
-	// Resulting host-side commit SHA. A new object distinct from commit, since cherry-picking onto a
-	// different parent always produces a new SHA.
-	HostCommit string `json:"hostCommit"`
-	// Stable host identity of the client that performed the apply.
-	HostId string `json:"hostId"`
-	// Absolute path on that host the commits were applied into.
-	HostPath string `json:"hostPath"`
-	// Slug of the GitSource these commits were applied from.
-	Slug string `json:"slug"`
-}
-
-// GetAppliedAt returns the value of AppliedAt.
-func (s *AppliedSourceCommit) GetAppliedAt() time.Time {
-	return s.AppliedAt
-}
-
-// GetCommit returns the value of Commit.
-func (s *AppliedSourceCommit) GetCommit() string {
-	return s.Commit
-}
-
-// GetHostCommit returns the value of HostCommit.
-func (s *AppliedSourceCommit) GetHostCommit() string {
-	return s.HostCommit
-}
-
-// GetHostId returns the value of HostId.
-func (s *AppliedSourceCommit) GetHostId() string {
-	return s.HostId
-}
-
-// GetHostPath returns the value of HostPath.
-func (s *AppliedSourceCommit) GetHostPath() string {
-	return s.HostPath
-}
-
-// GetSlug returns the value of Slug.
-func (s *AppliedSourceCommit) GetSlug() string {
-	return s.Slug
-}
-
-// SetAppliedAt sets the value of AppliedAt.
-func (s *AppliedSourceCommit) SetAppliedAt(val time.Time) {
-	s.AppliedAt = val
-}
-
-// SetCommit sets the value of Commit.
-func (s *AppliedSourceCommit) SetCommit(val string) {
-	s.Commit = val
-}
-
-// SetHostCommit sets the value of HostCommit.
-func (s *AppliedSourceCommit) SetHostCommit(val string) {
-	s.HostCommit = val
-}
-
-// SetHostId sets the value of HostId.
-func (s *AppliedSourceCommit) SetHostId(val string) {
-	s.HostId = val
-}
-
-// SetHostPath sets the value of HostPath.
-func (s *AppliedSourceCommit) SetHostPath(val string) {
-	s.HostPath = val
-}
-
-// SetSlug sets the value of Slug.
-func (s *AppliedSourceCommit) SetSlug(val string) {
-	s.Slug = val
-}
-
 // One item in a project's approval inbox (ADR 0149 §7). Exactly one of credential, trust or refresh
 // is set, as kind says. A credential or trust request is answered on its own resource's approve and
 // deny routes; a refresh by writing the secret's value, or dismissing it.
@@ -698,83 +619,6 @@ func (s *CloneProgressStage) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
-}
-
-// Ref: #/components/schemas/CompleteSandboxApplyBody
-type CompleteSandboxApplyBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Full 40-character SHA-1 of the newest sandbox-side commit that was cherry-picked in this apply.
-	Commit string `json:"commit"`
-	// Full 40-character SHA-1 of the resulting host-side commit after the fast-forward. A new object
-	// distinct from commit, since cherry-picking onto a different parent always produces a new SHA.
-	HostCommit string `json:"hostCommit"`
-	// Stable host identity of the client that performed the apply.
-	HostId string `json:"hostId"`
-	// Absolute path on that host the commits were applied into.
-	HostPath string `json:"hostPath"`
-	// Slug of the GitSource these commits were applied from.
-	Slug string `json:"slug"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *CompleteSandboxApplyBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetCommit returns the value of Commit.
-func (s *CompleteSandboxApplyBody) GetCommit() string {
-	return s.Commit
-}
-
-// GetHostCommit returns the value of HostCommit.
-func (s *CompleteSandboxApplyBody) GetHostCommit() string {
-	return s.HostCommit
-}
-
-// GetHostId returns the value of HostId.
-func (s *CompleteSandboxApplyBody) GetHostId() string {
-	return s.HostId
-}
-
-// GetHostPath returns the value of HostPath.
-func (s *CompleteSandboxApplyBody) GetHostPath() string {
-	return s.HostPath
-}
-
-// GetSlug returns the value of Slug.
-func (s *CompleteSandboxApplyBody) GetSlug() string {
-	return s.Slug
-}
-
-// SetSchema sets the value of Schema.
-func (s *CompleteSandboxApplyBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetCommit sets the value of Commit.
-func (s *CompleteSandboxApplyBody) SetCommit(val string) {
-	s.Commit = val
-}
-
-// SetHostCommit sets the value of HostCommit.
-func (s *CompleteSandboxApplyBody) SetHostCommit(val string) {
-	s.HostCommit = val
-}
-
-// SetHostId sets the value of HostId.
-func (s *CompleteSandboxApplyBody) SetHostId(val string) {
-	s.HostId = val
-}
-
-// SetHostPath sets the value of HostPath.
-func (s *CompleteSandboxApplyBody) SetHostPath(val string) {
-	s.HostPath = val
-}
-
-// SetSlug sets the value of Slug.
-func (s *CompleteSandboxApplyBody) SetSlug(val string) {
-	s.Slug = val
 }
 
 // Ref: #/components/schemas/CompleteSandboxSourcePushBody
@@ -2730,7 +2574,6 @@ func (*ErrorModelStatusCode) assignSandboxHarnessSecretsRes()           {}
 func (*ErrorModelStatusCode) attachHarnessConfigConfigureRes()          {}
 func (*ErrorModelStatusCode) clearPoolCacheRes()                        {}
 func (*ErrorModelStatusCode) commitHarnessConfigConfigureRes()          {}
-func (*ErrorModelStatusCode) completeSandboxApplyRes()                  {}
 func (*ErrorModelStatusCode) completeSandboxSourcePushRes()             {}
 func (*ErrorModelStatusCode) configureHarnessConfigRes()                {}
 func (*ErrorModelStatusCode) createHarnessConfigRes()                   {}
@@ -11122,69 +10965,6 @@ func (o OptListTrustRequestsStatus) Get() (v ListTrustRequestsStatus, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptListTrustRequestsStatus) Or(d ListTrustRequestsStatus) ListTrustRequestsStatus {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptNilAppliedSourceCommitArray returns new OptNilAppliedSourceCommitArray with value set to v.
-func NewOptNilAppliedSourceCommitArray(v []AppliedSourceCommit) OptNilAppliedSourceCommitArray {
-	return OptNilAppliedSourceCommitArray{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilAppliedSourceCommitArray is optional nullable []AppliedSourceCommit.
-type OptNilAppliedSourceCommitArray struct {
-	Value []AppliedSourceCommit
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilAppliedSourceCommitArray was set.
-func (o OptNilAppliedSourceCommitArray) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilAppliedSourceCommitArray) Reset() {
-	var v []AppliedSourceCommit
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilAppliedSourceCommitArray) SetTo(v []AppliedSourceCommit) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilAppliedSourceCommitArray) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilAppliedSourceCommitArray) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v []AppliedSourceCommit
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilAppliedSourceCommitArray) Get() (v []AppliedSourceCommit, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilAppliedSourceCommitArray) Or(d []AppliedSourceCommit) []AppliedSourceCommit {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -21486,7 +21266,6 @@ func (s *Sandbox) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
-func (*Sandbox) completeSandboxApplyRes()      {}
 func (*Sandbox) completeSandboxSourcePushRes() {}
 func (*Sandbox) configureHarnessConfigRes()    {}
 func (*Sandbox) createSandboxRes()             {}
@@ -27562,9 +27341,6 @@ type SandboxRuntime struct {
 	ProvisionProgress   OptSandboxProvisionProgress `json:"provisionProgress"`
 	// When provisionProgress was observed.
 	ProvisionProgressAt OptDateTime `json:"provisionProgressAt"`
-	// History of successful discobox apply runs that landed this sandbox's commits on a host, most
-	// recent last. Client-reported; append-only.
-	AppliedCommits OptNilAppliedSourceCommitArray `json:"appliedCommits"`
 	// Requested existence. Power state is not requested: whether a sandbox is
 	// running is observed and reported by its runtime, never asked for by the
 	// control plane. Archived is a third form of existence — as data, with no
@@ -27649,11 +27425,6 @@ func (s *SandboxRuntime) GetProvisionProgress() OptSandboxProvisionProgress {
 // GetProvisionProgressAt returns the value of ProvisionProgressAt.
 func (s *SandboxRuntime) GetProvisionProgressAt() OptDateTime {
 	return s.ProvisionProgressAt
-}
-
-// GetAppliedCommits returns the value of AppliedCommits.
-func (s *SandboxRuntime) GetAppliedCommits() OptNilAppliedSourceCommitArray {
-	return s.AppliedCommits
 }
 
 // GetDesiredState returns the value of DesiredState.
@@ -27764,11 +27535,6 @@ func (s *SandboxRuntime) SetProvisionProgress(val OptSandboxProvisionProgress) {
 // SetProvisionProgressAt sets the value of ProvisionProgressAt.
 func (s *SandboxRuntime) SetProvisionProgressAt(val OptDateTime) {
 	s.ProvisionProgressAt = val
-}
-
-// SetAppliedCommits sets the value of AppliedCommits.
-func (s *SandboxRuntime) SetAppliedCommits(val OptNilAppliedSourceCommitArray) {
-	s.AppliedCommits = val
 }
 
 // SetDesiredState sets the value of DesiredState.

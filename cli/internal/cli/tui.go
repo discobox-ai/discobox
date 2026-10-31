@@ -958,12 +958,10 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 	row.AgentObservedAt = sb.Runtime.AgentStatusObservedAt.Or(time.Time{})
 	if git := sandboxGitStatus(sb); git.Known {
 		row.Git = tui.GitState{
-			Known:         true,
-			Branch:        git.Branch,
-			Commit:        shortCommit(git.Commit),
-			Dirty:         !git.Clean,
-			Applied:       git.Applied,
-			AppliedCommit: shortCommit(git.AppliedHostCommit),
+			Known:  true,
+			Branch: git.Branch,
+			Commit: shortCommit(git.Commit),
+			Dirty:  !git.Clean,
 		}
 		if git.DiffKnown {
 			row.Diff = tui.DiffStat{

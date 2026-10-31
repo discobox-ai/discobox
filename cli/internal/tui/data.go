@@ -162,8 +162,7 @@ type DiffStat struct {
 
 // GitState is where a sandbox's work sits right now, as its own agent last
 // reported it: the branch and commit the primary source's working tree is on,
-// whether anything there is uncommitted, and whether the head commit has been
-// landed on a host by an apply.
+// and whether anything there is uncommitted.
 //
 // It arrives with the listing — the agent pushes it through the control plane —
 // so unlike the diffstat it costs nothing to show. Known separates "nothing
@@ -172,16 +171,9 @@ type DiffStat struct {
 type GitState struct {
 	Known bool
 
-	Branch  string
-	Commit  string // head, short
-	Dirty   bool   // uncommitted content in the working tree
-	Applied bool   // clean, and the head commit was the last one applied
-
-	// AppliedCommit is the host-side commit the apply produced, short. A
-	// cherry-pick onto a different parent mints a new SHA, so this — not the
-	// sandbox head — is the one findable in the local repository. Set only
-	// when Applied.
-	AppliedCommit string
+	Branch string
+	Commit string // head, short
+	Dirty  bool   // uncommitted content in the working tree
 }
 
 // Port is one TCP port a sandbox serves — observed listening, or declared by a
@@ -814,7 +806,7 @@ func (s Sandbox) repairable() bool {
 // It is empty for a discobox this identity created, which is the usual row.
 // The qualifier is for the row nothing here started — a box from a laptop, in
 // a folder whose path this machine happens to share — and it is the
-// same fact `apply` refuses on, so a row that will not apply here says why
+// identity difference, so the row says where it came from
 // before it is tried.
 //
 // A client identity is not quite a machine (`internal/hostid`): it is stored
@@ -909,22 +901,12 @@ func (s Sandbox) up() bool {
 	return s.State == StateRunning || s.State == StateStarting
 }
 
-// base is where the sandbox's work sits in git. Once its agent has reported,
-// that is the position the tree is on right now; until then it is the commit
-// the sandbox was spawned from. The mark on it is the state of the work,
-// most losable first: a star for uncommitted content — reported dirt, or the
-// snapshot carried in at create — an up arrow for committed work no apply
-// has landed, and a check for a head commit an apply has landed, which is
-// the state where nothing in the sandbox would be lost. An applied row shows
-// the host-side commit its apply produced rather than the sandbox head: that
-// is the SHA findable in the local repository.
+// base is the reported Git position, or the spawn position until a report
+// arrives. A star marks dirt and an up arrow marks commits ahead of spawn.
 func (s Sandbox) base() string {
 	branch, commit := s.Branch, s.Commit
 	if s.Git.Known {
 		branch, commit = s.Git.Branch, s.Git.Commit
-		if s.Git.Applied && !s.Git.Dirty && s.Git.AppliedCommit != "" {
-			commit = s.Git.AppliedCommit
-		}
 	}
 	if branch == "" && commit == "" {
 		return ""
@@ -933,8 +915,6 @@ func (s Sandbox) base() string {
 	switch {
 	case s.dirty():
 		out += "*"
-	case s.Git.Applied:
-		out += "✓"
 	case s.ahead():
 		out += "⇡"
 	}
@@ -950,12 +930,9 @@ func (s Sandbox) dirty() bool {
 	return s.Dirty
 }
 
-// ahead reports whether the sandbox holds committed work that no apply has
-// landed anywhere: its reported head has moved off the commit it was spawned
-// from, and is not the last applied one. It needs both commits to answer — a
-// sandbox with no recorded spawn commit cannot say its head has moved.
+// ahead reports clean committed work beyond the spawn commit.
 func (s Sandbox) ahead() bool {
-	return s.Git.Known && !s.Git.Dirty && !s.Git.Applied &&
+	return s.Git.Known && !s.Git.Dirty &&
 		s.Git.Commit != "" && s.Commit != "" && s.Git.Commit != s.Commit
 }
 
@@ -966,8 +943,6 @@ func (s Sandbox) changes() string {
 	switch {
 	case s.dirty():
 		return "dirty"
-	case s.Git.Applied:
-		return "applied"
 	case s.ahead():
 		return "ready"
 	case s.Git.Known:
@@ -1279,18 +1254,13 @@ const (
 	VerbPurge     Verb = "purge"
 )
 
-// Interaction is an action that owns a terminal for as long as it runs. Every
-// one of them is drawn in the window: attach and shell are terminals in the
-// discobox and open the workspace screen onto them, and apply is a command of
-// this CLI's own, drawn in a pane over whatever it was started from.
-//
-// Each takes exactly one discobox, which is what a pane shows.
+// Interaction identifies a terminal or workspace action.
 type Interaction string
 
 const (
 	InteractAttach Interaction = "attach"
 	InteractShell  Interaction = "shell"
-	InteractApply  Interaction = "apply"
+
 	// InteractTerminal is another of the discobox's own terminals, opened
 	// beside the primary. It is not one of the list's actions — the list opens
 	// a discobox, and which terminal of it you want is a question you can only
@@ -1329,47 +1299,11 @@ type Terminal interface {
 	Events() <-chan TerminalEvent
 }
 
-// ExitReporter is a Terminal that ran a command and can say how it ended.
-//
-// Only some can. A command this machine ran has a result, and a pane that read
-// "finished" over a failed one would be a screen agreeing with itself while the
-// output above it says otherwise. A session inside a discobox has no such
-// answer: it ended because the shell in it ended, which is not a verdict on
-// anything.
+// ExitReporter provides the local harness configure command's exit status.
+// Remote terminals report connection closure rather than a command verdict.
 type ExitReporter interface {
 	// ExitStatus is the command's exit code, and whether it has ended.
 	ExitStatus() (code int, done bool)
-}
-
-// ApplyResultReporter is the result channel carried by the local apply
-// command. The command's terminal remains the human-readable running report;
-// this is the same result in a shape the window can put on its completion
-// dialog without parsing terminal text.
-type ApplyResultReporter interface {
-	ApplyResult() (ApplyResult, bool)
-}
-
-type ApplyResult struct {
-	Sources []AppliedSource `json:"sources"`
-}
-
-type AppliedSource struct {
-	Slug   string `json:"slug"`
-	Status string `json:"status"`
-	// Repository is the local directory the source's commits landed in, and
-	// RepositoryError is why there was none to land them in — a source cloned
-	// from a remote has no local checkout on this machine. A source can finish
-	// successfully with the second and not the first: one that the discobox
-	// committed nothing to needs no directory at all.
-	Repository      string          `json:"hostPath"`
-	RepositoryError string          `json:"hostPathError"`
-	Branch          string          `json:"hostBranch"`
-	Commits         []AppliedCommit `json:"commits"`
-}
-
-type AppliedCommit struct {
-	Commit  string `json:"hostCommit"`
-	Subject string `json:"subject"`
 }
 
 // Binding is one sandbox port reachable at a local one, while a Forward is
@@ -2229,11 +2163,6 @@ type DataSource interface {
 	// saves what it wrote back, reporting whether anything changed. The window
 	// is suspended for it, for the same reason.
 	EditHarnessFile(ctx context.Context, server, harnessID, path string, stdin io.Reader, stdout, stderr io.Writer) (bool, error)
-
-	// Open connects a terminal for one of the CLI's own commands — apply —
-	// sized to the overlay it is going into. The discobox's terminals come
-	// through OpenExec and NewShell instead.
-	Open(ctx context.Context, action Interaction, sandboxID string, cols, rows int) (Terminal, error)
 
 	// Execs is a snapshot of a sandbox's exec sessions. The workspace polls it
 	// while it is open; it is a snapshot rather than a stream because the

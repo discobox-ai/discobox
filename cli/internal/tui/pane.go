@@ -24,7 +24,7 @@ import (
 // here: attaching draws every session the discobox has, and a session started
 // from anywhere appears as a tab on its own. See workspace.go.
 //
-// Over them, a command that runs and finishes — apply — takes the
+// Over them, harness configuration takes the
 // whole screen for as long as it runs. The terminals underneath are untouched:
 // still connected, still running, still where they were when it comes back.
 //
@@ -174,10 +174,6 @@ type pane struct {
 	// exited is set when what was running in the pane finished and the pane
 	// was kept anyway, so its last screen can be read.
 	exited bool
-	// failed is set with it when what finished did so badly. It is what the
-	// banner and the hints are colored by: the same screen either way, and a
-	// word that is not the same word.
-	failed bool
 
 	// notice is guidance drawn in the window header, outside this pane.
 	notice string
@@ -318,20 +314,6 @@ type endPaneMsg struct{}
 // running. It is the same exit Ctrl-C is everywhere else, spelled behind the
 // leader because inside a pane Ctrl-C belongs to the application.
 type quitPaneMsg struct{}
-
-// paneOpenedMsg carries a connected overlay terminal back to the model, or the
-// reason there is none. The workspace's own terminals arrive as
-// workspaceTermMsg instead; see workspace.go.
-//
-// A failure comes back the same way a success does rather than as a bare
-// status: the open left the window busy, and only the handler that was waiting
-// for the answer knows it has stopped waiting.
-type paneOpenedMsg struct {
-	action  Interaction
-	sandbox Sandbox
-	term    Terminal
-	err     error
-}
 
 type configurePaneOpenedMsg struct {
 	harness    Harness
@@ -476,8 +458,7 @@ func (m *Model) primary() *pane {
 // on without it.
 //
 // It is what the keys dispatch against and what the header reads, so the two
-// answer from the same listing: a screen that offers "apply" is a screen whose
-// header already said there was something to apply.
+// answer from the same listing, keeping the header and actions in sync.
 func (m *Model) currentBox() Sandbox {
 	for _, s := range m.list.all {
 		if s.ID == m.paneBox.ID {
@@ -485,62 +466,6 @@ func (m *Model) currentBox() Sandbox {
 		}
 	}
 	return m.paneBox
-}
-
-// openOverlay runs a command in a screen of its own, over whatever it was
-// started from: the workspace when one is open, and the list when the command
-// is all that is on screen.
-//
-// It has the screen because it is the thing you asked for and it is over when
-// it is over — a report you opened to read is not something to read in half a
-// window beside a harness scrolling past. What is underneath keeps running,
-// unresized and unredrawn, and is exactly where it was when the command exits.
-func (m *Model) openOverlay(act Interaction, sandbox Sandbox) tea.Cmd {
-	if m.overlay != nil {
-		return status("%s is still up — close it first", m.overlay.action)
-	}
-	// The discobox the screen is about, which the banner reads and the leader
-	// keys dispatch against. Over a workspace it is the one already open, which
-	// is where this box came from; from the list it is the row the cursor is
-	// on.
-	m.paneBox = sandbox
-	// The overlay is sized before it is opened: the size is what the far end
-	// is told, and a terminal that starts at the wrong size draws itself wrong
-	// before anything can correct it.
-	m.busy = string(act) + "…"
-	cols, rows := m.paneCells(m.width)
-	ctx, ds, id := m.ctx, m.ds, sandbox.ID
-	return func() tea.Msg {
-		term, err := ds.Open(ctx, act, id, cols, rows)
-		return paneOpenedMsg{action: act, sandbox: sandbox, term: term, err: err}
-	}
-}
-
-// paneOpened starts drawing a connected overlay terminal, or reports why there
-// is none.
-func (m *Model) paneOpened(msg paneOpenedMsg) tea.Cmd {
-	m.busy = ""
-	if msg.err != nil {
-		// Nothing was opened, so the screen is the workspace it already was —
-		// which is where the report has to be legible. See statusMessage.
-		return m.report(true, "%s: %v", msg.action, msg.err)
-	}
-	m.nextPaneID++
-	p := &pane{
-		id:      m.nextPaneID,
-		term:    termpane.New(m.paneOptions(paneOverlay, false)...),
-		stream:  msg.term,
-		action:  msg.action,
-		sandbox: msg.sandbox,
-	}
-	m.overlay = p
-	m.focus = focusPane
-	m.prompt.Blur()
-	m.layout()
-	return tea.Batch(
-		fromPane(p.id, p.term.Attach(msg.term)),
-		fromPane(p.id, m.paneEvents(msg.term)),
-	)
 }
 
 func (m *Model) configurePaneOpened(msg configurePaneOpenedMsg) tea.Cmd {
@@ -1058,8 +983,7 @@ func (m *Model) isOnScreen(p *pane) bool {
 // Where the pane sits decides what happens: the primary terminal ending ends
 // the workspace, since a workspace is a view onto that session; a tool ending
 // takes its window with it, since the window was the program; a shell tab and
-// a finished command hold their last screen to be read — an apply with little
-// to say is over in a moment, and a pane that vanished with it would be a
+// a finished command hold their last screen to be read — a short session may end in a moment, and a pane that vanished would be a
 // screen you never got to read. Only an error closes one of those unread, and
 // is reported instead.
 func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
@@ -1114,10 +1038,7 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		// Keep the last screen up to be read; the keys that mean done take it
 		// away.
 		p.exited = true
-		p.status, p.failed = exitVerdict(p.stream)
-		if m.successfulApply(p) {
-			m.openSuccessfulApplyDialog(p)
-		}
+		p.status = "finished"
 		return m.refresh()
 
 	case p == m.overlay:
@@ -1137,27 +1058,6 @@ func exitCode(stream Terminal) (int, bool) {
 		return 0, false
 	}
 	return reporter.ExitStatus()
-}
-
-// exitVerdict is what a pane that has ended says it was, and whether that is
-// bad news.
-//
-// A command that failed says so. The stream ending is not the same fact as the
-// command succeeding — an apply that could not cherry-pick prints its reason
-// and exits nonzero, and a pane that answered "finished" over it would be
-// contradicting the screen it is captioning. Where there is no exit status to
-// have (a session in a discobox, a stream that never was a process), the
-// stream ending is all there is to say.
-func exitVerdict(stream Terminal) (string, bool) {
-	reporter, ok := stream.(ExitReporter)
-	if !ok {
-		return "finished", false
-	}
-	code, done := reporter.ExitStatus()
-	if !done || code == 0 {
-		return "finished", false
-	}
-	return fmt.Sprintf("failed · exit %d", code), true
 }
 
 // finishedKey routes a key on a held screen.
@@ -1808,13 +1708,7 @@ func (m *Model) viewPaneHeader(w int) string {
 	hints := m.headerHints()
 	keys, pinned := strings.Repeat(" ", hintsWidth(hints, headerSep)), false
 	if p := m.focusedPane(); p != nil && p.status != "" {
-		// A command that failed is not the same news as one that is
-		// reconnecting or one that is over, and the banner is where it is read.
-		style := m.st.statusWA
-		if p.failed {
-			style = m.st.statusER
-		}
-		keys, pinned = style.Render(p.status), true
+		keys, pinned = m.st.statusWA.Render(p.status), true
 	}
 
 	// Each concession is the row with one more edge given up, widest first.
@@ -2036,7 +1930,7 @@ func (f paneHeaderFields) render(m *Model, left, right string, w int) string {
 //
 // They are returned in the order they are given up in, last first, once
 // viewPaneHeader has run out of edges to drop: the ports, then the diffstat,
-// which the apply report gives you anyway, then the word, whose mark is on the
+// then the word, whose mark is on the
 // position regardless. From the diffstat down that is the list's own drop
 // order. The id leads and never goes — it is what identifies the window. The
 // age of a listing that has stopped keeping up follows it, when it has, and is

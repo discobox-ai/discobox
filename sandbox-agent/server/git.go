@@ -14,7 +14,7 @@ import (
 )
 
 // serveGitRepositoryHTTP serves one of this sandbox's own source checkouts
-// over git's smart HTTP protocol: `discobox apply` fetches from it, and a
+// over git's smart HTTP protocol: a Git client fetches from it, and a
 // client clones, fetches and pushes through it (ADR 0126 §4). The pool
 // forwards its worktree route here; the token was checked against this
 // sandbox and against sandbox:read or sandbox:write (requiredRequestScope)

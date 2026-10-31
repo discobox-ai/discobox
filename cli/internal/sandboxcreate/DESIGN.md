@@ -244,8 +244,7 @@ sandbox create requests.
   `noLocalRepository`, so it stays deliverable afterwards. Nobody
   is asked. The two questions about an unborn repository — is HEAD one, and
   what does the working tree hold with no HEAD to read it against — come from
-  `internal/gitunborn`, because `discobox apply` asks them again coming back
-  ([ADR 0084](../../../docs/adr/0084-the-first-apply-into-a-repository-with-no-commits-is-its-history.md)).
+  `internal/gitunborn`.
   See the CLI design doc's "A Repository With No Commits" and
   [ADR 0083](../../../docs/adr/0083-a-repository-with-no-commits-is-uncommitted-work-on-an-empty-base.md).
 - A source repository whose `.git` is not a real directory — a linked worktree

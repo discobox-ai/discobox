@@ -7,9 +7,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// The base column prefers the reported position, and marks the state of the
-// work: a star for uncommitted content, a check for a head commit an apply
-// has landed, nothing for merely committed work.
+// The base column prefers the reported position and marks dirt or commits ahead.
 func TestSandboxBase(t *testing.T) {
 	t.Parallel()
 	spawn := Sandbox{Branch: "main", Commit: "1111111"}
@@ -29,13 +27,7 @@ func TestSandboxBase(t *testing.T) {
 		{"a report of clean clears the spawn star",
 			Sandbox{Branch: "main", Commit: "1111111", Dirty: true, Git: GitState{Known: true, Branch: "main", Commit: "1111111"}},
 			"main@1111111"},
-		{"applied wears the check",
-			Sandbox{Branch: "main", Commit: "1111111", Git: GitState{Known: true, Branch: "main", Commit: "2222222", Applied: true}},
-			"main@2222222✓"},
-		{"applied shows the host-side commit the apply produced",
-			Sandbox{Branch: "main", Commit: "1111111", Git: GitState{Known: true, Branch: "main", Commit: "2222222", Applied: true, AppliedCommit: "3333333"}},
-			"main@3333333✓"},
-		{"committed unapplied work wears the up arrow",
+		{"committed work ahead of spawn wears the up arrow",
 			Sandbox{Branch: "main", Commit: "1111111", Git: GitState{Known: true, Branch: "main", Commit: "2222222"}},
 			"main@2222222⇡"},
 		{"clean on the spawn commit is unmarked",

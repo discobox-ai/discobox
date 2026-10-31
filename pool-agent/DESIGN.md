@@ -698,7 +698,7 @@ missing bind mount is not hidden behind a missing sandbox IP address. The
 worktree's Git route is one of those routes: the repository is the sandbox's
 own (ADR 0126 §4), so the work in a sandbox that cannot start cannot be fetched
 until it is repaired, and the refusal's plain-text body is what `git` — and so
-`discobox apply` — prints. The origin route still serves, from the pool's own
+a Git client — prints. The origin route still serves, from the pool's own
 files.
 
 Every start — explicit, restart, or on use — ends by delivering the
@@ -1158,7 +1158,7 @@ way for the datagram tunnel
 ### The worktree route
 
 `.../sandboxes/{sandbox_id}/git-repositories/{slug}.git` is the sandbox's own
-checkout — what `discobox apply` fetches and a client clones, fetches and
+checkout — what a Git client fetches and a client clones, fetches and
 pushes. The sandbox agent serves it
 ([ADR 0126 §4](../docs/adr/0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md));
 the pool checks its own token's scope (`sandbox:read`, or `sandbox:write` for

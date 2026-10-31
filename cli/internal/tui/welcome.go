@@ -47,7 +47,7 @@ const welcomeIntro = "Discobox runs coding agents in isolated sandboxes on this 
 var welcomeSteps = []struct{ text, command string }{
 	{"A new box, with your source copied into it", "cd ~/src/my-project && discobox"},
 	{"Work with the agent until the change is a commit", `git commit -am "..."`},
-	{"Take that commit back out to your source", "discobox apply"},
+	{"Send that commit to your remote", "git push"},
 }
 
 // welcomeKeys is the window's own three keys, after the three steps: what the

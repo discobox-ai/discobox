@@ -171,6 +171,12 @@ any index covering the column and runs with `foreign_keys` off on one pinned
 connection, because SQLite refuses to drop an indexed column and implements the
 drop as a table rebuild.
 
+The retired apply workflow's nullable, unindexed `sandboxes.applied_commits`
+column is intentionally retained in existing databases to preserve recorded
+history. It has no current model or API reader or writer; new databases omit
+it. Existing sandbox rows and new writes work without a destructive migration.
+`TestMigratePreservesRetiredApplyHistory` covers repeated upgrades and writes.
+
 Tenant-era databases are not migrated in place. The supported replacement path
 for an installation that still has `tenant_id` columns, tenant-scoped primary
 keys, or tenant indexes is:

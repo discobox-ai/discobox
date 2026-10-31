@@ -180,9 +180,7 @@ type fakeSource struct {
 	execOpensAtDelivery []int
 	deliverSteps        []string
 	awaitedErr          error
-
-	openErr   error
-	renameErr error
+	renameErr           error
 	// hostToolErr fails RunHostTool, and toolsErr the catalog lookup.
 	hostToolErr error
 	toolsErr    error
@@ -313,7 +311,6 @@ type fakeSource struct {
 	titles      map[string]string
 	editors     []editorOpen // the sandboxes handed to a host tool, and which one
 	toolLookups []string     // the sandboxes whose tools were asked for
-	opens       []string     // "action id colsxrows"
 	execOpens   []string     // "id execID colsxrows"
 	terminals   []*fakeTerminal
 	// execTerminals is the terminal serving each exec attach, by exec id.
@@ -775,18 +772,6 @@ func (f *fakeSource) addressLookups() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.addressed...)
-}
-
-func (f *fakeSource) Open(_ context.Context, action Interaction, id string, cols, rows int) (Terminal, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.opens = append(f.opens, fmt.Sprintf("%s %s %dx%d", action, id, cols, rows))
-	if f.openErr != nil {
-		return nil, f.openErr
-	}
-	term := newFakeTerminal()
-	f.terminals = append(f.terminals, term)
-	return term, nil
 }
 
 func (f *fakeSource) Execs(context.Context, string) ([]Exec, error) {
@@ -1364,8 +1349,7 @@ type fakeTerminal struct {
 	repaints int
 	// exit is the command's exit code, for a terminal standing in for a local
 	// command. Nil is a terminal that is not one and has no result to give.
-	exit        *int
-	applyResult *ApplyResult
+	exit *int
 }
 
 // ExitStatus makes this terminal an [ExitReporter] when a test has given it a
@@ -1378,15 +1362,6 @@ func (f *fakeTerminal) ExitStatus() (int, bool) {
 		return 0, false
 	}
 	return *f.exit, true
-}
-
-func (f *fakeTerminal) ApplyResult() (ApplyResult, bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.applyResult == nil {
-		return ApplyResult{}, false
-	}
-	return *f.applyResult, true
 }
 
 func newFakeTerminal() *fakeTerminal {
@@ -2181,4 +2156,12 @@ func (f *fakeSource) DiscardHarnessChanges(_ context.Context, id, candidate stri
 	defer f.mu.Unlock()
 	f.harnessChangesWrites = append(f.harnessChangesWrites, "discard "+id+" "+candidate)
 	return "discarded", nil
+}
+
+func readySandboxes() []Sandbox {
+	all := testSandboxes()
+	all[0].Dirty = false
+	all[0].Git = GitState{Known: true, Branch: "main", Commit: "b7d0f11"}
+	all[0].Diff = DiffStat{Known: true, Added: 142, Deleted: 38, Files: 7}
+	return all
 }

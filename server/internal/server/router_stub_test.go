@@ -375,17 +375,6 @@ func (s *routerTestServices) UpdateSandboxMeta(_ context.Context, projectID, san
 	return s.instructSandbox(projectID, sandboxID)
 }
 
-func (s *routerTestServices) CompleteSandboxApply(_ context.Context, projectID, sandboxID string, _ services.CompleteSandboxApplyBody) (*model.Sandbox, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	sandbox, err := s.getSandbox(projectID, sandboxID)
-	if err != nil {
-		return nil, err
-	}
-	return &sandbox, nil
-}
-
 func (s *routerTestServices) ReconcileSandbox(_ context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

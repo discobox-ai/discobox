@@ -38,7 +38,6 @@ flowchart LR
     M --> K["skillsList (F5)"]
     K -->|n d| KVerb["Skills / AddSkills / RemoveSkills"]
     WS -->|leader g| Cred
-    L -->|y| Overlay["overlay pane → DataSource.Open"]
     WS -->|leader o| T["tools picker → Tools / NewTool / EndExec / RunHostTool / Addresses"]
     WS -->|leader A| Aud["audit screen → FollowAudit / AuditDetail"]
     WS -->|leader i, issue #N · leader p, PR #N| Iss["issue tab → Issue / CommentOnIssue / SetIssueState / MergePullRequest"]
@@ -448,7 +447,7 @@ There are three, in this order of precedence, and **only one is ever on screen**
 a harness with no credentials bound (`uncredentialed.go`), then a credential
 request waiting on this discobox (`credentials.go`). A screen carrying two
 exception bars has a second header rather than an exception. Work that is ready
-to apply gets no band: the header and the list already say `ready`, and the band
+ahead of spawn gets no band: the header and the list already say `ready`, and the band
 is for something that needs somebody.
 
 **The refusal outranks the request** — which is the opposite of what it looks
@@ -617,7 +616,7 @@ A discobox tagged `ready` or `blocked` — where its pull request stands, as the
 delivering skills tag it (`deliver-issue` and `develop`, "Ready, blocked,
 merged"): ready for a human merge, or waiting on somebody — draws that tag bold,
 green or red, where the row's other tags are dim. This `ready` is the pull
-request's, not the work's `ready` to apply that the header and list already
+request's, not the work's `ready` state that the header and list already
 spell out. The row itself is not painted: a list of boxes banded green and red
 is too busy to read, and the cursor and selection are the only bands a row
 carries. The status is drawn first among the row's tags (`Sandbox.rowTags`), so
@@ -866,7 +865,7 @@ drawn in the box a tool window would have and takes the keys and the mouse
 
 ## Pushing, without being asked
 
-The other direction from apply, and deliberately not shaped like it. While a
+While a
 workspace is open on a discobox, the window sends whatever has been committed
 here since it was created into the origin that discobox fetches from
 ([ADR 26-09-05-008](../../../docs/adr/26-09-05-008-an-attached-client-pushes-the-commits-made-where-it-runs.md)).
@@ -881,8 +880,7 @@ which the discobox only ever fetches
 A push moves `discobox/<branch>` (`origin/<branch>` in an earlier discobox;
 `SourcePush.Remote` says which) and stops: nothing in the discobox is
 checked out, rebased or interrupted, and uncommitted work in it cannot be
-touched. Apply is the opposite — it writes the developer's own working tree —
-which is why apply waits for its key and this is not offered at all.
+touched, so this happens automatically.
 
 **The trigger is an attach, and the workspace is one.** The rule is not about
 this window: a client with a terminal attached pushes, which is why `discobox
@@ -1099,7 +1097,7 @@ before. The window's own folder is the repository its checkout resolves to
 keeps the discoboxes filed under the window's key that resolved to nothing. A
 discobox is in the repository it resolved to when it was cut, so in a fork one
 cut while the branch tracked the upstream is in the upstream's folder, not the
-window's. `discobox ls` and `apply` still go by the origin key; the header is a
+window's. `discobox ls` still go by the origin key; the header is a
 filter, and a filter that merges clones sends nothing anywhere. A repository's folder cuts from the window's own source
 when it is the window's, and otherwise from what its newest discobox was cut
 from when that can be cut from here — a URL, or a directory of this machine's
@@ -1153,9 +1151,7 @@ stays up and reports on its status line. Archive invoked from a workspace is the
 exception: putting that discobox away also detaches its local streams and
 returns to the list, where the result is reported. An `Interaction` is drawn in
 the window (`pane.go`/`workspace.go`, over the `termpane` module): attach and
-shell open
-the workspace screen onto the discobox's own terminals, and apply is an overlay
-pane over whichever screen asked for it. Every interaction takes exactly one
+shell open the workspace screen onto the discobox's own terminals. Every interaction takes exactly one
 discobox, which is what a pane shows, and says so on the menu with the reason
 when a selection holds more. The window never steps aside for a discobox
 action; the `exec` field is the `tea.Exec` handoff `$EDITOR` still needs — on a
@@ -1504,8 +1500,7 @@ streaming a terminal of its own.
   stops — and the header drops the `leader q quit` half beside it, since quit
   and detach are the same act in such a window and offering both reads as a
   choice between them.
-- An archive from the workspace — the leader's `x`, or a successful apply's
-  archive — closes the workspace as it starts, like the launcher's, but waits
+- An archive from the workspace — the leader's `x` — closes the workspace as it starts, like the launcher's, but waits
   for the answer on a screen of its own rather than the list, then exits,
   carrying the failure if there was one (`archiveWorkspace`, `verbDone`'s
   `leave`). Esc does not take that wait down, and its key line names no key:
@@ -1532,7 +1527,7 @@ now.
 looked at** (`tools.go`, ADR-26-08-27-302, ADR-0134). A tool's pane lives in the shells
 column, sorted after every shell (`execBefore`), and `Model.toolShown` is the one
 with the whole window, if any; `screenPane` is the one pane with the whole
-screen, the apply overlay or the showing tool, and every place that asked
+screen, the configuration pane or the showing tool, and every place that asked
 `overlay != nil` asks it instead.
 
 - The catalog is not this package's (ADR 0125): `DataSource.Tools` merges the
@@ -1721,62 +1716,6 @@ another shell. The third opener has no counterpart in the list — `c` opens
 another terminal, on screen's and tmux's create key, since `t` is stop and the
 key map is the list's.
 
-**A command that finishes takes the screen.** `Model.overlay` is apply running
-full width — over the workspace, where the terminals stay connected, unresized
-and undrawn underneath, and over the list, where it is the whole screen. Its
-report is not something to read in half a window beside a harness scrolling
-past, and when it closes what was under it is exactly as it was: the workspace
-still running, or the list on the row it was opened from (`closeOverlay` →
-`leavePanes`). `openOverlay` sets `paneBox` either way, so the banner names the
-discobox the command is running against on both paths. `focusedPane` returns the
-overlay while it is up, which is what puts the keys, the cursor, the mouse and
-the hints on it without a second path through any of them.
-
-**A finished pane keeps its screen, and can be read back through.** The
-distinction is positional now: the primary does not hold (its end is the
-workspace's) and neither does a tool (its window was the program — see the
-tools above), while every other tab and the overlay do. A terminal or shell
-that exits stays as
-a readable tab, and a command that ran, printed and returned stays as the
-screen — an apply with little to say is over in a moment, and a pane that
-vanished with it would be a screen you never got to read. What it says it was is
-the command's own result where there is one (`exitVerdict`, over the optional
-`ExitReporter`): a nonzero exit reads "failed · exit N" in the banner and the
-hints, in the error color, because a screen captioned "finished" over an apply
-that printed why it could not is disagreeing with itself. A terminal that is a
-session rather than a command has no such verdict and is simply finished. The
-pane says so, and
-its keys become the reader's (`readFinished`): the arrows and pgup/pgdn walk
-back through output longer than the pane, `g`/`G` jump to the ends, the wheel
-scrolls, `h`/`l` still leave for another pane, and only the keys that mean done
-— `q`, Esc, Enter, Ctrl-C — dismiss it. The leader is the exception to that
-handover (`finishedKey`): a held screen is a pane with the window still around
-it, so the prefix's chords keep working on it — another pane, a new shell, the
-tools, quit — because a screen where every window key did nothing until it had
-been dismissed would be blocking you at exactly the moment you are deciding
-what to do next. They stay termpane's to resolve, so the chords are declared in
-one place, and a sequence already open there (`PrefixPending`, the prefix armed
-or a lead waiting) is left to finish rather than losing its second keystroke to
-the reader. Dismissal is local tab closure, not
-detach: the session is already over, and the way to be rid of a *running* shell
-is to exit it — there is deliberately no kill-tab key.
-
-A successful apply is the useful exception to the generic finished-pane flow:
-its report stays on screen and immediately opens a two-choice menu over it.
-Archive is selected by default; detach leaves the discobox running. The menu's
-body names every destination the apply wrote and the local commits it created
-there (`appliedSourceSections`), read from the structured report the child
-`discobox apply` leaves beside its terminal output (`ApplyResultReporter`)
-rather than parsed off the screen. Either
-choice detaches from the workspace, while Esc dismisses only the menu and
-returns to the readable apply result. The choice is carried out as it is made,
-not posted back as a message, so a key typed after it reads the screen the
-choice left rather than a report already gone. The menu is about the report
-under it (`dialog.over`) and goes with it: a session that ends while the menu
-is up takes the question away along with the workspace. A failed apply opens no cleanup menu; it
-keeps the ordinary reader keys so the failure remains the decision in front of
-the user.
-
 **Messages from a pane are addressed to it** (`paneMsg`, `fromPane`). Every
 command a pane produces is tagged with its id, because `termpane.ClosedMsg` says
 only "the session ended" — and a pane that has just been closed still has a read
@@ -1807,8 +1746,7 @@ on what a color or a mark means. It is read through `currentBox` off the
 listing the tick refreshes whichever screen is up, not off the snapshot the
 workspace was opened on: a header saying "clean" over a session that has been
 committing for an hour is worse than no header at all, and it is the same read
-the leader keys dispatch against, so a screen that offers `apply` is one whose
-banner already said there was something to apply. It costs no request — the
+the leader keys dispatch against. It costs no request — the
 agent pushes git state and the diffstat through the control plane with the
 listing.
 
@@ -1940,7 +1878,7 @@ place all the way down.
 Only a middle that still does not fit drops its own fields, whole from the
 right — the ports first, since they are the only field with no bound on their
 width (a compose stack brings up as many as it likes), then, in the list's own
-order, the diffstat, which the apply report gives you anyway, then the word,
+order, the diffstat, then the word,
 whose mark is on the position regardless, then the issue and pull request
 tags. The id never goes, and the age of a listing that has stopped keeping up
 (`listed 40s ago`, right after the id) is the last to: everything after it is
@@ -2636,8 +2574,7 @@ key for it would ask for what is already happening.
 The setup runs in the configuration pane described at the top of this doc.
 `$EDITOR` — on one of a harness's files, and on a tool's config (`tools.go`) —
 goes through `tea.Exec` (`harnessExec`) rather than a pane: it is a local
-program that draws its own screen, and unlike apply it is not one of this CLI's
-own commands with a discobox to name. `F3` is a function key because the prompt takes every
+program that draws its own screen, and is not one of this CLI's own commands. `F3` is a function key because the prompt takes every
 letter as text and the list has spent them on its own actions, and it is inert
 inside a pane, where every key is the sandbox's.
 
@@ -2661,8 +2598,7 @@ is opened rather than for every row of a listing.
 
 **One data seam.** Everything the window needs is on `DataSource` (`data.go`),
 implemented once in `cli.apiDataSource`. The interactive actions there build and
-execute the real Cobra commands, so the console runs `discobox apply` and the
-rest rather than a second implementation that drifts from them.
+share the CLI workflows, so the console and shell commands use the same behavior.
 
 **Color is a value, not a global.** `detectColor` reads the profile once and
 `styles.color` carries it. Without color the state glyph gives way to the state
@@ -2831,7 +2767,7 @@ through `DISCOBOX_HOST_ID` is not a generated id and is said whole.
 is our own.** `hostid` is stored per user under XDG, and a config directory
 that does not survive the run — CI, a container — mints a new one next time. A
 row like that did come from another identity, and saying so is right: it is the
-same fact `apply` refuses on, so the row says why before it is tried. Naming
+identity difference the row records. Naming
 the hostname for it is what would be wrong — "from wilma" while sitting on
 wilma reads as a mistake — so `Session.Host` carries this machine's hostname
 and a row recording that same name is qualified by its id alone.
@@ -3087,23 +3023,11 @@ the list to type something and coming back is not the same as arriving at it.
 `resetCursor` clears `visited` when the folder, server, or tag changes: a
 different set of sandboxes is a list nobody has chosen a row in.
 
-**The git column is where the work sits now.** Every row carries a
-branch@commit, and once the sandbox's agent has reported (`GitState`, relayed
-with the listing per ADR 0030) it is the position the working tree is on today
-rather than the commit the sandbox was cut from. The mark on it is the state
-of the work, most losable first: `*` in warning while the tree holds
-uncommitted content, `⇡` in the default text for work committed ahead of every
-host, which no apply has landed and an apply would take, `✓` in green when the head commit is the last one applied — the state
-where nothing in the sandbox would be lost — and unmarked dim when it sits
-clean where it was cut. An applied row shows the host-side commit its apply
-produced rather than the sandbox head, since that is the SHA findable in the
-local repository. The column beside it spells the mark out
-(`dirty` / `ready` / `applied` / `clean` / `-`), in the mark's color, so
-the code never has to be decoded — the same words `discobox ls` prints. Until anything reports, the row falls
-back to the spawn position, starred when a snapshot of uncommitted work was
-carried in. `discobox ls` prints the same column, plus the derivation spelled as
-a word (`dirty` / `ready` / `applied` / `clean`), from the same
-`cli.sandboxGitStatus` seam — one derivation, two spellings.
+**The git column is where the work sits now.** The agent reports the current
+branch and commit. `*` marks uncommitted content and `⇡` marks clean committed
+work ahead of the spawn commit. The words beside it are `dirty`, `ready`,
+`clean`, or `-` before a report arrives. Commits leave the box through Git push;
+the listing does not track whether they reached a remote.
 
 **Diffstats arrive with the listing.** The sandbox-agent measures
 `git diff --shortstat` against the spawn commit its manifest records,
@@ -3112,8 +3036,7 @@ pulled commits do not count (ADR 0018's base rule, carried into the agent by
 ADR 0037), and reports the counts with the rest of its status — so the column
 costs the list nothing and no git runs anywhere on its behalf — a fetch per
 row would be an exec waking every stopped sandbox just to draw a column. `DiffStat.Known` separates "nothing changed"
-from "nothing reported yet", which is what keeps apply available on a row
-whose report has not landed.
+from "nothing reported yet".
 
 **Keys are matched by name, not keystroke.** Bubble Tea reports a typed `V` as
 `shift+v` and a space as `space`; the key list promises letters, so `keyName`
@@ -3196,7 +3119,6 @@ the newest one where the busy line goes.
 | `credentials.go` | the credential inbox: the marks, the band's sentence, and the dialog that answers — which secret, and for how long |
 | `trusts.go` | a trust request's dialog: which certificate to pin, and for how long |
 | `refresh.go` | a refresh request's dialog, and the session permission that answers the next one unprompted |
-| `apply.go` | apply: its key, and what is offered when it succeeds |
 | `push.go` | the automatic push: the beat it runs on, what it says, and what it holds back after a refusal |
 | `column.go` | one side of the workspace: a strip of panes, one visible |
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |

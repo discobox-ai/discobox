@@ -56,9 +56,6 @@ func TestAttachDrawsInTheWindow(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
-	if len(ds.opens) != 0 {
-		t.Fatalf("opens = %v, want no command drawn over it", ds.opens)
-	}
 	term.send("hello from the sandbox")
 	d.wait("output", func() bool { return strings.Contains(frameText(m), "hello from the sandbox") })
 
@@ -1326,259 +1323,6 @@ func TestSplitPanesShareTheScreen(t *testing.T) {
 	}
 }
 
-// apply is the same command from either screen: drawn in a pane that takes the
-// screen, over the workspace when there is one and over the list when there is
-// not. The window never steps aside for it.
-func TestApplyFromTheListDrawsInAPane(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	m := newTestModel(t, ds)
-	d := newDriver(t, m)
-	d.start()
-	d.key("tab")
-	d.key("y")
-	d.wait("the command", func() bool { return m.overlay != nil })
-
-	if m.overlay.action != InteractApply {
-		t.Fatalf("overlay = %s, want apply", m.overlay.action)
-	}
-	if len(ds.opens) != 1 || !strings.HasPrefix(ds.opens[0], "apply sbx_one ") {
-		t.Fatalf("opens = %v, want apply drawn on the box under the cursor", ds.opens)
-	}
-	// There is no workspace under it: apply is the whole screen, and the
-	// banner still names the discobox it is running against.
-	if m.terminals.len() != 0 || m.shells.len() != 0 {
-		t.Fatal("apply from the list should not attach to anything")
-	}
-	if !strings.Contains(plainFrame(m), "sbx_one") {
-		t.Errorf("the banner should name the box:\n%s", plainFrame(m))
-	}
-
-	// It ends the way it ends — this one could not cherry-pick — and the screen
-	// is held either way, for the report to be read.
-	apply := ds.terminals[len(ds.terminals)-1]
-	apply.mu.Lock()
-	code := 1
-	apply.exit = &code
-	apply.mu.Unlock()
-	apply.send("cherry-pick failed: conflicts in server/main.go\r\n")
-	d.wait("output", func() bool { return strings.Contains(frameText(m), "cherry-pick failed") })
-	apply.Close()
-	d.wait("the pane to settle", func() bool { return m.overlay != nil && m.overlay.exited })
-
-	if !strings.Contains(plainFrame(m), "cherry-pick failed") {
-		t.Errorf("the report should still be up:\n%s", plainFrame(m))
-	}
-	if !strings.Contains(plainFrame(m), "failed") {
-		t.Errorf("it should say how the command ended:\n%s", plainFrame(m))
-	}
-
-	// Closing it goes back to the list it was opened from, on the same row.
-	d.key("q")
-	d.wait("the pane to close", func() bool { return m.overlay == nil })
-	if m.focus != focusList {
-		t.Fatalf("focus = %v, want the list it was opened from", m.focus)
-	}
-	if m.inPanes() {
-		t.Fatal("nothing should be left on screen")
-	}
-}
-
-// A command that ran, printed and returned leaves its last screen up to be
-// read. An apply with little to say is over in a moment, and a pane that
-// vanished with it would be a screen you never got to see.
-func TestAFinishedCommandHoldsItsScreen(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
-	d.key("ctrl+a")
-	d.key("y") // apply
-	d.wait("the command", func() bool { return m.overlay != nil })
-
-	apply := ds.terminals[len(ds.terminals)-1]
-	apply.send("applied 2 commits\r\nnothing left behind\r\n")
-	d.wait("output", func() bool { return strings.Contains(frameText(m), "nothing left behind") })
-
-	// The command returns.
-	apply.Close()
-	d.wait("the pane to settle", func() bool { return m.overlay != nil && m.overlay.exited })
-
-	// It is still there, and still readable.
-	if m.overlay == nil {
-		t.Fatal("the screen should have been kept")
-	}
-	if !strings.Contains(plainFrame(m), "nothing left behind") {
-		t.Errorf("the last screen should still be up:\n%s", plainFrame(m))
-	}
-	if !strings.Contains(plainFrame(m), "finished") {
-		t.Errorf("it should say the command is over:\n%s", plainFrame(m))
-	}
-	if !strings.Contains(hintLine(m.hints()), "q closes") {
-		t.Errorf("the keys should say how to take it away: %q", hintLine(m.hints()))
-	}
-
-	// A key that means nothing here leaves the screen alone: taking it away
-	// mid-read is exactly the wrong moment.
-	d.key("z")
-	if m.overlay == nil {
-		t.Fatal("a stray key should not close the screen")
-	}
-
-	// The ones that mean done take it away.
-	d.key("q")
-	d.wait("the pane to close", func() bool { return m.overlay == nil })
-	if m.focus != focusPane {
-		t.Fatalf("focus = %v, want the workspace it was over", m.focus)
-	}
-}
-
-func TestSuccessfulApplyAsksToArchiveOrDetach(t *testing.T) {
-	t.Parallel()
-	finish := func(t *testing.T, ds *fakeSource, d *driver, m *Model) {
-		t.Helper()
-		d.key("ctrl+a")
-		d.key("y")
-		d.wait("the command", func() bool { return m.overlay != nil })
-		apply := ds.terminals[len(ds.terminals)-1]
-		apply.mu.Lock()
-		code := 0
-		apply.exit = &code
-		apply.applyResult = &ApplyResult{Sources: []AppliedSource{
-			{
-				Slug:       "primary",
-				Status:     "applied",
-				Repository: "/src/disco2",
-				Branch:     "main",
-				Commits: []AppliedCommit{
-					{Commit: "1234567890abcdef", Subject: "show applied commits"},
-					{Commit: "fedcba0987654321", Subject: "polish the dialog"},
-				},
-			},
-			{Slug: "docs", Status: "up-to-date", Repository: "/src/docs", Branch: "trunk"},
-		}}
-		apply.mu.Unlock()
-		apply.Close()
-		d.wait("the successful apply question", func() bool {
-			return m.overlay != nil && m.overlay.exited && m.dialog != nil
-		})
-		if m.dialog.kind != dlgActions || len(m.dialog.items) != 2 {
-			t.Fatalf("dialog = %+v, want a two-choice menu", m.dialog)
-		}
-		if m.dialog.items[0].label != "archive" || m.dialog.items[1].label != "detach" || m.dialog.cursor != 0 {
-			t.Fatalf("items = %+v cursor = %d, want archive selected before detach", m.dialog.items, m.dialog.cursor)
-		}
-		text := dialogText(m)
-		for _, want := range []string{
-			"What this apply did", "primary", "/src/disco2", "main", "1234567890ab", "show applied commits",
-			"fedcba098765", "polish the dialog", "docs", "/src/docs", "trunk", "already up to date",
-		} {
-			if !strings.Contains(text, want) {
-				t.Fatalf("dialog does not carry %q:\n%s", want, text)
-			}
-		}
-		// The question is asked where it is answered: under the summary of what
-		// the apply did, immediately above the rows that answer it.
-		summary := strings.Index(text, "polish the dialog")
-		question := strings.Index(text, "what should happen to this discobox?")
-		archive := strings.Index(text, "put the discobox away")
-		if question < summary || archive < question {
-			t.Fatalf("summary at %d, question at %d, archive at %d; want the question between them:\n%s", summary, question, archive, text)
-		}
-	}
-
-	t.Run("escape returns to the apply result", func(t *testing.T) {
-		ds := newFakeSource(testSandboxes()...)
-		d, m, _ := openWorkspace(t, ds, "enter")
-		finish(t, ds, d, m)
-		d.key("esc")
-		if m.dialog != nil || m.overlay == nil || !m.overlay.exited || !m.inPanes() || m.focus != focusPane {
-			t.Fatalf("dialog = %v, overlay = %v, inPanes = %v, focus = %v; want the apply result", m.dialog, m.overlay, m.inPanes(), m.focus)
-		}
-	})
-
-	t.Run("detach leaves the box running", func(t *testing.T) {
-		ds := newFakeSource(testSandboxes()...)
-		d, m, _ := openWorkspace(t, ds, "enter")
-		finish(t, ds, d, m)
-		d.key("down")
-		d.key("enter")
-		if m.overlay != nil || m.inPanes() || m.focus != focusList {
-			t.Fatalf("overlay = %v, inPanes = %v, focus = %v; want the list", m.overlay, m.inPanes(), m.focus)
-		}
-		if len(ds.did) != 0 {
-			t.Fatalf("did = %v, detach must not change the box", ds.did)
-		}
-	})
-
-	t.Run("archive leaves the workspace and archives the box", func(t *testing.T) {
-		ds := newFakeSource(testSandboxes()...)
-		d, m, _ := openWorkspace(t, ds, "enter")
-		finish(t, ds, d, m)
-		d.key("enter")
-		d.wait("archive", func() bool { return len(ds.verbs()) == 1 })
-		if got := ds.did[0]; got != "archive sbx_one" {
-			t.Fatalf("did = %q, want archive sbx_one", got)
-		}
-		if m.overlay != nil || m.inPanes() || m.focus != focusList {
-			t.Fatalf("overlay = %v, inPanes = %v, focus = %v; want the list", m.overlay, m.inPanes(), m.focus)
-		}
-	})
-
-	// A window that is one command's own has no list for the archive to land
-	// on, so it goes once the archive is answered, as its detach does.
-	t.Run("archive closes a window that is one command's own", func(t *testing.T) {
-		ds := newFakeSource(testSandboxes()...)
-		d, m := openAttached(t, ds, testSandboxes()[0])
-		d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
-		finish(t, ds, d, m)
-		d.key("enter")
-		d.wait("the window to close", func() bool { return m.quit })
-		if got := ds.verbs(); len(got) != 1 || got[0] != "archive sbx_one" {
-			t.Fatalf("verbs = %q, want archive sbx_one", got)
-		}
-		if m.exitErr != nil {
-			t.Fatalf("exitErr = %v, want an ordinary exit", m.exitErr)
-		}
-	})
-
-	// A second Enter pressed on the heels of the answer is already queued when
-	// the answer is given, and Enter is also the finished report's own "done"
-	// key. The answer is carried out before that key is read, so it cannot
-	// take the report away first and leave the answer nothing to act on.
-	t.Run("an Enter queued behind the answer does not lose it", func(t *testing.T) {
-		ds := newFakeSource(testSandboxes()...)
-		d, m, _ := openWorkspace(t, ds, "enter")
-		finish(t, ds, d, m)
-		report := m.overlay
-		d.dispatch(keyPress("enter"))
-		if m.overlay == report {
-			t.Fatal("the answer should have left the report before the next key is read")
-		}
-		d.dispatch(keyPress("enter"))
-		d.wait("archive", func() bool { return len(ds.did) == 1 })
-		if got := ds.did[0]; got != "archive sbx_one" {
-			t.Fatalf("did = %q, want archive sbx_one", got)
-		}
-	})
-
-	// Every answer the question offers is a way of leaving the report, so when
-	// the session under the workspace ends and takes the report with it, the
-	// question goes too rather than promising a screen that is not there.
-	t.Run("the question goes with the workspace it was asked over", func(t *testing.T) {
-		ds := newFakeSource(testSandboxes()...)
-		d, m, primary := openWorkspace(t, ds, "enter")
-		finish(t, ds, d, m)
-		primary.Close()
-		d.wait("the workspace to close", func() bool { return !m.inPanes() && m.overlay == nil })
-		if m.dialog != nil {
-			t.Fatalf("the question outlived its report: %q", dialogText(m))
-		}
-		if len(ds.did) != 0 {
-			t.Fatalf("did = %v, nothing was chosen", ds.did)
-		}
-	})
-}
-
 // The primary session that ends is gone: the workspace was a view onto it, so
 // it is not held.
 func TestAnEndedSessionIsNotHeld(t *testing.T) {
@@ -1657,21 +1401,19 @@ func TestTheBannerFollowsTheListingsGitStatus(t *testing.T) {
 		t.Fatalf("the banner does not show the sandbox as dirty: %q", nameRow())
 	}
 
-	// The agent reports: the work is committed, and an apply has landed it on
-	// the host under a commit of its own.
+	// The agent reports a clean tree with committed work beyond spawn.
 	moved := testSandboxes()
 	moved[0].Git = GitState{
 		Known: true, Branch: "main", Commit: "b17e004",
-		Applied: true, AppliedCommit: "9dd21fa",
 	}
 	moved[0].Diff = DiffStat{Known: true, Added: 12, Deleted: 3, Files: 2}
 	ds.mu.Lock()
 	ds.sandboxes = moved
 	ds.mu.Unlock()
 	d.dispatch(tickMsg{})
-	d.wait("the refresh", func() bool { return strings.Contains(nameRow(), "applied") })
+	d.wait("the refresh", func() bool { return strings.Contains(nameRow(), "ready") })
 
-	if got := nameRow(); !strings.Contains(got, "main@9dd21fa✓  applied  +12 −3") {
+	if got := nameRow(); !strings.Contains(got, "main@b17e004⇡  ready  +12 −3") {
 		t.Fatalf("the banner did not follow the listing: %q", got)
 	}
 }
@@ -1809,7 +1551,7 @@ func TestTheBannerKeepsATransportStatusAsItNarrows(t *testing.T) {
 }
 
 // Once there are no edges left to give, the middle drops its own fields whole
-// from the right — the ports first, then the diffstat, which the apply report
+// from the right — the ports first, then the diffstat, which the session output
 // gives you anyway, then the word, whose mark the position carries regardless —
 // so a narrow window loses a field rather than showing half of one. The id
 // never goes: it is what identifies the window.
@@ -2080,58 +1822,6 @@ func TestTheBannerDrawsTheMachineOnlyWhenAllOfItIsKnown(t *testing.T) {
 	}
 }
 
-// Output longer than the pane can be read back through: a screen you cannot
-// scroll is a screen whose first half you never saw.
-func TestAFinishedCommandCanBeScrolled(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
-	d.key("ctrl+a")
-	d.key("y") // apply
-	d.wait("the command", func() bool { return m.overlay != nil })
-	apply := ds.terminals[len(ds.terminals)-1]
-
-	// More lines than the pane is tall.
-	_, rows := m.paneCells(m.width)
-	var out strings.Builder
-	for i := 1; i <= rows+20; i++ {
-		if i > 1 {
-			out.WriteString("\r\n")
-		}
-		fmt.Fprintf(&out, "line %d", i)
-	}
-	apply.send(out.String())
-	d.wait("output", func() bool { return strings.Contains(frameText(m), fmt.Sprintf("line %d", rows+20)) })
-	apply.Close()
-	d.wait("the pane to settle", func() bool { return m.overlay != nil && m.overlay.exited })
-
-	if strings.Contains(plainFrame(m), "line 1 ") {
-		t.Fatal("the first lines should have scrolled off the pane")
-	}
-	if !strings.Contains(hintLine(m.hints()), "scroll") {
-		t.Errorf("the keys should offer scrolling: %q", hintLine(m.hints()))
-	}
-
-	// Up walks back, home goes to the top, and the earliest output is there.
-	d.key("up")
-	if m.overlay.term.ScrollOffset() != 1 {
-		t.Fatalf("offset = %d, want one line back", m.overlay.term.ScrollOffset())
-	}
-	d.key("g")
-	if !strings.Contains(plainFrame(m), "line 1") {
-		t.Errorf("the top of the output should be reachable:\n%s", plainFrame(m))
-	}
-
-	// And end comes back to where it finished.
-	d.key("G")
-	if m.overlay.term.ScrollOffset() != 0 {
-		t.Fatalf("offset = %d, want the last screen", m.overlay.term.ScrollOffset())
-	}
-	if !strings.Contains(plainFrame(m), fmt.Sprintf("line %d", rows+20)) {
-		t.Errorf("the end of the output should be back:\n%s", plainFrame(m))
-	}
-}
-
 // Streaming output continues below a viewport in scrollback without pulling
 // the real window back to the live screen.
 func TestStreamingOutputDoesNotMoveScrolledViewport(t *testing.T) {
@@ -2285,72 +1975,6 @@ func TestAKeyAfterARunIsNotACommand(t *testing.T) {
 	}
 }
 
-// A command that runs and finishes takes the whole screen for as long as it
-// runs. What is under it is untouched — still connected, still running, still
-// where it was — and is back the moment the command exits.
-func TestACommandTakesTheScreenOverTheWorkspace(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	d, m, harness := openWorkspace(t, ds, "enter")
-	d.key("ctrl+a")
-	d.key("s")
-	d.wait("the tab", func() bool { return m.shells.len() == 1 })
-	harness.send("the harness is still working")
-	d.wait("output", func() bool { return strings.Contains(frameText(m), "still working") })
-
-	d.key("ctrl+a")
-	d.key("y") // apply
-	d.wait("the command", func() bool { return m.overlay != nil })
-
-	if m.overlay.action != InteractApply {
-		t.Fatalf("overlay = %s, want apply", m.overlay.action)
-	}
-	// Both terminals are still there, and neither was resized to make room:
-	// nothing was made room for.
-	if m.primary() == nil || m.shells.len() != 1 {
-		t.Fatal("the workspace should be kept under the command")
-	}
-	lcols, _ := m.paneCells(m.width / 2)
-	if got := ds.execTerm(ExecPrimary).size(); got[0] != lcols {
-		t.Fatalf("the terminal is %d columns, want the split's %d", got[0], lcols)
-	}
-	rcols, _ := m.paneCells(m.width - m.width/2)
-	if got := ds.execTerm("exec_shell1").size(); got[0] != rcols {
-		t.Fatalf("the shell is %d columns, want the split's %d", got[0], rcols)
-	}
-	// The command has the screen: it is the only box drawn, at the full width.
-	full, _ := m.paneCells(m.width)
-	if got := ds.terminals[len(ds.terminals)-1].size(); got[0] != full {
-		t.Fatalf("the command opened at %d columns, want the screen's %d", got[0], full)
-	}
-	frame := plainFrame(m)
-	if strings.Contains(frame, "still working") {
-		t.Fatalf("the workspace should be under the command, not beside it:\n%s", frame)
-	}
-	if !strings.Contains(frame, "[ apply ]") {
-		t.Fatalf("the command should name itself:\n%s", frame)
-	}
-
-	// It ends, and the workspace is back exactly as it was.
-	apply := ds.terminals[len(ds.terminals)-1]
-	apply.send("applied 2 commits\r\n")
-	d.wait("the output", func() bool { return strings.Contains(frameText(m), "applied 2 commits") })
-	apply.Close()
-	d.wait("the command to settle", func() bool { return m.overlay != nil && m.overlay.exited })
-	d.key("q")
-	d.wait("the workspace", func() bool { return m.overlay == nil })
-
-	if m.primary() == nil || m.shells.len() != 1 {
-		t.Fatal("the workspace should be back as it was")
-	}
-	if !strings.Contains(plainFrame(m), "still working") {
-		t.Fatalf("what was underneath should be back as it was:\n%s", plainFrame(m))
-	}
-	if m.focus != focusPane {
-		t.Fatalf("focus = %v, want the panes", m.focus)
-	}
-}
-
 // Every command the list offers is here on the key it has there. Archiving is
 // the exception that also detaches: the workspace belongs to the box being put
 // away, so its result is reported on the list behind it.
@@ -2373,27 +1997,6 @@ func TestLeaderRunsTheListsVerbs(t *testing.T) {
 	case <-term.closed:
 	default:
 		t.Fatal("the workspace terminal is still attached after archive")
-	}
-}
-
-// A command that cannot run says why, rather than opening a screen that reports
-// the same thing less clearly. The checks are the list's, on the same discobox.
-func TestTheLeaderKeepsTheListsChecks(t *testing.T) {
-	t.Parallel()
-	boxes := testSandboxes()
-	boxes[0].Diff = DiffStat{Known: true}
-	ds := newFakeSource(boxes...)
-	d, m, _ := openWorkspace(t, ds, "enter")
-
-	d.key("ctrl+a")
-	d.key("y") // apply, with nothing to bring back
-	d.settle()
-
-	if m.overlay != nil {
-		t.Fatal("an apply with nothing in it should not take the screen")
-	}
-	if m.dialog == nil || !strings.Contains(m.dialog.body, "nothing has changed") {
-		t.Fatalf("dialog = %v, want it to say why", m.dialog)
 	}
 }
 
@@ -2483,34 +2086,6 @@ func TestTheToolsPickerOpensTheWorkspaceBoxInZed(t *testing.T) {
 	}
 }
 
-// A command that cannot start says so on the screen it was asked for. The
-// workspace draws its own bottom line, so a report it did not carry was a key
-// that looked like it did nothing — and the window that was waiting for the
-// command stops saying it is.
-func TestAFailedCommandReportsOnTheWorkspace(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	ds.openErr = errors.New("no pty here")
-	d, m, _ := openWorkspace(t, ds, "enter")
-
-	d.key("ctrl+a")
-	d.key("y") // apply
-	d.wait("the report", func() bool { return m.status != "" })
-
-	if m.overlay != nil {
-		t.Fatal("nothing opened, so nothing should be over the workspace")
-	}
-	if !m.statusE || !strings.Contains(m.status, "no pty here") {
-		t.Fatalf("status = %q (error %v), want the reason apply did not start", m.status, m.statusE)
-	}
-	if m.busy != "" {
-		t.Fatalf("busy = %q, want the window to have stopped waiting", m.busy)
-	}
-	if !strings.Contains(plainFrame(m), "no pty here") {
-		t.Fatalf("the workspace does not show the report:\n%s", plainFrame(m))
-	}
-}
-
 // While a command is starting the workspace says so, in place of the keys: the
 // screen it takes is not up yet, and a key that appears to have done nothing
 // for as long as the server takes is the same key twice.
@@ -2519,66 +2094,10 @@ func TestTheWorkspaceShowsWhatItIsWaitingFor(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
-	m.busy = "apply…"
+	m.busy = "configure…"
 	d.dispatch(sizeMsg(m.width, m.height))
-	if !strings.Contains(plainFrame(m), "apply…") {
+	if !strings.Contains(plainFrame(m), "configure…") {
 		t.Fatalf("the workspace does not say what it is doing:\n%s", plainFrame(m))
-	}
-}
-
-// A command that failed says so, at both ends of the pane it ran in. The stream
-// ending is not the same fact as the command working, and a screen captioned
-// "finished" over an apply that could not cherry-pick contradicts the reason
-// printed above it.
-func TestAFailedCommandSaysSoRatherThanFinished(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
-	d.key("ctrl+a")
-	d.key("y") // apply
-	d.wait("the command", func() bool { return m.overlay != nil })
-
-	apply := ds.terminals[len(ds.terminals)-1]
-	apply.mu.Lock()
-	code := 1
-	apply.exit = &code
-	apply.mu.Unlock()
-	apply.send("nothing to apply: the cherry-pick failed\r\n")
-	apply.Close()
-	d.wait("the pane to settle", func() bool { return m.overlay != nil && m.overlay.exited })
-
-	if !m.overlay.failed {
-		t.Fatal("a command that exited nonzero should be marked failed")
-	}
-	if !strings.Contains(m.overlay.status, "failed") || !strings.Contains(m.overlay.status, "1") {
-		t.Fatalf("status = %q, want it to say it failed and with what", m.overlay.status)
-	}
-	frame := plainFrame(m)
-	if !strings.Contains(frame, "failed") {
-		t.Fatalf("the screen does not say the command failed:\n%s", frame)
-	}
-	if strings.Contains(frame, "finished") {
-		t.Fatalf("the screen still calls a failed command finished:\n%s", frame)
-	}
-}
-
-// A command that worked, and a terminal that is not a command at all, are both
-// just over: a session ending is not a verdict on anything, and a pane that
-// read failure into one would be inventing news.
-func TestAPaneWithNoVerdictIsSimplyFinished(t *testing.T) {
-	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
-	d.key("ctrl+a")
-	d.key("y") // apply
-	d.wait("the command", func() bool { return m.overlay != nil })
-
-	apply := ds.terminals[len(ds.terminals)-1]
-	apply.Close()
-	d.wait("the pane to settle", func() bool { return m.overlay != nil && m.overlay.exited })
-
-	if m.overlay.failed || m.overlay.status != "finished" {
-		t.Fatalf("status = %q failed = %v, want it simply finished", m.overlay.status, m.overlay.failed)
 	}
 }
 

@@ -17,7 +17,7 @@ import (
 // window of their own to be given.
 //
 // A tool that runs in the discobox is one exec session with the whole window,
-// opened over the workspace the way apply is, and it is the only kind of pane
+// opened over the workspace like harness configuration, and it is the only kind of pane
 // that survives being put away: minimizing moves it into the shells column, as
 // a tab after the shells, with the session running and the stream attached, so
 // it is still in sight and one press from its window again. Closing is the

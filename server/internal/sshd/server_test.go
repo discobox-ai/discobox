@@ -117,9 +117,6 @@ func (f *fakeSandboxService) UpgradeSandbox(context.Context, string, string, ser
 func (f *fakeSandboxService) CompleteSandboxSourcePush(context.Context, string, string, services.CompleteSandboxSourcePushBody) (*model.Sandbox, error) {
 	panic("not implemented")
 }
-func (f *fakeSandboxService) CompleteSandboxApply(context.Context, string, string, services.CompleteSandboxApplyBody) (*model.Sandbox, error) {
-	panic("not implemented")
-}
 func (f *fakeSandboxService) UpdateSandboxMeta(context.Context, string, string, services.UpdateSandboxMetaBody) (*model.Sandbox, error) {
 	panic("not implemented")
 }

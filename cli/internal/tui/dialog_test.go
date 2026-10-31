@@ -336,7 +336,7 @@ func TestTheHelpIsSearchable(t *testing.T) {
 	if !strings.Contains(got, "/vscode") {
 		t.Fatalf("the search line is not on the frame:\n%s", got)
 	}
-	if !strings.Contains(got, "vscode and zed are different") {
+	if !strings.Contains(got, "vscode and zed") {
 		t.Fatalf("the help did not scroll to the match:\n%s", got)
 	}
 }

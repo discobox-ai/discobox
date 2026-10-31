@@ -45,12 +45,8 @@ cd ~/src/my-project
 discobox
 ```
 
-Work with the agent and have it commit the changes inside the box. From your
-original repository, apply those commits to your working tree:
-
-```bash
-discobox apply
-```
+Work with the agent, have it commit the changes inside the box, and push them
+to a Git remote. Review and merge them through your usual Git workflow.
 
 ![Discobox with an agent terminal, a shell, services, and forwarded ports](assets/screens/claude-code.png)
 
@@ -82,9 +78,9 @@ flowchart LR
   repo["Your repository"] -- "clone" --> a["Box A"]
   repo -- "clone" --> b["Box B"]
   repo -- "clone" --> c["Box C"]
-  a -- "discobox apply" --> repo
-  b -- "discobox apply" --> repo
-  c -- "git push" --> host["Your Git host: a branch or pull request"]
+  a -- "git push" --> host["Your Git host: a branch or pull request"]
+  b -- "git push" --> host
+  c -- "git push" --> host
 ```
 
 **Where a box clones from.** The source you name first, `.` for the
@@ -96,39 +92,8 @@ cannot push to it, and nothing it does touches your files. `-i` brings more
 sources into the same box, either another local checkout or a remote URL, whose
 `origin` is then that remote.
 
-**Where the work goes.** The agent commits in the box. From there, the work goes
-back the same two ways it does today:
-
-- **Merge it back to your machine** with `discobox apply`, run from your
-  repository. It fetches the box's commits and cherry-picks them onto your
-  current branch, keeping each commit's message, author, and boundaries. The
-  result is ordinary history: review it with `git log`, amend or reorder it, and
-  push it like any other commit.
-  - The cherry-pick runs in a scratch worktree, and your branch moves only if
-    every commit applies cleanly. On a conflict nothing changes, and apply prints
-    the `git cherry-pick` command that reproduces it.
-  - Only committed work is applied. A box with uncommitted changes is skipped, so
-    nothing lands from a half-finished state.
-  - Discobox records what it applied, so applying the same box again brings over
-    only the commits made since.
-- **Push to a remote and open a pull request** from inside the box, with
-  `git push` and `gh`, the way you would from your laptop. The box never holds your
-  Git host token: you bind it to the box as a secret, or the agent requests access
-  and you approve it, and the box sees only a placeholder (see
-  [Isolation and credentials](#isolation-and-credentials)).
-
-### Keeping parallel boxes in step
-
-Boxes never see each other; their work meets in your repository. Once one box is
-applied, the others can build on it. Inside a box,
-`git fetch origin && git rebase origin/<branch>` picks up everything on your
-branch, including your own commits and the work of other boxes you applied. When two changes overlap, the
-agent resolves the conflict in its box and you apply the rebased result, so the
-merge work stays out of your checkout.
-
-Where a box cannot read your repository directly, such as one running on another
-machine, the client pushes your new commits into it while you are attached, and
-`discobox push` sends them on demand.
+**Where the work goes.** The agent commits in the box and pushes to a Git
+remote. Open a pull request or fetch and merge that branch on your machine.
 
 ## Working with a box
 

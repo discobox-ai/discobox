@@ -24,17 +24,6 @@ type sandboxGitState struct {
 	Commit string // head, full SHA
 	Clean  bool   // no uncommitted changes in the working tree
 
-	// Applied: the head commit is the last commit `discobox apply` recorded for
-	// this source, so everything committed here has landed on a host. Only a
-	// clean tree can be applied — dirty content is by definition not.
-	Applied bool
-
-	// AppliedHostCommit is the host-side commit that apply produced, full SHA.
-	// Cherry-picking onto a different parent always mints a new object, so this
-	// — not the sandbox head — is the SHA findable in the local repository. Set
-	// only when Applied.
-	AppliedHostCommit string
-
 	// The diff stat the agent measured: what the sandbox holds against the
 	// spawn commit, forwarded to the merge base with upstream once the
 	// sandbox has fetched so pulled commits do not count (ADR 0018's rule,
@@ -50,26 +39,14 @@ type sandboxGitState struct {
 	ObservedAt time.Time
 }
 
-// changes is the one-word answer to "does this sandbox hold work I could
-// lose": the working tree first, then the committed history against where it
-// started and what has been applied.
-//
-//   - "dirty":     uncommitted changes in the working tree
-//   - "applied":   clean, and the head commit was the last one applied to a host
-//   - "ready":     clean, with commits no apply has landed — what an apply takes
-//   - "clean":     clean and still on the commit it was spawned from
-//   - "-":         no agent has reported yet
-//
-// spawnCommit is the commit the sandbox was cut from, which is what separates
-// "clean because untouched" from "clean because committed".
+// changes describes the working tree and committed history relative to spawn.
+// Ready means clean with commits beyond spawn; it does not track Git pushes.
 func (g sandboxGitState) changes(spawnCommit string) string {
 	switch {
 	case !g.Known:
 		return "-"
 	case !g.Clean:
 		return "dirty"
-	case g.Applied:
-		return "applied"
 	case g.Commit != "" && g.Commit != spawnCommit:
 		return "ready"
 	default:
@@ -77,20 +54,12 @@ func (g sandboxGitState) changes(spawnCommit string) string {
 	}
 }
 
-// position is the branch@commit the sandbox is sitting on, in the launcher's
-// spelling, starred when the working tree holds uncommitted content. An
-// applied sandbox shows the host-side commit its apply produced instead of its
-// own head: everything here has landed, so the useful SHA is the one findable
-// in the local repository.
+// position is the current branch@commit, starred for uncommitted content.
 func (g sandboxGitState) position() string {
 	if !g.Known || (g.Branch == "" && g.Commit == "") {
 		return ""
 	}
-	commit := g.Commit
-	if g.Applied && g.AppliedHostCommit != "" {
-		commit = g.AppliedHostCommit
-	}
-	out := g.Branch + "@" + shortCommit(commit)
+	out := g.Branch + "@" + shortCommit(g.Commit)
 	if !g.Clean {
 		out += "*"
 	}
@@ -137,10 +106,6 @@ func sandboxGitStatus(sb apimodel.Sandbox) sandboxGitState {
 		state.DiffFiles = int(status.DiffFiles.Or(0))
 		state.DiffAdded = int(status.DiffAdded.Or(0))
 		state.DiffDeleted = int(status.DiffDeleted.Or(0))
-	}
-	if applied, ok := lastApplied(&sb, slug); ok && state.Clean && state.Commit == applied.Commit {
-		state.Applied = true
-		state.AppliedHostCommit = strings.TrimSpace(applied.HostCommit)
 	}
 	return state
 }

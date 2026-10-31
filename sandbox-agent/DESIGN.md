@@ -907,7 +907,7 @@ signer. Error output never includes exporter stderr or parse fragments.
   [`gitbackend`](../pkg/gitbackend) bridge against the checkout of the source
   named `slug`, as the sandbox's user (the identity `agentstatus` already runs
   git as), with a push updating the checked-out branch in place
-  (`updateInstead`). This is what `discobox apply` fetches and a client clones
+  (`updateInstead`). This is what a Git client fetches and a client clones
   and pushes through; the pool forwards its worktree route here. A fetch takes
   `sandbox:read` and a push `sandbox:write`, decided from the route segment
   before any suffix rule, since a slug may read like another route. A slug

@@ -55,7 +55,7 @@ func pushableSource(sb apimodel.Sandbox, hostID string) bool {
 	if !ok || origin.HostId != hostID {
 		return false
 	}
-	for _, entry := range applySources(&sb) {
+	for _, entry := range sandboxSources(&sb) {
 		if autoPushable(entry.source) {
 			return true
 		}
@@ -150,7 +150,7 @@ type sourcePush struct {
 // and local directory are all fixed at create — which is what makes it worth
 // holding rather than asking for on every beat.
 type pushTargets struct {
-	sources []applySourceEntry
+	sources []sourceEntry
 	// roots is the local repository each source pushes from, keyed by slug.
 	roots map[string]string
 }
@@ -184,7 +184,7 @@ func (a *App) pushSandboxSources(ctx context.Context, client *apiclientgen.Clien
 		return nil, err
 	}
 	pushes := make([]sourcePush, 0, len(targets.sources))
-	var pending []applySourceEntry
+	var pending []sourceEntry
 	for _, entry := range targets.sources {
 		resolved, err := sandboxpush.Resolve(ctx, targets.roots[entry.slug], sandboxID, entry.source, sandboxpush.Options{})
 		push := sourcePush{
@@ -314,13 +314,13 @@ func (a *App) pushTargets(ctx context.Context, client *apiclientgen.Client, proj
 	// settled stays true only while every source this discobox has was resolved
 	// for a reason that will read the same tomorrow.
 	settled := true
-	for _, entry := range applySources(sandbox) {
+	for _, entry := range sandboxSources(sandbox) {
 		if !autoPushable(entry.source) {
 			// Bound, cloned, or checked out at something that is not a branch:
 			// all three are decided at create and none of them changes.
 			continue
 		}
-		hostDir, _, err := resolveApplyHostDir(sandbox, hostID, entry, nil)
+		hostDir, err := resolveSourceHostDir(sandbox, hostID, entry, nil)
 		if err != nil {
 			// A directory that is not there *right now* — an unmounted drive,
 			// a checkout being replaced. `discobox push` answers this one with

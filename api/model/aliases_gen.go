@@ -5,7 +5,6 @@ package model
 
 import apigen "github.com/discobox-ai/discobox/api/gen"
 
-type AppliedSourceCommit = apigen.AppliedSourceCommit
 type ApprovalRequest = apigen.ApprovalRequest
 type ApproveSecretRequestBody = apigen.ApproveSecretRequestBody
 type ApproveTrustRequestBody = apigen.ApproveTrustRequestBody
@@ -13,7 +12,6 @@ type AssignSandboxHarnessSecretsBody = apigen.AssignSandboxHarnessSecretsBody
 type BoundSecret = apigen.BoundSecret
 type ClearPoolCacheBody = apigen.ClearPoolCacheBody
 type CloneProgressStage = apigen.CloneProgressStage
-type CompleteSandboxApplyBody = apigen.CompleteSandboxApplyBody
 type CompleteSandboxSourcePushBody = apigen.CompleteSandboxSourcePushBody
 type CreateHarnessConfigBody = apigen.CreateHarnessConfigBody
 type CreatePeerBody = apigen.CreatePeerBody

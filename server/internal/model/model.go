@@ -590,20 +590,6 @@ type SkillsSource struct {
 	Directory string `json:"directory" doc:"The directory inside the source's repository that holds the skills, or . for the root"`
 }
 
-// AppliedSourceCommit records one successful `discobox apply` of a source's
-// commits into a host working tree (ADR 0014). Client-declared provenance,
-// like Origin: the server cannot observe host-side Git state, so this is
-// reported after the fact, only once the client's fast-forward has actually
-// landed the commits.
-type AppliedSourceCommit struct {
-	Slug       string    `json:"slug" doc:"Slug of the GitSource these commits were applied from"`
-	Commit     string    `json:"commit" doc:"Newest sandbox-side commit SHA that was cherry-picked"`
-	HostCommit string    `json:"hostCommit" doc:"Resulting host-side commit SHA. A new object distinct from commit, since cherry-picking onto a different parent always produces a new SHA."`
-	HostID     string    `json:"hostId" doc:"Stable host identity of the client that performed the apply"`
-	HostPath   string    `json:"hostPath" doc:"Absolute path on that host the commits were applied into"`
-	AppliedAt  time.Time `json:"appliedAt" doc:"When this apply was recorded"`
-}
-
 // Origin is the client host a sandbox was created from.
 //
 // It is client-declared provenance, recorded verbatim and never used to
@@ -800,7 +786,7 @@ func (p *Pool) EverCreated() bool {
 // Membership has one test: **does changing this field require rebuilding the
 // container?** Everything here answers yes, which is what makes the fingerprint
 // over this struct a sound drift check. Fields that answer no — Name,
-// Description, Origin, AppliedCommits, the derived index columns, and every
+// Description, Origin, the derived index columns, and every
 // observed or runtime field — belong on Sandbox instead.
 //
 // Model, ModelServiceTier, ModelReasoningLevel, and Prompt are here because
@@ -1102,7 +1088,6 @@ type Sandbox struct {
 	Origin                   *Origin                         `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host the sandbox was created from. Immutable after create."`
 	SourceDeliveries         map[string]sourcecache.Delivery `gorm:"column:source_deliveries;type:text;serializer:json" json:"sourceDeliveries,omitempty"`
 	SourceDeliveredAt        *time.Time                      `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`
-	AppliedCommits           []AppliedSourceCommit           `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful discobox apply runs that landed this sandbox's commits on a host. Client-reported; append-only."`
 	OriginKey                *string                         `gorm:"column:origin_key;type:text;index" json:"-" doc:"Where the sandbox belongs on the client that created it: SandboxOriginKey of its origin and primary source. Indexed; what listings filter on."`
 	ProviderState            json.RawMessage                 `gorm:"column:provider_state;type:text" json:"providerState,omitempty" doc:"Non-secret provider state"`
 	// RepairGeneration marks one generation as a repair (ADR 0035): when it
