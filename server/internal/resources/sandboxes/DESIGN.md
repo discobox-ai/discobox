@@ -464,9 +464,11 @@ a lost mark would otherwise mean data kept forever.
 Two rules keep archived sandboxes inert:
 
 - The pool agent's complete sync omits them, exactly as it omits a sandbox whose
-  container was lost. `ApplySandboxStateReports` skips them outright — recording
+  container was lost. `ApplySandboxStateReports` hands them nothing — recording
   `stopped` would hand the reconciler drift to repair, and `ensure` would rebuild
-  the container the archive just removed.
+  the container the archive just removed. All it records of one is the
+  omission: its runtime state goes back to empty, unobserved, with nothing
+  marked ([Two state fields](#two-state-fields-one-writer-each)).
 - The pool agent refuses to start them on demand, so an exec cannot quietly
   undo an archive.
 
@@ -494,7 +496,10 @@ other's field:
 
 `ready` means the container has been converged against the spec. It says
 nothing about power; empty `RuntimeState` means no agent has reported yet,
-which is not `stopped`.
+which is not `stopped`. An archived sandbox is not the runtime's to report on,
+so the first complete sync that omits it puts its runtime state back to empty
+rather than leaving whatever it was before the archive; an unarchived sandbox
+reads as not yet reported until its pool reports it (ADR 26-10-29-316).
 
 The rule is enforced in the store, not by convention: `Store.UpdateSandbox`
 omits `observedSandboxColumns` from every write. Those are the runtime state,
@@ -533,6 +538,45 @@ pool agent starts it when that happens.
 
 See [ADR 0017](../../../../docs/adr/0017-resource-state-is-desired-and-observed-with-no-operations.md)
 §§9–13.
+
+## State changes are a stream
+
+A project's sandbox state changes are served as server-sent events
+([ADR 26-10-29-316](../../../../docs/adr/26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md)),
+by the hand-wired `GET /api/projects/{projectId}/events` (`internal/server`).
+The store writes the events with each change ([`store/DESIGN.md`](../../store/DESIGN.md#sandbox-events));
+this package owns where a client stands in them (`events.go`):
+
+- `OpenSandboxEvents` takes the client's cursor. None is a replay of the
+  project's current state, every sandbox's latest event, and then each change.
+  A cursor at or past the watermark is every event after it. One before it,
+  or past the head, is a `reset`, which carries no ID, and then the replay.
+- `Cursor` is where the stream stands, which is past its last event after a
+  replay, and while the project is quiet: a read that comes back short has
+  seen every event of the project up to the head read before it. The handler
+  sends it as an ID-only event, so a client never holds an ID retention
+  passes while it is connected.
+- `Next` reads what the client has not had, and the handler polls it every
+  500ms. It reads the watermark after the events, so a prune that lands while
+  a client tails is a reset rather than a gap.
+- The replay goes on from the head read before it, or its last event if
+  later. Everything committed after it has a higher `Seq`, so nothing between
+  the replay and the tail is lost.
+- Retention is the `sandboxEventPrune` reconcile resource: it removes what is
+  more than 24 hours old and not a sandbox's latest, and arms itself for the
+  next event to come due. Nothing else marks it, so once nothing is due its
+  scan is what finds the next event that is.
+
+An event's data is the projection of the sandbox, and nothing else:
+`desiredState`, `state`, `runtimeState` (none from the archive on: a pool
+stops reporting on an archived sandbox, so until its next complete sync puts
+it down the row's last value is from before it), and the primary session's program state (`state`, `kind`, `app`),
+while the sandbox is running, chosen by the
+rule `discobox ls` uses (`programstatus.PrimaryPosted`). The name is the
+configured handle, not the display name, which moves with the program's
+title. What is in it is
+the contract, `SandboxEventData` in `server.yaml`. A new field changes what
+every write is compared on, so it is an ADR's decision, not a convenience.
 
 ## A discobox is portable
 

@@ -2680,6 +2680,86 @@ components:
             required:
                 - slug
             type: object
+        SandboxEventData:
+            additionalProperties: false
+            description: The data of a sandbox event on the project's event stream (ADR 26-10-29-316 §1) - the sandbox's whole state, not what changed, so its latest event is all a client needs to know about it. These fields are the whole contract, and an event is sent only when one of them changes.
+            properties:
+                projectId:
+                    description: Project the sandbox belongs to.
+                    type: string
+                sandboxId:
+                    description: Sandbox ID.
+                    type: string
+                name:
+                    description: The sandbox's configured name, the generated handle it was created with.
+                    type: string
+                at:
+                    description: When the change was recorded. On a sandbox.deleted, when it was deleted.
+                    format: date-time
+                    type: string
+                desiredState:
+                    description: Requested existence. An archive is desiredState archived, and then state archived.
+                    enum:
+                        - present
+                        - archived
+                        - deleted
+                    type: string
+                state:
+                    description: Existence state, written by the sandbox's reconciler.
+                    enum:
+                        - pending
+                        - awaiting_source
+                        - ready
+                        - archived
+                        - deleted
+                        - failed
+                    type: string
+                runtimeState:
+                    description: Observed power state, reported by the pool agent hosting the sandbox. Absent until one has reported, which is not the same as stopped, and absent from the archive on, since an archived sandbox has no container; an unarchived one reads as not yet reported until its pool reports it again.
+                    enum:
+                        - starting
+                        - running
+                        - stopping
+                        - stopped
+                        - suspended
+                    type: string
+                program:
+                    $ref: '#/components/schemas/SandboxEventProgram'
+                    description: What the program in the sandbox's primary session last reported of itself over OSC 7501. Present only while runtimeState is running, and absent when the program reported nothing.
+            required:
+                - projectId
+                - sandboxId
+                - name
+                - at
+                - desiredState
+                - state
+            type: object
+        SandboxEventProgram:
+            additionalProperties: false
+            description: The state of the program in a sandbox's primary session, from its OSC 7501 status. Its message, title and progress are not reported, because they change while its state does not.
+            properties:
+                state:
+                    description: idle is waiting for the next instruction, working is busy, done is finished with a result not yet seen, blocked is waiting on a person, error is failed and stopped.
+                    enum:
+                        - idle
+                        - working
+                        - done
+                        - blocked
+                        - error
+                    type: string
+                kind:
+                    description: What a blocked program needs from the person. Absent when the program did not say, and for every other state.
+                    enum:
+                        - permission
+                        - question
+                        - auth
+                    type: string
+                app:
+                    description: The stable identifier of the program that reported, such as claude-code.
+                    type: string
+            required:
+                - state
+            type: object
         SandboxMeta:
             additionalProperties: false
             description: A sandbox's name, description and tags, as the file inside it that holds them says. Each is optional, and an absent one is unset.
@@ -5381,7 +5461,9 @@ components:
                     description: |-
                         Observed power state: what the container is doing, as reported by the pool agent
                         hosting it, which is the only component that can see it. Absent until an agent has
-                        reported on this sandbox, which is not the same as `stopped`. `suspended` is a
+                        reported on this sandbox, and again once an archived sandbox's pool has synced
+                        without it, so an unarchived one reads as not yet reported; neither is the same
+                        as `stopped`. `suspended` is a
                         container frozen whole, its memory kept: any start, or any use, thaws it.
                     enum:
                         - starting
@@ -8107,6 +8189,50 @@ info:
     version: 0.1.0
 openapi: 3.1.1
 paths:
+    /api/projects/{projectId}/events:
+        get:
+            description: |-
+                The project's sandbox state changes as server-sent events (ADR 26-10-29-316). An event is sent when a sandbox is created or deleted, and when its existence, its power state or the state of the program in its primary session changes; its data is a SandboxEventData, the sandbox's whole state.
+
+                Events are sandbox.created, sandbox.updated and sandbox.deleted, each with an id that increases in the order the changes committed, and reset. With no cursor the stream begins with the latest event of every sandbox in the project - its current state - and goes on with each change. With a cursor it sends every event after it. When retention has removed an event after the cursor, or the cursor is past every event there is, it sends a reset, with no id, and then the current state: the client drops what it holds and takes what follows as the truth. When the stream stands past the last event it sent - after the current state, or while the project is quiet - it sends an event with only an id, which moves the client's cursor and dispatches nothing.
+
+                The cursor is the Last-Event-ID header an EventSource sends when it reconnects, or the lastEventId query parameter. An idle stream sends a comment every 15 seconds.
+            operationId: stream-sandbox-events
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: The id of the last event the client had. An EventSource sends it when it reconnects. It wins over lastEventId.
+                  in: header
+                  name: Last-Event-ID
+                  required: false
+                  schema:
+                    type: string
+                - description: The id of the last event the client had, for a first connection that cannot set the Last-Event-ID header.
+                  in: query
+                  name: lastEventId
+                  required: false
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        text/event-stream:
+                            schema:
+                                type: string
+                    description: The project's sandbox events, until the client disconnects.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Stream the project's sandbox state changes.
+            tags:
+                - Sandboxes
     /api/projects/{projectId}/sandboxes/{sandboxId}/harness-config-changes:
         get:
             operationId: get-sandbox-harness-config-changes

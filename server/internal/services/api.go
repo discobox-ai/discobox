@@ -3,6 +3,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"time"
 
@@ -230,6 +231,39 @@ type SandboxService interface {
 	// onto its pool before the row that wakes the reconciler exists
 	// (ADR 0123 §3).
 	ImportSandbox(ctx context.Context, projectID string, archive io.Reader, opts SandboxImportOptions) (*SandboxImportResult, error)
+	// OpenSandboxEvents starts a stream of the project's sandbox events
+	// after lastEventID, or with the project's current state when it is nil
+	// (ADR 26-10-29-316 §4).
+	OpenSandboxEvents(ctx context.Context, projectID string, lastEventID *int64) (SandboxEventStream, error)
+}
+
+// SandboxEventStream is one client's position in a project's sandbox events.
+// It holds no connection: Next returns what the client has not had yet, which
+// may be nothing, and the caller decides how often to ask.
+//
+// Cursor is where the stream stands, which can be past the last event it sent:
+// after a replay, whose events are old, and while the project is quiet and
+// other projects' events move the head. The caller sends it on as an event ID,
+// so that a client that reconnects resumes from there rather than from an ID
+// retention may since have passed.
+type SandboxEventStream interface {
+	Next(ctx context.Context) ([]SandboxStreamEvent, error)
+	Cursor() int64
+}
+
+// SandboxEventReset is the control event a stream sends when it cannot go on
+// from the client's cursor (ADR 26-10-29-316 §4): the client drops what it
+// holds, and the events that follow are the truth.
+const SandboxEventReset = "reset"
+
+// SandboxStreamEvent is one event a stream sends: its ID, its type and its
+// data, the JSON of a model.SandboxEventData. ID is nil on a reset, which
+// leaves the client's cursor where it was, so a client that loses the
+// connection before the state after it has arrived is reset again.
+type SandboxStreamEvent struct {
+	ID   *int64
+	Type string
+	Data json.RawMessage
 }
 
 // SandboxImportOptions are the caller's overrides for one import. Everything

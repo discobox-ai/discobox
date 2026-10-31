@@ -1070,6 +1070,24 @@ type Invoker interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/stop
 	StopSandboxService(ctx context.Context, params StopSandboxServiceParams) (StopSandboxServiceRes, error)
+	// StreamSandboxEvents invokes stream-sandbox-events operation.
+	//
+	// The project's sandbox state changes as server-sent events (ADR 26-10-29-316). An event is sent
+	// when a sandbox is created or deleted, and when its existence, its power state or the state of the
+	// program in its primary session changes; its data is a SandboxEventData, the sandbox's whole state.
+	// Events are sandbox.created, sandbox.updated and sandbox.deleted, each with an id that increases in
+	// the order the changes committed, and reset. With no cursor the stream begins with the latest event
+	// of every sandbox in the project - its current state - and goes on with each change. With a cursor
+	// it sends every event after it. When retention has removed an event after the cursor, or the cursor
+	// is past every event there is, it sends a reset, with no id, and then the current state: the client
+	// drops what it holds and takes what follows as the truth. When the stream stands past the last
+	// event it sent - after the current state, or while the project is quiet - it sends an event with
+	// only an id, which moves the client's cursor and dispatches nothing.
+	// The cursor is the Last-Event-ID header an EventSource sends when it reconnects, or the lastEventId
+	// query parameter. An idle stream sends a comment every 15 seconds.
+	//
+	// GET /api/projects/{projectId}/events
+	StreamSandboxEvents(ctx context.Context, params StreamSandboxEventsParams) (StreamSandboxEventsRes, error)
 	// StreamSandboxExecResources invokes stream-sandbox-exec-resources operation.
 	//
 	// Stream opaque resource snapshots for a sandbox exec.
@@ -19198,6 +19216,149 @@ func (c *Client) sendStopSandboxService(ctx context.Context, params StopSandboxS
 
 	stage = "DecodeResponse"
 	result, err := decodeStopSandboxServiceResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// StreamSandboxEvents invokes stream-sandbox-events operation.
+//
+// The project's sandbox state changes as server-sent events (ADR 26-10-29-316). An event is sent
+// when a sandbox is created or deleted, and when its existence, its power state or the state of the
+// program in its primary session changes; its data is a SandboxEventData, the sandbox's whole state.
+// Events are sandbox.created, sandbox.updated and sandbox.deleted, each with an id that increases in
+// the order the changes committed, and reset. With no cursor the stream begins with the latest event
+// of every sandbox in the project - its current state - and goes on with each change. With a cursor
+// it sends every event after it. When retention has removed an event after the cursor, or the cursor
+// is past every event there is, it sends a reset, with no id, and then the current state: the client
+// drops what it holds and takes what follows as the truth. When the stream stands past the last
+// event it sent - after the current state, or while the project is quiet - it sends an event with
+// only an id, which moves the client's cursor and dispatches nothing.
+// The cursor is the Last-Event-ID header an EventSource sends when it reconnects, or the lastEventId
+// query parameter. An idle stream sends a comment every 15 seconds.
+//
+// GET /api/projects/{projectId}/events
+func (c *Client) StreamSandboxEvents(ctx context.Context, params StreamSandboxEventsParams) (StreamSandboxEventsRes, error) {
+	res, err := c.sendStreamSandboxEvents(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendStreamSandboxEvents(ctx context.Context, params StreamSandboxEventsParams) (res StreamSandboxEventsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("stream-sandbox-events"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/events"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, StreamSandboxEventsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/events"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "lastEventId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "lastEventId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.LastEventId.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "EncodeHeaderParams"
+	h := uri.NewHeaderEncoder(r.Header)
+	{
+		cfg := uri.HeaderParameterEncodingConfig{
+			Name:    "Last-Event-ID",
+			Explode: false,
+		}
+		if err := h.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.LastEventID.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode header")
+		}
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeStreamSandboxEventsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

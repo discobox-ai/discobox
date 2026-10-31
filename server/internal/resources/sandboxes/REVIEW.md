@@ -89,3 +89,11 @@
   is never rewritten, so a msg or state read from it describes nothing that is
   happening; the display name drops the msg when the box is not running, as
   the CLI's `sandboxProgramStatus` drops the whole status.
+
+## The event stream
+
+- **A stream's tests resume from an ID the stream sent**, never one picked by
+  hand. A replay's events are old, so the IDs a client is given can sit below
+  the watermark; a test that resumed from the head instead hid that every
+  reconnect to a quiet project reset and reprinted every discobox
+  (ADR 26-10-29-316 §4). Resume from `Cursor()`, or from the last ID written.

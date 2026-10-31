@@ -210,6 +210,7 @@ resource forever.
 | `sandboxProxyPolicy` | [sandboxes](../resources/sandboxes/DESIGN.md#proxy-policy) | none: marked with every egress level or gateway change and every write after a create |
 | `sandboxPower` | [sandboxes](../resources/sandboxes/DESIGN.md#sleep-idle-and-the-scheduled-start) | none: marked as drift by a status that asks for a power-down, and with intent by every outside power instruction and archive; the wake is a `RequeueAt` timer on its own dirty row, with `wake_at` as the durable copy |
 | `harnessConfig` | [harnessconfigs](../resources/harnessconfigs/DESIGN.md) | none |
+| `sandboxEventPrune` | [sandboxes](../resources/sandboxes/DESIGN.md#state-changes-are-a-stream) | one row (`all`), found when an event that is no sandbox's latest is past retention: nothing marks it, so after a quiet spell the scan is what starts it; armed with `RequeueAt` for the next event due |
 | `secretBindingExpiry` | [secrets](../resources/secrets/DESIGN.md#bindings-authorize) | one row (`all`), found when a binding has lapsed unswept; armed with `RequeueAt` for the next expiry, and marked at each binding's expiry by the store in the transaction that writes it (`MarkAtTx`) |
 
 ## What callers look like

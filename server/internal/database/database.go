@@ -17,6 +17,7 @@ import (
 	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/x/gormdb"
 )
 
@@ -189,7 +190,12 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := retireHarnessImages(write); err != nil {
 		return err
 	}
-	return rekeySandboxOrigins(write)
+	if err := rekeySandboxOrigins(write); err != nil {
+		return err
+	}
+	// Last, so the state each sandbox's first event reports is what the steps
+	// above left.
+	return store.BackfillSandboxEvents(write)
 }
 
 // retireHarnessImages takes the runnable images off the harness configs that

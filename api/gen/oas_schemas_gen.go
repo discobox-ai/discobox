@@ -2934,6 +2934,7 @@ func (*ErrorResponseStatusCode) startSandboxExecRes()                   {}
 func (*ErrorResponseStatusCode) startSandboxServiceRes()                {}
 func (*ErrorResponseStatusCode) statSandboxFileRes()                    {}
 func (*ErrorResponseStatusCode) stopSandboxServiceRes()                 {}
+func (*ErrorResponseStatusCode) streamSandboxEventsRes()                {}
 func (*ErrorResponseStatusCode) streamSandboxExecResourcesRes()         {}
 func (*ErrorResponseStatusCode) updateSandboxAgentMetaRes()             {}
 func (*ErrorResponseStatusCode) waitSandboxExecRes()                    {}
@@ -27591,7 +27592,9 @@ type SandboxRuntime struct {
 	ObservedGeneration int64 `json:"observedGeneration"`
 	// Observed power state: what the container is doing, as reported by the pool agent
 	// hosting it, which is the only component that can see it. Absent until an agent has
-	// reported on this sandbox, which is not the same as `stopped`. `suspended` is a
+	// reported on this sandbox, and again once an archived sandbox's pool has synced
+	// without it, so an unarchived one reads as not yet reported; neither is the same
+	// as `stopped`. `suspended` is a
 	// container frozen whole, its memory kept: any start, or any use, thaws it.
 	RuntimeState OptSandboxRuntimeRuntimeState `json:"runtimeState"`
 	// When runtimeState last changed to its current value.
@@ -28447,7 +28450,9 @@ func (s *SandboxRuntimeResources) init() SandboxRuntimeResources {
 
 // Observed power state: what the container is doing, as reported by the pool agent
 // hosting it, which is the only component that can see it. Absent until an agent has
-// reported on this sandbox, which is not the same as `stopped`. `suspended` is a
+// reported on this sandbox, and again once an archived sandbox's pool has synced
+// without it, so an unarchived one reads as not yet reported; neither is the same
+// as `stopped`. `suspended` is a
 // container frozen whole, its memory kept: any start, or any use, thaws it.
 type SandboxRuntimeRuntimeState string
 
@@ -32799,6 +32804,22 @@ func (s *StopSandboxBody) SetSchema(val OptURI) {
 func (s *StopSandboxBody) SetForce(val OptBool) {
 	s.Force = val
 }
+
+type StreamSandboxEventsOK struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s StreamSandboxEventsOK) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+func (*StreamSandboxEventsOK) streamSandboxEventsRes() {}
 
 type StreamSandboxExecResourcesOK struct {
 	Data io.Reader

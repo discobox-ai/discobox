@@ -1140,8 +1140,10 @@ type Sandbox struct {
 	// by the pool agent hosting it. Store.ApplySandboxStateReports is its only
 	// writer, and Store.UpdateSandbox omits it so no other path can carry a
 	// stale value back over an observation (ADR 0034 §2). Empty means no agent
-	// has reported on this sandbox yet, which is not the same as `stopped`.
-	RuntimeState          string     `gorm:"column:runtime_state;not null;type:text;default:''" json:"runtimeState,omitempty" doc:"Observed power state, reported by the pool agent hosting the sandbox. Empty until one has reported." enum:"starting,running,stopping,stopped,suspended"`
+	// has reported on this sandbox since it last ran: not yet, or not since it
+	// was archived, whose next complete sync puts the state down
+	// (ADR 26-10-29-316). Neither is the same as `stopped`.
+	RuntimeState          string     `gorm:"column:runtime_state;not null;type:text;default:''" json:"runtimeState,omitempty" doc:"Observed power state, reported by the pool agent hosting the sandbox. Empty until one has reported, and again once an archived sandbox's pool has synced without it." enum:"starting,running,stopping,stopped,suspended"`
 	RuntimeStateChangedAt *time.Time `gorm:"column:runtime_state_changed_at" json:"runtimeStateChangedAt,omitempty" doc:"When RuntimeState last changed to its current value" format:"date-time"`
 	// StateReportedAt and StateReportSeq order the runtime's state reports
 	// (ADR 0017 §10). A report older than what is already recorded is ignored,
@@ -1191,8 +1193,13 @@ type Sandbox struct {
 	// named, which is every row from before the column.
 	MetaName       *string    `gorm:"column:meta_name;type:text" json:"metaName,omitempty" doc:"The name in the sandbox's meta as it last reported it"`
 	MetaObservedAt *time.Time `gorm:"column:meta_observed_at" json:"metaObservedAt,omitempty" doc:"When the sandbox read or wrote MetaName, Description and Tags, on its own clock" format:"date-time"`
-	CreatedAt      time.Time  `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt      time.Time  `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	// EventSeq is the Seq of the sandbox's latest SandboxEvent, which the next
+	// change is compared with and retention always keeps (ADR 26-10-29-316
+	// §§2, 4). Zero is a sandbox with no event yet. Only the store's event
+	// recorder writes it, and UpdateSandbox omits it.
+	EventSeq  int64     `gorm:"column:event_seq;not null;default:0;index" json:"-"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project       *Project       `gorm:"foreignKey:ProjectID" json:"-"`
 	CreatedBy     *User          `gorm:"-" json:"createdBy,omitempty" doc:"Creating user"`
@@ -2100,5 +2107,7 @@ func AllModels() []any {
 		&SecretRejection{},
 		&HostTrustRequest{},
 		&HostTrust{},
+		&SandboxEvent{},
+		&SandboxEventLog{},
 	}
 }
