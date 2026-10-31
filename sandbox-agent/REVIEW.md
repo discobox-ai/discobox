@@ -96,7 +96,11 @@
   list waits only for those features. Gate all launches in `services.Manager`,
   including API starts and restarts. Boot launches wait independently, so a
   default service cannot hold up one whose stated features are ready. Do not
-  put the harness's `AwaitReady` gate in front of service discovery again.
+  put the harness's `AwaitReady` gate in front of service discovery again —
+  nor in front of anything else declared that boot starts: monitors wait for
+  the full run too (`Tracker.AwaitFeatures(ctx, nil)`), because the image's
+  monitors and the `gh` and `jq` they run on come from the async `cli`
+  feature. The mistake has been made twice.
 - **Wait for provisioning outside service lifecycle locks.** A restart can
   wait minutes under a live service; holding its lock prevents Stop and other
   requests from returning. Recheck live state under the lock before launching.
@@ -453,6 +457,22 @@ user waits on every single start.
   script's own curl: the step checks the sha256 and puts the file or tree in
   place whole, where a script's fetch does neither unless it says so. An
   unpinned installer (go, uv, bun, rustup) stays a `run` script.
+- **Anything recorded in an exec that names this binary uses its stable
+  path** (`stableAgentPath` in `server`): `agentlayer.AgentPath` wherever
+  the box runs its agent from the bundle store, never `os.Executable()`
+  there. An exec record outlives the box's stop and is run again by its
+  relaunch, and `os.Executable` resolves to the agent's layer under the
+  store, which is swept once a new agent is pinned: a monitor's runner
+  recorded that way exits 127 at every relaunch after an upgrade, and
+  nothing says so. Only where there is no store — no layers to sweep — is
+  the executable's own path the stable one.
+- **An in-box command that prints text a third party wrote escapes its
+  control characters**, as `cli/REVIEW.md` requires of text a discobox wrote.
+  A monitor's events carry issue titles, comments and fetched pages verbatim,
+  and `discobox-monitor pop`, `read`, `status` and `logs` print them into a
+  terminal the console relays: an unescaped OSC 52 reaches the user's
+  clipboard, an OSC 7501 fakes the terminal's status. `--json` output needs
+  nothing; `encoding/json` escapes them.
 - **A directory named `build` is ignored by the root `.gitignore`**; the
   `build` feature is kept by a negation there. A feature or test directory
   of that name elsewhere needs one too, or a clean checkout lacks it while

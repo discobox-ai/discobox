@@ -1,4 +1,5 @@
-# The command-line tools a working box is expected to have, and gh.
+# The command-line tools a working box is expected to have, gh, and the
+# image's event monitors.
 apiVersion: discobox.ai/provision/v1
 async: true
 commands: [gh]
@@ -22,3 +23,13 @@ steps:
   - name: gh
     apt: true
     run: install-gh.sh
+  # The image's event monitors (ADR 26-10-31-073 §9), with gh and jq, which
+  # they run on. Executable: a runner runs a monitor by its path.
+  - name: monitor-github-repo
+    file: {path: /usr/local/share/discobox/monitors/10-github-repo.sh, source: monitors/10-github-repo.sh, mode: "0755"}
+  - name: monitor-command
+    file: {path: /usr/local/share/discobox/monitors/20-command.sh, source: monitors/20-command.sh, mode: "0755"}
+  - name: monitor-file
+    file: {path: /usr/local/share/discobox/monitors/30-file.sh, source: monitors/30-file.sh, mode: "0755"}
+  - name: monitor-url
+    file: {path: /usr/local/share/discobox/monitors/40-url.sh, source: monitors/40-url.sh, mode: "0755"}
