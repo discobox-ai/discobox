@@ -783,6 +783,21 @@ func (s Sandbox) attachable() bool {
 	return s.HasRuntime || s.State == StateStarting || s.State == StateRepairing
 }
 
+// startable reports whether start is offered for this box: powered off, or
+// frozen whole. Attaching to one starts it too (attachable).
+func (s Sandbox) startable() bool {
+	return s.State == StateStopped || s.State == StateSuspended
+}
+
+// live reports whether the box is running, or being brought up, so attaching
+// to it starts nothing: a starting or repairing box is already being brought up,
+// and the attach waits for it. Every other state either starts the box on an
+// attach — stopped, suspended, and an error whose container may be off, since
+// the state does not say (attachable) — or refuses one.
+func (s Sandbox) live() bool {
+	return s.State == StateRunning || s.State == StateStarting || s.State == StateRepairing
+}
+
 // repairable reports whether repair is offered for this box.
 //
 // Repair is offered on every box but an archived one. A latched error, or a box

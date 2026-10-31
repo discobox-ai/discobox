@@ -37,9 +37,15 @@ const (
 	treeMinScreen = 90
 )
 
-// switchBoxMsg is the leader's ↑/↓ (or k/j): move to the discobox above or
-// below in the tree.
-type switchBoxMsg struct{ delta int }
+// switchBoxMsg is the leader's ↑/↓ (or k/j), or a leaderless chord: move to
+// the discobox above or below in the tree.
+type switchBoxMsg struct {
+	delta int
+	// chord is the leaderless key that asked, which a pane bound with no
+	// prefix took from its program. A window with no tree to walk hands it
+	// back, so the binding takes nothing where it does nothing.
+	chord *tea.KeyPressMsg
+}
 
 // treeShown reports whether the tree is drawn: in the workspace, or while one
 // is opening, and on a window wide enough to give it the cells. A window
@@ -304,13 +310,21 @@ func (m *Model) toggleTreeExpanded() {
 // syncListCursor puts the list's cursor on the box the workspace is showing,
 // which is what the tree draws as picked out while the panes have the keys.
 func (m *Model) syncListCursor() {
+	if m.listCursorTo(m.paneBox.ID) {
+		m.cursorOn = m.paneBox.ID
+	}
+}
+
+// listCursorTo puts the list's cursor on one box's row, reporting whether the
+// list has it.
+func (m *Model) listCursorTo(id string) bool {
 	for i, s := range m.list.rows() {
-		if s.ID == m.paneBox.ID {
+		if s.ID == id {
 			m.list.moveTo(i)
-			m.cursorOn = s.ID
-			return
+			return true
 		}
 	}
+	return false
 }
 
 // treeKey answers a key the list would otherwise take while it is in the
@@ -405,20 +419,74 @@ func boxStep(key string) (int, bool) {
 	return 0, false
 }
 
+// boxUpKey and boxDownKey walk the tree with no leader, from anywhere beside
+// it. They are Ctrl-Shift chords because nothing a box runs reaches for those:
+// a classic terminal cannot even encode them, and sends Ctrl-K and Ctrl-J
+// instead — which are not these keys, and go on to the program as before. So
+// on such a terminal the walk is the leader's ↑↓ alone. Every terminal that
+// speaks the Kitty keyboard protocol, which the window always asks for, sends
+// them as themselves.
+const (
+	boxUpKey   = "ctrl+shift+k"
+	boxDownKey = "ctrl+shift+j"
+)
+
+// boxChords are the leaderless chords as key presses, for the pane that binds
+// them to hand back where there is no tree to walk.
+var (
+	boxUpChord   = tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl | tea.ModShift}
+	boxDownChord = tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl | tea.ModShift}
+)
+
+// boxStepBare is how far along the tree a leaderless chord moves.
+func boxStepBare(msg tea.KeyPressMsg) (int, bool) {
+	switch msg.Keystroke() {
+	case boxUpKey:
+		return -1, true
+	case boxDownKey:
+		return 1, true
+	}
+	return 0, false
+}
+
 // switchBox moves the workspace to the discobox delta rows away in the tree.
 // It stops at the ends rather than wrapping, as moving between panes does.
 // A window with no tree has nothing to move along — one that is one attach's
 // own never lands on another box, and one too narrow for the tree would
 // switch to a box nobody can see listed — so there it does nothing.
+//
+// A walk does not start a box. Attaching to one that is not live is what starts
+// it (attachable), and passing over a row on the way to another is not asking
+// for that, so the walk stops on such a row with only the tree's cursor:
+// the list takes the keys, the workspace stays on screen, and Enter starts it
+// as it would from the list. A walk carries on from the list's cursor while the
+// list has the keys, so the leader's ↑↓ step past it as before.
 func (m *Model) switchBox(delta int) tea.Cmd {
 	if !m.treeAvailable() {
 		return nil
 	}
-	m.syncListCursor()
+	if !m.listFront {
+		m.syncListCursor()
+	}
 	m.list.move(delta)
 	next := m.list.current()
-	if next == nil || next.ID == m.paneBox.ID {
+	if next == nil {
 		return nil
+	}
+	if next.ID == m.paneBox.ID {
+		if m.listFront && m.hasWorkspace() {
+			m.backToPanes()
+		}
+		return nil
+	}
+	if !next.live() && m.parked[next.ID] == nil {
+		box := *next
+		m.focusTree()
+		m.listCursorTo(box.ID)
+		if box.startable() {
+			return status("%s is %s — enter starts it", sandboxLabel(box), box.State)
+		}
+		return status("%s is %s — enter attaches", sandboxLabel(box), box.State)
 	}
 	return m.switchTo(*next)
 }

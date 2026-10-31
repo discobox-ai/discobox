@@ -82,7 +82,11 @@ list with two sizes rather than two lists.
 
 ```mermaid
 flowchart LR
-    T["tree (listFront)"] -->|Enter, click, leader ↑↓| Sw["switchTo"]
+    T["tree (listFront)"] -->|Enter, click| Sw["switchTo"]
+    W["leader ↑↓, Ctrl-Shift-K/J"] --> Walk["switchBox"]
+    Walk -->|live or parked| Sw
+    Walk -->|otherwise| Stop["stop: tree's cursor on the row"]
+    Stop --> T
     Sw -->|parked| Un["unparkWorkspace"]
     Sw -->|not parked| Open["openFromList → attach"]
     Open --> Park["parkWorkspace (the one on screen)"]
@@ -121,6 +125,25 @@ flowchart LR
   is. A gesture the window holds stays the window's over the tree, so a drag
   released there still reaches its pane. The right button opens the row's
   menu: the box on screen's (below), or any other's list menu.
+- **A walk never starts a box** (`switchBox`). The leader's ↑↓ switch to
+  each box they land on, but attaching to one that is not `live` — stopped,
+  suspended, or errored with a container that may be off — is what starts
+  it, and passing over a row is not asking for that. So the walk stops
+  there with only the tree's cursor — the list takes the keys, the workspace
+  stays on screen, and Enter starts it as from the list. The leader's ↑↓
+  carry on from the list's cursor, and stepping back onto the box on screen
+  gives the panes back the keys. A press on the row is a pick and still
+  attaches.
+- **The walk has a leaderless chord** (`boxUpKey`, `boxDownKey`):
+  Ctrl-Shift-K/J, bound bare in the workspace's panes (`termpane.WithBinding`)
+  and answered by the window from the list, a page, or a workspace still
+  opening (`windowWalks`) — never from the composer, where the leader is not
+  armed either. A pane that reads its own keys still hands them to termpane
+  (`paneReserved`), and a window with no tree to walk hands them back to the
+  program (`switchBoxMsg.chord`). Ctrl-Shift is the one modifier set nothing
+  in a box reaches for, because a classic terminal cannot encode it: there it
+  arrives as Ctrl-K/J, which stay the program's, and the walk is the
+  leader's alone.
 - **The tree is the console's alone.** The leader's ↑/↓ do nothing in a
   window without one — a window that is one command's own, or one too
   narrow (`switchBox`).
