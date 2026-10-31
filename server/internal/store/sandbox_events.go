@@ -285,6 +285,16 @@ func primaryProgramStatus(status []byte) *model.SandboxEventProgram {
 	return program
 }
 
+// eventLogRead is the handle a stream reads the event log and its position
+// on: the write handle, never a read replica. A stream pages the log after its
+// cursor and then moves the cursor to the head it read; with replicas lagging
+// by different amounts, a page from one and the head from another skip what
+// the first had not yet seen, and a resume landing on a lagging replica reads
+// its own cursor as past the head and is reset (ADR 26-10-29-316 §3).
+func (s *Store) eventLogRead(ctx context.Context) (*gorm.DB, error) {
+	return s.getWrite(ctx)
+}
+
 // SandboxEventPosition is where the event stream stands: the last Seq handed
 // out, and the highest retention has removed.
 type SandboxEventPosition struct {
@@ -294,7 +304,7 @@ type SandboxEventPosition struct {
 
 // GetSandboxEventPosition reads the event stream's position as committed.
 func (s *Store) GetSandboxEventPosition(ctx context.Context) (SandboxEventPosition, error) {
-	read, err := s.getRead(ctx)
+	read, err := s.eventLogRead(ctx)
 	if err != nil {
 		return SandboxEventPosition{}, err
 	}
@@ -311,7 +321,7 @@ func (s *Store) GetSandboxEventPosition(ctx context.Context) (SandboxEventPositi
 // ListSandboxEventsAfter returns up to limit of a project's events after seq,
 // in order.
 func (s *Store) ListSandboxEventsAfter(ctx context.Context, projectID string, after int64, limit int) ([]model.SandboxEvent, error) {
-	read, err := s.getRead(ctx)
+	read, err := s.eventLogRead(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +341,7 @@ func (s *Store) ListSandboxEventsAfter(ctx context.Context, projectID string, af
 // so a stream that goes on from the last of it, or from deletedAfter if it is
 // empty, misses nothing.
 func (s *Store) ListLatestSandboxEvents(ctx context.Context, projectID string, deletedAfter int64) ([]model.SandboxEvent, error) {
-	read, err := s.getRead(ctx)
+	read, err := s.eventLogRead(ctx)
 	if err != nil {
 		return nil, err
 	}

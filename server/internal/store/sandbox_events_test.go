@@ -444,3 +444,29 @@ func TestStateReportAnnouncesWhatItWritesBackOverARecordedState(t *testing.T) {
 		t.Fatalf("an unchanged restamp recorded %d events", len(events))
 	}
 }
+
+// The stream reads the event log on the write handle: a read replica lagging
+// another would let a page and the head it moves to disagree, and skip events.
+// A store whose read handle is a replica that has seen none of them still
+// streams them.
+func TestSandboxEventLogIsReadOnTheWriteHandle(t *testing.T) {
+	ctx := context.Background()
+	primary, db := newTestStoreWithDB(t, nil)
+	createTestPool(t, primary, "project-1", "pool-1")
+	if err := primary.CreateSandbox(ctx, &model.Sandbox{ID: "sandbox-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "alpha"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	_, replica := newTestStoreWithDB(t, nil)
+	s := store.New(db.Write, replica.Write)
+
+	position, err := s.GetSandboxEventPosition(ctx)
+	if err != nil || position.Head == 0 {
+		t.Fatalf("position = %+v, %v; want the primary's head", position, err)
+	}
+	if events, err := s.ListSandboxEventsAfter(ctx, "project-1", 0, 10); err != nil || len(events) == 0 {
+		t.Fatalf("events after = %d, %v; want the primary's", len(events), err)
+	}
+	if events, err := s.ListLatestSandboxEvents(ctx, "project-1", 0); err != nil || len(events) == 0 {
+		t.Fatalf("latest events = %d, %v; want the primary's", len(events), err)
+	}
+}

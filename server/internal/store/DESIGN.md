@@ -91,6 +91,10 @@ are rows the store writes in the transaction of the change (`sandbox_events.go`)
 - `ListLatestSandboxEvents` is the project's current state in one statement:
   each live sandbox's latest event and each deletion after the head the caller
   read first.
+- A stream's reads of the log and its position (`GetSandboxEventPosition`,
+  `ListSandboxEventsAfter`, `ListLatestSandboxEvents`) are made on the write
+  handle (`eventLogRead`), never a read replica, so a page and the head it
+  moves to see one order of commits.
 
 ## Conditional Writes
 
