@@ -751,6 +751,43 @@ func TestPrefixBindingsEmitTheirMessage(t *testing.T) {
 	}
 }
 
+// A bare binding is the host's with no prefix, and only the exact chord: the
+// unshifted form a classic terminal sends instead still reaches the
+// application.
+func TestBareBindingsEmitTheirMessage(t *testing.T) {
+	type next struct{}
+	m, stream, _ := attach(t, 40, 5, WithPrefix("ctrl+a", "ctrl+c"), WithBinding("ctrl+shift+j", next{}))
+
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl | tea.ModShift})
+	if cmd == nil {
+		t.Fatal("a bound key should emit its message")
+	}
+	if _, ok := cmd().(next); !ok {
+		t.Fatalf("got %T, want the bound message", cmd())
+	}
+	if got := stream.sent(t, ""); got != "" {
+		t.Fatalf("a bound key should not also reach the application: %q", got)
+	}
+
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl}); cmd != nil {
+		t.Fatalf("ctrl+j emitted %T; it is the application's", cmd())
+	}
+	if got := stream.sent(t, "\n"); got != "\n" {
+		t.Fatalf("sent %q, want ctrl+j's line feed", got)
+	}
+
+	// It is the host's even with the prefix pressed before it, and leaves the
+	// prefix closed behind it.
+	m.Update(tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl | tea.ModShift}); cmd == nil {
+		t.Fatal("a bound key after the prefix should still emit its message")
+	}
+	m.Update(key("x"))
+	if got := stream.sent(t, "x"); !strings.HasSuffix(got, "x") || strings.Contains(got, "\x01") {
+		t.Fatalf("sent %q, want the key after it to be the application's, with no prefix", got)
+	}
+}
+
 // A chord is a lead that waits: it emits nothing itself, and the key after it
 // selects from a table of its own.
 func TestAPrefixChordTakesTwoKeys(t *testing.T) {

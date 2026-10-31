@@ -139,6 +139,8 @@ type options struct {
 	prefix     string
 	detach     string
 	bindings   map[string]prefixBinding
+	// bare are the keys reserved with no prefix; see WithBinding.
+	bare       map[string]tea.Msg
 	keys       map[string]string
 	highlight  func(uv.Style) uv.Style
 	wheelLines int
@@ -252,9 +254,9 @@ func WithPrefix(prefix, detach string) Option {
 // — declared by the host, where it can be read, changed, or left out.
 //
 // A bound key is taken before the encoder, and after everything the pane
-// reserves for itself: the prefix, the detach key, a chord lead and the
-// selection copy chord are all matched in Update and never reach here. Neither
-// do the keys the pane types literally on their behalf, nor the arrow presses
+// reserves for itself: the prefix, the detach key, a bare binding, a chord
+// lead and the selection copy chord are all matched in Update and never reach
+// here. Neither do the keys the pane types literally on their behalf, nor the arrow presses
 // the wheel synthesizes to scroll an alternate screen — those go straight to
 // the encoder, because each is the pane spelling out a keystroke rather than
 // the user pressing one.
@@ -270,6 +272,26 @@ func WithKeys(keys map[string]string) Option {
 		for name, seq := range keys {
 			o.keys[name] = seq
 		}
+	}
+}
+
+// WithBinding reserves a key on its own, with no prefix, emitting msg instead
+// of reaching the application. The key is matched exactly, by its keystroke
+// ("ctrl+shift+j"), so the shifted form of a chord is a different key from the
+// unshifted one, as it is in any terminal that can tell them apart.
+//
+// It is the exception to keeping the host out of the application's way, and
+// it is for chords no application is reaching for: ones classic terminals
+// cannot even encode. On those terminals the key arrives as its unshifted form,
+// which is not bound, and goes to the application as before — the binding is
+// simply not there. It is matched before everything else but the copy chord,
+// and ends a prefix or chord lead left open: it is always the host's.
+func WithBinding(key string, msg tea.Msg) Option {
+	return func(o *options) {
+		if o.bare == nil {
+			o.bare = map[string]tea.Msg{}
+		}
+		o.bare[key] = msg
 	}
 }
 
@@ -717,6 +739,12 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	}
 	name := msg.String()
+
+	if bound, ok := m.opts.bare[msg.Keystroke()]; ok {
+		m.chordLead = ""
+		m.prefixArmed, m.prefixRepeat = false, false
+		return func() tea.Msg { return bound }
+	}
 
 	if lead := m.chordLead; lead != "" {
 		// The lead consumed the prefix, so what arrives now is the second half
