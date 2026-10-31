@@ -785,16 +785,17 @@ declares), and its own `Sandbox.Egress` — by the rule in
 (`services.SandboxDisplayName`) so `discobox ls`, the console, and any other
 client agree: the name in the sandbox's meta when one is set
 ([ADR 26-10-12-026](../../../../docs/adr/26-10-12-026-a-sandboxs-name-is-meta-and-renaming-it-is-a-meta-write.md)),
-followed by the `msg` the primary terminal's program last reported over OSC
-7501 as `name: msg` (`sandboxmeta.Title`, shared with the console;
-[ADR 26-10-31-618](../../../../docs/adr/26-10-31-618-a-sandboxs-name-is-followed-by-what-its-program-reports.md));
-with no name set, that msg alone, then the window title the primary terminal last set,
-the configured name until one has, and the sandbox ID when it has no name
-either. The title is what the harness says the work is about, which tells two
-sandboxes apart better than two generated names do. A harness that speaks OSC
-7501 (Claude Code) says that in its msg and leaves its title alone, so the msg
-stands where the title would. A set name is what a person or the agent chose,
-and leads. The msg counts only while the sandbox is running: a stopped one's
+followed by what the primary terminal's program says, as `name: words`
+(`sandboxmeta.Title`, shared with the console;
+[ADR 26-10-31-618](../../../../docs/adr/26-10-31-618-a-sandboxs-name-is-followed-by-what-its-program-reports.md)):
+the `msg` it last reported over OSC 7501 while it reports one, else the window
+title the terminal last set. With no name set, those words alone, then the
+configured name, and the sandbox ID when it has no name either. The msg says
+what the work is doing (a harness reports one while it works or waits on a
+person, none while idle); the title says what it is about (Claude Code's is the
+session's title). Either tells two sandboxes apart better than two generated
+names do. A set name is what a person or the agent chose, and leads. The msg
+counts only while the sandbox is running: a stopped one's
 row keeps the last report, which describes nothing happening.
 
 It reads the name from the `meta_name` column and the title and msg out of the

@@ -2565,8 +2565,8 @@ func (m *Model) askRename(box Sandbox) tea.Cmd {
 	if box.GivenName != "" {
 		question += " An empty name gives back the title its harness set."
 	}
-	// A given name is offered as it was given, without the msg its program
-	// reported after it (sandboxmeta.Title): that is the program's, and
+	// A given name is offered as it was given, without the msg or title its
+	// program put after it (sandboxmeta.Title): that is the program's, and
 	// accepting it would make it part of the name.
 	current := box.Name
 	if box.GivenName != "" {
@@ -3737,10 +3737,10 @@ func (m *Model) headerHints() []hint {
 // churn the tab you find it by.
 //
 // What the box is called here is primaryTitle, as on the primary's tab
-// (paneName): the name it was given and the msg its program reports, either
-// of which outranks the terminal's title. The name is read off the listing, so
-// a rename reaches the title bar without waiting on the program to retitle
-// itself.
+// (paneName): the name it was given, then the msg its program reports or, with
+// none, the terminal's title; the box's display name when it has none of them.
+// The name is read off the listing, so a rename reaches the title bar without
+// waiting on the program to retitle itself.
 //
 // With no primary it is empty, which leaves the title as whatever started this
 // window set it: a launcher with nothing running in it has nothing to say that
@@ -3756,9 +3756,6 @@ func (m *Model) windowTitle() string {
 		return ""
 	}
 	title := m.primaryTitle()
-	if title == "" {
-		title = strings.TrimSpace(p.term.Title())
-	}
 	if title == "" {
 		title = displayName(m.currentBox())
 	}

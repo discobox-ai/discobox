@@ -144,18 +144,22 @@ func recordTitle(box Sandbox) string {
 }
 
 // primaryTitle is what the box in the workspace is called from the primary
-// terminal's side: the name it was given and the msg its program reports, as
-// "name: msg", and either alone when it has only one (sandboxmeta.Title). The
-// msg is focusedProgramStatus's, so it is the one the program said last, from
-// the stream or the poll, whichever is newer — the listing's name carries the
-// poll's, which lags what the pane has drawn. Empty when the box has neither,
-// the caller's cue to fall back to the terminal's title.
+// terminal's side: the name it was given, then the msg its program reports or,
+// with none, the title the terminal last set, as "name: words", and either
+// alone when it has only one (sandboxmeta.Title). The msg is
+// focusedProgramStatus's, so it is the one the program said last, from the
+// stream or the poll, whichever is newer — the listing's name carries the
+// poll's, which lags what the pane has drawn; the title is the pane's own, for
+// the same reason. Empty when the box has none of them.
 func (m *Model) primaryTitle() string {
-	var msg string
+	var msg, title string
 	if rec, ok := m.focusedProgramStatus(); ok {
 		msg = rec.Msg
 	}
-	return sandboxmeta.Title(m.currentBox().GivenName, msg)
+	if p := m.primary(); p != nil {
+		title = p.term.Title()
+	}
+	return sandboxmeta.Title(m.currentBox().GivenName, msg, title)
 }
 
 // syncProgramStatus sends the focused box's status when it is not what was

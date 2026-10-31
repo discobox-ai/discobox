@@ -1066,7 +1066,7 @@ func TestTheTerminalTitleFollowsThePrimaryPane(t *testing.T) {
 	}
 }
 
-// A name the discobox was given outranks its harness's title on the primary's
+// A name the discobox was given leads its harness's title on the primary's
 // tab and in the window title, and reaches both from the listing: one written
 // into the box's meta shows within a poll, without the program retitling itself.
 func TestAGivenNameFollowsTheListingOntoThePrimary(t *testing.T) {
@@ -1081,19 +1081,16 @@ func TestAGivenNameFollowsTheListingOntoThePrimary(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.dispatch(tickMsg{})
-	d.wait("the given name", func() bool { return m.View().WindowTitle == "Reaper race" })
-	if frame := frameText(m); !strings.Contains(frame, "Reaper race") || strings.Contains(frame, "go test ./...") {
-		t.Fatalf("the primary's edge should wear the given name in place of the title:\n%s", frame)
+	d.wait("the given name", func() bool { return m.View().WindowTitle == "Reaper race: go test ./..." })
+	if frame := frameText(m); !strings.Contains(frame, "Reaper race: go test ./...") {
+		t.Fatalf("the primary's edge should wear the given name, then the title:\n%s", frame)
 	}
 
-	// The harness retitling itself does not take the name back.
+	// The harness retitling itself keeps the name in front.
 	term.send("\x1b]2;go vet ./...\x07")
-	d.wait("the new title", func() bool { return strings.TrimSpace(m.primary().term.Title()) == "go vet ./..." })
-	if got := m.View().WindowTitle; got != "Reaper race" {
-		t.Fatalf("title = %q, want the given name", got)
-	}
-	if frame := frameText(m); !strings.Contains(frame, "Reaper race") || strings.Contains(frame, "go vet ./...") {
-		t.Fatalf("the primary's edge should keep the given name over a new title:\n%s", frame)
+	d.wait("the new title", func() bool { return m.View().WindowTitle == "Reaper race: go vet ./..." })
+	if frame := frameText(m); !strings.Contains(frame, "Reaper race: go vet ./...") {
+		t.Fatalf("the primary's edge should keep the given name in front of a new title:\n%s", frame)
 	}
 
 	// With a second pane the primary's tab in the strip wears it too.
@@ -1102,7 +1099,7 @@ func TestAGivenNameFollowsTheListingOntoThePrimary(t *testing.T) {
 	d.wait("the shell", func() bool { return m.shells.len() == 1 })
 	d.wait("the primary's tab", func() bool { return strings.Contains(frameText(m), "0 Reaper race") })
 
-	// Cleared, the harness's title is back.
+	// Cleared, the harness's title alone.
 	if err := ds.Rename(t.Context(), m.paneBox.ID, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -1111,15 +1108,15 @@ func TestAGivenNameFollowsTheListingOntoThePrimary(t *testing.T) {
 }
 
 // What the primary's program reports as its msg (OSC 7501) stands where its
-// window title would, since a harness that speaks the protocol stops putting
-// its activity in the title, and follows the name the box was given as
-// "name: msg". The rename dialog still offers the name alone.
+// window title would while it reports one, and follows the name the box was
+// given as "name: msg"; with none, the title is back. The rename dialog still
+// offers the name alone.
 func TestTheProgramsMsgFollowsTheGivenName(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
-	term.send("\x1b]2;Claude Code\x07")
-	d.wait("the title", func() bool { return m.View().WindowTitle == "Claude Code" })
+	term.send("\x1b]2;Reaper cleanup\x07")
+	d.wait("the title", func() bool { return m.View().WindowTitle == "Reaper cleanup" })
 
 	msg := base64.RawStdEncoding.EncodeToString([]byte("Fix the reaper race"))
 	term.send("\x1b]7501;state=working:app=claude-code:msg=" + msg + "\x1b\\")
@@ -1137,9 +1134,9 @@ func TestTheProgramsMsgFollowsTheGivenName(t *testing.T) {
 		t.Fatalf("record = %+v, %v; want the given name as its title beside the msg", rec, ok)
 	}
 
-	// With nothing reported, the name alone.
-	term.send("\x1b]7501;state=clear\x1b\\")
-	d.wait("the name alone", func() bool { return m.View().WindowTitle == "Reaper" })
+	// Idle, the program reports no msg: the name and the title.
+	term.send("\x1b]7501;state=idle:app=claude-code\x1b\\")
+	d.wait("the name and the title", func() bool { return m.View().WindowTitle == "Reaper: Reaper cleanup" })
 }
 
 // A shell tab is something you are doing inside this window, so it never takes

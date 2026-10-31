@@ -267,7 +267,7 @@ func sandboxesNamed(arg string, sandboxes []apimodel.Sandbox, match nameMatch) [
 // one that does not resolve, which is the failure listedName exists to end.
 //
 // The name the discobox was given counts on its own too: the listing shows it
-// followed by what its program reports (sandboxmeta.Title), and the name alone
+// followed by what its program says (sandboxmeta.Title), and the name alone
 // is what was typed to give it.
 func sandboxListedAs(sandbox apimodel.Sandbox, arg string) bool {
 	if sandbox.DisplayName == arg {
