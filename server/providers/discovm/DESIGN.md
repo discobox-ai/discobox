@@ -139,10 +139,13 @@ as ADR 26-10-09-106 §1 places it:
 - A remote driver authenticates with the provider's `apiKey`, passed as
   `Config.Keys` (`providerKeys`); disco-vm reads no key of its own accord,
   and the server's environment is not read. A provider made before it held
-  one fails each call to the service, naming `apiKey`. A remote driver also
-  needs `controlPlaneUrl`, where its pool machines reach this server: a
-  server they cannot reach cannot run their pools. `Validate` requires both
-  for a remote driver and refuses them for a local one.
+  one fails each call to the service, naming `apiKey`. A remote driver's
+  `controlPlaneUrl`, where its pool machines reach this server, is optional:
+  without one the server opens a
+  [control-plane channel](../DESIGN.md#the-control-plane-channel) to each pool
+  machine's agent, so it needs no URL a machine can reach (ADR 26-10-30-875).
+  `Validate` requires the key, and an `http(s)` URL when one is given, for a
+  remote driver, and refuses both for a local one.
 
 ## The Pool's Box
 
@@ -154,8 +157,8 @@ provisioning key and the driver's machine token, a cost ADR 26-10-27-767
 states. Its bootstrap names its own engine (ADR 26-10-23-551 §3):
 the machine runtime, the driver, the pool's project as the project and
 network its sandboxes' machines are made in, the provider's base, the
-provider's `controlPlaneUrl`, and where the agent listens: the driver's
-`Service.Listen` for the machine, which its one URL reaches (ADR
+provider's `controlPlaneUrl` or, with none, the channel's socket, and where
+the agent listens: the driver's `Service.Listen` for the machine, which its one URL reaches (ADR
 26-10-27-345 §2's rule, for the pool agent). The pool agent is reached at that
 URL (`acquireAgentClient`, `Engine.URL`): boxd's public HTTPS URL, the same
 across stop and start. The bootstrap also names the machine's public and
