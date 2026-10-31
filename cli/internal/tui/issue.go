@@ -451,7 +451,7 @@ func (m *Model) issueEdited(msg issueEditedMsg) tea.Cmd {
 // issueKey is a key typed at an issue tab. The leader and what follows it are
 // the pane's key map, as in any tab; the rest are the issue's.
 func (m *Model) issueKeyPress(p *pane, msg tea.KeyPressMsg) tea.Cmd {
-	if p.term.PrefixPending() || keyName(msg) == m.leader() {
+	if m.paneReserved(p, msg) {
 		term, cmd := p.term.Update(msg)
 		p.term = term
 		return fromPane(p.id, cmd)

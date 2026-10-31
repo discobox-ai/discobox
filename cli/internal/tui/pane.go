@@ -596,6 +596,11 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 		termpane.WithRepeatingPrefixBinding("down", switchBoxMsg{delta: 1}),
 		termpane.WithRepeatingPrefixBinding("k", switchBoxMsg{delta: -1}),
 		termpane.WithRepeatingPrefixBinding("j", switchBoxMsg{delta: 1}),
+		// And without the leader at all, on the chords only an enhanced
+		// keyboard protocol encodes (boxStepBare). A window with no tree
+		// hands them back to the program (switchBoxMsg.chord).
+		termpane.WithBinding(boxUpKey, switchBoxMsg{delta: -1, chord: &boxUpChord}),
+		termpane.WithBinding(boxDownKey, switchBoxMsg{delta: 1, chord: &boxDownChord}),
 		termpane.WithPrefixBinding(boxMenuKey, boxMenuMsg{}),
 		termpane.WithPrefixBinding(paneZoomKey, zoomPaneMsg{}),
 		termpane.WithPrefixBinding(paneTerminalKey, newTerminalMsg{}),
@@ -856,10 +861,20 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		if m.overlay != nil && p == m.overlay {
 			return m.underScreen(p)
 		}
+		// A leaderless chord in a window with no tree to walk was never the
+		// window's: it goes on to the program, as it would have unbound.
+		if msg.chord != nil && !m.treeAvailable() {
+			p.term.SendKey(*msg.chord)
+			return nil
+		}
 		armed := p.term.PrefixArmed()
 		p.term.SetPrefixArmed(false)
 		cmd := m.switchBox(msg.delta)
-		if armed {
+		// A run carries on in the panes the walk ends in. One that stopped on
+		// a row gave the list the keys (switchBox): the leader is not left
+		// armed in a pane that no longer has them, to take the next key typed
+		// there as a walk.
+		if armed && m.inPanes() {
 			if next := m.focusedPane(); next != nil {
 				next.term.SetPrefixArmed(true)
 			}
@@ -1121,6 +1136,17 @@ func exitCode(stream Terminal) (int, bool) {
 	return reporter.ExitStatus()
 }
 
+// paneReserved reports whether a key is one of the window's own a pane
+// declares to termpane — the leader, what follows it, the leaderless walk —
+// which a pane that reads its own keys still hands to termpane to resolve.
+// The walk is the window's only where there is a tree to walk; elsewhere the
+// chord is a key like any other, and goes where that pane sends its keys —
+// held behind a slow image paste in order with the rest, not ahead of them.
+func (m *Model) paneReserved(p *pane, key tea.KeyPressMsg) bool {
+	_, walk := boxStepBare(key)
+	return (walk && m.treeAvailable()) || p.term.PrefixPending() || keyName(key) == m.leader()
+}
+
 // finishedKey routes a key on a held screen.
 //
 // The pane is over; the window around it is not. A leader chord still means
@@ -1132,7 +1158,7 @@ func exitCode(stream Terminal) (int, bool) {
 // they are declared, and a sequence already open there is left to finish.
 // Everything else is the reader's.
 func (m *Model) finishedKey(p *pane, key tea.KeyPressMsg) tea.Cmd {
-	if p.term.PrefixPending() || keyName(key) == m.leader() {
+	if m.paneReserved(p, key) {
 		term, cmd := p.term.Update(key)
 		p.term = term
 		return fromPane(p.id, cmd)

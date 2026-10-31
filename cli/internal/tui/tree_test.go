@@ -269,6 +269,163 @@ func TestTheLeaderSwitchesBoxesAndParksTheOneLeft(t *testing.T) {
 	}
 }
 
+// The leader's walk does not start a stopped box it passes: it stops on the
+// row with only the tree's cursor, the workspace still on screen, and Enter
+// is what attaches — and so starts — it. ↑ from there goes back to the panes.
+func TestTheLeaderStopsOnAStoppedBoxUntilEnter(t *testing.T) {
+	t.Parallel()
+	boxes := testSandboxes()
+	boxes[1].State = StateStopped
+	ds := newFakeSource(boxes...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	d.leader("down")
+	d.settle()
+	if m.paneBox.ID != "sbx_one" || m.primary() == nil || len(m.parked) != 0 {
+		t.Fatalf("box %s, parked %d; want sbx_one left on screen", m.paneBox.ID, len(m.parked))
+	}
+	if got := m.list.current(); !m.listFront || got == nil || got.ID != "sbx_two" {
+		t.Fatalf("list front %v, cursor %v; want the tree's cursor on the stopped box", m.listFront, got)
+	}
+	if got := primaryOpens(ds, "sbx_two"); got != 0 {
+		t.Fatalf("sbx_two's primary attached %d times, want the walk to start nothing", got)
+	}
+	if !strings.Contains(m.status, "enter starts it") {
+		t.Fatalf("status = %q, want it to say Enter starts the box", m.status)
+	}
+
+	d.leader("up")
+	d.settle()
+	if m.listFront || m.focus != focusPane || m.paneBox.ID != "sbx_one" {
+		t.Fatalf("list front %v, focus %v, box %s; want back in sbx_one's panes", m.listFront, m.focus, m.paneBox.ID)
+	}
+
+	d.leader("down")
+	d.key("enter")
+	d.wait("the stopped box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+	if got := primaryOpens(ds, "sbx_two"); got != 1 {
+		t.Fatalf("sbx_two's primary attached %d times, want once on Enter", got)
+	}
+}
+
+// Ctrl-Shift-J and K walk the tree with no leader, from a pane and from the
+// list a stopped box left the keys on, and never reach the program. Ctrl-J,
+// what a classic terminal sends instead, is still the program's.
+func TestCtrlShiftWalksTheTreeWithoutTheLeader(t *testing.T) {
+	t.Parallel()
+	boxes := testSandboxes()
+	boxes[1].State = StateStopped
+	boxes[2].State, boxes[2].OriginKey, boxes[2].SourceOriginKey = StateRunning, boxes[0].OriginKey, boxes[0].SourceOriginKey
+	ds := newFakeSource(boxes...)
+	d, m, term := openWorkspace(t, ds, "enter")
+	down := tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl | tea.ModShift}
+	up := tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl | tea.ModShift}
+
+	d.dispatch(down)
+	d.settle()
+	if got := m.list.current(); m.paneBox.ID != "sbx_one" || !m.listFront || got == nil || got.ID != "sbx_two" {
+		t.Fatalf("box %s, list front %v, cursor %v; want the walk stopped on the stopped sbx_two", m.paneBox.ID, m.listFront, got)
+	}
+	d.dispatch(down)
+	d.wait("the box past it", func() bool { return m.paneBox.ID == "sbx_three" && m.primary() != nil })
+	if got := primaryOpens(ds, "sbx_two"); got != 0 {
+		t.Fatalf("sbx_two's primary attached %d times, want the walk to start nothing", got)
+	}
+	d.dispatch(up)
+	d.settle()
+	d.dispatch(up)
+	d.wait("the first box", func() bool { return m.paneBox.ID == "sbx_one" && m.focus == focusPane })
+	if got := term.inputSoFar(); strings.ContainsAny(got, "jkJK\n") {
+		t.Fatalf("the program received %q; the chords are the window's", got)
+	}
+
+	d.dispatch(tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl})
+	d.wait("ctrl+j at the program", func() bool { return strings.Contains(term.inputSoFar(), "\n") })
+	if m.paneBox.ID != "sbx_one" {
+		t.Fatalf("ctrl+j switched to %s; it is the program's", m.paneBox.ID)
+	}
+}
+
+// A walk stops on any box that is not live, an errored one included: its
+// state does not say whether its container is on, and attaching to one that
+// is off starts it.
+func TestTheLeaderStopsOnAnErroredBox(t *testing.T) {
+	t.Parallel()
+	boxes := testSandboxes()
+	boxes[1].State = StateError
+	ds := newFakeSource(boxes...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	d.leader("down")
+	d.settle()
+	if got := m.list.current(); m.paneBox.ID != "sbx_one" || !m.listFront || got == nil || got.ID != "sbx_two" {
+		t.Fatalf("box %s, list front %v, cursor %v; want the walk stopped on the errored sbx_two", m.paneBox.ID, m.listFront, got)
+	}
+	if got := primaryOpens(ds, "sbx_two"); got != 0 {
+		t.Fatalf("sbx_two's primary attached %d times, want the walk to attach nothing", got)
+	}
+}
+
+// A run of the leader's Ctrl-↓ that stops on a stopped box leaves no leader
+// armed in the pane behind it: back in the panes, Ctrl-J is the program's,
+// not another walk.
+func TestAWalkStoppedOnARowLeavesNoLeaderArmed(t *testing.T) {
+	t.Parallel()
+	boxes := testSandboxes()
+	boxes[1].State = StateStopped
+	ds := newFakeSource(boxes...)
+	d, m, term := openWorkspace(t, ds, "enter")
+
+	d.leader("ctrl+down")
+	d.settle()
+	if !m.listFront {
+		t.Fatal("the walk should have stopped on the stopped box, with the list in front")
+	}
+	d.key("esc")
+	if m.listFront || m.focus != focusPane {
+		t.Fatalf("list front %v, focus %v; want the panes back", m.listFront, m.focus)
+	}
+	d.key("ctrl+j")
+	d.wait("ctrl+j at the program", func() bool { return strings.Contains(term.inputSoFar(), "\n") })
+	if m.listFront || m.paneBox.ID != "sbx_one" {
+		t.Fatalf("list front %v, box %s; ctrl+j walked again", m.listFront, m.paneBox.ID)
+	}
+}
+
+// A window with no tree to walk takes nothing: the leaderless chords go on to
+// the program, as they would with nothing bound.
+func TestTheChordReachesTheProgramWithNoTree(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m := openAttached(t, ds, testSandboxes()[0])
+	d.wait("the primary terminal", func() bool { return m.primary() != nil && m.dialog == nil })
+	term := ds.execTerm(ExecPrimary)
+	before := term.inputSoFar()
+	d.dispatch(tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl | tea.ModShift})
+	d.wait("the chord at the program", func() bool { return len(term.inputSoFar()) > len(before) })
+	if m.paneBox.ID != "sbx_one" || len(m.parked) != 0 {
+		t.Fatalf("box %s, parked %d; want nothing switched", m.paneBox.ID, len(m.parked))
+	}
+}
+
+// The new discobox card is modal and its composer takes the keys: the chord
+// does not walk out of it.
+func TestTheChordDoesNotWalkOutOfTheNewCard(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.leader("h")
+	d.key("n")
+	if !m.newOpen || m.focus != focusPrompt {
+		t.Fatalf("new open %v, focus %v; want the new card's composer", m.newOpen, m.focus)
+	}
+	d.dispatch(tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl | tea.ModShift})
+	d.settle()
+	if !m.newOpen || m.focus != focusPrompt || m.paneBox.ID != "sbx_one" || len(m.parked) != 0 {
+		t.Fatalf("new open %v, focus %v, box %s; want the card left as it was", m.newOpen, m.focus, m.paneBox.ID)
+	}
+}
+
 // A parked workspace keeps emulating: what its terminal says while another
 // box is on screen is there when it comes back.
 func TestAParkedWorkspaceKeepsItsOutput(t *testing.T) {

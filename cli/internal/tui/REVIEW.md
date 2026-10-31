@@ -140,6 +140,11 @@
   is refused on every `heldPane` path as well: a clipboard write (OSC 52)
   from a box that is not on screen is dropped, or a box switched away from
   replaces what the user just copied from the one they are in.
+- **A walk that ends anywhere but the panes leaves no leader armed.** A run
+  of the leader's Ctrl-↑↓ re-arms the leader in the pane it lands in; a walk
+  that stopped on a row gave the list the keys, and a leader re-armed in the
+  pane left behind took the next Ctrl-K or Ctrl-J typed there as another
+  walk. Re-arm only while `inPanes()`.
 - **A bare attach's chrome is the only thing a box cannot draw.** The box's
   terminal has every row but the status line, so a dialog the window puts up
   is told from one the box draws by covering that line too: every dialog,

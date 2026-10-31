@@ -105,7 +105,7 @@ func (m *Model) imageInput(p *pane, msg tea.Msg) (tea.Cmd, bool) {
 			// The leader, and the key that follows it, are the window's: held,
 			// a slow copy would leave no way to quit, detach or move to
 			// another pane until it ended.
-			if keyName(msg) == m.leader() || p.term.PrefixPending() {
+			if m.paneReserved(p, msg) {
 				return m.toTerm(p, msg), true
 			}
 			p.imageHeld = append(p.imageHeld, msg)

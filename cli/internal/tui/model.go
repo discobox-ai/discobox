@@ -1648,6 +1648,15 @@ func unshiftBackspace(msg tea.KeyPressMsg) tea.KeyPressMsg {
 	return msg
 }
 
+// windowWalks reports whether a leaderless walk chord is the window's to
+// answer rather than a pane's (paneOptions binds it there) or nobody's.
+func (m *Model) windowWalks() bool {
+	if m.modalUp() || m.focus == focusPrompt {
+		return false
+	}
+	return m.focus != focusPane || m.focusedPane() == nil
+}
+
 func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	msg = unshiftBackspace(msg)
 
@@ -1700,6 +1709,14 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return cmd
 	}
+	// The leaderless walk along the tree, from the list or a page beside it,
+	// or while a workspace opens and no pane is there to take it — under
+	// nothing modal, and never from the composer, where the leader is not
+	// armed either. A pane binds the same chords itself (paneOptions).
+	if delta, ok := boxStepBare(msg); ok && m.windowWalks() {
+		m.leaderArmed = false
+		return m.switchBox(delta)
+	}
 	// The leader is the window's own prefix outside a pane, where there is no
 	// termpane to own one. It exists so the way out is the same key sequence
 	// on every screen: the workspace already quits on leader-q, and a window
@@ -1725,6 +1742,11 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			case paneZoomKey:
 				m.toggleTreeExpanded()
 				return nil
+			}
+			// A walk the leader's ↑↓ stopped on a stopped box (switchBox)
+			// carries on from it.
+			if delta, ok := boxStep(keyName(msg)); ok && !m.treeExpanded {
+				return m.switchBox(delta)
 			}
 		}
 		// A page right of the tree has no pane to own the leader either: h is
@@ -2325,7 +2347,7 @@ func (m *Model) actions(targets []Sandbox) []action {
 		anyRepair = anyRepair || s.repairable()
 		// A suspended box takes both: stop powers it off, start thaws it.
 		anyRunning = anyRunning || s.State == StateRunning || s.State == StateSuspended
-		anyStopped = anyStopped || s.State == StateStopped || s.State == StateSuspended
+		anyStopped = anyStopped || s.startable()
 		anyArchived = anyArchived || s.State == StateArchived
 		allArchived = allArchived && s.State == StateArchived
 	}
@@ -4648,6 +4670,11 @@ func (m *Model) helpText() string {
 		"",
 		"    " + leader + " h       to the list, from the leftmost pane; Esc back",
 		"    " + leader + " ↑ / ↓   the discobox above or below, or k and j",
+		"    Ctrl-Shift-K / Ctrl-Shift-J",
+		"                   the same, with no leader, in a terminal that",
+		"                   speaks the Kitty keyboard protocol",
+		"  A stopped discobox is not started by passing it: the walk stops",
+		"  on its row, and Enter starts it.",
 		"    " + leader + " " + paneZoomKey + "       on the list, the whole home screen and back",
 		"    n              on the list, a new discobox",
 		"",
