@@ -1,6 +1,6 @@
 # 26-10-16-424 — A terminal's status is what its program reports over OSC 7501
 
-- **Status**: Accepted
+- **Status**: Accepted (§6's record `title` superseded by [26-10-31-618](26-10-31-618-a-sandboxs-name-is-followed-by-what-its-program-reports.md): the box's name without the msg)
 - **Date**: 2026-10-16
 - **Supersedes**: [ADR 0124](0124-a-terminal-is-active-while-what-it-shows-changes.md)
   §1, for an exec while it holds a reported status (§4 below). Execs that never
