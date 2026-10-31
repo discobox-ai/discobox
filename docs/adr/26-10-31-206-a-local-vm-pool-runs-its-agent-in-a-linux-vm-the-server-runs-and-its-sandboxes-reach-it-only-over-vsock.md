@@ -1,7 +1,7 @@
 # 26-10-31-206 — A local VM pool runs its agent in a Linux VM the server runs, and its sandboxes reach it only over vsock
 
-- **Status**: Proposed. For a local driver (vz, later hcs) only, it would
-  supersede:
+- **Status**: Accepted (by the owner, 2026-10-31). For a local driver (vz,
+  later hcs) only, it supersedes:
   - [0144](0144-a-pool-of-host-vm-sandboxes-runs-its-agent-on-the-host.md):
     §1 whole; §3 whole; §4's "the agent dials each sandbox's guest socket",
     "Whether an interface exists is the driver's decision", and "the
@@ -26,7 +26,7 @@
     §5's "macOS (vz) stays as 106 has it", its pool agent a host process,
     and "For a local driver, all of 106 stands".
 
-  It would narrow
+  It narrows
   [26-10-24-953](26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
   §2's steps of making a box, with a first step that fences a local pool's
   network;
