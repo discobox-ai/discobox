@@ -1,9 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
-	"time"
-
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
@@ -20,11 +17,11 @@ import (
 // latched error displays as `error`, and its agent is still there to be
 // blocked.
 //
-// The sessions are decoded through a local struct, the server's display
-// name's way (services.SandboxDisplayName): the payload is whatever the box's
-// agent sent, and the generated schema type refuses the fields a newer agent
-// adds. The fields below are the contract, SandboxAgentProgramStatus in
-// server.yaml. A state or kind this client does not know reads as none.
+// Which session's status it is, and how the posted sessions are read, is
+// programstatus.PrimaryPosted's, which the server's sandbox events share: the
+// payload is whatever the box's agent sent, and the generated schema type
+// refuses the fields a newer agent adds. A state or kind this client does not
+// know reads as none.
 //
 // Its text is the program's, made displayable here: control characters,
 // bidirectional overrides and invisible formatting never reach a terminal.
@@ -40,58 +37,14 @@ func sandboxProgramStatus(sb apimodel.Sandbox) (programstatus.Status, bool) {
 	if !ok {
 		return programstatus.Status{}, false
 	}
-	var sessions []struct {
-		Primary       bool      `json:"primary"`
-		StartedAt     time.Time `json:"startedAt"`
-		ProgramStatus *struct {
-			State      string    `json:"state"`
-			Kind       string    `json:"kind"`
-			Progress   *int      `json:"progress"`
-			App        string    `json:"app"`
-			Title      string    `json:"title"`
-			Msg        string    `json:"msg"`
-			ReportedAt time.Time `json:"reportedAt"`
-		} `json:"programStatus"`
-	}
-	if err := json.Unmarshal(raw, &sessions); err != nil {
+	status, ok := programstatus.PrimaryPosted(raw)
+	if !ok {
 		return programstatus.Status{}, false
 	}
-	var (
-		found     programstatus.Status
-		startedAt time.Time
-		foundOK   bool
-	)
-	for _, session := range sessions {
-		reported := session.ProgramStatus
-		if !session.Primary || reported == nil || !knownState(programstatus.State(reported.State)) {
-			continue
-		}
-		if foundOK && !session.StartedAt.After(startedAt) {
-			continue
-		}
-		found = programstatus.Status{
-			State:      programstatus.State(reported.State),
-			Progress:   reported.Progress,
-			App:        terminalSafe(reported.App),
-			Title:      terminalSafe(programstatus.Displayable(reported.Title, programstatus.MaxTitle)),
-			Msg:        terminalSafe(programstatus.Displayable(reported.Msg, programstatus.MaxMsg)),
-			ReportedAt: reported.ReportedAt,
-		}
-		switch kind := programstatus.Kind(reported.Kind); kind {
-		case programstatus.Permission, programstatus.Question, programstatus.Auth:
-			found.Kind = kind
-		}
-		startedAt, foundOK = session.StartedAt, true
-	}
-	return found, foundOK
-}
-
-func knownState(state programstatus.State) bool {
-	switch state {
-	case programstatus.Idle, programstatus.Working, programstatus.Done, programstatus.Blocked, programstatus.Error:
-		return true
-	}
-	return false
+	status.App = terminalSafe(status.App)
+	status.Title = terminalSafe(programstatus.Displayable(status.Title, programstatus.MaxTitle))
+	status.Msg = terminalSafe(programstatus.Displayable(status.Msg, programstatus.MaxMsg))
+	return status, true
 }
 
 // programStatusColumn is the AGENT column of `discobox ls`: the state, a
