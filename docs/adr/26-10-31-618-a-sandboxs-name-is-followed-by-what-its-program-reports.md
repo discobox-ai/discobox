@@ -14,29 +14,45 @@
 A listing names a sandbox by `displayName`: its meta name when one is set,
 else the window title its primary terminal last set (ADR 26-10-12-026 §3). The
 title stood for what the work is about because the harness wrote it there:
-Claude Code titled the window with the session's title.
+Claude Code titles the window with the session's title, which it generates
+from the first prompt.
 
 Claude Code now speaks OSC 7501 (ADR 26-10-16-424). Told the protocol is
-there, it reports what it is doing in the record's `msg` and leaves the window
-title a fixed "Claude Code". Every box running it lists under that one title,
-and a named box shows its name with nothing of what it is doing. What the
-title used to say is now the msg.
+there, it reports what it is doing in the record's `msg` and drops the
+spinner glyph from its title; the title is still the session's. The `msg` is
+set only while it works (the tool call it is making) or waits on a person
+(what it waits for). Idle, and done in an interactive session, it reports no
+`msg`.
+
+Every Claude Code box nonetheless listed as "Claude Code", the title it falls
+back to before a session has one. The harness's env set
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, which also stops Claude Code
+generating the session's title, so the fallback was all it ever wrote. And a
+named box showed its name alone, with nothing of what it was doing or for.
 
 ## Decision
 
-### 1. The msg stands where the title stood, and follows a set name
+### 1. What the program says follows a set name: the msg, else the title
 
 `displayName` becomes, from the newest primary session on the row:
 
-- the meta name and the msg, as `name: msg`, when both are set;
-- the meta name alone when there is no msg;
-- the msg alone when there is no meta name;
-- then, as before, the window title, `config.name`, and the ID.
+- the meta name, then what the program says, as `name: words`, when both are
+  set; either alone when only one is;
+- what the program says is the `msg` while there is one, else the window title;
+- then `config.name`, and the ID.
 
-The msg is made displayable (`programstatus.Displayable`) before it is joined.
-The rule is `sandboxmeta.Title`, one function the server and the console
-share, so the console's window title and primary tab say what the listing
-says, from the stream's msg when it is newer than the poll.
+So a box says what it is doing while its agent works or waits, and what its
+session is about while it is idle. The msg and the title are both made
+displayable (`programstatus.Displayable`) and cut to the msg's limit before
+they are joined: both are a program's free text, posted from inside the box. The rule is
+`sandboxmeta.Title`, one function the server and the console share, so the
+console's window title and primary tab say what the listing says, from the
+stream's msg and the pane's title when they are newer than the poll.
+
+The Claude Code harness stops setting `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`
+and sets `DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING` and
+`DISABLE_FEEDBACK_COMMAND` in its place, which keep telemetry, error reports
+and `/feedback` off and let Claude Code title the session.
 
 ### 2. Only while the sandbox is running
 
@@ -51,27 +67,32 @@ A name typed to give a box keeps naming it: a `listedName` argument matches the
 meta name as well as the display name, under the same ambiguity and short-ID
 rules (`matchSandboxName`).
 
-### 4. The console's record names the box without the msg
+### 4. The console's record names the box without the program's words
 
 The OSC 7501 record the console re-emits (ADR 26-10-16-424 §6) carries the
 given name as its `title`, else `config.name`, else the ID — never the display
-name, which would repeat the `msg` beside it, from a poll that lags the stream.
+name, which can repeat the `msg` beside it, from a poll that lags the stream.
 
 ## Alternatives rejected
 
-**Show `name: msg` only in the console's window title and tab.** Rejected: the
-listing would then name every unnamed Claude Code box "Claude Code", and
-`discobox ls` would lose what tells two of them apart — the reason the title
-was made the name in the first place.
+**Show the program's words only in the console's window title and tab.**
+Rejected: `discobox ls` would then lose what a named box is doing and what it is
+about, which is what tells two named boxes apart — the reason the title was made
+the name in the first place.
 
 **Name by the record's own `title` field.** Rejected: it is optional, Claude
 Code does not send one, and a program that does sends its application's name,
 not what the session is about.
 
-**Use the msg only in `idle` or `done`, so the name churns less.** Rejected: a
-working box is the one whose work a person wants to see named, and the states a
-program passes through are its own to choose; filtering by state would hide the
-msg exactly while it is current.
+**The msg alone after a set name, as first decided.** Rejected: a harness
+reports no msg while idle, which is most of a box's life, so a named box said
+nothing of what it was for and an unnamed one fell back to the title anyway.
+Falling back to the title after a set name too makes the two cases one rule.
+
+**Always the title, never the msg, so the name churns less.** Rejected: a
+working box is the one whose work a person wants to see named, and the title
+says what the session is about, not what it is doing; the msg is what tells a
+working box's work apart while it is current.
 
 ## Consequences
 
@@ -80,7 +101,16 @@ msg exactly while it is current.
   the configured name and the ID do not (§3).
 - The ADR 26-10-12-026 objection to naming by the description — that it would
   rename a box every time its agent updated what it was doing — is accepted
-  here for the msg: the msg is what the title was, and the title already moved
-  with the harness.
-- A harness that does not speak OSC 7501 is unchanged: it reports no msg, and
-  its title names it as before.
+  here for the msg: the name moves while the agent works, and settles on the
+  title when it stops.
+- A harness that does not speak OSC 7501 reports no msg; its title names it
+  as before, after a set name when one is set.
+- Claude Code makes one more small model call per session, to title it, over
+  the `api.anthropic.com` route its egress already allows.
+- Dropping `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` turns back on everything
+  else Claude Code holds back under it, not only the title: background pull
+  request status polls through `gh` and `glab`, usage-quota probes, MCP
+  directory and plugin lookups, trusted-device enrollment, cloud sessions,
+  artifacts and uploads. It was set for the credential judge, which is gone.
+  In a restricted discobox the proxy refuses what its egress does not allow,
+  and Claude Code treats those as the failed background calls they are.
