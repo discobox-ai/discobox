@@ -73,11 +73,16 @@ its project's pools' scope and keep their blobs.
 
 It also answers what a pool's box is made of (`PoolBox`, which the pools
 control plane asks through `PoolBoxes`): the release's agent, that agent
-bundle's one layer for the box's platform (and a reader of it), and the
-pool bundle as the box's list, resolved by a third `releasePins`. A move of
-either reconciles every pool (`OnReleaseMoved`), which applies a moved pool
-bundle in its running box (ADR 26-10-24-953 §5). The pool bundle is in every
-pool's scope too, since the box fetches it signed as the pool.
+bundle's one layer for the box's platform, the pool bundle as the box's
+list, resolved by a third `releasePins`, and every manifest and layer of it
+the box's content store reads for that platform (`Blobs`), with one reader
+for those and the agent's layer (`OpenBlob`), which fetches what the store
+lacks as the pin it belongs to and refuses any other digest. The pool's maker
+places those blobs in the box, so a pool's box reads none of its own bundles
+over the routes (ADR 26-10-30-875 §5). A move of either reconciles every pool
+(`OnReleaseMoved`), which applies a moved pool bundle in its running box (ADR
+26-10-24-953 §5). The pool bundle stays in every pool's scope as a release
+bundle.
 
 ## Blob store
 

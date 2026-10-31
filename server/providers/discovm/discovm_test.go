@@ -118,7 +118,7 @@ func TestFakePoolMachineLifecycle(t *testing.T) {
 	r, _ := newFakePool(t, "")
 	ctx := context.Background()
 	instance := fakeInstance(t)
-	provider := poolruntime.New(r, Definition(), nil)
+	provider := poolruntime.New(r, Definition(), nil, nil)
 	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1"}
 	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
 
@@ -317,12 +317,13 @@ func TestValidateNamesTheDriversInThisBuild(t *testing.T) {
 	}
 }
 
-// A remote driver needs its key and the URL its pool machines reach the
-// server at, said rather than guessed; a local driver takes neither.
+// A remote driver needs its key, said rather than guessed, and may name the
+// URL its pool machines reach the server at: without one the server opens a
+// channel to each (ADR 26-10-30-875 §4). A local driver takes neither.
 func TestValidateWhatADriverNeeds(t *testing.T) {
 	for _, tc := range []struct{ config, want string }{
 		{`{"driver":"boxd"}`, "apiKey"},
-		{`{"driver":"boxd","apiKey":"k"}`, "controlPlaneUrl"},
+		{`{"driver":"boxd","apiKey":"k"}`, ""},
 		{`{"driver":"boxd","apiKey":"k","controlPlaneUrl":"unix:///run/discobox.sock"}`, "http or https"},
 		{`{"driver":"boxd","apiKey":"k","controlPlaneUrl":"https://discobox.example.com","deliverProviderKey":true}`, ""},
 		{`{"driver":"fake","apiKey":"k"}`, "takes no API key"},
@@ -339,7 +340,7 @@ func TestValidateWhatADriverNeeds(t *testing.T) {
 // runtime, whose shims are this binary.
 func TestFactoryBuildsAPoolProvider(t *testing.T) {
 	isolateStateRoot(t)
-	provider, err := FactoryWithPoolManager(nil)(context.Background(), fakeInstance(t))
+	provider, err := FactoryWithPoolManager(nil, nil)(context.Background(), fakeInstance(t))
 	if err != nil {
 		t.Fatalf("factory error = %v", err)
 	}
@@ -446,7 +447,7 @@ func TestUnreachableIsATransportFailureOnly(t *testing.T) {
 // console, as a host pool agent has no host to open one on.
 func TestFactoryProviderOnALocalDriverRefusesAConsole(t *testing.T) {
 	isolateStateRoot(t)
-	built, err := FactoryWithPoolManager(nil)(context.Background(), fakeInstance(t))
+	built, err := FactoryWithPoolManager(nil, nil)(context.Background(), fakeInstance(t))
 	if err != nil {
 		t.Fatalf("factory error = %v", err)
 	}

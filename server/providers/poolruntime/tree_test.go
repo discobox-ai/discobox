@@ -42,7 +42,7 @@ func newTreeRuntimeProvider(t *testing.T, sandboxID string, scopes ...string) *t
 func TestExportTreeFallsBackToTheNamedPoolWhenThereIsNoRuntimeState(t *testing.T) {
 	runtimeProvider := newTreeRuntimeProvider(t, "sandbox-1", poolagentserver.ScopeSandboxRead)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	stream, err := provider.ExportTree(context.Background(),
 		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "pool-1", sandbox.Delivery{}, nil)
@@ -60,7 +60,7 @@ func TestExportTreeFallsBackToTheNamedPoolWhenThereIsNoRuntimeState(t *testing.T
 func TestExportTreeWithoutAPoolStillReportsNotFound(t *testing.T) {
 	runtimeProvider := newTreeRuntimeProvider(t, "sandbox-1", poolagentserver.ScopeSandboxRead)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	if _, err := provider.ExportTree(context.Background(),
 		sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "", sandbox.Delivery{}, nil); err == nil {
@@ -135,7 +135,7 @@ func TestExportTreeSendsThePinsToThePool(t *testing.T) {
 	agent := httptest.NewServer(router)
 	t.Cleanup(agent.Close)
 	runtimeProvider := &testRuntimeProvider{baseURL: agent.URL, client: agent.Client(), token: poolToken, runtime: memory}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, &fakePoolManager{pool: activePool("pool-1"), schedulable: true})
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, &fakePoolManager{pool: activePool("pool-1"), schedulable: true}, nil)
 
 	agentDigest, platformDigest, harnessDigest := "sha256:"+strings.Repeat("c", 64), "sha256:"+strings.Repeat("a", 64), "sha256:"+strings.Repeat("b", 64)
 	delivered := sandbox.Delivery{

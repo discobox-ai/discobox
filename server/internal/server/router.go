@@ -188,10 +188,11 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	if err != nil {
 		return nil, services.Services{}, nil, nil, fmt.Errorf("configure development image synchronization: %w", err)
 	}
-	// Pool backends that cannot be dialed inward hand their guest-initiated
-	// control-plane connections to this hub; Serve treats it as one more
-	// listener for the ordinary handler, so routing and authentication are
-	// unchanged.
+	// Pool backends that cannot be dialed inward, and remote pools reached
+	// over a control-plane channel, hand their guest-initiated control-plane
+	// connections to this hub, each as its pool's; Serve treats it as one more
+	// listener for the ordinary handler, whose authentication holds every
+	// request on one to that pool's routes (CarrierPoolAuthenticator).
 	controlPlaneStreams := opts.ControlPlaneStreams
 	// A sandbox is told its discobox:// address only when that address
 	// reaches this server: every server has a peer ID (ADR 0117), but a peer
@@ -249,6 +250,9 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		// First, so a forwarded sandbox call can never reach the default user.
 		auth.SandboxForwardAuthenticator{Store: appStore},
 		auth.PoolAuthenticator{Store: appStore},
+		// Next, so a pool's control-plane stream that neither of those
+		// claimed is refused before anything that answers as the operator.
+		auth.CarrierPoolAuthenticator{},
 		// Before the default user, so an assertion is never answered as it.
 		auth.DiscobotAuthenticator{PublicKey: opts.DiscobotPublicKey},
 		// Last before the default user: a request over iroh that nothing else

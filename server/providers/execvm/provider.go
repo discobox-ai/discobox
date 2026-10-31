@@ -10,6 +10,7 @@ import (
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
@@ -46,17 +47,24 @@ func Validate(data json.RawMessage) error {
 	if len(cfg.Command.Values()) == 0 {
 		return fmt.Errorf("exec command is required")
 	}
-	return poolruntime.RequireControlPlaneURL(ProviderType, cfg.ControlPlaneURL)
+	return nil
 }
 
-func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) sandbox.ProviderFactory {
+// FactoryWithPoolManager makes the provider's instances. hub is the server's
+// carrier hub, which a pool with no controlPlaneUrl is reached through (ADR
+// 26-10-30-875).
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults, hub *carrierhub.Hub) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, poolManager, imageSync, serverDefaults)
+		return newFromInstance(ctx, instance, poolManager, imageSync, serverDefaults, hub)
 	}
 }
 
-func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
+func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults, hub *carrierhub.Hub) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
+	if err != nil {
+		return nil, err
+	}
+	streams, err := poolruntime.ControlPlaneStreams(ProviderType, cfg.ControlPlaneURL, hub)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +84,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		_ = driver.Close()
 		return nil, err
 	}
-	return poolruntime.New(engine, Definition(), poolManager), nil
+	return poolruntime.New(engine, Definition(), poolManager, streams), nil
 }
 
 // engineConfig maps the exec provider configuration to the shared engine
@@ -126,7 +134,7 @@ func Definition() sandbox.ProviderDefinition {
 		Description: "Delegates worker VM lifecycle to an external command, such as a shell script.",
 		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "command", Label: "Command", Type: "string", Required: true, Description: "Executable (plus fixed arguments) invoked as `<command> <op> <worker-id>`."},
-			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Required: true, Placeholder: "https://discobot.example.com"},
+			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "https://discobox.example.com", Description: "Where its pools reach this server. Leave it empty and this server opens a channel to each pool instead, so it needs no public URL."},
 			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, and the pool's own container runs, provisioned as a pool (ADR 26-10-16-423 §§7, 10, ADR 26-10-24-953 §2).", Advanced: true},
 			{Key: "publicAgentPort", Label: "Publish Harness Port Publicly", Type: "boolean", Description: "Publish the worker-agent port on all VM interfaces at the fixed harness port.", Advanced: true},
 			{Key: "sshUser", Label: "SSH User", Type: "string", Placeholder: "root", Advanced: true},

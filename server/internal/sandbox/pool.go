@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"crypto/ed25519"
 	"io"
 	"log/slog"
 	"sync"
@@ -39,6 +40,10 @@ type PoolManager interface {
 	// the release's agent, its layer for platform, and the pool's bundles.
 	PoolBox(ctx context.Context, platform imagecache.Platform) (PoolBox, error)
 	EnsureAgentTrustKey(ctx context.Context) (string, error)
+	// AgentIssuerKey is the private half of EnsureAgentTrustKey's key: what
+	// the server signs its requests to pool agents with, and presents on a
+	// control-plane channel's TLS (ADR 26-10-30-875 §1).
+	AgentIssuerKey(ctx context.Context) (ed25519.PrivateKey, error)
 	CreateAgentToken(ctx context.Context, claims poolagentauth.TokenClaims) (string, error)
 	CreateSandboxAgentToken(ctx context.Context, claims poolagentauth.TokenClaims) (string, error)
 	SchedulePoolReconciliation(ctx context.Context, projectID, poolID string) error
@@ -202,13 +207,21 @@ func (r PoolProgressReporter) ReportProgress(ctx context.Context, poolID string,
 
 // PoolBox is what a pool's maker places in its box before it runs
 // `discobox-provision apply` there (ADR 26-10-24-953 §2): the agent bundle the
-// release names, and the pool's bundles in order, as a pool's are its pins.
+// release names, and the pool's bundles in order, as a pool's are its pins,
+// with every blob of them the box's content store reads, so that apply fetches
+// nothing (ADR 26-10-30-875 §5).
 type PoolBox struct {
 	Agent BundlePin
 	// AgentLayer is the digest of the agent bundle's one layer for the box's
-	// platform, which OpenAgentLayer reads: a tar, gzipped or not, holding the
-	// agent alone (agentlayer.ExtractAgent).
-	AgentLayer     string
-	OpenAgentLayer func(ctx context.Context) (io.ReadCloser, error)
-	Bundles        []BundlePin
+	// platform: a tar, gzipped or not, holding the agent alone
+	// (agentlayer.ExtractAgent).
+	AgentLayer string
+	Bundles    []BundlePin
+	// Blobs is every manifest and layer of Bundles the box's content store
+	// reads for the box's platform, by digest: each bundle's manifest — under
+	// an index, the index and the platform's manifest — and that manifest's
+	// layers.
+	Blobs []string
+	// OpenBlob reads AgentLayer or one of Blobs, and answers its size.
+	OpenBlob func(ctx context.Context, digest string) (io.ReadCloser, int64, error)
 }

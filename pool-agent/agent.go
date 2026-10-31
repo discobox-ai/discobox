@@ -142,6 +142,30 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	}
 	logger.Info("pool identity ready", "poolID", bootstrap.PoolID, "runtime", runtimeKind)
 
+	// The agent's own listener is served from here on, before the first
+	// report: a pool reached over a control-plane channel cannot report until
+	// the server has opened one to it (ADR 26-10-30-875 §2). The listen URL's
+	// scheme selects the transport, so a VSOCK-only or socket-only pool needs
+	// no special case here.
+	listener, err := wire.Listen(bootstrap.AgentListenURL)
+	if err != nil {
+		return fmt.Errorf("listen on pool-agent endpoint %q: %w", bootstrap.AgentListenURL, err)
+	}
+	defer func() { _ = listener.Close() }()
+	channel, err := openControlPlaneChannel(ctx, logger, bootstrap, identity)
+	if err != nil {
+		return err
+	}
+	front, err := poolserver.StartFront(logger, listener, poolserver.Identity{ProjectID: bootstrap.ProjectID, PoolID: bootstrap.PoolID}, bootstrap.ControlPlaneKey, channelHandler(channel))
+	if err != nil {
+		return err
+	}
+	if channel != nil {
+		if err := awaitControlPlaneChannel(ctx, logger, channel); err != nil {
+			return err
+		}
+	}
+
 	// A machine pool's sandboxes are machines of its own engine (ADR
 	// 26-10-23-551 §3), opened before the first report: the pool's status is
 	// its driver's.
@@ -191,7 +215,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets)
+		return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets, front)
 	}
 	runtime, err := newDockerSandboxRuntime(root, bootstrap, hop, identity.PrivateKey, assets)
 	if err != nil {
@@ -200,7 +224,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// Image reclamation is the Docker pool's alone: the images are its daemon's,
 	// and a runtime that boots no OCI image has none to reclaim (ADR 0040).
 	go runtime.WatchImages(ctx, logger)
-	return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets)
+	return Serve(ctx, logger, root, bootstrap, identity, runtime, client, assets, front)
 }
 
 // newDockerSandboxRuntime is this pool's runtime: sandboxes as containers on
@@ -400,7 +424,7 @@ func ExecSystemdChildIfRequested() error {
 // A nil reporter runs no loop that reports to the control plane: no state
 // channel, tree reaper, status poll or resource report. A nil assets serves
 // no assets.discobox.internal.
-func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, identity *Identity, runtime sandboxruntime.Runtime, reporter SandboxStateClient, assets *assetcache.Cache) error {
+func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap Bootstrap, identity *Identity, runtime sandboxruntime.Runtime, reporter SandboxStateClient, assets *assetcache.Cache, front *poolserver.Front) error {
 	if reporter != nil {
 		if identity == nil {
 			return errors.New("the pool's identity is required for sandbox state reporting")
@@ -498,13 +522,6 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 		}
 	}
 	go runtime.WatchProxyMaterial(ctx, logger)
-	// The listen URL's scheme selects the transport, so a VSOCK-only or
-	// socket-only pool needs no special case here.
-	listener, err := wire.Listen(bootstrap.AgentListenURL)
-	if err != nil {
-		return fmt.Errorf("listen on pool-agent endpoint %q: %w", bootstrap.AgentListenURL, err)
-	}
-	defer func() { _ = listener.Close() }()
 	// Audit stays a nil interface when the key cannot be read, so the relay
 	// answers 503 rather than the agent failing to serve anything at all.
 	var audit poolserver.AuditReader
@@ -524,6 +541,7 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 	// proxy, on loopback (ADR 26-10-08-561). Without the pool's key there is
 	// no token to accept, so nothing listens.
 	var originListener net.Listener
+	var err error
 	if sandboxTokenKey != nil {
 		var listenConfig net.ListenConfig
 		originListener, err = listenConfig.Listen(ctx, "tcp", proxyagent.OriginsListenAddress)
@@ -563,7 +581,7 @@ func Serve(ctx context.Context, logger *slog.Logger, root layout.Root, bootstrap
 		Audit:                 audit,
 		ControlPlanePublicKey: bootstrap.ControlPlaneKey,
 		SandboxTokenKey:       sandboxTokenKey,
-		Listener:              listener,
+		Front:                 front,
 		OriginListener:        originListener,
 		AssetListener:         assetListener,
 		Assets:                assetHandler,

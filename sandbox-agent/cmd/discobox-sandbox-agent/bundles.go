@@ -85,7 +85,7 @@ func fetchBundles(ctx context.Context, runtimeConfig *intake.Intake) (bool, erro
 	if _, err := runtimeConfig.WaitApplied(ctx); err != nil {
 		return false, err
 	}
-	return true, applyBundles(ctx, pins, bundlestore.HTTPFetcher{})
+	return true, applyBundles(ctx, pins)
 }
 
 // placedPins is agentlayer.PinsFile, which the box's maker placed, and false
@@ -102,10 +102,10 @@ func placedPins() (agentlayer.Pins, bool, error) {
 	return pins, err == nil, err
 }
 
-// applyBundles brings pins into the box's content store through fetcher,
-// trying again a few times before it fails.
-func applyBundles(ctx context.Context, pins agentlayer.Pins, fetcher bundlestore.Fetcher) error {
-	store := &bundlestore.Store{Root: "/", Fetcher: fetcher, Platform: imagecache.PoolPlatform(), Logger: slog.Default()}
+// applyBundles brings pins into the box's content store from
+// assets.discobox.internal, trying again a few times before it fails.
+func applyBundles(ctx context.Context, pins agentlayer.Pins) error {
+	store := &bundlestore.Store{Root: "/", Fetcher: bundlestore.HTTPFetcher{}, Platform: imagecache.PoolPlatform(), Logger: slog.Default()}
 	wait := bundleRetryWait
 	for attempt := 1; ; attempt++ {
 		err := store.Apply(ctx, pins)

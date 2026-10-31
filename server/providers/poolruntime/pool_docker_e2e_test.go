@@ -68,7 +68,7 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 	pool := activePool(poolID)
 	pool.ProjectID = projectID
 	manager := &fakePoolManager{pool: pool, schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	runtimeSandbox, state, err := provider.Create(ctx, sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}, nil, sandbox.CreateOptions{
 		PoolID: poolID,

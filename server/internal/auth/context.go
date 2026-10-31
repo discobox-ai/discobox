@@ -47,6 +47,21 @@ func irohPeerFromContext(ctx context.Context) (endpoint.IrohID, bool) {
 	return peer, ok
 }
 
+type carrierPoolKey struct{}
+
+// WithCarrierPool marks a connection's context as a pool's control-plane
+// stream: one its guest opened over a channel the server holds to it, pushed
+// to the carrier hub (ADR 26-10-30-875 §3). Every request on it must be that
+// pool's own, or a sandbox call that pool forwards.
+func WithCarrierPool(ctx context.Context, poolID string) context.Context {
+	return context.WithValue(ctx, carrierPoolKey{}, poolID)
+}
+
+func carrierPoolFromContext(ctx context.Context) (string, bool) {
+	poolID, ok := ctx.Value(carrierPoolKey{}).(string)
+	return poolID, ok
+}
+
 const (
 	PrincipalTypeUser = "user"
 	PrincipalTypePool = "pool"

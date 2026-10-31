@@ -277,7 +277,7 @@ agent bundle, as a sandbox is. Each resolves from the release manifest
 among the release's bundles in its asset store, so they are pulled with the
 server's registry credentials and served from the blob store; the assets
 service answers what a pool's box is placed with (`PoolBox`: the agent's layer
-for the box's platform and the pool's pins), and a release that moves either
+for the box's platform, the pool's pins, and their blobs for that platform), and a release that moves either
 reconciles every pool.
 
 Both pool providers make the box with `poolruntime.ProvisionBox`
@@ -286,10 +286,14 @@ Both pool providers make the box with `poolruntime.ProvisionBox`
 or the `vm` provider's machine: it places the agent, runs
 `discobox-provision identity` and enrolls the public key it prints
 (`PoolMaker.Enroll`), places the bootstrap and the agent's environment
-(`bundle.BootstrapFile`, `bundle.EnvironmentFile`), and runs
-`discobox-provision apply` as the pool, which fetches the pins from the asset
-API with the box's key and applies every feature of them: a machine pool runs
-what a Docker pool runs (ADR 26-10-27-767). Each provider records what it
+(`bundle.BootstrapFile`, `bundle.EnvironmentFile`) together with every manifest
+and layer of the pool's bundles the box's content store reads for its platform
+(`PoolBox.Blobs`, read from the server's own asset store through
+`PoolBox.OpenBlob` and streamed into the copy at `agentlayer.PlacedBlob`), and
+runs `discobox-provision apply --pool`, which applies what was placed, dialing
+nothing, and every feature of it (ADR 26-10-30-875 §5): one path for every
+pool, however it reaches its control plane, and a machine pool runs what a
+Docker pool runs (ADR 26-10-27-767). Each provider records what it
 placed with the pool's runtime state (`poolruntime.BoxRecord`); a pool whose
 pins or placement moved since — its bootstrap and environment, which carry the
 provider's configuration and the pool's own settings, such as
@@ -672,9 +676,11 @@ facts about a pool the caller never asked about.
 
 ## Control Plane Reachability
 
-A pool agent dials the control plane; the control plane does not dial it. The
-transport comes from what the server is actually listening on, because HTTP is
-opt-in (see [server](../DESIGN.md#listen-endpoints)):
+A pool agent reaches the control plane over a URL it dials; on a remote
+provider with no `controlPlaneUrl` that URL is a socket the agent serves
+itself, over a channel the server opens to it (below). The transport comes
+from what the server is actually listening on, because HTTP is opt-in (see
+[server](../DESIGN.md#listen-endpoints)):
 
 | Backend | Agent reaches the control plane by |
 | --- | --- |
@@ -683,13 +689,58 @@ opt-in (see [server](../DESIGN.md#listen-endpoints)):
 | `wslc` | `unix://` socket served by the in-guest relay |
 | `docker`, local daemon | `unix://` the control plane's own socket, bind-mounted into the pool container at the same path (`Config.RelaySocketDir`) |
 | `docker`, remote daemon | the configured HTTP listener, rewritten to the container-resolvable host-gateway address |
-| `digitalocean`, `execvm`, `vm` on a remote driver (boxd) | explicit `controlPlaneUrl`, required at config time |
+| `digitalocean`, `execvm`, `vm` on a remote driver (boxd) | `controlPlaneUrl` when one is configured; otherwise `unix://` the agent's own socket, over the [control-plane channel](#the-control-plane-channel) |
 
 The Docker provider prefers the socket whenever its daemon is local, which is
 what lets a default install open no TCP port at all. A remote daemon cannot see
 that socket, so it needs an HTTP listener; when none is configured, provider
 instantiation fails with that as the message rather than producing a pool that
 starts and never registers.
+
+### The Control-Plane Channel
+
+[ADR 26-10-30-875](../../docs/adr/26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md):
+a remote provider whose `controlPlaneUrl` is empty is built with the server's
+carrier hub (`poolruntime.ControlPlaneStreams`), so the server needs no address
+its pools can reach.
+
+```mermaid
+sequenceDiagram
+    participant H as poolruntime channel holder
+    participant A as pool agent front
+    participant S as agent socket
+    participant P as agent / proxy unit
+    participant C as carrier hub
+    H->>A: GET .../control-plane-channel, Upgrade, server token (pool:control-plane-channel)
+    A-->>H: 101
+    H->>A: TLS 1.3, pinned both ways
+    Note over H,A: cpmux session inside the TLS
+    P->>S: unix:///run/discobox/control-plane.sock
+    S->>H: cpmux stream "control-plane"
+    H->>C: Push(poolID, stream)
+```
+
+- **Who holds it.** `poolruntime.Provider` (`controlPlaneChannels`) holds one
+  per pool from `ReconcilePool`/`RepairPool`, *before* the runtime's
+  `EnsurePool`, because the agent cannot make its first report, which the
+  runtime waits on, until a channel is open; it redials with backoff and
+  releases on `RemovePool` and `Close`. It dials the agent at the same lease
+  every other call uses (`AcquirePoolAgentClient`), on the lease's transport
+  rather than its client, so no client timeout cuts it.
+- **What it trusts.** The TLS is the channel's own whatever the front is (a
+  droplet's agent port is plain HTTP): the agent presents the pool's enrolled
+  key, which the server checks against the pool row, and the server presents
+  its pool-agent issuer key (`PoolManager.AgentIssuerKey`), which the agent
+  checks against its bootstrap's `controlPlanePublicKey`. No CA.
+- **What reaches the server.** Each stream is pushed to the carrier hub as the
+  pool's, so it reaches only that pool's routes
+  ([auth](../internal/auth/DESIGN.md#authentication)).
+- **The bootstrap** says `controlPlaneChannel` and names the agent's socket
+  (`poolagent.ControlPlaneChannelURL`) as its control-plane URL; providers
+  fill in their own URL only when the maker left it empty. Local providers
+  pass no hub and never use it.
+
+The pool end is [`pool-agent/cpchannel`](../../pool-agent/DESIGN.md#startup-flow).
 
 ## Pool Boot Metadata
 

@@ -682,9 +682,12 @@ the local socket directly, bridging it to a loopback HTTP address only for the
 git subprocesses that cannot speak anything else (see [cli](../cli/DESIGN.md)).
 `cfg.Listen` is threaded to the provider factories so a backend picks a
 transport this server actually answers on rather than assuming one exists.
-A backend whose transport only dials inward has the server open connections
-into the guest instead; `internal/transport/carrierhub` serves the same router
-over them as one more listener.
+A backend whose transport only dials inward, and a remote pool with no
+`controlPlaneUrl` ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md)),
+has the server open connections into the guest instead;
+`internal/transport/carrierhub` serves the same router over them as one more
+listener. Every connection on it is a pool's (`carrierhub.Conn`), and the
+auth chain holds each request on it to that pool's routes.
 
 `task dev` opts into nothing. It binds the local socket every other server
 binds, plus `iroh://` (unless `DISCOBOX_DEV_IROH=0`), which every build
@@ -1018,7 +1021,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/config/genschema` | Generates `config.schema.json` and `server.example.yaml` from `config.Config`'s struct tags. |
 | `internal/irohd` | Server side of the iroh endpoint: peer admission (`authorized_ids` plus enrolled peers), the endpoint key, remembered UDP sockets, and the listener watch. |
 | `internal/transport` | `HTTPClientLease`, the provider-supplied client a proxied request rides. |
-| `internal/transport/carrierhub` | Serves the API over connections the server opened into a pool guest, for backends whose transport only dials inward. |
+| `internal/transport/carrierhub` | Serves the API over connections the server opened into a pool guest — backends whose transport only dials inward, and the control-plane channel of a remote pool with no `controlPlaneUrl` — each tagged with its pool. |
 | `internal/apperrors` | Server-owned sentinel and HTTP status errors used by handlers, services, store, and provider adapters. |
 | `internal/model` | Server-owned persistence models and migration model list. |
 | `internal/sandbox` | Go-level sandbox provider interfaces, provider manager, and shared provider contract types. |

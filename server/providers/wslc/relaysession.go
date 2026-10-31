@@ -45,7 +45,7 @@ const GuestStateRoot = "/var/lib/docker/discobox"
 // hands each one to the server, which serves the ordinary control-plane handler
 // over it; see server/internal/transport/carrierhub.
 type StreamSink interface {
-	Push(conn net.Conn, cancel <-chan struct{}) error
+	Push(poolID string, conn net.Conn, cancel <-chan struct{}) error
 }
 
 // relaySession is one guest's control-plane relay: the guest process, the
@@ -310,7 +310,7 @@ func (r *relaySession) serveControlPlane(ctx context.Context, poolID string, sin
 			_ = conn.Close()
 			continue
 		}
-		if err := sink.Push(conn, r.stopped); err != nil {
+		if err := sink.Push(poolID, conn, r.stopped); err != nil {
 			_ = conn.Close()
 		}
 	}

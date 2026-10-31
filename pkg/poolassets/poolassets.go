@@ -1,9 +1,9 @@
 // Package poolassets reads the server's asset routes as a pool (ADR
 // 26-10-16-423 §13): a manifest or blob the pool's scope pins, under
 // /api/pools/{poolId}/assets, with an assertion the pool signs with its
-// identity key. The pool agent reads through it to fill its cache, and the
-// provisioner to apply a pool's own bundles before its agent runs (ADR
-// 26-10-24-953 §§3–4); both sign as the same pool, with the same key.
+// identity key. The pool agent reads through it to fill its cache (ADR
+// 26-10-24-953 §3). A pool's own bundles are not read through it: its maker
+// places them in its box (ADR 26-10-30-875 §5).
 package poolassets
 
 import (

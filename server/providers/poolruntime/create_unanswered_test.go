@@ -64,7 +64,7 @@ func TestPoolProviderCreateIsSentAgainWhenThePoolAgentLeavesMidRequest(t *testin
 
 	runtimeProvider, creates := newDroppingRuntimeProvider(t, "project-1", "pool-1", 2)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	runtimeSandbox, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
 		PoolID: "pool-1",
@@ -93,7 +93,7 @@ func TestPoolProviderCreateGivesUpOnAPoolAgentThatKeepsLeaving(t *testing.T) {
 
 	runtimeProvider, creates := newDroppingRuntimeProvider(t, "project-1", "pool-1", 1<<30)
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
 	if err == nil {
@@ -126,7 +126,7 @@ func TestPoolProviderCreateDoesNotRetryAnAnsweredRefusal(t *testing.T) {
 	t.Cleanup(agent.Close)
 	runtimeProvider := &testRuntimeProvider{baseURL: agent.URL, client: agent.Client(), token: "token"}
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
 	if err == nil {
@@ -194,7 +194,7 @@ func TestPoolProviderCreateReportsWhatEndedTheWaitAfterALostRequest(t *testing.T
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
 	// The pool is deleted while its agent is away: the wait for the host
 	// reads it gone.
-	provider := New(&downAfterFirstAcquire{testRuntimeProvider: runtimeProvider}, sandbox.ProviderDefinition{Name: "test"}, &deletedOnReconcile{fakePoolManager: manager})
+	provider := New(&downAfterFirstAcquire{testRuntimeProvider: runtimeProvider}, sandbox.ProviderDefinition{Name: "test"}, &deletedOnReconcile{fakePoolManager: manager}, nil)
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{PoolID: "pool-1"})
 	if !errors.Is(err, apperrors.ErrNotFound) || strings.Contains(err.Error(), "EOF") {

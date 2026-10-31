@@ -115,6 +115,10 @@ type Provider struct {
 	runtimeProvider RuntimeProvider
 	definition      sandbox.ProviderDefinition
 	manager         PoolManager
+	// channels holds a control-plane channel open to each of this
+	// provider's pools when they do not dial their control plane (ADR
+	// 26-10-30-875 §1); nil when they do.
+	channels *controlPlaneChannels
 
 	// reconcileMarks is when this provider last asked each pool to reconcile
 	// because its host could not be reached. See markPoolForReconcile.
@@ -123,13 +127,23 @@ type Provider struct {
 }
 
 // New creates a pool-backed sandbox provider over a runtime provider.
-func New(runtimeProvider RuntimeProvider, definition sandbox.ProviderDefinition, manager PoolManager) *Provider {
-	return &Provider{
+//
+// streams is nil for a provider whose pools dial their control plane. Given
+// one, the provider's pools are reached the other way (ADR 26-10-30-875):
+// each one's bootstrap says the control plane opens a channel to it, the
+// provider holds that channel open, and every stream the pool opens on it is
+// pushed to streams as that pool's.
+func New(runtimeProvider RuntimeProvider, definition sandbox.ProviderDefinition, manager PoolManager, streams StreamSink) *Provider {
+	p := &Provider{
 		runtimeProvider: runtimeProvider,
 		definition:      definition,
 		manager:         manager,
 		reconcileMarks:  map[string]time.Time{},
 	}
+	if streams != nil {
+		p.channels = newControlPlaneChannels(runtimeProvider, manager, streams)
+	}
+	return p
 }
 
 func (p *Provider) Initialize(ctx context.Context, provider *model.SandboxProviderInstance) error {
@@ -150,6 +164,9 @@ func (p *Provider) List(context.Context) ([]*sandbox.Sandbox, error) {
 }
 
 func (p *Provider) Close() error {
+	if p.channels != nil {
+		p.channels.close()
+	}
 	return p.runtimeProvider.Close()
 }
 
@@ -173,10 +190,11 @@ func (p *Provider) ReconcilePool(ctx context.Context, manager sandbox.PoolManage
 	if manager == nil {
 		return fmt.Errorf("pool manager is required")
 	}
-	maker, err := newPoolMaker(manager, project, pool)
+	maker, err := newPoolMaker(manager, project, pool, p.channels != nil)
 	if err != nil {
 		return err
 	}
+	p.holdChannel(pool)
 	if err := p.runtimeProvider.EnsurePool(ctx, project, provider, pool, maker, begin); err != nil {
 		return err
 	}
@@ -267,14 +285,28 @@ func (p *Provider) RepairPool(ctx context.Context, manager sandbox.PoolManager, 
 	if manager == nil {
 		return fmt.Errorf("pool manager is required")
 	}
-	maker, err := newPoolMaker(manager, project, pool)
+	maker, err := newPoolMaker(manager, project, pool, p.channels != nil)
 	if err != nil {
 		return err
 	}
+	p.holdChannel(pool)
 	return p.runtimeProvider.RepairPool(ctx, project, provider, pool, maker, reason, begin)
 }
 
+// holdChannel has the pool's control-plane channel held open, when this
+// provider's pools are reached over one. It is held before the pool's box is
+// made, not after: the agent the box starts cannot make its first report
+// until a channel is open, and the runtime waits for that report.
+func (p *Provider) holdChannel(pool *model.Pool) {
+	if p.channels != nil {
+		p.channels.hold(pool)
+	}
+}
+
 func (p *Provider) RemovePool(ctx context.Context, _ sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error {
+	if p.channels != nil {
+		p.channels.release(pool.ID)
+	}
 	return p.runtimeProvider.RemovePool(ctx, project, provider, pool)
 }
 

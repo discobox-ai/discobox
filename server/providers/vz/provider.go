@@ -196,7 +196,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		_ = driver.Close()
 		return nil, err
 	}
-	return poolruntime.New(engine, Definition(), poolManager), nil
+	return poolruntime.New(engine, Definition(), poolManager, nil), nil
 }
 
 // hostShares are the host directories every pool VM exports to its guest.

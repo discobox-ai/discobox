@@ -116,14 +116,7 @@ func Run(ctx context.Context) error {
 		// mid-flight. Liveness comes from ReadHeaderTimeout,
 		// IdleTimeout, and websocket keepalive pings on attach tunnels.
 		IdleTimeout: 120 * time.Second,
-		// A stream the iroh listener accepted carries the enrolled identity
-		// its peer proved, for IrohPeerAuthenticator.
-		ConnContext: func(ctx context.Context, conn net.Conn) context.Context {
-			if peer, ok := conn.(*endpoint.IrohPeerConn); ok {
-				return auth.WithIrohPeer(ctx, peer.Peer)
-			}
-			return ctx
-		},
+		ConnContext: connContext,
 	}
 	// Gracefully shut down on context cancellation (e.g. SIGINT/SIGTERM) so the
 	// listeners are released promptly instead of dying with the process. Armed
@@ -467,4 +460,20 @@ func reportConfigFile(cfg *config.Config) {
 	for _, warning := range cfg.Warnings {
 		log.Printf("configuration: %s: %s", cfg.ConfigFile, warning)
 	}
+}
+
+// connContext is what every connection the server accepts tells its requests
+// about where it came from. A stream the iroh listener accepted carries the
+// enrolled identity its peer proved, for IrohPeerAuthenticator; a stream a
+// pool's guest opened carries its pool, which every request on it is held to
+// (ADR 26-10-30-875 §3). Both are type switches on the connection itself, so
+// a listener that wraps either kind of connection loses what it says.
+func connContext(ctx context.Context, conn net.Conn) context.Context {
+	switch conn := conn.(type) {
+	case *endpoint.IrohPeerConn:
+		return auth.WithIrohPeer(ctx, conn.Peer)
+	case *carrierhub.Conn:
+		return auth.WithCarrierPool(ctx, conn.PoolID)
+	}
+	return ctx
 }

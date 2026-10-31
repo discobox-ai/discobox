@@ -17,8 +17,11 @@ import (
 type FactoryOptions struct {
 	DevelopmentImageSync *dockerworker.DevelopmentImageSynchronizer
 	// ControlPlaneStreams receives connections that a pool guest opens toward
-	// the control plane. Only backends whose transport cannot be dialed inward
-	// use it; the server serves its ordinary handler over whatever arrives.
+	// the control plane, each as its pool's: backends whose transport cannot
+	// be dialed inward, and the control-plane channel of a remote pool with no
+	// controlPlaneUrl (ADR 26-10-30-875). The server serves its ordinary
+	// handler over whatever arrives, holding every request to its pool's
+	// routes.
 	ControlPlaneStreams *carrierhub.Hub
 	// ListenEndpoints are the endpoints the control plane listens on. A backend
 	// whose agent dials inward picks its address from them.
@@ -36,16 +39,16 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 		return
 	}
 	manager.RegisterProviderDefinition(digitalocean.ProviderType, digitalocean.Definition())
-	manager.RegisterFactory(digitalocean.ProviderType, digitalocean.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults))
+	manager.RegisterFactory(digitalocean.ProviderType, digitalocean.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults, options.ControlPlaneStreams))
 	manager.RegisterProviderConfigValidator(digitalocean.ProviderType, digitalocean.Validate)
 	manager.RegisterProviderDefinition(discovm.ProviderType, discovm.Definition())
-	manager.RegisterFactory(discovm.ProviderType, discovm.FactoryWithPoolManager(poolManager))
+	manager.RegisterFactory(discovm.ProviderType, discovm.FactoryWithPoolManager(poolManager, options.ControlPlaneStreams))
 	manager.RegisterProviderConfigValidator(discovm.ProviderType, discovm.Validate)
 	manager.RegisterProviderDefinition(docker.ProviderType, docker.Definition())
 	manager.RegisterFactory(docker.ProviderType, docker.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ListenEndpoints, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(docker.ProviderType, docker.Validate)
 	manager.RegisterProviderDefinition(execvm.ProviderType, execvm.Definition())
-	manager.RegisterFactory(execvm.ProviderType, execvm.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults))
+	manager.RegisterFactory(execvm.ProviderType, execvm.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults, options.ControlPlaneStreams))
 	manager.RegisterProviderConfigValidator(execvm.ProviderType, execvm.Validate)
 	manager.RegisterProviderDefinition(libkrun.ProviderType, libkrun.Definition())
 	manager.RegisterFactory(libkrun.ProviderType, libkrun.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults))

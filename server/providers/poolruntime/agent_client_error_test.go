@@ -99,7 +99,7 @@ func TestPoolAgentWithoutTheRouteIsUnsupported(t *testing.T) {
 	runtimeProvider.baseURL = old.URL
 	runtimeProvider.client = old.Client()
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 
 	_, err := provider.ClearCache(context.Background(), activePool("pool-1"))
 	if !errors.Is(err, sandbox.ErrPoolAgentUnsupported) {
@@ -119,7 +119,7 @@ func TestEnsureRunningStartsTheSandboxAndMapsItsRefusals(t *testing.T) {
 	ctx := context.Background()
 	runtimeProvider := newTestRuntimeProvider(t, "project-1", "pool-1")
 	manager := &fakePoolManager{pool: activePool("pool-1"), schedulable: true}
-	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
+	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager, nil)
 	ref := sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}
 	state := poolRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"pool_id": "pool-1"}})
 

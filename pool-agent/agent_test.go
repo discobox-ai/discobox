@@ -649,6 +649,15 @@ func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	listenURL := wire.UnixURL(filepath.Join(dir, "agent.sock"))
 	client := &stateRecordingClient{reports: make(chan poolagent.SandboxStateRequest, 8)}
+	listener, err := wire.Listen(listenURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	front, err := poolagentserver.StartFront(slog.New(slog.DiscardHandler), listener, poolagentserver.Identity{ProjectID: "project-1", PoolID: "pool-1"}, controlPlaneKey, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	served := make(chan error, 1)
 	go func() {
 		served <- poolagent.Serve(ctx, slog.New(slog.DiscardHandler), layout.ContainerAt(t.TempDir()), poolagent.Bootstrap{
@@ -657,7 +666,7 @@ func TestServeReportsTheStatesItsRuntimeObserves(t *testing.T) {
 			PoolID:          "pool-1",
 			ControlPlaneKey: controlPlaneKey,
 			AgentListenURL:  listenURL,
-		}, &poolagent.Identity{PrivateKey: privateKey}, runtime, client, nil)
+		}, &poolagent.Identity{PrivateKey: privateKey}, runtime, client, nil, front)
 	}()
 
 	baseURL, httpClient, err := wire.HTTPClient(listenURL, 0)

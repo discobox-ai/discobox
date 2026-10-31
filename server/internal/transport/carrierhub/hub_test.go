@@ -39,7 +39,7 @@ func TestHubServesHTTPOverReversedConnections(t *testing.T) {
 	driverSide, agentSide := net.Pipe()
 	cancel := make(chan struct{})
 	go func() {
-		if err := hub.Push(driverSide, cancel); err != nil {
+		if err := hub.Push("pool-1", driverSide, cancel); err != nil {
 			t.Errorf("Push: %v", err)
 		}
 	}()
@@ -83,7 +83,7 @@ func TestHubPushIsCancellable(t *testing.T) {
 
 	cancel := make(chan struct{})
 	pushed := make(chan error, 1)
-	go func() { pushed <- hub.Push(conn, cancel) }()
+	go func() { pushed <- hub.Push("pool-1", conn, cancel) }()
 
 	// Nothing is accepting, so Push must still be blocked.
 	select {
@@ -111,7 +111,7 @@ func TestHubPushAfterCloseFails(t *testing.T) {
 	conn, other := net.Pipe()
 	t.Cleanup(func() { _ = conn.Close(); _ = other.Close() })
 
-	if err := hub.Push(conn, nil); !errors.Is(err, ErrClosed) {
+	if err := hub.Push("pool-1", conn, nil); !errors.Is(err, ErrClosed) {
 		t.Fatalf("Push after Close = %v, want ErrClosed", err)
 	}
 }
@@ -145,5 +145,35 @@ func TestHubCloseIsIdempotent(t *testing.T) {
 	}
 	if err := hub.Close(); err != nil {
 		t.Fatalf("second Close: %v", err)
+	}
+}
+
+// A connection is accepted as its pool's, which is what the server's
+// ConnContext holds every request on it to (ADR 26-10-30-875 §3).
+func TestHubAcceptsAConnectionAsItsPools(t *testing.T) {
+	hub := New()
+	t.Cleanup(func() { _ = hub.Close() })
+	conn, other := net.Pipe()
+	t.Cleanup(func() { _ = conn.Close(); _ = other.Close() })
+
+	go func() { _ = hub.Push("pool-1", conn, nil) }()
+	accepted, err := hub.Accept()
+	if err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	carrier, ok := accepted.(*Conn)
+	if !ok || carrier.PoolID != "pool-1" {
+		t.Fatalf("accepted %T %+v, want *Conn for pool-1", accepted, accepted)
+	}
+}
+
+func TestHubPushNeedsAPool(t *testing.T) {
+	hub := New()
+	t.Cleanup(func() { _ = hub.Close() })
+	conn, other := net.Pipe()
+	t.Cleanup(func() { _ = conn.Close(); _ = other.Close() })
+
+	if err := hub.Push("", conn, nil); err == nil {
+		t.Fatal("Push with no pool succeeded")
 	}
 }

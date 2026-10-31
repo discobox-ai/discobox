@@ -50,6 +50,9 @@ const (
 	// ScopePoolCacheClear authorizes stopping every sandbox on a pool and
 	// emptying its cache.
 	ScopePoolCacheClear = "pool:cache-clear"
+	// ScopePoolControlPlaneChannel authorizes opening a pool's control-plane
+	// channel (ADR 26-10-30-875 §1).
+	ScopePoolControlPlaneChannel = "pool:control-plane-channel"
 	// ScopeStatusRead authorizes only the sandbox-agent status endpoint, and
 	// ScopeInventoryRead only its inventory endpoint (ADR 26-10-11-657 §1).
 	// They are the two scopes MintSandboxAgentStatusTokens mints, hardcoded
@@ -143,25 +146,33 @@ func (m *Manager) createToken(ctx context.Context, audience string, claims Token
 	if claims.ProjectID == "" || claims.PoolID == "" {
 		return "", fmt.Errorf("projectID and workerID are required")
 	}
-	issuer, err := m.loadIssuer(ctx)
-	if errors.Is(err, store.ErrNotFound) {
-		if _, ensureErr := m.EnsureTrustKey(ctx); ensureErr != nil {
-			return "", ensureErr
-		}
-		issuer, err = m.loadIssuer(ctx)
-	}
-	if err != nil {
-		return "", err
-	}
-	privateKeyText, err := secrets.Open(ctx, m.sealer, purpose, StateKey, issuer.EncryptedPrivateKey)
-	if err != nil {
-		return "", err
-	}
-	privateKey, err := DecodePrivateKey(string(privateKeyText))
+	privateKey, err := m.IssuerKey(ctx)
 	if err != nil {
 		return "", err
 	}
 	return CreateTokenForAudience(privateKey, audience, claims, TokenTTL, ClockSkew)
+}
+
+// IssuerKey is the private half of the key every server request to a pool
+// agent is signed with, made on first use. The agent already trusts its
+// public half (EnsureTrustKey), which is why the server presents it on a
+// control-plane channel's TLS too (ADR 26-10-30-875 §1).
+func (m *Manager) IssuerKey(ctx context.Context) (ed25519.PrivateKey, error) {
+	issuer, err := m.loadIssuer(ctx)
+	if errors.Is(err, store.ErrNotFound) {
+		if _, ensureErr := m.EnsureTrustKey(ctx); ensureErr != nil {
+			return nil, ensureErr
+		}
+		issuer, err = m.loadIssuer(ctx)
+	}
+	if err != nil {
+		return nil, err
+	}
+	privateKeyText, err := secrets.Open(ctx, m.sealer, purpose, StateKey, issuer.EncryptedPrivateKey)
+	if err != nil {
+		return nil, err
+	}
+	return DecodePrivateKey(string(privateKeyText))
 }
 
 func (m *Manager) loadIssuer(ctx context.Context) (issuerState, error) {

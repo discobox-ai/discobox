@@ -19,9 +19,10 @@ from the in-sandbox `sandbox-agent` API.
 | `cmd/discobox-vsock-guest` | Local-VM guest services, built into the VM image: VSOCK-to-Docker byte splice and orderly shutdown endpoint. |
 | `cmd/discobox-cp-relay` | wslc guest half of the control-plane channel: multiplexes the guest's stdio with `cpmux` and serves the Unix socket the agent reaches the control plane through. |
 | `.` | Root `poolagent` Go package: boot contract, identity, control-plane HTTP client (`http.go`), status reporting, the standing sandbox-agent status poller (`statuspoll.go`, ADR 0030), resource accounting (`resourcereport.go`, `storagescan.go`, `cgroup.go`), and high-level command orchestration. |
-| `server` | Pool-local HTTP server, health/metadata endpoints, generated sandbox API route/auth adapter, the sandbox HTTP/sandbox-agent/Git proxy routes, the Git cache routes the control plane forwards clients' deliveries to (`sandbox_git_cache.go`), on-demand start (`autostart.go`), the loopback origin listener the pool proxy forwards sandboxes' origin fetches to (`NewOriginRouter`; see [Git origins](#git-origins)), and the socket it forwards their bundle fetches to (`Config.AssetListener`; see [Bundle Assets](#bundle-assets)). |
+| `server` | Pool-local HTTP server and the front that serves its listener from startup, before the router exists (`Front`: the control-plane channel's route alone until then), health/metadata endpoints, generated sandbox API route/auth adapter, the sandbox HTTP/sandbox-agent/Git proxy routes, the Git cache routes the control plane forwards clients' deliveries to (`sandbox_git_cache.go`), on-demand start (`autostart.go`), the loopback origin listener the pool proxy forwards sandboxes' origin fetches to (`NewOriginRouter`; see [Git origins](#git-origins)), and the socket it forwards their bundle fetches to (`Config.AssetListener`; see [Bundle Assets](#bundle-assets)). |
 | `assetcache` | The pool's pull-through cache of bundles (ADR 26-10-16-423 §13): each sandbox's record of what it is delivered (`delivery.json`: its agent and its ordered bundles), and each snapshot build's, kept apart from them by its `layout.SnapshotIDPrefix` ID ([Snapshots](#snapshots)), the blob store under `layout.PoolBuild`, filled through the pool's asset client ([`poolassets`](../pkg/poolassets)), the `assets.discobox.internal` handler scoped to one sandbox's bundles, the sweep, and the one layer of a sandbox's agent bundle (`AgentLayer`, `OpenAgentLayer`), which only the pool reads. See [Bundle Assets](#bundle-assets). |
-| `cpmux` | Symmetric yamux session over one duplex byte stream, for guests that can only be dialed inward (wslc). |
+| `cpmux` | Symmetric yamux session over one duplex byte stream, for guests that can only be dialed inward (wslc) and the control-plane channel. |
+| `cpchannel` | Both ends of the control-plane channel the server opens to a remote pool with no `controlPlaneUrl` ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md)): the upgrade at `/api/project/{p}/pool/{p}/control-plane-channel`, TLS 1.3 pinned to the pool's enrolled key and the server's issuer key, and the pool end (`Channel`) that serves the agent's control-plane socket over the latest channel's `cpmux` session. The server's end dials it (`Dial`) from `poolruntime`. |
 | `sandboxtoken` | Tokens the pool issues its own sandboxes, signed with the same key under their own audience (`discobox-pool-sandbox`); `origin:fetch` is accepted on the `git-origins` route alone. |
 | `internalhttp` | The transport for the pool's own HTTP, which never honors `HTTP_PROXY`: the control-plane client's, and the base of every transport a sandbox `Dialer` builds. |
 | `githttp` | Serves a source's origin through the shared [`gitbackend`](../pkg/gitbackend) CGI bridge, run as the repository's owner: a bare repository made for one sandbox, or a Git namespace of a cache. A sandbox's own fetch is served fetch-only, on protocol v0, confined to what its namespace advertises; see [Git origins](#git-origins). The `git-repositories` route is not served here; see [The worktree route](#the-worktree-route). |
@@ -44,9 +45,11 @@ from the in-sandbox `sandbox-agent` API.
 Before the agent starts, the pool's maker has made its box
 ([ADR 26-10-24-953](../docs/adr/26-10-24-953-every-box-is-provisioned-from-an-ordered-list-of-bundles-and-a-pool-is-a-box.md)
 §§3–4): placed the agent, run `discobox-provision identity` there, recorded the
-public key it printed as the pool's (enrollment), placed the bootstrap, and run
-`discobox-provision apply`, which fetches the pool bundle with that key and
-applies it, laying and starting the agent's unit.
+public key it printed as the pool's (enrollment), placed the bootstrap with the
+pool bundle's blobs, read from its own asset store, and run
+`discobox-provision apply --pool`, which applies what was placed, fetching
+nothing ([ADR 26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md)
+§5), laying and starting the agent's unit.
 
 1. The agent reads its `poolagent.Bootstrap` (`Load`): a root-only JSON file
    its maker placed and the bundle's unit names (`DISCOBOX_POOL_BOOTSTRAP_FILE`;
@@ -73,21 +76,35 @@ applies it, laying and starting the agent's unit.
    (`layout.PoolIdentityKey`, `LoadIdentity`). It never makes one: the key is
    the one its maker enrolled, and none is a box nobody enrolled, which fails
    the boot. Nothing registers it.
-4. Every control-plane call carries a pool assertion the agent signs itself
+4. The agent binds its own listener and serves it through `server.Front`
+   from here on, answering only the control-plane channel's route, to a
+   server token carrying `pool:control-plane-channel`, and 503 to anything else
+   until `Serve` hands it the full router. A pool whose bootstrap says
+   `controlPlaneChannel` (a remote pool with no `controlPlaneUrl`, [ADR
+   26-10-30-875](../docs/adr/26-10-30-875-a-remote-pool-reaches-its-control-plane-over-a-channel-the-server-opens.md)
+   §§1–2) is reached the other way: the server opens the channel, an upgrade
+   that runs TLS pinned to the pool's key and the server's issuer key, with
+   a `cpmux` session inside ([`cpchannel`](cpchannel)); the agent serves
+   `unix:///run/discobox/control-plane.sock`, its control-plane URL, by
+   opening a stream on the latest channel for each connection, so it and the
+   proxy unit dial it with `wire` like any other. It waits up to three
+   minutes for the first channel before the first report, and fails its boot
+   without one.
+5. Every control-plane call carries a pool assertion the agent signs itself
    ([`poolauth`](../pkg/poolauth): PASETO v4.public, audience `discobox-control-plane`,
    5-minute TTL). The control plane issues no runtime token.
-5. The first status report is synchronous, so a pool that cannot mark itself
+6. The first status report is synchronous, so a pool that cannot mark itself
    ready fails its boot. It is also what registers the pool: the control
    plane stamps `RegisteredAt` on a pool's first heartbeat.
-6. The agent starts the proxy unit's resolve-token refresher. A Docker pool
+7. The agent starts the proxy unit's resolve-token refresher. A Docker pool
    builds its Docker sandbox runtime and starts that runtime's image reclaim
    loop. A machine pool opens its own disco-vm engine before its first report,
    refuses a driver that cannot isolate and fence a sandbox's machine
    (`requireMachineFence`), and builds the machine runtime on it
    ([Machine Sandboxes](#machine-sandboxes)).
-7. `Serve`, handed the runtime as `sandboxruntime.Runtime`, starts the state,
+8. `Serve`, handed the runtime as `sandboxruntime.Runtime`, starts the state,
    progress, tree-reaper, status-poll and resource loops and the proxy-material
-   reclaim loop, and finally the pool-local HTTP server.
+   reclaim loop, and finally hands the front the pool-local HTTP router.
 
 ### State Root
 
@@ -1424,9 +1441,11 @@ bundle. `bundle` names the files its maker places beside it.
 - **Where things go**: the maker places the agent bundle, the pool's pins and
   the bootstrap at `/etc/discobox/pool-agent/bootstrap.json`
   (`bundle.BootstrapFile`; 0600 and root's, or the agent refuses it), with the
-  agent's environment beside it (`bundle.EnvironmentFile`), and runs
-  `discobox-provision apply` as the pool, which applies both features, every
-  step blocking.
+  agent's environment beside it (`bundle.EnvironmentFile`), and the pool
+  bundle's blobs, read from the server's own asset store, under
+  `agentlayer.PlacedDir`; then runs `discobox-provision apply --pool`, which
+  applies what was placed, dialing nothing and signing nothing (ADR
+  26-10-30-875 §5), both features, every step blocking.
 - **Ordering**: the agent's unit is `Type=notify`, ready once the proxy's
   environment, CA and control key — and on a Docker pool the builder's and
   registry's configuration — are written; the proxy, builder, registry and

@@ -42,6 +42,10 @@ const (
 	// BundlesDir holds a link for each bundle the box applies, by its name,
 	// to the tree its pin resolved to (BundleTree).
 	BundlesDir = StoreDir + "/by-name"
+	// PlacedDir holds the blobs a pool's maker placed for the store to apply
+	// with nothing fetched, each by its digest's hex (PlacedBlob), until
+	// `discobox-provision apply` has applied them (ADR 26-10-30-875 §5).
+	PlacedDir = StoreDir + "/placed"
 	// CurrentLink is the stable path the agent runs from: a link to the
 	// directory of the agent layer placed last.
 	CurrentLink = "/opt/discobox/current"
@@ -74,6 +78,10 @@ func TreeDir(digest string) string { return TreesDir + "/" + Hex(digest) }
 // path a step links from stays the same across upgrades and follows the
 // tree.
 func BundleTree(name string) string { return BundlesDir + "/" + name }
+
+// PlacedBlob is where a pool's maker places the manifest or blob digest
+// (PlacedDir).
+func PlacedBlob(digest string) string { return PlacedDir + "/" + Hex(digest) }
 
 // Hex is a digest's hex, which names its directories.
 func Hex(digest string) string { return strings.TrimPrefix(digest, "sha256:") }

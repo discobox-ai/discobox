@@ -6,8 +6,13 @@
 // dial the control plane. Rather than making the server listen on TCP (which on
 // Windows means a firewall prompt), such a driver opens connections into its
 // guest and hands them here. The Hub presents them as a net.Listener, so the
-// ordinary control-plane handler, routing, and authentication serve them
-// unchanged; only which side performed the connect differs.
+// ordinary control-plane handler, routing, and authentication serve them; only
+// which side performed the connect differs.
+//
+// Every connection belongs to one pool, and the Hub says which (Conn): a
+// stream a pool's guest opened reaches that pool's routes and nothing else,
+// never the default user (ADR 26-10-30-875 §3). The server reads the pool in
+// its ConnContext and the auth chain holds the connection to it.
 package carrierhub
 
 import (
@@ -25,6 +30,16 @@ var (
 	// own lifetime without constructing a context per connection.
 	ErrPushCanceled = errors.New("carrier push canceled")
 )
+
+// Conn is a connection a pool's guest opened toward the control plane, with
+// the pool it belongs to.
+type Conn struct {
+	net.Conn
+	// PoolID is the pool whose guest opened the connection, as the driver
+	// that pushed it knows it: from the transport it made, never from
+	// anything the guest said.
+	PoolID string
+}
 
 // Hub is a net.Listener fed by Push rather than by an operating system
 // listener. It is safe for concurrent use.
@@ -44,13 +59,16 @@ func New() *Hub {
 	}
 }
 
-// Push hands a connection to the server. It blocks until the server accepts the
+// Push hands a connection pool poolID's guest opened to the server. It blocks until the server accepts the
 // connection, the Hub closes, or cancel fires, so a driver cannot build an
 // unbounded backlog of guest connections. A canceled or rejected connection is
 // left for the caller to close.
-func (h *Hub) Push(conn net.Conn, cancel <-chan struct{}) error {
+func (h *Hub) Push(poolID string, conn net.Conn, cancel <-chan struct{}) error {
 	if conn == nil {
 		return errors.New("carrier connection is required")
+	}
+	if poolID == "" {
+		return errors.New("carrier connection needs the pool it belongs to")
 	}
 	select {
 	case <-h.done:
@@ -58,7 +76,7 @@ func (h *Hub) Push(conn net.Conn, cancel <-chan struct{}) error {
 	default:
 	}
 	select {
-	case h.conns <- conn:
+	case h.conns <- &Conn{Conn: conn, PoolID: poolID}:
 		return nil
 	case <-h.done:
 		return ErrClosed
