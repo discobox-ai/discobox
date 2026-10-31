@@ -63,7 +63,13 @@ func issueTabOf(m *Model) *pane {
 // beside it, from the keyboard.
 func openIssuePane(t *testing.T, ds *fakeSource) (*driver, *Model) {
 	t.Helper()
-	d, m, _ := openWorkspace(t, ds, "enter")
+	return openIssuePaneAt(t, ds, 120)
+}
+
+// openIssuePaneAt is openIssuePane on a console width cells wide.
+func openIssuePaneAt(t *testing.T, ds *fakeSource, width int) (*driver, *Model) {
+	t.Helper()
+	d, m, _ := openWorkspaceAt(t, ds, "enter", width)
 	d.key(m.leader())
 	d.key(issueKey)
 	d.wait("the issue", func() bool { return strings.Contains(plainFrame(m), "The reaper eats the wrong boxes") })
@@ -76,6 +82,9 @@ func TestClickingTheHeaderIssueOpensItAsATab(t *testing.T) {
 	t.Parallel()
 	ds := issueSource()
 	d, m, _ := openWorkspace(t, ds, "enter")
+	// Wide enough that the tab beside the primary reads as GitHub's page does,
+	// with the tree beside them both.
+	d.dispatch(sizeMsg(wideConsole, 40))
 	d.wait("the header", func() bool { return strings.Contains(plainFrame(m), "issue #4 · PR #9") })
 	opened := make(chan string, 4)
 	m.openOS = func(url string) error { opened <- url; return nil }
@@ -376,7 +385,7 @@ func TestTheIssueScrolls(t *testing.T) {
 func TestDetachingClosesTheIssue(t *testing.T) {
 	t.Parallel()
 	ds := issueSource()
-	d, m := openIssuePane(t, ds)
+	d, m := openIssuePaneAt(t, ds, narrowConsole)
 	d.key(m.leader())
 	d.key(paneDetachAlt)
 	d.wait("the list", func() bool { return m.focus != focusPane })

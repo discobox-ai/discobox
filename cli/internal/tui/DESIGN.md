@@ -40,6 +40,8 @@ flowchart LR
     WS -->|leader g| Cred
     WS -->|leader o| T["tools picker → Tools / NewTool / EndExec / RunHostTool / Addresses"]
     WS -->|leader A| Aud["audit screen → FollowAudit / AuditDetail"]
+    WS -->|leader ↑↓| Tree["workspace tree → park / unpark a workspace"]
+    WS -->|leader .| Menu["box actions menu → the list's verbs, tools, audit"]
     WS -->|leader i, issue #N · leader p, PR #N| Iss["issue tab → Issue / CommentOnIssue / SetIssueState / MergePullRequest"]
     A -->|d s| AVerb["DataSource.DoHarness"]
     A -->|v| ACard["config card → HarnessSecrets"]
@@ -68,6 +70,111 @@ sandbox listens on later, so only the command can say it was taken. On a row too
 reminder — the reminder says how the flow goes, the warning says why it will
 not.
 
+
+## The workspace tree
+
+`tree.go`, `bare.go`. With a workspace open on a window at least
+`treeMinScreen` wide, the discobox list stays down the left of it as a
+`treeWidth` column, and the box on the right is switched in place rather than
+by going back to the list screen. It is the same `sandboxList`, drawn narrow:
+its sections, nesting, filter and verbs are the list's own, so there is one
+list with two sizes rather than two lists.
+
+```mermaid
+flowchart LR
+    T["tree (listFront)"] -->|Enter, click, leader ↑↓| Sw["switchTo"]
+    Sw -->|parked| Un["unparkWorkspace"]
+    Sw -->|not parked| Open["openFromList → attach"]
+    Open --> Park["parkWorkspace (the one on screen)"]
+    T -->|F3 F4 F5| Pg["page right of the tree (pageFrame)"]
+    T -->|n| New["new discobox card (newOpen)"]
+    T -->|leader z| Exp["treeExpanded: the whole home screen"]
+```
+
+- **Width is the tree's first.** `screenWidth` is the terminal's; `width`,
+  which every other drawing reads, is that less the tree (`syncWidth`, run
+  after every message). The window right of the tree is drawn as though it
+  were the whole terminal, and the mouse is shifted into its coordinates
+  (`treeMouse`) — so nothing in the workspace knows the tree is there. The
+  tree draws against hit zones of its own (`treeZones`) for the same reason.
+- **A workspace switched away from is parked, not closed**
+  (`parkWorkspace`). A workspace is one value (`workspace`, embedded in
+  `Model`), so parking moves it aside whole and unparking moves it back. Its
+  streams stay attached and its panes keep emulating off screen
+  (`updateParkedPane`), so switching back is instant and shows where it is
+  now: a pane that ends while parked is settled as one on screen would be,
+  and what a pane started that answers it later — an issue read, a files
+  changed session, an image paste — finds it there (`heldPane`). Only the
+  live one is drawn and polls; the screen's generation ends, as on a detach
+  (`endLiveScreen`). Its local ports go with the screen and come back with it,
+  since they live exactly as long as the screen that shows them. Its push
+  loop does not end: it is still an attach, so it still pushes (ADR
+  26-09-05-008 §1), under the generation it was opened in (`pushGen`,
+  `pushLoop`), and the same loop carries on when it is shown again, so no
+  second push races the first. A report from a parked one names the box. A
+  parked primary that ends takes its workspace with it, as an open one's
+  does. Quitting closes every parked stream (`closeParked`).
+- **A press on a row switches to that box** (ADR 26-10-31-319, superseding
+  ADR 0088 §4 and §2 for the tree): the tree is a switcher, and a picked row
+  whose box is not on screen would leave the two disagreeing. The tree's text
+  is not chrome-selectable; the expanded list is the list screen, where it
+  is. A gesture the window holds stays the window's over the tree, so a drag
+  released there still reaches its pane. The right button opens the row's
+  menu: the box on screen's (below), or any other's list menu.
+- **The tree is the console's alone.** The leader's ↑/↓ do nothing in a
+  window without one — a window that is one command's own, or one too
+  narrow (`switchBox`).
+- **Beside the tree there is no detach** (`detaches`). Detaching meant going
+  back to the list, and the list is already on screen: a box is left by
+  switching to another, and the window by `leader q`. The key, its hints and
+  the help line go with it; a window too narrow for the tree, or a window
+  that is one attach, keeps detach as before.
+- **Focus is either the list or the right side** (`listFront`,
+  `listHasKeys`). `leader h` off the leftmost pane, or a press on the row of
+  the box on screen, give the list the keys; Esc, `leader l` or a click right
+  of it give them back. While the list has them, the right side's border is
+  drawn unfocused, and the right side's keys are neither answered, offered
+  nor pasted into: a page's keys line offers the list's.
+- **The harnesses, secrets and skills are pages right of the tree**, not
+  screens over the window: entries under the list, on the same F-keys, drawn
+  in a box like the workspace's (`pageFrame`) with the quit key above it
+  where the workspace header has it. A page covers the live workspace without
+  closing it; choosing the live box again puts the page away (`showLive`).
+  An entry shows its key only where the key works.
+- **A new discobox is a card**, the composer framed as a dialog (`newOpen`,
+  `viewNewCard`), and modal like one: the tree is greyed (`treeBlocked`)
+  while it or any dialog is up, since it takes no clicks then. It is not in
+  `modalUp`, because it is the composer: typing into it is typing into the
+  prompt (`typingIntoPrompt`, `touched`). Focus is held on it after every
+  message instead. Enter goes on to the create card as from the prompt.
+- **Messages ride the box's bottom edge** (`edgeMessage`) beside the tree and
+  in every workspace, the way a pane's title rides its top one, rather than
+  costing every terminal a row.
+- **The box's actions are a menu** (`boxMenu`, `leader .`): the list's verbs
+  for the box on screen — attach dropped, since it is on screen — with the
+  tools and the audit after the shell. It is not offered over a screen that
+  has the leader's keys for itself (an overlay, a tool). A pane's key line
+  opens with this key, so
+  stop, rename and archive are found where the reader is already looking.
+- **Maximizing a column hides the tree**, so a maximized column still has the
+  whole terminal. Disco stands at the foot of the list when the rows left
+  over can hold him, and sits out otherwise.
+
+**A window that is one attach starts bare** (`bare`, `viewBare`). While its
+workspace is only the primary terminal it draws no header and no border: the
+terminal has every row but the last, and that row says where you are — the
+brand, the box's source, the desktop and ports muted in the middle as links —
+and the two keys there are, `leader .` and `leader d`. It is still the
+window underneath, so the leader, the mouse and selection work as they always
+do. The chrome comes back the moment there is something for it to arrange — a
+second terminal, a shell, a tool, an overlay, the audit, a band — and the
+primary is resized each way (`bareShown`). The status line is the one row
+the box cannot draw, and so the one thing that tells a dialog the window puts
+up from a copy the box draws: every dialog stands in place of the whole
+window, that line included, and the credential band brings the chrome back. The menu there ends with **all
+discoboxes** (`showAllBoxes`), which turns the window into the console in
+place: the tree beside the same workspace, its cursor on the box, and the
+window no longer one command's own.
 
 ## The skills screen
 
@@ -1261,7 +1368,9 @@ screen's foot is two rows: what just happened (a result, an error, the busy
 line) and under it the keys. A message never displaces the keys, so an error
 that stays until something is done does not also hide what there is to do. The
 row is drawn blank when there is nothing to say, so a message coming and going
-moves nothing. A message has nothing to drop, so one too long for its room is
+moves nothing. The workspace and the pages beside the tree are the exception:
+there the message is laid into the box's bottom edge (`edgeMessage`), in the
+focused column's half of a split, so the terminals do not pay a row for it. A message has nothing to drop, so one too long for its room is
 cut out of the middle (`truncateMiddle`), because an error's start says what
 failed and its end says why.
 
@@ -1507,6 +1616,9 @@ streaming a terminal of its own.
   the window going takes the process with it, and an archive cut off on its
   way to the server is one nobody can say happened. Ctrl-C still quits, as it
   does on every screen of the window.
+- It stays one command's own until its box menu's **all discoboxes** is
+  chosen (`showAllBoxes`), which clears `attach` and makes it the console:
+  from there leaving the workspace no longer leaves the window.
 - The composer is unreachable in such a window, so the console's draft is
   neither restored into it nor written over (`restoreDraft`, `draftToSave`), and
   the introduction is not shown (`New`): there is no prompt for it to interrupt
@@ -1636,12 +1748,12 @@ screen, the configuration pane or the showing tool, and every place that asked
   cleared when the card opens — it belongs to the press that earned it.
 
 **The hints row is one row and drops rather than wraps** (`fitHints`).
-`paneRows` budgets exactly one keys row and one message row under the boxes,
-so another would have to come out of the panes — and a row that came and went,
-a hints line that grew by a fragment or a message row drawn only while there is
-a message, would resize every attached terminal, then resize it back. The
-message row is drawn empty for the same reason. Both rows are below the boxes,
-so they cost the panes height and never move where they start: `paneOrigin`
+`paneRows` budgets exactly one keys row under the boxes, so another would have
+to come out of the panes — and a row that came and went, a hints line that grew
+by a fragment or a message row drawn only while there is a message, would
+resize every attached terminal, then resize it back. The message rides the
+boxes' bottom edge for the same reason. The keys row is below the boxes,
+so it costs the panes height and never moves where they start: `paneOrigin`
 counts only what is above them. So the parts arrive
 most-worth-keeping first and the tail goes instead, the way the banner gives up
 its edges (`paneHeaderFields`, `fitFields`). What survives at any width is the
@@ -1724,7 +1836,8 @@ close a session nobody asked to end. Keys go to the focused pane; mouse events
 go to the pane under the pointer (`routeMouse`); everything a pane's own
 commands produced goes to the pane it came from.
 
-**A pane takes the whole window, and wears the border itself.** Attached, the
+**A pane takes the whole window, and wears the border itself** — except in a
+bare attach (see the workspace tree). Attached, the
 purple box is drawn around the terminal grid with a cell of air inside it, so
 the terminal's output never touches the frame, and everything else sits
 *outside* it: one banner above, then the bordered grid, then the keys below.
@@ -3122,6 +3235,8 @@ the newest one where the busy line goes.
 | `push.go` | the automatic push: the beat it runs on, what it says, and what it holds back after a refusal |
 | `column.go` | one side of the workspace: a strip of panes, one visible |
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |
+| `tree.go` | the workspace tree: the list beside the workspace, parking and switching, the pages right of it, the new discobox card, the box menu |
+| `bare.go` | a bare attach: the primary terminal alone with one status line under it |
 | `services.go` | the discobox's declared services: the menu behind the leader, and the three verbs |
 | `tools.go` | the tools: the catalog, the picker, the tool window and its `[-]`/`[x]` |
 | `issue.go` | the issue tab: a GitHub issue or pull request as a pane of the shells column, its keys, the comment field, closing and reopening, and how the page is laid out as lines |

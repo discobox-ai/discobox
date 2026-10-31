@@ -282,6 +282,8 @@ type fakeSource struct {
 	forwardErr    error
 	forwardsOpen  int
 	forwardsClose int
+	// forwardIDs is the discobox each forward was asked for, in order.
+	forwardIDs []string
 
 	// draftErr fails every draft write.
 	draftErr error
@@ -440,8 +442,24 @@ func (f *fakeSource) MarkWelcomed(context.Context) error {
 // SaveDraft records what the window handed the store, in order, so a test can
 // see both what was saved and how often.
 func (f *fakeSource) SaveDraft(_ context.Context, prompt string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.drafts = append(f.drafts, prompt)
 	return f.draftErr
+}
+
+// savedDrafts is every draft written so far.
+func (f *fakeSource) savedDrafts() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.drafts...)
+}
+
+// forwardsAskedFor is the discobox of every forward asked for so far.
+func (f *fakeSource) forwardsAskedFor() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.forwardIDs...)
 }
 
 // SaveView records the filters the window handed the store, in order.
@@ -799,14 +817,17 @@ func (f *fakeSource) OpenExec(_ context.Context, id, execID string, cols, rows i
 	return f.newExecTerminal(execID), nil
 }
 
-func (f *fakeSource) Forward(context.Context, string) (Forward, error) {
+func (f *fakeSource) Forward(_ context.Context, id string) (Forward, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.forwardErr != nil {
 		return nil, f.forwardErr
 	}
 	f.forwardsOpen++
-	if f.forward == nil {
+	f.forwardIDs = append(f.forwardIDs, id)
+	// A forward closed is gone: the next one asked for is a new one, as the
+	// real data source's is.
+	if f.forward == nil || f.forward.isClosed() {
 		f.forward = newFakeForward()
 	}
 	f.forward.source = f
@@ -836,14 +857,23 @@ func (f *fakeForward) Bindings() []Binding {
 
 func (f *fakeForward) Events() <-chan struct{} { return f.changed }
 
-func (f *fakeForward) Close() error {
+func (f *fakeForward) isClosed() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	return f.closed
+}
+
+// Close counts itself on the source after letting go of its own lock: the
+// source asks a forward whether it is closed while holding the source's.
+func (f *fakeForward) Close() error {
+	f.mu.Lock()
 	if f.closed {
+		f.mu.Unlock()
 		return nil
 	}
 	f.closed = true
 	close(f.changed)
+	f.mu.Unlock()
 	if f.source != nil {
 		f.source.mu.Lock()
 		f.source.forwardsClose++

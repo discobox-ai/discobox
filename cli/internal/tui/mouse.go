@@ -276,6 +276,9 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 	case hitKey:
 		return m.pressKeys(what.keys), true
 
+	case hitTree:
+		return m.treeAct(treeAction(what.idx)), true
+
 	case hitListKey:
 		// The list's own band, pressed from wherever the keyboard is.
 		m.focusListForMouse()

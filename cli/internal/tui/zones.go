@@ -111,6 +111,10 @@ const (
 	// hitChips is the strip under the composer that says what Enter will run:
 	// the run options, named.
 	hitChips
+
+	// hitTree is one of the workspace tree's own controls: its [+]/[-] and
+	// [x], and the keys on its last row. idx is the treeAction. See tree.go.
+	hitTree
 )
 
 // hit is what one rectangle of cells means.

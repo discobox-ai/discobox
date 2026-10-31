@@ -104,7 +104,7 @@ func TestChromeAndPaneSelectionsAreExclusive(t *testing.T) {
 		t.Fatal("no chrome selection to displace")
 	}
 
-	ox, oy := m.paneOrigin(m.focusedPane())
+	ox, oy := screenOrigin(m, m.focusedPane())
 	d.dispatch(tea.MouseClickMsg{X: ox, Y: oy, Button: tea.MouseLeft})
 	d.dispatch(tea.MouseMotionMsg{X: ox + 4, Y: oy, Button: tea.MouseLeft})
 	d.dispatch(tea.MouseReleaseMsg{X: ox + 4, Y: oy, Button: tea.MouseLeft})
@@ -151,8 +151,7 @@ func TestClickingATabLabelSelectsIt(t *testing.T) {
 	}
 	span := spans[0]
 	x := (span.start + span.end) / 2
-	d.dispatch(tea.MouseClickMsg{X: x, Y: 1, Button: tea.MouseLeft})
-	d.dispatch(tea.MouseReleaseMsg{X: x, Y: 1, Button: tea.MouseLeft})
+	clickWindow(d, x, 1)
 	if !m.onShells || m.shells.active != 0 {
 		t.Fatalf("onShells=%v activeShell=%d, want the clicked tab", m.onShells, m.shells.active)
 	}
@@ -170,16 +169,14 @@ func TestClickingABorderFocusesItsPane(t *testing.T) {
 	d.wait("the tab focused", func() bool { return m.onShells })
 
 	// The terminal's title row, left of the split.
-	d.dispatch(tea.MouseClickMsg{X: 2, Y: 1, Button: tea.MouseLeft})
-	d.dispatch(tea.MouseReleaseMsg{X: 2, Y: 1, Button: tea.MouseLeft})
+	clickWindow(d, 2, 1)
 	if m.onShells {
 		t.Fatal("clicking the terminal's border should focus the terminal")
 	}
 
 	// The shell box's bottom border, right of the split.
 	x, y := m.width/2+2, m.paneRows()+2
-	d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
-	d.dispatch(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
+	clickWindow(d, x, y)
 	if !m.onShells {
 		t.Fatal("clicking the shell box's border should focus the tab")
 	}
@@ -201,7 +198,7 @@ func TestClickingTheMaximizeButtonTakesTheWindow(t *testing.T) {
 	term, _ := zoomButtons(t, m)
 
 	// The terminal's, which maximizes it and takes the focus with it.
-	clickAt(d, term, 1)
+	clickWindow(d, term, 1)
 	if !m.maximized || m.onShells {
 		t.Fatalf("maximized=%v onShells=%v, want the terminal with the window", m.maximized, m.onShells)
 	}
@@ -215,7 +212,7 @@ func TestClickingTheMaximizeButtonTakesTheWindow(t *testing.T) {
 	// The one button on screen is now the restore, and it gives the split back.
 	_ = rawFrame(m)
 	restore, _ := zoomButtons(t, m)
-	clickAt(d, restore, 1)
+	clickWindow(d, restore, 1)
 	if m.maximized {
 		t.Fatal("clicking the restore button should give the window back")
 	}
@@ -223,7 +220,7 @@ func TestClickingTheMaximizeButtonTakesTheWindow(t *testing.T) {
 	// And the shell box's own button maximizes that side instead.
 	_ = rawFrame(m)
 	_, shells := zoomButtons(t, m)
-	clickAt(d, shells, 1)
+	clickWindow(d, shells, 1)
 	if !m.maximized || !m.onShells {
 		t.Fatalf("maximized=%v onShells=%v, want the tabs with the window", m.maximized, m.onShells)
 	}
@@ -291,7 +288,7 @@ func TestClickingTheEndButtonEndsThatPane(t *testing.T) {
 		t.Fatalf("the primary's box drew an [x] at column %d, want none", term)
 	}
 
-	clickAt(d, shells, 1)
+	clickWindow(d, shells, 1)
 	d.wait("the session ended", func() bool { return len(ds.endedExecs()) == 1 })
 	if got := ds.endedExecs(); got[0] != ended {
 		t.Fatalf("ended = %v, want the visible shell %q", got, ended)

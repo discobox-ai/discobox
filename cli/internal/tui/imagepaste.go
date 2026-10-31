@@ -193,7 +193,7 @@ func (m *Model) readImages(p *pane, original tea.Msg, read func(context.Context)
 // imagesRead carries what a paste meant into the discobox, or lets the paste
 // through as it came when it meant no image.
 func (m *Model) imagesRead(msg imageReadMsg) tea.Cmd {
-	p := m.paneByID(msg.pane)
+	p := m.heldPane(msg.pane)
 	if p == nil {
 		return nil
 	}
@@ -240,7 +240,7 @@ func (m *Model) imagesRead(msg imageReadMsg) tea.Cmd {
 // nothing is pasted: the key behind it would only have the agent read the
 // discobox's own empty clipboard.
 func (m *Model) imagesPut(msg imagePutMsg) tea.Cmd {
-	p := m.paneByID(msg.pane)
+	p := m.heldPane(msg.pane)
 	if p == nil {
 		return nil
 	}

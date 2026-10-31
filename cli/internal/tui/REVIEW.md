@@ -74,6 +74,11 @@
   over it — and on that screen the stolen keys are commands: Enter in a
   harness's configure terminal becomes "reconfigure the highlighted harness"
   and restarts the flow it was typed into.
+  The list in the workspace tree is the same trap from the other side: while
+  it has the keys beside a page (`listHasKeys`), the page's keys, hints and
+  paste are not the page's, and every one of the three asks it — a page
+  whose key line kept offering its own keys offered Enter as "bind" while
+  Enter attached the box under the list's cursor.
 
 - **Input held behind slow work never holds the leader.** An image paste holds
   a pane's keys while it reads the clipboard and copies into the discobox,
@@ -118,6 +123,30 @@
   archive from the workspace once fell through to the launcher's list, and a
   first fix inferred the exit in `verbDone` from `attach != nil` and no panes,
   which also fired on unrelated verbs and showed the list while it waited.
+
+## The workspace tree
+
+- **A workspace's state is a field of `workspace`, never loose on `Model`.**
+  Parking moves the whole value aside and unparking moves it back, so a field
+  added beside it on `Model` is one that silently belongs to whichever box is
+  on screen after a switch. What is the screen's alone — the generation, the
+  opens in flight, the overlay — is ended in `endLiveScreen`, the one teardown
+  closing and parking share.
+- **Anything a pane started that answers it later finds it with `heldPane`.**
+  A parked workspace's panes are still attached and still running; an issue
+  read, a files changed session or an image paste that looks its pane up on
+  screen only drops the answer for good once the box is switched away from —
+  an issue tab froze that way. What `updateParkedPane` refuses a parked pane
+  is refused on every `heldPane` path as well: a clipboard write (OSC 52)
+  from a box that is not on screen is dropped, or a box switched away from
+  replaces what the user just copied from the one they are in.
+- **A bare attach's chrome is the only thing a box cannot draw.** The box's
+  terminal has every row but the status line, so a dialog the window puts up
+  is told from one the box draws by covering that line too: every dialog,
+  card and band stands in place of the whole window, and the window returns
+  to its chrome for the credential band. Nothing may be drawn over the box's
+  rows as though it were the window's own, and nothing may leave the status
+  line standing under a prompt for a secret.
 
 ## Saved state
 

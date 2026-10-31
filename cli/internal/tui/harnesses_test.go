@@ -102,7 +102,9 @@ func TestHarnessesScreenOpensAndCloses(t *testing.T) {
 	if m.harnessesOpen {
 		t.Fatal("F3 should close the harnesses screen it opened")
 	}
-	if !strings.Contains(plainFrame(m), "Discoboxes") {
+	// The launcher is the whole window again: the tree is drawn only beside
+	// a page or a workspace, and it lists the discoboxes too.
+	if m.treeShown() || !strings.Contains(plainFrame(m), "Discoboxes") {
 		t.Fatal("closing the harnesses screen should put the launcher back")
 	}
 
