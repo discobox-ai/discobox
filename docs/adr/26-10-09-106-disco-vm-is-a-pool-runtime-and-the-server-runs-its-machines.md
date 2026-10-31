@@ -21,6 +21,18 @@
   its Deferred `docker` driver narrowed: the pool machine is a driver base
   bootstrapped from a pool-agent bundle, and the pool agent provisions its
   sandbox machines with a provisioning key
+- **Superseded, for a local driver (vz, later hcs), by**: [26-10-31-206](26-10-31-206-a-local-vm-pool-runs-its-agent-in-a-linux-vm-the-server-runs-and-its-sandboxes-reach-it-only-over-vsock.md)
+  — §1's local-hypervisor bullet (the Docker-free agent as a native host
+  process); §2's per-instance "return the address of the agent's port";
+  §3's `vz` bullet's server-owned route given out as the address, and its
+  forwards "to Unix sockets the host pool agent serves"; §5's 0144 §1
+  standing for a local driver (host roots, git on a host, staging and
+  supervising the agent), and its 0144 §§3–6 standing for a local pool, for
+  0144 §§3, 5 and 6; its rejection of "disco-vm as a sandbox runtime inside
+  an existing Docker pool" for its pool VM on every Mac and its relay for
+  every byte (not for a pool of several platforms, which stays refused); and
+  its Consequence of a Docker-free composition on darwin. In their place, a
+  local pool's agent runs in a Linux pool VM the server runs
 - **Date**: 2026-10-09
 - **Amended**: 2026-10-12, §§1 and 5, the Consequences, one rejected
   alternative and the Status line (which no longer narrows 0144 §3), before
