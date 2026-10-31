@@ -60,6 +60,10 @@ type monitorEnv struct {
 // only reads and writes files — the enabled instances, the queue — that the
 // agent's reconciler and the instances' runners read and write.
 func runMonitor(args []string) int {
+	if !monitors.Supported {
+		fmt.Fprintln(os.Stderr, "discobox-monitor: monitors are not available on a Windows sandbox yet")
+		return 1
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "discobox-monitor:", err)

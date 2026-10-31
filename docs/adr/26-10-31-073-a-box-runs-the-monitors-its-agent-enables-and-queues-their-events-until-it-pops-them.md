@@ -331,3 +331,9 @@ discobox-monitor enable github-repo -o repo=foo/bar -o pr=412 -o watch=prs,actio
   during a turn, never a prompt (§7).
 - **The console.** A pending count on the sandbox's status and a read-only
   listing of instances. Revisit once the in-box surface has settled.
+- **Windows sandboxes.** A runner runs a monitor by its path, a `#!` script,
+  which Windows does not run; a Windows sandbox has no monitors —
+  `discobox-monitor` says so and the agent starts no reconciler — rather
+  than ones that fail on every run. Revisit when a Windows sandbox is worked
+  in by an agent that needs them: a monitor declares its interpreter, or
+  runs through the sandbox's shell as a service does.

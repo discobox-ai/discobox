@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -29,6 +30,12 @@ const DirName = ".discobox/monitors"
 
 // BuiltinDir is where the image declares the monitors it ships.
 const BuiltinDir = "/usr/local/share/discobox/monitors"
+
+// Supported reports whether monitors run on this platform. A runner runs a
+// monitor by its path, which is a `#!` script: Linux and macOS run one, and
+// Windows does not, so a Windows sandbox has no monitors yet (ADR 26-10-31-073,
+// Deferred) rather than ones that fail on every run.
+const Supported = runtime.GOOS != "windows"
 
 // MinInterval is the shortest polling interval a declaration may ask for. A
 // monitor polling faster than this is a loop, and belongs in streaming mode.

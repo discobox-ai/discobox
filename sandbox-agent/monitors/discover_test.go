@@ -3,6 +3,7 @@ package monitors
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -90,14 +91,19 @@ func TestADeclarationThatCannotRunIsListedWithItsProblem(t *testing.T) {
 	for name, body := range cases {
 		writeMonitor(t, dir, name, body)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "noexec.sh"), []byte("#!/bin/sh\n#---\n#---\n"), 0o644); err != nil {
-		t.Fatal(err)
+	want := len(cases)
+	// Windows has no executable bit to withhold.
+	if runtime.GOOS != "windows" {
+		if err := os.WriteFile(filepath.Join(dir, "noexec.sh"), []byte("#!/bin/sh\n#---\n#---\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		want++
 	}
 	defs, err := Discover(dir, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(defs) != len(cases)+1 {
+	if len(defs) != want {
 		t.Fatalf("got %d definitions, want every file listed", len(defs))
 	}
 	for _, def := range defs {

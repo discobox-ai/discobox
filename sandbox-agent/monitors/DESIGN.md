@@ -95,6 +95,12 @@ flowchart LR
 - **Printed text is escaped.** Event fields and stderr are a third party's
   words; the CLI shows their control characters as escapes in its plain
   output (`--json` is escaped by encoding).
+- **Linux and macOS only.** A runner runs a monitor by its path, a `#!`
+  script; on Windows `discobox-monitor` refuses and the agent starts no
+  reconciler (`Supported`), so a Windows sandbox has no monitors rather than
+  ones failing on every run. The queue's file operations go through
+  `sharedfile.Retry` all the same, which waits out a Windows handle holding
+  a file, as the exec runtime records' do.
 - **Each run is its own process group, ended as a group.** A final event, a
   disable or an agent stop must not wait on a `sleep` or a `tail` the script
   started.
