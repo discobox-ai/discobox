@@ -22,19 +22,27 @@ set -eu
 name=boxd
 key_file=
 discobox=${DISCOBOX:-discobox}
-while [ $# -gt 0 ]; do
-	case $1 in
-	--key-file) key_file=$2; shift 2 ;;
-	--key-file=*) key_file=${1#*=}; shift ;;
-	--name) name=$2; shift 2 ;;
-	--name=*) name=${1#*=}; shift ;;
+# The script's flags may come anywhere; the rest are rotated to the back of
+# "$@", in order, for discobox.
+n=$#
+while [ "$n" -gt 0 ]; do
+	arg=$1; shift; n=$((n - 1))
+	case $arg in
+	--key-file|--name)
+		[ "$n" -gt 0 ] || { echo "$arg needs a value" >&2; exit 2; }
+		val=$1; shift; n=$((n - 1))
+		if [ "$arg" = --name ]; then name=$val; else key_file=$val; fi ;;
+	--key-file=*) key_file=${arg#*=} ;;
+	--name=*) name=${arg#*=} ;;
 	-h|--help) sed -n '2,20p' "$0"; exit 0 ;;
-	*) break ;;
+	*) set -- "$@" "$arg" ;;
 	esac
 done
 
 # The token goes to boxd.sh and the hosts beneath it — the gRPC API at
-# boxd.sh:9443 — and the exchange is at app.boxd.sh, inside that binding.
+# boxd.sh:9443 — and the exchange is at app.boxd.sh. A route names its hosts
+# exactly, so the secret takes both boxd.sh and *.boxd.sh: the server refuses a
+# recipe whose URL is outside the secret's routes.
 recipe='{"url":"https://app.boxd.sh/api/v1/auth/token","fields":["api_key"],"body":{"api_key":"{api_key}"},"tokenPath":"token","expiresAtPath":"expires_at"}'
 
 if [ -n "$key_file" ]; then
@@ -62,6 +70,6 @@ if "$discobox" "$@" secret get "$name" >/dev/null 2>&1; then
 	printf %s "$key" | "$discobox" "$@" secret update "$name" \
 		--exchange-recipe "$recipe" --field api_key=-
 else
-	printf %s "$key" | "$discobox" "$@" secret create --name "$name" --type exchange --route boxd.sh \
+	printf %s "$key" | "$discobox" "$@" secret create --name "$name" --type exchange --route boxd.sh --route '*.boxd.sh' \
 		--exchange-recipe "$recipe" --field api_key=-
 fi
