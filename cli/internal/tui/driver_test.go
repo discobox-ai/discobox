@@ -29,9 +29,12 @@ func newDriver(t *testing.T, m *Model) *driver {
 	return d
 }
 
-// start runs the model's Init, as the runtime does.
-func (d *driver) start() {
-	d.dispatch(tea.WindowSizeMsg{Width: 120, Height: 40})
+// start runs the model's Init, as the runtime does, in a 120x40 window.
+func (d *driver) start() { d.startAt(120, 40) }
+
+// startAt runs the model's Init in a window of the given size.
+func (d *driver) startAt(width, height int) {
+	d.dispatch(tea.WindowSizeMsg{Width: width, Height: height})
 	d.run(d.m.Init())
 }
 

@@ -18,8 +18,15 @@ import (
 	"github.com/discobox-ai/discobox/termpane"
 )
 
-// openWorkspace drives the window into the workspace on the first sandbox.
+// openWorkspace drives the window into the workspace on the first sandbox, on
+// a console wide enough for the workspace tree beside it.
 func openWorkspace(t *testing.T, ds *fakeSource, act string) (*driver, *Model, *fakeTerminal) {
+	t.Helper()
+	return openWorkspaceAt(t, ds, act, 120)
+}
+
+// openWorkspaceAt is openWorkspace on a console width cells wide.
+func openWorkspaceAt(t *testing.T, ds *fakeSource, act string, width int) (*driver, *Model, *fakeTerminal) {
 	t.Helper()
 	m := New(t.Context(), ds)
 	m.logo = logo{}
@@ -39,7 +46,7 @@ func openWorkspace(t *testing.T, ds *fakeSource, act string) (*driver, *Model, *
 		}
 	}
 	d := newDriver(t, m)
-	d.start()
+	d.startAt(width, 40)
 	// The window opens on the first discobox once the listing is in.
 	d.wait("the list", func() bool { return m.focus == focusList })
 
@@ -61,12 +68,16 @@ func TestAttachDrawsInTheWindow(t *testing.T) {
 
 	frame := frameText(m)
 	// Inside the border, under a banner identifying the discobox and saying how
-	// to get out.
+	// to get out: beside the tree there is no list to detach to, so the way
+	// out is quitting.
 	if !strings.Contains(frame, "sbx_one") {
 		t.Errorf("the pane should identify its discobox:\n%s", frame)
 	}
-	if !strings.Contains(frame, "ctrl+a d detach") {
+	if !strings.Contains(frame, "ctrl+a q quit") {
 		t.Errorf("the pane should say how to get out:\n%s", frame)
+	}
+	if strings.Contains(frame, "detach") {
+		t.Errorf("beside the tree there is nothing to detach to, so it is not offered:\n%s", frame)
 	}
 	for _, line := range strings.Split(rawFrame(m), "\n") {
 		if lipgloss.Width(line) != 120 {
@@ -108,8 +119,11 @@ func TestPaneOpensAtTheSizeItWillBeDrawnAt(t *testing.T) {
 		t.Fatalf("opened at %v, want %dx%d", got, cols, rows)
 	}
 	// The grid is the whole window bar its chrome, so it grows with it: the
-	// border and a cell of air inside it on each side.
-	if rows != m.height-5 || cols != m.width-2-2*boxPad {
+	// border and a cell of air inside it on each side, right of the tree.
+	if m.width != 120-treeWidth {
+		t.Fatalf("the window is %d cells beside the tree, want %d", m.width, 120-treeWidth)
+	}
+	if rows != m.height-4 || cols != m.width-2-2*boxPad {
 		t.Fatalf("pane is %dx%d in a %d-row window", cols, rows, m.height)
 	}
 	if got := len(m.primary().term.View()); got != rows {
@@ -254,7 +268,7 @@ func TestKeysGoToTheSandbox(t *testing.T) {
 func TestDetachLeavesTheWholeWorkspace(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
+	d, m, _ := openNarrowWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
 	d.key("s")
 	d.wait("the tab", func() bool { return m.shells.len() == 1 })
@@ -293,9 +307,14 @@ func TestLeaderQQuitsTheWindow(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
-	header := ansi.Strip(strings.Split(rawFrame(m), "\n")[0])
-	if !strings.Contains(header, "ctrl+a d detach") || !strings.Contains(header, "ctrl+a q quit") {
-		t.Fatalf("the header should offer both ways out: %q", header)
+	// Beside the tree quit is the one way out: there is no list to detach to.
+	header := windowLines(m)[0]
+	header = ansi.Strip(header)
+	if !strings.Contains(header, "ctrl+a q quit") {
+		t.Fatalf("the header should offer quit: %q", header)
+	}
+	if strings.Contains(header, "detach") {
+		t.Fatalf("the header should not offer a detach that does nothing: %q", header)
 	}
 
 	d.key("ctrl+a")
@@ -416,7 +435,7 @@ func TestThePollDoesNotReopenASessionAlreadyShown(t *testing.T) {
 func TestAStaleTickIsDropped(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
+	d, m, _ := openNarrowWorkspace(t, ds, "enter")
 	gen := m.wsGen
 
 	d.key("ctrl+a")
@@ -594,13 +613,14 @@ func TestPaneCursorLandsOnTheGrid(t *testing.T) {
 	term.send("abc")
 	d.wait("output", func() bool { return strings.Contains(frameText(m), "abc") })
 
-	cursor := m.paneCursor()
+	// The cursor the terminal is sent, in screen cells: right of the tree.
+	cursor := m.View().Cursor
 	if cursor == nil {
 		t.Fatal("an attached pane should place the cursor")
 	}
 	// The border and the air inside it across; the header, the line naming the
 	// box, and the border's top edge down.
-	originX, originY := m.paneOrigin(m.focusedPane())
+	originX, originY := screenOrigin(m, m.focusedPane())
 	if cursor.X != originX+3 || cursor.Y != originY {
 		t.Fatalf("cursor at %d,%d, want %d,%d", cursor.X, cursor.Y, originX+3, originY)
 	}
@@ -640,11 +660,12 @@ func TestPaneCursorLandsOnTheGridUnderTheCredentialBand(t *testing.T) {
 	d.wait("the band", func() bool { return m.bannerTop() == 1 })
 	d.wait("the text again", func() bool { return strings.Contains(frameText(m), "abc") })
 
-	cursor := m.paneCursor()
+	// The cursor the terminal is sent, in screen cells: right of the tree.
+	cursor := m.View().Cursor
 	if cursor == nil {
 		t.Fatal("an attached pane should place the cursor")
 	}
-	originX, originY := m.paneOrigin(m.focusedPane())
+	originX, originY := screenOrigin(m, m.focusedPane())
 	if cursor.X != originX+3 || cursor.Y != originY {
 		t.Fatalf("cursor at %d,%d, want %d,%d", cursor.X, cursor.Y, originX+3, originY)
 	}
@@ -688,8 +709,8 @@ func TestTheFrameNeverWraps(t *testing.T) {
 		t.Fatalf("a full-width row made the frame %d lines in a %d-row window", got, want)
 	}
 	for i, line := range lines {
-		if lipgloss.Width(line) != m.width {
-			t.Fatalf("line %d is %d cells, want %d: %q", i, lipgloss.Width(line), m.width, ansi.Strip(line))
+		if lipgloss.Width(line) != m.screenWidth {
+			t.Fatalf("line %d is %d cells, want %d: %q", i, lipgloss.Width(line), m.screenWidth, ansi.Strip(line))
 		}
 	}
 }
@@ -705,7 +726,7 @@ func TestApplicationTitleIsSetIntoTheBorder(t *testing.T) {
 	term.send("\x1b]2;go test ./...\x07")
 	d.wait("the title", func() bool { return m.primary().term.Title() == "go test ./..." })
 
-	border := ansi.Strip(strings.Split(rawFrame(m), "\n")[1])
+	border := ansi.Strip(windowLines(m)[1])
 	if !strings.Contains(border, "go test ./...") {
 		t.Fatalf("the border should carry the title: %q", border)
 	}
@@ -720,7 +741,7 @@ func TestApplicationTitleIsSetIntoTheBorder(t *testing.T) {
 	}
 	// And it is nowhere else: the banner above says where you are and which
 	// discobox this is.
-	if line := ansi.Strip(strings.Split(rawFrame(m), "\n")[0]); strings.Contains(line, "go test ./...") {
+	if line := ansi.Strip(windowLines(m)[0]); strings.Contains(line, "go test ./...") {
 		t.Errorf("the title is repeated in the banner: %q", line)
 	}
 }
@@ -736,7 +757,7 @@ func TestALongTitleLeavesTheBorderAlone(t *testing.T) {
 	term.send("\x1b]2;" + long + "\x07")
 	d.wait("the title", func() bool { return m.primary().term.Title() == long })
 
-	border := ansi.Strip(strings.Split(rawFrame(m), "\n")[1])
+	border := ansi.Strip(windowLines(m)[1])
 	if strings.Contains(border, "very long title very long") {
 		t.Fatalf("a title with no room should be dropped: %q", border)
 	}
@@ -751,7 +772,7 @@ func TestALongTitleLeavesTheBorderAlone(t *testing.T) {
 func TestCtrlCNeverQuitsFromAPane(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	d, m, term := openWorkspace(t, ds, "enter")
+	d, m, term := openNarrowWorkspace(t, ds, "enter")
 
 	d.key("ctrl+c")
 	d.settle()
@@ -794,7 +815,7 @@ func TestMouseIsForwardedToTheSandboxThatAskedForIt(t *testing.T) {
 	})
 
 	// A click on the grid reaches the sandbox, translated out of screen space.
-	originX, originY := m.paneOrigin(m.focusedPane())
+	originX, originY := screenOrigin(m, m.focusedPane())
 	d.dispatch(tea.MouseClickMsg{X: originX + 4, Y: originY + 2, Button: tea.MouseLeft})
 	if got := term.typed("\x1b[<"); !strings.Contains(got, "\x1b[<0;5;3") {
 		t.Fatalf("typed %q, want a click at grid cell 4,2", got)
@@ -802,7 +823,7 @@ func TestMouseIsForwardedToTheSandboxThatAskedForIt(t *testing.T) {
 
 	// A click on the window's own chrome is not the sandbox's.
 	before := len(term.typed(""))
-	d.dispatch(tea.MouseClickMsg{X: 0, Y: 0, Button: tea.MouseLeft})
+	d.windowMouse(tea.MouseClickMsg{X: 0, Y: 0, Button: tea.MouseLeft})
 	if after := len(term.typed("")); after != before {
 		t.Fatal("a click on the frame should not reach the sandbox")
 	}
@@ -823,7 +844,7 @@ func TestAClickOnTheAirForwardsBothHalvesToTheSandbox(t *testing.T) {
 		return p != nil && p.term.MouseMode() != termpane.MouseNone
 	})
 
-	originX, originY := m.paneOrigin(m.focusedPane())
+	originX, originY := screenOrigin(m, m.focusedPane())
 	d.dispatch(tea.MouseClickMsg{X: originX - boxPad, Y: originY, Button: tea.MouseLeft})
 	d.dispatch(tea.MouseReleaseMsg{X: originX - boxPad, Y: originY, Button: tea.MouseLeft})
 	if got := term.typed("\x1b[<0;1;1m"); !strings.Contains(got, "\x1b[<0;1;1M") ||
@@ -860,7 +881,7 @@ func TestPrefixMSeizesTheMouse(t *testing.T) {
 
 	// Taken, a click drives selection rather than the sandbox.
 	before := len(term.typed(""))
-	originX, originY := m.paneOrigin(m.focusedPane())
+	originX, originY := screenOrigin(m, m.focusedPane())
 	d.dispatch(tea.MouseClickMsg{X: originX, Y: originY, Button: tea.MouseLeft})
 	d.dispatch(tea.MouseReleaseMsg{X: originX, Y: originY, Button: tea.MouseLeft})
 	if after := len(term.typed("")); after != before {
@@ -884,7 +905,7 @@ func TestDragSelectsAndCopiesFromThePane(t *testing.T) {
 	term.send("hello world")
 	d.wait("output", func() bool { return strings.Contains(frameText(m), "hello world") })
 
-	originX, originY := m.paneOrigin(m.focusedPane())
+	originX, originY := screenOrigin(m, m.focusedPane())
 	d.dispatch(tea.MouseClickMsg{X: originX, Y: originY, Button: tea.MouseLeft})
 	d.dispatch(tea.MouseMotionMsg{X: originX + 4, Y: originY, Button: tea.MouseLeft})
 	d.dispatch(tea.MouseReleaseMsg{X: originX + 4, Y: originY, Button: tea.MouseLeft})
@@ -906,7 +927,7 @@ func TestDragFromTheBoxAirSelectsInThePane(t *testing.T) {
 	term.send("hello world\r\nsecond line")
 	d.wait("output", func() bool { return strings.Contains(frameText(m), "second line") })
 
-	originX, originY := m.paneOrigin(m.focusedPane())
+	originX, originY := screenOrigin(m, m.focusedPane())
 	d.dispatch(tea.MouseClickMsg{X: originX - boxPad, Y: originY, Button: tea.MouseLeft})
 	d.dispatch(tea.MouseMotionMsg{X: originX + 5, Y: originY + 1, Button: tea.MouseLeft})
 	d.dispatch(tea.MouseReleaseMsg{X: originX + 5, Y: originY + 1, Button: tea.MouseLeft})
@@ -930,7 +951,7 @@ func TestPressInTheRightAirSelectsToTheEndOfTheRow(t *testing.T) {
 	d.wait("output", func() bool { return strings.Contains(frameText(m), "hello world") })
 
 	p := m.focusedPane()
-	originX, originY := m.paneOrigin(p)
+	originX, originY := screenOrigin(m, p)
 	cols, _ := m.paneCells(m.paneWidthOf(p))
 	right := originX + cols - 1 + boxPad
 	d.dispatch(tea.MouseClickMsg{X: right, Y: originY, Button: tea.MouseLeft})
@@ -955,7 +976,7 @@ func TestTheBorderBesideTheAirStaysTheChromes(t *testing.T) {
 	d.wait("output", func() bool { return strings.Contains(frameText(m), "hello world") })
 
 	p := m.focusedPane()
-	originX, originY := m.paneOrigin(p)
+	originX, originY := screenOrigin(m, p)
 	cols, _ := m.paneCells(m.paneWidthOf(p))
 	for _, tc := range []struct {
 		side string
@@ -989,7 +1010,7 @@ func TestRightClickCopiesThePaneSelection(t *testing.T) {
 	term.send("hello world")
 	d.wait("output", func() bool { return strings.Contains(frameText(m), "hello world") })
 
-	originX, originY := m.paneOrigin(m.focusedPane())
+	originX, originY := screenOrigin(m, m.focusedPane())
 	d.dispatch(tea.MouseClickMsg{X: originX + 2, Y: originY, Button: tea.MouseRight})
 	d.settle()
 	if len(copies) != 0 {
@@ -1028,12 +1049,12 @@ func TestClickFocusesThePaneUnderIt(t *testing.T) {
 		d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
 		d.dispatch(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
 	}
-	x, y := m.paneOrigin(m.primary())
+	x, y := screenOrigin(m, m.primary())
 	click(x, y)
 	if m.onShells {
 		t.Fatal("clicking the terminal should focus it")
 	}
-	x, y = m.paneOrigin(m.shells.panes[0])
+	x, y = screenOrigin(m, m.shells.panes[0])
 	click(x, y)
 	if !m.onShells {
 		t.Fatal("clicking the tab should focus it back")
@@ -1046,7 +1067,7 @@ func TestClickFocusesThePaneUnderIt(t *testing.T) {
 func TestTheTerminalTitleFollowsThePrimaryPane(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	d, m, term := openWorkspace(t, ds, "enter")
+	d, m, term := openNarrowWorkspace(t, ds, "enter")
 
 	// Until the application says otherwise, the sandbox is what to call it.
 	if got, want := m.View().WindowTitle, "fix flaky pool reaper tests"; got != want {
@@ -1282,8 +1303,9 @@ func TestEachPaneKeepsItsOwnKeys(t *testing.T) {
 	if !m.inPanes() || m.shells.len() != 1 {
 		t.Fatal("ctrl+c in a shell should not detach anything")
 	}
-	if !strings.Contains(hintLine(m.hints()), m.leader()+" d detach") {
-		t.Fatalf("the keys should say the way out: %q", hintLine(m.hints()))
+	// Beside the tree the way out is quitting, offered in the header.
+	if !strings.Contains(hintLine(m.headerHints()), m.leader()+" q quit") {
+		t.Fatalf("the keys should say the way out: %q", hintLine(m.headerHints()))
 	}
 
 	// Back on the terminal, ctrl+c reaches the harness too. Someone who types
@@ -1311,7 +1333,7 @@ func TestSplitPanesShareTheScreen(t *testing.T) {
 	ds.execTerm("exec_shell1").send("in the shell")
 	d.wait("output", func() bool { return strings.Contains(frameText(m), "in the shell") })
 
-	for i, line := range strings.Split(rawFrame(m), "\n") {
+	for i, line := range windowLines(m) {
 		if lipgloss.Width(line) != m.width {
 			t.Fatalf("line %d is %d cells, want %d: %q", i, lipgloss.Width(line), m.width, ansi.Strip(line))
 		}
@@ -1346,7 +1368,7 @@ func TestTheDiscoboxIDIsCenteredInTheBanner(t *testing.T) {
 	// The id leads the banner's middle; the git columns follow it.
 	const middle = "sbx_one  main@a3f9c21*  dirty  +142 −38"
 
-	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	nameRow := func() string { return ansi.Strip(windowLines(m)[0]) }
 	centeredAt := func(row, name string) bool {
 		start := len([]rune(row[:strings.Index(row, name)]))
 		want := (len([]rune(row)) - len([]rune(name))) / 2
@@ -1396,7 +1418,7 @@ func TestTheBannerFollowsTheListingsGitStatus(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
-	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	nameRow := func() string { return ansi.Strip(windowLines(m)[0]) }
 	if !strings.Contains(nameRow(), "main@a3f9c21*  dirty") {
 		t.Fatalf("the banner does not show the sandbox as dirty: %q", nameRow())
 	}
@@ -1434,7 +1456,7 @@ func TestTheBannerCarriesTheListeningPorts(t *testing.T) {
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.dispatch(sizeMsg(180, 40))
 
-	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	nameRow := func() string { return ansi.Strip(windowLines(m)[0]) }
 	if got := nameRow(); !strings.Contains(got, "http:5173 · https:8443 · tcp:22") {
 		t.Fatalf("the banner does not carry the listening ports: %q", got)
 	}
@@ -1447,7 +1469,7 @@ func TestTheBannerOmitsPortsWhenNothingIsListening(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	_, m, _ := openWorkspace(t, ds, "enter")
 
-	row := ansi.Strip(strings.Split(rawFrame(m), "\n")[0])
+	row := ansi.Strip(windowLines(m)[0])
 	for _, group := range []string{"http:", "https:", "tcp:", "?:"} {
 		if strings.Contains(row, group) {
 			t.Fatalf("the banner carries %q for a sandbox serving nothing: %q", group, row)
@@ -1466,7 +1488,7 @@ func TestTheBannerFollowsTheListingsPorts(t *testing.T) {
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.dispatch(sizeMsg(180, 40))
 
-	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	nameRow := func() string { return ansi.Strip(windowLines(m)[0]) }
 	if strings.Contains(nameRow(), "http/") {
 		t.Fatalf("the banner should start with nothing listening: %q", nameRow())
 	}
@@ -1493,20 +1515,29 @@ func TestTheBannerGivesUpItsEdgesBeforeItsMiddle(t *testing.T) {
 	d, m, _ := openWorkspace(t, ds, "enter")
 
 	const middle = "sbx_one  main@a3f9c21*  dirty  +142 −38  http:5173 · https:8443"
-	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	nameRow := func() string { return ansi.Strip(windowLines(m)[0]) }
 
 	for _, tc := range []struct {
 		width  int
+		hidden bool
 		what   string
 		keys   bool
 		brand  bool
 		folder bool
 	}{
-		{width: 140, what: "room for everything", keys: true, brand: true, folder: true},
-		{width: 120, what: "the keys go first", brand: true, folder: true},
-		{width: 92, what: "then the program's own name", folder: true},
-		{width: 80, what: "then the folder"},
+		// Beside the tree the program's name is the tree's, and the row's left
+		// edge is where the box was cut from: the keys go, then that.
+		{width: 140, what: "beside the tree, room for everything", keys: true, folder: true},
+		{width: 120, what: "beside the tree, the keys go first", folder: true},
+		{width: 118, what: "beside the tree, then the source"},
+		// With the tree put away the row is the whole window's again, and its
+		// left edge is the brand and the list's filter.
+		{width: 140, hidden: true, what: "room for everything", keys: true, brand: true, folder: true},
+		{width: 110, hidden: true, what: "the keys go first", brand: true, folder: true},
+		{width: 92, hidden: true, what: "then the program's own name", folder: true},
+		{width: 80, hidden: true, what: "then the folder"},
 	} {
+		m.treeHidden = tc.hidden
 		d.dispatch(sizeMsg(tc.width, 40))
 		row := nameRow()
 		// Whatever went, the middle is still whole: that is the point of the
@@ -1514,7 +1545,7 @@ func TestTheBannerGivesUpItsEdgesBeforeItsMiddle(t *testing.T) {
 		if !strings.Contains(row, middle) {
 			t.Fatalf("%s: the middle is not whole at %d columns: %q", tc.what, tc.width, row)
 		}
-		if got := strings.Contains(row, "detach"); got != tc.keys {
+		if got := strings.Contains(row, "quit"); got != tc.keys {
 			t.Fatalf("%s: keys shown = %v at %d columns: %q", tc.what, got, tc.width, row)
 		}
 		// The folder path contains "disco2", so the brand is looked for where
@@ -1537,7 +1568,7 @@ func TestTheBannerKeepsATransportStatusAsItNarrows(t *testing.T) {
 	d, m, _ := openWorkspace(t, ds, "enter")
 	m.primary().status = "reconnecting…"
 
-	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	nameRow := func() string { return ansi.Strip(windowLines(m)[0]) }
 	for _, width := range []int{140, 100, 80, 60} {
 		d.dispatch(sizeMsg(width, 40))
 		row := nameRow()
@@ -1562,7 +1593,7 @@ func TestTheBannersMiddleDropsFieldsWholeAsItNarrows(t *testing.T) {
 	ds := newFakeSource(serving...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
-	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	nameRow := func() string { return ansi.Strip(windowLines(m)[0]) }
 	for _, tc := range []struct {
 		width int
 		want  []string
@@ -1619,7 +1650,7 @@ func TestTheBannerCarriesWhatTheDiscoboxAndMachineAreUsing(t *testing.T) {
 	d, m, ds := busyWorkspace(t)
 	d.dispatch(sizeMsg(270, 40))
 
-	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	nameRow := func() string { return ansi.Strip(windowLines(m)[0]) }
 	const want = "cpu 12% (4.2/24)  mem 1.2G (9.0/32G)  disk 3.4G (32G free)"
 	if got := nameRow(); !strings.Contains(got, want) {
 		t.Fatalf("the banner does not carry the usage: %q", got)
@@ -1645,26 +1676,27 @@ func TestTheBannerGivesUpUsageBeforeAnyEdge(t *testing.T) {
 	d, m, _ := busyWorkspace(t)
 
 	const middle = "sbx_one  main@a3f9c21*  dirty  +142 −38  http:5173 · https:8443"
-	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	nameRow := func() string { return ansi.Strip(windowLines(m)[0]) }
 	for _, tc := range []struct {
 		width int
 		want  []string
 		gone  []string
 	}{
-		{270, []string{"cpu 12% (4.2/24)  mem 1.2G (9.0/32G)  disk 3.4G (32G free)"}, nil},
+		{280, []string{"cpu 12% (4.2/24)  mem 1.2G (9.0/32G)  disk 3.4G (32G free)"}, nil},
 		{250, []string{"cpu 12%  mem 1.2G  disk 3.4G"}, []string{"(4.2/24)", "9.0/32G", "free"}},
 		{190, []string{"cpu 12%  mem 1.2G"}, []string{"disk 3.4G", "(4.2/24)"}},
 		{170, []string{"cpu 12%"}, []string{"mem 1.2G", "disk 3.4G"}},
-		{160, nil, []string{"cpu", "mem 1.2G", "disk 3.4G"}},
+		{134, nil, []string{"cpu", "mem 1.2G", "disk 3.4G"}},
 	} {
 		d.dispatch(sizeMsg(tc.width, 40))
 		row := nameRow()
 		if !strings.Contains(row, middle) {
 			t.Fatalf("at %d columns the middle is not whole: %q", tc.width, row)
 		}
-		// Every edge is still there: the readouts made way for them, never
-		// the other way round.
-		if !strings.Contains(row, "detach") || !strings.HasPrefix(strings.TrimSpace(row), "discobox") || !strings.Contains(row, "/src/disco2") {
+		// Every edge is still there — beside the tree, the source on the left
+		// and quit on the right: the readouts made way for them, never the
+		// other way round.
+		if !strings.Contains(row, "ctrl+a q quit") || !strings.HasPrefix(strings.TrimSpace(row), "/src/disco2") {
 			t.Fatalf("at %d columns the readouts cost the row an edge: %q", tc.width, row)
 		}
 		for _, want := range tc.want {
@@ -1688,7 +1720,7 @@ func TestTheBannerOmitsUsageNothingHasMeasured(t *testing.T) {
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.dispatch(sizeMsg(270, 40))
 
-	row := ansi.Strip(strings.Split(rawFrame(m), "\n")[0])
+	row := ansi.Strip(windowLines(m)[0])
 	for _, word := range []string{"cpu", "mem", "disk"} {
 		if strings.Contains(row, word) {
 			t.Fatalf("the banner carries %q with nothing measured: %q", word, row)
@@ -1707,7 +1739,7 @@ func TestTheBannerHoldsItsMiddleAsTheReadoutsChange(t *testing.T) {
 	d, m, ds := busyWorkspace(t)
 	d.dispatch(sizeMsg(270, 40))
 
-	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	nameRow := func() string { return ansi.Strip(windowLines(m)[0]) }
 	at := func() int { return strings.Index(nameRow(), "sbx_one") }
 	before := at()
 	if !strings.Contains(nameRow(), "(4.2/24)") {
@@ -1743,12 +1775,16 @@ func TestTheBannerHoldsItsMiddleAsTheReadoutsChange(t *testing.T) {
 func TestTheBannerSpendsNoRoomAnEdgeGaveUp(t *testing.T) {
 	t.Parallel()
 	d, m, _ := busyWorkspace(t)
-	// Narrow enough that the middle needs the keys' room and the keys go.
-	d.dispatch(sizeMsg(121, 40))
+	// Narrow enough that the middle needs the keys' room and the keys go:
+	// beside the tree, the window is this less the tree.
+	d.dispatch(sizeMsg(130, 40))
 
-	row := ansi.Strip(strings.Split(rawFrame(m), "\n")[0])
-	if strings.Contains(row, "detach") {
+	row := ansi.Strip(windowLines(m)[0])
+	if strings.Contains(row, "quit") {
 		t.Fatalf("this width is meant to be past the keys: %q", row)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(row), "/src/disco2") {
+		t.Fatalf("the source should still be there, or the width is wrong: %q", row)
 	}
 	if !strings.Contains(row, "sbx_one  main@a3f9c21*  dirty  +142 −38  http:5173 · https:8443") {
 		t.Fatalf("the middle should be whole, which is what the keys paid for: %q", row)
@@ -1779,13 +1815,16 @@ func TestTheBannerSpendsNoRoomTheBrandGaveUp(t *testing.T) {
 	// A project in the brand is what makes the left edge wide enough to matter.
 	ds.session.Project = "backend-platform"
 	d, m, _ := openWorkspace(t, ds, "enter")
-	// A one-shot window offers detach and not quit, which halves the key line —
-	// set here rather than by opening one, because what this test is about is
-	// the width of the two edges, not how the window came to be one.
-	m.oneRun = true
+	// The brand and the filter are the row's left edge only with the tree put
+	// away: beside it the brand is the tree's. Put away, the key line is the
+	// one hint — quit, with no list beside the box to detach to.
+	m.treeHidden = true
 	d.dispatch(sizeMsg(116, 40))
+	if hints := hintLine(m.headerHints()); hints != "ctrl+a q quit" {
+		t.Fatalf("header keys = %q, want the one hint", hints)
+	}
 
-	row := ansi.Strip(strings.Split(rawFrame(m), "\n")[0])
+	row := ansi.Strip(windowLines(m)[0])
 	if strings.Contains(row, "discobox") {
 		t.Fatalf("this width is meant to be past the brand: %q", row)
 	}
@@ -1811,7 +1850,7 @@ func TestTheBannerDrawsTheMachineOnlyWhenAllOfItIsKnown(t *testing.T) {
 	d.dispatch(tickMsg{})
 	d.dispatch(sizeMsg(270, 40))
 
-	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	nameRow := func() string { return ansi.Strip(windowLines(m)[0]) }
 	d.wait("the machine to go", func() bool { return !strings.Contains(nameRow(), "(4.2/24)") })
 	row := nameRow()
 	if !strings.Contains(row, "cpu 12%  mem 1.2G  disk 3.4G") {
@@ -1841,7 +1880,7 @@ func TestStreamingOutputDoesNotMoveScrolledViewport(t *testing.T) {
 	term.send(out.String())
 	d.wait("stream output", func() bool { return p.term.ScrollbackLen() >= 10 })
 
-	ox, oy := m.paneOrigin(p)
+	ox, oy := screenOrigin(m, p)
 	d.dispatch(tea.MouseWheelMsg{X: ox + 1, Y: oy + 1, Button: tea.MouseWheelUp})
 	if p.term.ScrollOffset() == 0 {
 		t.Fatal("mouse wheel did not move the live pane into scrollback")
@@ -2001,12 +2040,13 @@ func TestLeaderRunsTheListsVerbs(t *testing.T) {
 }
 
 // The leader's way out works from every pane, whether or not the pane has one
-// of its own. It costs the application nothing, being behind the leader, and
+// of its own, on a console with no tree beside the workspace, where there is a
+// list to detach to. It costs the application nothing, being behind the leader, and
 // one key that always works beats remembering which pane took Ctrl-C.
 func TestTheLeaderDetachesFromAnyPane(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
+	d, m, _ := openNarrowWorkspace(t, ds, "enter")
 
 	d.key("ctrl+a")
 	d.key("d")
@@ -2197,29 +2237,28 @@ func TestDragSelectsWhatIsDrawnUnderThePointer(t *testing.T) {
 			if len(lines) != m.height {
 				t.Fatalf("frame = %d rows, want the window's %d", len(lines), m.height)
 			}
-			// The foot, from the bottom up: the keys, the message, the lower
-			// band when there is one, and then the box's bottom edge directly
-			// under the grid's last row.
-			if !strings.Contains(lines[len(lines)-1], m.detachHint()) {
+			// The foot, from the bottom up: the keys, the lower band when there
+			// is one, and then the box's bottom edge, carrying the message,
+			// directly under the grid's last row.
+			if !strings.Contains(lines[len(lines)-1], m.leader()+" "+boxMenuKey+" actions") {
 				t.Fatalf("last row = %q, want the keys", lines[len(lines)-1])
-			}
-			if !strings.Contains(lines[len(lines)-2], "no space left on device") {
-				t.Fatalf("row above the keys = %q, want the message", lines[len(lines)-2])
 			}
 			_, firstY := whereDrawn(t, m, "first")
 			_, finalY := whereDrawn(t, m, "final")
 			if finalY-firstY != rows-1 {
 				t.Fatalf("grid drawn over rows %d..%d, want %d rows", firstY, finalY, rows)
 			}
-			if edge := len(lines) - 3 - m.bannerTop(); finalY+1 != edge || !strings.Contains(lines[edge], "╰") {
+			edge := len(lines) - 2 - m.bannerTop()
+			if finalY+1 != edge || !strings.Contains(lines[edge], "╰") {
 				t.Fatalf("the grid's last row is %d and the bottom edge is %q on %d, want the edge right under it",
 					finalY, lines[finalY+1], finalY+1)
 			}
-			// The message and keys rows are not the pane's to take a press on.
-			for _, y := range []int{len(lines) - 2, len(lines) - 1} {
-				if p := m.paneBoxAt(5, y); p != nil {
-					t.Fatalf("a press on row %d landed in a pane", y)
-				}
+			if !strings.Contains(lines[edge], "no space left on device") {
+				t.Fatalf("the bottom edge = %q, want the message on it", lines[edge])
+			}
+			// The keys row is not the pane's to take a press on.
+			if p := m.paneBoxAt(5, len(lines)-1); p != nil {
+				t.Fatalf("a press on row %d landed in a pane", len(lines)-1)
 			}
 
 			for _, word := range []string{"first", "final"} {

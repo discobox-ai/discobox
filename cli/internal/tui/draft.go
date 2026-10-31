@@ -114,6 +114,7 @@ func (m *Model) draftToSave() (prompt string, ok bool) {
 func (m *Model) closeWindow() tea.Cmd {
 	m.saveDraftNow()
 	m.saveViewNow()
+	m.closeParked()
 	m.quit = true
 	return tea.Quit
 }

@@ -74,7 +74,7 @@ func TestWorkspaceHeaderShowsBoundPortsAsTheyArrive(t *testing.T) {
 func TestDetachingClosesTheForward(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(forwardSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
+	d, m, _ := openNarrowWorkspace(t, ds, "enter")
 	d.wait("the forward", func() bool { return m.forward != nil })
 
 	d.key("ctrl+a")
@@ -141,6 +141,8 @@ func TestClickingAHeaderLinkOpensIt(t *testing.T) {
 	ds := newFakeSource(desktopSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.wait("the forward", func() bool { return m.forward != nil })
+	// Wide enough that the header beside the tree has room for every link.
+	d.dispatch(sizeMsg(160, 40))
 
 	opened := make(chan string, 4)
 	m.openOS = func(url string) error { opened <- url; return nil }

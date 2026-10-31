@@ -188,7 +188,7 @@ func (m *Model) EndReviews(wait time.Duration) {
 // updateReview hands the window what its session sent, and turns the tab back
 // to the conversation when the session is over.
 func (m *Model) updateReview(msg reviewMsg) tea.Cmd {
-	p := m.paneByID(msg.pane)
+	p := m.heldPane(msg.pane)
 	if p == nil || p.issue == nil || p.issue.review != msg.window {
 		if started, ok := msg.msg.(reviewStartedMsg); ok && started.err == nil {
 			// Started for a window since replaced or closed.
@@ -230,6 +230,11 @@ func (m *Model) updateReview(msg reviewMsg) tea.Cmd {
 		v.files, v.review = false, nil
 		return nil
 	case termpane.CopyMsg:
+		// Only from the screen: a box switched away from does not get to
+		// write this machine's clipboard (updateParkedPane drops it too).
+		if m.paneByID(p.id) == nil {
+			return nil
+		}
 		return m.copyText(msg.Text, "copied")
 	}
 	return m.toReview(p, msg.msg)

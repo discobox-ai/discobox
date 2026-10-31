@@ -377,6 +377,19 @@ func (m *Model) paneByID(id int) *pane {
 	return nil
 }
 
+// heldPane is a pane by id wherever this window holds it: on screen, or in a
+// workspace parked in the tree. Anything a pane started that answers it
+// later — an issue read, a files changed session, an image paste — is looked
+// up through this, so a box switched away from goes on where it was rather
+// than dropping the answer (paneMsg's own traffic goes to updateParkedPane).
+func (m *Model) heldPane(id int) *pane {
+	if p := m.paneByID(id); p != nil {
+		return p
+	}
+	_, p := m.parkedPane(id)
+	return p
+}
+
 // allPanes is every pane this window is drawing or holding attached: the strip
 // the workspace is, the tools in it included, showing or put away. It is what
 // anything addressing a pane by identity walks — never what counts positions,
@@ -387,7 +400,9 @@ func (m *Model) allPanes() []*pane {
 
 // inPanes reports whether the window is showing terminals rather than the list.
 func (m *Model) inPanes() bool {
-	return m.terminals.len() > 0 || m.overlay != nil || m.toolShown != nil
+	// The list in front of an open workspace has the keys, and the window is
+	// its screen for as long as it does. See tree.go.
+	return m.hasWorkspace() && !m.listFront && !m.pageUp()
 }
 
 // screenPane is the pane with the whole window, or nil when the workspace
@@ -460,12 +475,24 @@ func (m *Model) primary() *pane {
 // It is what the keys dispatch against and what the header reads, so the two
 // answer from the same listing, keeping the header and actions in sync.
 func (m *Model) currentBox() Sandbox {
+	return m.boxByID(m.paneBox.ID)
+}
+
+// boxByID is one discobox as the listing last had it: the workspace's own
+// box, or a parked one's.
+func (m *Model) boxByID(id string) Sandbox {
 	for _, s := range m.list.all {
-		if s.ID == m.paneBox.ID {
+		if s.ID == id {
 			return s
 		}
 	}
-	return m.paneBox
+	if id == m.paneBox.ID {
+		return m.paneBox
+	}
+	if ws := m.parked[id]; ws != nil {
+		return ws.paneBox
+	}
+	return Sandbox{ID: id}
 }
 
 func (m *Model) configurePaneOpened(msg configurePaneOpenedMsg) tea.Cmd {
@@ -566,6 +593,13 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 		termpane.WithRepeatingPrefixBinding(paneRightKey, movePaneMsg{delta: 1}),
 		termpane.WithRepeatingPrefixBinding("left", movePaneMsg{delta: -1}),
 		termpane.WithRepeatingPrefixBinding("right", movePaneMsg{delta: 1}),
+		// Up and down move along the workspace tree instead: the discobox on
+		// screen, rather than the pane in it. See tree.go.
+		termpane.WithRepeatingPrefixBinding("up", switchBoxMsg{delta: -1}),
+		termpane.WithRepeatingPrefixBinding("down", switchBoxMsg{delta: 1}),
+		termpane.WithRepeatingPrefixBinding("k", switchBoxMsg{delta: -1}),
+		termpane.WithRepeatingPrefixBinding("j", switchBoxMsg{delta: 1}),
+		termpane.WithPrefixBinding(boxMenuKey, boxMenuMsg{}),
 		termpane.WithPrefixBinding(paneZoomKey, zoomPaneMsg{}),
 		termpane.WithPrefixBinding(paneTerminalKey, newTerminalMsg{}),
 		termpane.WithPrefixBinding(paneEndKey, endPaneMsg{}),
@@ -755,6 +789,10 @@ func (m *Model) toTerm(p *pane, msg tea.Msg) tea.Cmd {
 func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 	p := m.paneByID(tagged.id)
 	if p == nil {
+		// A pane of a parked workspace keeps emulating off screen.
+		if ws, parked := m.parkedPane(tagged.id); parked != nil {
+			return m.updateParkedPane(ws, parked, tagged.msg)
+		}
 		// Its pane is already gone; nothing left to tell.
 		return nil
 	}
@@ -803,6 +841,27 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		armed := p.term.PrefixArmed()
 		p.term.SetPrefixArmed(false)
 		cmd := m.movePane(msg.delta)
+		if armed {
+			if next := m.focusedPane(); next != nil {
+				next.term.SetPrefixArmed(true)
+			}
+		}
+		return cmd
+
+	case boxMenuMsg:
+		if m.hasScreen(p) {
+			return m.underScreen(p)
+		}
+		p.term.SetPrefixArmed(false)
+		return m.boxMenu(m.paneBox)
+
+	case switchBoxMsg:
+		if m.overlay != nil && p == m.overlay {
+			return m.underScreen(p)
+		}
+		armed := p.term.PrefixArmed()
+		p.term.SetPrefixArmed(false)
+		cmd := m.switchBox(msg.delta)
 		if armed {
 			if next := m.focusedPane(); next != nil {
 				next.term.SetPrefixArmed(true)
@@ -894,6 +953,11 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 			m.closeOverlay()
 			m.layout()
 			return tea.Batch(m.refresh(), status("%s closed", p.action))
+		}
+		// Beside the tree there is nothing to detach to: the list is already
+		// on screen, and leaving a box is switching to another.
+		if !m.detaches() {
+			return nil
 		}
 		// Detaching leaves every session running: they are the discobox's
 		// terminals, and closing the window onto them is not the same as
@@ -1483,11 +1547,19 @@ func wheelLines(wheel tea.MouseWheelMsg) int {
 // down, or below them, where it only makes them shorter. A row added below
 // belongs here and nowhere else: paneOrigin measures from the top, and
 // counting it there too puts every mouse event and the cursor a row off.
-func (m *Model) paneRows() int { return m.height - 5 - m.bannerCost() }
+func (m *Model) paneRows() int {
+	if m.bare() {
+		return m.height - 1
+	}
+	return m.height - 4 - m.bannerCost()
+}
 
 // paneCells is the terminal size a pane of the given box width implies: the
 // box, less its border and a cell of air inside it on each side.
 func (m *Model) paneCells(width int) (cols, rows int) {
+	if m.bare() && width == m.width {
+		return max(width, 1), max(m.height-1, 1)
+	}
 	return max(width-2-2*boxPad, 1), max(m.paneRows(), 1)
 }
 
@@ -1548,6 +1620,9 @@ func (m *Model) shellLeft() int {
 // The cursor and every mouse event are placed against this, so it is worked
 // out once rather than counted twice.
 func (m *Model) paneOrigin(p *pane) (x, y int) {
+	if m.bare() {
+		return 0, 0
+	}
 	// The credential band's top row sits between the header and the boxes, so
 	// the grids start a row lower while it is up — one row, not two: the band
 	// below the boxes takes a row from their height and nothing from where
@@ -1571,6 +1646,9 @@ func (m *Model) paneOrigin(p *pane) (x, y int) {
 // put between the border's sides without passing through anything that could
 // re-wrap them.
 func (m *Model) viewPaneWindow() string {
+	if m.bare() {
+		return m.viewBare()
+	}
 	inner := max(m.width-2, 1)
 	pad := strings.Repeat(" ", boxPad)
 
@@ -1606,8 +1684,13 @@ func (m *Model) viewPaneWindow() string {
 	// The overlay has the screen while it is up. What is under it is not drawn
 	// half-covered or dimmed behind it: it is not there, and it is all still
 	// there when the command exits.
+	// The list in the tree beside the workspace takes focus from every pane
+	// here: none of them is the one keys go to, so none wears the bright edge.
+	live := !m.listFront
 	var body string
 	switch {
+	case m.terminals.len() == 0 && m.overlay == nil && m.wsOpening:
+		body = m.viewOpening(m.width, m.paneRows()+2)
 	case m.audit != nil:
 		body = m.viewAuditBox(m.width)
 	case m.overlay != nil:
@@ -1618,18 +1701,34 @@ func (m *Model) viewPaneWindow() string {
 		// The terminals on the left, the shells on the right; the right half
 		// takes any cell the division left over so the row comes out exactly
 		// the width.
-		left := m.viewColumnBox(&m.terminals, false, 0, m.width/2, !m.onShells)
-		right := m.viewColumnBox(&m.shells, true, m.width/2, m.width-m.width/2, m.onShells)
+		left := m.viewColumnBox(&m.terminals, false, 0, m.width/2, live && !m.onShells)
+		right := m.viewColumnBox(&m.shells, true, m.width/2, m.width-m.width/2, live && m.onShells)
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	case m.maximized && m.onShells:
 		// Maximized: the column with focus has the window and the other is not
 		// drawn at all — still attached, still emulating, and back where it was
 		// the moment the button gives the window back.
-		body = m.viewColumnBox(&m.shells, true, 0, m.width, true)
+		body = m.viewColumnBox(&m.shells, true, 0, m.width, live)
 	default:
-		body = m.viewColumnBox(&m.terminals, false, 0, m.width, true)
+		body = m.viewColumnBox(&m.terminals, false, 0, m.width, live)
 	}
-	rows = append(rows, strings.Split(body, "\n")...)
+	bodyRows := strings.Split(body, "\n")
+	// The message rides the boxes' bottom edge, the way a pane's title rides
+	// its top one, rather than costing the terminals a row of their own.
+	// In a split it is the focused box's edge, so it never runs across the
+	// corners between the two.
+	if last := len(bodyRows) - 1; last > 0 {
+		edge := bodyRows[last]
+		switch half := m.width / 2; {
+		case m.split() && m.onShells && m.overlay == nil && m.showingTool() == nil:
+			bodyRows[last] = ansi.Truncate(edge, half, "") + m.edgeMessage(ansi.TruncateLeft(edge, half, ""), m.width-half)
+		case m.split() && m.overlay == nil && m.showingTool() == nil:
+			bodyRows[last] = m.edgeMessage(ansi.Truncate(edge, half, ""), half) + ansi.TruncateLeft(edge, half, "")
+		default:
+			bodyRows[last] = m.edgeMessage(edge, m.width)
+		}
+	}
+	rows = append(rows, bodyRows...)
 	if banner != "" {
 		rows = append(rows, bannerIndent+banner+pad+" ")
 		// The whole band is the target, not the words in it: a bar this size
@@ -1646,9 +1745,6 @@ func (m *Model) viewPaneWindow() string {
 		m.banner.live = true
 	}
 	room := max(inner-2*boxPad, 1)
-	// The message row is always drawn, empty or not: a row that came and went
-	// with a message would resize every terminal on screen each time.
-	rows = append(rows, " "+pad+padANSI(m.statusMessage(room), room)+pad+" ")
 	m.zones.push(1+boxPad, len(rows))
 	keys := m.statusKeys(room)
 	m.zones.pop()
@@ -1698,8 +1794,18 @@ func (m *Model) viewPaneHeader(w int) string {
 		}
 		return padANSI(rendered, w)
 	}
-	filter := m.viewFilter(false)
-	full := m.viewHeaderBrand() + filter
+	// The tree beside the workspace carries the filter, and a window opened
+	// on one box has no list for it to narrow; the header says it on neither.
+	filter := ""
+	brand := m.viewHeaderBrand()
+	if !m.treeMode() && m.attach == nil {
+		filter = m.viewFilter(false)
+	} else if m.treeMode() {
+		// Beside the tree the window is plainly discobox; what this corner
+		// says instead is where the box on screen was cut from.
+		brand = m.st.headerLabel.Render(m.boxSourceLabel() + "  ")
+	}
+	full := brand + filter
 
 	// The keys are measured as plain text and drawn only once the row has
 	// settled which of its edges it can afford: styling costs no cells, so the
@@ -2132,7 +2238,7 @@ func (m *Model) viewColumnBox(col *column, shells bool, left, width int, focused
 // is one pane with the window to itself, so it wears its own name and no
 // control: there is nothing beside it to maximize over.
 func (m *Model) viewOverlayBox(width int) string {
-	edge := m.st.frame
+	edge := m.focusEdge()
 	inner := max(width-2, 1)
 	return m.viewPaneBox(m.overlay, titledEdge(m.st, edge, m.overlay.name(), "", inner), edge, width)
 }
@@ -2142,7 +2248,7 @@ func (m *Model) viewOverlayBox(width int) string {
 // buttons that say what can be done to a window that outlives being looked at:
 // put it away, or end it. See toolControls.
 func (m *Model) viewToolBox(p *pane, width int) string {
-	edge := m.st.frame
+	edge := m.focusEdge()
 	inner := max(width-2, 1)
 	control := m.toolControls(edge, width)
 	return m.viewPaneBox(p, titledEdge(m.st, edge, p.name(), control, inner), edge, width)

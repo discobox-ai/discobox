@@ -612,7 +612,13 @@ func TestEveryMarkLandsOnSomethingDrawn(t *testing.T) {
 func assertMarksLand(t *testing.T, m *Model, width int) {
 	t.Helper()
 	send(t, m, tea.WindowSizeMsg{Width: width, Height: 40})
-	lines := strings.Split(plainFrame(m), "\n")
+	// The window marks in its own coordinates, right of the tree when there
+	// is one; the tree marks in its own, which are the screen's.
+	frame := plainFrame(m)
+	lines := strings.Split(plainWindow(m), "\n")
+	if m.treeShown() {
+		assertTreeMarksLand(t, m, strings.Split(frame, "\n"))
+	}
 	if len(m.zones.marks) == 0 {
 		t.Fatalf("the frame marked nothing at all")
 	}
@@ -634,6 +640,33 @@ func assertMarksLand(t *testing.T, m *Model, width int) {
 		row := []rune(lines[z.y])
 		if z.x+z.width > len(row) || strings.TrimSpace(string(row[z.x:z.x+z.width])) == "" {
 			t.Errorf("a %v mark for %v covers no text at %d,%d in:\n%s", z.what.kind, z.what.keys, z.x, z.y, lines[z.y])
+		}
+	}
+}
+
+// assertTreeMarksLand is assertMarksLand for the workspace tree's own hit
+// map: every mark inside the tree's columns, and every one of its controls
+// over the words that name it.
+func assertTreeMarksLand(t *testing.T, m *Model, lines []string) {
+	t.Helper()
+	if len(m.treeZones.marks) == 0 {
+		t.Fatalf("the tree marked nothing at all")
+	}
+	for _, z := range m.treeZones.marks {
+		if z.y < 0 || z.y+z.height > len(lines) {
+			t.Errorf("a tree %v mark spans rows %d..%d of a %d-row frame", z.what.kind, z.y, z.y+z.height-1, len(lines))
+			continue
+		}
+		if z.x < 0 || z.x+z.width > treeWidth {
+			t.Errorf("a tree %v mark spans columns %d..%d of the %d-column tree", z.what.kind, z.x, z.x+z.width-1, treeWidth)
+			continue
+		}
+		if z.what.kind != hitTree {
+			continue
+		}
+		row := []rune(lines[z.y])
+		if z.x+z.width > len(row) || strings.TrimSpace(string(row[z.x:z.x+z.width])) == "" {
+			t.Errorf("a tree control %d covers no text at %d,%d in:\n%s", z.what.idx, z.x, z.y, lines[z.y])
 		}
 	}
 }

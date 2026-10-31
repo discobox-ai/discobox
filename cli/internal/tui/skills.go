@@ -343,11 +343,14 @@ func (m *Model) pressSkillsRow(idx, _ int) tea.Cmd {
 const skillsChrome = harnessesChrome
 
 func (m *Model) viewSkills() string {
-	m.zones.push(bodyLeft+m.logoColumn(), headerTop+2)
+	m.zones.push(bodyLeft+m.logoColumn(), m.pageBodyTop())
 	body := m.skills.view(m.st, &m.zones)
 	m.zones.pop()
 	if m.showLogo() {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, m.logo.view(lipgloss.Height(body)), body)
+	}
+	if m.treeShown() {
+		return m.pageFrame(strings.Split(body, "\n"))
 	}
 
 	m.zones.push(bodyLeft, headerTop)

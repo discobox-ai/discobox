@@ -31,12 +31,13 @@ import (
 // — so the request and the refusal are one event, and the request is the half
 // that cannot be usefully answered.
 
-// rejectedKey is the band's key behind the leader: k, for the key that is not
-// working. The letters this window already spends are elsewhere — g is the
-// credential request. The
+// rejectedKey is the band's key behind the leader: K, for the key that is not
+// working — capital, because k and j move along the workspace tree. The
+// letters this window already spends are elsewhere — g is the credential
+// request. The
 // signed-out harness's band (uncredentialed.go) answers to it too: a key that
 // is not there is a key that is not working.
-const rejectedKey = "k"
+const rejectedKey = "K"
 
 // openRejectedMsg is the leader plus that key inside a pane.
 type openRejectedMsg struct{}

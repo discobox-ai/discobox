@@ -390,6 +390,57 @@ func TestTheMarkIsDroppedOnANarrowTerminal(t *testing.T) {
 	}
 }
 
+// A page beside the tree — the harnesses, the secrets — is framed as the
+// workspace is: its message rides the box's bottom edge rather than costing a
+// row, and the frame is the terminal exactly either way, the keys staying up
+// under it and nothing above the edge moving when one arrives.
+func TestAMessageRidesThePagesBottomEdgeBesideTheTree(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		open []string
+		keys string
+	}{
+		{"harnesses", []string{"f3"}, "Esc"},
+		{"secrets", []string{"f4"}, "esc back"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m := newTestModel(t, newFakeSource(testSandboxes()...))
+			press(t, m, tc.open...)
+			if !m.treeShown() {
+				t.Fatal("the page should open beside the tree")
+			}
+			before := strings.Split(windowText(m), "\n")
+			if len(before) != m.height {
+				t.Fatalf("frame = %d rows, want the window's %d", len(before), m.height)
+			}
+			edge := len(before) - 2
+			if got := strings.Trim(before[edge], "╰─╯"); got != "" {
+				t.Fatalf("bottom edge = %q, want a bare edge with nothing to say", before[edge])
+			}
+
+			send(t, m, statusMsg{text: "cannot archive: no space left on device", err: true})
+			after := strings.Split(windowText(m), "\n")
+			if len(after) != m.height {
+				t.Fatalf("frame = %d rows with a message up, want the window's %d", len(after), m.height)
+			}
+			if got := after[edge]; !strings.HasPrefix(got, "╰─ ✗ cannot archive: no space left on device ─") || !strings.HasSuffix(got, "╯") {
+				t.Fatalf("bottom edge = %q, want the error laid into it", got)
+			}
+			if got := after[len(after)-1]; !strings.Contains(got, tc.keys) {
+				t.Fatalf("keys row = %q, want the keys still there under the error", got)
+			}
+			// Nothing above the edge moved to make room for it.
+			for i := 0; i < edge; i++ {
+				if before[i] != after[i] {
+					t.Fatalf("row %d changed when the message arrived:\nbefore %q\nafter  %q", i, before[i], after[i])
+				}
+			}
+		})
+	}
+}
+
 // rowFor finds the rendered line carrying a sandbox's name.
 func rowFor(t *testing.T, m *Model, name string) string {
 	t.Helper()
@@ -1071,8 +1122,8 @@ func TestALongErrorKeepsItsCause(t *testing.T) {
 	}
 }
 
-// A message has a row of its own above the keys, on every screen that fills the
-// window, and the frame is the terminal exactly either way: the keys stay up
+// A message has a row of its own above the keys, on the home screen that fills
+// the window, and the frame is the terminal exactly either way: the keys stay up
 // under an error that stays until something is done, and the row is kept
 // while there is no message so one arriving moves nothing.
 func TestAMessageSitsAboveTheKeys(t *testing.T) {
@@ -1084,8 +1135,6 @@ func TestAMessageSitsAboveTheKeys(t *testing.T) {
 	}{
 		{"launcher", nil, "Shift-Tab harness"},
 		{"list", []string{"tab"}, "a attach"},
-		{"harnesses", []string{"f3"}, "Esc"},
-		{"secrets", []string{"f4"}, "esc back"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
