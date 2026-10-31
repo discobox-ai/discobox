@@ -8,3 +8,8 @@
   read/modify/write of credential-bearing state, including startup initialization.
   Otherwise a stale initializer snapshot can restore a raw login after handoff
   has replaced it with an acknowledged sentinel, or lose concurrent trust edits.
+
+- Pass host paths into POSIX test launchers as quoted data, not interpolated
+  shell source. Windows backslashes are consumed as shell escapes, and spaces,
+  quotes and dollar signs in a checkout path can change the command before the
+  tested program sees it. Exercise a path with shell metacharacters locally.
