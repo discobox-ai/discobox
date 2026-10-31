@@ -16,6 +16,7 @@ func NewOpenAPIRouter(services services.Services) (*chi.Mux, error) {
 	registerSandboxTransferRoutes(router, services.Sandboxes)
 	registerSandboxHTTPRoutes(router, services.Sandboxes)
 	registerSandboxAgentTerminalRoutes(router, services.Sandboxes)
+	registerSandboxEventRoutes(router, services.Sandboxes)
 
 	generated, err := handlers.NewServer(services)
 	if err != nil {

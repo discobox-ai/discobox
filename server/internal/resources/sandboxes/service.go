@@ -93,7 +93,11 @@ func (s *Service) RegisterJobs(opts ...reconcile.RegisterOption) error {
 	if err := s.engine.Register(SandboxProxyPolicyResourceType, &sandboxProxyPolicyReconciler{store: s.store, providers: s.sandboxProviders}); err != nil {
 		return err
 	}
-	return s.engine.Register(SandboxPowerResourceType, &sandboxPowerReconciler{store: s.store, providers: s.sandboxProviders, now: time.Now})
+	if err := s.engine.Register(SandboxPowerResourceType, &sandboxPowerReconciler{store: s.store, providers: s.sandboxProviders, now: time.Now}); err != nil {
+		return err
+	}
+	// Applies the sandbox events' retention (ADR 26-10-29-316 §4).
+	return s.engine.Register(SandboxEventPruneResourceType, &sandboxEventPruneReconciler{store: s.store, now: time.Now})
 }
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {

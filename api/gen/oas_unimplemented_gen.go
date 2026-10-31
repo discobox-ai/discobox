@@ -1518,6 +1518,27 @@ func (UnimplementedHandler) StopSandboxService(ctx context.Context, params StopS
 	return r, ht.ErrNotImplemented
 }
 
+// StreamSandboxEvents implements stream-sandbox-events operation.
+//
+// The project's sandbox state changes as server-sent events (ADR 26-10-29-316). An event is sent
+// when a sandbox is created or deleted, and when its existence, its power state or the state of the
+// program in its primary session changes; its data is a SandboxEventData, the sandbox's whole state.
+// Events are sandbox.created, sandbox.updated and sandbox.deleted, each with an id that increases in
+// the order the changes committed, and reset. With no cursor the stream begins with the latest event
+// of every sandbox in the project - its current state - and goes on with each change. With a cursor
+// it sends every event after it. When retention has removed an event after the cursor, or the cursor
+// is past every event there is, it sends a reset, with no id, and then the current state: the client
+// drops what it holds and takes what follows as the truth. When the stream stands past the last
+// event it sent - after the current state, or while the project is quiet - it sends an event with
+// only an id, which moves the client's cursor and dispatches nothing.
+// The cursor is the Last-Event-ID header an EventSource sends when it reconnects, or the lastEventId
+// query parameter. An idle stream sends a comment every 15 seconds.
+//
+// GET /api/projects/{projectId}/events
+func (UnimplementedHandler) StreamSandboxEvents(ctx context.Context, params StreamSandboxEventsParams) (r StreamSandboxEventsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // StreamSandboxExecResources implements stream-sandbox-exec-resources operation.
 //
 // Stream opaque resource snapshots for a sandbox exec.

@@ -995,6 +995,10 @@ func (s *routerTestServices) ImportSandbox(context.Context, string, io.Reader, s
 	return s.importResult, nil
 }
 
+func (s *routerTestServices) OpenSandboxEvents(context.Context, string, *int64) (services.SandboxEventStream, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (s *routerTestServices) PullSandboxSource(context.Context, string, string, string, services.PullSandboxSourceBody) (*model.Sandbox, error) {
 	panic("not implemented")
 }

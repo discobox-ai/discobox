@@ -90,7 +90,25 @@ func (s *Store) ApplySandboxStateReports(ctx context.Context, batch SandboxState
 			// archive just removed and put the sandbox beyond its retention
 			// policy. Archived sandboxes are simply not the runtime's to report
 			// on (ADR 0022 §5).
+			//
+			// What a complete sync that omits one does say is that nothing is
+			// running for it, so its last observation is put down: the runtime
+			// state reads unobserved, as before any pool reported, and not as
+			// whatever it was before the archive. That is what an unarchive
+			// starts from until the pool reports again, rather than a `running`
+			// from days ago (ADR 26-10-29-316). It is not drift: nothing is
+			// handed to the reconciler.
 			if sandbox.DesiredState == model.DesiredStateArchived {
+				if _, still := reported[sandbox.ID]; batch.Complete && !still && sandbox.RuntimeState != "" && acceptSandboxStateReport(sandbox, batch) {
+					sandbox.SetRuntimeState("")
+					if err := tx.Model(&model.Sandbox{}).
+						Where("id = ?", sandbox.ID).
+						Select("runtime_state", "runtime_state_changed_at").
+						Updates(sandbox).Error; err != nil {
+						return err
+					}
+					txStore.sandboxChanged(sandbox.ID)
+				}
 				continue
 			}
 			report, ok := reported[sandbox.ID]
@@ -125,6 +143,11 @@ func (s *Store) ApplySandboxStateReports(ctx context.Context, batch SandboxState
 				Select(observedSandboxColumns).
 				Updates(sandbox).Error; err != nil {
 				return err
+			}
+			// Of what this writes, only the state is in a sandbox's events:
+			// the restamp a complete sync makes of every sandbox records nothing.
+			if previous != sandbox.RuntimeState {
+				txStore.sandboxChanged(sandbox.ID)
 			}
 			if missing || previous != sandbox.RuntimeState {
 				changed = append(changed, SandboxObservation{Sandbox: *sandbox, RuntimeMissing: missing})

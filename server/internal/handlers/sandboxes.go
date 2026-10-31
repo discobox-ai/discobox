@@ -246,3 +246,14 @@ func originKeys(values []string) []string {
 	}
 	return keys
 }
+
+// StreamSandboxEvents is served by the hand-wired stream in internal/server
+// (ADR 26-10-29-316): every event is flushed as it is read, which a generated
+// handler's one write cannot do. The route reaches here only on a router that
+// does not register that stream.
+func (h *Handler) StreamSandboxEvents(context.Context, serverapi.StreamSandboxEventsParams) (serverapi.StreamSandboxEventsRes, error) {
+	return &serverapi.ErrorResponseStatusCode{
+		StatusCode: http.StatusNotImplemented,
+		Response:   serverapi.ErrorResponse{Error: "sandbox events are served by the event stream"},
+	}, nil
+}

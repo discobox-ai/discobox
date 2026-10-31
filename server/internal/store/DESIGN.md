@@ -59,9 +59,38 @@ Use a transaction only where two statements must commit together: intent plus
 its dirty mark, a create plus its secret assignments, a delete plus its
 cascades (`DeleteProject`, `DeleteSecret`, `DeleteSandbox`,
 `DeleteHarnessConfig`), a state-report batch. A mutation that is a single
-statement does not need one. Nothing is published on commit: a waiting caller
-re-reads the rows rather than being told
+statement does not need one — except a write of a sandbox column its events
+report (below), which commits with its event. Nothing is published on commit: a
+waiting caller re-reads the rows rather than being told
 ([ADR 0081](../../../docs/adr/0081-project-events-are-not-persisted-and-the-wait-polls.md)).
+
+## Sandbox Events
+
+A sandbox's events ([ADR 26-10-29-316](../../../docs/adr/26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md))
+are rows the store writes in the transaction of the change (`sandbox_events.go`):
+
+- Every writer of a column an event reports notes the sandbox on its
+  transaction's `sandboxEventBatch` (`sandboxChanged`, `sandboxDeleted`):
+  `CreateSandbox`, `UpdateSandbox`, `ApplySandboxStateReports` (only on a
+  moved runtime state), `UpdateSandboxAgentStatus`, `DeleteSandbox`. One called
+  outside a transaction opens one (`inSandboxTx`). A new writer of
+  `desired_state`, `state`, `runtime_state` or `agent_status` must do the same.
+- `Store.Transaction` records the batch just before the outermost transaction
+  commits. Each noted sandbox is projected from the row as committed
+  (`sandboxEventData`) and compared with its latest event, so a write that moved
+  nothing reported — a heartbeat, a restamp, a rolled-back savepoint — records
+  nothing.
+- `Seq` comes from `SandboxEventLog.Head`, advanced in the same transaction.
+  Its row lock is held to commit, which makes `Seq` order commit order on
+  Postgres; it is taken last, after every other lock the transaction holds, so
+  it cannot deadlock against a writer holding a sandbox row.
+- Retention (`PruneSandboxEvents`) removes events older than its cutoff that
+  are no sandbox's latest, and moves `PrunedThrough` past them in the same
+  transaction. A stream reads the events after its cursor and then the
+  watermark, so a prune between the two is seen.
+- `ListLatestSandboxEvents` is the project's current state in one statement:
+  each live sandbox's latest event and each deletion after the head the caller
+  read first.
 
 ## Conditional Writes
 
@@ -118,6 +147,9 @@ save silently replays a stale value.
   omits both (`sandboxWakeColumns`) and only `CancelSandboxWakeTx` and
   `SetSandboxWakeIfEpoch` write them. The latter writes only on the epoch its
   caller read, which every cancellation moves.
+- A sandbox's `event_seq` is written by the event recorder alone, and
+  `UpdateSandbox` omits it (`sandboxEventSeqColumn`): a row saved back from a
+  copy read before an event would point it at an older one.
 - Agent telemetry is written as narrow column updates, never a row `Save`:
   `UpdateSandboxAgentStatus`, `UpdateSandboxResources`,
   `RecordPoolProvisionProgress`, `RecordPoolResources`.
@@ -193,6 +225,7 @@ Keep files split by resource area:
 | `harness_configs.go` | Harness configs. |
 | `sandboxes.go` | Sandbox desired-state persistence, reconcile scans, archive expiry, agent-status/resource telemetry. |
 | `sandbox_state_reports.go` | Pool-agent state and provisioning-progress reports (the observed columns' only writer). |
+| `sandbox_events.go` | Sandbox events: the per-transaction batch and its recording, the stream's reads, retention, and the backfill `database.Migrate` runs. |
 | `providers.go` | Provider instance persistence. |
 | `pools.go` | Pool persistence: CRUD, enrollment (the key a pool's maker read from its box) and heartbeats (the first registers it), telemetry, the schedulable-pool placement gate, and pool-scoped sandbox counts. |
 | `secrets.go` | Secrets (sealed values), secret requests and refresh requests. |

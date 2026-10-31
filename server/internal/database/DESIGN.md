@@ -14,6 +14,7 @@ flowchart LR
     secretdump[cmd/discobox-secret-dump] --> database
     database --> gormdb[discobox-ai/x gormdb]
     database --> model[internal/model]
+    database -- "event backfill" --> store
 ```
 
 - Use `gormdb` for opening write/read GORM pools.
@@ -123,8 +124,12 @@ by what it is looking for and is idempotent:
    marks to `sandboxProxyPolicy`, the reconcile that now pushes egress and
    gateways together (`renameSandboxEgressReconcile`, ADR 26-10-16-470 §5), the
    sandbox state split (ADR 0034), denying the open requests of a sandbox that
-   no longer exists (`denyOrphanedSecretRequests`), and re-keying every sandbox
-   origin to where its source came from (`rekeySandboxOrigins`, ADR 0111 §4).
+   no longer exists (`denyOrphanedSecretRequests`), re-keying every sandbox
+   origin to where its source came from (`rekeySandboxOrigins`, ADR 0111 §4),
+   and, last, a `sandbox.updated` event for every sandbox that has none
+   (`store.BackfillSandboxEvents`, ADR 26-10-29-316), so the event stream's
+   current state covers sandboxes from before it. The projection is the
+   store's, so the step calls it rather than writing rows of its own.
 
 The platform columns (ADR 0145 §1) are added by `AutoMigrate` and deliberately
 not backfilled: a guess is wrong for a pool of another architecture, and a

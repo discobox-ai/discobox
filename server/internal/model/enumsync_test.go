@@ -59,6 +59,10 @@ var yamlEnumAliases = map[string]string{
 	// The failure reason sits on the embedded ResourceLifecycle beside the
 	// message it classifies, and the API carries it inside the runtime object.
 	"SandboxRuntime.errorReason": "ResourceLifecycle.errorReason",
+	// A sandbox event's data is a projection of the sandbox (ADR 26-10-29-316
+	// §1), so its axes are the sandbox's.
+	"SandboxEventData.desiredState": "ResourceLifecycle.desiredState",
+	"SandboxEventData.runtimeState": "Sandbox.runtimeState",
 }
 
 // yamlOwnedEnums lists contract enums with no authoritative Go model tag, with
@@ -79,6 +83,9 @@ var yamlOwnedEnums = map[string]string{
 	"Pool.desiredState":                    "per-resource narrowing: a pool cannot be archived, so it omits the sandbox-only value in the shared tag",
 	"Pool.state":                           "per-resource narrowing of the embedded ResourceLifecycle, whose shared tag is the union of both vocabularies",
 	"SandboxRuntime.state":                 "per-resource narrowing of the embedded ResourceLifecycle",
+	"SandboxEventData.state":               "per-resource narrowing of the embedded ResourceLifecycle, as SandboxRuntime.state is",
+	"SandboxEventProgram.state":            "OSC 7501's vocabulary, owned by the root programstatus package; the store projects it from AgentStatus, which it stores as opaque JSON",
+	"SandboxEventProgram.kind":             "OSC 7501's vocabulary, owned by the root programstatus package; the store projects it from AgentStatus, which it stores as opaque JSON",
 	"SandboxRuntime.displayState":          "derived presentation state computed by the API layer, not stored on the model",
 	"PoolSandboxState.state":               "the pool agent's reporting vocabulary: the states a runtime can actually observe, a subset of the model's",
 	"SandboxConfig.harnessMode":            "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",

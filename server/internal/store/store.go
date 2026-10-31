@@ -27,6 +27,10 @@ type Store struct {
 	txRead  *gorm.DB
 
 	sealer secrets.Sealer
+
+	// sandboxEvents is set on a store bound to a transaction: the sandboxes
+	// it changed, whose events it records before it commits.
+	sandboxEvents *sandboxEventBatch
 }
 
 type Option func(*Store)

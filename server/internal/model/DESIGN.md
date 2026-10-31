@@ -34,6 +34,8 @@ completion timestamp and require no backfill (ADR 26-10-23-948).
 | `ProjectGateway` | A gateway every discobox of the project is routed through by its pool's proxy (ADR 26-10-16-470): addressed by `name`, its `match` unique in the project, stored as `gateway.Normalize` writes it. A header value from the server's environment is stored as the variable's name, never its value. `managed_by` is `config` for one the server configuration file keeps (ADR 26-10-17-271), which alone may take a value from the environment, and `api` for the API's. |
 | `ProjectSkillsSource` | One skills repository (`url`, `ref`, `directory`) every discobox of the project is created with, in the order added. The creating client copies the list into its create request; the server never adds it to one (ADR 26-10-14-894). |
 | `Peer` | Machine permitted to connect to this server, keyed by peer ID (ADR 0095). Not project-scoped. |
+| `SandboxEvent` | One change of a sandbox's state on the project's event stream (ADR 26-10-29-316): its `Seq`, the stream's ID, in commit order; its type; and its data, a `SandboxEventData` snapshot of the sandbox's existence, power and program state. Written by the store with the change; the sandbox's latest (`Sandbox.EventSeq`) is kept while the sandbox exists, the rest for 24 hours. |
+| `SandboxEventLog` | The event stream's one row: `Head`, the last `Seq` handed out, whose row lock orders the events, and `PrunedThrough`, the highest retention removed. |
 | `Job` | Non-persisted, read-only API view of a pending reconcile mark. |
 
 ## Persistence Scope
@@ -70,9 +72,11 @@ name, deleting a pool its name, deleting a project its name, deleting a user
 their email address. Recreating any of them fails with a constraint error rather
 than doing the obvious thing.
 
-Nothing records the deletion either: there is no event table (ADR 0081). An
-audit trail is a feature with its own requirements — what is worth keeping, and
-for how long — and belongs to whoever asks for one. Nothing in the system offers
+Nothing keeps the deleted row either. A sandbox's deletion is an event on
+its project's stream (`SandboxEvent`, ADR 26-10-29-316), kept for a day so a
+client that reconnects hears of it; that is the stream's contract, not an audit
+trail. An audit trail is a feature with its own requirements — what is worth
+keeping, and for how long — and belongs to whoever asks for one (ADR 0081). Nothing in the system offers
 undelete, and reviving a row is not a feature to add by leaving tombstones lying
 around: it is a restore path that should be explicit if it is ever wanted.
 

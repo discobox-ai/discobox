@@ -192,6 +192,25 @@ Two things are the handler's own:
   of an idle followed log blocks until the next line, which may never come, so
   the handler cannot wait to notice on its next write.
 
+### Sandbox Events
+
+`/api/projects/{projectId}/events` is the project's sandbox state changes as
+server-sent events ([ADR 26-10-29-316](../docs/adr/26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md)).
+It is documented in `server.yaml`, `stream-sandbox-events`, with the event data
+as `SandboxEventData`, and hand-wired (`sandbox_events.go`) because each event
+is flushed as it is read, which the generated handler's one write cannot do;
+the generated handler answers 501. It is authorized as any project route is,
+for a member; a sandbox principal is refused, since its role lists no such
+route.
+
+The handler takes the cursor from `Last-Event-ID`, or `lastEventId` for a first
+connection, and polls the stream the sandboxes service opens
+([`resources/sandboxes/DESIGN.md`](internal/resources/sandboxes/DESIGN.md#state-changes-are-a-stream))
+every 500ms. It sends `retry:` once, the stream's cursor as an ID-only event
+whenever it stands past the last event sent (after a replay, or in a quiet
+spell in place of the ping), and a `: ping` comment after 15 idle seconds. An error after the first byte ends the response, and the client
+resumes from its cursor.
+
 ### Pool Guest Image
 
 `POST /api/projects/{projectId}/pools/{poolId}/guest-image` is hand-wired beside

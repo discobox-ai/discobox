@@ -78,6 +78,9 @@ func TestASandboxHoldsOnlyTheSandboxRole(t *testing.T) {
 		// It reaches only the discoboxes it created, and is not its own creator.
 		{http.MethodGet, project + "/sandboxes/" + routeTestSandboxID, http.StatusForbidden},
 		{http.MethodGet, project + "/pools", http.StatusForbidden},
+		// The event stream is every sandbox in the project, not only the ones
+		// it created (ADR 26-10-29-316).
+		{http.MethodGet, "/api" + project + "/events", http.StatusForbidden},
 		{http.MethodGet, "/projects/another-project/sandboxes", http.StatusForbidden},
 		{http.MethodGet, "/projects", http.StatusForbidden},
 		{http.MethodGet, "/peers", http.StatusForbidden},
