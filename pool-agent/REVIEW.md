@@ -424,8 +424,16 @@ never this runtime's to remove.
 
 ## The control-plane channel
 
-- The channel's upgrade is asked for over HTTP/1.1 alone (`cpchannel.http1`),
-  with ALPN offering only `http/1.1`. Why: HTTP/2 has no Upgrade, and Go's
-  HTTP/2 client refuses any Upgrade but websocket's, so through any HTTPS
-  front that offers h2 the channel would never open, and a test against plain
+- The channel is a standard binary WebSocket, never an upgrade to a protocol
+  of its own, and keeps its pinned TLS inside. Why: a hosted edge forwards
+  WebSockets and need not forward anything else — a custom upgrade answered
+  and then carried nothing past boxd's edge — and the edge's TLS is not end
+  to end (ADR 26-10-31-152). A change to the handshake is tested through a
+  proxy that refuses other upgrades
+  (`TestTheChannelOpensThroughAnEdgeThatForwardsOnlyWebSockets`), not only
+  against the agent directly.
+- The channel's WebSocket is asked for over HTTP/1.1 alone (`cpchannel.http1`),
+  with ALPN offering only `http/1.1`. Why: a WebSocket opens with an HTTP/1.1
+  Upgrade, so through any HTTPS front that offers h2 a transport that
+  negotiated it would never open the channel, and a test against plain
   `httptest` would not notice (`TestTheChannelOpensThroughAnHTTP2Front`).

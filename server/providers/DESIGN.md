@@ -711,9 +711,9 @@ sequenceDiagram
     participant S as agent socket
     participant P as agent / proxy unit
     participant C as carrier hub
-    H->>A: GET .../control-plane-channel, Upgrade, server token (pool:control-plane-channel)
+    H->>A: GET .../control-plane-channel, WebSocket discobox-control-plane.v1, server token (pool:control-plane-channel)
     A-->>H: 101
-    H->>A: TLS 1.3, pinned both ways
+    H->>A: TLS 1.3 in binary messages, pinned both ways
     Note over H,A: cpmux session inside the TLS
     P->>S: unix:///run/discobox/control-plane.sock
     S->>H: cpmux stream "control-plane"
@@ -727,6 +727,10 @@ sequenceDiagram
   releases on `RemovePool` and `Close`. It dials the agent at the same lease
   every other call uses (`AcquirePoolAgentClient`), on the lease's transport
   rather than its client, so no client timeout cuts it.
+- **How it crosses a front.** A binary WebSocket, asked for over HTTP/1.1
+  ([ADR 26-10-31-152](../../docs/adr/26-10-31-152-the-control-plane-channel-is-a-websocket.md)):
+  a hosted edge (boxd's) forwards WebSockets, not an upgrade to a protocol of
+  its own.
 - **What it trusts.** The TLS is the channel's own whatever the front is (a
   droplet's agent port is plain HTTP): the agent presents the pool's enrolled
   key, which the server checks against the pool row, and the server presents

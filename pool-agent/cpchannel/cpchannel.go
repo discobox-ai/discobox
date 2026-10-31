@@ -3,10 +3,11 @@
 // being reachable at all (ADR 26-10-30-875 §§1–2).
 //
 // The server dials the agent at the URL every other server-to-agent call
-// uses, and asks to upgrade a signed request on the agent's API (Path). Over
-// the upgraded connection the two ends run TLS 1.3 of their own, mutual and
-// pinned to keys each already holds — the pool's enrolled key, and the
-// server's pool-agent issuer key the agent verifies every server request
+// uses, and opens a binary WebSocket with a signed request on the agent's
+// API (Path), so any front that forwards WebSockets carries it (ADR
+// 26-10-31-152). Over the WebSocket the two ends run TLS 1.3 of their own,
+// mutual and pinned to keys each already holds — the pool's enrolled key, and
+// the server's pool-agent issuer key the agent verifies every server request
 // with — and a cpmux session inside it. The agent then opens a stream on the
 // session for every connection its own processes make to the control plane
 // (Channel.Serve), and the server hands each one to its carrier hub.
@@ -17,14 +18,12 @@
 package cpchannel
 
 import (
-	"bufio"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -33,16 +32,19 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
-// Protocol is the Upgrade token of a control-plane channel.
-const Protocol = "discobox-control-plane/1"
+// Subprotocol names the channel in its WebSocket handshake. Both ends require
+// it, so a channel never runs against something that speaks another protocol.
+const Subprotocol = "discobox-control-plane.v1"
 
 // Action is the last segment of the channel's route on the agent's API.
 const Action = "control-plane-channel"
 
-// handshakeTimeout bounds the TLS handshake on a fresh upgrade. Both ends are
-// already talking; anything slower is a peer that is not going to finish.
+// handshakeTimeout bounds the TLS handshake on a fresh WebSocket. Both ends
+// are already talking; anything slower is a peer that is not going to finish.
 const handshakeTimeout = 30 * time.Second
 
 // Path is the channel's route on pool poolID's agent API, under the prefix
@@ -123,10 +125,11 @@ func serverTLS(serverKey ed25519.PrivateKey, pool ed25519.PublicKey) (*tls.Confi
 	}, nil
 }
 
-// Dial opens a channel to a pool's agent: the upgrade at baseURL on transport,
-// authorized with token (a server token that may open the channel), then the pinned TLS
-// over what it upgraded to. The connection it returns is the TLS one, which
-// the caller runs its cpmux client over.
+// Dial opens a channel to a pool's agent: the WebSocket at baseURL on
+// transport, authorized with token (a server token that may open the
+// channel), then the pinned TLS over it. The connection it returns is the TLS
+// one, which the caller runs its cpmux client over; closing it closes the
+// WebSocket.
 //
 // The transport is taken rather than a client because a client's timeout
 // would cut the channel off at its deadline: the channel lives as long as
@@ -136,28 +139,30 @@ func Dial(ctx context.Context, transport http.RoundTripper, baseURL, projectID, 
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+Path(projectID, poolID), nil)
+	ws, resp, err := websocket.Dial(ctx, strings.TrimRight(baseURL, "/")+Path(projectID, poolID), &websocket.DialOptions{
+		HTTPClient:      &http.Client{Transport: http1(transport)},
+		HTTPHeader:      http.Header{"Authorization": []string{"Bearer " + token}},
+		Subprotocols:    []string{Subprotocol},
+		CompressionMode: websocket.CompressionDisabled,
+	})
 	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Connection", "Upgrade")
-	req.Header.Set("Upgrade", Protocol)
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := (&http.Client{Transport: http1(transport)}).Do(req)
-	if err != nil {
+		if resp != nil && resp.StatusCode != http.StatusSwitchingProtocols {
+			var body []byte
+			if resp.Body != nil {
+				body, _ = io.ReadAll(io.LimitReader(resp.Body, 512))
+				_ = resp.Body.Close()
+			}
+			return nil, fmt.Errorf("open the control-plane channel: the pool agent answered %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		}
 		return nil, fmt.Errorf("open the control-plane channel: %w", err)
 	}
-	if resp.StatusCode != http.StatusSwitchingProtocols {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("open the control-plane channel: the pool agent answered %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	if ws.Subprotocol() != Subprotocol {
+		_ = ws.CloseNow()
+		return nil, fmt.Errorf("open the control-plane channel: the pool agent does not speak %s", Subprotocol)
 	}
-	upgraded, ok := resp.Body.(io.ReadWriteCloser)
-	if !ok {
-		_ = resp.Body.Close()
-		return nil, errors.New("open the control-plane channel: the upgraded connection is not writable")
-	}
-	conn := tls.Client(streamConn{ReadWriteCloser: upgraded}, config)
+	// The channel outlives the dial's context: it is closed through the
+	// connection returned, and the caller's session ends with it.
+	conn := tls.Client(websocket.NetConn(context.Background(), ws, websocket.MessageBinary), config)
 	handshake, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
 	if err := conn.HandshakeContext(handshake); err != nil {
@@ -167,11 +172,11 @@ func Dial(ctx context.Context, transport http.RoundTripper, baseURL, projectID, 
 	return conn, nil
 }
 
-// http1 is transport speaking HTTP/1.1 alone. HTTP/2 has no Upgrade, and Go's
-// HTTP/2 client refuses an Upgrade header other than websocket's outright, so
-// over an HTTPS front that offers HTTP/2 (boxd's edge) the channel would never
-// open. A transport that is not an *http.Transport is the caller's to have
-// made HTTP/1.1.
+// http1 is transport speaking HTTP/1.1 alone. A WebSocket opens with an
+// HTTP/1.1 Upgrade, which HTTP/2 does not have, so over an HTTPS front that
+// offers HTTP/2 (boxd's edge) a transport that negotiated h2 could never open
+// the channel. A transport that is not an *http.Transport is the caller's to
+// have made HTTP/1.1.
 func http1(transport http.RoundTripper) http.RoundTripper {
 	t, ok := transport.(*http.Transport)
 	if !ok {
@@ -191,40 +196,26 @@ func http1(transport http.RoundTripper) http.RoundTripper {
 	return t
 }
 
-// accept upgrades one request on the pool end and completes the pinned TLS
-// over it, returning the TLS connection. The request has already been
-// authorized as the server's; the TLS proves it is the server at the other
-// end of this connection too, not only who asked for it.
+// accept opens the WebSocket of one request on the pool end and completes
+// the pinned TLS over it, returning the TLS connection. The request has
+// already been authorized as the server's; the TLS proves it is the server at
+// the other end of this connection too, not only who asked for it. A request
+// that is not a WebSocket is answered 426 by websocket.Accept.
 func accept(w http.ResponseWriter, r *http.Request, config *tls.Config) (net.Conn, error) {
-	if !headerHasToken(r.Header, "Connection", "upgrade") || !strings.EqualFold(strings.TrimSpace(r.Header.Get("Upgrade")), Protocol) {
-		http.Error(w, "a control-plane channel is an upgrade to "+Protocol, http.StatusUpgradeRequired)
-		return nil, errors.New("not an upgrade to the control-plane channel")
-	}
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		http.Error(w, "this connection cannot be upgraded", http.StatusInternalServerError)
-		return nil, errors.New("the response cannot be hijacked")
-	}
-	raw, buffered, err := hijacker.Hijack()
+	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		Subprotocols:    []string{Subprotocol},
+		CompressionMode: websocket.CompressionDisabled,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("take over the connection: %w", err)
+		return nil, fmt.Errorf("open the channel's WebSocket: %w", err)
 	}
-	_, err = buffered.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: " + Protocol + "\r\n\r\n")
-	if err == nil {
-		err = buffered.Flush()
+	if ws.Subprotocol() != Subprotocol {
+		_ = ws.Close(websocket.StatusPolicyViolation, "the "+Subprotocol+" subprotocol is required")
+		return nil, fmt.Errorf("the channel's WebSocket did not ask for %s", Subprotocol)
 	}
-	if err != nil {
-		_ = raw.Close()
-		return nil, fmt.Errorf("answer the upgrade: %w", err)
-	}
-	// Nothing should follow the request before the 101, but what the server
-	// already read past it is the start of the TLS handshake if anything is.
-	conn := raw
-	if buffered.Reader.Buffered() > 0 {
-		conn = bufferedConn{Conn: raw, reader: buffered.Reader}
-	}
-	_ = raw.SetDeadline(time.Time{})
-	tlsConn := tls.Server(conn, config)
+	// The request's context ends when the handler returns, and the channel
+	// outlives it: it is closed through the connection returned.
+	tlsConn := tls.Server(websocket.NetConn(context.Background(), ws, websocket.MessageBinary), config)
 	handshake, cancel := context.WithTimeout(r.Context(), handshakeTimeout)
 	defer cancel()
 	if err := tlsConn.HandshakeContext(handshake); err != nil {
@@ -233,40 +224,3 @@ func accept(w http.ResponseWriter, r *http.Request, config *tls.Config) (net.Con
 	}
 	return tlsConn, nil
 }
-
-func headerHasToken(header http.Header, name, token string) bool {
-	for _, value := range header.Values(name) {
-		for _, part := range strings.Split(value, ",") {
-			if strings.EqualFold(strings.TrimSpace(part), token) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// streamConn is the client's upgraded body as a net.Conn, which TLS needs.
-// The body has no addresses or deadlines of its own; the TLS handshake is
-// bounded by its context instead, and the session after it by its keepalive.
-type streamConn struct {
-	io.ReadWriteCloser
-}
-
-func (streamConn) LocalAddr() net.Addr              { return channelAddr{} }
-func (streamConn) RemoteAddr() net.Addr             { return channelAddr{} }
-func (streamConn) SetDeadline(time.Time) error      { return nil }
-func (streamConn) SetReadDeadline(time.Time) error  { return nil }
-func (streamConn) SetWriteDeadline(time.Time) error { return nil }
-
-type channelAddr struct{}
-
-func (channelAddr) Network() string { return "control-plane-channel" }
-func (channelAddr) String() string  { return "control-plane-channel" }
-
-// bufferedConn reads what the HTTP server had already buffered first.
-type bufferedConn struct {
-	net.Conn
-	reader *bufio.Reader
-}
-
-func (c bufferedConn) Read(p []byte) (int, error) { return c.reader.Read(p) }
