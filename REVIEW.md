@@ -19,6 +19,14 @@ Global review expectations:
   comments, not only the Go callers the compiler finds. Renaming
   `agentlayer.AgentLayer` to `ExtractAgent` left five citations of the old
   name, a review note among them, pointing at code that was gone.
+- Changing how a sandbox is named on screen (`sandboxmeta.Title`,
+  `services.SandboxDisplayName`) also updates every place that tells a person
+  or an agent the rule, most of them off the change's path: the `Meta.Name`
+  comment, `writeSandboxName` in `cli/internal/cli/rename.go`, the rename
+  dialog in `cli/internal/tui/DESIGN.md`, the in-box `discobox` skill
+  (`sandbox-agent/features/core/skills/discobox/SKILL.md`), and the status
+  line of every ADR the rule supersedes. The rule changed twice in a day, and
+  each change left some of these describing the rule before it.
 - Retiring a concept: grep every `DESIGN.md`, `REVIEW.md`, `AGENTS.md` and
   skill under `.agents/skills` for it, and the shared skills in the
   discobox-ai/skills repository, not only the docs on the change's path.

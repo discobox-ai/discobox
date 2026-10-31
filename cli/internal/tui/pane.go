@@ -221,15 +221,12 @@ func (p *pane) name() string {
 // paneName is what to call a pane on screen. The primary terminal answers to
 // what the discobox is called (primaryTitle) when it is called anything: the
 // name it was given, the way the listing and the window title do (ADR
-// 26-10-12-026: a set name shows in "the console and the window title"), and
-// the msg its program reports after it. The harness titles its session as it
-// goes, and a name a person or the agent chose outranks that; a harness that
-// speaks OSC 7501 says what the session is in its msg instead. The harness's
-// title is then on screen only inside the program itself. The name is read off
-// the listing rather than the snapshot the pane was opened on, so a name
-// written into the box's meta reaches the tab within a poll whether or not the
-// program retitles itself. Every other pane is what its program says it is
-// (pane.name).
+// 26-10-12-026: a set name shows in "the console and the window title"),
+// followed by the msg its program reports or, with none, the title it set (ADR
+// 26-10-31-618). The name is read off the listing rather than the snapshot the
+// pane was opened on, so a name written into the box's meta reaches the tab
+// within a poll whether or not the program retitles itself. Every other pane is
+// what its program says it is (pane.name).
 func (m *Model) paneName(p *pane) string {
 	if p.primary {
 		if title := m.primaryTitle(); title != "" {
