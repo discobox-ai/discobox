@@ -35,17 +35,27 @@ func watchHarnessConfig(ctx context.Context, home string, paths []string, observ
 			return
 		}
 		for _, target := range targets {
+			// Arm parents before children: a directory created after its
+			// parent's watch is reported by that parent, and one created before
+			// is found by the Stat below. Arming children first loses a
+			// directory created between checking it and watching its parent.
+			var dirs []string
 			for dir := filepath.Dir(target); withinCaptureHome(home, dir); dir = filepath.Dir(dir) {
+				dirs = append(dirs, dir)
+				if dir == home {
+					break
+				}
+			}
+			for i := len(dirs) - 1; i >= 0; i-- {
+				dir := dirs[i]
 				// Avoid watching symlinks into unrelated trees. This check is
 				// best-effort (Add uses a path); exports independently enforce
 				// os.Root confinement and never trust an event's contents.
 				resolved, resolveErr := filepath.EvalSymlinks(dir)
-				if resolveErr == nil && withinCaptureHome(home, resolved) {
-					if info, statErr := os.Stat(dir); statErr == nil && info.IsDir() {
-						_ = watcher.Add(dir)
-					}
+				if resolveErr != nil || !withinCaptureHome(home, resolved) {
+					break
 				}
-				if dir == home {
+				if info, statErr := os.Stat(dir); statErr != nil || !info.IsDir() || watcher.Add(dir) != nil {
 					break
 				}
 			}
