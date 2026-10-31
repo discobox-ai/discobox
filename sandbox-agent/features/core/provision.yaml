@@ -42,6 +42,8 @@ steps:
     file: {path: /usr/local/share/discobox/skills/discobox/SKILL.md, source: skills/discobox/SKILL.md}
   - name: skill-discobox-access
     file: {path: /usr/local/share/discobox/skills/discobox-access/SKILL.md, source: skills/discobox-access/SKILL.md}
+  - name: skill-discobox-monitor
+    file: {path: /usr/local/share/discobox/skills/discobox-monitor/SKILL.md, source: skills/discobox-monitor/SKILL.md}
 
   # The system trust store, built whole so boot only adds the box's CA to it.
   - name: ca-store

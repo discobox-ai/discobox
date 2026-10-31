@@ -327,7 +327,9 @@ when you take one — a box held up keeps its share of the pool while it waits.
 ### Sleep, and name when to wake
 
 When you are done for now but have to look again later — CI, a review, a job
-running somewhere else — do not hold the box up waiting. Put it to sleep and
+running somewhere else — do not hold the box up waiting. (To be told while you
+are still working, enable a monitor and keep `discobox-monitor pop --wait`
+running: the `discobox-monitor` skill.) Put it to sleep and
 say when to wake it:
 
 ```bash
@@ -435,6 +437,10 @@ Read from the primary source's tree, versioned with it:
   `/usr/local/share/discobox/tools`, and the user's own win over both. The diff
   is `id: ai.discobox.diff`, which the user's git summary opens; a declaration
   with that id replaces it.
+- `.discobox/monitors/` — event monitors an agent can enable: scripts with
+  front matter that print a line per change. Nothing runs until one is
+  enabled with `discobox-monitor enable`, and a monitor you write goes here.
+  See the `discobox-monitor` skill.
 - `.discobox/skills/` — skills installed into the harness's skill directories
   once, at the box's first launch. One added later reaches the next box, not
   this one.
@@ -452,6 +458,9 @@ Installed in every discobox, whatever it was made from:
 - **discobox-access** — ask a human for a credential this box was not given,
   and run one command with it. Use on a 401/403, or when a CLI says it is not
   logged in.
+- **discobox-monitor** — watch a repository, a PR, a CI run, a command, a
+  file or a URL, and pop the events it queues. Only a running
+  `discobox-monitor pop --wait` wakes you. Discobox never prompts you.
 - **discobox-review** — have fresh-eyes subagents review the working tree —
   the default reviewer and any the repository defines in `.discobox/review/` —
   and drive it to sign-off.
