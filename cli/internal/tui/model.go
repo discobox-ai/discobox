@@ -295,6 +295,11 @@ type Model struct {
 	clicks         int
 	clickX, clickY int
 	clickAt        time.Time
+	// clickBox is the box whose tree row the last press landed on: a second
+	// press on the same cell is a double click only on the same box, since a
+	// listing that reordered the tree between the two would otherwise start
+	// one the first press never pointed at.
+	clickBox string
 	// now is the clock the window counts elapsed time against: the
 	// double-click window above, and how long a read has been out (see poll),
 	// which is what decides whether the band says the listing is late. One
@@ -4673,8 +4678,9 @@ func (m *Model) helpText() string {
 		"    Ctrl-Shift-K / Ctrl-Shift-J",
 		"                   the same, with no leader, in a terminal that",
 		"                   speaks the Kitty keyboard protocol",
-		"  A stopped discobox is not started by passing it: the walk stops",
-		"  on its row, and Enter starts it.",
+		"  A stopped discobox is not started by passing it: the walk, or a",
+		"  click on its row, stops there, and Enter or a double click",
+		"  starts it.",
 		"    " + leader + " " + paneZoomKey + "       on the list, the whole home screen and back",
 		"    n              on the list, a new discobox",
 		"",

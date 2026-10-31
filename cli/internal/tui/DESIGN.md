@@ -82,8 +82,8 @@ list with two sizes rather than two lists.
 
 ```mermaid
 flowchart LR
-    T["tree (listFront)"] -->|Enter, click| Sw["switchTo"]
-    W["leader ↑↓, Ctrl-Shift-K/J"] --> Walk["switchBox"]
+    T["tree (listFront)"] -->|Enter, double click| Sw["switchTo"]
+    W["leader ↑↓, Ctrl-Shift-K/J, click"] --> Walk["landOn"]
     Walk -->|live or parked| Sw
     Walk -->|otherwise| Stop["stop: tree's cursor on the row"]
     Stop --> T
@@ -118,22 +118,30 @@ flowchart LR
   second push races the first. A report from a parked one names the box. A
   parked primary that ends takes its workspace with it, as an open one's
   does. Quitting closes every parked stream (`closeParked`).
-- **A press on a row switches to that box** (ADR 26-10-31-319, superseding
+- **A press on a row switches to a live box** (ADR 26-10-31-319, superseding
   ADR 0088 §4 and §2 for the tree): the tree is a switcher, and a picked row
-  whose box is not on screen would leave the two disagreeing. The tree's text
+  whose box is not on screen would leave the two disagreeing. On a box that
+  is not live this departs from 319 §1, which has every press attach: 319
+  did not weigh that attaching starts a stopped box, and a press is a step of
+  the walk below (`landOn`), so such a box is only pointed at — the "first
+  press picks, second acts" it rejected, for these boxes alone. A double
+  press on the same box is Enter: it starts that box, and on the box on
+  screen — the one its first press switched to, still opening or not — gives
+  its panes the keys rather than the list, which otherwise stood in front of
+  a workspace nobody could type at. The tree's text
   is not chrome-selectable; the expanded list is the list screen, where it
   is. A gesture the window holds stays the window's over the tree, so a drag
   released there still reaches its pane. The right button opens the row's
   menu: the box on screen's (below), or any other's list menu.
-- **A walk never starts a box** (`switchBox`). The leader's ↑↓ switch to
+- **A walk never starts a box** (`switchBox`, `landOn`). The leader's ↑↓ switch to
   each box they land on, but attaching to one that is not `live` — stopped,
   suspended, or errored with a container that may be off — is what starts
   it, and passing over a row is not asking for that. So the walk stops
   there with only the tree's cursor — the list takes the keys, the workspace
   stays on screen, and Enter starts it as from the list. The leader's ↑↓
   carry on from the list's cursor, and stepping back onto the box on screen
-  gives the panes back the keys. A press on the row is a pick and still
-  attaches.
+  gives the panes back the keys, as Esc does — to a workspace still opening
+  too, whose keys are the leader's until its pane arrives (`backToPanes`).
 - **The walk has a leaderless chord** (`boxUpKey`, `boxDownKey`):
   Ctrl-Shift-K/J, bound bare in the workspace's panes (`termpane.WithBinding`)
   and answered by the window from the list, a page, or a workspace still
