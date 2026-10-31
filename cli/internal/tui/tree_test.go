@@ -426,6 +426,55 @@ func TestTheChordDoesNotWalkOutOfTheNewCard(t *testing.T) {
 	}
 }
 
+// A single click on a stopped box's row in the tree is a step onto it: the
+// cursor goes there and nothing is attached, so nothing starts. The second
+// press of a double click is Enter, and attaches — starting it.
+func TestAClickOnAStoppedRowPointsAndADoubleClickStartsIt(t *testing.T) {
+	t.Parallel()
+	boxes := testSandboxes()
+	boxes[1].State = StateStopped
+	ds := newFakeSource(boxes...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	x, y := at(t, m, "exec/terminal cons")
+	d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	d.settle()
+	if got := m.list.current(); m.paneBox.ID != "sbx_one" || !m.listFront || got == nil || got.ID != "sbx_two" {
+		t.Fatalf("box %s, list front %v, cursor %v; want the click to point at the stopped sbx_two", m.paneBox.ID, m.listFront, got)
+	}
+	if got := primaryOpens(ds, "sbx_two"); got != 0 {
+		t.Fatalf("sbx_two's primary attached %d times, want a single click to start nothing", got)
+	}
+
+	d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	d.wait("the stopped box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+	if m.listFront || m.focus != focusPane {
+		t.Fatalf("list front %v, focus %v; want the started box's panes to have the keys", m.listFront, m.focus)
+	}
+}
+
+// A double click on a live box's row switches to it on the first press, and
+// the second, landing on the box now opening, leaves it the keys rather than
+// taking them for the list — the window is not left with the list in front
+// of a workspace nobody can type at.
+func TestADoubleClickOnALiveRowLeavesItsPanesTheKeys(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	x, y := at(t, m, "exec/terminal cons")
+	d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	d.wait("the second box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+	d.settle()
+	if m.listFront || m.focus != focusPane {
+		t.Fatalf("list front %v, focus %v; want sbx_two's panes to have the keys", m.listFront, m.focus)
+	}
+	if got := primaryOpens(ds, "sbx_two"); got != 1 {
+		t.Fatalf("sbx_two's primary attached %d times, want once", got)
+	}
+}
+
 // A parked workspace keeps emulating: what its terminal says while another
 // box is on screen is there when it comes back.
 func TestAParkedWorkspaceKeepsItsOutput(t *testing.T) {

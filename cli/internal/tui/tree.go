@@ -280,8 +280,10 @@ func (m *Model) backToPanes() {
 	m.prompt.Blur()
 	m.focus = focusPane
 	// The new discobox page, or the home screen when there is nothing right
-	// of the tree to go back to, is the composer's.
-	if m.newOpen || (!m.hasWorkspace() && !m.pageOpen()) {
+	// of the tree to go back to, is the composer's. A workspace still opening
+	// is something to go back to: the keys are the leader's until its pane
+	// arrives (openWorkspace).
+	if m.newOpen || (!m.hasWorkspace() && !m.wsOpening && !m.pageOpen()) {
 		m.focus = focusPrompt
 		m.prompt.Focus()
 	}
@@ -479,8 +481,16 @@ func (m *Model) switchBox(delta int) tea.Cmd {
 		}
 		return nil
 	}
-	if !next.live() && m.parked[next.ID] == nil {
-		box := *next
+	return m.landOn(*next)
+}
+
+// landOn moves to a box other than the one on screen the way a step along the
+// tree does — a walk's step, or a single click on its row: a live or parked one
+// is switched to, and any other is only pointed at, the list's cursor on its
+// row and the list in front, since attaching to it would start it. Enter, or a
+// double click, is what goes on to start it (switchTo).
+func (m *Model) landOn(box Sandbox) tea.Cmd {
+	if !box.live() && m.parked[box.ID] == nil {
 		m.focusTree()
 		m.listCursorTo(box.ID)
 		if box.startable() {
@@ -488,7 +498,7 @@ func (m *Model) switchBox(delta int) tea.Cmd {
 		}
 		return status("%s is %s — enter attaches", sandboxLabel(box), box.State)
 	}
-	return m.switchTo(*next)
+	return m.switchTo(box)
 }
 
 // switchTo shows one discobox's workspace: its parked one when it has one,
@@ -704,6 +714,21 @@ func (m *Model) treeMouse(msg tea.MouseMsg) (tea.Msg, tea.Cmd, bool) {
 			}
 			box := rows[where.what.idx]
 			m.list.moveTo(where.what.idx)
+			// A double click is Enter on the row: it attaches, starting a
+			// box the first click only pointed at, and on the box on screen
+			// — the one the first click just switched to, opened or still
+			// opening — it gives that box the keys rather than the list.
+			clicks, prev := m.countClick(mouse.X, mouse.Y), m.clickBox
+			m.clickBox = box.ID
+			if clicks > 1 && prev == box.ID {
+				if box.ID == m.paneBox.ID {
+					if m.hasWorkspace() || m.wsOpening {
+						m.showLive()
+					}
+					return nil, nil, true
+				}
+				return nil, m.switchTo(box), true
+			}
 			if box.ID == m.paneBox.ID && m.pageUp() && m.hasWorkspace() {
 				m.showLive()
 				return nil, nil, true
@@ -712,7 +737,7 @@ func (m *Model) treeMouse(msg tea.MouseMsg) (tea.Msg, tea.Cmd, bool) {
 				m.focusTree()
 				return nil, nil, true
 			}
-			return nil, m.switchTo(box), true
+			return nil, m.landOn(box), true
 		default:
 			// The filter, the band's keys: what they do on the list screen.
 			m.focusTree()
