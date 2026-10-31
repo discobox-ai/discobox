@@ -52,8 +52,8 @@ const (
 // Meta is what the file holds.
 type Meta struct {
 	// Name is what a person or the agent calls the sandbox: one line of
-	// display text that a listing shows in place of the title its harness
-	// set. It identifies nothing — two sandboxes may share one — and an empty
+	// display text that leads what a listing shows, followed by what its
+	// program says (Title). It identifies nothing — two sandboxes may share one — and an empty
 	// one means none has been set (ADR 26-10-12-026).
 	Name string `json:"name,omitempty"`
 	// Description says what the sandbox is for, in the words of whoever
@@ -137,25 +137,32 @@ func NormalizeName(name string) string {
 	return strings.TrimSpace(name)
 }
 
-// Title is what a sandbox is called on screen when it has a name, or its
-// program reports a message, or both: the name, then the message, as
-// "name: msg" (ADR 26-10-31-618). The message is the msg the program in the primary terminal
-// last reported over OSC 7501 — a harness that speaks the protocol puts there
-// what it would otherwise have put in its window title (Claude Code's is the
-// session's title) — so it stands where the window title would, and a set
-// name heads it rather than hiding it. The message is made displayable
-// (programstatus.Displayable), since it is a program's free text. Empty when
-// there is neither, the caller's cue to fall back to the window title.
-func Title(name, msg string) string {
+// Title is what a sandbox is called on screen from what it holds: the name it
+// was given, then what its program says, as "name: words", and either alone
+// when it has only one (ADR 26-10-31-618). What its program says is the msg it
+// last reported over OSC 7501 while it has one — what it is doing now — and
+// otherwise the window title its primary terminal last set, which is what the
+// session is about (Claude Code titles the window with the session's title).
+// A harness reports a msg while it works or waits on a person and none while
+// idle, so the name says what the box is doing while it is doing something and
+// what it is for the rest of the time. A set name heads both rather than being
+// hidden by them. Both are made displayable (programstatus.Displayable), since
+// both are a program's free text, posted from inside the sandbox. Empty when
+// there is none of the three, the caller's cue to fall back to the configured
+// name.
+func Title(name, msg, title string) string {
 	name = strings.TrimSpace(name)
-	msg = strings.TrimSpace(programstatus.Displayable(msg, programstatus.MaxMsg))
+	words := strings.TrimSpace(programstatus.Displayable(msg, programstatus.MaxMsg))
+	if words == "" {
+		words = strings.TrimSpace(programstatus.Displayable(title, programstatus.MaxMsg))
+	}
 	switch {
 	case name == "":
-		return msg
-	case msg == "":
+		return words
+	case words == "":
 		return name
 	default:
-		return name + ": " + msg
+		return name + ": " + words
 	}
 }
 

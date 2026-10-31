@@ -967,9 +967,10 @@ it needs. The in-box skills teach these forms.
 Which *name* that is, is `nameMatch` (`internal/cli/shell.go`), and `rm` is the
 command that made the distinction necessary. The NAME column is
 `SandboxDisplayName`: the name the discobox was given when it has one
-(`discobox rename`), followed by its program's OSC 7501 msg as `name: msg`;
-else that msg, else the primary terminal's window title once something
-has set one, and the configured name only until then — and the configured name is
+(`discobox rename`), followed by what its program says — its OSC 7501 msg
+while it reports one, else the primary terminal's window title — as
+`name: words`; with no name, those words alone, and the configured name only
+until something has said any — and the configured name is
 generated (`randomname.Generate`; `run` has no `--name`), so it is a string the
 listing has usually stopped printing.
 
@@ -1418,10 +1419,10 @@ The NAME a sandbox listing shows is `Sandbox.displayName`, computed by the
 server (`services.SandboxDisplayName`) and read verbatim here — `discobox ls`, the
 console list, and any other client name a sandbox the same way because none of them
 derives it. The console's window title and primary tab are the exception: they
-apply the same rule (`sandboxmeta.Title`) to the msg the attached stream
-reported, which is newer than the poll's. A name set with `discobox rename` (the discobox's meta name,
+apply the same rule (`sandboxmeta.Title`) to the msg and title the attached
+stream reported, which are newer than the poll's. A name set with `discobox rename` (the discobox's meta name,
 ADR 26-10-12-026) leads it, followed by the program's OSC 7501 msg while the
-box is running (ADR 26-10-31-618), and
+box is running and it reports one, else the window title (ADR 26-10-31-618), and
 resolves alone as any listed name does (`listedName`); `admin box update --name` still edits the configured name,
 which `configuredName` arguments match.
 

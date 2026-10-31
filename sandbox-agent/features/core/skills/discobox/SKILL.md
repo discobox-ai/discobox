@@ -254,11 +254,12 @@ the change is written into this same file.
 }
 ```
 
-- `name` — what the box is called: one line, at most 128 bytes. When set it is
-  the NAME the user's `discobox ls` and window show, in place of the title
-  your own session set. This is how you rename the box when asked to; a
-  session title (`/rename` and the like) does not last. Leave it out, or empty,
-  and the box is listed by that title again.
+- `name` — what the box is called: one line, at most 128 bytes. When set it
+  leads the NAME the user's `discobox ls` and window show, followed by what
+  your session says — what you are doing while you work, else its title — as
+  `name: words`. This is how you rename the box when asked to; a session title
+  (`/rename` and the like) only changes the words after it. Leave it out, or
+  empty, and the box is listed by those words alone.
 - `description` — what the box is for. The listing shows its first line, so
   make that line stand on its own; more lines are for detail.
 - `tags` — key to value. An empty value makes a plain label (`"wip": ""`).

@@ -1221,8 +1221,8 @@ and a blank line would make that a retype. Enter on the unchanged name is the
 same as Esc, since neither asked for anything. It takes exactly one discobox,
 because a name is a name and a selection cannot share one. The name it sets is
 the one in the discobox's meta (`DataSource.Rename`, the write `discobox rename`
-makes, ADR 26-10-12-026), which the row shows from then on in place of the
-title its harness set, followed by its program's msg (ADR 26-10-31-618) — so a row showing a title can be renamed, where it could
+makes, ADR 26-10-12-026), which the row shows from then on ahead of what its
+program says — its msg, else its title (ADR 26-10-31-618) — so a row showing a title can be renamed, where it could
 not while rename edited the configured name the row was not showing. A stopped
 discobox is started to take it, as it is for a tag, so an archived one, which
 cannot be started, refuses it with the reason. Enter on what is shown is still
@@ -2219,19 +2219,19 @@ from outside the window, where what matters is which discobox this is and what
 its agent is doing; a tab or a report is something you are doing inside the
 window and already looking at. What the box is called (`primaryTitle`) comes
 first in both: the name it was given (`Sandbox.GivenName`) followed by the msg
-its program reports over OSC 7501, as `name: msg` (`sandboxmeta.Title`, the
-server's display name rule), or either alone. The primary's border is that,
-else what `pane.name` says (`Model.paneName`), and the title bar is that, else
-the primary's title, else the box's display name (`windowTitle`); ADR
-26-10-12-026 has a set name show in the console and the window title, and a
-harness that speaks OSC 7501 puts in its msg what it would otherwise title the
-window with. The msg is `focusedProgramStatus`'s, so the stream's when it is
-newer than the poll. The record sent to the outer terminal names the box
+its program reports over OSC 7501 while it reports one, else the primary's
+window title, as `name: words` (`sandboxmeta.Title`, the server's display name
+rule), or either alone. The primary's border is that, else what `pane.name`
+says (`Model.paneName`), and the title bar is that, else the box's display
+name (`windowTitle`); ADR 26-10-12-026 has a set name show in the console and
+the window title. The msg says what the agent is doing while it works or waits;
+idle it reports none, and the title (Claude Code's is the session's title) says
+what the session is about. The msg is `focusedProgramStatus`'s, so the stream's
+when it is newer than the poll, and the title is the pane's own. The record sent to the outer terminal names the box
 without its program's words — given name, else configured name, else ID
 (`recordTitle`) — since it carries the msg beside it (ADR 26-10-31-618). The given name is read off the listing rather than the
 pane's snapshot, so a name written into the box's meta shows within a poll
-whether or not the program retitles itself, and while it is set the harness's
-title is on screen only inside the program. With no primary the terminal's
+whether or not the program retitles itself. With no primary the terminal's
 title is left exactly as the shell that started the window left it. On a
 terminal that does not know OSC 7501 the title is led by the
 primary box's status glyph (see the agent glyph section above). Messages the window does not handle fall through to the pane, because the

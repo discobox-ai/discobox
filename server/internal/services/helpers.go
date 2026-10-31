@@ -737,17 +737,14 @@ func SandboxDisplayState(sandbox *model.Sandbox) string {
 
 // SandboxDisplayName is the name a listing shows for a sandbox: the name in
 // its meta when one is set (ADR 26-10-12-026 §3), followed by what the program
-// in its primary terminal last reported as its msg (OSC 7501) when it reported
-// one while the sandbox is running, as "name: msg" (sandboxmeta.Title; ADR
-// 26-10-31-618). With no name set, the msg alone,
-// then the window title its primary terminal last set, the sandbox's own
-// configured name until one has, and the sandbox ID when it has no name
-// either. The title is what the harness says the work is about, which tells
-// two sandboxes apart better than two generated names do; a harness that
-// reports its status over OSC 7501 says that in the msg instead and leaves
-// its title alone, so the msg stands where the title would. A set name is
-// what a person or the agent chose to call it, which outranks what the
-// harness happened to write, and leads it.
+// in its primary terminal says — the msg it last reported over OSC 7501 while
+// the sandbox is running and it has one, else the window title the terminal
+// last set — as "name: words" (sandboxmeta.Title; ADR 26-10-31-618). Either
+// alone when there is only one, then the sandbox's own configured name, and the
+// sandbox ID when it has no name either. The msg says what the work is doing
+// and the title what it is about; both tell two sandboxes apart better than two
+// generated names do. A set name is what a person or the agent chose to call
+// it, which outranks what the harness happened to write, and leads it.
 //
 // It is computed here, next to the display state it sits beside on the wire, so
 // every client names a sandbox the same way rather than each rediscovering the
@@ -762,11 +759,8 @@ func SandboxDisplayName(sandbox *model.Sandbox) string {
 		// and nothing is doing what that msg says in a box that is off.
 		msg = ""
 	}
-	if name := sandboxmeta.Title(sandboxMetaName(sandbox), msg); name != "" {
+	if name := sandboxmeta.Title(sandboxMetaName(sandbox), msg, title); name != "" {
 		return name
-	}
-	if title != "" {
-		return title
 	}
 	if name := strings.TrimSpace(sandbox.Name); name != "" {
 		return name
