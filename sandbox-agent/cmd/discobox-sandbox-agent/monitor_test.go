@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -217,6 +218,9 @@ func TestMonitorDisableSaysWhatIsStillPending(t *testing.T) {
 }
 
 func TestMonitorTestPrintsEventsAndEnablesNothing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("runs a shell script by its path, which Windows cannot")
+	}
 	env := testMonitorEnv(t)
 	out, err := runMonitorCmd(t, env, "test", "hello")
 	if err != nil {

@@ -5,15 +5,27 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
+// requireScripts skips a test that runs a monitor script: Windows runs no
+// `#!` script by its path, and a Windows sandbox's monitors are its own kind
+// of executable, which these scripts are not.
+func requireScripts(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("runs a shell script by its path, which Windows cannot")
+	}
+}
+
 // startInstance enables a monitor whose script is body and runs its runner
 // until it returns or timeout passes.
 func startInstance(t *testing.T, body string, options map[string]string, timeout time.Duration) (Dirs, error) {
 	t.Helper()
+	requireScripts(t)
 	d := HomeDirs(t.TempDir())
 	path := writeMonitor(t, t.TempDir(), "probe.sh", body)
 	inst := Instance{Name: "probe", Monitor: "probe", Path: path, Workdir: t.TempDir(), Options: options}
@@ -163,6 +175,7 @@ echo "{\"title\":\"$DISCOBOX_OPT_REPO|$DISCOBOX_OPT_MAX_AGE|${DISCOBOX_OPT_STRAY
 }
 
 func TestARunnerStopsWhenItsInstanceIsDisabledAndReplaced(t *testing.T) {
+	requireScripts(t)
 	d := HomeDirs(t.TempDir())
 	path := writeMonitor(t, t.TempDir(), "probe.sh", "#!/bin/sh\n#---\n# interval: 1s\n#---\n")
 	if _, err := Enable(d, Instance{Name: "probe", Monitor: "probe", Path: path}); err != nil {
@@ -196,6 +209,7 @@ func TestARunnerStopsWhenItsInstanceIsDisabledAndReplaced(t *testing.T) {
 }
 
 func TestATestRunWritesNoState(t *testing.T) {
+	requireScripts(t)
 	path := writeMonitor(t, t.TempDir(), "probe.sh", "#!/bin/sh\n#---\n#---\necho hello\n")
 	state := t.TempDir()
 	var got []Event

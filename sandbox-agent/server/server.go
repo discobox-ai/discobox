@@ -715,8 +715,9 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// The monitors an agent enabled resume with the box (ADR 26-10-31-073
 	// §5), once the working tree a monitor runs in is there and the whole
 	// provisioning run, async features included, is over. A configure sandbox
-	// is not worked in, and runs none.
-	if config.WorkedIn(cfg.HarnessMode) {
+	// is not worked in, and runs none; nor does a Windows one, which cannot run
+	// a monitor's script (monitors.Supported).
+	if config.WorkedIn(cfg.HarnessMode) && monitors.Supported {
 		if reconciler, err := newMonitorReconciler(execManager, logger); err != nil {
 			logger.Warn("sandbox agent monitors disabled", "error", err)
 		} else {
