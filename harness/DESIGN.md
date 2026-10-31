@@ -156,12 +156,15 @@ coding harnesses; shell carries no capture implementation.
   sets. codex and opencode declare none until their hosts are established from
   their own documentation (ADR 26-10-01-032 §3), so a restricted project lists
   them itself.
-- **claude-code sends no nonessential traffic.** Its env layer sets
-  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` for every discobox on it,
-  restricted or not: telemetry, error reports, and `/bug` are off. It is a
-  product decision taken with egress, not a consequence of it — a restricted
-  discobox would otherwise spend refused requests on them, and Discobox does
-  not want them sent from an unrestricted one either.
+- **claude-code sends no telemetry.** Its env layer sets `DISABLE_TELEMETRY`,
+  `DISABLE_ERROR_REPORTING` and `DISABLE_FEEDBACK_COMMAND` for every discobox
+  on it, restricted or not: telemetry, error reports, and `/feedback` (`/bug`)
+  are off, from an unrestricted discobox too. Its other background calls are
+  not held back (pull request status through `gh`, quota probes, plugin and
+  MCP directory lookups); a restricted discobox's proxy refuses those its
+  egress does not allow. Not `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, which
+  holds those back as well: it also stops Claude Code titling the session, and
+  that title is what names a box while its agent is idle (ADR 26-10-31-618).
 - **A manifest is a stack of layers** (ADR 0086 §2). A bundle's effective
   manifest is `harness.ComposeBundleLabels`: the platform's `10-platform`
   layer, then every `io.discobox.image.v1.<NN>-<name>` label the bundle
