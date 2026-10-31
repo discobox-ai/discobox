@@ -81,6 +81,7 @@ duplicated number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
+| [26-10-30-584](26-10-30-584-a-credential-policy-file-supplies-a-bindings-routes.md) | A credential policy file supplies a binding's routes | Accepted |
 | [26-10-26-573](26-10-26-573-a-harness-exports-local-configuration-back-to-its-config.md) | A harness exports local configuration back to its config | Accepted (narrows 0011 §2, 26-10-14-718 §2, and 26-10-15-848 §3; §3's harness-config grant superseded by [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md); §3's conflict-resolution requirement narrowed by [26-10-30-775](26-10-30-775-a-user-can-force-save-a-reviewed-harness-candidate.md)) |
 | [26-10-30-775](26-10-30-775-a-user-can-force-save-a-reviewed-harness-candidate.md) | A user can force-save a reviewed harness candidate | Accepted (narrows 26-10-26-573 §3's conflict-resolution requirement) |
 | [26-10-27-345](26-10-27-345-a-machine-sandbox-is-made-again-in-place-and-its-bootstrap-names-where-its-agent-listens.md) | A machine sandbox is made again in place, and its bootstrap names where its agent listens | Accepted (narrows [26-10-08-127](26-10-08-127-a-sandboxs-bootstrap-is-static-and-the-intake-carries-the-rest.md) §1 for a machine, and [26-10-23-551](26-10-23-551-a-vm-pool-bootstraps-its-own-agent-from-a-bundle-and-provisions-its-machines.md) §3's listen address) |
