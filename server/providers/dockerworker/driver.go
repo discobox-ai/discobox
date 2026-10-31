@@ -8,7 +8,6 @@ package dockerworker
 import (
 	"context"
 	"net"
-	"net/http"
 	"strings"
 	"sync"
 
@@ -207,9 +206,11 @@ func NewDockerClientForDialer(dial func(ctx context.Context, network, addr strin
 
 // NewDockerClientForHost builds a Docker API client for a directly reachable
 // daemon endpoint such as unix:///path or tcp://host:port.
+//
+// Deliberately no WithHTTPClient, for NewDockerClientForDialer's reason and
+// one more: given a pre-built http.Client the client chose https for a plain
+// daemon, so every call to a unix:// or tcp:// endpoint (an exec provider's)
+// failed with "server gave HTTP response to HTTPS client".
 func NewDockerClientForHost(host string) (*client.Client, error) {
-	return client.New(
-		client.WithHTTPClient(&http.Client{Transport: &http.Transport{}}),
-		client.WithHost(host),
-	)
+	return client.New(client.WithHost(host))
 }
