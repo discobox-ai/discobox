@@ -82,7 +82,8 @@ answer an unencodable chord with a configurable keymap, and Claude Code's
 the same thing, in the open, where the host declares it and can leave it out.
 
 It is taken before the encoder and *after* everything the pane reserves — the
-prefix, the detach key, a chord lead, the copy chord — none of which reach it,
+prefix, the detach key, a bare binding, a chord lead, the copy chord — none of
+which reach it,
 and neither do the keys the pane spells out itself: the reserved keys it types
 literally, and the arrows the wheel stands in for on an alternate screen. Those
 call `sendEncoded`, which is `SendKey` without the keymap, because a keymap
@@ -261,6 +262,10 @@ application also wants — Ctrl-C being the obvious one — while leaving a way 
 type it. What *happens* on detach is the host's decision; the pane keeps
 running. `WithPrefixBinding` reserves further keys behind the prefix, each
 emitting a host message instead of reaching the application.
+`WithBinding` reserves a key with no prefix at all, matched by its exact
+keystroke: for chords only an enhanced keyboard protocol can encode
+(Ctrl-Shift-J), which a classic terminal delivers as their unshifted form and so
+to the application, untouched.
 
 **A repaint is a question for the far end, not a redraw here** (`Model.Repaint`,
 `Stream.Repaint`). Nothing local fixes a pane whose screen is wrong: the
