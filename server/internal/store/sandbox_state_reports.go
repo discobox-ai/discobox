@@ -3,9 +3,12 @@ package store
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
@@ -143,11 +146,13 @@ func (s *Store) ApplySandboxStateReports(ctx context.Context, batch SandboxState
 				Updates(sandbox).Error; err != nil {
 				return err
 			}
-			// Of what this writes, only the state is in a sandbox's events:
-			// the restamp a complete sync makes of every sandbox records nothing.
-			if previous != sandbox.RuntimeState {
-				txStore.sandboxChanged(sandbox.ID)
-			}
+			// Every row written is handed to the event record, which compares
+			// it with the sandbox's latest event (ADR 26-10-29-316 §2), rather
+			// than judging the change here: a write is announced exactly when
+			// the row and the event disagree, however they came to, and the
+			// restamp a complete sync makes of an unchanged sandbox still
+			// records nothing.
+			txStore.sandboxChanged(sandbox.ID)
 			if missing || previous != sandbox.RuntimeState {
 				changed = append(changed, SandboxObservation{Sandbox: *sandbox, RuntimeMissing: missing})
 			}
@@ -177,13 +182,29 @@ func acceptSandboxStateReport(sandbox *model.Sandbox, batch SandboxStateReportBa
 	return !batch.ReportedAt.Before(*sandbox.StateReportedAt)
 }
 
+// listSandboxesForPool reads the pool's sandboxes for a state report, locked.
+//
+// What the batch decides from these rows has to be what it writes over: the
+// report watermark it accepts a report against (acceptSandboxStateReport) and
+// the state it calls the previous one, which decides what goes back to the
+// reconciler and what the event record is given. Read without a lock, two
+// batches for one pool in flight together both read the row as it was before
+// either: an older report is accepted over a newer one and puts its state and
+// sequence back, and a box that came back up reads as unchanged, so its
+// sentinels and proxy policy are never delivered again. Locked, the second
+// batch waits and reads what the first wrote. The rows are locked in ID order,
+// so two batches take them in the same order, and before the event counter,
+// which every transaction takes last (sandbox_events.go). SQLite has one
+// writer and takes no row lock.
 func (s *Store) listSandboxesForPool(ctx context.Context, tx *gorm.DB, projectID, poolID string) ([]model.Sandbox, error) {
 	var sandboxes []model.Sandbox
 	// The state sync writes back observed columns only, so the skills'
 	// content is not loaded for it (sandboxSkillColumns).
 	err := tx.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Omit("skills").
 		Where("project_id = ? AND pool_id = ?", projectID, poolID).
+		Order("id").
 		Find(&sandboxes).Error
 	return sandboxes, err
 }
@@ -210,12 +231,18 @@ func (s *Store) ApplySandboxProgressReports(ctx context.Context, poolID string, 
 	if len(reports) == 0 {
 		return nil
 	}
+	// Written in sandbox ID order, the order a state report locks a pool's
+	// sandboxes in (listSandboxesForPool): two transactions that lock several
+	// of one pool's rows in different orders deadlock, and Postgres fails one.
+	ordered := slices.SortedFunc(slices.Values(reports), func(a, b SandboxProgressReport) int {
+		return strings.Compare(a.SandboxID, b.SandboxID)
+	})
 	return s.Transaction(ctx, func(txStore *Store, tx *gorm.DB) error {
 		pool, err := txStore.GetPoolByID(ctx, poolID)
 		if err != nil {
 			return err
 		}
-		for _, report := range reports {
+		for _, report := range ordered {
 			sandbox, err := txStore.GetSandbox(ctx, pool.ProjectID, report.SandboxID)
 			if err != nil {
 				if errors.Is(err, ErrNotFound) {
