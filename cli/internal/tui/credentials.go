@@ -492,7 +492,7 @@ func bindingSection(a approval) section {
 	if a.req.Delegate {
 		fields = append(fields, field{label: "purpose", value: delegationPurpose, tone: toneAccent})
 	}
-	if where := a.req.where(); where != "" {
+	if where := a.req.whereRows(); where != "" {
 		fields = append(fields, field{label: "may be sent to", value: where, tone: toneAccent})
 	}
 	return section{label: "the binding", fields: fields}
@@ -576,7 +576,7 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 	if req.EnvVar != "" {
 		fields = append(fields, field{label: "delivered as", value: req.EnvVar})
 	}
-	if where := req.where(); where != "" {
+	if where := req.whereRows(); where != "" {
 		fields = append(fields, field{label: "may be sent to", value: where, tone: toneAccent})
 	}
 	if req.AskedTTL > 0 {
@@ -932,7 +932,7 @@ func credentialErrorSection(req CredentialRequest) section {
 		return section{label: "still waiting", fields: []field{{label: "trust", value: req.Host, tone: toneAccent}}}
 	}
 	fields := []field{{label: "credential", value: credentialName(req), tone: toneAccent}}
-	if where := req.where(); where != "" {
+	if where := req.whereRows(); where != "" {
 		fields = append(fields, field{label: "for", value: where, tone: toneAccent})
 	}
 	return section{label: "still waiting", fields: fields}

@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
@@ -36,5 +39,28 @@ func TestThePickerOffersTheSecretNamedAsAskedFirst(t *testing.T) {
 	got := secretsForRequest([]Secret{other, named}, req)
 	if len(got) != 2 || got[0].ID != named.ID {
 		t.Fatalf("picker order = %v; want the secret named github first, and both offered", got)
+	}
+}
+
+// A card lists a request's routes one to a row, each whole on its own row,
+// rather than as one "; "-joined line wrapped wherever the card runs out.
+func TestACardListsEachRouteOnItsOwnRow(t *testing.T) {
+	req := CredentialRequest{Name: "github", Routes: []secretroute.Route{
+		{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/discobox-ai/discobox/**"}, Methods: []string{"GET"}},
+		{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/discobox-ai/discobox/pulls"}, Methods: []string{"POST"}},
+	}}
+	d := &dialog{sections: []section{bindingSection(approval{req: req, secret: Secret{Name: "github"}})}}
+	rows := d.sectionLines(newStyles(false), 120)
+	for _, route := range req.Routes {
+		want := secretroute.Format(route)
+		found := false
+		for _, row := range rows {
+			if strings.HasSuffix(strings.TrimRight(ansi.Strip(row), " "), want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("no row ends with %q; card:\n%s", want, strings.Join(rows, "\n"))
+		}
 	}
 }

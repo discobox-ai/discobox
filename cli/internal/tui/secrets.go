@@ -886,7 +886,7 @@ func (m *Model) bindingDetail(b SecretBinding, now time.Time) string {
 func (m *Model) reviewBinding(secretName string, b SecretBinding, back func() tea.Cmd) tea.Cmd {
 	where, tone := "where the secret's routes send it", toneDim
 	if len(b.Routes) > 0 {
-		where, tone = routesText(b.Routes)+", within the secret's routes", toneAccent
+		where, tone = routeRows(b.Routes)+"\n(within the secret's routes)", toneAccent
 	}
 	covers := section{label: "the binding", fields: []field{
 		{label: "secret", value: secretName, tone: toneAccent},
