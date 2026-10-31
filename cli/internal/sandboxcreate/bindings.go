@@ -8,6 +8,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/apiroute"
+	"github.com/discobox-ai/discobox/cli/internal/credentialpolicy"
 	"github.com/discobox-ai/discobox/cli/internal/secretenv"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	idpkg "github.com/discobox-ai/x/id"
@@ -32,6 +33,26 @@ func ParseBindings(binds, delegates []string) ([]apimodel.SandboxBindingInput, e
 	vars := map[string]bool{}
 	for _, value := range binds {
 		named, routes, _ := strings.Cut(value, "@")
+		var policies credentialpolicy.References
+		if strings.Contains(value, ",policy=") {
+			var tail string
+			named, tail, _ = strings.Cut(value, ",")
+			if strings.Contains(named, "@") {
+				return nil, fmt.Errorf("--bind %q: policies and inline routes are mutually exclusive", value)
+			}
+			for _, part := range strings.Split(tail, ",") {
+				var err error
+				if path, ok := strings.CutPrefix(part, "policy="); ok {
+					err = policies.Add(path)
+				} else {
+					err = policies.Argument(part)
+				}
+				if err != nil {
+					return nil, fmt.Errorf("--bind %q: %w", value, err)
+				}
+			}
+			routes = ""
+		}
 		secret, envVar, hasVar := strings.Cut(named, ":")
 		secret, envVar = strings.TrimSpace(secret), strings.TrimSpace(envVar)
 		byID := !hasVar && idpkg.IsGenerated(secret)
@@ -48,6 +69,13 @@ func ParseBindings(binds, delegates []string) ([]apimodel.SandboxBindingInput, e
 		parsed, err := ParseRoutes(routes)
 		if err != nil {
 			return nil, fmt.Errorf("--bind %q: %w", value, err)
+		}
+		if len(policies) > 0 {
+			resolved, err := policies.Resolve()
+			if err != nil {
+				return nil, fmt.Errorf("--bind %q: %w", value, err)
+			}
+			parsed = apiroute.Inputs(resolved)
 		}
 		binding := apimodel.SandboxBindingInput{Secret: secret, Routes: parsed}
 		if envVar != "" {

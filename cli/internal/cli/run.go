@@ -222,8 +222,11 @@ left out, so github is GITHUB — which its pool swaps for the value where the
 secret's routes allow, narrowed by any ROUTE given — each a host, exact,
 '*.suffix' for the hosts beneath suffix or '*' for any, optionally =blocked —
 as Copilot CLI's GitHub token is:
-'github:COPILOT_GITHUB_TOKEN@api.github.com,*.githubcopilot.com'. A route
-with methods, paths or a protocol is bound with 'discobox secret bind
+'github:COPILOT_GITHUB_TOKEN@api.github.com,*.githubcopilot.com'. Policy files supply reusable routes, with their own arguments:
+--bind 'github,policy=issues.json,owner=acme,repo=widget'. Repeat policy=FILE
+within one binding to merge routes; each following NAME=VALUE belongs to
+that file. Policy files and inline @ROUTE values are mutually exclusive. A route
+with methods, paths or a protocol is also bound with 'discobox secret bind
 --route'. --delegate
 SECRET[@ROUTE,...] lets the new discobox give the secret to the discoboxes it
 creates instead. In --from-json, "bindings" lists them. A discobox creating one
@@ -489,7 +492,7 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.BoolVar(&opts.noSource, "no-source", false, "Create the discobox with nothing checked out in it, in place of SOURCE, so every argument is the prompt; the directory you run in still decides where it is filed and what Git authorship it commits under")
 	flags.BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/settings.json, using a local checkout beside the source directory when there is one")
 	flags.BoolVar(&opts.includeDirty, "include-dirty", false, "Carry the uncommitted changes in each local source into the discobox, as a snapshot on top of its checked-out commit; without it only committed history goes in. A directory in no Git repository has no commit to start from, and is copied whatever this says")
-	flags.StringArrayVar(&opts.bind, "bind", nil, "Bind a project secret to the new discobox, as SECRET[:VAR][@ROUTE,...]: the variable it receives the sentinel in (default the secret's name upper-snaked), and routes that narrow where it may be sent; repeat for more. A discobox creating one binds only what it may delegate")
+	flags.StringArrayVar(&opts.bind, "bind", nil, "Bind a project secret to the new discobox, as SECRET[:VAR][@ROUTE,...]: the variable it receives the sentinel in (default the secret's name upper-snaked), and routes that narrow where it may be sent; or SECRET[:VAR],policy=FILE,NAME=VALUE (repeat policy=FILE to merge files, arguments follow each file). Repeat for more. A discobox creating one binds only what it may delegate")
 	flags.StringArrayVar(&opts.delegate, "delegate", nil, "Let the new discobox give a project secret to the discoboxes it creates, as SECRET[@ROUTE,...]; repeat for more. A person's to give")
 	flags.BoolVar(&opts.discoboxAPI, "discobox-api", false, "Let the new discobox call the discobox API through its pool, acting only on the discoboxes it creates. A discobox creating one may set it only when it has it itself")
 	flags.BoolVar(&opts.fromJSON, "from-json", false, "Read the request from stdin as one JSON object instead of from flags, create the discobox without attaching, and print it as JSON")

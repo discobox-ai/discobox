@@ -10,6 +10,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/apiroute"
+	"github.com/discobox-ai/discobox/cli/internal/credentialpolicy"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 
 	"github.com/spf13/cobra"
@@ -99,6 +101,7 @@ func (a *App) newSecretBindCommand() *cobra.Command {
 	var as string
 	var raw rawFlag
 	var routes []string
+	var policies credentialpolicy.References
 	var delegate bool
 	var target bindingTargetFlags
 	lasts := lifetime.NewFlag()
@@ -122,6 +125,12 @@ held in memory, never on a disk, and the pool refuses a request carrying it
 off its routes; but a discobox holding a value can send it anywhere, so that is
 a guard against mistakes, not a boundary.
 
+--policy FILE supplies reusable routes instead of --route. Repeat it to merge
+policies into one route list; --policy-arg NAME=VALUE applies to the preceding
+file. Arguments and defaults resolve locally and the binding stores concrete
+routes. Editing a file does not change an existing binding. Blocked routes
+participate across the merged list under the usual specificity rules.
+
 --delegate lets the discobox give the secret, to use, to the discoboxes it
 creates: by answering their requests, or when it creates them. With --as as
 well, it uses the secret too; without, it is delivered nothing itself.
@@ -136,6 +145,13 @@ over its harness config's, and that over the project's.
   discobox secret bind github lead --delegate --for 8h`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(policies) > 0 && len(routes) > 0 {
+				return fmt.Errorf("--policy and --route are mutually exclusive")
+			}
+			resolved, err := policies.Resolve()
+			if err != nil {
+				return err
+			}
 			box := ""
 			if len(args) > 1 {
 				box = args[1]
@@ -153,6 +169,9 @@ over its harness config's, and that over the project's.
 			parsed, err := routeFlagValues("--route", routes)
 			if err != nil {
 				return err
+			}
+			if len(policies) > 0 {
+				parsed = apiroute.Inputs(resolved)
 			}
 			body := &apimodel.CreateSecretBindingBody{Secret: args[0], TargetKind: t.kind, Routes: parsed}
 			if t.ref != "" {
@@ -192,6 +211,8 @@ over its harness config's, and that over the project's.
 			return writeBound(cmd.OutOrStdout(), binding, secret, t, time.Now())
 		},
 	}
+	cmd.Flags().Var(&policyValue{references: &policies}, "policy", "A credential policy FILE; repeat to merge routes. Following --policy-arg flags belong to this file")
+	cmd.Flags().Var(&policyValue{references: &policies, argument: true}, "policy-arg", "An argument NAME=VALUE for the preceding --policy; repeat for more")
 	cmd.Flags().StringVar(&as, "as", "", "The environment variable to deliver it in (default the secret's name upper-snaked)")
 	cmd.Flags().StringArrayVar(&routes, "route", nil, "Where it may be sent for this binding, narrowing the secret's routes, as "+secretroute.Syntax+"; one per flag, repeat for more")
 	cmd.Flags().Var(lasts, "for", bindingLifetimeFlagUsage)
@@ -546,4 +567,24 @@ func (a *App) getSecret(ctx context.Context, client *apiclientgen.Client, projec
 		return nil, err
 	}
 	return expectResponse[apimodel.Secret](res)
+}
+
+// policyValue preserves flag order so each policy owns its arguments.
+type policyValue struct {
+	references *credentialpolicy.References
+	argument   bool
+}
+
+func (v *policyValue) String() string { return "" }
+func (v *policyValue) Type() string {
+	if v.argument {
+		return "NAME=VALUE"
+	}
+	return "FILE"
+}
+func (v *policyValue) Set(value string) error {
+	if v.argument {
+		return v.references.Argument(value)
+	}
+	return v.references.Add(value)
 }
