@@ -1407,6 +1407,32 @@ its `provision.json`, ADR 26-10-16-423 §6), read the same way
 ones that failed, and nothing once all are ready. Under the console's cursor
 it takes the name's place, after an error and a blocked agent's text.
 
+## Following State Changes (`discobox events`)
+
+`discobox events [DISCOBOX]` prints the project's sandbox events as they
+arrive, from the server's event stream
+([ADR 26-10-29-316](../docs/adr/26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md)):
+first each discobox's state now, then each change (`events.go`).
+
+- It reads the stream over the plain HTTP client, as `admin pool logs` does,
+  since the generated client reads a response whole. Its own parser
+  (`parseServerSentEvents`) keeps the cursor, and the data is decoded through
+  a local struct: `SandboxEventData` is in `server.yaml` but has no generated
+  type, since no operation's body is it.
+- A dropped connection reconnects after the server's `retry:` with the last
+  ID the stream gave in `Last-Event-ID` — an event's, or one the stream sent
+  alone to say where it stands — so nothing prints twice and nothing is
+  skipped. The first connection's failure is the command's, as is a 4xx on
+  any later one; a later 5xx or network failure is waited out.
+- `DISCOBOX` filters client-side, by the ID `resolveListedSandbox` gives; the
+  route has no filter. A `reset` is printed whatever the filter.
+- A line is the time, what happened, the configured name (the event's; a
+  display name follows the program's title, and would make every title an
+  event) and ID, then `state=`,
+  `desired=` when it is not `present`, `power=`, and `agent=` with the
+  program's state, what it is blocked on and its app. `-o json` is one line of
+  JSON per event (`writeTerminalSafeJSONLine`): its `id`, `event` and `data`.
+
 ## Sandbox Display Name
 
 The NAME a sandbox listing shows is `Sandbox.displayName`, computed by the
