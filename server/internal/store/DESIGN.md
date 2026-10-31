@@ -71,8 +71,8 @@ are rows the store writes in the transaction of the change (`sandbox_events.go`)
 
 - Every writer of a column an event reports notes the sandbox on its
   transaction's `sandboxEventBatch` (`sandboxChanged`, `sandboxDeleted`):
-  `CreateSandbox`, `UpdateSandbox`, `ApplySandboxStateReports` (only on a
-  moved runtime state), `UpdateSandboxAgentStatus`, `DeleteSandbox`. One called
+  `CreateSandbox`, `UpdateSandbox`, `ApplySandboxStateReports` (every row it
+  writes), `UpdateSandboxAgentStatus`, `DeleteSandbox`. One called
   outside a transaction opens one (`inSandboxTx`). A new writer of
   `desired_state`, `state`, `runtime_state` or `agent_status` must do the same.
 - `Store.Transaction` records the batch just before the outermost transaction

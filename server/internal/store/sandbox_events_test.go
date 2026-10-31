@@ -405,3 +405,42 @@ func TestSandboxEventsReportNoPowerForAnArchivedSandbox(t *testing.T) {
 		t.Fatalf("unarchived data = %+v, want no power and no program from before the archive", data)
 	}
 }
+
+// A state report compares every row it writes with the sandbox's latest
+// event, not with its own unlocked read of the row: a batch accepted on a
+// stale read can write back a state another batch has just recorded the
+// opposite of, and its own read calls that no change.
+func TestStateReportAnnouncesWhatItWritesBackOverARecordedState(t *testing.T) {
+	ctx := context.Background()
+	s, db := newTestStoreWithDB(t, nil)
+	createTestPool(t, s, "project-1", "pool-1")
+	if err := s.CreateSandbox(ctx, &model.Sandbox{ID: "sandbox-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "alpha"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	report := func(seq int64, state string) {
+		t.Helper()
+		batch := store.SandboxStateReportBatch{PoolID: "pool-1", BootID: "boot-1", Sequence: seq, ReportedAt: time.Now().UTC(), Complete: true,
+			Reports: []store.SandboxStateReport{{SandboxID: "sandbox-1", State: state}}}
+		if _, err := s.ApplySandboxStateReports(ctx, batch); err != nil {
+			t.Fatalf("state report: %v", err)
+		}
+	}
+	report(1, model.SandboxRuntimeStateStopped)
+	events := sandboxEvents(t, s, 0)
+	cursor := events[len(events)-1].Seq
+
+	// The row reads running while its latest event says stopped: what the
+	// lost race leaves.
+	if err := db.Write.Model(&model.Sandbox{}).Where("id = ?", "sandbox-1").UpdateColumn("runtime_state", model.SandboxRuntimeStateRunning).Error; err != nil {
+		t.Fatal(err)
+	}
+	report(2, model.SandboxRuntimeStateRunning)
+	events = sandboxEvents(t, s, cursor)
+	if len(events) != 1 || eventData(t, events[0]).RuntimeState != model.SandboxRuntimeStateRunning {
+		t.Fatalf("events = %+v, want running announced", events)
+	}
+	report(3, model.SandboxRuntimeStateRunning)
+	if events := sandboxEvents(t, s, events[0].Seq); len(events) != 0 {
+		t.Fatalf("an unchanged restamp recorded %d events", len(events))
+	}
+}
