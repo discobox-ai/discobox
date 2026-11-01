@@ -75,8 +75,11 @@ wants its monitor running tells the agent to enable it.
 ### 2. `enable --update` changes an enabled instance's options in place
 
 `discobox-monitor enable <monitor> [--name N] --update [-o k=v]...` enables the
-instance as `enable` does. When the name already holds that monitor with
-other options, it rewrites the instance's options instead of refusing.
+instance as `enable` does. When the name already holds that monitor, it
+rewrites the instance as this enable resolved it instead of refusing: its
+options, and the declaration it runs. An agent that fixes a skill's monitor
+by writing a repository copy (§1) makes an enabled instance run that copy
+with the same command it uses to change its options.
 
 - The options given replace the instance's options whole. A lead restates the
   repository along with the growing PR list. Merging per key would leave no
@@ -87,6 +90,9 @@ other options, it rewrites the instance's options instead of refusing.
 - A polling instance's next run gets the new options. A streaming instance's
   current run is ended and started again with them, since its options are
   in its environment.
+- A run still going with the old options that ends the instance — a final
+  event — does not end the updated one: the instance runs again with its new
+  options. A final event says the old list is finished, not the new one.
 - A name that holds a different monitor is still refused. That is a different
   instance, not new options for this one.
 - The monitor is told nothing beyond its options and its state. What starts
@@ -148,8 +154,8 @@ Only `test` sets the variable. An enabled instance still starts at now (073
 
 - `monitors.Discover` takes the run user's skill directories as well. A
   definition and an instance name the skill they came from.
-- `enable` gains `--update`, and the runner reads its instance's options from
-  the instance file on each run.
+- `enable` gains `--update`, and the runner reads its instance from the
+  instance file on each run.
 - `test` gains `--since`; front matter gains `since`. `github-repo` (and its Go
   rewrite, #414) reads `DISCOBOX_MONITOR_SINCE` on a first run.
 - A skill can ship the lead's watchers: `orchestrate-issues` can drop
