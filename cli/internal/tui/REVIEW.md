@@ -144,6 +144,17 @@
   on screen after a switch. What is the screen's alone — the generation, the
   opens in flight, the overlay — is ended in `endLiveScreen`, the one teardown
   closing and parking share.
+- **The busy line is the screen's to end only when the screen owns it.** A
+  create's narration is the window's: it keeps reporting into the workspace
+  the create goes to (`watchCreate`), so `endLiveScreen` leaves it running
+  (`createNarrating`). Never save and restore `busyGen` around a park to keep
+  a narration alive — the generation only goes up, and a restored one
+  revives whatever owned the line at the save.
+- **Two messages from one `tea.Batch` arrive in either order.** Each runs on a
+  goroutine of its own, so a create's "server took it" (`promptSpentMsg`) can
+  land after its "done" (`createdMsg`). What one learns of the other goes in a
+  record both carry (`createWatch`), not in a window-wide field, which a
+  second create started in between overwrites too.
 - **Anything a pane started that answers it later finds it with `heldPane`.**
   A parked workspace's panes are still attached and still running; an issue
   read, a files changed session or an image paste that looks its pane up on

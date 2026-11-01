@@ -197,13 +197,7 @@ func (m *Model) openWorkspace(sandbox Sandbox, freshShell bool) tea.Cmd {
 	m.harnessesOpen = false
 	m.busy = "attach…"
 	if m.attach == nil {
-		// The workspace is the screen from here, tree and all, while the
-		// attach waits; the keys are the leader's until a pane arrives.
-		m.wsOpening = true
-		m.listFront, m.treeExpanded = false, false
-		m.closePages()
-		m.focus = focusPane
-		m.prompt.Blur()
+		m.showOpening()
 	}
 	m.connecting = map[string]bool{}
 	m.ending = map[string]bool{}
@@ -217,6 +211,18 @@ func (m *Model) openWorkspace(sandbox Sandbox, freshShell bool) tea.Cmd {
 		return m.deliverSource(gen, sandbox, freshShell)
 	}
 	return m.attachWorkspace(gen, sandbox, freshShell)
+}
+
+// showOpening makes the workspace of paneBox the screen, tree and all, while
+// it is on its way up: the attach waiting, or a create that has the discobox
+// still delivering its source (watchCreate). Its frame says what the wait is
+// for (viewOpening), and the keys are the leader's until a pane arrives.
+func (m *Model) showOpening() {
+	m.wsOpening = true
+	m.listFront, m.treeExpanded = false, false
+	m.closePages()
+	m.focus = focusPane
+	m.prompt.Blur()
 }
 
 // attachWorkspace starts everything an open workspace runs: the listings, the
@@ -1039,8 +1045,13 @@ func (m *Model) endLiveScreen() {
 	m.connecting = nil
 	m.toolOpening = nil
 	m.closeAudit()
-	m.endNarration()
-	m.busy = ""
+	// The busy line is the screen's — an attach, a delivery, a provisioning
+	// watch — unless a create has it: that is the window's, and goes on
+	// reporting into whatever workspace is shown next (watchCreate).
+	if !m.createNarrating {
+		m.endNarration()
+		m.busy = ""
+	}
 	if m.overlay != nil {
 		_ = m.overlay.term.Close()
 		m.overlay = nil

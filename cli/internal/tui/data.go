@@ -2037,13 +2037,14 @@ type DataSource interface {
 	// did not carry in, a repository settings file it could not read all of.
 	// The window keeps it on screen past the steps that follow it.
 	//
-	// accepted is called once, the moment the server has taken the create and
-	// before the source is delivered: from then on the discobox exists whatever
-	// the rest of the run does, so the prompt it was given can no longer be
-	// lost and the window lets go of it. A create the server refused never
+	// accepted is called once with the discobox, the moment the server has
+	// taken the create and before the source is delivered: from then on the
+	// discobox exists whatever the rest of the run does, so the prompt it was
+	// given can no longer be lost and the window lets go of it, and goes to
+	// the discobox to watch the rest from there. A create the server refused never
 	// calls it. A run that fails after it returns the discobox it made beside
 	// the error, so the window can still say which one it was.
-	Run(ctx context.Context, req RunRequest, report, warn func(string), accepted func()) (Sandbox, error)
+	Run(ctx context.Context, req RunRequest, report, warn func(string), accepted func(Sandbox)) (Sandbox, error)
 
 	// WatchProvisioning reports what a sandbox that is not usable yet is being
 	// made to do, until ctx ends. It blocks, and is meant to run beside a wait

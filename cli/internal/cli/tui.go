@@ -1145,7 +1145,7 @@ func gitRoot(ctx context.Context, dir string) (string, bool) {
 // Run creates the sandbox Enter asked for and delivers its source, which is
 // exactly what `discobox run` does before it attaches — including saying which of
 // those steps is underway, on the same words the command uses (ADR 0060).
-func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report, warn func(string), accepted func()) (tui.Sandbox, error) {
+func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report, warn func(string), accepted func(tui.Sandbox)) (tui.Sandbox, error) {
 	if d.servers == nil {
 		if req.Server != "" {
 			return tui.Sandbox{}, fmt.Errorf("there is no server %s to create on; there is only the primary", req.Server)
@@ -1174,21 +1174,29 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report, war
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
-	box, err := source.create(ctx, req, report, warn, accepted)
+	// A box the server took is on this server whether or not the rest of
+	// the run goes through, and is known to be from the moment it is taken:
+	// the window goes to it then, and asks after it here.
+	locate := func(box tui.Sandbox) tui.Sandbox {
+		d.mu.Lock()
+		d.located[box.ID] = target
+		d.mu.Unlock()
+		box.Server = target.name
+		return box
+	}
+	box, err := source.create(ctx, req, report, warn, func(box tui.Sandbox) {
+		if accepted != nil {
+			accepted(locate(box))
+		}
+	})
 	if box.ID == "" {
 		return tui.Sandbox{}, err
 	}
-	// A box the server took is on this server whether or not the rest of
-	// the run went through.
-	d.mu.Lock()
-	d.located[box.ID] = target
-	box.Server = target.name
-	d.mu.Unlock()
-	return box, err
+	return locate(box), err
 }
 
 // create is Run on this data source's own server.
-func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, warn func(string), accepted func()) (tui.Sandbox, error) {
+func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, warn func(string), accepted func(tui.Sandbox)) (tui.Sandbox, error) {
 	opts := sandboxcreate.PromptOptions{
 		Source:   strings.TrimSpace(req.Source),
 		NoSource: req.NoSource,
@@ -1266,13 +1274,13 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
-	if accepted != nil {
-		accepted()
-	}
 	// From here the discobox exists, so a failure still returns it: the
 	// window names what it made either way (tui.DataSource.Run).
 	hostID, _ := hostid.Get()
 	made := toTUISandbox(*sandbox, hostID)
+	if accepted != nil {
+		accepted(made)
+	}
 	// The local source is done as soon as it has been delivered, which for a
 	// directory that is not a repository means deleting the repository built
 	// over it. The defer covers the paths that never reach the delivery.
