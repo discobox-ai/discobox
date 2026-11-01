@@ -3,7 +3,8 @@
 An agent enables a **monitor** (a declared script) as an **instance**. The
 instance's **runner** runs the script and queues each line it prints as an
 **event**, and the agent pops events when it chooses
-([ADR 26-10-31-073](../../docs/adr/26-10-31-073-a-box-runs-the-monitors-its-agent-enables-and-queues-their-events-until-it-pops-them.md)).
+([ADR 26-10-31-073](../../docs/adr/26-10-31-073-a-box-runs-the-monitors-its-agent-enables-and-queues-their-events-until-it-pops-them.md),
+amended by [ADR 26-11-01-375](../../docs/adr/26-11-01-375-a-monitor-is-enabled-by-its-path-an-instance-changes-its-options-in-place-and-test-starts-in-the-past.md)).
 
 ```mermaid
 flowchart LR
@@ -21,8 +22,9 @@ flowchart LR
 ## Ownership
 
 - **Files are the interface.** Each piece has one writer:
-  - Enabled files: the CLI writes them. The runner removes one only when its
-    instance ends itself.
+  - Enabled files: the CLI writes them, and rewrites one in place for
+    `enable --update`. The runner removes one only when its instance ends
+    itself.
   - Status and logs: the runner writes them.
   - Events: the runner queues them, and so does `emit`.
   - Moving events into `read/`: `pop`.
@@ -38,7 +40,8 @@ flowchart LR
   directory and the exec list:
   - It starts or relaunches the runner of each enabled instance. A relaunch
     keeps the exec id (ADR 0038).
-  - An instance is its `ID`, new on every enable, not its name: an exec
+  - An instance is its `ID`, new on every enable that creates it and kept by
+    `enable --update`, not its name: an exec
     tagged with another ID — the name disabled and enabled again before a
     sync saw the gap — is replaced, and a runner exits once the file's ID is
     not its own.
@@ -59,6 +62,13 @@ flowchart LR
 
 ## Rules
 
+- **A monitor is named by its id or by its path.** An id is looked up in
+  the two declaration directories (`Discover`, the repository's winning).
+  An argument with a `/` is a script's path, wherever it is — a skill's own
+  monitor — read alone (`Load`, `declared.ReadFile`: nothing else in its
+  directory is read); it is made absolute with its links kept,
+  so a skill linked in from a checkout runs the checkout's file. Nothing
+  outside the two directories is discovered or listed.
 - **Only the runner's discovery reads a declaration's fields.**
   - `Enable` records the declaration's path and workdir.
   - Before each run, the runner reloads the declaration from that path
@@ -90,6 +100,21 @@ flowchart LR
     replaced by its own recovery.
 - **The pending cap is per instance.** Past `PendingCap`, the oldest events
   are dropped and one keyed `monitor.dropped` event reports how many.
+- **`enable --update` keeps the instance and its state.** It rewrites the
+  enabled file as that enable resolved it — options, and the declaration,
+  the file its id resolves to now or the path given — under the same
+  `ID`, so the reconciler keeps the exec and the runner keeps running it.
+  - The runner reads its instance from the file before each run. A
+    streaming run checks the file every few seconds and is restarted — not
+    counted as a failure, no backoff — when it changes.
+  - A run that ends the instance (a final event, a streaming exit zero)
+    removes the file only if it still holds what that run ran with
+    (`finishIf`); after an update it runs again instead.
+  - What starts fresh for a newly named target is the monitor's own state:
+    one it has no state for is a baseline.
+- **`Since` reaches only a `test`'s first run**, as `DISCOBOX_MONITOR_SINCE`,
+  and only for a declaration with `since: true`; `test` refuses `--since`
+  for one without. An enabled instance always starts at now.
 - **A new instance starts with empty state.** `Enable` clears the state
   directory a previous instance with that name left, and the monitor's own
   directory is keyed by the instance's ID as well, so a runner of the old
@@ -112,7 +137,9 @@ flowchart LR
   started.
 - **Ending is the runner's decision.**
   - A final event, or a streaming monitor exiting zero, sets `done` and
-    removes the enabled file.
+    removes the enabled file — if it still holds what that run ran with
+    (`finishIf`). After an `enable --update` the instance runs again
+    with its new options instead.
   - The state directory stays, so `status` still shows how the instance
     ended, until `disable` clears it.
 - **An instance's interval is the declaration's, unless the monitor declares
@@ -141,8 +168,8 @@ flowchart LR
 ```
 
 - [`builtin`](builtin) is the seam: `Monitor` is one run of a built-in,
-  given `Env` (the instance's name, state directory and options, its
-  environment, `Emit`, and JSON state files written whole). A returned error
+  given `Env` (the instance's name, state directory and options, a test's
+  `Since`, its environment, `Emit`, and JSON state files written whole). A returned error
   is the failure, and its text is what `monitor.failed` carries.
 - The registry is `builtinMonitors` in `cmd/discobox-sandbox-agent`. A new
   built-in adds a package, an entry there, and a script in the image.

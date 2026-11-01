@@ -93,8 +93,19 @@ func TestMonitorEnableRecordsTheInstanceAndRefusesWhatItCannotRun(t *testing.T) 
 	if out, err := runMonitorCmd(t, env, "enable", "github-repo", "--name", "pr-412", "-o", "pr=412", "-o", "repo=a/b"); err != nil || !strings.Contains(out, "already enabled") {
 		t.Fatalf("same enable = %q, %v", out, err)
 	}
-	if _, err := runMonitorCmd(t, env, "enable", "github-repo", "--name", "pr-412", "-o", "repo=a/b,pr=9"); err == nil || !strings.Contains(err.Error(), "--name") {
+	if _, err := runMonitorCmd(t, env, "enable", "github-repo", "--name", "pr-412", "-o", "repo=a/b,pr=9"); err == nil || !strings.Contains(err.Error(), "--name") || !strings.Contains(err.Error(), "--update") {
 		t.Fatalf("enable over another instance = %v", err)
+	}
+	// --update gives the instance the new options, and keeps it.
+	out, err = runMonitorCmd(t, env, "enable", "github-repo", "--name", "pr-412", "--update", "-o", "repo=a/b,pr=412,413")
+	if err != nil || !strings.Contains(out, "updated pr-412") {
+		t.Fatalf("enable --update = %q, %v", out, err)
+	}
+	if updated, _ := monitors.ReadInstance(env.dirs, "pr-412"); updated.ID != inst.ID || updated.Options["pr"] != "412,413" {
+		t.Fatalf("updated instance = %+v, was %+v", updated, inst)
+	}
+	if _, err := runMonitorCmd(t, env, "enable", "hello", "--name", "pr-412", "--update"); err == nil || !strings.Contains(err.Error(), "not its monitor") {
+		t.Fatalf("enable --update of another monitor = %v", err)
 	}
 	if _, err := runMonitorCmd(t, env, "enable", "github-repo", "-o", "issues=1"); err == nil || !strings.Contains(err.Error(), "requires repo") {
 		t.Fatalf("enable with a wrong option = %v", err)
@@ -235,6 +246,80 @@ func TestMonitorTestPrintsEventsAndEnablesNothing(t *testing.T) {
 	}
 	if n, _ := env.dirs.Queue().Count(monitors.Filter{}); n != 0 {
 		t.Fatalf("test queued %d events", n)
+	}
+}
+
+func TestMonitorEnablesAScriptByItsPath(t *testing.T) {
+	env := testMonitorEnv(t)
+	// A skill's own monitor: beside its SKILL.md, reached through a link as a
+	// skills source's skill is.
+	checkout := t.TempDir()
+	dir := filepath.Join(checkout, "lead", "monitors")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "10-disk.sh"), []byte("#!/bin/sh\n#---\n# description: free disk\n# interval: 5m\n# options:\n# - {name: min, required: true}\n#---\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skills := filepath.Join(env.home, ".claude", "skills")
+	if err := os.MkdirAll(skills, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(checkout, "lead"), filepath.Join(skills, "lead")); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(skills, "lead", "monitors", "10-disk.sh")
+
+	// It is not discovered: list shows the declaration directories only.
+	if out, err := runMonitorCmd(t, env, "list"); err != nil || strings.Contains(out, "disk") {
+		t.Fatalf("list = %q, %v", out, err)
+	}
+	if _, err := runMonitorCmd(t, env, "enable", path); err == nil || !strings.Contains(err.Error(), "requires min") {
+		t.Fatalf("enable by path without its required option = %v", err)
+	}
+	out, err := runMonitorCmd(t, env, "enable", path, "-o", "min=10G")
+	if err != nil || !strings.Contains(out, "enabled disk") {
+		t.Fatalf("enable by path = %q, %v", out, err)
+	}
+	// The link is kept, so an edit in the checkout reaches the instance.
+	if inst, _ := monitors.ReadInstance(env.dirs, "disk"); inst.Path != path || inst.Monitor != "disk" || inst.Builtin || inst.Workdir != env.sourceRoot {
+		t.Fatalf("instance = %+v", inst)
+	}
+	if out, err := runMonitorCmd(t, env, "enable", path, "--update", "-o", "min=20G"); err != nil || !strings.Contains(out, "updated disk") {
+		t.Fatalf("enable --update by path = %q, %v", out, err)
+	}
+	if out, err := runMonitorCmd(t, env, "show", path); err != nil || !strings.Contains(out, "from:  path") || !strings.Contains(out, "enabled as disk") {
+		t.Fatalf("show by path = %q, %v", out, err)
+	}
+	if _, err := runMonitorCmd(t, env, "enable", filepath.Join(skills, "lead", "monitors")); err == nil || !strings.Contains(err.Error(), "is a directory") {
+		t.Fatalf("enable of a directory = %v", err)
+	}
+	if _, err := runMonitorCmd(t, env, "enable", "./nope.sh"); err == nil || !strings.Contains(err.Error(), "no such file") {
+		t.Fatalf("enable of a missing path = %v", err)
+	}
+}
+
+func TestMonitorTestSinceGivesTheFirstRunABaselineInThePast(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("runs a shell script by its path, which Windows cannot")
+	}
+	env := testMonitorEnv(t)
+	dir := filepath.Join(env.sourceRoot, monitors.DirName)
+	if err := os.WriteFile(filepath.Join(dir, "recent.sh"), []byte("#!/bin/sh\n#---\n# since: true\n#---\necho \"from $DISCOBOX_MONITOR_SINCE\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runMonitorCmd(t, env, "test", "recent", "--since", "2h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ev monitors.Event
+	if err := json.Unmarshal([]byte(out), &ev); err != nil || ev.Title != "from "+now.Add(-2*time.Hour).UTC().Format(time.RFC3339) {
+		t.Fatalf("test --since printed %q: %v", out, err)
+	}
+	// A monitor that does not declare it would print nothing, which reads as
+	// nothing having happened: it is refused.
+	if _, err := runMonitorCmd(t, env, "test", "hello", "--since", "2h"); err == nil || !strings.Contains(err.Error(), "since: true") {
+		t.Fatalf("test --since of a monitor without since = %v", err)
 	}
 }
 

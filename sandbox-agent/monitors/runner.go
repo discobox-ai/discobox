@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -28,6 +30,9 @@ const (
 	// stderrTail is how much of a failed run's stderr its monitor.failed
 	// event carries.
 	stderrTail = 4 << 10
+	// optionsCheck is how often a streaming run looks for new options
+	// (ADR 26-11-01-375 §2).
+	optionsCheck = 2 * time.Second
 )
 
 // Runner runs one instance: its monitor's script, once per interval or kept
@@ -54,6 +59,12 @@ type Runner struct {
 	// Stderr is where the monitor's stderr goes. Nil is the instance's
 	// rotating log.
 	Stderr io.Writer
+	// Since, when set, is given to the first run as DISCOBOX_MONITOR_SINCE: a
+	// baseline in the past, for `test --since` (ADR 26-11-01-375 §3).
+	Since time.Time
+	// OptionsCheck is how often a streaming run looks at the instance's file
+	// for new options; zero is optionsCheck.
+	OptionsCheck time.Duration
 
 	status Status
 }
@@ -89,9 +100,17 @@ func (r *Runner) Run(ctx context.Context) error {
 	r.setState(StateStarting, nil)
 
 	backoff := time.Duration(0)
+	first := true
 	for {
-		if !r.Test && !r.stillEnabled() {
-			return nil
+		if !r.Test {
+			// Each run takes the instance as it is now: `enable --update`
+			// changes its options, and the declaration it runs, without
+			// changing the instance.
+			current, ok := r.current()
+			if !ok {
+				return nil
+			}
+			r.Instance = current
 		}
 		def, err := Load(r.Instance.Path, r.Instance.Builtin)
 		if err == nil && def.Problem != "" {
@@ -115,9 +134,16 @@ func (r *Runner) Run(ctx context.Context) error {
 		}
 
 		started := time.Now()
-		final, tail, runErr := r.runOnce(ctx, def)
+		final, restart, tail, runErr := r.runOnce(ctx, def, first)
+		first = false
 		if ctx.Err() != nil {
 			return nil
+		}
+		if restart {
+			// Its options changed: run it again with them, at once and with
+			// nothing counted against it.
+			backoff = 0
+			continue
 		}
 		if runErr != nil {
 			r.failing(runErr.Error(), tail)
@@ -125,10 +151,22 @@ func (r *Runner) Run(ctx context.Context) error {
 			r.recovered()
 		}
 		if final || (interval == 0 && runErr == nil) {
-			r.setState(StateDone, nil)
 			if !r.Test {
-				return finish(r.Dirs, r.Instance.Name)
+				result, err := finishIf(r.Dirs, r.Instance)
+				if err != nil {
+					return err
+				}
+				switch result {
+				case optionsChanged:
+					// Done with the options it ran with, not with the ones
+					// an update gave it since: run again with those.
+					backoff = 0
+					continue
+				case replaced:
+					return nil
+				}
 			}
+			r.setState(StateDone, nil)
 			return nil
 		}
 
@@ -153,21 +191,22 @@ func (r *Runner) Run(ctx context.Context) error {
 }
 
 // runOnce runs the monitor's script once, to its end, queuing what it prints.
-// final reports a final event; tail is the end of what it wrote to stderr.
-func (r *Runner) runOnce(ctx context.Context, def Definition) (final bool, tail string, err error) {
+// final reports a final event; restart, a streaming run ended because its
+// instance changed under it; tail is the end of what it wrote to stderr.
+func (r *Runner) runOnce(ctx context.Context, def Definition, first bool) (final, restart bool, tail string, err error) {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	//nolint:gosec // G204: the monitor the repository or image declared is what is meant to run.
+	//nolint:gosec // G204: the monitor the repository, a skill or the image declared is what is meant to run.
 	cmd := exec.CommandContext(runCtx, def.Path)
 	cmd.Dir = r.Instance.Workdir
-	cmd.Env = r.environ()
+	cmd.Env = r.environ(first)
 	ownProcessGroup(cmd)
 	// A child that left the group can still hold the pipes open after the
 	// script exits; that must not hold up the run.
 	cmd.WaitDelay = 5 * time.Second
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return false, "", err
+		return false, false, "", err
 	}
 	stderr := &tailWriter{max: stderrTail}
 	cmd.Stderr = io.MultiWriter(r.Stderr, stderr)
@@ -177,7 +216,28 @@ func (r *Runner) runOnce(ctx context.Context, def Definition) (final bool, tail 
 	r.status.LastRunAt = &now
 	r.setState(StateRunning, nil)
 	if err := cmd.Start(); err != nil {
-		return false, "", err
+		return false, false, "", err
+	}
+	// A polling run ends by itself and its next run takes new options; a
+	// streaming one runs until something ends it, and new options, a disable
+	// or another instance under the name are each something.
+	var changed atomic.Bool
+	if def.Interval == 0 && !r.Test {
+		ran := r.Instance
+		ran.Options = maps.Clone(ran.Options)
+		watchDone := make(chan struct{})
+		var watching sync.WaitGroup
+		watching.Add(1)
+		go func() {
+			defer watching.Done()
+			r.watchInstance(runCtx, watchDone, &changed, cancel, ran)
+		}()
+		// Joined, not only told: Run writes the instance's options as soon
+		// as this returns.
+		defer func() {
+			close(watchDone)
+			watching.Wait()
+		}()
 	}
 
 	reader := bufio.NewReaderSize(stdout, 64<<10)
@@ -207,14 +267,44 @@ func (r *Runner) runOnce(ctx context.Context, def Definition) (final bool, tail 
 	tail = stderr.String()
 	switch {
 	case emitErr != nil:
-		return final, tail, fmt.Errorf("queue an event: %w", emitErr)
+		return final, false, tail, fmt.Errorf("queue an event: %w", emitErr)
 	case final:
 		// Ended by its final event, however the process took being ended.
-		return true, tail, nil
+		return true, false, tail, nil
+	case changed.Load():
+		// Ended for its instance changing, however the process took it.
+		return false, true, tail, nil
 	case waitErr != nil:
-		return false, tail, waitErr
+		return false, false, tail, waitErr
 	}
-	return false, tail, nil
+	return false, false, tail, nil
+}
+
+// watchInstance ends a streaming run when its instance's file changes under
+// it: new options or a new declaration, which the running process cannot
+// take, or the instance gone or replaced, which the loop then sees.
+func (r *Runner) watchInstance(ctx context.Context, done <-chan struct{}, changed *atomic.Bool, cancel context.CancelFunc, ran Instance) {
+	every := r.OptionsCheck
+	if every <= 0 {
+		every = optionsCheck
+	}
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case <-ticker.C:
+		}
+		current, ok := r.current()
+		if !ok || !current.sameRun(ran) {
+			changed.Store(true)
+			cancel()
+			return
+		}
+	}
 }
 
 // The variables a monitor is told its instance in, besides each option's own
@@ -224,11 +314,15 @@ const (
 	EnvState = "DISCOBOX_MONITOR_STATE"
 	// EnvOptions is every option, as a JSON object.
 	EnvOptions = "DISCOBOX_MONITOR_OPTIONS"
+	// EnvSince is a baseline in the past, RFC 3339 UTC, given to a test's
+	// first run only (Runner.Since).
+	EnvSince = "DISCOBOX_MONITOR_SINCE"
 )
 
 // environ is the monitor's environment: the runner's own, less any monitor
-// variables it inherited, plus this instance's.
-func (r *Runner) environ() []string {
+// variables it inherited, plus this instance's. A first run is given Since,
+// when set.
+func (r *Runner) environ(first bool) []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		if strings.HasPrefix(kv, "DISCOBOX_OPT_") || strings.HasPrefix(kv, "DISCOBOX_MONITOR_") {
@@ -247,6 +341,9 @@ func (r *Runner) environ() []string {
 		EnvState+"="+r.MonitorState,
 		EnvOptions+"="+options,
 	)
+	if first && !r.Since.IsZero() {
+		env = append(env, EnvSince+"="+r.Since.UTC().Format(time.RFC3339))
+	}
 	for key, value := range r.Instance.Options {
 		env = append(env, OptionEnvName(key)+"="+value)
 	}
@@ -308,12 +405,15 @@ func (r *Runner) writeStatus() {
 	_ = writeJSONFile(filepath.Join(r.Dirs.InstanceStateDir(r.Instance.Name), statusFile), r.status)
 }
 
-// stillEnabled reports whether the instance's file is still this instance:
-// one disabled and enabled again under its name is another, with its own
-// runner to come.
-func (r *Runner) stillEnabled() bool {
+// current is the instance's file, when it is still this instance: one
+// disabled and enabled again under its name is another, with its own runner
+// to come.
+func (r *Runner) current() (Instance, bool) {
 	current, err := ReadInstance(r.Dirs, r.Instance.Name)
-	return err == nil && current.ID == r.Instance.ID
+	if err != nil || current.ID != r.Instance.ID {
+		return Instance{}, false
+	}
+	return current, true
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
