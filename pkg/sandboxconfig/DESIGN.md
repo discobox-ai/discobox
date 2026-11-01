@@ -26,7 +26,12 @@ control plane's resolved harness config.
   once), the create-time `SkillsSources` (each a skills source's checkout and a
   directory in it, in the order a later one wins in; `ValidateSkillsDirectory`
   is the rule the CLI, the server, the pool and the sandbox hold; ADR
-  26-10-14-294; `ValidateSkillsRepository` is what a project's skills source
+  26-10-14-294; a skills source's target may be home-relative,
+  `~/.discobox/skill-sources/<name>`, which `ValidateSourceDirectory` allows
+  on a skills source alone and the sandbox agent expands once, as it reads the
+  bootstrap or a runtime-config document, with `ExpandHome` against its
+  user's home; `sandboxpath.HomeRelative` is the form, ADR 26-11-01-692;
+  `ValidateSkillsRepository` is what a project's skills source
   may name, held by the server on add and by every client before Git runs on
   one, ADR 26-10-14-894), the create-time `Features` (the repository's
   features as its client read them from `.discobox/settings.json`, which the
@@ -274,7 +279,7 @@ sandbox, delivered as one revisioned document to the sandbox agent's
   source, so it means what the readiness file always meant (ADR 0055).
 - **`Validate` is the whole refusal.** Everything a delivery can be wrong about —
   revision, durations, env names, PEM CAs, a keypair that does not load, the
-  namespace, a source target that is not a clean absolute path by the sandbox's own platform's rules (`sandboxpath`, which the caller passes: the agent passes its own, ADR 0145 §6), an
+  namespace, a source target that is neither a clean absolute path by the sandbox's own platform's rules (`sandboxpath`, which the caller passes: the agent passes its own, ADR 0145 §6) nor home-relative (`sandboxpath.HomeRelative`, a skills source's, ADR 26-11-01-692), an
   origin with no target, a token that is not one line — is checked before
   anything is written, so a refused document changes nothing.
 - **Who may deliver one.** `RuntimeConfigScope`, signed by the pool with the key

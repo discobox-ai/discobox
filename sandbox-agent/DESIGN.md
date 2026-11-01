@@ -463,6 +463,17 @@ flowchart LR
   link is removed as a link, never walked, so replacing one never deletes from
   another checkout. A directory the checkout lacks fails the launch, as an
   unreadable skills directory does. See ADR 26-10-14-294.
+- A skills source is checked out below home, its target home-relative
+  (`~/.discobox/skill-sources/<name>`) in `sandbox.json` and in every
+  runtime-config document. It is expanded once, where each is read: boot's
+  `provision` against the home it resolved, the agent's runtime against the
+  run user's home (`runUserHome`), and `sourceconverge.Converge` for each
+  document, which the intake keeps as delivered so a retry still compares
+  equal. Nothing past those reads a `~`. Convergence creates such a target, and
+  the directories between home and it, for the user, refusing a link on the
+  way; a container's is already bound there at boot. A home that does not
+  resolve leaves the target unexpanded, and converging it fails naming why.
+  See ADR 26-11-01-692.
 - Treat the unit manager as the source of truth for terminal unit liveness —
   systemd on Linux, the agent's own `Supervisor` elsewhere (see
   [Supervision](#supervision)). Runtime JSON

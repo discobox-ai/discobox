@@ -180,6 +180,54 @@ func (p Paths) Rooted(value string) string {
 	return cleaned
 }
 
+// HomePrefix starts a home-relative sandbox path: `~/` and a path below the
+// sandbox user's home. Only the sandbox knows where that home is, so such a
+// path is carried as written by everything outside it and expanded inside it
+// (ADR 26-11-01-692). It is written with `/` on every platform.
+const HomePrefix = "~/"
+
+// HomeRelative reports whether value is a home-relative path, and returns the
+// part below home: HomePrefix and a clean, relative, slash-separated path that
+// names something below home — no `..`, no `.` alone, no back slash, and no
+// control character. The rules are the same on every platform, because the
+// path is spelled the same on every platform until it is expanded.
+func HomeRelative(value string) (string, bool) {
+	rest, ok := strings.CutPrefix(value, HomePrefix)
+	if !ok || rest == "" || rest == "." || path.IsAbs(rest) || path.Clean(rest) != rest {
+		return "", false
+	}
+	if rest == ".." || strings.HasPrefix(rest, "../") || strings.ContainsAny(rest, `\`) {
+		return "", false
+	}
+	for _, r := range rest {
+		if r < 0x20 || r == 0x7f {
+			return "", false
+		}
+	}
+	return rest, true
+}
+
+// ExpandHome is value with a home-relative path joined onto home by this
+// platform's rules; any other value, and every value when home is empty (a
+// home that did not resolve), comes back as it is, so it is never read as a
+// path relative to wherever its reader happens to be.
+func (p Paths) ExpandHome(value, home string) string {
+	rest, ok := HomeRelative(value)
+	if !ok || strings.TrimSpace(home) == "" {
+		return value
+	}
+	return p.Join(home, rest)
+}
+
+// IsTarget reports whether value is a place a source may be checked out at:
+// a clean absolute path, or a home-relative one (HomeRelative).
+func (p Paths) IsTarget(value string) bool {
+	if _, ok := HomeRelative(value); ok {
+		return true
+	}
+	return p.IsAbs(value) && p.Clean(value) == value
+}
+
 // isRoot reports whether a cleaned absolute path is a root: "/", a drive's
 // `C:\`, or a share's `\\server\share\`.
 func (p Paths) isRoot(cleaned string) bool {

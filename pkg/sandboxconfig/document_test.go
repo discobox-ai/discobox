@@ -113,3 +113,29 @@ func TestAgentServerName(t *testing.T) {
 		}
 	}
 }
+
+// The bootstrap's skills source targets are expanded with the sources'
+// (ADR 26-11-01-692 §3), on a copy: the document read stays as it was.
+func TestConfigExpandHome(t *testing.T) {
+	linux := sandboxpath.For(platform.Platform{OS: "linux"})
+	doc := Config{
+		Sources: []Source{
+			{Slug: "primary", Target: "/workspace/app"},
+			{Slug: "tools", Target: "~/.discobox/skill-sources/tools"},
+		},
+		SkillsSources: []SkillsSource{{Target: "~/.discobox/skill-sources/tools", Directory: "skills"}},
+	}
+	expanded := doc.ExpandHome(linux, "/home/u")
+	if got := expanded.Sources[1].Target; got != "/home/u/.discobox/skill-sources/tools" {
+		t.Fatalf("source target = %q", got)
+	}
+	if got := expanded.Sources[0].Target; got != "/workspace/app" {
+		t.Fatalf("an absolute target changed to %q", got)
+	}
+	if got := expanded.SkillsSources[0].Target; got != "/home/u/.discobox/skill-sources/tools" {
+		t.Fatalf("skills source target = %q", got)
+	}
+	if doc.Sources[1].Target != "~/.discobox/skill-sources/tools" || doc.SkillsSources[0].Target != "~/.discobox/skill-sources/tools" {
+		t.Fatalf("ExpandHome changed the document it was given: %+v", doc)
+	}
+}

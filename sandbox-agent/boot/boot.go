@@ -256,6 +256,11 @@ func (b *booter) reloadUserUnits(logger *slog.Logger, id identity) error {
 // pool's container), and only then are the config volume, the declared volumes
 // and the sources wired from them.
 func (b *booter) provision(logger *slog.Logger, id identity, bootstrap *sandboxconfig.Config, wire bool) error {
+	// A skills source's target may be home-relative (ADR 26-11-01-692 §3):
+	// expanded here against the home boot resolved, so the direnv whitelist
+	// and the wiring below see the place it is mounted.
+	expanded := bootstrap.ExpandHome(sandboxPaths, id.home)
+	bootstrap = &expanded
 	// The features' groups and env go first, before the account exists, so
 	// the account joins groups already there (ADR 26-10-16-423 §5); it also
 	// decides which features are off, which the steps below read.

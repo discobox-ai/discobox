@@ -2605,7 +2605,7 @@ components:
                 slug:
                     type: string
                 target:
-                    description: The absolute in-sandbox path the source's checkout lives at. Required with originUrl.
+                    description: The in-sandbox path the source's checkout lives at, absolute, or home-relative (~/ and a clean relative path) for a skills source, which the sandbox expands against its user's home. Required with originUrl.
                     type: string
                 originUrl:
                     description: Where the source's origin is served, when it has one. The sandbox clones from it and keeps it as the checkout's origin remote.
@@ -3485,7 +3485,7 @@ components:
             additionalProperties: false
             properties:
                 directory:
-                    description: Directory where this source should be placed inside the sandbox
+                    description: Directory where this source should be placed inside the sandbox. Only a skills source may name one below the sandbox user's home, as ~/ and a clean relative path, which the sandbox expands.
                     type: string
                 workingDirectory:
                     description: Working directory inside the sandbox for this source
@@ -4356,7 +4356,7 @@ components:
                 sourceCodeReferences:
                     additionalProperties:
                         $ref: '#/components/schemas/GitSource'
-                    description: Additional Git sources to materialize in the sandbox
+                    description: Additional Git sources to materialize in the sandbox, keyed by the directory each lands in. Only a skills source's key may be below the sandbox user's home, as ~/ and a clean relative path.
                     type: object
                 user:
                     $ref: '#/components/schemas/SandboxUser'
@@ -4434,7 +4434,7 @@ components:
                 sourceCodeReferences:
                     additionalProperties:
                         $ref: '#/components/schemas/GitSource'
-                    description: Additional Git sources to materialize in the sandbox
+                    description: Additional Git sources to materialize in the sandbox, keyed by the directory each lands in. Only a skills source's key may be below the sandbox user's home, as ~/ and a clean relative path.
                     type: object
                 user:
                     $ref: '#/components/schemas/SandboxUser'

@@ -3600,7 +3600,7 @@ func sandboxSources(paths sandboxpath.Paths, req *workerapimodel.PoolSandboxCrea
 		sort.Strings(keys)
 		for _, key := range keys {
 			source := refs[key]
-			defaultTarget := paths.Rooted(key)
+			defaultTarget := sourceDirectory(paths, key)
 			if defaultTarget == "" {
 				defaultTarget = paths.Join(paths.WorkingRoot(), defaultSourceSlug(source, key))
 			}
@@ -3612,11 +3612,22 @@ func sandboxSources(paths sandboxpath.Paths, req *workerapimodel.PoolSandboxCrea
 	return out
 }
 
+// sourceDirectory is the target a directory a create names places a source
+// at: a home-relative one as written, for the sandbox to expand against its
+// user's home, which the pool does not know (ADR 26-11-01-692 §2); any other
+// rooted as it always has been.
+func sourceDirectory(paths sandboxpath.Paths, directory string) string {
+	if _, ok := sandboxpath.HomeRelative(directory); ok {
+		return directory
+	}
+	return paths.Rooted(directory)
+}
+
 func sandboxSourceFor(paths sandboxpath.Paths, seed string, source workerapimodel.GitSource, defaultTarget string, used map[string]struct{}) sandboxSource {
 	slug := sourceSlug(source, seed, used)
 	target := defaultTarget
 	if destination, ok := source.Destination.Get(); ok {
-		if directory := paths.Rooted(optString(destination.Directory)); directory != "" {
+		if directory := sourceDirectory(paths, optString(destination.Directory)); directory != "" {
 			target = directory
 		}
 	}
@@ -4120,17 +4131,42 @@ func delivery(req *workerapimodel.PoolSandboxCreateRequest) assetcache.Delivery 
 // sandbox carries a harness config (ADR 0032), so a request without one is a
 // control plane that failed to resolve it, not a sandbox asking for a bare
 // shell.
+//
+// Nothing is placed below home but what a skills source names (ADR
+// 26-11-01-692 §1). Every other directory is rooted as it always has been
+// (sourceDirectory): the server holds a create to the rest, and a sandbox
+// created before this, whose key the pool placed then, is placed again the
+// same way when it is created anew.
 func validateCreateRequest(sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) error {
 	if _, ok := req.ResolvedHarnessConfig.Get(); !ok {
 		return fmt.Errorf("sandbox %s: create request has no resolved harness config", sandboxID)
 	}
 	refs, _ := req.Config.SourceCodeReferences.Get()
+	skillsKeys := map[string]bool{}
 	for _, skills := range req.Config.SkillsSources {
 		if _, ok := refs[skills.Source]; !ok {
 			return fmt.Errorf("sandbox %s: skills source %q names no source code reference", sandboxID, skills.Source)
 		}
 		if err := sandboxconfig.ValidateSkillsDirectory(skills.Directory); err != nil {
 			return fmt.Errorf("sandbox %s: skills source %q: %w", sandboxID, skills.Source, err)
+		}
+		skillsKeys[skills.Source] = true
+	}
+	if source, ok := req.Config.Source.Get(); ok {
+		if destination, ok := source.Destination.Get(); ok {
+			if err := sandboxconfig.ValidateSourceDirectory(optString(destination.Directory), false); err != nil {
+				return fmt.Errorf("sandbox %s: source directory %w", sandboxID, err)
+			}
+		}
+	}
+	for key, ref := range refs {
+		if err := sandboxconfig.ValidateSourceDirectory(key, skillsKeys[key]); err != nil {
+			return fmt.Errorf("sandbox %s: source code reference %w", sandboxID, err)
+		}
+		if destination, ok := ref.Destination.Get(); ok {
+			if err := sandboxconfig.ValidateSourceDirectory(optString(destination.Directory), skillsKeys[key]); err != nil {
+				return fmt.Errorf("sandbox %s: source code reference %q directory %w", sandboxID, key, err)
+			}
 		}
 	}
 	return nil

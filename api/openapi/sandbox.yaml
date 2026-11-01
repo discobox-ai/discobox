@@ -1631,7 +1631,7 @@ components:
                 slug:
                     type: string
                 target:
-                    description: The absolute in-sandbox path the source's checkout lives at. Required with originUrl.
+                    description: The in-sandbox path the source's checkout lives at, absolute, or home-relative (~/ and a clean relative path) for a skills source, which the sandbox expands against its user's home. Required with originUrl.
                     type: string
             required:
                 - slug
