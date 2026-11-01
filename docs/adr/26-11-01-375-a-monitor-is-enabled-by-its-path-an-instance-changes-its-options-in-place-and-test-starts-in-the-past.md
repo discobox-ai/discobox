@@ -1,6 +1,6 @@
 # 26-11-01-375 — A monitor is enabled by its path, an instance changes its options in place, and `test` can start in the past
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-01
 - **Amends**: [26-10-31-073](26-10-31-073-a-box-runs-the-monitors-its-agent-enables-and-queues-their-events-until-it-pops-them.md)
   §2's monitors only from two declaration directories and its refusal of an

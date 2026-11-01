@@ -1,6 +1,6 @@
 # 26-10-31-073 — A box runs the monitors its agent enables, and queues their events until it pops them
 
-- **Status**: Accepted
+- **Status**: Accepted (§2's two declaration directories and refusal of other options, and §3's `test` that always starts at a baseline, amended by [26-11-01-375](26-11-01-375-a-monitor-is-enabled-by-its-path-an-instance-changes-its-options-in-place-and-test-starts-in-the-past.md): a monitor may be named by its path, `enable --update` changes an instance in place, and `test --since` starts in the past)
 - **Date**: 2026-10-31
 - **Relates to**: [ADR 0070](0070-services-are-declared-execs-the-sandbox-starts-for-you.md)
   and [ADR 0125](0125-tools-are-declared-in-files-the-way-services-are.md),
