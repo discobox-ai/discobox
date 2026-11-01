@@ -48,7 +48,7 @@ func newSizeFixture(t *testing.T) *Service {
 		}
 	}
 
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProviderDefinition(sizedType, sandbox.ProviderDefinition{
 		Name:           sizedType,
 		PoolSizeFields: []sandbox.PoolSizeField{sandbox.PoolSizeCPU, sandbox.PoolSizeMemory},

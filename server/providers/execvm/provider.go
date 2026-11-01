@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -32,7 +31,6 @@ type Config struct {
 	PublicAgentPort  *bool                  `json:"publicAgentPort,omitempty"`
 	SSHUser          string                 `json:"sshUser,omitempty"`
 	SSHPrivateKey    string                 `json:"sshPrivateKey,omitempty"`
-	SSHPrivateKeyEnv string                 `json:"sshPrivateKeyEnv,omitempty"`
 }
 
 func Decode(data []byte) (Config, error) {
@@ -40,6 +38,9 @@ func Decode(data []byte) (Config, error) {
 }
 
 func Validate(data json.RawMessage) error {
+	if err := poolruntime.RefuseEnvironmentReferences(data, "sshPrivateKeyEnv"); err != nil {
+		return err
+	}
 	cfg, err := Decode(data)
 	if err != nil {
 		return err
@@ -71,7 +72,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 	driver, err := NewDriver(DriverConfig{
 		Command:       cfg.Command.Values(),
 		SSHUser:       cfg.SSHUser,
-		SSHPrivateKey: sshPrivateKey(cfg),
+		SSHPrivateKey: strings.TrimSpace(cfg.SSHPrivateKey),
 	})
 	if err != nil {
 		return nil, err
@@ -116,16 +117,6 @@ func effectiveAgentPort(agentPort int) int {
 	return agentPort
 }
 
-func sshPrivateKey(cfg Config) string {
-	if key := strings.TrimSpace(cfg.SSHPrivateKey); key != "" {
-		return key
-	}
-	if envName := strings.TrimSpace(cfg.SSHPrivateKeyEnv); envName != "" {
-		return strings.TrimSpace(os.Getenv(envName))
-	}
-	return ""
-}
-
 // Definition describes the exec provider for provider catalogs.
 func Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{
@@ -138,8 +129,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "sandboxBaseImage", Label: "Sandbox Base Image", Type: "string", Placeholder: dockerworker.DefaultSandboxBaseImage, Description: "Sandbox base image every sandbox delivered its platform runs, and the pool's own container runs, provisioned as a pool (ADR 26-10-16-423 §§7, 10, ADR 26-10-24-953 §2).", Advanced: true},
 			{Key: "publicAgentPort", Label: "Publish Harness Port Publicly", Type: "boolean", Description: "Publish the worker-agent port on all VM interfaces at the fixed harness port.", Advanced: true},
 			{Key: "sshUser", Label: "SSH User", Type: "string", Placeholder: "root", Advanced: true},
-			{Key: "sshPrivateKey", Label: "SSH Private Key", Type: "password", Description: "PEM private key used when docker-endpoint returns ssh:// URLs.", Advanced: true},
-			{Key: "sshPrivateKeyEnv", Label: "SSH Private Key Environment Variable", Type: "string", Advanced: true},
+			{Key: "sshPrivateKey", Label: "SSH Private Key", Type: sandbox.ProviderConfigFieldSecret, Description: "PEM private key used when docker-endpoint returns ssh:// URLs.", Advanced: true},
 			{Key: "agentPort", Label: "Harness Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
 		}, poolruntime.PoolPolicyConfigFields()...),
 	}

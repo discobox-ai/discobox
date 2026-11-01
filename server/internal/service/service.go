@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/endpoint"
@@ -110,7 +111,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	if len(options.ListenEndpoints) == 0 {
 		options.ListenEndpoints = []string{endpoint.DefaultEndpoint()}
 	}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(store)
 	poolControlPlane := pools.NewControlPlane(store, engine)
 	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, poolControlPlane, providerregistry.FactoryOptions{
 		DevelopmentImageSync: options.DevelopmentImageSync,
@@ -244,6 +245,13 @@ func (s *Service) Start(ctx context.Context) error {
 	// upgrade already gets the current one.
 	if err := s.store.RefreshSecretFormats(ctx); err != nil {
 		return fmt.Errorf("refresh secret formats: %w", err)
+	}
+	// Before anything resolves a provider: a credential an older server kept
+	// in a provider's config in the clear is sealed, and an environment
+	// reference resolved once, so the instances resolve with their keys and
+	// no reconcile meets one unsealed (ADR 26-10-31-694 §4).
+	if err := s.store.SealProviderCredentials(ctx, os.LookupEnv); err != nil {
+		return fmt.Errorf("seal provider credentials: %w", err)
 	}
 	if err := s.engine.Start(ctx); err != nil {
 		return err

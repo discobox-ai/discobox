@@ -1559,7 +1559,8 @@ func (s *CreateSandboxExecWait) UnmarshalText(data []byte) error {
 type CreateSandboxProviderInstanceBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Non-secret provider configuration.
+	// Provider configuration, its secret fields included. Secret fields are sealed in the provider row
+	// and never returned.
 	Config jx.Raw `json:"config"`
 	// Provider display name.
 	Name string `json:"name"`
@@ -19403,10 +19404,8 @@ func (*ProjectSkillsSource) createProjectSkillsSourceRes() {}
 
 // Ref: #/components/schemas/ProviderConfigField
 type ProviderConfigField struct {
-	Advanced           OptBool   `json:"advanced"`
-	CredentialAuthType OptString `json:"credentialAuthType"`
-	CredentialProvider OptString `json:"credentialProvider"`
-	Description        OptString `json:"description"`
+	Advanced    OptBool   `json:"advanced"`
+	Description OptString `json:"description"`
 	// The field cannot change while the provider instance has pools, because the pools' hosts were made
 	// by what it names.
 	Immutable   OptBool   `json:"immutable"`
@@ -19414,22 +19413,15 @@ type ProviderConfigField struct {
 	Label       string    `json:"label"`
 	Placeholder OptString `json:"placeholder"`
 	Required    OptBool   `json:"required"`
-	Type        string    `json:"type"`
+	// The type of the value: string, number, boolean, or secret. A secret field holds a credential,
+	// which is sealed in the provider row and never returned, so a client prompts for it without echoing
+	// it.
+	Type string `json:"type"`
 }
 
 // GetAdvanced returns the value of Advanced.
 func (s *ProviderConfigField) GetAdvanced() OptBool {
 	return s.Advanced
-}
-
-// GetCredentialAuthType returns the value of CredentialAuthType.
-func (s *ProviderConfigField) GetCredentialAuthType() OptString {
-	return s.CredentialAuthType
-}
-
-// GetCredentialProvider returns the value of CredentialProvider.
-func (s *ProviderConfigField) GetCredentialProvider() OptString {
-	return s.CredentialProvider
 }
 
 // GetDescription returns the value of Description.
@@ -19470,16 +19462,6 @@ func (s *ProviderConfigField) GetType() string {
 // SetAdvanced sets the value of Advanced.
 func (s *ProviderConfigField) SetAdvanced(val OptBool) {
 	s.Advanced = val
-}
-
-// SetCredentialAuthType sets the value of CredentialAuthType.
-func (s *ProviderConfigField) SetCredentialAuthType(val OptString) {
-	s.CredentialAuthType = val
-}
-
-// SetCredentialProvider sets the value of CredentialProvider.
-func (s *ProviderConfigField) SetCredentialProvider(val OptString) {
-	s.CredentialProvider = val
 }
 
 // SetDescription sets the value of Description.
@@ -27002,7 +26984,7 @@ func (s *SandboxProviderCatalogItem) SetName(val string) {
 type SandboxProviderInstance struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Non-secret provider configuration.
+	// Provider configuration, without its secret fields.
 	Config jx.Raw `json:"config"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
@@ -27016,6 +26998,8 @@ type SandboxProviderInstance struct {
 	ProjectId string `json:"projectId"`
 	// Pools backed by this provider instance.
 	Pools OptNilPoolArray `json:"pools"`
+	// The secret fields that have a value. Their values are never returned.
+	SecretFields OptNilStringArray `json:"secretFields"`
 	// Provider type.
 	Type string `json:"type"`
 	// Last update timestamp.
@@ -27060,6 +27044,11 @@ func (s *SandboxProviderInstance) GetProjectId() string {
 // GetPools returns the value of Pools.
 func (s *SandboxProviderInstance) GetPools() OptNilPoolArray {
 	return s.Pools
+}
+
+// GetSecretFields returns the value of SecretFields.
+func (s *SandboxProviderInstance) GetSecretFields() OptNilStringArray {
+	return s.SecretFields
 }
 
 // GetType returns the value of Type.
@@ -27110,6 +27099,11 @@ func (s *SandboxProviderInstance) SetProjectId(val string) {
 // SetPools sets the value of Pools.
 func (s *SandboxProviderInstance) SetPools(val OptNilPoolArray) {
 	s.Pools = val
+}
+
+// SetSecretFields sets the value of SecretFields.
+func (s *SandboxProviderInstance) SetSecretFields(val OptNilStringArray) {
+	s.SecretFields = val
 }
 
 // SetType sets the value of Type.
@@ -33423,7 +33417,8 @@ func (s *UpdateSandboxMetaBodySetTags) init() UpdateSandboxMetaBodySetTags {
 type UpdateSandboxProviderInstanceBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Non-secret provider configuration.
+	// Provider configuration, replacing the stored one. A secret field left out keeps its value, a value
+	// replaces it, and null clears it.
 	Config jx.Raw `json:"config"`
 	// Whether this provider is disabled.
 	Disabled OptBool `json:"disabled"`

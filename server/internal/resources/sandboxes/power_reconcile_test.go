@@ -66,7 +66,7 @@ func newPowerFixture(t *testing.T) *powerFixture {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
 	provider := &powerProvider{}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(svc.store)
 	manager.RegisterProvider("test", provider)
 	manager.SetDefault("test")
 	svc.sandboxProviders = manager

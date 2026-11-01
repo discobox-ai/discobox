@@ -107,7 +107,7 @@ subcommand runs. Use --help=<provider> to show provider-specific options.
 Examples:
   discobox admin provider create --help
   discobox admin provider create --help=digitalocean
-  discobox admin provider create --type digitalocean --control-plane-url https://example.com --token-env DIGITALOCEAN_ACCESS_TOKEN`,
+  discobox admin provider create --type digitalocean --ssh-keys 12345 --secret token=@do-token --secret sshPrivateKey=@id_ed25519`,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		DisableFlagParsing: true,
 		RunE:               a.runProviderCreate,
@@ -117,6 +117,7 @@ Examples:
 	cmd.Flags().String("type", "digitalocean", "Provider type")
 	cmd.Flags().String("name", "", "Provider instance name")
 	cmd.Flags().String("config", "", "Provider config JSON or @path")
+	cmd.Flags().StringArray("secret", nil, secretFlagUsage)
 	cmd.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
 		if provider := strings.TrimSpace(helpFlag.Provider()); provider != "" {
 			if err := a.writeProviderCreateHelpForProvider(cmd, provider); err != nil {
@@ -143,7 +144,8 @@ options.
 Examples:
   discobox admin provider update --help
   discobox admin provider update --help=docker
-  discobox admin provider update my-provider --min-workers 1 --max-workers 2`,
+  discobox admin provider update my-provider --min-workers 1 --max-workers 2
+  discobox admin provider update my-provider --secret apiKey=@new-key`,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		DisableFlagParsing: true,
 		ValidArgsFunction:  a.completeProviders,
@@ -154,6 +156,7 @@ Examples:
 	cmd.Flags().String("name", "", "Provider instance name")
 	cmd.Flags().String("config", "", "Provider config JSON or @path")
 	cmd.Flags().Bool("disabled", false, "Disable or enable the provider instance")
+	cmd.Flags().StringArray("secret", nil, secretFlagUsage)
 	cmd.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
 		if provider := strings.TrimSpace(helpFlag.Provider()); provider != "" {
 			if err := a.writeProviderUpdateHelpForProvider(cmd, provider); err != nil {

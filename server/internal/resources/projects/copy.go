@@ -14,6 +14,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/x/id"
@@ -149,10 +150,21 @@ func (s *Service) copyProviders(ctx context.Context, sourceProjectID, projectID 
 	ids := make(map[string]string, len(sourceProviders))
 	for i := range sourceProviders {
 		sourceProvider := &sourceProviders[i]
+		// The copy carries the source's secret fields, sealed again in its
+		// own row (ADR 26-10-31-694 §5): a sealed value is bound to the row
+		// it was sealed in, so it is opened and given to the create whole.
+		sealed, err := s.store.OpenSandboxProviderSecrets(ctx, sourceProvider)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", sourceProvider.Name, err)
+		}
+		config, err := sandbox.JoinProviderConfig(json.RawMessage(sourceProvider.Config), sealed)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", sourceProvider.Name, err)
+		}
 		created, err := s.providers.CreateSandboxProviderInstance(ctx, projectID, services.CreateSandboxProviderInstanceBody{
 			Type:   sourceProvider.Type,
 			Name:   sourceProvider.Name,
-			Config: jx.Raw(sourceProvider.Config),
+			Config: jx.Raw(config),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", sourceProvider.Name, err)

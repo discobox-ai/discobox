@@ -31,6 +31,13 @@ type ProviderFactory func(ctx context.Context, instance *model.SandboxProviderIn
 // ProviderConfigValidator validates persisted provider-instance configuration.
 type ProviderConfigValidator func(config json.RawMessage) error
 
+// ProviderSecrets opens the sealed half of a provider instance's config: the
+// fields its definition types secret, by key (ADR 26-10-31-694 §1). The store
+// is the one implementation, since only it holds the sealer.
+type ProviderSecrets interface {
+	OpenSandboxProviderSecrets(ctx context.Context, instance *model.SandboxProviderInstance) (map[string]json.RawMessage, error)
+}
+
 // ProviderManager manages registered providers, definitions, and factories.
 type ProviderManager struct {
 	mu         sync.RWMutex
@@ -40,6 +47,7 @@ type ProviderManager struct {
 	validators map[string]ProviderConfigValidator
 	cache      map[string]cachedProvider
 	defaultID  string
+	secrets    ProviderSecrets
 }
 
 type cachedProvider struct {
@@ -47,9 +55,11 @@ type cachedProvider struct {
 	updatedAt time.Time
 }
 
-// NewProviderManager creates an empty provider manager.
-func NewProviderManager() *ProviderManager {
+// NewProviderManager creates an empty provider manager. secrets opens what an
+// instance's row seals before its provider is built from it.
+func NewProviderManager(secrets ProviderSecrets) *ProviderManager {
 	return &ProviderManager{
+		secrets:    secrets,
 		providers:  make(map[string]Provider),
 		defs:       make(map[string]ProviderDefinition),
 		factories:  make(map[string]ProviderFactory),
@@ -323,11 +333,15 @@ func (m *ProviderManager) cachedProvider(ctx context.Context, instance *model.Sa
 	}
 	m.mu.RUnlock()
 
-	provider, err := factory(ctx, instance)
+	resolved, err := m.withSecrets(ctx, instance)
 	if err != nil {
 		return nil, err
 	}
-	if err := provider.Initialize(ctx, instance); err != nil {
+	provider, err := factory(ctx, resolved)
+	if err != nil {
+		return nil, err
+	}
+	if err := provider.Initialize(ctx, resolved); err != nil {
 		closeProvider(provider)
 		return nil, err
 	}
@@ -339,6 +353,47 @@ func (m *ProviderManager) cachedProvider(ctx context.Context, instance *model.Sa
 		closeProvider(previous)
 	}
 	return provider, nil
+}
+
+// withSecrets is instance with its sealed fields joined into its config, the
+// config its provider decodes (ADR 26-10-31-694 §1). A secret field still in
+// the clear in the stored config fails the resolve and is never handed to the
+// provider: only a server older than this one writes it there, and a restart
+// of this one seals it (§4).
+func (m *ProviderManager) withSecrets(ctx context.Context, instance *model.SandboxProviderInstance) (*model.SandboxProviderInstance, error) {
+	definition, _ := m.GetProviderDefinition(instance.Type)
+	if key, ok := secretFieldIn(instance.Config, definition); ok {
+		return nil, fmt.Errorf("provider instance %s holds %s unsealed in its config: restart the server to seal it", instance.ID, key)
+	}
+	sealed, err := m.secrets.OpenSandboxProviderSecrets(ctx, instance)
+	if err != nil {
+		return nil, err
+	}
+	if len(sealed) == 0 {
+		return instance, nil
+	}
+	joined, err := JoinProviderConfig(json.RawMessage(instance.Config), sealed)
+	if err != nil {
+		return nil, fmt.Errorf("provider instance %s: %w", instance.ID, err)
+	}
+	resolved := *instance
+	resolved.Config = model.RawJSON(joined)
+	return &resolved, nil
+}
+
+// secretFieldIn reports a field of config the definition types secret, which
+// a stored config must not hold. A config that is not an object holds none.
+func secretFieldIn(config []byte, definition ProviderDefinition) (string, bool) {
+	var fields map[string]json.RawMessage
+	if len(config) == 0 || json.Unmarshal(config, &fields) != nil {
+		return "", false
+	}
+	for _, key := range definition.SecretFields() {
+		if _, ok := fields[key]; ok {
+			return key, true
+		}
+	}
+	return "", false
 }
 
 func (m *ProviderManager) snapshotProviders() map[string]Provider {

@@ -2,6 +2,7 @@ package projects_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -285,6 +286,43 @@ func TestCreateProjectCopiesProvidersPoolsAndConfiguredHarnesses(t *testing.T) {
 	if len(bindings) != 1 || bindings[0].SecretID != secrets[0].ID || bindings[0].EnvName != "CODEX_TOKEN" ||
 		len(bindings[0].Routes) != 1 || !slices.Equal(bindings[0].Routes[0].Hosts, []string{"api.openai.com"}) {
 		t.Fatalf("bindings = %#v; want one pointing at the copied secret, with its routes", bindings)
+	}
+}
+
+// A copied provider is created with its source's secret fields: they are
+// opened from the source row and handed to the create whole, which seals them
+// in the copy's own row (ADR 26-10-31-694 §5).
+func TestCreateProjectCopiesAProvidersSecretFields(t *testing.T) {
+	svc, st, ctx := newService(t)
+	source := seedSourceProject(ctx, t, st)
+	keyed := &model.SandboxProviderInstance{ProjectID: source.ID, Type: "vm", Name: "VM", Config: model.RawJSON(`{"driver":"boxd"}`)}
+	if err := store.SetSandboxProviderSecrets(keyed, map[string]json.RawMessage{"apiKey": json.RawMessage(`"bxd_key"`)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSandboxProviderInstance(ctx, keyed); err != nil {
+		t.Fatalf("create keyed provider: %v", err)
+	}
+
+	project, err := svc.CreateProject(ctx, services.CreateProjectBody{
+		Name:              "Copy",
+		CopyFromProjectId: apigen.NewOptString(source.ID),
+	})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	providers, err := st.ListSandboxProviderInstances(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	var given string
+	for _, provider := range providers {
+		if provider.Type == "vm" {
+			// stubProviders stores the create's config as it was given.
+			given = string(provider.Config)
+		}
+	}
+	if given != `{"apiKey":"bxd_key","driver":"boxd"}` {
+		t.Fatalf("copied vm provider was created with %q, want its config with the key joined in", given)
 	}
 }
 

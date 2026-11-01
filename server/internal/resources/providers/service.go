@@ -7,8 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
+
+	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -85,12 +89,6 @@ func providerConfigFieldToService(field sandboxesvc.ProviderConfigField) service
 	if field.Advanced {
 		out.Advanced = services.OptBool{Value: field.Advanced, Set: true}
 	}
-	if field.CredentialProvider != "" {
-		out.CredentialProvider = services.OptString{Value: field.CredentialProvider, Set: true}
-	}
-	if field.CredentialAuthType != "" {
-		out.CredentialAuthType = services.OptString{Value: field.CredentialAuthType, Set: true}
-	}
 	if field.Immutable {
 		out.Immutable = services.OptBool{Value: field.Immutable, Set: true}
 	}
@@ -117,7 +115,14 @@ func (s *Service) ListSandboxProviderInstances(ctx context.Context, projectID st
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
 	}
-	return s.store.ListSandboxProviderInstances(ctx, projectID)
+	providers, err := s.store.ListSandboxProviderInstances(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range providers {
+		s.readSecretFields(ctx, &providers[i])
+	}
+	return providers, nil
 }
 
 func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID string, input services.CreateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error) {
@@ -128,10 +133,18 @@ func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID s
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "type is required")
 	}
 	manager := s.sandboxes.SandboxProviderManager()
-	if err := manager.ValidateProviderConfig(input.Type, services.RawMessage(input.Config)); err != nil {
+	config := services.RawMessage(input.Config)
+	if err := manager.ValidateProviderConfig(input.Type, config); err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
-	provider := &model.SandboxProviderInstance{ProjectID: projectID, Type: input.Type, Name: input.Name, Config: model.RawJSON(services.RawMessage(input.Config))}
+	plain, sealed, err := s.splitConfig(input.Type, config, nil)
+	if err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	provider := &model.SandboxProviderInstance{ProjectID: projectID, Type: input.Type, Name: input.Name, Config: model.RawJSON(plain)}
+	if err := store.SetSandboxProviderSecrets(provider, sealed); err != nil {
+		return nil, err
+	}
 	if err := s.store.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		return nil, err
 	}
@@ -148,42 +161,184 @@ func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID s
 		}
 		return nil, resolveErr
 	}
-	return s.store.GetSandboxProviderInstance(ctx, projectID, provider.ID)
+	return s.getWithSecretFields(ctx, projectID, provider.ID)
 }
 
 func (s *Service) GetSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error) {
-	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, providerID)
+	provider, err := s.getWithSecretFields(ctx, projectID, providerID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "provider instance not found")
 	}
 	return provider, nil
 }
 
-func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, providerID string, input services.UpdateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error) {
+// getWithSecretFields reads a provider instance as the API answers with it:
+// its config, which holds no secret field, and the names of the secret fields
+// that have a value.
+func (s *Service) getWithSecretFields(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error) {
 	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, providerID)
 	if err != nil {
-		return nil, apperrors.NotFound(err, "provider instance not found")
-	}
-	if name, ok := input.Name.Get(); ok {
-		provider.Name = name
-	}
-	if len(input.Config) > 0 {
-		config := services.RawMessage(input.Config)
-		if err := s.sandboxes.SandboxProviderManager().ValidateProviderConfig(provider.Type, config); err != nil {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
-		}
-		if err := s.refuseImmutableChange(ctx, provider, config); err != nil {
-			return nil, err
-		}
-		provider.Config = model.RawJSON(config)
-	}
-	if disabled, ok := input.Disabled.Get(); ok {
-		provider.Disabled = disabled
-	}
-	if err := s.store.UpdateSandboxProviderInstance(ctx, provider); err != nil {
 		return nil, err
 	}
-	return s.store.GetSandboxProviderInstance(ctx, projectID, providerID)
+	s.readSecretFields(ctx, provider)
+	return provider, nil
+}
+
+// readSecretFields makes provider what a read answers with (ADR 26-10-31-694
+// §2): its config without any secret field, and SecretFields, the secret
+// fields its row seals a value for. A secret field still in the stored config
+// — a row the startup migration could not move, or one an older server wrote
+// — is taken out of the answer as well; it fails the instance's resolve.
+//
+// A row whose sealed fields do not open is that instance's problem, as one
+// that does not resolve is: it is logged and answered with no secretFields,
+// so that the listing, and the update or delete that would mend it, still
+// work.
+func (s *Service) readSecretFields(ctx context.Context, provider *model.SandboxProviderInstance) {
+	definition, _ := s.sandboxes.SandboxProviderManager().GetProviderDefinition(provider.Type)
+	provider.Config = model.RawJSON(withoutSecretFields(json.RawMessage(provider.Config), definition.SecretFields()))
+	sealed, err := s.store.OpenSandboxProviderSecrets(ctx, provider)
+	if err != nil {
+		slog.ErrorContext(ctx, "provider instance's secret fields did not open", "project", provider.ProjectID, "provider", provider.ID, "error", err)
+		return
+	}
+	provider.SecretFields = slices.Sorted(maps.Keys(sealed))
+}
+
+// withoutSecretFields is config with the secret keys taken out. A config that
+// is not an object, or holds none of them, is returned as it is.
+func withoutSecretFields(config json.RawMessage, secretKeys []string) json.RawMessage {
+	var fields map[string]json.RawMessage
+	if len(secretKeys) == 0 || len(config) == 0 || json.Unmarshal(config, &fields) != nil {
+		return config
+	}
+	removed := false
+	for _, key := range secretKeys {
+		if _, ok := fields[key]; ok {
+			delete(fields, key)
+			removed = true
+		}
+	}
+	if !removed {
+		return config
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(fields)
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+// splitConfig splits a config a caller wrote into the config stored in the
+// clear and the secret fields sealed apart from it, by the secret fields the
+// provider's definition declares (ADR 26-10-31-694 §§1, 2). kept is what is
+// sealed already: a secret field the config leaves out keeps its value there,
+// a value replaces it, and null clears it. Only an object
+// can be split; an empty config is an empty object.
+func (s *Service) splitConfig(providerType string, config json.RawMessage, kept map[string]json.RawMessage) (json.RawMessage, map[string]json.RawMessage, error) {
+	sealed := maps.Clone(kept)
+	if sealed == nil {
+		sealed = map[string]json.RawMessage{}
+	}
+	if len(bytes.TrimSpace(config)) == 0 {
+		return nil, sealed, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(config, &fields); err != nil {
+		return nil, nil, fmt.Errorf("provider config must be a JSON object: %w", err)
+	}
+	definition, _ := s.sandboxes.SandboxProviderManager().GetProviderDefinition(providerType)
+	secretKeys := definition.SecretFields()
+	if !slices.ContainsFunc(secretKeys, func(key string) bool { _, ok := fields[key]; return ok }) {
+		return config, sealed, nil
+	}
+	for _, key := range secretKeys {
+		value, ok := fields[key]
+		if !ok {
+			continue
+		}
+		delete(fields, key)
+		if clearsSecretField(value) {
+			delete(sealed, key)
+			continue
+		}
+		sealed[key] = value
+	}
+	if len(fields) == 0 {
+		return nil, sealed, nil
+	}
+	plain, err := json.Marshal(fields)
+	if err != nil {
+		return nil, nil, err
+	}
+	return plain, sealed, nil
+}
+
+// clearsSecretField reports whether a secret field's value in a write clears
+// it: null. Any other value replaces it.
+func clearsSecretField(value json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(value), []byte("null"))
+}
+
+func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, providerID string, input services.UpdateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error) {
+	// The row is read locked and written back whole in one transaction: the
+	// sealed fields an update keeps are read from it, and a read on the root
+	// store, which may be a lagging replica, or an unlocked read beside a
+	// concurrent rotation, would write back a key it had just replaced
+	// (store/REVIEW.md).
+	err := s.store.Transaction(ctx, func(tx *store.Store, _ *gorm.DB) error {
+		provider, err := tx.LockSandboxProviderInstance(ctx, projectID, providerID)
+		if err != nil {
+			return apperrors.NotFound(err, "provider instance not found")
+		}
+		if name, ok := input.Name.Get(); ok {
+			provider.Name = name
+		}
+		if len(input.Config) > 0 {
+			if err := s.updateConfig(ctx, tx, provider, services.RawMessage(input.Config)); err != nil {
+				return err
+			}
+		}
+		if disabled, ok := input.Disabled.Get(); ok {
+			provider.Disabled = disabled
+		}
+		return tx.UpdateSandboxProviderInstance(ctx, provider)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.getWithSecretFields(ctx, projectID, providerID)
+}
+
+// updateConfig replaces provider's config with config, keeping each secret
+// field config leaves out (ADR 26-10-31-694 §2).
+func (s *Service) updateConfig(ctx context.Context, tx *store.Store, provider *model.SandboxProviderInstance, config json.RawMessage) error {
+	kept, err := tx.OpenSandboxProviderSecrets(ctx, provider)
+	if err != nil {
+		return err
+	}
+	plain, sealed, err := s.splitConfig(provider.Type, config, kept)
+	if err != nil {
+		return apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	// Validated whole, with the secret fields it keeps, as a create is.
+	joined, err := sandbox.JoinProviderConfig(plain, sealed)
+	if err != nil {
+		return apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	if err := s.sandboxes.SandboxProviderManager().ValidateProviderConfig(provider.Type, joined); err != nil {
+		return apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	// No secret field is immutable: a key changes while pools stand, which
+	// is what rotating it is.
+	if err := s.refuseImmutableChange(ctx, tx, provider, plain); err != nil {
+		return err
+	}
+	provider.Config = model.RawJSON(plain)
+	return store.SetSandboxProviderSecrets(provider, sealed)
 }
 
 // refuseImmutableChange refuses a config that changes a field the provider
@@ -191,7 +346,7 @@ func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, 
 // what the field names, and nothing under the new value could remove them. It
 // is the update's counterpart of the delete refusal below, and like it allows
 // anything once the pools are gone.
-func (s *Service) refuseImmutableChange(ctx context.Context, provider *model.SandboxProviderInstance, config json.RawMessage) error {
+func (s *Service) refuseImmutableChange(ctx context.Context, tx *store.Store, provider *model.SandboxProviderInstance, config json.RawMessage) error {
 	definition, ok := s.sandboxes.SandboxProviderManager().GetProviderDefinition(provider.Type)
 	if !ok {
 		return nil
@@ -216,7 +371,7 @@ func (s *Service) refuseImmutableChange(ctx context.Context, provider *model.San
 	if len(changed) == 0 {
 		return nil
 	}
-	pools, err := s.store.ListPoolsForProviderInstance(ctx, provider.ProjectID, provider.ID)
+	pools, err := tx.ListPoolsForProviderInstance(ctx, provider.ProjectID, provider.ID)
 	if err != nil {
 		return err
 	}

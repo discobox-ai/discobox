@@ -293,7 +293,12 @@ func (a *App) writeProvider(cmd *cobra.Command, provider *apimodel.SandboxProvid
 	fmt.Fprintf(tw, "TYPE\t%s\n", provider.Type)
 	fmt.Fprintf(tw, "DISABLED\t%t\n", provider.Disabled)
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(provider.UpdatedAt))
-	fmt.Fprintf(tw, "CONFIG\t%s\n", formatRedactedRawJSON(provider.GetConfig()))
+	fmt.Fprintf(tw, "CONFIG\t%s\n", formatRawJSON(provider.GetConfig()))
+	// A secret field's value is never returned (ADR 26-10-31-694 §2): what
+	// is shown is that it is set.
+	for _, key := range provider.SecretFields.Or(nil) {
+		fmt.Fprintf(tw, "%s\t(set)\n", key)
+	}
 	return tw.Flush()
 }
 
@@ -1160,59 +1165,20 @@ func terminalWidth(w io.Writer) int {
 	return width
 }
 
-func runeLen(value string) int {
-	return len([]rune(value))
-}
-
-func formatRedactedRawJSON(raw []byte) string {
+// formatRawJSON is a JSON value on one line.
+func formatRawJSON(raw []byte) string {
 	if len(raw) == 0 {
 		return ""
 	}
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return "[invalid JSON config redacted]"
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, raw); err != nil {
+		return string(raw)
 	}
-	redactSensitiveJSON(value)
-	data, err := json.Marshal(value)
-	if err != nil {
-		return "[invalid JSON config redacted]"
-	}
-	return string(data)
+	return compact.String()
 }
 
-func redactSensitiveJSON(value any) {
-	switch typed := value.(type) {
-	case map[string]any:
-		for key, child := range typed {
-			if isSensitiveConfigKey(key) {
-				typed[key] = "[REDACTED]"
-				continue
-			}
-			redactSensitiveJSON(child)
-		}
-	case []any:
-		for _, child := range typed {
-			redactSensitiveJSON(child)
-		}
-	}
-}
-
-func isSensitiveConfigKey(key string) bool {
-	normalized := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(key, "-", ""), "_", ""), " ", ""))
-	for _, needle := range []string{
-		"token",
-		"password",
-		"secret",
-		"apikey",
-		"accesskey",
-		"privatekey",
-		"credential",
-	} {
-		if strings.Contains(normalized, needle) {
-			return true
-		}
-	}
-	return false
+func runeLen(value string) int {
+	return len([]rune(value))
 }
 
 func optString(value string) apiclientgen.OptString {

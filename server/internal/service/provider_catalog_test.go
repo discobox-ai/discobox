@@ -548,21 +548,33 @@ func existingDefaultHostMounts(t *testing.T) []string {
 
 func TestServiceResolvesDigitalOceanProviderInstance(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _, _ := newSandboxTestService(t, nil)
-	t.Setenv("TEST_DIGITALOCEAN_TOKEN", "token-1")
+	svc, _, st, projectID := newSandboxTestService(t, nil)
 
-	provider, err := svc.SandboxProviderManager().ResolveInstance(ctx, &model.SandboxProviderInstance{
-		ID:   "provider-1",
-		Type: "digitalocean",
+	// The token is sealed in the row, and the provider is built from the
+	// config with it joined back in (ADR 26-10-31-694 §1).
+	instance := &model.SandboxProviderInstance{
+		ProjectID: projectID,
+		Type:      "digitalocean",
+		Name:      "do",
 		Config: []byte(`{
-			"tokenEnv": "TEST_DIGITALOCEAN_TOKEN",
 			"controlPlaneUrl": "https://control.example",
 			"region": "sfo3",
 			"size": "s-1vcpu-1gb",
 			"image": "ubuntu-24-04-x64",
 			"tags": "sandbox,ci"
 		}`),
-	})
+	}
+	if err := store.SetSandboxProviderSecrets(instance, map[string]json.RawMessage{"token": json.RawMessage(`"token-1"`)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSandboxProviderInstance(ctx, instance); err != nil {
+		t.Fatalf("create provider instance: %v", err)
+	}
+	stored, err := st.GetSandboxProviderInstance(ctx, projectID, instance.ID)
+	if err != nil {
+		t.Fatalf("read provider instance: %v", err)
+	}
+	provider, err := svc.SandboxProviderManager().ResolveInstance(ctx, stored)
 	if err != nil {
 		t.Fatalf("resolve digitalocean provider: %v", err)
 	}

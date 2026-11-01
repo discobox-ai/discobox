@@ -48,6 +48,27 @@ func DecodeConfig[T any](data []byte, providerType string) (T, error) {
 	return cfg, nil
 }
 
+// RefuseEnvironmentReferences refuses a config that sets any of the named
+// fields: references to an environment variable of the server's process that
+// held a credential, which a provider no longer reads (ADR 26-10-31-694 §6).
+// A decoded config ignores a field it does not know, so without this a
+// config naming one would be accepted and do nothing.
+func RefuseEnvironmentReferences(data []byte, keys ...string) error {
+	if len(data) == 0 {
+		return nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil // Decode reports a config that is not an object.
+	}
+	for _, key := range keys {
+		if _, ok := fields[key]; ok {
+			return fmt.Errorf("%s is no longer accepted: a provider takes its credential as the value of its secret field, never from the server's environment", key)
+		}
+	}
+	return nil
+}
+
 // ControlPlaneStreams is how a remote provider's pools reach their control
 // plane (ADR 26-10-30-875 §4). Given a controlPlaneUrl, they dial it, and it is
 // nil. Without one, the server opens a channel to each pool, and it is hub:

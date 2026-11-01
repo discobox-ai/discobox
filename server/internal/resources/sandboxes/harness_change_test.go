@@ -15,7 +15,7 @@ import (
 func TestHarnessChangeRefusalKeepsEffectiveHarness(t *testing.T) {
 	svc, st := newUpgradeEngineFixture(t)
 	provider := &recordingProvider{}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(svc.store)
 	manager.RegisterProvider("docker", provider)
 	manager.SetDefault("docker")
 	svc.sandboxProviders = manager
@@ -87,7 +87,7 @@ func TestHarnessChangeAppliesSameBundleDifferentConfigAndFencesReplacement(t *te
 	target := bundledConfig(t, st, codexBundle, codexBundleV2)
 	sb := eligibleSandbox(t, st, old.ID, codexBundle, codexBundleV2, func(sb *model.Sandbox) { sb.Prompt = []string{"old task"} })
 	provider := &recordingProvider{}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(svc.store)
 	manager.RegisterProvider("docker", provider)
 	manager.SetDefault("docker")
 	svc.sandboxProviders = manager

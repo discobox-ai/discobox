@@ -199,10 +199,21 @@ IDs already carried by persisted rows.
 ## Secret Sealing
 
 With `WithSealer`, the store encrypts secret material on write and decrypts it
-only on request: `secrets.encrypted_value` (`OpenSecretValue`) and
-`sandboxes.secret_state` (`OpenSandboxSecretState`). Plaintext rows pass through
-unchanged. Deleting secrets (directly, with an anonymous sandbox assignment, or
-with the project) nulls `encrypted_value` before removing the row.
+only on request: `secrets.encrypted_value` (`OpenSecretValue`),
+`sandboxes.secret_state` (`OpenSandboxSecretState`), and
+`sandbox_provider_instances.encrypted_config` (`OpenSandboxProviderSecrets`).
+Plaintext rows pass through unchanged. Deleting secrets (directly, with an
+anonymous sandbox assignment, or with the project) nulls `encrypted_value`
+before removing the row.
+
+A provider instance's `encrypted_config` is a JSON object of the fields its
+definition types `secret` (ADR 26-10-31-694). The caller puts them there in the
+clear (`SetSandboxProviderSecrets`), and create and update seal it, bound to
+the row's project and ID, so a copy is opened and created again rather than
+carried as bytes. `SealProviderCredentials` runs at every start, before any
+provider resolves: it moves what an older server kept in `config` in the
+clear, from a list of type and key fixed in the migration rather than read
+from the definitions, and resolves an environment reference once.
 
 ## Error Contract
 

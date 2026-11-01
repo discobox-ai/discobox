@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -28,20 +29,21 @@ import (
 	"github.com/discobox-ai/discobox/pkg/version"
 )
 
-func TestWriteProviderTableIncludesConfig(t *testing.T) {
+func TestWriteProviderTableIncludesConfigAndSetSecretFields(t *testing.T) {
 	app := &App{output: "table"}
 	cmd := &cobra.Command{}
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	err := app.writeProvider(cmd, &apimodel.SandboxProviderInstance{
+	provider := &apimodel.SandboxProviderInstance{
 		ID:       "provider-1",
-		Name:     "Docker",
-		Type:     "docker",
-		Config:   jx.Raw(`{"socketPath":"/var/run/docker.sock","token":"do-secret","nested":{"apiKey":"api-secret"},"items":[{"password":"password-secret"}]}`),
+		Name:     "VM",
+		Type:     "vm",
+		Config:   jx.Raw(`{"driver": "boxd", "deliverProviderKey": true}`),
 		Disabled: true,
-	})
-	if err != nil {
+	}
+	provider.SecretFields.SetTo([]string{"apiKey"})
+	if err := app.writeProvider(cmd, provider); err != nil {
 		t.Fatalf("writeProvider: %v", err)
 	}
 
@@ -49,19 +51,14 @@ func TestWriteProviderTableIncludesConfig(t *testing.T) {
 	for _, want := range []string{
 		"FIELD",
 		"CONFIG",
-		`"socketPath":"/var/run/docker.sock"`,
-		`"token":"[REDACTED]"`,
-		`"apiKey":"[REDACTED]"`,
-		`"password":"[REDACTED]"`,
+		`{"driver":"boxd","deliverProviderKey":true}`,
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("provider output = %q, want %q", output, want)
 		}
 	}
-	for _, leaked := range []string{"do-secret", "api-secret", "password-secret", "bootstrap-secret"} {
-		if strings.Contains(output, leaked) {
-			t.Fatalf("provider output leaked secret %q: %q", leaked, output)
-		}
+	if !regexp.MustCompile(`(?m)^apiKey +\(set\)$`).MatchString(output) {
+		t.Fatalf("provider output = %q, want a row apiKey (set)", output)
 	}
 }
 

@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -36,7 +35,6 @@ type Config struct {
 	poolruntime.PoolPolicy
 
 	Token            string                 `json:"token,omitempty"`
-	TokenEnv         string                 `json:"tokenEnv,omitempty"`
 	ControlPlaneURL  string                 `json:"controlPlaneUrl,omitempty"`
 	APIBaseURL       string                 `json:"apiBaseUrl,omitempty"`
 	Region           string                 `json:"region,omitempty"`
@@ -46,7 +44,6 @@ type Config struct {
 	SSHKeys          poolruntime.StringList `json:"sshKeys,omitempty"`
 	SSHUser          string                 `json:"sshUser,omitempty"`
 	SSHPrivateKey    string                 `json:"sshPrivateKey,omitempty"`
-	SSHPrivateKeyEnv string                 `json:"sshPrivateKeyEnv,omitempty"`
 	VPCUUID          string                 `json:"vpcUuid,omitempty"`
 	Tags             poolruntime.StringList `json:"tags,omitempty"`
 	Backups          bool                   `json:"backups,omitempty"`
@@ -60,15 +57,18 @@ func Decode(data []byte) (Config, error) {
 }
 
 func Validate(data json.RawMessage) error {
+	if err := poolruntime.RefuseEnvironmentReferences(data, "tokenEnv", "sshPrivateKeyEnv"); err != nil {
+		return err
+	}
 	cfg, err := Decode(data)
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(cfg.Token) == "" && strings.TrimSpace(cfg.TokenEnv) == "" {
-		return fmt.Errorf("digitalocean token or tokenEnv is required")
+	if strings.TrimSpace(cfg.Token) == "" {
+		return fmt.Errorf("digitalocean token is required")
 	}
-	if accessSecret(cfg.SSHPrivateKey, cfg.SSHPrivateKeyEnv, "") == "" {
-		return fmt.Errorf("digitalocean sshPrivateKey or sshPrivateKeyEnv is required to reach worker Docker daemons")
+	if strings.TrimSpace(cfg.SSHPrivateKey) == "" {
+		return fmt.Errorf("digitalocean sshPrivateKey is required to reach worker Docker daemons")
 	}
 	return nil
 }
@@ -108,14 +108,14 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 
 func driverConfigFrom(cfg Config) DriverConfig {
 	return DriverConfig{
-		Token:         accessSecret(cfg.Token, cfg.TokenEnv, "DIGITALOCEAN_ACCESS_TOKEN"),
+		Token:         strings.TrimSpace(cfg.Token),
 		APIBaseURL:    cfg.APIBaseURL,
 		Region:        cfg.Region,
 		Size:          cfg.Size,
 		Image:         cfg.Image,
 		SSHKeys:       cfg.SSHKeys.Values(),
 		SSHUser:       cfg.SSHUser,
-		SSHPrivateKey: accessSecret(cfg.SSHPrivateKey, cfg.SSHPrivateKeyEnv, ""),
+		SSHPrivateKey: strings.TrimSpace(cfg.SSHPrivateKey),
 		VPCUUID:       cfg.VPCUUID,
 		Tags:          cfg.Tags.Values(),
 		Backups:       cfg.Backups,
@@ -150,22 +150,6 @@ func effectiveAgentPort(agentPort int) int {
 	return agentPort
 }
 
-// accessSecret resolves a secret from direct configuration, a configured
-// environment variable, or a default environment variable.
-func accessSecret(value, valueEnv, defaultEnv string) string {
-	if value = strings.TrimSpace(value); value != "" {
-		return value
-	}
-	envName := strings.TrimSpace(valueEnv)
-	if envName == "" {
-		envName = defaultEnv
-	}
-	if envName == "" {
-		return ""
-	}
-	return strings.TrimSpace(os.Getenv(envName))
-}
-
 // Definition describes the DigitalOcean provider for provider catalogs.
 func Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{
@@ -173,12 +157,10 @@ func Definition() sandbox.ProviderDefinition {
 		Icon:        "digitalocean",
 		Description: "Runs one Docker-enabled Droplet per sandbox worker.",
 		ConfigFields: append([]sandbox.ProviderConfigField{
-			{Key: "token", Label: "API Token", Type: "password", CredentialProvider: "digitalocean", CredentialAuthType: "token"},
-			{Key: "tokenEnv", Label: "API Token Environment Variable", Type: "string", Placeholder: "DIGITALOCEAN_ACCESS_TOKEN", Description: "Environment variable containing the API token; use instead of token for local CLI workflows."},
+			{Key: "token", Label: "API Token", Type: sandbox.ProviderConfigFieldSecret, Required: true, Description: "DigitalOcean API token the server manages Droplets with."},
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "https://discobox.example.com", Description: "Where its pools reach this server. Leave it empty and this server opens a channel to each pool instead, so it needs no public URL."},
 			{Key: "sshKeys", Label: "SSH Keys", Type: "string", Required: true, Description: "SSH key IDs or fingerprints registered with DigitalOcean; must match the SSH private key."},
-			{Key: "sshPrivateKey", Label: "SSH Private Key", Type: "password", Description: "PEM private key used to reach the Droplet's Docker daemon over SSH."},
-			{Key: "sshPrivateKeyEnv", Label: "SSH Private Key Environment Variable", Type: "string", Description: "Environment variable containing the SSH private key; use instead of sshPrivateKey."},
+			{Key: "sshPrivateKey", Label: "SSH Private Key", Type: sandbox.ProviderConfigFieldSecret, Required: true, Description: "PEM private key used to reach the Droplet's Docker daemon over SSH."},
 			{Key: "sshUser", Label: "SSH User", Type: "string", Placeholder: defaultSSHUser, Advanced: true},
 			{Key: "region", Label: "Region", Type: "string", Placeholder: defaultRegion},
 			{Key: "size", Label: "Droplet Size", Type: "string", Placeholder: defaultSize},

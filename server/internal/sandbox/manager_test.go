@@ -19,7 +19,7 @@ import (
 )
 
 func TestProviderManagerRegisterStatusAndDefinitions(t *testing.T) {
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(sealedFields(nil))
 	provider := &fakeProvider{
 		image:  "fake:latest",
 		status: sandbox.ProviderStatus{Available: true, State: "ready", Message: "ok"},
@@ -58,7 +58,7 @@ func TestProviderManagerRegisterStatusAndDefinitions(t *testing.T) {
 
 func TestProviderManagerResolveForSandbox(t *testing.T) {
 	ctx := context.Background()
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(sealedFields(nil))
 	defaultProvider := &fakeProvider{image: "default:latest"}
 	instanceProvider := &fakeProvider{image: "instance:latest"}
 	manager.RegisterProvider("default", defaultProvider)
@@ -87,7 +87,7 @@ func TestProviderManagerResolveForSandbox(t *testing.T) {
 
 func TestProviderManagerFactoryCachesProviderInstances(t *testing.T) {
 	ctx := context.Background()
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(sealedFields(nil))
 	calls := 0
 	manager.RegisterFactory("remote", func(context.Context, *model.SandboxProviderInstance) (sandbox.Provider, error) {
 		calls++
@@ -116,7 +116,7 @@ func TestProviderManagerFactoryCachesProviderInstances(t *testing.T) {
 }
 
 func TestProviderManagerValidatesOnlyResolvableTypes(t *testing.T) {
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(sealedFields(nil))
 	manager.RegisterFactory("remote", func(context.Context, *model.SandboxProviderInstance) (sandbox.Provider, error) {
 		return &fakeProvider{}, nil
 	})
@@ -141,7 +141,7 @@ func TestProviderManagerValidatesOnlyResolvableTypes(t *testing.T) {
 
 func TestProviderManagerClosesProviderThatFailsToInitialize(t *testing.T) {
 	ctx := context.Background()
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(sealedFields(nil))
 	provider := &fakeProvider{initErr: errors.New("host unreachable")}
 	manager.RegisterFactory("remote", func(context.Context, *model.SandboxProviderInstance) (sandbox.Provider, error) {
 		return provider, nil
@@ -157,7 +157,7 @@ func TestProviderManagerClosesProviderThatFailsToInitialize(t *testing.T) {
 
 func TestProviderManagerAggregatesProviderOperations(t *testing.T) {
 	ctx := context.Background()
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(sealedFields(nil))
 	first := &fakeProvider{
 		image: "first:latest",
 		sandboxes: []*sandbox.Sandbox{
@@ -209,6 +209,7 @@ type fakeProvider struct {
 	reconcileCalls  int
 	removeProjectID string
 	initErr         error
+	onInitialize    func(*model.SandboxProviderInstance)
 	closed          bool
 }
 
@@ -223,7 +224,10 @@ func (p *fakeProvider) List(context.Context) ([]*sandbox.Sandbox, error) {
 	}
 	return p.sandboxes, nil
 }
-func (p *fakeProvider) Initialize(context.Context, *model.SandboxProviderInstance) error {
+func (p *fakeProvider) Initialize(_ context.Context, instance *model.SandboxProviderInstance) error {
+	if p.onInitialize != nil {
+		p.onInitialize(instance)
+	}
 	return p.initErr
 }
 func (p *fakeProvider) Reconcile(context.Context) error {
@@ -291,4 +295,58 @@ func (*fakeProvider) ImportTree(_ context.Context, _ sandbox.SandboxRef, poolID 
 
 func (p *fakeProvider) PullSource(context.Context, sandbox.SandboxRef, sourcecache.PullRequest) (sourcecache.Delivery, error) {
 	panic("unexpected source pull")
+}
+
+// sealedFields stands in for the store: what it opens for every instance.
+type sealedFields map[string]json.RawMessage
+
+func (f sealedFields) OpenSandboxProviderSecrets(context.Context, *model.SandboxProviderInstance) (map[string]json.RawMessage, error) {
+	return f, nil
+}
+
+func TestProviderManagerJoinsSealedFieldsIntoTheConfigItsProviderDecodes(t *testing.T) {
+	ctx := context.Background()
+	manager := sandbox.NewProviderManager(sealedFields{"apiKey": json.RawMessage(`"key-1"`)})
+	manager.RegisterProviderDefinition("remote", sandbox.ProviderDefinition{ConfigFields: []sandbox.ProviderConfigField{
+		{Key: "driver", Type: "string"},
+		{Key: "apiKey", Type: sandbox.ProviderConfigFieldSecret},
+	}})
+	var built, initialized string
+	provider := &fakeProvider{}
+	manager.RegisterFactory("remote", func(_ context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
+		built = string(instance.Config)
+		provider.onInitialize = func(instance *model.SandboxProviderInstance) { initialized = string(instance.Config) }
+		return provider, nil
+	})
+	stored := &model.SandboxProviderInstance{ID: "provider-1", Type: "remote", Config: model.RawJSON(`{"driver":"boxd"}`)}
+	if _, err := manager.ResolveInstance(ctx, stored); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	const want = `{"apiKey":"key-1","driver":"boxd"}`
+	if built != want || initialized != want {
+		t.Errorf("factory saw %s and Initialize %s, want %s for both", built, initialized, want)
+	}
+	if string(stored.Config) != `{"driver":"boxd"}` {
+		t.Errorf("stored instance's config became %s: the join must not write back to the row", stored.Config)
+	}
+}
+
+func TestProviderManagerRefusesASecretFieldLeftInTheClear(t *testing.T) {
+	ctx := context.Background()
+	manager := sandbox.NewProviderManager(sealedFields(nil))
+	manager.RegisterProviderDefinition("remote", sandbox.ProviderDefinition{ConfigFields: []sandbox.ProviderConfigField{
+		{Key: "apiKey", Type: sandbox.ProviderConfigFieldSecret},
+	}})
+	built := false
+	manager.RegisterFactory("remote", func(context.Context, *model.SandboxProviderInstance) (sandbox.Provider, error) {
+		built = true
+		return &fakeProvider{}, nil
+	})
+	_, err := manager.ResolveInstance(ctx, &model.SandboxProviderInstance{ID: "provider-1", Type: "remote", Config: model.RawJSON(`{"apiKey":"key-1"}`)})
+	if err == nil || !strings.Contains(err.Error(), "apiKey unsealed") || !strings.Contains(err.Error(), "restart the server") {
+		t.Fatalf("resolve = %v, want the unsealed apiKey refused with a restart to seal it", err)
+	}
+	if built {
+		t.Error("the provider was built from a config with its key in the clear")
+	}
 }

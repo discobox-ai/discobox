@@ -981,7 +981,7 @@ components:
                     readOnly: true
                     type: string
                 config:
-                    description: Non-secret provider configuration
+                    description: Provider configuration, its secret fields included. Secret fields are sealed in the provider row and never returned.
                 name:
                     description: Provider display name
                     maxLength: 200
@@ -4172,10 +4172,6 @@ components:
             properties:
                 advanced:
                     type: boolean
-                credentialAuthType:
-                    type: string
-                credentialProvider:
-                    type: string
                 description:
                     type: string
                 immutable:
@@ -4190,6 +4186,7 @@ components:
                 required:
                     type: boolean
                 type:
+                    description: 'The type of the value: string, number, boolean, or secret. A secret field holds a credential, which is sealed in the provider row and never returned, so a client prompts for it without echoing it.'
                     type: string
             required:
                 - key
@@ -5732,7 +5729,7 @@ components:
                     readOnly: true
                     type: string
                 config:
-                    description: Non-secret provider configuration
+                    description: Provider configuration, without its secret fields
                 createdAt:
                     description: Creation timestamp
                     format: date-time
@@ -5754,6 +5751,12 @@ components:
                     description: Pools backed by this provider instance
                     items:
                         $ref: '#/components/schemas/Pool'
+                    nullable: true
+                    type: array
+                secretFields:
+                    description: The secret fields that have a value. Their values are never returned.
+                    items:
+                        type: string
                     nullable: true
                     type: array
                 type:
@@ -6714,7 +6717,7 @@ components:
                     readOnly: true
                     type: string
                 config:
-                    description: Non-secret provider configuration
+                    description: Provider configuration, replacing the stored one. A secret field left out keeps its value, a value replaces it, and null clears it.
                 disabled:
                     description: Whether this provider is disabled
                     type: boolean
