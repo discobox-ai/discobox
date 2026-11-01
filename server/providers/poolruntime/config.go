@@ -59,7 +59,7 @@ func RefuseEnvironmentReferences(data []byte, keys ...string) error {
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
-		return nil // Decode reports a config that is not an object.
+		return fmt.Errorf("decode provider config: %w", err)
 	}
 	for _, key := range keys {
 		if _, ok := fields[key]; ok {

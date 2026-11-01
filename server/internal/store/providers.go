@@ -267,7 +267,11 @@ func (s *Store) sealProviderCredentials(ctx context.Context, tx *gorm.DB, provid
 			continue
 		}
 		if fromEnv, ok := lookupEnv(name); ok && strings.TrimSpace(fromEnv) != "" {
-			moved[credential.key] = mustJSONString(strings.TrimSpace(fromEnv))
+			value, err := json.Marshal(strings.TrimSpace(fromEnv))
+			if err != nil {
+				return fmt.Errorf("encode %s from %s: %w", credential.key, name, err)
+			}
+			moved[credential.key] = value
 			changed = true
 		}
 	}
@@ -300,9 +304,4 @@ func stringField(raw json.RawMessage) string {
 		return ""
 	}
 	return strings.TrimSpace(value)
-}
-
-func mustJSONString(value string) json.RawMessage {
-	data, _ := json.Marshal(value)
-	return data
 }
