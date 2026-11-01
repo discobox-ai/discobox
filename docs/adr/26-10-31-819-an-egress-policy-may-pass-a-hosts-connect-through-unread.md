@@ -107,7 +107,7 @@ its own trust store, which holds the public roots and the MITM CA.
 ### 4. Audit: every tunnel is recorded, with all the proxy can see
 
 The proxy cannot read a passthrough tunnel, but it still records everything
-it can see from outside, in the HTTP audit with `passthrough` set:
+it can see from outside, in the HTTP audit, on the row's `tunnel` record:
 
 - **When the tunnel opens:** the client, `CONNECT` and its authority, the
   matching `passthrough` entry, the address dialed, and the upstream proxy
@@ -117,16 +117,22 @@ it can see from outside, in the HTTP audit with `passthrough` set:
   unchanged: whether it is a TLS ClientHello, and if so its SNI, ALPN
   protocols, and offered versions. An SNI that names a host other than the
   authority is recorded as a mismatch. It is not refused: the bytes go to
-  the authority whatever the SNI says, and policy judged the authority.
+  the authority whatever the SNI says, and policy judged the authority. The
+  peek waits a few seconds at most, while the origin's bytes already flow to
+  the client, so a protocol whose server speaks first is not held up.
 - **When it closes:** the bytes each way, the duration, and which side
   closed, or the error that ended it.
 
-The row is written when the tunnel opens and completed when it closes, so a
-tunnel that is still open, or one cut short when the proxy stopped, is on
-record. Its span is `proxy.http.connect` with `proxy.http.passthrough` and
-the same fields. A reader of the audit sees that the sandbox talked to the
-host, under which name, how much, and for how long, and that nothing more
-was recorded.
+A tunnel is two rows, sharing a tunnel ID: an **open** row, written once the
+dial and the peek are done, and a **close** row, written when it ends. A
+row is never updated after it is written, because audit followers read
+forward by row ID (`after_id`) and would never see the update. Two rows
+also mean a tunnel that is still open, or one cut short when the proxy
+stopped, is on record by its open row. A failed dial is one row. The span
+is `proxy.http.passthrough`, carrying none of the ClientHello's own text,
+which only the audit row's redactor may keep.
+A reader of the audit sees that the sandbox talked to the host, under which
+name, how much, and for how long, and that nothing more was recorded.
 
 ### 5. A discobox may set passthrough only within its own
 
@@ -135,18 +141,19 @@ and harness config through their `PATCH`, and a box through its config
 `PATCH`.
 
 A discobox may write one level: a box's own, when it creates the box or
-later through that box's config `PATCH`. Every entry it writes must be
+later through that box's update (`PATCH` of the sandbox, which the sandbox
+role reaches for this alone). Every entry it writes must be
 covered by an entry of the **caller's** effective `passthrough`, by
 `entryCovers`, read when the write is made. So a child created with `[]`
 can later be given `[foo]` by a discobox that holds `foo`, and taken back
 to `[]`, but never given a host its caller does not hold. A discobox holding
 no passthrough can write only `[]`.
 
-- **Which boxes.** The boxes a discobox may already act on (26-10-14-320,
-  as narrowed by 26-10-01-032 §4): its project's boxes whose effective
-  policy its own covers, itself included. That coverage now includes
-  `passthrough` (below), so a discobox can never write to a box that sends
-  more unread than it does.
+- **Which boxes.** The boxes a discobox may already act on: those it
+  created (26-10-27-880 §9), whose effective policy its own covers
+  (26-10-01-032 §4). A discobox is not its own creator, so it never sets
+  its own. That coverage now includes `passthrough` (below), so a discobox
+  can never write to a box that sends more unread than it does.
 - **Only that field.** The sandbox role's update may carry `config.egress`
   alone, and its `allow` and `denyByDefault` must equal the stored level's.
   Every other part of the update stays refused to it, as today.
@@ -171,10 +178,14 @@ and send traffic through it unread.
 The effective policy is delivered as today (26-10-01-032 §5): on the create,
 then pushed on every change. Nothing new reaches the pool but the field.
 
-A pool agent older than this ignores the field (ADR 0118), so its proxy
-intercepts every tunnel as before. That fails toward inspection: the host
-works as it does today or fails as it does today, and nothing passes unread
-that a person did not choose.
+Passthrough is sent to the pool only when it is not empty, as raw secrets
+are (26-10-27-840), because a pool agent older than this refuses a policy
+with a field it does not know. A sandbox with none is pushed exactly what it
+was before. A create or push that carries passthrough to an older pool is refused and
+retried until that pool moves onto the current agent, which it does when it
+is next reconciled. Meanwhile the pool keeps the policy it last took, and
+intercepts every tunnel. That fails toward inspection: nothing passes unread
+until a pool that understands passthrough has been told it.
 
 ### 7. Sentinels and raw values on a passthrough host
 
