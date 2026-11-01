@@ -16,9 +16,10 @@ import (
 // sandboxList is the upper pane: every sandbox in the project, newest-created
 // first.
 //
-// A row is one line (two in the workspace tree, for a tagged one: tagLines):
+// A row is one line (two in the workspace tree, for a tagged one: inTree):
 // a glyph for the state, the name, the harness, where it
-// came from, how old it is and what it has changed. The fixed width
+// came from, how old it is and what it has changed — in the tree only the
+// glyph, the name and the marks (inTree). The fixed width
 // columns drop off the right end as the terminal narrows — the name and the
 // glyph are what the eye actually picks a sandbox by, and neither ever goes.
 type sandboxList struct {
@@ -54,11 +55,12 @@ type sandboxList struct {
 	// way until then.
 	showArchived bool
 
-	// tagLines puts a row's tags on a line of their own under it rather than
-	// beside the name, which is how the workspace tree draws them: a column
-	// that narrow gives the name all of its width and the tags none
-	// (tagLine).
-	tagLines bool
+	// inTree is the list drawn as the workspace tree's narrow column. A
+	// row's tags go on a line of their own under it rather than beside the
+	// name: a column that narrow gives the name all of its width and the tags
+	// none (tagLine). And a row's tail is only its marks (row): there the
+	// name is worth more than the harness or anything after it.
+	inTree bool
 
 	// unreachable are the servers the last listing could not reach, which get
 	// a section of their own with no rows: a server's discoboxes going missing
@@ -895,7 +897,7 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	// is only known here: a section header is a line, and how many there are
 	// between the offset and the cursor depends on where the sections fall.
 	// clamp keeps the cursor on a row; this keeps the row on the screen.
-	for (l.grouped() || l.tagLines) && l.cursor > l.offset && l.cursor < len(rows) && l.lineSpan(rows, l.offset, l.cursor) > rowBudget {
+	for (l.grouped() || l.inTree) && l.cursor > l.offset && l.cursor < len(rows) && l.lineSpan(rows, l.offset, l.cursor) > rowBudget {
 		l.offset++
 	}
 
@@ -911,7 +913,7 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 		body = append(body, st.dimText.Render(pad("  no discoboxes here yet — type a prompt below", l.width)))
 	}
 	l.drawn = drawn{top: len(out), first: l.offset}
-	if l.sectioned() || l.tagLines {
+	if l.sectioned() || l.inTree {
 		l.drawn.rows = make([]int, 0, max(bodyBudget, 0))
 	}
 	// How many each section has, for its band to say, counted once rather
@@ -945,7 +947,7 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 		l.drawn.count++
 		// Its tags, when it has a line for them, are part of the row: a press
 		// on them points at it like a press on its name.
-		if l.tagLines && len(body) < rowBudget {
+		if l.inTree && len(body) < rowBudget {
 			if line, links, ok := l.tagLine(st, z, rows[i], i, len(out)+len(body), focused); ok {
 				rowLinks = append(rowLinks, links...)
 				body = append(body, line)
@@ -1007,7 +1009,7 @@ func (l *sandboxList) lineSpan(rows []Sandbox, from, to int) int {
 		return 0
 	}
 	lines := to - from + 1
-	if l.tagLines {
+	if l.inTree {
 		for _, s := range rows[from : to+1] {
 			if len(s.Tags) > 0 {
 				lines++
@@ -1129,24 +1131,33 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	if s.PendingRequests > 0 {
 		req = st.statusER.Render("!")
 	}
-	addCol("  "+st.dimText.Render(pad(s.Harness, 7)), 9)
+	// The tree's column has room for the marks that want a person and
+	// nothing else: the harness and every column after it would only take
+	// the name's width, and the name is what a row there is picked by. The
+	// columns are first-fit, so leaving out the harness alone would hand its
+	// cells to the next one that fits rather than to the name.
+	if !l.inTree {
+		addCol("  "+st.dimText.Render(pad(s.Harness, 7)), 9)
+	}
 	addCol(up, 2)
 	addCol(req, 2)
 
-	// Where the work sits in git — the reported position once the sandbox's
-	// agent has spoken, the spawn commit until then. Where it came from is not
-	// a column: it is the header's filter, and every row on screen has
-	// already been filtered to it — a column repeating the same value on every
-	// row is a column spent saying nothing.
-	//
-	baseStyle := gitStyle(st, s)
-	addCol(baseStyle.Render(pad(s.base(), 14)), 15)
-	// The mark spelled out, in the mark's own color. It is added right after
-	// the position so the two survive a narrowing terminal together.
-	addCol(baseStyle.Render(pad(s.changes(), 7)), 8)
-	addCol(st.dimText.Render(pad(createdText(s, l.now()), 8)), 9)
-	addCol(usage(st, s), usageWidth+1)
-	addCol(padANSI(diffText(st, s), 11), 11)
+	if !l.inTree {
+		// Where the work sits in git — the reported position once the sandbox's
+		// agent has spoken, the spawn commit until then. Where it came from is not
+		// a column: it is the header's filter, and every row on screen has
+		// already been filtered to it — a column repeating the same value on every
+		// row is a column spent saying nothing.
+		//
+		baseStyle := gitStyle(st, s)
+		addCol(baseStyle.Render(pad(s.base(), 14)), 15)
+		// The mark spelled out, in the mark's own color. It is added right after
+		// the position so the two survive a narrowing terminal together.
+		addCol(baseStyle.Render(pad(s.changes(), 7)), 8)
+		addCol(st.dimText.Render(pad(createdText(s, l.now()), 8)), 9)
+		addCol(usage(st, s), usageWidth+1)
+		addCol(padANSI(diffText(st, s), 11), 11)
+	}
 	tail := cols.text
 
 	head := l.rowHead(st, s, atCursor)
@@ -1201,7 +1212,7 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	// says it.
 	var shown []string
 	taggedW := 0
-	if len(s.Tags) > 0 && !l.tagLines {
+	if len(s.Tags) > 0 && !l.inTree {
 		room := nameW - (nameReserve - lipgloss.Width(head))
 		for _, tag := range s.rowTags() {
 			next := taggedW + lipgloss.Width(" "+tagLabel(tag))
@@ -1271,7 +1282,7 @@ func (l *sandboxList) shade(st *styles, line string, atCursor, selected bool) st
 	}
 }
 
-// tagLine is the line under a tagged row in the workspace tree (tagLines): its
+// tagLine is the line under a tagged row in the workspace tree (inTree): its
 // tags, drawn as the row draws them beside the name (tagSpans) — the pull
 // request status bold in its color and first, an issue or pull request a link,
 // the rest dim — from under the name, with the tree's rule carried down past

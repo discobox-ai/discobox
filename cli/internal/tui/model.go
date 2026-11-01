@@ -3525,7 +3525,7 @@ func (m *Model) layout() {
 	// is a pane with space at the bottom, which is what a full-screen window
 	// looks like — not a reason to shrink the frame.
 	m.list.width, m.list.height = m.bodyWidth(), room
-	m.list.tagLines = false
+	m.list.inTree = false
 	m.list.clamp()
 }
 

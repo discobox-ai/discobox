@@ -818,7 +818,7 @@ func (m *Model) viewTree() string {
 	// The pages are fixed under the list: a rule, then one row each.
 	pagesRows := len(treePages) + 1
 	m.list.width, m.list.height = inner, max(h-len(out)-2-pagesRows, 1)
-	m.list.tagLines = true
+	m.list.inTree = true
 	m.list.clamp()
 	m.zones.push(1, len(out))
 	// The cursor is drawn whoever has the keys: with the panes it is the box
