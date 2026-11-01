@@ -2861,15 +2861,13 @@ key the server stored, or its GitHub repository (below) — and a created discob
 one cut from a checkout inside the creator records the creator as the machine
 and a path inside it, and nothing makes a creator and what it creates share a
 source. So a discobox is drawn under its creator wherever the creator is
-drawn, whatever folder it is filed in, *and* in its own folder like any other
-row. Where those are the same section it is drawn once, nested. Where they are
-not — `all folders`, with the two filed apart — it is on two rows: nested
-under its creator, and in its own folder's section, nested under nothing and
-carrying the `from …` qualifier below. A row nested under its creator drops
-that qualifier, which would name the creator as a machine. The header's count
-and a command's targets are of discoboxes, so one on two rows counts and is
-acted on once (`targets`, `selectionCount`); a refresh keeps the cursor on the
-row it was on (`Sandbox.under`).
+drawn, whatever folder it is filed in, and only there: **every discobox is on
+one row**. It is a top in its own folder only where no creator of it is drawn —
+that folder narrowed to on the header — and then carries the `from …`
+qualifier below. A row nested under its creator drops that qualifier, which
+would name the creator as a machine. One row per discobox is what lets the
+tree's walk (`switchBox`) find the box on screen by its ID; a second row of it
+was a second place the walk could start from.
 
 The filters that are about the discobox itself — server, tags, archived —
 apply to a nested row as to any (`shown`); only the folder does not. A row

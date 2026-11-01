@@ -124,10 +124,9 @@ func newSandboxList(session Session) *sandboxList {
 // sandbox between the key press and the action.
 func (l *sandboxList) setAll(all []Sandbox) {
 	l.loaded = true
-	var onID string
-	var onUnder boxRef
+	var on boxRef
 	if s := l.current(); s != nil {
-		onID, onUnder = s.ID, s.under
+		on = boxRef{s.Server, s.ID}
 	}
 	l.all = all
 	l.index = make(map[boxRef]int, len(all))
@@ -135,19 +134,10 @@ func (l *sandboxList) setAll(all []Sandbox) {
 		l.index[boxRef{s.Server, s.ID}] = i
 	}
 
-	// A discobox can be on two rows — under its creator, and in its own
-	// folder — so the row is the one in the same tree, and failing that the
-	// first one of that discobox.
-	if onID != "" {
-		found := false
+	if on.id != "" {
 		for i, s := range l.rows() {
-			if s.ID != onID {
-				continue
-			}
-			if !found || s.under == onUnder {
-				l.cursor, found = i, true
-			}
-			if s.under == onUnder {
+			if (boxRef{s.Server, s.ID}) == on {
+				l.cursor = i
 				break
 			}
 		}
@@ -189,18 +179,10 @@ func (l *sandboxList) rows() []Sandbox {
 
 // count is how many discoboxes the list draws, which is what everything that
 // says how many there are says — the band, a section, the filter card, the
-// archived offer — so they all count the same ones. It is of discoboxes rather
-// than rows: one drawn twice (nest) is one.
+// archived offer — so they all count the same ones. Every discobox is on one
+// row (nest).
 func (l *sandboxList) count() int {
-	return countBoxes(l.rows())
-}
-
-func countBoxes(rows []Sandbox) int {
-	seen := make(map[boxRef]bool, len(rows))
-	for _, s := range rows {
-		seen[boxRef{s.Server, s.ID}] = true
-	}
-	return len(seen)
+	return len(l.rows())
 }
 
 // boxRef names a discobox across every server the window lists: an ID is one
@@ -249,9 +231,8 @@ func (l *sandboxList) shown(s Sandbox) bool {
 // often not where its creator is: one cut from a checkout inside the creator
 // records the creator as the machine. So it is drawn under its creator
 // wherever the creator is drawn, whatever folder it is filed in itself, and
-// in its own folder as well — once, when that is the section it is already
-// nested in, and otherwise a second time there, on a row of its own that says
-// where it is from (Sandbox.elsewhere).
+// only there: every discobox is on one row. It is a top in its own folder
+// only when no creator of it is drawn.
 //
 // A row nests under the nearest creator that is shown, so one whose creator
 // is archived and hidden, or lacks a tag the header names, moves up to the
@@ -287,15 +268,15 @@ func (l *sandboxList) nest() []Sandbox {
 		}
 	}
 
-	// sameSection is whether a row above i in its chain is a row of i's own
-	// section, in which case i is already drawn there, nested.
-	sameSection := func(i int) bool {
+	// drawnAbove is whether a row above i in its chain is a top, in which
+	// case i is drawn nested in that one's tree.
+	drawnAbove := func(i int) bool {
 		at := i
 		for range l.all {
 			if at = nodes[at].parent; at < 0 || at == i {
 				return false
 			}
-			if a := l.all[at]; l.folder.holds(a, l.session) && (!l.grouped() || a.folderKey(l.session) == l.all[i].folderKey(l.session)) {
+			if l.folder.holds(l.all[at], l.session) {
 				return true
 			}
 		}
@@ -332,7 +313,7 @@ func (l *sandboxList) nest() []Sandbox {
 		}
 	}
 	for _, i := range tops {
-		if !sameSection(i) {
+		if !drawnAbove(i) {
 			place(i, boxRef{l.all[i].Server, l.all[i].ID}, "", "")
 		}
 	}
@@ -596,26 +577,14 @@ func (l *sandboxList) current() *Sandbox {
 // under the cursor.
 func (l *sandboxList) targets() []Sandbox {
 	rows := l.rows()
-	// A discobox drawn twice — under its creator, and in its own folder — is
-	// still one discobox to act on.
-	seen := map[boxRef]bool{}
-	var out []Sandbox
-	take := func(s Sandbox) {
-		if ref := (boxRef{s.Server, s.ID}); !seen[ref] {
-			seen[ref] = true
-			out = append(out, s)
-		}
-	}
 	if l.visual && len(rows) > 0 {
 		lo, hi := l.visualRange()
-		for _, s := range rows[lo : hi+1] {
-			take(s)
-		}
-		return out
+		return append([]Sandbox(nil), rows[lo:hi+1]...)
 	}
+	var out []Sandbox
 	for _, s := range rows {
 		if l.selected[s.ID] {
-			take(s)
+			out = append(out, s)
 		}
 	}
 	if len(out) > 0 {
@@ -650,17 +619,17 @@ func (l *sandboxList) commitVisual() int {
 		l.selected[s.ID] = true
 	}
 	l.visual = false
-	return countBoxes(rows[lo : hi+1])
+	return hi - lo + 1
 }
 
 func (l *sandboxList) selectionCount() int {
-	seen := map[boxRef]bool{}
+	n := 0
 	for _, s := range l.rows() {
 		if l.selected[s.ID] {
-			seen[boxRef{s.Server, s.ID}] = true
+			n++
 		}
 	}
-	return len(seen)
+	return n
 }
 
 func (l *sandboxList) toggleSelect() {
@@ -837,7 +806,7 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 		titleStyle = st.titleDim
 	}
 	rows := l.rows()
-	right := plural(countBoxes(rows), "box", "boxes")
+	right := plural(len(rows), "box", "boxes")
 	// A refresh out longer than the window waits before saying so takes the
 	// count's place: the count is exactly what is being refreshed, and this is
 	// the one place a window with one server has to say it. Nothing is drawn

@@ -346,6 +346,53 @@ func TestCtrlShiftWalksTheTreeWithoutTheLeader(t *testing.T) {
 	}
 }
 
+// The leader's ↑↓ walk a tree of created discoboxes row by row, down to the
+// bottom of it and back up, on every folder at once with the created ones
+// filed apart from their creator: each is on one row, under its creator, so no
+// step lands on a box drawn a second time and walks back into the tree.
+func TestTheLeaderWalksThroughNestedBoxes(t *testing.T) {
+	t.Parallel()
+	boxes := testSandboxes()[:2]
+	created := func(id, by string) Sandbox {
+		box := boxes[0]
+		box.ID, box.Name, box.CreatedBy = id, id+" box", by
+		box.OriginKey = "box:" + by + ":/workspace/source"
+		box.OriginHostID, box.OriginHost = "host_"+by, by
+		box.Source, box.SourceOriginKey = "/workspace/source", ""
+		return box
+	}
+	boxes = append(boxes, created("sbx_kid", "sbx_one"), created("sbx_grand", "sbx_kid"))
+	ds := newFakeSource(boxes...)
+	ds.nothingSaved = true
+	d, m, _ := openWorkspace(t, ds, "enter")
+	if !m.list.grouped() {
+		t.Fatalf("the list is narrowed to %q, want every folder", m.list.folder.key)
+	}
+
+	var ids []string
+	for _, s := range m.list.rows() {
+		ids = append(ids, s.ID)
+	}
+	if want := []string{"sbx_one", "sbx_kid", "sbx_grand", "sbx_two"}; !slices.Equal(ids, want) {
+		t.Fatalf("rows = %v, want %v", ids, want)
+	}
+
+	walk := []string{"sbx_kid", "sbx_grand", "sbx_two"}
+	for _, id := range walk {
+		d.leader("down")
+		d.wait(id, func() bool { return m.paneBox.ID == id && m.primary() != nil })
+	}
+	d.leader("down")
+	d.settle()
+	if m.paneBox.ID != "sbx_two" {
+		t.Fatalf("↓ off the bottom switched to %s", m.paneBox.ID)
+	}
+	for _, id := range []string{"sbx_grand", "sbx_kid", "sbx_one"} {
+		d.leader("up")
+		d.wait(id, func() bool { return m.paneBox.ID == id && m.primary() != nil })
+	}
+}
+
 // A walk stops on any box that is not live, an errored one included: its
 // state does not say whether its container is on, and attaching to one that
 // is off starts it.
