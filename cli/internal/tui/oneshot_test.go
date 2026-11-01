@@ -626,12 +626,12 @@ func TestAFailedArchiveFromAnAttachEndsWithTheError(t *testing.T) {
 	}
 }
 
-// The launcher's archive is unchanged: the workspace goes and the window
-// lands on the list, which reports it.
+// The launcher's archive, on a console with no tree, is unchanged: the
+// workspace goes and the window lands on the list, which reports it.
 func TestArchivingFromTheLauncherKeepsTheWindow(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
+	d, m, _ := openNarrowWorkspace(t, ds, "enter")
 
 	d.key("ctrl+a")
 	d.key("x")

@@ -882,10 +882,18 @@ type verbDoneMsg struct {
 	verb Verb
 	ids  []string
 	errs []error
-	// leave is whether the window goes with this answer: an archive that left
-	// the workspace of a window that is one command's own. See
-	// archiveWorkspace.
+	then verbThen
+}
+
+// verbThen is what a verb's answer does beyond being reported, which only
+// archiveWorkspace asks for.
+type verbThen struct {
+	// leave is whether the window goes with the answer: an archive that left
+	// the workspace of a window that is one command's own.
 	leave bool
+	// next is the box an archive beside the tree goes on to once it is
+	// answered: the archived box's neighbor in the tree.
+	next string
 }
 
 // runActionMsg carries a choice out of the action menu. The menu cannot run the
@@ -1057,8 +1065,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// them: the two reads land independently and either can be the later.
 		m.list.setPending(m.requests)
 		// A box opened before the listing had it — one just created — gets
-		// the tree's cursor once it lands.
-		if !m.listFront && m.cursorOn != m.paneBox.ID {
+		// the tree's cursor once it lands. Only while it is open: the box a
+		// closed workspace leaves in paneBox is no longer the cursor's to
+		// follow, and an archive beside the tree has put it on another.
+		if (m.hasWorkspace() || m.wsOpening) && !m.listFront && m.cursorOn != m.paneBox.ID {
 			m.syncListCursor()
 		}
 		// What the project has been cut from is read off the same listing the
@@ -1260,7 +1270,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return nil
 
 	case runVerbMsg:
-		return m.runVerb(msg.verb, msg.ids, false)
+		return m.runVerb(msg.verb, msg.ids, verbThen{})
 
 	case imageReadMsg:
 		return m.imagesRead(msg)
@@ -2554,7 +2564,7 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 		// From the workspace the one target is the discobox it shows.
 		return m.archiveWorkspace(targets[0])
 	}
-	return m.runVerb(verb, ids, false)
+	return m.runVerb(verb, ids, verbThen{})
 }
 
 // runVerbMsg is a confirmed verb on its way back to the live model, for the
@@ -2587,9 +2597,8 @@ var interactions = map[string]Interaction{
 // runVerb applies a lifecycle verb to every target, in one command: the window
 // reports once, on the whole batch, rather than flickering a line per sandbox.
 //
-// leave is whether the window closes on the answer rather than reporting it;
-// only archiveWorkspace asks for that.
-func (m *Model) runVerb(verb Verb, ids []string, leave bool) tea.Cmd {
+// then is what the answer does beyond being reported (verbThen).
+func (m *Model) runVerb(verb Verb, ids []string, then verbThen) tea.Cmd {
 	feed, next := m.narrate()
 	m.busy = string(verb) + "…"
 	run := func() tea.Msg {
@@ -2598,7 +2607,7 @@ func (m *Model) runVerb(verb Verb, ids []string, leave bool) tea.Cmd {
 		for i, id := range ids {
 			errs[i] = m.ds.Do(m.ctx, verb, id, feed.credentials())
 		}
-		return verbDoneMsg{verb: verb, ids: ids, errs: errs, leave: leave}
+		return verbDoneMsg{verb: verb, ids: ids, errs: errs, then: then}
 	}
 	return tea.Batch(run, next)
 }
@@ -2608,14 +2617,33 @@ func (m *Model) runVerb(verb Verb, ids []string, leave bool) tea.Cmd {
 // the workspace was a view onto. The launcher lands on its list, where the
 // answer is reported.
 //
+// Where the tree walks (treeAvailable) it goes on to the row after the
+// archived one instead — the one before, from the last. The list's cursor is
+// put on that row as the request starts, and once the archive is answered a
+// live or parked box there is switched to, its panes in front (archivedOnTo).
+// Not before: the archive owns the busy line and what it narrates — a
+// credential it asks for included — until it is answered, and an attach
+// started beside it would take both. Any other box is only pointed at, since
+// attaching to it would start it; with no workspace left there is no tree,
+// so that is the list's cursor on the home screen.
+//
 // A window that is one command's own has no list behind it, so it waits for
 // the answer on a screen of its own and then goes, as its detach does. Esc
 // does not take that wait down: the window going takes the process with it,
 // and an archive cut off on its way to the server is one nobody can say
 // happened.
 func (m *Model) archiveWorkspace(box Sandbox) tea.Cmd {
+	// Read before the workspace closes: the tree is drawn only beside one.
+	var next *Sandbox
+	if m.treeAvailable() {
+		next = m.list.neighbor(box.ID)
+	}
 	m.closeWorkspace()
 	m.layout()
+	if next != nil {
+		m.listCursorTo(next.ID)
+		return m.runVerb(VerbArchive, []string{box.ID}, verbThen{next: next.ID})
+	}
 	leave := m.attach != nil
 	if leave {
 		d := statusDialog("Archiving "+sandboxLabel(box), "archiving the discobox")
@@ -2627,7 +2655,27 @@ func (m *Model) archiveWorkspace(box Sandbox) tea.Cmd {
 		d.back = d
 		m.dialog = d
 	}
-	return m.runVerb(VerbArchive, []string{box.ID}, leave)
+	return m.runVerb(VerbArchive, []string{box.ID}, verbThen{leave: leave})
+}
+
+// archivedOnTo goes on from an archive beside the tree to the box it picked
+// (verbThen.next), once the archive is answered. A failed archive leaves the
+// box where it was, so the cursor goes back to it. A window that has moved on
+// meanwhile — the cursor moved off the picked row, another box opened, a card
+// up — keeps where it is.
+func (m *Model) archivedOnTo(msg verbDoneMsg, failed bool) tea.Cmd {
+	cur := m.list.current()
+	if cur == nil || cur.ID != msg.then.next || m.hasWorkspace() || m.wsOpening || m.dialog != nil || m.focus != focusList {
+		return nil
+	}
+	if failed {
+		m.listCursorTo(msg.ids[0])
+		return nil
+	}
+	if box := *cur; box.live() || m.parked[box.ID] != nil {
+		return m.switchTo(box)
+	}
+	return nil
 }
 
 func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
@@ -2652,19 +2700,23 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 	// The archive that left a one-command window's workspace was waiting for
 	// this answer to close the window, with the failure if there was one —
 	// the way an attach that fails ends. See archiveWorkspace.
-	if msg.leave {
+	if msg.then.leave {
 		if firstErr != nil {
 			return m.exit(fmt.Errorf("%s: %w", msg.verb, firstErr))
 		}
 		return m.exit(nil)
 	}
+	var onTo tea.Cmd
+	if msg.then.next != "" {
+		onTo = m.archivedOnTo(msg, failed > 0)
+	}
 	switch {
 	case failed == 0:
-		return tea.Batch(m.refresh(), m.report(false, "%s: %s", msg.verb, plural(done, "box", "boxes")))
+		return tea.Batch(m.refresh(), m.report(false, "%s: %s", msg.verb, plural(done, "box", "boxes")), onTo)
 	case done == 0 && len(msg.ids) == 1:
-		return tea.Batch(m.refresh(), m.report(true, "%s: %v", msg.verb, firstErr))
+		return tea.Batch(m.refresh(), m.report(true, "%s: %v", msg.verb, firstErr), onTo)
 	default:
-		return tea.Batch(m.refresh(), m.report(true, "%s: %d of %d failed: %v", msg.verb, failed, len(msg.ids), firstErr))
+		return tea.Batch(m.refresh(), m.report(true, "%s: %d of %d failed: %v", msg.verb, failed, len(msg.ids), firstErr), onTo)
 	}
 }
 

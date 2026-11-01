@@ -269,6 +269,168 @@ func TestTheLeaderSwitchesBoxesAndParksTheOneLeft(t *testing.T) {
 	}
 }
 
+// The leader's archive beside the tree puts the box away and goes on to the
+// row after it in the tree, as a step along the tree does: a live one is
+// switched to with its panes in front, and the archived box's workspace is
+// closed rather than parked. Not until the archive is answered: the archive
+// owns the busy line, and what it narrates, until then.
+func TestArchivingBesideTheTreeGoesOnToTheNextBox(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.doGate = make(chan struct{})
+	d, m, term := openWorkspace(t, ds, "enter")
+
+	d.leader("x")
+	d.wait("the archive asked", func() bool { return m.busy == "archive…" })
+	select {
+	case <-term.closed:
+	default:
+		t.Fatal("the archived box's terminal is still attached")
+	}
+	if got := m.list.current(); m.hasWorkspace() || m.wsOpening || got == nil || got.ID != "sbx_two" {
+		t.Fatalf("workspace %v, opening %v, cursor %v; want nothing opened and the cursor on the next box while the archive waits",
+			m.hasWorkspace(), m.wsOpening, got)
+	}
+	if got := primaryOpens(ds, "sbx_two"); got != 0 {
+		t.Fatalf("sbx_two's primary attached %d times before the archive was answered", got)
+	}
+
+	close(ds.doGate)
+	d.wait("the next box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+	if got := ds.verbs(); len(got) != 1 || got[0] != "archive sbx_one" {
+		t.Fatalf("did = %v, want the box on screen archived", got)
+	}
+	if m.parked["sbx_one"] != nil {
+		t.Fatal("the archived box's workspace should be closed, not parked")
+	}
+	if !m.treeShown() || m.focus != focusPane || m.listFront {
+		t.Fatalf("tree %v, focus %v, list front %v; want the next box's panes beside the tree", m.treeShown(), m.focus, m.listFront)
+	}
+	if got := m.list.current(); got == nil || got.ID != "sbx_two" {
+		t.Fatalf("the tree's cursor is on %v, want the box on screen", got)
+	}
+}
+
+// A cursor moved while the archive waits is a choice of its own: the answer
+// does not take the window to the box the archive picked.
+func TestACursorMovedDuringTheArchiveKeepsItsRow(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.doGate = make(chan struct{})
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	d.leader("x")
+	d.wait("the archive asked", func() bool { return m.busy == "archive…" })
+	d.key("up")
+	if got := m.list.current(); got == nil || got.ID != "sbx_one" {
+		t.Fatalf("the cursor is on %v, want it moved up onto sbx_one", got)
+	}
+	close(ds.doGate)
+	d.wait("the archive", func() bool { return m.busy == "" })
+	d.settle()
+
+	if m.hasWorkspace() || m.wsOpening || primaryOpens(ds, "sbx_two") != 0 {
+		t.Fatalf("workspace %v, opening %v; want nothing opened once the cursor moved", m.hasWorkspace(), m.wsOpening)
+	}
+	if got := m.list.current(); got == nil || got.ID != "sbx_one" {
+		t.Fatalf("the cursor is on %v, want it left where it was moved", got)
+	}
+}
+
+// From the last row the next box is the one before, and a parked one comes
+// back as it was rather than being attached again.
+func TestArchivingTheLastRowGoesBackToAParkedBox(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	first := m.primary()
+	d.leader("down")
+	d.wait("the second box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+	if rows := m.list.rows(); rows[len(rows)-1].ID != "sbx_two" {
+		t.Fatalf("the tree's last row is %s, want sbx_two", rows[len(rows)-1].ID)
+	}
+
+	d.leader("x")
+	d.wait("the box before", func() bool { return m.paneBox.ID == "sbx_one" && m.primary() != nil && m.busy == "" })
+	if m.primary() != first {
+		t.Fatal("the parked box should come back as it was, not be attached again")
+	}
+	if got := primaryOpens(ds, "sbx_one"); got != 1 {
+		t.Fatalf("sbx_one's primary attached %d times, want once", got)
+	}
+	if len(m.parked) != 0 {
+		t.Fatalf("parked = %v, want nothing parked", m.parked)
+	}
+}
+
+// The next box is only pointed at when it is not live: attaching would start
+// it. With the archived box's workspace gone there is no tree, so it is the
+// home screen's list with its cursor on that box, and Enter starts it.
+func TestArchivingBesideTheTreePointsAtAStoppedNextBox(t *testing.T) {
+	t.Parallel()
+	boxes := testSandboxes()
+	boxes[1].State = StateStopped
+	ds := newFakeSource(boxes...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	d.leader("x")
+	d.wait("the archive", func() bool { return len(ds.verbs()) == 1 && m.busy == "" })
+	d.settle()
+
+	if got := primaryOpens(ds, "sbx_two"); got != 0 {
+		t.Fatalf("sbx_two's primary attached %d times, want the stopped box left stopped", got)
+	}
+	if got := m.list.current(); got == nil || got.ID != "sbx_two" || m.focus != focusList {
+		t.Fatalf("cursor %v, focus %v; want the list's cursor on the stopped box", got, m.focus)
+	}
+	if m.hasWorkspace() || m.treeShown() || m.listFront {
+		t.Fatalf("workspace %v, tree %v, list front %v; want the home screen", m.hasWorkspace(), m.treeShown(), m.listFront)
+	}
+	d.key("enter")
+	d.wait("the stopped box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+}
+
+// A failed archive leaves the box where it was, so nothing is opened and the
+// cursor goes back to it.
+func TestAFailedArchiveBesideTheTreeStaysOnTheBox(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.doErr = errors.New("server said no")
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	d.leader("x")
+	d.wait("the archive", func() bool { return len(ds.verbs()) == 1 && m.busy == "" })
+	d.settle()
+
+	if got := primaryOpens(ds, "sbx_two"); got != 0 {
+		t.Fatalf("sbx_two's primary attached %d times after a failed archive", got)
+	}
+	if got := m.list.current(); got == nil || got.ID != "sbx_one" {
+		t.Fatalf("the cursor is on %v, want the box whose archive failed", got)
+	}
+	if !strings.Contains(m.status, "server said no") {
+		t.Fatalf("status = %q, want the failure", m.status)
+	}
+}
+
+// A box's neighbor is the row after it, the one before it from the last row,
+// and none for the only row or a box the list does not have.
+func TestABoxsNeighborIsTheRowAfterItOrBefore(t *testing.T) {
+	l := listForTest(Session{}, treeTagBoxes())
+	for id, want := range map[string]string{"sbx_a": "sbx_b", "sbx_b": "sbx_c", "sbx_c": "sbx_b", "sbx_gone": ""} {
+		got := ""
+		if n := l.neighbor(id); n != nil {
+			got = n.ID
+		}
+		if got != want {
+			t.Errorf("neighbor(%s) = %q, want %q", id, got, want)
+		}
+	}
+	if n := listForTest(Session{}, treeTagBoxes()[:1]).neighbor("sbx_a"); n != nil {
+		t.Errorf("the only row's neighbor = %s, want none", n.ID)
+	}
+}
+
 // The leader's walk does not start a stopped box it passes: it stops on the
 // row with only the tree's cursor, the workspace still on screen, and Enter
 // is what attaches — and so starts — it. ↑ from there goes back to the panes.

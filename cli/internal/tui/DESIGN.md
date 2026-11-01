@@ -142,6 +142,19 @@ flowchart LR
   carry on from the list's cursor, and stepping back onto the box on screen
   gives the panes back the keys, as Esc does — to a workspace still opening
   too, whose keys are the leader's until its pane arrives (`backToPanes`).
+- **An archive beside the tree goes on to the next box** (`archiveWorkspace`,
+  `sandboxList.neighbor`, `archivedOnTo`). Wherever the walk works
+  (`treeAvailable`), the leader's `x` closes the archived box's workspace —
+  not parked: the box is going away — and puts the list's cursor on the row
+  after it, or the one before from the last. Once the archive is answered, a
+  live or parked box there is switched to with the panes in front, as a step
+  of the walk would. Not before: the archive owns the busy line and what it
+  narrates, a credential question included, and an attach beside it would
+  take both (`verbThen.next`). Any other box is only pointed at, and with no
+  workspace left there is no tree, so that is the home screen's cursor. A
+  failed archive puts the cursor back on its box; a window that has moved on
+  meanwhile stays where it is. Without the tree it lands on the list, as
+  before.
 - **The walk has a leaderless chord** (`boxUpKey`, `boxDownKey`):
   Ctrl-Shift-K/J, bound bare in the workspace's panes (`termpane.WithBinding`)
   and answered by the window from the list, a page, or a workspace still
@@ -1322,7 +1335,8 @@ reclaims no rows before `tea.Exec`.
 **Four kinds of action.** A `Verb` goes to the API and returns, so the window
 stays up and reports on its status line. Archive invoked from a workspace is the
 exception: putting that discobox away also detaches its local streams and
-returns to the list, where the result is reported. An `Interaction` is drawn in
+returns to the list, where the result is reported — or, beside the tree, goes
+on to the next box (see the workspace tree). An `Interaction` is drawn in
 the window (`pane.go`/`workspace.go`, over the `termpane` module): attach and
 shell open the workspace screen onto the discobox's own terminals. Every interaction takes exactly one
 discobox, which is what a pane shows, and says so on the menu with the reason
