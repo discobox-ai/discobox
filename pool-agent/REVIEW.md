@@ -242,9 +242,10 @@ durable state asks the same question.
 
 - **Remove a sandbox's proxy record only under its power lock, after a look
   taken under the lock finds no container** (`reapSandboxMaterial`). The
-  record — sentinels, routes, egress and gateways in the secrets file — is
-  removed whole, and its loss fails open: a sandbox with no egress entry is
-  unrestricted. A replacement has no container between the old one's removal
+  record — sentinels, routes, egress, passthrough and gateways in the secrets
+  file — is removed whole, and its loss fails open: a sandbox with no egress
+  entry is unrestricted. (A lost passthrough entry fails closed: its tunnels
+  are intercepted.) A replacement has no container between the old one's removal
   and the new one's create, after the create registered the new record, so
   "no container" alone is not "orphan"; the material record's age does not
   help, because a re-stage never moves it (#314).

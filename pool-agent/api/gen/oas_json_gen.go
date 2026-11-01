@@ -147,11 +147,18 @@ func (s *EgressPolicy) encodeFields(e *jx.Encoder) {
 			s.DenyByDefault.Encode(e)
 		}
 	}
+	{
+		if s.Passthrough.Set {
+			e.FieldStart("passthrough")
+			s.Passthrough.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfEgressPolicy = [2]string{
+var jsonFieldsNameOfEgressPolicy = [3]string{
 	0: "allow",
 	1: "denyByDefault",
+	2: "passthrough",
 }
 
 // Decode decodes EgressPolicy from json.
@@ -181,6 +188,16 @@ func (s *EgressPolicy) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"denyByDefault\"")
+			}
+		case "passthrough":
+			if err := func() error {
+				s.Passthrough.Reset()
+				if err := s.Passthrough.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"passthrough\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -5344,6 +5361,39 @@ func (s *OptNilStringArray) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes PoolHTTPAuditTunnel as json.
+func (o OptPoolHTTPAuditTunnel) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes PoolHTTPAuditTunnel from json.
+func (o *OptPoolHTTPAuditTunnel) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptPoolHTTPAuditTunnel to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptPoolHTTPAuditTunnel) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptPoolHTTPAuditTunnel) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes PoolSandboxInstanceSourceDeliveries as json.
 func (o OptPoolSandboxInstanceSourceDeliveries) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -6453,6 +6503,12 @@ func (s *PoolHTTPAuditExchange) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Tunnel.Set {
+			e.FieldStart("tunnel")
+			s.Tunnel.Encode(e)
+		}
+	}
+	{
 		if s.Upgrade.Set {
 			e.FieldStart("upgrade")
 			s.Upgrade.Encode(e)
@@ -6470,7 +6526,7 @@ func (s *PoolHTTPAuditExchange) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolHTTPAuditExchange = [18]string{
+var jsonFieldsNameOfPoolHTTPAuditExchange = [19]string{
 	0:  "$schema",
 	1:  "blocked",
 	2:  "blockedReason",
@@ -6486,9 +6542,10 @@ var jsonFieldsNameOfPoolHTTPAuditExchange = [18]string{
 	12: "sandboxId",
 	13: "status",
 	14: "swappedSecretIds",
-	15: "upgrade",
-	16: "upgradeType",
-	17: "url",
+	15: "tunnel",
+	16: "upgrade",
+	17: "upgradeType",
+	18: "url",
 }
 
 // Decode decodes PoolHTTPAuditExchange from json.
@@ -6682,6 +6739,16 @@ func (s *PoolHTTPAuditExchange) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"swappedSecretIds\"")
 			}
+		case "tunnel":
+			if err := func() error {
+				s.Tunnel.Reset()
+				if err := s.Tunnel.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tunnel\"")
+			}
 		case "upgrade":
 			if err := func() error {
 				s.Upgrade.Reset()
@@ -6703,7 +6770,7 @@ func (s *PoolHTTPAuditExchange) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"upgradeType\"")
 			}
 		case "url":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.URL = string(v)
@@ -6726,7 +6793,7 @@ func (s *PoolHTTPAuditExchange) Decode(d *jx.Decoder) error {
 	for i, mask := range [3]uint8{
 		0b11010010,
 		0b00110001,
-		0b00000010,
+		0b00000100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -6990,6 +7057,12 @@ func (s *PoolHTTPAuditExchangeDetail) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Tunnel.Set {
+			e.FieldStart("tunnel")
+			s.Tunnel.Encode(e)
+		}
+	}
+	{
 		if s.Upgrade.Set {
 			e.FieldStart("upgrade")
 			s.Upgrade.Encode(e)
@@ -7025,7 +7098,7 @@ func (s *PoolHTTPAuditExchangeDetail) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolHTTPAuditExchangeDetail = [42]string{
+var jsonFieldsNameOfPoolHTTPAuditExchangeDetail = [43]string{
 	0:  "$schema",
 	1:  "appliedHeaders",
 	2:  "appliedPattern",
@@ -7062,12 +7135,13 @@ var jsonFieldsNameOfPoolHTTPAuditExchangeDetail = [42]string{
 	33: "streamRecorded",
 	34: "streamSessionId",
 	35: "swappedSecretIds",
-	36: "upgrade",
-	37: "upgradeC2sBytes",
-	38: "upgradeS2cBytes",
-	39: "upgradeType",
-	40: "url",
-	41: "writtenAt",
+	36: "tunnel",
+	37: "upgrade",
+	38: "upgradeC2sBytes",
+	39: "upgradeS2cBytes",
+	40: "upgradeType",
+	41: "url",
+	42: "writtenAt",
 }
 
 // Decode decodes PoolHTTPAuditExchangeDetail from json.
@@ -7481,6 +7555,16 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"swappedSecretIds\"")
 			}
+		case "tunnel":
+			if err := func() error {
+				s.Tunnel.Reset()
+				if err := s.Tunnel.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tunnel\"")
+			}
 		case "upgrade":
 			if err := func() error {
 				s.Upgrade.Reset()
@@ -7522,7 +7606,7 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"upgradeType\"")
 			}
 		case "url":
-			requiredBitSet[5] |= 1 << 0
+			requiredBitSet[5] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.URL = string(v)
@@ -7558,7 +7642,7 @@ func (s *PoolHTTPAuditExchangeDetail) Decode(d *jx.Decoder) error {
 		0b01000001,
 		0b00111000,
 		0b00000000,
-		0b00000001,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -7859,6 +7943,350 @@ func (s *PoolHTTPAuditResponse) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PoolHTTPAuditResponse) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *PoolHTTPAuditTunnel) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *PoolHTTPAuditTunnel) encodeFields(e *jx.Encoder) {
+	{
+		if s.Alpn != nil {
+			e.FieldStart("alpn")
+			e.ArrStart()
+			for _, elem := range s.Alpn {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.C2sBytes.Set {
+			e.FieldStart("c2sBytes")
+			s.C2sBytes.Encode(e)
+		}
+	}
+	{
+		if s.ClosedBy.Set {
+			e.FieldStart("closedBy")
+			s.ClosedBy.Encode(e)
+		}
+	}
+	{
+		if s.DialedAddress.Set {
+			e.FieldStart("dialedAddress")
+			s.DialedAddress.Encode(e)
+		}
+	}
+	{
+		if s.Entry.Set {
+			e.FieldStart("entry")
+			s.Entry.Encode(e)
+		}
+	}
+	{
+		if s.Error.Set {
+			e.FieldStart("error")
+			s.Error.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("id")
+		e.Str(s.ID)
+	}
+	{
+		e.FieldStart("phase")
+		e.Str(s.Phase)
+	}
+	{
+		if s.S2cBytes.Set {
+			e.FieldStart("s2cBytes")
+			s.S2cBytes.Encode(e)
+		}
+	}
+	{
+		if s.ServerName.Set {
+			e.FieldStart("serverName")
+			s.ServerName.Encode(e)
+		}
+	}
+	{
+		if s.ServerNameMismatch.Set {
+			e.FieldStart("serverNameMismatch")
+			s.ServerNameMismatch.Encode(e)
+		}
+	}
+	{
+		if s.TLS.Set {
+			e.FieldStart("tls")
+			s.TLS.Encode(e)
+		}
+	}
+	{
+		if s.TlsVersions != nil {
+			e.FieldStart("tlsVersions")
+			e.ArrStart()
+			for _, elem := range s.TlsVersions {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.UpstreamProxy.Set {
+			e.FieldStart("upstreamProxy")
+			s.UpstreamProxy.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfPoolHTTPAuditTunnel = [14]string{
+	0:  "alpn",
+	1:  "c2sBytes",
+	2:  "closedBy",
+	3:  "dialedAddress",
+	4:  "entry",
+	5:  "error",
+	6:  "id",
+	7:  "phase",
+	8:  "s2cBytes",
+	9:  "serverName",
+	10: "serverNameMismatch",
+	11: "tls",
+	12: "tlsVersions",
+	13: "upstreamProxy",
+}
+
+// Decode decodes PoolHTTPAuditTunnel from json.
+func (s *PoolHTTPAuditTunnel) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolHTTPAuditTunnel to nil")
+	}
+	var requiredBitSet [2]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "alpn":
+			if err := func() error {
+				s.Alpn = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Alpn = append(s.Alpn, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"alpn\"")
+			}
+		case "c2sBytes":
+			if err := func() error {
+				s.C2sBytes.Reset()
+				if err := s.C2sBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"c2sBytes\"")
+			}
+		case "closedBy":
+			if err := func() error {
+				s.ClosedBy.Reset()
+				if err := s.ClosedBy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"closedBy\"")
+			}
+		case "dialedAddress":
+			if err := func() error {
+				s.DialedAddress.Reset()
+				if err := s.DialedAddress.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"dialedAddress\"")
+			}
+		case "entry":
+			if err := func() error {
+				s.Entry.Reset()
+				if err := s.Entry.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"entry\"")
+			}
+		case "error":
+			if err := func() error {
+				s.Error.Reset()
+				if err := s.Error.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"error\"")
+			}
+		case "id":
+			requiredBitSet[0] |= 1 << 6
+			if err := func() error {
+				v, err := d.Str()
+				s.ID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"id\"")
+			}
+		case "phase":
+			requiredBitSet[0] |= 1 << 7
+			if err := func() error {
+				v, err := d.Str()
+				s.Phase = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"phase\"")
+			}
+		case "s2cBytes":
+			if err := func() error {
+				s.S2cBytes.Reset()
+				if err := s.S2cBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"s2cBytes\"")
+			}
+		case "serverName":
+			if err := func() error {
+				s.ServerName.Reset()
+				if err := s.ServerName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"serverName\"")
+			}
+		case "serverNameMismatch":
+			if err := func() error {
+				s.ServerNameMismatch.Reset()
+				if err := s.ServerNameMismatch.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"serverNameMismatch\"")
+			}
+		case "tls":
+			if err := func() error {
+				s.TLS.Reset()
+				if err := s.TLS.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tls\"")
+			}
+		case "tlsVersions":
+			if err := func() error {
+				s.TlsVersions = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.TlsVersions = append(s.TlsVersions, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tlsVersions\"")
+			}
+		case "upstreamProxy":
+			if err := func() error {
+				s.UpstreamProxy.Reset()
+				if err := s.UpstreamProxy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"upstreamProxy\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolHTTPAuditTunnel")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b11000000,
+		0b00000000,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfPoolHTTPAuditTunnel) {
+					name = jsonFieldsNameOfPoolHTTPAuditTunnel[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *PoolHTTPAuditTunnel) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolHTTPAuditTunnel) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

@@ -662,6 +662,11 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 	if err != nil {
 		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
+	if principal, ok := auth.PrincipalFromContext(ctx); ok && principal.Type == auth.PrincipalTypeSandbox {
+		if err := s.refuseSandboxRoleUpdate(ctx, principal.SandboxID, sandbox, input); err != nil {
+			return nil, err
+		}
+	}
 
 	var change *model.SandboxHarnessChange
 	if config, ok := input.Config.Get(); ok {

@@ -147,9 +147,10 @@ func (a *App) newPoolUpdateCommand() *cobra.Command {
 	var egressOpts egressFlags
 	cmd := &cobra.Command{Use: "update POOL", Short: "Update a pool", Long: `Update a pool.
 
---egress-allow and --egress-deny-by-default set the pool's egress level, which
-every discobox in the pool converges onto, running ones included. A build's own
-base-image pulls are not filtered by any level (ADR 26-10-01-032 §7).
+--egress-allow, --egress-deny-by-default and --egress-passthrough set the pool's
+egress level, which every discobox in the pool converges onto, running ones
+included. A build's own base-image pulls are not filtered by any level (ADR
+26-10-01-032 §7).
 
 ` + egressHelp, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()

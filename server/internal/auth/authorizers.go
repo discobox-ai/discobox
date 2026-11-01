@@ -172,6 +172,10 @@ var sandboxRole = []sandboxRoleRoute{
 	{method: http.MethodPost, path: "sandboxes/*/upgrade", names: withinCaller},
 	// Changing a discobox's name, description and tags (ADR 26-10-08-447 §1).
 	{method: http.MethodPatch, path: "sandboxes/*/meta", names: withinCaller},
+	// Setting a discobox's passthrough within the caller's own (ADR
+	// 26-10-31-819 §5). The update service refuses every other field to the
+	// sandbox role, and passthrough the caller does not hold.
+	{method: http.MethodPatch, path: "sandboxes/*", names: withinCaller},
 	// A discobox's services: reading them and their logs, and starting,
 	// stopping, and restarting the commands it declares.
 	{method: http.MethodGet, path: "sandboxes/*/services", names: createdDiscobox},

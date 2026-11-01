@@ -28,22 +28,60 @@ import (
 // restricted sandbox may reach; neither narrows another level. On an effective
 // policy, DenyByDefault is whether the sandbox is restricted, and Allow is
 // then all it may reach.
+//
+// Passthrough names the hosts whose CONNECT the pool proxy splices to the
+// origin unread instead of intercepting (ADR 26-10-31-819), in Allow's
+// vocabulary. It decides how an allowed tunnel is carried, never whether it is
+// allowed, and applies whether or not the sandbox is restricted.
 type Policy struct {
 	Allow         []string `json:"allow,omitempty"`
 	DenyByDefault bool     `json:"denyByDefault,omitempty"`
+	Passthrough   []string `json:"passthrough,omitempty"`
 }
 
-// Merge is the effective policy of a sandbox whose levels are given (§2): it
-// is restricted when any level says so, and may then reach the union of every
-// level's hosts. The union is normalized, so two merges of the same levels are
-// equal whatever order the levels or their entries came in.
+// Effective is a sandbox's effective policy (ADR 26-10-01-032 §2): own is its
+// own level and inherited its project's, pool's and harness config's. A
+// sandbox a person created passes through the union of every level's hosts;
+// one a discobox created inherits none of them and passes through its own
+// level's alone (ADR 26-10-31-819 §2), so passthrough is never copied onto a
+// box a person did not decide it for.
+func Effective(own Policy, createdByDiscobox bool, inherited ...Policy) Policy {
+	if createdByDiscobox {
+		inherited = withoutPassthrough(inherited)
+	}
+	return Merge(append(inherited, own)...)
+}
+
+// Provision is the policy a sandbox's machine-scoped layers are provisioned
+// under, on no sandbox's behalf: inherited levels merged, passing nothing
+// through, since provisioning is no box a person decided passthrough for.
+func Provision(inherited ...Policy) Policy {
+	return Merge(withoutPassthrough(inherited)...)
+}
+
+func withoutPassthrough(levels []Policy) []Policy {
+	out := make([]Policy, len(levels))
+	for i, level := range levels {
+		level.Passthrough = nil
+		out[i] = level
+	}
+	return out
+}
+
+// Merge is the union of the levels given: restricted when any level says so,
+// and then reaching the union of their hosts, and passing through the union
+// of their passthrough hosts. Effective and Provision decide which levels'
+// passthrough a policy takes. The unions are normalized, so two merges of the
+// same levels are equal whatever order the levels or their entries came in.
 func Merge(levels ...Policy) Policy {
 	var merged Policy
 	for _, level := range levels {
 		merged.DenyByDefault = merged.DenyByDefault || level.DenyByDefault
 		merged.Allow = append(merged.Allow, level.Allow...)
+		merged.Passthrough = append(merged.Passthrough, level.Passthrough...)
 	}
 	merged.Allow = Normalize(merged.Allow)
+	merged.Passthrough = Normalize(merged.Passthrough)
 	return merged
 }
 
@@ -68,6 +106,11 @@ func (p Policy) Validate() error {
 			return err
 		}
 	}
+	for _, entry := range p.Passthrough {
+		if err := ValidateEntry(entry); err != nil {
+			return fmt.Errorf("passthrough: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -76,7 +119,7 @@ func (p Policy) Validate() error {
 func ValidateEntry(entry string) error {
 	entry = strings.TrimSpace(entry)
 	if entry == "" {
-		return errors.New("egress allow entry is empty")
+		return errors.New("egress entry is empty")
 	}
 	if ip := net.ParseIP(entry); ip != nil {
 		return refuseMappedIPv4(entry, ip)
@@ -85,10 +128,10 @@ func ValidateEntry(entry string) error {
 		return refuseMappedIPv4(entry, ip)
 	}
 	if strings.Contains(entry, "://") {
-		return fmt.Errorf("egress allow entry %q is a URL; entries are hosts only", entry)
+		return fmt.Errorf("egress entry %q is a URL; entries are hosts only", entry)
 	}
 	if strings.Contains(entry, "/") {
-		return fmt.Errorf("egress allow entry %q is not a valid CIDR", entry)
+		return fmt.Errorf("egress entry %q is not a valid CIDR", entry)
 	}
 	if entry == "*" {
 		return nil
@@ -101,17 +144,17 @@ func ValidateEntry(entry string) error {
 		name = strings.TrimSuffix(name, ".*")
 	}
 	if strings.Contains(name, ":") {
-		return fmt.Errorf("egress allow entry %q names a port; entries are hosts only", entry)
+		return fmt.Errorf("egress entry %q names a port; entries are hosts only", entry)
 	}
 	if name == "" || strings.Contains(name, "*") {
-		return fmt.Errorf("egress allow entry %q: a wildcard is only \"*\", a leading \"*.\", or a trailing \".*\"", entry)
+		return fmt.Errorf("egress entry %q: a wildcard is only \"*\", a leading \"*.\", or a trailing \".*\"", entry)
 	}
 	for label := range strings.SplitSeq(name, ".") {
 		if label == "" {
-			return fmt.Errorf("egress allow entry %q has an empty label", entry)
+			return fmt.Errorf("egress entry %q has an empty label", entry)
 		}
 		if strings.IndexFunc(label, notHostNameRune) >= 0 {
-			return fmt.Errorf("egress allow entry %q is not a host name, IP, or CIDR", entry)
+			return fmt.Errorf("egress entry %q is not a host name, IP, or CIDR", entry)
 		}
 	}
 	return nil
@@ -133,7 +176,7 @@ func notHostNameRune(r rune) bool {
 // as what it is.
 func refuseMappedIPv4(entry string, ip net.IP) error {
 	if ip.To4() != nil && strings.Contains(entry, ":") {
-		return fmt.Errorf("egress allow entry %q is an IPv4 address in IPv6 form; write it as IPv4", entry)
+		return fmt.Errorf("egress entry %q is an IPv4 address in IPv6 form; write it as IPv4", entry)
 	}
 	return nil
 }
@@ -141,8 +184,18 @@ func refuseMappedIPv4(entry string, ip net.IP) error {
 // Matcher answers whether a destination is in an allow list.
 type Matcher struct {
 	domains []string
-	ips     []net.IP
-	cidrs   []*net.IPNet
+	ips     []matchedIP
+	cidrs   []matchedCIDR
+}
+
+type matchedIP struct {
+	entry string
+	ip    net.IP
+}
+
+type matchedCIDR struct {
+	entry string
+	cidr  *net.IPNet
 }
 
 // NewMatcher compiles allow entries. An entry that is not valid matches
@@ -154,9 +207,9 @@ func NewMatcher(allow []string) Matcher {
 			continue
 		}
 		if ip := net.ParseIP(entry); ip != nil {
-			m.ips = append(m.ips, ip)
+			m.ips = append(m.ips, matchedIP{entry: entry, ip: ip})
 		} else if _, cidr, err := net.ParseCIDR(entry); err == nil {
-			m.cidrs = append(m.cidrs, cidr)
+			m.cidrs = append(m.cidrs, matchedCIDR{entry: entry, cidr: cidr})
 		} else if !strings.Contains(entry, "/") {
 			m.domains = append(m.domains, entry)
 		}
@@ -167,19 +220,26 @@ func NewMatcher(allow []string) Matcher {
 // Allows reports whether host, with or without a port, is allowed. An IP
 // literal is matched against IP and CIDR entries only, never a domain.
 func (m Matcher) Allows(host string) bool {
+	_, ok := m.Match(host)
+	return ok
+}
+
+// Match is Allows that also says which entry matched host, the first in the
+// entries' normalized order.
+func (m Matcher) Match(host string) (string, bool) {
 	if only, _, err := net.SplitHostPort(host); err == nil {
 		host = only
 	}
 	host = strings.TrimSuffix(strings.Trim(host, "[]"), ".")
 	if ip := net.ParseIP(host); ip != nil {
-		return m.allowsIP(ip)
+		return m.matchIP(ip)
 	}
 	for _, pattern := range m.domains {
 		if matchDomain(pattern, host) {
-			return true
+			return pattern, true
 		}
 	}
-	return false
+	return "", false
 }
 
 // matchDomain checks whether host matches pattern: "*" matches every host,
@@ -201,37 +261,56 @@ func matchDomain(pattern, host string) bool {
 }
 
 func (m Matcher) allowsIP(ip net.IP) bool {
-	for _, allowed := range m.ips {
-		if allowed.Equal(ip) {
-			return true
-		}
-	}
-	for _, cidr := range m.cidrs {
-		if cidr.Contains(ip) {
-			return true
-		}
-	}
-	return false
+	_, ok := m.matchIP(ip)
+	return ok
 }
 
-// Covers reports whether everything child may reach, outer may reach too:
-// an unrestricted outer covers anything, and a restricted one covers only a
-// restricted child whose every entry one of outer's entries covers. It is the
-// check that keeps a discobox from creating one wider than itself (§4).
+func (m Matcher) matchIP(ip net.IP) (string, bool) {
+	for _, allowed := range m.ips {
+		if allowed.ip.Equal(ip) {
+			return allowed.entry, true
+		}
+	}
+	for _, allowed := range m.cidrs {
+		if allowed.cidr.Contains(ip) {
+			return allowed.entry, true
+		}
+	}
+	return "", false
+}
+
+// Covers reports whether child is no wider than outer: everything child may
+// reach, outer may reach too, and everything child passes through unread,
+// outer passes through too. For reach, an unrestricted outer covers anything,
+// and a restricted one covers only a restricted child whose every entry one
+// of outer's entries covers. Passthrough is held to outer's whether or not
+// either is restricted (ADR 26-10-31-819 §5): an unrestricted sandbox reaches
+// everything, but the proxy reads all of it. It is the check that keeps a
+// discobox from creating, or acting on, one wider than itself (§4).
 func Covers(outer, child Policy) bool {
+	if !CoversEntries(outer.Passthrough, child.Passthrough) {
+		return false
+	}
 	if !outer.DenyByDefault {
 		return true
 	}
 	if !child.DenyByDefault {
 		return false
 	}
-	for _, entry := range Normalize(child.Allow) {
+	return CoversEntries(outer.Allow, child.Allow)
+}
+
+// CoversEntries reports whether every entry of child is covered by one of
+// outer's: every host the child entry matches, an outer entry matches too.
+func CoversEntries(outer, child []string) bool {
+	outer = Normalize(outer)
+	for _, entry := range Normalize(child) {
 		// An entry that is not valid matches nothing (NewMatcher), so it
-		// reaches nothing the outer policy could need to cover.
+		// reaches nothing the outer list could need to cover.
 		if ValidateEntry(entry) != nil {
 			continue
 		}
-		if !slices.ContainsFunc(Normalize(outer.Allow), func(o string) bool { return entryCovers(o, entry) }) {
+		if !slices.ContainsFunc(outer, func(o string) bool { return entryCovers(o, entry) }) {
 			return false
 		}
 	}

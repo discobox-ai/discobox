@@ -89,6 +89,12 @@
   is never rewritten, so a msg or state read from it describes nothing that is
   happening; the display name drops the msg when the box is not running, as
   the CLI's `sandboxProgramStatus` drops the whole status.
+- A sandbox-role route that reaches a whole update body (the sandbox `PATCH`,
+  for passthrough, ADR 26-10-31-819 §5) checks the fields it may set by
+  listing them, read off the body's own encoding (`onlyFields`), never by
+  refusing the fields known today. Otherwise the next field added to the
+  update is writable by every discobox on the boxes it created, and no test
+  fails.
 
 ## The event stream
 

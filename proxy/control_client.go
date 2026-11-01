@@ -24,6 +24,13 @@ type AuditHTTPExchange = audit.HTTPExchange
 // to the response cache entry it was served from (ADR 26-10-08-698 §1).
 const AuditBodyFormatCache = audit.BodyFormatCache
 
+// The phases of a passthrough tunnel's audit rows (ADR 26-10-31-819 §4).
+const (
+	AuditTunnelPhaseOpen   = audit.TunnelPhaseOpen
+	AuditTunnelPhaseClose  = audit.TunnelPhaseClose
+	AuditTunnelPhaseFailed = audit.TunnelPhaseFailed
+)
+
 // AuditDNSQuery is one audited DNS query, as the control API returns it.
 type AuditDNSQuery = audit.DNSQuery
 

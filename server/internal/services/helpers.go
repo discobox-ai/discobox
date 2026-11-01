@@ -963,7 +963,8 @@ func AgentCredentialRequestStatus(req *model.SecretRequest, binding *model.Secre
 // the proxy could not enforce as a bad request naming the entry.
 func EgressPolicyToModel(in apimodel.EgressPolicy) (egress.Policy, error) {
 	allow, _ := in.Allow.Get()
-	level := egress.Policy{Allow: egress.Normalize(allow), DenyByDefault: in.DenyByDefault.Or(false)}
+	passthrough, _ := in.Passthrough.Get()
+	level := egress.Policy{Allow: egress.Normalize(allow), DenyByDefault: in.DenyByDefault.Or(false), Passthrough: egress.Normalize(passthrough)}
 	if err := level.Validate(); err != nil {
 		return egress.Policy{}, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}

@@ -73,6 +73,54 @@ type HTTPEvent struct {
 	StreamFormat         string
 	StreamDroppedChunks  uint64
 	StreamDroppedBytes   uint64
+	// Tunnel is a passthrough CONNECT's record (ADR 26-10-31-819 §4); zero
+	// on every other row.
+	Tunnel Tunnel
+}
+
+// A tunnel row's phase (Tunnel.Phase).
+const (
+	TunnelPhaseOpen   = "open"
+	TunnelPhaseClose  = "close"
+	TunnelPhaseFailed = "failed"
+)
+
+// Tunnel is what the proxy sees of a CONNECT it splices unread: everything
+// outside the tunnel, nothing inside it. A tunnel is two rows sharing ID, an
+// open row and a close row, because a row is never updated once written:
+// followers read forward by row ID and would never see the update. A dial
+// that fails is one row, Phase "failed".
+type Tunnel struct {
+	// ID is shared by a tunnel's rows.
+	ID string `gorm:"index"`
+	// Phase is TunnelPhaseOpen, TunnelPhaseClose, or TunnelPhaseFailed;
+	// empty on a row that is no passthrough tunnel's.
+	Phase string
+	// Entry is the passthrough entry the CONNECT's host matched.
+	Entry string
+	// DialedAddress is the address the proxy connected to: the origin's, or
+	// the upstream proxy's when the tunnel went through one.
+	DialedAddress string
+	// UpstreamProxy is the upstream proxy the tunnel went through, redacted;
+	// empty when it went direct.
+	UpstreamProxy string
+	// TLS is whether the client's first flight was a TLS ClientHello, and
+	// ServerName, ALPN and TLSVersions what it offered, comma-joined.
+	// ServerNameMismatch is a ServerName naming a host other than the
+	// CONNECT's.
+	TLS                bool
+	ServerName         string
+	ALPN               string
+	TLSVersions        string
+	ServerNameMismatch bool
+	// C2SBytes and S2CBytes are the bytes carried each way, on the close row.
+	C2SBytes int64
+	S2CBytes int64
+	// ClosedBy is the side whose stream ended first, "client" or "server",
+	// on the close row.
+	ClosedBy string
+	// Error is why the dial failed, or the error that ended the tunnel.
+	Error string
 }
 
 // SOCKSEvent is an asynchronous audit event for a SOCKS connect attempt.
@@ -172,6 +220,9 @@ type HTTPExchange struct {
 	StreamFormat        string
 	StreamDroppedChunks uint64
 	StreamDroppedBytes  uint64
+	// Tunnel is a passthrough tunnel's record. AutoMigrate adds its columns
+	// to a database written before it, whose rows read them as empty.
+	Tunnel Tunnel `gorm:"embedded;embeddedPrefix:tunnel_"`
 }
 
 // SOCKSConnect is the GORM model for audited SOCKS connections.
@@ -730,6 +781,7 @@ func (r *Recorder) write(event any) {
 			StreamFormat:        e.StreamFormat,
 			StreamDroppedChunks: e.StreamDroppedChunks,
 			StreamDroppedBytes:  e.StreamDroppedBytes,
+			Tunnel:              e.Tunnel,
 		}).Error
 		recordError(span, err)
 		span.End()

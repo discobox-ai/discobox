@@ -147,8 +147,9 @@ outside them -- which is the reason to hold one back.
 next "discobox" or "discobox console": it is otherwise shown once, the first time
 the console opens on the project.
 
---egress-allow and --egress-deny-by-default set the project's egress level, which
-every discobox in the project converges onto, running ones included.
+--egress-allow, --egress-deny-by-default and --egress-passthrough set the project's
+egress level, which every discobox in the project converges onto, running
+ones included.
 
 ` + egressHelp, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()

@@ -455,6 +455,30 @@ type HTTPAuditExchange struct {
 	ResponseBytes    int64    `json:"responseBytes"`
 	Upgrade          bool     `json:"upgrade"`
 	UpgradeType      string   `json:"upgradeType,omitempty"`
+	// Tunnel is what the proxy saw of a passthrough CONNECT it spliced unread
+	// (ADR 26-10-31-819 §4); nil on every other row, and from a pool agent
+	// that predates passthrough.
+	Tunnel *HTTPAuditTunnel `json:"tunnel,omitempty"`
+}
+
+// HTTPAuditTunnel is one row of a passthrough tunnel: its open row, its close
+// row, or the one row of a dial that failed. Nothing inside the tunnel is in
+// it.
+type HTTPAuditTunnel struct {
+	ID                 string   `json:"id"`
+	Phase              string   `json:"phase"`
+	Entry              string   `json:"entry,omitempty"`
+	DialedAddress      string   `json:"dialedAddress,omitempty"`
+	UpstreamProxy      string   `json:"upstreamProxy,omitempty"`
+	TLS                bool     `json:"tls"`
+	ServerName         string   `json:"serverName,omitempty"`
+	ALPN               []string `json:"alpn,omitempty"`
+	TLSVersions        []string `json:"tlsVersions,omitempty"`
+	ServerNameMismatch bool     `json:"serverNameMismatch"`
+	C2SBytes           int64    `json:"c2sBytes,omitempty"`
+	S2CBytes           int64    `json:"s2cBytes,omitempty"`
+	ClosedBy           string   `json:"closedBy,omitempty"`
+	Error              string   `json:"error,omitempty"`
 }
 
 // HTTPAuditExchangeDetail is one audited exchange in full: every field the

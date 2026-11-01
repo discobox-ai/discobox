@@ -22,12 +22,14 @@ import (
 // the sandbox service, which delivers it, and the sandbox role's authorizer,
 // which bounds what a discobox may act on by it. A harness config that is gone
 // contributes nothing.
+// Which levels' passthrough it takes is egress.Effective's to decide.
 func (s *Store) EffectiveSandboxEgress(ctx context.Context, sb *model.Sandbox) (egress.Policy, error) {
 	levels, err := s.machineEgressLevels(ctx, sb)
 	if err != nil {
 		return egress.Policy{}, err
 	}
-	return egress.Merge(append(levels, sb.Egress)...), nil
+	createdByDiscobox := sb.CreatedBySandboxID != nil && strings.TrimSpace(*sb.CreatedBySandboxID) != ""
+	return egress.Effective(sb.Egress, createdByDiscobox, levels...), nil
 }
 
 // ProvisionEgress is the egress policy for provisioning a sandbox's
@@ -35,13 +37,14 @@ func (s *Store) EffectiveSandboxEgress(ctx context.Context, sb *model.Sandbox) (
 // EffectiveSandboxEgress without the sandbox's own level, so the project's,
 // the pool's and the harness config's (with the hosts its image declares).
 // It names nothing of the sandbox, so what is provisioned under it is the
-// same for every sandbox of the plan.
+// same for every sandbox of the plan. It passes nothing through
+// (egress.Provision).
 func (s *Store) ProvisionEgress(ctx context.Context, sb *model.Sandbox) (egress.Policy, error) {
 	levels, err := s.machineEgressLevels(ctx, sb)
 	if err != nil {
 		return egress.Policy{}, err
 	}
-	return egress.Merge(levels...), nil
+	return egress.Provision(levels...), nil
 }
 
 // machineEgressLevels is every egress level of sb but its own: its

@@ -24,6 +24,7 @@ type Config struct {
 	Cache         CacheConfig
 	Recording     RecordingConfig
 	Allowlist     AllowlistConfig
+	Passthrough   PassthroughConfig
 	Gateways      GatewaysConfig
 	Secrets       SecretsConfig
 	// PoolHosts are the hosts the pool serves its sandboxes itself — its Git
@@ -158,6 +159,15 @@ type RecordingConfig struct {
 // absent from Clients is unrestricted; one present reaches only its entries,
 // so an empty list reaches nothing. Entries are egress.ValidateEntry's.
 type AllowlistConfig struct {
+	Clients map[string][]string
+}
+
+// PassthroughConfig is each client's passthrough hosts (ADR 26-10-31-819),
+// keyed by client ID (the sandbox ID): an allowed CONNECT to one of them is
+// spliced to the origin unread instead of intercepted. A client absent from
+// Clients has none. Entries are egress.ValidateEntry's. It never admits a
+// host: Allowlist decides that.
+type PassthroughConfig struct {
 	Clients map[string][]string
 }
 
@@ -301,6 +311,14 @@ func (c Config) Validate() error {
 		}
 		if err := (egress.Policy{Allow: allow}).Validate(); err != nil {
 			return fmt.Errorf("allowlist for client %q: %w", clientID, err)
+		}
+	}
+	for clientID, hosts := range c.Passthrough.Clients {
+		if strings.TrimSpace(clientID) == "" {
+			return errors.New("passthrough has an empty client ID")
+		}
+		if err := (egress.Policy{Passthrough: hosts}).Validate(); err != nil {
+			return fmt.Errorf("passthrough for client %q: %w", clientID, err)
 		}
 	}
 	for _, client := range c.Secrets.Clients {

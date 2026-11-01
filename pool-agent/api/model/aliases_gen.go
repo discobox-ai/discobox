@@ -33,6 +33,7 @@ type PoolDNSAuditResponse = poolagentapi.PoolDNSAuditResponse
 type PoolHTTPAuditExchange = poolagentapi.PoolHTTPAuditExchange
 type PoolHTTPAuditExchangeDetail = poolagentapi.PoolHTTPAuditExchangeDetail
 type PoolHTTPAuditResponse = poolagentapi.PoolHTTPAuditResponse
+type PoolHTTPAuditTunnel = poolagentapi.PoolHTTPAuditTunnel
 type PoolSandboxCreateRequest = poolagentapi.PoolSandboxCreateRequest
 type PoolSandboxInstance = poolagentapi.PoolSandboxInstance
 type PoolSandboxListResponse = poolagentapi.PoolSandboxListResponse

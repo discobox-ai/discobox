@@ -156,6 +156,7 @@ Current authorizers:
     ([ADR 26-10-02-478](../../../docs/adr/26-10-02-478-a-discobox-starts-and-stops-the-discoboxes-it-creates.md));
     its meta — `PATCH .../meta`
     ([ADR 26-10-08-447](../../../docs/adr/26-10-08-447-a-discobox-tags-the-discoboxes-it-creates.md));
+    its update, for its passthrough alone (ADR 26-10-31-819 §5);
     its services — list, get, `logs`, `start`, `stop`, and `restart`; and
     HTTP to any of its ports, any method (`http/{port}`);
   - secret requests list, get, approve, and deny, and secrets list;
@@ -180,7 +181,13 @@ Current authorizers:
   (`store.EffectiveSandboxEgress`, `egress.Covers`;
   [ADR 26-10-01-032](../../../docs/adr/26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md)
   §4). Otherwise a restricted discobox would reach the world through a wider
-  one. Reads bring data to the caller, never out of it, and are not held to it.
+  one. Coverage includes passthrough, whether or not either is restricted, so
+  a discobox never sends through another what its own proxy would have read
+  ([ADR 26-10-31-819](../../../docs/adr/26-10-31-819-an-egress-policy-may-pass-a-hosts-connect-through-unread.md)
+  §5). The sandbox update itself is a `withinCaller` route for that ADR: the
+  sandboxes service refuses the sandbox role every field but the target's
+  passthrough, and passthrough the caller does not hold. Reads bring data to
+  the caller, never out of it, and are not held to it.
 
   A secret request's get, approve, and deny (`ownedRequest`) are allowed only
   when a discobox the caller created filed it — the request's owner. A request

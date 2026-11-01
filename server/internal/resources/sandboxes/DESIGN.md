@@ -723,6 +723,11 @@ declares), and its own `Sandbox.Egress` — by the rule in
 [`proxy/egress`](../../../../proxy/egress): restricted when any level sets
 `denyByDefault`, and then reaching the union of the allow lists
 ([ADR 26-10-01-032](../../../../docs/adr/26-10-01-032-a-sandboxs-egress-is-denied-when-any-of-its-levels-says-so.md)).
+Its passthrough hosts, whose `CONNECT` the proxy splices unread, are the union
+of the levels' for a discobox a person created, and its own level's alone for
+one a discobox created (`CreatedBySandboxID`), restricted or not
+(`egress.Effective`)
+([ADR 26-10-31-819](../../../../docs/adr/26-10-31-819-an-egress-policy-may-pass-a-hosts-connect-through-unread.md)).
 
 - **Merged, never stored.** `store.EffectiveSandboxEgress` reads the levels as
   they stand whenever it is needed: into `CreateOptions.Egress`, into each
@@ -735,7 +740,18 @@ declares), and its own `Sandbox.Egress` — by the rule in
   and harness under on no sandbox's behalf, as it builds a snapshot of them
   ([ADR 26-10-16-423](../../../../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §8). It rides the create alone; the next create of the plan carries a
-  changed one, and a snapshot is keyed by it.
+  changed one, and a snapshot is keyed by it. It passes nothing through:
+  provisioning is no box a person chose passthrough for.
+- **A discobox holds passthrough to its own.** A create from the sandbox role
+  may give the new discobox only passthrough hosts the creator's own covers
+  (`refuseWiderThanCreator`), and an update from it — which the sandbox role
+  reaches for a discobox it created and does not reach less than — may change
+  that discobox's passthrough and nothing else, within the caller's
+  (`refuseSandboxRoleUpdate`). A person sets any level to anything.
+- **Passthrough is sent only when there is some.** A pool agent that predates
+  it refuses a policy with a field it does not know; a sandbox with none is
+  pushed what it was before, and a push with some is refused by such a pool
+  until it moves onto the current agent, which keeps intercepting meanwhile.
 - **A create carries it; a push delivers every change.** A level change —
   project, pool, harness config, or a sandbox's own — or a change to the
   project's gateways marks the `sandboxProxyPolicy` resource of every sandbox

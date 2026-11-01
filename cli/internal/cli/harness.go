@@ -397,10 +397,10 @@ func (a *App) newHarnessUpdateCommand() *cobra.Command {
 	var egressOpts egressFlags
 	cmd := &cobra.Command{Use: "update HARNESS", Short: "Update a harness config", Long: `Update a harness config.
 
---egress-allow and --egress-deny-by-default set the harness's egress level, which
-every discobox on the harness converges onto, running ones included. The hosts
-the harness bundle declares (imageEgressHosts) are part of this level already
-and need not be listed.
+--egress-allow, --egress-deny-by-default and --egress-passthrough set the
+harness's egress level, which every discobox on the harness converges onto,
+running ones included. The hosts the harness bundle declares (imageEgressHosts)
+are part of this level already and need not be listed.
 
 ` + egressHelp, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
