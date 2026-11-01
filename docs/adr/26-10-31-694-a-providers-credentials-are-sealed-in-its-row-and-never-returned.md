@@ -108,7 +108,7 @@ instance, in one transaction:
 
 - **The fields are listed in the migration** by type and key —
   `digitalocean.token`, `digitalocean.sshPrivateKey`,
-  `execvm.sshPrivateKey`, `vm.apiKey` — rather than read from the provider
+  `exec.sshPrivateKey`, `vm.apiKey` — rather than read from the provider
   definitions. The migration moves what was stored before this decision, and
   a later definition must not change what it moves.
 - **A non-empty string moves** from `config` into the sealed
@@ -128,12 +128,15 @@ after this one migrated. The value is never handed to the provider. An older
 server reading a migrated row finds no key and fails the same way. Running
 mixed versions on one database is not supported across this upgrade.
 
-### 5. A project copy copies the sealed fields
+### 5. A project copy carries the sealed fields
 
-Copying providers copies `encrypted_config` with the rest of the row. The
-copy is sealed on the same server with the same sealer, and today's copy
-already carries the key, in the clear. The person copying is a member of
-both projects.
+Copying a provider carries its sealed fields to the copy. A sealed value is
+bound to the row it was sealed in (the sealer authenticates the project and
+ID), so the copy cannot take `encrypted_config` as bytes: the server opens the
+source's fields and creates the copy with them, which seals them again in the
+copy's own row, on the same server with the same sealer. Today's copy already
+carries the key, in the clear. The person copying is a member of both
+projects.
 
 ### 6. Environment references are removed and refused
 
@@ -150,6 +153,13 @@ No secret field takes an environment variable's name either.
   write a provider in any project could point `tokenEnv` at a variable the
   server holds for itself, and have the provider send it to a host the
   config names.
+
+## Amendments
+
+Amended from implementation, before anything shipped against it: §4 named the
+exec provider by its package (`execvm`) rather than its stored type (`exec`),
+and §5 had the copy take `encrypted_config` as bytes, which a value sealed to
+its own row cannot be.
 
 ## Alternatives considered
 
