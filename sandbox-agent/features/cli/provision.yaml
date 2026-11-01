@@ -33,3 +33,5 @@ steps:
     file: {path: /usr/local/share/discobox/monitors/30-file.sh, source: monitors/30-file.sh, mode: "0755"}
   - name: monitor-url
     file: {path: /usr/local/share/discobox/monitors/40-url.sh, source: monitors/40-url.sh, mode: "0755"}
+  - name: monitor-discobox-box
+    file: {path: /usr/local/share/discobox/monitors/50-discobox-box.sh, source: monitors/50-discobox-box.sh, mode: "0755"}

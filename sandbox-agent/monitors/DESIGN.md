@@ -175,3 +175,5 @@ flowchart LR
   built-in adds a package, an entry there, and a script in the image.
 - [`githubrepo`](githubrepo/DESIGN.md) is the first built-in: the image's
   `github-repo`.
+- [`discoboxbox`](discoboxbox/DESIGN.md) is the image's `discobox-box`:
+  other boxes, through the discobox API.
