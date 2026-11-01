@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/monitors"
 )
@@ -41,6 +42,10 @@ type Env struct {
 	State string
 	// Options are the instance's options (DISCOBOX_MONITOR_OPTIONS).
 	Options map[string]string
+	// Since, set only for a test's first run (DISCOBOX_MONITOR_SINCE), is
+	// the time a monitor that declares `since: true` takes as its baseline
+	// instead of now (ADR 26-11-01-375 §3).
+	Since time.Time
 	// Getenv reads the rest of the monitor's environment: its credentials,
 	// its proxy.
 	Getenv func(string) string
@@ -99,6 +104,13 @@ func FromEnviron(getenv func(string) string, stdout, stderr io.Writer) (Env, err
 		if err := json.Unmarshal([]byte(raw), &env.Options); err != nil {
 			return Env{}, fmt.Errorf("%s: %w", monitors.EnvOptions, err)
 		}
+	}
+	if raw := strings.TrimSpace(getenv(monitors.EnvSince)); raw != "" {
+		since, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return Env{}, fmt.Errorf("%s: %q is not an RFC 3339 time", monitors.EnvSince, raw)
+		}
+		env.Since = since
 	}
 	return env, nil
 }

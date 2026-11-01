@@ -67,8 +67,16 @@ func run(ctx context.Context, env builtin.Env, base string, hc *http.Client, now
 		return errors.New("no GitHub credential in this box: ask for one with discobox-access (GH_TOKEN, for api.github.com)")
 	}
 	p := &poller{cfg: cfg, c: newClient(base, token, hc), env: env, st: &st, first: st.Since.IsZero()}
+	if p.first && !env.Since.IsZero() {
+		p.startFrom(env.Since)
+	}
 	st.NotBefore = time.Time{}
 	err = p.poll(ctx)
+	// A pass from the past is kept only whole: cut short, by a rate limit
+	// or anything else, it leaves only a wait, and the next run, given no
+	// since, is a baseline.
+	cutShort := p.since && err != nil
+	p.since = false
 	// The box's clock, for the next run's check: GitHub's waits are
 	// lengths of time from GitHub's now.
 	if rl, ok := isRateLimited(err); ok {
@@ -80,6 +88,9 @@ func run(ctx context.Context, env builtin.Env, base string, hc *http.Client, now
 		if after := now().Add(p.c.pollAfter.Sub(p.c.now())); after.After(st.NotBefore) {
 			st.NotBefore = after
 		}
+	}
+	if cutShort {
+		p.st = &state{NotBefore: st.NotBefore}
 	}
 	if saveErr := p.save(); err == nil {
 		err = saveErr
@@ -111,9 +122,19 @@ type poller struct {
 	env   builtin.Env
 	st    *state
 	first bool
+	// since is a first run that startFrom began in the past, not yet
+	// finished: nothing it does is saved until it is.
+	since bool
 }
 
-func (p *poller) save() error { return p.env.WriteState(stateFile, p.st) }
+// save writes the state, except during a first run from the past
+// (startFrom), whose markers are not done work until it has finished.
+func (p *poller) save() error {
+	if p.since {
+		return nil
+	}
+	return p.env.WriteState(stateFile, p.st)
+}
 
 func (p *poller) emit(ev monitors.Event) error { return p.env.Emit(ev) }
 
@@ -145,6 +166,13 @@ func (p *poller) poll(ctx context.Context) error {
 	}
 	if start.IsZero() {
 		start = p.c.now()
+	}
+	if p.since && p.cfg.PRs && p.cfg.filtered() {
+		// The open PRs head and author select, as a baseline would find
+		// them; those the pass finds active since are followed from it.
+		if err := p.selectOpenPRs(ctx); err != nil {
+			return err
+		}
 	}
 	// Options changed in place name new targets, or drop old ones.
 	fresh := !p.first && p.retarget()
@@ -228,6 +256,23 @@ func (p *poller) baseline(ctx context.Context, start time.Time, issues, runs res
 	p.st.Since, p.st.Baseline = start, start
 	p.st.IssuesETag = issues.ETag
 	return p.finishIfDone()
+}
+
+// startFrom begins a first run given a baseline in the past (`test --since`,
+// ADR 26-11-01-375 §3) as though a pass had ended then: no baseline is
+// taken, and this run reports what happened after since, in the events an
+// instance would have queued. Its markers are set at once, before the work
+// they mark, so nothing is saved until the run has finished (save): one cut
+// short leaves no state but a wait, and the next run is a baseline. Every later run
+// goes on as usual.
+func (p *poller) startFrom(since time.Time) {
+	p.first, p.since = false, true
+	// The search reaches back to since, and no further (cutoff).
+	p.st.Since, p.st.Baseline = since, since
+	// The runs created since then are a gap to read, not a baseline.
+	p.st.RunsSince = since
+	// A pass is due whatever the issues probe says.
+	p.st.LastChange = since
 }
 
 // needsWatched reports whether the watched issues and PRs are queried this
