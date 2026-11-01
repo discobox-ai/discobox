@@ -26,38 +26,33 @@ flowchart LR
   `harnessConfigId`, or a `--harness` selector (slug first, then display name,
   then ID) →
   the project default → 409. A deleted default counts as no default. A
-  sandbox is pinned to its harness config's `Bundle`/`BundleDigest`, or a
-  manifest file's template to its `Image`/`ImageDigest`
+  sandbox is pinned to its harness config's `Bundle`/`BundleDigest`
   (`createHarnessPins`, `services.HarnessConfigPins`) — in config mode too,
   since the configure command is harness-bundle content — and to the platform
   the release names. No harness is an image and there is no default image
-  (ADR 26-10-16-423 §10): a config registered before bundles, which has
-  neither, is refused with 409, and one whose bundle has no content digest — a
+  (ADR 26-10-16-423 §10): a config registered before bundles, which has no
+  bundle, is refused with 409, and one whose bundle has no content digest — a
   development bundle no pool has built yet — with 503.
-- A sandbox's platform (`os/arch`, the root `platform` package) is its pool's,
-  which a manifest file's template must run on (ADR 0145 §1); a bundle names
-  none, since its steps select the platform they run on, and rules no pool
-  out. A pool of another platform than a manifest file's is refused with a 409
-  that says which the template runs on (`platformOnPool`). A pool whose agent has not declared a platform yet is
-  an ordinary target, and the sandbox is created without one: it takes the
-  pool's when the provider places it (`store.SchedulablePoolForSandbox`,
-  `CreateOptions.Platform`), which makes the same check and fails the create's
-  reconcile with that reason rather than waiting on the pool. A sandbox from
+- A sandbox's platform (`os/arch`, the root `platform` package) and the kind
+  of box it is (`platform.ImageKind`) are its pool's. A harness names neither
+  — its bundle's steps select the platform they run on (ADR 26-10-16-423 §2,
+  ADR 26-11-01-122) — so it rules no pool out: the same harness runs in a
+  Docker pool's container and on a boxd pool's machine. A pool whose agent has
+  not declared a platform yet is an ordinary target, and the sandbox is
+  created without one: it takes the pool's when the provider places it
+  (`store.SchedulablePoolForSandbox`, `CreateOptions.Platform`). A sandbox from
   before platforms takes its pool's the same way. A pool whose agent never
   declares one — an agent from before platforms — places as before them, and
   its sandboxes have no platform. The platform is never changed
   once set. It is a column beside `PoolID`, not a `SandboxManifest` field: it is
   not a spec that can drift, and adding it to the manifest would have moved
-  every sandbox's fingerprint. An upgrade never moves a sandbox onto a harness
-  config whose template does not run on its platform (`SandboxUpgradeTarget`).
-- A sandbox's pool must also run the kind of box its harness runs on
-  (`platform.ImageKind`, ADR 26-10-09-106 §4; OCI for a bundle): a VM harness for boxd is
-  refused on a Docker pool of its own platform and placed on a boxd pool. Create
-  and import refuse a pool whose agent has declared another kind with a 409
-  naming both (`refuseOtherImageKind`), and placement makes the same check
-  (`store.SchedulablePoolForSandbox`). A pool that has not declared one is still
-  a target. The kind is not recorded on the sandbox: it is its harness config's,
-  read at every placement.
+  every sandbox's fingerprint. The kind is not recorded on the sandbox: it is
+  its pool's.
+- Import takes a tree only onto a pool that runs OCI images: an archive holds a
+  container discobox's tree, and machine export and import are deferred (ADR
+  26-10-09-106). The pool's kind is the refusal — `refuseMachinePool` before
+  the tree is read, for a pool that has declared one, and
+  `poolruntime.Provider.ImportTree` once a pool still coming up has.
 - Sandboxes that have no harness config converge by *upgrade*, not by
   migration. The target comes from the reserved `shell` built-in
   (`fallbackHarnessConfig`). Such a sandbox reports `available` regardless of
@@ -69,7 +64,7 @@ flowchart LR
   reports an available upgrade, and `Service.currentRepin`, which resolves
   the change that `UpgradeSandbox`, `RepairSandbox`,
   `UpgradeHarnessConfigSandboxes` and `UpgradeReleaseSandboxes` apply. The
-  change is all of a sandbox's pins: harness bundle (or manifest file), the
+  change is all of a sandbox's pins: harness bundle, the
   harness manifest composed from it (`HarnessManifestDigest`), and the
   release's platform and agent bundles (ADR 26-10-16-423 §7, ADR 26-10-24-953
   §2). The read path is handed the release's bundles last resolved
@@ -403,7 +398,7 @@ rider on a rebuild that is happening anyway.
 
 `UpgradeHarnessConfigSandboxes` is the automatic author of that same upgrade
 (ADR 0082). `resources/harnessconfigs` calls it wherever a harness config's
-`BundleDigest`, its `ManifestDigest` or a manifest file's `ImageDigest` moves, and `UpgradePlatformSandboxes` is the
+`BundleDigest` or its `ManifestDigest` moves, and `UpgradePlatformSandboxes` is the
 same for every project's sandboxes whenever the release's platform reference
 resolves to a new digest (`assets.Service.OnPlatformMoved`, first on every
 start). Each re-pins its present, settled sandboxes — the config's, or for
@@ -607,8 +602,7 @@ and is answered as a 400 about the archive rather than an error about the pool
   container?", so a spec field added there travels from the day it is added.
   Two of its fields are not taken as they arrive: `HarnessConfigID` is cleared
   on export and resolved by slug on import — an import's `--harness` by slug,
-  name or ID — because an ID names a row on one server and nothing on another; and its harness pins — `Bundle`/`BundleDigest`,
-  or `Image`/`ImageDigest` for a manifest file — and its platform are re-pinned
+  name or ID — because an ID names a row on one server and nothing on another; and its harness pins — `Bundle`/`BundleDigest` — and its platform are re-pinned
   to the destination's, exactly as a create takes them from there. The pins
   cannot come from the archive — `buildCreateOptions` reads `RunCommand`,
   `Files`, `Volumes` and `Env` off the harness config row, so a bundle from one
@@ -616,12 +610,10 @@ and is answered as a 400 about the archive rather than an error about the pool
   that does not.
 - **A transfer stays on its platform** (ADR 0145 §8). The manifest records the
   sandbox's platform — its pool's, for one not placed since platforms were
-  recorded. Import refuses, with 409 and before the upload, a destination
-  harness whose image is not published for the archive's platform, or a
-  destination pool of another platform, a destination harness that is not an
-  OCI image — an archive is a container's tree, and a machine discobox's
-  export is deferred (ADR 26-10-09-106) — or a pool that runs another kind, and
-  passes the platform to
+  recorded. Import refuses, with 409 and before the upload, a destination pool
+  of another platform — its harness rules none out — or one that runs
+  anything but OCI images (the import-kind bullet above), and passes the
+  platform to
   `Provider.ImportTree`, whose placement checks the pool it lands on — waiting
   for one that has not reported yet, and refusing one that never declares a
   platform — before the tree is read. An archive

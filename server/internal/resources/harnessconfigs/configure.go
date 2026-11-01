@@ -129,8 +129,8 @@ type SandboxRuntime interface {
 	// on them (ADR 26-10-02-924).
 	MarkSecretHoldersDirtyTx(ctx context.Context, txStore *store.Store, txDB *gorm.DB, projectID, secretID string) error
 	// UpgradeHarnessConfigSandboxes moves this config's stopped sandboxes onto
-	// the image and bundle it now resolves to (ADR 0082). Called wherever this
-	// config's ImageDigest or BundleDigest is written to a different value,
+	// the bundle it now resolves to (ADR 0082). Called wherever this config's
+	// BundleDigest or ManifestDigest is written to a different value,
 	// through applyResolvedPins.
 	UpgradeHarnessConfigSandboxes(ctx context.Context, projectID, harnessConfigID string) error
 	// MarkProxyPolicyChangedTx converges this config's discoboxes onto a changed
@@ -169,7 +169,7 @@ func (s *Service) ConfigureHarnessConfig(ctx context.Context, projectID, configI
 	if err != nil {
 		return nil, apperrors.NotFound(err, "harness config not found")
 	}
-	if strings.TrimSpace(config.Bundle) == "" && strings.TrimSpace(config.Image) == "" {
+	if strings.TrimSpace(config.Bundle) == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("harness config %s was registered before bundles: register its bundle to configure it", config.Slug))
 	}
 	// Stated in terms of the missing command rather than the slug: the reserved

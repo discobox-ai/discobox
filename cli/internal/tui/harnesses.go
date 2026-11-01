@@ -238,7 +238,7 @@ func (l *harnessList) row(st *styles, h Harness, i int) string {
 	// The bundle is what the harness actually runs, and the longest thing on
 	// the row, so it goes last: it is the first column a narrow terminal gives
 	// up.
-	addCol(st.dimText.Render(truncate(h.runs(), 34)), 34)
+	addCol(st.dimText.Render(truncate(h.Bundle, 34)), 34)
 
 	marker := "  "
 	if atCursor {
@@ -771,18 +771,8 @@ func harnessCard(st *styles, h Harness, secrets []HarnessSecret) string {
 	if h.Bundle != "" {
 		fmt.Fprintln(&b, label("Bundle"), h.Bundle)
 	}
-	if h.ManifestFile != "" {
-		fmt.Fprintln(&b, label("Manifest"), h.ManifestFile)
-	}
 	if h.Digest != "" {
 		fmt.Fprintln(&b, label("Digest"), h.Digest)
-	}
-	if h.Platforms != "" {
-		platforms := h.Platforms
-		if h.Unhosted {
-			platforms += st.dimText.Render("  no pool here runs it")
-		}
-		fmt.Fprintln(&b, label("Platform"), platforms)
 	}
 	if len(h.Run) > 0 {
 		fmt.Fprintln(&b, label("Run"), st.command.Render(strings.Join(h.Run, " ")))

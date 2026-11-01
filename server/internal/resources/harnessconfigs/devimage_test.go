@@ -16,11 +16,6 @@ type recordingInspector struct {
 	err   error
 }
 
-func (s *recordingInspector) InspectManifestFile(context.Context, string) (imageMetadata, error) {
-	s.calls++
-	return imageMetadata{}, s.err
-}
-
 func (s *recordingInspector) InspectBundle(context.Context, string, func(map[string]string) error) (bundleInspection, error) {
 	s.calls++
 	return bundleInspection{}, s.err
@@ -66,7 +61,7 @@ func buildModeService(t *testing.T, bundles *devbundles.Set) (*Service, *recordi
 func TestResolveComposesThePlatformLayerInBuildMode(t *testing.T) {
 	svc, fallback := buildModeService(t, buildModeBundles(t, harnessMetadataJSON))
 
-	metadata, err := svc.resolveHarness(context.Background(), svc.platformBundle(), codexBundle, "")
+	metadata, err := svc.resolveHarness(context.Background(), svc.platformBundle(), codexBundle)
 	if err != nil {
 		t.Fatalf("resolveHarness() error = %v", err)
 	}
@@ -81,8 +76,8 @@ func TestResolveComposesThePlatformLayerInBuildMode(t *testing.T) {
 	}
 	// The reference is content-addressed over its inputs, so it is its own
 	// freshness key; there is no digest until something builds it.
-	if metadata.BundleDigest != codexBundle || metadata.Digest != "" {
-		t.Fatalf("digests = %q, %q, want the build-mode reference as the bundle's and no other", metadata.BundleDigest, metadata.Digest)
+	if metadata.BundleDigest != codexBundle {
+		t.Fatalf("bundle digest = %q, want the build-mode reference", metadata.BundleDigest)
 	}
 }
 
@@ -90,26 +85,22 @@ func TestResolveComposesThePlatformLayerInBuildMode(t *testing.T) {
 // built one labeled with the empty string is.
 func TestResolveRefusesABuildModeBundleWithNoMetadata(t *testing.T) {
 	svc, _ := buildModeService(t, buildModeBundles(t, ""))
-	if _, err := svc.resolveHarness(context.Background(), svc.platformBundle(), codexBundle, ""); err == nil {
+	if _, err := svc.resolveHarness(context.Background(), svc.platformBundle(), codexBundle); err == nil {
 		t.Fatal("resolveHarness() = nil, want a bundle built without its argument refused")
 	}
 }
 
 // Any bundle the development set does not hold still goes to the daemon and
-// registry, and a manifest file is read as it always is, so production
-// behavior is untouched.
+// registry, so production behavior is untouched.
 func TestInspectFallsBackForWhatTheDevelopmentBundlesDoNotHold(t *testing.T) {
 	fallback := &recordingInspector{}
 	inspector := newDevImageInspector(buildModeBundles(t, harnessMetadataJSON), fallback, nil)
 
-	if _, err := inspector.InspectManifestFile(context.Background(), "file:///overlays/manifest.json"); err != nil {
-		t.Fatalf("InspectManifestFile() error = %v", err)
-	}
 	if _, err := inspector.InspectBundle(context.Background(), "ghcr.io/discobox-ai/other-bundle:v1", admitAny); err != nil {
 		t.Fatalf("InspectBundle() error = %v", err)
 	}
-	if fallback.calls != 2 {
-		t.Fatalf("fallback inspector called %d times, want 2", fallback.calls)
+	if fallback.calls != 1 {
+		t.Fatalf("fallback inspector called %d times, want 1", fallback.calls)
 	}
 }
 

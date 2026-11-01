@@ -22,7 +22,7 @@ func TestRefreshingACustomHarnessBundleUpgradesItsSandboxes(t *testing.T) {
 	}
 	runtime := &stubSandboxRuntime{}
 	inspector := &stubInspector{byImage: map[string]imageMetadata{
-		"registry.example/custom:v1": {Digest: "sha256:two"},
+		"registry.example/custom:v1": {BundleDigest: "sha256:two"},
 	}}
 	svc := &Service{store: st, inspector: inspector, harnesses: testReferences, sandboxes: runtime}
 
@@ -60,7 +60,7 @@ func TestReseedingABuiltInBundleUpgradesItsSandboxes(t *testing.T) {
 		t.Fatal("no built-in harnesses to seed")
 	}
 	runtime := &stubSandboxRuntime{}
-	inspector := &stubInspector{byImage: map[string]imageMetadata{bundle: {Digest: "sha256:one"}}}
+	inspector := &stubInspector{byImage: map[string]imageMetadata{bundle: {BundleDigest: "sha256:one"}}}
 	svc := &Service{store: st, inspector: inspector, harnesses: bundleReferences(overrides), sandboxes: runtime}
 
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
@@ -72,7 +72,7 @@ func TestReseedingABuiltInBundleUpgradesItsSandboxes(t *testing.T) {
 
 	// Same reference, rebuilt: the case tag comparison misses and digest
 	// comparison catches (ADR 0016 §7).
-	inspector.byImage[bundle] = imageMetadata{Digest: "sha256:two"}
+	inspector.byImage[bundle] = imageMetadata{BundleDigest: "sha256:two"}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("reseed built-ins: %v", err)
 	}

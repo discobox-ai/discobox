@@ -151,7 +151,7 @@ func TestNewRouterCreateSandboxResolvesHarnessName(t *testing.T) {
 	createHarnessResp := httptest.NewRecorder()
 	router.ServeHTTP(createHarnessResp, jsonRequest(http.MethodPost, "/projects/"+testDefaultProjectID+"/harness-configs", `{
 		"name": "Codex",
-		"image": "discobox-harness-codex:local"
+		"bundle": "discobox-harness-codex:local"
 	}`))
 	if createHarnessResp.Code != http.StatusOK {
 		t.Fatalf("POST /harness-configs status = %d, body = %s", createHarnessResp.Code, createHarnessResp.Body.String())
@@ -183,6 +183,21 @@ func TestNewRouterCreateSandboxResolvesHarnessName(t *testing.T) {
 	}
 	if got := sandbox.Config.HarnessConfigId.Or(""); got != harness.ID {
 		t.Fatalf("harnessConfigId = %q, want %q", got, harness.ID)
+	}
+}
+
+// A harness is its bundle and nothing else (ADR 26-11-01-122): the create
+// body has no image field, so a request naming a file:// manifest file there
+// is refused as a bad request before anything reads it.
+func TestNewRouterCreateHarnessConfigRefusesAnImage(t *testing.T) {
+	router := newStubRouterForTest()
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, jsonRequest(http.MethodPost, "/projects/"+testDefaultProjectID+"/harness-configs", `{
+		"name": "Xcode",
+		"image": "file:///var/cache/discobox/overlays/darwin-arm64/manifest.json"
+	}`))
+	if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), `unexpected field \"image\"`) {
+		t.Fatalf("POST /harness-configs status = %d, body = %s; want the image field refused", resp.Code, resp.Body.String())
 	}
 }
 

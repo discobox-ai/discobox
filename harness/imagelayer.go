@@ -156,47 +156,6 @@ func ComposeBundleLabels(platformLabels, harnessLabels map[string]string) (Image
 	return MergeImageMetadata(platformLayer.Metadata, own), nil
 }
 
-// ReadManifestFile reads a manifest file into the label set
-// ResolveImageLabels resolves. It is how a template with no image — a non-Linux
-// one, assembled from a vendor's base and Discobox's overlay — ships the same
-// manifest an image carries in its labels (ADR 0145 §3): one JSON object whose
-// keys are the very label keys an image would carry, ImageLabel and
-// ImageLayerLabelPrefix plus a layer name, each holding that layer as a JSON
-// object rather than as the string a label is. One resolver then reads both,
-// so layering, merge by identity, the reserved layer numbers and the base
-// layer's proof of lineage mean the same thing from either source.
-//
-// Any other key is refused. An image's labels carry more than its manifest, so
-// the resolver skips what is not a layer; a manifest file is nothing else, and
-// a key in it that is not a layer is a mistake to say rather than to skip.
-func ReadManifestFile(data []byte) (map[string]string, error) {
-	var layers map[string]json.RawMessage
-	if err := json.Unmarshal(data, &layers); err != nil {
-		return nil, fmt.Errorf("parse manifest file: %w", err)
-	}
-	labels := make(map[string]string, len(layers))
-	for key, raw := range layers {
-		// Each key is stored as the layer it resolves to, the image's own or
-		// a contributed one by its trimmed name, so that two keys naming one
-		// layer — differing only in space the resolver trims — are refused
-		// rather than left to map order to choose between on each read.
-		canonical := ImageLabel
-		if name, ok := layerName(key); ok {
-			canonical = ImageLayerLabelPrefix + name
-		} else if strings.TrimSpace(key) != ImageLabel {
-			return nil, fmt.Errorf("manifest file key %q is not a layer: want %s or %s<NN>-<name>", key, ImageLabel, ImageLayerLabelPrefix)
-		}
-		if trimmed := strings.TrimSpace(string(raw)); trimmed == "" || trimmed[0] != '{' {
-			return nil, fmt.Errorf("manifest file layer %q must be a JSON object", key)
-		}
-		if _, dup := labels[canonical]; dup {
-			return nil, fmt.Errorf("manifest file names layer %q twice", canonical)
-		}
-		labels[canonical] = string(raw)
-	}
-	return labels, nil
-}
-
 // layerName returns the layer name a contributed layer's label key carries.
 func layerName(key string) (string, bool) {
 	key = strings.TrimSpace(key)

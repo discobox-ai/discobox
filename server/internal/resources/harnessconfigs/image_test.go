@@ -12,7 +12,6 @@ import (
 
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/harnesscapture"
-	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
@@ -482,12 +481,12 @@ func TestSeedBuiltInsRewritesABuiltInWhoseSecretDeclarationsMoved(t *testing.T) 
 	const bundle = "discobox-harness-claude-code:v1"
 	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code", BuiltIn: true,
-		Bundle: bundle, BundleDigest: "sha256:same", ImageKind: platform.OCI,
+		Bundle: bundle, BundleDigest: "sha256:same",
 		Secrets: []model.HarnessConfigSecret{{Name: "API_KEY", Required: true}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	declared := imageMetadata{Digest: "sha256:same", ImageMetadata: harness.ImageMetadata{
+	declared := imageMetadata{BundleDigest: "sha256:same", ImageMetadata: harness.ImageMetadata{
 		Harness: &harness.Image{ID: "claude-code", Name: "Claude Code", Secrets: []harness.Secret{{
 			Name: "API_KEY", Required: true,
 			RejectionScope: []harness.RejectionRule{{Host: "api.example.com", Paths: []string{"/v1/messages"}}},
@@ -505,5 +504,34 @@ func TestSeedBuiltInsRewritesABuiltInWhoseSecretDeclarationsMoved(t *testing.T) 
 	want := []model.HarnessSecretRejectionRule{{Host: "api.example.com", Paths: []string{"/v1/messages"}}}
 	if len(got.Secrets) != 1 || !reflect.DeepEqual(got.Secrets[0].RejectionScope, want) {
 		t.Fatalf("secrets = %#v, want API_KEY scoped to %v", got.Secrets, want)
+	}
+}
+
+// A bundle's steps select the platform they run on and its kind is the pool's,
+// so a label claiming either is refused — and a bundle is a Linux box's, so a
+// label naming an account or a shell is refused too (ADR 26-11-01-122).
+func TestComposeBundleMetadataRefusesAPlatformKindAccountOrShell(t *testing.T) {
+	for name, tc := range map[string]struct {
+		own  string
+		says string
+	}{
+		"a platform": {`{"platform": "darwin/arm64"}`, "declares platform darwin/arm64"},
+		"a kind":     {`{"imageKind": "vm/boxd"}`, "declares image kind vm/boxd"},
+		"an account": {`{"account": "ada"}`, "names no account"},
+		"a shell":    {`{"shell": "/bin/zsh"}`, "names no shell"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := parseBundle("sha256:test", bundleLabels(tc.own))
+			if err == nil || !strings.Contains(err.Error(), tc.says) {
+				t.Errorf("err = %v, want one saying %q", err, tc.says)
+			}
+		})
+	}
+	inspected, err := parseBundle("sha256:test", bundleLabels(`{"features": {"desktop": true}}`))
+	if err != nil {
+		t.Errorf("a Linux bundle declaring the desktop: %v", err)
+	}
+	if !inspected.ImageKind.IsZero() || !inspected.Platform.IsZero() {
+		t.Errorf("a bundle's kind = %v platform = %v, want neither: both are its pool's", inspected.ImageKind, inspected.Platform)
 	}
 }

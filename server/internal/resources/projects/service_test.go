@@ -65,7 +65,7 @@ type stubHarnesses struct{ st *store.Store }
 
 func (s stubHarnesses) SeedBuiltIns(ctx context.Context, projectID string) error {
 	return s.st.CreateHarnessConfig(ctx, &model.HarnessConfig{
-		ProjectID: projectID, Slug: "codex", Name: "Codex", BuiltIn: true, Image: "codex:current",
+		ProjectID: projectID, Slug: "codex", Name: "Codex", BuiltIn: true, Bundle: "codex:current",
 	})
 }
 
@@ -132,7 +132,7 @@ func seedSourceProject(ctx context.Context, t *testing.T, st *store.Store) *mode
 	if err := st.CreatePool(ctx, pool); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	config := &model.HarnessConfig{ProjectID: project.ID, Slug: "codex", Name: "Codex", BuiltIn: true, Configured: true, Image: "codex:stale",
+	config := &model.HarnessConfig{ProjectID: project.ID, Slug: "codex", Name: "Codex", BuiltIn: true, Configured: true, Bundle: "codex:stale",
 		Egress: egress.Policy{Allow: []string{"api.openai.com"}}}
 	config.ConfiguredFiles = []model.HarnessConfigFile{{Path: "/home/user/.codex/config", Content: "hello"}}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
@@ -252,10 +252,10 @@ func TestCreateProjectCopiesProvidersPoolsAndConfiguredHarnesses(t *testing.T) {
 	if strings.Join(config.Egress.Allow, ",") != "api.openai.com" {
 		t.Fatalf("built-in harness egress = %+v, want the level a person set carried across", config.Egress)
 	}
-	// The new project was seeded against the current image, and copying the
-	// source's configured state must not drag its stale image back in.
-	if config.Image != "codex:current" {
-		t.Fatalf("image = %q, want the freshly seeded codex:current", config.Image)
+	// The new project was seeded against the current bundle, and copying the
+	// source's configured state must not drag its stale bundle back in.
+	if config.Bundle != "codex:current" {
+		t.Fatalf("bundle = %q, want the freshly seeded codex:current", config.Bundle)
 	}
 	if project.DefaultHarnessConfigID != config.ID {
 		t.Fatalf("default harness config = %q, want %q", project.DefaultHarnessConfigID, config.ID)

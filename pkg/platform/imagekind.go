@@ -6,12 +6,12 @@ import (
 	"strings"
 )
 
-// ImageKind is what a sandbox's image is, and so what a pool must run to start
-// it (ADR 26-10-09-106 §4): an OCI image, which a Docker pool runs as a
-// container, or a VM image for one driver, which a `vm` pool on that driver
-// runs as a machine. It is a placement key beside the platform, because
-// the platform alone does not tell them apart: a boxd pool and an amd64 Docker
-// pool both host linux/amd64.
+// ImageKind is the kind of image a pool runs (ADR 26-10-09-106 §4): OCI
+// images, which a Docker pool runs as containers, or VM images for one driver,
+// which a `vm` pool on that driver runs as machines. The platform alone does
+// not tell them apart: a boxd pool and an amd64 Docker pool both host
+// linux/amd64. A sandbox is whatever kind of box its pool runs; a harness names
+// no kind (ADR 26-11-01-122).
 //
 // It is spelled `oci` or `vm/<driver>` (ADR 26-10-15-629). The zero value is
 // no kind: one that has not been declared.
@@ -30,8 +30,8 @@ const (
 	FormatVM  = "vm"
 )
 
-// OCI is the kind of every image a Docker pool runs, and of every harness and
-// pool from before image kinds were recorded.
+// OCI is the kind of every image a Docker pool runs, and of every pool from
+// before image kinds were recorded.
 var OCI = ImageKind{Format: FormatOCI}
 
 // VM is the kind of a VM image built for driver.
@@ -126,37 +126,25 @@ func (k *ImageKind) Scan(src any) error {
 	}
 }
 
-// KindMismatchError is a sandbox refused by a pool that runs another kind of
-// image. The kinds are the reason, and the message says them both.
-type KindMismatchError struct {
-	Image ImageKind
-	Pool  ImageKind
+// NotOCIError is a pool refused a container's tree because it runs another
+// kind of image: a tree is a container discobox's, and a machine is not made
+// from one (ADR 26-10-09-106 defers it). The pool's kind is the reason.
+type NotOCIError struct {
+	Pool ImageKind
 }
 
-func (e *KindMismatchError) Error() string {
-	return fmt.Sprintf("its image is %s, and the pool runs %s", describeImage(e.Image), describePool(e.Pool))
+func (e *NotOCIError) Error() string {
+	return fmt.Sprintf("the pool runs %s, and a container discobox's tree runs only on a pool of OCI images", describePool(e.Pool))
 }
 
-// PlaceKind reports whether a sandbox whose image is of kind image may be
-// placed on a pool that runs pool: nil when they are the same kind, a
-// *KindMismatchError when they are not. A kind that was never declared matches
-// nothing, because there is nothing to say it would run.
-func PlaceKind(image, pool ImageKind) error {
-	if image.IsZero() || image != pool {
-		return &KindMismatchError{Image: image, Pool: pool}
+// TakesContainerTree reports whether a pool that runs k takes a container
+// discobox's tree: nil for OCI, a *NotOCIError otherwise. A kind that was never
+// declared takes nothing, because nothing says the pool would run it.
+func (k ImageKind) TakesContainerTree() error {
+	if k != OCI {
+		return &NotOCIError{Pool: k}
 	}
 	return nil
-}
-
-func describeImage(k ImageKind) string {
-	switch {
-	case k.IsZero():
-		return "of no declared kind"
-	case k.Format == FormatOCI:
-		return "an OCI image"
-	default:
-		return fmt.Sprintf("a VM image for the %s driver", k.Driver)
-	}
 }
 
 func describePool(k ImageKind) string {

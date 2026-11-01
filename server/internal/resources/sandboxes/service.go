@@ -272,19 +272,13 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err != nil {
 		return nil, apperrors.NotFound(err, "harness config not found")
 	}
-	// The sandbox runs on its pool's platform, which a manifest file's
-	// template must run on, in config mode as much as in run mode (ADR 0145
-	// §1).
-	sandboxPlatform, err := platformOnPool(harnessConfig, pool)
-	if err != nil {
-		return nil, err
-	}
+	// The sandbox runs on its pool's platform and is the kind of box its pool
+	// runs: a harness is a bundle, whose steps select the platform they run
+	// on, and rules no pool out (ADR 26-10-16-423 §2, ADR 26-11-01-122). A
+	// pool whose agent has not declared its platform yet answers none, and
+	// the sandbox takes it when it is placed (store.SchedulablePoolForSandbox).
+	sandboxPlatform := pool.Platform
 	if err := validateSourceWorkingDirectory(source, sandboxPlatform); err != nil {
-		return nil, err
-	}
-	// And the pool must run the kind of box its harness runs on
-	// (ADR 26-10-09-106 §4).
-	if err := refuseOtherImageKind(harnessConfig, pool); err != nil {
 		return nil, err
 	}
 	// A harness is only selectable once its configure flow has succeeded.
@@ -332,8 +326,6 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			ModelServiceTier:      services.OptStringPtr(config.ModelServiceTier),
 			ModelReasoningLevel:   services.OptStringPtr(config.ModelReasoningLevel),
 			Prompt:                config.Prompt,
-			Image:                 harnessPins.Image,
-			ImageDigest:           harnessPins.ImageDigest,
 			HarnessManifestDigest: harnessPins.ManifestDigest,
 			Env:                   map[string]string(config.Env.Or(nil)),
 			Source:                source,
@@ -428,8 +420,8 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 }
 
 // createHarnessPins is what a sandbox created on config is pinned to: its
-// bundle, or its manifest file (services.HarnessConfigPins). A config with
-// neither was registered before bundles, and one whose bundle has no digest
+// bundle (services.HarnessConfigPins). A config with none was registered
+// before bundles, and one whose bundle has no digest
 // is a development bundle no pool has built yet: no box can apply either.
 func createHarnessPins(config *model.HarnessConfig) (services.HarnessPins, error) {
 	pins, ok := services.HarnessConfigPins(config)
@@ -443,27 +435,6 @@ func createHarnessPins(config *model.HarnessConfig) (services.HarnessPins, error
 		return services.HarnessPins{}, apperrors.NewStatusError(http.StatusConflict,
 			fmt.Sprintf("harness %q was registered before bundles, and no harness runs as an image any more: register its bundle with `discobox admin harness update %s --bundle <reference>`", config.Slug, config.Slug))
 	}
-}
-
-// platformOnPool is the platform a sandbox on harness runs on when placed on
-// pool: the pool's, which the harness's image must be published for (ADR 0145
-// §1). A multi-platform release image runs on a pool of any platform it
-// publishes; a single-platform development build is refused elsewhere, with a
-// 409 that says what it was published for.
-//
-// A pool whose agent has not yet declared what it hosts is an ordinary target
-// for a create — one still coming up — and answers no platform: the sandbox
-// takes its pool's when it is placed (store.SchedulablePoolForSandbox), which
-// makes the same check then.
-func platformOnPool(harness *model.HarnessConfig, pool *model.Pool) (platform.Platform, error) {
-	if pool.Platform.IsZero() {
-		return platform.Platform{}, nil
-	}
-	if err := harness.Platforms.Publishes(pool.Platform); err != nil {
-		return platform.Platform{}, apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("harness %q cannot run on pool %q: %v", harness.Slug, pool.Name, err))
-	}
-	return pool.Platform, nil
 }
 
 // refuseOtherPlatform refuses a sandbox of sandboxPlatform on a pool that
@@ -481,25 +452,6 @@ func refuseOtherPlatform(sandboxPlatform platform.Platform, pool *model.Pool) er
 	}
 	if err := platform.Place(sandboxPlatform, pool.Platform); err != nil {
 		return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("pool %q: %v", pool.Name, err))
-	}
-	return nil
-}
-
-// refuseOtherImageKind refuses a sandbox on harness when pool runs another kind
-// of image, with the kinds as the reason (ADR 26-10-09-106 §4): a VM
-// harness on a Docker pool of the same platform, or an OCI harness on a
-// vm pool. It is the placement check as create and import make it,
-// before anything is written. A pool whose agent has not declared what it
-// runs is a pool still coming up, and not refused here: the provider's
-// placement (store.SchedulablePoolForSandbox) checks the kind once the agent
-// has said.
-func refuseOtherImageKind(harness *model.HarnessConfig, pool *model.Pool) error {
-	if pool.ImageKind.IsZero() {
-		return nil
-	}
-	if err := platform.PlaceKind(harness.ImageKind, pool.ImageKind); err != nil {
-		return apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("harness %q cannot run on pool %q: %v", harness.Slug, pool.Name, err))
 	}
 	return nil
 }
@@ -1380,7 +1332,6 @@ func (s *Service) upgradeStoppedSandboxes(ctx context.Context, projectID, harnes
 		}
 		slog.InfoContext(ctx, "upgraded stopped sandbox to its current pins",
 			"projectId", projectID, "sandboxId", sb.ID, "harnessConfigId", configID,
-			"previousImageDigest", sb.ImageDigest, "imageDigest", repin.Harness.ImageDigest,
 			"previousBundleDigest", sb.HarnessPin().Digest, "bundleDigest", repin.Harness.Bundle.Digest,
 			"previousPlatformBundleDigest", sb.PlatformPin().Digest, "platformBundleDigest", repin.Platform.Digest,
 			"previousAgentBundleDigest", sb.AgentBundleDigest, "agentBundleDigest", repin.Agent.Digest,

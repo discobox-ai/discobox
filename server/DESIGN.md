@@ -833,9 +833,8 @@ dirty set; there is no job queue.
 
 A sandbox pins what it applies (ADR 26-10-16-423 §7): its harness config's
 bundle, `Bundle`/`BundleDigest`, and the platform the release's reference
-resolves to, `PlatformBundle`/`PlatformBundleDigest`, each by digest — or, on a
-manifest file's template with no image, that file as `Image`/`ImageDigest` —
-and the manifest its container is built with, `HarnessManifestDigest`: the
+resolves to, `PlatformBundle`/`PlatformBundleDigest`, each by digest, and the
+manifest its container is built with, `HarnessManifestDigest`: the
 config's `ManifestDigest`, of the bundle's labels composed on the platform's
 layer, which a platform-layer edit moves and no bundle digest does. No
 sandbox pins an image of its own: every container is its provider's sandbox

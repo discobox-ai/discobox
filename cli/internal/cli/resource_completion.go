@@ -208,21 +208,11 @@ func (a *App) listHarnessConfigNameCompletions(ctx context.Context, client *apic
 	if err != nil {
 		return nil, err
 	}
-	// What `--harness` completes to is what a discobox can be created on, so a
-	// harness no pool can run is not offered (ADR 0145 §1, ADR 26-10-09-106
-	// §4).
-	placements, err := a.listPoolPlacements(ctx, client, projectID)
-	if err != nil {
-		return nil, err
-	}
 	harnesses := sortedByRecency(body.GetHarnessConfigs(), func(harness apimodel.HarnessConfig) time.Time {
 		return recencyTime(harness.UpdatedAt, harness.CreatedAt)
 	})
 	completions := make([]string, 0, len(harnesses))
 	for _, harness := range harnesses {
-		if !placements.run(harness) {
-			continue
-		}
 		completions = append(completions, completionItem(harness.Name, completionDescription(harness.ID, strings.Join(harness.RunCommand, " "))))
 	}
 	return completions, nil

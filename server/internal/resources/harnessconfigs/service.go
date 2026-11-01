@@ -38,13 +38,12 @@ type Service struct {
 	dirtier              Dirtier
 }
 
-// NewService builds the service. overlayDir is the one directory a file://
-// manifest reference may name a file in; empty refuses every such reference.
-func NewService(store *store.Store, harnesses harnessdefs.References, requireBuiltInImages bool, overlayDir string) *Service {
+// NewService builds the service.
+func NewService(store *store.Store, harnesses harnessdefs.References, requireBuiltInImages bool) *Service {
 	verified := &verifiedBundles{}
 	return &Service{
 		store:                store,
-		inspector:            defaultImageInspector{overlayDir: overlayDir, verified: verified},
+		inspector:            defaultImageInspector{verified: verified},
 		verified:             verified,
 		harnesses:            harnesses,
 		requireBuiltInImages: requireBuiltInImages,
@@ -76,10 +75,9 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	if err != nil {
 		return nil, apperrors.NotFound(err, "project not found")
 	}
-	// A harness is its bundle, or, for a template with no image, its manifest
-	// file (ADR 26-10-16-423 §2).
-	bundle, manifestFile := strings.TrimSpace(input.Bundle.Or("")), strings.TrimSpace(input.Image.Or(""))
-	if bundle == "" && manifestFile == "" {
+	// A harness is its bundle (ADR 26-10-16-423 §2, ADR 26-11-01-122).
+	bundle := strings.TrimSpace(input.Bundle.Or(""))
+	if bundle == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness bundle is required")
 	}
 	// The labels are authoritative. Inspect them once here to snapshot the
@@ -87,7 +85,7 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	if s.inspector == nil {
 		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "bundle inspection is unavailable")
 	}
-	inspected, err := s.resolveHarness(ctx, s.platformBundle(), bundle, manifestFile)
+	inspected, err := s.resolveHarness(ctx, s.platformBundle(), bundle)
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
@@ -142,8 +140,6 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 		Name:         name,
 		Bundle:       bundle,
 		BundleDigest: inspected.BundleDigest,
-		Image:        manifestFile,
-		ImageDigest:  inspected.Digest,
 	}
 	snapshotImageMetadata(config, inspected)
 	if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
@@ -249,40 +245,32 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 }
 
 // reinspect inspects bundle, the one config has or the one being registered
-// for it, or config's manifest file.
+// for it.
 func (s *Service) reinspect(ctx context.Context, config *model.HarnessConfig, bundle string) (imageMetadata, error) {
 	if s.inspector == nil {
 		return imageMetadata{}, apperrors.NewStatusError(http.StatusServiceUnavailable, "bundle inspection is unavailable")
 	}
-	bundle, manifestFile := strings.TrimSpace(bundle), strings.TrimSpace(config.Image)
+	bundle = strings.TrimSpace(bundle)
 	// A harness registered before bundles has a manifest its image's labels
 	// gave it, and no image any more (internal/database): it keeps that
 	// manifest until a bundle is registered for it, and a refresh has nothing
 	// to read it again from.
-	if bundle == "" && manifestFile == "" {
+	if bundle == "" {
 		return imageMetadata{}, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("harness config %s was registered before bundles: register its bundle to refresh it", config.Slug))
 	}
-	if bundle != "" {
-		manifestFile = ""
-	}
-	metadata, err := s.resolveHarness(ctx, s.platformBundle(), bundle, manifestFile)
+	metadata, err := s.resolveHarness(ctx, s.platformBundle(), bundle)
 	if err != nil {
 		return imageMetadata{}, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
 	return metadata, nil
 }
 
-// resnapshot writes what reinspect read of config's bundle or manifest file
-// onto it.
+// resnapshot writes what reinspect read of config's bundle onto it.
 func (s *Service) resnapshot(ctx context.Context, config *model.HarnessConfig, bundle string, metadata imageMetadata) (*model.HarnessConfig, error) {
 	bundle = strings.TrimSpace(bundle)
 	previous := configPins(config)
 	previousHosts := config.ImageEgressHosts
 	config.Bundle, config.BundleDigest = bundle, metadata.BundleDigest
-	if bundle != "" {
-		config.Image = ""
-	}
-	config.ImageDigest = metadata.Digest
 	snapshotImageMetadata(config, metadata)
 	// The snapshot and the routes it declares onto configured secrets commit
 	// together, so a failed refresh leaves the old digest for a retry to move.
@@ -298,8 +286,8 @@ func (s *Service) resnapshot(ctx context.Context, config *model.HarnessConfig, b
 		return nil, err
 	}
 	slog.InfoContext(ctx, "refreshed harness config",
-		"harnessConfigId", config.ID, "bundle", bundle, "manifestFile", config.Image,
-		"previousBundleDigest", previous.bundle, "bundleDigest", metadata.BundleDigest, "manifestFileDigest", metadata.Digest)
+		"harnessConfigId", config.ID, "bundle", bundle,
+		"previousBundleDigest", previous.bundle, "bundleDigest", metadata.BundleDigest)
 	s.applyResolvedPins(ctx, config.ProjectID, config.ID, previous, configPins(config))
 	stored, err := s.store.GetHarnessConfig(ctx, config.ProjectID, config.ID)
 	if err != nil {
@@ -430,7 +418,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		if existing != nil && !existing.BuiltIn {
 			return fmt.Errorf("built-in harness %s conflicts with a user-created harness config", seed.Slug)
 		}
-		metadata, inspectErr := s.resolveHarness(ctx, platformBundle, bundle, "")
+		metadata, inspectErr := s.resolveHarness(ctx, platformBundle, bundle)
 		if inspectErr != nil {
 			if s.requireBuiltInImages {
 				return fmt.Errorf("inspect release harness %s (bundle %s): %w", seed.Slug, bundle, inspectErr)
@@ -439,17 +427,12 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				"slug", seed.Slug, "bundle", bundle, "error", inspectErr)
 			continue
 		}
-		// The platforms, the image kind and a runnable image left from
-		// before bundles are compared too, so a built-in recorded with them is
-		// rewritten as the bundle it is now. The secret declarations are
-		// compared for the same reason: one snapshotted by a server that did
-		// not read a field of them yet (a rejection scope, ADR 26-10-13-595)
-		// carries the digest and not the field, and would otherwise be skipped
-		// for good.
-		if existing != nil && existing.Image == "" && existing.ImageDigest == "" &&
-			existing.Bundle == bundle && existing.BundleDigest == metadata.BundleDigest &&
+		// The secret declarations are compared too: one snapshotted by a
+		// server that did not read a field of them yet (a rejection scope, ADR
+		// 26-10-13-595) carries the digest and not the field, and would
+		// otherwise be skipped for good.
+		if existing != nil && existing.Bundle == bundle && existing.BundleDigest == metadata.BundleDigest &&
 			existing.ManifestDigest == manifestDigest(metadata) &&
-			slices.Equal(existing.Platforms, metadata.Platforms) && existing.ImageKind == metadata.ImageKind &&
 			sameSecretDeclarations(existing.Secrets, declaredSecrets(metadata.Harness)) {
 			continue
 		}
@@ -475,7 +458,6 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		previous := configPins(existing)
 		previousHosts := existing.ImageEgressHosts
 		existing.Bundle, existing.BundleDigest = bundle, metadata.BundleDigest
-		existing.Image, existing.ImageDigest = "", ""
 		snapshotImageMetadata(existing, metadata)
 		// As at refresh: the snapshot and its routes commit together, so a
 		// seed that fails leaves the config for the next one to find unequal.
@@ -537,7 +519,7 @@ func (s *Service) EnsureHarnessAvailable(ctx context.Context, projectID string) 
 		case s.inspector == nil:
 			reasons = append(reasons, fmt.Sprintf("%s (%s): bundle inspection is unavailable", seed.Slug, bundle))
 		default:
-			if _, inspectErr := s.resolveHarness(ctx, platformBundle, bundle, ""); inspectErr != nil {
+			if _, inspectErr := s.resolveHarness(ctx, platformBundle, bundle); inspectErr != nil {
 				reasons = append(reasons, fmt.Sprintf("%s (%s): %v", seed.Slug, bundle, inspectErr))
 				continue
 			}
@@ -584,27 +566,26 @@ func (s *Service) markEgressChangedTx(ctx context.Context, txStore *store.Store,
 	return s.sandboxes.MarkProxyPolicyChangedTx(ctx, txStore, txDB, config.ProjectID, "", config.ID)
 }
 
-// pins is what a harness config pins a sandbox to: its bundle, or its
-// manifest file, and the manifest composed from it.
+// pins is what a harness config pins a sandbox to: its bundle, and the
+// manifest composed from it.
 type pins struct {
-	bundle       string
-	manifestFile string
-	manifest     string
+	bundle   string
+	manifest string
 }
 
 func configPins(config *model.HarnessConfig) pins {
-	return pins{bundle: config.BundleDigest, manifestFile: config.ImageDigest, manifest: config.ManifestDigest}
+	return pins{bundle: config.BundleDigest, manifest: config.ManifestDigest}
 }
 
 func (p pins) empty() bool {
-	return strings.TrimSpace(p.bundle) == "" && strings.TrimSpace(p.manifestFile) == ""
+	return strings.TrimSpace(p.bundle) == ""
 }
 
 // applyResolvedPins is the single place a harness config's resolved bundle
-// or manifest file reaches its sandboxes (ADR 0082 §1, ADR 26-10-16-423 §7).
+// reaches its sandboxes (ADR 0082 §1, ADR 26-10-16-423 §7).
 //
 // The rule is stated on the fields rather than on a list of callers: wherever
-// BundleDigest or ImageDigest is written to a value different from the one it
+// BundleDigest or ManifestDigest is written to a value different from the one it
 // replaced, that config's eligible stopped sandboxes are re-pinned onto it. A
 // built-in reseeded at startup and a custom harness re-pulled by its owner are
 // the same event to a sandbox running it, so they go through the same
@@ -626,8 +607,7 @@ func (s *Service) applyResolvedPins(ctx context.Context, projectID, configID str
 	if err := s.sandboxes.UpgradeHarnessConfigSandboxes(ctx, projectID, configID); err != nil {
 		slog.WarnContext(ctx, "harness bundle resolved but stopped sandboxes were not upgraded",
 			"harnessConfigId", configID, "previousBundleDigest", previous.bundle,
-			"bundleDigest", resolved.bundle, "previousManifestFileDigest", previous.manifestFile,
-			"manifestFileDigest", resolved.manifestFile, "previousManifestDigest", previous.manifest,
+			"bundleDigest", resolved.bundle, "previousManifestDigest", previous.manifest,
 			"manifestDigest", resolved.manifest, "error", err)
 	}
 }
@@ -639,22 +619,11 @@ func (s *Service) seeds() []harnessdefs.Seed {
 	return harnessdefs.Seeds(s.harnesses, s.requireBuiltInImages)
 }
 
-// resolveHarness inspects what a harness config is snapshotted from: a
-// harness bundle, composed on the platform bundle (ADR 26-10-16-423 §2); or a
-// manifest file, which is the whole manifest of a template with no image. The
-// result is the bundle's manifest and digest, or the file's with its digest,
-// platforms and kind.
-func (s *Service) resolveHarness(ctx context.Context, platformBundle *platformBundle, bundleRef, manifestFile string) (imageMetadata, error) {
-	bundleRef, manifestFile = strings.TrimSpace(bundleRef), strings.TrimSpace(manifestFile)
-	if manifestFile != "" {
-		if !isManifestFile(manifestFile) {
-			return imageMetadata{}, fmt.Errorf("harness image %q is no manifest file: a harness is registered by its bundle, and no harness is an image", manifestFile)
-		}
-		if bundleRef != "" {
-			return imageMetadata{}, fmt.Errorf("harness %q is a manifest file, which is a whole manifest and takes no bundle", manifestFile)
-		}
-		return s.inspector.InspectManifestFile(ctx, manifestFile)
-	}
+// resolveHarness inspects what a harness config is snapshotted from: its
+// harness bundle, composed on the platform bundle (ADR 26-10-16-423 §2). The
+// result is the bundle's manifest and digest.
+func (s *Service) resolveHarness(ctx context.Context, platformBundle *platformBundle, bundleRef string) (imageMetadata, error) {
+	bundleRef = strings.TrimSpace(bundleRef)
 	if bundleRef == "" {
 		return imageMetadata{}, fmt.Errorf("harness bundle is required: a harness's manifest is read from its bundle")
 	}
@@ -679,7 +648,7 @@ func (s *Service) resolveHarness(ctx context.Context, platformBundle *platformBu
 
 // platformBundle is the platform bundle this server's release pins, inspected
 // once by whatever resolves several harnesses on it, and only when one needs
-// it: a manifest file is composed on nothing.
+// it.
 type platformBundle struct {
 	inspector imageInspector
 	ref       string
@@ -755,11 +724,8 @@ func conventionCommands(slug string, image harness.Image) (runCommand, relaunchC
 // wants exactly this set on exactly one config, and a snapshot that grows a
 // field should not have to grow a return value at three call sites to reach
 // them. Identity — id, slug, bundle, digests, Configured — is the caller's;
-// this is only what the labels say, the platforms a manifest file's template
-// runs on, and the kind of box the harness runs on.
+// this is only what the labels say.
 func snapshotImageMetadata(config *model.HarnessConfig, inspected imageMetadata) {
-	config.Platforms = inspected.Platforms
-	config.ImageKind = inspected.ImageKind
 	config.ManifestDigest = manifestDigest(inspected)
 	metadata := inspected.ImageMetadata
 	image := metadata.Harness

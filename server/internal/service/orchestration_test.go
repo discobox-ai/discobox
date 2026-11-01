@@ -24,6 +24,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/service"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 	"github.com/discobox-ai/x/id"
 	"gorm.io/gorm"
 )
@@ -266,11 +267,11 @@ func TestCreateSandboxPinsDefaultHarnessConfig(t *testing.T) {
 	svc, _, st, projectID := newSandboxTestService(t, nil)
 
 	harness := &model.HarnessConfig{
-		ProjectID:   projectID,
-		Slug:        "codex",
-		Name:        "Codex CLI",
-		Image:       "file:///etc/discobox/harnesses/codex.json",
-		ImageDigest: testManifestDigest,
+		ProjectID:    projectID,
+		Slug:         "codex",
+		Name:         "Codex CLI",
+		Bundle:       "example.invalid/discobox-harness-codex@" + testBundleDigest,
+		BundleDigest: testBundleDigest,
 		// Only configured harnesses are selectable, so a sandbox can pin this one.
 		Configured: true,
 		RunCommand: []string{
@@ -330,7 +331,7 @@ func TestCreateSandboxRequiresResolvedPool(t *testing.T) {
 
 	appStore := store.New(db.Write, db.Read)
 	engine := newTestReconcileEngine(t, db.Write)
-	svc := service.New(appStore, engine, service.Options{})
+	svc := service.New(appStore, engine, testServiceOptions())
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
 	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -376,7 +377,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 
 	appStore := store.New(db.Write, db.Read)
 	engine := newTestReconcileEngine(t, db.Write)
-	svc := service.New(appStore, engine, service.Options{})
+	svc := service.New(appStore, engine, testServiceOptions())
 
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
 	if err != nil {
@@ -481,14 +482,27 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 // name, written straight to the store.
 //
 // SeedBuiltIns cannot supply it here: it composes each harness's manifest on
-// the server's platform bundle, which these tests' server names none of, and
-// a bundle pins a sandbox only beside a platform. What these tests need from
-// a harness config is that it exists, is configured, answers to "shell", and
-// pins a sandbox to something: a manifest file, a template with no image,
-// does that without a platform. ADR 0066 §7 names constructing the config
-// directly as the end state this replaces the label-only stand-in images with.
-// testManifestDigest stands in for a manifest file's content digest.
-var testManifestDigest = "sha256:" + strings.Repeat("ab", 32)
+// the server's platform bundle, which these tests' server cannot inspect.
+// What these tests need from a harness config is that it exists, is
+// configured, answers to "shell", and pins a sandbox to a bundle, which the
+// release's platform and agent, pinned by digest (testServiceOptions), go
+// beside. ADR 0066 §7 names constructing the config directly as the end state
+// this replaces the label-only stand-in images with.
+var (
+	testBundleDigest         = "sha256:" + strings.Repeat("ab", 32)
+	testPlatformBundleDigest = "sha256:" + strings.Repeat("cd", 32)
+	testAgentBundleDigest    = "sha256:" + strings.Repeat("ef", 32)
+)
+
+// testServiceOptions names a release whose platform and agent bundles are
+// pinned by digest, which resolve with no registry, so a sandbox on a bundle
+// can be created.
+func testServiceOptions() service.Options {
+	return service.Options{
+		Harnesses:      harnessdefs.References{PlatformBundle: "example.invalid/discobox-platform@" + testPlatformBundleDigest},
+		ServerDefaults: dockerworker.ServerDefaults{AgentBundle: "example.invalid/discobox-agent@" + testAgentBundleDigest},
+	}
+}
 
 func seedTestHarnessConfig(ctx context.Context, t *testing.T, appStore *store.Store, projectID string) {
 	t.Helper()
@@ -504,15 +518,14 @@ func seedTestHarnessConfig(ctx context.Context, t *testing.T, appStore *store.St
 		return
 	}
 	config := &model.HarnessConfig{
-		ProjectID:  projectID,
-		Slug:       harnessdefs.ShellSlug,
-		Name:       "Shell",
-		BuiltIn:    true,
-		Configured: true,
-		Image:      "file:///etc/discobox/harnesses/shell.json",
-		// A manifest file is pinned by its digest, as a bundle is.
-		ImageDigest: testManifestDigest,
-		RunCommand:  []string{"sh"},
+		ProjectID:    projectID,
+		Slug:         harnessdefs.ShellSlug,
+		Name:         "Shell",
+		BuiltIn:      true,
+		Configured:   true,
+		Bundle:       "example.invalid/discobox-harness-shell@" + testBundleDigest,
+		BundleDigest: testBundleDigest,
+		RunCommand:   []string{"sh"},
 	}
 	if err := appStore.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("seed harness config: %v", err)
@@ -543,7 +556,7 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 	}
 	_ = notifyContext
 	engine := newTestReconcileEngine(t, db.Write)
-	svc := service.New(appStore, engine, service.Options{})
+	svc := service.New(appStore, engine, testServiceOptions())
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
 	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)

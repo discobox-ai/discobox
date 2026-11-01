@@ -59,7 +59,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	sourceURL := mustParseURL(t, "https://example.com/repo.git")
 	poolID := createPoolForInstance(ctx, t, svc, projectID, providerInstance.ID)
 	sb, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
-		HarnessName: serverapi.NewOptString(manifestFileHarnessConfig(ctx, t, st, projectID)),
+		HarnessName: serverapi.NewOptString(bundleHarnessConfig(ctx, t, st, projectID)),
 		PoolId:      serverapi.NewOptString(poolID),
 		Config: serverapi.SandboxCreateConfig{
 			Name: "sandbox-1",
@@ -174,7 +174,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 func TestCreateSandboxAcceptsUnknownPool(t *testing.T) {
 	ctx := context.Background()
 	svc, _, st, projectID := newSandboxTestService(t, nil)
-	harnessSlug := manifestFileHarnessConfig(ctx, t, st, projectID)
+	harnessSlug := bundleHarnessConfig(ctx, t, st, projectID)
 	svc.RegisterSandboxProvider("recording", &recordingSandboxProvider{})
 	instance, err := svc.CreateSandboxProviderInstance(ctx, projectID, services.CreateSandboxProviderInstanceBody{Type: "recording", Name: "recording"})
 	if err != nil {
@@ -682,24 +682,22 @@ func mustParseURL(t *testing.T, value string) url.URL {
 	return *parsed
 }
 
-// manifestFileHarnessConfig replaces whatever SeedBuiltIns managed to create
-// with one configured harness whose manifest is a file, a template with no
-// image, and returns its slug.
+// bundleHarnessConfig replaces whatever SeedBuiltIns managed to create with
+// one configured harness on a bundle pinned by digest, and returns its slug.
 //
 // Seeding inspects real bundles, so which built-ins exist depends on what this
-// machine happens to hold. A manifest file pins a sandbox without a platform
-// bundle, which these tests' server names none of, and a sandbox must resolve
-// a harness config (ADR 0048) that pins it to something.
-func manifestFileHarnessConfig(ctx context.Context, t *testing.T, st *store.Store, projectID string) string {
+// machine happens to hold, and a sandbox must resolve a harness config (ADR
+// 0048) that pins it to a bundle, beside the release's (testServiceOptions).
+func bundleHarnessConfig(ctx context.Context, t *testing.T, st *store.Store, projectID string) string {
 	t.Helper()
 	clearSeededHarnessConfigs(ctx, t, st, projectID)
 	config := &model.HarnessConfig{
-		ProjectID: projectID, Slug: "imageless", Name: "Imageless", Configured: true,
-		Image:       "file:///etc/discobox/harnesses/imageless.json",
-		ImageDigest: testManifestDigest,
+		ProjectID: projectID, Slug: "bundled", Name: "Bundled", Configured: true,
+		Bundle:       "example.invalid/discobox-harness-bundled@" + testBundleDigest,
+		BundleDigest: testBundleDigest,
 	}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
-		t.Fatalf("create manifest-file harness config: %v", err)
+		t.Fatalf("create bundle harness config: %v", err)
 	}
 	return config.Slug
 }

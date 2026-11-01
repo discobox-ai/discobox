@@ -3,16 +3,13 @@ package harnessconfigs
 import (
 	"archive/tar"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
+	"maps"
 	"os"
 	"path"
-	"path/filepath"
-	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -31,20 +28,12 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+// imageMetadata is what a harness bundle is read as: the digest a box on it
+// applies it by (ADR 26-10-16-423 §2), and the manifest its labels compose on
+// the platform's. It names no platform and no image kind, which are the
+// pool's (ADR 26-11-01-122).
 type imageMetadata struct {
-	// Digest is a manifest file's, which a sandbox on its template pins, and
-	// BundleDigest a bundle's, which a box on it applies (ADR 26-10-16-423 §2).
-	// One of the two is set: a harness is a bundle or a manifest file.
-	Digest       string
 	BundleDigest string
-	// Platforms is what a manifest file's template runs on (ADR 0145 §1): the
-	// one platform it declares. Empty for a bundle, whose steps select the
-	// platform they run on, which rules no pool out.
-	Platforms platform.Set
-	// ImageMetadata is the resolved manifest. Its ImageKind is the kind of box
-	// the harness runs on (ADR 26-10-09-106 §4), always set once inspected: OCI
-	// for a bundle, which a Docker pool's sandbox base image applies, or the
-	// VM kind a manifest file declares.
 	harness.ImageMetadata
 }
 
@@ -62,17 +51,12 @@ type bundleInspection struct {
 // 26-10-16-423 §2). admit judges its labels before any layer is read, so a
 // reference that is not the bundle it is meant to be — an image of several GB
 // named as a harness's bundle — is refused for what its labels say, not after
-// its layers are saved and read. InspectManifestFile reads a manifest file,
-// whose layers are the whole manifest of a template with no image.
+// its layers are saved and read.
 type imageInspector interface {
 	InspectBundle(ctx context.Context, bundleRef string, admit func(labels map[string]string) error) (bundleInspection, error)
-	InspectManifestFile(ctx context.Context, ref string) (imageMetadata, error)
 }
 
 type defaultImageInspector struct {
-	// overlayDir is the one directory a file:// manifest reference may name
-	// a file in (inspectManifestFile).
-	overlayDir string
 	// verified is the bundles whose layers were read and found to carry no
 	// whiteout, by digest, so each is read once rather than on every seed.
 	// Nil reads every time.
@@ -110,21 +94,7 @@ func (v *verifiedBundles) add(digest string) {
 	v.digests[digest] = true
 }
 
-// InspectManifestFile reads a template with no image — a non-Linux one,
-// assembled from a vendor's base and Discobox's overlay — named by its
-// overlay's manifest file (ADR 0145 §3), which is never a reference a daemon
-// or a registry knows.
-func (d defaultImageInspector) InspectManifestFile(_ context.Context, ref string) (imageMetadata, error) {
-	if !isManifestFile(ref) {
-		return imageMetadata{}, fmt.Errorf("%q names no manifest file", ref)
-	}
-	return inspectManifestFile(ref, d.overlayDir)
-}
-
 func (d defaultImageInspector) InspectBundle(ctx context.Context, bundleRef string, admit func(labels map[string]string) error) (bundleInspection, error) {
-	if isManifestFile(bundleRef) {
-		return bundleInspection{}, fmt.Errorf("bundle %q names a manifest file: a bundle is an OCI image", bundleRef)
-	}
 	// A locally present bundle is authoritative once found: its metadata is
 	// what was built here, and an error reading it is surfaced rather than
 	// masked by a doomed registry fetch of the same (often :local) reference.
@@ -148,7 +118,7 @@ func (d defaultImageInspector) InspectBundle(ctx context.Context, bundleRef stri
 		return bundleInspection{}, fmt.Errorf("inspect bundle %q: %w", bundleRef, registryauth.Explain(ref, err))
 	}
 	// The platform bundle is an index; a harness bundle is one manifest.
-	image, _, err := publishedImage(descriptor)
+	image, err := publishedImage(descriptor)
 	if err != nil {
 		return bundleInspection{}, fmt.Errorf("resolve bundle %q: %w", bundleRef, err)
 	}
@@ -242,32 +212,27 @@ func refuseLayerWhiteouts(layer v1.Layer) error {
 const whiteoutPrefix = ".wh."
 
 // publishedImage resolves the image a bundle's labels and layers are read
-// from, and, for a multi-platform one — the platform bundle — every platform
-// its index publishes. They are read from the platform a pool on this machine
-// hosts when the index lists it, and from the first platform it lists
-// otherwise: a bundle published only for another architecture still declares
-// the same manifest.
-//
-// platforms is nil for a single-platform image, whose config says what it is.
-func publishedImage(descriptor *remote.Descriptor) (v1.Image, platform.Set, error) {
+// from. For a multi-platform one — the platform bundle — they are read from the
+// platform a pool on this machine hosts when the index lists it, and from the
+// first platform it lists otherwise, by os/arch: a bundle published only for
+// another architecture still declares the same manifest.
+func publishedImage(descriptor *remote.Descriptor) (v1.Image, error) {
 	if !descriptor.MediaType.IsIndex() {
-		image, err := descriptor.Image()
-		return image, nil, err
+		return descriptor.Image()
 	}
 	index, err := descriptor.ImageIndex()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	platforms, digests, err := indexPlatforms(index)
+	digests, err := indexDigests(index)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	if platforms.Contains(platform.Pool()) {
-		image, err := descriptor.Image()
-		return image, platforms, err
+	if _, ok := digests[platform.Pool()]; ok {
+		return descriptor.Image()
 	}
-	image, err := index.Image(digests[platforms[0]])
-	return image, platforms, err
+	listed := slices.SortedFunc(maps.Keys(digests), func(a, b platform.Platform) int { return strings.Compare(a.String(), b.String()) })
+	return index.Image(digests[listed[0]])
 }
 
 // localImageDigest is the digest to pin a locally-inspected bundle to.
@@ -285,30 +250,31 @@ func localImageDigest(inspected dockerclient.ImageInspectResult) string {
 	return inspected.ID
 }
 
-// indexPlatforms is every platform an index publishes, attestation entries
-// aside, and the digest of the first manifest it lists for each.
-func indexPlatforms(index v1.ImageIndex) (platform.Set, map[platform.Platform]v1.Hash, error) {
+// indexDigests is the digest of the first manifest an index lists for each
+// platform it publishes, attestation entries — listed as unknown/unknown — and
+// anything else that is no os/arch pair aside.
+func indexDigests(index v1.ImageIndex) (map[platform.Platform]v1.Hash, error) {
 	manifest, err := index.IndexManifest()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	listed := make([]platform.Platform, 0, len(manifest.Manifests))
 	digests := map[platform.Platform]v1.Hash{}
 	for _, entry := range manifest.Manifests {
 		if entry.Platform == nil {
 			continue
 		}
 		p := platform.Platform{OS: entry.Platform.OS, Arch: entry.Platform.Architecture}
-		listed = append(listed, p)
+		if p.Validate() != nil || p.OS == "unknown" {
+			continue
+		}
 		if _, ok := digests[p]; !ok {
 			digests[p] = entry.Digest
 		}
 	}
-	platforms := platform.NewSet(listed...)
-	if len(platforms) == 0 {
-		return nil, nil, fmt.Errorf("its index lists no platform")
+	if len(digests) == 0 {
+		return nil, fmt.Errorf("its index lists no platform")
 	}
-	return platforms, digests, nil
+	return digests, nil
 }
 
 // inspectLocalBundle inspects bundleRef via the local Docker daemon, which
@@ -381,144 +347,14 @@ func saveLocalImage(ctx context.Context, client *dockerclient.Client, ref string
 	return image, cleanup, nil
 }
 
-// isManifestFile reports whether ref names a manifest file rather than an
-// image: services.ManifestFileScheme and an absolute path on this server's
-// host, inside its overlay directory.
-func isManifestFile(ref string) bool {
-	return strings.HasPrefix(strings.TrimSpace(ref), services.ManifestFileScheme)
-}
-
-// inspectManifestFile reads a manifest file named by a file:// reference: the
-// same layers an image carries in its labels, resolved the same way. Its
-// digest is the file's own, so a changed overlay is a moved pin exactly as a
-// rebuilt tag is (ADR 0145 §2), and its one platform is the one it declares —
-// there is no registry to say what else it is published for.
-//
-// The file must be in overlayDir, where overlays are staged, and it is read
-// through an os.Root on that directory, so neither `..` nor a symlink leaves
-// it. A reference is a harness registration's, which any project member
-// makes over the API: read from anywhere, it would have this server open a
-// path the caller chose and answer with whether it exists and what it holds.
-// A reference outside is refused before anything is opened, and the refusal
-// names only the directory.
-func inspectManifestFile(ref, overlayDir string) (imageMetadata, error) {
-	parsed, err := url.Parse(strings.TrimSpace(ref))
-	if err != nil {
-		return imageMetadata{}, fmt.Errorf("parse manifest file reference %q: %w", ref, err)
-	}
-	if parsed.Host != "" && parsed.Host != "localhost" {
-		return imageMetadata{}, fmt.Errorf("manifest file reference %q names host %q: a manifest file is read from this server's own disk", ref, parsed.Host)
-	}
-	path := filepath.FromSlash(parsed.Path)
-	if runtime.GOOS == "windows" {
-		// file:///C:/x parses to the path /C:/x.
-		path = filepath.FromSlash(strings.TrimPrefix(parsed.Path, "/"))
-	}
-	if !filepath.IsAbs(path) {
-		return imageMetadata{}, fmt.Errorf("manifest file reference %q must name an absolute path", ref)
-	}
-	overlayDir = strings.TrimSpace(overlayDir)
-	if overlayDir == "" {
-		return imageMetadata{}, fmt.Errorf("manifest file reference %q: this server has no overlay directory to read manifest files from", ref)
-	}
-	// A configured directory may be relative, and a reference never is.
-	overlayDir, err = filepath.Abs(overlayDir)
-	if err != nil {
-		return imageMetadata{}, fmt.Errorf("resolve overlay directory: %w", err)
-	}
-	rel, err := filepath.Rel(overlayDir, filepath.Clean(path))
-	if err != nil || rel == "." || !filepath.IsLocal(rel) {
-		return imageMetadata{}, fmt.Errorf("manifest file reference %q is not in the overlay directory %s: a manifest file is read from there and nowhere else", ref, overlayDir)
-	}
-	root, err := os.OpenRoot(overlayDir)
-	if err != nil {
-		return imageMetadata{}, fmt.Errorf("open overlay directory: %w", err)
-	}
-	defer root.Close()
-	data, err := readManifestFile(root, rel)
-	if err != nil {
-		return imageMetadata{}, fmt.Errorf("read manifest file %q: %w", ref, err)
-	}
-	sum := sha256.Sum256(data)
-	return parseManifestFile("sha256:"+hex.EncodeToString(sum[:]), data)
-}
-
-// maxManifestFileBytes bounds what a manifest file read buffers. An overlay
-// also holds the agent's binaries, and a reference to one of those must not
-// have the server read a binary whole into memory, once per request, to learn
-// it is not JSON. A manifest is a few kilobytes.
-const maxManifestFileBytes = 1 << 20
-
-// readManifestFile reads the regular file at rel under root, refusing one
-// larger than maxManifestFileBytes before buffering it.
-func readManifestFile(root *os.Root, rel string) ([]byte, error) {
-	file, err := root.Open(rel)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("not a regular file")
-	}
-	data, err := io.ReadAll(io.LimitReader(file, maxManifestFileBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > maxManifestFileBytes {
-		return nil, fmt.Errorf("larger than %d bytes, which no manifest is", maxManifestFileBytes)
-	}
-	return data, nil
-}
-
-// manifestFileSource is what a manifest file's errors say they are about.
-const manifestFileSource = "manifest file"
-
-// parseManifestFile resolves a manifest file's layers and validates the result
-// for the platform it declares, which a manifest file must: nothing else says
-// what its template runs. It must declare its image kind too, and that kind is
-// a VM image for a driver (ADR 26-10-09-106 §4): an OCI template is an
-// image, and a reference to a file is none. The kind is what keeps a Linux
-// manifest file off a Docker pool of its platform — placement refuses it there
-// with that reason — so a manifest file may be any platform's.
-func parseManifestFile(digest string, data []byte) (imageMetadata, error) {
-	labels, err := harness.ReadManifestFile(data)
-	if err != nil {
-		return imageMetadata{}, err
-	}
-	metadata, hasBase, err := harness.ResolveImageLabels(labels)
-	if err != nil {
-		return imageMetadata{}, err
-	}
-	// The base layer is the sandbox agent's for that platform, shipped in the
-	// same overlay as the agent, and proves lineage just as an image's does.
-	if !hasBase {
-		return imageMetadata{}, fmt.Errorf("manifest file carries no %s%s layer: its template is not built on the sandbox agent's overlay", harness.ImageLayerLabelPrefix, harness.SandboxBaseLayer)
-	}
-	if metadata.Platform.IsZero() {
-		return imageMetadata{}, fmt.Errorf("manifest file declares no platform: a template with no image says which one it runs")
-	}
-	if metadata.ImageKind.Format != platform.FormatVM {
-		return imageMetadata{}, fmt.Errorf("manifest file declares no VM image kind: a template with no image names the VM driver its image is built for, as %s/<driver>", platform.FormatVM)
-	}
-	if err := validateImageMetadata(metadata, metadata.Platform.OS, manifestFileSource); err != nil {
-		return imageMetadata{}, err
-	}
-	return imageMetadata{Digest: digest, Platforms: platform.NewSet(metadata.Platform), ImageMetadata: metadata}, nil
-}
-
 // composeBundleMetadata resolves a harness bundle's labels, composed on the
 // platform bundle's (harness.ComposeBundleLabels), into the one manifest the
 // harness effectively declares. Only the merged result is validated.
 //
 // A bundle is a Linux sandbox's, and names neither a platform nor an image
 // kind: its steps select on the platform they run on, and the kind is the
-// provider's (ADR 26-10-16-423 §2). The kind is OCI here, the kind of box a
-// Docker pool runs it on: its sandbox base image, which the agent applies it
-// to.
+// pool's, whatever box it is applied to (ADR 26-10-16-423 §2, ADR
+// 26-11-01-122).
 func composeBundleMetadata(platformBundle, harnessBundle bundleInspection) (harness.ImageMetadata, error) {
 	metadata, err := harness.ComposeBundleLabels(platformBundle.Labels, harnessBundle.Labels)
 	if err != nil {
@@ -528,22 +364,21 @@ func composeBundleMetadata(platformBundle, harnessBundle bundleInspection) (harn
 		return harness.ImageMetadata{}, fmt.Errorf("%s declares platform %s: a bundle's steps select the platform they run on", bundleLabelSource, metadata.Platform)
 	}
 	if !metadata.ImageKind.IsZero() {
-		return harness.ImageMetadata{}, fmt.Errorf("%s declares image kind %s: a bundle names no image kind, which is the provider's", bundleLabelSource, metadata.ImageKind)
+		return harness.ImageMetadata{}, fmt.Errorf("%s declares image kind %s: a bundle names no image kind, which is its pool's", bundleLabelSource, metadata.ImageKind)
 	}
-	if err := validateImageMetadata(metadata, "linux", bundleLabelSource); err != nil {
+	if err := validateImageMetadata(metadata, bundleLabelSource); err != nil {
 		return harness.ImageMetadata{}, err
 	}
-	metadata.ImageKind = platform.OCI
 	return metadata, nil
 }
 
 const bundleLabelSource = "bundle's " + harness.ImageLabel + " label"
 
-// validateImageMetadata judges a resolved manifest for a sandbox whose
-// platform's OS is goos. source is what an error says it is about: an image's
-// label, or a manifest file.
-func validateImageMetadata(metadata harness.ImageMetadata, goos, source string) error {
-	if err := metadata.ValidateFor(goos); err != nil {
+// validateImageMetadata judges a resolved manifest as a Linux box's: every
+// manifest is a bundle's (ADR 26-11-01-122). source is what an error says it
+// is about.
+func validateImageMetadata(metadata harness.ImageMetadata, source string) error {
+	if err := metadata.ValidateFor("linux"); err != nil {
 		return fmt.Errorf("%s: %w", source, err)
 	}
 	// A manifest is optional in full: an image that installs its agent as
@@ -665,10 +500,6 @@ func newDevImageInspector(bundles *devbundles.Set, fallback imageInspector, veri
 		return fallback
 	}
 	return devImageInspector{bundles: bundles, fallback: fallback, verified: verified}
-}
-
-func (d devImageInspector) InspectManifestFile(ctx context.Context, ref string) (imageMetadata, error) {
-	return d.fallback.InspectManifestFile(ctx, ref)
 }
 
 // InspectBundle answers a bundle no pool has built yet with its reference as

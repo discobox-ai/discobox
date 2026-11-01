@@ -118,6 +118,13 @@ Global review expectations:
   as callers: deleting only `NewStatusErrorOfKind` left the whole problem-kind
   mechanism and `secrets.Redact` in place, unreachable from anything real
   (ADR 26-10-27-880).
+- Retiring a field of a persisted model checks `pkg/` for what only that field
+  used: a shared type, its constructor, its comparison and its error stay
+  compiling because a test or a discarded return still names them, and the
+  dead-code check counts a discarded return as a caller. Retiring a harness's
+  platforms left `platform.Set` alive only through `publishedImage`'s return
+  its one caller threw away, and the harness's kind left `platform.PlaceKind`
+  and `KindMismatchError` comparing a hard-coded `OCI` (ADR 26-11-01-122).
 - A skill's (or doc's) claim about what a credential's routes allow or stop is
   checked against what each route actually matches, not against what the
   skill means to do with it: a REST route reads no body, so `PATCH …/pulls/*`

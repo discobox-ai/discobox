@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pool-agent/assetcache"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
@@ -157,5 +158,20 @@ func TestExportTreeSendsThePinsToThePool(t *testing.T) {
 	}
 	if !slices.Equal(got.Bundles, want) || got.Agent != (assetcache.Pin{Name: "discobox-agent", Digest: agentDigest}) {
 		t.Fatalf("pool agent read with %+v, want %+v and its agent", got, want)
+	}
+}
+
+// An imported tree is a container discobox's, so a pool that runs VM images is
+// refused by its own kind — once it has said what it runs — before anything is
+// uploaded to it (ADR 26-11-01-122).
+func TestImportTreeRefusesAPoolThatRunsVMImages(t *testing.T) {
+	pool := activePool("pool-1")
+	pool.ImageKind = platform.VM("boxd")
+	manager := &fakePoolManager{pool: pool, schedulable: true}
+	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager, nil)
+	_, err := provider.ImportTree(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, "pool-1", platform.Pool(), strings.NewReader(""))
+	var notOCI *platform.NotOCIError
+	if !errors.As(err, &notOCI) || notOCI.Pool != platform.VM("boxd") {
+		t.Fatalf("err = %v, want the pool's VM kind refused", err)
 	}
 }

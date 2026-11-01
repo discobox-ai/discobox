@@ -119,7 +119,7 @@ func TestUpgradeTargetOffersConfigBundleToUnpinnedSandboxes(t *testing.T) {
 		t.Fatalf("currentRepin: %v", err)
 	}
 	want := model.BundlePin{Reference: codexBundle, Digest: codexBundleV2}
-	if !target.Available || target.Harness.Bundle != want || target.Harness.Image != "" {
+	if !target.Available || target.Harness.Bundle != want {
 		t.Fatalf("unpinned target = %+v, want available with the config's bundle alone", target)
 	}
 	target.apply(unpinned)

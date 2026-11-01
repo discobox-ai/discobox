@@ -90,9 +90,6 @@ type Options struct {
 	// WSLCCommand overrides the WSL Containers program the Windows host is
 	// checked for.
 	WSLCCommand string
-	// OverlayDir is the one directory a harness's file:// manifest reference
-	// may name a file in. Empty refuses every such reference.
-	OverlayDir string
 	// AssetDir is the blob store bundles are served to pools from (ADR
 	// 26-10-16-423 §13).
 	AssetDir string
@@ -129,7 +126,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	jobsService := resourcejobs.NewService(store, engine)
 	sandboxService.SetArchiveRetention(options.ArchiveRetention)
 	sandboxService.SetServerPeerID(options.ServerPeerID)
-	harnessConfigService := harnessconfigs.NewService(store, options.Harnesses, options.ServerDefaults.Release != nil, options.OverlayDir)
+	harnessConfigService := harnessconfigs.NewService(store, options.Harnesses, options.ServerDefaults.Release != nil)
 	harnessConfigService.SetDevelopmentBundles(options.DevelopmentBundles)
 	// The configure flow runs an ephemeral sandbox and watches it through the
 	// reconcile engine, so it needs both.

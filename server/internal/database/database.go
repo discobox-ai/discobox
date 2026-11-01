@@ -117,7 +117,7 @@ func (db *DB) Migrate(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := unsetManifestFileImageKinds(write); err != nil {
+	if err := dropHarnessImageColumns(write); err != nil {
 		return err
 	}
 	if err := respellDiscoVMImageKinds(write); err != nil {
@@ -188,9 +188,6 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := upgradeRouteShapes(write); err != nil {
 		return err
 	}
-	if err := retireHarnessImages(write); err != nil {
-		return err
-	}
 	if err := rekeySandboxOrigins(write); err != nil {
 		return err
 	}
@@ -199,41 +196,47 @@ func (db *DB) Migrate(ctx context.Context) error {
 	return store.BackfillSandboxEvents(write)
 }
 
-// retireHarnessImages takes the runnable images off the harness configs that
-// recorded one (ADR 26-10-16-423 §10): no harness is an image any more, and a
-// harness config's image is a manifest file's or nothing. A config on a
-// bundle keeps its bundle, which is what every box on it applies, and loses
-// the twin it recorded beside it, with the platforms read from that twin's
-// index, which a bundle's steps select instead. A config from before bundles
-// loses the image it ran as and keeps the manifest its labels gave it: it
-// runs nowhere until a bundle is registered for it, and says so.
+// dropHarnessImageColumns drops the harness_configs columns a harness kept
+// beside its bundle: image, image_digest, image_kind and platforms. A harness
+// is its bundle and nothing else (ADR 26-10-16-423 §2, ADR 26-11-01-122): the
+// kind of box and its platform are its pool's, and a manifest file is no
+// longer a harness.
 //
-// A sandbox's own image pin is not cleared here: the pool still keeps a
-// container a sandbox from before bundles runs, by the fingerprint that pin
-// is part of, and the sandbox leaves it when it is pinned to its bundles
+// Each config that still recorded an image — a runnable image from before
+// bundles, or a file:// manifest file — is logged with it first, which is the
+// only record left of what its owner registered. Its row is kept: with no
+// bundle it was registered before bundles, which create and repair refuse,
+// naming `admin harness update --bundle`, until a bundle is registered for it.
+//
+// A sandbox's own image pin is not touched: the pool keeps the container a
+// sandbox from before bundles runs by the fingerprint that pin is part of,
+// and the sandbox leaves it when it is pinned to its bundles
 // (sandboxes.Service.PinUndeliveredSandboxes).
 //
-// It runs on every start, and once nothing is left to clear it updates
-// nothing: a manifest file's image is the one image it leaves.
-func retireHarnessImages(db *gorm.DB) error {
-	var configs []model.HarnessConfig
-	retired := db.Model(&model.HarnessConfig{}).Where("image <> ? AND image NOT LIKE ?", "", "file://%")
-	if err := retired.Select("id", "project_id", "slug", "bundle", "image", "image_digest").Find(&configs).Error; err != nil {
-		return err
-	}
-	if len(configs) == 0 {
+// Once the columns are gone it does nothing.
+func dropHarnessImageColumns(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable(&model.HarnessConfig{}) {
 		return nil
 	}
-	// Each is logged with the image it ran as, which is the only record left
-	// of what its owner registered.
-	for _, config := range configs {
-		log.Printf("cleared harness config %s (%s) of project %s of the runnable image it ran as, %s@%s (bundle %q): no harness is an image any more, and one with no bundle runs nowhere until one is registered for it",
-			config.ID, config.Slug, config.ProjectID, config.Image, config.ImageDigest, config.Bundle)
+	if migrator.HasColumn(&model.HarnessConfig{}, "image") {
+		var configs []map[string]any
+		if err := db.Table("harness_configs").Select("id", "project_id", "slug", "bundle", "image", "image_digest").
+			Where("image <> ?", "").Find(&configs).Error; err != nil {
+			return err
+		}
+		for _, config := range configs {
+			log.Printf("dropped the image harness config %s (%s) of project %s recorded, %s@%s (bundle %q): a harness is its bundle, and one with none runs nowhere until one is registered for it",
+				columnText(config["id"]), columnText(config["slug"]), columnText(config["project_id"]),
+				columnText(config["image"]), columnText(config["image_digest"]), columnText(config["bundle"]))
+		}
 	}
-	// UpdateColumns, not Updates: a migration is not an edit, and leaves
-	// updated_at as it was.
-	return db.Model(&model.HarnessConfig{}).Where("image <> ? AND image NOT LIKE ?", "", "file://%").
-		UpdateColumns(map[string]any{"image": "", "image_digest": "", "platforms": nil}).Error
+	for _, column := range []string{"image", "image_digest", "image_kind", "platforms"} {
+		if err := dropRetiredColumn(db, &model.HarnessConfig{}, "harness_configs", column); err != nil {
+			return fmt.Errorf("drop harness_configs.%s: %w", column, err)
+		}
+	}
+	return nil
 }
 
 // columnText is a text column read into a map, as a driver hands it back,
@@ -276,24 +279,7 @@ func addsImageKindColumn(db *gorm.DB, model any) bool {
 	return migrator.HasTable(model) && !migrator.HasColumn(model, "image_kind")
 }
 
-// unsetManifestFileImageKinds takes back the OCI that adding the column gave a
-// harness config named by a file:// manifest reference (ADR 0145 §3). Every
-// other harness from before kinds is an image, and OCI; a manifest file is
-// not, and one from before kinds declares no kind to say which driver's it
-// is. Its kind is left undeclared, which places it on no pool, until its file
-// declares one and the harness's image is refreshed — a refresh of the file
-// as it stands is refused for naming none.
-//
-// It runs on every start rather than only the one that adds the column, so a
-// start that dies between the two cannot leave such a harness OCI for good:
-// nothing else would ever correct it. Repeating it touches nothing else,
-// because a manifest file registered since kinds always has a VM kind.
-func unsetManifestFileImageKinds(db *gorm.DB) error {
-	return db.Model(&model.HarnessConfig{}).Where("image LIKE ? AND image_kind = ?", "file://%", platform.OCI).
-		UpdateColumn("image_kind", "").Error
-}
-
-// respellDiscoVMImageKinds rewrites every pool's and harness's image kind
+// respellDiscoVMImageKinds rewrites every pool's image kind
 // stored as `discovm/<driver>`, the spelling releases before ADR 26-10-15-629
 // wrote, as `vm/<driver>`, the only spelling platform.ParseImageKind reads.
 // It runs on every start, before anything scans a kind; after the first it
@@ -301,13 +287,8 @@ func unsetManifestFileImageKinds(db *gorm.DB) error {
 func respellDiscoVMImageKinds(db *gorm.DB) error {
 	const old = "discovm/"
 	respelled := gorm.Expr("? || SUBSTR(image_kind, ?)", platform.FormatVM+"/", len(old)+1)
-	for _, table := range []any{&model.Pool{}, &model.HarnessConfig{}} {
-		if err := db.Model(table).Where("image_kind LIKE ?", old+"%").
-			UpdateColumn("image_kind", respelled).Error; err != nil {
-			return err
-		}
-	}
-	return nil
+	return db.Model(&model.Pool{}).Where("image_kind LIKE ?", old+"%").
+		UpdateColumn("image_kind", respelled).Error
 }
 
 // backfillPoolImageKinds records OCI for every pool that existed before image

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/tarsums"
 	"github.com/discobox-ai/discobox/pkg/version"
@@ -266,27 +265,17 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 		return nil, err
 	}
 	// An archive is a container sandbox's tree: export and import of a machine
-	// sandbox are deferred (ADR 26-10-09-106), so a harness that is not an OCI
-	// image cannot take one, and the pool must run OCI images. Placement takes
-	// the tree's stand-in for OCI for the same reason.
-	if harnessConfig.ImageKind != platform.OCI {
-		return nil, apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("harness %q is not an OCI image, and an archive holds a container discobox's tree; a machine discobox is not imported", harnessConfig.Slug))
-	}
-	if err := refuseOtherImageKind(harnessConfig, pool); err != nil {
+	// sandbox are deferred (ADR 26-10-09-106), so the pool must run OCI images.
+	// A pool whose agent has not said what it runs is still coming up, and the
+	// provider refuses it once it has (poolruntime.Provider.ImportTree).
+	if err := refuseMachinePool(pool); err != nil {
 		return nil, err
 	}
 	// A discobox moves between machines, not between platforms (ADR 0145 §8):
-	// its tree belongs to the platform it ran on, so neither a harness whose
-	// image is not published for it nor a pool of another one may take it. An
-	// archive from before platforms names none, so there is nothing to refuse
-	// it by; it takes its pool's platform when it is placed.
+	// its tree belongs to the platform it ran on, so no pool of another one may
+	// take it. An archive from before platforms names none, so there is
+	// nothing to refuse it by; it takes its pool's platform when it is placed.
 	if !spec.Platform.IsZero() {
-		if err := harnessConfig.Platforms.Publishes(spec.Platform); err != nil {
-			return nil, apperrors.NewStatusError(http.StatusConflict,
-				fmt.Sprintf("the archive holds a %s discobox, and harness %q cannot run it: %v; a discobox is not moved between platforms",
-					spec.Platform, harnessConfig.Slug, err))
-		}
 		if err := refuseOtherPlatform(spec.Platform, pool); err != nil {
 			return nil, err
 		}
@@ -372,7 +361,7 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	if err != nil {
 		return nil, err
 	}
-	sb.Image, sb.ImageDigest = harnessPins.Image, harnessPins.ImageDigest
+	sb.Image, sb.ImageDigest = "", ""
 	sb.HarnessManifestDigest = harnessPins.ManifestDigest
 	release, err := s.currentRelease(ctx)
 	if err != nil {
@@ -564,4 +553,20 @@ func (s *Service) importingUserID(ctx context.Context) string {
 		return userID
 	}
 	return s.defaultUserID
+}
+
+// refuseMachinePool refuses an import onto a pool that runs anything but OCI
+// images: an archive holds a container discobox's tree, and export and import
+// of a machine discobox are deferred (ADR 26-10-09-106). The pool's kind is
+// the reason, never the harness's, which names none (ADR 26-11-01-122). A pool
+// whose agent has not declared what it runs is not refused here.
+func refuseMachinePool(pool *model.Pool) error {
+	if pool.ImageKind.IsZero() {
+		return nil
+	}
+	if err := pool.ImageKind.TakesContainerTree(); err != nil {
+		return apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("cannot import onto pool %q: %v; an archive holds a container discobox's tree, and a machine discobox is not imported", pool.Name, err))
+	}
+	return nil
 }

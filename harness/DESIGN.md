@@ -121,25 +121,16 @@ coding harnesses; shell carries no capture implementation.
   compacted from (see `Taskfile.yml`). Save-back bundles also install that same
   document beside their capture command; configure and capture read its
   provider definitions, so refresh clients and route policy have one source.
-- **A template with no image ships the same manifest as a file** (ADR 0145 §3).
-  A non-Linux sandbox is a VM template assembled from a vendor's base and
-  Discobox's overlay, and the overlay carries the manifest as one JSON object
-  keyed by the very label keys an image would carry, each holding its layer as
-  an object (`ReadManifestFile`). The file becomes that label set and resolves
-  through `ResolveImageLabels`, so layering, merge by identity, the reserved
-  numbers, the base layer's proof of lineage and the `discobox-harness-run`
-  convention are one contract from either source; a key that is not a layer is
-  refused rather than skipped, since a manifest file holds nothing else. The
-  server names one by a `file://` reference
-  ([`resources/harnessconfigs`](../server/internal/resources/harnessconfigs/DESIGN.md)).
 - **What a platform has is declared, and what it lacks is the declaration's
   absence** — never a probe at runtime or an optional interface (ADR 0145 §3).
-  A manifest file declares its `platform` (`os/arch`) and its `imageKind`
-  (`vm/<driver>`, ADR 26-10-09-106 §4); a bundle declares neither,
-  because its steps select the platform they run on and its kind is the
-  provider's (ADR 26-10-16-423 §2). A non-Linux manifest
-  names its one `account` by name alone (ADR 0145 §5) and the `shell` its
-  terminals type into, as an absolute path of its platform; a Linux one names
+  A bundle declares no `platform` and no `imageKind`, because its steps
+  select the platform they run on and the kind of box is its pool's (ADR
+  26-10-16-423 §2, ADR 26-11-01-122); a label naming either is refused at
+  registration. `ValidateFor` keeps the rules 0145 §§3, 5 set for a
+  non-Linux manifest — its one `account` by name alone and the absolute
+  `shell` its terminals type into, and no Linux container mechanism — as the
+  contract a non-Linux bundle would be judged by. No such bundle is
+  registered today: every manifest is a bundle's, judged as Linux, which names
   neither, because both come from the account the sandbox resolves from its
   own passwd database (ADR 0025). `features` says what the filesystem ships
   beyond running commands — `desktop`, `docker` (nested Docker and its runc
@@ -224,9 +215,7 @@ coding harnesses; shell carries no capture implementation.
   it was built with, and is refused. It names instead the
   `platformAPIVersion` it needs (`PlatformAPIVersion`), which must be the one
   the platform's layer provides. A bundle carrying a whiteout is refused: its
-  layers add feature directories side by side and delete nothing. A
-  manifest file still proves its lineage with the overlay's
-  `10-sandbox-base` layer (ADR 0086 §1).
+  layers add feature directories side by side and delete nothing.
 - **The harness command is a convention.** The image installs its agent as
   `/usr/local/bin/discobox-harness-run` (`harness.RunCommand`) and the runtime
   types `discobox-harness-run [--resume] '<prompt>'`. `runCommand` and
@@ -422,9 +411,9 @@ coding harnesses; shell carries no capture implementation.
   disagree about which release a sandbox is running.
 - A harness's **platform** is not a definition's to declare (ADR 0145 §1). A
   bundle names none: one artifact for every architecture, whose steps select
-  the platform they run on, so a pool of any platform runs it. Only a
-  manifest file's template declares the one platform it runs on, which the
-  control plane records and a sandbox's pool must host. See
+  the platform they run on, so a pool of any platform runs it, and the
+  control plane records no harness platform: a sandbox's is its pool's (ADR
+  26-11-01-122). See
   [`resources/harnessconfigs/DESIGN.md`](../server/internal/resources/harnessconfigs/DESIGN.md).
 - Whether a harness has an interactive configure flow is the image's
   declaration (`config.command`), snapshotted as the config's config command.

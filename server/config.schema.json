@@ -332,7 +332,7 @@
       "type": "boolean"
     },
     "overlayDir": {
-      "description": "Directory the overlays of non-Linux sandbox templates are staged in, and the only one a harness's file:// manifest reference may name a file in. Defaults to \u003ccacheDir\u003e/overlays. Environment: DISCOBOX_OVERLAY_DIR (takes precedence over this file).",
+      "description": "Retired, and ignored: no harness is a file:// manifest file any more, and nothing is staged there. Read with a warning, and refused from the next release.",
       "examples": [
         "/var/cache/discobox/overlays"
       ],

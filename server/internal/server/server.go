@@ -230,7 +230,6 @@ func Run(ctx context.Context) error {
 			ImageCache:       imageCache,
 		},
 		WSLCCommand: cfg.WSLCCommand,
-		OverlayDir:  cfg.OverlayDir,
 		AssetDir:    cfg.AssetDir,
 	})
 	if err != nil {

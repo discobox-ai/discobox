@@ -887,39 +887,18 @@ func TestTheKeyListUnderAConfigureTerminalIsThePanes(t *testing.T) {
 	}
 }
 
-// A harness no pool in the project hosts the platform of is not offered: a
-// discobox on it would be refused at create (ADR 0145 §1). It is still listed
-// on the harnesses screen, which is where a person learns why.
-func TestHarnessChoicesLeaveOutWhatNoPoolHosts(t *testing.T) {
+// Every harness is offered, the default leading: a harness names no
+// platform and no image kind, so no pool rules one out (ADR 26-11-01-122).
+func TestHarnessChoicesOfferEveryHarness(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())
 	m.opts.setHarnesses([]Harness{
-		{Slug: "codex", Default: true},
-		{Slug: "xcode", Platforms: "darwin/arm64", Unhosted: true},
 		{Slug: "shell"},
+		{Slug: "codex", Default: true},
+		{Slug: "claude"},
 	})
-	want := []string{"codex", "shell"}
+	want := []string{"codex", "shell", "claude"}
 	if got := m.opts.opts[optHarness].choices; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("choices = %v, want %v", got, want)
-	}
-}
-
-// A project default no pool can run is not offered either — leaving the row
-// unset would run it — and the hint names it as the default and says why,
-// rather than claiming the project has none.
-func TestAnUnhostedDefaultIsNamedRatherThanDenied(t *testing.T) {
-	t.Parallel()
-	m := newTestModel(t, newFakeSource())
-	m.opts.setHarnesses([]Harness{
-		{Slug: "xcode", Default: true, Platforms: "darwin/arm64", Unhosted: true},
-		{Slug: "codex"},
-	})
-	harness := m.opts.opts[optHarness]
-	want := []string{unsetHarness, "codex"}
-	if strings.Join(harness.choices, ",") != strings.Join(want, ",") {
-		t.Fatalf("choices = %v, want %v", harness.choices, want)
-	}
-	if !strings.Contains(harness.hint, "xcode") || strings.Contains(harness.hint, "no project default") {
-		t.Fatalf("hint = %q, want the unhosted default named", harness.hint)
 	}
 }

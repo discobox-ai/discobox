@@ -71,22 +71,11 @@ func tarDir(t *testing.T, dir, tarPath string) {
 // with every other lookup refused.
 func layoutService(t *testing.T, bundles ...devimage.Bundle) (*Service, *recordingInspector) {
 	t.Helper()
-	fallback := &recordingInspector{}
+	// A development bundle is in no daemon or registry.
+	fallback := &recordingInspector{err: errors.New("a development bundle must not be looked for in a daemon or a registry")}
 	svc := &Service{store: newTestStore(t), harnesses: harnessdefs.References{PlatformBundle: platformReference}}
-	svc.inspector = newDevImageInspector(devbundles.New(bundles, t.TempDir()), noBundles{fallback}, &verifiedBundles{})
+	svc.inspector = newDevImageInspector(devbundles.New(bundles, t.TempDir()), fallback, &verifiedBundles{})
 	return svc, fallback
-}
-
-// noBundles answers a manifest file and refuses any bundle, which on a
-// development server is in no daemon or registry.
-type noBundles struct{ files *recordingInspector }
-
-func (n noBundles) InspectManifestFile(ctx context.Context, ref string) (imageMetadata, error) {
-	return n.files.InspectManifestFile(ctx, ref)
-}
-
-func (noBundles) InspectBundle(context.Context, string, func(map[string]string) error) (bundleInspection, error) {
-	return bundleInspection{}, errors.New("a development bundle must not be looked for in a daemon or a registry")
 }
 
 // In copy-mode the watcher exports each bundle as a layout no daemon holds:
@@ -98,7 +87,7 @@ func TestResolveReadsBundlesFromTheirLayouts(t *testing.T) {
 	codex := exportBundle(t, codexBundle, map[string]string{harness.ImageLabel: harnessMetadataJSON}, []string{"features/codex/provision.yaml"})
 	svc, fallback := layoutService(t, platformBundle, codex)
 
-	metadata, err := svc.resolveHarness(context.Background(), svc.platformBundle(), codexBundle, "")
+	metadata, err := svc.resolveHarness(context.Background(), svc.platformBundle(), codexBundle)
 	if err != nil {
 		t.Fatalf("resolveHarness() error = %v", err)
 	}

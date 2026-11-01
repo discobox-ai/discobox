@@ -102,11 +102,11 @@ func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
 			wantTarget: SandboxPinTarget{},
 		},
 		{
-			// A config registered before bundles carries only the runnable
-			// image it was created with, which pins nothing now.
+			// A config registered before bundles has no bundle, which pins
+			// nothing.
 			name:       "a config from before bundles is nothing to move to",
 			sandbox:    sandboxWithHarness("harness-1", "", ""),
-			config:     &model.HarnessConfig{Image: "discobox-harness-codex:old"},
+			config:     &model.HarnessConfig{RunCommand: []string{"codex"}},
 			wantTarget: SandboxPinTarget{},
 		},
 	} {
@@ -145,30 +145,6 @@ func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
 	}
 }
 
-// A template with no image pins its manifest file, not a bundle (ADR
-// 26-10-16-423 §2): that file's digest moving is the upgrade, and applying it
-// leaves no bundle pin behind.
-func TestSandboxUpgradeTargetFollowsAManifestFile(t *testing.T) {
-	config := &model.HarnessConfig{Image: "file:///etc/discobox/harness.json", ImageDigest: contentDigest("manifest-new")}
-	sb := sandboxWithHarness("harness-1", "", "")
-	sb.Image, sb.ImageDigest = config.Image, contentDigest("manifest-old")
-	target, available := SandboxUpgradeTarget(sb, config, ReleasePins{})
-	want := SandboxPinTarget{Harness: HarnessPins{Image: config.Image, ImageDigest: config.ImageDigest}}
-	if target != want || !available {
-		t.Fatalf("target = %+v available = %v, want %+v", target, available, want)
-	}
-	sb.HarnessConfig = config
-	rendered := SandboxUpgrade(sb, SandboxUpgradeBasis{})
-	if rendered["reason"] != "imageDigestChanged" || rendered["targetImageDigest"] != config.ImageDigest ||
-		rendered["currentImageDigest"] != contentDigest("manifest-old") {
-		t.Fatalf("rendered %v, want the manifest file's upgrade", rendered)
-	}
-	target.Apply(sb)
-	if sb.ImageDigest != config.ImageDigest || sb.Bundle != "" || sb.BundleDigest != "" {
-		t.Fatalf("applied image %q bundle %q %q, want the manifest file alone", sb.ImageDigest, sb.Bundle, sb.BundleDigest)
-	}
-}
-
 // TestSandboxUpgradeTargetIgnoresConfigMode: a config-mode sandbox runs the
 // configure flow and is thrown away.
 func TestSandboxUpgradeTargetIgnoresConfigMode(t *testing.T) {
@@ -192,25 +168,14 @@ func TestSandboxUpgradeWithoutAFallbackConfig(t *testing.T) {
 	}
 }
 
-// A manifest file whose template does not run on the sandbox's platform is
-// nothing to move to (ADR 0145 §1). One that runs on it, or one whose
-// platforms nobody has read, is.
-func TestSandboxUpgradeTargetStaysOnTheSandboxsPlatform(t *testing.T) {
-	config := &model.HarnessConfig{
-		ID: "harness-1", Image: "file:///etc/discobox/harness.json", ImageDigest: contentDigest("manifest-new"),
-		Platforms: platform.NewSet(platform.Platform{OS: "linux", Arch: "riscv64"}),
-	}
-	sb := sandboxWithHarness("harness-1", "", "")
-	sb.Image, sb.ImageDigest = config.Image, contentDigest("manifest-old")
-	sb.Platform = platform.Platform{OS: "linux", Arch: "arm64"}
-	if target, available := SandboxUpgradeTarget(sb, config, ReleasePins{}); !target.Empty() || available {
-		t.Fatalf("target = %+v, available = %t; want nothing to move to", target, available)
-	}
-	for _, platforms := range []platform.Set{platform.NewSet(sb.Platform, config.Platforms[0]), nil} {
-		config.Platforms = platforms
-		if target, available := SandboxUpgradeTarget(sb, config, ReleasePins{}); target.Harness.ImageDigest != config.ImageDigest || !available {
-			t.Fatalf("platforms %q: target = %+v, available = %t; want the config's manifest file", platforms, target, available)
-		}
+// A harness names no platform, so its bundle is something to move to
+// whatever platform the sandbox runs on (ADR 26-11-01-122).
+func TestSandboxUpgradeTargetIgnoresTheSandboxsPlatform(t *testing.T) {
+	config := shellConfig()
+	sb := sandboxWithHarness(config.ID, shellBundle, contentDigest("shell-old"))
+	sb.Platform = platform.Platform{OS: "linux", Arch: "riscv64"}
+	if target, available := SandboxUpgradeTarget(sb, config, ReleasePins{}); target.Harness.Bundle.Digest != config.BundleDigest || !available {
+		t.Fatalf("target = %+v, available = %t; want the config's bundle", target, available)
 	}
 }
 

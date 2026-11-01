@@ -3,18 +3,14 @@
 // server manifest (serverstage) and a guest image build already spell one.
 //
 // It is a placement key (ADR 0145 §1). A pool declares the one platform it
-// hosts, a harness config records the platforms its image is published for, and
-// a sandbox runs on its pool's platform, which its harness must publish; a
-// sandbox is placed only on a pool of its own platform, and a transfer never
-// crosses one (ADR 0145 §8).
+// hosts, and a sandbox runs on its pool's platform: a sandbox is placed only
+// on a pool of its own platform, and a transfer never crosses one (ADR 0145
+// §8).
 //
-// The image kind (ImageKind) is the second placement key (ADR 26-10-09-106
-// §4): a pool declares the kind of image it runs, a harness config records the
-// kind its image is, and a sandbox is placed only where both the platform and
-// the kind match. In the root module
-// because the control plane that places, the pool agent that declares, and
-// the CLI that offers only what a pool can run must all spell and compare it
-// the same way.
+// A pool also declares the kind of image it runs (ImageKind, ADR 26-10-09-106
+// §4). A harness names neither: both are its pool's (ADR 26-11-01-122). In
+// the root module because the control plane that places and the pool agent
+// that declares must spell and compare it the same way.
 package platform
 
 import (
@@ -22,7 +18,6 @@ import (
 	"fmt"
 	"regexp"
 	"runtime"
-	"slices"
 	"strings"
 )
 
@@ -147,59 +142,6 @@ func Place(sandbox, pool Platform) error {
 		return &MismatchError{Sandbox: sandbox, Pool: pool}
 	}
 	return nil
-}
-
-// Set is the platforms an image is published for, sorted and without
-// duplicates. An empty set is one nobody has read: it rules nothing out.
-type Set []Platform
-
-// NewSet builds a set from what an image publishes, dropping duplicates and
-// anything that is not a usable os/arch pair — an index lists its attestation
-// manifests as unknown/unknown.
-func NewSet(platforms ...Platform) Set {
-	out := make(Set, 0, len(platforms))
-	for _, p := range platforms {
-		if p.Validate() == nil && p.OS != "unknown" && !slices.Contains(out, p) {
-			out = append(out, p)
-		}
-	}
-	slices.SortFunc(out, func(a, b Platform) int { return strings.Compare(a.String(), b.String()) })
-	return out
-}
-
-// Contains reports whether the set names p.
-func (s Set) Contains(p Platform) bool { return slices.Contains(s, p) }
-
-func (s Set) String() string {
-	names := make([]string, len(s))
-	for i, p := range s {
-		names[i] = p.String()
-	}
-	return strings.Join(names, ", ")
-}
-
-// UnpublishedError is a pool whose platform a harness's image is not published
-// for. An image built for one architecture — what a development build makes —
-// runs only on a pool of that architecture, and the refusal says so rather
-// than leaving the pool to fail pulling it.
-type UnpublishedError struct {
-	Published Set
-	Pool      Platform
-}
-
-func (e *UnpublishedError) Error() string {
-	return fmt.Sprintf("its image is published for %s only, and the pool hosts %s; an image built for one platform runs only on a pool of that platform",
-		e.Published, describe(e.Pool))
-}
-
-// Publishes reports whether an image published for s runs on a pool that
-// hosts pool: nil when s names it or when s is empty — an image nobody has
-// read rules nothing out — and an *UnpublishedError otherwise.
-func (s Set) Publishes(pool Platform) error {
-	if len(s) == 0 || s.Contains(pool) {
-		return nil
-	}
-	return &UnpublishedError{Published: s, Pool: pool}
 }
 
 func describe(p Platform) string {
