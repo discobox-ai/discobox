@@ -1,6 +1,6 @@
 # 26-10-01-032 — A sandbox's egress is denied when any of its levels says so
 
-- **Status**: Accepted (narrows [26-10-14-320](26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md) §§1, 3)
+- **Status**: Accepted (narrows [26-10-14-320](26-10-14-320-a-discobox-acts-on-any-discobox-in-its-project-and-the-judge-decides-which.md) §§1, 3; §§1, 2, 4, 6 narrowed for passthrough by [26-10-31-819](26-10-31-819-an-egress-policy-may-pass-a-hosts-connect-through-unread.md))
 - **Date**: 2026-10-01
 - **Relates to**: [ADR 0126](0126-a-sandbox-does-not-share-a-host-or-a-filesystem-with-its-pool.md)
   §6, which makes the pool proxy a sandbox's only route out;
