@@ -32,8 +32,9 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/gitprogress"
-
+	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
@@ -80,6 +81,11 @@ type Config struct {
 	// each checkout, and as this user, with its home and groups, when that is
 	// who the owner is.
 	User *execs.User
+	// Home is that user's home, which a home-relative target — a skills
+	// source's — is joined onto (ADR 26-11-01-692 §3). Empty when it did not
+	// resolve, and such a target then fails rather than being read relative
+	// to the agent's own directory.
+	Home string
 	// CredentialHelper is the credential.helper value each origin is
 	// configured with, so a fetch — the agent's own and a user's later
 	// `git fetch origin` alike — reads the origin's token from this agent.
@@ -108,6 +114,10 @@ type Converger struct {
 
 	mu      sync.Mutex
 	desired *sandboxconfig.RuntimeConfig
+	// homeTargets are the slugs desired named at a home-relative target,
+	// which desired holds expanded: those whose target, and the directories
+	// on the way to it, a pass creates.
+	homeTargets map[string]bool
 	// received is when desired arrived, which is when a source not tried
 	// yet started waiting.
 	received time.Time
@@ -138,11 +148,24 @@ func New(cfg Config) *Converger {
 	}
 }
 
+// sandboxPaths judges paths inside this sandbox, which the agent runs in.
+var sandboxPaths = sandboxpath.For(platform.Current())
+
 // Converge makes doc the document to converge on and wakes the loop. It never
 // blocks: a document delivered while a pass runs is picked up by the next.
+//
+// A home-relative target is expanded here, once (ADR 26-11-01-692 §3), so
+// every pass, state and comparison sees the absolute one.
 func (c *Converger) Converge(doc sandboxconfig.RuntimeConfig) {
+	homeTargets := map[string]bool{}
+	for _, source := range doc.Sources {
+		if _, ok := sandboxpath.HomeRelative(source.Target); ok {
+			homeTargets[source.Slug] = true
+		}
+	}
+	doc = doc.ExpandHome(sandboxPaths, c.cfg.Home)
 	c.mu.Lock()
-	c.desired, c.received = &doc, time.Now().UTC()
+	c.desired, c.homeTargets, c.received = &doc, homeTargets, time.Now().UTC()
 	c.mu.Unlock()
 	select {
 	case c.wake <- struct{}{}:
@@ -195,7 +218,7 @@ func (c *Converger) States() []SourceState {
 // again without a new document.
 func (c *Converger) pass(ctx context.Context) bool {
 	c.mu.Lock()
-	doc := c.desired
+	doc, homeTargets := c.desired, c.homeTargets
 	c.mu.Unlock()
 	if doc == nil {
 		return false
@@ -205,7 +228,7 @@ func (c *Converger) pass(ctx context.Context) bool {
 		if ctx.Err() != nil {
 			return false
 		}
-		state := c.converge(ctx, doc.Revision, source)
+		state := c.converge(ctx, doc.Revision, source, homeTargets[source.Slug])
 		// A source still cloning after its pass was superseded mid-attempt;
 		// failed and waiting ones are retried until they converge.
 		if state.State == StateFailed || state.State == StateCloning || (state.State == StateWaiting && source.OriginURL != "") {
@@ -223,8 +246,9 @@ func (c *Converger) setState(state SourceState) SourceState {
 	return state
 }
 
-// converge brings one source to its target and records where it got.
-func (c *Converger) converge(ctx context.Context, revision int64, source sandboxconfig.RuntimeSource) SourceState {
+// converge brings one source to its target and records where it got. home
+// says the target was home-relative, and so is one this creates.
+func (c *Converger) converge(ctx context.Context, revision int64, source sandboxconfig.RuntimeSource, home bool) SourceState {
 	state := SourceState{Slug: source.Slug, Revision: revision}
 	if source.OriginURL == "" {
 		state.State = StateWaiting
@@ -232,6 +256,11 @@ func (c *Converger) converge(ctx context.Context, revision int64, source sandbox
 	}
 	ctx, cancel := context.WithTimeout(ctx, sourceTimeout)
 	defer cancel()
+	if home {
+		if err := c.ensureHomeTarget(source.Target); err != nil {
+			return c.failed(state, err)
+		}
+	}
 	repo, err := c.open(source.Target)
 	if err != nil {
 		return c.failed(state, err)
@@ -341,6 +370,48 @@ func (c *Converger) failed(state SourceState, err error) SourceState {
 	state.State, state.Error = StateFailed, err.Error()
 	c.cfg.Logger.Warn("materialize source", "slug", state.Slug, "error", err)
 	return c.setState(state)
+}
+
+// ensureHomeTarget creates a home-relative source's target, and every
+// directory missing between home and it, each given to the sandbox user. A
+// container's is already there, bind-mounted at boot; a VM's is not, and
+// nothing else makes it (ADR 26-11-01-692 §3). Only a path below home is made,
+// and a directory on the way that is a link is refused rather than followed:
+// home is the user's, and the agent may be root.
+func (c *Converger) ensureHomeTarget(target string) error {
+	home := strings.TrimSpace(c.cfg.Home)
+	if home == "" {
+		return fmt.Errorf("source target %s is below the sandbox user's home, which did not resolve", target)
+	}
+	home = filepath.Clean(home)
+	rel, err := filepath.Rel(home, target)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("source target %s is not below the sandbox user's home %s", target, home)
+	}
+	dir := home
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		dir = filepath.Join(dir, part)
+		err := os.Mkdir(dir, 0o755)
+		if errors.Is(err, fs.ErrExist) {
+			info, err := os.Lstat(dir)
+			if err != nil {
+				return fmt.Errorf("source target: %w", err)
+			}
+			if !info.IsDir() {
+				return fmt.Errorf("source target: %s is not a directory", dir)
+			}
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("source target: %w", err)
+		}
+		if c.cfg.User != nil && os.Geteuid() == 0 {
+			if err := chownTo(dir, c.cfg.User); err != nil {
+				return fmt.Errorf("source target: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 // open is the checkout at target, worked on as whoever owns it.

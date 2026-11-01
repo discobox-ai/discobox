@@ -169,3 +169,74 @@ func TestRooted(t *testing.T) {
 		}
 	}
 }
+
+func TestHomeRelative(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		rest  string
+		ok    bool
+	}{
+		{"~/.discobox/skill-sources/tools", ".discobox/skill-sources/tools", true},
+		{"~/x", "x", true},
+		{"~", "", false},
+		{"~/", "", false},
+		{"~/.", "", false},
+		{"~/..", "", false},
+		{"~/../etc", "", false},
+		{"~/a/../b", "", false},
+		{"~/a/", "", false},
+		{"~//a", "", false},
+		{`~/a\b`, "", false},
+		{"~/a\nb", "", false},
+		{"~user/a", "", false},
+		{"/home/u/a", "", false},
+		{"a", "", false},
+	} {
+		rest, ok := HomeRelative(tc.value)
+		if rest != tc.rest || ok != tc.ok {
+			t.Errorf("HomeRelative(%q) = %q, %v; want %q, %v", tc.value, rest, ok, tc.rest, tc.ok)
+		}
+	}
+}
+
+func TestExpandHome(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		paths Paths
+		value string
+		home  string
+		want  string
+	}{
+		{"linux", linux, "~/.discobox/skill-sources/tools", "/home/u", "/home/u/.discobox/skill-sources/tools"},
+		{"darwin", darwin, "~/x", "/Users/u", "/Users/u/x"},
+		{"windows", windows, "~/.discobox/skill-sources/tools", `C:\Users\u`, `C:\Users\u\.discobox\skill-sources\tools`},
+		{"absolute kept", linux, "/workspace/app", "/home/u", "/workspace/app"},
+		{"invalid kept", linux, "~/../x", "/home/u", "~/../x"},
+		{"no home kept", linux, "~/x", "", "~/x"},
+	} {
+		if got := tc.paths.ExpandHome(tc.value, tc.home); got != tc.want {
+			t.Errorf("%s: ExpandHome(%q, %q) = %q, want %q", tc.name, tc.value, tc.home, got, tc.want)
+		}
+	}
+}
+
+func TestIsTarget(t *testing.T) {
+	for _, tc := range []struct {
+		paths Paths
+		value string
+		want  bool
+	}{
+		{linux, "/workspace/app", true},
+		{linux, "~/.discobox/skill-sources/tools", true},
+		{windows, "~/.discobox/skill-sources/tools", true},
+		{windows, `C:\workspace\app`, true},
+		{linux, "/workspace/app/", false},
+		{linux, "workspace/app", false},
+		{linux, "~/../x", false},
+		{windows, "/workspace/app", false},
+	} {
+		if got := tc.paths.IsTarget(tc.value); got != tc.want {
+			t.Errorf("%s IsTarget(%q) = %v, want %v", tc.paths.OS(), tc.value, got, tc.want)
+		}
+	}
+}

@@ -35,10 +35,13 @@ func TestRuntimeConfigValidate(t *testing.T) {
 		}, "no target"},
 		"relative target": {func(c *RuntimeConfig) {
 			c.Sources = []RuntimeSource{{Slug: "primary", Target: "workspace"}}
-		}, "is not a clean absolute"},
+		}, "neither a clean absolute"},
+		"home-relative target that climbs out of home": {func(c *RuntimeConfig) {
+			c.Sources = []RuntimeSource{{Slug: "tools", Target: "~/../etc"}}
+		}, "neither a clean absolute"},
 		"unclean target": {func(c *RuntimeConfig) {
 			c.Sources = []RuntimeSource{{Slug: "primary", Target: "/workspace/../etc"}}
-		}, "is not a clean absolute"},
+		}, "neither a clean absolute"},
 		"multi-line token": {func(c *RuntimeConfig) {
 			c.Sources = []RuntimeSource{{Slug: "primary", Target: "/workspace", OriginToken: "a\nprotocol=http"}}
 		}, "single line"},
@@ -55,6 +58,30 @@ func TestRuntimeConfigValidate(t *testing.T) {
 				t.Fatalf("Validate() = %v, want an error naming %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// A skills source's target is home-relative until the sandbox expands it
+// against its user's home (ADR 26-11-01-692 §3), and expanding leaves the
+// document it was given as it was, since that is the one kept and compared.
+func TestRuntimeConfigHomeRelativeTarget(t *testing.T) {
+	doc := RuntimeConfig{Revision: 1, Sources: []RuntimeSource{
+		{Slug: "primary", Target: "/workspace/app", OriginURL: "https://pool/origins/primary"},
+		{Slug: "tools", Target: "~/.discobox/skill-sources/tools", OriginURL: "https://github.com/acme/tools"},
+	}}
+	linux := sandboxpath.For(platform.Platform{OS: "linux"})
+	if err := doc.Validate(linux); err != nil {
+		t.Fatalf("Validate() = %v, want a home-relative target accepted", err)
+	}
+	expanded := doc.ExpandHome(linux, "/home/u")
+	if got := expanded.Sources[1].Target; got != "/home/u/.discobox/skill-sources/tools" {
+		t.Fatalf("expanded target = %q", got)
+	}
+	if got := expanded.Sources[0].Target; got != "/workspace/app" {
+		t.Fatalf("an absolute target changed to %q", got)
+	}
+	if got := doc.Sources[1].Target; got != "~/.discobox/skill-sources/tools" {
+		t.Fatalf("ExpandHome changed the document it was given: %q", got)
 	}
 }
 

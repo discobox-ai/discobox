@@ -6,6 +6,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/pkg/platform"
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 )
 
 func TestSkillsValidate_AcceptsASkillWithFiles(t *testing.T) {
@@ -218,6 +221,42 @@ func TestValidateSkillsRepository(t *testing.T) {
 	} {
 		if err := ValidateSkillsRepository(tc.url, tc.ref); (err == nil) != tc.ok {
 			t.Errorf("ValidateSkillsRepository(%q, %q) = %v, want ok %v", tc.url, tc.ref, err, tc.ok)
+		}
+	}
+}
+
+// Only a skills source may be placed below home, and a skills source is
+// placed below home or at a clean absolute path (ADR 26-11-01-692 §1).
+func TestValidateSourceDirectory(t *testing.T) {
+	linux := sandboxpath.For(platform.Platform{OS: "linux"})
+	windows := sandboxpath.For(platform.Platform{OS: "windows"})
+	for _, tc := range []struct {
+		name      string
+		directory string
+		skills    bool
+		rules     []sandboxpath.Paths
+		want      string
+	}{
+		{"skills below home", "~/.discobox/skill-sources/tools", true, []sandboxpath.Paths{linux}, ""},
+		{"skills absolute, as before", "/workspace/skill-sources/tools", true, []sandboxpath.Paths{linux}, ""},
+		{"skills absolute on windows", `C:\workspace\skill-sources\tools`, true, []sandboxpath.Paths{linux, windows}, ""},
+		{"no directory", "", true, nil, ""},
+		{"work absolute", "/workspace/app", false, []sandboxpath.Paths{linux}, ""},
+		{"work relative is left to placement", "app", false, []sandboxpath.Paths{linux}, ""},
+		{"work below home", "~/app", false, []sandboxpath.Paths{linux}, "only a skills source"},
+		{"skills climbing out of home", "~/../etc", true, []sandboxpath.Paths{linux}, "clean relative path below home"},
+		{"another user's home", "~root/x", true, []sandboxpath.Paths{linux}, "clean relative path below home"},
+		{"skills relative", "skill-sources/tools", true, []sandboxpath.Paths{linux}, "neither below home"},
+		{"skills unclean", "/workspace/../etc", true, []sandboxpath.Paths{linux}, "neither below home"},
+		{"skills unclean, no rules", "/workspace/../etc", true, nil, ""},
+		{"skills climbing out of home, no rules", "~/../etc", true, nil, "clean relative path below home"},
+	} {
+		err := ValidateSourceDirectory(tc.directory, tc.skills, tc.rules...)
+		if tc.want == "" && err != nil {
+			t.Errorf("%s: ValidateSourceDirectory(%q) = %v, want accepted", tc.name, tc.directory, err)
+		}
+		if tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+			t.Errorf("%s: ValidateSourceDirectory(%q) = %v, want an error naming %q", tc.name, tc.directory, err, tc.want)
 		}
 	}
 }

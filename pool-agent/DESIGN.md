@@ -492,6 +492,10 @@ sequenceDiagram
   A pool-served origin carries a token (`sandboxtoken`, `origin:fetch`), issued
   for a day and renewed by deciding the document once it has less than half
   left. Delivery carries over by slug: a source is delivered once.
+  A skills source's home-relative target (`~/...`) is kept as written
+  (`sourceDirectory`), never rooted: the pool does not know the sandbox
+  user's home, and the sandbox expands it (ADR 26-11-01-692 §2). A create
+  placing anything else below home is refused (`validateCreateRequest`).
 - **Each source's directory** is created empty under `sources/<slug>` at create
   and never touched again; boot binds it onto the target and gives it to the
   sandbox user, who clones into it.

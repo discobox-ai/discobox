@@ -1125,6 +1125,11 @@ func referenceDestination(sandbox platform.Platform, resolved resolvedRunSource,
 		}
 	}
 	root := placement.Root
+	if _, home := sandboxpath.HomeRelative(root); home {
+		// Below home (a skills source's root) the path is the sandbox's to
+		// expand, and spelled with slashes until it does.
+		return path.Join(root, slugifySource(name)), name
+	}
 	if root == "" {
 		// The working root holds an extra source with no host path of its own
 		// to keep: every remote one, and every local one whose path a sandbox
@@ -1191,12 +1196,11 @@ func defaultRunDestination(sandbox platform.Platform) resolvedRunSourceDestinati
 // github.com/discobox-ai/discobox lands at /workspace/discobox. It is the
 // directory the same repository would take as an --include
 // (referenceDestination), which is what lets yieldPrimaryDirectory see the two
-// meet. A name that slugs to nothing, or that is a directory the working root
-// already holds for something else, takes the default directory instead; so
+// meet. A name that slugs to nothing takes the default directory instead; so
 // does one another source of the same create claims.
 func remoteRunDestination(sandbox platform.Platform, url string) resolvedRunSourceDestination {
 	dir, name := referenceDestination(sandbox, resolvedRunSource{URL: url}, referencePlacement{})
-	if slug := slugifySource(name); slug == "" || slug == skillsSourcesDirectory {
+	if slug := slugifySource(name); slug == "" {
 		return defaultRunDestination(sandbox)
 	}
 	return resolvedRunSourceDestination{Directory: dir, WorkingDirectory: dir}

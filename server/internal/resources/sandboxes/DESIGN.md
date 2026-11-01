@@ -53,6 +53,13 @@ flowchart LR
   26-10-09-106). The pool's kind is the refusal — `refuseMachinePool` before
   the tree is read, for a pool that has declared one, and
   `poolruntime.Provider.ImportTree` once a pool still coming up has.
+- A source's placement is checked at create and at import, by the sandbox's
+  platform's path rules or, before its pool declares one, by each it may be
+  (`sandboxPathRules`): a working directory is an absolute path inside its
+  source (`validateSourceWorkingDirectory`, ADR 26-10-15-417), and only a
+  skills source may be placed below home, `~/...`, which the sandbox expands
+  (`validateSourceDirectories`, ADR 26-11-01-692). Both a reference's key and
+  its destination's directory are checked, since the pool reads both.
 - Sandboxes that have no harness config converge by *upgrade*, not by
   migration. The target comes from the reserved `shell` built-in
   (`fallbackHarnessConfig`). Such a sandbox reports `available` regardless of

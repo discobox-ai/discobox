@@ -290,6 +290,9 @@ func (s *Service) ImportSandbox(ctx context.Context, projectID string, archive i
 	if err := validateSourceWorkingDirectory(spec.Manifest.Source, importPlatform); err != nil {
 		return nil, err
 	}
+	if err := validateSourceDirectories(spec.Manifest.Source, spec.Manifest.SourceCodeReferences, importPlatform); err != nil {
+		return nil, err
+	}
 
 	if s.sandboxProviders == nil {
 		return nil, fmt.Errorf("sandbox provider manager is required")

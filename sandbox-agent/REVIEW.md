@@ -373,6 +373,15 @@ Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-r
   After the rename, write the tracked tree whole (`checkout --force`,
   `restore`) — never `clean`, which deletes what the target held before the
   clone, nested source targets included.
+- **A target below home is made as root in a tree the user writes.** Boot's
+  `wireSources` and `ensureHomeTarget` create a skills source's target under
+  the user's home (ADR 26-11-01-692), and a link the user plants on the way
+  can steer where root makes a directory. That crosses nothing only because
+  boot gives the sandbox user passwordless sudo. A change that offers a box
+  without it must make both refuse links race-free first (`os.Root`, or
+  `openat` with `O_NOFOLLOW` per component). Why: security review of ADR
+  26-11-01-692 found `ensureHomeTarget` checks each component before it makes
+  the next, and `wireSources` follows links.
 - **The token stays out of the checkout.** No `extraHeader`, no tokenized URL,
   no `-c` carrying it on a command line; git reads it through the helper only.
 - **A path test for a route whose path carries a slug comes first** in

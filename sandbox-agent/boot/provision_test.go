@@ -188,3 +188,27 @@ func TestProvisionWiresFeaturesFirstAndSkipsWhatIsOff(t *testing.T) {
 		t.Fatalf("direnv.toml = %q; direnv is off", direnv)
 	}
 }
+
+// A skills source's target is home-relative in the bootstrap (ADR
+// 26-11-01-692 §3); provision expands it against the home it resolved before
+// anything reads it, so the direnv whitelist names where it is.
+func TestProvisionExpandsAHomeRelativeSourceTarget(t *testing.T) {
+	id := selfIdentity(t)
+	b, _ := newFakeGitBooter(nil)
+	root := t.TempDir()
+	bootstrap := sandboxconfig.Config{
+		AgentRuntime: sandboxconfig.AgentRuntime{WorkingRoot: filepath.Join(root, "workspace")},
+		Sources:      []sandboxconfig.Source{{Slug: "tools", Target: "~/.discobox/skill-sources/tools"}},
+	}
+	if err := b.provision(slog.Default(), id, &bootstrap, false); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	want := filepath.Join(id.home, ".discobox", "skill-sources", "tools")
+	direnv, ok := readDirenvConfig(t, id.home)
+	if !ok || !strings.Contains(direnv, `"`+want+`"`) || strings.Contains(direnv, "~") {
+		t.Fatalf("direnv.toml = %q (written %v), want %s whitelisted", direnv, ok, want)
+	}
+	if bootstrap.Sources[0].Target != "~/.discobox/skill-sources/tools" {
+		t.Fatalf("provision rewrote the bootstrap it was given: %q", bootstrap.Sources[0].Target)
+	}
+}

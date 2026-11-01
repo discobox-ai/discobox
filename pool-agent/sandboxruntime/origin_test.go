@@ -294,6 +294,54 @@ func TestSandboxDocumentCarriesSkillsSourcesInOrder(t *testing.T) {
 	}
 }
 
+// A skills source keyed below home keeps its key as its target, in both
+// lists sandbox.json carries, for the sandbox to expand against its user's
+// home (ADR 26-11-01-692 §2); a source being worked on may not be keyed there.
+func TestSandboxDocumentKeepsAHomeRelativeSkillsTarget(t *testing.T) {
+	const key = "~/.discobox/skill-sources/tools"
+	req := originTestRequest("/home/user/src/app")
+	tools := workerapimodel.GitSource{Kind: workerclient.GitSourceKindGit}
+	tools.Slug = workerclient.NewOptString("tools")
+	tools.Destination = workerclient.NewOptGitSourceDestination(workerclient.GitSourceDestination{Directory: workerclient.NewOptString(key)})
+	refs := req.Config.SourceCodeReferences.Or(nil)
+	if refs == nil {
+		refs = workerclient.SandboxConfigSourceCodeReferences{}
+	}
+	refs[key] = tools
+	req.Config.SourceCodeReferences = workerclient.NewOptSandboxConfigSourceCodeReferences(refs)
+	req.Config.SkillsSources = []workerapimodel.SandboxSkillsSource{{Source: key, Directory: "skills"}}
+	req.ResolvedHarnessConfig = workerclient.NewOptResolvedHarnessConfig(workerclient.ResolvedHarnessConfig{})
+	if err := validateCreateRequest(deliveryTestSandboxID, req); err != nil {
+		t.Fatalf("validate create request: %v", err)
+	}
+	doc, err := buildSandboxDocument(linuxPaths, "proj_a", deliveryTestSandboxID, "pool_a", "", "", "image", proxyagent.PoolEndpoints(""), req, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []sandboxconfig.SkillsSource{{Target: key, Directory: "skills"}}; !reflect.DeepEqual(doc.Runtime.SkillsSources, want) {
+		t.Fatalf("skills sources = %+v, want %+v", doc.Runtime.SkillsSources, want)
+	}
+	found := false
+	for _, source := range doc.Runtime.Sources {
+		if source.Slug == "tools" {
+			found = true
+			if source.Target != key {
+				t.Fatalf("tools target = %q, want %q kept for the sandbox to expand", source.Target, key)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("sources = %+v, want tools", doc.Runtime.Sources)
+	}
+
+	// The same reference with no skills source naming it is one being worked
+	// on, and that is never placed below home.
+	req.Config.SkillsSources = nil
+	if err := validateCreateRequest(deliveryTestSandboxID, req); err == nil {
+		t.Fatal("validate create request with a work source below home: nil, want a refusal")
+	}
+}
+
 // sandbox.json carries the repository's features as the request gave them
 // (ADR 26-10-16-423 §4).
 func TestSandboxDocumentCarriesFeatures(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/platform"
 )
 
 // A --skills value is a skills source when what precedes its //PATH is a Git
@@ -91,7 +92,7 @@ func TestSplitSkillsReadsADirectoryAsItIs(t *testing.T) {
 }
 
 // Each skills repository is one reference marked for its skills, checked out
-// under skill-sources, and the directories are filed in the order given, one
+// below home, and the directories are filed in the order given, one
 // repository's sharing its reference however they interleave with another's.
 func TestBuildPromptSandboxBodyFilesSkillsRepositoriesInOrder(t *testing.T) {
 	tools := "file://" + filepath.ToSlash(newRunSourceTestRepoIn(t, t.TempDir(), "tools"))
@@ -109,7 +110,7 @@ func TestBuildPromptSandboxBodyFilesSkillsRepositoriesInOrder(t *testing.T) {
 	defer local.Close()
 
 	references, _ := body.Config.SourceCodeReferences.Get()
-	toolsKey, sharedKey := "/workspace/skill-sources/tools", "/workspace/skill-sources/shared"
+	toolsKey, sharedKey := "~/.discobox/skill-sources/tools", "~/.discobox/skill-sources/shared"
 	if len(references) != 2 {
 		t.Fatalf("references = %v, want one per repository", references)
 	}
@@ -135,6 +136,35 @@ func TestBuildPromptSandboxBodyFilesSkillsRepositoriesInOrder(t *testing.T) {
 	}
 	if _, ok := body.Config.Skills.Get(); ok {
 		t.Fatal("a skills repository was read as content")
+	}
+}
+
+// A skills source is keyed below home with slashes on every platform: the
+// sandbox expands it by its own rules (ADR 26-11-01-692 §1), so a Windows
+// sandbox's key is no different from a Linux one's, and it is never under the
+// working root a sandbox with no source works in.
+func TestBuildPromptSandboxBodyKeysSkillsBelowHomeOnEveryPlatform(t *testing.T) {
+	tools := "file://" + filepath.ToSlash(newRunSourceTestRepoIn(t, t.TempDir(), "tools"))
+	for _, sandbox := range []platform.Platform{linuxSandbox, {OS: "windows", Arch: "amd64"}, {OS: "darwin", Arch: "arm64"}} {
+		body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+			Platform:     sandbox,
+			NoSource:     true,
+			IncludeDirty: IncludeDirtyNever,
+			SkillDirs:    []string{tools},
+		})
+		if err != nil {
+			t.Fatalf("%s: build prompt sandbox body: %v", sandbox.OS, err)
+		}
+		local.Close()
+		references, _ := body.Config.SourceCodeReferences.Get()
+		reference, ok := references["~/.discobox/skill-sources/tools"]
+		if !ok || len(references) != 1 {
+			t.Fatalf("%s: references = %v, want one keyed ~/.discobox/skill-sources/tools", sandbox.OS, references)
+		}
+		destination, _ := reference.Destination.Get()
+		if got := destination.Directory.Or(""); got != "~/.discobox/skill-sources/tools" {
+			t.Fatalf("%s: destination directory = %q, want the key", sandbox.OS, got)
+		}
 	}
 }
 
@@ -173,7 +203,7 @@ func TestAddSkillsSourcesFilesBesideTheGivenReferences(t *testing.T) {
 		t.Fatalf("add skills sources: %v", err)
 	}
 	references, _ := config.SourceCodeReferences.Get()
-	key := "/workspace/skill-sources/tools"
+	key := "~/.discobox/skill-sources/tools"
 	reference, ok := references[key]
 	if !ok || len(references) != 2 {
 		t.Fatalf("references = %v, want the given one and %s", references, key)
@@ -212,8 +242,8 @@ func TestBuildPromptSandboxBodyFilesProjectSkillsFirst(t *testing.T) {
 	}
 	defer local.Close()
 	want := []apimodel.SandboxSkillsSource{
-		{Source: "/workspace/skill-sources/shared", Directory: "skills"},
-		{Source: "/workspace/skill-sources/tools", Directory: "."},
+		{Source: "~/.discobox/skill-sources/shared", Directory: "skills"},
+		{Source: "~/.discobox/skill-sources/tools", Directory: "."},
 	}
 	if !reflect.DeepEqual(body.Config.SkillsSources, want) {
 		t.Fatalf("skills sources = %+v, want %+v", body.Config.SkillsSources, want)

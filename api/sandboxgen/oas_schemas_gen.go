@@ -7162,7 +7162,9 @@ type SandboxRuntimeConfigSource struct {
 	// the checkout's origin remote.
 	OriginUrl OptString `json:"originUrl"`
 	Slug      string    `json:"slug"`
-	// The absolute in-sandbox path the source's checkout lives at. Required with originUrl.
+	// The in-sandbox path the source's checkout lives at, absolute, or home-relative (~/ and a clean
+	// relative path) for a skills source, which the sandbox expands against its user's home. Required
+	// with originUrl.
 	Target OptString `json:"target"`
 }
 

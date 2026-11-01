@@ -322,14 +322,15 @@ func TestBuildPromptSandboxBodyMovesARemotePrimaryOffAnIncludedSourcesName(t *te
 	}
 }
 
-// A repository named after a directory the working root holds for something
-// else is not placed there.
-func TestRemoteRunDestinationAvoidsTheSkillsSourcesDirectory(t *testing.T) {
+// A remote primary is placed by its repository's name under the working
+// root. Skills sources are checked out below home (ADR 26-11-01-692), so a
+// repository named skill-sources takes its name like any other.
+func TestRemoteRunDestinationIsTheRepositorysName(t *testing.T) {
 	for url, want := range map[string]string{
-		"https://github.com/discobox-ai/discobox":           "/workspace/discobox",
-		"https://github.com/discobox-ai/discobox.git":       "/workspace/discobox",
-		"git@github.com:acme/My_Repo.git":                   "/workspace/my-repo",
-		"https://github.com/acme/" + skillsSourcesDirectory: "/workspace/source",
+		"https://github.com/discobox-ai/discobox":     "/workspace/discobox",
+		"https://github.com/discobox-ai/discobox.git": "/workspace/discobox",
+		"git@github.com:acme/My_Repo.git":             "/workspace/my-repo",
+		"https://github.com/acme/skill-sources":       "/workspace/skill-sources",
 	} {
 		if got := remoteRunDestination(linuxSandbox, url); got.Directory != want || got.WorkingDirectory != want {
 			t.Errorf("remoteRunDestination(%s) = %#v, want %s", url, got, want)

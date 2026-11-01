@@ -13,10 +13,12 @@ import (
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 )
 
-// skillsSourcesDirectory is where a skills source is checked out, under the
-// sandbox's working root: apart from the sources being worked on (ADR
-// 26-10-14-294 §2).
-const skillsSourcesDirectory = "skill-sources"
+// skillsSourcesRoot is where a skills source is checked out: below the sandbox
+// user's home, apart from the sources being worked on and from the working
+// root a sandbox with no source works in (ADR 26-11-01-692 §1). It is
+// home-relative, slash-separated on every platform, and only the sandbox
+// expands it, since only the sandbox knows where its user's home is.
+const skillsSourcesRoot = sandboxpath.HomePrefix + ".discobox/skill-sources"
 
 // SkillsArgs are --skills values split by their form (ADR 26-10-14-294 §1):
 // the directories read as content, and the Git URLs that are skills sources,
@@ -169,8 +171,7 @@ func setSkillsSources(ctx context.Context, config *apimodel.SandboxCreateConfig,
 	if len(repos) == 0 {
 		return nil
 	}
-	paths := sandboxpath.For(sourceOptions.Platform)
-	placement := referencePlacement{Root: paths.Join(paths.WorkingRoot(), skillsSourcesDirectory)}
+	placement := referencePlacement{Root: skillsSourcesRoot}
 	keys := map[string]string{}
 	refs := map[string]SkillsRepository{}
 	var skillsSources []apiclientgen.SandboxSkillsSource

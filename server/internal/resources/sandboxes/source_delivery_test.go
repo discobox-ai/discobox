@@ -476,3 +476,47 @@ func TestValidateSourceWorkingDirectory(t *testing.T) {
 		})
 	}
 }
+
+// A skills source is placed below home, or at a clean absolute path as every
+// sandbox before ADR 26-11-01-692 holds it; nothing else is placed below
+// home, under either of the directories a source names.
+func TestValidateSourceDirectories(t *testing.T) {
+	linux := platform.Platform{OS: "linux", Arch: "amd64"}
+	str := func(v string) *string { return &v }
+	skills := func(directory *string) model.GitSource {
+		ref := model.GitSource{Kind: "git", Purpose: model.GitSourcePurposeSkills}
+		if directory != nil {
+			ref.Destination = &model.GitSourceDestination{Directory: directory}
+		}
+		return ref
+	}
+	home := "~/.discobox/skill-sources/tools"
+	for _, tc := range []struct {
+		name     string
+		source   *model.GitSource
+		refs     model.SourceCodeReferences
+		platform platform.Platform
+		ok       bool
+	}{
+		{"skills below home", nil, model.SourceCodeReferences{home: skills(str(home))}, linux, true},
+		{"skills below home, platform not declared", nil, model.SourceCodeReferences{home: skills(str(home))}, platform.Platform{}, true},
+		{"skills under the working root, as before", nil, model.SourceCodeReferences{"/workspace/skill-sources/tools": skills(str("/workspace/skill-sources/tools"))}, linux, true},
+		{"work under the working root", &model.GitSource{Destination: &model.GitSourceDestination{Directory: str("/workspace/app")}}, model.SourceCodeReferences{"/workspace/lib": {Kind: "git"}}, linux, true},
+		{"work keyed below home", nil, model.SourceCodeReferences{"~/lib": {Kind: "git"}}, linux, false},
+		{"work placed below home", nil, model.SourceCodeReferences{"/workspace/lib": {Kind: "git", Destination: &model.GitSourceDestination{Directory: str("~/lib")}}}, linux, false},
+		{"primary below home", &model.GitSource{Destination: &model.GitSourceDestination{Directory: str("~/app")}}, nil, linux, false},
+		{"skills climbing out of home", nil, model.SourceCodeReferences{"~/../etc": skills(nil)}, linux, false},
+		{"skills placed out of home", nil, model.SourceCodeReferences{home: skills(str("~/../etc"))}, linux, false},
+		{"skills at a relative path", nil, model.SourceCodeReferences{"skill-sources/tools": skills(nil)}, linux, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateSourceDirectories(tc.source, tc.refs, tc.platform)
+			if tc.ok && err != nil {
+				t.Fatalf("refused: %v", err)
+			}
+			if !tc.ok && err == nil {
+				t.Fatal("accepted")
+			}
+		})
+	}
+}

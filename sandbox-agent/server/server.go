@@ -230,6 +230,20 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	if err != nil {
 		return agentRuntime{}, err
 	}
+	// A skills source's target may be home-relative (ADR 26-11-01-692 §3).
+	// It is expanded here, once, against the home every exec starts in, so
+	// nothing from here on — the readiness gate, skill links, the git route,
+	// status, convergence — reads a `~`. A home that does not resolve leaves
+	// such a target as it was: convergence refuses it, naming why, so it is
+	// never cloned, and the rest find no checkout there.
+	sourcesHome, _, err := runUserHome(execManager)
+	if err != nil {
+		slog.Default().Warn("sandbox user's home did not resolve; a home-relative source target is left unexpanded", "error", err)
+		sourcesHome = ""
+	}
+	sandboxPaths := sandboxpath.For(platform.Current())
+	cfg.Sources = sandboxconfig.ExpandSourcesHome(sandboxPaths, sourcesHome, cfg.Sources)
+	cfg.SkillsSources = sandboxconfig.ExpandSkillsSourcesHome(sandboxPaths, sourcesHome, cfg.SkillsSources)
 	// nil only for a sandbox no pool delivers runtime config to and whose
 	// sources were in place before its container was created.
 	awaitSources := sourcesready.Gate(cfg.Sources, cfg.AwaitsRuntimeConfig, "", slog.Default())
@@ -330,6 +344,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		Manifest:         cfg.Sources,
 		Env:              cfg.Env,
 		User:             execManager.DefaultUser(),
+		Home:             sourcesHome,
 		CredentialHelper: gitCredentialHelper(cfg.RuntimeDir),
 	})
 	fileService, err := files.New()

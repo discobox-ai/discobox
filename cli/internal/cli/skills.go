@@ -80,9 +80,10 @@ func (a *App) newSkillsCommand() *cobra.Command {
 		Long: "Manage the skills every new discobox gets.\n\n" +
 			"A repository, URL[@REF][//PATH] or GitHub's owner/repo[@REF][//PATH], is the\n" +
 			"project's: every discobox of the project is created with it, whoever creates\n" +
-			"it, checked out under skill-sources with each skill in PATH linked in. A\n" +
-			"directory is this machine's, kept in client.yaml's run.skills, and copied into\n" +
-			"every discobox created from here. owner/repo is the directory when one is there.\n\n" +
+			"it, checked out under ~/.discobox/skill-sources with each skill in PATH linked\n" +
+			"in. A directory is this machine's, kept in client.yaml's run.skills, and\n" +
+			"copied into every discobox created from here. owner/repo is the directory when\n" +
+			"one is there.\n\n" +
 			"A create adds the project's first, then client.yaml's or its own --skills, so\n" +
 			"yours win on a skill of the same name. --no-project-skills leaves the\n" +
 			"project's out of one create.",

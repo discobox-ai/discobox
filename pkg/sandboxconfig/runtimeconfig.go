@@ -146,8 +146,9 @@ type RuntimeProxy struct {
 // — is the create-time placement in sandbox.json's Source of the same slug.
 type RuntimeSource struct {
 	Slug string `json:"slug"`
-	// Target is the absolute in-sandbox path the source's checkout lives at.
-	// Required with an OriginURL: a source with an origin is one the sandbox
+	// Target is the in-sandbox path the source's checkout lives at: absolute,
+	// or home-relative for a skills source (ADR 26-11-01-692), which the
+	// sandbox expands (ExpandHome). Required with an OriginURL: a source with an origin is one the sandbox
 	// clones, and it has to know where.
 	Target string `json:"target,omitempty"`
 	// OriginURL is where the source's origin is served, when it has one. The
@@ -254,8 +255,8 @@ func (c RuntimeConfig) Validate(paths sandboxpath.Paths) error {
 			errs = append(errs, fmt.Errorf("source %q is named twice", source.Slug))
 		}
 		seen[source.Slug] = true
-		if source.Target != "" && (!paths.IsAbs(source.Target) || paths.Clean(source.Target) != source.Target) {
-			errs = append(errs, fmt.Errorf("source %q target %q is not a clean absolute %s path", source.Slug, source.Target, pathsOS(paths)))
+		if source.Target != "" && !paths.IsTarget(source.Target) {
+			errs = append(errs, fmt.Errorf("source %q target %q is neither a clean absolute %s path nor a home-relative one", source.Slug, source.Target, pathsOS(paths)))
 		}
 		if source.OriginURL != "" {
 			if _, err := url.Parse(source.OriginURL); err != nil {
@@ -272,6 +273,23 @@ func (c RuntimeConfig) Validate(paths sandboxpath.Paths) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// ExpandHome is the document with each home-relative source target
+// (sandboxpath.HomeRelative) joined onto home, which only the sandbox knows
+// (ADR 26-11-01-692 §3). The sandbox agent converges on what this returns and
+// keeps the document as delivered, so a retried delivery still compares equal
+// to the one held.
+func (c RuntimeConfig) ExpandHome(paths sandboxpath.Paths, home string) RuntimeConfig {
+	if len(c.Sources) > 0 {
+		sources := make([]RuntimeSource, len(c.Sources))
+		for i, source := range c.Sources {
+			source.Target = paths.ExpandHome(source.Target, home)
+			sources[i] = source
+		}
+		c.Sources = sources
+	}
+	return c
 }
 
 // pathsOS names the platform a path was judged for, in a refusal.

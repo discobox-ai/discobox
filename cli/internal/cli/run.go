@@ -194,7 +194,7 @@ and the repository's of the same name. Links are followed and .git is left
 out; the skills are carried in the request, at most 1 MiB in all.
 
 --skills URL[@REF][//PATH] is a Git repository instead: it is checked out under
-skill-sources in the discobox's working root, and every subdirectory of PATH
+~/.discobox/skill-sources in the discobox, and every subdirectory of PATH
 (the repository's root without one) that holds a SKILL.md is linked into the
 skill directories, not copied, so an edit to a skill lands in the checkout and
 can be committed and pushed back. Several --skills naming one repository at one
@@ -482,7 +482,7 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) {
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "A secret to store and bind as KEY: KEY reads $KEY from this shell, KEY=@FILE reads a file, KEY=VALUE takes the value itself (it then sits in shell history and the process list); add @HOST to send it to HOST alone, else it is sent anywhere. A value or path holding an @ ends with one. Repeat for more. A stored secret is bound with --bind")
 	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source to bring into the discobox, DIR, URL or GitHub OWNER/REPO, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under the discobox's working root (/workspace on Linux) where it cannot; either way it is named after itself, so -i ../foo is the source foo")
-	flags.StringArrayVar(&opts.skillDirs, "skills", nil, "Skills to install in the discobox: a directory, whose subdirectories holding a SKILL.md are each copied in as a skill, or a repository, URL or GitHub OWNER/REPO, then [@REF][//PATH], checked out under skill-sources with each skill in PATH linked in, so an edit can be pushed back; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills, but a linked skill wins over a copied one. Given, it replaces client.yaml's run.skills")
+	flags.StringArrayVar(&opts.skillDirs, "skills", nil, "Skills to install in the discobox: a directory, whose subdirectories holding a SKILL.md are each copied in as a skill, or a repository, URL or GitHub OWNER/REPO, then [@REF][//PATH], checked out under ~/.discobox/skill-sources with each skill in PATH linked in, so an edit can be pushed back; repeat for more than one. A later directory wins on a skill of the same name, and every one wins over --user-skills, but a linked skill wins over a copied one. Given, it replaces client.yaml's run.skills")
 	flags.BoolVar(&opts.noProjectSkills, "no-project-skills", false, "Leave the project's skills repositories (discobox skills) out of this discobox. Otherwise they are added ahead of any --skills, which win on a skill of the same name")
 	flags.BoolVar(&opts.userSkillsFlag, "user-skills", false, "Install your own skills from ~/.claude/skills and ~/.agents/skills in the discobox, before any --skills. Defaults to client.yaml's run.userSkills")
 	flags.StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")

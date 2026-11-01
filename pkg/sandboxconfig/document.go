@@ -411,6 +411,45 @@ func (c Config) SandboxGroups() []string {
 	return append([]string(nil), c.AdditionalGroups...)
 }
 
+// ExpandHome is the document with every home-relative source target, and
+// the skills sources' targets with them, joined onto home (ADR 26-11-01-692
+// §3): what everything in the sandbox past reading it works with, so nothing
+// after that reads a `~`.
+func (c Config) ExpandHome(paths sandboxpath.Paths, home string) Config {
+	c.Sources = ExpandSourcesHome(paths, home, c.Sources)
+	c.SkillsSources = ExpandSkillsSourcesHome(paths, home, c.SkillsSources)
+	return c
+}
+
+// ExpandSourcesHome is sources, copied, with each home-relative target and
+// working directory joined onto home.
+func ExpandSourcesHome(paths sandboxpath.Paths, home string, sources []Source) []Source {
+	if len(sources) == 0 {
+		return sources
+	}
+	out := make([]Source, len(sources))
+	for i, source := range sources {
+		source.Target = paths.ExpandHome(source.Target, home)
+		source.WorkingDirectory = paths.ExpandHome(source.WorkingDirectory, home)
+		out[i] = source
+	}
+	return out
+}
+
+// ExpandSkillsSourcesHome is skillsSources, copied, with each home-relative
+// target joined onto home.
+func ExpandSkillsSourcesHome(paths sandboxpath.Paths, home string, skillsSources []SkillsSource) []SkillsSource {
+	if len(skillsSources) == 0 {
+		return skillsSources
+	}
+	out := make([]SkillsSource, len(skillsSources))
+	for i, skills := range skillsSources {
+		skills.Target = paths.ExpandHome(skills.Target, home)
+		out[i] = skills
+	}
+	return out
+}
+
 // PrimarySourceSlug names the primary source where no slug is given, and it is
 // always the name the primary's source data is mounted under,
 // `/.discobox/data-per-source/primary`, whatever the primary's own slug. Harness

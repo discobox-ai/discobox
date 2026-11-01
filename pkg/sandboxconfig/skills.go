@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/discobox-ai/discobox/pkg/sandboxpath"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 )
 
@@ -275,6 +276,40 @@ func ValidateSkillsDirectory(dir string) error {
 		return fmt.Errorf("skills directory: %w", err)
 	}
 	return nil
+}
+
+// ValidateSourceDirectory refuses a directory a source is placed at — a
+// source code reference's key, or the directory its destination names — that
+// the sandbox could not place it at (ADR 26-11-01-692 §1). Only a skills
+// source may be home-relative (sandboxpath.HomeRelative): a work source's
+// directory reaches host tools, which take an absolute path alone (ADR
+// 26-10-15-417). A skills source is home-relative or a clean absolute path by
+// one of rules, the sandbox's platform's, or each one it may be when that is
+// not known yet; with no rules, only the home-relative form is judged, and
+// any other directory is left to the rules that place it, as it is on a work
+// source. An empty directory names nothing and passes.
+func ValidateSourceDirectory(directory string, skills bool, rules ...sandboxpath.Paths) error {
+	if directory == "" {
+		return nil
+	}
+	if strings.HasPrefix(directory, "~") {
+		if _, ok := sandboxpath.HomeRelative(directory); !ok {
+			return fmt.Errorf("%q is not %s followed by a clean relative path below home", directory, sandboxpath.HomePrefix)
+		}
+		if !skills {
+			return fmt.Errorf("%q is below home, where only a skills source may be placed", directory)
+		}
+		return nil
+	}
+	if !skills || len(rules) == 0 {
+		return nil
+	}
+	for _, paths := range rules {
+		if paths.IsTarget(directory) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%q is neither below home (%s...) nor a clean absolute path", directory, sandboxpath.HomePrefix)
 }
 
 // ValidateSkillsRepository refuses a skills repository a project may not name

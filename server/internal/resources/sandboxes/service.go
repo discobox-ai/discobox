@@ -281,6 +281,9 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err := validateSourceWorkingDirectory(source, sandboxPlatform); err != nil {
 		return nil, err
 	}
+	if err := validateSourceDirectories(source, sourceCodeReferences, sandboxPlatform); err != nil {
+		return nil, err
+	}
 	// A harness is only selectable once its configure flow has succeeded.
 	// harnessMode "config" is exempt: that is the configure flow itself.
 	if harnessMode != sandboxconfig.HarnessModeConfig && !harnessConfig.Configured {

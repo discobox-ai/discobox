@@ -131,13 +131,7 @@ func validateSourceWorkingDirectory(source *model.GitSource, sandboxPlatform pla
 		return nil
 	}
 	workingDirectory := *source.Destination.WorkingDirectory
-	rules := []sandboxpath.Paths{sandboxpath.For(sandboxPlatform)}
-	if sandboxPlatform.IsZero() {
-		rules = []sandboxpath.Paths{
-			sandboxpath.For(platform.Platform{OS: "linux"}),
-			sandboxpath.For(platform.Platform{OS: "windows"}),
-		}
-	}
+	rules := sandboxPathRules(sandboxPlatform)
 	for _, paths := range rules {
 		if sourceWorkingDirectoryInside(paths, source.Destination.Directory, workingDirectory) {
 			return nil
@@ -145,6 +139,47 @@ func validateSourceWorkingDirectory(source *model.GitSource, sandboxPlatform pla
 	}
 	return apperrors.NewStatusError(http.StatusBadRequest,
 		fmt.Sprintf("source working directory %q is not an absolute path inside the source's directory", workingDirectory))
+}
+
+// sandboxPathRules are the path rules a sandbox of sandboxPlatform is judged
+// by: its own, or, for a sandbox whose pool has not declared its platform yet,
+// each it may turn out to be, so a create is not refused for its pool being
+// new.
+func sandboxPathRules(sandboxPlatform platform.Platform) []sandboxpath.Paths {
+	if sandboxPlatform.IsZero() {
+		return []sandboxpath.Paths{
+			sandboxpath.For(platform.Platform{OS: "linux"}),
+			sandboxpath.For(platform.Platform{OS: "windows"}),
+		}
+	}
+	return []sandboxpath.Paths{sandboxpath.For(sandboxPlatform)}
+}
+
+// validateSourceDirectories refuses a source placed where the sandbox could
+// not place it (ADR 26-11-01-692 §1): below home, unless it is a skills
+// source, and a skills source anywhere but below home or at a clean absolute
+// path. Every directory a source names is checked, its reference key and its
+// destination's, since the pool reads both. The primary source is never a
+// skills source (validateSkillsSources), so it is never below home.
+func validateSourceDirectories(source *model.GitSource, refs model.SourceCodeReferences, sandboxPlatform platform.Platform) error {
+	rules := sandboxPathRules(sandboxPlatform)
+	if source != nil && source.Destination != nil && source.Destination.Directory != nil {
+		if err := sandboxconfig.ValidateSourceDirectory(*source.Destination.Directory, false, rules...); err != nil {
+			return apperrors.NewStatusError(http.StatusBadRequest, "source directory "+err.Error())
+		}
+	}
+	for key, ref := range refs {
+		skills := ref.IsSkills()
+		if err := sandboxconfig.ValidateSourceDirectory(key, skills, rules...); err != nil {
+			return apperrors.NewStatusError(http.StatusBadRequest, "source code reference "+err.Error())
+		}
+		if ref.Destination != nil && ref.Destination.Directory != nil {
+			if err := sandboxconfig.ValidateSourceDirectory(*ref.Destination.Directory, skills, rules...); err != nil {
+				return apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("source code reference %q directory %v", key, err))
+			}
+		}
+	}
+	return nil
 }
 
 // sourceWorkingDirectoryInside reports whether workingDirectory is absolute by

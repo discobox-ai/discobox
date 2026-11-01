@@ -19,7 +19,7 @@ func selectSourcesTestSandbox(skillsOnly bool) *apimodel.Sandbox {
 	skills.SetSlug(apiclientgen.NewOptString("tools"))
 	skills.SetPurpose(apiclientgen.NewOptGitSourcePurpose(apiclientgen.GitSourcePurposeSkills))
 	sandbox.Config.SetSourceCodeReferences(apiclientgen.NewOptSandboxConfigSourceCodeReferences(
-		apiclientgen.SandboxConfigSourceCodeReferences{"/workspace/skill-sources/tools": skills}))
+		apiclientgen.SandboxConfigSourceCodeReferences{"~/.discobox/skill-sources/tools": skills}))
 	return sandbox
 }
 

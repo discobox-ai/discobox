@@ -3576,7 +3576,8 @@ func (s *GitSourceDelivery) UnmarshalText(data []byte) error {
 
 // Ref: #/components/schemas/GitSourceDestination
 type GitSourceDestination struct {
-	// Directory where this source should be placed inside the sandbox.
+	// Directory where this source should be placed inside the sandbox. Only a skills source may name one
+	// below the sandbox user's home, as ~/ and a clean relative path, which the sandbox expands.
 	Directory OptString `json:"directory"`
 	// Working directory inside the sandbox for this source.
 	WorkingDirectory OptString `json:"workingDirectory"`
@@ -24211,7 +24212,8 @@ type SandboxConfig struct {
 	Prompt []string `json:"prompt"`
 	// Primary Git source to materialize in the sandbox.
 	Source OptGitSource `json:"source"`
-	// Additional Git sources to materialize in the sandbox.
+	// Additional Git sources to materialize in the sandbox, keyed by the directory each lands in. Only a
+	// skills source's key may be below the sandbox user's home, as ~/ and a clean relative path.
 	SourceCodeReferences OptSandboxConfigSourceCodeReferences `json:"sourceCodeReferences"`
 	// User identity and home directory to use inside the sandbox.
 	User OptSandboxUser `json:"user"`
@@ -24504,7 +24506,8 @@ func (s *SandboxConfigHarnessMode) UnmarshalText(data []byte) error {
 	}
 }
 
-// Additional Git sources to materialize in the sandbox.
+// Additional Git sources to materialize in the sandbox, keyed by the directory each lands in. Only a
+// skills source's key may be below the sandbox user's home, as ~/ and a clean relative path.
 type SandboxConfigSourceCodeReferences map[string]GitSource
 
 func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeReferences {
@@ -24563,7 +24566,8 @@ type SandboxCreateConfig struct {
 	Secrets []SandboxSecretInput `json:"secrets"`
 	// Primary Git source to materialize in the sandbox.
 	Source OptGitSource `json:"source"`
-	// Additional Git sources to materialize in the sandbox.
+	// Additional Git sources to materialize in the sandbox, keyed by the directory each lands in. Only a
+	// skills source's key may be below the sandbox user's home, as ~/ and a clean relative path.
 	SourceCodeReferences OptSandboxCreateConfigSourceCodeReferences `json:"sourceCodeReferences"`
 	// User identity and home directory to use inside the sandbox.
 	User OptSandboxUser `json:"user"`
@@ -24833,7 +24837,8 @@ func (s *SandboxCreateConfigSkills) init() SandboxCreateConfigSkills {
 	return m
 }
 
-// Additional Git sources to materialize in the sandbox.
+// Additional Git sources to materialize in the sandbox, keyed by the directory each lands in. Only a
+// skills source's key may be below the sandbox user's home, as ~/ and a clean relative path.
 type SandboxCreateConfigSourceCodeReferences map[string]GitSource
 
 func (s *SandboxCreateConfigSourceCodeReferences) init() SandboxCreateConfigSourceCodeReferences {
@@ -28083,7 +28088,9 @@ func (s *SandboxRuntimeConfigSecretEnv) init() SandboxRuntimeConfigSecretEnv {
 // Ref: #/components/schemas/SandboxRuntimeConfigSource
 type SandboxRuntimeConfigSource struct {
 	Slug string `json:"slug"`
-	// The absolute in-sandbox path the source's checkout lives at. Required with originUrl.
+	// The in-sandbox path the source's checkout lives at, absolute, or home-relative (~/ and a clean
+	// relative path) for a skills source, which the sandbox expands against its user's home. Required
+	// with originUrl.
 	Target OptString `json:"target"`
 	// Where the source's origin is served, when it has one. The sandbox clones from it and keeps it as
 	// the checkout's origin remote.

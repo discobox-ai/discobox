@@ -40,7 +40,11 @@ sandbox create requests.
   the refusal names the largest skills read before it.
   A `--skills` repository is not read: `SplitSkills` (`ParseSkills`) takes a
   Git URL or GitHub shorthand, `[@REF][//PATH]`, as a skills source, resolved
-  like a remote `-i` but placed under `<working root>/skill-sources`, marked
+  like a remote `-i` but placed below home, at
+  `~/.discobox/skill-sources/<name>` (`skillsSourcesRoot`), so it is never
+  under the working root a discobox with no source works in. The key is
+  home-relative and slash-separated on every platform; only the sandbox knows
+  its user's home and expands it (ADR 26-11-01-692). It is marked
   `purpose: skills`, and its paths filed in `skillsSources` in the order given;
   one repository at one ref is one reference whatever its paths and however
   its URL is spelled (`SkillsRepository.Key`), and at two refs is refused. A
@@ -90,7 +94,7 @@ sandbox create requests.
   checkout would have had), with the requested subdirectory honored by
   its position within the repository. A **remote** primary is placed by its
   repository's name, `/workspace/<name>` (`remoteRunDestination`), unless that
-  name slugs to nothing or is `skill-sources`; a reference that lands on the
+  name slugs to nothing; a reference that lands on the
   same directory keeps it and the primary moves to `/workspace/source`
   (`yieldPrimaryDirectory`), so the primary's directory is settled only after
   every reference is, and filed on the request then. A declared source naming

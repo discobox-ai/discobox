@@ -148,6 +148,7 @@ func newHarness(t *testing.T, manifest ...sandboxconfig.Source) *harness {
 	h := &harness{home: home, socket: socket, helper: HelperCommand(executable, socket)}
 	h.c = New(Config{
 		Manifest:         manifest,
+		Home:             home,
 		Env:              map[string]string{"HOME": home, "GIT_CONFIG_NOSYSTEM": "1", "PATH": os.Getenv("PATH")},
 		CredentialHelper: h.helper,
 		RetryInterval:    20 * time.Millisecond,
@@ -263,6 +264,61 @@ func TestFreshCloneMaterializesTheSourceOnce(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(target, "scratch.txt")); err != nil {
 		t.Fatalf("a later pass removed an untracked file: %v", err)
+	}
+}
+
+// A skills source's target is home-relative (ADR 26-11-01-692): it is
+// expanded against the user's home, and on a VM, where nothing has made it, it
+// and the directories on the way to it are created before the clone.
+func TestAHomeRelativeTargetIsExpandedAndCreated(t *testing.T) {
+	o := newOrigin(t)
+	first := o.commit("SKILL.md", "a skill\n")
+	h := newHarness(t)
+	source := sandboxconfig.RuntimeSource{Slug: "tools", Target: "~/.discobox/skill-sources/tools", OriginURL: o.url, OriginToken: testToken, Commit: first}
+
+	state := h.pass(t, document(1, source), "tools")
+	if state.State != StateMaterialized || state.Commit != first {
+		t.Fatalf("state = %+v, want materialized at %s", state, first)
+	}
+	target := filepath.Join(h.home, ".discobox", "skill-sources", "tools")
+	if got, err := os.ReadFile(filepath.Join(target, "SKILL.md")); err != nil || string(got) != "a skill\n" {
+		t.Fatalf("SKILL.md under home = %q, %v", got, err)
+	}
+	// A re-delivery of the same document converges on the same checkout.
+	if state := h.pass(t, document(2, source), "tools"); state.State != StateMaterialized || state.Commit != first {
+		t.Fatalf("state after a re-delivery = %+v", state)
+	}
+}
+
+// A link on the way to a home-relative target is refused, not followed: home
+// is the user's, and the agent may be root.
+func TestAHomeRelativeTargetIsNotMadeThroughALink(t *testing.T) {
+	o := newOrigin(t)
+	first := o.commit("SKILL.md", "a skill\n")
+	h := newHarness(t)
+	elsewhere := t.TempDir()
+	if err := os.Symlink(elsewhere, filepath.Join(h.home, ".discobox")); err != nil {
+		t.Fatal(err)
+	}
+	source := sandboxconfig.RuntimeSource{Slug: "tools", Target: "~/.discobox/skill-sources/tools", OriginURL: o.url, OriginToken: testToken, Commit: first}
+	if state := h.pass(t, document(1, source), "tools"); state.State != StateFailed || !strings.Contains(state.Error, "is not a directory") {
+		t.Fatalf("state = %+v, want failed on the link", state)
+	}
+	if entries, _ := os.ReadDir(elsewhere); len(entries) != 0 {
+		t.Fatalf("a directory was made through the link: %v", entries)
+	}
+}
+
+// A home-relative target with no home to expand it against fails; it is
+// never read relative to the agent's own directory.
+func TestAHomeRelativeTargetWithNoHomeFails(t *testing.T) {
+	c := New(Config{})
+	c.Converge(document(1, sandboxconfig.RuntimeSource{Slug: "tools", Target: "~/.discobox/skill-sources/tools", OriginURL: "http://127.0.0.1:1/tools.git"}))
+	<-c.wake
+	c.pass(context.Background())
+	states := c.States()
+	if len(states) != 1 || states[0].State != StateFailed || !strings.Contains(states[0].Error, "did not resolve") {
+		t.Fatalf("states = %+v, want failed on the unresolved home", states)
 	}
 }
 
@@ -773,7 +829,7 @@ func TestASupersededAttemptDoesNotMaterializeTheOldPin(t *testing.T) {
 	// The re-pin arrives, then the attempt begun under revision 1 completes.
 	h.c.Converge(document(2, repinned))
 	<-h.c.wake
-	if state := h.c.converge(context.Background(), 1, old); state.State != StateCloning {
+	if state := h.c.converge(context.Background(), 1, old, false); state.State != StateCloning {
 		t.Fatalf("the superseded attempt = %+v, want it left unfinished", state)
 	}
 	if _, ok := materializedAt(target); ok {
