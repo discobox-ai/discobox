@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/monitors"
 )
@@ -54,6 +55,23 @@ func TestABuiltinRunsWithTheInstanceTheRunnerDescribes(t *testing.T) {
 	}
 }
 
+func TestABuiltinIsGivenSinceOnlyWhenTheRunnerSetsIt(t *testing.T) {
+	var seen Env
+	set := map[string]Monitor{"probe": func(_ context.Context, env Env) error { seen = env; return nil }}
+	vars := map[string]string{"DISCOBOX_MONITOR_STATE": t.TempDir()}
+	var stdout, stderr bytes.Buffer
+	if code := Main(context.Background(), set, []string{"probe"}, environ(vars), &stdout, &stderr); code != 0 || !seen.Since.IsZero() {
+		t.Fatalf("without it: exit %d, since %v: %s", code, seen.Since, stderr.String())
+	}
+	vars["DISCOBOX_MONITOR_SINCE"] = "2026-11-01T03:00:00Z"
+	if code := Main(context.Background(), set, []string{"probe"}, environ(vars), &stdout, &stderr); code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	if want := time.Date(2026, 11, 1, 3, 0, 0, 0, time.UTC); !seen.Since.Equal(want) {
+		t.Fatalf("since = %v, want %v", seen.Since, want)
+	}
+}
+
 func TestAFailingBuiltinExitsWithItsReasonOnStderr(t *testing.T) {
 	vars := environ(map[string]string{"DISCOBOX_MONITOR_STATE": t.TempDir()})
 	set := map[string]Monitor{"probe": func(context.Context, Env) error { return errors.New("no credential: ask with discobox-access") }}
@@ -74,6 +92,7 @@ func TestMainRefusesWhatIsNotABuiltinOrNotUnderARunner(t *testing.T) {
 		{[]string{"other"}, map[string]string{"DISCOBOX_MONITOR_STATE": "/x"}, "no built-in monitor"},
 		{[]string{"probe"}, nil, "DISCOBOX_MONITOR_STATE"},
 		{[]string{"probe"}, map[string]string{"DISCOBOX_MONITOR_STATE": "/x", "DISCOBOX_MONITOR_OPTIONS": "{"}, "DISCOBOX_MONITOR_OPTIONS"},
+		{[]string{"probe"}, map[string]string{"DISCOBOX_MONITOR_STATE": "/x", "DISCOBOX_MONITOR_SINCE": "an hour ago"}, "DISCOBOX_MONITOR_SINCE"},
 	} {
 		var stdout, stderr bytes.Buffer
 		if code := Main(context.Background(), set, tc.args, environ(tc.vars), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), tc.want) {

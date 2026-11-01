@@ -4,6 +4,7 @@
 # description: New activity on a repository's issues, pull requests and Actions runs
 # interval: 60s
 # min-interval: 10s
+# since: true
 # options:
 # - {name: repo, required: true, description: owner/name}
 # - {name: watch, description: "issues, prs, actions, comma-separated; all three when omitted and no ids or filters are given"}
@@ -18,4 +19,6 @@
 # The image's github-repo monitor (ADR 26-10-31-073 §9), written in Go and
 # run by the agent (sandbox-agent/monitors/githubrepo): a quiet repository
 # costs no rate limit, and a catch-up after a long sleep keeps its progress.
+# Given DISCOBOX_MONITOR_SINCE (`test --since`, ADR 26-11-01-375 §3), its
+# first run starts from that time instead of now.
 exec discobox-sandbox-agent monitor-builtin github-repo

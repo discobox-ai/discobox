@@ -80,6 +80,16 @@ flowchart TD
   baseline cut short is taken again whole, never read as a pass from the
   epoch. Actions watched without a pass over runs yet (`RunsSince` zero) is
   a baseline for runs.
+- **`since: true`: a test's first run may start in the past**
+  ([ADR 26-11-01-375](../../../docs/adr/26-11-01-375-a-monitor-is-enabled-by-its-path-an-instance-changes-its-options-in-place-and-test-starts-in-the-past.md)
+  §3). Given `Env.Since`, a first run takes no baseline: it is a pass as
+  though the last had ended then (`startFrom`), `Since`, `Baseline` and
+  `RunsSince` all set to it, so the search, its cutoff and the runs' gap
+  reach back that far. Named PRs start `Quiet` as they would at a baseline,
+  and the open PRs `head` and `author` select are found as a baseline finds
+  them. A run with state already ignores it. Its markers are set before the
+  work they mark, so it saves nothing until it has finished: cut short, it
+  leaves only a rate limit's wait, and the next run is a baseline.
 - **A followed run that is gone (404) is let go**; a named one that does not
   exist is the instance's failure, naming the option.
 - **GitHub's clock, not the box's.** A pass's bounds come from the probes'

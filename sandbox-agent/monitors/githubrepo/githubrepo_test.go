@@ -410,7 +410,7 @@ func TestTheImageDeclaresThisMonitor(t *testing.T) {
 }
 
 func TestATargetNamedSinceTheBaselineStartsAsItsOwnBaseline(t *testing.T) {
-	// Options changed in place (ADR 26-11-01-375 §2, proposed): a PR named
+	// Options changed in place (ADR 26-11-01-375 §2): a PR named
 	// later reports what happens after it was named, not what it already was.
 	f := newFake(t, t0)
 	f.touchIssues()
@@ -433,6 +433,77 @@ func TestATargetNamedSinceTheBaselineStartsAsItsOwnBaseline(t *testing.T) {
 	f.prs[8] = pull(8, "b", "bbb2222222", "SUCCESS", "MERGEABLE")
 	f.setChecks("bbb2222222", `{"check_runs":[{"conclusion":"success"}]}`)
 	if got := in.poll(); !slices.Equal(kinds(got), []string{"pr.checks", "pr.conflict"}) {
+		t.Fatalf("events = %+v", got)
+	}
+}
+
+func TestAFirstRunGivenSinceReportsWhatHappenedAfterIt(t *testing.T) {
+	// test --since (ADR 26-11-01-375 §3): the first run is a pass from an
+	// hour ago, not a baseline, and reports in the events an instance queues.
+	since := t0.Add(-time.Hour)
+	f := newFake(t, t0)
+	f.touchIssues()
+	f.nodes = []activityNode{issueNode(1, t0.Add(-3*time.Hour), t0.Add(-30*time.Minute),
+		comment("c0", t0.Add(-2*time.Hour), "before"), comment("c1", t0.Add(-30*time.Minute), "after"))}
+	f.setRuns(
+		workflowRun{ID: 2, Name: "ci", Status: "completed", Conclusion: "success", HeadBranch: "main", CreatedAt: t0.Add(-40 * time.Minute), UpdatedAt: t0.Add(-20 * time.Minute)},
+		workflowRun{ID: 1, Name: "ci", Status: "completed", Conclusion: "success", HeadBranch: "main", CreatedAt: t0.Add(-4 * time.Hour), UpdatedAt: t0.Add(-3 * time.Hour)},
+	)
+	in := newInstance(t, f, map[string]string{"repo": "o/r"})
+	in.env.Since = since
+	got := in.poll()
+	if !slices.Equal(kinds(got), []string{"issue.comment", "run.completed"}) || got[0].Body != "after" || got[1].Key != "run-2" {
+		t.Fatalf("events = %+v", got)
+	}
+	if st := in.state(); !st.Baseline.Equal(since) {
+		t.Fatalf("baseline = %v, want %v", st.Baseline, since)
+	}
+	// Only the first run is given it; the next goes on from this pass and
+	// repeats nothing.
+	in.env.Since = time.Time{}
+	f.advance(time.Minute)
+	f.touchIssues()
+	if got := in.poll(); len(got) != 0 {
+		t.Fatalf("repeated %+v", got)
+	}
+}
+
+func TestAFirstRunFromThePastCutShortLeavesOnlyItsWait(t *testing.T) {
+	// Its markers stand for a pass not yet done: kept, they would make the
+	// next run a pass rather than the baseline it has to be.
+	f := newFake(t, t0)
+	busyGap(f, t0.Add(-3*time.Hour))
+	f.limitAt["search"] = 2
+	in := newInstance(t, f, map[string]string{"repo": "o/r", "watch": "issues"})
+	in.env.Since = t0.Add(-3 * time.Hour)
+	in.poll()
+	st := in.state()
+	if !st.Since.IsZero() || !st.Baseline.IsZero() || st.Walk != nil || st.NotBefore.IsZero() {
+		t.Fatalf("state = %+v; want only the wait", st)
+	}
+	// The next run, past the wait and given no since, is a baseline.
+	in.env.Since = time.Time{}
+	in.clock = in.clock.Add(time.Hour)
+	f.reset()
+	if got := in.poll(); len(got) != 0 {
+		t.Fatalf("events = %+v", got)
+	}
+	if st := in.state(); st.Baseline.IsZero() {
+		t.Fatalf("no baseline: %+v", st)
+	}
+}
+
+func TestSinceIsOnlyAFirstRunsBaseline(t *testing.T) {
+	// An instance with state ignores it: its baseline is already taken.
+	f := newFake(t, t0)
+	f.touchIssues()
+	in := newInstance(t, f, map[string]string{"repo": "o/r", "watch": "issues"})
+	in.poll()
+	f.advance(time.Minute)
+	f.nodes = []activityNode{issueNode(1, t0.Add(-3*time.Hour), t0.Add(-30*time.Minute), comment("c1", t0.Add(-30*time.Minute), "old"))}
+	f.touchIssues()
+	in.env.Since = t0.Add(-time.Hour)
+	if got := in.poll(); len(got) != 0 {
 		t.Fatalf("events = %+v", got)
 	}
 }
