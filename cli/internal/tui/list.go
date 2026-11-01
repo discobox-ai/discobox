@@ -581,6 +581,26 @@ func (l *sandboxList) current() *Sandbox {
 	return &rows[l.cursor]
 }
 
+// neighbor is the row after one box's — the one before it, for the last row —
+// which is where the list goes once that box leaves it. Nil when the box is
+// not listed or is the only row.
+func (l *sandboxList) neighbor(id string) *Sandbox {
+	rows := l.rows()
+	for i, s := range rows {
+		if s.ID != id {
+			continue
+		}
+		switch {
+		case i+1 < len(rows):
+			return &rows[i+1]
+		case i > 0:
+			return &rows[i-1]
+		}
+		return nil
+	}
+	return nil
+}
+
 // targets returns the sandboxes a command should act on: the visual range
 // while one is being drawn, otherwise everything selected, otherwise the row
 // under the cursor.

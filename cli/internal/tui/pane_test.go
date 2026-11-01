@@ -2017,11 +2017,13 @@ func TestAKeyAfterARunIsNotACommand(t *testing.T) {
 
 // Every command the list offers is here on the key it has there. Archiving is
 // the exception that also detaches: the workspace belongs to the box being put
-// away, so its result is reported on the list behind it.
+// away, so on a console with no tree beside it its result is reported on the
+// list behind it. Beside the tree it goes on to the next box instead; see
+// TestArchivingBesideTheTreeGoesOnToTheNextBox.
 func TestLeaderRunsTheListsVerbs(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
-	d, m, term := openWorkspace(t, ds, "enter")
+	d, m, term := openNarrowWorkspace(t, ds, "enter")
 
 	d.key("ctrl+a")
 	d.key("x") // archive
