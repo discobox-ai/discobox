@@ -746,13 +746,19 @@ offer.
 The tree's column is too narrow to share: beside the name a row's tags only
 get what the name has past its floor, and the tail columns take that first,
 so in the tree a tag never fit. There a tagged row draws its tags on a second
-line under it (`sandboxList.tagLines`, `tagLine`), from under the name, with
+line under it (`sandboxList.inTree`, `tagLine`), from under the name, with
 the tree's rule carried down past them — drawn as beside the name
 (`tagSpans`): the pull request status first in its color, an issue or pull
 request a link, the rest dim, and `+N` for what does not fit. The line is
 part of the row: a press on it points at the row, its links open, and the
 cursor's window counts it (`lineSpan`, `drawn.rows`). The wide list keeps one
 line per row and its tags beside the name.
+
+For the same reason a tree row's tail is only its marks — the upgrade arrow
+and the credential request — with no harness and no git, age or usage
+columns: those cells go to the name, which is what a row there is picked by.
+The tail is first-fit, so dropping the harness alone would only hand its cells
+to the next column that fits.
 
 The workspace header carries the box's other tags too (`tagsField`), dim,
 last among its fields and the first given up: not the issue and pull request

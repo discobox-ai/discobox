@@ -299,7 +299,7 @@ func TestTheWorkspaceHeaderLeavesAnUnnumberedIssueOut(t *testing.T) {
 // on.
 func treeTagBoxes() []Sandbox {
 	return []Sandbox{
-		{ID: "sbx_a", Name: "fix the reaper", State: StateRunning, Repository: "https://github.com/acme/disco",
+		{ID: "sbx_a", Name: "fix the reaper", State: StateRunning, Harness: "claude", Repository: "https://github.com/acme/disco",
 			Tags: []string{"issue=342", "ready", "area=tui", "size=s", "kind=bug"}},
 		{ID: "sbx_b", Name: "plain", State: StateRunning},
 		{ID: "sbx_c", Name: "consolidate", State: StateRunning, Repository: "https://github.com/acme/disco",
@@ -311,11 +311,11 @@ func treeTagBoxes() []Sandbox {
 // it, drawn as the row draws them beside the name — the pull request status
 // first and in its color, an issue or pull request a link, the rest dim — with
 // how many did not fit, and an untagged row has no such line. The name gets
-// the row's width rather than sharing it.
+// the row's width rather than sharing it, with the harness column too.
 func TestTheTreeDrawsATaggedRowsTagsUnderIt(t *testing.T) {
 	st := newStyles(true)
 	l := listForTest(Session{}, treeTagBoxes())
-	l.width, l.tagLines = treeWidth-2, true
+	l.width, l.inTree = treeWidth-2, true
 	z := &zones{}
 	out := l.view(st, z, true)
 	lines := strings.Split(ansi.Strip(out), "\n")
@@ -356,10 +356,14 @@ func TestTheTreeDrawsATaggedRowsTagsUnderIt(t *testing.T) {
 	}
 
 	// The list itself, wide, keeps its tags beside the name on one line.
-	l.width, l.tagLines = 160, false
+	l.width, l.inTree = 160, false
 	wide := ansi.Strip(l.view(st, &zones{}, true))
 	if !strings.Contains(wide, "fix the reaper #ready #issue=342") || strings.Contains(wide, "      #ready") {
 		t.Fatalf("the wide list does not keep its tags beside the name:\n%s", wide)
+	}
+	// And keeps the harness column the tree leaves out for the name.
+	if !strings.Contains(wide, "claude") {
+		t.Fatalf("the wide list has no harness column:\n%s", wide)
 	}
 }
 
@@ -371,7 +375,7 @@ func TestTheTreeScrollsByTheLinesItsTagsTake(t *testing.T) {
 		boxes = append(boxes, Sandbox{ID: fmt.Sprintf("sbx_%d", i), Name: fmt.Sprintf("box %d", i), State: StateRunning, Tags: []string{"t"}})
 	}
 	l := listForTest(Session{}, boxes)
-	l.width, l.height, l.tagLines = treeWidth-2, 7, true
+	l.width, l.height, l.inTree = treeWidth-2, 7, true
 	l.moveTo(5)
 	lines := strings.Split(ansi.Strip(l.view(newStyles(true), &zones{}, true)), "\n")
 	text := strings.Join(lines, "\n")
