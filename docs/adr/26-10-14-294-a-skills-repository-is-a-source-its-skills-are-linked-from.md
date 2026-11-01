@@ -8,6 +8,8 @@
 - **Amended by**: [26-10-15-664](26-10-15-664-a-source-is-named-one-way-everywhere.md) — §1's
   `URL[@REF][//PATH]` is the general source notation, and `--skills` takes
   GitHub shorthand.
+- **Superseded in part by**: [26-11-01-692](26-11-01-692-a-skills-source-is-checked-out-under-home.md) —
+  §2's placement: a `skills` source is checked out under home.
 - **Relates to**: [0055](0055-a-delivered-source-settles-before-its-sandbox-runs.md),
   [0056](0056-a-repository-declares-the-sources-it-is-worked-on-with.md),
   [0072](0072-a-repository-ships-skills-that-only-exist-in-a-sandbox.md),
