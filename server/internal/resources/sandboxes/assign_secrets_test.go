@@ -126,7 +126,7 @@ func newAssignFixture(t *testing.T) (*Service, *recordingProvider) {
 	t.Helper()
 	svc, _ := newBindingFixture(t)
 	rec := &recordingProvider{}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(svc.store)
 	manager.RegisterProvider("test", rec)
 	manager.SetDefault("test")
 	svc.sandboxProviders = manager

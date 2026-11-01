@@ -31,7 +31,7 @@ import (
 func TestReconcileClearsARecordedFailureOnSuccess(t *testing.T) {
 	ctx := context.Background()
 	appStore, _ := newPoolReconcilerTestStore(t)
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProvider("stub", stubPoolProvider{})
 
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
@@ -88,7 +88,7 @@ func TestReconcileClearsARecordedFailureOnSuccess(t *testing.T) {
 func TestReconcilePromotesAPoolThatRegisteredAfterConverging(t *testing.T) {
 	ctx := context.Background()
 	appStore, _ := newPoolReconcilerTestStore(t)
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProvider("stub", stubPoolProvider{})
 
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
@@ -135,7 +135,7 @@ func TestReconcilePromotesAPoolThatRegisteredAfterConverging(t *testing.T) {
 func TestFailedReconcileKeepsALiveCreatedPoolActive(t *testing.T) {
 	ctx := context.Background()
 	appStore, _ := newPoolReconcilerTestStore(t)
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProvider("stub", failingPoolProvider{stubPoolProvider{}})
 
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
@@ -190,7 +190,7 @@ func TestFailedReconcileKeepsALiveCreatedPoolActive(t *testing.T) {
 func TestStaleHeartbeatReadsOffline(t *testing.T) {
 	ctx := context.Background()
 	appStore, _ := newPoolReconcilerTestStore(t)
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProvider("stub", stubPoolProvider{})
 
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
@@ -294,7 +294,7 @@ func TestReconcileRequeuesAPoolHostThatIsStillComingUp(t *testing.T) {
 	ctx := context.Background()
 	appStore, _ := newPoolReconcilerTestStore(t)
 	runtime := &hostComingUpProvider{}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProvider("stub", runtime)
 
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
@@ -504,7 +504,7 @@ func (p startingPoolProvider) ReconcilePool(ctx context.Context, manager sandbox
 func TestReplacementClosesPlacementBeforePreload(t *testing.T) {
 	ctx := context.Background()
 	appStore, _ := newPoolReconcilerTestStore(t)
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "startup", Name: "startup"}
 	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatal(err)
@@ -549,7 +549,7 @@ func TestReplacementClosesPlacementBeforePreload(t *testing.T) {
 func TestStartupReconcileDoesNotRenewPreviousOfflineFailure(t *testing.T) {
 	ctx := context.Background()
 	st, _ := newPoolReconcilerTestStore(t)
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(st)
 	manager.RegisterProvider("stub", stubPoolProvider{})
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
 	if err := st.CreateSandboxProviderInstance(ctx, provider); err != nil {
@@ -603,7 +603,7 @@ func TestSupersededPoolReconcileSettlesCleanly(t *testing.T) {
 	ctx := context.Background()
 	appStore, db := newPoolReconcilerTestStore(t)
 	runtime := &supersedingPoolProvider{db: db}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProvider("stub", runtime)
 
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
@@ -658,7 +658,7 @@ func TestPoolSupersededInsideReconcilePoolIsNotRepaired(t *testing.T) {
 	ctx := context.Background()
 	appStore, db := newPoolReconcilerTestStore(t)
 	runtime := &supersededAtBeginProvider{db: db}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProvider("stub", runtime)
 
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
@@ -751,7 +751,7 @@ func TestReconcilePersistsTheHostCredential(t *testing.T) {
 	appStore, _ := newPoolReconcilerTestStore(t)
 	expires := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
 	runtime := &credentialPoolProvider{credential: &model.PoolHostCredential{Key: model.PoolHostKeyIssued, Scope: "org", KeyID: "key-1", ExpiresAt: &expires, MachineToken: true}}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProvider("stub", runtime)
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
 	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {

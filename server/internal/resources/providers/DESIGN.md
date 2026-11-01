@@ -2,9 +2,36 @@
 
 `internal/resources/providers` owns provider-instance API behavior, the
 provider-type catalog, and startup reconciliation. A provider instance is
-backend identity only — type, name, non-secret connection config, and a
+backend identity only — type, name, connection config, its credentials, and a
 disabled flag (`model.SandboxProviderInstance`). Capacity, sharing policy, and
 observed runtime status belong to `Pool` (`internal/resources/pools`).
+
+## Credentials
+
+A config field the definition types `secret` (`sandbox.ProviderConfigFieldSecret`)
+holds a credential, and is sealed in the instance's own row, apart from the
+rest of the config (ADR 26-10-31-694):
+
+- **Write.** The service splits a written config by the definition's secret
+  fields: they go to `encrypted_config`, which the store seals, and `config`
+  keeps the rest. On update, a secret field the body leaves out keeps its
+  sealed value, a value replaces it, and null clears it. The update reads
+  the row locked and writes it in one transaction. The config is validated whole,
+  secret fields joined in, as create's is.
+- **Read.** Every answer carries `config` without secret fields and
+  `secretFields`, the names of those with a value; no value is ever returned,
+  not even one still in a row's stored `config`. A row whose sealed fields do
+  not open is logged and answered without `secretFields`, so it does not take
+  the listing down.
+- **Resolve.** `sandbox.ProviderManager` opens the sealed fields through the
+  store and joins them into the config the provider's factory and
+  `Initialize` decode; a provider imports nothing of the store. A secret
+  field still in `config` fails the resolve and never reaches the provider.
+- **Rotation** is an update: it moves `UpdatedAt`, on which the manager's
+  cache is keyed. No secret field is `Immutable`.
+- **No project secret** is named, so no binding, request, delegation or raw
+  delivery reaches a provider's credential. An environment reference
+  (`tokenEnv`, `sshPrivateKeyEnv`) is refused by name (400).
 
 ## Boundaries
 
@@ -41,7 +68,8 @@ flowchart LR
   provider on the next resolve because the cache is keyed by `UpdatedAt`.
 - Project copy creates the copied instances through this service
   (`CreateSandboxProviderInstance`), so they get the same validation and
-  resolve.
+  resolve. It hands the create the source's config with its sealed fields
+  joined in, so the copy seals them again in its own row.
 - Provider instance deletion must refuse deletion (409) while pools are still
   bound to the instance: pools bind immutably at create, and sandboxes hang off
   the pools. Delete the pools first.

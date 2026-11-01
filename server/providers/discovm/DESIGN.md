@@ -138,7 +138,9 @@ as ADR 26-10-09-106 §1 places it:
   real machine does.
 - A remote driver authenticates with the provider's `apiKey`, passed as
   `Config.Keys` (`providerKeys`); disco-vm reads no key of its own accord,
-  and the server's environment is not read. A provider made before it held
+  and the server's environment is not read. `apiKey` is a `secret` field:
+  sealed in the provider's row and joined into its config only at resolve
+  (ADR 26-10-31-694). A provider made before it held
   one fails each call to the service, naming `apiKey`. A remote driver's
   `controlPlaneUrl`, where its pool machines reach this server, is optional:
   without one the server opens a

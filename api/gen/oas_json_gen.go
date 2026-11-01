@@ -29270,18 +29270,6 @@ func (s *ProviderConfigField) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.CredentialAuthType.Set {
-			e.FieldStart("credentialAuthType")
-			s.CredentialAuthType.Encode(e)
-		}
-	}
-	{
-		if s.CredentialProvider.Set {
-			e.FieldStart("credentialProvider")
-			s.CredentialProvider.Encode(e)
-		}
-	}
-	{
 		if s.Description.Set {
 			e.FieldStart("description")
 			s.Description.Encode(e)
@@ -29319,17 +29307,15 @@ func (s *ProviderConfigField) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfProviderConfigField = [10]string{
+var jsonFieldsNameOfProviderConfigField = [8]string{
 	0: "advanced",
-	1: "credentialAuthType",
-	2: "credentialProvider",
-	3: "description",
-	4: "immutable",
-	5: "key",
-	6: "label",
-	7: "placeholder",
-	8: "required",
-	9: "type",
+	1: "description",
+	2: "immutable",
+	3: "key",
+	4: "label",
+	5: "placeholder",
+	6: "required",
+	7: "type",
 }
 
 // Decode decodes ProviderConfigField from json.
@@ -29337,7 +29323,7 @@ func (s *ProviderConfigField) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode ProviderConfigField to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -29350,26 +29336,6 @@ func (s *ProviderConfigField) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"advanced\"")
-			}
-		case "credentialAuthType":
-			if err := func() error {
-				s.CredentialAuthType.Reset()
-				if err := s.CredentialAuthType.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"credentialAuthType\"")
-			}
-		case "credentialProvider":
-			if err := func() error {
-				s.CredentialProvider.Reset()
-				if err := s.CredentialProvider.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"credentialProvider\"")
 			}
 		case "description":
 			if err := func() error {
@@ -29392,7 +29358,7 @@ func (s *ProviderConfigField) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"immutable\"")
 			}
 		case "key":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.Key = string(v)
@@ -29404,7 +29370,7 @@ func (s *ProviderConfigField) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"key\"")
 			}
 		case "label":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Label = string(v)
@@ -29436,7 +29402,7 @@ func (s *ProviderConfigField) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"required\"")
 			}
 		case "type":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.Type = string(v)
@@ -29456,9 +29422,8 @@ func (s *ProviderConfigField) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
-		0b01100000,
-		0b00000010,
+	for i, mask := range [1]uint8{
+		0b10011000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -45297,6 +45262,12 @@ func (s *SandboxProviderInstance) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SecretFields.Set {
+			e.FieldStart("secretFields")
+			s.SecretFields.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("type")
 		e.Str(s.Type)
 	}
@@ -45306,17 +45277,18 @@ func (s *SandboxProviderInstance) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxProviderInstance = [10]string{
-	0: "$schema",
-	1: "config",
-	2: "createdAt",
-	3: "disabled",
-	4: "id",
-	5: "name",
-	6: "projectId",
-	7: "pools",
-	8: "type",
-	9: "updatedAt",
+var jsonFieldsNameOfSandboxProviderInstance = [11]string{
+	0:  "$schema",
+	1:  "config",
+	2:  "createdAt",
+	3:  "disabled",
+	4:  "id",
+	5:  "name",
+	6:  "projectId",
+	7:  "pools",
+	8:  "secretFields",
+	9:  "type",
+	10: "updatedAt",
 }
 
 // Decode decodes SandboxProviderInstance from json.
@@ -45419,8 +45391,18 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"pools\"")
 			}
+		case "secretFields":
+			if err := func() error {
+				s.SecretFields.Reset()
+				if err := s.SecretFields.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"secretFields\"")
+			}
 		case "type":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Type = string(v)
@@ -45432,7 +45414,7 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"type\"")
 			}
 		case "updatedAt":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -45454,7 +45436,7 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b01111100,
-		0b00000011,
+		0b00000110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

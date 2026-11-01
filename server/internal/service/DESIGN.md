@@ -91,12 +91,18 @@ reconcilers the service needs. `NewApp` then applies the setters, calls
    `Options.SandboxReconcileJobConcurrency`), `harnessConfig`
    (`harnessconfigs.Service`, so in-flight configure flows survive a restart),
    and `pool` (`pools.ControlPlane.RegisterJobs`).
-2. Invalidates previous pool health with `Store.BeginPoolHealthChecks`, then
-   starts the engine. This runs before any worker or HTTP listener can use old
-   readiness; pool identity and lifecycle survive.
-3. Starts the pool bootstrap-token cleanup owned by `pools.ControlPlane`, and
+2. Invalidates previous pool health with `Store.BeginPoolHealthChecks`. This
+   runs before any worker or HTTP listener can use old readiness; pool
+   identity and lifecycle survive.
+3. Brings stored secrets' formats up to date (`Store.RefreshSecretFormats`),
+   before anything mints a sentinel, and seals the credentials an older
+   server kept in a provider's config in the clear
+   (`Store.SealProviderCredentials`, ADR 26-10-31-694 §4), before anything
+   resolves a provider. Then it starts the engine, whose reconciles resolve
+   providers.
+4. Starts the pool bootstrap-token cleanup owned by `pools.ControlPlane`, and
    the asset store's hourly removal by reference (`assets.Service.StartPruning`).
-4. Runs `providers.Service.EnsureExistingSandboxProviderInstances`, resolving
+5. Runs `providers.Service.EnsureExistingSandboxProviderInstances`, resolving
    every enabled provider instance. An instance that does not resolve is
    logged and its pools marked for retry; only a store error stops the engine
    and returns.

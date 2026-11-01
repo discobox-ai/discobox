@@ -107,7 +107,7 @@ func transferFixture(t *testing.T) (context.Context, *Service, *store.Store, *tr
 		}
 		return len(sandboxes)
 	}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProvider("test", provider)
 	manager.SetDefault("test")
 	svc := NewService(appStore, manager, "user-1", engine)

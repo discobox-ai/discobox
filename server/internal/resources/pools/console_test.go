@@ -26,7 +26,7 @@ func (refusingConsoleProvider) OpenConsole(context.Context, *model.SandboxProvid
 func TestOpenPoolConsoleAnswersNotImplementedForABackendWithNoConsole(t *testing.T) {
 	ctx := context.Background()
 	appStore, _ := newPoolReconcilerTestStore(t)
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProvider("hosted", refusingConsoleProvider{})
 	instance := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "hosted", Name: "hosted"}
 	if err := appStore.CreateSandboxProviderInstance(ctx, instance); err != nil {

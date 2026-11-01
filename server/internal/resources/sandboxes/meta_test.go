@@ -42,7 +42,7 @@ func metaFixture(t *testing.T, agent http.HandlerFunc) *Service {
 	service, _ := attachWaitFixture(t)
 	server := httptest.NewServer(agent)
 	t.Cleanup(server.Close)
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(service.store)
 	manager.RegisterProvider("test", &metaAgentProvider{baseURL: server.URL})
 	manager.SetDefault("test")
 	service.sandboxProviders = manager

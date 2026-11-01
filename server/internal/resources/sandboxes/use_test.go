@@ -148,7 +148,7 @@ func useFixture(t *testing.T) (*Service, *containerProvider, *gorm.DB) {
 	}
 
 	provider := &containerProvider{}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProvider("test", provider)
 	manager.SetDefault("test")
 

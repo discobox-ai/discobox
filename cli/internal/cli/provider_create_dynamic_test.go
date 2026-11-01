@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -423,5 +426,114 @@ func TestProviderCreateCommandConsumesDebugGlobalFlag(t *testing.T) {
 	}
 	if !strings.Contains(debugOutput, "> POST "+server.URL+"/projects/default/providers") {
 		t.Fatalf("debug output = %q, want provider create request", debugOutput)
+	}
+}
+
+func keyedCatalogItem() apimodel.SandboxProviderCatalogItem {
+	provider := apimodel.SandboxProviderCatalogItem{ID: "vm", Name: "vm"}
+	provider.ConfigFields.SetTo([]apimodel.ProviderConfigField{{
+		Key:   "driver",
+		Label: "Driver",
+		Type:  "string",
+	}, {
+		Key:         "apiKey",
+		Label:       "API Key",
+		Type:        "secret",
+		Required:    apiclientgen.NewOptBool(true),
+		Description: apiclientgen.NewOptString("The driver's key."),
+	}})
+	return provider
+}
+
+// A secret field has no flag of its own: its value comes from a file or
+// stdin through --secret, never from the command line (ADR 26-10-31-694 §2).
+func TestDynamicProviderCreateReadsASecretFieldFromAFile(t *testing.T) {
+	provider := keyedCatalogItem()
+	keyFile := filepath.Join(t.TempDir(), "key")
+	if err := os.WriteFile(keyFile, []byte("bxd_key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := NewRootCommand()
+	createCmd, _, err := cmd.Find([]string{"admin", "provider", "create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseDynamicProviderCreateArgs(createCmd, []string{"--type", "vm", "--api-key", "bxd_key"}, provider); err == nil {
+		t.Fatal("--api-key parsed: a secret field must have no flag of its own")
+	}
+	opts, err := parseDynamicProviderCreateArgs(createCmd, []string{"--type", "vm", "--driver", "boxd", "--secret", "apiKey=@" + keyFile}, provider)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	body, err := dynamicProviderCreateBody(opts, provider)
+	if err != nil {
+		t.Fatalf("body: %v", err)
+	}
+	if got := string(body.GetConfig()); got != `{"apiKey":"bxd_key\n","driver":"boxd"}` {
+		t.Fatalf("config = %s", got)
+	}
+
+	for name, args := range map[string][]string{
+		"a value on the command line": {"--type", "vm", "--secret", "apiKey=bxd_key"},
+		"a field that is not secret":  {"--type", "vm", "--secret", "driver=@" + keyFile},
+		"the required key left out":   {"--type", "vm", "--driver", "boxd"},
+	} {
+		opts, err := parseDynamicProviderCreateArgs(createCmd, args, provider)
+		if err != nil {
+			t.Fatalf("%s: parse: %v", name, err)
+		}
+		if _, err := dynamicProviderCreateBody(opts, provider); err == nil {
+			t.Errorf("%s: create body built, want it refused", name)
+		}
+	}
+}
+
+// An update sends the current config with the new key read from stdin; one
+// without --secret sends no key, so the server keeps the one it holds.
+func TestDynamicProviderUpdateReadsASecretFieldFromStdin(t *testing.T) {
+	provider := keyedCatalogItem()
+	current := &apimodel.SandboxProviderInstance{Config: jx.Raw(`{"driver":"boxd"}`)}
+	cmd := NewRootCommand()
+	updateCmd, _, err := cmd.Find([]string{"admin", "provider", "update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updateCmd.SetIn(strings.NewReader("bxd_new"))
+	opts, err := parseDynamicProviderUpdateArgs(updateCmd, []string{"provider-1", "--secret", "apiKey=-"}, provider)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	body, err := dynamicProviderUpdateBody(opts, provider, current)
+	if err != nil {
+		t.Fatalf("body: %v", err)
+	}
+	if got := string(body.GetConfig()); got != `{"apiKey":"bxd_new","driver":"boxd"}` {
+		t.Fatalf("config = %s", got)
+	}
+
+	opts, err = parseDynamicProviderUpdateArgs(updateCmd, []string{"provider-1", "--driver", "vz"}, provider)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	body, err = dynamicProviderUpdateBody(opts, provider, current)
+	if err != nil {
+		t.Fatalf("body: %v", err)
+	}
+	if got := string(body.GetConfig()); got != `{"driver":"vz"}` {
+		t.Fatalf("config = %s, want no key sent", got)
+	}
+}
+
+func TestProviderCreateHelpListsSecretFieldsUnderSecret(t *testing.T) {
+	var out bytes.Buffer
+	if err := writeProviderCreateHelp(&out, keyedCatalogItem()); err != nil {
+		t.Fatal(err)
+	}
+	help := out.String()
+	if strings.Contains(help, "--api-key") {
+		t.Errorf("help offers --api-key: %s", help)
+	}
+	if !strings.Contains(help, "Secret Fields") || !regexp.MustCompile(`apiKey +The driver's key\. \(required\)`).MatchString(help) {
+		t.Errorf("help does not list apiKey as a required secret field: %s", help)
 	}
 }

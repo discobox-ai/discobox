@@ -115,7 +115,7 @@ func (d *Dialer) AcquireDockerClient(ctx context.Context, target Target) (*docke
 // the key-authenticated SSH channel.
 func (d *Dialer) Dial(ctx context.Context, target Target) (*ssh.Client, error) {
 	if d.signer == nil {
-		return nil, errors.New("ssh private key is required to reach the worker docker daemon; set sshPrivateKey or sshPrivateKeyEnv")
+		return nil, errors.New("ssh private key is required to reach the worker docker daemon; set the provider's sshPrivateKey")
 	}
 	if strings.TrimSpace(target.Host) == "" {
 		return nil, errors.New("ssh target host is required")

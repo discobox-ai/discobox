@@ -84,7 +84,7 @@ func attachWaitFixture(t *testing.T) (*Service, *provisioningProvider) {
 	}
 
 	provider := &provisioningProvider{}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProvider("test", provider)
 	manager.SetDefault("test")
 

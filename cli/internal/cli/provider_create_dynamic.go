@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +21,8 @@ type dynamicProviderCreateOptions struct {
 	Name         string
 	ProviderType string
 	Config       string
+	Secrets      []string
+	Stdin        io.Reader
 	Flags        *pflag.FlagSet
 }
 
@@ -27,9 +30,16 @@ type dynamicProviderUpdateOptions struct {
 	ProviderID string
 	Name       string
 	Config     string
+	Secrets    []string
 	Disabled   bool
+	Stdin      io.Reader
 	Flags      *pflag.FlagSet
 }
+
+// secretFlagUsage describes --secret, the one way a secret field's value is
+// given: from a file or stdin, never on the command line, where ps shows it
+// (ADR 26-10-31-694 §2).
+const secretFlagUsage = "Secret field from a file or stdin, as KEY=@path or KEY=- (repeatable); never given on the command line" //nolint:gosec // Flag help text, not a credential.
 
 type providerCreateHelpFlag struct {
 	provider string
@@ -293,7 +303,7 @@ func providerTypeFromArgs(args []string) string {
 }
 
 func parseDynamicProviderCreateArgs(cmd *cobra.Command, args []string, provider apimodel.SandboxProviderCatalogItem) (dynamicProviderCreateOptions, error) {
-	opts := dynamicProviderCreateOptions{ProviderType: provider.ID}
+	opts := dynamicProviderCreateOptions{ProviderType: provider.ID, Stdin: cmd.InOrStdin()}
 	flags := providerCreateFlagSet(cmd, provider, &opts)
 	opts.Flags = flags
 	if err := flags.Parse(args); err != nil {
@@ -309,7 +319,7 @@ func parseDynamicProviderCreateArgs(cmd *cobra.Command, args []string, provider 
 }
 
 func parseDynamicProviderUpdateArgs(cmd *cobra.Command, args []string, provider apimodel.SandboxProviderCatalogItem) (dynamicProviderUpdateOptions, error) {
-	opts := dynamicProviderUpdateOptions{}
+	opts := dynamicProviderUpdateOptions{Stdin: cmd.InOrStdin()}
 	flags := providerUpdateFlagSet(cmd, provider, &opts)
 	opts.Flags = flags
 	if err := flags.Parse(args); err != nil {
@@ -331,6 +341,7 @@ func providerCreateFlagSet(cmd *cobra.Command, provider apimodel.SandboxProvider
 	flags.StringVar(&opts.ProviderType, "type", provider.ID, "Provider type")
 	flags.StringVar(&opts.Name, "name", "", "Provider instance name")
 	flags.StringVar(&opts.Config, "config", "", "Provider config JSON or @path; cannot be combined with provider-specific flags")
+	flags.StringArrayVar(&opts.Secrets, "secret", nil, secretFlagUsage)
 	for _, field := range sortedProviderConfigFields(provider) {
 		flagName := providerFieldFlagName(field.Key)
 		description := providerFieldDescription(field)
@@ -348,6 +359,7 @@ func providerUpdateFlagSet(cmd *cobra.Command, provider apimodel.SandboxProvider
 	flags.StringVar(&opts.Name, "name", "", "Provider instance name")
 	flags.StringVar(&opts.Config, "config", "", "Provider config JSON or @path; cannot be combined with provider-specific flags")
 	flags.BoolVar(&opts.Disabled, "disabled", false, "Disable or enable the provider instance")
+	flags.StringArrayVar(&opts.Secrets, "secret", nil, secretFlagUsage)
 	for _, field := range sortedProviderConfigFields(provider) {
 		flagName := providerFieldFlagName(field.Key)
 		description := providerFieldDescription(field)
@@ -364,26 +376,131 @@ func dynamicProviderCreateBody(opts dynamicProviderCreateOptions, provider apimo
 	if opts.Flags == nil {
 		return body, nil
 	}
-	config := strings.TrimSpace(opts.Config)
-	if config != "" {
+	secrets, err := providerSecretValues(opts.Secrets, provider, opts.Stdin)
+	if err != nil {
+		return nil, err
+	}
+	var raw jx.Raw
+	if config := strings.TrimSpace(opts.Config); config != "" {
 		for _, field := range sortedProviderConfigFields(provider) {
 			if opts.Flags.Changed(providerFieldFlagName(field.Key)) {
 				return nil, fmt.Errorf("--config cannot be combined with provider-specific flags")
 			}
 		}
-		raw, err := rawJSON(config)
-		if err != nil {
+		if raw, err = rawJSON(config); err != nil {
 			return nil, err
 		}
-		body.SetConfig(raw)
-		return body, nil
+	} else if raw, err = dynamicProviderCreateConfig(opts.Flags, provider); err != nil {
+		return nil, err
 	}
-	raw, err := dynamicProviderCreateConfig(opts.Flags, provider)
-	if err != nil {
+	if raw, err = withProviderSecrets(raw, secrets); err != nil {
+		return nil, err
+	}
+	if err := requireProviderSecrets(raw, provider); err != nil {
 		return nil, err
 	}
 	body.SetConfig(raw)
 	return body, nil
+}
+
+// providerSecretValues reads each --secret KEY=@path or KEY=- into the value
+// of the provider's secret field KEY. A value is never taken from the command
+// line itself, and stdin is read for at most one.
+func providerSecretValues(specs []string, provider apimodel.SandboxProviderCatalogItem, stdin io.Reader) (map[string]string, error) {
+	if len(specs) == 0 {
+		return nil, nil
+	}
+	secretKeys := map[string]bool{}
+	var names []string
+	for _, field := range provider.ConfigFields.Or(nil) {
+		if isSecretProviderField(field) {
+			secretKeys[field.Key] = true
+			names = append(names, field.Key)
+		}
+	}
+	values := make(map[string]string, len(specs))
+	readStdin := false
+	for _, spec := range specs {
+		key, source, ok := strings.Cut(spec, "=")
+		key = strings.TrimSpace(key)
+		if !ok || key == "" {
+			return nil, fmt.Errorf("--secret %q: give it as KEY=@path or KEY=-", spec)
+		}
+		if !secretKeys[key] {
+			if len(names) == 0 {
+				return nil, fmt.Errorf("--secret %s: a %s provider has no secret fields", key, provider.ID)
+			}
+			return nil, fmt.Errorf("--secret %s: not a secret field of a %s provider (its secret fields: %s)", key, provider.ID, strings.Join(names, ", "))
+		}
+		if _, dup := values[key]; dup {
+			return nil, fmt.Errorf("--secret %s is given twice", key)
+		}
+		var data []byte
+		var err error
+		switch {
+		case source == "-":
+			if readStdin {
+				return nil, fmt.Errorf("--secret %s: only one secret may be read from stdin", key)
+			}
+			readStdin = true
+			if stdin == nil {
+				return nil, fmt.Errorf("--secret %s: no stdin to read", key)
+			}
+			data, err = io.ReadAll(stdin)
+		case strings.HasPrefix(source, "@"):
+			data, err = os.ReadFile(strings.TrimPrefix(source, "@"))
+		default:
+			return nil, fmt.Errorf("--secret %s: read it from a file (%s=@path) or stdin (%s=-), never from the command line", key, key, key)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("--secret %s: %w", key, err)
+		}
+		values[key] = string(data)
+	}
+	return values, nil
+}
+
+// withProviderSecrets sets the secret values in a config object.
+func withProviderSecrets(raw jx.Raw, secrets map[string]string) (jx.Raw, error) {
+	if len(secrets) == 0 {
+		return raw, nil
+	}
+	config := map[string]any{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &config); err != nil {
+			return nil, fmt.Errorf("config must be a JSON object: %w", err)
+		}
+	}
+	for key, value := range secrets {
+		config[key] = value
+	}
+	data, err := json.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	return jx.Raw(data), nil
+}
+
+// requireProviderSecrets refuses a create that leaves out a required secret
+// field, naming the flag that gives it.
+func requireProviderSecrets(raw jx.Raw, provider apimodel.SandboxProviderCatalogItem) error {
+	config := map[string]json.RawMessage{}
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &config)
+	}
+	for _, field := range provider.ConfigFields.Or(nil) {
+		if !isSecretProviderField(field) || !field.Required.Or(false) {
+			continue
+		}
+		if _, ok := config[field.Key]; !ok {
+			return fmt.Errorf("required secret %s not set: give it with --secret %s=@path or --secret %s=-", field.Key, field.Key, field.Key)
+		}
+	}
+	return nil
+}
+
+func isSecretProviderField(field apimodel.ProviderConfigField) bool {
+	return strings.EqualFold(field.Type, "secret")
 }
 
 func dynamicProviderCreateConfig(flags *pflag.FlagSet, provider apimodel.SandboxProviderCatalogItem) (jx.Raw, error) {
@@ -437,14 +554,26 @@ func dynamicProviderUpdateBody(opts dynamicProviderUpdateOptions, provider apimo
 	return body, nil
 }
 
+// dynamicProviderUpdateConfig is the config an update sends, which replaces
+// the stored one. The current config it starts from holds no secret field,
+// and a secret field an update leaves out keeps its value, so only a --secret
+// given here changes one.
 func dynamicProviderUpdateConfig(opts dynamicProviderUpdateOptions, provider apimodel.SandboxProviderCatalogItem, current *apimodel.SandboxProviderInstance) (jx.Raw, error) {
+	secrets, err := providerSecretValues(opts.Secrets, provider, opts.Stdin)
+	if err != nil {
+		return nil, err
+	}
 	if opts.Flags.Changed("config") {
 		for _, field := range sortedProviderConfigFields(provider) {
 			if opts.Flags.Changed(providerFieldFlagName(field.Key)) {
 				return nil, fmt.Errorf("--config cannot be combined with provider-specific flags")
 			}
 		}
-		return rawJSON(opts.Config)
+		raw, err := rawJSON(opts.Config)
+		if err != nil {
+			return nil, err
+		}
+		return withProviderSecrets(raw, secrets)
 	}
 	m := map[string]any{}
 	if current != nil && len(current.GetConfig()) > 0 {
@@ -465,6 +594,9 @@ func dynamicProviderUpdateConfig(opts dynamicProviderUpdateOptions, provider api
 		}
 		m[field.Key] = converted
 	}
+	for key, value := range secrets {
+		m[key] = value
+	}
 	data, err := json.Marshal(m)
 	if err != nil {
 		return nil, err
@@ -473,7 +605,7 @@ func dynamicProviderUpdateConfig(opts dynamicProviderUpdateOptions, provider api
 }
 
 func dynamicProviderUpdateConfigChanged(flags *pflag.FlagSet, provider apimodel.SandboxProviderCatalogItem) bool {
-	if flags.Changed("config") {
+	if flags.Changed("config") || flags.Changed("secret") {
 		return true
 	}
 	for _, field := range sortedProviderConfigFields(provider) {
@@ -536,6 +668,7 @@ func writeProviderCreateStaticHelp(cmd *cobra.Command) {
 	fmt.Fprintln(cmd.OutOrStdout(), "      --name string       Provider instance name")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --type string       Provider type (default \"digitalocean\")")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --config string     Provider config JSON or @path")
+	fmt.Fprintln(cmd.OutOrStdout(), "      --secret KEY=@path  Secret field from a file, or KEY=- from stdin (repeatable)")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --help              Show this help without contacting the API server")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --help=PROVIDER     Load catalog and show provider-specific flags")
 }
@@ -552,6 +685,7 @@ func writeProviderUpdateStaticHelp(cmd *cobra.Command) {
 	fmt.Fprintln(cmd.OutOrStdout(), "      --name string       Provider instance name")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --disabled          Disable or enable the provider instance")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --config string     Provider config JSON or @path")
+	fmt.Fprintln(cmd.OutOrStdout(), "      --secret KEY=@path  Secret field from a file, or KEY=- from stdin (repeatable)")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --help              Show this help without contacting the API server")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --help=PROVIDER     Load catalog and show provider-specific flags")
 }
@@ -567,6 +701,7 @@ func writeProviderCreateHelp(w io.Writer, provider apimodel.SandboxProviderCatal
 	fmt.Fprintf(w, "      --type string     Provider type (default %q)\n", provider.ID)
 	fmt.Fprintln(w, "      --config string   Provider config JSON or @path; cannot be combined with provider-specific flags")
 	fields := sortedProviderConfigFields(provider)
+	defer writeProviderSecretHelp(w, provider, true)
 	if len(fields) > 0 {
 		fmt.Fprintln(w, "\nProvider Flags:")
 		for _, field := range fields {
@@ -603,6 +738,7 @@ func writeProviderUpdateHelp(w io.Writer, provider apimodel.SandboxProviderCatal
 	fmt.Fprintln(w, "      --disabled          Disable or enable the provider instance")
 	fmt.Fprintln(w, "      --config string     Provider config JSON or @path; cannot be combined with provider-specific flags")
 	fields := sortedProviderConfigFields(provider)
+	defer writeProviderSecretHelp(w, provider, false)
 	if len(fields) > 0 {
 		fmt.Fprintln(w, "\nProvider Flags:")
 		for _, field := range fields {
@@ -624,6 +760,31 @@ func writeProviderUpdateHelp(w io.Writer, provider apimodel.SandboxProviderCatal
 	return nil
 }
 
+// writeProviderSecretHelp lists the provider's secret fields, which are given
+// with --secret rather than a flag of their own.
+func writeProviderSecretHelp(w io.Writer, provider apimodel.SandboxProviderCatalogItem, create bool) {
+	var fields []apimodel.ProviderConfigField
+	for _, field := range provider.ConfigFields.Or(nil) {
+		if isSecretProviderField(field) {
+			fields = append(fields, field)
+		}
+	}
+	if len(fields) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "\nSecret Fields (--secret KEY=@path or --secret KEY=-; sealed by the server and never shown again):")
+	for _, field := range fields {
+		required := ""
+		if create && field.Required.Or(false) {
+			required = " (required)"
+		}
+		fmt.Fprintf(w, "      %-24s %s%s\n", field.Key, field.Description.Or(field.Label), required)
+	}
+	if !create {
+		fmt.Fprintln(w, "      A secret field an update leaves out keeps its value.")
+	}
+}
+
 func findProviderCatalogItem(providers []apimodel.SandboxProviderCatalogItem, providerType string) (apimodel.SandboxProviderCatalogItem, bool) {
 	for _, provider := range providers {
 		if provider.ID == providerType {
@@ -633,8 +794,15 @@ func findProviderCatalogItem(providers []apimodel.SandboxProviderCatalogItem, pr
 	return apimodel.SandboxProviderCatalogItem{}, false
 }
 
+// sortedProviderConfigFields lists the fields that get a flag of their own:
+// every field but a secret one, which is given with --secret instead.
 func sortedProviderConfigFields(provider apimodel.SandboxProviderCatalogItem) []apimodel.ProviderConfigField {
-	fields := append([]apimodel.ProviderConfigField(nil), provider.ConfigFields.Or(nil)...)
+	var fields []apimodel.ProviderConfigField
+	for _, field := range provider.ConfigFields.Or(nil) {
+		if !isSecretProviderField(field) {
+			fields = append(fields, field)
+		}
+	}
 	sort.SliceStable(fields, func(i, j int) bool {
 		if fields[i].Required.Or(false) != fields[j].Required.Or(false) {
 			return fields[i].Required.Or(false)

@@ -364,7 +364,7 @@ func TestAFailedCreateStillQueuesTheEgressPush(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newUpgradeEngineFixture(t)
 	rec := &recordingProvider{createErr: errors.New("container failed to start")}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(svc.store)
 	manager.RegisterProvider("test", rec)
 	manager.SetDefault("test")
 	svc.sandboxProviders = manager

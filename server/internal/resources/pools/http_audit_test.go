@@ -106,7 +106,7 @@ func newAuditServiceWith(t *testing.T, shape func(*model.Pool)) (*Service, *audi
 		},
 		dnsFilters: map[string]sandbox.DNSAuditFilter{},
 	}
-	manager := sandbox.NewProviderManager()
+	manager := sandbox.NewProviderManager(appStore)
 	manager.RegisterProvider("audit", provider)
 	instance := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "audit", Name: "audit"}
 	if err := appStore.CreateSandboxProviderInstance(ctx, instance); err != nil {

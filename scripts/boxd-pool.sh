@@ -20,8 +20,8 @@
 # machine and needs no public URL (ADR 26-10-30-875). It sets deliverProviderKey,
 # because boxd issues a pool no narrower key from an API key (ADR 26-10-23-551
 # §4): the key is placed on the pool's machine, and nothing expires it. The
-# server stores provider config as it is given, so the key is in its database
-# in the clear.
+# server seals the key in the provider's row and never returns it (ADR
+# 26-10-31-694).
 set -eu
 
 name=boxd

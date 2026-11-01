@@ -1263,8 +1263,11 @@ One spelling per meaning across the tree ([ADR 26-10-23-600](../docs/adr/26-10-2
   `lifetime.Flag` (`forever` only where it is allowed, `NewLapsingFlag`
   otherwise) and `--since` its words back from now; a size is
   `byteSizeFlag` (`8g`); switching off is `--disabled[=false]`; `--harness` is
-  a slug, a name or an ID; a `--secret` is a name or an ID. Timeouts and poll
-  intervals stay Go durations.
+  a slug, a name or an ID; a `--secret` is a name or an ID, except
+  `admin provider`'s `--secret KEY=@path` (or `KEY=-`), which gives a
+  provider's own credential field from a file or stdin and names no project
+  secret (ADR 26-10-31-694 §2). Timeouts and poll intervals stay Go
+  durations.
 - **An update's list flag is emptied by `--clear-<flag>`** (`addClearFlag`),
   refused beside the flag it clears, never by an empty value.
 - **A secret is bound, never granted** ([ADR 26-10-27-880](../docs/adr/26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md)).

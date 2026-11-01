@@ -1262,18 +1262,23 @@ func (s *Sandbox) BeforeCreate(_ *gorm.DB) error {
 
 // SandboxProviderInstance stores configured sandbox provider instances.
 //
-// Config is for non-secret settings only. Secret material should be encrypted
-// into EncryptedConfig or another secret store before this model is persisted.
+// Config holds every field but those the provider's definition types secret.
+// Those are a JSON object in EncryptedConfig, sealed with the store's sealer,
+// which only the server opens, to join them into the config the provider
+// decodes (ADR 26-10-31-694).
 type SandboxProviderInstance struct {
-	ID              string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable provider instance ID"`
-	ProjectID       string    `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	Type            string    `gorm:"column:type;not null;type:text;index" json:"type" doc:"Provider type"`
-	Name            string    `gorm:"column:name;not null;type:text" json:"name" doc:"Provider display name" maxLength:"200"`
-	Config          RawJSON   `gorm:"column:config;type:text" json:"config,omitempty" doc:"Non-secret provider configuration"`
-	EncryptedConfig []byte    `gorm:"column:encrypted_config" json:"-"`
-	Disabled        bool      `gorm:"column:disabled;not null;default:false" json:"disabled" doc:"Whether this provider is disabled"`
-	CreatedAt       time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt       time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ID              string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable provider instance ID"`
+	ProjectID       string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	Type            string  `gorm:"column:type;not null;type:text;index" json:"type" doc:"Provider type"`
+	Name            string  `gorm:"column:name;not null;type:text" json:"name" doc:"Provider display name" maxLength:"200"`
+	Config          RawJSON `gorm:"column:config;type:text" json:"config,omitempty" doc:"Provider configuration, without its secret fields"`
+	EncryptedConfig []byte  `gorm:"column:encrypted_config" json:"-"`
+	// SecretFields names the secret fields EncryptedConfig holds a value for.
+	// It is not stored: the providers service reads it for an API answer.
+	SecretFields []string  `gorm:"-" json:"secretFields,omitempty" doc:"The secret fields that have a value. Their values are never returned."`
+	Disabled     bool      `gorm:"column:disabled;not null;default:false" json:"disabled" doc:"Whether this provider is disabled"`
+	CreatedAt    time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt    time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 	Pools   []Pool   `gorm:"foreignKey:ProviderInstanceID" json:"pools,omitempty" doc:"Pools backed by this provider instance"`
