@@ -53,7 +53,10 @@ The key is home-relative only on a `skills` reference. The server refuses a
 `ssh-remote+` folder, `{workdir}`), and those take only an absolute path (ADR
 26-10-15-417). A `skills` reference's key is either absolute (the form every
 existing sandbox holds) or `~/` followed by a clean, relative, slash-separated
-path with no `..`. The server and the pool both refuse any other key.
+path with no `..`. The server refuses any other key, at create and at
+import. The pool refuses a `~` on anything a skills source does not name, and
+places every other directory as it always has, so a sandbox created before
+this, created anew from what it holds, is placed where it was.
 
 ### 2. The pool carries `~` through untouched
 
@@ -67,16 +70,25 @@ is. The sources volume is keyed by slug, so nothing there changes.
 
 `sandboxconfig` validates a target as absolute **or** `~/<clean relative
 path>`, and gains one expansion that rewrites each `~/` target against a home,
-joined by the sandbox's own path rules. The sandbox agent applies it once:
+joined by the sandbox's own path rules. The sandbox agent applies it once per
+reading:
 
 - where boot reads `sandbox.json`, with the home `resolveIdentity` resolves;
-- where the agent reads the bootstrap into its runtime config, and where the
-  intake accepts or reloads a runtime-config document, with the home the
-  default user resolves to (`execs.HomeDir`).
+- where the agent builds its runtime from the bootstrap, with the home every
+  exec starts in (`runUserHome`, which the meta file and wakes already use);
+- where the converger takes a runtime-config document, with that same home.
 
-Everything after that sees absolute targets: wiring, the direnv whitelist,
-convergence, skill links, the git route and status. None of them learns about
-`~`.
+The intake keeps a document as it was delivered and validates it as such: a
+retried delivery has to compare equal to the document held, and an expanded
+copy would not. The converger is where a delivered target is first used, so
+it expands each document as it receives it and works from the expanded copy.
+
+Everything else sees absolute targets: wiring, the direnv whitelist, skill
+links, the git route and status. None of them learns about `~`. A home that
+does not resolve leaves a target unexpanded and logged: convergence refuses
+it, naming why, so the source is never cloned, and the rest find no checkout
+there. Such a sandbox's user has no home to work in either, so nothing more
+is done to keep it going.
 
 The directories on the way to a home target are created and given to the
 user: by `wireSources` in a container, as it does for any target now, and by
@@ -120,10 +132,14 @@ fingerprint does not change. Nothing is migrated.
 - The server gains key validation for references, which it does not have
   today: absolute, or `~/` on a `skills` reference only.
 - The pool's `sandboxSources` keeps a `~/` target as it is, and its create
-  validation applies the same rule as the server.
+  validation refuses a `~` that no skills source names.
 - `sandboxconfig` gains the `~/` target form and its expansion. The sandbox
-  agent's boot, config load and intake apply the expansion. Convergence
+  agent's boot, runtime and converger apply the expansion. Convergence
   creates a missing target's parent directories for the user.
+- A pool older than this would root a `~/` key into a literal `/~/...`
+  directory. A pool upgrades itself to its server's release, so a create
+  meets such a pool only while that pool is being upgraded; nothing
+  negotiates around it.
 - The client cannot detect a skills key that collides with a mirrored local
   source under home, because it cannot compare `~/…` with `/home/<user>/…`.
   Such a collision needs a local repository at
