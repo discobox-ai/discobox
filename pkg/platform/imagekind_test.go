@@ -96,8 +96,8 @@ func TestTakesContainerTreeOnlyOnOCI(t *testing.T) {
 		t.Fatalf("an OCI pool refused a container's tree: %v", err)
 	}
 	for kind, says := range map[ImageKind]string{
-		VM("boxd"):  "the pool runs VM images for the boxd driver",
-		ImageKind{}: "the pool runs no declared kind of image",
+		VM("boxd"): "the pool runs VM images for the boxd driver",
+		{}:         "the pool runs no declared kind of image",
 	} {
 		err := kind.TakesContainerTree()
 		var notOCI *NotOCIError
