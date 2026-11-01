@@ -20982,12 +20982,13 @@ type Sandbox struct {
 	// Creating user ID.
 	CreatedByUserId string `json:"createdByUserId"`
 	// Name to show for this sandbox in a listing, computed by the server so every
-	// client shows the same one: the name in the sandbox's meta when one is set
-	// (meta.name), then the window title the primary terminal last set, the
-	// sandbox's configured name until one has, and the sandbox ID if it has no
-	// name either. The title is what the harness says the work is about, which
-	// tells two sandboxes apart better than two generated names do, and a set
-	// name is what a person or the agent chose to call it instead.
+	// client shows the same one, as "title: msg". The title is the name in the
+	// sandbox's meta when one is set (meta.name), else the window title the
+	// primary terminal last set, else the sandbox's configured name, else its ID.
+	// While the sandbox is running and the primary terminal's program has
+	// reported a msg over OSC 7501, the msg follows it; with none, the title
+	// stands alone. A set name is what a person or the agent chose to call the
+	// sandbox and replaces the harness's title; the msg says what it is doing.
 	DisplayName string `json:"displayName"`
 	// Stable sandbox ID.
 	ID string `json:"id"`
@@ -26674,9 +26675,9 @@ func (s *SandboxMemoryConsumptionAdditional) init() SandboxMemoryConsumptionAddi
 // optional, and an absent one is unset.
 // Ref: #/components/schemas/SandboxMeta
 type SandboxMeta struct {
-	// What a person or the agent calls the sandbox, on one line. When set it is the sandbox's
-	// displayName, in place of the title its harness set. It identifies nothing, and two sandboxes may
-	// share one.
+	// What a person or the agent calls the sandbox, on one line. When set it is the title of the
+	// sandbox's displayName, in place of the title its harness set, and the program's msg follows it. It
+	// identifies nothing, and two sandboxes may share one.
 	Name OptString `json:"name"`
 	// What the sandbox is for, in the words of whoever wrote it. May run to several lines; a listing
 	// shows the first.

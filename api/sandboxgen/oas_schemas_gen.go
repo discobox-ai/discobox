@@ -6806,9 +6806,9 @@ type SandboxMeta struct {
 	// What the sandbox is for, in the words of whoever wrote it. May run to several lines; a listing
 	// shows the first.
 	Description OptString `json:"description"`
-	// What a person or the agent calls the sandbox, on one line. When set it is the sandbox's
-	// displayName, in place of the title its harness set. It identifies nothing, and two sandboxes may
-	// share one.
+	// What a person or the agent calls the sandbox, on one line. When set it is the title of the
+	// sandbox's displayName, in place of the title its harness set, and the program's msg follows it. It
+	// identifies nothing, and two sandboxes may share one.
 	Name OptString `json:"name"`
 	// Tags labeling the sandbox, key to value. A tag with an empty value is a plain label.
 	Tags OptSandboxMetaTags `json:"tags"`

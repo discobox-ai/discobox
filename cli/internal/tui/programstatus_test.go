@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -184,8 +185,8 @@ func TestATerminalThatKnowsTheProtocolKeepsItsTitlePlain(t *testing.T) {
 }
 
 // The record names the box without its program's words: the listing's name
-// of a box nobody named is the msg itself (sandboxmeta.Title), which the
-// record already carries beside the title.
+// ends with the msg (sandboxmeta.Title), which the record already carries
+// beside the title.
 func TestTheRecordsTitleIsNotTheMsgAgain(t *testing.T) {
 	box := Sandbox{
 		ID: "sbx_quiet", Name: "Fix the reaper race", ConfigName: "brave-otter", State: StateRunning,
@@ -202,4 +203,24 @@ func TestTheRecordsTitleIsNotTheMsgAgain(t *testing.T) {
 	if got := recordTitle(box); got != "sbx_quiet" {
 		t.Fatalf("title = %q, want the ID", got)
 	}
+}
+
+// With no given name and no window title, from the pane or the poll, the box
+// is called by its configured name, and the msg still only follows it
+// (sandboxmeta.Title): the msg never stands in for what the box is called.
+func TestAnUntitledPrimaryIsCalledByItsConfiguredName(t *testing.T) {
+	t.Parallel()
+	boxes := testSandboxes()
+	boxes[0].TerminalTitle, boxes[0].ConfigName = "", "brave-otter"
+	ds := newFakeSource(boxes...)
+	d, m, term := openWorkspace(t, ds, "enter")
+	d.wait("the configured name", func() bool { return m.View().WindowTitle == "brave-otter" })
+
+	msg := base64.RawStdEncoding.EncodeToString([]byte("Fix the reaper race"))
+	term.send("\x1b]7501;state=working:app=claude-code:msg=" + msg + "\x1b\\")
+	d.wait("the configured name and the msg", func() bool { return m.View().WindowTitle == "brave-otter: Fix the reaper race" })
+
+	// A title the pane draws takes the configured name's place.
+	term.send("\x1b]2;Reaper cleanup\x07")
+	d.wait("the title and the msg", func() bool { return m.View().WindowTitle == "Reaper cleanup: Fix the reaper race" })
 }

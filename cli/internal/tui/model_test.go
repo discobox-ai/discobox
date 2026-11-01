@@ -715,6 +715,36 @@ func TestRenameTakesARowNamedByItsTerminalTitle(t *testing.T) {
 	}
 }
 
+// The rename field opens on what the box is called, never on the msg its row
+// shows after it: a working box nobody named lists as "title: msg"
+// (sandboxmeta.Title), and a word added to that would make the msg part of the
+// name for good.
+func TestRenameOffersTheTitleWithoutTheMsg(t *testing.T) {
+	t.Parallel()
+	boxes := testSandboxes()
+	boxes[0].Name = "fix flaky pool reaper tests: Running the tests"
+	ds := newFakeSource(boxes...)
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("tab"), keyPress("e"))
+	if m.dialog == nil || m.dialog.kind != dlgInput {
+		t.Fatalf("e should open an input dialog, got %+v", m.dialog)
+	}
+	if got := m.dialog.input.Value(); got != "fix flaky pool reaper tests" {
+		t.Fatalf("the field opens on %q, want the title without the msg", got)
+	}
+	send(t, m, keyPress("esc"))
+
+	// With no title either, the box is called by its configured name.
+	boxes = testSandboxes()
+	boxes[0].Name, boxes[0].TerminalTitle, boxes[0].ConfigName = "brave-otter: Running the tests", "", "brave-otter"
+	ds = newFakeSource(boxes...)
+	m = newTestModel(t, ds)
+	send(t, m, keyPress("tab"), keyPress("e"))
+	if got := m.dialog.input.Value(); got != "brave-otter" {
+		t.Fatalf("the field opens on %q, want the configured name", got)
+	}
+}
+
 // An action that does not apply says why rather than doing nothing.
 func TestUnavailableActionExplainsItself(t *testing.T) {
 	t.Parallel()

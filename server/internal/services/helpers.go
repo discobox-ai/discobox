@@ -8,12 +8,12 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/discobox-ai/discobox/pkg/imagecache"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/provisionspec"
 	"github.com/discobox-ai/discobox/pkg/sandboxconfig"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
@@ -735,16 +735,15 @@ func SandboxDisplayState(sandbox *model.Sandbox) string {
 	}
 }
 
-// SandboxDisplayName is the name a listing shows for a sandbox: the name in
-// its meta when one is set (ADR 26-10-12-026 §3), followed by what the program
-// in its primary terminal says — the msg it last reported over OSC 7501 while
-// the sandbox is running and it has one, else the window title the terminal
-// last set — as "name: words" (sandboxmeta.Title; ADR 26-10-31-618). Either
-// alone when there is only one, then the sandbox's own configured name, and the
-// sandbox ID when it has no name either. The msg says what the work is doing
-// and the title what it is about; both tell two sandboxes apart better than two
-// generated names do. A set name is what a person or the agent chose to call
-// it, which outranks what the harness happened to write, and leads it.
+// SandboxDisplayName is the name a listing shows for a sandbox: its resolved
+// title — the name in its meta when one is set (ADR 26-10-12-026 §3), else the
+// window title its primary terminal last set, else its configured name, else
+// its ID — followed, while the sandbox is running and its program has one, by
+// the msg that program last reported over OSC 7501, as "title: msg"
+// (sandboxmeta.Title; ADR 26-10-31-618). The title says what the box is or is
+// about, and the msg what it is doing now; a set name is what a person or the
+// agent chose to call it, which outranks what the harness happened to write,
+// and replaces the terminal title.
 //
 // It is computed here, next to the display state it sits beside on the wire, so
 // every client names a sandbox the same way rather than each rediscovering the
@@ -759,13 +758,11 @@ func SandboxDisplayName(sandbox *model.Sandbox) string {
 		// and nothing is doing what that msg says in a box that is off.
 		msg = ""
 	}
-	if name := sandboxmeta.Title(sandboxMetaName(sandbox), msg, title); name != "" {
-		return name
+	fallback := strings.TrimSpace(sandbox.Name)
+	if fallback == "" {
+		fallback = sandbox.ID
 	}
-	if name := strings.TrimSpace(sandbox.Name); name != "" {
-		return name
-	}
-	return sandbox.ID
+	return sandboxmeta.Title(sandboxMetaName(sandbox), title, fallback, msg)
 }
 
 // sandboxMetaName is the name the sandbox's meta holds, as the row last
@@ -777,14 +774,10 @@ func sandboxMetaName(sandbox *model.Sandbox) string {
 	return strings.TrimSpace(*sandbox.MetaName)
 }
 
-// sandboxPrimaryTerminalTitleAndMsg is the window title the sandbox's primary
-// terminal last set (OSC 0/2), and the msg its program last reported with its
-// status (OSC 7501), as sandbox-agent reported them with the rest of its status
-// (ADR 0030, ADR 26-10-16-424) — already on the sandbox row, so naming a
-// listing wakes nothing. Each is empty when no primary session has set one,
-// which is the caller's cue to fall back. Sessions live and ended alike are on
-// the record; the newest primary that set either is the one whose words the
-// user last saw, and both are read from that one session.
+// sandboxPrimaryTerminalTitleAndMsg is what the sandbox's primary terminal
+// last said of itself (programstatus.PrimaryTitleAndMsg), as sandbox-agent
+// reported it with the rest of its status (ADR 0030, ADR 26-10-16-424) —
+// already on the sandbox row, so naming a listing wakes nothing.
 func sandboxPrimaryTerminalTitleAndMsg(sandbox *model.Sandbox) (title, msg string) {
 	if len(sandbox.AgentStatus) == 0 {
 		return "", ""
@@ -795,37 +788,14 @@ func sandboxPrimaryTerminalTitleAndMsg(sandbox *model.Sandbox) (title, msg strin
 	// generated type forbids those (additionalProperties: false), so decoding
 	// through it would fail the whole payload over a field nothing here reads
 	// — and a stopped sandbox's row is never rewritten, so that loss would be
-	// permanent. Only the fields below are the contract.
+	// permanent.
 	var status struct {
-		Sessions []struct {
-			Primary       bool      `json:"primary"`
-			Title         string    `json:"title"`
-			StartedAt     time.Time `json:"startedAt"`
-			ProgramStatus *struct {
-				Msg string `json:"msg"`
-			} `json:"programStatus"`
-		} `json:"sessions"`
+		Sessions json.RawMessage `json:"sessions"`
 	}
 	if err := json.Unmarshal(sandbox.AgentStatus, &status); err != nil {
 		return "", ""
 	}
-	found, startedAt := false, time.Time{}
-	for _, session := range status.Sessions {
-		if !session.Primary {
-			continue
-		}
-		sessionTitle, sessionMsg := strings.TrimSpace(session.Title), ""
-		if session.ProgramStatus != nil {
-			sessionMsg = strings.TrimSpace(session.ProgramStatus.Msg)
-		}
-		if sessionTitle == "" && sessionMsg == "" {
-			continue
-		}
-		if !found || session.StartedAt.After(startedAt) {
-			title, msg, startedAt, found = sessionTitle, sessionMsg, session.StartedAt, true
-		}
-	}
-	return title, msg
+	return programstatus.PrimaryTitleAndMsg(status.Sessions)
 }
 
 func SandboxesToAPI(sandboxes []model.Sandbox, basis SandboxUpgradeBasis) ([]serverapi.Sandbox, error) {

@@ -21,12 +21,19 @@ Global review expectations:
   name, a review note among them, pointing at code that was gone.
 - Changing how a sandbox is named on screen (`sandboxmeta.Title`,
   `services.SandboxDisplayName`) also updates every place that tells a person
-  or an agent the rule, most of them off the change's path: the `Meta.Name`
-  comment, `writeSandboxName` in `cli/internal/cli/rename.go`, the rename
-  dialog in `cli/internal/tui/DESIGN.md`, the in-box `discobox` skill
+  or an agent the rule, most of them off the change's path: the `SandboxMeta.name`
+  and `displayName` descriptions in `api/openapi/server.yaml`, the `Meta.Name`
+  comment, `writeSandboxName` in `cli/internal/cli/rename.go`, the comments on
+  the console's `windowTitle` and `paneName`, the rename dialog in
+  `cli/internal/tui/DESIGN.md`, the in-box `discobox` skill
   (`sandbox-agent/features/core/skills/discobox/SKILL.md`), and the status
-  line of every ADR the rule supersedes. The rule changed twice in a day, and
-  each change left some of these describing the rule before it.
+  line of every ADR the rule supersedes. The rule changed three times in two
+  days, and each change left some of these describing the rule before it.
+- The console's rename dialog prefills what the box is called (`askRename`),
+  so it must offer the resolved title without the msg, never `Sandbox.Name`:
+  the listing's name can end with the program's msg, and a word added to it
+  writes that msg into the box's name for good. A change to the naming rule
+  left this prefill behind twice.
 - Retiring a concept: grep every `DESIGN.md`, `REVIEW.md`, `AGENTS.md` and
   skill under `.agents/skills` for it, and the shared skills in the
   discobox-ai/skills repository, not only the docs on the change's path.

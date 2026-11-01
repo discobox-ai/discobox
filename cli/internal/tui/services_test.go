@@ -787,7 +787,10 @@ func TestAnUnknownServiceNumberIsReported(t *testing.T) {
 // shells keep the digits to themselves.
 func TestServiceTabsWearSNumbersAndLeaveTheDigitsAlone(t *testing.T) {
 	t.Parallel()
-	ds := newFakeSource(testSandboxes()...)
+	// A short title, so the primary's tab leaves the strip room for the rest.
+	boxes := testSandboxes()
+	boxes[0].Name, boxes[0].TerminalTitle = "reaper", "reaper"
+	ds := newFakeSource(boxes...)
 	ds.services = []Service{runningService("api", "API", "exec_api")}
 	ds.execs = []Exec{serviceExecRecord("exec_api", "api", "API")}
 	d, m, _ := openWorkspace(t, ds, "enter")
@@ -797,7 +800,7 @@ func TestServiceTabsWearSNumbersAndLeaveTheDigitsAlone(t *testing.T) {
 	d.wait("the shell", func() bool { return m.shells.len() == 1 })
 
 	frame := plainFrame(m)
-	for _, want := range []string{"[ S1 API ]", "[ 0 attach ]", "[ 1 zsh ]"} {
+	for _, want := range []string{"[ S1 API ]", "[ 0 reaper ]", "[ 1 zsh ]"} {
 		if !strings.Contains(frame, want) {
 			t.Errorf("the strip should wear %q:\n%s", want, frame)
 		}

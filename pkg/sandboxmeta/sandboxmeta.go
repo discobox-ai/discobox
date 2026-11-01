@@ -1,8 +1,8 @@
 // Package sandboxmeta is the shape of a sandbox's meta — its name, its
 // description and its tags: the file inside the sandbox that holds them, the
 // rules each must satisfy, the selector grammar a listing filters tags by, and
-// how a set name heads what the sandbox's program reports in the name a
-// listing shows (Title, ADR 26-10-31-618).
+// the name a listing shows, in which a set name is the title the sandbox's
+// program's msg follows (Title, ADR 26-10-31-618).
 //
 // A sandbox's meta lives in the sandbox, in a JSON file at RelativePath under
 // the sandbox user's home. That file is the system of record: the agent in the
@@ -52,9 +52,10 @@ const (
 // Meta is what the file holds.
 type Meta struct {
 	// Name is what a person or the agent calls the sandbox: one line of
-	// display text that leads what a listing shows, followed by what its
-	// program says (Title). It identifies nothing — two sandboxes may share one — and an empty
-	// one means none has been set (ADR 26-10-12-026).
+	// display text that is the title of what a listing shows, in place of the
+	// title its program set, followed by the msg its program reports (Title).
+	// It identifies nothing — two sandboxes may share one — and an empty one
+	// means none has been set (ADR 26-10-12-026).
 	Name string `json:"name,omitempty"`
 	// Description says what the sandbox is for, in the words of whoever
 	// wrote it. It may run to several lines; a listing shows the first.
@@ -137,32 +138,34 @@ func NormalizeName(name string) string {
 	return strings.TrimSpace(name)
 }
 
-// Title is what a sandbox is called on screen from what it holds: the name it
-// was given, then what its program says, as "name: words", and either alone
-// when it has only one (ADR 26-10-31-618). What its program says is the msg it
-// last reported over OSC 7501 while it has one — what it is doing now — and
-// otherwise the window title its primary terminal last set, which is what the
-// session is about (Claude Code titles the window with the session's title).
-// A harness reports a msg while it works or waits on a person and none while
-// idle, so the name says what the box is doing while it is doing something and
-// what it is for the rest of the time. A set name heads both rather than being
-// hidden by them. Both are made displayable (programstatus.Displayable), since
-// both are a program's free text, posted from inside the sandbox. Empty when
-// there is none of the three, the caller's cue to fall back to the configured
-// name.
-func Title(name, msg, title string) string {
-	name = strings.TrimSpace(name)
-	words := strings.TrimSpace(programstatus.Displayable(msg, programstatus.MaxMsg))
-	if words == "" {
-		words = strings.TrimSpace(programstatus.Displayable(title, programstatus.MaxMsg))
+// Title is what a sandbox is called on screen (ADR 26-10-31-618): its
+// resolved title, then the msg its program last reported over OSC 7501 while
+// it has one, as "title: msg". The resolved title is the first of the name it
+// was given (its meta's), the window title its primary terminal last set
+// (Claude Code titles the window with the session's title), and fallback, the
+// caller's name for a box with neither (its configured name, else its ID). A
+// given name replaces the terminal title rather than heading it, and the msg
+// only ever follows the resolved title, never stands in for it: a harness
+// reports a msg while it works or waits on a person and none while idle, so
+// the box keeps one name throughout and says what it is doing beside it. The
+// title and the msg are made displayable (programstatus.Displayable), since
+// both are a program's free text, posted from inside the sandbox.
+func Title(name, title, fallback, msg string) string {
+	resolved := strings.TrimSpace(name)
+	if resolved == "" {
+		resolved = strings.TrimSpace(programstatus.Displayable(title, programstatus.MaxMsg))
 	}
+	if resolved == "" {
+		resolved = strings.TrimSpace(fallback)
+	}
+	words := strings.TrimSpace(programstatus.Displayable(msg, programstatus.MaxMsg))
 	switch {
-	case name == "":
-		return words
 	case words == "":
-		return name
+		return resolved
+	case resolved == "":
+		return words
 	default:
-		return name + ": " + words
+		return resolved + ": " + words
 	}
 }
 

@@ -348,7 +348,10 @@ func TestEndedPrimaryClosesTheWorkspace(t *testing.T) {
 func TestAttachJoinsEveryLiveSession(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 8, 7, 11, 0, 0, 0, time.UTC)
-	ds := newFakeSource(testSandboxes()...)
+	// A short title, so the primary's tab leaves the strip room for the rest.
+	boxes := testSandboxes()
+	boxes[0].Name, boxes[0].TerminalTitle = "reaper", "reaper"
+	ds := newFakeSource(boxes...)
 	ds.execs = []Exec{
 		{ID: "exec_pri", Harness: "claude", Primary: true, Tty: true, Live: true, CreatedAt: now},
 		{ID: "exec_term", Command: []string{"claude"}, Harness: "claude", Tty: true, Live: true, CreatedAt: now.Add(2 * time.Minute)},
@@ -375,7 +378,7 @@ func TestAttachJoinsEveryLiveSession(t *testing.T) {
 	// Both strips name every pane, and the numbering runs across the screen:
 	// the primary is 0 and the shells carry on from the terminals.
 	frame := plainFrame(m)
-	for _, want := range []string{"0 attach", "1 claude", "2 bash", "3 zsh"} {
+	for _, want := range []string{"0 reaper", "1 claude", "2 bash", "3 zsh"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("the strips should name every pane, missing %q:\n%s", want, frame)
 		}
@@ -1087,9 +1090,10 @@ func TestTheTerminalTitleFollowsThePrimaryPane(t *testing.T) {
 	}
 }
 
-// A name the discobox was given leads its harness's title on the primary's
-// tab and in the window title, and reaches both from the listing: one written
-// into the box's meta shows within a poll, without the program retitling itself.
+// A name the discobox was given takes its harness's title's place on the
+// primary's tab and in the window title, and reaches both from the listing: one
+// written into the box's meta shows within a poll, without the program
+// retitling itself.
 func TestAGivenNameFollowsTheListingOntoThePrimary(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
@@ -1102,16 +1106,16 @@ func TestAGivenNameFollowsTheListingOntoThePrimary(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.dispatch(tickMsg{})
-	d.wait("the given name", func() bool { return m.View().WindowTitle == "Reaper race: go test ./..." })
-	if frame := frameText(m); !strings.Contains(frame, "Reaper race: go test ./...") {
-		t.Fatalf("the primary's edge should wear the given name, then the title:\n%s", frame)
+	d.wait("the given name", func() bool { return m.View().WindowTitle == "Reaper race" })
+	if frame := frameText(m); !strings.Contains(frame, "Reaper race") || strings.Contains(frame, "go test ./...") {
+		t.Fatalf("the primary's edge should wear the given name in the title's place:\n%s", frame)
 	}
 
-	// The harness retitling itself keeps the name in front.
+	// The harness retitling itself does not move the name.
 	term.send("\x1b]2;go vet ./...\x07")
-	d.wait("the new title", func() bool { return m.View().WindowTitle == "Reaper race: go vet ./..." })
-	if frame := frameText(m); !strings.Contains(frame, "Reaper race: go vet ./...") {
-		t.Fatalf("the primary's edge should keep the given name in front of a new title:\n%s", frame)
+	d.wait("the new title in the pane", func() bool { return m.primary().term.Title() == "go vet ./..." })
+	if got := m.View().WindowTitle; got != "Reaper race" {
+		t.Fatalf("window title after a retitle = %q, want the given name alone", got)
 	}
 
 	// With a second pane the primary's tab in the strip wears it too.
@@ -1120,7 +1124,7 @@ func TestAGivenNameFollowsTheListingOntoThePrimary(t *testing.T) {
 	d.wait("the shell", func() bool { return m.shells.len() == 1 })
 	d.wait("the primary's tab", func() bool { return strings.Contains(frameText(m), "0 Reaper race") })
 
-	// Cleared, the harness's title alone.
+	// Cleared, the harness's title is back.
 	if err := ds.Rename(t.Context(), m.paneBox.ID, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -1128,10 +1132,10 @@ func TestAGivenNameFollowsTheListingOntoThePrimary(t *testing.T) {
 	d.wait("the title back", func() bool { return m.View().WindowTitle == "go vet ./..." })
 }
 
-// What the primary's program reports as its msg (OSC 7501) stands where its
-// window title would while it reports one, and follows the name the box was
-// given as "name: msg"; with none, the title is back. The rename dialog still
-// offers the name alone.
+// What the primary's program reports as its msg (OSC 7501) follows the box's
+// resolved title — the name it was given, else its window title — as
+// "title: msg", and never stands in for it; with no msg, the resolved title
+// alone. The rename dialog still offers the name alone.
 func TestTheProgramsMsgFollowsTheGivenName(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
@@ -1141,7 +1145,7 @@ func TestTheProgramsMsgFollowsTheGivenName(t *testing.T) {
 
 	msg := base64.RawStdEncoding.EncodeToString([]byte("Fix the reaper race"))
 	term.send("\x1b]7501;state=working:app=claude-code:msg=" + msg + "\x1b\\")
-	d.wait("the msg", func() bool { return m.View().WindowTitle == "Fix the reaper race" })
+	d.wait("the title and the msg", func() bool { return m.View().WindowTitle == "Reaper cleanup: Fix the reaper race" })
 
 	if err := ds.Rename(t.Context(), m.paneBox.ID, "Reaper"); err != nil {
 		t.Fatal(err)
@@ -1155,9 +1159,9 @@ func TestTheProgramsMsgFollowsTheGivenName(t *testing.T) {
 		t.Fatalf("record = %+v, %v; want the given name as its title beside the msg", rec, ok)
 	}
 
-	// Idle, the program reports no msg: the name and the title.
+	// Idle, the program reports no msg: the name alone.
 	term.send("\x1b]7501;state=idle:app=claude-code\x1b\\")
-	d.wait("the name and the title", func() bool { return m.View().WindowTitle == "Reaper: Reaper cleanup" })
+	d.wait("the name alone", func() bool { return m.View().WindowTitle == "Reaper" })
 }
 
 // A shell tab is something you are doing inside this window, so it never takes
@@ -1337,7 +1341,7 @@ func TestSplitPanesShareTheScreen(t *testing.T) {
 	}
 	// Each side names what it is running, and wears the number it answers to.
 	frame := ansi.Strip(rawFrame(m))
-	if !strings.Contains(frame, "[ 0 attach ]") || !strings.Contains(frame, "[ 1 zsh ]") {
+	if !strings.Contains(frame, "[ 0 fix flaky pool reaper tests ]") || !strings.Contains(frame, "[ 1 zsh ]") {
 		t.Fatalf("each side should name what it is running:\n%s", frame)
 	}
 }

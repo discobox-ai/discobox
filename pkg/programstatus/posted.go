@@ -2,6 +2,7 @@ package programstatus
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -60,6 +61,45 @@ func PrimaryPosted(sessions []byte) (Status, bool) {
 		startedAt, ok = session.StartedAt, true
 	}
 	return found, ok
+}
+
+// PrimaryTitleAndMsg is the window title a sandbox's primary terminal last set
+// (OSC 0/2) and the msg its program last reported with its status (OSC 7501),
+// read from the sessions its sandbox agent posts, as the server's display name
+// and the console's primary title both read them (sandboxmeta.Title). Each is
+// empty when no primary session has set one, which is the caller's cue to fall
+// back. Sessions live and ended alike are on the record; the newest primary
+// that set either is the one whose words the user last saw, and both are read
+// from that one session. The text is as posted, trimmed.
+func PrimaryTitleAndMsg(sessions []byte) (title, msg string) {
+	var posted []struct {
+		Primary       bool      `json:"primary"`
+		Title         string    `json:"title"`
+		StartedAt     time.Time `json:"startedAt"`
+		ProgramStatus *struct {
+			Msg string `json:"msg"`
+		} `json:"programStatus"`
+	}
+	if json.Unmarshal(sessions, &posted) != nil {
+		return "", ""
+	}
+	found, startedAt := false, time.Time{}
+	for _, session := range posted {
+		if !session.Primary {
+			continue
+		}
+		sessionTitle, sessionMsg := strings.TrimSpace(session.Title), ""
+		if session.ProgramStatus != nil {
+			sessionMsg = strings.TrimSpace(session.ProgramStatus.Msg)
+		}
+		if sessionTitle == "" && sessionMsg == "" {
+			continue
+		}
+		if !found || session.StartedAt.After(startedAt) {
+			title, msg, startedAt, found = sessionTitle, sessionMsg, session.StartedAt, true
+		}
+	}
+	return title, msg
 }
 
 // KnownState reports whether state is one the protocol defines.

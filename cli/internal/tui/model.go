@@ -2673,21 +2673,19 @@ type renameDoneMsg struct {
 // rather than a name retyped.
 func (m *Model) askRename(box Sandbox) tea.Cmd {
 	// Enter on what is shown asks for nothing, whichever name that is: on a
-	// box nobody has named it is the harness's title, spinner and all, and
-	// accepting it would freeze that as the box's name. An empty line takes a
+	// box nobody has named it is the title its harness set, and accepting it
+	// would freeze that as the box's name. An empty line takes a
 	// given name away, which puts the title back; on a box with none there is
 	// nothing to take.
 	question := "What should this discobox be called?"
 	if box.GivenName != "" {
 		question += " An empty name gives back the title its harness set."
 	}
-	// A given name is offered as it was given, without the msg or title its
-	// program put after it (sandboxmeta.Title): that is the program's, and
-	// accepting it would make it part of the name.
-	current := box.Name
-	if box.GivenName != "" {
-		current = box.GivenName
-	}
+	// The box's resolved title is offered without the msg its program puts
+	// after it on the row (sandboxmeta.Title): the msg is the program's, and
+	// accepting it would make it part of the name. The row's own text,
+	// box.Name, carries that msg while the program works.
+	current := boxTitle(box, box.TerminalTitle)
 	m.dialog = inputDialog("Rename", question, "name", current,
 		func(name string) tea.Cmd {
 			if name == current || (name == "" && box.GivenName == "") {
@@ -3915,10 +3913,11 @@ func (m *Model) headerHints() []hint {
 // churn the tab you find it by.
 //
 // What the box is called here is primaryTitle, as on the primary's tab
-// (paneName): the name it was given, then the msg its program reports or, with
-// none, the terminal's title; the box's display name when it has none of them.
-// The name is read off the listing, so a rename reaches the title bar without
-// waiting on the program to retitle itself.
+// (paneName): its resolved title — the name it was given, else the terminal's
+// title, else its configured name, else its ID — followed by the msg its
+// program reports while it has one (sandboxmeta.Title). The name is read off
+// the listing, so a rename reaches the title bar without waiting on the
+// program to retitle itself.
 //
 // With no primary it is empty, which leaves the title as whatever started this
 // window set it: a launcher with nothing running in it has nothing to say that
@@ -3933,11 +3932,7 @@ func (m *Model) windowTitle() string {
 	if p == nil {
 		return ""
 	}
-	title := m.primaryTitle()
-	if title == "" {
-		title = displayName(m.currentBox())
-	}
-	return m.statusTitlePrefix() + title
+	return m.statusTitlePrefix() + m.primaryTitle()
 }
 
 // viewPrompt draws the composer the way Claude Code draws its own: a rule

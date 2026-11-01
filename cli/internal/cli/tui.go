@@ -23,6 +23,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
 	"github.com/discobox-ai/discobox/pkg/tools"
@@ -956,6 +957,10 @@ func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 		}
 	}
 	row.AgentObservedAt = sb.Runtime.AgentStatusObservedAt.Or(time.Time{})
+	if status, ok := sb.Runtime.AgentStatus.Get(); ok {
+		title, _ := programstatus.PrimaryTitleAndMsg(status["sessions"])
+		row.TerminalTitle = terminalSafe(title)
+	}
 	if git := sandboxGitStatus(sb); git.Known {
 		row.Git = tui.GitState{
 			Known:  true,

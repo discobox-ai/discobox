@@ -44,7 +44,7 @@ func TestLeaderCOpensATerminalBesideThePrimary(t *testing.T) {
 	}
 	// And the strip names them both, numbered from the primary.
 	frame := plainFrame(m)
-	if !strings.Contains(frame, "0 attach") || !strings.Contains(frame, "1 claude") {
+	if !strings.Contains(frame, "0 fix flaky pool reaper tests") || !strings.Contains(frame, "1 claude") {
 		t.Fatalf("the strip should name both terminals:\n%s", frame)
 	}
 }

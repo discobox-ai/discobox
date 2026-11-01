@@ -263,26 +263,27 @@ func TestParseTag(t *testing.T) {
 }
 
 func TestTitle(t *testing.T) {
-	cases := []struct{ name, msg, title, want string }{
-		{"", "", "", ""},
-		{"  Daily check ", "", "", "Daily check"},
-		{"", " fix the reaper ", "", "fix the reaper"},
-		{"Daily check", "fix the reaper", "", "Daily check: fix the reaper"},
-		{"Daily check", "fix\x1b the\u202e reaper", "", "Daily check: fix the reaper"},
-		{"Daily check", "\x07", "", "Daily check"},
-		// The title stands in for the msg while the program reports none.
-		{"Daily check", "", " Reaper cleanup ", "Daily check: Reaper cleanup"},
-		{"", "", "Reaper cleanup", "Reaper cleanup"},
-		{"Daily check", "\x07", "Reaper cleanup", "Daily check: Reaper cleanup"},
-		// The title is the program's free text too.
-		{"Daily check", "", "Reaper\x1b]0;x\x07 \u202ecleanup", "Daily check: Reaper]0;x cleanup"},
-		// A msg, while there is one, says more than the title does.
-		{"Daily check", "Running the tests", "Reaper cleanup", "Daily check: Running the tests"},
-		{"", "Running the tests", "Reaper cleanup", "Running the tests"},
+	cases := []struct{ name, title, fallback, msg, want string }{
+		{"", "", "", "", ""},
+		{"", "", "brave-otter", "", "brave-otter"},
+		{"  Daily check ", "", "brave-otter", "", "Daily check"},
+		// A given name replaces the terminal title rather than heading it.
+		{"Daily check", "Reaper cleanup", "brave-otter", "", "Daily check"},
+		{"", " Reaper cleanup ", "brave-otter", "", "Reaper cleanup"},
+		// The msg follows the resolved title, whichever that is.
+		{"Daily check", "Reaper cleanup", "brave-otter", "Running the tests", "Daily check: Running the tests"},
+		{"", "Reaper cleanup", "brave-otter", " Running the tests ", "Reaper cleanup: Running the tests"},
+		{"", "", "brave-otter", "Running the tests", "brave-otter: Running the tests"},
+		{"", "", "", "Running the tests", "Running the tests"},
+		// Both are a program's free text, made displayable.
+		{"Daily check", "", "brave-otter", "fix\x1b the\u202e reaper", "Daily check: fix the reaper"},
+		{"Daily check", "", "brave-otter", "\x07", "Daily check"},
+		{"", "Reaper\x1b]0;x\x07 \u202ecleanup", "brave-otter", "", "Reaper]0;x cleanup"},
+		{"", "\x07", "brave-otter", "Running the tests", "brave-otter: Running the tests"},
 	}
 	for _, tc := range cases {
-		if got := Title(tc.name, tc.msg, tc.title); got != tc.want {
-			t.Errorf("Title(%q, %q, %q) = %q, want %q", tc.name, tc.msg, tc.title, got, tc.want)
+		if got := Title(tc.name, tc.title, tc.fallback, tc.msg); got != tc.want {
+			t.Errorf("Title(%q, %q, %q, %q) = %q, want %q", tc.name, tc.title, tc.fallback, tc.msg, got, tc.want)
 		}
 	}
 }
