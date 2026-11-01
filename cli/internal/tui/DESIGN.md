@@ -1646,10 +1646,19 @@ streaming a terminal of its own.
   uncommitted work and the wait are the window's own, whoever asked for the run.
 - Such a window never shows the list. The wait has the screen from the first
   frame (`Model.waitDialog`, `creatingTitle`) and stays up through the create,
-  becoming the wait on the discobox itself once there is one to name; a create
-  that fails takes it down, because a report belongs on a screen somebody can
-  read it on. The console's own runs keep the list they were started from and
-  report on the busy line there.
+  becoming the wait on the discobox itself once there is one to name.
+- A run that ends short of a workspace ends the window (`Model.runFailed`): a
+  create that fails, or one the server took and the window could not finish;
+  a working tree that cannot be read; a harness that cannot run, or whose
+  setup or default fails on the run's way through it. The failure is the
+  command's error, reported on the terminal once the window has gone; a
+  discobox the server took is still handed back (`Model.made`), since
+  `DataSource.Run` returns it beside a later failure. Turning down one of the
+  run's harness questions, or leaving the setup it stopped for unfinished,
+  ends it as turning down its create card does, with `errNothingCreated`
+  (`leavesTheRun`). A question asked over the wait — the Git credentials one —
+  goes back to it when answered (`dialog.back`), by key or click alike. The console's own runs
+  keep the list they were started from and report on the status line there.
 - Leaving that wait leaves the window (`onCancel` → `Model.exit`), because
   there is no list behind it to stop watching *from*. The discobox is not
   touched: it was created before the wait went up, or is being created by a

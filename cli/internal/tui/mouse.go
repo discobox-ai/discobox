@@ -573,7 +573,9 @@ func (m *Model) pressDialogItem(idx int) tea.Cmd {
 	stays := d.items[idx].stays
 	cmd := d.action(d.items[idx].key)
 	if m.dialog == d && !stays {
-		m.dialog = nil
+		// As a key's answer does (updateKey): closing a card puts up the one
+		// it was opened over.
+		m.dialog = d.back
 	}
 	return cmd
 }
