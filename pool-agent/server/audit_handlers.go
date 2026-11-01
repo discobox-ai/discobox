@@ -196,6 +196,7 @@ func poolHTTPAuditExchangeDetail(row proxy.AuditHTTPExchange) workerapimodel.Poo
 		UpgradeS2cBytes:      workerapi.NewOptInt64(row.UpgradeS2CBytes),
 		StreamDroppedChunks:  workerapi.NewOptInt64(int64(row.StreamDroppedChunks)),
 		StreamDroppedBytes:   workerapi.NewOptInt64(int64(row.StreamDroppedBytes)),
+		Tunnel:               poolHTTPAuditTunnel(row),
 	}
 	for value, field := range map[string]*workerapi.OptString{
 		row.BlockedReason:      &detail.BlockedReason,
@@ -317,6 +318,40 @@ func (s *sandboxService) httpAuditArtifactHandler() http.Handler {
 // bytes for a body, framed for an upgraded stream.
 const AuditArtifactFormatHeader = "X-Discobox-Audit-Format"
 
+// poolHTTPAuditTunnel is a passthrough tunnel's record (ADR 26-10-31-819
+// §4), absent on a row that is no tunnel's.
+func poolHTTPAuditTunnel(row proxy.AuditHTTPExchange) workerapi.OptPoolHTTPAuditTunnel {
+	t := row.Tunnel
+	if t.Phase == "" {
+		return workerapi.OptPoolHTTPAuditTunnel{}
+	}
+	out := workerapimodel.PoolHTTPAuditTunnel{
+		ID:                 t.ID,
+		Phase:              t.Phase,
+		Alpn:               splitAuditList(t.ALPN),
+		TlsVersions:        splitAuditList(t.TLSVersions),
+		TLS:                workerapi.NewOptBool(t.TLS),
+		ServerNameMismatch: workerapi.NewOptBool(t.ServerNameMismatch),
+	}
+	if t.Phase == proxy.AuditTunnelPhaseClose {
+		out.C2sBytes = workerapi.NewOptInt64(t.C2SBytes)
+		out.S2cBytes = workerapi.NewOptInt64(t.S2CBytes)
+	}
+	for value, field := range map[string]*workerapi.OptString{
+		t.Entry:         &out.Entry,
+		t.DialedAddress: &out.DialedAddress,
+		t.UpstreamProxy: &out.UpstreamProxy,
+		t.ServerName:    &out.ServerName,
+		t.ClosedBy:      &out.ClosedBy,
+		t.Error:         &out.Error,
+	} {
+		if value != "" {
+			*field = workerapi.NewOptString(value)
+		}
+	}
+	return workerapi.NewOptPoolHTTPAuditTunnel(out)
+}
+
 func poolHTTPAuditExchange(row proxy.AuditHTTPExchange) workerapimodel.PoolHTTPAuditExchange {
 	exchange := workerapimodel.PoolHTTPAuditExchange{
 		ID:               row.ID.String(),
@@ -334,6 +369,7 @@ func poolHTTPAuditExchange(row proxy.AuditHTTPExchange) workerapimodel.PoolHTTPA
 		RequestBodyBytes: workerapi.NewOptInt64(row.RequestBodyBytes),
 		ResponseBytes:    workerapi.NewOptInt64(row.ResponseBytes),
 		Upgrade:          workerapi.NewOptBool(row.Upgrade),
+		Tunnel:           poolHTTPAuditTunnel(row),
 	}
 	if row.BlockedReason != "" {
 		exchange.BlockedReason = workerapi.NewOptString(row.BlockedReason)

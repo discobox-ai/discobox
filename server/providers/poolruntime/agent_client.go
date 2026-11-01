@@ -257,6 +257,7 @@ func (p *poolAgentClient) ListHTTPAudit(ctx context.Context, projectID string, q
 			ResponseBytes:    e.ResponseBytes.Or(0),
 			Upgrade:          e.Upgrade.Or(false),
 			UpgradeType:      e.UpgradeType.Or(""),
+			Tunnel:           httpAuditTunnel(e.Tunnel),
 		})
 	}
 	return out, nil
@@ -280,6 +281,31 @@ func (p *poolAgentClient) GetHTTPAudit(ctx context.Context, projectID, sandboxID
 		return nil, mapPoolClientError(err)
 	}
 	return httpAuditExchangeDetail(res)
+}
+
+// httpAuditTunnel is a relayed passthrough tunnel's record, nil when the row
+// is no tunnel's.
+func httpAuditTunnel(opt poolclient.OptPoolHTTPAuditTunnel) *sandbox.HTTPAuditTunnel {
+	t, ok := opt.Get()
+	if !ok {
+		return nil
+	}
+	return &sandbox.HTTPAuditTunnel{
+		ID:                 t.ID,
+		Phase:              t.Phase,
+		Entry:              t.Entry.Or(""),
+		DialedAddress:      t.DialedAddress.Or(""),
+		UpstreamProxy:      t.UpstreamProxy.Or(""),
+		TLS:                t.TLS.Or(false),
+		ServerName:         t.ServerName.Or(""),
+		ALPN:               append([]string(nil), t.Alpn...),
+		TLSVersions:        append([]string(nil), t.TlsVersions...),
+		ServerNameMismatch: t.ServerNameMismatch.Or(false),
+		C2SBytes:           t.C2sBytes.Or(0),
+		S2CBytes:           t.S2cBytes.Or(0),
+		ClosedBy:           t.ClosedBy.Or(""),
+		Error:              t.Error.Or(""),
+	}
 }
 
 // httpAuditExchangeDetail is the relayed row as the control plane's own type.
@@ -307,6 +333,7 @@ func httpAuditExchangeDetail(res *poolapimodel.PoolHTTPAuditExchangeDetail) (*sa
 			ResponseBytes:    res.ResponseBytes.Or(0),
 			Upgrade:          res.Upgrade.Or(false),
 			UpgradeType:      res.UpgradeType.Or(""),
+			Tunnel:           httpAuditTunnel(res.Tunnel),
 		},
 		EnqueuedAt:           res.EnqueuedAt.Or(time.Time{}),
 		WrittenAt:            res.WrittenAt.Or(time.Time{}),
@@ -1282,11 +1309,18 @@ func poolGatewayHeaders(headers []gateway.Header) []poolclient.GatewayHeader {
 	return out
 }
 
+// poolEgressPolicy is the policy as the pool takes it. Passthrough is sent
+// only when there is some, so a pool agent that predates it, and refuses a
+// field it does not know, is sent what it was before (ADR 26-10-31-819 §6).
 func poolEgressPolicy(policy egress.Policy) poolclient.EgressPolicy {
-	return poolclient.EgressPolicy{
+	out := poolclient.EgressPolicy{
 		Allow:         poolclient.NewOptNilStringArray(policy.Allow),
 		DenyByDefault: poolclient.NewOptBool(policy.DenyByDefault),
 	}
+	if len(policy.Passthrough) > 0 {
+		out.Passthrough = poolclient.NewOptNilStringArray(policy.Passthrough)
+	}
+	return out
 }
 
 func (p *poolAgentClient) PullSource(ctx context.Context, ref sandbox.SandboxRef, request sourcecache.PullRequest) (sourcecache.Delivery, error) {

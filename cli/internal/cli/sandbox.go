@@ -152,7 +152,8 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 		Short: "Create a discobox",
 		Long: `Create a discobox.
 
---egress-allow and --egress-deny-by-default set the discobox's own egress level.
+--egress-allow, --egress-deny-by-default and --egress-passthrough set the
+discobox's own egress level.
 
 ` + egressHelp,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -230,8 +231,10 @@ func (a *App) newSandboxUpdateCommand() *cobra.Command {
 first; the update leaves it stopped. The new harness provisions on its next start.
 Conversation state is not transferred between harnesses.
 
---egress-allow and --egress-deny-by-default set the discobox's own egress level,
-which it converges onto while running.
+--egress-allow, --egress-deny-by-default and --egress-passthrough set the
+discobox's own egress level, which it converges onto while running. Run from a
+discobox, an update may change only --egress-passthrough of a discobox it
+created, and only to hosts its own passthrough covers.
 
 --discobox-api lets the discobox call the discobox API through its pool, in the
 sandbox role, acting only on the discoboxes it created; --discobox-api=false

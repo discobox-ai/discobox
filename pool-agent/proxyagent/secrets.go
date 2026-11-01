@@ -50,6 +50,10 @@ type secretsDoc struct {
 	// nowhere.
 	Routes map[string]map[string][][]secretroute.Route `json:"routes,omitempty"`
 	Egress map[string][]string                         `json:"egress,omitempty"`
+	// Passthrough is, per sandbox, the hosts whose CONNECT the proxy splices
+	// unread (ADR 26-10-31-819), restricted or not. A sandbox absent from it
+	// has none.
+	Passthrough map[string][]string `json:"passthrough,omitempty"`
 	// Gateways are, per sandbox, its project's gateways (ADR 26-10-16-470).
 	// A header value from the server's environment is its variable's name.
 	Gateways map[string][]gateway.Route `json:"gateways,omitempty"`
@@ -153,9 +157,15 @@ func SandboxRawSentinels(root layout.Root, projectID, poolID, sandboxID string) 
 }
 
 // SetSandboxEgress records a sandbox's effective egress policy for the proxy by
-// updating SecretsFile. An unrestricted policy removes the sandbox's entry.
+// updating SecretsFile. An unrestricted policy removes the sandbox's allow
+// entry, and an empty passthrough its passthrough entry.
 func SetSandboxEgress(root layout.Root, projectID, poolID string, sandboxID string, policy egress.Policy) error {
 	return updateSecretsDoc(root, projectID, poolID, func(doc *secretsDoc) {
+		if passthrough := egress.Normalize(policy.Passthrough); len(passthrough) > 0 {
+			doc.Passthrough[sandboxID] = passthrough
+		} else {
+			delete(doc.Passthrough, sandboxID)
+		}
 		if !policy.DenyByDefault {
 			delete(doc.Egress, sandboxID)
 			return
@@ -198,6 +208,7 @@ func RemoveSandboxPolicy(root layout.Root, projectID, poolID string, sandboxID s
 		delete(doc.Raw, sandboxID)
 		delete(doc.Routes, sandboxID)
 		delete(doc.Egress, sandboxID)
+		delete(doc.Passthrough, sandboxID)
 		delete(doc.Gateways, sandboxID)
 		delete(doc.Environment, sandboxID)
 	})
@@ -216,6 +227,9 @@ func updateSecretsDoc(root layout.Root, projectID, poolID string, update func(*s
 	}
 	if doc.Egress == nil {
 		doc.Egress = map[string][]string{}
+	}
+	if doc.Passthrough == nil {
+		doc.Passthrough = map[string][]string{}
 	}
 	if doc.Gateways == nil {
 		doc.Gateways = map[string][]gateway.Route{}
@@ -854,6 +868,10 @@ func (p *policyPublisher) apply() error {
 	for clientID, allow := range p.file.Egress {
 		allowlist[clientID] = append([]string(nil), allow...)
 	}
+	passthrough := make(map[string][]string, len(p.file.Passthrough))
+	for clientID, hosts := range p.file.Passthrough {
+		passthrough[clientID] = slices.Clone(hosts)
+	}
 	gateways := make(map[string][]gateway.Route, len(p.file.Gateways))
 	for clientID, routes := range p.file.Gateways {
 		gateways[clientID] = slices.Clone(routes)
@@ -868,6 +886,7 @@ func (p *policyPublisher) apply() error {
 	cfg.Secrets.Clients = secretClients(merged, raw)
 	cfg.Trusts = trusts
 	cfg.Allowlist = proxy.AllowlistConfig{Clients: allowlist}
+	cfg.Passthrough = proxy.PassthroughConfig{Clients: passthrough}
 	cfg.Gateways = proxy.GatewaysConfig{Clients: gateways}
 	return p.server.ApplyConfig(cfg)
 }

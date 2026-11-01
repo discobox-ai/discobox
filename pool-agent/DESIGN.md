@@ -821,7 +821,7 @@ image cannot be obtained leaves the sandbox the container it had.
 Separately, persisted per-sandbox proxy material supplies a periodic
 level-triggered sweep that reclaims the proxy record of sandboxes that no longer
 have a container here: the material, and with it the sandbox's entries in the
-proxy's secrets file — sentinels, routes, egress and gateways. Sandbox loss
+proxy's secrets file — sentinels, routes, egress, passthrough and gateways. Sandbox loss
 travels on the state channel, not here. A replacement leaves its sandbox with no
 container between removing the old one and creating the new, after the create
 has registered its record, and the material record is as old as the sandbox: so
@@ -1964,7 +1964,8 @@ The one exception is a raw binding's, on a route outside the protocol (below).
   sandbox holds raw (`raw`); an agent cannot ask for one raw — only a person
   makes a binding raw.
 - **`policyPublisher` owns the proxy's per-client policy**, merging the
-  sentinels and raw sentinels, the restricted sandboxes' egress allow lists, and each sandbox's
+  sentinels and raw sentinels, the restricted sandboxes' egress allow lists,
+  each sandbox's passthrough hosts (ADR 26-10-31-819), and each sandbox's
   gateways from SecretsFile, and the pool's host trusts.
   They have to be applied together because `ApplyConfig` replaces the whole of
   it, and each publish is one read-and-apply so two that race cannot land an
@@ -1978,9 +1979,11 @@ The one exception is a raw binding's, on a route outside the protocol (below).
   change arrives on `PoolSandboxUpdateRequest.egress`, which `UpdateSandbox`
   records under the sandbox's lock, and only while its container exists: a
   sandbox with no container is answered not found, since its create carries
-  the policy, and a push that raced a delete cannot leave an entry behind. An unrestricted policy removes the
-  entry; archive and delete remove it with the sentinels
-  (`RemoveSandboxPolicy`).
+  the policy, and a push that raced a delete cannot leave an entry behind. An
+  unrestricted policy removes the allow-list entry and an empty passthrough
+  the passthrough entry, each on its own, since passthrough applies whether
+  or not the sandbox is restricted; archive and delete remove both with the
+  sentinels (`RemoveSandboxPolicy`).
 - **A sandbox's gateways are recorded the same way**
   ([ADR 26-10-16-470](../docs/adr/26-10-16-470-a-project-may-route-a-providers-api-through-a-gateway.md) §5):
   `gateways` on the create and update requests, written by

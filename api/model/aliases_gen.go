@@ -43,6 +43,7 @@ type GitSourceDestination = apigen.GitSourceDestination
 type GitSourceWorkspace = apigen.GitSourceWorkspace
 type HTTPAuditExchange = apigen.HTTPAuditExchange
 type HTTPAuditExchangeDetail = apigen.HTTPAuditExchangeDetail
+type HTTPAuditTunnel = apigen.HTTPAuditTunnel
 type HarnessCaptureBaseline = apigen.HarnessCaptureBaseline
 type HarnessCaptureCredential = apigen.HarnessCaptureCredential
 type HarnessCaptureCredentialPreview = apigen.HarnessCaptureCredentialPreview

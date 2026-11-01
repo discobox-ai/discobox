@@ -161,6 +161,13 @@
   (`Recorder.SetRedactor`), or a client's raw secret (ADR 26-10-27-840) is
   written down in it. The redactor is applied to copies; never redact the
   live request, which still has to carry the value on its routes.
+- Text a client chooses outside any request is client text too: a
+  passthrough tunnel's ClientHello (its SNI and ALPN) is redacted with the
+  row (`redactHTTP`, the `Tunnel` fields), and so is a dial error, which
+  repeats the authority. A span has no redactor, so ClientHello text never
+  goes on one. The CONNECT authority is the exception every CONNECT span
+  already makes (`proxy.http.connect_host`), so a dial error naming it may
+  go on the span as well.
 - A raw secret is judged on the request as the sandbox sent it, before the
   cache, a gateway or a swap touches it (`watchRaw`). A body is never read
   ahead past `rawBodyScanLimit` or when its length is undeclared: a stream

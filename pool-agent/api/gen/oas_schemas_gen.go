@@ -54,6 +54,10 @@ func (s *BundlePin) SetDigest(val string) {
 type EgressPolicy struct {
 	Allow         OptNilStringArray `json:"allow"`
 	DenyByDefault OptBool           `json:"denyByDefault"`
+	// Hosts whose CONNECT the pool proxy splices to the origin unread instead of intercepting (ADR
+	// 26-10-31-819), restricted or not; it never admits a host. Sent only when not empty, because an
+	// older pool agent refuses a policy with a field it does not know.
+	Passthrough OptNilStringArray `json:"passthrough"`
 }
 
 // GetAllow returns the value of Allow.
@@ -66,6 +70,11 @@ func (s *EgressPolicy) GetDenyByDefault() OptBool {
 	return s.DenyByDefault
 }
 
+// GetPassthrough returns the value of Passthrough.
+func (s *EgressPolicy) GetPassthrough() OptNilStringArray {
+	return s.Passthrough
+}
+
 // SetAllow sets the value of Allow.
 func (s *EgressPolicy) SetAllow(val OptNilStringArray) {
 	s.Allow = val
@@ -74,6 +83,11 @@ func (s *EgressPolicy) SetAllow(val OptNilStringArray) {
 // SetDenyByDefault sets the value of DenyByDefault.
 func (s *EgressPolicy) SetDenyByDefault(val OptBool) {
 	s.DenyByDefault = val
+}
+
+// SetPassthrough sets the value of Passthrough.
+func (s *EgressPolicy) SetPassthrough(val OptNilStringArray) {
+	s.Passthrough = val
 }
 
 // Ref: #/components/schemas/ErrorDetail
@@ -3530,6 +3544,52 @@ func (o OptNilStringArray) Or(d []string) []string {
 	return d
 }
 
+// NewOptPoolHTTPAuditTunnel returns new OptPoolHTTPAuditTunnel with value set to v.
+func NewOptPoolHTTPAuditTunnel(v PoolHTTPAuditTunnel) OptPoolHTTPAuditTunnel {
+	return OptPoolHTTPAuditTunnel{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolHTTPAuditTunnel is optional PoolHTTPAuditTunnel.
+type OptPoolHTTPAuditTunnel struct {
+	Value PoolHTTPAuditTunnel
+	Set   bool
+}
+
+// IsSet returns true if OptPoolHTTPAuditTunnel was set.
+func (o OptPoolHTTPAuditTunnel) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolHTTPAuditTunnel) Reset() {
+	var v PoolHTTPAuditTunnel
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolHTTPAuditTunnel) SetTo(v PoolHTTPAuditTunnel) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolHTTPAuditTunnel) Get() (v PoolHTTPAuditTunnel, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolHTTPAuditTunnel) Or(d PoolHTTPAuditTunnel) PoolHTTPAuditTunnel {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptPoolListDNSAuditOrder returns new OptPoolListDNSAuditOrder with value set to v.
 func NewOptPoolListDNSAuditOrder(v PoolListDNSAuditOrder) OptPoolListDNSAuditOrder {
 	return OptPoolListDNSAuditOrder{
@@ -4573,7 +4633,8 @@ type PoolHTTPAuditExchange struct {
 	// Secrets whose values were swapped into this request, by ID, whatever kind of sentinel stood in for
 	// them. It is optional because a pool agent older than ADR 26-10-01-240 does not send it, and absent
 	// means no secret was named.
-	SwappedSecretIds []string `json:"swappedSecretIds"`
+	SwappedSecretIds []string               `json:"swappedSecretIds"`
+	Tunnel           OptPoolHTTPAuditTunnel `json:"tunnel"`
 	// True for an upgraded (e.g. WebSocket) connection.
 	Upgrade OptBool `json:"upgrade"`
 	// The upgrade protocol.
@@ -4655,6 +4716,11 @@ func (s *PoolHTTPAuditExchange) GetStatus() int {
 // GetSwappedSecretIds returns the value of SwappedSecretIds.
 func (s *PoolHTTPAuditExchange) GetSwappedSecretIds() []string {
 	return s.SwappedSecretIds
+}
+
+// GetTunnel returns the value of Tunnel.
+func (s *PoolHTTPAuditExchange) GetTunnel() OptPoolHTTPAuditTunnel {
+	return s.Tunnel
 }
 
 // GetUpgrade returns the value of Upgrade.
@@ -4745,6 +4811,11 @@ func (s *PoolHTTPAuditExchange) SetStatus(val int) {
 // SetSwappedSecretIds sets the value of SwappedSecretIds.
 func (s *PoolHTTPAuditExchange) SetSwappedSecretIds(val []string) {
 	s.SwappedSecretIds = val
+}
+
+// SetTunnel sets the value of Tunnel.
+func (s *PoolHTTPAuditExchange) SetTunnel(val OptPoolHTTPAuditTunnel) {
+	s.Tunnel = val
 }
 
 // SetUpgrade sets the value of Upgrade.
@@ -4850,7 +4921,8 @@ type PoolHTTPAuditExchangeDetail struct {
 	// Secrets whose values were swapped into this request, by ID, whatever kind of sentinel stood in for
 	// them. It is optional because a pool agent older than ADR 26-10-01-240 does not send it, and absent
 	// means no secret was named.
-	SwappedSecretIds []string `json:"swappedSecretIds"`
+	SwappedSecretIds []string               `json:"swappedSecretIds"`
+	Tunnel           OptPoolHTTPAuditTunnel `json:"tunnel"`
 	// True for an upgraded (e.g. WebSocket) connection.
 	Upgrade OptBool `json:"upgrade"`
 	// Bytes the sandbox sent over the upgraded connection.
@@ -5043,6 +5115,11 @@ func (s *PoolHTTPAuditExchangeDetail) GetStreamSessionId() OptString {
 // GetSwappedSecretIds returns the value of SwappedSecretIds.
 func (s *PoolHTTPAuditExchangeDetail) GetSwappedSecretIds() []string {
 	return s.SwappedSecretIds
+}
+
+// GetTunnel returns the value of Tunnel.
+func (s *PoolHTTPAuditExchangeDetail) GetTunnel() OptPoolHTTPAuditTunnel {
+	return s.Tunnel
 }
 
 // GetUpgrade returns the value of Upgrade.
@@ -5255,6 +5332,11 @@ func (s *PoolHTTPAuditExchangeDetail) SetSwappedSecretIds(val []string) {
 	s.SwappedSecretIds = val
 }
 
+// SetTunnel sets the value of Tunnel.
+func (s *PoolHTTPAuditExchangeDetail) SetTunnel(val OptPoolHTTPAuditTunnel) {
+	s.Tunnel = val
+}
+
 // SetUpgrade sets the value of Upgrade.
 func (s *PoolHTTPAuditExchangeDetail) SetUpgrade(val OptBool) {
 	s.Upgrade = val
@@ -5335,6 +5417,184 @@ func (s *PoolHTTPAuditResponse) SetSchema(val OptURI) {
 // SetExchanges sets the value of Exchanges.
 func (s *PoolHTTPAuditResponse) SetExchanges(val []PoolHTTPAuditExchange) {
 	s.Exchanges = val
+}
+
+// What the pool proxy saw of a passthrough CONNECT (ADR 26-10-31-819), which it spliced to the
+// origin unread. Nothing inside the tunnel is recorded. A tunnel is an open row and a close row
+// sharing an ID, since a row is never updated once written; a dial that failed is one row.
+// Ref: #/components/schemas/PoolHTTPAuditTunnel
+type PoolHTTPAuditTunnel struct {
+	// The application protocols the client's TLS ClientHello offered.
+	Alpn []string `json:"alpn"`
+	// Bytes the client sent through the tunnel, on the close row.
+	C2sBytes OptInt64 `json:"c2sBytes"`
+	// Which side's stream ended first, client or server, on the close row.
+	ClosedBy OptString `json:"closedBy"`
+	// The address the proxy connected to - the origin's, or the upstream proxy's when the tunnel went
+	// through one.
+	DialedAddress OptString `json:"dialedAddress"`
+	// The passthrough entry the CONNECT's host matched.
+	Entry OptString `json:"entry"`
+	// Why the dial failed, or the error that ended the tunnel.
+	Error OptString `json:"error"`
+	// Shared by a tunnel's rows.
+	ID string `json:"id"`
+	// Open when the tunnel was set up, close when it ended, failed when the dial failed. The pool proxy
+	// owns the values (proxy.AuditTunnelPhase*), as it does a body format's.
+	Phase string `json:"phase"`
+	// Bytes the origin sent through the tunnel, on the close row.
+	S2cBytes OptInt64 `json:"s2cBytes"`
+	// The server name (SNI) the client's TLS ClientHello asked for.
+	ServerName OptString `json:"serverName"`
+	// True when serverName names a host other than the CONNECT's. The bytes still went to the CONNECT's
+	// host, the one policy judged.
+	ServerNameMismatch OptBool `json:"serverNameMismatch"`
+	// True when the client's first flight was a TLS ClientHello.
+	TLS OptBool `json:"tls"`
+	// The TLS versions the client's ClientHello offered.
+	TlsVersions []string `json:"tlsVersions"`
+	// The upstream proxy the tunnel went through, redacted; absent when it went direct.
+	UpstreamProxy OptString `json:"upstreamProxy"`
+}
+
+// GetAlpn returns the value of Alpn.
+func (s *PoolHTTPAuditTunnel) GetAlpn() []string {
+	return s.Alpn
+}
+
+// GetC2sBytes returns the value of C2sBytes.
+func (s *PoolHTTPAuditTunnel) GetC2sBytes() OptInt64 {
+	return s.C2sBytes
+}
+
+// GetClosedBy returns the value of ClosedBy.
+func (s *PoolHTTPAuditTunnel) GetClosedBy() OptString {
+	return s.ClosedBy
+}
+
+// GetDialedAddress returns the value of DialedAddress.
+func (s *PoolHTTPAuditTunnel) GetDialedAddress() OptString {
+	return s.DialedAddress
+}
+
+// GetEntry returns the value of Entry.
+func (s *PoolHTTPAuditTunnel) GetEntry() OptString {
+	return s.Entry
+}
+
+// GetError returns the value of Error.
+func (s *PoolHTTPAuditTunnel) GetError() OptString {
+	return s.Error
+}
+
+// GetID returns the value of ID.
+func (s *PoolHTTPAuditTunnel) GetID() string {
+	return s.ID
+}
+
+// GetPhase returns the value of Phase.
+func (s *PoolHTTPAuditTunnel) GetPhase() string {
+	return s.Phase
+}
+
+// GetS2cBytes returns the value of S2cBytes.
+func (s *PoolHTTPAuditTunnel) GetS2cBytes() OptInt64 {
+	return s.S2cBytes
+}
+
+// GetServerName returns the value of ServerName.
+func (s *PoolHTTPAuditTunnel) GetServerName() OptString {
+	return s.ServerName
+}
+
+// GetServerNameMismatch returns the value of ServerNameMismatch.
+func (s *PoolHTTPAuditTunnel) GetServerNameMismatch() OptBool {
+	return s.ServerNameMismatch
+}
+
+// GetTLS returns the value of TLS.
+func (s *PoolHTTPAuditTunnel) GetTLS() OptBool {
+	return s.TLS
+}
+
+// GetTlsVersions returns the value of TlsVersions.
+func (s *PoolHTTPAuditTunnel) GetTlsVersions() []string {
+	return s.TlsVersions
+}
+
+// GetUpstreamProxy returns the value of UpstreamProxy.
+func (s *PoolHTTPAuditTunnel) GetUpstreamProxy() OptString {
+	return s.UpstreamProxy
+}
+
+// SetAlpn sets the value of Alpn.
+func (s *PoolHTTPAuditTunnel) SetAlpn(val []string) {
+	s.Alpn = val
+}
+
+// SetC2sBytes sets the value of C2sBytes.
+func (s *PoolHTTPAuditTunnel) SetC2sBytes(val OptInt64) {
+	s.C2sBytes = val
+}
+
+// SetClosedBy sets the value of ClosedBy.
+func (s *PoolHTTPAuditTunnel) SetClosedBy(val OptString) {
+	s.ClosedBy = val
+}
+
+// SetDialedAddress sets the value of DialedAddress.
+func (s *PoolHTTPAuditTunnel) SetDialedAddress(val OptString) {
+	s.DialedAddress = val
+}
+
+// SetEntry sets the value of Entry.
+func (s *PoolHTTPAuditTunnel) SetEntry(val OptString) {
+	s.Entry = val
+}
+
+// SetError sets the value of Error.
+func (s *PoolHTTPAuditTunnel) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetID sets the value of ID.
+func (s *PoolHTTPAuditTunnel) SetID(val string) {
+	s.ID = val
+}
+
+// SetPhase sets the value of Phase.
+func (s *PoolHTTPAuditTunnel) SetPhase(val string) {
+	s.Phase = val
+}
+
+// SetS2cBytes sets the value of S2cBytes.
+func (s *PoolHTTPAuditTunnel) SetS2cBytes(val OptInt64) {
+	s.S2cBytes = val
+}
+
+// SetServerName sets the value of ServerName.
+func (s *PoolHTTPAuditTunnel) SetServerName(val OptString) {
+	s.ServerName = val
+}
+
+// SetServerNameMismatch sets the value of ServerNameMismatch.
+func (s *PoolHTTPAuditTunnel) SetServerNameMismatch(val OptBool) {
+	s.ServerNameMismatch = val
+}
+
+// SetTLS sets the value of TLS.
+func (s *PoolHTTPAuditTunnel) SetTLS(val OptBool) {
+	s.TLS = val
+}
+
+// SetTlsVersions sets the value of TlsVersions.
+func (s *PoolHTTPAuditTunnel) SetTlsVersions(val []string) {
+	s.TlsVersions = val
+}
+
+// SetUpstreamProxy sets the value of UpstreamProxy.
+func (s *PoolHTTPAuditTunnel) SetUpstreamProxy(val OptString) {
+	s.UpstreamProxy = val
 }
 
 type PoolListDNSAuditOrder string

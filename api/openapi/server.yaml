@@ -725,6 +725,12 @@ components:
                 denyByDefault:
                     description: Restricts every discobox this level covers to the allow lists of its levels, even when they are empty.
                     type: boolean
+                passthrough:
+                    description: Hosts whose HTTPS proxy CONNECT is spliced to the origin unread instead of intercepted (ADR 26-10-31-819), so TLS stays end to end; entries as allow's. It never admits a host, and on such a tunnel nothing inside is read, so no sentinel is swapped and no body is recorded. A discobox a person creates passes through the union of its levels' lists; one a discobox created, only its own level's. A discobox may set a discobox's own level only to entries its own passthrough covers.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
             type: object
         HarnessConfigPort:
             additionalProperties: false
@@ -4784,6 +4790,8 @@ components:
                     items:
                         type: string
                     type: array
+                tunnel:
+                    $ref: '#/components/schemas/HTTPAuditTunnel'
                 upgrade:
                     description: True for an upgraded (e.g. WebSocket) connection
                     type: boolean
@@ -4944,6 +4952,8 @@ components:
                     items:
                         type: string
                     type: array
+                tunnel:
+                    $ref: '#/components/schemas/HTTPAuditTunnel'
                 upgrade:
                     description: True for an upgraded (e.g. WebSocket) connection
                     type: boolean
@@ -4978,6 +4988,62 @@ components:
                 - requestHeaders
                 - responseHeaders
                 - appliedHeaders
+            type: object
+        HTTPAuditTunnel:
+            additionalProperties: false
+            description: What the pool proxy saw of a passthrough CONNECT (ADR 26-10-31-819), which it spliced to the origin unread. Nothing inside the tunnel is recorded. A tunnel is an open row and a close row sharing an ID, since a row is never updated once written; a dial that failed is one row.
+            properties:
+                alpn:
+                    description: The application protocols the client's TLS ClientHello offered.
+                    items:
+                        type: string
+                    type: array
+                c2sBytes:
+                    description: Bytes the client sent through the tunnel, on the close row.
+                    format: int64
+                    type: integer
+                closedBy:
+                    description: Which side's stream ended first, client or server, on the close row.
+                    type: string
+                dialedAddress:
+                    description: The address the proxy connected to - the origin's, or the upstream proxy's when the tunnel went through one.
+                    type: string
+                entry:
+                    description: The passthrough entry the CONNECT's host matched.
+                    type: string
+                error:
+                    description: Why the dial failed, or the error that ended the tunnel.
+                    type: string
+                id:
+                    description: Shared by a tunnel's rows.
+                    type: string
+                phase:
+                    description: open when the tunnel was set up, close when it ended, failed when the dial failed. Relayed from the pool proxy, which owns the values, as a body format is.
+                    type: string
+                s2cBytes:
+                    description: Bytes the origin sent through the tunnel, on the close row.
+                    format: int64
+                    type: integer
+                serverName:
+                    description: The server name (SNI) the client's TLS ClientHello asked for.
+                    type: string
+                serverNameMismatch:
+                    description: True when serverName names a host other than the CONNECT's. The bytes still went to the CONNECT's host, the one policy judged.
+                    type: boolean
+                tls:
+                    description: True when the client's first flight was a TLS ClientHello.
+                    type: boolean
+                tlsVersions:
+                    description: The TLS versions the client's ClientHello offered.
+                    items:
+                        type: string
+                    type: array
+                upstreamProxy:
+                    description: The upstream proxy the tunnel went through, redacted; absent when it went direct.
+                    type: string
+            required:
+                - id
+                - phase
             type: object
         UnavailableAuditPool:
             additionalProperties: false

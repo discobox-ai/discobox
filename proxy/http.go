@@ -240,6 +240,11 @@ func newHTTPProxy(certs *CertificateBundle, flt *filter.Filter, gateways map[str
 	// proxy's hop aside (applyUpstreamProxy). The pinned and h2c transports
 	// are clones of this one, so they dial the same way.
 	p.Tr.DialContext = h.destinations.DialContext
+	// goproxy's constructor points ConnectDial at HTTPS_PROXY on its own,
+	// ignoring NO_PROXY. This proxy decides its upstream itself
+	// (applyUpstreamProxy), so a passthrough tunnel (ADR 26-10-31-819) to an
+	// exempt destination is dialed directly, by the destination dialer.
+	p.ConnectDial = nil
 	h.reports = newCredentialReporter(swapper.Report)
 	h.setupMITM()
 	h.setupHandlers()
@@ -321,6 +326,13 @@ func (h *httpProxy) setupHandlers() {
 				BlockedReason: "host denied",
 			})
 			return h.rejectConnect, host
+		}
+		// A host the client's passthrough names is spliced unread (ADR
+		// 26-10-31-819); it was allowed above, which passthrough never
+		// decides.
+		if entry, ok := flt.PassthroughForClient(host, client.ID); ok && !h.internalHost(host) {
+			span.SetAttributes(attribute.Bool("proxy.http.passthrough", true), attribute.String("proxy.http.passthrough_entry", entry))
+			return h.passthroughConnect(entry), host
 		}
 		return h.mitmConnect, host
 	})

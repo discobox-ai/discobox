@@ -108,3 +108,83 @@ func TestCovers(t *testing.T) {
 		})
 	}
 }
+
+func TestMergePassthrough(t *testing.T) {
+	got := Merge(
+		Policy{Passthrough: []string{"Pinned.Vendor.com"}},
+		Policy{Passthrough: []string{"*.corp.example", "pinned.vendor.com"}, DenyByDefault: true},
+		Policy{},
+	)
+	if want := []string{"*.corp.example", "pinned.vendor.com"}; !slices.Equal(got.Passthrough, want) {
+		t.Fatalf("Merge().Passthrough = %v, want %v", got.Passthrough, want)
+	}
+	if got.Allow != nil {
+		t.Fatalf("passthrough admitted hosts: Allow = %v", got.Allow)
+	}
+}
+
+func TestValidatePassthrough(t *testing.T) {
+	if err := (Policy{Passthrough: []string{"*.corp.example", "10.0.0.0/8"}}).Validate(); err != nil {
+		t.Fatalf("Validate() = %v", err)
+	}
+	if err := (Policy{Passthrough: []string{"corp.example:443"}}).Validate(); err == nil {
+		t.Fatal("Validate() accepted a passthrough entry with a port")
+	}
+}
+
+func TestMatcherMatch(t *testing.T) {
+	m := NewMatcher([]string{"*.corp.example", "10.0.0.0/8", "1.2.3.4"})
+	for host, want := range map[string]string{
+		"api.corp.example:443": "*.corp.example",
+		"10.2.3.4:5432":        "10.0.0.0/8",
+		"1.2.3.4":              "1.2.3.4",
+	} {
+		if got, ok := m.Match(host); !ok || got != want {
+			t.Errorf("Match(%q) = %q, %v; want %q", host, got, ok, want)
+		}
+	}
+	if got, ok := m.Match("corp.example"); ok {
+		t.Errorf("Match(corp.example) = %q, want no match", got)
+	}
+}
+
+func TestCoversPassthrough(t *testing.T) {
+	tests := []struct {
+		name         string
+		outer, child Policy
+		want         bool
+	}{
+		{name: "an empty child is covered by anything", outer: Policy{}, child: Policy{}, want: true},
+		{name: "unrestricted outer without passthrough does not cover a child with it", outer: Policy{}, child: Policy{Passthrough: []string{"foo.example"}}, want: false},
+		{name: "a subset is covered", outer: Policy{Passthrough: []string{"foo.example", "bar.example"}}, child: Policy{Passthrough: []string{"foo.example"}}, want: true},
+		{name: "a wildcard covers a name beneath it", outer: Policy{Passthrough: []string{"*.corp.example"}}, child: Policy{Passthrough: []string{"db.corp.example"}}, want: true},
+		{name: "a wider child is not", outer: Policy{Passthrough: []string{"db.corp.example"}}, child: Policy{Passthrough: []string{"*.corp.example"}}, want: false},
+		{name: "held to it under restriction too", outer: Policy{DenyByDefault: true, Allow: []string{"*"}}, child: Policy{DenyByDefault: true, Passthrough: []string{"foo.example"}}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Covers(tt.outer, tt.child); got != tt.want {
+				t.Fatalf("Covers(%+v, %+v) = %v, want %v", tt.outer, tt.child, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEffectiveInheritsPassthroughOnlyForAPersonsBox(t *testing.T) {
+	project := Policy{Passthrough: []string{"pinned.example"}, Allow: []string{"github.com"}, DenyByDefault: true}
+	own := Policy{Passthrough: []string{"own.example"}}
+	person := Effective(own, false, project)
+	if want := []string{"own.example", "pinned.example"}; !slices.Equal(person.Passthrough, want) {
+		t.Fatalf("a person's box passes through %v, want %v", person.Passthrough, want)
+	}
+	discobox := Effective(own, true, project)
+	if want := []string{"own.example"}; !slices.Equal(discobox.Passthrough, want) {
+		t.Fatalf("a discobox's box passes through %v, want only its own %v", discobox.Passthrough, want)
+	}
+	if !discobox.DenyByDefault || !slices.Equal(discobox.Allow, []string{"github.com"}) {
+		t.Fatalf("a discobox's box lost the inherited allow or restriction: %+v", discobox)
+	}
+	if got := Provision(project); len(got.Passthrough) != 0 || !got.DenyByDefault {
+		t.Fatalf("Provision() = %+v, want restricted with nothing passed through", got)
+	}
+}

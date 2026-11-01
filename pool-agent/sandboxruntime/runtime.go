@@ -1923,7 +1923,8 @@ func egressPolicy(opt workerclient.OptEgressPolicy) egress.Policy {
 		return egress.Policy{}
 	}
 	allow, _ := policy.Allow.Get()
-	return egress.Policy{Allow: allow, DenyByDefault: policy.DenyByDefault.Or(false)}
+	passthrough, _ := policy.Passthrough.Get()
+	return egress.Policy{Allow: allow, DenyByDefault: policy.DenyByDefault.Or(false), Passthrough: passthrough}
 }
 
 // DeleteSandbox removes the sandbox's container, its proxy material, and its

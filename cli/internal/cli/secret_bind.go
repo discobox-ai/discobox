@@ -112,7 +112,10 @@ func (a *App) newSecretBindCommand() *cobra.Command {
 or every discobox of the project (--project-wide).
 
 --as names the environment variable it is delivered in: a sentinel that the
-discobox's pool exchanges for the value on the way out. Left out, it is the
+discobox's pool exchanges for the value on the way out. It is never exchanged
+on a host the discobox's egress passes through unread (--egress-passthrough,
+ADR 26-10-31-819): the proxy reads nothing inside such a tunnel, so the host
+gets the sentinel and refuses it. Left out, it is the
 secret's name upper-snaked: github is GITHUB, npm-token is NPM_TOKEN. --route narrows where it
 may be sent for this binding; left out, it goes where the secret's routes say. --for is how long the binding lasts, within
 the secret's limit.
@@ -122,8 +125,9 @@ signs with it or sends it where an exchange cannot reach: env puts it in the
 variable, file puts there the path of a file under /run/discobox/raw-secrets
 holding it. The secret must allow it (secret update --allow-raw). The value is
 held in memory, never on a disk, and the pool refuses a request carrying it
-off its routes; but a discobox holding a value can send it anywhere, so that is
-a guard against mistakes, not a boundary.
+off its routes, except on a host the discobox passes through unread, where it
+is not looked for; and a discobox holding a value can send it anywhere, so that
+is a guard against mistakes, not a boundary.
 
 --policy FILE supplies reusable routes instead of --route. Repeat it to merge
 policies into one route list; --policy-arg NAME=VALUE applies to the preceding

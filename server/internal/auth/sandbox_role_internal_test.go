@@ -55,6 +55,9 @@ func roleStore(t *testing.T) *store.Store {
 		{ID: "sbx-github-wide", Name: "github-wide", CreatedBySandboxID: by("sbx-github")},
 		{ID: "sbx-sealed", Name: "sealed", Egress: restricted(), CreatedBySandboxID: by("sbx-lead"), DiscoboxAPI: true},
 		{ID: "sbx-sealed-wider", Name: "sealed-wider", Egress: restricted("api.github.com"), CreatedBySandboxID: by("sbx-sealed")},
+		// A box with passthrough its unrestricted creator does not hold, as a
+		// person may set (ADR 26-10-31-819 §5).
+		{ID: "sbx-unread", Name: "unread", Egress: egress.Policy{Passthrough: []string{"db.corp.example"}}, CreatedBySandboxID: by("sbx-lead")},
 	} {
 		sandbox.ProjectID, sandbox.PoolID, sandbox.CreatedByUserID = "proj-1", "pool-1", "user-1"
 		if err := st.CreateSandbox(ctx, sandbox); err != nil {
@@ -177,15 +180,18 @@ func TestSandboxRolePowersTheDiscoboxesItCreated(t *testing.T) {
 	})
 }
 
-// A discobox changes the meta of the discoboxes it created; renaming one
-// stays out (ADR 26-10-08-447).
+// A discobox changes the meta of the discoboxes it created, and reaches their
+// update, where the service refuses it everything but passthrough within its
+// own (ADR 26-10-08-447, ADR 26-10-31-819 §5).
 func TestSandboxRoleTagsTheDiscoboxesItCreated(t *testing.T) {
 	checkRole(t, []roleCase{
 		{"tag its worker", roleLead, http.MethodPatch, "/projects/default/sandboxes/sbx-worker/meta", http.StatusOK},
 		{"tag its worker by its project", roleLead, http.MethodPatch, "/api/projects/proj-1/sandboxes/sbx-worker/meta", http.StatusOK},
 		{"tag a person's discobox", roleLead, http.MethodPatch, "/projects/default/sandboxes/sbx-persons/meta", http.StatusForbidden},
 		{"tag nothing", roleLead, http.MethodPatch, "/projects/default/sandboxes/sbx-none/meta", http.StatusNotFound},
-		{"rename its worker", roleLead, http.MethodPatch, "/projects/default/sandboxes/sbx-worker", http.StatusForbidden},
+		{"update its worker", roleLead, http.MethodPatch, "/projects/default/sandboxes/sbx-worker", http.StatusOK},
+		{"update a person's discobox", roleLead, http.MethodPatch, "/projects/default/sandboxes/sbx-persons", http.StatusForbidden},
+		{"update itself", roleWorker, http.MethodPatch, "/projects/default/sandboxes/sbx-worker", http.StatusForbidden},
 	})
 }
 
@@ -292,5 +298,10 @@ func TestSandboxRoleActsOnlyOnDiscoboxesWithinItsEgress(t *testing.T) {
 		{"type into a wider discobox", sealed, http.MethodPost, "/projects/default/sandboxes/sbx-sealed-wider/execs/primary/input", http.StatusForbidden},
 		{"wait on a wider discobox", sealed, http.MethodPost, "/projects/default/sandboxes/sbx-sealed-wider/execs/primary/wait", http.StatusOK},
 		{"an unrestricted caller types into a restricted one", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-sealed/execs/primary/input", http.StatusOK},
+		// Passthrough is held to the caller's whether or not either is
+		// restricted: an unrestricted caller's traffic is all read.
+		{"type into one with passthrough the caller lacks", roleLead, http.MethodPost, "/projects/default/sandboxes/sbx-unread/execs/primary/input", http.StatusForbidden},
+		{"update one with passthrough the caller lacks", roleLead, http.MethodPatch, "/projects/default/sandboxes/sbx-unread", http.StatusForbidden},
+		{"read the screen of one with passthrough", roleLead, http.MethodGet, "/projects/default/sandboxes/sbx-unread/execs/primary/screen", http.StatusOK},
 	})
 }

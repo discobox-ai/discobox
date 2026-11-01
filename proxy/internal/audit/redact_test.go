@@ -44,6 +44,12 @@ func TestRecordHTTPRedactsTheClientsRawSecrets(t *testing.T) {
 		URL: "https://evil.example/?k=" + redactSecret, BlockedReason: "raw: sbd_1: " + redactSecret,
 		RequestHeaders: live,
 	})
+	// A passthrough tunnel's ClientHello is the client's own text, and it may
+	// put a raw value in the SNI or an ALPN entry (ADR 26-10-31-819 §4).
+	recorder.RecordHTTP(HTTPEvent{
+		Time: time.Now().UTC(), ClientID: "sb-raw", Host: "pinned.example:443", Method: http.MethodConnect,
+		Tunnel: Tunnel{ID: "tun_1", Phase: TunnelPhaseOpen, ServerName: redactSecret + ".example", ALPN: "h2," + redactSecret, Error: "dial " + redactSecret},
+	})
 	recorder.RecordHTTP(HTTPEvent{
 		Time: time.Now().UTC(), ClientID: "sb-other", Host: "evil.example", Method: http.MethodGet,
 		URL: "https://evil.example/?k=" + redactSecret,
@@ -60,10 +66,16 @@ func TestRecordHTTPRedactsTheClientsRawSecrets(t *testing.T) {
 	}
 	defer reader.Close()
 	rows, err := reader.ListHTTP(context.Background(), QueryOptions{ClientID: "sb-raw", Limit: 10})
-	if err != nil || len(rows) != 1 {
+	if err != nil || len(rows) != 2 {
 		t.Fatalf("rows = %+v (%v)", rows, err)
 	}
-	row := rows[0]
+	tunnel := rows[0].Tunnel
+	for name, text := range map[string]string{"server name": tunnel.ServerName, "alpn": tunnel.ALPN, "error": tunnel.Error} {
+		if strings.Contains(text, redactSecret) || !strings.Contains(text, "[REDACTED]") {
+			t.Errorf("tunnel %s = %q, want the secret redacted", name, text)
+		}
+	}
+	row := rows[1]
 	for name, text := range map[string]string{"url": row.URL, "headers": row.RequestHeaders, "reason": row.BlockedReason} {
 		if strings.Contains(text, redactSecret) || !strings.Contains(text, "[REDACTED]") {
 			t.Errorf("%s = %q, want the secret redacted", name, text)

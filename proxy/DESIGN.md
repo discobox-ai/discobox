@@ -36,7 +36,8 @@ decision, destination policy decision, cache event, and upgraded-stream audit
 row. The listener sniffs each connection's first byte: `0x05` is served as
 SOCKS5, an ASCII capital letter as HTTP, and anything else (SOCKS4 included) is
 closed. Every allowed `CONNECT` is MITM'd with a per-host certificate from the
-MITM CA; there is no passthrough tunnel.
+MITM CA, except one to a host the client's passthrough names, which is spliced
+to the origin unread ([Passthrough](#passthrough)).
 
 A request read from a tunnel is for the `CONNECT` authority, while policy —
 the filter, the gateways, and the secret swap — judges its `Host`. So a
@@ -845,7 +846,7 @@ refuses a wider child with, so validation, merging, and enforcement cannot
 read an entry three ways.
 
 Runtime policy changes only through `ApplyConfig`, which hot-swaps the allowlist,
-the gateways ([Gateways](#gateways)), the sentinel set with its swap tuning — installed in the running
+the passthrough hosts ([Passthrough](#passthrough)), the gateways ([Gateways](#gateways)), the sentinel set with its swap tuning — installed in the running
 `Swapper`, so its cache survives — and the host trusts
 ([Host Trust](#host-trust)). Pool-agent calls it directly to publish
 sentinel sets and trusts. The proxy does not expose an HTTP configuration API; listener,
@@ -855,6 +856,47 @@ remain startup-only.
 Header audit redaction covers both credential-like header names and every header
 name a gateway touches. This keeps a gateway's key out of the trail even when
 its header name does not look sensitive.
+
+## Passthrough
+
+A client's passthrough hosts (`Config.Passthrough`, per client ID, in
+`egress`'s vocabulary) are those whose `CONNECT` is spliced to the origin
+unread instead of intercepted
+([ADR 26-10-31-819](../docs/adr/26-10-31-819-an-egress-policy-may-pass-a-hosts-connect-through-unread.md)).
+The control plane decides them; the filter holds them beside the allow list
+(`PassthroughForClient`).
+
+- **Order at `CONNECT`.** The gate host and the pool hosts are intercepted
+  first; the allow list refuses next; a passthrough match is spliced; anything
+  else is MITM'd. Passthrough never admits a host, never applies to the gate
+  or a pool host however it is spelled (`internalHost`: a trailing dot, case),
+  and plain `http://` requests and SOCKS are untouched by it.
+- **The splice** (`passthrough.go`) takes the connection through goproxy's
+  `ConnectHijack`. It dials as any tunnel is dialed — `ConnectDial` behind an
+  upstream proxy, honoring its exemptions, otherwise the destination dialer
+  that refuses the pool's own loopback — answers `200` (or `502` when the dial
+  fails), and copies bytes each way, half-closing where the connection can.
+  goproxy's constructor points `ConnectDial` at `HTTPS_PROXY` on its own,
+  ignoring `NO_PROXY`; `newHTTPProxy` clears it so the upstream is this
+  proxy's decision alone ([Upstream Egress](#upstream-egress)).
+- **Nothing inside is read**: no sentinel swap, no raw-value watch, no `421`,
+  no plaintext-to-TLS upgrade, no cache, no spool, no host-trust pin. The
+  client verifies the origin itself.
+- **The ClientHello is peeked, not consumed.** Before the client's bytes are
+  sent on, up to `helloPeekWait` (5s) of its first flight is read through a
+  `crypto/tls` server over a connection that records reads and drops writes,
+  so the client is never answered; the recorded bytes go to the origin first.
+  The origin's bytes flow to the client from the start, so a server that
+  speaks first is not held up.
+- **Audit is two rows per tunnel**, `audit.HTTPExchange.Tunnel` sharing a
+  `tun_` ID: an `open` row once the dial and peek are done (entry, dialed
+  address, upstream proxy, TLS, SNI, ALPN, offered versions, and an SNI that
+  names another host as a mismatch, which is recorded and not refused), and a
+  `close` row when it ends (bytes each way, duration, which side ended first,
+  error). A row is never updated, because followers read forward by `after_id`.
+  A failed dial is one `failed` row with a `502`. The ClientHello's text and a
+  dial error are redacted with the row (`redactHTTP`), like any client text.
+  The span is `proxy.http.passthrough`, and carries none of that text.
 
 ## Gateways
 
@@ -1064,8 +1106,10 @@ is empty, the first set variable in `UpstreamProxyEnvVars` (`HTTPS_PROXY`,
 `HTTP_PROXY`, `ALL_PROXY`, each upper then lower case) — names an upstream. That
 is the nested case: a pool proxy inside a Discobox sandbox has no route off-box
 and must hand its egress to the sandbox's own forwarder. Both goproxy egress
-hooks (`Transport.Proxy` and `ConnectDial`) route through it, and both honor
+hooks (`Transport.Proxy` and `ConnectDial`, which carries
+[passthrough](#passthrough) tunnels) route through it, and both honor
 `UpstreamNoProxy` (falling back to `NO_PROXY`) with standard `NO_PROXY` matching,
-so loopback and control-plane traffic stay direct. `pool-agent/proxyagent`
+so loopback and control-plane traffic stay direct. With no upstream,
+`ConnectDial` is nil and a tunnel is dialed by the destination dialer. `pool-agent/proxyagent`
 forwards those variables into the proxy unit rather than setting the fields.
 SOCKS5 connects always dial directly.

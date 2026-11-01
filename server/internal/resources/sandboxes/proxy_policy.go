@@ -2,9 +2,11 @@ package sandboxes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"gorm.io/gorm"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
@@ -116,6 +119,73 @@ func (s *Service) MarkProxyPolicyChangedTx(ctx context.Context, txStore *store.S
 	return nil
 }
 
+// refuseSandboxRoleUpdate is ADR 26-10-31-819 §5's check on an update from
+// the sandbox role, which reaches it only for a discobox it created and does
+// not reach less than (authorizeWithinCaller): it may change that discobox's
+// passthrough and nothing else, and only to entries the caller's own
+// effective passthrough covers, read as it stands.
+func (s *Service) refuseSandboxRoleUpdate(ctx context.Context, callerID string, target *model.Sandbox, input services.UpdateSandboxBody) error {
+	onlyPassthrough := apperrors.NewStatusError(http.StatusForbidden,
+		"a discobox may change only the passthrough of a discobox it created; everything else about it is a person's to change")
+	// What the sandbox role may send is listed, not what it may not: a field
+	// added to the update later is refused to it until someone decides
+	// otherwise (server/internal/auth/REVIEW.md, no authorization by
+	// exclusion). The body is read as it would be sent, field by field.
+	if fields, err := onlyFields(&input, "config", "$schema"); err != nil || !fields {
+		return onlyPassthrough
+	}
+	config, ok := input.Config.Get()
+	if !ok {
+		return onlyPassthrough
+	}
+	if fields, err := onlyFields(&config, "egress"); err != nil || !fields {
+		return onlyPassthrough
+	}
+	requested, ok := config.Egress.Get()
+	if !ok {
+		return onlyPassthrough
+	}
+	level, err := services.EgressPolicyToModel(requested)
+	if err != nil {
+		return err
+	}
+	if level.DenyByDefault != target.Egress.DenyByDefault || !slices.Equal(level.Allow, egress.Normalize(target.Egress.Allow)) {
+		return onlyPassthrough
+	}
+	caller, err := s.store.GetSandbox(ctx, target.ProjectID, callerID)
+	if err != nil {
+		return fmt.Errorf("read calling discobox: %w", err)
+	}
+	outer, err := s.store.EffectiveSandboxEgress(ctx, caller)
+	if err != nil {
+		return err
+	}
+	if !egress.CoversEntries(outer.Passthrough, level.Passthrough) {
+		return apperrors.NewStatusError(http.StatusForbidden,
+			"a discobox may set another's passthrough only to hosts its own passthrough covers (ADR 26-10-31-819 §5)")
+	}
+	return nil
+}
+
+// onlyFields reports whether v, encoded as the API encodes it, sets no field
+// but those named.
+func onlyFields(v json.Marshaler, allowed ...string) (bool, error) {
+	data, err := v.MarshalJSON()
+	if err != nil {
+		return false, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return false, err
+	}
+	for name := range fields {
+		if !slices.Contains(allowed, name) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 // refuseWiderThanCreator is §4's check on a create from the sandbox role: the
 // new discobox may reach nothing its creator cannot. The creator's policy is
 // read as it stands; the child's is what it would be created with.
@@ -131,6 +201,10 @@ func (s *Service) refuseWiderThanCreator(ctx context.Context, creatorID string, 
 	inner, err := s.store.EffectiveSandboxEgress(ctx, child)
 	if err != nil {
 		return err
+	}
+	if !egress.CoversEntries(outer.Passthrough, inner.Passthrough) {
+		return apperrors.NewStatusError(http.StatusForbidden,
+			"a discobox may give a new discobox only passthrough hosts its own passthrough covers (ADR 26-10-31-819 §5)")
 	}
 	if !egress.Covers(outer, inner) {
 		return apperrors.NewStatusError(http.StatusForbidden,

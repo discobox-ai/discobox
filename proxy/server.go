@@ -160,6 +160,7 @@ func (s *Server) ApplyConfig(cfg Config) error {
 	}
 	s.filter = flt
 	s.cfg.Allowlist = cfg.Allowlist
+	s.cfg.Passthrough = cfg.Passthrough
 	s.cfg.Gateways = cfg.Gateways
 	s.cfg.Secrets = cfg.Secrets
 	s.cfg.Trusts = cfg.Trusts
@@ -171,7 +172,7 @@ func (s *Server) ApplyConfig(cfg Config) error {
 }
 
 func buildFilter(cfg Config) *filter.Filter {
-	return filter.New(filter.Config{Clients: cfg.Allowlist.Clients})
+	return filter.New(filter.Config{Clients: cfg.Allowlist.Clients, Passthrough: cfg.Passthrough.Clients})
 }
 
 func swapperConfig(cfg Config) secrets.Config {

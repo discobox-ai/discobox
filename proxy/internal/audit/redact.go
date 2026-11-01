@@ -52,6 +52,12 @@ func redactHTTP(event HTTPEvent, redactor Redactor) HTTPEvent {
 	event.CacheKey = redactor.Redact(event.CacheKey)
 	event.RequestHeaders = redactHeaders(event.RequestHeaders, redactor)
 	event.ResponseHeaders = redactHeaders(event.ResponseHeaders, redactor)
+	// A passthrough tunnel's ClientHello is the client's own text, read
+	// before anything else could have been (ADR 26-10-31-819 §4), and a dial
+	// error repeats the authority it was given.
+	event.Tunnel.ServerName = redactor.Redact(event.Tunnel.ServerName)
+	event.Tunnel.ALPN = redactor.Redact(event.Tunnel.ALPN)
+	event.Tunnel.Error = redactor.Redact(event.Tunnel.Error)
 	return event
 }
 

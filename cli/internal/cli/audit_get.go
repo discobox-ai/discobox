@@ -139,6 +139,7 @@ func (a *App) printHTTPAuditRecord(ctx context.Context, out io.Writer, asJSON bo
 		{"response body", auditBodyField(detail.ResponseBodyRecorded.Or(false), detail.ResponseBytes.Or(0), detail.ResponseBodyFormat.Or(""), detail.ResponseBodyError.Or(""))},
 		{"upgrade", httpAuditUpgradeField(detail)},
 	}
+	fields = append(fields, httpAuditTunnelFields(detail)...)
 	if err := writeAuditFields(out, fields); err != nil {
 		return nil, err
 	}
@@ -382,6 +383,52 @@ func httpAuditUpgradeField(detail *apimodel.HTTPAuditExchangeDetail) string {
 		parts = append(parts, fmt.Sprintf("%d chunks dropped under load (%d bytes)", dropped, detail.StreamDroppedBytes.Or(0)))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// httpAuditTunnelFields describe a passthrough tunnel's row (ADR
+// 26-10-31-819 §4): what the proxy saw from outside a CONNECT it spliced
+// unread. None for a row that is no tunnel's.
+func httpAuditTunnelFields(detail *apimodel.HTTPAuditExchangeDetail) []auditField {
+	t, ok := detail.Tunnel.Get()
+	if !ok {
+		return nil
+	}
+	passthrough := terminalSafe(t.Phase) + " " + terminalSafe(t.ID) + ", not intercepted: nothing inside was read"
+	var hello string
+	if t.TLS.Or(false) {
+		parts := []string{"TLS"}
+		if name := t.ServerName.Or(""); name != "" {
+			parts = append(parts, "server name "+terminalSafe(name))
+		}
+		if t.ServerNameMismatch.Or(false) {
+			parts = append(parts, "which is not the CONNECT's host")
+		}
+		if len(t.Alpn) > 0 {
+			parts = append(parts, "ALPN "+terminalSafe(strings.Join(t.Alpn, ", ")))
+		}
+		if len(t.TlsVersions) > 0 {
+			parts = append(parts, "offering "+terminalSafe(strings.Join(t.TlsVersions, ", ")))
+		}
+		hello = strings.Join(parts, "; ")
+	} else if t.Phase == "open" {
+		hello = "not a TLS ClientHello, or none in time"
+	}
+	var carried string
+	if t.Phase == "close" {
+		carried = fmt.Sprintf("%d bytes sent, %d received", t.C2sBytes.Or(0), t.S2cBytes.Or(0))
+		if by := t.ClosedBy.Or(""); by != "" {
+			carried += ", ended by the " + terminalSafe(by)
+		}
+	}
+	return []auditField{
+		{"passthrough", passthrough},
+		{"passthrough entry", terminalSafe(t.Entry.Or(""))},
+		{"dialed", terminalSafe(t.DialedAddress.Or(""))},
+		{"upstream proxy", terminalSafe(t.UpstreamProxy.Or(""))},
+		{"client hello", hello},
+		{"carried", carried},
+		{"tunnel error", terminalSafe(t.Error.Or(""))},
+	}
 }
 
 // auditBodyField says whether a body can be read, how big it was, and why it is
