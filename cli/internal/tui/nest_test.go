@@ -66,39 +66,34 @@ func TestADiscoboxIsNestedUnderTheOneThatCreatedIt(t *testing.T) {
 	}
 }
 
-// A discobox filed in another folder than its creator is drawn twice on every
-// folder at once: under its creator, and in its own folder, where the server
-// filed it and `discobox ls` lists it.
-func TestADiscoboxFiledApartFromItsCreatorIsAlsoInItsOwnFolder(t *testing.T) {
+// A discobox filed in another folder than its creator is drawn once on every
+// folder at once: under its creator, and not a second time in its own folder.
+// Only a folder that does not draw its creator lists it as a top.
+func TestADiscoboxFiledApartFromItsCreatorIsDrawnOnceUnderIt(t *testing.T) {
 	l := listForTest(nestSession, nestBoxes())
 	l.folder = everyFolder
 
-	want := []string{
-		"solo", "lead", "├ newer child", "└ older child", "  └ grandchild",
-		"grandchild",
-		"newer child", "older child", "└ grandchild",
-	}
+	want := []string{"solo", "lead", "├ newer child", "└ older child", "  └ grandchild"}
 	if got := rowNames(l); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("rows = %q, want %q", got, want)
 	}
 	// A nested row is in the section of the row its tree hangs from.
-	sections := map[string]int{}
 	for _, s := range l.rows() {
-		sections[l.sectionOf(s)]++
-	}
-	if sections["here:/src/app"] != 5 || sections["box:sbx_lead:/workspace/source"] != 3 || sections["box:sbx_old:/workspace/source"] != 1 {
-		t.Fatalf("sections = %v", sections)
+		if got := l.sectionOf(s); got != "here:/src/app" {
+			t.Fatalf("%s is in section %q, want its creator's", s.Name, got)
+		}
 	}
 
 	out := l.view(newStyles(false), &zones{}, true)
-	if !strings.Contains(out, "5 boxes") || strings.Contains(out, "9 boxes") {
-		t.Errorf("the band counts rows rather than discoboxes:\n%s", out)
+	if !strings.Contains(out, "5 boxes") {
+		t.Errorf("the band does not count the five discoboxes drawn:\n%s", out)
 	}
-	if !strings.Contains(out, "/workspace/source · from sbx_lead") {
-		t.Errorf("the folder the created discoboxes are filed in has no section:\n%s", out)
+	if strings.Contains(out, "from sbx_lead") {
+		t.Errorf("the folder the created discoboxes are filed in has a section of its own:\n%s", out)
 	}
 
-	// Its own folder lists it as the server filed it, creator or no creator.
+	// Its own folder lists it as the server filed it when its creator is not
+	// drawn there.
 	l.folder = folder{key: "box:sbx_lead:/workspace/source"}
 	if got := rowNames(l); strings.Join(got, "|") != "newer child|older child|└ grandchild" {
 		t.Fatalf("rows in the created discoboxes' folder = %q", got)
@@ -117,30 +112,6 @@ func TestADiscoboxFiledWithItsCreatorIsDrawnOnce(t *testing.T) {
 		if got := rowNames(l); strings.Join(got, "|") != "lead|└ child" {
 			t.Fatalf("rows in %q = %q", f.key, got)
 		}
-	}
-}
-
-// A command acts once on a discobox that is on two rows, and marking it counts
-// it once.
-func TestADiscoboxOnTwoRowsIsOneTarget(t *testing.T) {
-	l := listForTest(nestSession, nestBoxes())
-	l.folder = everyFolder
-	l.selected["sbx_new"] = true
-	if got := l.targets(); len(got) != 1 || got[0].ID != "sbx_new" {
-		t.Fatalf("targets = %v", got)
-	}
-	if got := l.selectionCount(); got != 1 {
-		t.Fatalf("selectionCount = %d, want 1", got)
-	}
-	l.selected = map[string]bool{}
-	l.moveTo(0)
-	l.toggleVisual()
-	l.moveTo(len(l.rows()) - 1)
-	if got := l.targets(); len(got) != 5 {
-		t.Fatalf("a visual range over every row targets %d discoboxes, want 5", len(got))
-	}
-	if got := l.commitVisual(); got != 5 {
-		t.Fatalf("a visual range over every row marked %d discoboxes, want 5", got)
 	}
 }
 
@@ -170,20 +141,15 @@ func TestTheArchivedOfferCountsTheNestedOnes(t *testing.T) {
 	}
 }
 
-// A refreshed listing leaves the cursor on the row it was on, not on the
-// other row of the same discobox.
-func TestTheCursorStaysOnItsRowOfADiscoboxDrawnTwice(t *testing.T) {
+// A refreshed listing leaves the cursor on the discobox it was on, nested or
+// not.
+func TestTheCursorStaysOnANestedDiscobox(t *testing.T) {
 	l := listForTest(nestSession, nestBoxes())
 	l.folder = everyFolder
-	l.moveTo(6) // "newer child", in its own folder
-	l.setAll(nestBoxes())
-	if l.cursor != 6 {
-		t.Fatalf("cursor = %d after a refresh, want 6", l.cursor)
-	}
-	l.moveTo(2) // "newer child", under its creator
-	l.setAll(nestBoxes())
-	if l.cursor != 2 {
-		t.Fatalf("cursor = %d after a refresh, want 2", l.cursor)
+	l.moveTo(4) // "grandchild", two levels down
+	l.setAll(append([]Sandbox{{ID: "sbx_fresh", Name: "fresh", OriginKey: "here:/src/app", OriginHostID: "host_here"}}, nestBoxes()...))
+	if s := l.current(); s == nil || s.ID != "sbx_grand" {
+		t.Fatalf("cursor on %v after a refresh, want sbx_grand", s)
 	}
 }
 
