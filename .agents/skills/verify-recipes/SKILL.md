@@ -452,9 +452,7 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   `DISCOBOX_HARNESS_*` and `DISCOBOX_DEV_DOCKER_IMAGE_*` lines of the
   checkout's `.env`.
 
-- A manifest-file harness (`admin harness create --image file://<path>`) is read
-  only from `$DISCOBOX_CACHE_DIR/overlays`; put the JSON there. To exercise a
-  stored-row migration, write the old value with `sqlite3
+- To exercise a stored-row migration, write the old value with `sqlite3
   $S/data/discobox.db` while the server is stopped and read it back right after
   start: built-in harnesses are re-seeded and pools re-reported within seconds,
   which overwrites what you planted on them.
@@ -486,6 +484,15 @@ until curl -s 127.0.0.1:18471/projects | grep -q '"id"'; do sleep 1; done
   and `reconcile_dirty`, clear the projects'
   `default_pool_id`: the copy then never touches Docker, and never collides
   with the loop's pools, which share its IDs.
+- A pool of a VM kind (`vm/boxd`) with no boxd reachable, for what create or
+  import decides by a pool's kind: on that DB copy, `admin provider create
+  --type vm --config '{"driver":"boxd","apiKey":"x"}'` and `admin pool create`,
+  stop the server, then `sqlite3 … "UPDATE pools SET image_kind='vm/boxd',
+  platform='linux/amd64', state='active'"`. Create and import are judged
+  against that row; the box then fails on boxd being unreachable, which is
+  the environment, not the change. For a before/after, build `main`'s server
+  from `git archive <base> | tar -x -C $S/main-src` (no worktree) and start
+  it on its own copy of the same database.
 - A pool route on that server, with no real pool: see the no-Docker case
   under [Verifying a pool route as the dev pool](#verifying-a-pool-route-as-the-dev-pool-the-asset-api-any-apipoolspoolid).
 - To race new intent against a pool's first reconcile (supersede paths):

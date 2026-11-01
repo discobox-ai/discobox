@@ -18,7 +18,6 @@ type harnessCreateOptions struct {
 	name           string
 	slug           string
 	bundle         string
-	manifestFile   string
 	files          []string
 	createOnlyFile []string
 }
@@ -198,7 +197,6 @@ func (a *App) newHarnessCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Harness config name")
 	cmd.Flags().StringVar(&opts.slug, "slug", "", "Stable, URL-safe identifier used to select this harness (e.g. codex); defaults to the definition ID or a slug derived from the name")
 	cmd.Flags().StringVar(&opts.bundle, "bundle", "", "Harness bundle to register: a FROM scratch image of its features, built FROM nothing or another harness's bundle, whose labels are its manifest")
-	cmd.Flags().StringVar(&opts.manifestFile, "manifest-file", "", "Instead of a bundle, a file:// manifest file in the server's overlay directory: the whole manifest of a template with no image")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the harness's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
 	return cmd
@@ -597,7 +595,6 @@ func createHarnessBody(opts harnessCreateOptions) (*apimodel.CreateHarnessConfig
 	body.SetName(optString(opts.name))
 	body.SetSlug(optString(opts.slug))
 	body.SetBundle(optString(opts.bundle))
-	body.SetImage(optString(opts.manifestFile))
 	if len(opts.files) > 0 {
 		files, err := parseHarnessFileFlags(opts.files, opts.createOnlyFile)
 		if err != nil {

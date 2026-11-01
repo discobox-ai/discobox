@@ -129,7 +129,7 @@ func configuredHarness(t *testing.T, st *store.Store, slug, name string) *model.
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: slug, Name: name, Configured: true,
 		Bundle: "ghcr.io/discobox-ai/discobox-harness-" + slug + ":v1", BundleDigest: digest,
-		ImageKind: platform.OCI, RunCommand: []string{slug},
+		RunCommand: []string{slug},
 	}
 	if err := st.CreateHarnessConfig(context.Background(), config); err != nil {
 		t.Fatalf("create harness config: %v", err)
@@ -689,18 +689,21 @@ func TestImportDropsInvalidTags(t *testing.T) {
 }
 
 // A discobox moves between machines, not between platforms (ADR 0145 §8):
-// an archive of another platform than the harness or the pool it is imported
-// onto is refused, before the tree is uploaded, and one of the same platform
-// is recorded as that platform. A harness says what platforms it runs on only
-// when it is a manifest file, a template with no image.
+// an archive of another platform than the pool it is imported onto is
+// refused, before the tree is uploaded, and one of the same platform is
+// recorded as that platform. Its harness rules no platform out.
 func TestImportRefusesAnotherPlatform(t *testing.T) {
 	ctx, svc, st, provider := transferFixture(t)
-	asManifestFile(t, st, configuredHarness(t, st, "codex", "Codex"), platform.Pool())
-	darwin := platform.Platform{OS: "darwin", Arch: "arm64"}
-	archive := exportArchive(t, func(m *sandboxexport.Manifest) { m.Sandbox.Platform = darwin }, map[string]string{"data/x": "x"})
+	configuredHarness(t, st, "codex", "Codex")
+	// The pool's agent says it hosts another platform than the archive's.
+	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
+	if _, err := st.UpdatePoolStatus(ctx, "pool-1", riscv, platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	archive := exportArchive(t, func(m *sandboxexport.Manifest) { m.Sandbox.Platform = platform.Pool() }, nil)
 	_, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{})
-	if err == nil || !strings.Contains(err.Error(), "darwin/arm64") {
-		t.Fatalf("err = %v, want a refusal naming the archive's platform", err)
+	if err == nil || !strings.Contains(err.Error(), riscv.String()) {
+		t.Fatalf("err = %v, want a refusal naming the pool's platform", err)
 	}
 	var status interface{ StatusCode() int }
 	if !errors.As(err, &status) || status.StatusCode() != http.StatusConflict {
@@ -708,16 +711,6 @@ func TestImportRefusesAnotherPlatform(t *testing.T) {
 	}
 	if provider.imported != nil {
 		t.Error("the tree was uploaded before the platform was refused")
-	}
-
-	// The pool's agent says it hosts another platform than the archive's.
-	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
-	if _, err := st.UpdatePoolStatus(ctx, "pool-1", riscv, platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
-		t.Fatal(err)
-	}
-	archive = exportArchive(t, func(m *sandboxexport.Manifest) { m.Sandbox.Platform = platform.Pool() }, nil)
-	if _, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{}); err == nil || !strings.Contains(err.Error(), riscv.String()) {
-		t.Fatalf("err = %v, want a refusal naming the pool's platform", err)
 	}
 
 	if _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.OCI, true, true, false, 1, 1, 1, nil); err != nil {
@@ -832,8 +825,10 @@ func TestImportWaitsOnAPoolThatHasNotDeclaredYet(t *testing.T) {
 	}
 }
 
-// An archive lands only on a pool that runs the kind of image its harness's is
-// (ADR 26-10-09-106 §4), refused before its tree is read.
+// An archive is a container discobox's tree, and a machine discobox is not
+// imported (ADR 26-10-09-106 defers it): it lands only on a pool that runs OCI
+// images, and the pool's kind, not its harness's, is the refusal, made before
+// its tree is read (ADR 26-11-01-122).
 func TestImportRefusesAPoolOfAnotherImageKind(t *testing.T) {
 	ctx, svc, st, provider := transferFixture(t)
 	configuredHarness(t, st, "codex", "Codex")
@@ -848,29 +843,5 @@ func TestImportRefusesAPoolOfAnotherImageKind(t *testing.T) {
 	}
 	if provider.imported != nil {
 		t.Error("the tree was uploaded before the kind was refused")
-	}
-}
-
-// An archive is a container discobox's tree, and a machine discobox is not
-// imported (ADR 26-10-09-106 defers it): a VM harness is refused even on
-// a pool of its own driver, before the tree is read.
-func TestImportRefusesADiscoVMHarness(t *testing.T) {
-	ctx, svc, st, provider := transferFixture(t)
-	machine := configuredHarness(t, st, "machine", "Machine")
-	machine.ImageKind = platform.VM("boxd")
-	if err := st.UpdateHarnessConfig(ctx, machine); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.UpdatePoolStatus(ctx, "pool-1", platform.Pool(), platform.VM("boxd"), true, true, false, 1, 1, 1, nil); err != nil {
-		t.Fatal(err)
-	}
-	archive := exportArchive(t, func(m *sandboxexport.Manifest) { m.Sandbox.Platform = platform.Pool() }, map[string]string{"data/x": "x"})
-	_, err := svc.ImportSandbox(ctx, "project-1", bytes.NewReader(archive), services.SandboxImportOptions{Harness: "machine"})
-	var status interface{ StatusCode() int }
-	if !errors.As(err, &status) || status.StatusCode() != http.StatusConflict || !strings.Contains(err.Error(), "is not an OCI image") {
-		t.Fatalf("err = %v, want a 409 saying the harness is not an OCI image", err)
-	}
-	if provider.imported != nil {
-		t.Error("the tree was uploaded before the harness was refused")
 	}
 }

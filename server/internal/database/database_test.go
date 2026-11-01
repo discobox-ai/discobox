@@ -954,7 +954,7 @@ func TestMigrateLiftsTheLimitOnConfiguredHarnessSecrets(t *testing.T) {
 		}
 	}
 	if err := db.Write.WithContext(ctx).Create(&model.HarnessConfig{
-		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code", Image: "img:1",
+		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code", Bundle: "img:1",
 		Configured: true, ConfiguredSecretIDs: []string{configured.ID, chosen.ID},
 	}).Error; err != nil {
 		t.Fatalf("seed harness config: %v", err)
@@ -1012,7 +1012,7 @@ func TestMigrateHarnessTemplatesToLiteralSettingsAndCredentialBindings(t *testin
 
 	const oldTrust = "\n{{- if .workingDir }}\n[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n{{- end }}\n"
 	stamp := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	row := model.HarnessConfig{ID: "hc_legacy", ProjectID: "project-1", Slug: "legacy", Name: "Legacy", Image: "img:1", Configured: true}
+	row := model.HarnessConfig{ID: "hc_legacy", ProjectID: "project-1", Slug: "legacy", Name: "Legacy", Bundle: "img:1", Configured: true}
 	if err := db.Write.Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -1250,9 +1250,7 @@ func TestMigrateBackfillsSecretValueUpdatedAt(t *testing.T) {
 
 // A database from before platforms were recorded gains the columns on every
 // table that places by them, and no row is given a guess (ADR 0145 §1). A
-// built-in harness is re-inspected at the next seed and records what its image
-// publishes; any other harness reads as unknown, which rules nothing out, until
-// it is refreshed. A pool's agent declares its platform on its next report,
+// pool's agent declares its platform on its next report,
 // and a sandbox takes its pool's when it is next placed. A guess would be
 // wrong for a pool of another architecture, and a sandbox's platform is
 // never corrected once written.
@@ -1279,16 +1277,12 @@ func TestMigrateGuessesNoPlatform(t *testing.T) {
 	if err := db.Write.Create(&pool).Error; err != nil {
 		t.Fatal(err)
 	}
-	config := model.HarnessConfig{ID: "hc-1", ProjectID: project.ID, Slug: "shell", Name: "Shell"}
-	if err := db.Write.Create(&config).Error; err != nil {
-		t.Fatal(err)
-	}
 	sandbox := model.Sandbox{ID: "sbx-1", ProjectID: project.ID, PoolID: pool.ID, Name: "one", CreatedByUserID: "user-1"}
 	if err := db.Write.Create(&sandbox).Error; err != nil {
 		t.Fatal(err)
 	}
 	// The schema those rows were written under: no platform anywhere.
-	for table, column := range map[string]string{"pools": "platform", "harness_configs": "platforms", "sandboxes": "platform"} {
+	for table, column := range map[string]string{"pools": "platform", "sandboxes": "platform"} {
 		if err := db.Write.Exec("ALTER TABLE " + table + " DROP COLUMN " + column).Error; err != nil {
 			t.Fatalf("drop %s.%s: %v", table, column, err)
 		}
@@ -1300,13 +1294,6 @@ func TestMigrateGuessesNoPlatform(t *testing.T) {
 		}
 	}
 
-	var gotConfig model.HarnessConfig
-	if err := db.Write.First(&gotConfig, "id = ?", config.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if len(gotConfig.Platforms) != 0 {
-		t.Errorf("harness config platforms = %q, want none until its image is inspected", gotConfig.Platforms)
-	}
 	var gotPool model.Pool
 	if err := db.Write.First(&gotPool, "id = ?", pool.ID).Error; err != nil {
 		t.Fatal(err)
@@ -1323,12 +1310,11 @@ func TestMigrateGuessesNoPlatform(t *testing.T) {
 	}
 }
 
-// A database from before image kinds were recorded gains the columns, and
-// every pool and image harness it already holds is OCI's — there was no other
-// kind of image to run (ADR 26-10-09-106 §4). A manifest-file harness is no OCI
-// image, and declared no driver, so it is left with no kind. A pool created afterwards has no
-// kind until its agent declares one, and a later start does not claim OCI for
-// it: a discovm pool runs no OCI image.
+// A database from before image kinds were recorded gains the pools' column,
+// and every pool it already holds is OCI's — there was no other kind of image
+// to run (ADR 26-10-09-106 §4). A pool created afterwards has no kind until
+// its agent declares one, and a later start does not claim OCI for it: a VM
+// pool runs no OCI image.
 func TestMigrateBackfillsOCIImageKinds(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{Driver: gormdb.DriverSQLite, DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db")})
@@ -1351,19 +1337,9 @@ func TestMigrateBackfillsOCIImageKinds(t *testing.T) {
 	if err := db.Write.Create(&old).Error; err != nil {
 		t.Fatal(err)
 	}
-	config := model.HarnessConfig{ID: "hc-1", ProjectID: project.ID, Slug: "shell", Name: "Shell"}
-	if err := db.Write.Create(&config).Error; err != nil {
-		t.Fatal(err)
-	}
-	manifestFile := model.HarnessConfig{ID: "hc-2", ProjectID: project.ID, Slug: "xcode", Name: "Xcode", Image: "file:///overlays/darwin-arm64/manifest.json"}
-	if err := db.Write.Create(&manifestFile).Error; err != nil {
-		t.Fatal(err)
-	}
-	// The schema those rows were written under: no image kind anywhere.
-	for _, table := range []string{"pools", "harness_configs"} {
-		if err := db.Write.Exec("ALTER TABLE " + table + " DROP COLUMN image_kind").Error; err != nil {
-			t.Fatalf("drop %s.image_kind: %v", table, err)
-		}
+	// The schema those rows were written under: no image kind.
+	if err := db.Write.Exec("ALTER TABLE pools DROP COLUMN image_kind").Error; err != nil {
+		t.Fatalf("drop pools.image_kind: %v", err)
 	}
 	if err := db.Migrate(ctx); err != nil {
 		t.Fatal(err)
@@ -1376,20 +1352,6 @@ func TestMigrateBackfillsOCIImageKinds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var gotConfig model.HarnessConfig
-	if err := db.Write.First(&gotConfig, "id = ?", config.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if gotConfig.ImageKind != platform.OCI {
-		t.Errorf("harness config image kind = %q, want oci", gotConfig.ImageKind)
-	}
-	var gotManifestFile model.HarnessConfig
-	if err := db.Write.First(&gotManifestFile, "id = ?", manifestFile.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if !gotManifestFile.ImageKind.IsZero() {
-		t.Errorf("manifest-file harness image kind = %q, want none: a manifest file is no OCI image", gotManifestFile.ImageKind)
-	}
 	var gotOld, gotFresh model.Pool
 	if err := db.Write.First(&gotOld, "id = ?", old.ID).Error; err != nil {
 		t.Fatal(err)
@@ -1405,13 +1367,15 @@ func TestMigrateBackfillsOCIImageKinds(t *testing.T) {
 	}
 }
 
-// A harness config stored before bundles keeps everything it had, and gains a
-// bundle and bundle digest that are empty until one is registered for it.
-// No harness is an image (ADR 26-10-16-423 §10): a config from before bundles
-// keeps everything its image's labels gave it but the image, and a config on a
-// bundle loses the runnable twin it recorded beside it, and the platforms read
-// from that twin. A manifest file is the one image a config keeps.
-func TestMigrateRetiresHarnessImages(t *testing.T) {
+// A harness is its bundle and nothing else (ADR 26-11-01-122): a database
+// whose harness configs recorded an image, its digest, an image kind and
+// platforms beside the bundle loses those columns, and keeps every row with
+// everything else it had — a config from before bundles, one on a bundle that
+// recorded a runnable twin, and a file:// manifest file, which now has no
+// bundle and runs nowhere until one is registered for it. A sandbox keeps its
+// own image pin, which a container from before bundles is fingerprinted by.
+// A config written afterwards needs none of the columns.
+func TestMigrateDropsHarnessImageColumns(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{Driver: gormdb.DriverSQLite, DSN: "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db")})
 	if err != nil {
@@ -1421,33 +1385,69 @@ func TestMigrateRetiresHarnessImages(t *testing.T) {
 	if err := db.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
+	// The schema those rows were written under, as the release before this one
+	// declared it.
+	for _, column := range []string{
+		"image text NOT NULL DEFAULT ''",
+		"image_digest text NOT NULL DEFAULT ''",
+		"image_kind text NOT NULL DEFAULT 'oci'",
+		"platforms text",
+	} {
+		if err := db.Write.Exec("ALTER TABLE harness_configs ADD COLUMN " + column).Error; err != nil {
+			t.Fatalf("add harness_configs.%s: %v", column, err)
+		}
+	}
 	project := model.Project{ID: "project-1", Name: "project"}
 	if err := db.Write.Create(&project).Error; err != nil {
 		t.Fatal(err)
 	}
 	beforeBundles := model.HarnessConfig{
 		ID: "hc-1", ProjectID: project.ID, Slug: "acme", Name: "Acme", Configured: true,
-		Image: "example.com/acme:v1", ImageDigest: "sha256:acme", RunCommand: []string{"acme"},
-		Env: map[string]string{"ACME": "1"}, Platforms: platform.NewSet(platform.Platform{OS: "linux", Arch: "amd64"}),
+		RunCommand: []string{"acme"}, Env: map[string]string{"ACME": "1"},
 	}
 	onBundle := model.HarnessConfig{
 		ID: "hc-2", ProjectID: project.ID, Slug: "codex", Name: "Codex",
 		Bundle: "example.com/codex:v1", BundleDigest: "sha256:bundle",
-		Image: "example.com/codex-image:v1", ImageDigest: "sha256:twin", Platforms: platform.NewSet(platform.Platform{OS: "linux", Arch: "arm64"}),
 	}
-	manifestFile := model.HarnessConfig{
-		ID: "hc-3", ProjectID: project.ID, Slug: "mac", Name: "Mac",
-		Image: "file:///overlays/mac.json", ImageDigest: "sha256:file", Platforms: platform.NewSet(platform.Platform{OS: "darwin", Arch: "arm64"}),
-	}
+	manifestFile := model.HarnessConfig{ID: "hc-3", ProjectID: project.ID, Slug: "mac", Name: "Mac", Configured: true}
 	for _, config := range []*model.HarnessConfig{&beforeBundles, &onBundle, &manifestFile} {
 		if err := db.Write.Create(config).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	// Twice: what one start clears, the next finds cleared.
+	for id, columns := range map[string][]any{
+		"hc-1": {"example.com/acme:v1", "sha256:acme", "oci", `["linux/amd64"]`},
+		"hc-2": {"example.com/codex-image:v1", "sha256:twin", "oci", `["linux/arm64"]`},
+		"hc-3": {"file:///overlays/mac.json", "sha256:file", "vm/vz", `["darwin/arm64"]`},
+	} {
+		if err := db.Write.Exec("UPDATE harness_configs SET image = ?, image_digest = ?, image_kind = ?, platforms = ? WHERE id = ?",
+			append(columns, id)...).Error; err != nil {
+			t.Fatalf("store %s: %v", id, err)
+		}
+	}
+	provider := model.SandboxProviderInstance{ID: "provider-1", ProjectID: project.ID, Name: "provider", Type: "docker"}
+	if err := db.Write.Create(&provider).Error; err != nil {
+		t.Fatal(err)
+	}
+	pool := model.Pool{ID: "pool-1", ProjectID: project.ID, PoolManifest: model.PoolManifest{ProviderInstanceID: provider.ID, Name: "pool"}}
+	if err := db.Write.Create(&pool).Error; err != nil {
+		t.Fatal(err)
+	}
+	sandbox := model.Sandbox{ID: "sbx-1", ProjectID: project.ID, PoolID: pool.ID, Name: "old", CreatedByUserID: "user-1",
+		SandboxManifest: model.SandboxManifest{Image: "example.com/acme:v1", ImageDigest: "sha256:acme"}}
+	if err := db.Write.Create(&sandbox).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Twice: what one start drops, the next finds dropped.
 	for range 2 {
 		if err := db.Migrate(ctx); err != nil {
 			t.Fatal(err)
+		}
+	}
+	for _, column := range []string{"image", "image_digest", "image_kind", "platforms"} {
+		if db.Write.Migrator().HasColumn(&model.HarnessConfig{}, column) {
+			t.Errorf("harness_configs.%s survived the migration", column)
 		}
 	}
 	read := func(id string) model.HarnessConfig {
@@ -1457,16 +1457,24 @@ func TestMigrateRetiresHarnessImages(t *testing.T) {
 		}
 		return got
 	}
-	if got := read(beforeBundles.ID); got.Image != "" || got.ImageDigest != "" || len(got.Platforms) != 0 ||
-		!got.Configured || len(got.RunCommand) != 1 || got.Env["ACME"] != "1" || got.Bundle != "" {
-		t.Errorf("config from before bundles = %+v, want its manifest kept and no image", got)
+	if got := read(beforeBundles.ID); !got.Configured || len(got.RunCommand) != 1 || got.Env["ACME"] != "1" || got.Bundle != "" {
+		t.Errorf("config from before bundles = %+v, want its manifest kept", got)
 	}
-	if got := read(onBundle.ID); got.Image != "" || got.ImageDigest != "" || len(got.Platforms) != 0 ||
-		got.Bundle != onBundle.Bundle || got.BundleDigest != onBundle.BundleDigest {
-		t.Errorf("config on a bundle = %+v, want its bundle and no twin", got)
+	if got := read(onBundle.ID); got.Bundle != onBundle.Bundle || got.BundleDigest != onBundle.BundleDigest {
+		t.Errorf("config on a bundle = %+v, want its bundle kept", got)
 	}
-	if got := read(manifestFile.ID); got.Image != manifestFile.Image || got.ImageDigest != manifestFile.ImageDigest || len(got.Platforms) != 1 {
-		t.Errorf("manifest-file config = %+v, want its file kept", got)
+	if got := read(manifestFile.ID); got.Slug != "mac" || !got.Configured || got.Bundle != "" {
+		t.Errorf("manifest-file config = %+v, want its row kept with no bundle", got)
+	}
+	var gotSandbox model.Sandbox
+	if err := db.Write.First(&gotSandbox, "id = ?", sandbox.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gotSandbox.Image != sandbox.Image || gotSandbox.ImageDigest != sandbox.ImageDigest {
+		t.Errorf("sandbox image = %q@%q, want its own pin kept", gotSandbox.Image, gotSandbox.ImageDigest)
+	}
+	if err := db.Write.Create(&model.HarnessConfig{ID: "hc-4", ProjectID: project.ID, Slug: "new", Name: "New", Bundle: "example.com/new:v1"}).Error; err != nil {
+		t.Fatalf("create a harness config after the drop: %v", err)
 	}
 }
 
@@ -1602,19 +1610,10 @@ func TestMigrateRespellsDiscoVMImageKinds(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	config := model.HarnessConfig{ID: "hc-1", ProjectID: project.ID, Slug: "xcode", Name: "Xcode", Image: "file:///overlays/darwin-arm64/manifest.json"}
-	if err := db.Write.Create(&config).Error; err != nil {
-		t.Fatal(err)
-	}
 	// What a release before the respelling wrote, which no longer parses.
-	for table, rows := range map[string]map[string]string{
-		"pools":           {"pool-vm": "discovm/boxd", "pool-oci": "oci"},
-		"harness_configs": {"hc-1": "discovm/vz"},
-	} {
-		for id, kind := range rows {
-			if err := db.Write.Exec("UPDATE "+table+" SET image_kind = ? WHERE id = ?", kind, id).Error; err != nil {
-				t.Fatalf("store %s.%s: %v", table, id, err)
-			}
+	for id, kind := range map[string]string{"pool-vm": "discovm/boxd", "pool-oci": "oci"} {
+		if err := db.Write.Exec("UPDATE pools SET image_kind = ? WHERE id = ?", kind, id).Error; err != nil {
+			t.Fatalf("store pools.%s: %v", id, err)
 		}
 	}
 
@@ -1632,13 +1631,6 @@ func TestMigrateRespellsDiscoVMImageKinds(t *testing.T) {
 		if got.ImageKind != want {
 			t.Errorf("%s image kind = %q, want %q", id, got.ImageKind, want)
 		}
-	}
-	var gotConfig model.HarnessConfig
-	if err := db.Write.First(&gotConfig, "id = ?", config.ID).Error; err != nil {
-		t.Fatalf("read harness config: %v", err)
-	}
-	if gotConfig.ImageKind != platform.VM("vz") {
-		t.Errorf("harness config image kind = %q, want vm/vz", gotConfig.ImageKind)
 	}
 }
 

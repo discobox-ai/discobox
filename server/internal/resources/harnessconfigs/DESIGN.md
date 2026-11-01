@@ -37,11 +37,9 @@ true of it, and true *by rule* rather than by slug:
   every box on the harness applies: no harness is an image (§10), so every box
   runs its provider's image — on the Docker driver, the sandbox base image —
   and its agent applies its platform and harness bundles at every start (§7).
-  A config records it with its digest (`Bundle`/`BundleDigest`). A `file://`
-  manifest file is the one other registration: the whole manifest of a
-  template with no image, recorded as `Image`/`ImageDigest`, and a bundle
-  beside one is refused. `Image` names nothing else; a reference that is not a
-  manifest file is refused, saying no harness is an image.
+  A config records it with its digest (`Bundle`/`BundleDigest`), and nothing
+  else: there is no other registration (ADR 26-11-01-122), and the create
+  body has no field for one.
 - The bundle's manifest **labels** are authoritative. `resolveHarness`
   inspects the bundle **once** (local Docker daemon first, registry fallback;
   a development bundle from its OCI image layout, which no daemon holds) and
@@ -103,41 +101,13 @@ true of it, and true *by rule* rather than by slug:
   bundle; from the local daemon, the `RepoDigests` entry, or the image ID for
   a never-pushed local build; for a development bundle, the manifest its
   layout's index lists (`devimage.Bundle`).
-- A bundle names no **platform**: its steps select the platform they run on,
-  so a config on one records none (ADR 0145 §1), which rules no pool out. Its
-  **image kind** is `oci` (`platform.ImageKind`, ADR 26-10-09-106 §4): a label
-  cannot say otherwise — one declaring `imageKind` is refused — and it is the
-  kind of box it is applied to, the Docker driver's sandbox base image. A
-  manifest file records the one platform and the `vm/<driver>` kind it
-  must declare. Seeding compares both. The kind column defaults to `oci`; a
-  manifest-file config from before kinds is left with none, and runs on no
-  pool until its file declares one and it is refreshed (`internal/database`).
-  A sandbox on the config is placed only on a pool that runs its kind
-  (`resources/sandboxes`).
-- A **`file://` reference** names a manifest file instead of an image: the
-  template with no image a non-Linux sandbox runs, whose overlay ships the same
-  layers as a file (ADR 0145 §3). `inspectManifestFile` reads it from this
-  server's disk ahead of any daemon or registry — `file://` is no image
-  reference either would answer — and only from the overlay directory
-  (`overlayDir`, under the cache by default), through an `os.Root` that
-  neither `..` nor a symlink leaves: any project member registers a harness,
-  and a path read from anywhere would answer them with what the server's own
-  files hold. It resolves the file through the same
-  `harness.ResolveImageLabels` (`harness.ReadManifestFile` turns the file into
-  that label set). Its digest is the file's sha256, so a changed overlay moves
-  the pin as a rebuilt tag does, its platforms are the one platform the
-  file declares, which it must, and its image kind is the VM kind it
-  must declare as well: a manifest file is no OCI image. It requires the
-  overlay's `10-sandbox-base` layer, its proof of lineage (ADR 0086 §1). Both
-  sources judge the merged result by its platform
-  (`harness.ImageMetadata.ValidateFor`): a bundle is a Linux box's, and a
-  label naming a platform, an image kind, an account or a shell is refused —
-  its steps select the platform they run on, and its kind is the provider's,
-  `oci` for the Docker driver's sandbox base image it is applied to. A manifest file may be
-  Linux's — a boxd sandbox's template — because its kind, not its platform,
-  keeps it off a Docker pool of that platform. The account, shell and features are validated
-  here and not snapshotted: nothing reads them from a config yet, and the
-  change that does adds them to the snapshot with its migration.
+- A harness names no **platform** and no **image kind** (ADR 26-10-16-423 §2,
+  ADR 26-11-01-122): its steps select the platform they run on, and the kind
+  of box is its pool's — a Docker pool's container or a VM pool's machine —
+  so a config records neither and rules no pool out. The merged manifest is
+  judged as a Linux box's (`harness.ImageMetadata.ValidateFor`): a label
+  naming a platform, an image kind, an account or a shell is refused, and
+  the features it declares are validated and not snapshotted.
 - In dev, `devImageInspector` answers first, from the development bundles
   (`SetDevelopmentBundles`, `server/internal/devbundles`): a layout the image
   watcher exported, or in build-mode one the server saved once a pool's daemon
@@ -198,9 +168,9 @@ true of it, and true *by rule* rather than by slug:
 
 `applyResolvedPins` is the one place a newly resolved bundle reaches the
 sandboxes on that config (ADR 0082, ADR 26-10-16-423 §7). The rule is stated
-on the fields rather than on a list of callers: **wherever `BundleDigest`,
-`ManifestDigest`, or a manifest file's `ImageDigest` is written to a value
-different from the one it replaced**, the config's eligible stopped sandboxes
+on the fields rather than on a list of callers: **wherever `BundleDigest` or
+`ManifestDigest` is written to a value different from the one it
+replaced**, the config's eligible stopped sandboxes
 are re-pinned onto it through `SandboxRuntime.UpgradeHarnessConfigSandboxes`,
 which does nothing when the project's automatic-upgrade policy is off (ADR
 0082 §3).

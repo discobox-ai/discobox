@@ -106,9 +106,6 @@ type AppOptions struct {
 	// WSLCCommand overrides the WSL Containers program the Windows host is
 	// checked for.
 	WSLCCommand string
-	// OverlayDir is the one directory a harness's file:// manifest reference
-	// may name a file in. Empty refuses every such reference.
-	OverlayDir string
 	// AssetDir is the blob store bundles are served to pools from (ADR
 	// 26-10-16-423 §13).
 	AssetDir string
@@ -214,7 +211,6 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		ConfiguredGateways:             opts.ConfiguredGateways,
 		ServerDefaults:                 opts.ServerDefaults,
 		WSLCCommand:                    opts.WSLCCommand,
-		OverlayDir:                     opts.OverlayDir,
 		AssetDir:                       opts.AssetDir,
 	})
 	if opts.SecretSealer != nil {

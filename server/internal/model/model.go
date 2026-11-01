@@ -357,13 +357,11 @@ type HarnessConfig struct {
 	Configured               bool                       `gorm:"column:configured;not null;default:false" json:"configured" doc:"True once the configure flow completed successfully. Only configured harnesses can be selected to run."`
 	Name                     string                     `gorm:"column:name;not null;type:text;uniqueIndex:idx_harness_config_project_name,priority:2" json:"name" doc:"Harness config name" maxLength:"200"`
 	// Bundle is the harness bundle the manifest is read from and every box on
-	// the harness applies (ADR 26-10-16-423 §2). Image is a manifest file, the
-	// whole manifest of a template with no image (ADR 0145 §3), and empty on a
-	// bundle: no harness is an image (§10). A config registered before
-	// bundles has neither (internal/database cleared the image it had), and
+	// the harness applies (ADR 26-10-16-423 §2); a harness is nothing else
+	// (ADR 26-11-01-122). A config registered before bundles has none, and
 	// keeps the manifest its image's labels gave it until a bundle is
 	// registered for it.
-	Bundle       string `gorm:"column:bundle;not null;type:text;default:''" json:"bundle,omitempty" doc:"The harness bundle its manifest is read from and every discobox on it applies. Absent on a harness registered before bundles, or one whose image is a manifest file."`
+	Bundle       string `gorm:"column:bundle;not null;type:text;default:''" json:"bundle,omitempty" doc:"The harness bundle its manifest is read from and every discobox on it applies. Absent on a harness registered before bundles, which runs nowhere until a bundle is registered for it."`
 	BundleDigest string `gorm:"column:bundle_digest;not null;type:text;default:''" json:"bundleDigest,omitempty" doc:"Content digest observed when the harness bundle was registered"`
 	// ManifestDigest is the digest of the composed manifest the config
 	// snapshots: the harness bundle's labels on the platform's layer (ADR
@@ -371,8 +369,6 @@ type HarnessConfig struct {
 	// platform-layer edit, which moves no bundle digest, still reaches the
 	// sandboxes on the config (harnessconfigs.snapshotImageMetadata).
 	ManifestDigest   string                `gorm:"column:manifest_digest;not null;type:text;default:''" json:"manifestDigest,omitempty" doc:"Digest of the manifest composed from the harness bundle's labels on the platform's layer, which moves when either does"`
-	Image            string                `gorm:"column:image;not null;type:text;default:''" json:"image,omitempty" doc:"A manifest file, the whole manifest of a template with no image. Absent on a harness bundle."`
-	ImageDigest      string                `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Content digest observed when the manifest file was registered"`
 	RunCommand       []string              `gorm:"column:run_command;type:text;serializer:json" json:"runCommand,omitempty" doc:"Run argv snapshotted from the registered bundle's label."`
 	RelaunchCommand  []string              `gorm:"column:relaunch_command;type:text;serializer:json" json:"relaunchCommand,omitempty" doc:"Relaunch argv snapshotted from the registered bundle's label."`
 	ConfigCommand    []string              `gorm:"column:config_command;type:text;serializer:json" json:"configCommand,omitempty" doc:"Config-mode argv snapshotted from the registered bundle's label."`
@@ -383,20 +379,7 @@ type HarnessConfig struct {
 	Env              map[string]string     `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Default environment variables snapshotted from the image label."`
 	Volumes          []harness.Volume      `gorm:"column:volumes;type:text;serializer:json" json:"volumes,omitempty" doc:"Declarative volumes snapshotted from the image label."`
 	AdditionalGroups []string              `gorm:"column:additional_groups;type:text;serializer:json" json:"additionalGroups,omitempty" doc:"Supplementary OS groups snapshotted from the image label."`
-	// Platforms is what a manifest file's template runs on (ADR 0145 §1): the
-	// one platform it declares. A sandbox runs on its pool's platform, which
-	// this must name. Empty on a bundle, whose steps select the platform they
-	// run on, which rules no pool out.
-	Platforms platform.Set `gorm:"column:platforms;type:text;serializer:json" json:"platforms,omitempty" doc:"Platforms a manifest file's template runs on, as os/arch. A discobox on this harness is placed only on a pool that hosts one of them. Absent on a bundle, which rules no pool out."`
-	// ImageKind is the kind of box the harness runs on (ADR 26-10-09-106 §4),
-	// read when it is inspected: OCI for a bundle, which a Docker pool's
-	// sandbox base image applies, or the VM kind a manifest file
-	// declares. A sandbox on it is placed only on a pool that runs that kind.
-	// The column defaults to OCI; a manifest-file harness from before kinds is
-	// left with none (database.unsetManifestFileImageKinds), which places
-	// nowhere.
-	ImageKind        platform.ImageKind `gorm:"column:image_kind;not null;type:text;default:'oci'" json:"imageKind" doc:"The kind of box the harness runs on: oci for a bundle, or vm/<driver> for a manifest file's VM image built for that driver. A discobox on this harness is placed only on a pool that runs this kind. Empty on a manifest-file harness registered before image kinds, which runs on no pool until its file declares one and it is refreshed."`
-	ImageEgressHosts []string           `gorm:"column:image_egress_hosts;type:text;serializer:json" json:"imageEgressHosts,omitempty" doc:"Hosts the registered bundle declares it needs, snapshotted from its label."`
+	ImageEgressHosts []string              `gorm:"column:image_egress_hosts;type:text;serializer:json" json:"imageEgressHosts,omitempty" doc:"Hosts the registered bundle declares it needs, snapshotted from its label."`
 	// Egress is the harness level a person set (ADR 26-10-01-032). It is kept
 	// apart from ImageEgressHosts so registering a new bundle replaces what the
 	// bundle declares and leaves what a person chose alone.
@@ -805,20 +788,20 @@ type SandboxManifest struct {
 	ModelServiceTier    *string  `gorm:"column:model_service_tier;type:text" json:"modelServiceTier,omitempty" doc:"Model service tier the harness should use"`
 	ModelReasoningLevel *string  `gorm:"column:model_reasoning_level;type:text" json:"modelReasoningLevel,omitempty" doc:"Model reasoning level the harness should use"`
 	Prompt              []string `gorm:"column:prompt;type:text;serializer:json" json:"prompt,omitempty" doc:"Prompt the harness should run, passed as argv to preserve the caller's exact tokens"`
-	// Image and ImageDigest are the manifest file of the template with no
-	// image a sandbox on such a harness runs (ADR 0145 §3), and empty on a
-	// sandbox on a harness bundle, which runs its provider's image with its
-	// bundles applied (ADR 26-10-16-423 §10). A sandbox from before bundles
-	// carried its runnable harness image here, until it was pinned to its
-	// bundles (sandboxes.Service.PinUndeliveredSandboxes).
-	Image       string `gorm:"column:image;type:text" json:"image,omitempty" doc:"Manifest file of the template with no image this sandbox runs, when its harness is one"`
-	ImageDigest string `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Digest of the manifest file this sandbox is pinned to. Written at create and by an upgrade; the pool host rebuilds any container whose spec fingerprint does not match."`
+	// Image and ImageDigest are the runnable harness image a sandbox from
+	// before bundles ran, kept until it is pinned to its bundles
+	// (sandboxes.Service.PinUndeliveredSandboxes), which clears them: they are
+	// in the fingerprint such a sandbox's container was built with, so the
+	// pool keeps that container until then. Nothing pins a sandbox to an
+	// image any more (ADR 26-10-16-423 §10, ADR 26-11-01-122).
+	Image       string `gorm:"column:image;type:text" json:"image,omitempty" doc:"The runnable harness image a discobox from before bundles runs, until it is pinned to its bundles"`
+	ImageDigest string `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Digest of the runnable harness image a discobox from before bundles runs, until it is pinned to its bundles"`
 	// The bundles a box applies (ADR 26-10-16-423 §§7, 13): its harness
 	// config's, and the platform its server's release names, each pinned by
 	// digest — at create, by an upgrade or a repair, and for a stopped sandbox
 	// when what they were taken from moves — and are what the pool lets the
 	// box fetch. Omitted when empty, which keeps the fingerprint of a sandbox
-	// on a manifest file what it was before bundles.
+	// from before bundles what it was.
 	Bundle       string `gorm:"column:bundle;not null;type:text;default:''" json:"bundle,omitempty" doc:"Harness bundle this sandbox is pinned to"`
 	BundleDigest string `gorm:"column:bundle_digest;not null;type:text;default:''" json:"bundleDigest,omitempty" doc:"Manifest digest of the harness bundle this sandbox is pinned to"`
 	// HarnessManifestDigest is the harness config's ManifestDigest the
@@ -1046,7 +1029,7 @@ type Sandbox struct {
 	CreatedBySandboxID *string `gorm:"column:created_by_sandbox_id;type:text;index" json:"createdBySandboxId,omitempty" doc:"Sandbox that created this one, when a sandbox did (ADR 26-09-24-630). Immutable after create."`
 	PoolID             string  `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool the sandbox is scheduled into. Resolved at create, immutable after."`
 	// Platform is what the sandbox runs on (ADR 0145 §1): its pool's, which
-	// its harness's image must be published for. A sandbox created before its
+	// its harness rules nothing out of (ADR 26-11-01-122). A sandbox created before its
 	// pool's agent declared a platform, or before platforms were recorded, has
 	// none until it is next placed, which gives it the pool's. It is outside SandboxManifest because it is not a spec that
 	// can change: a sandbox's tree belongs to its platform, so it is placed only

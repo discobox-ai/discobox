@@ -49,22 +49,6 @@ func (s *Service) prepareHarnessChange(ctx context.Context, sb *model.Sandbox, c
 	if !target.Configured {
 		return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("harness %q is not configured; run `discobox admin harness configure %s` first", target.Slug, target.Slug))
 	}
-	pool, err := s.store.GetPool(ctx, sb.ProjectID, sb.PoolID)
-	if err != nil {
-		return nil, err
-	}
-	if _, err = platformOnPool(target, pool); err != nil {
-		return nil, err
-	}
-	if !sb.Platform.IsZero() {
-		if err := target.Platforms.Publishes(sb.Platform); err != nil {
-			return nil, apperrors.NewStatusError(http.StatusConflict, err.Error())
-		}
-	}
-
-	if err = refuseOtherImageKind(target, pool); err != nil {
-		return nil, err
-	}
 	pins, err := createHarnessPins(target)
 	if err != nil {
 		return nil, err

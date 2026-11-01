@@ -13,10 +13,6 @@ import (
 
 type unavailableInspector struct{ err error }
 
-func (i unavailableInspector) InspectManifestFile(context.Context, string) (imageMetadata, error) {
-	return imageMetadata{}, i.err
-}
-
 func (i unavailableInspector) InspectBundle(context.Context, string, func(map[string]string) error) (bundleInspection, error) {
 	return bundleInspection{}, i.err
 }

@@ -142,8 +142,8 @@ func TestCreateRefusesAHarnessItCannotPin(t *testing.T) {
 	}{
 		{
 			name: "registered before bundles",
-			// The upgrade retired the runnable image it named
-			// (database.retireHarnessImages), leaving neither.
+			// The upgrade dropped the runnable image it named
+			// (database.dropHarnessImageColumns), leaving no bundle.
 			mutate: func(c *model.HarnessConfig) { c.Bundle, c.BundleDigest = "", "" },
 			status: http.StatusConflict, says: "registered before bundles",
 		},
@@ -325,8 +325,8 @@ func TestUndeliveredSandboxesArePinned(t *testing.T) {
 	delivered := eligibleSandbox(t, st, config.ID, codexBundle, codexBundleV1, func(sb *model.Sandbox) {
 		sb.PlatformBundle, sb.PlatformBundleDigest = platformRef, platformOld
 	})
-	// Registered before bundles: the upgrade retired the runnable image it
-	// named (database.retireHarnessImages), and no bundle is registered yet.
+	// Registered before bundles: the upgrade dropped the runnable image it
+	// named (database.dropHarnessImageColumns), and no bundle is registered yet.
 	unregistered := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "legacy", Name: "Legacy", RunCommand: []string{"legacy"}, Configured: true,
 	}

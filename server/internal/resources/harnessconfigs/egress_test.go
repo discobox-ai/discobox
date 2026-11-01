@@ -76,7 +76,7 @@ func TestRefreshingABundleWithNewHostsConvergesItsSandboxes(t *testing.T) {
 	}
 	runtime := &stubSandboxRuntime{}
 	declaring := func(digest string, hosts ...string) imageMetadata {
-		return imageMetadata{Digest: digest, ImageMetadata: harness.ImageMetadata{Harness: &harness.Image{EgressHosts: hosts}}}
+		return imageMetadata{BundleDigest: digest, ImageMetadata: harness.ImageMetadata{Harness: &harness.Image{EgressHosts: hosts}}}
 	}
 	inspector := &stubInspector{byImage: map[string]imageMetadata{"registry.example/custom:v1": declaring("sha256:two", "API.example")}}
 	svc := &Service{store: st, inspector: inspector, harnesses: testReferences, sandboxes: runtime}
@@ -105,10 +105,10 @@ func TestRegistrationRefusesAnEgressHostTheProxyCouldNotMatch(t *testing.T) {
 	declaring := func(hosts ...string) harness.ImageMetadata {
 		return harness.ImageMetadata{Harness: &harness.Image{EgressHosts: hosts}}
 	}
-	if err := validateImageMetadata(declaring("api.anthropic.com", "*.googleapis.com"), "linux", "test image"); err != nil {
+	if err := validateImageMetadata(declaring("api.anthropic.com", "*.googleapis.com"), "test image"); err != nil {
 		t.Fatalf("valid hosts refused: %v", err)
 	}
-	if err := validateImageMetadata(declaring("api.anthropic.com:443"), "linux", "test image"); err == nil {
+	if err := validateImageMetadata(declaring("api.anthropic.com:443"), "test image"); err == nil {
 		t.Fatal("a host with a port was accepted")
 	}
 }

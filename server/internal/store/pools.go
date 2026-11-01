@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -337,8 +336,8 @@ func (s *Store) RecordPoolResources(ctx context.Context, poolID string, resource
 // guess written onto a sandbox placed there is never corrected.
 //
 // The pool's sandboxes are not touched: a sandbox takes its platform when it
-// is placed (SchedulablePoolForSandbox), which is the one place its harness's
-// image is checked against it.
+// is placed (SchedulablePoolForSandbox), which is the one place its platform
+// is checked against its pool's.
 func recordPoolPlatform(pool *model.Pool, hosts platform.Platform) {
 	if !hosts.IsZero() {
 		pool.Platform = hosts
@@ -370,17 +369,12 @@ func recordPoolImageKind(pool *model.Pool, runs platform.ImageKind) {
 // The sandbox's platform is settled here too (ADR 0145 §1), once the pool is
 // schedulable, because only a reporting agent has declared what it hosts. A
 // sandbox with none yet — created while its pool's agent had not declared one
-// — takes the pool's, written to its row. Its harness's image must be
-// published for it, which is refused with a *platform.UnpublishedError naming
-// what it is published for; a sandbox of another platform than its pool's is
-// refused with a *platform.MismatchError. Neither is ErrNotFound: a pool of the
-// wrong platform is not one on its way up, and a caller that waited on it
-// would wait for good.
-//
-// The kind of image the pool runs must be the kind its harness's image is (ADR
-// 26-10-09-106 §4), or the sandbox is refused with a *platform.KindMismatchError
-// — a VM harness on a Docker pool of the same platform, say. It is not
-// ErrNotFound either, for the same reason.
+// — takes the pool's, written to its row. A sandbox of another platform than
+// its pool's is refused with a *platform.MismatchError, which is not
+// ErrNotFound: a pool of the wrong platform is not one on its way up, and a
+// caller that waited on it would wait for good. Its harness rules no pool out:
+// a harness is a bundle, whose steps select the platform they run on, and the
+// kind of box is the pool's (ADR 26-10-16-423 §2, ADR 26-11-01-122).
 //
 // sandbox may stand in for a row not written yet — an import restores the tree
 // first — and then carries the platform its tree belongs to, which is all
@@ -400,15 +394,6 @@ func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sa
 		(pool.State != model.PoolStateActive && pool.State != model.PoolStateOffline) ||
 		!pool.IsReady() || !pool.Schedulable {
 		return nil, ErrNotFound
-	}
-	imageKind, known, err := s.sandboxImageKind(ctx, sandbox)
-	if err != nil {
-		return nil, err
-	}
-	if known {
-		if err := platform.PlaceKind(imageKind, pool.ImageKind); err != nil {
-			return nil, err
-		}
 	}
 	// A pool whose agent has declared nothing — one from before platforms —
 	// places as every pool did before them a sandbox that has no platform
@@ -437,44 +422,6 @@ func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sa
 	return pool, nil
 }
 
-// sandboxImageKind is the kind of image the sandbox runs: its harness config's
-// (ADR 26-10-09-106 §4), named by a stand-in or by its row. A sandbox with no
-// harness config runs an OCI image — it is from before harness configs, or the
-// stand-in an import places its tree with, and import takes only an OCI
-// harness. A harness config whose kind is undeclared answers the zero kind,
-// which places nowhere. known is false only when the harness config the
-// sandbox names is gone, which leaves nothing to check.
-func (s *Store) sandboxImageKind(ctx context.Context, sandbox *model.Sandbox) (kind platform.ImageKind, known bool, err error) {
-	harnessID := ""
-	if sandbox.HarnessConfigID != nil {
-		harnessID = *sandbox.HarnessConfigID
-	}
-	read, err := s.getRead(ctx)
-	if err != nil {
-		return platform.ImageKind{}, false, err
-	}
-	if harnessID == "" && sandbox.ID != "" {
-		var row model.Sandbox
-		err := read.WithContext(ctx).Select("id", "harness_config_id").
-			First(&row, "id = ? AND project_id = ?", sandbox.ID, sandbox.ProjectID).Error
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return platform.ImageKind{}, false, err
-		}
-		if err == nil && row.HarnessConfigID != nil {
-			harnessID = *row.HarnessConfigID
-		}
-	}
-	if harnessID == "" {
-		return platform.OCI, true, nil
-	}
-	var harness model.HarnessConfig
-	err = read.WithContext(ctx).Select("id", "image_kind").First(&harness, "id = ?", harnessID).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return platform.ImageKind{}, false, nil
-	}
-	return harness.ImageKind, err == nil, err
-}
-
 // recordedSandboxPlatform is the platform the sandbox already has: the one a
 // stand-in carries, or its row's. Zero for one that has none yet.
 func (s *Store) recordedSandboxPlatform(ctx context.Context, sandbox *model.Sandbox) (platform.Platform, error) {
@@ -495,8 +442,7 @@ func (s *Store) recordedSandboxPlatform(ctx context.Context, sandbox *model.Sand
 }
 
 // settleSandboxPlatform is the platform the sandbox runs on: its row's, or,
-// for a row with none yet, its pool's, recorded on the row. The harness the
-// row names must be published for it. A stand-in with no row answers the
+// for a row with none yet, its pool's, recorded on the row. A stand-in with no row answers the
 // platform it carries, or its pool's when it carries none.
 func (s *Store) settleSandboxPlatform(ctx context.Context, sandbox *model.Sandbox, pool *model.Pool) (platform.Platform, error) {
 	standIn := sandbox.Platform
@@ -511,7 +457,7 @@ func (s *Store) settleSandboxPlatform(ctx context.Context, sandbox *model.Sandbo
 		return platform.Platform{}, err
 	}
 	var row model.Sandbox
-	err = write.WithContext(ctx).Select("id", "platform", "harness_config_id").
+	err = write.WithContext(ctx).Select("id", "platform").
 		First(&row, "id = ? AND project_id = ?", sandbox.ID, sandbox.ProjectID).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return standIn, nil
@@ -522,19 +468,6 @@ func (s *Store) settleSandboxPlatform(ctx context.Context, sandbox *model.Sandbo
 	settled := row.Platform
 	if settled.IsZero() {
 		settled = pool.Platform
-	}
-	if row.HarnessConfigID != nil && *row.HarnessConfigID != "" {
-		var harness model.HarnessConfig
-		err := write.WithContext(ctx).Select("id", "slug", "platforms").
-			First(&harness, "id = ?", *row.HarnessConfigID).Error
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return platform.Platform{}, err
-		}
-		if err == nil {
-			if err := harness.Platforms.Publishes(settled); err != nil {
-				return platform.Platform{}, fmt.Errorf("harness %q: %w", harness.Slug, err)
-			}
-		}
 	}
 	if row.Platform.IsZero() && !settled.IsZero() {
 		if err := write.WithContext(ctx).Model(&model.Sandbox{}).

@@ -673,14 +673,10 @@ type CreateHarnessConfigBody struct {
 	Schema OptURI `json:"$schema"`
 	// Optional non-secret configured file values to associate with the registered harness.
 	Files OptNilHarnessConfigFileArray `json:"files"`
-	// The harness bundle to register, required unless image is a manifest file. It is a FROM scratch OCI
-	// image built FROM nothing or FROM another harness's bundle, never the platform's. The server
-	// composes its io.discobox.image.v1 manifest labels on its platform bundle's and snapshots the
-	// result into the HarnessConfig.
+	// The harness bundle to register. It is a FROM scratch OCI image built FROM nothing or FROM another
+	// harness's bundle, never the platform's. The server composes its io.discobox.image.v1 manifest
+	// labels on its platform bundle's and snapshots the result into the HarnessConfig.
 	Bundle OptString `json:"bundle"`
-	// A file:// manifest file in the server's overlay directory, the whole manifest of a template with
-	// no image, which takes no bundle. No harness is a runnable image, so nothing else is accepted here.
-	Image OptString `json:"image"`
 	// Harness config name. Defaults to the name declared by the bundle's label.
 	Name OptString `json:"name"`
 	// Stable, URL-safe identifier used to select the harness config (e.g. codex). Defaults to the id
@@ -701,11 +697,6 @@ func (s *CreateHarnessConfigBody) GetFiles() OptNilHarnessConfigFileArray {
 // GetBundle returns the value of Bundle.
 func (s *CreateHarnessConfigBody) GetBundle() OptString {
 	return s.Bundle
-}
-
-// GetImage returns the value of Image.
-func (s *CreateHarnessConfigBody) GetImage() OptString {
-	return s.Image
 }
 
 // GetName returns the value of Name.
@@ -731,11 +722,6 @@ func (s *CreateHarnessConfigBody) SetFiles(val OptNilHarnessConfigFileArray) {
 // SetBundle sets the value of Bundle.
 func (s *CreateHarnessConfigBody) SetBundle(val OptString) {
 	s.Bundle = val
-}
-
-// SetImage sets the value of Image.
-func (s *CreateHarnessConfigBody) SetImage(val OptString) {
-	s.Image = val
 }
 
 // SetName sets the value of Name.
@@ -5254,31 +5240,17 @@ type HarnessConfig struct {
 	// The harness bundle its manifest is read from and every discobox on it applies, a FROM scratch OCI
 	// image of its features with its manifest in labels, composed on the server's platform bundle (ADR
 	// 26-10-16-423 §2). Absent on a harness registered before bundles, whose manifest is what its
-	// image's labels gave it and which runs nowhere until a bundle is registered for it, or one whose
-	// image is a manifest file.
+	// image's labels gave it and which runs nowhere until a bundle is registered for it. A harness names
+	// no platform and no image kind, since a discobox on it runs on its pool's platform and is the kind
+	// of box its pool runs.
 	Bundle OptString `json:"bundle"`
 	// Content digest observed when the harness bundle was registered.
 	BundleDigest OptString `json:"bundleDigest"`
 	// Digest of the manifest composed from the harness bundle's labels on the platform's layer, which
 	// moves when either does. A sandbox pins it beside the bundle.
 	ManifestDigest OptString `json:"manifestDigest"`
-	// A file:// manifest file, the whole manifest of a template with no image. Absent on a harness
-	// registered by its bundle, which no discobox runs as an image.
-	Image OptString `json:"image"`
-	// Content digest observed when the manifest file was registered.
-	ImageDigest OptString `json:"imageDigest"`
-	// The kind of box the harness runs on: oci for a bundle, which a Docker pool's sandbox base image
-	// applies, or vm/<driver> for a manifest file's VM image built for that driver. A discobox on this
-	// harness is placed only on a pool that runs this kind. Empty on a manifest-file harness registered
-	// before image kinds, which runs on no pool until its file declares one and it is refreshed. Absent
-	// from a server from before image kinds, whose harnesses are all oci.
-	ImageKind OptString `json:"imageKind"`
 	// Harness config name.
 	Name string `json:"name"`
-	// Platforms a manifest file's template runs on, as os/arch. A discobox on this harness runs on its
-	// pool's platform, and is placed only on a pool that hosts one of these. Absent on a bundle, whose
-	// steps select the platform they run on, which rules no pool out.
-	Platforms []string `json:"platforms"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
 	// Argv declared by the registered image to resume a previous harness session.
@@ -5408,29 +5380,9 @@ func (s *HarnessConfig) GetManifestDigest() OptString {
 	return s.ManifestDigest
 }
 
-// GetImage returns the value of Image.
-func (s *HarnessConfig) GetImage() OptString {
-	return s.Image
-}
-
-// GetImageDigest returns the value of ImageDigest.
-func (s *HarnessConfig) GetImageDigest() OptString {
-	return s.ImageDigest
-}
-
-// GetImageKind returns the value of ImageKind.
-func (s *HarnessConfig) GetImageKind() OptString {
-	return s.ImageKind
-}
-
 // GetName returns the value of Name.
 func (s *HarnessConfig) GetName() string {
 	return s.Name
-}
-
-// GetPlatforms returns the value of Platforms.
-func (s *HarnessConfig) GetPlatforms() []string {
-	return s.Platforms
 }
 
 // GetProjectId returns the value of ProjectId.
@@ -5578,29 +5530,9 @@ func (s *HarnessConfig) SetManifestDigest(val OptString) {
 	s.ManifestDigest = val
 }
 
-// SetImage sets the value of Image.
-func (s *HarnessConfig) SetImage(val OptString) {
-	s.Image = val
-}
-
-// SetImageDigest sets the value of ImageDigest.
-func (s *HarnessConfig) SetImageDigest(val OptString) {
-	s.ImageDigest = val
-}
-
-// SetImageKind sets the value of ImageKind.
-func (s *HarnessConfig) SetImageKind(val OptString) {
-	s.ImageKind = val
-}
-
 // SetName sets the value of Name.
 func (s *HarnessConfig) SetName(val string) {
 	s.Name = val
-}
-
-// SetPlatforms sets the value of Platforms.
-func (s *HarnessConfig) SetPlatforms(val []string) {
-	s.Platforms = val
 }
 
 // SetProjectId sets the value of ProjectId.
@@ -23989,12 +23921,12 @@ type SandboxConfig struct {
 	// The repository's features by name, as the client read them from its .discobox/settings.json at
 	// create. The sandbox provisions every feature but those whose enabled is false. Fixed at create.
 	Features OptSandboxConfigFeatures `json:"features"`
-	// The manifest file of the template with no image this sandbox runs, when its harness is one. Absent
-	// on a sandbox on a harness bundle, which runs its provider's image with its bundles applied and is
+	// The runnable harness image a discobox from before bundles runs, until it is pinned to its bundles.
+	// Absent on every other discobox, which runs its provider's image with its bundles applied and is
 	// pinned to no image.
 	Image OptString `json:"image"`
-	// Digest of the manifest file this sandbox is pinned to. Written at create and by an upgrade, never
-	// by a restart.
+	// Digest of the runnable harness image a discobox from before bundles runs, until it is pinned to
+	// its bundles.
 	ImageDigest OptString `json:"imageDigest"`
 	// The harness bundle this sandbox is pinned to (ADR 26-10-16-423 §7). Written at create and by an
 	// upgrade, and for a stopped sandbox when its harness config's bundle moves.
@@ -29462,15 +29394,15 @@ func (s *SandboxUpdateConfig) SetName(val OptString) {
 	s.Name = val
 }
 
-// Availability of a newer harness bundle or manifest file, or platform bundle, for
+// Availability of a newer harness, platform or agent bundle, for
 // this sandbox. Derived at read time by comparing the sandbox's pins to its harness
 // config's current ones and to the platform bundle its server's release last
 // resolved to; it is never stored. Absent when the sandbox's harness config pins
 // nothing to move to.
 // Ref: #/components/schemas/SandboxUpgrade
 type SandboxUpgrade struct {
-	// Whether the harness config now resolves to a different bundle or manifest file, or the release to
-	// a different platform or agent bundle, than this sandbox is pinned to.
+	// Whether the harness config now resolves to a different bundle or manifest, or the release to a
+	// different platform or agent bundle, than this sandbox is pinned to.
 	Available bool `json:"available"`
 	// Agent bundle digest this sandbox's pool places it with.
 	CurrentAgentBundleDigest OptString `json:"currentAgentBundleDigest"`
@@ -29478,9 +29410,10 @@ type SandboxUpgrade struct {
 	CurrentBundleDigest OptString `json:"currentBundleDigest"`
 	// Platform bundle digest this sandbox is pinned to.
 	CurrentPlatformBundleDigest OptString `json:"currentPlatformBundleDigest"`
-	// Manifest file of the template with no image this sandbox runs, when its harness is one.
+	// The runnable harness image a discobox from before bundles runs, which an upgrade leaves for its
+	// bundles.
 	CurrentImage OptString `json:"currentImage"`
-	// Manifest file digest this sandbox is pinned to.
+	// Digest of the runnable harness image a discobox from before bundles runs.
 	CurrentImageDigest OptString `json:"currentImageDigest"`
 	// Why an upgrade is available, the first pin that moved.
 	Reason OptSandboxUpgradeReason `json:"reason"`
@@ -29488,10 +29421,6 @@ type SandboxUpgrade struct {
 	TargetAgentBundleDigest OptString `json:"targetAgentBundleDigest"`
 	// Harness bundle digest an upgrade would pin this sandbox to.
 	TargetBundleDigest OptString `json:"targetBundleDigest"`
-	// Manifest file this sandbox's harness config resolves to now.
-	TargetImage OptString `json:"targetImage"`
-	// Manifest file digest an upgrade would pin this sandbox to.
-	TargetImageDigest OptString `json:"targetImageDigest"`
 	// Platform bundle digest an upgrade would pin this sandbox to.
 	TargetPlatformBundleDigest OptString `json:"targetPlatformBundleDigest"`
 }
@@ -29539,16 +29468,6 @@ func (s *SandboxUpgrade) GetTargetAgentBundleDigest() OptString {
 // GetTargetBundleDigest returns the value of TargetBundleDigest.
 func (s *SandboxUpgrade) GetTargetBundleDigest() OptString {
 	return s.TargetBundleDigest
-}
-
-// GetTargetImage returns the value of TargetImage.
-func (s *SandboxUpgrade) GetTargetImage() OptString {
-	return s.TargetImage
-}
-
-// GetTargetImageDigest returns the value of TargetImageDigest.
-func (s *SandboxUpgrade) GetTargetImageDigest() OptString {
-	return s.TargetImageDigest
 }
 
 // GetTargetPlatformBundleDigest returns the value of TargetPlatformBundleDigest.
@@ -29601,16 +29520,6 @@ func (s *SandboxUpgrade) SetTargetBundleDigest(val OptString) {
 	s.TargetBundleDigest = val
 }
 
-// SetTargetImage sets the value of TargetImage.
-func (s *SandboxUpgrade) SetTargetImage(val OptString) {
-	s.TargetImage = val
-}
-
-// SetTargetImageDigest sets the value of TargetImageDigest.
-func (s *SandboxUpgrade) SetTargetImageDigest(val OptString) {
-	s.TargetImageDigest = val
-}
-
 // SetTargetPlatformBundleDigest sets the value of TargetPlatformBundleDigest.
 func (s *SandboxUpgrade) SetTargetPlatformBundleDigest(val OptString) {
 	s.TargetPlatformBundleDigest = val
@@ -29620,7 +29529,6 @@ func (s *SandboxUpgrade) SetTargetPlatformBundleDigest(val OptString) {
 type SandboxUpgradeReason string
 
 const (
-	SandboxUpgradeReasonImageDigestChanged          SandboxUpgradeReason = "imageDigestChanged"
 	SandboxUpgradeReasonBundleDigestChanged         SandboxUpgradeReason = "bundleDigestChanged"
 	SandboxUpgradeReasonManifestDigestChanged       SandboxUpgradeReason = "manifestDigestChanged"
 	SandboxUpgradeReasonPlatformBundleDigestChanged SandboxUpgradeReason = "platformBundleDigestChanged"
@@ -29630,7 +29538,6 @@ const (
 // AllValues returns all SandboxUpgradeReason values.
 func (SandboxUpgradeReason) AllValues() []SandboxUpgradeReason {
 	return []SandboxUpgradeReason{
-		SandboxUpgradeReasonImageDigestChanged,
 		SandboxUpgradeReasonBundleDigestChanged,
 		SandboxUpgradeReasonManifestDigestChanged,
 		SandboxUpgradeReasonPlatformBundleDigestChanged,
@@ -29641,8 +29548,6 @@ func (SandboxUpgradeReason) AllValues() []SandboxUpgradeReason {
 // MarshalText implements encoding.TextMarshaler.
 func (s SandboxUpgradeReason) MarshalText() ([]byte, error) {
 	switch s {
-	case SandboxUpgradeReasonImageDigestChanged:
-		return []byte(s), nil
 	case SandboxUpgradeReasonBundleDigestChanged:
 		return []byte(s), nil
 	case SandboxUpgradeReasonManifestDigestChanged:
@@ -29659,9 +29564,6 @@ func (s SandboxUpgradeReason) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *SandboxUpgradeReason) UnmarshalText(data []byte) error {
 	switch SandboxUpgradeReason(data) {
-	case SandboxUpgradeReasonImageDigestChanged:
-		*s = SandboxUpgradeReasonImageDigestChanged
-		return nil
 	case SandboxUpgradeReasonBundleDigestChanged:
 		*s = SandboxUpgradeReasonBundleDigestChanged
 		return nil

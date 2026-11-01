@@ -57,7 +57,8 @@ func (p *Provider) ExportTree(ctx context.Context, ref sandbox.SandboxRef, poolI
 // is one, else the project's schedulable pool -- and waited for on the same
 // budget, because a restore is the first thing that touches the host and it can
 // arrive while the pool is still coming up. The pool it settles on is returned
-// so the row created afterwards names the pool the data is actually on.
+// so the row created afterwards names the pool the data is actually on. Only a
+// pool that runs OCI images takes one.
 func (p *Provider) ImportTree(ctx context.Context, ref sandbox.SandboxRef, poolID string, sandboxPlatform platform.Platform, tree io.Reader) (string, error) {
 	if p.manager == nil {
 		return "", fmt.Errorf("pool manager is required")
@@ -70,6 +71,13 @@ func (p *Provider) ImportTree(ctx context.Context, ref sandbox.SandboxRef, poolI
 	})
 	if err != nil {
 		return "", err
+	}
+	// A tree is a container discobox's: export and import of a machine one
+	// are deferred (ADR 26-10-09-106), so the pool must run OCI images. Import
+	// refuses a pool that already said otherwise; this is the pool that had
+	// not said yet, which a schedulable one has.
+	if err := pool.ImageKind.TakesContainerTree(); err != nil {
+		return "", fmt.Errorf("pool %q cannot take an imported discobox: %w", pool.Name, err)
 	}
 	lease, err := p.awaitPoolAgentClient(ctx, pool)
 	if err != nil {

@@ -133,30 +133,32 @@ by what it is looking for and is idempotent:
 
 The platform columns (ADR 0145 §1) are added by `AutoMigrate` and deliberately
 not backfilled: a guess is wrong for a pool of another architecture, and a
-sandbox's platform is never corrected once written. A harness config's
-platforms are read when its image is inspected — every built-in at the next
-seed — a pool's are declared by its agent's next report, and a sandbox takes
-its pool's when it is next placed. Until then an empty value rules nothing out.
+sandbox's platform is never corrected once written. A pool's are declared by
+its agent's next report, and a sandbox takes its pool's when it is next
+placed. Until then an empty value rules nothing out.
 
-The image kind columns (ADR 26-10-09-106 §4) are backfilled where there is
-nothing to guess: every pool and every image harness from before kinds is OCI.
-A harness config's column defaults to `oci`, so `AutoMigrate`'s added column
-fills every row; a `file://` manifest-file harness is no OCI image and named no
-driver, so `unsetManifestFileImageKinds` takes that back, leaving it no kind —
-which places it on no pool until its file declares one and its image is
-refreshed. A pool's column defaults to empty — a pool created since is not
-known to run OCI images until its agent says — so `backfillPoolImageKinds`
-writes OCI into the pools that existed, only on the start that adds the
-column, which `addsImageKindColumn` reads before `AutoMigrate`. The
-manifest-file repair runs on every start instead, since nothing else would
-correct a row a dead start left OCI, and it is idempotent: a manifest file
-registered since kinds always has a VM kind.
+The pools' image kind column (ADR 26-10-09-106 §4) is backfilled where there
+is nothing to guess: every pool from before kinds is OCI. Its default is empty
+— a pool created since is not known to run OCI images until its agent says —
+so `backfillPoolImageKinds` writes OCI into the pools that existed, only on
+the start that adds the column, which `addsImageKindColumn` reads before
+`AutoMigrate`.
 
 A VM kind was spelled `discovm/<driver>` until ADR 26-10-15-629 respelled it
 `vm/<driver>`, and only the new spelling is read, so a stored old one would
 fail every scan of its row. `respellDiscoVMImageKinds` rewrites them on pools
-and harness configs on every start, before anything reads a kind; after the
-first it matches nothing.
+on every start, before anything reads a kind; after the first it matches
+nothing.
+
+A harness is its bundle and nothing else (ADR 26-11-01-122), so
+`dropHarnessImageColumns` drops the `image`, `image_digest`, `image_kind` and
+`platforms` columns of `harness_configs`, logging every config that still
+recorded an image first — a runnable image from before bundles, or a `file://`
+manifest file — since that is the only record left of what was registered.
+Every row is kept: one with no bundle was registered before bundles, which
+create and repair refuse with 409 until a bundle is registered for it. A
+sandbox's own `image`/`image_digest` stay: a container from before bundles is
+fingerprinted by them until the sandbox is pinned to its bundles.
 
 `AutoMigrate` creates tables, adds and widens columns, and creates missing
 indexes, but never drops any of them, never alters an index that already exists

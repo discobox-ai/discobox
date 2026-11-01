@@ -18996,7 +18996,7 @@ func (s *Server) handleReconsiderSandboxHarnessConfigChangesRequest(args [2]stri
 
 // handleRefreshHarnessConfigImageRequest handles refresh-harness-config-image operation.
 //
-// Re-inspect the harness config's bundle, or its manifest file, and re-snapshot its label
+// Re-inspect the harness config's bundle and re-snapshot its label
 // metadata and digest. Registration snapshots the labels once and nothing re-reads them, so a
 // config pointing at a rebuilt tag keeps describing a bundle that no longer exists under it —
 // and its sandboxes can never report an available upgrade. Built-in configs get this

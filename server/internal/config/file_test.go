@@ -403,6 +403,21 @@ func TestRetiredDockerPoolImageIsIgnoredWithAWarning(t *testing.T) {
 	}
 }
 
+// server.yaml's overlayDir is retired (ADR 26-11-01-122): no harness is a
+// manifest file any more, so for one release a file that sets it still loads,
+// with a warning, rather than failing on a key the decoder does not know.
+func TestRetiredOverlayDirIsIgnoredWithAWarning(t *testing.T) {
+	clearConfigEnv(t)
+	writeConfigFile(t, "overlayDir: /var/cache/discobox/overlays\n")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(cfg.Warnings) != 1 || !strings.Contains(cfg.Warnings[0], "overlayDir is retired") {
+		t.Fatalf("Warnings = %q, want one for the retired key", cfg.Warnings)
+	}
+}
+
 // server.yaml's judging keys are retired (ADR 26-10-27-880): nothing judges
 // credential use, so for one release a file that sets them still loads, with
 // a warning for each, and none of them means anything.

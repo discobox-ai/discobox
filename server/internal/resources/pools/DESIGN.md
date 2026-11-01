@@ -224,12 +224,11 @@ platform as every pool did before platforms, settling and checking nothing,
 and refuses one that has — only an import's tree brings a platform onto such a
 pool, and nothing could check it there (ADR 0145 §8). A
 sandbox with none yet — created while its pool's agent had declared nothing,
-or before platforms were recorded — takes the pool's, written to its row, but
-only if its harness runs on it: a bundle names no platform and runs on any, and
-a manifest file's template runs on the one it declares. It refuses a harness
-that does not, with a `*platform.UnpublishedError` that names what the
-template runs on, and a sandbox of another platform than its pool's with a
-`*platform.MismatchError`. Neither is `ErrNotFound`: a pool of the wrong
+or before platforms were recorded — takes the pool's, written to its row: its
+harness names no platform and runs on any, and no image kind, since the kind
+of box is its pool's (ADR 26-11-01-122). It refuses a sandbox of another
+platform than its pool's with a `*platform.MismatchError`, which is not
+`ErrNotFound`: a pool of the wrong
 platform is not one on its way up, and a caller that waited on it would wait
 for good. The check runs after the readiness gate, since only a reporting agent
 has declared what it hosts.
@@ -249,12 +248,13 @@ The migration that adds the column backfills OCI for every pool that existed
 then, and only on that start: a pool created since has no kind until its agent
 says, since it may be a vm pool.
 
-`SchedulablePoolForSandbox` refuses a sandbox whose harness's image is another
-kind than the pool runs with a `*platform.KindMismatchError` naming both — a
-VM harness on a Docker pool of its very platform, or an OCI one on a
-vm pool — before the platform is settled, and never as `ErrNotFound`. A
-sandbox with no harness config, and an import's stand-in, are OCI: import takes
-only an OCI harness. A harness of no declared kind places nowhere.
+The kind is the pool's alone: a harness names none (ADR 26-11-01-122), so a
+sandbox is whatever kind of box its pool runs, and placement checks no kind.
+The one thing refused for it is an import onto a pool that runs anything but
+OCI images — an archive holds a container's tree — with a
+`*platform.NotOCIError` naming the pool's kind
+(`poolruntime.Provider.ImportTree`, and `sandboxes.refuseMachinePool` before
+the tree is read).
 
 ## Who owns which status field
 

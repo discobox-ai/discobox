@@ -3,7 +3,6 @@ package store_test
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -362,48 +361,29 @@ func schedulablePool(t *testing.T, s *store.Store, poolID string, hosts platform
 }
 
 // A sandbox created while its pool's agent had declared nothing takes the
-// pool's platform when it is placed, written to its row — provided its
-// harness's image is published for it. A single-platform image on a pool of
-// another platform is refused, saying what it is published for, and the row
-// is left without a platform rather than given one it cannot run on.
+// pool's platform when it is placed, written to its row. Its harness rules no
+// platform out: a harness is a bundle, whose steps select the platform they
+// run on (ADR 26-11-01-122).
 func TestPlacementSettlesASandboxsPlatform(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	riscv := platform.Platform{OS: "linux", Arch: "riscv64"}
 	schedulablePool(t, s, "pool-1", riscv, platform.OCI)
-	for slug, published := range map[string]platform.Set{
-		"multi":  platform.NewSet(platform.Pool(), riscv),
-		"single": platform.NewSet(platform.Pool()),
-	} {
-		if err := s.CreateHarnessConfig(ctx, &model.HarnessConfig{ID: "hc-" + slug, ProjectID: "project-1", Slug: slug, Name: slug, Platforms: published}); err != nil {
-			t.Fatal(err)
-		}
-		harnessID := "hc-" + slug
-		if err := s.CreateSandbox(ctx, &model.Sandbox{ID: "sbx-" + slug, ProjectID: "project-1", PoolID: "pool-1", Name: slug, CreatedByUserID: "user-1",
-			SandboxManifest: model.SandboxManifest{HarnessConfigID: &harnessID}}); err != nil {
-			t.Fatal(err)
-		}
+	if err := s.CreateHarnessConfig(ctx, &model.HarnessConfig{ID: "hc-codex", ProjectID: "project-1", Slug: "codex", Name: "codex"}); err != nil {
+		t.Fatal(err)
+	}
+	harnessID := "hc-codex"
+	if err := s.CreateSandbox(ctx, &model.Sandbox{ID: "sbx-codex", ProjectID: "project-1", PoolID: "pool-1", Name: "codex", CreatedByUserID: "user-1",
+		SandboxManifest: model.SandboxManifest{HarnessConfigID: &harnessID}}); err != nil {
+		t.Fatal(err)
 	}
 	// The stand-in a provider places with carries no platform: the row was
 	// written before the pool declared one.
-	standIn := func(id string) *model.Sandbox {
-		return &model.Sandbox{ID: id, ProjectID: "project-1", PoolID: "pool-1"}
+	if _, err := s.SchedulablePoolForSandbox(ctx, &model.Sandbox{ID: "sbx-codex", ProjectID: "project-1", PoolID: "pool-1"}); err != nil {
+		t.Fatalf("a harness on a pool of another platform than this machine's: %v", err)
 	}
-
-	if _, err := s.SchedulablePoolForSandbox(ctx, standIn("sbx-multi")); err != nil {
-		t.Fatalf("a multi-platform harness on a pool of one of its platforms: %v", err)
-	}
-	if sb, err := s.GetSandbox(ctx, "project-1", "sbx-multi"); err != nil || sb.Platform != riscv {
+	if sb, err := s.GetSandbox(ctx, "project-1", "sbx-codex"); err != nil || sb.Platform != riscv {
 		t.Fatalf("platform = %v, %v; want the pool's %q recorded", sb.Platform, err, riscv)
-	}
-
-	_, err := s.SchedulablePoolForSandbox(ctx, standIn("sbx-single"))
-	var unpublished *platform.UnpublishedError
-	if !errors.As(err, &unpublished) || errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("err = %v, want the image's platforms as the refusal", err)
-	}
-	if sb, err := s.GetSandbox(ctx, "project-1", "sbx-single"); err != nil || !sb.Platform.IsZero() {
-		t.Fatalf("platform = %v, %v; want none recorded", sb.Platform, err)
 	}
 }
 
@@ -480,65 +460,26 @@ func TestAnUndeclaredPoolRefusesASandboxWithAPlatform(t *testing.T) {
 	}
 }
 
-// A pool runs one kind of image, and a sandbox is placed only where its
-// harness's image is that kind as well as the pool's platform (ADR 26-10-09-106
-// §4). A boxd pool and a Docker pool both host linux on this architecture: a
-// VM harness for boxd is refused on the Docker pool with the kinds as the
-// reason — never ErrNotFound, which a caller would wait on for good — and
-// placed on the boxd pool, and an OCI harness the other way round.
-func TestPlacementMatchesTheImageKind(t *testing.T) {
+// A harness names no image kind: a sandbox on it is the kind of box its pool
+// runs (ADR 26-10-16-423 §2, ADR 26-11-01-122). The same harness places on a
+// boxd pool and on a Docker pool of the same platform.
+func TestPlacementTakesThePoolsImageKind(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	boxd := platform.VM("boxd")
 	schedulablePool(t, s, "docker", platform.Pool(), platform.OCI)
-	schedulablePool(t, s, "boxd", platform.Pool(), boxd)
-	for slug, kind := range map[string]platform.ImageKind{"machine": boxd, "container": platform.OCI, "undeclared": {}} {
-		if err := s.CreateHarnessConfig(ctx, &model.HarnessConfig{ID: "hc-" + slug, ProjectID: "project-1", Slug: slug, Name: slug,
-			Platforms: platform.NewSet(platform.Pool()), ImageKind: kind}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// The column's default stands in for a kind left out of an insert, so the
-	// undeclared one — what the migration leaves a manifest-file harness — is
-	// written the way the migration writes it.
-	if err := s.UpdateHarnessConfig(ctx, &model.HarnessConfig{Revision: 1, ID: "hc-undeclared", ProjectID: "project-1", Slug: "undeclared", Name: "undeclared",
-		Platforms: platform.NewSet(platform.Pool())}); err != nil {
+	schedulablePool(t, s, "boxd", platform.Pool(), platform.VM("boxd"))
+	if err := s.CreateHarnessConfig(ctx, &model.HarnessConfig{ID: "hc-shell", ProjectID: "project-1", Slug: "shell", Name: "shell"}); err != nil {
 		t.Fatal(err)
 	}
-	place := func(harness, pool string) error {
-		harnessID := "hc-" + harness
-		id := "sbx-" + harness + "-" + pool
+	for _, pool := range []string{"docker", "boxd"} {
+		harnessID := "hc-shell"
+		id := "sbx-" + pool
 		if err := s.CreateSandbox(ctx, &model.Sandbox{ID: id, ProjectID: "project-1", PoolID: pool, Name: id, CreatedByUserID: "user-1",
 			SandboxManifest: model.SandboxManifest{HarnessConfigID: &harnessID}}); err != nil {
 			t.Fatal(err)
 		}
-		_, err := s.SchedulablePoolForSandbox(ctx, &model.Sandbox{ID: id, ProjectID: "project-1", PoolID: pool})
-		return err
-	}
-
-	err := place("machine", "docker")
-	var mismatch *platform.KindMismatchError
-	if !errors.As(err, &mismatch) || errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("a VM harness on a Docker pool of its platform: err = %v, want a kind mismatch", err)
-	}
-	if mismatch.Image != boxd || mismatch.Pool != platform.OCI {
-		t.Fatalf("mismatch = %+v", mismatch)
-	}
-	if !strings.Contains(err.Error(), "VM image for the boxd driver, and the pool runs OCI images") {
-		t.Fatalf("err = %q, want it to say both kinds", err)
-	}
-	if err := place("machine", "boxd"); err != nil {
-		t.Fatalf("a VM harness on a pool of its driver: %v", err)
-	}
-	if err := place("container", "boxd"); !errors.As(err, &mismatch) {
-		t.Fatalf("an OCI harness on a boxd pool: err = %v, want a kind mismatch", err)
-	}
-	if err := place("container", "docker"); err != nil {
-		t.Fatalf("an OCI harness on a Docker pool: %v", err)
-	}
-	for _, pool := range []string{"docker", "boxd"} {
-		if err := place("undeclared", pool); !errors.As(err, &mismatch) {
-			t.Fatalf("a harness of no declared kind on %s: err = %v, want a kind mismatch", pool, err)
+		if _, err := s.SchedulablePoolForSandbox(ctx, &model.Sandbox{ID: id, ProjectID: "project-1", PoolID: pool}); err != nil {
+			t.Fatalf("a bundle harness on the %s pool: %v", pool, err)
 		}
 	}
 }

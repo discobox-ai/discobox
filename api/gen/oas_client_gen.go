@@ -869,7 +869,7 @@ type Invoker interface {
 	ReconsiderSandboxHarnessConfigChanges(ctx context.Context, request *HarnessConfigSelection, params ReconsiderSandboxHarnessConfigChangesParams) (ReconsiderSandboxHarnessConfigChangesRes, error)
 	// RefreshHarnessConfigImage invokes refresh-harness-config-image operation.
 	//
-	// Re-inspect the harness config's bundle, or its manifest file, and re-snapshot its label
+	// Re-inspect the harness config's bundle and re-snapshot its label
 	// metadata and digest. Registration snapshots the labels once and nothing re-reads them, so a
 	// config pointing at a rebuilt tag keeps describing a bundle that no longer exists under it —
 	// and its sandboxes can never report an available upgrade. Built-in configs get this
@@ -16036,7 +16036,7 @@ func (c *Client) sendReconsiderSandboxHarnessConfigChanges(ctx context.Context, 
 
 // RefreshHarnessConfigImage invokes refresh-harness-config-image operation.
 //
-// Re-inspect the harness config's bundle, or its manifest file, and re-snapshot its label
+// Re-inspect the harness config's bundle and re-snapshot its label
 // metadata and digest. Registration snapshots the labels once and nothing re-reads them, so a
 // config pointing at a rebuilt tag keeps describing a bundle that no longer exists under it —
 // and its sandboxes can never report an available upgrade. Built-in configs get this

@@ -1,7 +1,6 @@
 package harnessconfigs
 
 import (
-	"context"
 	"io"
 	golog "log"
 	"net/http"
@@ -16,11 +15,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
-	apigen "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/pkg/platform"
-	"github.com/discobox-ai/discobox/server/internal/model"
-	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
 // testRegistry serves an in-process registry and returns its host.
@@ -103,13 +98,9 @@ func TestPublishedImageReadsAnIndexsPlatforms(t *testing.T) {
 		v1.Platform{OS: "linux", Architecture: other},
 		v1.Platform{OS: "unknown", Architecture: "unknown"},
 	)
-	image, platforms, err := publishedImage(descriptor)
+	image, err := publishedImage(descriptor)
 	if err != nil {
 		t.Fatal(err)
-	}
-	want := platform.NewSet(pool, platform.Platform{OS: "linux", Arch: other})
-	if platforms.String() != want.String() {
-		t.Fatalf("platforms = %q, want %q", platforms, want)
 	}
 	if got := labelArch(t, image); got != pool.Arch {
 		t.Fatalf("labels read from %q, want this machine's %q", got, pool.Arch)
@@ -120,68 +111,11 @@ func TestPublishedImageReadsAnIndexsPlatforms(t *testing.T) {
 // manifest: its labels are read from a platform it is published for.
 func TestPublishedImageReadsAnotherPlatformsLabels(t *testing.T) {
 	descriptor, _ := pushIndex(t, v1.Platform{OS: "linux", Architecture: "riscv64"})
-	image, platforms, err := publishedImage(descriptor)
+	image, err := publishedImage(descriptor)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if platforms.String() != "linux/riscv64" {
-		t.Fatalf("platforms = %q, want linux/riscv64", platforms)
 	}
 	if got := labelArch(t, image); got != "riscv64" {
 		t.Fatalf("labels read from %q, want riscv64", got)
-	}
-}
-
-// A manifest file's registration records the one platform its template runs
-// on and the kind it declares, as inspection read them, and pins the file's
-// digest; it has no bundle.
-func TestCreateHarnessConfigRecordsAManifestFilesPlatform(t *testing.T) {
-	ctx := context.Background()
-	st := newTestStore(t)
-	const file = "file:///overlays/darwin-arm64/manifest.json"
-	darwin := platform.NewSet(platform.Platform{OS: "darwin", Arch: "arm64"})
-	inspector := &stubInspector{byImage: map[string]imageMetadata{
-		file: {Digest: "sha256:file", Platforms: darwin, ImageMetadata: harness.ImageMetadata{
-			ImageKind: platform.VM("vz"), Harness: &harness.Image{ID: "example", Name: "Example"},
-		}},
-	}}
-	svc := &Service{store: st, inspector: inspector, harnesses: testReferences}
-	config, err := svc.CreateHarnessConfig(ctx, "project-1", services.CreateHarnessConfigBody{Image: apigen.NewOptString(file)})
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	if config.Platforms.String() != darwin.String() || config.ImageKind != platform.VM("vz") {
-		t.Fatalf("platforms = %q kind = %v, want %q and vm/vz", config.Platforms, config.ImageKind, darwin)
-	}
-	if config.Image != file || config.ImageDigest != "sha256:file" || config.Bundle != "" || config.BundleDigest != "" {
-		t.Fatalf("config = %+v, want the manifest file pinned and no bundle", config)
-	}
-}
-
-// A built-in recorded with the platforms its runnable image was published for
-// is rewritten with none, even when its reference and digest have not moved: a
-// bundle's steps select the platform they run on, which rules no pool out.
-func TestSeedBuiltInsRewritesABuiltInWhosePlatformsMoved(t *testing.T) {
-	ctx := context.Background()
-	st := newTestStore(t)
-	const bundle = "discobox-harness-codex:v1"
-	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
-		ProjectID: "project-1", Slug: "codex", Name: "Codex", BuiltIn: true,
-		Bundle: bundle, BundleDigest: "sha256:same", ImageKind: platform.OCI, RunCommand: []string{"codex"},
-		Platforms: platform.NewSet(platform.Platform{OS: "linux", Arch: "amd64"}, platform.Platform{OS: "linux", Arch: "arm64"}),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	inspector := &stubInspector{byImage: map[string]imageMetadata{bundle: {Digest: "sha256:same"}}}
-	svc := &Service{store: st, inspector: inspector, harnesses: bundleReferences(map[string]string{"codex": bundle})}
-	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	got, err := st.GetHarnessConfigBySlug(ctx, "project-1", "codex")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got.Platforms) != 0 {
-		t.Fatalf("platforms = %q, want none", got.Platforms)
 	}
 }

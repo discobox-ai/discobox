@@ -20,26 +20,20 @@ const ImageAPIVersion = "discobox.dev/image/v1"
 
 // ImageMetadata is the full non-secret payload a harness image declares: env
 // defaults, declarative volumes, supplementary OS groups the sandbox user
-// needs, what the sandbox's platform has, and the harness contract. An image
-// carries it in its labels (ImageLabel and the layers beside it); a non-Linux
-// template carries the same layers in its overlay's manifest file
-// (ReadManifestFile), and both resolve through ResolveImageLabels (ADR 0145 §3).
+// needs, what the sandbox's platform has, and the harness contract. A bundle
+// carries it in its labels (ImageLabel and the layers beside it), which
+// resolve through ResolveImageLabels.
 type ImageMetadata struct {
 	APIVersion string `json:"apiVersion"`
 	// PlatformAPIVersion is the platform a bundle runs on (PlatformAPIVersion,
 	// the constant): the one the platform bundle's layer provides, and the one
 	// a harness bundle's own layer needs (ComposeBundleLabels).
 	PlatformAPIVersion string `json:"platformAPIVersion,omitempty"`
-	// Platform is the platform a manifest file's template runs. Only a manifest
-	// file declares it: an image's platform is what its registry publishes it
-	// for, which a label cannot know, so an image label naming one is refused
-	// at registration rather than read beside the registry's answer.
-	Platform platform.Platform `json:"platform,omitzero"`
-	// ImageKind is the kind of image a manifest file's template is built as:
-	// a VM image for the driver it names (ADR 26-10-09-106 §4). Only a
-	// manifest file declares it, as it does its platform: an image is an OCI
-	// image by being one, so an image label naming a kind is refused at
-	// registration.
+	// Platform and ImageKind are read only to be refused: a harness is a
+	// bundle, whose steps select the platform they run on, and the kind of box
+	// is its pool's (ADR 26-11-01-122), so a label naming either is refused at
+	// registration rather than ignored.
+	Platform  platform.Platform  `json:"platform,omitzero"`
 	ImageKind platform.ImageKind `json:"imageKind,omitzero"`
 	// Account is the one account a sandbox without POSIX ids runs as, by its
 	// name alone (ADR 0145 §5). Shell is the login shell a terminal types its

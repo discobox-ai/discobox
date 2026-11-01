@@ -196,12 +196,13 @@ type Config struct {
 	// by digest when it is gone, so it lives under the cache.
 	AssetDir string `yaml:"assetDir" env:"DISCOBOX_ASSET_DIR" doc:"Blob store the server serves bundles to pools from, by digest. Every blob in it is fetched again when it is missing. Defaults to <cacheDir>/assets." example:"/var/cache/discobox/assets"`
 
-	// OverlayDir is where the overlays of templates with no image are staged
-	// (ADR 0145 §2), and the one directory a harness's file:// manifest
-	// reference may name a file in. A harness config is registered over the
-	// API, so a reference anywhere else would have this server read whatever
-	// path a caller named and answer with what it found.
-	OverlayDir string `yaml:"overlayDir" env:"DISCOBOX_OVERLAY_DIR" doc:"Directory the overlays of non-Linux sandbox templates are staged in, and the only one a harness's file:// manifest reference may name a file in. Defaults to <cacheDir>/overlays." example:"/var/cache/discobox/overlays"`
+	// RetiredOverlayDir is server.yaml's overlayDir, the one directory a
+	// harness's file:// manifest file was read from. No harness is a manifest
+	// file any more (ADR 26-11-01-122), so it is read only to warn
+	// (retiredKeys), and means nothing. It is a field rather than a gap because
+	// the file is decoded with unknown keys refused, which would stop the server
+	// before the warning.
+	RetiredOverlayDir string `yaml:"overlayDir" doc:"Retired, and ignored: no harness is a file:// manifest file any more, and nothing is staged there. Read with a warning, and refused from the next release." example:"/var/cache/discobox/overlays"`
 
 	// WSLCCommand overrides the WSL Containers program the Windows host is
 	// checked for at startup, for a host that keeps it somewhere this check
@@ -363,13 +364,9 @@ func Load() (*Config, error) {
 		cfg.ImageCacheDir = filepath.Join(cfg.CacheDir, "images")
 	}
 	// Empty counts as absent for the reason the image store's does: a blank
-	// line would otherwise leave no directory at all, and every manifest file
-	// refused.
+	// line would otherwise leave no directory at all.
 	if !configured("assetDir") || strings.TrimSpace(cfg.AssetDir) == "" {
 		cfg.AssetDir = filepath.Join(cfg.CacheDir, "assets")
-	}
-	if !configured("overlayDir") || strings.TrimSpace(cfg.OverlayDir) == "" {
-		cfg.OverlayDir = filepath.Join(cfg.CacheDir, "overlays")
 	}
 	if !configured("databaseDsn") {
 		cfg.DatabaseDSN = defaultDatabaseDSN(cfg.DataDir)
@@ -453,6 +450,7 @@ var retiredKeys = []struct{ key, advice string }{
 	{"jevApiKey", "nothing asks Jev any more (ADR 26-10-27-880)"},
 	{"jevModel", "nothing asks Jev any more (ADR 26-10-27-880)"},
 	{"jevUnsure", "nothing asks Jev any more (ADR 26-10-27-880)"},
+	{"overlayDir", "no harness is a file:// manifest file any more, and nothing is staged there (ADR 26-11-01-122)"},
 }
 
 // retiredKeyWarnings names each retired key the file set.

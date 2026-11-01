@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -40,23 +39,17 @@ func (d *apiDataSource) Harnesses(ctx context.Context, server string) ([]tui.Har
 	if err != nil {
 		return nil, err
 	}
-	// So is what the project's pools host and run, which decides what `run`
-	// offers.
-	placements, err := d.app.listPoolPlacements(ctx, d.client, d.projectID)
-	if err != nil {
-		return nil, err
-	}
 	sorted := append([]apimodel.HarnessConfig(nil), configs...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].CreatedAt.Before(sorted[j].CreatedAt) })
 
 	harnesses := make([]tui.Harness, 0, len(sorted))
 	for _, cfg := range sorted {
-		harnesses = append(harnesses, toTUIHarness(cfg, defaultID, placements))
+		harnesses = append(harnesses, toTUIHarness(cfg, defaultID))
 	}
 	return harnesses, nil
 }
 
-func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string, placements poolPlacements) tui.Harness {
+func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 	harness := tui.Harness{
 		ID:      cfg.ID,
 		Name:    strings.TrimSpace(cfg.Name),
@@ -71,10 +64,7 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string, placements poolP
 		ConfigReminder: strings.TrimSpace(cfg.ConfigReminder.Or("")),
 		Error:          strings.TrimSpace(cfg.ConfigureError.Or("")),
 		Bundle:         cfg.Bundle.Or(""),
-		ManifestFile:   cfg.Image.Or(""),
-		Digest:         cmp.Or(cfg.BundleDigest.Or(""), cfg.ImageDigest.Or("")),
-		Platforms:      strings.Join(cfg.Platforms, ", "),
-		Unhosted:       !placements.run(cfg),
+		Digest:         cfg.BundleDigest.Or(""),
 		Run:            cfg.RunCommand,
 		Relaunch:       cfg.RelaunchCommand.Or(nil),
 		Updated:        cfg.UpdatedAt,

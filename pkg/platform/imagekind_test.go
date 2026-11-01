@@ -91,29 +91,18 @@ func TestImageKindJSONScanAndValue(t *testing.T) {
 	}
 }
 
-func TestPlaceKindRefusesAnotherKind(t *testing.T) {
-	if err := PlaceKind(VM("boxd"), VM("boxd")); err != nil {
-		t.Fatalf("same kind refused: %v", err)
+func TestTakesContainerTreeOnlyOnOCI(t *testing.T) {
+	if err := OCI.TakesContainerTree(); err != nil {
+		t.Fatalf("an OCI pool refused a container's tree: %v", err)
 	}
-	if err := PlaceKind(OCI, OCI); err != nil {
-		t.Fatalf("OCI on OCI refused: %v", err)
-	}
-	for _, c := range []struct {
-		image, pool ImageKind
-		says        string
-	}{
-		{VM("boxd"), OCI, "its image is a VM image for the boxd driver, and the pool runs OCI images"},
-		{OCI, VM("boxd"), "its image is an OCI image, and the pool runs VM images for the boxd driver"},
-		{VM("vz"), VM("boxd"), "for the vz driver, and the pool runs VM images for the boxd driver"},
-		{ImageKind{}, ImageKind{}, "of no declared kind, and the pool runs no declared kind of image"},
+	for kind, says := range map[ImageKind]string{
+		VM("boxd"):  "the pool runs VM images for the boxd driver",
+		ImageKind{}: "the pool runs no declared kind of image",
 	} {
-		err := PlaceKind(c.image, c.pool)
-		var mismatch *KindMismatchError
-		if !errors.As(err, &mismatch) {
-			t.Fatalf("PlaceKind(%s, %s) = %v; want a *KindMismatchError", c.image, c.pool, err)
-		}
-		if !strings.Contains(err.Error(), c.says) {
-			t.Fatalf("PlaceKind(%s, %s) = %q; want it to say %q", c.image, c.pool, err, c.says)
+		err := kind.TakesContainerTree()
+		var notOCI *NotOCIError
+		if !errors.As(err, &notOCI) || !strings.Contains(err.Error(), says) {
+			t.Fatalf("TakesContainerTree(%q) = %v; want a *NotOCIError saying %q", kind, err, says)
 		}
 	}
 }

@@ -12,7 +12,6 @@ import (
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/pkg/platform"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
@@ -115,26 +114,20 @@ func TestInspectBundleRefusesAWhiteout(t *testing.T) {
 	}
 }
 
-// A bundle is an OCI image, and a manifest file is none.
-func TestInspectBundleRefusesAManifestFile(t *testing.T) {
-	if _, err := (defaultImageInspector{}).InspectBundle(context.Background(), "file:///overlays/manifest.json", admitAny); err == nil {
-		t.Fatal("InspectBundle() = nil, want a manifest file refused as a bundle")
-	}
-}
-
 // bundleService registers against a stub whose harness bundle and platform
 // bundle are separate references, as a real registration's are.
 func bundleService(t *testing.T) (*Service, *stubInspector) {
 	inspector := &stubInspector{byImage: map[string]imageMetadata{
-		"example.com/acme:v1": {Digest: "sha256:bundle", ImageMetadata: harness.ImageMetadata{
+		"example.com/acme:v1": {BundleDigest: "sha256:bundle", ImageMetadata: harness.ImageMetadata{
 			Env: map[string]string{"ACME": "1"}, Harness: &harness.Image{ID: "acme", Name: "Acme"},
 		}},
 	}}
 	return &Service{store: newTestStore(t), inspector: inspector, harnesses: testReferences}, inspector
 }
 
-// A harness is its bundle (ADR 26-10-16-423 §2): it is registered with no
-// image, runs on whatever box a pool applies it to, and rules no platform out.
+// A harness is its bundle (ADR 26-10-16-423 §2, ADR 26-11-01-122): it is
+// registered with no image, platform or kind, and runs on whatever box a pool
+// applies it to.
 func TestCreateRegistersTheBundle(t *testing.T) {
 	svc, _ := bundleService(t)
 	config, err := svc.CreateHarnessConfig(context.Background(), "project-1", services.CreateHarnessConfigBody{
@@ -149,12 +142,6 @@ func TestCreateRegistersTheBundle(t *testing.T) {
 	if config.Bundle != "example.com/acme:v1" || config.BundleDigest != "sha256:bundle" {
 		t.Fatalf("bundle = %q@%q, want the registered bundle and its digest", config.Bundle, config.BundleDigest)
 	}
-	if config.Image != "" || config.ImageDigest != "" {
-		t.Fatalf("image = %q@%q, want none: no harness is an image", config.Image, config.ImageDigest)
-	}
-	if len(config.Platforms) != 0 || config.ImageKind != platform.OCI {
-		t.Fatalf("platforms = %q kind = %v, want none and the OCI box a Docker pool applies it to", config.Platforms, config.ImageKind)
-	}
 }
 
 func TestCreateRefusesAHarnessWithNoBundle(t *testing.T) {
@@ -163,34 +150,6 @@ func TestCreateRefusesAHarnessWithNoBundle(t *testing.T) {
 	var status apperrors.StatusError
 	if !errors.As(err, &status) || status.StatusCode() != http.StatusBadRequest || !strings.Contains(err.Error(), "bundle is required") {
 		t.Fatalf("err = %v, want a missing bundle refused as a bad request", err)
-	}
-}
-
-// An image is a harness only when it names a manifest file: a runnable image
-// is refused, with or without a bundle beside it, rather than recorded and
-// never run.
-func TestCreateRefusesAnImage(t *testing.T) {
-	svc, _ := bundleService(t)
-	for name, bundle := range map[string]apigen.OptString{"alone": {}, "beside a bundle": apigen.NewOptString("example.com/acme:v1")} {
-		t.Run(name, func(t *testing.T) {
-			_, err := svc.CreateHarnessConfig(context.Background(), "project-1", services.CreateHarnessConfigBody{
-				Image: apigen.NewOptString("example.com/acme-image:v1"), Bundle: bundle,
-			})
-			var status apperrors.StatusError
-			if !errors.As(err, &status) || status.StatusCode() != http.StatusBadRequest || !strings.Contains(err.Error(), "no harness is an image") {
-				t.Fatalf("err = %v, want an image refused as a bad request", err)
-			}
-		})
-	}
-}
-
-func TestCreateRefusesABundleBesideAManifestFile(t *testing.T) {
-	svc, _ := bundleService(t)
-	_, err := svc.CreateHarnessConfig(context.Background(), "project-1", services.CreateHarnessConfigBody{
-		Image: apigen.NewOptString("file:///overlays/manifest.json"), Bundle: apigen.NewOptString("example.com/acme:v1"),
-	})
-	if err == nil || !strings.Contains(err.Error(), "takes no bundle") {
-		t.Fatalf("err = %v, want a bundle beside a manifest file refused", err)
 	}
 }
 
@@ -260,9 +219,6 @@ func TestUpdateRegistersABundleForAHarnessRegisteredBeforeBundles(t *testing.T) 
 	}
 	if updated.Bundle != "example.com/acme:v1" || updated.BundleDigest != "sha256:bundle" || updated.Env["ACME"] != "1" {
 		t.Fatalf("config = %+v, want the bundle registered and its manifest snapshotted", updated)
-	}
-	if updated.Image != "" || updated.ImageDigest != "" {
-		t.Fatalf("image = %q@%q, want none beside the bundle", updated.Image, updated.ImageDigest)
 	}
 }
 
