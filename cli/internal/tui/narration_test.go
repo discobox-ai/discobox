@@ -114,7 +114,7 @@ func TestAWarningOutlastsTheStepsAfterIt(t *testing.T) {
 		t.Fatalf("busy = %q, want the steps to carry on beside the warning", m.busy)
 	}
 	// The create it is about finishing is no answer to it: it stays.
-	send(t, m, createdMsg{sandbox: Sandbox{ID: "sbx_1"}, req: RunRequest{Detach: true}})
+	send(t, m, createdMsg{sandbox: Sandbox{ID: "sbx_1"}, req: RunRequest{Detach: true}, create: &createWatch{}})
 	if got := m.statusMessage(200); !strings.Contains(got, "left out") {
 		t.Fatalf("status = %q, want the warning to outlast the create finishing", got)
 	}

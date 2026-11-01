@@ -512,7 +512,7 @@ func (f *fakeSource) runRequests() []RunRequest {
 	return append([]RunRequest(nil), f.runs...)
 }
 
-func (f *fakeSource) Run(_ context.Context, req RunRequest, report, warn func(string), accepted func()) (Sandbox, error) {
+func (f *fakeSource) Run(_ context.Context, req RunRequest, report, warn func(string), accepted func(Sandbox)) (Sandbox, error) {
 	f.mu.Lock()
 	f.runs = append(f.runs, req)
 	gate := f.runGate
@@ -533,9 +533,9 @@ func (f *fakeSource) Run(_ context.Context, req RunRequest, report, warn func(st
 		f.mu.Unlock()
 		return Sandbox{}, err
 	}
-	accepted()
 	deliver, deliverErr := f.deliverGate, f.deliverErr
 	created := Sandbox{ID: f.createdID, Name: promptText(req), State: StateStarting}
+	accepted(created)
 	f.mu.Unlock()
 	if deliver != nil {
 		<-deliver

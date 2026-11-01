@@ -114,6 +114,10 @@ type Model struct {
 	treeHidden bool
 	// newOpen is whether the new discobox page is open. See tree.go.
 	newOpen bool
+	// createNarrating is whether the busy line is a create's (create), which
+	// is not the screen's to end when the screen is parked or closed
+	// (endLiveScreen). Any other narration taking the line clears it.
+	createNarrating bool
 	// cursorOn is the box syncListCursor last found in the list.
 	cursorOn string
 	// treeHoverX and treeHoverY are where the pointer rests over the tree,
@@ -866,6 +870,7 @@ type directorySizeMsg struct{}
 type createdMsg struct {
 	sandbox Sandbox
 	req     RunRequest
+	create  *createWatch
 	// accepted is whether the server took the create before err: a run that
 	// fails after that has still made a discobox.
 	accepted bool
@@ -1211,7 +1216,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case promptSpentMsg:
 		m.setSubmitting(false)
 		m.promptSpent(msg.req)
-		return nil
+		return m.watchCreate(msg)
 
 	case auditUpdateMsg:
 		return m.auditUpdated(msg)
@@ -1784,6 +1789,11 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 				return m.switchBox(delta)
 			}
 			switch keyName(msg) {
+			case paneLeftKey, "left", "ctrl+h", "ctrl+left":
+				if m.treeShown() {
+					m.focusTree()
+					return nil
+				}
 			case paneDetachAlt:
 				if !m.detaches() {
 					return nil
@@ -3271,35 +3281,20 @@ type createMsg struct{ req RunRequest }
 // becomes "Starting <name>" the moment the create comes back with one.
 const creatingTitle = "Creating a discobox"
 
-// waitDialog is the screen a window waits on: what it is waiting for, with the
-// newest report under it.
+// waitDialog is the screen a window that is one command's own waits on: what
+// it is waiting for, with the newest report under it. The console has none;
+// it watches a create in the discobox's opening workspace (watchCreate).
 //
-// Leaving it is where the two kinds of window differ. The launcher goes back to
-// the list it was started from, which is where the discobox it is waiting for
-// will appear. A window that is one command's own has no list behind it, so
-// leaving the wait leaves the window — and leaves the discobox alone: it was
-// created before this screen went up, or is being created by a request the
-// server has already taken, and it carries on coming up either way. Nothing is
-// stopped and nothing is attached to.
+// Such a window has no list behind it, so leaving the wait leaves the window —
+// and leaves the discobox alone: it was created before this screen went up, or
+// is being created by a request the server has already taken, and it carries
+// on coming up either way. Nothing is stopped and nothing is attached to.
 func (m *Model) waitDialog(title, body string) *dialog {
 	d := statusDialog(title, body)
-	if m.oneShot() {
-		// What the key does, and then what it does not do: the second half is
-		// the reassurance, not an offer, so it names no key.
-		d.keys = []hint{pressing("Esc closes this window", "esc"), says("the discobox carries on")}
-		d.onCancel = func() tea.Cmd { return m.exit(nil) }
-		return d
-	}
-	// The wait is over a workspace already opening underneath it, so leaving
-	// the wait leaves that too. Taking down only the dialog would leave the
-	// attach running behind the list, and the pane it opens would take the
-	// screen back the moment the discobox came up — from somebody who had
-	// just said they were not watching.
-	d.onCancel = func() tea.Cmd {
-		m.closeWorkspace()
-		m.layout()
-		return tea.Batch(m.refresh(), status("stopped watching — the discobox is still starting"))
-	}
+	// What the key does, and then what it does not do: the second half is
+	// the reassurance, not an offer, so it names no key.
+	d.keys = []hint{pressing("Esc closes this window", "esc"), says("the discobox carries on")}
+	d.onCancel = func() tea.Cmd { return m.exit(nil) }
 	return d
 }
 
@@ -3317,12 +3312,17 @@ func (m *Model) create(req RunRequest) tea.Cmd {
 	// is underway is knowable only here, so the shared creation path reports it
 	// and the busy line follows along (ADR 0060).
 	feed, next := m.narrate()
+	m.createNarrating = true
+	// Both answers below are about this one create, and arrive on goroutines
+	// of their own in either order; this is where each learns what the other
+	// did (watchCreate, created).
+	watch := &createWatch{}
 	// The prompt is let go of as soon as the server has the create, not when
 	// the whole run is over: delivering the source and bringing the discobox
 	// up take a while, and a composer still holding a prompt that is already
 	// running reads as one that was not sent. Not before, either — a create
 	// the server refuses leaves the prompt where it was, to be sent again.
-	accepted := make(chan struct{}, 1)
+	accepted := make(chan Sandbox, 1)
 	create := func() tea.Msg {
 		defer feed.close()
 		defer close(accepted)
@@ -3330,18 +3330,18 @@ func (m *Model) create(req RunRequest) tea.Cmd {
 		var taken bool
 		deliveryRequest := req
 		deliveryRequest.Credentials = feed.credentials()
-		sandbox, err := m.ds.Run(m.ctx, deliveryRequest, feed.report, feed.warn, func() {
+		sandbox, err := m.ds.Run(m.ctx, deliveryRequest, feed.report, feed.warn, func(box Sandbox) {
 			taken = true
 			select {
-			case accepted <- struct{}{}:
+			case accepted <- box:
 			default:
 			}
 		})
-		return createdMsg{sandbox: sandbox, req: req, accepted: taken, err: err}
+		return createdMsg{sandbox: sandbox, req: req, create: watch, accepted: taken, err: err}
 	}
 	spent := func() tea.Msg {
-		if _, ok := <-accepted; ok {
-			return promptSpentMsg{req: req}
+		if box, ok := <-accepted; ok {
+			return promptSpentMsg{req: req, sandbox: box, create: watch}
 		}
 		return nil
 	}
@@ -3349,8 +3349,58 @@ func (m *Model) create(req RunRequest) tea.Cmd {
 }
 
 // promptSpentMsg says the server has taken a create, so the prompt it carried
-// is running and no longer the composer's.
-type promptSpentMsg struct{ req RunRequest }
+// is running and no longer the composer's, and the discobox it made exists.
+type promptSpentMsg struct {
+	req     RunRequest
+	sandbox Sandbox
+	create  *createWatch
+}
+
+// createWatch is what one create's two answers — the server taking it
+// (promptSpentMsg) and the create finishing (createdMsg) — know of each
+// other. They are sent from goroutines of their own, so either can arrive
+// first; it is read and written only in Update. One to a create, since a
+// second can be started while the first is still delivering its source.
+type createWatch struct {
+	// shown is whether the window went to the discobox when the server took
+	// it (watchCreate).
+	shown bool
+	// answered is whether the create has finished (created), after which
+	// there is nothing for the window to go to the discobox and wait for.
+	answered bool
+}
+
+// watchCreate takes the window to the discobox a create has just made, the
+// moment the server has it, rather than leaving the composer — or the new
+// discobox card — on screen while the source is delivered. Its workspace is
+// shown on its way up, and the create's steps are narrated in its frame
+// (viewOpening); the attach starts once the create is done (created).
+//
+// Not in a window that is one run's own, whose wait screen already is the
+// run; not for a detached create, which asked to stay where it was; and not
+// once the create has answered (createWatch), which either opened the attach
+// itself or found nothing to attach to.
+func (m *Model) watchCreate(msg promptSpentMsg) tea.Cmd {
+	box := msg.sandbox
+	if m.oneShot() || msg.req.Detach || box.ID == "" || msg.create.answered {
+		return nil
+	}
+	// Parking leaves the create's own narration running (endLiveScreen): its
+	// steps carry on in the frame of the workspace it is going to.
+	m.parkWorkspace()
+	m.paneBox = box
+	m.showOpening()
+	msg.create.shown = true
+	m.syncWidth()
+	m.layout()
+	return m.refresh()
+}
+
+// createShowing reports whether the screen is still the workspace watchCreate
+// went to for this discobox, opening: nobody has walked off it since.
+func (m *Model) createShowing(id string) bool {
+	return m.wsOpening && m.paneBox.ID == id
+}
 
 // promptSpent empties the composer. Clearing it is what makes the window
 // usable twice in a row without reaching for a delete key, and resetting the
@@ -3372,6 +3422,11 @@ func (m *Model) promptSpent(req RunRequest) {
 func (m *Model) created(msg createdMsg) tea.Cmd {
 	m.endNarration()
 	m.busy = ""
+	// Whether the window went to this discobox when the server took it
+	// (watchCreate), and is still there.
+	msg.create.answered = true
+	shown := msg.create.shown
+	stillShown := shown && m.createShowing(msg.sandbox.ID)
 	// An accepted create gave the composer back on promptSpentMsg, and by now
 	// may be a later create's to hold; one turned down gives it back here.
 	if !msg.accepted {
@@ -3394,6 +3449,11 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 				box := msg.sandbox
 				m.attach = &box
 			}
+			// The workspace it went to on the way has nothing coming to it.
+			if stillShown {
+				m.closeWorkspace()
+				m.layout()
+			}
 			return tea.Batch(m.refresh(), m.runFailed(fmt.Errorf("created the discobox, but could not finish setting it up: %w", msg.err)))
 		}
 		return m.runFailed(fmt.Errorf("cannot create the discobox: %w", msg.err))
@@ -3415,11 +3475,25 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 		box := msg.sandbox
 		m.attach = &box
 	}
-	// The window goes to the discobox being made, rather than sitting on a
-	// list with a busy line under it. Everything the wait is spent on — a pool
-	// coming up, an image arriving, a container starting — reports here until
-	// the attach can take over, and this takes itself down when it does.
-	m.dialog = m.waitDialog("Starting "+sandboxLabel(msg.sandbox), "creating the discobox")
+	if shown && !stillShown {
+		// The window went to it, and somebody has walked off it since — to
+		// another box, back to the list. Taking the screen back from them now
+		// is what they just said not to do; it is on the list, a press away.
+		if m.statusW && m.status != "" {
+			return m.refresh()
+		}
+		return tea.Batch(m.refresh(), m.report(false, "created %s", sandboxLabel(msg.sandbox)))
+	}
+	if m.oneShot() {
+		// The window is this run, so its wait screen carries on until the
+		// attach can take over: a pool coming up, an image arriving, a
+		// container starting report here, and it takes itself down when the
+		// attach does.
+		m.dialog = m.waitDialog("Starting "+sandboxLabel(msg.sandbox), "creating the discobox")
+	}
+	// Anywhere else the window is on the discobox's workspace already, or
+	// goes to it now, and the same wait is narrated in its frame
+	// (viewOpening) with the tree beside it.
 	return tea.Batch(m.refresh(), m.openFromList(InteractAttach, msg.sandbox))
 }
 

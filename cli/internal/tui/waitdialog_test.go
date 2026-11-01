@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -82,29 +83,84 @@ func TestSandboxLabelPrefersTheName(t *testing.T) {
 	}
 }
 
-// Esc on the launcher's wait is "I am not watching this one", so the attach
-// that was opening underneath goes with the dialog: its answer, arriving once
-// the discobox is up, must not put a pane over the list somebody went back to.
-func TestStoppingTheWaitStopsTheAttachUnderIt(t *testing.T) {
+// The launcher's create is watched in the discobox's workspace, opening, not
+// under a wait: and walking off that workspace is "I am not watching this
+// one", so the attach that was opening goes with it — its answer, arriving
+// once the discobox is up, must not put a pane over the screen somebody went
+// to.
+func TestLeavingTheOpeningWorkspaceStopsTheAttachUnderIt(t *testing.T) {
 	t.Parallel()
 	m := newTestModel(t, newFakeSource())
-	m.created(createdMsg{sandbox: Sandbox{ID: "sbx_1", Name: "nimble_swan"}, accepted: true})
-	if m.dialog == nil || m.dialog.kind != dlgStatus {
-		t.Fatal("creating a discobox did not put the wait up")
+	m.created(createdMsg{sandbox: Sandbox{ID: "sbx_1", Name: "nimble_swan"}, create: &createWatch{}, accepted: true})
+	if m.dialog != nil {
+		t.Fatal("the launcher's create put a wait up over the workspace it opens")
+	}
+	if !m.wsOpening || m.paneBox.ID != "sbx_1" {
+		t.Fatalf("opening %v, box %s; want the new box's workspace on its way up", m.wsOpening, m.paneBox.ID)
 	}
 	opening := m.wsGen
 
-	m.update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if m.dialog != nil {
-		t.Fatal("Esc did not take the wait down")
-	}
-	if m.quit {
-		t.Fatal("stopping the launcher's wait closed the window")
-	}
+	m.closeWorkspace()
 
 	// The listing the attach was waiting on, answered after the fact.
 	m.update(workspaceExecsMsg{gen: opening})
 	if m.inPanes() || m.connecting[ExecPrimary] {
-		t.Fatal("the discobox took the screen after the wait for it was stopped")
+		t.Fatal("the discobox took the screen after its workspace was left")
+	}
+}
+
+// A create's two answers come from goroutines of their own, so "the server
+// took it" can arrive after "done". Done and failed, there is nothing to go
+// to: the late one must not park the screen onto a workspace no attach is
+// coming to.
+func TestALateAcceptAfterAFailedCreateGoesNowhere(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	box := Sandbox{ID: "sbx_new", Name: "nimble_swan"}
+	watch := &createWatch{}
+	m.created(createdMsg{sandbox: box, create: watch, accepted: true, err: errors.New("push failed")})
+	m.update(promptSpentMsg{sandbox: box, create: watch})
+	if m.wsOpening || m.paneBox.ID == box.ID {
+		t.Fatalf("opening %v, box %s; want the screen left alone by an accept that came after the failure", m.wsOpening, m.paneBox.ID)
+	}
+}
+
+// And done well, the attach is already the screen: the late accept leaves it
+// as it is rather than parking it and starting over.
+func TestALateAcceptAfterADoneCreateLeavesTheAttach(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	box := Sandbox{ID: "sbx_new", Name: "nimble_swan"}
+	watch := &createWatch{}
+	m.created(createdMsg{sandbox: box, create: watch, accepted: true})
+	gen := m.wsGen
+	m.update(promptSpentMsg{sandbox: box, create: watch})
+	if m.wsGen != gen || !m.wsOpening || m.paneBox.ID != box.ID {
+		t.Fatalf("gen %d→%d, opening %v, box %s; want the attach left running", gen, m.wsGen, m.wsOpening, m.paneBox.ID)
+	}
+}
+
+// Two creates can be underway at once: the first finishing must not take the
+// screen from the second, which is the one the window went to last.
+func TestAFirstCreateDoesNotTakeTheScreenFromASecond(t *testing.T) {
+	t.Parallel()
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	a, b := Sandbox{ID: "sbx_a", Name: "first"}, Sandbox{ID: "sbx_b", Name: "second"}
+	wa, wb := &createWatch{}, &createWatch{}
+	m.update(promptSpentMsg{sandbox: a, create: wa})
+	m.update(promptSpentMsg{sandbox: b, create: wb})
+	if !m.wsOpening || m.paneBox.ID != b.ID {
+		t.Fatalf("opening %v, box %s; want the second create's workspace", m.wsOpening, m.paneBox.ID)
+	}
+	send(t, m, createdMsg{sandbox: a, create: wa, accepted: true})
+	if m.paneBox.ID != b.ID || !m.wsOpening {
+		t.Fatalf("box %s, opening %v; want the second create's workspace kept", m.paneBox.ID, m.wsOpening)
+	}
+	if !strings.Contains(m.status, "created first") {
+		t.Fatalf("status %q; want the first create reported", m.status)
+	}
+	m.created(createdMsg{sandbox: b, create: wb, accepted: true})
+	if m.paneBox.ID != b.ID || !m.wsOpening || m.connecting == nil {
+		t.Fatalf("box %s, opening %v; want the second create attaching", m.paneBox.ID, m.wsOpening)
 	}
 }

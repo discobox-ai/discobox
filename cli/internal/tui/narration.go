@@ -156,6 +156,7 @@ func (m *Model) waiting(text string) {
 // whatever the window says next.
 func (m *Model) endNarration() {
 	m.busyGen++
+	m.createNarrating = false
 	if m.stopNarrating != nil {
 		m.stopNarrating()
 		m.stopNarrating = nil

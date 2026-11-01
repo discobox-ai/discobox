@@ -23,7 +23,7 @@ flowchart LR
     M --> W["welcome (once per project)"]
     W -->|Enter| MW["DataSource.MarkWelcomed"]
     P -->|Enter| Card["create card (source, harness, server, skills, sources)"]
-    Card -->|Enter| Run["DataSource.Run → attach"]
+    Card -->|Enter| Run["DataSource.Run → accepted: workspace opening → attach"]
     L -->|u R t T x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
     L -->|Enter a s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal / EndExec"]
@@ -187,7 +187,8 @@ flowchart LR
   while it or any dialog is up, since it takes no clicks then. It is not in
   `modalUp`, because it is the composer: typing into it is typing into the
   prompt (`typingIntoPrompt`, `touched`). Focus is held on it after every
-  message instead. Enter goes on to the create card as from the prompt.
+  message instead. Enter goes on to the create card as from the prompt, and
+  the card is gone the moment the server takes the create (below).
 - **Messages ride the box's bottom edge** (`edgeMessage`) beside the tree and
   in every workspace, the way a pane's title rides its top one, rather than
   costing every terminal a row.
@@ -1663,10 +1664,10 @@ streaming a terminal of its own.
   there is no list behind it to stop watching *from*. The discobox is not
   touched: it was created before the wait went up, or is being created by a
   request the server already has, and it carries on coming up with nothing
-  attached to it. The console's wait keeps the plain "Esc stops watching",
-  which there means going back to the list the discobox will appear in — and
-  staying on it: the workspace that was opening under the wait is closed with
-  it, so the discobox coming up does not take the screen back.
+  attached to it. The console has no wait: its create is watched in the
+  discobox's opening workspace (`watchCreate`), and walking off that is the
+  "stop watching" — the attach that was opening goes with it, so the
+  discobox coming up does not take the screen back.
 - The window is the attach on what it opened or made — a run becomes one in
   `created` — so every way out of the workspace is the way out of the window:
   the leader's `d` and the primary session ending both go through `Model.exit`,
@@ -2497,15 +2498,15 @@ accelerator and the only one of the two ever drawn; a menu whose rows have none
 has no key column at all.
 
 **A dialog with no answer is how a wait is drawn** (`dlgStatus`,
-`statusDialog`). A console left on screen with a line under it while a pool
-comes up and gigabytes arrive looks idle beside a list you can still act on,
-and the next thing that happens is a terminal appearing without warning. So
-once the create returns, the window goes to the discobox being made
-(`created`, "Starting <name>"), and the provisioning narration (`narration.go`) reports into the
-dialog's body rather than only onto the busy line. Enter does not dismiss it:
-there is nothing to answer, and closing it would drop the user onto a pane that
-has not attached. `provisioningDoneMsg` takes it down; Esc gives up the view of
-the discobox, not the discobox.
+`statusDialog`) in a window that is one command's own, which has nothing else
+to show while a pool comes up and gigabytes arrive. The console draws the same
+wait in the discobox's opening workspace instead (`watchCreate`, below). Once
+the create returns, the wait says "Starting <name>" (`created`), and the
+provisioning narration (`narration.go`) reports into the dialog's body rather
+than only onto the busy line. Enter does not dismiss it: there is nothing to
+answer, and closing it would drop the user onto a pane that has not attached.
+`provisioningDoneMsg` takes it down; Esc closes the window, not the
+discobox.
 
 **A paste is routed like a keystroke** (`updatePaste`, `dialog.paste`). A
 terminal reports a bracketed paste as one message of its own rather than as the
@@ -2690,6 +2691,22 @@ wait — and only if it still holds the prompt that was sent, since a draft can
 land in an empty one. Turned down, the prompt is handed back as it was. A run
 that fails after the server took it says the discobox was created, because a
 report that it was not sends somebody to retype a spent prompt.
+
+**Accepted, the window goes to the discobox** (`watchCreate`), from the prompt
+or the new discobox card alike: its workspace is shown opening, with the tree
+beside it, and the rest of the create — the source push, the SSH config — is
+narrated in its frame (`viewOpening`) rather than under a card nobody is
+typing into. The screen it leaves is parked like any switched away from; the
+create's narration runs on across the park (`createNarrating`), since it is
+the create's and not the screen's. The attach starts once `Run` returns (`created`), in the same
+frame, with no wait dialog over it — that dialog is the screen only in a
+window that is one run's own. Walking off the opening workspace before then
+is leaving it: the create finishing says so on the status line and leaves the
+screen where it was. The create's two answers — taken, and done — arrive in
+either order and know of each other through a record of that one create
+(`createWatch`), so a create already done is not gone to, and a second create
+started meanwhile is not taken from by the first. A detached create stays where it
+was asked from.
 
 **The panes carry this window's keymap** (`paneKeymap`, `pane.go`). A pane's
 encoder answers only what the program inside it negotiated, and nothing

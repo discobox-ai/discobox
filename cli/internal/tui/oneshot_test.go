@@ -388,18 +388,6 @@ func TestEscOnAOneShotWaitLeavesTheDiscoboxStarting(t *testing.T) {
 	close(ds.runGate)
 }
 
-// The launcher's own wait is unchanged: Esc stops watching and puts back the
-// list, which is where the discobox it was waiting for turns up. What stopping
-// takes down with it is TestStoppingTheWaitStopsTheAttachUnderIt.
-func TestTheLaunchersWaitOnlyStopsWatching(t *testing.T) {
-	t.Parallel()
-	m := &Model{st: newStyles(false)}
-	d := m.waitDialog("Starting nimble_swan", "creating the discobox")
-	if len(d.keys) != 0 || d.footer != "" {
-		t.Fatalf("the launcher's wait should offer nothing but stopping watching: keys %v, footer %q", d.keys, d.footer)
-	}
-}
-
 // A project that has not been welcomed still gets the introduction on a run
 // window: it is not one of the two things New drops it for, and it stands in
 // front of the wait for the discobox this run is making, exactly as it would

@@ -1398,3 +1398,82 @@ func TestAParkedFilesChangedCannotCopy(t *testing.T) {
 		t.Fatalf("copied %q, status %q; want a parked box's copy dropped", copied, m.status)
 	}
 }
+
+// Enter on the new discobox card does not leave the card on screen while the
+// source is delivered: the moment the server has the box, the window goes to
+// its workspace, opening, and the create's steps are narrated in its frame.
+// The attach starts there once the create is done, with no wait put up over
+// it.
+func TestTheNewCardGoesToTheBoxOnceTheServerHasIt(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	ds.mu.Lock()
+	ds.deliverGate = make(chan struct{})
+	ds.runSteps = []string{"pushing the source"}
+	ds.mu.Unlock()
+
+	d.leader("n")
+	for _, key := range typeString("fix the reaper") {
+		d.dispatch(key)
+	}
+	d.key("enter")
+	d.key("enter")
+	d.wait("the new box's workspace", func() bool { return m.wsOpening && m.paneBox.ID == "sbx_created" })
+	if m.newOpen || m.dialog != nil || !m.treeShown() || m.focus != focusPane {
+		t.Fatalf("card %v, dialog %v, tree %v, focus %v; want the opening workspace beside the tree", m.newOpen, m.dialog != nil, m.treeShown(), m.focus)
+	}
+	if m.parked["sbx_one"] == nil {
+		t.Fatal("the workspace the card was opened over was not parked")
+	}
+	if frame := plainFrame(m); !strings.Contains(frame, "pushing the source") {
+		t.Fatalf("the opening workspace does not say what the create is doing:\n%s", frame)
+	}
+	for _, opened := range ds.execOpened() {
+		if strings.HasPrefix(opened, "sbx_created ") {
+			t.Fatal("the source is still being delivered, and nothing should have attached yet")
+		}
+	}
+
+	close(ds.deliverGate)
+	d.wait("the attach", func() bool { return m.primary() != nil && m.paneBox.ID == "sbx_created" })
+	if m.dialog != nil {
+		t.Fatal("a wait was put up over the workspace the create is narrated in")
+	}
+}
+
+// Walking off the box a create took the window to is leaving it: the create
+// finishing later says so and leaves the screen where it was.
+func TestACreateWalkedOffDoesNotTakeTheScreenBack(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	ds.mu.Lock()
+	ds.deliverGate = make(chan struct{})
+	ds.mu.Unlock()
+
+	d.leader("n")
+	for _, key := range typeString("fix the reaper") {
+		d.dispatch(key)
+	}
+	d.key("enter")
+	d.key("enter")
+	d.wait("the new box's workspace", func() bool { return m.wsOpening && m.paneBox.ID == "sbx_created" })
+
+	d.leader("h")
+	d.wait("the tree", func() bool { return m.listFront })
+	m.listCursorTo("sbx_two")
+	d.key("enter")
+	d.wait("the other box", func() bool { return m.paneBox.ID == "sbx_two" && m.primary() != nil })
+
+	close(ds.deliverGate)
+	d.wait("the create's report", func() bool { return strings.Contains(m.status, "created") })
+	if m.paneBox.ID != "sbx_two" {
+		t.Fatalf("box %s; want the screen left on the box walked to", m.paneBox.ID)
+	}
+	for _, opened := range ds.execOpened() {
+		if strings.HasPrefix(opened, "sbx_created ") {
+			t.Fatalf("the create attached after it was walked off: %v", ds.execOpened())
+		}
+	}
+}
