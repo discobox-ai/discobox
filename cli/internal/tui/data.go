@@ -2041,7 +2041,8 @@ type DataSource interface {
 	// before the source is delivered: from then on the discobox exists whatever
 	// the rest of the run does, so the prompt it was given can no longer be
 	// lost and the window lets go of it. A create the server refused never
-	// calls it.
+	// calls it. A run that fails after it returns the discobox it made beside
+	// the error, so the window can still say which one it was.
 	Run(ctx context.Context, req RunRequest, report, warn func(string), accepted func()) (Sandbox, error)
 
 	// WatchProvisioning reports what a sandbox that is not usable yet is being

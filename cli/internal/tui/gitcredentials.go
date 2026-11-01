@@ -64,7 +64,12 @@ func (m *Model) credentialQuestion(msg narrationMsg) tea.Cmd {
 		return m.nextNarration(msg.source)
 	}
 	answer := func(yes bool) tea.Cmd { question.answer <- yes; return nil }
+	previous := m.dialog
 	m.dialog = actionsDialog("Git credentials", ansi.Strip(question.remote)+" needs credentials to pull on the pool. Use your Git credentials?", []action{{key: "lend", label: "Use Git credentials for this pull", enabled: true}, {key: "push", label: "Fetch here and push", enabled: true}}, func(choice string) tea.Cmd { return answer(choice == "lend") })
 	m.dialog.onCancel = func() tea.Cmd { return answer(false) }
+	// The question comes up over whatever the window was showing — the wait
+	// on this create, in a window that is one command's own — and answering
+	// it puts that back rather than uncovering the list.
+	m.dialog.back = previous
 	return m.nextNarration(msg.source)
 }

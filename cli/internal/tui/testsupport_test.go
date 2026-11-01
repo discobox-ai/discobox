@@ -541,7 +541,7 @@ func (f *fakeSource) Run(_ context.Context, req RunRequest, report, warn func(st
 		<-deliver
 	}
 	if deliverErr != nil {
-		return Sandbox{}, deliverErr
+		return created, deliverErr
 	}
 	return created, nil
 }

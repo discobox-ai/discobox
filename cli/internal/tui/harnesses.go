@@ -553,7 +553,7 @@ func (m *Model) runHarnessVerb(verb HarnessVerb, harness Harness, resume *RunReq
 	server := m.configServer()
 	return func() tea.Msg {
 		if err := m.ds.DoHarness(m.ctx, server, verb, harness.ID); err != nil {
-			return harnessDoneMsg{err: fmt.Errorf("%s %s: %w", verb, name, err)}
+			return harnessDoneMsg{err: fmt.Errorf("%s %s: %w", verb, name, err), resume: resume}
 		}
 		return harnessDoneMsg{text: verb.done(name), resume: resume}
 	}
@@ -648,6 +648,11 @@ func (m *Model) editHarnessFile(harness Harness, path string) tea.Cmd {
 func (m *Model) harnessDone(msg harnessDoneMsg) tea.Cmd {
 	m.busy = ""
 	if msg.err != nil {
+		if msg.resume != nil {
+			// The run this was answering cannot go on, so it ends as a run
+			// does — in a window that is one command's own, the window with it.
+			return tea.Batch(m.loadHarnesses(), m.runFailed(msg.err))
+		}
 		return tea.Batch(m.loadHarnesses(), m.report(true, "%v", msg.err))
 	}
 	if msg.andDefault != nil {

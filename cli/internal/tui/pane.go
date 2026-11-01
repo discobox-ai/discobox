@@ -494,7 +494,10 @@ func (m *Model) boxByID(id string) Sandbox {
 func (m *Model) configurePaneOpened(msg configurePaneOpenedMsg) tea.Cmd {
 	m.busy = ""
 	if msg.err != nil {
-		return m.report(true, "configure %s: %v", msg.harness.displayName(), msg.err)
+		// The same outcome as a setup that ran and failed (paneClosed), so
+		// harnessDone decides for both what it ends.
+		err := fmt.Errorf("configure %s: %w", msg.harness.displayName(), msg.err)
+		return func() tea.Msg { return harnessDoneMsg{err: err, resume: msg.resume} }
 	}
 	m.nextPaneID++
 	p := &pane{
@@ -978,6 +981,12 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 			// The overlay is this CLI's own command, so leaving it closes it.
 			m.closeOverlay()
 			m.layout()
+			if p.configure != nil && p.configure.resume != nil && m.oneShot() {
+				// A setup a run stopped for, left unfinished, is that run
+				// turned down: the window is the run, and there is no list
+				// behind the setup to go back to.
+				return m.exit(errNothingCreated)
+			}
 			return tea.Batch(m.refresh(), status("%s closed", p.action))
 		}
 		// Beside the tree there is nothing to detach to: the list is already
@@ -1091,7 +1100,9 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		}
 		name := flow.harness.displayName()
 		if err != nil {
-			return func() tea.Msg { return harnessDoneMsg{err: fmt.Errorf("configure %s: %w", name, err)} }
+			return func() tea.Msg {
+				return harnessDoneMsg{err: fmt.Errorf("configure %s: %w", name, err), resume: flow.resume}
+			}
 		}
 		return func() tea.Msg {
 			return harnessDoneMsg{text: "configured " + name, andDefault: flow.andDefault, resume: flow.resume}

@@ -1175,14 +1175,16 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report, war
 		return tui.Sandbox{}, err
 	}
 	box, err := source.create(ctx, req, report, warn, accepted)
-	if err != nil {
+	if box.ID == "" {
 		return tui.Sandbox{}, err
 	}
+	// A box the server took is on this server whether or not the rest of
+	// the run went through.
 	d.mu.Lock()
 	d.located[box.ID] = target
 	box.Server = target.name
 	d.mu.Unlock()
-	return box, nil
+	return box, err
 }
 
 // create is Run on this data source's own server.
@@ -1267,6 +1269,10 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 	if accepted != nil {
 		accepted()
 	}
+	// From here the discobox exists, so a failure still returns it: the
+	// window names what it made either way (tui.DataSource.Run).
+	hostID, _ := hostid.Get()
+	made := toTUISandbox(*sandbox, hostID)
 	// The local source is done as soon as it has been delivered, which for a
 	// directory that is not a repository means deleting the repository built
 	// over it. The defer covers the paths that never reach the delivery.
@@ -1274,13 +1280,13 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 	// A server that cannot reach this directory waits for us to push it.
 	gitServerURL, releaseGitServerURL, err := d.app.gitServerURL(ctx)
 	if err != nil {
-		return tui.Sandbox{}, err
+		return made, err
 	}
 	err = sandboxcreate.DeliverSource(ctx, d.client, d.projectID, sandbox, local, gitServerURL, d.app.token, step, sandboxcreate.DeliveryOptions{LendCredentials: req.LendGitCredentials, ConfirmCredential: req.Credentials.Confirm, RunCredential: req.Credentials.Run})
 	releaseGitServerURL()
 	local.Close()
 	if err != nil {
-		return tui.Sandbox{}, err
+		return made, err
 	}
 	if report != nil {
 		report("syncing SSH config")
@@ -1296,10 +1302,9 @@ func (d *apiDataSource) create(ctx context.Context, req tui.RunRequest, report, 
 		}
 	})
 	if err := d.app.syncSSHConfigAfterCreate(ctx, d.client, d.projectID, notes); err != nil {
-		return tui.Sandbox{}, err
+		return made, err
 	}
-	hostID, _ := hostid.Get()
-	return toTUISandbox(*sandbox, hostID), nil
+	return made, nil
 }
 
 // WatchProvisioning says what a discobox that is not usable yet is being made

@@ -129,6 +129,12 @@
   archive from the workspace once fell through to the launcher's list, and a
   first fix inferred the exit in `verbDone` from `attach != nil` and no panes,
   which also fired on unrelated verbs and showed the list while it waited.
+  A run's failures before its workspace — the create itself, the harness
+  questions and setup — once only reported on the status line, which in such
+  a window is the list; they go through `Model.runFailed`. Leaving the setup a
+  run stopped for, and answering a question put up over the wait, were missed
+  the same way. This is the third time: check every path a new modal or
+  overlay closes by — key, click, detach, failure — for what it uncovers.
 
 ## The workspace tree
 

@@ -2984,7 +2984,7 @@ func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
 	}
 	candidates := m.defaultCandidates()
 	if len(candidates) == 0 {
-		return m.report(true, "this project has no harness to run; register one with `discobox admin harness create`"), true
+		return m.runFailed(errors.New("this project has no harness to run; register one with `discobox admin harness create`")), true
 	}
 
 	items := make([]action, 0, len(candidates))
@@ -3010,6 +3010,7 @@ func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
 			return nil
 		})
 	menu.keys = []hint{pressing("Enter chooses", "enter"), pressing("Esc cancels", "esc")}
+	m.leavesTheRun(menu)
 	m.dialog = menu
 	return nil, true
 }
@@ -3068,14 +3069,25 @@ func (m *Model) askToSetUpHarness(req RunRequest) (tea.Cmd, bool) {
 	if !harness.Configurable {
 		// Nothing to offer: it declares no setup, so it is not the setup that
 		// is missing. Saying so beats a confirm whose yes does nothing.
-		return m.report(true, "%s cannot be run and has no setup to run", name), true
+		return m.runFailed(fmt.Errorf("%s cannot be run and has no setup to run", name)), true
 	}
 	m.dialog = confirmDialog("Set up "+name+"?",
 		name+" has not been set up, so a discobox cannot be created on it. Run its setup now? It takes the terminal and asks its own questions.",
 		func(string) tea.Cmd {
 			return func() tea.Msg { return harnessSetupMsg{harness: harness, resume: &req} }
 		})
+	m.leavesTheRun(m.dialog)
 	return nil, true
+}
+
+// leavesTheRun makes turning down a question a run stopped to ask end the
+// run's own window, as turning down its create card does (createDialog):
+// nothing was made, and there is no list behind the question to land on. The
+// launcher's question just closes, back to the list it was asked from.
+func (m *Model) leavesTheRun(d *dialog) {
+	if m.oneShot() {
+		d.onCancel = func() tea.Cmd { return m.exit(errNothingCreated) }
+	}
 }
 
 // harnessNamed finds the harness a run request names, by the same name the
@@ -3095,7 +3107,7 @@ func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
 	// create sets it again when it goes.
 	m.setSubmitting(false)
 	if msg.err != nil {
-		return m.report(true, "cannot read the working tree: %v", msg.err)
+		return m.runFailed(fmt.Errorf("cannot read the working tree: %w", msg.err))
 	}
 	if !msg.workspace.Carries {
 		return m.create(msg.req)
@@ -3376,10 +3388,15 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 			// The server has the discobox, and the prompt is already gone from
 			// the composer. Saying it could not be created would send somebody
 			// to type it again and make a second one; it is on the list, as
-			// far as it got.
-			return tea.Batch(m.refresh(), m.report(true, "created the discobox, but could not finish setting it up: %v", msg.err))
+			// far as it got. A window that is the run ends, and still hands
+			// back the discobox it made, for the command to name (made).
+			if m.oneRun && msg.sandbox.ID != "" {
+				box := msg.sandbox
+				m.attach = &box
+			}
+			return tea.Batch(m.refresh(), m.runFailed(fmt.Errorf("created the discobox, but could not finish setting it up: %w", msg.err)))
 		}
-		return m.report(true, "cannot create the discobox: %v", msg.err)
+		return m.runFailed(fmt.Errorf("cannot create the discobox: %w", msg.err))
 	}
 	if msg.req.Detach {
 		// A warning the create reported is about this discobox, and stands
@@ -3404,6 +3421,19 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 	// the attach can take over, and this takes itself down when it does.
 	m.dialog = m.waitDialog("Starting "+sandboxLabel(msg.sandbox), "creating the discobox")
 	return tea.Batch(m.refresh(), m.openFromList(InteractAttach, msg.sandbox))
+}
+
+// runFailed is how a run ends short of a workspace: a create, or a question on
+// the way to one, that failed. The launcher reports it on the status line under
+// the list it was started from. A window that is one command's own has no list
+// behind it — the list is a screen only the box menu's "all discoboxes" asks
+// for (showAllBoxes) — so it ends with the failure, the way an attach that
+// never came up ends it, and the command reports it on the terminal.
+func (m *Model) runFailed(err error) tea.Cmd {
+	if m.oneShot() {
+		return m.exit(err)
+	}
+	return m.report(true, "%v", err)
 }
 
 // ---------------------------------------------------------------------------

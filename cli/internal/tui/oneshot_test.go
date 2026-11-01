@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/discobox/termpane"
 )
 
 // The windows that are one command's own: `discobox run`, which is the window
@@ -268,20 +270,78 @@ func TestARunWindowBecomesTheAttachOnWhatItMade(t *testing.T) {
 	}
 }
 
-// A create that failed takes its wait down with it: the report belongs on a
-// screen somebody can read it on.
-func TestARunWindowsFailureIsReadable(t *testing.T) {
+// A create that failed ends the window with the failure, the way an attach
+// that never came up does: the window has no list behind it, and the list is
+// a screen only the box menu asks for. The command reports the failure on the
+// terminal once the window has gone.
+func TestARunWindowsFailedCreateEndsWithTheError(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	ds.runErr = errors.New("no pool is accepting discoboxes")
 	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
-	d.wait("the failure", func() bool { return m.statusE })
+	d.wait("the window to close", func() bool { return m.quit })
 
-	if m.dialog != nil {
-		t.Fatalf("dialog = %+v, want the wait taken down with the create", m.dialog)
+	if m.exitErr == nil || !strings.Contains(m.exitErr.Error(), "cannot create the discobox: no pool is accepting discoboxes") {
+		t.Fatalf("exitErr = %v, want the create's failure", m.exitErr)
 	}
-	if !strings.Contains(m.status, "no pool is accepting discoboxes") {
-		t.Fatalf("status = %q, want the failure", m.status)
+}
+
+// So does a create the server took and the window could not finish: the
+// failure says it was created, so nobody runs it again for a second one.
+func TestARunWindowsUnfinishedCreateEndsWithTheError(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	ds.deliverErr = errors.New("source push refused")
+	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+	d.wait("the window to close", func() bool { return m.quit })
+
+	if m.exitErr == nil || !strings.Contains(m.exitErr.Error(), "created the discobox, but could not finish setting it up: source push refused") {
+		t.Fatalf("exitErr = %v, want the unfinished create's failure", m.exitErr)
+	}
+	// The discobox is there whatever went wrong after the server took it, and
+	// the command names it once the window has gone.
+	if made := m.made(); made == nil || made.ID != ds.createdID {
+		t.Fatalf("made = %+v, want the discobox the create made", made)
+	}
+}
+
+// Turning down a question the run stopped to ask is turning down the run, as
+// turning down its create card is: nothing was made, and the window goes
+// rather than uncovering the list.
+func TestEscOnARunsHarnessQuestionEndsTheCommand(t *testing.T) {
+	t.Parallel()
+	ds := noDefaultSource(t)
+	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+	d.wait("the harness question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
+
+	d.key("esc")
+	d.wait("the window to close", func() bool { return m.quit })
+	if !errors.Is(m.exitErr, errNothingCreated) || len(ds.runRequests()) != 0 {
+		t.Fatalf("exitErr = %v runs = %+v, want nothing created", m.exitErr, ds.runRequests())
+	}
+}
+
+// A harness setup the run stopped for that fails ends the run, and with it the
+// window.
+func TestARunWindowsFailedSetupEndsWithTheError(t *testing.T) {
+	t.Parallel()
+	ds := noDefaultSource(t)
+	ds.configureErr = errors.New("the setup exited before it finished")
+	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+	d.wait("the harness question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
+
+	for i, item := range m.dialog.items {
+		if item.label == "Custom" {
+			d.key(itoa(i + 1))
+			break
+		}
+	}
+	d.wait("the window to close", func() bool { return m.quit })
+	if m.exitErr == nil || !strings.Contains(m.exitErr.Error(), "the setup exited before it finished") {
+		t.Fatalf("exitErr = %v, want the setup's failure", m.exitErr)
+	}
+	if len(ds.runRequests()) != 0 {
+		t.Fatalf("runs = %+v, want nothing created", ds.runRequests())
 	}
 }
 
@@ -614,5 +674,28 @@ func TestStoppingFromAnAttachKeepsTheWindow(t *testing.T) {
 	}
 	if m.primary() == nil {
 		t.Fatal("the workspace should still be open")
+	}
+}
+
+// Leaving a setup the run stopped for, before it has finished, is turning the
+// run down: the window goes with nothing made rather than landing on the list
+// with the run dropped.
+func TestDetachingARunsSetupEndsTheCommand(t *testing.T) {
+	t.Parallel()
+	ds := noDefaultSource(t)
+	d, m := openRun(t, ds, RunRequest{IncludeDirty: "false"})
+	d.wait("the harness question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
+
+	for i, item := range m.dialog.items {
+		if item.label == "Custom" {
+			d.key(itoa(i + 1))
+			break
+		}
+	}
+	d.wait("the setup", func() bool { return m.overlay != nil && m.overlay.configure != nil })
+	d.dispatch(paneMsg{id: m.overlay.id, msg: termpane.DetachMsg{}})
+	d.wait("the window to close", func() bool { return m.quit })
+	if !errors.Is(m.exitErr, errNothingCreated) || len(ds.runRequests()) != 0 {
+		t.Fatalf("exitErr = %v runs = %+v, want nothing created", m.exitErr, ds.runRequests())
 	}
 }
