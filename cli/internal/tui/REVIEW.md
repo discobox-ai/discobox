@@ -79,6 +79,12 @@
   paste are not the page's, and every one of the three asks it — a page
   whose key line kept offering its own keys offered Enter as "bind" while
   Enter attached the box under the list's cursor.
+  The audit screen is the trap a third way: it is drawn over the panes and
+  ahead of an overlay, so anything that reaches a page from it — the leader's
+  F3, say, to the harnesses page, where Enter on a harness opens a configure
+  pane of its own — closes it first (`openPage`), or the audit comes back in
+  front of that pane, takes its keys into the audit search, and leaves nothing
+  to click.
 
 - **Input held behind slow work never holds the leader.** An image paste holds
   a pane's keys while it reads the clipboard and copies into the discobox,

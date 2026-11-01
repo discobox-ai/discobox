@@ -1737,6 +1737,13 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if keyName(msg) == paneQuitKey {
 			return m.closeWindow()
 		}
+		// The tree's entries — the new card and the pages — open behind the
+		// leader from every screen beside the tree, as they do from a pane.
+		if a, ok := treePageFor(keyName(msg)); ok {
+			if cmd, taken := m.treeEntry(a); taken {
+				return cmd
+			}
+		}
 		// The list in the tree has the keys: the leader's l goes back to the
 		// panes, and z swaps it for the whole home screen and back.
 		if m.listFront {
@@ -4678,6 +4685,10 @@ func (m *Model) helpText() string {
 		"  starts it.",
 		"    " + leader + " " + paneZoomKey + "       on the list, the whole home screen and back",
 		"    n              on the list, a new discobox",
+		"    " + leader + " n / F3 / F4 / F5",
+		"                   the same as the list's entries, from anywhere",
+		"                   beside it: a new discobox, the harnesses, the",
+		"                   secrets, the skills",
 		"",
 		"  Beside the list there is nothing to detach to: a box is left by",
 		"  switching to another, and the window by quitting.",

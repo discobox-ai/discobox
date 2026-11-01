@@ -120,8 +120,12 @@ func (m *Model) closeNew() {
 	}
 }
 
-// openPage opens the page a tree entry names, the keys going with it.
+// openPage opens the page a tree entry names, the keys going with it. The
+// audit screen it is opened over goes: a page that opens a pane of its own
+// (a harness configure) would otherwise have the audit drawn in front of that
+// pane and taking its keys.
 func (m *Model) openPage(a treeAction) tea.Cmd {
+	m.closeAudit()
 	m.listFront, m.treeExpanded = false, false
 	switch a {
 	case treeNew:
@@ -153,6 +157,38 @@ var treePages = []struct {
 	{treeHarnesses, "  harnesses", harnessesKey},
 	{treeSecrets, "  secrets", secretsKey},
 	{treeSkills, "  skills", skillsKey},
+}
+
+// treePageMsg is a tree entry's key behind the leader in a pane, so the
+// entries open from wherever the box is being typed at, not only from the
+// list.
+type treePageMsg struct{ act treeAction }
+
+// treePageFor is the tree entry a key opens, if any.
+func treePageFor(key string) (treeAction, bool) {
+	for _, p := range treePages {
+		if p.key == key {
+			return p.act, true
+		}
+	}
+	return 0, false
+}
+
+// treeEntry opens a tree entry's page, for its bare key (treeKey) and for the
+// leader's, which reaches it from a pane, the audit screen, a workspace on its
+// way up, or another page. It reports false where there is no tree to hold the
+// entry — a window too narrow or opened on one attach, a tree put away, the
+// run options over it — and for the page already up, whose own key puts it
+// away. A column maximized over the tree does not stop it: the page is not the
+// workspace, so the tree is drawn beside it (treeShown).
+func (m *Model) treeEntry(a treeAction) (tea.Cmd, bool) {
+	if !m.treeAvailable() || m.treeHidden || m.optionsOpen {
+		return nil, false
+	}
+	if cur, ok := m.pageShowing(); ok && cur == a {
+		return nil, false
+	}
+	return m.openPage(a), true
 }
 
 // pageShowing is the tree entry whose page is up, if any.
@@ -341,10 +377,7 @@ func (m *Model) treeKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	// expanded, and from a page — they are the way between the pages.
 	for _, p := range treePages[1:] {
 		if keyName(msg) == p.key && (m.listFront || m.treeExpanded || m.pageUp()) {
-			if cur, ok := m.pageShowing(); ok && cur == p.act {
-				return nil, false // the screen's own toggle puts it away
-			}
-			return m.openPage(p.act), true
+			return m.treeEntry(p.act)
 		}
 	}
 	// The new discobox card is modal: Esc puts it away, and Tab, which would
