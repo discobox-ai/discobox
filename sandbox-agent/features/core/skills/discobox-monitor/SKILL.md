@@ -60,27 +60,37 @@ monitor with a wake (`discobox-power sleep --wake-in 30m`, see the
 
 ## The built-in monitors
 
-`github-repo` reports new activity in one repository. It uses `gh` with the
-box's credential. If it fails with 401 or 403, ask for GitHub access with
-`discobox-access`.
+`github-repo` reports new activity in one repository. It uses the box's
+GitHub credential (`GH_TOKEN`). If it fails for want of one, or with 401 or
+403, ask for GitHub access with `discobox-access`. A quiet repository costs
+it no rate limit, so leave it enabled.
 
 ```bash
 discobox-monitor enable github-repo -o repo=foo/bar                            # issues, PRs and Actions runs
 discobox-monitor enable github-repo -o repo=foo/bar -o watch=prs,actions
 discobox-monitor enable github-repo --name pr-412 -o repo=foo/bar -o pr=412    # only PR 412
 discobox-monitor enable github-repo --name ci -o repo=foo/bar -o run=4114819   # one Actions run
+discobox-monitor enable github-repo --name workers -o repo=foo/bar -o 'head=discobox/*'  # PRs from these branches
+discobox-monitor enable github-repo --name main-ci -o repo=foo/bar -o branch=main        # main's CI only
 ```
 
-- `watch` picks kinds: `issues`, `prs`, `actions`. Without `watch` or any
-  ids, all three are watched.
+- `watch` picks kinds: `issues`, `prs`, `actions`. Without `watch`, ids or
+  filters, all three are watched.
 - `issue`, `pr` and `run` narrow their kind to those ids (comma-separated).
   Given without `watch`, the ids also pick the kinds: `-o pr=412` watches
   PR 412 and nothing else.
+- `head` (a branch glob; `*` does not cross a `/`) and `author` (a login)
+  select PRs the way `pr` names them, including ones opened later. Use them
+  for PRs you can't name yet. `branch` narrows Actions to one branch's runs.
+- `interval` polls more often than every 60s, down to 10s. Use it for one PR
+  you are waiting on, not a whole repository.
 - What it reports:
   - **Issues and PRs:** opened, closed, merged, reopened, ready for review.
   - **Comments and reviews:** comments, and reviews with their inline
     comments.
-  - **A PR named by id:** its checks passing or failing.
+  - **A PR named by id or selected by `head`/`author`:** its checks passing
+    or failing (`pr.checks`), and `pr.conflict` when it starts conflicting
+    with its base, the cue to rebase, and again when it no longer does.
   - **Actions:** runs completing, with a failed run's failed jobs and steps.
 - An instance that watches only ids ends itself once each of them is closed
   or complete.
@@ -157,7 +167,10 @@ Rules:
     in a one-line mapping an unquoted comma starts the next field.
 - **Two modes.**
   - **Polling:** with `interval:` (at least `1s`), the script runs once per
-    interval and exits. Start with this one.
+    interval and exits. Start with this one. To let each instance choose
+    how often it runs, declare an option named `interval` (`-o
+    interval=15s`) and, if it needs one, a floor (`min-interval: 10s`). The
+    runner then paces it. Don't write a sleep loop for that.
   - **Streaming:** without `interval:`, the script runs continuously. Use
     it for `tail -F` and loops. If it exits non-zero, it's restarted with
     backoff. If it exits zero, the instance is done.

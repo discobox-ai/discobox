@@ -50,14 +50,23 @@ type Event struct {
 
 // line is what a monitor may print. Anything else in the object is ignored.
 type line struct {
-	Kind    string          `json:"kind"`
+	Kind    string          `json:"kind,omitempty"`
 	Title   string          `json:"title"`
-	Summary string          `json:"summary"`
-	URL     string          `json:"url"`
-	Key     string          `json:"key"`
-	Body    string          `json:"body"`
-	Data    json.RawMessage `json:"data"`
-	Final   bool            `json:"final"`
+	Summary string          `json:"summary,omitempty"`
+	URL     string          `json:"url,omitempty"`
+	Key     string          `json:"key,omitempty"`
+	Body    string          `json:"body,omitempty"`
+	Data    json.RawMessage `json:"data,omitempty"`
+	Final   bool            `json:"final,omitempty"`
+}
+
+// FormatLine is ev as the line a monitor prints for it, without a newline:
+// only the fields ParseLine reads, since the rest are the queue's to add.
+func FormatLine(ev Event) ([]byte, error) {
+	return json.Marshal(line{
+		Kind: ev.Kind, Title: ev.Title, Summary: ev.Summary, URL: ev.URL,
+		Key: ev.Key, Body: ev.Body, Data: ev.Data, Final: ev.Final,
+	})
 }
 
 // ParseLine reads one line a monitor printed. A JSON object is an event, and

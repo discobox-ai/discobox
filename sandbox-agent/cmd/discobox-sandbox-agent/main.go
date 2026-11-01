@@ -31,6 +31,7 @@ import (
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
 	"github.com/discobox-ai/discobox/sandbox-agent/intake"
 	"github.com/discobox-ai/discobox/sandbox-agent/monitors"
+	"github.com/discobox-ai/discobox/sandbox-agent/monitors/builtin"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
 	"github.com/discobox-ai/discobox/sandbox-agent/provision"
 	"github.com/discobox-ai/discobox/sandbox-agent/proxyenv"
@@ -79,6 +80,10 @@ func run(name string, args []string) int {
 	// What an enabled monitor instance's exec runs (ADR 26-10-31-073 §4).
 	if len(args) > 0 && args[0] == monitors.RunnerCommand {
 		return runMonitorRunner(args[1:])
+	}
+	// What a built-in monitor's declared script execs (monitors/builtin).
+	if len(args) > 0 && args[0] == builtin.Command {
+		return runMonitorBuiltin(args[1:])
 	}
 	if len(args) > 0 && args[0] == "exec-shim" {
 		return runExecShim(args[1:])

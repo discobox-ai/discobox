@@ -97,6 +97,11 @@ func (r *Runner) Run(ctx context.Context) error {
 		if err == nil && def.Problem != "" {
 			err = errors.New(def.Problem)
 		}
+		var interval time.Duration
+		if err == nil {
+			// The declaration may have changed what an interval it takes.
+			interval, err = def.IntervalFor(r.Instance.Options)
+		}
 		if err != nil {
 			if r.Test {
 				return err
@@ -119,7 +124,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		} else {
 			r.recovered()
 		}
-		if final || (def.Interval == 0 && runErr == nil) {
+		if final || (interval == 0 && runErr == nil) {
 			r.setState(StateDone, nil)
 			if !r.Test {
 				return finish(r.Dirs, r.Instance.Name)
@@ -128,8 +133,8 @@ func (r *Runner) Run(ctx context.Context) error {
 		}
 
 		var wait time.Duration
-		if def.Interval > 0 {
-			wait = time.Until(started.Add(def.Interval))
+		if interval > 0 {
+			wait = time.Until(started.Add(interval))
 			next := time.Now().Add(wait)
 			r.setState(StateWaiting, &next)
 		} else {
@@ -212,6 +217,15 @@ func (r *Runner) runOnce(ctx context.Context, def Definition) (final bool, tail 
 	return false, tail, nil
 }
 
+// The variables a monitor is told its instance in, besides each option's own
+// (Option.EnvName).
+const (
+	EnvName  = "DISCOBOX_MONITOR_NAME"
+	EnvState = "DISCOBOX_MONITOR_STATE"
+	// EnvOptions is every option, as a JSON object.
+	EnvOptions = "DISCOBOX_MONITOR_OPTIONS"
+)
+
 // environ is the monitor's environment: the runner's own, less any monitor
 // variables it inherited, plus this instance's.
 func (r *Runner) environ() []string {
@@ -229,9 +243,9 @@ func (r *Runner) environ() []string {
 		}
 	}
 	env = append(env,
-		"DISCOBOX_MONITOR_NAME="+r.Instance.Name,
-		"DISCOBOX_MONITOR_STATE="+r.MonitorState,
-		"DISCOBOX_MONITOR_OPTIONS="+options,
+		EnvName+"="+r.Instance.Name,
+		EnvState+"="+r.MonitorState,
+		EnvOptions+"="+options,
 	)
 	for key, value := range r.Instance.Options {
 		env = append(env, OptionEnvName(key)+"="+value)

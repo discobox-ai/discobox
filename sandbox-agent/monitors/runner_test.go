@@ -234,3 +234,22 @@ func TestATestRunWritesNoState(t *testing.T) {
 		t.Fatal("test wrote a status file")
 	}
 }
+
+func TestAnInstanceRunsAtTheIntervalItWasGiven(t *testing.T) {
+	// Declared every 60s; the instance asks for 1s, so a second run comes
+	// well inside the declared interval.
+	d, err := startInstance(t, `#!/bin/sh
+#---
+# interval: 60s
+# options:
+# - interval
+#---
+echo "{\"title\":\"ran\"}"
+`, map[string]string{"interval": "1s"}, 2500*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st, ok, _ := ReadStatus(d, "probe"); !ok || st.Runs < 2 {
+		t.Fatalf("status = %+v", st)
+	}
+}

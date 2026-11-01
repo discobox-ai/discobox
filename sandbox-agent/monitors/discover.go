@@ -74,8 +74,13 @@ type Definition struct {
 	FileName    string   `json:"-"`
 	Options     []Option `json:"options,omitempty"`
 	// Interval is how often a polling monitor is run. Zero is a streaming
-	// monitor: run once, and kept running.
+	// monitor: run once, and kept running. A polling monitor that declares an
+	// `interval` option runs each instance at the interval it was given
+	// (IntervalFor), this one being its default.
 	Interval time.Duration `json:"interval,omitempty"`
+	// MinInterval is the shortest interval an instance may be given: the
+	// declaration's `min-interval`, else the package's MinInterval.
+	MinInterval time.Duration `json:"minInterval,omitempty"`
 	// Builtin marks a declaration that came from the image rather than the
 	// repository.
 	Builtin bool   `json:"builtin,omitempty"`
@@ -135,6 +140,32 @@ func Load(path string, builtin bool) (Definition, error) {
 	return Definition{}, fmt.Errorf("monitor %s: no such declaration", path)
 }
 
+// IntervalOption is the option a polling monitor declares to let each
+// instance choose how often it runs.
+const IntervalOption = "interval"
+
+// IntervalFor is how often an instance with opts runs: its `interval` option
+// when the monitor declares one and the instance gives it, else the declared
+// interval. A streaming monitor has none, whatever it is given.
+func (d Definition) IntervalFor(opts map[string]string) (time.Duration, error) {
+	if d.Interval == 0 {
+		return 0, nil
+	}
+	raw := strings.TrimSpace(opts[IntervalOption])
+	if _, declared := d.Option(IntervalOption); !declared || raw == "" {
+		return d.Interval, nil
+	}
+	interval, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("option interval: %q is not a duration (30s, 5m)", raw)
+	}
+	floor := max(d.MinInterval, MinInterval)
+	if interval < floor {
+		return 0, fmt.Errorf("option interval: %s is shorter than %s, the least %s takes", interval, floor, d.ID)
+	}
+	return interval, nil
+}
+
 // Find is the definition with id.
 func Find(defs []Definition, id string) (Definition, bool) {
 	for _, def := range defs {
@@ -189,6 +220,21 @@ func definition(file declared.File) Definition {
 			return def
 		}
 		def.Interval = interval
+	}
+	if raw := file.Fields.String("min_interval"); raw != "" {
+		floor, err := time.ParseDuration(raw)
+		switch {
+		case err != nil:
+			def.Problem = fmt.Sprintf("front matter: min-interval: %q is not a duration (10s, 1m)", raw)
+			return def
+		case def.Interval == 0:
+			def.Problem = "front matter: min-interval: a streaming monitor, with no interval, has no interval to bound"
+			return def
+		case floor < MinInterval || floor > def.Interval:
+			def.Problem = fmt.Sprintf("front matter: min-interval: %s must be between %s and the interval, %s", floor, MinInterval, def.Interval)
+			return def
+		}
+		def.MinInterval = floor
 	}
 	raw, present := file.Fields["options"]
 	if present && raw == nil {
