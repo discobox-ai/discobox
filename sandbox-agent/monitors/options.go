@@ -74,6 +74,9 @@ func CheckOptions(def Definition, opts map[string]string) error {
 	if len(missing) > 0 {
 		problems = append(problems, fmt.Sprintf("%s requires %s", def.ID, strings.Join(missing, ", ")))
 	}
+	if _, err := def.IntervalFor(opts); err != nil {
+		problems = append(problems, err.Error())
+	}
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "; "))
 	}

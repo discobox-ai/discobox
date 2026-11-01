@@ -115,3 +115,36 @@ flowchart LR
     removes the enabled file.
   - The state directory stays, so `status` still shows how the instance
     ended, until `disable` clears it.
+- **An instance's interval is the declaration's, unless the monitor declares
+  an `interval` option.** Then the instance's value is its polling
+  interval, no shorter than the front matter's `min-interval`
+  (`Definition.IntervalFor`). `enable` checks it, and the runner reads it
+  again before each run, as it does the declaration.
+
+## Built-ins written in Go
+
+A built-in is one of the image's monitors (`Definition.Builtin`, 073 §9).
+Most are scripts. One written in Go, because a script cannot do its job
+well, is still declared by a script in the image's directory: one that execs
+`discobox-sandbox-agent monitor-builtin NAME` ([ADR 26-11-01-477](../../docs/adr/26-11-01-477-github-repo-is-a-go-built-in-that-probes-before-it-reads-and-an-instance-may-choose-its-interval.md)).
+Its Go code ships in the agent, so it is never a repository's. The script keeps the
+declaration's name, options and interval. The runner, the instance's state,
+its failure events and the queue are the same as for any script, and the
+framework has no second kind of monitor.
+
+```mermaid
+flowchart LR
+  Runner["monitor-run (Runner)"] -->|"runs, per interval"| Script["10-github-repo.sh"]
+  Script -->|"exec"| Sub["monitor-builtin github-repo"]
+  Sub -->|"builtin.Env from DISCOBOX_MONITOR_*"| Impl["githubrepo.Run"]
+  Impl -->|"JSON lines"| Runner
+```
+
+- [`builtin`](builtin) is the seam: `Monitor` is one run of a built-in,
+  given `Env` (the instance's name, state directory and options, its
+  environment, `Emit`, and JSON state files written whole). A returned error
+  is the failure, and its text is what `monitor.failed` carries.
+- The registry is `builtinMonitors` in `cmd/discobox-sandbox-agent`. A new
+  built-in adds a package, an entry there, and a script in the image.
+- [`githubrepo`](githubrepo/DESIGN.md) is the first built-in: the image's
+  `github-repo`.

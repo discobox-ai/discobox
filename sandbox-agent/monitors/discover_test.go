@@ -144,3 +144,61 @@ func TestTheImagesMonitorsAllParse(t *testing.T) {
 		}
 	}
 }
+
+func TestAnInstanceChoosesItsIntervalOnlyWhenTheMonitorDeclaresTheOption(t *testing.T) {
+	dir := t.TempDir()
+	writeMonitor(t, dir, "paced.sh", "#!/bin/sh\n#---\n# interval: 60s\n# min-interval: 10s\n# options:\n# - interval\n#---\n")
+	writeMonitor(t, dir, "fixed.sh", "#!/bin/sh\n#---\n# interval: 60s\n#---\n")
+	defs, err := Discover(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	paced, _ := Find(defs, "paced")
+	fixed, _ := Find(defs, "fixed")
+	if paced.Problem != "" || paced.MinInterval != 10*time.Second {
+		t.Fatalf("paced = %+v", paced)
+	}
+	for _, tc := range []struct {
+		def     Definition
+		opts    map[string]string
+		want    time.Duration
+		problem string
+	}{
+		{paced, nil, time.Minute, ""},
+		{paced, map[string]string{"interval": "15s"}, 15 * time.Second, ""},
+		{paced, map[string]string{"interval": "5s"}, 0, "shorter than 10s"},
+		{paced, map[string]string{"interval": "soon"}, 0, "not a duration"},
+		// Not declared: CheckOptions refuses it as unknown; the runner keeps
+		// the declared interval.
+		{fixed, map[string]string{"interval": "15s"}, time.Minute, ""},
+	} {
+		got, err := tc.def.IntervalFor(tc.opts)
+		if tc.problem != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.problem) {
+				t.Errorf("%s %v: err = %v, want %q", tc.def.ID, tc.opts, err, tc.problem)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Errorf("%s %v = %v, %v; want %v", tc.def.ID, tc.opts, got, err, tc.want)
+		}
+	}
+	if err := CheckOptions(paced, map[string]string{"interval": "1s"}); err == nil || !strings.Contains(err.Error(), "shorter than 10s") {
+		t.Fatalf("CheckOptions = %v", err)
+	}
+}
+
+func TestAMinIntervalOutsideItsBoundsIsAProblem(t *testing.T) {
+	dir := t.TempDir()
+	writeMonitor(t, dir, "streaming.sh", "#!/bin/sh\n#---\n# min-interval: 10s\n#---\n")
+	writeMonitor(t, dir, "above.sh", "#!/bin/sh\n#---\n# interval: 30s\n# min-interval: 1m\n#---\n")
+	defs, err := Discover(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, def := range defs {
+		if !strings.Contains(def.Problem, "min-interval") {
+			t.Errorf("%s: problem = %q", def.ID, def.Problem)
+		}
+	}
+}

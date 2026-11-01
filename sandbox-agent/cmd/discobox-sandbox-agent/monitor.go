@@ -19,6 +19,8 @@ import (
 
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/monitors"
+	"github.com/discobox-ai/discobox/sandbox-agent/monitors/builtin"
+	"github.com/discobox-ai/discobox/sandbox-agent/monitors/githubrepo"
 )
 
 const monitorUsage = `usage:
@@ -131,6 +133,20 @@ func runMonitorRunner(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// builtinMonitors are the monitors written in Go, each run by its declared
+// script through `monitor-builtin NAME`.
+var builtinMonitors = map[string]builtin.Monitor{
+	githubrepo.Name: githubrepo.Run,
+}
+
+// runMonitorBuiltin is the `monitor-builtin NAME` subcommand: one run of a
+// built-in, under the runner, as its script would be.
+func runMonitorBuiltin(args []string) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return builtin.Main(ctx, builtinMonitors, args, os.Getenv, os.Stdout, os.Stderr)
 }
 
 func monitor(env monitorEnv, args []string, out io.Writer) error {
@@ -268,7 +284,7 @@ func monitorList(env monitorEnv, args []string, out io.Writer) error {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "MONITOR\tFROM\tRUNS\tOPTIONS\tDESCRIPTION")
 	for _, def := range defs {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", def.ID, source(def), mode(def), optionSummary(def), def.Description)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", def.ID, source(def), mode(def, nil), optionSummary(def), def.Description)
 	}
 	if err := tw.Flush(); err != nil {
 		return err
@@ -305,11 +321,21 @@ func source(def monitors.Definition) string {
 	return "repo"
 }
 
-func mode(def monitors.Definition) string {
-	if def.Interval > 0 {
-		return "every " + def.Interval.String()
+// mode is how the monitor runs: for an instance given opts, or with nil, as
+// declared, saying when an instance may choose its own interval.
+func mode(def monitors.Definition, opts map[string]string) string {
+	if def.Interval == 0 {
+		return "streaming"
 	}
-	return "streaming"
+	if opts != nil {
+		if interval, err := def.IntervalFor(opts); err == nil {
+			return "every " + interval.String()
+		}
+	}
+	if _, ok := def.Option(monitors.IntervalOption); ok {
+		return fmt.Sprintf("every %s (-o interval=, at least %s)", def.Interval, max(def.MinInterval, monitors.MinInterval))
+	}
+	return "every " + def.Interval.String()
 }
 
 func optionSummary(def monitors.Definition) string {
@@ -349,7 +375,7 @@ func monitorShow(env monitorEnv, args []string, out io.Writer) error {
 		fmt.Fprintf(out, "  %s\n", def.Description)
 	}
 	fmt.Fprintf(out, "  from:  %s (%s)\n", source(def), def.Path)
-	fmt.Fprintf(out, "  runs:  %s\n", mode(def))
+	fmt.Fprintf(out, "  runs:  %s\n", mode(def, nil))
 	if def.Problem != "" {
 		fmt.Fprintf(out, "  cannot run: %s\n", def.Problem)
 	}
@@ -427,7 +453,7 @@ func monitorEnable(env monitorEnv, args []string, out io.Writer) error {
 		fmt.Fprintf(out, "%s is already enabled: %s\n", inst.Name, inst.Describe())
 		return nil
 	}
-	fmt.Fprintf(out, "enabled %s: %s, %s\n", inst.Name, inst.Describe(), mode(def))
+	fmt.Fprintf(out, "enabled %s: %s, %s\n", inst.Name, inst.Describe(), mode(def, options))
 	fmt.Fprintln(out, "Its events wait for 'discobox-monitor pop'. To be woken by one, keep 'discobox-monitor pop --wait' running.")
 	return nil
 }
@@ -949,7 +975,7 @@ func monitorTest(env monitorEnv, args []string, out io.Writer) error {
 		ctx, cancel = context.WithTimeout(ctx, *runFor)
 		defer cancel()
 	}
-	fmt.Fprintf(os.Stderr, "testing %s (%s) in a fresh state directory; nothing is enabled or queued. Ctrl-C ends it.\n", def.ID, mode(def))
+	fmt.Fprintf(os.Stderr, "testing %s (%s) in a fresh state directory; nothing is enabled or queued. Ctrl-C ends it.\n", def.ID, mode(def, options))
 	count := 0
 	runner := &monitors.Runner{
 		Test:         true,
