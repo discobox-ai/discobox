@@ -1834,14 +1834,14 @@ func testSandboxes() []Sandbox {
 	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
 	return []Sandbox{
 		{
-			ID: "sbx_one", Name: "fix flaky pool reaper tests", State: StateRunning, HasRuntime: true,
+			ID: "sbx_one", Name: "fix flaky pool reaper tests", TerminalTitle: "fix flaky pool reaper tests", State: StateRunning, HasRuntime: true,
 			Harness: "claude", OriginKey: testKey("/src/disco2"), OriginHostID: testHostID,
 			Source: "/src/disco2", SourceOriginKey: testKey("/src/disco2"),
 			Branch: "main", Commit: "a3f9c21", Dirty: true,
 			Created: now.Add(-2 * time.Minute), Diff: DiffStat{Known: true, Added: 142, Deleted: 38, Files: 7},
 		},
 		{
-			ID: "sbx_two", Name: "exec/terminal consolidation", State: StateRunning, HasRuntime: true,
+			ID: "sbx_two", Name: "exec/terminal consolidation", TerminalTitle: "exec/terminal consolidation", State: StateRunning, HasRuntime: true,
 			Harness: "claude", OriginKey: testKey("/src/disco2"), OriginHostID: testHostID,
 			Source: "/src/disco2", SourceOriginKey: testKey("/src/disco2"),
 			Branch: "main", Commit: "a3f9c21",
@@ -1849,14 +1849,14 @@ func testSandboxes() []Sandbox {
 			Diff: DiffStat{Known: true, Added: 903, Deleted: 511, Files: 24},
 		},
 		{
-			ID: "sbx_three", Name: "openapi: sandbox upgrade field", State: StateStopped, HasRuntime: true,
+			ID: "sbx_three", Name: "openapi: sandbox upgrade field", TerminalTitle: "openapi: sandbox upgrade field", State: StateStopped, HasRuntime: true,
 			Harness: "codex", OriginKey: testKey("/src/obot"), OriginHostID: testHostID,
 			Source: "/src/obot", SourceOriginKey: testKey("/src/obot"),
 			Branch: "main", Commit: "1c713f6",
 			Created: now.Add(-time.Hour), Diff: DiffStat{Known: true},
 		},
 		{
-			ID: "sbx_four", Name: "bats harness-configure endpoints", State: StateArchived,
+			ID: "sbx_four", Name: "bats harness-configure endpoints", TerminalTitle: "bats harness-configure endpoints", State: StateArchived,
 			Harness: "codex", OriginKey: testKey("https://github.com/acme/foo"), OriginHostID: testHostID,
 			Source: "https://github.com/acme/foo", SourceRemote: true, SourceOriginKey: testKey("https://github.com/acme/foo"),
 			Branch: "main", Commit: "41a9507",

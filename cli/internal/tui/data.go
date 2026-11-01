@@ -263,6 +263,13 @@ type Sandbox struct {
 	// cleared from a title that cannot.
 	GivenName string
 
+	// TerminalTitle is the window title the primary terminal last set, as
+	// the box last reported it (programstatus.PrimaryTitleAndMsg). The
+	// workspace names the box by its pane's own title, which is newer; this
+	// is what it is named by until the pane has drawn one, as the listing
+	// names it (sandboxmeta.Title).
+	TerminalTitle string
+
 	// Tags are the discobox's tags as it last reported them, spelled `key` or
 	// `key=value` in key order, and Description is the first line of its
 	// description (ADR 0136). The discobox holds both, in its meta file; these

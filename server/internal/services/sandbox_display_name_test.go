@@ -61,12 +61,11 @@ func TestSandboxDisplayName(t *testing.T) {
 			want: "new work",
 		},
 		{
-			// A harness that reports over OSC 7501 says what the session is
-			// in its msg and leaves its window title alone, so the msg
-			// stands where the title would.
+			// A harness that reports over OSC 7501 says what it is doing in
+			// its msg, which follows the window title rather than hiding it.
 			name:     "primary reported a msg",
 			sessions: `[{"terminalId":"exc_1","primary":true,"title":"Claude Code","programStatus":{"app":"claude-code","state":"working","msg":"fix the reaper","reportedAt":"2026-08-12T00:00:00Z"},"attacherCount":0,"execStatus":"running"}]`,
-			want:     "fix the reaper",
+			want:     "Claude Code: fix the reaper",
 		},
 		{
 			name:     "primary reported a status with no msg",
@@ -78,7 +77,7 @@ func TestSandboxDisplayName(t *testing.T) {
 			// not part of a name.
 			name:     "msg is made displayable",
 			sessions: `[{"terminalId":"exc_1","primary":true,"programStatus":{"state":"working","msg":"fix\u0007 the\u202e reaper"},"attacherCount":0,"execStatus":"running"}]`,
-			want:     "fix the reaper",
+			want:     "generated-name: fix the reaper",
 		},
 		{
 			name: "newest primary's msg wins over an older one's",
@@ -117,7 +116,7 @@ func TestSandboxDisplayNameFallsBackToID(t *testing.T) {
 	}
 }
 
-// A name set in the sandbox's meta leads the title its harness wrote
+// A name set in the sandbox's meta replaces the title its harness wrote
 // (ADR 26-10-12-026 §3, ADR 26-10-31-618): it is what a person or the agent
 // chose to call the sandbox. It is reported in meta, and the configured name is
 // left alone.
@@ -125,15 +124,15 @@ func TestSandboxDisplayNamePrefersTheMetaName(t *testing.T) {
 	sandbox := titledSandbox(`[{"terminalId":"exc_1","primary":true,"title":"Commit files","attacherCount":0,"execStatus":"running"}]`)
 	name := "  Daily GH Check In "
 	sandbox.MetaName = &name
-	if got := SandboxDisplayName(sandbox); got != "Daily GH Check In: Commit files" {
-		t.Fatalf("display name = %q, want the name the sandbox was given, then the title", got)
+	if got := SandboxDisplayName(sandbox); got != "Daily GH Check In" {
+		t.Fatalf("display name = %q, want the name the sandbox was given in the title's place", got)
 	}
 	out, err := SandboxToAPI(sandbox, SandboxUpgradeBasis{})
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
 	meta, _ := out.Meta.Get()
-	if out.DisplayName != "Daily GH Check In: Commit files" || meta.Name.Or("") != "Daily GH Check In" || out.Config.Name != "generated-name" {
+	if out.DisplayName != "Daily GH Check In" || meta.Name.Or("") != "Daily GH Check In" || out.Config.Name != "generated-name" {
 		t.Fatalf("displayName = %q, meta.name = %q, config.name = %q", out.DisplayName, meta.Name.Or(""), out.Config.Name)
 	}
 	// The description is left out when unset; the tags are sent empty, for a
@@ -143,32 +142,31 @@ func TestSandboxDisplayNamePrefersTheMetaName(t *testing.T) {
 	}
 
 	// What the program reports as its msg follows the name it was given.
-	// While it reports one, that stands in for the title.
 	sandbox.AgentStatus = []byte(`{"sessions":[{"terminalId":"exc_1","primary":true,"title":"Reaper cleanup","programStatus":{"app":"claude-code","state":"working","msg":"Commit files"},"attacherCount":0,"execStatus":"running"}]}`)
 	if got := SandboxDisplayName(sandbox); got != "Daily GH Check In: Commit files" {
 		t.Fatalf("display name with a msg = %q, want the name then the msg", got)
 	}
 
 	// A stopped box's row keeps the last status its agent posted; nothing is
-	// doing what it says, so the title follows the name again.
+	// doing what it says, so the name stands alone again.
 	sandbox.RuntimeState = model.SandboxRuntimeStateStopped
-	if got := SandboxDisplayName(sandbox); got != "Daily GH Check In: Reaper cleanup" {
-		t.Fatalf("display name of a stopped box = %q, want the name then the title", got)
+	if got := SandboxDisplayName(sandbox); got != "Daily GH Check In" {
+		t.Fatalf("display name of a stopped box = %q, want the name alone", got)
 	}
 	sandbox.RuntimeState = model.SandboxRuntimeStateRunning
 
-	// Cleared, the msg names it again.
+	// Cleared, the title takes the name's place, and the msg follows it.
 	blank := " "
 	sandbox.MetaName = &blank
-	if got := SandboxDisplayName(sandbox); got != "Commit files" {
-		t.Fatalf("display name with no name set = %q, want the msg", got)
+	if got := SandboxDisplayName(sandbox); got != "Reaper cleanup: Commit files" {
+		t.Fatalf("display name with no name set = %q, want the title then the msg", got)
 	}
 
 	// Idle, the program reports no msg: the title says what the session is.
 	sandbox.AgentStatus = []byte(`{"sessions":[{"terminalId":"exc_1","primary":true,"title":"Reaper cleanup","programStatus":{"app":"claude-code","state":"idle"},"attacherCount":0,"execStatus":"running"}]}`)
 	sandbox.MetaName = &name
-	if got := SandboxDisplayName(sandbox); got != "Daily GH Check In: Reaper cleanup" {
-		t.Fatalf("display name of an idle box = %q, want the name then the title", got)
+	if got := SandboxDisplayName(sandbox); got != "Daily GH Check In" {
+		t.Fatalf("display name of an idle box = %q, want the name alone", got)
 	}
 	sandbox.MetaName = &blank
 

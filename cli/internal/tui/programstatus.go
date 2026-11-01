@@ -133,24 +133,39 @@ func (m *Model) focusedProgramStatus() (programstatus.Record, bool) {
 // title the program wrote; the record carries the msg beside it already, and
 // would say it twice, or say it once from a poll that lags the stream.
 func recordTitle(box Sandbox) string {
-	switch {
-	case box.GivenName != "":
+	if box.GivenName != "" {
 		return box.GivenName
-	case box.ConfigName != "":
-		return box.ConfigName
-	default:
-		return box.ID
 	}
+	return unnamedName(box)
+}
+
+// unnamedName is what a box is called when nothing has named it: its
+// configured name, else its ID. It is the fallback of the box's resolved title
+// (sandboxmeta.Title), as the server's display name falls back.
+func unnamedName(box Sandbox) string {
+	if box.ConfigName != "" {
+		return box.ConfigName
+	}
+	return box.ID
+}
+
+// boxTitle is box's resolved title without its program's msg (sandboxmeta.Title
+// with none): the name it was given, else terminalTitle, else its configured
+// name, else its ID.
+func boxTitle(box Sandbox, terminalTitle string) string {
+	return sandboxmeta.Title(box.GivenName, terminalTitle, unnamedName(box), "")
 }
 
 // primaryTitle is what the box in the workspace is called from the primary
-// terminal's side: the name it was given, then the msg its program reports or,
-// with none, the title the terminal last set, as "name: words", and either
-// alone when it has only one (sandboxmeta.Title). The msg is
+// terminal's side: its resolved title — the name it was given, else the title
+// the terminal last set, else its configured name, else its ID — followed by
+// the msg its program reports while it has one, as "title: msg"
+// (sandboxmeta.Title, the server's display name rule). The msg is
 // focusedProgramStatus's, so it is the one the program said last, from the
 // stream or the poll, whichever is newer — the listing's name carries the
 // poll's, which lags what the pane has drawn; the title is the pane's own, for
-// the same reason. Empty when the box has none of them.
+// the same reason, and the one the box last reported until the pane has drawn
+// one. Never empty: a workspace always has a box, and a box always has an ID.
 func (m *Model) primaryTitle() string {
 	var msg, title string
 	if rec, ok := m.focusedProgramStatus(); ok {
@@ -159,7 +174,11 @@ func (m *Model) primaryTitle() string {
 	if p := m.primary(); p != nil {
 		title = p.term.Title()
 	}
-	return sandboxmeta.Title(m.currentBox().GivenName, msg, title)
+	box := m.currentBox()
+	if strings.TrimSpace(title) == "" {
+		title = box.TerminalTitle
+	}
+	return sandboxmeta.Title(box.GivenName, title, unnamedName(box), msg)
 }
 
 // syncProgramStatus sends the focused box's status when it is not what was
