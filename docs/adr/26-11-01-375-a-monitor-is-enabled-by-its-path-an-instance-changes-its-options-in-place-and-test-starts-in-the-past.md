@@ -92,8 +92,9 @@ the path given (§1).
   newly named id reports only what happens after it was added. The
   `discobox-monitor` skill's template says so.
 
-`enable` without `--update` is unchanged: other options are refused, and the
-message names `--update` as well as `--name`.
+`enable` without `--update` still refuses other options, and now also another
+script of the same id — one named by its path — saying which script the
+instance runs; the message names `--update` as well as `--name`.
 
 ### 3. `test --since DUR` starts from a baseline in the past, for a monitor that declares it can
 
