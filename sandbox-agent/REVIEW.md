@@ -486,8 +486,19 @@ user waits on every single start.
   A monitor's events carry issue titles, comments and fetched pages verbatim,
   and `discobox-monitor pop`, `read`, `status` and `logs` print them into a
   terminal the console relays: an unescaped OSC 52 reaches the user's
-  clipboard, an OSC 7501 fakes the terminal's status. `--json` output needs
-  nothing; `encoding/json` escapes them.
+  clipboard, an OSC 7501 fakes the terminal's status. A monitor declaration
+  is third-party text too — a repository's or a skills source's author's — so
+  `list`, `show` and `enable`'s output escape its id, name, description,
+  path and problem, and `discobox-monitor` escapes every error where it
+  prints it, so a path a third party named cannot slip through an error made
+  far from the CLI. `--json` output needs nothing;
+  `encoding/json` escapes them.
+- **A monitor's runner removes its enabled file only if the file still holds
+  what that run acted on** (`finishIf`). `enable --update` rewrites the file
+  under a running instance, so a run that started with the old options and
+  ends with a final event must not remove the file the update wrote. The
+  CLI's `enable --update` and `disable` record the user's intent and write
+  without such a check.
 - **A directory named `build` is ignored by the root `.gitignore`**; the
   `build` feature is kept by a negation there. A feature or test directory
   of that name elsewhere needs one too, or a clean checkout lacks it while

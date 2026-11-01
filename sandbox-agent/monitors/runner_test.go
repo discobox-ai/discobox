@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func startInstance(t *testing.T, body string, options map[string]string, timeout
 	d := HomeDirs(t.TempDir())
 	path := writeMonitor(t, t.TempDir(), "probe.sh", body)
 	inst := Instance{Name: "probe", Monitor: "probe", Path: path, Workdir: t.TempDir(), Options: options}
-	if _, err := Enable(d, inst); err != nil {
+	if _, err := Enable(d, inst, false); err != nil {
 		t.Fatal(err)
 	}
 	inst, err := ReadInstance(d, inst.Name)
@@ -178,7 +179,7 @@ func TestARunnerStopsWhenItsInstanceIsDisabledAndReplaced(t *testing.T) {
 	requireScripts(t)
 	d := HomeDirs(t.TempDir())
 	path := writeMonitor(t, t.TempDir(), "probe.sh", "#!/bin/sh\n#---\n# interval: 1s\n#---\n")
-	if _, err := Enable(d, Instance{Name: "probe", Monitor: "probe", Path: path}); err != nil {
+	if _, err := Enable(d, Instance{Name: "probe", Monitor: "probe", Path: path}, false); err != nil {
 		t.Fatal(err)
 	}
 	inst, err := ReadInstance(d, "probe")
@@ -195,7 +196,7 @@ func TestARunnerStopsWhenItsInstanceIsDisabledAndReplaced(t *testing.T) {
 	if err := Disable(d, "probe"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Enable(d, Instance{Name: "probe", Monitor: "probe", Path: path, Options: map[string]string{"other": "yes"}}); err != nil {
+	if _, err := Enable(d, Instance{Name: "probe", Monitor: "probe", Path: path, Options: map[string]string{"other": "yes"}}, false); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -252,4 +253,189 @@ echo "{\"title\":\"ran\"}"
 	if st, ok, _ := ReadStatus(d, "probe"); !ok || st.Runs < 2 {
 		t.Fatalf("status = %+v", st)
 	}
+}
+
+// waitFor polls cond until it holds or the deadline passes.
+func waitFor(t *testing.T, what string, within time.Duration, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestAnUpdatedPollingInstanceRunsWithItsNewOptionsAndKeepsItsState(t *testing.T) {
+	requireScripts(t)
+	d := HomeDirs(t.TempDir())
+	// Each run counts itself in the state directory and prints its count and
+	// options, so a run after the update shows both carried on.
+	path := writeMonitor(t, t.TempDir(), "probe.sh", `#!/bin/sh
+#---
+# interval: 1s
+#---
+n=$(cat "$DISCOBOX_MONITOR_STATE/n" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "$n" >"$DISCOBOX_MONITOR_STATE/n"
+echo "run $n pr=$DISCOBOX_OPT_PR"
+`)
+	inst := Instance{Name: "probe", Monitor: "probe", Path: path, Options: map[string]string{"pr": "1"}}
+	if _, err := Enable(d, inst, false); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := ReadInstance(d, "probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- (&Runner{Dirs: d, Instance: inst}).Run(ctx) }()
+	waitFor(t, "a first run", 5*time.Second, func() bool { return len(pending(t, d)) >= 1 })
+
+	if result, err := Enable(d, Instance{Name: "probe", Monitor: "probe", Path: path, Options: map[string]string{"pr": "1,2"}}, true); err != nil || result != Updated {
+		t.Fatalf("update = %v, %v", result, err)
+	}
+	waitFor(t, "a run with the new options", 5*time.Second, func() bool {
+		for _, ev := range pending(t, d) {
+			if strings.HasSuffix(ev.Title, "pr=1,2") {
+				return true
+			}
+		}
+		return false
+	})
+	cancel()
+	<-done
+	events := pending(t, d)
+	for i, ev := range events {
+		if want := "run " + strconv.Itoa(i+1) + " pr="; !strings.HasPrefix(ev.Title, want) {
+			t.Fatalf("event %d = %q; want %q…, one count carried across the update", i, ev.Title, want)
+		}
+	}
+}
+
+func TestAnUpdatedStreamingInstanceIsRestartedWithItsNewOptions(t *testing.T) {
+	requireScripts(t)
+	d := HomeDirs(t.TempDir())
+	path := writeMonitor(t, t.TempDir(), "probe.sh", `#!/bin/sh
+#---
+#---
+echo "started pr=$DISCOBOX_OPT_PR"
+exec sleep 60
+`)
+	if _, err := Enable(d, Instance{Name: "probe", Monitor: "probe", Path: path, Options: map[string]string{"pr": "1"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := ReadInstance(d, "probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	r := &Runner{Dirs: d, Instance: inst, OptionsCheck: 100 * time.Millisecond}
+	go func() { done <- r.Run(ctx) }()
+	waitFor(t, "the first start", 5*time.Second, func() bool { return len(pending(t, d)) == 1 })
+
+	if _, err := Enable(d, Instance{Name: "probe", Monitor: "probe", Path: path, Options: map[string]string{"pr": "2"}}, true); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "a restart with the new options", 5*time.Second, func() bool { return len(pending(t, d)) == 2 })
+	cancel()
+	<-done
+	events := pending(t, d)
+	if events[0].Title != "started pr=1" || events[1].Title != "started pr=2" {
+		t.Fatalf("events = %q, %q", events[0].Title, events[1].Title)
+	}
+	for _, ev := range events {
+		if ev.Kind == KindFailed {
+			t.Fatalf("a restart for new options was reported as a failure: %+v", ev)
+		}
+	}
+}
+
+func TestSinceReachesOnlyTheFirstRun(t *testing.T) {
+	requireScripts(t)
+	path := writeMonitor(t, t.TempDir(), "probe.sh", `#!/bin/sh
+#---
+# interval: 1s
+#---
+echo "since=${DISCOBOX_MONITOR_SINCE:-none}"
+`)
+	since := time.Date(2026, 11, 1, 10, 0, 0, 0, time.FixedZone("x", 3600))
+	var got []string
+	ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
+	defer cancel()
+	r := &Runner{
+		Test:         true,
+		Instance:     Instance{Name: "test", Monitor: "probe", Path: path},
+		MonitorState: t.TempDir(),
+		Stderr:       os.Stderr,
+		Since:        since,
+		Emit:         func(ev Event) error { got = append(got, ev.Title); return nil },
+	}
+	if err := r.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) < 2 || got[0] != "since=2026-11-01T09:00:00Z" || got[1] != "since=none" {
+		t.Fatalf("runs saw %q", got)
+	}
+}
+
+func TestAFinalEventFromARunWithOldOptionsDoesNotEndAnUpdatedInstance(t *testing.T) {
+	requireScripts(t)
+	d := HomeDirs(t.TempDir())
+	// A run with pr=1 says it is finished, but only after the update to
+	// pr=1,2 has landed; a run with pr=1,2 keeps watching.
+	gates := t.TempDir()
+	gate, started := filepath.Join(gates, "updated"), filepath.Join(gates, "started")
+	path := writeMonitor(t, t.TempDir(), "probe.sh", `#!/bin/sh
+#---
+# interval: 1s
+#---
+if [ "$DISCOBOX_OPT_PR" = 1 ]; then
+  touch "`+started+`"
+  while [ ! -e "`+gate+`" ]; do sleep 0.05; done
+  echo '{"title":"everything is closed","final":true}'
+else
+  echo "watching $DISCOBOX_OPT_PR"
+fi
+`)
+	if _, err := Enable(d, Instance{Name: "probe", Monitor: "probe", Path: path, Options: map[string]string{"pr": "1"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := ReadInstance(d, "probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- (&Runner{Dirs: d, Instance: inst}).Run(ctx) }()
+	// The update lands while a run with the old options is under way.
+	waitFor(t, "a run with the old options", 5*time.Second, func() bool {
+		_, err := os.Stat(started)
+		return err == nil
+	})
+	if _, err := Enable(d, Instance{Name: "probe", Monitor: "probe", Path: path, Options: map[string]string{"pr": "1,2"}}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(gate, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "a run with the new options", 5*time.Second, func() bool {
+		for _, ev := range pending(t, d) {
+			if ev.Title == "watching 1,2" {
+				return true
+			}
+		}
+		return false
+	})
+	if got, err := ReadInstance(d, "probe"); err != nil || got.Options["pr"] != "1,2" {
+		t.Fatalf("instance after the old run's final event = %+v, %v; want the update kept", got, err)
+	}
+	cancel()
+	<-done
 }

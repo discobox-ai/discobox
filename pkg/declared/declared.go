@@ -94,6 +94,15 @@ func ReadDir(dir string) ([]File, error) {
 	return ReadFS(os.DirFS(dir), dir)
 }
 
+// ReadFile reads the one declaration at path as ReadDir would, but alone:
+// nothing else in its directory is read, so no file beside it can make it a
+// duplicate, and a directory that cannot be listed does not matter. Its ID is
+// empty when its name is not a declaration's.
+func ReadFile(path string) File {
+	dir := filepath.Dir(path)
+	return parse(os.DirFS(dir), dir, filepath.Base(path))
+}
+
 // ReadFS is ReadDir over the root of fsys, for declarations that are not on a
 // disk — the ones a binary embeds. root is what each File's Path is joined to,
 // and may be empty.

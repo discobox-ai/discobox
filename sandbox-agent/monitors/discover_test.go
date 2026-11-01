@@ -128,6 +128,18 @@ func TestLoadReadsOneDeclarationByPath(t *testing.T) {
 	}
 }
 
+func TestLoadReadsNothingBesideTheFile(t *testing.T) {
+	// A skill's monitor beside its notes: watch.md normalizes to the same id
+	// and sorts first, which would make watch.sh a duplicate in a listing.
+	dir := t.TempDir()
+	path := writeMonitor(t, dir, "watch.sh", githubLike)
+	writeMonitor(t, dir, "watch.md", "# notes\n")
+	def, err := Load(path, false)
+	if err != nil || def.Problem != "" {
+		t.Fatalf("load = %+v, %v", def, err)
+	}
+}
+
 // The image's monitors are front matter written by hand, where one unquoted
 // comma in a description makes the whole monitor unrunnable.
 func TestTheImagesMonitorsAllParse(t *testing.T) {
@@ -200,5 +212,26 @@ func TestAMinIntervalOutsideItsBoundsIsAProblem(t *testing.T) {
 		if !strings.Contains(def.Problem, "min-interval") {
 			t.Errorf("%s: problem = %q", def.ID, def.Problem)
 		}
+	}
+}
+
+func TestSinceIsDeclaredInFrontMatter(t *testing.T) {
+	dir := t.TempDir()
+	writeMonitor(t, dir, "yes.sh", "#!/bin/sh\n#---\n# interval: 60s\n# since: true\n#---\n")
+	writeMonitor(t, dir, "no.sh", "#!/bin/sh\n#---\n# interval: 60s\n#---\n")
+	writeMonitor(t, dir, "bad.sh", "#!/bin/sh\n#---\n# since: sometimes\n#---\n")
+	defs, err := Discover(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]Definition{}
+	for _, def := range defs {
+		got[def.ID] = def
+	}
+	if !got["yes"].Since || got["no"].Since {
+		t.Errorf("since = %v, %v", got["yes"].Since, got["no"].Since)
+	}
+	if !strings.Contains(got["bad"].Problem, "since") {
+		t.Errorf("bad since problem = %q", got["bad"].Problem)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -26,7 +27,7 @@ import (
 const monitorUsage = `usage:
   discobox-monitor list [--json]
   discobox-monitor show MONITOR [--json]
-  discobox-monitor enable MONITOR [--name NAME] [-o KEY=VALUE]...
+  discobox-monitor enable MONITOR [--name NAME] [--update] [-o KEY=VALUE]...
   discobox-monitor disable NAME
   discobox-monitor status [NAME] [--json]
   discobox-monitor logs NAME [--lines N]
@@ -35,12 +36,17 @@ const monitorUsage = `usage:
   discobox-monitor read ID [--json]
   discobox-monitor emit --title TEXT [--kind KIND] [--key KEY] [--summary TEXT]
                         [--url URL] [--body-file FILE|-] [--name NAME]
-  discobox-monitor test MONITOR [-o KEY=VALUE]... [--for DUR]
+  discobox-monitor test MONITOR [-o KEY=VALUE]... [--for DUR] [--since DUR]
 
 Enabling a monitor watches; only a running 'pop --wait' wakes you. Events wait
 until you pop them, and 'read ID' shows one whole. A monitor is a script in the
-repository's .discobox/monitors or the image's; 'test' runs one without
-enabling it.
+repository's .discobox/monitors or the image's, named by its id, or anywhere,
+named by its path (a skill's own: enable ./monitors/watch.sh). 'test' runs one
+without enabling it, and 'test --since 2h' starts it two hours back, for a
+monitor that can.
+
+'enable --update' gives an enabled instance new options in place, keeping what
+it already watched; the options given replace its options whole.
 
 -o takes KEY=VALUE, repeated or joined by commas (-o repo=foo/bar,pr=412).
 DUR is a Go duration (30m, 2h).`
@@ -77,7 +83,7 @@ func runMonitor(args []string) int {
 	// repository that declares nothing.
 	var sourceRoot string
 	if cfg, err := config.Load(config.DefaultPath); err != nil {
-		fmt.Fprintln(os.Stderr, "discobox-monitor: the repository's monitors are unavailable:", err)
+		fmt.Fprintln(os.Stderr, "discobox-monitor: the repository's monitors are unavailable:", safe(err.Error(), true))
 	} else {
 		sourceRoot = cfg.ExecDefaults.SourceRoot
 	}
@@ -92,7 +98,9 @@ func runMonitor(args []string) int {
 		ctx:        ctx,
 	}
 	if err := monitor(env, args, os.Stdout); err != nil {
-		fmt.Fprintln(os.Stderr, "discobox-monitor:", err)
+		// Escaped here, whatever the error: one can carry a path or a name a
+		// third party chose, such as a skills source's skill directory.
+		fmt.Fprintln(os.Stderr, "discobox-monitor:", safe(err.Error(), true))
 		var u usageError
 		if errors.As(err, &u) {
 			fmt.Fprintln(os.Stderr, monitorUsage)
@@ -240,7 +248,27 @@ func (env monitorEnv) discover() ([]monitors.Definition, error) {
 	return monitors.Discover(env.builtinDir, env.sourceRoot)
 }
 
+// definition is the monitor an argument names: by its path when it has a `/`
+// (or the platform's own separator) in it, wherever the file is — a skill's
+// own monitor, say (ADR 26-11-01-375 §1) — and otherwise by its id in the
+// declaration directories. A path is
+// made absolute against the working directory and cleaned, with its links
+// kept: a skill linked in from a checkout runs the checkout's file.
 func (env monitorEnv) definition(id string) (monitors.Definition, error) {
+	if strings.ContainsRune(id, '/') || strings.ContainsRune(id, filepath.Separator) {
+		path, err := filepath.Abs(id)
+		if err != nil {
+			return monitors.Definition{}, err
+		}
+		if info, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+			return monitors.Definition{}, fmt.Errorf("monitor %s: no such file", path)
+		} else if err != nil {
+			return monitors.Definition{}, fmt.Errorf("monitor %s: %w", path, err)
+		} else if info.IsDir() {
+			return monitors.Definition{}, fmt.Errorf("monitor %s is a directory; name the script in it", path)
+		}
+		return monitors.Load(path, filepath.Dir(path) == filepath.Clean(env.builtinDir))
+	}
 	defs, err := env.discover()
 	if err != nil {
 		return monitors.Definition{}, err
@@ -249,13 +277,13 @@ func (env monitorEnv) definition(id string) (monitors.Definition, error) {
 	if !ok {
 		ids := make([]string, 0, len(defs))
 		for _, d := range defs {
-			ids = append(ids, d.ID)
+			ids = append(ids, oneLine(d.ID))
 		}
 		known := "none are declared"
 		if len(ids) > 0 {
 			known = "there are " + strings.Join(ids, ", ")
 		}
-		return monitors.Definition{}, fmt.Errorf("no monitor %q: %s (discobox-monitor list)", id, known)
+		return monitors.Definition{}, fmt.Errorf("no monitor %q: %s (discobox-monitor list, or name a script by its path)", id, known)
 	}
 	return def, nil
 }
@@ -284,14 +312,14 @@ func monitorList(env monitorEnv, args []string, out io.Writer) error {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "MONITOR\tFROM\tRUNS\tOPTIONS\tDESCRIPTION")
 	for _, def := range defs {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", def.ID, source(def), mode(def, nil), optionSummary(def), def.Description)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", oneLine(def.ID), env.source(def), mode(def, nil), optionSummary(def), oneLine(def.Description))
 	}
 	if err := tw.Flush(); err != nil {
 		return err
 	}
 	for _, def := range defs {
 		if def.Problem != "" {
-			fmt.Fprintf(out, "%s cannot run: %s (%s)\n", def.ID, def.Problem, def.Path)
+			fmt.Fprintln(out, cannotRun(def))
 		}
 	}
 	return nil
@@ -314,11 +342,21 @@ func (env monitorEnv) sourceRootOr(fallback string) string {
 	return fallback
 }
 
-func source(def monitors.Definition) string {
-	if def.Builtin {
+// cannotRun says why a declaration cannot run. A declaration is third-party
+// text — a skills source's author's, a repository's — so all of it is
+// escaped.
+func cannotRun(def monitors.Definition) string {
+	return fmt.Sprintf("%s cannot run: %s (%s)", oneLine(def.ID), oneLine(def.Problem), oneLine(def.Path))
+}
+
+func (env monitorEnv) source(def monitors.Definition) string {
+	switch {
+	case def.Builtin:
 		return "image"
+	case env.sourceRoot != "" && filepath.Dir(def.Path) == filepath.Join(env.sourceRoot, monitors.DirName):
+		return "repo"
 	}
-	return "repo"
+	return "path"
 }
 
 // mode is how the monitor runs: for an instance given opts, or with nil, as
@@ -370,14 +408,17 @@ func monitorShow(env monitorEnv, args []string, out io.Writer) error {
 	if *asJSON {
 		return writeJSONLines(out, []monitors.Definition{def})
 	}
-	fmt.Fprintf(out, "%s — %s\n", def.ID, def.Name)
+	fmt.Fprintf(out, "%s — %s\n", oneLine(def.ID), oneLine(def.Name))
 	if def.Description != "" {
-		fmt.Fprintf(out, "  %s\n", def.Description)
+		fmt.Fprintf(out, "  %s\n", oneLine(def.Description))
 	}
-	fmt.Fprintf(out, "  from:  %s (%s)\n", source(def), def.Path)
+	fmt.Fprintf(out, "  from:  %s (%s)\n", env.source(def), oneLine(def.Path))
 	fmt.Fprintf(out, "  runs:  %s\n", mode(def, nil))
+	if def.Since {
+		fmt.Fprintln(out, "  since: test --since starts it from a baseline in the past")
+	}
 	if def.Problem != "" {
-		fmt.Fprintf(out, "  cannot run: %s\n", def.Problem)
+		fmt.Fprintf(out, "  cannot run: %s\n", oneLine(def.Problem))
 	}
 	if len(def.Options) > 0 {
 		fmt.Fprintln(out, "  options:")
@@ -386,13 +427,13 @@ func monitorShow(env monitorEnv, args []string, out io.Writer) error {
 			if opt.Required {
 				required = " (required)"
 			}
-			fmt.Fprintf(out, "    %s%s  %s\n", opt.Name, required, opt.Description)
+			fmt.Fprintf(out, "    %s%s  %s\n", opt.Name, required, oneLine(opt.Description))
 		}
 	}
 	instances, _ := monitors.Enabled(env.dirs)
 	for _, inst := range instances {
 		if inst.Monitor == def.ID {
-			fmt.Fprintf(out, "  enabled as %s: %s\n", inst.Name, inst.Describe())
+			fmt.Fprintf(out, "  enabled as %s: %s\n", inst.Name, oneLine(inst.Describe()))
 		}
 	}
 	return nil
@@ -401,6 +442,7 @@ func monitorShow(env monitorEnv, args []string, out io.Writer) error {
 func monitorEnable(env monitorEnv, args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("enable", flag.ContinueOnError)
 	name := fs.String("name", "", "")
+	update := fs.Bool("update", false, "")
 	var opts stringList
 	fs.Var(&opts, "o", "")
 	fs.Var(&opts, "option", "")
@@ -416,7 +458,7 @@ func monitorEnable(env monitorEnv, args []string, out io.Writer) error {
 		return err
 	}
 	if def.Problem != "" {
-		return fmt.Errorf("%s cannot run: %s (%s)", def.ID, def.Problem, def.Path)
+		return errors.New(cannotRun(def))
 	}
 	options, err := monitors.ParseOptions(opts)
 	if err != nil {
@@ -442,18 +484,26 @@ func monitorEnable(env monitorEnv, args []string, out io.Writer) error {
 	if len(inst.Options) == 0 {
 		inst.Options = nil
 	}
-	created, err := monitors.Enable(env.dirs, inst)
+	result, err := monitors.Enable(env.dirs, inst, *update)
 	if err != nil {
 		if errors.Is(err, monitors.ErrNameTaken) {
-			return fmt.Errorf("%w; pass --name to enable another", err)
+			// It names the instance's monitor, a declaration's id.
+			if *update {
+				return errors.New(oneLine(err.Error()) + "; --update changes an instance's options, not its monitor: pass --name to enable another")
+			}
+			return errors.New(oneLine(err.Error()) + "; pass --update to change its options, or --name to enable another")
 		}
 		return err
 	}
-	if !created {
-		fmt.Fprintf(out, "%s is already enabled: %s\n", inst.Name, inst.Describe())
+	switch result {
+	case monitors.Unchanged:
+		fmt.Fprintf(out, "%s is already enabled: %s\n", inst.Name, oneLine(inst.Describe()))
+		return nil
+	case monitors.Updated:
+		fmt.Fprintf(out, "updated %s: %s; it keeps what it already watched\n", inst.Name, oneLine(inst.Describe()))
 		return nil
 	}
-	fmt.Fprintf(out, "enabled %s: %s, %s\n", inst.Name, inst.Describe(), mode(def, options))
+	fmt.Fprintf(out, "enabled %s: %s, %s\n", inst.Name, oneLine(inst.Describe()), mode(def, options))
 	fmt.Fprintln(out, "Its events wait for 'discobox-monitor pop'. To be woken by one, keep 'discobox-monitor pop --wait' running.")
 	return nil
 }
@@ -942,6 +992,7 @@ func monitorTest(env monitorEnv, args []string, out io.Writer) error {
 	fs.Var(&opts, "o", "")
 	fs.Var(&opts, "option", "")
 	runFor := fs.Duration("for", 0, "")
+	since := fs.Duration("since", 0, "")
 	rest, err := parseInterspersed(fs, args)
 	if err != nil {
 		return err
@@ -954,7 +1005,13 @@ func monitorTest(env monitorEnv, args []string, out io.Writer) error {
 		return err
 	}
 	if def.Problem != "" {
-		return fmt.Errorf("%s cannot run: %s (%s)", def.ID, def.Problem, def.Path)
+		return errors.New(cannotRun(def))
+	}
+	if *since < 0 {
+		return usageError{"--since takes a duration back from now (2h)"}
+	}
+	if *since > 0 && !def.Since {
+		return fmt.Errorf("%s cannot start in the past: its front matter does not declare `since: true` (%s)", oneLine(def.ID), oneLine(def.Path))
 	}
 	options, err := monitors.ParseOptions(opts)
 	if err != nil {
@@ -975,12 +1032,19 @@ func monitorTest(env monitorEnv, args []string, out io.Writer) error {
 		ctx, cancel = context.WithTimeout(ctx, *runFor)
 		defer cancel()
 	}
-	fmt.Fprintf(os.Stderr, "testing %s (%s) in a fresh state directory; nothing is enabled or queued. Ctrl-C ends it.\n", def.ID, mode(def, options))
+	var from time.Time
+	baseline := "a fresh state directory"
+	if *since > 0 {
+		from = env.now().Add(-*since)
+		baseline = "a baseline " + since.String() + " back"
+	}
+	fmt.Fprintf(os.Stderr, "testing %s (%s) from %s; nothing is enabled or queued. Ctrl-C ends it.\n", oneLine(def.ID), mode(def, options), baseline)
 	count := 0
 	runner := &monitors.Runner{
 		Test:         true,
 		Instance:     monitors.Instance{Name: "test", Monitor: def.ID, Path: def.Path, Builtin: def.Builtin, Workdir: workdir, Options: options},
 		MonitorState: state,
+		Since:        from,
 		Stderr:       os.Stderr,
 		Emit: func(ev monitors.Event) error {
 			count++

@@ -86,6 +86,16 @@ func TestReadDirReportsDuplicateIDs(t *testing.T) {
 	}
 }
 
+func TestReadFileReadsOneDeclarationAlone(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "10-api.sh", "#!/bin/sh\n#---\n#---\n", 0o755)
+	write(t, dir, "20-api.sh", "#!/bin/sh\n#---\n# name: Second\n#---\n", 0o755)
+	file := ReadFile(filepath.Join(dir, "20-api.sh"))
+	if file.ID != "api" || file.Name != "Second" || file.Problem != "" || file.Path != filepath.Join(dir, "20-api.sh") {
+		t.Fatalf("file = %+v", file)
+	}
+}
+
 func TestParseReportsMalformedMetadata(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "list.yaml", "- a\n- b\n", 0o644)

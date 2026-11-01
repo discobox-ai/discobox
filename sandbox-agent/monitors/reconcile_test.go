@@ -56,7 +56,7 @@ func TestReconcilerRunsOneRunnerPerEnabledInstance(t *testing.T) {
 		t.Fatal(err)
 	}
 	workdir := t.TempDir()
-	if _, err := Enable(r.Dirs, Instance{Name: "pr-412", Monitor: "github-repo", Workdir: workdir}); err != nil {
+	if _, err := Enable(r.Dirs, Instance{Name: "pr-412", Monitor: "github-repo", Workdir: workdir}, false); err != nil {
 		t.Fatal(err)
 	}
 	r.Sync(ctx, logger)
@@ -93,7 +93,7 @@ func TestReconcilerRelaunchesARunnerThatEnded(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	code := int64(1)
 	units.Exit = &code
-	if _, err := Enable(r.Dirs, Instance{Name: "ci", Monitor: "github-repo"}); err != nil {
+	if _, err := Enable(r.Dirs, Instance{Name: "ci", Monitor: "github-repo"}, false); err != nil {
 		t.Fatal(err)
 	}
 	r.Sync(ctx, logger)
@@ -114,7 +114,7 @@ func TestReconcilerReplacesARunnerThatIsNotTheEnabledInstances(t *testing.T) {
 	r, units := newTestReconciler(t)
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
-	if _, err := Enable(r.Dirs, Instance{Name: "pr", Monitor: "github-repo", Options: map[string]string{"pr": "412"}}); err != nil {
+	if _, err := Enable(r.Dirs, Instance{Name: "pr", Monitor: "github-repo", Options: map[string]string{"pr": "412"}}, false); err != nil {
 		t.Fatal(err)
 	}
 	r.Sync(ctx, logger)
@@ -124,7 +124,7 @@ func TestReconcilerReplacesARunnerThatIsNotTheEnabledInstances(t *testing.T) {
 	if err := Disable(r.Dirs, "pr"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Enable(r.Dirs, Instance{Name: "pr", Monitor: "github-repo", Options: map[string]string{"pr": "413"}}); err != nil {
+	if _, err := Enable(r.Dirs, Instance{Name: "pr", Monitor: "github-repo", Options: map[string]string{"pr": "413"}}, false); err != nil {
 		t.Fatal(err)
 	}
 	r.Sync(ctx, logger)

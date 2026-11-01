@@ -13,7 +13,10 @@
 package monitors
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -81,6 +84,9 @@ type Definition struct {
 	// MinInterval is the shortest interval an instance may be given: the
 	// declaration's `min-interval`, else the package's MinInterval.
 	MinInterval time.Duration `json:"minInterval,omitempty"`
+	// Since reports that the monitor can start from a baseline in the past,
+	// given as DISCOBOX_MONITOR_SINCE (ADR 26-11-01-375 §3).
+	Since bool `json:"since,omitempty"`
 	// Builtin marks a declaration that came from the image rather than the
 	// repository.
 	Builtin bool   `json:"builtin,omitempty"`
@@ -126,18 +132,24 @@ func Discover(builtinDir, sourceRoot string) ([]Definition, error) {
 
 // Load reads the one declaration at path, which is what a runner does before
 // each run, so an edit to a monitor reaches the instances of it without
-// enabling them again.
+// enabling them again. It is also how `enable` and `test` read a monitor named
+// by its path rather than its id (ADR 26-11-01-375 §1). Only that file is
+// read: whatever else is in its directory, a skill's or a person's, is not a
+// declaration of this one.
 func Load(path string, builtin bool) (Definition, error) {
-	defs, err := discoverDir(filepath.Dir(path), builtin)
-	if err != nil {
-		return Definition{}, err
-	}
-	for _, def := range defs {
-		if def.Path == path {
-			return def, nil
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return Definition{}, fmt.Errorf("monitor %s: no such declaration", path)
 		}
+		return Definition{}, fmt.Errorf("monitor %s: %w", path, err)
 	}
-	return Definition{}, fmt.Errorf("monitor %s: no such declaration", path)
+	file := declared.ReadFile(path)
+	if file.ID == "" {
+		return Definition{}, fmt.Errorf("monitor %s: its name is not a declaration's", path)
+	}
+	def := definition(file)
+	def.Builtin = builtin
+	return def, nil
 }
 
 // IntervalOption is the option a polling monitor declares to let each
@@ -235,6 +247,14 @@ func definition(file declared.File) Definition {
 			return def
 		}
 		def.MinInterval = floor
+	}
+	if raw, present := file.Fields["since"]; present {
+		since, ok := raw.(bool)
+		if !ok {
+			def.Problem = "front matter: since: is not true or false"
+			return def
+		}
+		def.Since = since
 	}
 	raw, present := file.Fields["options"]
 	if present && raw == nil {

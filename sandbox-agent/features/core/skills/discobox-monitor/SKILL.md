@@ -107,7 +107,21 @@ Each monitor reports only what happens after you enable it, never a
 backlog.
 
 One instance per name. Enabling the same monitor with the same options
-again does nothing. To watch two PRs, give each its own `--name`.
+again does nothing. To watch two PRs, give each its own `--name`, or list
+both in one instance (`-o pr=412,413`).
+
+To change what an instance watches, enable it again with `--update`. The
+options you give replace its options whole, so restate the ones you keep.
+The instance keeps what it already saw: nothing it was watching starts over,
+and only a newly named id starts from now. It also picks up the monitor's
+current script, or the path you name.
+
+```bash
+discobox-monitor enable github-repo --name lead --update -o repo=foo/bar -o pr=412,413,415
+```
+
+`--update` works whether or not the instance is enabled yet, so a script can
+run the same command every time.
 
 ## Reading events
 
@@ -133,8 +147,20 @@ e18  just now  pr-412  pr.review  alice requested changes on #412 — this leaks
 
 Put a new monitor in the repository, in `.discobox/monitors/` at the root of
 the primary source. The user decides whether to commit it or delete it.
-Tell them you wrote it. A monitor is an executable script with front
-matter:
+Tell them you wrote it.
+
+A monitor can also live anywhere and be named by its path: any argument
+with a `/` in it is a path. That is how a skill ships one, for watching
+that belongs with the skill rather than with one repository: it keeps the
+script beside its `SKILL.md` and says to enable it by its path relative to
+the skill. `list` doesn't show monitors named by path.
+
+```bash
+discobox-monitor test <skill dir>/monitors/watch.sh -o repo=foo/bar
+discobox-monitor enable <skill dir>/monitors/watch.sh --name lead --update -o repo=foo/bar
+```
+
+A monitor is an executable script with front matter:
 
 ```bash
 #!/usr/bin/env bash
@@ -185,7 +211,14 @@ Rules:
     relative paths in options are relative to it.
 - **Only what changed.** If the state directory is empty, this is the
   first run: record a baseline and print nothing. Report changes against it
-  after that.
+  after that. If you keep state per target (per PR, per run), treat a
+  target with no state as a baseline too. That way an id added with
+  `--update` reports only what happens after it was added.
+- **Starting in the past (optional).** Add `since: true` to the front
+  matter if the monitor can take its baseline at a given time. A first run
+  with `DISCOBOX_MONITOR_SINCE` set (RFC 3339, UTC) should report what
+  happened after that time instead of printing nothing. Only `test --since`
+  sets it.
 - **Output.**
   - Each stdout line is an event. A JSON object needs only `title`. It can
     also carry `kind`, `summary`, `url`, `key`, `body` (the detail `read`
@@ -206,4 +239,12 @@ queued. A correct monitor prints nothing on its first run.
 
 ```bash
 discobox-monitor test deploy-status -o env=staging --for 3m
+```
+
+To see what its events actually look like, start a monitor that declares
+`since: true` from a past baseline, such as `github-repo`. Its first run
+then prints what really happened in that window:
+
+```bash
+discobox-monitor test github-repo -o repo=foo/bar --since 2h --for 10s
 ```
