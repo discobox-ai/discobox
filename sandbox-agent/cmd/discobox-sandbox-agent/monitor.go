@@ -21,6 +21,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/monitors"
 	"github.com/discobox-ai/discobox/sandbox-agent/monitors/builtin"
+	"github.com/discobox-ai/discobox/sandbox-agent/monitors/discoboxbox"
 	"github.com/discobox-ai/discobox/sandbox-agent/monitors/githubrepo"
 )
 
@@ -146,7 +147,8 @@ func runMonitorRunner(args []string) int {
 // builtinMonitors are the monitors written in Go, each run by its declared
 // script through `monitor-builtin NAME`.
 var builtinMonitors = map[string]builtin.Monitor{
-	githubrepo.Name: githubrepo.Run,
+	githubrepo.Name:  githubrepo.Run,
+	discoboxbox.Name: discoboxbox.Run,
 }
 
 // runMonitorBuiltin is the `monitor-builtin NAME` subcommand: one run of a

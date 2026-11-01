@@ -95,6 +95,35 @@ discobox-monitor enable github-repo --name main-ci -o repo=foo/bar -o branch=mai
 - An instance that watches only ids ends itself once each of them is closed
   or complete.
 
+`discobox-box` reports what happens to other discoboxes: the ones you
+started, or any in the project you can name. It reads the discobox API, so
+this box must be allowed to call it (`discoboxApi`). Without that, every run
+fails saying so, and only a person can allow it.
+
+```bash
+discobox-monitor enable discobox-box --name workers -o tag=issue           # every box tagged issue
+discobox-monitor enable discobox-box --name workers -o 'tag=role=worker lead=me'  # every selector matches
+discobox-monitor enable discobox-box --name w -o id=sbx_abc,sbx_def -o watch=terminal,requests
+```
+
+- `id` names boxes (comma-separated). `tag` selects them, including boxes
+  created later: `key` or `key=value`, separated by spaces, all of which
+  must match.
+- `watch` picks kinds: `state`, `terminal`, `requests`. All three when
+  omitted. `interval` polls more often than every 30s, down to 10s.
+- What it reports:
+  - **`box.state`:** a box's state changing (running, stopped, suspended,
+    …). Also `box.created` for a selected box created after you enabled
+    it, and `box.gone` for a named one that was deleted.
+  - **`box.busy` / `box.idle`:** its primary terminal's program reporting
+    that it is working, or idle, done, waiting (on a permission, a question,
+    a login) or stopped on an error. This is what the program reports, not
+    what its screen says.
+  - **`box.request` / `box.request.answered`:** a secret request from it
+    pending, and then approved or denied. You see requests only from the
+    boxes this box created.
+- An instance that names only ids ends itself once every one is gone.
+
 The other built-ins:
 - **`command`:** `-o cmd='make status' -o every=2m` runs the command and
   reports when its output or exit status changes.
