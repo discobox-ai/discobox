@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -290,5 +291,116 @@ func TestTheWorkspaceHeaderLeavesAnUnnumberedIssueOut(t *testing.T) {
 	boxes[0].Repository = ""
 	if field := workField(newStyles(false), boxes[0]); !field.empty() {
 		t.Fatalf("workField = %q, want nothing without a repository", field.text())
+	}
+}
+
+// treeTagBoxes are three discoboxes for the tree's tag lines: one with more
+// tags than its line holds, one with none, and one a pull request is blocked
+// on.
+func treeTagBoxes() []Sandbox {
+	return []Sandbox{
+		{ID: "sbx_a", Name: "fix the reaper", State: StateRunning, Repository: "https://github.com/acme/disco",
+			Tags: []string{"issue=342", "ready", "area=tui", "size=s", "kind=bug"}},
+		{ID: "sbx_b", Name: "plain", State: StateRunning},
+		{ID: "sbx_c", Name: "consolidate", State: StateRunning, Repository: "https://github.com/acme/disco",
+			Tags: []string{"pr=12", "blocked"}},
+	}
+}
+
+// In the workspace tree a tagged row has its tags on a line of its own under
+// it, drawn as the row draws them beside the name — the pull request status
+// first and in its color, an issue or pull request a link, the rest dim — with
+// how many did not fit, and an untagged row has no such line. The name gets
+// the row's width rather than sharing it.
+func TestTheTreeDrawsATaggedRowsTagsUnderIt(t *testing.T) {
+	st := newStyles(true)
+	l := listForTest(Session{}, treeTagBoxes())
+	l.width, l.tagLines = treeWidth-2, true
+	z := &zones{}
+	out := l.view(st, z, true)
+	lines := strings.Split(ansi.Strip(out), "\n")
+
+	var body []string
+	for _, line := range lines[1:] {
+		if strings.TrimSpace(line) != "" && !strings.Contains(line, "boxes") {
+			body = append(body, strings.TrimRight(line, " "))
+		}
+	}
+	want := []string{
+		"❯ ●   fix the reaper",
+		"      #ready #issue=342 +3",
+		"  ●   plain",
+		"  ●   consolidate",
+		"      #blocked #pr=12",
+	}
+	if strings.Join(body, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("rows:\n%s\nwant:\n%s", strings.Join(body, "\n"), strings.Join(want, "\n"))
+	}
+	for _, span := range []string{
+		st.readyText.Render("#ready"),
+		st.blockedText.Render("#blocked"),
+		st.info.Render("#issue=342"),
+		st.info.Render("#pr=12"),
+	} {
+		if !strings.Contains(out, span) {
+			t.Errorf("the tag lines have no %q:\n%s", span, out)
+		}
+	}
+
+	// A press on a tag line points at its row, and one on a link opens it.
+	if hit, ok := z.at(30, 6); !ok || hit.what.kind != hitRow || hit.what.idx != 2 {
+		t.Fatalf("a press on the last row's tag line hits %+v, want row 2", hit)
+	}
+	if hit, ok := z.at(14, 3); !ok || hit.what.kind != hitURL || hit.what.url != "https://github.com/acme/disco/issues/342" {
+		t.Fatalf("a press on #issue=342 hits %+v, want its issue", hit)
+	}
+
+	// The list itself, wide, keeps its tags beside the name on one line.
+	l.width, l.tagLines = 160, false
+	wide := ansi.Strip(l.view(st, &zones{}, true))
+	if !strings.Contains(wide, "fix the reaper #ready #issue=342") || strings.Contains(wide, "      #ready") {
+		t.Fatalf("the wide list does not keep its tags beside the name:\n%s", wide)
+	}
+}
+
+// A tree too short for every row keeps the cursor's row on screen with its tag
+// line, counting the tag lines above it.
+func TestTheTreeScrollsByTheLinesItsTagsTake(t *testing.T) {
+	var boxes []Sandbox
+	for i := range 6 {
+		boxes = append(boxes, Sandbox{ID: fmt.Sprintf("sbx_%d", i), Name: fmt.Sprintf("box %d", i), State: StateRunning, Tags: []string{"t"}})
+	}
+	l := listForTest(Session{}, boxes)
+	l.width, l.height, l.tagLines = treeWidth-2, 7, true
+	l.moveTo(5)
+	lines := strings.Split(ansi.Strip(l.view(newStyles(true), &zones{}, true)), "\n")
+	text := strings.Join(lines, "\n")
+	if !strings.Contains(text, "❯ ●   box 5") || strings.Count(text, "#t") < 3 {
+		t.Fatalf("the cursor's row, or the tag lines, are off the tree:\n%s", text)
+	}
+	if strings.Contains(text, "box 2") {
+		t.Fatalf("the tree draws more rows than it has lines for:\n%s", text)
+	}
+}
+
+// The workspace header carries the box's tags it does not say otherwise, dim:
+// not the issue and pull request it links, nor a pull request status, which
+// it says through the git word.
+func TestTheWorkspaceHeaderCarriesTheBoxsOtherTags(t *testing.T) {
+	t.Parallel()
+	st := newStyles(true)
+	m := newColorModel(t, newFakeSource())
+	m.paneBox = Sandbox{ID: "sbx_one", Name: "one", Repository: "https://github.com/acme/disco",
+		Tags: []string{"issue=4", "ready", "area=tui", "kind=bug"}}
+	got := m.paneHeaderFields().text()
+	if !strings.Contains(got, st.dimText.Render("#area=tui #kind=bug")) {
+		t.Fatalf("header = %q, want the box's other tags dim in it", got)
+	}
+	if strings.Contains(got, "#issue") || strings.Contains(got, "#ready") {
+		t.Fatalf("header = %q, want the issue and the status said once, their own way", got)
+	}
+	m.paneBox.Tags = []string{"issue=4"}
+	if got := m.paneHeaderFields(); len(got) != 2 {
+		t.Fatalf("header = %q, want the id and the issue and no tags field for a box with none left to say", got.text())
 	}
 }

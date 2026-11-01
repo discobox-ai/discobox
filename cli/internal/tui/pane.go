@@ -2073,7 +2073,8 @@ func (f paneHeaderFields) render(m *Model, left, right string, w int) string {
 // these terminals.
 //
 // They are returned in the order they are given up in, last first, once
-// viewPaneHeader has run out of edges to drop: the ports, then the diffstat,
+// viewPaneHeader has run out of edges to drop: the box's other tags
+// (tagsField), then the ports, then the desktop, then the diffstat,
 // then the word, whose mark is on the
 // position regardless. From the diffstat down that is the list's own drop
 // order. The id leads and never goes — it is what identifies the window. The
@@ -2137,6 +2138,12 @@ func (m *Model) paneHeaderFields() paneHeaderFields {
 	}
 	if listening := portsField(m.st, box, m.forwardedPorts()); !listening.empty() {
 		fields = append(fields, listening)
+	}
+	// The rest of its tags come last of all, the first thing given up: the
+	// tree beside the header draws them under the box's row already, and like
+	// the ports they have no bound on their width.
+	if tags := tagsField(m.st, box); !tags.empty() {
+		fields = append(fields, tags)
 	}
 	return fields
 }
