@@ -733,6 +733,78 @@ func TestThePagesOpenRightOfTheTreeAndNameTheirKeysWhereTheyWork(t *testing.T) {
 	}
 }
 
+// The tree's entries open behind the leader from a pane, from a page beside
+// the tree, and from the audit screen, not only from the list: n the new card,
+// F3 to F5 the pages. Nothing reaches the program.
+func TestTheLeaderOpensTheTreesEntriesFromAnywhereBesideIt(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+
+	d.leader(harnessesKey)
+	d.wait("the harnesses", func() bool { return m.harnessesOpen })
+	if !m.treeShown() || m.listFront || m.primary() == nil {
+		t.Fatalf("tree %v, listFront %v; want the page beside the tree over the live workspace", m.treeShown(), m.listFront)
+	}
+	// From the page, the leader's next key is another page.
+	d.leader(secretsKey)
+	d.wait("the secrets", func() bool { return m.secretsOpen && !m.harnessesOpen })
+	d.key("esc")
+	if !m.inPanes() || m.focus != focusPane {
+		t.Fatalf("inPanes %v, focus %v; want the workspace back", m.inPanes(), m.focus)
+	}
+
+	d.leader(skillsKey)
+	d.wait("the skills", func() bool { return m.skillsOpen })
+	m.showLive()
+
+	d.leader("n")
+	if !m.newOpen || m.focus != focusPrompt {
+		t.Fatalf("newOpen %v, focus %v; want the card with the composer", m.newOpen, m.focus)
+	}
+	d.key("esc")
+	if m.newOpen || !m.inPanes() {
+		t.Fatalf("newOpen %v, inPanes %v; want Esc back to the workspace", m.newOpen, m.inPanes())
+	}
+
+	// Over the audit screen, which covers the panes.
+	d.leader(auditKey)
+	d.wait("the audit", func() bool { return m.audit != nil })
+	d.leader(harnessesKey)
+	d.wait("the harnesses over the audit", func() bool { return m.harnessesOpen })
+	if m.audit != nil {
+		t.Fatal("the page opened over the audit left it open behind the page")
+	}
+	// A pane the page opens of its own is what is in front, with the keys:
+	// no audit comes back over it.
+	d.key("j")
+	d.key("e")
+	d.wait("the configure pane", func() bool { return m.overlay != nil })
+	if m.audit != nil || !m.inPanes() || m.focusedPane() != m.overlay {
+		t.Fatalf("audit %v, inPanes %v; want the configure pane in front with the keys", m.audit != nil, m.inPanes())
+	}
+	if frame := plainFrame(m); !strings.Contains(frame, "Configuring Codex") {
+		t.Fatalf("the configure pane is not what is drawn:\n%s", frame)
+	}
+
+	d.settle()
+	if got := term.inputSoFar(); strings.Contains(got, "n") {
+		t.Fatalf("the program received %q; the leader's keys are the window's", got)
+	}
+}
+
+// With no tree beside the box the leader's tree keys open nothing, and say so.
+func TestTheLeadersTreeKeysNeedTheTree(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openNarrowWorkspace(t, ds, "enter")
+	d.leader(harnessesKey)
+	d.settle()
+	if m.harnessesOpen || !m.inPanes() || !strings.Contains(m.status, "beside the list") {
+		t.Fatalf("harnesses %v, inPanes %v, status %q; want nothing opened and a note", m.harnessesOpen, m.inPanes(), m.status)
+	}
+}
+
 // n on the list opens the new discobox card. It is modal: the tree is greyed
 // and takes no clicks while it is up, and Esc puts it away.
 func TestNewDiscoboxIsAModalCardBesideTheTree(t *testing.T) {

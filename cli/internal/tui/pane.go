@@ -606,6 +606,11 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 		termpane.WithPrefixBinding(paneTerminalKey, newTerminalMsg{}),
 		termpane.WithPrefixBinding(paneEndKey, endPaneMsg{}),
 	)
+	// The tree's entries, on the keys the tree names them by: the new card
+	// and the pages open right of it from the box being typed at.
+	for _, tp := range treePages {
+		opts = append(opts, termpane.WithPrefixBinding(tp.key, treePageMsg{act: tp.act}))
+	}
 	// The digits jump straight to a pane by the number its label wears, the
 	// way tmux selects windows: 0 is the terminal, 1 through 9 the tabs.
 	for n := 0; n <= 9; n++ {
@@ -880,6 +885,16 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 			}
 		}
 		return cmd
+
+	case treePageMsg:
+		if m.hasScreen(p) {
+			return m.underScreen(p)
+		}
+		p.term.SetPrefixArmed(false)
+		if cmd, taken := m.treeEntry(msg.act); taken {
+			return cmd
+		}
+		return status("the list's entries open beside the list, which this window is not showing")
 
 	case jumpPaneMsg:
 		if m.hasScreen(p) {

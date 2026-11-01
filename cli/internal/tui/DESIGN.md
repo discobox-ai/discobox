@@ -172,6 +172,16 @@ flowchart LR
   where the workspace header has it. A page covers the live workspace without
   closing it; choosing the live box again puts the page away (`showLive`).
   An entry shows its key only where the key works.
+- **The tree's entries are leader keys too** (`treePageMsg`, `treeEntry`):
+  `leader n`, `leader F3`/`F4`/`F5` open the card or a page from a pane, the
+  audit screen, a workspace opening, or another page — wherever the window has
+  a tree, and the bare key belongs to something else. The bare keys and the
+  leader's go through one `treeEntry`: the page already up is left to its own
+  key, which puts it away, and a window with no tree opens nothing and says
+  why. A column maximized over the tree is no bar — a page is not the
+  workspace, so the tree is drawn beside it. A page opened over the audit
+  closes it (`openPage`), or the audit would be drawn in front of the page's
+  own panes and take their keys.
 - **A new discobox is a card**, the composer framed as a dialog (`newOpen`,
   `viewNewCard`), and modal like one: the tree is greyed (`treeBlocked`)
   while it or any dialog is up, since it takes no clicks then. It is not in
