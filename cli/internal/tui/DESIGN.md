@@ -740,6 +740,24 @@ The link is drawn only when the forward has bound it, the same rule
 `portEntry` follows: an offer to open something unreachable is worse than no
 offer.
 
+## A row's tags in the tree are a line of their own
+
+The tree's column is too narrow to share: beside the name a row's tags only
+get what the name has past its floor, and the tail columns take that first,
+so in the tree a tag never fit. There a tagged row draws its tags on a second
+line under it (`sandboxList.tagLines`, `tagLine`), from under the name, with
+the tree's rule carried down past them — drawn as beside the name
+(`tagSpans`): the pull request status first in its color, an issue or pull
+request a link, the rest dim, and `+N` for what does not fit. The line is
+part of the row: a press on it points at the row, its links open, and the
+cursor's window counts it (`lineSpan`, `drawn.rows`). The wide list keeps one
+line per row and its tags beside the name.
+
+The workspace header carries the box's other tags too (`tagsField`), dim,
+last among its fields and the first given up: not the issue and pull request
+`workField` links, nor a pull request status, which the header says through
+the git word on terms of its own (below).
+
 ## An issue or pull request tag is a link
 
 A discobox tagged `issue=N` or `pr=N` whose source is a GitHub repository —
@@ -2032,9 +2050,11 @@ is happening, and unlike them it is written down nowhere else, so it holds its
 place all the way down.
 
 Only a middle that still does not fit drops its own fields, whole from the
-right — the ports first, since they are the only field with no bound on their
-width (a compose stack brings up as many as it likes), then, in the list's own
-order, the diffstat, then the word,
+right — the box's other tags first (`tagsField`), which the tree beside the
+header draws under its row already, then the ports, since they are the only
+other field with no bound on their width (a compose stack brings up as many as
+it likes), then the desktop, then, in the list's own order, the diffstat, then
+the word,
 whose mark is on the position regardless, then the issue and pull request
 tags. The id never goes, and the age of a listing that has stopped keeping up
 (`listed 40s ago`, right after the id) is the last to: everything after it is

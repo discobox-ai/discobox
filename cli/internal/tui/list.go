@@ -16,7 +16,8 @@ import (
 // sandboxList is the upper pane: every sandbox in the project, newest-created
 // first.
 //
-// A row is one line: a glyph for the state, the name, the harness, where it
+// A row is one line (two in the workspace tree, for a tagged one: tagLines):
+// a glyph for the state, the name, the harness, where it
 // came from, how old it is and what it has changed. The fixed width
 // columns drop off the right end as the terminal narrows — the name and the
 // glyph are what the eye actually picks a sandbox by, and neither ever goes.
@@ -52,6 +53,12 @@ type sandboxList struct {
 	// Archived sandboxes are history: kept, listed on request, and out of the
 	// way until then.
 	showArchived bool
+
+	// tagLines puts a row's tags on a line of their own under it rather than
+	// beside the name, which is how the workspace tree draws them: a column
+	// that narrow gives the name all of its width and the tags none
+	// (tagLine).
+	tagLines bool
 
 	// unreachable are the servers the last listing could not reach, which get
 	// a section of their own with no rows: a server's discoboxes going missing
@@ -888,7 +895,7 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	// is only known here: a section header is a line, and how many there are
 	// between the offset and the cursor depends on where the sections fall.
 	// clamp keeps the cursor on a row; this keeps the row on the screen.
-	for l.grouped() && l.cursor > l.offset && l.cursor < len(rows) && l.lineSpan(rows, l.offset, l.cursor) > rowBudget {
+	for (l.grouped() || l.tagLines) && l.cursor > l.offset && l.cursor < len(rows) && l.lineSpan(rows, l.offset, l.cursor) > rowBudget {
 		l.offset++
 	}
 
@@ -904,7 +911,7 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 		body = append(body, st.dimText.Render(pad("  no discoboxes here yet — type a prompt below", l.width)))
 	}
 	l.drawn = drawn{top: len(out), first: l.offset}
-	if l.sectioned() {
+	if l.sectioned() || l.tagLines {
 		l.drawn.rows = make([]int, 0, max(bodyBudget, 0))
 	}
 	// How many each section has, for its band to say, counted once rather
@@ -936,6 +943,15 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 			l.drawn.rows = append(l.drawn.rows, i)
 		}
 		l.drawn.count++
+		// Its tags, when it has a line for them, are part of the row: a press
+		// on them points at it like a press on its name.
+		if l.tagLines && len(body) < rowBudget {
+			if line, links, ok := l.tagLine(st, z, rows[i], i, len(out)+len(body), focused); ok {
+				rowLinks = append(rowLinks, links...)
+				body = append(body, line)
+				l.drawn.rows = append(l.drawn.rows, i)
+			}
+		}
 	}
 	// The servers that did not answer, after the ones that did: their rows are
 	// missing from this listing rather than gone, and a section saying so is
@@ -981,7 +997,8 @@ func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	return lipgloss.JoinVertical(lipgloss.Left, block...)
 }
 
-// lineSpan is how many lines rows from through to take, headers included. It
+// lineSpan is how many lines rows from through to take, headers and tag lines
+// included. It
 // is what tells the window whether the cursor still fits, and it counts the
 // way the body draws: a header in front of the first row, and one wherever the
 // section changes.
@@ -990,6 +1007,13 @@ func (l *sandboxList) lineSpan(rows []Sandbox, from, to int) int {
 		return 0
 	}
 	lines := to - from + 1
+	if l.tagLines {
+		for _, s := range rows[from : to+1] {
+			if len(s.Tags) > 0 {
+				lines++
+			}
+		}
+	}
 	if !l.grouped() {
 		return lines
 	}
@@ -1125,22 +1149,7 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	addCol(padANSI(diffText(st, s), 11), 11)
 	tail := cols.text
 
-	// The cursor is a chevron, and selection is a background —
-	// discobox-review's file list, which is a picker like this one rather than
-	// a diff.
-	marker := "  "
-	if atCursor {
-		marker = st.key.Render("❯") + " "
-	}
-
-	head := marker
-	if glyph {
-		// What the agent reports comes right after the box's own state, so
-		// the two read as one column pair; a box whose agent reports nothing
-		// leaves the cell blank rather than closing it up, so the names stay
-		// in line.
-		head += l.stateStyle(st, s).Render(stateDot(s)) + " " + agentGlyph(st, s.Agent.State) + " "
-	}
+	head := l.rowHead(st, s, atCursor)
 	// The branch a discobox created by another hangs from, after the state so
 	// the glyphs stay one column the eye runs down. It is part of the head: it
 	// comes out of the name's width, and the name keeps its floor.
@@ -1192,7 +1201,7 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	// says it.
 	var shown []string
 	taggedW := 0
-	if len(s.Tags) > 0 {
+	if len(s.Tags) > 0 && !l.tagLines {
 		room := nameW - (nameReserve - lipgloss.Width(head))
 		for _, tag := range s.rowTags() {
 			next := taggedW + lipgloss.Width(" "+tagLabel(tag))
@@ -1223,17 +1232,99 @@ func (l *sandboxList) row(st *styles, z *zones, s Sandbox, i, y int, focused boo
 	named := nameStyle.Render(truncate(name, nameW))
 	tagged, links := l.tagSpans(st, z, s, shown, lipgloss.Width(head)+lipgloss.Width(named)+lipgloss.Width(from), y)
 	cell := padANSI(named+from+tagged, nameW+lipgloss.Width(from)+taggedW)
-	line := padANSI(head+cell+tail, l.width)
+	return l.shade(st, padANSI(head+cell+tail, l.width), atCursor, selected), links
+}
+
+// rowHead is what a row draws in front of its tree branch and its name: the
+// cursor's chevron, and in color the state dot and the agent's glyph. It is
+// the one place that says how wide that is, so the tag line under a row
+// (tagLine) starts where the row's name does.
+func (l *sandboxList) rowHead(st *styles, s Sandbox, atCursor bool) string {
+	// The cursor is a chevron, and selection is a background —
+	// discobox-review's file list, which is a picker like this one rather than
+	// a diff.
+	head := "  "
+	if atCursor {
+		head = st.key.Render("❯") + " "
+	}
+	if st.color {
+		// What the agent reports comes right after the box's own state, so
+		// the two read as one column pair; a box whose agent reports nothing
+		// leaves the cell blank rather than closing it up, so the names stay
+		// in line.
+		head += l.stateStyle(st, s).Render(stateDot(s)) + " " + agentGlyph(st, s.Agent.State) + " "
+	}
+	return head
+}
+
+// shade is a row's line with the background its cursor and its marks give it.
+func (l *sandboxList) shade(st *styles, line string, atCursor, selected bool) string {
 	switch {
 	case atCursor && selected:
-		return highlight(st, line, colBothBG), links
+		return highlight(st, line, colBothBG)
 	case selected:
-		return highlight(st, line, colSelectedBG), links
+		return highlight(st, line, colSelectedBG)
 	case atCursor:
-		return highlight(st, line, colHighlightBG), links
+		return highlight(st, line, colHighlightBG)
 	default:
-		return line, links
+		return line
 	}
+}
+
+// tagLine is the line under a tagged row in the workspace tree (tagLines): its
+// tags, drawn as the row draws them beside the name (tagSpans) — the pull
+// request status bold in its color and first, an issue or pull request a link,
+// the rest dim — from under the name, with the tree's rule carried down past
+// them. As many as fit, and how many more there are when that is not all of
+// them. It reports false for a row with no tags, which has no such line.
+func (l *sandboxList) tagLine(st *styles, z *zones, s Sandbox, i, y int, focused bool) (string, []rowLink, bool) {
+	if len(s.Tags) == 0 {
+		return "", nil, false
+	}
+	atCursor := i == l.cursor && focused
+	selected := l.selected[s.ID]
+	if l.visual {
+		lo, hi := l.visualRange()
+		selected = selected || (i >= lo && i <= hi)
+	}
+
+	// Under the marker and the glyphs, and under the name's branch the rule
+	// it continues on, so a tree reads unbroken through its rows' tags.
+	indent := strings.Repeat(" ", lipgloss.Width(l.rowHead(st, s, false)))
+	cont := ""
+	if lead, ok := strings.CutSuffix(s.tree, treeBranch); ok {
+		cont = lead + treeRule
+	} else if lead, ok := strings.CutSuffix(s.tree, treeLast); ok {
+		cont = lead + treeGap
+	}
+	head := indent + st.dimText.Render(cont)
+
+	// The space in front of the first tag is the gap to the name's column,
+	// and a cell is kept clear of the right edge, as the row's columns keep
+	// one.
+	room := l.width - lipgloss.Width(head)
+	tags := s.rowTags()
+	var shown []string
+	used := 0
+	for n, tag := range tags {
+		w := lipgloss.Width(" " + tagLabel(tag))
+		// The last that fits leaves room to say how many did not, unless it
+		// is the last of them.
+		more := 0
+		if n < len(tags)-1 {
+			more = lipgloss.Width(fmt.Sprintf(" +%d", len(tags)-n-1))
+		}
+		if used+w+more > room {
+			break
+		}
+		shown, used = append(shown, tag), used+w
+	}
+	tagged, links := l.tagSpans(st, z, s, shown, lipgloss.Width(head)-1, y)
+	if rest := len(tags) - len(shown); rest > 0 {
+		tagged += st.dimText.Render(fmt.Sprintf(" +%d", rest))
+	}
+	line := padANSI(ansi.Truncate(head, max(lipgloss.Width(head)-1, 0), "")+tagged, l.width)
+	return l.shade(st, line, atCursor, selected), links, true
 }
 
 // rowLink is a link drawn on a row: the cells it takes in the list's block —
@@ -1438,6 +1529,24 @@ func workField(st *styles, s Sandbox) paneHeaderField {
 		field.spans = append(field.spans, span)
 	}
 	return field
+}
+
+// tagsField is the discobox's tags the header says nothing of otherwise, dim
+// and in the order they are kept. The ones it says already are left out: an
+// issue or pull request workField links, and a pull request status, which the
+// header says through the git word (paneHeaderFields), on terms of its own
+// that a tag drawn beside it would contradict. Empty when that leaves none.
+func tagsField(st *styles, s Sandbox) paneHeaderField {
+	var labels []string
+	for _, tag := range s.Tags {
+		if s.tagURL(tag) == "" && !isPRStatus(tag) {
+			labels = append(labels, tagLabel(tag))
+		}
+	}
+	if len(labels) == 0 {
+		return paneHeaderField{}
+	}
+	return textField(st.dimText.Render(strings.Join(labels, " ")))
 }
 
 // desktopField is the sandbox's graphical desktop, as a link to the local end of
