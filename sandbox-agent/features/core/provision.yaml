@@ -23,6 +23,11 @@ steps:
     run: link-agent.sh
   - name: dirs
     run: make-dirs.sh
+  # How a feature puts a command it installed in a prefix of its own on every
+  # user's PATH, moving aside what the box had at the name (see the script).
+  # Every feature that links one requires core for it.
+  - name: link-command
+    file: {path: /usr/local/libexec/discobox/link-command, source: link-command, mode: "0755"}
 
   # The whole PATH and the tools' env for a login shell, which /etc/profile
   # would otherwise overwrite; image.json's PATH is what a non-login exec gets.

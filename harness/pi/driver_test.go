@@ -143,7 +143,7 @@ func TestImagePolicy(t *testing.T) {
 	if !feature.InstallsPackage("fd-find") {
 		t.Error("the feature does not install fd-find")
 	}
-	if !feature.Runs(t, "npm install -g @earendil-works/pi-coding-agent") {
+	if !feature.Runs(t, "/usr/local/libexec/discobox/npm-global install @earendil-works/pi-coding-agent") {
 		t.Error("the feature does not install pi's CLI")
 	}
 	conf := readFile(t, "agent.conf")

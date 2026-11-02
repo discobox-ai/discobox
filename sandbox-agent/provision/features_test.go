@@ -142,6 +142,50 @@ func TestAUsableCopyIsAdopted(t *testing.T) {
 	}
 }
 
+// An adopted feature's scripts, its checks among them, are told where the
+// check found each command, even with a refused copy ahead of it on PATH; a
+// feature that installed its own is told nothing.
+func TestAnAdoptedFeaturesScriptsAreToldWhatItAdopted(t *testing.T) {
+	const spec = asyncHead + `adopt:
+  commands: [node, npm-cli]
+steps:
+  - name: wire
+    check: wire.sh
+    run: wire.sh
+`
+	for name, adopt := range map[string]bool{"adopted": true, "installed": false} {
+		t.Run(name, func(t *testing.T) {
+			b := newBox(t)
+			told := filepath.Join(t.TempDir(), "told")
+			b.feature("node", map[string]string{
+				provisionspec.FileName: spec,
+				"wire.sh":              "#!/bin/sh\necho \"${DISCOBOX_PROVISION_ADOPTED_NODE:-none} ${DISCOBOX_PROVISION_ADOPTED_NPM_CLI:-none}\" >> " + told + "\n",
+			})
+			// A copy in a user's home, first on PATH, which the check refuses.
+			b.executable("home/boxd/.nvm/bin/node", "#!/bin/sh\n", 0o755)
+			if err := os.MkdirAll(filepath.Join(b.root, "usr/local/bin"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink("../../../home/boxd/.nvm/bin/node", filepath.Join(b.root, "usr/local/bin/node")); err != nil {
+				t.Fatal(err)
+			}
+			if adopt {
+				b.executable("usr/bin/node", "#!/bin/sh\n", 0o755)
+				b.executable("usr/bin/npm-cli", "#!/bin/sh\n", 0o755)
+			}
+			b.mustApply()
+			b.mustApply() // the second run's check is told too
+			want := "none none\nnone none\n"
+			if adopt {
+				want = "/usr/bin/node /usr/bin/npm-cli\n/usr/bin/node /usr/bin/npm-cli\n"
+			}
+			if data, _ := os.ReadFile(told); string(data) != want {
+				t.Errorf("told %q, want %q", data, want)
+			}
+		})
+	}
+}
+
 // A copy that is not usable is not adopted: too old, a link into a user's
 // home, or one other users cannot run.
 func TestACopyThatIsNotUsableIsNotAdopted(t *testing.T) {

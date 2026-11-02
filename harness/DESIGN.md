@@ -283,7 +283,16 @@ coding harnesses; shell carries no capture implementation.
   ([ADR 26-10-16-423](../docs/adr/26-10-16-423-a-harness-is-a-provisioning-bundle-and-the-agent-provisions-any-box.md)
   §4): its `provision.yaml` installs the CLI (`install-cli.sh`) and places
   each file where the harness reads it, requiring the platform features it
-  runs on (`node`, and `bun` for omp).
+  runs on (`node`, and `bun` for omp). An npm CLI is installed by the node
+  feature's `npm-global`: with the npm the node feature chose (adopted or
+  its own), into Discobox's prefix `/usr/local/lib/discobox/npm`, its
+  commands linked into `/usr/local/bin` — never `npm install -g`, whose npm
+  and prefix are whatever the box's PATH finds, on boxd one user's nvm. The
+  `cli` step's `check-cli.sh` (`npm-global check`) puts it back when it
+  left the prefix or was shadowed. Launchers, configure and capture scripts
+  run `node` by name: the node feature links the chosen one into
+  `/usr/local/bin`. See
+  [`provision`](../sandbox-agent/provision/DESIGN.md#where-a-feature-installs).
 - **A harness Dockerfile builds one artifact, its bundle** (§2): one `FROM
   scratch` stage, `bundle`, holding the feature's files under
   `/features/<feature>/` and the manifest in labels, published as
@@ -358,7 +367,8 @@ coding harnesses; shell carries no capture implementation.
   image** ([ADR 0114](../docs/adr/0114-a-sandbox-pins-its-agent-version-from-a-pool-cached-store.md)).
   A harness bundle's feature declares what it installed in
   `/usr/local/libexec/discobox/agent.conf` (`AGENT_PACKAGE`, `AGENT_BIN`, and
-  optionally `AGENT_IMAGE_DIRS`), and the platform does the rest from
+  optionally `AGENT_IMAGE_DIRS`, where its own copy is read from when not
+  Discobox's npm prefix), and the platform does the rest from
   `/etc/profile.d/sandbox-agent-store.sh`: `discobox-agent-store pin` points
   `~/.local/bin/<bin>` at the newest version in the store, once per sandbox and
   never again (a pin for another package of the same command, left by an

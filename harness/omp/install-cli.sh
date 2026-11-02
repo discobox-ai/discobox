@@ -1,5 +1,8 @@
 #!/bin/sh
-# The harness's CLI, from npm, at its latest release when this step is applied.
+# The harness's CLI, from npm, at its latest release when this step is applied:
+# into Discobox's npm prefix with the npm the node feature chose, and its
+# commands linked into /usr/local/bin (npm-global), never npm's default global
+# prefix, which on some boxes is one user's nvm.
 # omp is a Bun script (`#!/usr/bin/env bun`) and runs on the bun feature's
 # Bun; its native addon is an optional dependency npm picks for the platform.
 #
@@ -10,10 +13,5 @@
 # manifest's env sets it too, for the version store's installs.
 set -eu
 
-# Provisioning also runs after boot, when ~/.npm may be a shared cache mount.
-# Keep install scratch out of images without touching that mounted cache.
-npm_config_cache=$(mktemp -d)
-export npm_config_cache
-trap 'rm -rf "$npm_config_cache"' EXIT
-
-ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm install -g @oh-my-pi/pi-coding-agent
+export ONNXRUNTIME_NODE_INSTALL_CUDA=skip
+exec /usr/local/libexec/discobox/npm-global install @oh-my-pi/pi-coding-agent

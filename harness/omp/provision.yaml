@@ -12,6 +12,7 @@ steps:
   - name: capture-licenses
     file: {path: /usr/local/libexec/discobox/harness-capture/settings-LICENSE.txt, source: harness-capture/settings-LICENSE.txt}
   - name: cli
+    check: check-cli.sh
     run: install-cli.sh
   # omp's lifecycle reaches JavaScript and never a command, so this extension
   # is what the other harnesses declare as command hooks. omp has no system

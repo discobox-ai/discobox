@@ -149,8 +149,9 @@ may use any executable that implements the JSON command contract.
 
 | File | Contract |
 | --- | --- |
-| `provision.yaml` | the harness's feature (`sandbox-agent/provision/DESIGN.md`): `requires` the platform features the CLI runs on (`node`; omp `bun` too); a `run: install-cli.sh` step; `file` steps for `agent.conf` → `/usr/local/libexec/discobox/agent.conf`, hook/system config, `capture.sh` → `/usr/local/libexec/discobox/<id>-capture` (`0755`) with the exporter helpers, `launch.sh` → `/usr/local/bin/discobox-harness-run` (`0755`) |
-| `install-cli.sh` | executable; `npm install -g` the CLI, then `rm -rf /root/.npm` |
+| `provision.yaml` | the harness's feature (`sandbox-agent/provision/DESIGN.md`): `requires` the platform features the CLI runs on (`node`; omp `bun` too); a `cli` step, `run: install-cli.sh` with `check: check-cli.sh`; `file` steps for `agent.conf` → `/usr/local/libexec/discobox/agent.conf`, hook/system config, `capture.sh` → `/usr/local/libexec/discobox/<id>-capture` (`0755`) with the exporter helpers, `launch.sh` → `/usr/local/bin/discobox-harness-run` (`0755`) |
+| `install-cli.sh` | executable; `exec /usr/local/libexec/discobox/npm-global install <pkg>` — never `npm install -g`, which installs with whatever npm PATH finds into its default prefix (on boxd one user's nvm; see `sandbox-agent/provision/DESIGN.md`, "Where a feature installs") |
+| `check-cli.sh` | executable; `exec /usr/local/libexec/discobox/npm-global check <pkg>`, and both scripts copied by the `Dockerfile` |
 | `Dockerfile` | The bundle alone, as every harness's: one `FROM scratch AS bundle` stage that labels `io.discobox.image.v1` from `HARNESS_METADATA` through `${HARNESS_METADATA:?...}` and `COPY`s every file `provision.yaml` names, and it, into `/features/<id>/` (`harness/feature_test.go` checks the copy is whole). No harness is an image: a box applies the bundle |
 | `image.json` | `apiVersion`, `platformAPIVersion` (`discobox.ai/platform/v1`, which registration requires), `env` (auto-update off, policy env), `harness.{id,name,description,secrets,files,saveBack}`. No `runCommand` — the convention is the command. No `config`: a configure command or its ports is refused at registration (ADR 26-11-02-152) |
 | `agent.conf` | `AGENT_PACKAGE`, `AGENT_BIN` for the pool-cached version store |

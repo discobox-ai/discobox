@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -129,6 +130,11 @@ type featurePlan struct {
 	firstAsync int
 	adopted    bool
 	version    string
+	// commands are, for an adopted feature, the box path of each command
+	// its adopt check found, keyed by command: what its scripts are told
+	// (AdoptedEnv) so they wire the copy the check chose, never another
+	// found on PATH.
+	commands map[string]string
 	// deferredFrom is, in a run taking a snapshot (Options.Snapshot), the
 	// index of the feature's first step left out of it: it and every step
 	// after it are Deferred, so what the box applies at its boot still runs
@@ -418,7 +424,7 @@ func (r *Runner) runSteps(ctx context.Context, plan *featurePlan, want func(int,
 			return outcomes, plan.failed
 		}
 		r.tracker().step(feature.Name, step.Name)
-		result, err := r.applyStep(ctx, out, feature, step)
+		result, err := r.applyStep(ctx, out, plan, step)
 		if err != nil {
 			plan.failed = fmt.Errorf("feature %q: step %q: %w", feature.Name, step.Name, err)
 			fmt.Fprintf(out, "discobox provision: %s: step %s failed: %v\n", feature.Name, step.Name, err)
@@ -564,11 +570,11 @@ func (r *Runner) plan(ctx context.Context, features []provisionspec.Feature, opt
 			}
 		}
 		if feature.Spec.Adopt != nil && !r.installedHere(feature) {
-			version, err := r.usable(ctx, feature)
+			version, commands, err := r.usable(ctx, feature)
 			if err != nil {
 				r.logger().Info("provision: not adopted", "feature", feature.Name, "reason", err)
 			} else {
-				plan.adopted, plan.version = true, version
+				plan.adopted, plan.version, plan.commands = true, version, commands
 			}
 		}
 		reason, optedOut := opts.Off[feature.Name]
@@ -665,7 +671,8 @@ func order(features []provisionspec.Feature) ([]provisionspec.Feature, error) {
 	return ordered, nil
 }
 
-func (r *Runner) applyStep(ctx context.Context, out io.Writer, feature provisionspec.Feature, step provisionspec.Step) (Result, error) {
+func (r *Runner) applyStep(ctx context.Context, out io.Writer, plan *featurePlan, step provisionspec.Step) (Result, error) {
+	feature := plan.feature
 	if !r.Platform.Selects(step.When) {
 		return Unselected, nil
 	}
@@ -689,7 +696,7 @@ func (r *Runner) applyStep(ctx context.Context, out io.Writer, feature provision
 			inPlace = supported && r.packagesSatisfied(ctx, packages)
 		}
 		if inPlace && step.Check != "" {
-			inPlace, err = r.check(ctx, out, feature, step.Check)
+			inPlace, err = r.check(ctx, out, plan, step.Check)
 			if err != nil {
 				return "", err
 			}
@@ -699,7 +706,7 @@ func (r *Runner) applyStep(ctx context.Context, out io.Writer, feature provision
 		}
 		result = Reapplied
 	}
-	if err := r.apply(ctx, out, feature, step); err != nil {
+	if err := r.apply(ctx, out, plan, step); err != nil {
 		return "", err
 	}
 	if err := r.Records.RecordStep(feature.Name, step.Name, StepRecord{Digest: digest, AppliedAt: r.now()}); err != nil {
@@ -710,8 +717,9 @@ func (r *Runner) applyStep(ctx context.Context, out io.Writer, feature provision
 
 // check runs a check script: exit 0 is in place, any other exit is drift, and
 // a script that could not be run at all is an error.
-func (r *Runner) check(ctx context.Context, out io.Writer, feature provisionspec.Feature, script string) (bool, error) {
-	err := r.script(ctx, out, feature, script)
+func (r *Runner) check(ctx context.Context, out io.Writer, plan *featurePlan, script string) (bool, error) {
+	feature := plan.feature
+	err := r.script(ctx, out, plan, script)
 	var exitErr *exec.ExitError
 	switch {
 	case err == nil:
@@ -724,7 +732,8 @@ func (r *Runner) check(ctx context.Context, out io.Writer, feature provisionspec
 	}
 }
 
-func (r *Runner) apply(ctx context.Context, out io.Writer, feature provisionspec.Feature, step provisionspec.Step) error {
+func (r *Runner) apply(ctx context.Context, out io.Writer, plan *featurePlan, step provisionspec.Step) error {
+	feature := plan.feature
 	switch {
 	case step.File != nil:
 		return r.applyFile(feature, step.File)
@@ -743,18 +752,47 @@ func (r *Runner) apply(ctx context.Context, out io.Writer, feature provisionspec
 			r.apt.Lock()
 			defer r.apt.Unlock()
 		}
-		return r.script(ctx, out, feature, step.Run)
+		return r.script(ctx, out, plan, step.Run)
 	}
 	return errors.New("names no kind")
 }
 
-// script runs one of the feature's scripts from the feature's directory.
-func (r *Runner) script(ctx context.Context, out io.Writer, feature provisionspec.Feature, script string) error {
+// script runs one of the feature's scripts from the feature's directory. An
+// adopted feature's scripts, its checks among them, are also told what it
+// adopted (AdoptedEnv).
+func (r *Runner) script(ctx context.Context, out io.Writer, plan *featurePlan, script string) error {
+	feature := plan.feature
 	env := []string{
 		"DISCOBOX_PROVISION_FEATURE=" + feature.Name,
 		"DISCOBOX_PROVISION_FEATURE_DIR=" + feature.Dir,
 	}
+	if plan.adopted {
+		env = append(env, AdoptedEnv(plan.commands)...)
+	}
 	return r.command(ctx, out, feature.Dir, env, filepath.Join(feature.Dir, filepath.FromSlash(script)))
+}
+
+// AdoptedEnv is what an adopted feature's scripts are told: each command its
+// adopt check found, as DISCOBOX_PROVISION_ADOPTED_<COMMAND>=<path on the
+// box>, the command upper-cased with anything but a letter or digit made
+// "_". A feature that installed its own copy is told nothing: its scripts
+// know where they put it. Neither probes PATH, which may hold a copy the
+// check refused ahead of the one it chose (ADR 26-10-16-423 §4).
+func AdoptedEnv(commands map[string]string) []string {
+	env := make([]string, 0, len(commands))
+	for _, command := range slices.Sorted(maps.Keys(commands)) {
+		name := strings.Map(func(r rune) rune {
+			switch {
+			case r >= 'a' && r <= 'z':
+				return r - 'a' + 'A'
+			case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+				return r
+			}
+			return '_'
+		}, command)
+		env = append(env, "DISCOBOX_PROVISION_ADOPTED_"+name+"="+commands[command])
+	}
+	return env
 }
 
 func (r *Runner) command(ctx context.Context, out io.Writer, dir string, env []string, name string, args ...string) error {

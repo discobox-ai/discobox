@@ -12,6 +12,7 @@ steps:
   - name: capture-licenses
     file: {path: /usr/local/libexec/discobox/harness-capture/settings-LICENSE.txt, source: harness-capture/settings-LICENSE.txt}
   - name: cli
+    check: check-cli.sh
     run: install-cli.sh
   # Claude Code's managed settings, the layer above every user's and project's.
   - name: managed-settings
