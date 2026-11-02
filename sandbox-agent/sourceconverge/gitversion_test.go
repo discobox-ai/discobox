@@ -36,12 +36,12 @@ func TestParseGitVersion(t *testing.T) {
 // has installed a git that takes a bearer credential.
 func oldGitOnPath(t *testing.T) {
 	t.Helper()
-	real, err := exec.LookPath("git")
+	gitPath, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	script := "#!/bin/sh\nif [ \"$1\" = version ]; then echo 'git version 2.43.0'; exit 0; fi\nexec " + real + " \"$@\"\n"
+	script := "#!/bin/sh\nif [ \"$1\" = version ]; then echo 'git version 2.43.0'; exit 0; fi\nexec " + gitPath + " \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
