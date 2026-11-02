@@ -171,6 +171,9 @@ type Model struct {
 	// the listing the run options' harness choices are built from. It is read
 	// whether or not the screen is up. See harnesses.go.
 	harnesses *harnessList
+	// pools are the configured server's, as last listed, for the run options'
+	// Pool row: kept here because the panel is rebuilt when the session lands.
+	pools []Pool
 
 	// secrets is the project's credentials and the bindings standing on them:
 	// the screen that manages them, and the operator's side of the credential
@@ -625,7 +628,7 @@ func (m *Model) made() *Sandbox {
 // is heard the usual way. Closing that last gap is Bubble Tea's to do, by
 // listening before it first reads the size.
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tea.RequestWindowSize, textarea.Blink, probeProgramStatus(), m.loadSession(), m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadHarnesses(), m.tick(), m.startShimmer()}
+	cmds := []tea.Cmd{tea.RequestWindowSize, textarea.Blink, probeProgramStatus(), m.loadSession(), m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadHarnesses(), m.loadPools(), m.tick(), m.startShimmer()}
 	// An attach opens on its workspace rather than on the prompt, from the row
 	// the command already has: waiting for the listing to come back would hold
 	// the attach behind a request it does not need. The listing is still read,
@@ -1022,6 +1025,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// The two loads race, and either order has to end with the panel
 		// offering the harnesses that are actually there.
 		m.opts.setHarnesses(m.harnesses.all)
+		m.opts.setPools(m.pools)
 		m.openOnList()
 		return tea.Batch(cmd, m.startPendingRun())
 
@@ -1431,6 +1435,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case harnessesLoadedMsg:
 		return m.harnessesLoaded(msg)
+
+	case poolsLoadedMsg:
+		m.poolsLoaded(msg)
+		return nil
 
 	case harnessSetupMsg:
 		if msg.andDefault {
@@ -1899,6 +1907,8 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		m.optionsOpen = !m.optionsOpen
 		if m.optionsOpen {
 			m.harnessesOpen, m.secretsOpen, m.skillsOpen = false, false, false
+			m.layout()
+			return m.loadPools()
 		}
 		m.layout()
 		return nil

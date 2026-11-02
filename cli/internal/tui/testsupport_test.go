@@ -108,6 +108,7 @@ type fakeSource struct {
 	stopped  int
 
 	harnesses    []Harness
+	pools        []Pool
 	harnessErr   error
 	configureErr error
 	// portsInUse is what LocalPortsInUse answers: the local ports a test says
@@ -1295,6 +1296,12 @@ func (f *fakeSource) endExec(execID string) {
 			f.execs[i].Live = false
 		}
 	}
+}
+
+func (f *fakeSource) Pools(_ context.Context, _ string) ([]Pool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]Pool(nil), f.pools...), nil
 }
 
 func (f *fakeSource) Harnesses(_ context.Context, server string) ([]Harness, error) {

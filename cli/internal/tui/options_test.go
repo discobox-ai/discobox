@@ -296,3 +296,166 @@ func TestASourcelessFolderElsewhereCutsFromTheWindowsOwn(t *testing.T) {
 		t.Fatalf("request = %+v, want a create from the window's own source", req)
 	}
 }
+
+// testPools are a project's pools with the second one its default.
+func testPools() []Pool {
+	return []Pool{
+		{ID: "pool-arm", Name: "arm", Platform: "linux/arm64"},
+		{ID: "pool-local", Name: "local", Platform: "linux/amd64", Default: true},
+		{ID: "pool-gpu", Name: "gpu"},
+	}
+}
+
+// The Pool row leads with the project default, which asks for no flag, and
+// stepping off it is --pool, on the strip and in the command both.
+func TestThePoolRowSendsTheChosenPool(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource()
+	ds.pools = testPools()
+	m := newTestModel(t, ds)
+	st := newStyles(false)
+
+	row := m.opts.opts[optPool]
+	if !slices.Equal(row.choices, []string{"local", "arm", "gpu"}) {
+		t.Fatalf("choices = %q, want the default leading", row.choices)
+	}
+	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Pool != "" {
+		t.Fatalf("Pool = %q, want none for the default", req.Pool)
+	}
+	if strings.Contains(m.opts.command(""), "--pool") || strings.Contains(m.opts.chips(st), "pool") {
+		t.Fatal("the default pool is not worth a flag or a chip")
+	}
+
+	send(t, m, keyPress("ctrl+o"))
+	m.opts.moveTo(optPool)
+	send(t, m, keyPress("right"))
+	if req := m.opts.request("", m.opts.opts[optSource].selected()); req.Pool != "arm" {
+		t.Fatalf("Pool = %q, want arm", req.Pool)
+	}
+	if command := m.opts.command(""); !strings.Contains(command, "--pool arm") {
+		t.Fatalf("command = %q, want --pool arm", command)
+	}
+	if chips := m.opts.chips(st); !strings.Contains(chips, "pool arm") {
+		t.Fatalf("chips = %q, want the chosen pool", chips)
+	}
+
+	// A refresh keeps the choice where it is, however the listing reorders.
+	m.opts.setPools([]Pool{testPools()[2], testPools()[1], testPools()[0]})
+	if got := m.opts.opts[optPool].selected(); got != "arm" {
+		t.Fatalf("after a refresh the row is on %q, want arm", got)
+	}
+}
+
+// Two pools of one name are told apart by ID, which is the only thing --pool
+// can say that picks one of them.
+func TestASharedPoolNameIsSentAsItsID(t *testing.T) {
+	t.Parallel()
+	o := newOptions(Session{Directory: "/src"})
+	o.setPools([]Pool{{ID: "p1", Name: "same", Default: true}, {ID: "p2", Name: "same"}})
+	if got := o.opts[optPool].values; !slices.Equal(got, []string{"", "p2"}) {
+		t.Fatalf("values = %q, want the second pool by ID", got)
+	}
+}
+
+// `discobox run --pool` opens the row on that pool, whether the listing has
+// come back or not, and a pool the listing does not hold stays on it so the
+// create meets the server's answer about it.
+func TestARequestedPoolSurvivesTheListing(t *testing.T) {
+	t.Parallel()
+	o := newOptions(Session{Directory: "/src"})
+	o.prefill(RunRequest{Pool: "pool-gpu"})
+	o.setPools(testPools())
+	if got := o.opts[optPool].display(); got != "gpu" {
+		t.Fatalf("row shows %q, want the pool named by ID", got)
+	}
+	if req := o.request("", "/src"); req.Pool != "gpu" {
+		t.Fatalf("Pool = %q, want gpu", req.Pool)
+	}
+
+	o = newOptions(Session{Directory: "/src"})
+	o.prefill(RunRequest{Pool: "elsewhere"})
+	o.setPools(testPools())
+	if req := o.request("", "/src"); req.Pool != "elsewhere" {
+		t.Fatalf("Pool = %q, want the unlisted pool kept", req.Pool)
+	}
+}
+
+// One server's pool is not another's: a change of server puts the row back
+// on the default.
+func TestAChangeOfServerForgetsThePool(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource()
+	ds.session.Servers = []string{"alpha", "beta"}
+	ds.pools = testPools()
+	m := newTestModel(t, ds)
+	m.opts.opts[optPool].idx = 1
+
+	send(t, m, keyPress("ctrl+o"))
+	m.opts.moveTo(optServer)
+	send(t, m, keyPress("right"))
+	if m.opts.opts[optPool].changed() {
+		t.Fatalf("row is on %q after a change of server, want the default", m.opts.opts[optPool].display())
+	}
+}
+
+// A project with one pool has nothing to choose, and the panel does not name
+// what it has never heard of: the row is not drawn, and the cursor steps past
+// it.
+func TestThePoolRowIsHiddenWithNothingToChoose(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource()
+	ds.session.Servers = []string{"alpha", "beta"}
+	ds.pools = []Pool{{ID: "pool-local", Name: "local", Default: true}}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("ctrl+o"))
+	if view := m.opts.view(m.st, &m.zones, 120, ""); strings.Contains(view, "Pool") {
+		t.Fatalf("one pool is nothing to choose, but the panel shows the row:\n%s", view)
+	}
+	m.opts.moveTo(optInclude)
+	send(t, m, keyPress("down"))
+	if m.opts.cursor != optServer {
+		t.Fatalf("cursor = %d, want down from the last source row to step past the pool to the server", m.opts.cursor)
+	}
+	send(t, m, keyPress("up"))
+	if m.opts.cursor != optInclude {
+		t.Fatalf("cursor = %d, want up from the server to step past the pool", m.opts.cursor)
+	}
+	m.opts.moveTo(optPool)
+	if m.opts.cursor == optPool {
+		t.Fatal("a press cannot land on a row that is not drawn")
+	}
+}
+
+// `discobox run --pool` names a pool the listing may already hold, under its
+// ID or its name, and the row lands on that pool rather than on a second copy
+// of it — the default named outright included, which asks for no flag.
+func TestARequestedPoolAfterTheListingIsTheListedPool(t *testing.T) {
+	t.Parallel()
+	o := newOptions(Session{Directory: "/src"})
+	o.setPools(testPools())
+	o.prefill(RunRequest{Pool: "pool-gpu"})
+	if row := o.opts[optPool]; len(row.choices) != 3 || row.display() != "gpu" {
+		t.Fatalf("row = %q on %q, want the listed gpu and no copy of it", row.choices, row.display())
+	}
+
+	o = newOptions(Session{Directory: "/src"})
+	o.setPools(testPools())
+	o.prefill(RunRequest{Pool: "local"})
+	if req := o.request("", "/src"); req.Pool != "" || len(o.opts[optPool].choices) != 3 {
+		t.Fatalf("Pool = %q with choices %q, want the default and no flag", req.Pool, o.opts[optPool].choices)
+	}
+}
+
+// A pool renamed between listings is still the pool that was chosen.
+func TestARenamedPoolStaysChosen(t *testing.T) {
+	t.Parallel()
+	o := newOptions(Session{Directory: "/src"})
+	o.setPools(testPools())
+	o.opts[optPool].idx = 1 // arm
+	renamed := testPools()
+	renamed[0].Name = "graviton"
+	o.setPools(renamed)
+	if req := o.request("", "/src"); req.Pool != "graviton" || len(o.opts[optPool].choices) != 3 {
+		t.Fatalf("Pool = %q with choices %q, want the renamed pool", req.Pool, o.opts[optPool].choices)
+	}
+}

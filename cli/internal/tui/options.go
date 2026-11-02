@@ -30,7 +30,7 @@ type option struct {
 	choices []string
 	// values are what the choices stand for, when what a choice is called is
 	// not what the command takes. Nil leaves every choice its own value, which
-	// is every row but the source.
+	// is every row but the source, the pool and the server.
 	values []string
 	// unchanged is the value this row counts as the CLI's own default, for a
 	// row whose choices are not in a fixed order with the default leading.
@@ -147,6 +147,9 @@ type optionSet struct {
 	// The listing does not hold it, so where a discobox cut from it is filed
 	// is kept here for the list to follow it there.
 	named Source
+	// pools are the server's pools as last listed, which the Pool row is
+	// built from; see setPools.
+	pools []Pool
 	// lastCut is the source the last create card was answered with
 	// (askHowToCreate), in this window or — through Session.LastSource — the
 	// last one on this machine. It leads the Source row, and answering a card
@@ -197,8 +200,8 @@ const enterSourceChoice = "enter a directory, URL, or owner/repo, with @REF and 
 // Index into optionSet.opts. The command builder reads by name, so the order
 // here is only the order they are shown in.
 //
-// These are `discobox run`'s flags and nothing else: --harness, --include-dirty,
-// --detach, -e and -s, SOURCE, the source the sandbox is cut from, and what is
+// These are `discobox run`'s flags and nothing else: --harness, --pool,
+// --include-dirty, --detach, -e and -s, SOURCE, the source the sandbox is cut from, and what is
 // brought in beside it — --user-skills, --skills and -i. A launcher that offers
 // options the command does not have is a launcher you cannot reproduce from a
 // shell.
@@ -217,9 +220,13 @@ const (
 	optUserSkills
 	optSkills
 	optInclude
-	// optServer is last because it is the one row that is not always there:
-	// it exists only when there is a server to choose (ADR 0116 §5), and the
-	// rows before it keep their places either way. See optionSet.server.
+	// optPool is where the discobox is created, beside the server it is on.
+	optPool
+	// optServer is last because it is the one row that is not always in the
+	// list: it exists only when there is a server to choose (ADR 0116 §5), and
+	// the rows before it keep their places either way. See optionSet.server.
+	// The Pool row is always in the list and drawn only when there is a pool
+	// to choose (optionSet.shown).
 	optServer
 )
 
@@ -291,6 +298,13 @@ func newOptions(session Session) *optionSet {
 			hint:    "-i · another directory, URL, or owner/repo, with @REF, brought into the same discobox",
 			example: "../other-repo", checked: true,
 		},
+		optPool: {
+			// Like the harness row, the choices are the server's and arrive
+			// through setPools; until they do, the row is the default alone.
+			label: "Pool", kind: optChoice,
+			choices: []string{unsetPool}, values: []string{""},
+			hint: poolHint,
+		},
 	}}
 	if len(session.Servers) > 1 {
 		// The primary leads, so the common case is index zero and emits no
@@ -356,6 +370,9 @@ func (o *optionSet) prefill(req RunRequest) {
 			i = len(harness.choices) - 1
 		}
 		harness.idx = i
+	}
+	if req.Pool != "" {
+		o.choosePool(req.Pool)
 	}
 	switch req.IncludeDirty {
 	case "true":
@@ -442,6 +459,129 @@ func (o *optionSet) setHarnesses(harnesses []Harness) {
 	if def != "" {
 		harness.hint = "--harness · unset is the project default, which is " + def + " · " + HarnessesKeyName + " manages them"
 	}
+}
+
+// unsetPool is what the Pool row leads with when the project names no default
+// pool: a create with no --pool goes wherever the server places it.
+const unsetPool = "(default)"
+
+// poolHint is what the Pool row says before the listing has said which pool
+// the default is.
+const poolHint = "--pool · the pool the discobox is created on, which decides the platform it runs on"
+
+// setPools rebuilds the Pool row from the server's pools. The project default
+// leads, so the common case is index zero and emits no flag, as on the harness
+// row; the rest follow in the order the listing gives them.
+//
+// The row is drawn only when there is a pool to choose (shown): a project with
+// one pool, which is most of them, never hears the word, as the machine line
+// does not use it (Resources). The create card hides it the same way.
+//
+// What was chosen survives the rebuild, matched by ID — through the pool the
+// last listing said it was, so a rename does not lose it — or by name: a
+// refresh is not a reason to move a create elsewhere. A pool the listing does
+// not hold — one `discobox run --pool` named — stays on the row rather than
+// being dropped, so the create meets the server's answer about it rather than
+// another pool.
+func (o *optionSet) setPools(pools []Pool) {
+	row := o.opts[optPool]
+	chosen := row.selected()
+	for _, pool := range o.pools {
+		if chosen != "" && chosen == poolSelector(pool, o.pools) {
+			chosen = pool.ID
+		}
+	}
+	o.pools = pools
+
+	choices, values := []string{unsetPool}, []string{""}
+	hint := poolHint
+	for _, pool := range pools {
+		if pool.Default {
+			choices[0] = poolLabel(pool)
+			hint = "--pool · unset is the project default, which is " + poolLabel(pool) + platformNote(pool)
+		}
+	}
+	for _, pool := range pools {
+		if !pool.Default {
+			choices = append(choices, poolLabel(pool))
+			values = append(values, poolSelector(pool, pools))
+		}
+	}
+
+	row.idx = 0
+	if chosen != "" {
+		i := -1
+		for _, pool := range pools {
+			if chosen == pool.ID || (i < 0 && chosen == poolSelector(pool, pools)) {
+				// The default named outright is the default.
+				i = 0
+				if !pool.Default {
+					i = slices.Index(values, poolSelector(pool, pools))
+				}
+			}
+		}
+		if i < 0 {
+			choices, values = append(choices, chosen), append(values, chosen)
+			i = len(values) - 1
+		}
+		row.idx = i
+	}
+	row.choices, row.values, row.hint = choices, values, hint
+	if o.cursor == optPool && !o.shown(optPool) {
+		o.move(-1)
+	}
+}
+
+// choosePool sets the Pool row to a pool named by ID or name, before or after
+// the listing has arrived: matched against the listing when there is one, and
+// kept as named when there is none yet, for setPools to match when it lands.
+func (o *optionSet) choosePool(value string) {
+	row := o.opts[optPool]
+	row.choices, row.values = append(row.choices, value), append(row.values, value)
+	row.idx = len(row.values) - 1
+	if o.pools != nil {
+		o.setPools(o.pools)
+	}
+}
+
+// clearPools puts the Pool row back on the default with nothing listed, for a
+// change of server: one server's pool is not another's.
+func (o *optionSet) clearPools() {
+	row := o.opts[optPool]
+	row.idx = 0
+	o.setPools(nil)
+}
+
+// poolLabel is how a pool reads on the row: its name, or its ID when it has
+// none.
+func poolLabel(pool Pool) string {
+	if pool.Name != "" {
+		return pool.Name
+	}
+	return pool.ID
+}
+
+// platformNote is the platform a pool hosts, as the end of a hint.
+func platformNote(pool Pool) string {
+	if pool.Platform == "" {
+		return ""
+	}
+	return " (" + pool.Platform + ")"
+}
+
+// poolSelector is what --pool takes for a pool: its name, which is what the
+// command preview is read for, unless another pool shares it, where only the
+// ID says which.
+func poolSelector(pool Pool, pools []Pool) string {
+	if pool.Name == "" {
+		return pool.ID
+	}
+	for _, other := range pools {
+		if other.ID != pool.ID && other.Name == pool.Name {
+			return pool.ID
+		}
+	}
+	return pool.Name
 }
 
 // setFolder points the run source at the folder the header has moved to. The
@@ -794,12 +934,34 @@ func (o *optionSet) current() *option { return o.opts[o.cursor] }
 
 func (o *optionSet) move(delta int) {
 	o.cursor = (o.cursor + delta + len(o.opts)) % len(o.opts)
+	step := sign(delta)
+	if step == 0 {
+		step = -1
+	}
+	for !o.shown(o.cursor) {
+		o.cursor = (o.cursor + step + len(o.opts)) % len(o.opts)
+	}
 }
 
 // moveTo puts the cursor on one row, which is what a press on it means. It
-// clamps rather than wrapping: a pointer names a row that is there.
+// clamps rather than wrapping: a pointer names a row that is there. A row that
+// is not drawn is stepped past in the direction the cursor was going.
 func (o *optionSet) moveTo(i int) {
-	o.cursor = min(max(i, 0), len(o.opts)-1)
+	i = min(max(i, 0), len(o.opts)-1)
+	if !o.shown(i) {
+		if i > o.cursor && i+1 < len(o.opts) {
+			i++
+		} else {
+			i--
+		}
+	}
+	o.cursor = i
+}
+
+// shown reports whether a row is drawn. Every row is but the pool's, which is
+// there only when there is a pool to choose (see setPools).
+func (o *optionSet) shown(i int) bool {
+	return i != optPool || len(o.opts[optPool].choices) > 1
 }
 
 // request is what Enter actually asks for: the options as `discobox run`'s
@@ -828,6 +990,9 @@ func (o *optionSet) request(prompt, source string) RunRequest {
 	}
 	if h := o.opts[optHarness]; h.changed() {
 		req.Harness = h.choices[h.idx]
+	}
+	if pool := o.opts[optPool]; pool.changed() {
+		req.Pool = pool.selected()
 	}
 	switch o.opts[optDirty].idx {
 	case 1:
@@ -880,6 +1045,10 @@ func (o *optionSet) renderChips(st *styles, focused bool) string {
 			style = st.chipOn
 		}
 		parts = append(parts, style.Render(harness.display()))
+	}
+
+	if pool := o.opts[optPool]; pool.changed() {
+		add("pool " + pool.display())
 	}
 
 	// Only the answers that were given. Auto is what the option already does,
@@ -998,6 +1167,9 @@ func (o *optionSet) commandFor(req RunRequest) string {
 	if req.Harness != "" {
 		run = append(run, "--harness", req.Harness)
 	}
+	if req.Pool != "" {
+		run = append(run, "--pool", shellQuote(req.Pool))
+	}
 	// Uncommitted work is carried only when asked for, so only that answer
 	// has a flag to write; the window's question has none.
 	if req.IncludeDirty == "true" {
@@ -1059,13 +1231,18 @@ func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string 
 	// with it.
 	rowsTop := strings.Count(b.String(), "\n") + dialogPadTop
 
+	y := rowsTop
 	for i, opt := range o.opts {
+		if !o.shown(i) {
+			continue
+		}
 		b.WriteString(opt.viewRow(st, z, optionRow{
-			value: opt.display(), y: rowsTop + i, inner: inner, cursor: i == o.cursor,
+			value: opt.display(), y: y, inner: inner, cursor: i == o.cursor,
 			row:   hit{kind: hitOptionRow, idx: i},
 			cycle: hit{kind: hitOptionCycle, idx: i},
 		}))
 		b.WriteString("\n")
+		y++
 	}
 
 	b.WriteString("\n")

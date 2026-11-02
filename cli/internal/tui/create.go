@@ -35,7 +35,7 @@ type createCard struct {
 	prompt string
 	// base is the request `discobox run` opened the window on, when the card
 	// is asking where that run is cut from (WithRun). What the card has no row
-	// for — the prompt's own tokens, --bind, --delegate, --pool, --declared-sources — is
+	// for — the prompt's own tokens, --bind, --delegate, --declared-sources — is
 	// taken from it as given. Nil for a card the composer opened.
 	base *RunRequest
 	// cursor is the row of the list Enter creates from: a source, or the last
@@ -82,10 +82,17 @@ func (o *optionSet) newCreateCard(prompt string, base *RunRequest) *createCard {
 }
 
 // rows are the settings under the list, as indexes into the options: the
-// harness first, since it is the one most often changed, then the server where
-// there is one to choose, then what is brought in beside the source.
+// harness first, since it is the one most often changed, then the pool and the
+// server where there is one to choose, then what is brought in beside the
+// source.
 func (c *createCard) rows() []int {
 	rows := []int{optHarness}
+	// The pool where there is more than one to choose, by the panel's own
+	// rule: a row with nothing to step to is a row that only says what the
+	// strip already does.
+	if c.opts.shown(optPool) {
+		rows = append(rows, optPool)
+	}
 	if c.opts.server() != nil {
 		rows = append(rows, optServer)
 	}
@@ -312,7 +319,7 @@ func (c *createCard) requestFrom(source string) RunRequest {
 	req := c.opts.request(c.prompt, source)
 	if c.base != nil {
 		req.Prompt = append([]string(nil), c.base.Prompt...)
-		req.Bind, req.Delegate, req.DiscoboxAPI, req.Pool = c.base.Bind, c.base.Delegate, c.base.DiscoboxAPI, c.base.Pool
+		req.Bind, req.Delegate, req.DiscoboxAPI = c.base.Bind, c.base.Delegate, c.base.DiscoboxAPI
 		req.SkipDeclaredSources = c.base.SkipDeclaredSources
 	}
 	return req
