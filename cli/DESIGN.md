@@ -1398,8 +1398,9 @@ arrive, from the server's event stream
 first each discobox's state now, then each change (`events.go`).
 
 - It reads the stream over the plain HTTP client, as `admin pool logs` does,
-  since the generated client reads a response whole. Its own parser
-  (`parseServerSentEvents`) keeps the cursor, and the data is decoded through
+  since the generated client reads a response whole. `pkg/sse` parses it,
+  shared with the `discobox-box` monitor; the command keeps the cursor, and
+  decodes the data through
   a local struct: `SandboxEventData` is in `server.yaml` but has no generated
   type, since no operation's body is it.
 - A dropped connection reconnects after the server's `retry:` with the last
@@ -1412,8 +1413,10 @@ first each discobox's state now, then each change (`events.go`).
 - A line is the time, what happened, the configured name (the event's; a
   display name follows the program's title, and would make every title an
   event) and ID, then `state=`,
-  `desired=` when it is not `present`, `power=`, and `agent=` with the
-  program's state, what it is blocked on and its app. `-o json` is one line of
+  `desired=` when it is not `present`, `power=`, `agent=` with the
+  program's state, what it is blocked on and its app, and `tags=` when it has
+  any (ADR 26-11-01-560 §2). In a box with the discobox API it reads the
+  box's whole project, as `ls` does. `-o json` is one line of
   JSON per event (`writeTerminalSafeJSONLine`): its `id`, `event` and `data`.
 
 ## Sandbox Display Name

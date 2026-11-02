@@ -37,7 +37,7 @@ func TestFollowSandboxEventsResumesFromTheLastEvent(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		event := func(id int, typ, sandbox, state string) {
-			fmt.Fprintf(w, "id: %d\nevent: %s\ndata: {\"sandboxId\":%q,\"name\":%q,\"state\":%q,\"desiredState\":\"present\",\"runtimeState\":\"running\",\"program\":{\"state\":\"blocked\",\"kind\":\"permission\",\"app\":\"claude-code\"}}\n\n", id, typ, sandbox, sandbox+"-name", state)
+			fmt.Fprintf(w, "id: %d\nevent: %s\ndata: {\"sandboxId\":%q,\"name\":%q,\"state\":%q,\"desiredState\":\"present\",\"runtimeState\":\"running\",\"program\":{\"state\":\"blocked\",\"kind\":\"permission\",\"app\":\"claude-code\"},\"tags\":{\"role\":\"worker\"}}\n\n", id, typ, sandbox, sandbox+"-name", state)
 		}
 		switch n {
 		case 1:
@@ -94,7 +94,7 @@ func TestFollowSandboxEventsResumesFromTheLastEvent(t *testing.T) {
 	if !strings.HasPrefix(lines[1], "reset:") {
 		t.Fatalf("second line %q, want the reset", lines[1])
 	}
-	for _, want := range []string{"updated", "state=ready", "power=running", "agent=blocked(permission) claude-code"} {
+	for _, want := range []string{"updated", "state=ready", "power=running", "agent=blocked(permission) claude-code", "tags=role=worker"} {
 		if !strings.Contains(lines[2], want) {
 			t.Fatalf("line %q lacks %q", lines[2], want)
 		}
@@ -149,27 +149,5 @@ func TestFollowSandboxEventsReportsARefusal(t *testing.T) {
 	}
 	if requests != 1 {
 		t.Fatalf("asked %d times, want once", requests)
-	}
-}
-
-func TestParseServerSentEvents(t *testing.T) {
-	stream := "retry: 500\n\n: comment\nid: 4\nevent: sandbox.updated\ndata: {\"a\":\ndata: 1}\n\nevent: reset\ndata: {}\n\nid: 9\n\n"
-	var got []string
-	var fields []string
-	err := parseServerSentEvents(strings.NewReader(stream), func(field, value string) {
-		fields = append(fields, field+"="+value)
-	}, func(id, event, data string) error {
-		got = append(got, id+"|"+event+"|"+data)
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"4|sandbox.updated|{\"a\":\n1}", "|reset|{}", "9||"}
-	if strings.Join(got, ";") != strings.Join(want, ";") {
-		t.Fatalf("events = %q, want %q", got, want)
-	}
-	if strings.Join(fields, ",") != "retry=500" {
-		t.Fatalf("fields = %q", fields)
 	}
 }

@@ -38,6 +38,7 @@ COPY pkg/sandboxuser ./pkg/sandboxuser
 COPY pkg/secretroute ./pkg/secretroute
 COPY pkg/sourcecache ./pkg/sourcecache
 COPY pkg/sourceref ./pkg/sourceref
+COPY pkg/sse ./pkg/sse
 COPY pkg/tarsums ./pkg/tarsums
 COPY pkg/tools ./pkg/tools
 COPY pkg/vsock ./pkg/vsock
@@ -123,6 +124,7 @@ COPY pkg/secretroute ./pkg/secretroute
 COPY pkg/serverstage ./pkg/serverstage
 COPY pkg/sourcecache ./pkg/sourcecache
 COPY pkg/sourceref ./pkg/sourceref
+COPY pkg/sse ./pkg/sse
 COPY pkg/tools ./pkg/tools
 COPY pkg/version ./pkg/version
 COPY pkg/wsrecord ./pkg/wsrecord
