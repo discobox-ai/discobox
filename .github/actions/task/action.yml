@@ -41,8 +41,9 @@ runs:
         cache: false
 
     # The devShell itself comes from cache.nixos.org. What Depot Cache does not
-    # cover is kept here: the module cache, and golangci-lint's analysis cache,
-    # which is its own and not Go's.
+    # cover is kept here: the module cache, golangci-lint's analysis cache,
+    # which is its own and not Go's, and Windows's build cache, since Depot's
+    # Windows runner sets no GOCACHEPROG. That path exists on no other runner.
     #
     # Keyed by commit and saved only from main, so a run starts from the newest
     # main that saved one. A key that stays put until go.sum changes is a hit
@@ -53,11 +54,13 @@ runs:
     # it.
     #
     # actions/cache, which Depot's runners back with Depot Cache too, so it
-    # still works on a GitHub-hosted runner, where only the build cache is lost.
+    # still works on a GitHub-hosted runner, where Linux and macOS lose only
+    # the build cache.
     - name: Restore the Go caches
       uses: actions/cache/restore@v6.1.0
       with:
         path: |
+          ~/AppData/Local/go-build
           ~/go/pkg/mod
           ~/.cache/golangci-lint
           ~/Library/Caches/golangci-lint
@@ -75,7 +78,8 @@ runs:
     # them. Nothing is downloaded before the target or uploaded after it, and a
     # pull request's results are shared like main's. Nix keeps the environment,
     # so the devShell's go sees it too. This step shows it in the log, and warns
-    # on a runner that did not set it, where every build starts cold.
+    # on a Linux or macOS runner that did not set it, where every build starts
+    # cold. Windows never has it, and keeps its build cache in actions/cache.
     #
     # Only for a pull request or a push to a branch. Go trusts whatever the
     # cache returns for a key, and a pull request's code can write that cache,
@@ -108,6 +112,8 @@ runs:
         if [ -n "$prog" ]; then
           # Its first word only: the rest is the runner's, and could carry a credential.
           echo "Go's build cache is GOCACHEPROG, running ${prog%% *}."
+        elif [ "$RUNNER_OS" = Windows ]; then
+          echo "Depot's Windows runner sets no GOCACHEPROG: Go's build cache is the actions/cache one."
         else
           echo "::warning title=No Depot Cache::GOCACHEPROG is unset on this runner, so Go builds from a cold cache. Is Depot Cache's automatic connection on for Actions jobs?"
         fi
@@ -129,6 +135,7 @@ runs:
       uses: actions/cache/save@v6.1.0
       with:
         path: |
+          ~/AppData/Local/go-build
           ~/go/pkg/mod
           ~/.cache/golangci-lint
           ~/Library/Caches/golangci-lint
