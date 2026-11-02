@@ -31,7 +31,7 @@ runs:
     # Nix does not run on Windows (ADR 0066 §4), so there the bootstrap Go comes
     # from setup-go instead, and GOTOOLCHAIN=auto fetches go.mod's from there as
     # it does in the devShell. Its own cache stays off: the step below is the
-    # one cache, for every runner.
+    # one cache, for every runner, beside Depot Cache.
     - name: Install Go
       if: runner.os == 'Windows'
       uses: actions/setup-go@v7.0.0
@@ -39,28 +39,42 @@ runs:
         go-version-file: go.mod
         cache: false
 
-    # The devShell itself comes from cache.nixos.org. This is the Go build and
-    # module cache, plus golangci-lint's analysis cache, which is what actually
-    # dominates a check or test job.
+    # Go's build and test cache is not here: Depot's runners start every job
+    # with GOCACHEPROG set to Depot Cache, which Go asks for each compiled
+    # package or test result as it needs it and writes new ones to as it makes
+    # them. Nothing is downloaded before the target or uploaded after it, and a
+    # pull request's results are shared like main's. Nix keeps the environment,
+    # so the devShell's go sees it too. This step shows it in the log, and warns
+    # on a runner that did not set it, where every build starts cold.
+    - name: Report the Go build cache
+      shell: bash
+      run: |
+        if [ "$RUNNER_OS" = Windows ]; then go=go; else go='nix develop -c go'; fi
+        prog=$($go env GOCACHEPROG)
+        if [ -n "$prog" ]; then
+          echo "GOCACHEPROG=$prog"
+        else
+          echo "::warning title=No Depot Cache::GOCACHEPROG is unset on this runner, so Go builds from a cold cache. Is Depot Cache's automatic connection on for Actions jobs?"
+        fi
+
+    # The devShell itself comes from cache.nixos.org. What Depot Cache does not
+    # cover is kept here: the module cache, and golangci-lint's analysis cache,
+    # which is its own and not Go's.
     #
     # Keyed by commit and saved only from main, so a run starts from the newest
     # main that saved one. A key that stays put until go.sum changes is a hit
-    # forever and therefore never saved again, and the build cache falls a
+    # forever and therefore never saved again, and the lint cache falls a
     # commit further behind main with every push. A run on main saves, whether
     # a push, a schedule, or a dispatch; pull requests and tags only restore:
     # what they would save is scoped to their own ref, where nothing else reads
     # it.
     #
-    # Deliberately actions/cache and not a vendor-specific one: Depot's runners
-    # back the GitHub Actions cache API with Depot Cache, so this is already the
-    # fast path there, and it still works on a GitHub-hosted runner.
+    # actions/cache, which Depot's runners back with Depot Cache too, so it
+    # still works on a GitHub-hosted runner, where only the build cache is lost.
     - name: Restore the Go caches
       uses: actions/cache/restore@v6.1.0
       with:
         path: |
-          ~/.cache/go-build
-          ~/Library/Caches/go-build
-          ~/AppData/Local/go-build
           ~/go/pkg/mod
           ~/.cache/golangci-lint
           ~/Library/Caches/golangci-lint
@@ -82,16 +96,13 @@ runs:
       shell: bash
       run: go tool task ${{ inputs.target }}
 
-    # Saved whether or not the target passed: a failing test still leaves the
-    # build it compiled behind, and the next push needs it as much.
+    # Saved whether or not the target passed: a failing target still leaves the
+    # modules it fetched and the analysis it ran behind.
     - name: Save the Go caches
       if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
       uses: actions/cache/save@v6.1.0
       with:
         path: |
-          ~/.cache/go-build
-          ~/Library/Caches/go-build
-          ~/AppData/Local/go-build
           ~/go/pkg/mod
           ~/.cache/golangci-lint
           ~/Library/Caches/golangci-lint

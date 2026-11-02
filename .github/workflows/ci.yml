@@ -4,9 +4,10 @@ name: CI
 
 # Runners are Depot's. The sizes below match what the GitHub-hosted equivalents
 # gave us (4 CPU / 16 GB) rather than Depot's 2-CPU default; raise the suffix to
-# -8 or -16 to trade money for wall-clock. Depot runners also back the GitHub
-# Actions cache API with Depot Cache, so the actions/cache in .github/actions/task
-# is transparently ~10x faster here with no change to it.
+# -8 or -16 to trade money for wall-clock. Depot runners also start every job
+# with GOCACHEPROG pointing Go's build and test cache at Depot Cache, which is
+# fetched object by object rather than restored and saved whole; see
+# .github/actions/task for what actions/cache still keeps.
 
 on:
   pull_request:
