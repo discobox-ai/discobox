@@ -103,3 +103,9 @@
   the watermark; a test that resumed from the head instead hid that every
   reconnect to a quiet project reset and reprinted every discobox
   (ADR 26-10-29-316 §4). Resume from `Cursor()`, or from the last ID written.
+- **`pushSandboxSentinels` sends every field it owns non-nil, even
+  empty** (`Sentinels`, `SecretEnv`). A nil field in `UpdateOptions` means
+  "leave the pool's copy as it is", so the last sentinel removed, or turned
+  raw, stayed in the sandbox; a variable turned raw kept its old sentinel,
+  which is the pool's handle for the value and shadowed an `env` delivery of
+  it (ADR 26-10-27-840 §3).

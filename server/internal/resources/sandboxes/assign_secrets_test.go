@@ -274,6 +274,11 @@ func TestARawBindingIsPushedRawAndNeverAsASentinel(t *testing.T) {
 	if len(pushed.Sentinels) != 0 || len(pushed.SecretEnv) != 0 {
 		t.Fatalf("pushed sentinels %v and env %v, want none for a raw binding", pushed.Sentinels, pushed.SecretEnv)
 	}
+	if pushed.SecretEnv == nil {
+		// Nil leaves the pool's last environment standing, and with it any
+		// sentinel the variable held before it turned raw, shadowing the value.
+		t.Fatal("pushed no secret environment, want an empty one that replaces the last")
+	}
 	if raw := pushed.RawSecrets[rows[0].Sentinel]; raw != (RawSecret{EnvName: "OPENAI_API_KEY", Delivery: "file"}) {
 		t.Fatalf("pushed raw = %#v, want the row's delivery by its sentinel", pushed.RawSecrets)
 	}

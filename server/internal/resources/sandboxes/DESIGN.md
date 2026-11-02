@@ -1042,7 +1042,11 @@ reaches in its transaction (`MarkBindingHoldersDirtyTx`,
 `MarkSecretHoldersDirtyTx`), and the reconciler materializes the sandbox's
 bindings and sends its sentinel set with each sentinel's route lists — every
 sentinel has some, an empty list sending it nowhere — as a provider
-`Update`. Deleting a sandbox marks the discoboxes holding what was handed on
+`Update`. The set and the secret environment are each sent empty, never left
+out, when nothing is in them: the pool keeps what it was last sent of a field
+left out, so the last sentinel removed, or turned raw, would otherwise stay in
+the sandbox — where an `env` raw delivery's variable would still hold the
+pool's handle. Deleting a sandbox marks the discoboxes holding what was handed on
 under its delegate bindings (`store.OnBindingsDeleted`).
 
 Running a second harness in a sandbox (`AssignSandboxHarnessSecrets`, `POST

@@ -427,6 +427,13 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 		// An empty set, not none: it is what removes the last sentinel.
 		sentinels = []string{}
 	}
+	if secretEnv == nil {
+		// Likewise an empty environment: without it the pool keeps the last
+		// one it was sent, and a variable whose binding went, or turned raw,
+		// keeps its sentinel in the sandbox, where it shadows a raw value's
+		// env delivery with the pool's handle (ADR 26-10-27-840 §3).
+		secretEnv = map[string]string{}
+	}
 	sentinelRoutes, err := s.store.SentinelRouteLists(ctx, sandboxModel.ProjectID, assignments)
 	if err != nil {
 		return err
