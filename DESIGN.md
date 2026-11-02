@@ -257,7 +257,7 @@ Three layers, and the top one holds no logic (ADR 0066):
 ```mermaid
 flowchart TD
     workflows[".github/workflows/<br/>when, on which runner, how artifacts move"]
-    action[".github/actions/task<br/>checkout done, install Nix (Go on Windows),<br/>restore caches, run one target, save caches on main"]
+    action[".github/actions/task<br/>checkout done, install Nix (Go on Windows),<br/>restore module and lint caches, run one target,<br/>save them on main; Go's build cache is Depot Cache"]
     taskfile["Taskfile.yml<br/>every step of check, test, build, release"]
     flake["flake.nix<br/>system tools and environment"]
 
@@ -278,9 +278,14 @@ flowchart TD
 - `.github/workflows/` decides only *when* a target runs and on which runner.
   Every job body is one Taskfile target, run by the `.github/actions/task`
   composite action as `nix develop -c go tool task <target>`, or as plain
-  `go tool task <target>` on Windows. Its Go and golangci-lint caches are keyed
-  by commit and saved only by runs on `main`, so every run starts from the
-  newest `main` rather than from whenever `go.sum` last changed.
+  `go tool task <target>` on Windows. Go's build and test cache is Depot Cache,
+  which Depot's runners set as `GOCACHEPROG` and every run, pull requests
+  included, reads and writes per object; a runner without it builds cold. Any
+  run but a pull request or a branch push turns it off (a tag's release, a
+  dispatched one), since a pull request can write what it would read. The
+  module and golangci-lint caches are `actions/cache`, keyed by commit and saved
+  only by runs on `main`, so every run starts from the newest `main` rather than
+  from whenever `go.sum` last changed.
 
 Release binaries are built on the platform they target — darwin has to be, since
 `vz` is cgo against Virtualization.framework and its entitlement is applied by
