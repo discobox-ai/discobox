@@ -336,6 +336,38 @@ func TestMachineArchiveKeepsTheMachine(t *testing.T) {
 	}
 }
 
+// A pool machine made again has none of the trees the one before it kept, but
+// the sandboxes' machines are still there under their names: archiving one
+// stops it, rather than reporting it not found and leaving it running. Only a
+// sandbox with neither a tree nor a machine is not found.
+func TestMachineArchiveWithoutItsTreeStopsTheMachine(t *testing.T) {
+	f := newMachineFixture(t)
+	ctx := context.Background()
+	r := f.runtime
+	if _, err := r.CreateSandbox(ctx, machineCreate("sbx_6")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(r.sandboxRoot("sbx_6")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.ArchiveSandbox(ctx, "sbx_6"); err != nil {
+		t.Fatalf("archive a sandbox whose tree was lost = %v, want its machine stopped", err)
+	}
+	inst, err := f.owner.Instance(ctx, "sbx-6")
+	if err != nil {
+		t.Fatalf("archived sandbox's machine: %v, want it kept", err)
+	}
+	if state := r.engine.State(ctx, inst); state != engine.Stopped {
+		t.Fatalf("archived machine is %s, want stopped", state)
+	}
+	if !r.isArchived("sbx_6") {
+		t.Fatal("the sandbox is not marked archived")
+	}
+	if err := r.ArchiveSandbox(ctx, "sbx_none"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("archive a sandbox with no tree and no machine = %v, want ErrNotFound", err)
+	}
+}
+
 // A machine cannot be frozen, so a suspend is refused, and a machine's tree is
 // its disk, so an export is.
 func TestMachineRefusesWhatItCannotDo(t *testing.T) {
@@ -859,5 +891,28 @@ func TestARunningMachineIsReachedAsItWasMade(t *testing.T) {
 	}
 	if serves, err := r.agentServesTLS("sbx_1"); err != nil || serves {
 		t.Fatalf("agentServesTLS = %v, %v; want a running machine still reached as it was made", serves, err)
+	}
+}
+
+// A machine sandbox's sources are served from the same git-origins route as a
+// container's, so staging it records which of them come from the pool's cache:
+// without the record the route serves an empty repository of the sandbox's
+// own, and its clone waits forever on a source the cache holds.
+func TestMachineStagingRecordsSourceCaches(t *testing.T) {
+	f := newMachineFixture(t)
+	req := machineCreate(deliveryTestSandboxID)
+	req.Config.Source = originTestRequest("/home/dev/project").Config.Source
+	if err := os.MkdirAll(f.runtime.sandboxRoot(deliveryTestSandboxID), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.runtime.stageSandbox(context.Background(), deliveryTestSandboxID, req); err != nil {
+		t.Fatal(err)
+	}
+	caches, err := f.runtime.readSourceCaches(deliveryTestSandboxID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if caches["primary"] != originTestCacheKey {
+		t.Fatalf("recorded caches = %v, want the primary's %q", caches, originTestCacheKey)
 	}
 }
