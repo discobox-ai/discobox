@@ -144,7 +144,7 @@ func (m *Model) narrated(msg narrationMsg) tea.Cmd {
 // the two are written together rather than in each of the places that report.
 func (m *Model) waiting(text string) {
 	m.busy = text + "…"
-	if m.dialog != nil && m.dialog.kind == dlgStatus {
+	if m.windowWaiting() {
 		m.dialog.body = text
 	}
 }

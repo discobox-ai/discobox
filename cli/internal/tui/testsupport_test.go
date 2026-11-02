@@ -309,6 +309,12 @@ type fakeSource struct {
 	doErr        error         // what every lifecycle verb answers
 	doGate       chan struct{} // when set, every lifecycle verb waits for it to close
 	renames      []string      // "id name"
+	// settings is what BoxSettings answers per box, and updates every
+	// UpdateBox it was sent.
+	settings    map[string]BoxSettings
+	settingsErr error
+	updates     []boxUpdate
+	updateErr   error
 	// titles is what each renamed box was showing before it was given a name,
 	// which is what clearing the name shows again.
 	titles      map[string]string
@@ -650,6 +656,27 @@ func (f *fakeSource) Do(_ context.Context, verb Verb, id string, _ CredentialUI)
 	defer f.mu.Unlock()
 	f.did = append(f.did, string(verb)+" "+id)
 	return f.doErr
+}
+
+type boxUpdate struct {
+	id     string
+	update BoxSettingsUpdate
+}
+
+func (f *fakeSource) BoxSettings(_ context.Context, id string) (BoxSettings, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.settingsErr != nil {
+		return BoxSettings{}, f.settingsErr
+	}
+	return f.settings[id], nil
+}
+
+func (f *fakeSource) UpdateBox(_ context.Context, id string, update BoxSettingsUpdate) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.updates = append(f.updates, boxUpdate{id: id, update: update})
+	return f.updateErr
 }
 
 func (f *fakeSource) Rename(_ context.Context, id, name string) error {

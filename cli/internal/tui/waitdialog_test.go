@@ -15,6 +15,7 @@ func TestWaitingDialogFollowsTheNarration(t *testing.T) {
 	t.Parallel()
 	m := &Model{st: newStyles(true), width: 80, height: 24}
 	m.dialog = statusDialog("Starting nimble_swan", "creating the discobox")
+	m.dialog.windowWait = true
 
 	feed := narration{gen: m.busyGen, ch: make(chan narrationLine, 1)}
 	m.narrated(narrationMsg{source: feed, text: "pulling the discobox image"})
@@ -37,6 +38,7 @@ func TestWaitingDialogClosesWhenProvisioningEnds(t *testing.T) {
 	t.Parallel()
 	m := &Model{st: newStyles(true), width: 80, height: 24}
 	m.dialog = statusDialog("Starting nimble_swan", "creating the discobox")
+	m.dialog.windowWait = true
 
 	m.update(provisioningDoneMsg{sandboxID: "sbx_1"})
 	if m.dialog != nil {
@@ -162,5 +164,25 @@ func TestAFirstCreateDoesNotTakeTheScreenFromASecond(t *testing.T) {
 	m.created(createdMsg{sandbox: b, create: wb, accepted: true})
 	if m.paneBox.ID != b.ID || !m.wsOpening || m.connecting == nil {
 		t.Fatalf("box %s, opening %v; want the second create attaching", m.paneBox.ID, m.wsOpening)
+	}
+}
+
+// Another operation's status card — the settings read, a secret being stored —
+// is not the window's wait: a create's progress neither writes into it nor
+// takes it down.
+func TestWindowWaitLeavesOtherStatusCardsAlone(t *testing.T) {
+	t.Parallel()
+	m := &Model{st: newStyles(true), width: 80, height: 24}
+	card := statusDialog("Settings", "saving…")
+	m.dialog = card
+
+	feed := narration{gen: m.busyGen, ch: make(chan narrationLine, 1)}
+	m.narrated(narrationMsg{source: feed, text: "pulling the discobox image"})
+	if card.body != "saving…" {
+		t.Fatalf("body = %q, want the card's own", card.body)
+	}
+	m.update(provisioningDoneMsg{sandboxID: "sbx_1"})
+	if m.dialog != card {
+		t.Fatal("provisioning finishing took another operation's card down")
 	}
 }

@@ -160,6 +160,13 @@ type dialog struct {
 	// it, is prose — the caveat the question carries — and stays text.
 	keys []hint
 
+	// windowWait marks a status card as the window's own wait — for a create,
+	// an attach, an archive the window closes on — which the busy line's
+	// narration writes into (waiting) and the end of that wait takes down.
+	// Any other status card is some operation's own, which a create's progress
+	// must neither overwrite nor close: a statusDialog alone is not this.
+	windowWait bool
+
 	// onCancel runs when the dialog is dismissed without answering. Most
 	// dialogs have nothing to do there, but a question whose two answers are
 	// both answers — carry the uncommitted changes, or do not — has to hear
