@@ -331,7 +331,9 @@ type UpdateOptions struct {
 	// removes them.
 	Gateways []gateway.Route
 	// SecretEnv replaces the sandbox's secret-bound env->sentinel map. It
-	// mirrors CreateOptions.SecretEnv.
+	// mirrors CreateOptions.SecretEnv. Nil leaves it as it is; an empty,
+	// non-nil map removes every variable, as the last sentinel binding going,
+	// or turning raw, must.
 	SecretEnv map[string]string
 }
 

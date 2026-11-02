@@ -444,7 +444,7 @@ func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, st
 	if opts.Sentinels != nil && len(opts.RawSecrets) > 0 {
 		req.RawSecrets = poolclient.NewOptNilPoolSandboxUpdateRequestRawSecrets(poolclient.PoolSandboxUpdateRequestRawSecrets(poolRawSecrets(opts.RawSecrets)))
 	}
-	if len(opts.SecretEnv) > 0 {
+	if opts.SecretEnv != nil {
 		req.SecretEnv = poolclient.NewOptNilPoolSandboxUpdateRequestSecretEnv(poolclient.PoolSandboxUpdateRequestSecretEnv(opts.SecretEnv))
 	}
 	poolSandbox, err := client.PoolUpdateSandbox(ctx, req, poolclient.PoolUpdateSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
