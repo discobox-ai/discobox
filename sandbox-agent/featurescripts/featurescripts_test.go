@@ -197,7 +197,8 @@ func TestAHarnessCLILandsInDiscoboxsPrefixWhateverTheBoxHadOnPATH(t *testing.T) 
 		"a link into a closed home": {
 			box: func(b *box) {
 				b.node(b.path("/home/boxd/.nvm/versions/node/v24.22.1/bin"), "v24.22.1")
-				for _, c := range []string{"node", "npm"} {
+				write(t, b.path("/home/boxd/.nvm/versions/node/v24.22.1/bin/corepack"), "#!/bin/sh\n", 0o755)
+				for _, c := range []string{"node", "npm", "corepack"} {
 					symlink(t, b.path("/home/boxd/.nvm/versions/node/v24.22.1/bin/"+c), b.path("/usr/local/bin/"+c))
 				}
 				if err := os.Chmod(b.path("/home/boxd"), 0o750); err != nil {
@@ -236,7 +237,7 @@ func TestAHarnessCLILandsInDiscoboxsPrefixWhateverTheBoxHadOnPATH(t *testing.T) 
 				}
 			}
 			before := map[string]string{}
-			for _, c := range []string{"node", "npm"} {
+			for _, c := range []string{"node", "npm", "corepack"} {
 				if target, err := os.Readlink(b.path("/usr/local/bin/" + c)); err == nil {
 					before[c] = "link:" + target
 				} else if _, err := os.Stat(b.path("/usr/local/bin/" + c)); err == nil {
@@ -261,6 +262,11 @@ func TestAHarnessCLILandsInDiscoboxsPrefixWhateverTheBoxHadOnPATH(t *testing.T) 
 				if got := b.readlink("/usr/local/bin/" + c); got != b.path(tc.chosen+"/"+c) {
 					t.Errorf("/usr/local/bin/%s -> %s, want the chosen %s", c, got, b.path(tc.chosen+"/"+c))
 				}
+			}
+			// The installed Node ships no corepack, so the refused one's is
+			// taken off PATH rather than left in front of nothing.
+			if _, err := os.Lstat(b.path("/usr/local/bin/corepack")); !os.IsNotExist(err) {
+				t.Errorf("/usr/local/bin/corepack is still there: %v", err)
 			}
 			// What the box had is moved aside, never deleted.
 			for c, was := range before {

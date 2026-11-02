@@ -12,19 +12,21 @@
 # refused, ahead of the chosen one. Then node, npm, npx and corepack are
 # linked into /usr/local/bin from beside the chosen node, so a bare `node` in
 # a launcher or a capture script runs it too, and what the box had there is
-# moved aside (link-command).
+# moved aside (link-command); an npx or corepack the chosen Node has none of
+# is moved aside too, with nothing in its place.
 #
 # Run with `check` (check-node.sh), it changes nothing and exits non-zero when
 # the record or a link is not what it would make: a box whose Node moved, or
 # whose links were shadowed again, is put right at its next boot.
 #
-# DISCOBOX_NODE_ENV, DISCOBOX_NPM_PREFIX, DISCOBOX_INSTALLED_NODE_DIR and
-# DISCOBOX_LINK_COMMAND move its fixed paths, for tests.
+# DISCOBOX_NODE_ENV, DISCOBOX_NPM_PREFIX, DISCOBOX_INSTALLED_NODE_DIR,
+# DISCOBOX_BIN_DIR and DISCOBOX_LINK_COMMAND move its fixed paths, for tests.
 set -eu
 
 record=${DISCOBOX_NODE_ENV:-/usr/local/lib/discobox/node.env}
 prefix=${DISCOBOX_NPM_PREFIX:-/usr/local/lib/discobox/npm}
 link_command=${DISCOBOX_LINK_COMMAND:-/usr/local/libexec/discobox/link-command}
+bin=${DISCOBOX_BIN_DIR:-/usr/local/bin}
 
 if [ -n "${DISCOBOX_PROVISION_ADOPTED_NODE:-}" ]; then
   node=$DISCOBOX_PROVISION_ADOPTED_NODE
@@ -51,6 +53,8 @@ if [ "${1-}" = check ]; then
   for command in npx corepack; do
     if [ -x "${node%/*}/$command" ]; then
       "$link_command" --check "${node%/*}/$command" "$command"
+    elif [ -e "$bin/$command" ] || [ -L "$bin/$command" ]; then
+      exit 1
     fi
   done
   exit 0
@@ -71,9 +75,13 @@ mv -f "$tmp" "$record"
 
 "$link_command" "$node" node
 "$link_command" "$npm" npm
-# Node 25 no longer ships corepack; link what is there.
+# Node 25 no longer ships corepack. One the chosen Node has none of is taken
+# off PATH rather than left to the copy the adopt check refused: boxd's links
+# into /home/boxd/.nvm, which no other user can run.
 for command in npx corepack; do
   if [ -x "${node%/*}/$command" ]; then
     "$link_command" "${node%/*}/$command" "$command"
+  else
+    "$link_command" --aside "$command"
   fi
 done
