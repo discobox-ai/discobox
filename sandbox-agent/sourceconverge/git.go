@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/discobox-ai/discobox/pkg/gitprogress"
@@ -498,6 +499,51 @@ func (r *repository) writeMarker(path, content string) error {
 		return nil
 	}
 	return chownTo(path, r.owner)
+}
+
+// bearerGitVersion is the first git that takes a bearer credential from a
+// helper (the authtype capability).
+var bearerGitVersion = [2]int{2, 46}
+
+// takesBearer reports, as an error saying why not, whether the git the
+// checkout runs can take the bearer credential its origin is fetched with.
+func (r *repository) takesBearer(ctx context.Context) error {
+	out, err := r.output(ctx, r.dir, nil, "version")
+	if err != nil {
+		return err
+	}
+	version, ok := parseGitVersion(out)
+	if !ok {
+		// A version this cannot read is not one to refuse: the clone says
+		// soon enough whether it can authenticate.
+		return nil
+	}
+	if version[0] > bearerGitVersion[0] || (version[0] == bearerGitVersion[0] && version[1] >= bearerGitVersion[1]) {
+		return nil
+	}
+	return fmt.Errorf("waiting for a git that takes a bearer credential (%d.%d or later): this box's is %d.%d", bearerGitVersion[0], bearerGitVersion[1], version[0], version[1])
+}
+
+// parseGitVersion reads the major and minor version from `git version`'s
+// "git version 2.43.0" (and vendor suffixes after it).
+func parseGitVersion(out string) ([2]int, bool) {
+	fields := strings.Fields(out)
+	if len(fields) < 3 {
+		return [2]int{}, false
+	}
+	parts := strings.SplitN(fields[2], ".", 3)
+	if len(parts) < 2 {
+		return [2]int{}, false
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return [2]int{}, false
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return [2]int{}, false
+	}
+	return [2]int{major, minor}, true
 }
 
 func (r *repository) run(ctx context.Context, stdin []byte, args ...string) error {
