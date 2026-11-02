@@ -1271,7 +1271,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case provisioningDoneMsg:
 		// The attach can finish, so the report on it goes and what is
 		// underneath — the pane it was covering — comes forward.
-		if m.dialog != nil && m.dialog.kind == dlgStatus {
+		if m.windowWaiting() {
 			m.dialog = nil
 		}
 		return nil
@@ -1297,6 +1297,15 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case renameDoneMsg:
 		return m.renameDone(msg)
+
+	case boxSettingsReadMsg:
+		return m.settingsRead(msg)
+
+	case boxSettingsSaveMsg:
+		return m.saveSettings(msg)
+
+	case boxSettingsDoneMsg:
+		return m.settingsDone(msg)
 
 	case hostToolRanMsg:
 		return m.hostToolRan(msg)
@@ -2414,6 +2423,10 @@ func (m *Model) actions(targets []Sandbox) []action {
 	if one && targets[0].State == StateArchived {
 		renameable, renameWhy = false, "an archived box cannot be started to take a name — unarchive it first"
 	}
+	settable, settableWhy := one, "takes exactly one box"
+	if one && targets[0].State == StateArchived {
+		settable, settableWhy = false, "an archived box is unarchived before its settings change"
+	}
 	return []action{
 		{key: "a", press: "a", label: "attach", detail: "join the harness terminal", enabled: attachable,
 			why: attachWhy(one, targets)},
@@ -2422,6 +2435,8 @@ func (m *Model) actions(targets []Sandbox) []action {
 		{key: harnessChangesKey, press: harnessChangesKey, label: "review config", detail: "review and save local settings and logins", enabled: one && targets[0].State == StateRunning, why: "takes one running box"},
 		{key: renameKey, press: renameKey, label: "rename", detail: "type a new name for the box", enabled: renameable,
 			why: renameWhy},
+		{key: settingsKey, press: settingsKey, label: "settings", detail: "edit its configured name, harness, egress and discobox API access", enabled: settable,
+			why: settableWhy},
 		{key: "u", press: "u", label: "upgrade", detail: "re-pin to the current harness image", enabled: anyUpgrade,
 			why: "already on the current image"},
 		{key: repairKey, press: repairKey, label: "repair", detail: "rebuild the box on the current image, keeping its work", enabled: anyRepair,
@@ -2532,6 +2547,9 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 	}
 	if key == renameKey {
 		return m.askRename(targets[0])
+	}
+	if key == settingsKey {
+		return m.askSettings(targets[0])
 	}
 	if action, ok := interactions[key]; ok {
 		// Every interaction is drawn in the window, and a pane shows one
@@ -2671,6 +2689,7 @@ func (m *Model) archiveWorkspace(box Sandbox) tea.Cmd {
 	leave := m.attach != nil
 	if leave {
 		d := statusDialog("Archiving "+sandboxLabel(box), "archiving the discobox")
+		d.windowWait = true
 		// Nothing here is pressed: the line says what happens, and names no
 		// key, rather than the status card's "Esc stops watching".
 		d.keys = []hint{says("this window closes when the archive is answered")}
@@ -3357,6 +3376,11 @@ type createMsg struct{ req RunRequest }
 // becomes "Starting <name>" the moment the create comes back with one.
 const creatingTitle = "Creating a discobox"
 
+// windowWaiting is whether the card up is the window's own wait (windowWait).
+func (m *Model) windowWaiting() bool {
+	return m.dialog != nil && m.dialog.windowWait
+}
+
 // waitDialog is the screen a window that is one command's own waits on: what
 // it is waiting for, with the newest report under it. The console has none;
 // it watches a create in the discobox's opening workspace (watchCreate).
@@ -3367,6 +3391,7 @@ const creatingTitle = "Creating a discobox"
 // on coming up either way. Nothing is stopped and nothing is attached to.
 func (m *Model) waitDialog(title, body string) *dialog {
 	d := statusDialog(title, body)
+	d.windowWait = true
 	// What the key does, and then what it does not do: the second half is
 	// the reassurance, not an offer, so it names no key.
 	d.keys = []hint{pressing("Esc closes this window", "esc"), says("the discobox carries on")}
@@ -3512,7 +3537,7 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 		// The wait is over and there is nothing to wait for, so it goes: the
 		// report belongs on a screen somebody can read it on. Only this
 		// window's own wait is taken down; a dialog the user opened is theirs.
-		if m.dialog != nil && m.dialog.kind == dlgStatus {
+		if m.windowWaiting() {
 			m.dialog = nil
 		}
 		if msg.accepted {
@@ -4768,7 +4793,8 @@ func (m *Model) helpText() string {
 		"           current image, keeping its workspace and changes",
 		"    " + credentialsKey + "      answer the credential request waiting on it",
 		"    H      review and save harness settings and logins",
-		"    e      rename          t  stop",
+		"    e      rename          E  settings",
+		"    t      stop",
 		"    T      start           x  archive (Del too)",
 		"    U      unarchive       P  purge",
 		"    A      show or hide archived discoboxes",
@@ -4781,6 +4807,10 @@ func (m *Model) helpText() string {
 		"",
 		"  attach and shell open a workspace on one discobox. vscode and zed",
 		"  edit the box over SSH in a separate window.",
+		"",
+		"  settings edits what `discobox admin box update` does: the",
+		"  configured name, the harness (on a stopped box), the box's own",
+		"  egress level and its discobox API access.",
 		"",
 		"  rename opens the current name for editing. Enter accepts, Esc",
 		"  cancels. The name you give a box replaces the title its harness",

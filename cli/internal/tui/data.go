@@ -402,6 +402,54 @@ type Sandbox struct {
 	ImageUnavailable bool
 }
 
+// BoxSettings is what `discobox admin box update` changes on one discobox:
+// its configured name, its harness, its own egress level, and whether it may
+// call the discobox API. It is read when the settings form opens rather than
+// carried on every row, because the listing has no use for the egress lists.
+type BoxSettings struct {
+	// Name is the configured name, the handle the box was created with — not
+	// the name rename gives it, which is its meta's (ADR 26-10-12-026).
+	Name string
+	// HarnessID is its harness config's ID.
+	HarnessID string
+	// Egress is the discobox's own level, one of the four a box's egress is
+	// decided from.
+	Egress Egress
+	// DiscoboxAPI is whether it may call the discobox API through its pool,
+	// acting only on the discoboxes it created.
+	DiscoboxAPI bool
+}
+
+// Egress is one level of egress policy: whether it restricts a box to the
+// allow lists, its own allow list, and the hosts whose HTTPS CONNECT is passed
+// through unread.
+type Egress struct {
+	DenyByDefault bool
+	Allow         []string
+	Passthrough   []string
+}
+
+// BoxSettingsUpdate is the parts of BoxSettings a save changes; nil keeps the
+// stored value. The egress level's three parts are separate for the same
+// reason: a form that only touched the allow list sends only that, and the
+// rest is kept as the server has it.
+type BoxSettingsUpdate struct {
+	Name *string
+	// Harness is the harness config's ID. The server takes it only on a
+	// stopped box.
+	Harness           *string
+	EgressDeny        *bool
+	EgressAllow       *[]string
+	EgressPassthrough *[]string
+	DiscoboxAPI       *bool
+}
+
+// empty is an update that changes nothing.
+func (u BoxSettingsUpdate) empty() bool {
+	return u.Name == nil && u.Harness == nil && u.EgressDeny == nil && u.EgressAllow == nil &&
+		u.EgressPassthrough == nil && u.DiscoboxAPI == nil
+}
+
 // Session is what the window knows about where it is running: the project and
 // the directory every command it runs inherits.
 //
@@ -2110,6 +2158,14 @@ type DataSource interface {
 	// Verb: a verb is a word the window already has, and this one needs the
 	// name typed first.
 	Rename(ctx context.Context, sandboxID, name string) error
+
+	// BoxSettings reads what `discobox admin box update` changes on one
+	// sandbox, as the server holds it now: the settings form opens on it.
+	BoxSettings(ctx context.Context, sandboxID string) (BoxSettings, error)
+
+	// UpdateBox changes those settings, through the update `discobox admin
+	// box update` makes. A part left nil is kept as it is stored.
+	UpdateBox(ctx context.Context, sandboxID string, update BoxSettingsUpdate) error
 
 	// Tools is every tool one sandbox can be worked on with: the CLI's and the
 	// user's, merged with what the sandbox's image and primary source declare.

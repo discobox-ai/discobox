@@ -86,6 +86,18 @@
   front of that pane, takes its keys into the audit search, and leaves nothing
   to click.
 
+- **A dialog opened by a slow read waits behind a card of its own, and
+  replaces only that card.** The answer arrives whenever the server gives it;
+  opened unconditionally, it lands over whatever the person has moved to —
+  a workspace, another dialog — and takes its keys, and clearing `m.busy` on
+  the way ends somebody else's line. Put a `statusDialog` up, carry it in the
+  answer, and open the result only while `m.dialog` is still it
+  (`askSettings`). `showHarnessChanges` predates this and does not.
+  A status card is not the window's wait unless it is marked `windowWait`:
+  the create's narration writes into, and its end takes down, only that one.
+  Testing `kind == dlgStatus` instead let a create's progress overwrite the
+  settings card and close it under its read.
+
 - **Input held behind slow work never holds the leader.** An image paste holds
   a pane's keys while it reads the clipboard and copies into the discobox,
   which can take minutes over a slow link; the leader and the key after it are

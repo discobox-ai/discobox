@@ -26,6 +26,7 @@ flowchart LR
     Card -->|Enter| Run["DataSource.Run → accepted: workspace opening → attach"]
     L -->|u R t T x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
+    L -->|E| Settings["settings form → BoxSettings / UpdateBox"]
     L -->|Enter a s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal / EndExec"]
     WS -->|poll| Svc["services → Services / ServiceLogs"]
     WS -->|leader S0| SvcMenu["services menu → DoService"]
@@ -1434,6 +1435,32 @@ absent from `verbs`/`interactions`, which is what keeps it off the workspace
 screen: rename needs a name typed into a dialog, and a discobox you are
 already looking at is one you know the name of.
 
+**Settings is `discobox admin box update` as one form** (`settingsKey` `E`,
+`settings.go`). It is a fourth kind, beside rename: one form over everything
+that command changes — the configured name, the harness, the box's own egress
+level (deny by default, allow, passthrough) and its discobox API access — read
+fresh when it opens (`DataSource.BoxSettings`), since the row carries neither
+the egress lists nor the API access, and saved as only the parts that differ
+from what was read (`BoxSettingsUpdate`, nil keeps the stored value). The CLI
+turns that into the same `sandboxChange` the command's flags make and builds
+the request with the same `body`, which keeps the egress parts it was not sent
+as stored (`egressChange`); the harness goes as `harnessConfigId`, the exact ID
+the window holds, where `--harness` sends a selector. The read and the save
+are each waited on behind a card of their own rather than on the busy line, and
+their answer replaces only that card, so nothing opens over a screen the
+person moved to meanwhile. Esc on the read gives it up. Esc on the save only
+stops watching it: the request is not taken back, and its answer goes to the
+status line. A refused save the card is still up for puts the form back
+holding everything typed, with the refusal on it. Neither card is the window's
+own wait (`dialog.windowWait`), so a create's narration does not write into it
+or take it down. The harness row is drawn on
+every box and answerable only on a stopped one, with why, because the server
+refuses the change otherwise; it offers the enabled harnesses on the box's
+server and the box's own whatever its state, and the box's own alone when the
+listing fails. The name here is the configured handle, not rename's: the form
+says so on the row. One box, not archived. It is in the box menu as every list
+action is.
+
 **The status line's right end names the discobox under the cursor**
 (`statusIdentity`): its id, and the name it is configured with. Neither is on
 the row. The name a row shows is the server's display name, which is the
@@ -2528,7 +2555,7 @@ accelerator and the only one of the two ever drawn; a menu whose rows have none
 has no key column at all.
 
 **A dialog with no answer is how a wait is drawn** (`dlgStatus`,
-`statusDialog`) in a window that is one command's own, which has nothing else
+`waitDialog`) in a window that is one command's own, which has nothing else
 to show while a pool comes up and gigabytes arrive. The console draws the same
 wait in the discobox's opening workspace instead (`watchCreate`, below). Once
 the create returns, the wait says "Starting <name>" (`created`), and the
@@ -2536,7 +2563,12 @@ provisioning narration (`narration.go`) reports into the dialog's body rather
 than only onto the busy line. Enter does not dismiss it: there is nothing to
 answer, and closing it would drop the user onto a pane that has not attached.
 `provisioningDoneMsg` takes it down; Esc closes the window, not the
-discobox.
+discobox. The window's own wait is told apart by a mark, `dialog.windowWait`,
+not by its kind (`Model.windowWaiting`): `waitDialog` and the card an archive
+the window closes on puts up set it, and the narration and the take-downs touch
+only a card that has it. Every other status card — a credential being
+answered, a secret stored, the settings read — is some operation's own, which
+a create neither writes into nor closes.
 
 **A paste is routed like a keystroke** (`updatePaste`, `dialog.paste`). A
 terminal reports a bracketed paste as one message of its own rather than as the
@@ -3342,6 +3374,7 @@ the newest one where the busy line goes.
 | `options.go` | `discobox run`'s flags as a panel, the chip strip, the command preview |
 | `create.go` | the create card Enter opens: the source list, the settings under it reached by Tab |
 | `dialog.go` | the one modal layer: message, confirm, action menu, input, form, help, the labelled-section card, and the `/` search over a scrolling body |
+| `settings.go` | the settings form: `discobox admin box update` as one card over a box's name, harness, egress level and discobox API access |
 | `form.go` | the form dialog: rows typed into or chosen between, the ones an answer makes irrelevant dimmed and stepped over |
 | `theme.go` | the palette and every style, built against the detected profile |
 | `logo.go` | the mark, embedded from `logo.chars` as captured |
