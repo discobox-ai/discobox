@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-faster/jx"
 
@@ -147,7 +148,9 @@ func TestAnApprovedUsePartReplacesTheUseBindingsOfItsSecret(t *testing.T) {
 	// With none in the asked variable, the oldest moves to it.
 	svc2, st2 := newAgentCredentialService(t)
 	secret2 := createBearerSecret(ctx, t, svc2)
-	first := mustDeliverAs(t, st2, testSandboxID, secret2.ID, "GH_A")
+	// Written an hour apart, so which is oldest does not hang on the clock's
+	// resolution (on Windows two writes in a row can share a timestamp).
+	first := mustBindAs(t, st2, &model.SecretBinding{SecretID: secret2.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: testSandboxID, Use: true, EnvName: "GH_A", CreatedAt: time.Now().Add(-time.Hour)})
 	second := mustDeliverAs(t, st2, testSandboxID, secret2.ID, "GH_B")
 	approved, err = svc2.ApproveSecretRequest(ctx, "project-1", createAgentRequest(ctx, t, svc2).ID, approveUse(secret2.ID))
 	if err != nil {

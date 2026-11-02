@@ -109,3 +109,36 @@ func TestAfterIsWhatTheUsePartLeaves(t *testing.T) {
 		t.Fatalf("after %+v", left)
 	}
 }
+
+// Two bindings written within one clock tick are still ordered the same way
+// every time, by ID, so the preview and the server keep the same one.
+func TestASharedTimestampIsOrderedByID(t *testing.T) {
+	at := time.Unix(1700000000, 0)
+	for range 10 {
+		plan := Use([]Binding{
+			{ID: "bind_b", Use: true, EnvName: "GH_B", Created: at},
+			{ID: "bind_a", Use: true, EnvName: "GH_A", Created: at},
+		}, "GITHUB_TOKEN")
+		if plan.Keep != "bind_a" {
+			t.Fatalf("kept %q, want bind_a: the lower ID breaks the tie", plan.Keep)
+		}
+	}
+}
+
+// Within one second the server's stored time is finer than the API's, which
+// the CLI and console plan from: the order is the ID's, not the sub-second,
+// so the preview keeps the binding the server keeps.
+func TestWithinASecondTheIDDecidesWhateverThePrecision(t *testing.T) {
+	at := time.Unix(1700000000, 0)
+	server := []Binding{
+		{ID: "bind_b", Use: true, EnvName: "GH_B", Created: at.Add(100 * time.Millisecond)},
+		{ID: "bind_a", Use: true, EnvName: "GH_A", Created: at.Add(900 * time.Millisecond)},
+	}
+	preview := []Binding{
+		{ID: "bind_b", Use: true, EnvName: "GH_B", Created: at},
+		{ID: "bind_a", Use: true, EnvName: "GH_A", Created: at},
+	}
+	if s, p := Use(server, "GITHUB_TOKEN").Keep, Use(preview, "GITHUB_TOKEN").Keep; s != p || s != "bind_a" {
+		t.Fatalf("server keeps %q, preview %q; want both bind_a", s, p)
+	}
+}
