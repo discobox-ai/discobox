@@ -11,4 +11,8 @@
   forward: once `raw` was saved, a writer that built its binding from
   scratch (configure's `PutTargetUseBinding`) would have reset a person's raw
   delivery to a sentinel. A writer that does not decide a field copies it from
-  the standing binding.
+  the standing binding. The list itself is the first thing to check: an
+  update that writes through `Select(...)` gets every column the model gains
+  that it is meant to save, with a test that it round-trips. `raw` was added
+  without joining it, so a raw approval over a sentinel binding and `admin
+  binding update --raw` reported success and saved nothing.
