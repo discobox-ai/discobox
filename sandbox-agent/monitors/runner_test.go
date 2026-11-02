@@ -384,6 +384,53 @@ echo "since=${DISCOBOX_MONITOR_SINCE:-none}"
 	}
 }
 
+// A polling run is told its interval, the instance's own when it gives one;
+// a streaming run has none.
+func TestARunIsToldItsInterval(t *testing.T) {
+	requireScripts(t)
+	dir := t.TempDir()
+	polling := writeMonitor(t, dir, "polling.sh", `#!/bin/sh
+#---
+# interval: 2s
+# min-interval: 1s
+# options:
+# - {name: interval}
+#---
+echo "interval=${DISCOBOX_MONITOR_INTERVAL:-none}"
+echo '{"title":"done","final":true}'
+`)
+	streaming := writeMonitor(t, dir, "streaming.sh", `#!/bin/sh
+#---
+# name: streaming
+#---
+echo "interval=${DISCOBOX_MONITOR_INTERVAL:-none}"
+`)
+	for _, tc := range []struct {
+		path string
+		opts map[string]string
+		want string
+	}{
+		{polling, nil, "interval=2s"},
+		{polling, map[string]string{"interval": "1m30s"}, "interval=1m30s"},
+		{streaming, nil, "interval=none"},
+	} {
+		var got []string
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		r := &Runner{
+			Test:         true,
+			Instance:     Instance{Name: "test", Monitor: "probe", Path: tc.path, Options: tc.opts},
+			MonitorState: t.TempDir(),
+			Stderr:       os.Stderr,
+			Emit:         func(ev Event) error { got = append(got, ev.Title); return nil },
+		}
+		err := r.Run(ctx)
+		cancel()
+		if err != nil || len(got) == 0 || got[0] != tc.want {
+			t.Errorf("%s %v: saw %q, %v; want %q", filepath.Base(tc.path), tc.opts, got, err, tc.want)
+		}
+	}
+}
+
 func TestAFinalEventFromARunWithOldOptionsDoesNotEndAnUpdatedInstance(t *testing.T) {
 	requireScripts(t)
 	d := HomeDirs(t.TempDir())

@@ -72,6 +72,24 @@ func TestABuiltinIsGivenSinceOnlyWhenTheRunnerSetsIt(t *testing.T) {
 	}
 }
 
+func TestABuiltinIsGivenItsInterval(t *testing.T) {
+	var seen Env
+	set := map[string]Monitor{"probe": func(_ context.Context, env Env) error { seen = env; return nil }}
+	vars := map[string]string{"DISCOBOX_MONITOR_STATE": t.TempDir()}
+	var stdout, stderr bytes.Buffer
+	if code := Main(context.Background(), set, []string{"probe"}, environ(vars), &stdout, &stderr); code != 0 || seen.Interval != 0 {
+		t.Fatalf("without it: exit %d, interval %v: %s", code, seen.Interval, stderr.String())
+	}
+	vars["DISCOBOX_MONITOR_INTERVAL"] = "1m30s"
+	if code := Main(context.Background(), set, []string{"probe"}, environ(vars), &stdout, &stderr); code != 0 || seen.Interval != 90*time.Second {
+		t.Fatalf("exit %d, interval %v: %s", code, seen.Interval, stderr.String())
+	}
+	vars["DISCOBOX_MONITOR_INTERVAL"] = "soon"
+	if code := Main(context.Background(), set, []string{"probe"}, environ(vars), &stdout, &stderr); code != 2 {
+		t.Fatalf("a bad interval: exit %d", code)
+	}
+}
+
 func TestAFailingBuiltinExitsWithItsReasonOnStderr(t *testing.T) {
 	vars := environ(map[string]string{"DISCOBOX_MONITOR_STATE": t.TempDir()})
 	set := map[string]Monitor{"probe": func(context.Context, Env) error { return errors.New("no credential: ask with discobox-access") }}
