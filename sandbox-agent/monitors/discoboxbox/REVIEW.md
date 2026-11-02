@@ -2,7 +2,7 @@
 
 - **Check each local struct field against `server.yaml`, and have the fake
   serve the API's JSON, not the monitor's structs.** A field read as the
-  wrong type fails the whole listing's decode, so every run fails, and a
+  wrong type fails its event's decode, so every run fails, and a
   fake that encodes the monitor's own struct agrees with it: the first
   draft read a request's `routes` as strings, where the API sends
   `SecretRoute` objects, and only a live request showed it.
@@ -12,6 +12,12 @@
   than it is (a blocked subscription reads as GraphQL refused), and a form
   of this package's own is one no other client shows and `Parse` refuses.
   `route` names any key secretroute does not read.
-- **Name a box with `sandboxmeta.Title`.** The server and the console both
-  resolve a box's title through it; a rule of this package's own would call
-  a box something no other client does.
+- **Have the fake stream as `internal/server` does**: its replay, the ID-only
+  event after it, the cursor and `reset`, with each event's data a map the
+  way the store writes it. A framing read wrongly then fails a test rather
+  than every run.
+- **Save the cursor only where resuming from it loses nothing.** A cursor
+  saved part way through a reset's replay skips the rest of it, and the boxes
+  it would have confirmed are later taken as deleted. Nothing is concluded —
+  a reset confirmed, a named id missing — from a stream that did not run its
+  whole hold.

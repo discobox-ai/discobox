@@ -96,25 +96,30 @@ discobox-monitor enable github-repo --name main-ci -o repo=foo/bar -o branch=mai
   or complete.
 
 `discobox-box` reports what happens to other discoboxes: the ones you
-started, or any in the project you can name. It reads the discobox API, so
-this box must be allowed to call it (`discoboxApi`). Without that, every run
-fails saying so, and only a person can allow it.
+started, or any in the project you can name. It follows the discobox API's
+event stream, so changes arrive as they happen, and this box must be allowed
+to call the API (`discoboxApi`). Without that, every run fails saying so,
+and only a person can allow it.
 
 ```bash
+discobox-monitor enable discobox-box --name workers -o created-by=me      # every box you start
 discobox-monitor enable discobox-box --name workers -o tag=issue           # every box tagged issue
 discobox-monitor enable discobox-box --name workers -o 'tag=role=worker lead=me'  # every selector matches
 discobox-monitor enable discobox-box --name w -o id=sbx_abc,sbx_def -o watch=terminal,requests
 ```
 
-- `id` names boxes (comma-separated). `tag` selects them, including boxes
-  created later: `key` or `key=value`, separated by spaces, all of which
-  must match.
+- `id` names boxes (comma-separated). `tag` selects them: `key` or
+  `key=value`, separated by spaces, all of which must match. `created-by`
+  selects the boxes `me` (this box) or another box's ID created. `tag` and
+  `created-by` also take boxes created later, and both must match when you
+  give both.
 - `watch` picks kinds: `state`, `terminal`, `requests`. All three when
-  omitted. `interval` polls more often than every 30s, down to 10s.
+  omitted. Secret requests are checked every `interval` (30s, at least 10s);
+  the rest arrive at once.
 - What it reports:
   - **`box.state`:** a box's state changing (running, stopped, suspended,
-    …). Also `box.created` for a selected box created after you enabled
-    it, and `box.gone` for a named one that was deleted.
+    archived, …). Also `box.created` for a selected box created after you
+    enabled it, and `box.gone` for a watched one that was deleted.
   - **`box.busy` / `box.idle`:** its primary terminal's program reporting
     that it is working, or idle, done, waiting (on a permission, a question,
     a login) or stopped on an error. This is what the program reports, not
@@ -122,6 +127,7 @@ discobox-monitor enable discobox-box --name w -o id=sbx_abc,sbx_def -o watch=ter
   - **`box.request` / `box.request.answered`:** a secret request from it
     pending, and then approved or denied. You see requests only from the
     boxes this box created.
+- A box is called by the name it was created with, not its window title.
 - An instance that names only ids ends itself once every one is gone.
 
 The other built-ins:
@@ -236,6 +242,8 @@ Rules:
   - `DISCOBOX_MONITOR_NAME` is the instance's name.
   - `DISCOBOX_MONITOR_STATE` is a directory that survives restarts, for
     remembering what you already reported.
+  - `DISCOBOX_MONITOR_INTERVAL` is a polling monitor's interval (`30s`):
+    the next run starts that long after this one did.
   - Every monitor, the built-ins included, runs in the repository root, so
     relative paths in options are relative to it.
 - **Only what changed.** If the state directory is empty, this is the

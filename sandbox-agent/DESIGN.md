@@ -253,7 +253,7 @@ flowchart LR
   file contract, and never as a route per fact (ADR 0126 §§1, 3).
 - A built-in monitor may read the discobox API, as a process of the box run
   as its user, through the pool's gate as the box's `discobox` CLI does
-  (`discobox-box`, ADR 26-11-01-560). That is the box asking, not the agent
+  (`discobox-box` follows the sandbox event stream, ADR 26-11-01-560). That is the box asking, not the agent
   fetching its configuration, which the rule above still forbids.
 - The desktop viewer's framebuffer arithmetic exists twice, in `desktop.NormalizeSize`
   and in the page's `quantize()`, and the two must round identically. The page

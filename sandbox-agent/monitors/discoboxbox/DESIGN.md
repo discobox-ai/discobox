@@ -1,19 +1,20 @@
 # discobox-box Design
 
 The image's `discobox-box` monitor
-([ADR 26-11-01-560](../../../docs/adr/26-11-01-560-discobox-box-watches-other-boxes-by-polling-the-discobox-api-through-the-gate.md)),
+([ADR 26-11-01-560](../../../docs/adr/26-11-01-560-discobox-box-watches-other-boxes-through-the-sandbox-event-stream.md)),
 a [built-in written in Go](../DESIGN.md#built-ins-written-in-go) watching
-other discoboxes. One run is one poll: it lists the project's boxes and, when
-requests are watched, the secret requests this box may read, compares them
-with `discobox-box.json` in the instance's state directory, and reports what
-differs.
+other discoboxes. One run follows the project's sandbox event stream
+([ADR 26-10-29-316](../../../docs/adr/26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md))
+from the cursor in `discobox-box.json` for its interval, reports what each
+event changes for the boxes it watches, and, when requests are watched, then
+lists the secret requests this box may read.
 
 ```mermaid
 flowchart LR
-  Run["one run"] -->|"GET /projects/P/sandboxes[?tag=]"| Gate["pool gate (DISCOBOX_API_URL)"]
-  Run -->|"GET /projects/P/secret-requests"| Gate
+  Run["one run, for its interval"] -->|"GET /api/projects/P/events, Last-Event-ID"| Gate["pool gate (DISCOBOX_API_URL)"]
+  Run -->|"then GET /projects/P/secret-requests"| Gate
   Gate --> Server["discobox API, as this box"]
-  Run -->|"diff against"| State[("discobox-box.json")]
+  Run <-->|"cursor, every box's last state"| State[("discobox-box.json")]
   Run -->|"box.* events"| Runner["runner's queue"]
 ```
 
@@ -24,34 +25,43 @@ flowchart LR
   `DISCOBOX_PROJECT` (else `default`, the box's own). The gate adds the
   pool's credential; the box sends none. A refusal — no `discoboxApi`, a
   pool not yet connected — is the run's failure, with the server's text.
-- **Responses are read through local structs**, never `api/gen`'s types:
-  runtime code does not use the public API's DTOs (the root `REVIEW.md`),
-  and a field a newer server adds breaks nothing. Each field mirrors
-  `server.yaml`'s type, a route an object, not a string. A terminal's status
-  is `programstatus.PrimaryPosted` of `runtime.agentStatus.sessions`, as
-  `discobox ls` reads it; a box is called what every client calls it,
-  `sandboxmeta.Title` without the msg.
-- **Boxes are named (`id`) or selected (`tag`).** Tags alone are the list's
-  filter. With ids, the list is the project's and both are matched here
-  with `sandboxmeta`'s selectors. Selectors are space-separated: a comma
-  followed by `key=` starts another `-o` option.
+- **A run is a polling run that holds the stream.** It reads for
+  `Env.Interval` (the runner's, so the instance's `interval`), and the runner
+  starts the next at once. A stream that ends sooner ends the run without
+  failing it. Failure and recovery stay the runner's (ADR 26-11-01-477's
+  reason against a built-in that streams forever).
+- **The stream is project-wide; selection is here.** The route has no filter
+  (ADR 26-11-01-560 §1). Every box's last state is held, watched or not, so
+  a tag added later or options changed in place select from what is held. A
+  box is watched when named by `id`, or when it matches every `tag` selector
+  (`sandboxmeta`'s) and `created-by`, those given. `created-by=me` is this
+  box's ID from its sandbox config.
+- **Events are read through a local struct**, never `api/gen`'s types:
+  runtime code does not use the public API's DTOs (the root `REVIEW.md`).
+  Each field mirrors `SandboxEventData` in `server.yaml`. A box is called by
+  its configured name, the event's; its state is the display state its
+  existence and power give, by the server's rule.
 - **One event per change, keyed per box.** A box's state, its terminal and
   each request have their own key, so an unpopped event is replaced by the
   next of its kind. A terminal is reported only while its box runs.
-- **First sight is a baseline, for what was already there.** The first run
-  reports nothing. A box that existed at the baseline and is selected later
-  (a tag, or options changed in place) is recorded quietly. A box created
-  after the baseline is news whenever it is first seen (`box.created`): a
-  worker tags itself once it runs, often after its first request.
+- **First sight is a baseline, for what was already there.** The first run's
+  replay reports nothing. A box first seen in a `sandbox.created` recorded
+  after the baseline is `New`, and is reported created when it is first
+  watched, however late its tag comes. Any other box newly watched is
+  recorded quietly.
+- **The cursor is saved only where it is safe to resume from.** After each
+  event, except while a `reset` is pending: then it stays where the reset
+  found it until a run has followed the stream for its whole hold, the
+  replay is known whole, and the boxes it left out are taken as deleted. A
+  run cut short before that is reset again. State is written with each
+  event emitted, and at the run's end.
 - **A request is news when it was made after the baseline**, whichever box
   made it and however late that box came to be watched: it waits on
-  someone. One made before the baseline is where things stood.
-- **Requests are the requester's to see.** The server lists only the
-  requests of the boxes this box created; another box's never appear.
-- **A box named by id that leaves the list is gone**, recorded whatever
-  `watch` says and reported once when `state` is watched; a box
-  only selected that leaves it is let go quietly, since it may have lost its
-  tag. An instance watching only ids ends (`discobox.finished`, final) once
-  every one is gone. A named id never seen is the run's failure.
-- **The box's clock** sets the baseline; a box's and a request's
+  someone. One made before the baseline is where things stood. The server
+  lists only the requests of the boxes this box created.
+- **A watched box deleted is gone.** A named one is recorded gone whatever
+  `watch` says, and an instance watching only ids ends
+  (`discobox.finished`, final) once every one is gone. A named id never seen
+  by the end of a whole run is the run's failure.
+- **The box's clock** sets the baseline; an event's `at` and a request's
   `createdAt` are the server's. They are compared directly.

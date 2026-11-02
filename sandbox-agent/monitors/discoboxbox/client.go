@@ -1,8 +1,10 @@
 package discoboxbox
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,53 +13,73 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/pkg/programstatus"
-	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
+	"github.com/discobox-ai/discobox/pkg/sse"
 )
 
-// box is what this monitor reads of a Sandbox in a listing. A local struct,
-// not `api/gen`'s type: runtime code does not use the public API's DTOs
-// (the root REVIEW.md), and a field a newer server adds breaks nothing.
-type box struct {
-	ID        string    `json:"id"`
-	CreatedAt time.Time `json:"createdAt"`
-	Config    struct {
-		Name string `json:"name"`
-	} `json:"config"`
-	Meta struct {
-		Name string            `json:"name"`
-		Tags map[string]string `json:"tags"`
-	} `json:"meta"`
-	Runtime *struct {
-		DisplayState string `json:"displayState"`
-		AgentStatus  *struct {
-			Sessions json.RawMessage `json:"sessions"`
-		} `json:"agentStatus"`
-	} `json:"runtime"`
+// boxEvent is what this monitor reads of a sandbox event's data,
+// `SandboxEventData` in server.yaml (ADR 26-10-29-316 §1, ADR 26-11-01-560
+// §2): the box's whole state. A local struct, not `api/gen`'s type: runtime
+// code does not use the public API's DTOs (the root REVIEW.md), and a field a
+// newer server adds breaks nothing.
+type boxEvent struct {
+	SandboxID    string    `json:"sandboxId"`
+	Name         string    `json:"name"`
+	At           time.Time `json:"at"`
+	DesiredState string    `json:"desiredState"`
+	State        string    `json:"state"`
+	RuntimeState string    `json:"runtimeState"`
+	Program      *struct {
+		State string `json:"state"`
+		Kind  string `json:"kind"`
+	} `json:"program"`
+	Tags               map[string]string `json:"tags"`
+	CreatedBySandboxID string            `json:"createdBySandboxId"`
 }
 
-// name is what an event calls the box: its title as every client resolves
-// it (sandboxmeta.Title) — the name in its meta, else its primary terminal's
-// window title, else its configured name or ID — without the msg the server's
-// displayName carries, which changes with every turn.
-func (b box) name() string {
-	var title string
-	if b.Runtime != nil && b.Runtime.AgentStatus != nil {
-		title, _ = programstatus.PrimaryTitleAndMsg(b.Runtime.AgentStatus.Sessions)
+// The stream's event types.
+const (
+	eventCreated = "sandbox.created"
+	eventUpdated = "sandbox.updated"
+	eventDeleted = "sandbox.deleted"
+	eventReset   = "reset"
+)
+
+// displayState is what a listing would call the box's state, from what its
+// event carries: existence first, then power, by the rule the server's
+// displayState follows (services.SandboxDisplayState), less the repair and
+// the error message an event does not carry.
+func (e boxEvent) displayState() string {
+	switch {
+	case e.State == "failed":
+		return "error"
+	case e.DesiredState == "deleted" && e.State != "deleted":
+		return "deleting"
+	case e.DesiredState == "archived" && e.State != "archived":
+		return "archiving"
 	}
-	fallback := strings.TrimSpace(b.Config.Name)
-	if fallback == "" {
-		fallback = b.ID
+	switch e.State {
+	case "pending", "awaiting_source":
+		return "starting"
+	case "ready":
+		if e.RuntimeState == "" {
+			return "starting"
+		}
+		return e.RuntimeState
+	case "archived", "deleted":
+		return e.State
 	}
-	return sandboxmeta.Title(b.Meta.Name, title, fallback, "")
+	return "pending"
 }
 
-func (b box) displayState() string {
-	if b.Runtime == nil || b.Runtime.DisplayState == "" {
-		return "pending"
+// name is what an event calls the box: its configured name, the one the
+// stream carries, else its ID. The display name follows its program's title,
+// which the stream leaves out (ADR 26-10-29-316 §1).
+func (e boxEvent) name() string {
+	if name := strings.TrimSpace(e.Name); name != "" {
+		return name
 	}
-	return b.Runtime.DisplayState
+	return e.SandboxID
 }
 
 // secretRequest is what this monitor reads of a SecretRequest.
@@ -150,20 +172,6 @@ func (e *apiError) Error() string {
 	return text
 }
 
-func (c *client) listBoxes(ctx context.Context, tags []string) ([]box, error) {
-	query := url.Values{}
-	for _, tag := range tags {
-		query.Add("tag", tag)
-	}
-	var out struct {
-		Sandboxes []box `json:"sandboxes"`
-	}
-	if err := c.get(ctx, "listing boxes", "/projects/"+url.PathEscape(c.project)+"/sandboxes", query, &out); err != nil {
-		return nil, err
-	}
-	return out.Sandboxes, nil
-}
-
 // listRequests is every secret request this box may read: those of the
 // boxes it created.
 func (c *client) listRequests(ctx context.Context) ([]secretRequest, error) {
@@ -174,6 +182,67 @@ func (c *client) listRequests(ctx context.Context) ([]secretRequest, error) {
 		return nil, err
 	}
 	return out.SecretRequests, nil
+}
+
+// streamEvent is one event off the stream: its ID, empty for a reset; its
+// type, empty for an event that only moves the cursor; and its data.
+type streamEvent struct {
+	id   string
+	typ  string
+	data boxEvent
+}
+
+// stream reads the project's sandbox events after cursor, the project's
+// current state first when there is none (ADR 26-10-29-316 §4), handing each
+// to onEvent until the stream ends, ctx ends, or onEvent fails. It reports
+// whether the server opened the stream. A refusal is an apiError; a stream
+// that ends is not an error, since the cursor makes the next run lose
+// nothing.
+func (c *client) stream(ctx context.Context, cursor string, onEvent func(streamEvent) error) (bool, error) {
+	target := strings.TrimRight(c.base, "/") + "/api/projects/" + url.PathEscape(c.project) + "/events"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	if cursor != "" {
+		req.Header.Set("Last-Event-ID", cursor)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return false, nil
+		}
+		return false, fmt.Errorf("discobox API, reading events: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		return false, &apiError{status: resp.StatusCode, what: "reading events", message: refusal(body)}
+	}
+	// An error handling an event is the run's. The read ending — the run's
+	// time up, the connection dropped — is not: the cursor says where to go
+	// on from. Only an event too long to read is, since every run would meet
+	// it again.
+	var handled error
+	err = sse.Read(resp.Body, nil, func(id, typ, data string) error {
+		ev := streamEvent{id: id, typ: typ}
+		if typ == eventCreated || typ == eventUpdated || typ == eventDeleted {
+			if err := json.Unmarshal([]byte(data), &ev.data); err != nil {
+				handled = fmt.Errorf("discobox API, event %s: %w", id, err)
+				return handled
+			}
+		}
+		handled = onEvent(ev)
+		return handled
+	})
+	if handled != nil {
+		return true, handled
+	}
+	if errors.Is(err, bufio.ErrTooLong) {
+		return true, fmt.Errorf("discobox API, reading events: %w", err)
+	}
+	return true, nil
 }
 
 func (c *client) get(ctx context.Context, what, path string, query url.Values, v any) error {
