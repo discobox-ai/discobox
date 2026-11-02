@@ -339,6 +339,14 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_
   `git status`, not only its final report.
 - Baseline against the original (the built-in, or the skill at `HEAD`) on an
   identical copy of the repo before calling a behavior a regression.
+- `discobox-monitor` keeps instances and its queue under `$HOME/.discobox`,
+  so the isolated `HOME` has its own. Seed a scenario with `HOME=$H
+  discobox-monitor enable …`. Nothing runs a seeded instance, because the
+  agent reconciles only the real home, so `status` says `starting`. Write
+  `{"state":"running",…}` to `$H/.discobox/monitors/state/<name>/status.json`
+  for it to say `running`. Grade the choice of watch from the `tool_use`
+  entries (`Monitor` vs a background `Bash`, `pop --follow` vs a `tail`/`sleep`
+  loop). Prove delivery separately, in your own session, against the real home.
 - A narrow rule (one tag step, one section) needs no full run: prompt
   `Read .claude/skills/<name>/SKILL.md and do ONLY <step> for <state>`, with
   the state seeded in `$H/.discobox/meta.json`, and read the file afterwards.
