@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/desktop"
 )
@@ -24,33 +23,22 @@ var desktopUserUnits = []string{
 }
 
 // writeDesktopDropins binds the socket-activated desktop units to the resolved
-// sandbox user. Each drop-in is written only when its base unit is present in the image, so an
-// image built without the desktop gets none of them.
+// sandbox user. Every drop-in is written whether or not its unit is installed
+// yet: the desktop feature provisions in the background (async), so in a VM
+// guest its units arrive after this runs, and systemd applies a drop-in to its
+// unit whenever that unit is loaded. A drop-in for a unit that never arrives is
+// inert. A sandbox with the desktop turned off gets none (writeUnitDropins).
 //
 // Two kinds are written: the user a unit runs as, and the companions that hang
 // off xvfb.service so that whatever starts X — a program talking to :0, or a
 // browser that has loaded the viewer and asked it for a framebuffer size —
 // brings up the desktop session and the viewer with it.
 func writeDesktopDropins(id identity) error {
-	if fileExists("/etc/systemd/system/xvfb.service") {
-		var companions []string
-		if fileExists("/etc/systemd/system/xfce4-session@.service") {
-			companions = append(companions, "xfce4-session@"+id.name+".service")
-		}
-		if fileExists("/etc/systemd/system/discobox-desktop.service") {
-			companions = append(companions, "discobox-desktop.service")
-		}
-		if len(companions) > 0 {
-			if err := installFile("/etc/systemd/system/xvfb.service.d/discobox-desktop-user.conf", 0o644,
-				"[Unit]\nWants="+strings.Join(companions, " ")+"\n"); err != nil {
-				return err
-			}
-		}
+	if err := installFile("/etc/systemd/system/xvfb.service.d/discobox-desktop-user.conf", 0o644,
+		"[Unit]\nWants=xfce4-session@"+id.name+".service discobox-desktop.service\n"); err != nil {
+		return err
 	}
 	for _, unit := range desktopUserUnits {
-		if !fileExists("/etc/systemd/system/" + unit) {
-			continue
-		}
 		if err := installFile("/etc/systemd/system/"+unit+".d/discobox-desktop-user.conf", 0o644,
 			fmt.Sprintf("[Service]\nUser=%s\n", id.name)); err != nil {
 			return err
@@ -61,20 +49,13 @@ func writeDesktopDropins(id identity) error {
 	// from a shell. seedDesktopScale writes it before the session can start, but a
 	// failure there is logged rather than fatal, and `-` is what lets the
 	// session start without the file.
-	if fileExists("/etc/systemd/system/xfce4-session@.service") {
-		if err := installFile("/etc/systemd/system/xfce4-session@.service.d/discobox-desktop-user.conf", 0o644,
-			fmt.Sprintf("[Service]\nEnvironmentFile=-%s\n",
-				filepath.Join(id.home, desktop.ScaleEnvDir, desktop.ScaleEnvName))); err != nil {
-			return err
-		}
+	if err := installFile("/etc/systemd/system/xfce4-session@.service.d/discobox-desktop-user.conf", 0o644,
+		fmt.Sprintf("[Service]\nEnvironmentFile=-%s\n",
+			filepath.Join(id.home, desktop.ScaleEnvDir, desktop.ScaleEnvName))); err != nil {
+		return err
 	}
-	if fileExists("/etc/systemd/system/websockify@.service") && fileExists("/etc/systemd/system/websockify-proxy.service") {
-		if err := installFile("/etc/systemd/system/websockify-proxy.service.d/discobox-desktop-user.conf", 0o644,
-			fmt.Sprintf("[Unit]\nWants=websockify@%s.service\nAfter=websockify@%s.service\n", id.name, id.name)); err != nil {
-			return err
-		}
-	}
-	return nil
+	return installFile("/etc/systemd/system/websockify-proxy.service.d/discobox-desktop-user.conf", 0o644,
+		fmt.Sprintf("[Unit]\nWants=websockify@%s.service\nAfter=websockify@%s.service\n", id.name, id.name))
 }
 
 // seedDesktopScale writes the desktop's starting scale into the sandbox user's
