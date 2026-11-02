@@ -178,6 +178,11 @@ never against anything the machine reports (551 §1):
 - no machine: the pool's keys are revoked by name (a machine lost outside
   discobox, or a record lost), and one is made, keyed and provisioned; it
   registers anew;
+- a machine under the pool's name that is not the one the record names (a
+  pass made it and stopped before its record was saved): it is taken as made —
+  the pool's keys revoked, the record reset, the agent placed and keyed — but
+  only when it is on the pool's own network and not isolated, as create makes
+  it; any other is refused, and nothing is placed on it (551 §4);
 - a stopped machine is started on the disk it kept; the agent starts from the
   units `apply` enabled, on the key it holds;
 - a key due for renewal is replaced (below);
