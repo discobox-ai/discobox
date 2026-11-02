@@ -23,9 +23,9 @@ type state struct {
 	Requests map[string]string `json:"requests,omitempty"`
 	// Gone are the boxes named by id that have been deleted.
 	Gone []string `json:"gone,omitempty"`
-	// Unconfirmed are the boxes held when the stream reset, which the replay
-	// after it has not yet shown to exist. While any are, Cursor stays where
-	// the reset found it, so a run cut short is reset again.
+	// Unconfirmed are the boxes held when a replay began — after a reset, or
+	// from scratch over boxes a cut-off first replay left — which it has not
+	// yet shown to exist; those it never shows were deleted.
 	Unconfirmed []string `json:"unconfirmed,omitempty"`
 	// Resetting is set from a reset until its replay is known to be whole,
 	// even when it left nothing unconfirmed.

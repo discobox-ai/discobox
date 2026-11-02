@@ -29,6 +29,7 @@ type boxEvent struct {
 	DesiredState string    `json:"desiredState"`
 	State        string    `json:"state"`
 	RuntimeState string    `json:"runtimeState"`
+	DisplayState string    `json:"displayState"`
 	Program      *struct {
 		State string `json:"state"`
 		Kind  string `json:"kind"`
@@ -44,33 +45,6 @@ const (
 	eventDeleted = "sandbox.deleted"
 	eventReset   = "reset"
 )
-
-// displayState is what a listing would call the box's state, from what its
-// event carries: existence first, then power, by the rule the server's
-// displayState follows (services.SandboxDisplayState), less the repair and
-// the error message an event does not carry.
-func (e boxEvent) displayState() string {
-	switch {
-	case e.State == "failed":
-		return "error"
-	case e.DesiredState == "deleted" && e.State != "deleted":
-		return "deleting"
-	case e.DesiredState == "archived" && e.State != "archived":
-		return "archiving"
-	}
-	switch e.State {
-	case "pending", "awaiting_source":
-		return "starting"
-	case "ready":
-		if e.RuntimeState == "" {
-			return "starting"
-		}
-		return e.RuntimeState
-	case "archived", "deleted":
-		return e.State
-	}
-	return "pending"
-}
 
 // name is what an event calls the box: its configured name, the one the
 // stream carries, else its ID. The display name follows its program's title,
@@ -194,15 +168,14 @@ type streamEvent struct {
 
 // stream reads the project's sandbox events after cursor, the project's
 // current state first when there is none (ADR 26-10-29-316 §4), handing each
-// to onEvent until the stream ends, ctx ends, or onEvent fails. It reports
-// whether the server opened the stream. A refusal is an apiError; a stream
-// that ends is not an error, since the cursor makes the next run lose
-// nothing.
-func (c *client) stream(ctx context.Context, cursor string, onEvent func(streamEvent) error) (bool, error) {
+// to onEvent until the stream ends, ctx ends, or onEvent fails. A refusal is
+// an apiError; a stream that ends is not an error, since the cursor makes the
+// next run lose nothing.
+func (c *client) stream(ctx context.Context, cursor string, onEvent func(streamEvent) error) error {
 	target := strings.TrimRight(c.base, "/") + "/api/projects/" + url.PathEscape(c.project) + "/events"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return false, err
+		return err
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	if cursor != "" {
@@ -211,14 +184,14 @@ func (c *client) stream(ctx context.Context, cursor string, onEvent func(streamE
 	resp, err := c.http.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return false, nil
+			return nil
 		}
-		return false, fmt.Errorf("discobox API, reading events: %w", err)
+		return fmt.Errorf("discobox API, reading events: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		return false, &apiError{status: resp.StatusCode, what: "reading events", message: refusal(body)}
+		return &apiError{status: resp.StatusCode, what: "reading events", message: refusal(body)}
 	}
 	// An error handling an event is the run's. The read ending — the run's
 	// time up, the connection dropped — is not: the cursor says where to go
@@ -237,12 +210,12 @@ func (c *client) stream(ctx context.Context, cursor string, onEvent func(streamE
 		return handled
 	})
 	if handled != nil {
-		return true, handled
+		return handled
 	}
 	if errors.Is(err, bufio.ErrTooLong) {
-		return true, fmt.Errorf("discobox API, reading events: %w", err)
+		return fmt.Errorf("discobox API, reading events: %w", err)
 	}
-	return true, nil
+	return nil
 }
 
 func (c *client) get(ctx context.Context, what, path string, query url.Values, v any) error {
