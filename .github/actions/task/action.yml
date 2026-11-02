@@ -72,6 +72,35 @@ runs:
           go-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
           go-${{ runner.os }}-${{ runner.arch }}-
 
+    # Depot's Windows runner carries Depot Cache's credentials (DEPOT_CACHE_TOKEN
+    # and DEPOT_CACHE_HOST, as Linux's does) but neither the CLI nor
+    # GOCACHEPROG, so it gets the CLI here, the version Linux's runner has, and
+    # the step below points Go at it.
+    - name: Install the Depot CLI
+      if: runner.os == 'Windows'
+      uses: depot/setup-action@v1.7.2
+      with:
+        version: 2.102.25
+
+    # Go's build and test cache is not here: Depot's runners start every job
+    # with GOCACHEPROG set to Depot Cache, which Go asks for each compiled
+    # package or test result as it needs it and writes new ones to as it makes
+    # them. Nothing is downloaded before the target or uploaded after it, and a
+    # pull request's results are shared like main's. Nix keeps the environment,
+    # so the devShell's go sees it too. This step shows it in the log, and warns
+    # on a Linux or macOS runner that did not set it, where every build starts
+    # cold. Windows never has it, and keeps its build cache in actions/cache.
+    #
+    # Only for a pull request or a push to a branch. Go trusts whatever the
+    # cache returns for a key, and a pull request's code can write that cache,
+    # so every other run turns it off for the rest of the job and compiles from
+    # scratch: a tag's release binaries, images, VM guest and kernel, and a
+    # release dispatched by hand, which runs off a branch. Choosing by event,
+    # not by which job publishes, keeps a trigger added later off it too.
+    #
+    # After the restore, not before: the devShell's go is a bootstrap with
+    # GOTOOLCHAIN=auto, so the first go command downloads the toolchain into the
+    # module cache, read-only, and the restore then cannot extract over it.
     # Go's build and test cache is not here: Depot's runners start every job
     # with GOCACHEPROG set to Depot Cache, which Go asks for each compiled
     # package or test result as it needs it and writes new ones to as it makes
@@ -127,7 +156,8 @@ runs:
           # Its first word only: the rest is the runner's, and could carry a credential.
           echo "Go's build cache is GOCACHEPROG, running ${prog%% *}."
         elif [ "$RUNNER_OS" = Windows ]; then
-          echo "Depot's Windows runner sets no GOCACHEPROG: Go's build cache is the actions/cache one."
+          echo "GOCACHEPROG=depot gocache" >> "$GITHUB_ENV"
+          echo "Depot's Windows runner sets no GOCACHEPROG: pointing Go at depot gocache ($(depot --version | head -1))."
         else
           echo "::warning title=No Depot Cache::GOCACHEPROG is unset on this runner, so Go builds from a cold cache. Is Depot Cache's automatic connection on for Actions jobs?"
         fi
