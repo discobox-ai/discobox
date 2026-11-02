@@ -206,7 +206,7 @@ func (r *Runner) configure(ctx context.Context, plan *featurePlan) ([]Outcome, e
 		}
 		// Validate on every activation, even if a snapshot brought matching records.
 		// Unchanged content keeps its record and does not schedule a restart.
-		same, err := r.configurationInPlace(ctx, out, plan.feature, step)
+		same, err := r.configurationInPlace(ctx, out, plan, step)
 		if err != nil {
 			return outcomes, fmt.Errorf("configuration %s/%s: %w", plan.feature.Name, step.Name, err)
 		}
@@ -240,7 +240,7 @@ func (r *Runner) configure(ctx context.Context, plan *featurePlan) ([]Outcome, e
 				return outcomes, err
 			}
 		}
-		result, err := r.applyStep(ctx, out, plan.feature, step)
+		result, err := r.applyStep(ctx, out, plan, step)
 		if err != nil {
 			return outcomes, fmt.Errorf("configuration %s/%s: %w (log: %s)", plan.feature.Name, step.Name, err, r.logPath(plan.feature.Name))
 		}
@@ -254,9 +254,10 @@ func (r *Runner) configure(ctx context.Context, plan *featurePlan) ([]Outcome, e
 	return outcomes, nil
 }
 
-func (r *Runner) configurationInPlace(ctx context.Context, out io.Writer, feature provisionspec.Feature, step provisionspec.Step) (bool, error) {
+func (r *Runner) configurationInPlace(ctx context.Context, out io.Writer, plan *featurePlan, step provisionspec.Step) (bool, error) {
+	feature := plan.feature
 	if step.Run != "" {
-		return r.check(ctx, out, feature, step.Check)
+		return r.check(ctx, out, plan, step.Check)
 	}
 	var path, source string
 	mode := os.FileMode(0o644)

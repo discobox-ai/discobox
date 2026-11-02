@@ -12,6 +12,7 @@ steps:
   - name: capture-licenses
     file: {path: /usr/local/libexec/discobox/harness-capture/settings-LICENSE.txt, source: harness-capture/settings-LICENSE.txt}
   - name: cli
+    check: check-cli.sh
     run: install-cli.sh
   # Copilot loads every file here as a *policy* hook source: read beside the
   # user's own hooks rather than instead of them, and kept on by policy when

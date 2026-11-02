@@ -1,6 +1,11 @@
-# rustup, with no toolchain: a project's rust-toolchain file chooses one.
+# rustup, with no toolchain: a project's rust-toolchain file chooses one. The
+# install is shared, in /usr/local/lib/discobox/rust; each user's toolchains,
+# registry and `cargo install` are their own (see the script).
 apiVersion: discobox.ai/provision/v1
 async: true
+# For link-command.
+requires: [core]
 steps:
   - name: rustup
+    check: check-rustup.sh
     run: install-rustup.sh

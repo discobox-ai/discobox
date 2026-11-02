@@ -73,7 +73,7 @@ func TestImageDeclaresNoCredentials(t *testing.T) {
 		t.Fatalf("manifest env = %v, want opencode's updater disabled", image.Env)
 	}
 	feature := featuretest.Load(t, ".")
-	if !feature.Runs(t, "npm install -g @opencode/cli") {
+	if !feature.Runs(t, "/usr/local/libexec/discobox/npm-global install @opencode/cli") {
 		t.Error("the feature does not install opencode's CLI")
 	}
 	for source, want := range map[string]string{
