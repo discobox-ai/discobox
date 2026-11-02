@@ -235,6 +235,7 @@ var names = [...]string{
 	"lederberg",
 	"lehmann",
 	"leibniz",
+	"linville",
 	"liskov",
 	"lovelace",
 	"mahavira",
