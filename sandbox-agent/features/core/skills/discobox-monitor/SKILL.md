@@ -1,7 +1,7 @@
 ---
 name: discobox-monitor
-description: Watch something without spending turns on it, and be told when it changes. Monitors queue events about a GitHub repository (issues, pull requests, Actions runs, one PR's reviews and checks), a command's output, a file's new lines or a URL until you pop them. You can write a new monitor as a small script. Use when you would otherwise poll by hand: waiting on CI, a review, a merge, a job elsewhere, a log line; or when the user asks to be told when something happens.
-allowed-tools: Bash
+description: Watch something and be woken when it changes, by running `discobox-monitor pop --follow` under Claude Code's Monitor tool. Read this before you write a watch or poll of your own (a Monitor script, `tail -f`, an `until`/`sleep` loop, `gh pr checks --watch`). An instance may already be watching it (`discobox-monitor status`), and built-ins cover a GitHub repository (issues, PRs, reviews, checks, Actions runs), a command's output, a file's new lines and a URL. Use when waiting on CI, a review, a merge, a deploy or a log line, or when the user asks to be told when something happens.
+allowed-tools: Bash, Monitor
 ---
 
 # Watching with discobox-monitor
@@ -9,48 +9,109 @@ allowed-tools: Bash
 A **monitor** is a script that watches something and prints a line each time
 it changes. **Enabling** one starts an **instance** of it. The instance keeps
 running in this box, and the box holds its events in a queue until you
-**pop** them. `pop` gives you a one-line header per event, and `read ID`
-gives you all of one event.
+**pop** them. In Claude Code, the **Monitor tool** runs the pop, so each
+event arrives in your conversation as a notification.
+
+Those are two separate jobs. The instances do the watching, and one
+Monitor tool streams their events to you. Don't put the watching itself in
+a Monitor script: no `tail -f`, no `while sleep` loop, no `gh pr checks`
+poll.
 
 ```bash
+discobox-monitor status                               # instances, their state, events pending
 discobox-monitor list                                 # monitors available, with their options
 discobox-monitor enable github-repo -o repo=owner/name -o pr=412
-discobox-monitor status                               # instances, their state, events pending
 discobox-monitor pop                                  # take pending event headers
 discobox-monitor read e17                             # all of one event: body, data, url
 discobox-monitor disable github-repo                  # stop watching
 ```
 
+## Before you write any watch of your own
+
+Go down this list and stop at the first step that fits:
+
+1. **Something is already watching it.** Run `discobox-monitor status` on
+   its own, and read it before you enable anything. Don't chain an `enable`
+   after it. If an instance covers what you want, even roughly, use it,
+   and keep the Monitor tool streaming its events (next section). Don't
+   enable a duplicate, and don't disable an instance you didn't start: it
+   may be the user's, or another session's. To make it watch more, run
+   `enable --update` with the options it already has, plus yours.
+2. **A monitor exists for it.** `discobox-monitor list` shows the built-ins
+   and the repository's `.discobox/monitors`. The built-ins cover a GitHub
+   repository, a PR, a CI run, a command's output, a file's new lines and a
+   URL. Enable one, then stream it.
+3. **Nothing fits, and it's worth keeping.** Write a monitor
+   (`Writing a monitor`, below), test it, enable it, then stream it.
+4. **Only then write an ad-hoc watch,** and only for something short-lived
+   that you started yourself, such as a build you launched in this
+   session. For that, a background Bash command that exits when it's done
+   is fine.
+
+Why monitors beat a script of your own:
+- The queue holds events while nothing is streaming them, so a Monitor
+  tool expiring, a harness restart or the box sleeping loses nothing.
+- The user and the next session can see what's being watched.
+- `github-repo` costs no rate limit on a quiet repository. It reports
+  reviews, checks, conflicts and failed steps, which a quick script misses.
+
+## In Claude Code: one Monitor tool runs the pop
+
+Start one Monitor tool on the whole queue, not one per instance:
+
+```
+Monitor(
+  command: "discobox-monitor pop --follow",
+  description: "discobox monitor events",
+  timeout_ms: 1800000,
+)
+```
+
+- Give it `timeout_ms: 1800000`, the most the Monitor tool allows, so you
+  re-arm it as rarely as possible.
+- Each notification line is one event header, with its id, instance, kind
+  and title. Run `discobox-monitor read ID` for its body: failed jobs,
+  review comments, log excerpts.
+- **Re-arm it when it expires.** The Monitor tool stops after at most 30
+  minutes. While you are still waiting, start the same command again.
+  Events that arrived in between are still queued, and the new pop
+  delivers them first.
+- **Run only one pop at a time.** Each event goes to whichever pop takes it
+  first. A second `--follow` takes events away from the first, and so does
+  a stray `pop`. If a Monitor tool is already running the pop, enabling
+  another instance needs nothing more: its events come through the same
+  stream.
+- **A box shared by sessions.** A box normally runs one agent, so stream
+  the whole queue. When you know other sessions in this box watch too (a
+  lead and its helpers, the user's second terminal), every session streams
+  only the instances it started or was handed, one Monitor tool per
+  instance (`pop --follow --name pr-412`). Each one looks at the rest with
+  `peek`, which takes nothing. A whole-queue pop would take their events.
+- **Keep the stream quiet.** The Monitor tool stops a command that prints
+  too much, and events popped while it was suppressing output are no
+  longer pending, so nothing re-delivers them. Narrow a busy instance
+  (`watch`, ids, `match`) rather than streaming everything. If the tool
+  stopped the stream, `read` still shows each event by its id. Ids count up
+  (`e17`, `e18`, …), so read on from the last one you were shown.
+- To stop being woken, stop the Monitor tool. Disable the instance only
+  when nothing should watch it any longer.
+
+**Only a running pop wakes you. Enabling a monitor does not.** Discobox
+never types into your terminal. Without a running pop, events wait until
+you next run `pop`. In a harness without a Monitor tool, run
+`discobox-monitor pop --wait` as a background command (`--wait=30m` bounds
+it), and start it again after each wake.
+
 ## Start of a session: check what is already running
 
 Instances belong to the box, not to your session. They keep running after
-your harness exits or is relaunched, and after the box stops and starts. So
-a fresh session may find instances and pending events it didn't start.
-Before you begin:
-
-```bash
-discobox-monitor status
-```
-
-Pop what is pending and disable what you no longer need.
-
-## Being woken: only a waiting `pop` wakes you
-
-**Enabling a monitor watches. It does not wake you.** Discobox never types
-into your terminal or prompts you. If you want an event to bring you back,
-keep a waiting pop running in the background. It returns when an event
-arrives, and that return is your wake-up:
-
-```bash
-discobox-monitor pop --wait          # until an event arrives
-discobox-monitor pop --wait=30m      # or for at most 30 minutes
-discobox-monitor pop --follow        # print each batch as it arrives, until interrupted
-```
-
-Run it the way your harness tells you a background command finished, for
-example as a background shell command, or under a tool that streams a
-command's lines (`--follow`). Without a waiting pop, events just wait until
-the next time you run `pop`.
+your harness exits or relaunches, and after the box stops and starts. A
+fresh session may find instances and pending events it didn't start. Run
+`discobox-monitor status` before you begin. Pop what is pending. If you
+are still waiting on something, start the Monitor tool. Leave instances
+you didn't start alone unless the user says otherwise. In a box shared by
+sessions, pop only your own instances (`--name`) and `peek` the rest, here
+and after a wake.
 
 Monitors don't keep the box up, and their events don't count as activity.
 A box that is only watching still goes idle and stops. Instances resume at

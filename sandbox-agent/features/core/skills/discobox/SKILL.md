@@ -330,8 +330,10 @@ when you take one — a box held up keeps its share of the pool while it waits.
 
 When you are done for now but have to look again later — CI, a review, a job
 running somewhere else — do not hold the box up waiting. (To be told while you
-are still working, enable a monitor and keep `discobox-monitor pop --wait`
-running: the `discobox-monitor` skill.) Put it to sleep and
+are still working, enable a monitor and keep a pop running. In Claude Code,
+that is `discobox-monitor pop --follow` under the Monitor tool. Elsewhere, it
+is a background `discobox-monitor pop --wait`. See the `discobox-monitor`
+skill.) Put it to sleep and
 say when to wake it:
 
 ```bash
@@ -461,8 +463,10 @@ Installed in every discobox, whatever it was made from:
   and run one command with it. Use on a 401/403, or when a CLI says it is not
   logged in.
 - **discobox-monitor** — watch a repository, a PR, a CI run, a command, a
-  file or a URL, and pop the events it queues. Only a running
-  `discobox-monitor pop --wait` wakes you. Discobox never prompts you.
+  file or a URL, and pop the events it queues. Check it before you write a
+  watch loop of your own. In Claude Code, the Monitor tool runs
+  `discobox-monitor pop --follow`, and only a running pop wakes you.
+  Discobox never prompts you.
 - **discobox-review** — have fresh-eyes subagents review the working tree —
   the default reviewer and any the repository defines in `.discobox/review/` —
   and drive it to sign-off.
