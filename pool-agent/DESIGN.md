@@ -980,6 +980,10 @@ flowchart LR
   the sandbox has. The pool keeps the bootstrap whole in `machine.json`, so the
   status poll's convergence rebuilds with no create request.
 - **Archive** stops the machine and keeps it: its disk is the tree. The
+  machine is found by its name, as delete finds it, so a sandbox whose
+  pool-side tree is gone (a pool machine made again keeps none of its
+  predecessor's) is still stopped and marked; only a sandbox with neither a
+  tree nor a machine is not found. The
   unarchiving create starts the same machine. **Delete** returns only once the
   driver no longer has the machine (ADR 0022 §3).
 - **Clear-cache** stops nothing, since no machine shares a cache: it empties

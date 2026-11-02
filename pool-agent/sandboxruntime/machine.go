@@ -1128,10 +1128,20 @@ func (r *MachineSandboxRuntime) ArchiveSandbox(ctx context.Context, sandboxID st
 	defer lock.Unlock()
 	root := r.sandboxRoot(sandboxID)
 	if _, err := os.Stat(root); err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("archive sandbox %s: %w", sandboxID, ErrNotFound)
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("archive sandbox %s: %w", sandboxID, err)
 		}
-		return fmt.Errorf("archive sandbox %s: %w", sandboxID, err)
+		// The tree is the pool's record, on its own machine's disk, and a
+		// pool machine made again has none of what the one before it made.
+		// The sandbox's machine is found by its name all the same, and is
+		// what archiving has to stop: not found is only for a sandbox with
+		// neither, which the control plane takes as nothing to tear down.
+		if _, err := r.instance(ctx, sandboxID); err != nil {
+			return fmt.Errorf("archive sandbox %s: %w", sandboxID, err)
+		}
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return fmt.Errorf("archive sandbox %s: %w", sandboxID, err)
+		}
 	}
 	// Marked before the machine stops, so nothing starts it in between.
 	if err := writeSandboxArchiveMarker(root, time.Now()); err != nil {
