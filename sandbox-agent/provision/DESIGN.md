@@ -159,7 +159,10 @@ closed to every other user), a dangling link, an older copy. So which copy
   (`…/displaced/usr/local/bin/node`, a later one `.1`, `.2`), and the move is
   said in the feature's log; a link already into `/usr/local/lib/discobox/`
   is one a step laid, and is replaced in place. Putting a box's copy back is
-  moving it back from there.
+  moving it back from there. A name that belongs with a refused copy and has
+  no counterpart in the chosen one — boxd's `corepack` beside a Node 25 that
+  ships none — is moved aside with nothing in its place (`link-command
+  --aside`), rather than left running the refused copy.
 - **Each such step has a `check`** (`link-command --check`, `npm-global
   check`, the select step's `check-node.sh`) that fails when the command left
   the prefix or the link was shadowed again, so the step is applied again at
