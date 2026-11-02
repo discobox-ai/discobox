@@ -490,8 +490,8 @@ func TestSandboxEventsCarryTagsAndCreator(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("after create: %+v", events)
 	}
-	if data := eventData(t, events[0]); data.CreatedBySandboxID != lead || data.Tags != nil {
-		t.Fatalf("created data = %+v, want creator %s and no tags", data, lead)
+	if data := eventData(t, events[0]); data.CreatedBySandboxID != lead || data.Tags != nil || data.DisplayState != "starting" {
+		t.Fatalf("created data = %+v, want creator %s, no tags, and displayState starting", data, lead)
 	}
 	cursor := events[0].Seq
 
@@ -531,6 +531,34 @@ func TestSandboxEventsCarryTagsAndCreator(t *testing.T) {
 	events = sandboxEvents(t, s, cursor)
 	if len(events) != 1 || eventData(t, events[0]).Tags != nil {
 		t.Fatalf("after clearing tags: %+v, want one event with no tags", events)
+	}
+}
+
+// An event's displayState is the server's one rule over the row
+// (Sandbox.DisplayState), so a failure is an event, and reads as an error,
+// though neither axis moved.
+func TestSandboxEventsCarryTheDisplayState(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+	sandbox := &model.Sandbox{ID: "sandbox-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "alpha"}
+	sandbox.DesiredState = model.DesiredStatePresent
+	sandbox.State = model.SandboxStateReady
+	if err := s.CreateSandbox(ctx, sandbox); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	cursor := sandboxEvents(t, s, 0)[0].Seq
+	message := "the pool is gone"
+	sandbox.ErrorMessage = &message
+	if err := s.UpdateSandbox(ctx, sandbox); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	events := sandboxEvents(t, s, cursor)
+	if len(events) != 1 {
+		t.Fatalf("after an error: %+v, want one event", events)
+	}
+	if data := eventData(t, events[0]); data.DisplayState != "error" || data.State != model.SandboxStateReady {
+		t.Fatalf("data = %+v, want displayState error over state ready", data)
 	}
 }
 

@@ -152,8 +152,13 @@ func sandboxEventCursor(r *http.Request) (*int64, error) {
 var errSandboxEventCursor = errors.New("the last event ID is not one this stream sent: it is a whole number")
 
 // writeSandboxEvent writes one event. Its data is one line of JSON, so it
-// needs one data field.
+// needs one data field. One with no type only moves the cursor, and is its ID
+// alone.
 func writeSandboxEvent(frame *bytes.Buffer, event services.SandboxStreamEvent) {
+	if event.Type == "" {
+		frame.WriteString("id: " + strconv.FormatInt(*event.ID, 10) + "\n\n")
+		return
+	}
 	if event.ID != nil {
 		frame.WriteString("id: " + strconv.FormatInt(*event.ID, 10) + "\n")
 	}

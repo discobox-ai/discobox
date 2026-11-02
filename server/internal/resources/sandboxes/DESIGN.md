@@ -517,7 +517,7 @@ Two consequences worth stating:
   both fields, and an archived sandbox is never live however it was last
   observed.
 - **`displayState` is the composition** and the only thing clients should read
-  (`services.SandboxDisplayState`). Existence answers first; the runtime axis
+  (`model.Sandbox.DisplayState`). Existence answers first; the runtime axis
   fills in what the container is doing once existence is settled at `ready`.
   A repair recorded and not yet landed is `repairing`, whoever authored it, and
   answers before the failure it is repairing: recording it cleared the error
@@ -557,7 +557,9 @@ this package owns where a client stands in them (`events.go`):
   replay, and while the project is quiet: a read that comes back short has
   seen every event of the project up to the head read before it. The handler
   sends it as an ID-only event, so a client never holds an ID retention
-  passes while it is connected.
+  passes while it is connected. A replay always ends with one, even where it
+  equals the replay's last event's ID: it is how a client knows the current
+  state has all arrived (ADR 26-11-01-560 §3).
 - `Next` reads what the client has not had, and the handler polls it every
   500ms. It reads the watermark after the events, so a prune that lands while
   a client tails is a reset rather than a gap.
@@ -577,7 +579,8 @@ while the sandbox is running, chosen by the
 rule `discobox ls` uses (`programstatus.PrimaryPosted`), its `tags`, and
 `createdBySandboxId`
 ([ADR 26-11-01-560](../../../../docs/adr/26-11-01-560-discobox-box-watches-other-boxes-through-the-sandbox-event-stream.md)
-§2). The name is the configured handle, not the display name, which moves
+§2), and `displayState`, the row's display state by the one rule
+(`Sandbox.DisplayState`), so no client combines the axes itself. The name is the configured handle, not the display name, which moves
 with the program's title. A box with the discobox API reads the whole
 project's stream, as it lists the project's sandboxes, and narrows it
 itself (§1). What is in it is
