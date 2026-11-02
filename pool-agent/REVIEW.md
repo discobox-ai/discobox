@@ -38,6 +38,20 @@ repairs what a walk here gets wrong.
 
 Rule of thumb: on the create path, walk only what this agent wrote.
 
+## A writer's mode is not a shared parent's
+
+A writer that makes its own directory with `os.MkdirAll(dir, 0o700)` also makes
+every missing parent `0700`. On a pool machine nothing else makes the state
+trees, so whichever writer runs first (a key's directory, the git cache, the
+machine orphan sweep) would decide the mode of the state root or a pool's tree,
+and a private one there cuts the sandbox user off from every origin below it.
+The trees' modes are `layout.Root.PreparePoolTrees`'s, set at every start of a
+machine pool's agent. Do not answer a mode problem by changing one writer's
+`MkdirAll`: a parent that already exists keeps its mode, and the next writer
+added makes it again. Why: an early machine pool fixed it in `storeKey` and
+the git cache, and the orphan sweep still made a pool's tree private before
+the first create.
+
 ## A sandbox container has no `WorkingDir`
 
 - **Never set `container.Config.WorkingDir` for a sandbox.** Docker creates
