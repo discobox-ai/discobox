@@ -280,12 +280,13 @@ flowchart TD
   composite action as `nix develop -c go tool task <target>`, or as plain
   `go tool task <target>` on Windows. Go's build and test cache is Depot Cache,
   which Depot's runners set as `GOCACHEPROG` and every run, pull requests
-  included, reads and writes per object; a runner without it builds cold. Any
-  run but a pull request or a branch push turns it off (a tag's release, a
-  dispatched one), since a pull request can write what it would read. The
-  module and golangci-lint caches are `actions/cache`, keyed by commit and saved
-  only by runs on `main`, so every run starts from the newest `main` rather than
-  from whenever `go.sum` last changed.
+  included, reads and writes per object; a runner without it builds cold.
+  Depot's Windows runner sets none, so Windows keeps its build cache in
+  `actions/cache`. Any run but a pull request or a branch push turns Depot
+  Cache off (a tag's release, a dispatched one), since a pull request can write
+  what it would read. The module and golangci-lint caches are `actions/cache`,
+  keyed by commit and saved only by runs on `main`, so every run starts from
+  the newest `main` rather than from whenever `go.sum` last changed.
 
 Release binaries are built on the platform they target — darwin has to be, since
 `vz` is cgo against Virtualization.framework and its entitlement is applied by
