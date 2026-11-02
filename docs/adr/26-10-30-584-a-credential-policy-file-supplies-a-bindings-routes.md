@@ -1,6 +1,6 @@
 # 26-10-30-584 — A credential policy file supplies a binding's routes
 
-Status: Accepted
+Status: Accepted (§2's CLI-side resolution narrowed to bindings by [26-11-02-022](26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md): a request sends its documents and the server resolves them)
 Date: 2026-10-30
 
 ## Context

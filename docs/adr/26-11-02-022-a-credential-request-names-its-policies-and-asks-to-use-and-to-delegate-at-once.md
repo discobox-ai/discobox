@@ -1,8 +1,8 @@
 # 26-11-02-022 — A credential request names its policies, and asks to use and to delegate at once
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-02
-- **Would amend**:
+- **Amends**:
   - [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md):
     - §1's `SecretRequest`, whose `Use` and `Delegate` share one `Routes`.
       Each becomes a part with its own routes (§1).
