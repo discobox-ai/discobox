@@ -10,9 +10,13 @@ description: Run one Taskfile target in the repository's Nix devShell on Linux, 
 # already on disk, so every job runs actions/checkout first. A job that needs a
 # second target adds a plain `run: nix develop -c go tool task <target>` step on
 # Linux, where Nix is installed by then, or `run: go tool task <target>` on macOS
-# and Windows. What such a step compiles reaches Depot Cache like the rest, but
-# the module and lint caches are saved by this action's last step, not when the
-# job ends, so what it downloads or lints is not kept for the next run.
+# and Windows. What such a step compiles reaches Depot Cache like the rest.
+#
+# Nothing is cached here but through Depot Cache: Go's build and test cache and
+# golangci-lint's analysis cache are its, fetched per object, and modules come
+# from the module proxy each run. An actions/cache of either was a tarball
+# restored and saved whole, which on main cost 6-11 minutes a job, and without
+# it the jobs measured no slower. The devShell comes from cache.nixos.org.
 
 inputs:
   target:
@@ -31,43 +35,14 @@ runs:
 
     # Only Linux enters the devShell (ADR 26-11-02-173). Nix does not run on
     # Windows, and a macOS job uses nothing of it but a bootstrap Go, so both
-    # get go.mod's Go from setup-go instead. Its own cache stays off: the step
-    # below is the one cache, for every runner, beside Depot Cache.
+    # get go.mod's Go from setup-go instead. Its own cache stays off, for the
+    # reason above.
     - name: Install Go
       if: runner.os != 'Linux'
       uses: actions/setup-go@v7.0.0
       with:
         go-version-file: go.mod
         cache: false
-
-    # The devShell itself comes from cache.nixos.org. What Depot Cache does not
-    # cover is kept here: the module cache, and golangci-lint's analysis cache,
-    # which is its own and not Go's.
-    #
-    # Keyed by commit and saved only from main, so a run starts from the newest
-    # main that saved one. A key that stays put until go.sum changes is a hit
-    # forever and therefore never saved again, and the lint cache falls a
-    # commit further behind main with every push. A run on main saves, whether
-    # a push, a schedule, or a dispatch; pull requests and tags only restore:
-    # what they would save is scoped to their own ref, where nothing else reads
-    # it.
-    #
-    # actions/cache, which Depot's runners back with Depot Cache too, so it
-    # still works on a GitHub-hosted runner, where only the build cache is lost.
-    - name: Restore the Go caches
-      uses: actions/cache/restore@v6.1.0
-      with:
-        path: |
-          ~/go/pkg/mod
-          ~/.cache/golangci-lint
-          ~/Library/Caches/golangci-lint
-        # Keyed by job, not by target: a target name carries a colon, and the
-        # jobs are already one-to-one with targets. Separate keys because a
-        # cross-compiling job's cache has nothing in common with a native one's.
-        key: go-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ github.sha }}
-        restore-keys: |
-          go-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
-          go-${{ runner.os }}-${{ runner.arch }}-
 
     # Depot's Windows runner carries Depot Cache's credentials (DEPOT_CACHE_TOKEN
     # and DEPOT_CACHE_HOST, as Linux's does) but neither the CLI nor
@@ -96,10 +71,8 @@ runs:
     # release dispatched by hand, which runs off a branch. Choosing by event,
     # not by which job publishes, keeps a trigger added later off it too.
     #
-    # After the restore, not before: the devShell's go is a bootstrap with
-    # GOTOOLCHAIN=auto, so on Linux the first go command downloads the toolchain
-    # into the module cache, read-only, and the restore then cannot extract
-    # over it.
+    # golangci-lint reads its own GOLANGCI_LINT_CACHEPROG, which Depot's Linux
+    # runner sets too; the step names it when it is there.
     - name: Choose the Go build cache
       shell: bash
       env:
@@ -121,6 +94,12 @@ runs:
         if [ -n "$prog" ]; then
           # Its first word only: the rest is the runner's, and could carry a credential.
           echo "Go's build cache is GOCACHEPROG, running ${prog%% *}."
+          lint=${GOLANGCI_LINT_CACHEPROG:-}
+          if [ -n "$lint" ]; then
+            echo "golangci-lint's cache is GOLANGCI_LINT_CACHEPROG, running ${lint%% *}."
+          else
+            echo "golangci-lint's cache is local to this job."
+          fi
         elif [ "$RUNNER_OS" = Windows ] && [ -n "${DEPOT_CACHE_TOKEN:-}" ]; then
           echo "GOCACHEPROG=depot gocache" >> "$GITHUB_ENV"
           echo "Depot's Windows runner sets no GOCACHEPROG: pointing Go at depot gocache ($(depot --version | head -1))."
@@ -137,15 +116,3 @@ runs:
       if: runner.os != 'Linux'
       shell: bash
       run: go tool task ${{ inputs.target }}
-
-    # Saved whether or not the target passed: a failing target still leaves the
-    # modules it fetched and the analysis it ran behind.
-    - name: Save the Go caches
-      if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
-      uses: actions/cache/save@v6.1.0
-      with:
-        path: |
-          ~/go/pkg/mod
-          ~/.cache/golangci-lint
-          ~/Library/Caches/golangci-lint
-        key: go-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ github.sha }}

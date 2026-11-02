@@ -62,11 +62,6 @@ Global review expectations:
   git, and what the runner image ships. Those jobs have no Nix devShell (ADR
   26-11-02-173), so a target reaching for jq, shellcheck, bats or node works in
   a developer's shell and fails, or finds the image's own version, in CI.
-- No `go` command runs in `.github/actions/task` before the module cache is
-  restored. `GOTOOLCHAIN=auto` makes the first one download the toolchain into
-  `~/go/pkg/mod` as read-only files, the restore then fails to extract over
-  them, and `actions/cache` reports that as a miss: a reporting step put first
-  silently lost the module and lint caches on every Linux and macOS job.
 - A constructor that starts a goroutine reading into an object takes its own
   claim on that object first. `wstunnel.Client.DialNew` started a tunnel's
   reader before claiming its stream, so a server closing at once left nothing
