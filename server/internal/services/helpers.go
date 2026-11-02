@@ -880,18 +880,38 @@ func RawMessage(raw []byte) json.RawMessage {
 	return json.RawMessage(raw)
 }
 
-// AgentCredentialRequestStatus maps a request's approval state onto the
-// protocol's vocabulary. The protocol says "granted", the control plane says
-// "approved", and only the control plane knows that an approval whose binding
-// has since been removed or lapsed no longer holds.
-func AgentCredentialRequestStatus(req *model.SecretRequest, binding *model.SecretBinding) string {
-	switch req.Status {
-	case model.SecretRequestStatusApproved:
+// RequestBindings are the live bindings a request's parts were answered with:
+// nil for a part not approved, or whose binding has since been removed or
+// lapsed.
+type RequestBindings struct {
+	Use, Delegate *model.SecretBinding
+}
+
+// AgentCredentialRequestStatus maps a request's answer onto the protocol's
+// vocabulary (ADR 26-11-02-022 §4): pending until a person answers, then
+// granted when any part is, denied when none is. The protocol says
+// "granted", the control plane says "approved", and only the control plane
+// knows that an approval whose binding has since been removed or lapsed no
+// longer holds.
+func AgentCredentialRequestStatus(req *model.SecretRequest, bindings RequestBindings) string {
+	if req.Status == model.SecretRequestStatusPending {
+		return model.SecretRequestStatusPending
+	}
+	if AgentCredentialPartStatus(req.Use, bindings.Use) == "granted" || AgentCredentialPartStatus(req.Delegate, bindings.Delegate) == "granted" {
+		return "granted"
+	}
+	return model.SecretRequestStatusDenied
+}
+
+// AgentCredentialPartStatus is one part's status as the protocol says it.
+func AgentCredentialPartStatus(part model.SecretRequestPart, binding *model.SecretBinding) string {
+	switch part.Outcome {
+	case model.SecretRequestPartApproved:
 		if binding == nil {
 			return model.SecretRequestStatusDenied
 		}
 		return "granted"
-	case model.SecretRequestStatusDenied:
+	case model.SecretRequestPartDenied:
 		return model.SecretRequestStatusDenied
 	default:
 		return model.SecretRequestStatusPending

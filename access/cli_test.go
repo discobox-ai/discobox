@@ -1,7 +1,7 @@
 package access
 
 import (
-	"cmp"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -31,16 +31,13 @@ type fakeService struct {
 	requestIDs   []string
 	trustIDs     []string
 	statusErr    error
-	// predatesPurpose answers as a service that knows no purposes: it drops
-	// the field and reports none.
-	predatesPurpose bool
-	trusts          []agentcreds.Trust
-	gotTrust        agentcreds.TrustRequestBody
-	trustStatus     agentcreds.TrustRequestStatus
-	trustPolls      []agentcreds.TrustRequestStatus
-	gotAudit        agentcreds.AuditQuery
-	exchanges       []agentcreds.AuditExchange
-	environment     map[string]string
+	trusts       []agentcreds.Trust
+	gotTrust     agentcreds.TrustRequestBody
+	trustStatus  agentcreds.TrustRequestStatus
+	trustPolls   []agentcreds.TrustRequestStatus
+	gotAudit     agentcreds.AuditQuery
+	exchanges    []agentcreds.AuditExchange
+	environment  map[string]string
 	// requestErr is what Request answers with, as a service refusing the ask.
 	requestErr error
 }
@@ -59,8 +56,11 @@ func (f *fakeService) Request(_ context.Context, body agentcreds.RequestBody) (a
 		return agentcreds.RequestStatus{}, f.requestErr
 	}
 	status := agentcreds.RequestStatus{RequestID: "sreq_1", Status: agentcreds.StatusPending}
-	if !f.predatesPurpose {
-		status.Purpose = cmp.Or(body.Purpose, agentcreds.PurposeUse)
+	if body.Uses() {
+		status.Use = &agentcreds.PartStatus{Status: agentcreds.StatusPending}
+	}
+	if body.Delegate != nil {
+		status.Delegate = &agentcreds.PartStatus{Status: agentcreds.StatusPending}
 	}
 	return status, nil
 }
@@ -302,59 +302,200 @@ func TestRequestCarriesTheLifetimeAskedFor(t *testing.T) {
 	}
 }
 
-// An ask to delegate a credential reaches the service from either form of the
-// command, and a purpose the protocol does not know is refused before
-// anything is sent.
+// An ask to delegate a credential reaches the service as the delegate part,
+// from either form of the command, and needs no variable (ADR 26-11-02-022
+// §1).
 func TestRequestCarriesAnAskToDelegate(t *testing.T) {
 	svc := &fakeService{}
 	serve(t, svc)
 
-	body := `{"name":"github","hosts":["github.com"],"purpose":"delegate"}`
+	body := `{"name":"github","delegate":{"routes":["GET api.github.com/repos/acme/web/**"]}}`
 	if _, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) }); code != exitOK {
 		t.Fatalf("exit = %d, want 0: %s", code, stderr)
 	}
-	if svc.gotRequest.Purpose != agentcreds.PurposeDelegate {
-		t.Fatalf("purpose = %q, want delegate", svc.gotRequest.Purpose)
+	if svc.gotRequest.Uses() || svc.gotRequest.Delegate == nil || !slices.Equal(svc.gotRequest.Delegate.Routes, []string{"GET api.github.com/repos/acme/web/**"}) {
+		t.Fatalf("request = %#v, want only a delegate part", svc.gotRequest)
 	}
 
 	svc.gotRequest = agentcreds.RequestBody{}
-	delegateFlags := []string{"request", "--name", "github", "--hosts", "api.github.com", "--delegate"}
+	delegateFlags := []string{"request", "--name", "github", "--delegate-route", "GET api.github.com/repos/acme/web/**"}
 	if _, stderr, code := capture(t, "", func() int { return Run(delegateFlags) }); code != exitOK {
 		t.Fatalf("exit = %d, want 0: %s", code, stderr)
 	}
-	if svc.gotRequest.Purpose != agentcreds.PurposeDelegate {
-		t.Fatalf("purpose = %q, want --delegate to ask for delegate", svc.gotRequest.Purpose)
+	if svc.gotRequest.Uses() || svc.gotRequest.Delegate == nil || len(svc.gotRequest.Delegate.Routes) != 1 {
+		t.Fatalf("request = %#v, want --delegate-route to ask to delegate", svc.gotRequest)
 	}
+}
 
-	// A delegation is delivered to nothing here, so naming a variable for it
-	// is a mistake rather than a detail to drop.
-	svc.gotRequest = agentcreds.RequestBody{}
-	if _, _, code := capture(t, "", func() int { return Run(append(askFlags, "--delegate")) }); code != exitUsage {
-		t.Fatalf("exit = %d, want a usage error for a delegation naming --env-var", code)
+// One request asks to use a credential and to delegate it, each part with
+// its own routes, so a person answers both on one screen.
+func TestRequestAsksToUseAndDelegateAtOnce(t *testing.T) {
+	svc := &fakeService{}
+	serve(t, svc)
+	args := append(slices.Clone(askFlags), "--delegate-route", "POST api.github.com/repos/acme/web/pulls")
+	if _, stderr, code := capture(t, "", func() int { return Run(args) }); code != exitOK {
+		t.Fatalf("exit = %d: %s", code, stderr)
 	}
-	if svc.gotRequest.Name != "" {
-		t.Fatalf("request = %#v, want nothing sent", svc.gotRequest)
+	got := svc.gotRequest
+	if got.EnvVar != "GITHUB_TOKEN" || !slices.Equal(got.Hosts, []string{"api.github.com"}) || got.Delegate == nil || !slices.Equal(got.Delegate.Routes, []string{"POST api.github.com/repos/acme/web/pulls"}) {
+		t.Fatalf("request = %#v, want both parts with their own routes", got)
 	}
+}
 
-	svc.gotRequest = agentcreds.RequestBody{}
-	odd := `{"name":"github","envVar":"GITHUB_TOKEN","hosts":["github.com"],"purpose":"own"}`
-	if _, _, code := capture(t, odd, func() int { return Run([]string{"request", "--json"}) }); code != exitUsage {
-		t.Fatalf("exit = %d, want a usage error for an unknown purpose", code)
+// --delegate and a purpose are gone: one is refused as an unknown flag, the
+// other as an unknown field, so an agent following an old example learns at
+// once rather than asking for the wrong thing.
+func TestTheOldAskToDelegateIsRefused(t *testing.T) {
+	svc := &fakeService{}
+	serve(t, svc)
+	if _, _, code := capture(t, "", func() int { return Run(append(slices.Clone(askFlags), "--delegate")) }); code != exitUsage {
+		t.Fatalf("--delegate: exit = %d, want a usage error", code)
+	}
+	body := `{"name":"github","hosts":["github.com"],"purpose":"delegate"}`
+	_, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) })
+	if code != exitUsage || !strings.Contains(stderr, "purpose") {
+		t.Fatalf("purpose: exit = %d, stderr %s", code, stderr)
 	}
 	if svc.gotRequest.Name != "" {
 		t.Fatalf("request = %#v, want nothing sent", svc.gotRequest)
 	}
 }
 
-// A service that does not know purposes records an ask to use; an agent that
-// asked to delegate is told at once rather than left waiting on the wrong
-// question.
-func TestAnAskToDelegateRefusesAServiceThatDropsIt(t *testing.T) {
-	serve(t, &fakeService{predatesPurpose: true})
-	body := `{"name":"github","hosts":["github.com"],"purpose":"delegate"}`
-	_, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) })
-	if code != exitError || !strings.Contains(stderr, "does not know how to ask for a delegation") {
-		t.Fatalf("exit = %d, stderr %s", code, stderr)
+func compact(t *testing.T, document string) string {
+	t.Helper()
+	var b bytes.Buffer
+	if err := json.Compact(&b, []byte(document)); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+func writePolicy(t *testing.T, dir, name, body string) string {
+	t.Helper()
+	path := dir + "/" + name
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+const issuesPolicy = `{
+  "version": 1,
+  "description": "Open issues in one repository",
+  "parameters": {"owner": {"type": "pathSegment"}, "repo": {"type": "pathSegment"}},
+  "routes": [{"hosts": ["api.github.com"], "methods": ["POST"], "paths": ["/repos/${owner}/${repo}/issues"]}]
+}
+`
+
+// A policy file is sent as it was read, beside the arguments that follow its
+// flag: each --policy-arg belongs to the --policy or --delegate-policy before
+// it (ADR 26-11-02-022 §2). The client resolves nothing.
+func TestRequestCarriesPolicyFilesWithTheirOwnArguments(t *testing.T) {
+	svc := &fakeService{}
+	serve(t, svc)
+	dir := t.TempDir()
+	issues := writePolicy(t, dir, "issues.json", issuesPolicy)
+	args := []string{"request", "--name", "github", "--env-var", "GH_TOKEN",
+		"--policy", issues, "--policy-arg", "owner=acme", "--policy-arg", "repo=web",
+		"--delegate-policy", issues, "--policy-arg", "owner=acme", "--policy-arg", "repo=vm",
+		"--policy", issues, "--policy-arg", "owner=acme", "--policy-arg", "repo=docs"}
+	if _, stderr, code := capture(t, "", func() int { return Run(args) }); code != exitOK {
+		t.Fatalf("exit = %d: %s", code, stderr)
+	}
+	got := svc.gotRequest
+	if len(got.Policies) != 2 || got.Delegate == nil || len(got.Delegate.Policies) != 1 {
+		t.Fatalf("request = %#v, want two use policies and one delegate policy", got)
+	}
+	for i, want := range []string{"web", "docs"} {
+		if p := got.Policies[i]; p.File != issues || p.Args["repo"] != want || p.Args["owner"] != "acme" {
+			t.Fatalf("use policy %d = %#v, want repo %s", i, p, want)
+		}
+	}
+	if p := got.Delegate.Policies[0]; p.Args["repo"] != "vm" || len(p.Args) != 2 {
+		t.Fatalf("delegate policy = %#v, want only its own arguments", p)
+	}
+	// The wire carries the document as JSON, which encoding/json compacts;
+	// keys, their order and any repeated one are kept as they were read.
+	if string(got.Policies[0].Document) != compact(t, issuesPolicy) {
+		t.Fatalf("document = %q, want the file's document unchanged", got.Policies[0].Document)
+	}
+}
+
+// The JSON form names policies by file too, and the CLI reads them.
+func TestRequestJSONReadsItsPolicyFiles(t *testing.T) {
+	svc := &fakeService{}
+	serve(t, svc)
+	dir := t.TempDir()
+	issues := writePolicy(t, dir, "issues.json", issuesPolicy)
+	body := fmt.Sprintf(`{"name":"github","delegate":{"policies":[{"file":%q,"args":{"owner":"acme","repo":"web"}}]}}`, issues)
+	if _, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) }); code != exitOK {
+		t.Fatalf("exit = %d: %s", code, stderr)
+	}
+	if got := svc.gotRequest.Delegate; got == nil || len(got.Policies) != 1 || string(got.Policies[0].Document) != compact(t, issuesPolicy) || got.Policies[0].Args["repo"] != "web" {
+		t.Fatalf("request = %#v", svc.gotRequest)
+	}
+}
+
+// What the CLI can see wrong with a policy is refused before anything is
+// sent, naming the file or the flag that fixes it.
+func TestRequestRefusesABadPolicy(t *testing.T) {
+	svc := &fakeService{}
+	serve(t, svc)
+	dir := t.TempDir()
+	issues := writePolicy(t, dir, "issues.json", issuesPolicy)
+	big := writePolicy(t, dir, "big.json", `{"version":1,"description":"`+strings.Repeat("x", agentcreds.MaxPolicyBytes)+`"}`)
+	twice := writePolicy(t, dir, "twice.json", `{"version":1,"routes":[{"hosts":["a.example"],"hosts":["b.example"]}]}`)
+	list := writePolicy(t, dir, "list.json", `[{"version":1}]`)
+	two := writePolicy(t, dir, "two.json", `{"version":1} {"version":1}`)
+	base := []string{"request", "--name", "github", "--env-var", "GH_TOKEN"}
+	for name, tc := range map[string]struct {
+		args []string
+		want string
+	}{
+		"too large":         {[]string{"--policy", big}, "big.json"},
+		"repeated key":      {[]string{"--policy", twice}, `"hosts" is repeated`},
+		"not an object":     {[]string{"--policy", list}, "not a JSON object"},
+		"two values":        {[]string{"--policy", two}, "more than one JSON value"},
+		"missing":           {[]string{"--policy", dir + "/missing.json"}, "missing.json"},
+		"arg before policy": {[]string{"--policy-arg", "owner=acme", "--policy", issues}, "give it after one"},
+		"repeated arg":      {[]string{"--policy", issues, "--policy-arg", "repo=a", "--policy-arg", "repo=b"}, "given twice"},
+		"beside routes":     {[]string{"--policy", issues, "--route", "api.github.com"}, "leave out --route"},
+		"delegate beside":   {[]string{"--hosts", "h", "--delegate-policy", issues, "--delegate-route", "api.github.com"}, "leave out --delegate-route"},
+	} {
+		svc.gotRequest = agentcreds.RequestBody{}
+		_, stderr, code := capture(t, "", func() int { return Run(append(slices.Clone(base), tc.args...)) })
+		if code != exitUsage || !strings.Contains(stderr, tc.want) {
+			t.Errorf("%s: exit = %d, stderr %q, want a usage error naming %q", name, code, stderr, tc.want)
+		}
+		if svc.gotRequest.Name != "" {
+			t.Errorf("%s: request sent, want nothing", name)
+		}
+	}
+	var many []string
+	for range agentcreds.MaxRequestPolicies + 1 {
+		many = append(many, "--policy", issues)
+	}
+	if _, stderr, code := capture(t, "", func() int { return Run(append(slices.Clone(base), many...)) }); code != exitUsage || !strings.Contains(stderr, "at most") {
+		t.Errorf("too many policies: exit = %d, stderr %q", code, stderr)
+	}
+}
+
+// A JSON body that repeats a key is refused rather than read as its last
+// value, at any depth: a duplicated argument must never be reduced silently.
+func TestRequestJSONRefusesARepeatedKey(t *testing.T) {
+	svc := &fakeService{}
+	serve(t, svc)
+	for name, body := range map[string]string{
+		"top level": `{"name":"github","name":"other","envVar":"T","hosts":["h"]}`,
+		"argument":  `{"name":"github","delegate":{"policies":[{"file":"p.json","args":{"repo":"a","repo":"b"}}]}}`,
+	} {
+		_, stderr, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) })
+		if code != exitUsage || !strings.Contains(stderr, "repeated") {
+			t.Errorf("%s: exit = %d, stderr %s", name, code, stderr)
+		}
+	}
+	if svc.gotRequest.Name != "" {
+		t.Fatalf("request = %#v, want nothing sent", svc.gotRequest)
 	}
 }
 
@@ -419,7 +560,7 @@ func TestWaitReportsWhatWasGranted(t *testing.T) {
 	granted := &agentcreds.Credential{Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"}, ExpiresAt: &expires}
 	serve(t, &fakeService{requestPolls: []agentcreds.RequestStatus{
 		{RequestID: "sreq_1", Status: agentcreds.StatusPending},
-		{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Purpose: agentcreds.PurposeUse, Credential: granted},
+		{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Use: &agentcreds.PartStatus{Status: agentcreds.StatusGranted, Credential: granted}},
 	}})
 	stdout, stderr, code := capture(t, "", func() int { return Run(append(askFlags, "--wait", "--timeout", "10s")) })
 	if code != exitOK {
@@ -427,6 +568,7 @@ func TestWaitReportsWhatWasGranted(t *testing.T) {
 	}
 	for _, want := range []string{
 		"sreq_1 granted",
+		"use: granted",
 		"github (GITHUB_TOKEN → api.github.com) [expires 2026-11-01T00:00:00Z]",
 		"in GITHUB_TOKEN for every command you start from now on",
 	} {
@@ -441,7 +583,7 @@ func TestWaitReportsWhatWasGranted(t *testing.T) {
 func TestWaitSaysAGrantIsTheValueItself(t *testing.T) {
 	granted := &agentcreds.Credential{Name: "aws", EnvVar: "AWS_KEY_FILE", Hosts: []string{"amazonaws.com"}, Raw: agentcreds.RawFile}
 	serve(t, &fakeService{requestPolls: []agentcreds.RequestStatus{
-		{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Purpose: agentcreds.PurposeUse, Credential: granted},
+		{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Use: &agentcreds.PartStatus{Status: agentcreds.StatusGranted, Credential: granted}},
 	}})
 	stdout, stderr, code := capture(t, "", func() int { return Run(append(askFlags, "--wait", "--timeout", "10s")) })
 	if code != exitOK {
@@ -461,6 +603,28 @@ func TestWaitOnADeniedRequestExitsNonZero(t *testing.T) {
 	_, _, code := capture(t, body, func() int { return Run([]string{"request", "--json"}) })
 	if code == exitOK {
 		t.Fatal("a denied request exited 0")
+	}
+}
+
+// A request with one part granted and the other denied delivers the granted
+// one, says so, and still exits non-zero: zero means every part asked for
+// was granted (ADR 26-11-02-022 §4).
+func TestAPartlyDeniedRequestExitsNonZero(t *testing.T) {
+	granted := &agentcreds.Credential{Name: "github", EnvVar: "GH_TOKEN", Hosts: []string{"api.github.com"}}
+	serve(t, &fakeService{status: agentcreds.RequestStatus{
+		RequestID: "sreq_1", Status: agentcreds.StatusGranted,
+		Use:      &agentcreds.PartStatus{Status: agentcreds.StatusGranted, Credential: granted},
+		Delegate: &agentcreds.PartStatus{Status: agentcreds.StatusDenied},
+	}})
+	args := append(slices.Clone(askFlags), "--delegate-route", "api.github.com", "--wait", "--timeout", "5s")
+	stdout, stderr, code := capture(t, "", func() int { return Run(args) })
+	if code != exitError {
+		t.Fatalf("exit = %d, want 1: %s", code, stderr)
+	}
+	for _, want := range []string{"use: granted", "delegate: denied", "in GH_TOKEN for every command you start"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout lacks %q:\n%s", want, stdout)
+		}
 	}
 }
 
@@ -601,5 +765,25 @@ func TestRequestWaitThroughAnOutageIsPending(t *testing.T) {
 	stdout, stderr, code := capture(t, "", func() int { return Run(append(askFlags, "--wait", "--timeout", "50ms")) })
 	if code != exitPending || !strings.Contains(stdout, "sreq_1 pending") || !strings.Contains(stderr, "wait --json request 'sreq_1'") {
 		t.Fatalf("exit %d, stdout %q, stderr %q; want exit %d, the request pending and how to resume", code, stdout, stderr, exitPending)
+	}
+}
+
+// Documents each within MaxPolicyBytes may still together outgrow the body
+// the service reads: refused here, naming the limit, and nothing is sent.
+func TestRequestRefusesPoliciesThatOutgrowTheBody(t *testing.T) {
+	svc := &fakeService{}
+	serve(t, svc)
+	dir := t.TempDir()
+	doc := `{"version":1,"description":"` + strings.Repeat("x", agentcreds.MaxPolicyBytes-200) + `","routes":[{"hosts":["a.example"]}]}`
+	args := []string{"request", "--name", "github", "--env-var", "GH_TOKEN"}
+	for i := range 20 {
+		args = append(args, "--policy", writePolicy(t, dir, fmt.Sprintf("p%d.json", i), doc))
+	}
+	_, stderr, code := capture(t, "", func() int { return Run(args) })
+	if code != exitUsage || !strings.Contains(stderr, "MaxBodyBytes") {
+		t.Fatalf("exit = %d, stderr %q; want a usage error naming MaxBodyBytes", code, stderr)
+	}
+	if svc.gotRequest.Name != "" {
+		t.Fatal("request sent, want nothing")
 	}
 }

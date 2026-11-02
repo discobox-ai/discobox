@@ -568,6 +568,19 @@ seconds is no row at all (`lifetimeChoices`) and the step opens on the hour:
 a row's identity is its second count, and one that shared forever's count would
 otherwise take the cursor.
 
+**A request with two parts is answered part by part** (ADR 26-11-02-022).
+The request card shows each part a request has and its roles: each role's
+name and arguments, its description marked as the discobox's words, and
+beside it what its routes grant (`requestrole.Summary`), never the label
+alone. Choosing a secret reads what the asking discobox already holds of it
+(`standingLoadedMsg`), so the cards that follow say what an approved part
+does to each of those bindings — kept, gone, losing its use, split — by
+`pkg/bindingplan`, the rule the server applies (`replacedText`). A request asking both to use and to delegate gets a step of its own
+after the lifetime (`askParts`): approve both, or one with the other denied —
+there is no row that approves one and leaves the other unsaid. The answer is
+one `Approval` naming a decision for every part (`Approval.Use`,
+`Approval.Delegate`), raw delivery offered only when the use part is approved.
+
 **A lifetime the credential does not allow is not offered** (`withinLimit`).
 A secret's binding limit is a ceiling the server enforces, so the request card
 names it on each secret's row, the lifetime step dims every choice over it and

@@ -345,7 +345,7 @@ func TestAnAttachedHarnessConfigDelegatesNothing(t *testing.T) {
 		t.Fatalf("effective = %+v, want the use and no delegation", effective)
 	}
 	req := createAgentRequest(ctx, t, svc)
-	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{}); !isStatus(err, http.StatusForbidden) {
+	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{Use: decide(true)}); !isStatus(err, http.StatusForbidden) {
 		t.Fatalf("approve under an attached config's delegation = %v, want 403", err)
 	}
 	if listed, err := svc.ListSecrets(asLead(), "project-1"); err != nil || len(listed) != 0 {

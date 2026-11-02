@@ -2,13 +2,16 @@ package secrets
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/credentialpolicy"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
@@ -97,18 +100,16 @@ func sandboxCredential(secret *model.Secret, applied store.EffectiveBinding, pur
 // latency, so this never waits for one; the caller polls
 // GetSandboxCredentialRequest.
 //
+// An ask has a use part, a delegate part, or both (ADR 26-11-02-022 §1), each
+// naming its routes inline or by policy documents, which are resolved here
+// and nowhere else (§2): what the request stores, and everything an approver
+// is later shown of it, comes from this one resolution.
+//
 // An identical pending ask is reused rather than duplicated, so an agent that
 // retries produces one inbox item instead of a pile. Identical means approving
-// either would grant the same thing: the same variable, routes (each host
-// asked for being one), purpose and lifetime. The justification is left out; it argues for a grant and does not
-// change which one approval mints, so a retry reworded is still a retry.
+// either would grant the same thing (store.FindPendingAgentCredentialRequests).
 func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID string, input services.CreateSandboxCredentialRequestBody) (*model.SecretRequest, error) {
 	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, strings.TrimSpace(input.SandboxId))
-	if err != nil {
-		return nil, err
-	}
-	// What the credential is asked for: to use it, or to delegate it.
-	purpose, err := requestPurpose(string(input.Purpose.Or("")))
 	if err != nil {
 		return nil, err
 	}
@@ -117,26 +118,44 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	if name == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential name is required")
 	}
-	// A use is delivered in the variable it names; a delegation delivers
-	// nothing to the discobox that asks, so naming one is a mistake about
-	// what it asks for.
-	switch {
-	case purpose == model.SecretPurposeDelegate && envName != "":
+	if count := len(input.Policies) + len(input.Delegate.Or(services.SandboxCredentialRequestDelegate{}).Policies); count > agentcreds.MaxRequestPolicies {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
-			"a request to delegate names no environment variable: a delegation delivers nothing to the discobox that asks")
-	case purpose == model.SecretPurposeUse && !services.EnvVarNamePattern.MatchString(envName):
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a valid environment variable name")
+			fmt.Sprintf("a request names at most %d policies across its parts, not %d", agentcreds.MaxRequestPolicies, count))
 	}
-	// A destination is mandatory: the request's routes are what an approval
-	// binds unless the approver names others, and an agent says where it
-	// means to send what it asks for (ADR 0031 §5).
 	hosts := hostscope.List(input.Hosts...)
-	if len(hosts) == 0 && len(input.Routes) == 0 {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a destination: a host or a route")
-	}
-	routes, err := requestedRoutes(hosts, input.Routes)
+	budget := agentcreds.MaxRequestRouteBytes
+	use, err := requestedPart("use", hosts, input.Routes, input.Policies, &budget)
 	if err != nil {
 		return nil, err
+	}
+	use.Asked = use.Asked || envName != ""
+	var delegate model.SecretRequestPart
+	if part, ok := input.Delegate.Get(); ok {
+		if delegate, err = requestedPart("delegate", nil, part.Routes, part.Policies, &budget); err != nil {
+			return nil, err
+		}
+		if !delegate.Asked {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				"the delegate part names where the credential may be sent: routes or policies")
+		}
+	}
+	switch {
+	case !use.Asked && !delegate.Asked:
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			"credential request requires a destination: a host, a route or a policy to use it, or a delegate part")
+	case delegate.Asked && envName != "" && len(use.Routes) == 0:
+		// A delegation delivers nothing to the discobox that asks, so a
+		// variable with nothing to use is a mistake about what it asks for.
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			"a request with only a delegate part names no environment variable: a delegation delivers nothing to the discobox that asks")
+	case use.Asked && len(use.Routes) == 0:
+		// A destination is mandatory: the routes are what an approval binds
+		// unless the approver names others, and an agent says where it means
+		// to send what it asks for (ADR 0031 §5).
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			"credential request requires a destination to use it: a host, a route or a policy")
+	case use.Asked && !services.EnvVarNamePattern.MatchString(envName):
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a valid environment variable name to use it")
 	}
 	// The lifetime asked for is recorded, not checked against any secret: which
 	// secret answers the request is the approval's choice, and so is whether
@@ -153,28 +172,24 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
 			fmt.Sprintf("a requested grant lifetime runs from 1 second to %d (thirty days); leave it out to ask for nothing in particular", int64(agentcreds.MaxGrantTTLSeconds)))
 	}
-
-	pending, err := s.store.FindPendingAgentCredentialRequests(ctx, sandbox.ProjectID, sandbox.ID, envName, routes, purpose)
-	if err != nil {
-		return nil, err
-	}
-	for i := range pending {
-		if pending[i].TTL == grantTTL && pending[i].Name == name {
-			return &pending[i], nil
-		}
-	}
-
 	req := &model.SecretRequest{
 		ProjectID:     sandbox.ProjectID,
 		RequestedBy:   agentRequesterID(sandbox.ID),
 		SandboxID:     sandbox.ID,
-		Routes:        routes,
 		Name:          name,
 		EnvName:       envName,
 		Justification: strings.TrimSpace(input.Justification.Or("")),
 		TTL:           grantTTL,
-		Purpose:       purpose,
+		Use:           use,
+		Delegate:      delegate,
 		Status:        model.SecretRequestStatusPending,
+	}
+	pending, err := s.store.FindPendingAgentCredentialRequests(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if len(pending) > 0 {
+		return &pending[0], nil
 	}
 	if err := s.store.CreateSecretRequest(ctx, req); err != nil {
 		return nil, err
@@ -182,39 +197,153 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	return req, nil
 }
 
+// requestedPart reads one part of an ask: its routes, inline (hosts and typed
+// routes) or by policy documents, never both. Each document is resolved
+// against its arguments (credentialpolicy.ResolveDocument) and recorded with
+// what an approver is shown of it; the part's routes are the union of them.
+// The part is Asked when it names anything at all. Input from a box: every
+// limit here is a boundary (ADR 26-11-02-022 §2), and budget, shared by the
+// request's parts, is what is left of agentcreds.MaxRequestRouteBytes: it is
+// spent after each document resolves, so a request is refused as soon as
+// what it resolves to outgrows it, not after all of it was expanded.
+func requestedPart(which string, hosts, typed []string, policies []services.SandboxCredentialPolicy, budget *int) (model.SecretRequestPart, error) {
+	var part model.SecretRequestPart
+	if len(policies) > 0 && (len(hosts) > 0 || len(typed) > 0) {
+		return part, apperrors.NewStatusError(http.StatusBadRequest,
+			fmt.Sprintf("the %s part names its routes inline or by policies, not both", which))
+	}
+	switch {
+	case len(policies) > 0:
+		for i, policy := range policies {
+			resolved, err := requestedPolicy(policy)
+			if err != nil {
+				return part, apperrors.NewStatusError(http.StatusBadRequest,
+					fmt.Sprintf("%s part, policy %d (%q): %v", which, i+1, policy.File, err))
+			}
+			if err := spendRouteBytes(budget, resolved.Routes); err != nil {
+				return part, err
+			}
+			part.Policies = append(part.Policies, resolved)
+			part.Routes = append(part.Routes, resolved.Routes...)
+		}
+		routes, err := model.NormalizeRoutes(part.Routes)
+		if err != nil {
+			return part, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("%s part: %v", which, err))
+		}
+		part.Routes = routes
+	case len(hosts) > 0 || len(typed) > 0:
+		routes, err := requestedRoutes(hosts, typed)
+		if err != nil {
+			return part, err
+		}
+		part.Routes = routes
+	default:
+		return part, nil
+	}
+	if len(part.Routes) > agentcreds.MaxPartRoutes {
+		return part, apperrors.NewStatusError(http.StatusBadRequest,
+			fmt.Sprintf("the %s part resolves to %d routes; a part may have at most %d", which, len(part.Routes), agentcreds.MaxPartRoutes))
+	}
+	if err := spendRouteBytes(budget, part.Routes); err != nil {
+		return part, err
+	}
+	part.Asked = true
+	return part, nil
+}
+
+// spendRouteBytes takes the JSON size of routes from what is left of a
+// request's agentcreds.MaxRequestRouteBytes, refusing the request, naming the
+// limit, once it is spent.
+func spendRouteBytes(budget *int, routes []model.SecretRoute) error {
+	encoded, err := json.Marshal(routes)
+	if err != nil {
+		return err
+	}
+	*budget -= len(encoded)
+	if *budget < 0 {
+		return apperrors.NewStatusError(http.StatusBadRequest,
+			fmt.Sprintf("the request resolves to more than %d bytes of routes, the most a request may (its policies' arguments expand into its routes)", agentcreds.MaxRequestRouteBytes))
+	}
+	return nil
+}
+
+// requestedPolicy resolves one policy document a box sent, and records what
+// an approver is shown of it: the file's base name, its description, its
+// arguments, a digest of the document and the arguments no route path names
+// — beside the routes it resolved to, which are what it grants (ADR
+// 26-11-02-022 §3).
+func requestedPolicy(policy services.SandboxCredentialPolicy) (model.SecretRequestPolicy, error) {
+	file := strings.TrimSpace(policy.File)
+	if file == "" {
+		return model.SecretRequestPolicy{}, errors.New("a policy names its file")
+	}
+	if len(policy.Document) > agentcreds.MaxPolicyBytes {
+		return model.SecretRequestPolicy{}, fmt.Errorf("the document is %d bytes; a policy may be at most %d", len(policy.Document), agentcreds.MaxPolicyBytes)
+	}
+	args := map[string]string(policy.Args.Or(nil))
+	resolved, err := credentialpolicy.ResolveDocument(policy.Document, args)
+	if err != nil {
+		return model.SecretRequestPolicy{}, err
+	}
+	routes, err := model.NormalizeRoutes(resolved.Routes)
+	if err != nil {
+		return model.SecretRequestPolicy{}, err
+	}
+	name := strings.TrimSuffix(path.Base(strings.ReplaceAll(file, "\\", "/")), ".json")
+	if len(args) == 0 {
+		args = nil
+	}
+	return model.SecretRequestPolicy{
+		File:        file,
+		Name:        name,
+		Description: resolved.Description,
+		Args:        args,
+		Digest:      resolved.Digest,
+		UnusedArgs:  resolved.UnusedArgs,
+		Routes:      routes,
+	}, nil
+}
+
 // GetSandboxCredentialRequest reads one of a sandbox's own credential requests
-// and, once approved, the binding it was answered with while it stands.
-func (s *Service) GetSandboxCredentialRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.SecretRequest, *model.SecretBinding, error) {
+// and, for each part approved, the binding it was answered with while it
+// stands.
+func (s *Service) GetSandboxCredentialRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.SecretRequest, services.RequestBindings, error) {
+	var bindings services.RequestBindings
 	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, sandboxID)
 	if err != nil {
-		return nil, nil, err
+		return nil, bindings, err
 	}
 	req, err := s.store.GetSecretRequest(ctx, sandbox.ProjectID, requestID)
 	if err != nil {
-		return nil, nil, apperrors.NotFound(err, "secret request not found")
+		return nil, bindings, apperrors.NotFound(err, "secret request not found")
 	}
 	// A sandbox may poll only its own asks. Requests are project-scoped rows and
 	// a pool hosts many sandboxes, so without this a compromised sandbox could
 	// read every request in the project by guessing IDs.
 	if req.SandboxID != sandbox.ID {
-		return nil, nil, apperrors.NewStatusError(http.StatusNotFound, "secret request not found")
+		return nil, bindings, apperrors.NewStatusError(http.StatusNotFound, "secret request not found")
 	}
-	if req.Status != model.SecretRequestStatusApproved || req.BindingID == "" {
-		return req, nil, nil
-	}
-	binding, err := s.store.SecretBindingByExactID(ctx, sandbox.ProjectID, req.BindingID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			// The binding was removed after approval. The request stays
-			// approved (it is history), but there is nothing to use.
-			return req, nil, nil
+	for _, part := range []struct {
+		part *model.SecretRequestPart
+		into **model.SecretBinding
+	}{{&req.Use, &bindings.Use}, {&req.Delegate, &bindings.Delegate}} {
+		if part.part.Outcome != model.SecretRequestPartApproved || part.part.BindingID == "" {
+			continue
 		}
-		return nil, nil, err
+		binding, err := s.store.SecretBindingByExactID(ctx, sandbox.ProjectID, part.part.BindingID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				// The binding was removed after approval. The part stays
+				// approved (it is history), but there is nothing to use.
+				continue
+			}
+			return nil, bindings, err
+		}
+		if binding.Live(time.Now().UTC()) {
+			*part.into = binding
+		}
 	}
-	if !binding.Live(time.Now().UTC()) {
-		return req, nil, nil
-	}
-	return req, binding, nil
+	return req, bindings, nil
 }
 
 // requestedRoutes are the routes an ask names, read as every route is written:
@@ -238,17 +367,6 @@ func requestedRoutes(hosts, typed []string) ([]model.SecretRoute, error) {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
 	return routes, nil
-}
-
-// requestPurpose reads what a credential is asked for. Nothing named is use.
-func requestPurpose(purpose string) (string, error) {
-	switch purpose = strings.TrimSpace(purpose); purpose {
-	case "", model.SecretPurposeUse:
-		return model.SecretPurposeUse, nil
-	case model.SecretPurposeDelegate:
-		return purpose, nil
-	}
-	return "", apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("a credential is asked for use or delegate, not %q", purpose))
 }
 
 // agentRequesterID is the principal recorded on a protocol-originated request.

@@ -714,8 +714,8 @@ func TestMigrateMovesSecretHostsToLists(t *testing.T) {
 	if err := write.First(&req, "id = ?", "req_old").Error; err != nil {
 		t.Fatalf("read request: %v", err)
 	}
-	if !reflect.DeepEqual(req.Routes, []model.SecretRoute{upgraded("api.github.com", "", false)}) {
-		t.Errorf("request routes = %+v, want [api.github.com]", req.Routes)
+	if !reflect.DeepEqual(req.Use.Routes, []model.SecretRoute{upgraded("api.github.com", "", false)}) {
+		t.Errorf("request use routes = %+v, want [api.github.com]", req.Use.Routes)
 	}
 }
 

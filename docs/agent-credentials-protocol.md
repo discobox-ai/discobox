@@ -127,17 +127,31 @@ POST /v1/credentials/requests
     "GET api.github.com/repos/discobox-ai/discobox/**",
     "api.github.com/graphql graphql=query"
   ],
-  "justification": "The task asks me to read the PR's checks.",
+  "delegate": {
+    "routes": ["GET api.github.com/repos/discobox-ai/discobox/**"]
+  },
+  "justification": "The task asks me to read the PR's checks, and to hand that to the workers I create.",
   "grantTTLSeconds": 14400
 }
 ```
 
 ```json
-{ "requestId": "req_1a2b…", "status": "pending", "purpose": "use" }
+{ "requestId": "req_1a2b…", "status": "pending",
+  "use": { "status": "pending" }, "delegate": { "status": "pending" } }
 ```
 
+A request has a **use part**, a **delegate part**, or both
+([ADR 26-11-02-022](adr/26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md)
+§1). The use part is `envVar` with `hosts`, `routes` or `policies`: where the
+caller will send the credential, delivered in that variable. `delegate` is
+the delegate part, with its own `routes` or `policies`: where the sandboxes
+the caller creates may be given it. A delegation names no variable; it is
+delivered to nothing in the caller, and lets the caller send nothing itself.
+Each part's lists are independent, and a person answers the two separately
+in one answer.
+
 `name` is the credential asked for and `envVar` the variable it is wanted in.
-`hosts` and `routes` are where it will be sent; an ask names at least one of
+`hosts` and `routes` are where it will be sent; a part names at least one of
 either, and may name both. A host is shorthand for a route to that exact host
 and no host beneath it — `*.github.com` asks for the names beneath
 `github.com`, and `*` alone for any host
@@ -180,8 +194,31 @@ string
 each host and route becomes a route of the binding asked for, which the
 approver may edit; a route that does not parse makes the ask `invalid`.
 
-`name` and a destination are required, and `envVar` to use the
-credential — an ask to delegate names none; an ask without them is `invalid`. A body that still
+`policies` names credential policy files in place of routes and hosts
+([ADR 26-10-30-584](adr/26-10-30-584-a-credential-policy-file-supplies-a-bindings-routes.md)),
+on either part but never beside routes on the same one:
+
+```json
+{ "file": "roles/github-submit.json", "args": { "owner": "acme", "repo": "web" },
+  "document": { "version": 1, "description": "Open pull requests in one repository", "routes": [ … ] } }
+```
+
+`file` is how the caller named it, and `document` the file's JSON object as
+read; a client reads the file and sends the document. The implementation
+validates and resolves it with `args` (§3 of ADR 584), and refuses the whole
+request as `invalid`, naming the file, if it does not resolve. A person is
+shown each file's name and description beside what its routes allow; the name
+and description grant nothing. A document is at most **64 KiB**, a request
+names at most **32** policies across its parts, a part resolves to at most
+**512** routes, everything a request resolves to is at most **256 KiB** of
+routes (an argument is one path segment of at most 256 bytes, but a template
+may repeat it), and the body is at most **1 MiB**.
+
+`name` and a part are required, a destination for each part, and `envVar`
+for the use part — the delegate part names none; an ask without them is
+`invalid`. A field the protocol does not know is `invalid` too, naming it:
+`purpose`, which a request carried before it had parts, is refused rather
+than dropped. A body that still
 names a destination as `host`, as a client that predates `hosts` sends, is
 `invalid` rather than read without it; an empty `host` is no destination.
 `justification` is shown to the person answering; nothing evaluates it.
@@ -195,14 +232,17 @@ part of the contract, because an ask is only worth anything if it can be shown
 to a human as an answer: a ten-year ask is one keystroke from a credential
 that outlives the work.
 
-`purpose` is optional: `use`, the default, asks to use the credential;
-`delegate` asks to give it to the sandboxes the caller creates. One or the
-other, never both. Only a person answers an ask to delegate. Any other value is
-`invalid`. The answer, and every poll of it, carries the `purpose` the
-implementation recorded.
+Only a person answers a request with a delegate part, use part and all.
 
-A second ask for the same `envVar`, hosts and routes (each in any order) and `purpose` while
-one is still pending returns that pending request rather than a new one.
+A request states the whole access the caller wants of each kind: in Discobox
+an approved part replaces the caller's own binding of that kind for that
+credential, wider or narrower, and never adds to it.
+
+A second ask from the same caller for the same `name`, `envVar` (or none),
+lifetime and parts, each part resolving to the same routes (in any order),
+while one is still pending returns that pending request rather than a new
+one. A policy's name, description and arguments, like the justification, do
+not make an ask different.
 
 Approval is human-latency, so `request` is **asynchronous**: it answers
 `202 Accepted` immediately and the client polls.
@@ -212,12 +252,19 @@ GET /v1/credentials/requests/{requestId}
 ```
 
 ```json
-{ "requestId": "req_1a2b…", "status": "granted", "purpose": "use",
-  "credential": { "name": "github", "envVar": "GITHUB_TOKEN", "hosts": ["api.github.com"], "expiresAt": "2026-08-12T18:00:00Z" } }
+{ "requestId": "req_1a2b…", "status": "granted",
+  "use": { "status": "granted",
+    "credential": { "name": "github", "envVar": "GITHUB_TOKEN", "hosts": ["api.github.com"], "expiresAt": "2026-08-12T18:00:00Z" } },
+  "delegate": { "status": "denied" } }
 ```
 
-`status` is one of `pending`, `granted`, `denied`. `credential` is present once
-granted, as `list` reports it — the hosts and lifetime the approver chose,
+`status` is one of `pending`, `granted`, `denied`: `pending` until a person
+answers, then `granted` when any part was and `denied` when none was. `use`
+and `delegate` report each part the request has, with the same three
+statuses; a client exits successfully only when every part asked for was
+granted (`RequestStatus.Complete`), since a part denied leaves the caller
+without what it asked for, though a part granted is delivered. A part's
+`credential` is present once granted, as `list` reports it — the hosts and lifetime the approver chose,
 which need not be the ones asked for, and `raw` when the approver chose to
 hand over the value itself rather than a placeholder. In Discobox a request may also be
 answered by the sandbox that created the caller, when it holds a delegate

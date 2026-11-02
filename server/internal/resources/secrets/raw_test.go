@@ -97,7 +97,7 @@ func TestASentinelApprovalNeverRenewsARawBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); !isStatus(err, http.StatusConflict) {
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, approveUse(secret.ID)); !isStatus(err, http.StatusConflict) {
 		t.Fatalf("approving over a raw binding = %v, want 409", err)
 	}
 	if got, err := st.SecretBindingByExactID(ctx, "project-1", standing.ID); err != nil || got.ExpiresAt != standing.ExpiresAt {
@@ -223,48 +223,47 @@ func TestAPersonMayGrantARequestRaw(t *testing.T) {
 		}
 		return req
 	}
-	raw := services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID), Raw: serverapi.NewOptApproveSecretRequestBodyRaw(serverapi.ApproveSecretRequestBodyRawFile)}
+	raw := services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID), Use: decideRaw(serverapi.SecretRequestPartDecisionRawFile)}
 	req := ask()
 	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, raw); !isStatus(err, http.StatusForbidden) {
 		t.Fatalf("granting raw of a secret that does not allow it = %v, want 403", err)
 	}
 	allowRaw(ctx, t, svc, secret)
 	mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: leadID, Delegate: true})
-	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{Raw: raw.Raw}); !isStatus(err, http.StatusForbidden) {
+	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{Use: raw.Use}); !isStatus(err, http.StatusForbidden) {
 		t.Fatalf("a discobox granting raw = %v, want 403", err)
 	}
 	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	binding, err := st.SecretBindingByExactID(ctx, "project-1", approved.BindingID)
+	binding, err := st.SecretBindingByExactID(ctx, "project-1", approved.Use.BindingID)
 	if err != nil || binding.Raw != "file" || binding.RequestID != req.ID {
 		t.Fatalf("approved binding = %+v, %v, want a raw file binding answering the request", binding, err)
 	}
 	again, err := svc.ApproveSecretRequest(ctx, "project-1", ask().ID, raw)
-	if err != nil || again.BindingID != binding.ID {
+	if err != nil || again.Use.BindingID != binding.ID {
 		t.Fatalf("granting raw again = %+v, %v, want the raw binding renewed", again, err)
 	}
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", ask().ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); !isStatus(err, http.StatusConflict) {
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", ask().ID, approveUse(secret.ID)); !isStatus(err, http.StatusConflict) {
 		t.Fatalf("a sentinel approval over the raw binding = %v, want 409", err)
 	}
 }
 
-// A request to delegate is delivered nothing, so it is granted no raw value.
+// A delegate part is delivered nothing, so it is granted no raw value.
 func TestADelegationIsGrantedNoRawValue(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, _ := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
 	allowRaw(ctx, t, svc, secret)
 	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
-		SandboxId: testSandboxID, Name: "github", Hosts: []string{"github.com"},
-		Purpose: serverapi.NewOptCreateSandboxCredentialRequestBodyPurpose(serverapi.CreateSandboxCredentialRequestBodyPurposeDelegate),
+		SandboxId: testSandboxID, Name: "github", Delegate: delegateRoutes("github.com"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId: serverapi.NewOptString(secret.ID), Raw: serverapi.NewOptApproveSecretRequestBodyRaw(serverapi.ApproveSecretRequestBodyRawEnv),
+		SecretId: serverapi.NewOptString(secret.ID), Delegate: decideRaw(serverapi.SecretRequestPartDecisionRawEnv),
 	}); !isStatus(err, http.StatusBadRequest) {
 		t.Fatalf("granting a delegation raw = %v, want 400", err)
 	}
@@ -280,14 +279,20 @@ func TestADelegationOverARawBindingPointsAtTheBinding(t *testing.T) {
 	allowRaw(ctx, t, svc, secret)
 	mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: testSandboxID, Use: true, Delegate: true, EnvName: "GH_TOKEN", Raw: "env"})
 	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
-		SandboxId: testSandboxID, Name: "github", Hosts: []string{"github.com"},
-		Purpose: serverapi.NewOptCreateSandboxCredentialRequestBodyPurpose(serverapi.CreateSandboxCredentialRequestBodyPurposeDelegate),
+		SandboxId: testSandboxID, Name: "github", Delegate: delegateRoutes("github.com"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
+	_, err = svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID), Delegate: decide(true)})
 	if !isStatus(err, http.StatusConflict) || !strings.Contains(err.Error(), "admin binding update") {
 		t.Fatalf("a delegation over a raw binding = %v, want a 409 pointing at the binding", err)
 	}
+}
+
+// decideRaw approves the use part granting the value itself.
+func decideRaw(raw serverapi.SecretRequestPartDecisionRaw) serverapi.OptSecretRequestPartDecision {
+	return serverapi.NewOptSecretRequestPartDecision(serverapi.SecretRequestPartDecision{
+		Decision: serverapi.SecretRequestPartDecisionDecisionApprove, Raw: serverapi.NewOptSecretRequestPartDecisionRaw(raw),
+	})
 }

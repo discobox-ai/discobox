@@ -17,7 +17,10 @@
 // docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md.
 package agentcreds
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Version is the protocol version every route is served under.
 const Version = "v1"
@@ -143,14 +146,14 @@ func AskedGrantTTL(seconds int64) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-// What a request asks the credential for. A grant is one or the other, never
-// both, so a person approving one agrees to one thing.
+// What a binding lets the caller do with a credential, as list reports it:
+// use it, or give it to the sandboxes it creates. A request asks for either or
+// both, as its use and delegate parts (ADR 26-11-02-022 §1).
 const (
-	// PurposeUse asks to use the credential: the approval delivers it in the
-	// variable asked for. It is what a request naming no purpose asks.
+	// PurposeUse is a credential delivered in its variable.
 	PurposeUse = "use"
-	// PurposeDelegate asks to give the credential to the sandboxes the caller
-	// creates. The approval authorizes nothing the caller sends itself.
+	// PurposeDelegate is a credential the caller may give the sandboxes it
+	// creates. It authorizes nothing the caller sends itself.
 	PurposeDelegate = "delegate"
 )
 
@@ -164,44 +167,99 @@ const (
 	RawFile = "file"
 )
 
-// RequestBody asks a human for a credential.
+// RequestBody asks a human for a credential: to use it, to delegate it, or
+// both, in one request a person answers at once (ADR 26-11-02-022 §1).
 //
-// GrantTTLSeconds is how long the agent asks the approval to last. It is a
-// suggestion, not a term: the approver sees it as the answer already chosen and
-// may pick any other. Zero asks for nothing in particular, and the ceiling is
-// MaxGrantTTLSeconds, so forever is not something an agent can ask for — the
-// human may still grant it, but the one answer that never comes back to be
-// asked again is never the default.
+// GrantTTLSeconds is how long the agent asks the approval to last, for both
+// parts. It is a suggestion, not a term: the approver sees it as the answer
+// already chosen and may pick any other. Zero asks for nothing in particular,
+// and the ceiling is MaxGrantTTLSeconds, so forever is not something an agent
+// can ask for — the human may still grant it, but the one answer that never
+// comes back to be asked again is never the default.
 //
-// Purpose is PurposeUse or PurposeDelegate; empty asks for PurposeUse.
+// The use part is EnvVar with Hosts, Routes or Policies: where the
+// credential will be sent, delivered in the variable. Delegate is the
+// delegate part, which names no variable. A request has at least one part.
 //
-// Hosts and Routes are where the credential will be sent; an ask names at
-// least one of either. A host is shorthand for one route to that exact host
-// and no host beneath it (ADR 26-10-02-393). A route is the typed form
-// `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`
+// Hosts and Routes name destinations. A host is shorthand for one route to
+// that exact host and no host beneath it (ADR 26-10-02-393). A route is the
+// typed form `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`
 // (ADR 26-10-27-880 §4), such as `GET api.github.com/repos/o/r/**` or
 // `api.github.com/graphql graphql=query`; the protocol carries it as written
-// and the implementation reads it.
+// and the implementation reads it. Policies name credential policy files
+// instead (ADR 26-10-30-584); on one part they are exclusive with routes and
+// hosts.
 //
 // Justification is shown to the person answering; nothing evaluates it.
 type RequestBody struct {
-	Name            string   `json:"name"`
-	EnvVar          string   `json:"envVar,omitempty"`
-	Hosts           []string `json:"hosts,omitempty"`
-	Routes          []string `json:"routes,omitempty"`
-	Justification   string   `json:"justification,omitempty"`
-	GrantTTLSeconds int64    `json:"grantTTLSeconds,omitempty"`
-	Purpose         string   `json:"purpose,omitempty"`
+	Name            string        `json:"name"`
+	EnvVar          string        `json:"envVar,omitempty"`
+	Hosts           []string      `json:"hosts,omitempty"`
+	Routes          []string      `json:"routes,omitempty"`
+	Policies        []Policy      `json:"policies,omitempty"`
+	Delegate        *DelegatePart `json:"delegate,omitempty"`
+	Justification   string        `json:"justification,omitempty"`
+	GrantTTLSeconds int64         `json:"grantTTLSeconds,omitempty"`
 }
 
-// RequestStatus is what request and its poll both answer with. Once granted,
-// Credential is what the caller now holds, as the approver chose it: the
-// hosts and lifetime may differ from the ones asked for. A credential granted
-// for PurposeUse is in its variable for every command started from then on.
+// Uses reports whether the request has a use part.
+func (b RequestBody) Uses() bool {
+	return b.EnvVar != "" || len(b.Hosts) > 0 || len(b.Routes) > 0 || len(b.Policies) > 0
+}
+
+// DelegatePart is the part of a request that asks to give the credential to
+// the sandboxes the caller creates. Routes or Policies, never both.
+type DelegatePart struct {
+	Routes   []string `json:"routes,omitempty"`
+	Policies []Policy `json:"policies,omitempty"`
+}
+
+// Policy names one credential policy file in a request (ADR 26-11-02-022 §2).
+// File is how the caller named it, and what an approver is shown; Args are
+// its arguments. Document is the file's JSON object, carried as it was read:
+// the implementation validates and resolves it, never the client, which reads
+// the file and fills Document in before sending.
+type Policy struct {
+	File     string            `json:"file"`
+	Args     map[string]string `json:"args,omitempty"`
+	Document json.RawMessage   `json:"document,omitempty"`
+}
+
+// Limits on what a request may carry (ADR 26-11-02-022 §2). A client refuses
+// a document over MaxPolicyBytes naming its file; the implementation refuses
+// a request over any of them.
+const (
+	// MaxPolicyBytes bounds one policy document.
+	MaxPolicyBytes = 64 << 10
+	// MaxRequestPolicies bounds the policies of one request, across its parts.
+	MaxRequestPolicies = 32
+	// MaxPartRoutes bounds the routes one part resolves to.
+	MaxPartRoutes = 512
+	// MaxRequestRouteBytes bounds what a whole request resolves to: the JSON
+	// encoding of every route it stores, each part's and each policy's. A
+	// count of routes does not bound their size: a small document can
+	// expand its arguments into a route of a megabyte, so a request's limit
+	// is on what it resolves to, not only on what it sent.
+	MaxRequestRouteBytes = 256 << 10
+)
+
+// RequestStatus is what request and its poll both answer with. Status is
+// pending until a person answers; then granted when any part was, denied
+// when none was. Use and Delegate report each part the request has (ADR
+// 26-11-02-022 §4).
 type RequestStatus struct {
-	RequestID  string      `json:"requestId"`
+	RequestID string      `json:"requestId"`
+	Status    string      `json:"status"`
+	Use       *PartStatus `json:"use,omitempty"`
+	Delegate  *PartStatus `json:"delegate,omitempty"`
+}
+
+// PartStatus is one part of a request. Once granted, Credential is what the
+// caller now holds under it, as the approver chose it: the hosts and lifetime
+// may differ from the ones asked for. A credential granted for use is in its
+// variable for every command started from then on.
+type PartStatus struct {
 	Status     string      `json:"status"`
-	Purpose    string      `json:"purpose,omitempty"`
 	Credential *Credential `json:"credential,omitempty"`
 }
 
@@ -209,6 +267,21 @@ type RequestStatus struct {
 // what a polling client waits for.
 func (s RequestStatus) Settled() bool {
 	return s.Status == StatusGranted || s.Status == StatusDenied
+}
+
+// Complete reports whether every part the request has was granted: what a
+// waiting client exits zero on, since a shell-driven agent reads zero as
+// having what it asked for.
+func (s RequestStatus) Complete() bool {
+	if s.Status != StatusGranted {
+		return false
+	}
+	for _, part := range []*PartStatus{s.Use, s.Delegate} {
+		if part != nil && part.Status != StatusGranted {
+			return false
+		}
+	}
+	return true
 }
 
 // EnvironmentResponse is what the environment read answers with: every

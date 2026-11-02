@@ -207,20 +207,20 @@ func TestMigrateRetiresTheCredentialJudge(t *testing.T) {
 		}
 
 		var requests []model.SecretRequest
-		if err := write.Order("purpose").Find(&requests).Error; err != nil {
+		if err := write.Order("delegate_asked DESC").Find(&requests).Error; err != nil {
 			t.Fatalf("run %d: list requests: %v", run, err)
 		}
 		if len(requests) != 2 {
 			t.Fatalf("run %d: requests = %+v, want the two sandbox grants asked again once", run, requests)
 		}
 		delegate, use := requests[0], requests[1]
-		if use.SandboxID != "sbx-1" || use.Status != model.SecretRequestStatusPending || use.Purpose != model.SecretPurposeUse ||
-			use.Name != "github" || use.EnvName != "GH_TOKEN" || !reflect.DeepEqual(use.Routes, []model.SecretRoute{upgraded("api.github.com", "", false)}) ||
+		if use.SandboxID != "sbx-1" || use.Status != model.SecretRequestStatusPending || !use.Use.Asked || use.Delegate.Asked ||
+			use.Name != "github" || use.EnvName != "GH_TOKEN" || !reflect.DeepEqual(use.Use.Routes, []model.SecretRoute{upgraded("api.github.com", "", false)}) ||
 			!strings.Contains(use.Justification, "open a PR") {
 			t.Fatalf("run %d: use request = %+v", run, use)
 		}
-		if delegate.Purpose != model.SecretPurposeDelegate || delegate.Status != model.SecretRequestStatusPending ||
-			!reflect.DeepEqual(delegate.Routes, []model.SecretRoute{upgraded("github.com", "", false)}) {
+		if !delegate.Delegate.Asked || delegate.Use.Asked || delegate.Status != model.SecretRequestStatusPending ||
+			!reflect.DeepEqual(delegate.Delegate.Routes, []model.SecretRoute{upgraded("github.com", "", false)}) {
 			t.Fatalf("run %d: delegate request = %+v", run, delegate)
 		}
 

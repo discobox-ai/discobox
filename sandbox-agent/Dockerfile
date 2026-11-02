@@ -97,8 +97,10 @@ COPY go.mod go.sum ./
 COPY pkg/agentcreds ./pkg/agentcreds
 COPY api ./api
 COPY pkg/auditid ./pkg/auditid
+COPY pkg/bindingplan ./pkg/bindingplan
 COPY pkg/configfile ./pkg/configfile
 COPY pkg/controlplane ./pkg/controlplane
+COPY pkg/credentialpolicy ./pkg/credentialpolicy
 COPY pkg/declared ./pkg/declared
 COPY pkg/endpoint ./pkg/endpoint
 COPY pkg/execstream ./pkg/execstream

@@ -160,8 +160,11 @@ func requestSubject(r CredentialRequest) string {
 		return "trust this host"
 	}
 	// An ask to delegate and an ask to use the same credential may both be
-	// waiting, and are different questions.
-	if r.Delegate {
+	// waiting, and are different questions; one request may ask both.
+	switch {
+	case r.asksBoth():
+		return credentialName(r) + " · to use and to delegate"
+	case r.delegateOnly():
 		return credentialName(r) + " · to delegate"
 	}
 	switch {

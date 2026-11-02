@@ -2,11 +2,13 @@ package agentcreds_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,7 +105,6 @@ func TestRequestCarriesTheAsk(t *testing.T) {
 		EnvVar:        "GITHUB_TOKEN",
 		Hosts:         []string{"api.github.com"},
 		Justification: "open a pull request",
-		Purpose:       agentcreds.PurposeUse,
 	}
 	status, err := newTestClient(t, svc).Request(context.Background(), ask)
 	if err != nil {
@@ -111,6 +112,106 @@ func TestRequestCarriesTheAsk(t *testing.T) {
 	}
 	if status.Status != agentcreds.StatusPending || !reflect.DeepEqual(svc.gotRequest, ask) {
 		t.Fatalf("request = %#v, asked %#v, want %#v pending", status, svc.gotRequest, ask)
+	}
+}
+
+// Both parts of a request, and the policy documents in them, reach the
+// service as they were sent (ADR 26-11-02-022 §§1–2).
+func TestRequestCarriesBothPartsAndTheirPolicies(t *testing.T) {
+	svc := &fakeService{}
+	ask := agentcreds.RequestBody{
+		Name:     "github",
+		EnvVar:   "GH_TOKEN",
+		Policies: []agentcreds.Policy{{File: "roles/submit.json", Args: map[string]string{"repo": "web"}, Document: json.RawMessage(`{"version":1,"routes":[{"hosts":["api.github.com"]}]}`)}},
+		Delegate: &agentcreds.DelegatePart{Routes: []string{"GET api.github.com/repos/acme/vm/**"}},
+	}
+	if _, err := newTestClient(t, svc).Request(context.Background(), ask); err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if !reflect.DeepEqual(svc.gotRequest, ask) {
+		t.Fatalf("service saw %#v, want %#v", svc.gotRequest, ask)
+	}
+	if !svc.gotRequest.Uses() {
+		t.Fatal("a request with policies does not report a use part")
+	}
+	if (agentcreds.RequestBody{Delegate: ask.Delegate}).Uses() {
+		t.Fatal("a delegate-only request reports a use part")
+	}
+}
+
+// A field the protocol does not know is refused as invalid rather than
+// dropped, so a client older than a removed field — a request's purpose — is
+// told so instead of having its ask read as something else.
+func TestRequestRefusesAnUnknownField(t *testing.T) {
+	svc := &fakeService{}
+	server := httptest.NewServer(agentcreds.NewHandler(svc))
+	t.Cleanup(server.Close)
+	body := `{"name":"github","hosts":["github.com"],"purpose":"delegate"}`
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+agentcreds.PathRequests, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var refusal agentcreds.ErrorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&refusal); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest || refusal.Code != agentcreds.CodeInvalid || !strings.Contains(refusal.Error, "purpose") {
+		t.Fatalf("status %d, %#v; want invalid naming purpose", resp.StatusCode, refusal)
+	}
+	if svc.gotRequest.Name != "" {
+		t.Fatalf("service saw %#v, want nothing", svc.gotRequest)
+	}
+}
+
+// A request carrying policy documents may be as large as MaxBodyBytes: the
+// limit is what MaxRequestPolicies documents of MaxPolicyBytes need.
+func TestRequestBodyUpToTheLimitIsRead(t *testing.T) {
+	svc := &fakeService{}
+	var policies []agentcreds.Policy
+	pad := strings.Repeat("x", agentcreds.MaxPolicyBytes-200)
+	for range 12 {
+		policies = append(policies, agentcreds.Policy{File: "p.json", Document: json.RawMessage(`{"version":1,"description":"` + pad + `","routes":[{"hosts":["a.example"]}]}`)})
+	}
+	ask := agentcreds.RequestBody{Name: "big", EnvVar: "T", Policies: policies}
+	encoded, err := json.Marshal(ask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) <= 64<<10 || len(encoded) > agentcreds.MaxBodyBytes {
+		t.Fatalf("test body is %d bytes, want between the old limit and MaxBodyBytes", len(encoded))
+	}
+	if _, err := newTestClient(t, svc).Request(context.Background(), ask); err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if len(svc.gotRequest.Policies) != 12 {
+		t.Fatalf("service saw %d policies, want 12", len(svc.gotRequest.Policies))
+	}
+}
+
+// Complete is whether every part asked for was granted: what a waiting
+// client exits zero on (ADR 26-11-02-022 §4).
+func TestCompleteNeedsEveryPartGranted(t *testing.T) {
+	granted := &agentcreds.PartStatus{Status: agentcreds.StatusGranted}
+	denied := &agentcreds.PartStatus{Status: agentcreds.StatusDenied}
+	for name, tc := range map[string]struct {
+		status agentcreds.RequestStatus
+		want   bool
+	}{
+		"use granted":     {agentcreds.RequestStatus{Status: agentcreds.StatusGranted, Use: granted}, true},
+		"both granted":    {agentcreds.RequestStatus{Status: agentcreds.StatusGranted, Use: granted, Delegate: granted}, true},
+		"delegate denied": {agentcreds.RequestStatus{Status: agentcreds.StatusGranted, Use: granted, Delegate: denied}, false},
+		"denied":          {agentcreds.RequestStatus{Status: agentcreds.StatusDenied, Use: denied}, false},
+		"pending":         {agentcreds.RequestStatus{Status: agentcreds.StatusPending, Use: &agentcreds.PartStatus{Status: agentcreds.StatusPending}}, false},
+	} {
+		if got := tc.status.Complete(); got != tc.want {
+			t.Errorf("%s: Complete() = %v, want %v", name, got, tc.want)
+		}
 	}
 }
 
@@ -128,7 +229,7 @@ func TestDenialRoundTripsAsDenial(t *testing.T) {
 func TestWaitForRequestPollsUntilSettled(t *testing.T) {
 	svc := &fakeService{statuses: []agentcreds.RequestStatus{
 		{RequestID: "req-1", Status: agentcreds.StatusPending},
-		{RequestID: "req-1", Status: agentcreds.StatusGranted, Credential: &agentcreds.Credential{Name: "github", EnvVar: "GITHUB_TOKEN"}},
+		{RequestID: "req-1", Status: agentcreds.StatusGranted, Use: &agentcreds.PartStatus{Status: agentcreds.StatusGranted, Credential: &agentcreds.Credential{Name: "github", EnvVar: "GITHUB_TOKEN"}}},
 	}}
 	client := newTestClient(t, svc)
 	status, err := client.Request(context.Background(), agentcreds.RequestBody{Name: "github", EnvVar: "GITHUB_TOKEN", Hosts: []string{"api.github.com"}})
@@ -142,7 +243,7 @@ func TestWaitForRequestPollsUntilSettled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
-	if settled.Status != agentcreds.StatusGranted || settled.Credential == nil || settled.Credential.EnvVar != "GITHUB_TOKEN" {
+	if settled.Status != agentcreds.StatusGranted || settled.Use == nil || settled.Use.Credential == nil || settled.Use.Credential.EnvVar != "GITHUB_TOKEN" {
 		t.Fatalf("settled = %#v", settled)
 	}
 }
@@ -282,5 +383,29 @@ func TestWaitForRequestEndsOnWhatItStartedWith(t *testing.T) {
 	status, err := waitServer(t, http.StatusBadGateway).WaitForRequest(ctx, known, time.Millisecond)
 	if err != nil || status != known {
 		t.Fatalf("wait = %+v, %v; want %+v and no error", status, err, known)
+	}
+}
+
+// A body over MaxBodyBytes is refused naming the limit, not as a bare read
+// error: the client can tell its documents together were too large.
+func TestRequestOverTheBodyLimitNamesIt(t *testing.T) {
+	server := httptest.NewServer(agentcreds.NewHandler(&fakeService{}))
+	t.Cleanup(server.Close)
+	body := `{"name":"big","justification":"` + strings.Repeat("x", agentcreds.MaxBodyBytes) + `"}`
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+agentcreds.PathRequests, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var refusal agentcreds.ErrorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&refusal); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(refusal.Error, "MaxBodyBytes") {
+		t.Fatalf("status %d, %q; want a refusal naming MaxBodyBytes", resp.StatusCode, refusal.Error)
 	}
 }

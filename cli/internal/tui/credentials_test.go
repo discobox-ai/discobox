@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/cli/internal/requestrole"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 )
 
@@ -26,7 +27,7 @@ func waitingRequest() CredentialRequest {
 		SandboxID:     "sbx_one",
 		Name:          "github",
 		EnvVar:        "GH_TOKEN",
-		Routes:        []secretroute.Route{{Hosts: []string{"api.github.com"}}},
+		Use:           &RequestPart{Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}},
 		Justification: "the task asks me to open a PR",
 		Created:       time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC),
 	}
@@ -145,7 +146,7 @@ func TestAnAskToDelegateSaysWhatItIs(t *testing.T) {
 	t.Parallel()
 	ds := newFakeSource(testSandboxes()...)
 	req := waitingRequest()
-	req.Delegate = true
+	req.Delegate, req.Use = &RequestPart{Routes: req.routes()}, nil
 	ds.requests = []CredentialRequest{req}
 	m := newTestModel(t, ds)
 
@@ -895,5 +896,107 @@ func TestAPlaceholderIsGrantedWhenChosen(t *testing.T) {
 	drain(t, m, m.dialog.action("sentinel"), 0)
 	if len(ds.approvals) != 1 || ds.approvals[0].Raw != "" {
 		t.Fatalf("approvals = %#v, want one granting a placeholder", ds.approvals)
+	}
+}
+
+// A request that asks both to use a credential and to delegate it is
+// answered part by part, on one card each before anything is sent: no row
+// approves one part and leaves the other unsaid, the card says what an
+// approved part replaces, and the answer goes as one call with both
+// decisions (ADR 26-11-02-022 §§3–5).
+func TestARequestWithTwoPartsIsAnsweredPartByPart(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	req := waitingRequest()
+	pulls := secretroute.Route{Hosts: []string{"api.github.com"}, Methods: []string{"POST"}, Paths: []string{"/repos/acme/web/pulls"}}
+	req.Use = &RequestPart{Routes: req.routes()}
+	req.Delegate = &RequestPart{Routes: []secretroute.Route{pulls}, Roles: requestrole.Group([]requestrole.Policy{{
+		Name: "github-submit", Description: "Open pull requests in one repository", Digest: "d1",
+		Args: map[string]string{"repo": "web"}, Routes: []secretroute.Route{pulls},
+	}})}
+	ds.requests = []CredentialRequest{req}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
+	ds.projectBindings = []SecretBinding{
+		{ID: "sbd_old", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: "sbx_one", Use: true, EnvVar: "GITHUB_TOKEN"},
+		{ID: "sbd_other", SecretID: "sec_gh", TargetKind: BindingSandbox, TargetID: "sbx_two", Use: true, EnvVar: "ELSEWHERE"},
+	}
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	if !onRequestCard(m) {
+		t.Fatalf("dialog = %s, want the request card", describe(m.dialog))
+	}
+	for _, want := range []string{"the delegate part", "github-submit: repo=web", "the discobox's words", "grants api.github.com · POST · /repos/acme/web/pulls"} {
+		if !strings.Contains(dialogText(m), want) {
+			t.Fatalf("card = %q, want %q", dialogText(m), want)
+		}
+	}
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, time.Hour)
+	if len(ds.approvals) != 0 || m.dialog == nil || m.dialog.title != "Which parts?" {
+		t.Fatalf("dialog = %s, approvals %v; want both parts asked before anything is sent", describe(m.dialog), ds.approvals)
+	}
+	text := dialogText(m)
+	if !strings.Contains(text, "in GITHUB_TOKEN") || strings.Contains(text, "ELSEWHERE") {
+		t.Fatalf("card = %q, want what the asking discobox holds, and only that, said as replaced", text)
+	}
+	drain(t, m, m.dialog.action("use"), 0)
+	if len(ds.approvals) != 1 {
+		t.Fatalf("approvals = %#v, want one call", ds.approvals)
+	}
+	if got := ds.approvals[0]; got.Use != PartApprove || got.Delegate != PartDeny || got.SecretID != "sec_gh" {
+		t.Fatalf("approval = %#v, want the use part approved and the delegation denied", got)
+	}
+}
+
+// A request with one part is approved by choosing a secret, as before, and
+// says only that part.
+func TestARequestWithOnePartNamesOnlyThatPart(t *testing.T) {
+	t.Parallel()
+	m, ds := sourceWithRequest(t)
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
+	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
+	grantFor(t, m, time.Hour)
+	if len(ds.approvals) != 1 || ds.approvals[0].Use != PartApprove || ds.approvals[0].Delegate != "" {
+		t.Fatalf("approvals = %#v, want the use part approved and nothing said of a delegate part", ds.approvals)
+	}
+}
+
+// The card says, of each binding the asking discobox holds of the secret,
+// what approving a part does to it — kept, gone, losing its use, split — by
+// the rule the server applies, and when a new one is made (ADR 26-11-02-022
+// §5).
+func TestTheCardSaysWhatEachBindingBecomes(t *testing.T) {
+	t.Parallel()
+	at := func(m int) time.Time { return time.Date(2026, 11, 2, 0, m, 0, 0, time.UTC) }
+	standing := []SecretBinding{
+		{ID: "old", Use: true, EnvVar: "GITHUB_TOKEN", Created: at(0)},
+		{ID: "asked", Use: true, EnvVar: "GH_TOKEN", Created: at(1)},
+		{ID: "both", Use: true, Delegate: true, EnvVar: "GH_LEAD", Created: at(2)},
+	}
+	use := replacedText(standing, false, "GH_TOKEN", true)
+	for _, want := range []string{
+		"the one in GH_TOKEN, sent to the secret's routes — kept, takes this approval",
+		"the one in GITHUB_TOKEN, sent to the secret's routes — goes",
+		"the one in GH_LEAD, sent to the secret's routes — loses its use; its delegation stays",
+	} {
+		if !strings.Contains(use, want) {
+			t.Errorf("use part:\n%s\nwant %q", use, want)
+		}
+	}
+	delegate := replacedText(standing, true, "GH_TOKEN", false)
+	if !strings.Contains(delegate, "stays the delegation; its use moves to a binding of its own in GH_LEAD") || strings.Contains(delegate, "GITHUB_TOKEN") {
+		t.Errorf("delegate part:\n%s", delegate)
+	}
+	if got := replacedText(standing[2:], false, "GH_TOKEN", true); !strings.Contains(got, "and a new binding is made") {
+		t.Errorf("a use part with nothing to keep:\n%s", got)
+	}
+	// Both parts approved over the binding that uses and delegates: the use
+	// part takes its use, and the delegate part then updates the delegation
+	// left — no split, no second new use binding.
+	both := standing[2:]
+	if got := replacedText(both, true, "GH_TOKEN", true); !strings.Contains(got, "the delegation, sent to the secret's routes — kept, takes this approval") ||
+		strings.Contains(got, "moves") || strings.Contains(got, "new binding") {
+		t.Errorf("delegate part after the use part:\n%s", got)
 	}
 }

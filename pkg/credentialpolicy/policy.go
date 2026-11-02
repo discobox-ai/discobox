@@ -1,15 +1,20 @@
-// Package credentialpolicy resolves local credential policy files into the
-// concrete route snapshot a binding holds (ADR 26-10-30-584).
+// Package credentialpolicy resolves credential policy documents into the
+// concrete route snapshot a binding holds (ADR 26-10-30-584): the CLI reads
+// them from local files for a binding a person writes, and the server
+// resolves the documents a credential request carries (ADR 26-11-02-022 §2).
 package credentialpolicy
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -94,59 +99,95 @@ func read(ref Reference) ([]secretroute.Route, error) {
 	if len(data) > policyByteLimit {
 		return nil, fmt.Errorf("file exceeds 1 MiB")
 	}
+	resolved, err := ResolveDocument(data, ref.Args)
+	if err != nil {
+		return nil, err
+	}
+	return resolved.Routes, nil
+}
+
+// Resolved is one policy document resolved against its arguments.
+//
+// Routes is what the document grants. Description is the document's own
+// text, Digest the SHA-256 of its canonical JSON (keys sorted, no
+// insignificant space), so two copies of one document group together
+// whatever their spelling, and UnusedArgs the arguments given that no route
+// path names: arguments shown beside a role must never suggest a narrowing
+// the document does not make (ADR 26-11-02-022 §3).
+type Resolved struct {
+	Routes      []secretroute.Route
+	Description string
+	Digest      string
+	UnusedArgs  []string
+}
+
+// ResolveDocument validates one policy document and resolves it against
+// args. It is what a file reference resolves through, and what the server
+// resolves a request's documents with, so a document means one thing
+// wherever it is read.
+func ResolveDocument(data []byte, args map[string]string) (Resolved, error) {
+	if len(data) > policyByteLimit {
+		return Resolved{}, fmt.Errorf("document exceeds 1 MiB")
+	}
 	if !utf8.Valid(data) {
-		return nil, fmt.Errorf("file is not valid UTF-8")
+		return Resolved{}, fmt.Errorf("document is not valid UTF-8")
+	}
+	for name := range args {
+		if !parameterName.MatchString(name) || name == "policy" {
+			return Resolved{}, fmt.Errorf("argument %q has an invalid or reserved name", name)
+		}
 	}
 	d := json.NewDecoder(bytes.NewReader(data))
 	if err := checkJSON(d, reflect.TypeFor[document](), "$", 0); err != nil {
-		return nil, err
+		return Resolved{}, err
 	}
 	if _, err := d.Token(); err != io.EOF {
-		return nil, fmt.Errorf("trailing JSON")
+		return Resolved{}, fmt.Errorf("trailing JSON")
 	}
 	var doc document
 	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, err
+		return Resolved{}, err
 	}
 	if doc.Version != 1 {
-		return nil, fmt.Errorf("version must be 1")
+		return Resolved{}, fmt.Errorf("version must be 1")
 	}
 	if len(doc.Routes) == 0 {
-		return nil, fmt.Errorf("routes must be nonempty")
+		return Resolved{}, fmt.Errorf("routes must be nonempty")
 	}
 	values := map[string]string{}
 	for name, p := range doc.Parameters {
 		if !parameterName.MatchString(name) || name == "policy" {
-			return nil, fmt.Errorf("parameter %q has an invalid or reserved name", name)
+			return Resolved{}, fmt.Errorf("parameter %q has an invalid or reserved name", name)
 		}
 		if p.Type != "pathSegment" {
-			return nil, fmt.Errorf("parameter %q: type must be pathSegment", name)
+			return Resolved{}, fmt.Errorf("parameter %q: type must be pathSegment", name)
 		}
 		if p.Optional != (p.Default != nil) {
-			return nil, fmt.Errorf("parameter %q: optional parameters require a default; required parameters cannot have one", name)
+			return Resolved{}, fmt.Errorf("parameter %q: optional parameters require a default; required parameters cannot have one", name)
 		}
 		if p.Default != nil {
 			if err := literal(*p.Default); err != nil {
-				return nil, fmt.Errorf("parameter %q default: %w", name, err)
+				return Resolved{}, fmt.Errorf("parameter %q default: %w", name, err)
 			}
 		}
-		v, ok := ref.Args[name]
+		v, ok := args[name]
 		if !ok {
 			if !p.Optional {
-				return nil, fmt.Errorf("required parameter %q is missing", name)
+				return Resolved{}, fmt.Errorf("required parameter %q is missing", name)
 			}
 			v = *p.Default
 		}
 		if err := literal(v); err != nil {
-			return nil, fmt.Errorf("parameter %q: %w", name, err)
+			return Resolved{}, fmt.Errorf("parameter %q: %w", name, err)
 		}
 		values[name] = v
 	}
-	for name := range ref.Args {
+	for name := range args {
 		if _, ok := doc.Parameters[name]; !ok {
-			return nil, fmt.Errorf("unknown parameter %q", name)
+			return Resolved{}, fmt.Errorf("unknown parameter %q", name)
 		}
 	}
+	used := map[string]bool{}
 	remainingPathBytes := policyByteLimit
 	for i, route := range doc.Routes {
 		// Only paths allow placeholders. Check all other fields as encoded JSON.
@@ -154,10 +195,10 @@ func read(ref Reference) ([]secretroute.Route, error) {
 		route.Paths = nil
 		other, err := json.Marshal(route)
 		if err != nil {
-			return nil, fmt.Errorf("routes[%d]: %w", i, err)
+			return Resolved{}, fmt.Errorf("routes[%d]: %w", i, err)
 		}
 		if strings.Contains(string(other), "${") {
-			return nil, fmt.Errorf("routes[%d]: parameters are supported only in paths", i)
+			return Resolved{}, fmt.Errorf("routes[%d]: parameters are supported only in paths", i)
 		}
 		for j, path := range paths {
 			originalSegments := strings.Split(path, "/")
@@ -165,7 +206,7 @@ func read(ref Reference) ([]secretroute.Route, error) {
 			for {
 				before, after, found := strings.Cut(path, "${")
 				if len(before) > remainingPathBytes {
-					return nil, fmt.Errorf("routes[%d].paths[%d]: expanded paths exceed 1 MiB", i, j)
+					return Resolved{}, fmt.Errorf("routes[%d].paths[%d]: expanded paths exceed 1 MiB", i, j)
 				}
 				remainingPathBytes -= len(before)
 				b.WriteString(before)
@@ -174,14 +215,15 @@ func read(ref Reference) ([]secretroute.Route, error) {
 				}
 				name, tail, closed := strings.Cut(after, "}")
 				if !closed {
-					return nil, fmt.Errorf("routes[%d].paths[%d]: unclosed parameter", i, j)
+					return Resolved{}, fmt.Errorf("routes[%d].paths[%d]: unclosed parameter", i, j)
 				}
 				v, ok := values[name]
+				used[name] = true
 				if !ok {
-					return nil, fmt.Errorf("routes[%d].paths[%d]: undeclared parameter %q", i, j, name)
+					return Resolved{}, fmt.Errorf("routes[%d].paths[%d]: undeclared parameter %q", i, j, name)
 				}
 				if len(v) > remainingPathBytes {
-					return nil, fmt.Errorf("routes[%d].paths[%d]: expanded paths exceed 1 MiB", i, j)
+					return Resolved{}, fmt.Errorf("routes[%d].paths[%d]: expanded paths exceed 1 MiB", i, j)
 				}
 				remainingPathBytes -= len(v)
 				b.WriteString(v)
@@ -190,21 +232,44 @@ func read(ref Reference) ([]secretroute.Route, error) {
 			paths[j] = b.String()
 			for k, part := range strings.Split(paths[j], "/") {
 				if part == "" && originalSegments[k] != "" {
-					return nil, fmt.Errorf("routes[%d].paths[%d]: an empty argument cannot remove a path segment", i, j)
+					return Resolved{}, fmt.Errorf("routes[%d].paths[%d]: an empty argument cannot remove a path segment", i, j)
 				}
 			}
 		}
 		route.Paths = paths
 		normalized, err := secretroute.Normalize(route)
 		if err != nil {
-			return nil, fmt.Errorf("routes[%d]: %w", i, err)
+			return Resolved{}, fmt.Errorf("routes[%d]: %w", i, err)
 		}
 		doc.Routes[i] = normalized
 	}
-	return doc.Routes, nil
+	var canonical any
+	if err := json.Unmarshal(data, &canonical); err != nil {
+		return Resolved{}, err
+	}
+	compact, err := json.Marshal(canonical)
+	if err != nil {
+		return Resolved{}, err
+	}
+	sum := sha256.Sum256(compact)
+	var unused []string
+	for name := range args {
+		if !used[name] {
+			unused = append(unused, name)
+		}
+	}
+	sort.Strings(unused)
+	return Resolved{Routes: doc.Routes, Description: doc.Description, Digest: hex.EncodeToString(sum[:]), UnusedArgs: unused}, nil
 }
 
+// maxSegmentBytes bounds one argument or default: a path segment, which no
+// real name comes near, and which every placeholder naming it repeats.
+const maxSegmentBytes = 256
+
 func literal(value string) error {
+	if len(value) > maxSegmentBytes {
+		return fmt.Errorf("a path segment is at most %d bytes, not %d", maxSegmentBytes, len(value))
+	}
 	if !segment.MatchString(value) || value == "." || value == ".." {
 		return fmt.Errorf("want a literal path segment containing only letters, digits, ., _, ~ or -")
 	}

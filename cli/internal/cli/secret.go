@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -346,7 +347,15 @@ func (a *App) newSecretRequestListCommand() *cobra.Command {
 }
 
 func (a *App) newSecretRequestGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get REQUEST_ID", Short: "Show a secret request", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var secretRef string
+	cmd := &cobra.Command{Use: "get REQUEST_ID", Short: "Show a secret request", Long: `Show a secret request: what each part asks, the roles it was asked by beside
+what their routes grant, and the answer once there is one.
+
+--secret, on a pending request, shows what approving every part with that
+secret would do to the bindings the discobox already holds of it: a part
+approved replaces them, so access it loses is read before it is approved
+(ADR 26-11-02-022 §5). approve --secret says it again for the parts it
+approves.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -367,30 +376,55 @@ func (a *App) newSecretRequestGetCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return a.writeSecretRequest(cmd, request)
+		var replacements []partReplacement
+		if strings.TrimSpace(secretRef) != "" {
+			if request.Status != apiclientgen.SecretRequestStatusPending {
+				return fmt.Errorf("--secret shows what approving would replace; request %s is already %s", request.ID, request.Status)
+			}
+			secretID, err := a.resolveSecretID(cmd.Context(), client, projectID, secretRef)
+			if err != nil {
+				return err
+			}
+			if replacements, err = a.requestReplacements(cmd.Context(), client, projectID, request, secretID, true, true); err != nil {
+				return err
+			}
+		}
+		return a.writeSecretRequest(cmd, request, replacements)
 	}}
+	cmd.Flags().StringVar(&secretRef, "secret", "", "On a pending request: show what approving it with this secret, by name or ID, would replace")
+	return cmd
 }
 
 func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	var secretRef string
 	var raw rawFlag
-	var routes []string
+	var routes, delegateRoutes []string
+	var useDecision, delegateDecision decisionFlag
 	lifetimeFlag := lifetime.NewFlag()
-	cmd := &cobra.Command{Use: "approve REQUEST_ID", Short: "Approve a secret request, binding the secret to the discobox that asked", Long: `Approve a secret request: the secret is bound to the discobox that asked,
-in the variable it asked for, or delegated to it when it asked to delegate.
+	cmd := &cobra.Command{Use: "approve REQUEST_ID", Short: "Answer a secret request, binding the secret to the discobox that asked", Long: `Answer a secret request: each part approved binds the secret to the discobox
+that asked. A request has a use part — the secret in the variable it asked for
+— a delegate part — the secret given on to the discoboxes it creates — or both
+(ADR 26-11-02-022).
+
+An answer decides every part the request has. A request with one part is
+approved by this command; one with both needs a decision for each, --use and
+--delegate, approve or deny, and is refused without one. A part approved
+replaces the discobox's own bindings of that kind for the secret; a part
+denied leaves them as they are.
 
 --secret names the secret that answers it when the request named one that is
-not a project secret's name, or to choose another. --route narrows where it may be
-sent; left out, the binding is held to the routes the request named. --for is
-how long it lasts; left out, what the request asked for, else an hour, within
-the secret's limit.
+not a project secret's name, or to choose another. --route narrows where the
+use part may send it, --delegate-route what the delegate part may hand on;
+left out, a part is held to the routes it asked for. --for is how long each
+part approved lasts; left out, what the request asked for, else an hour,
+within the secret's limit.
 
 --raw grants the value itself rather than a sentinel, for a program that
 signs with it or sends it where an exchange cannot reach: env puts it in the
 variable, file the path of a file in memory holding it. It is yours to choose
-— a request never asks for it — and the secret must allow it (secret update
---allow-raw). The discobox can then send the value anywhere; its pool only
-refuses a request carrying it off its routes.
+— a request never asks for it — the secret must allow it (secret update
+--allow-raw), and only the use part takes it. The discobox can then send the
+value anywhere; its pool only refuses a request carrying it off its routes.
 
 ` + routeHelp, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
@@ -405,68 +439,223 @@ refuses a request carrying it off its routes.
 		if err != nil {
 			return err
 		}
-		body := &apimodel.ApproveSecretRequestBody{}
+		// Which parts the request has decides what the answer must say, so it
+		// is read first.
+		res, err := client.GetSecretRequest(cmd.Context(), apiclientgen.GetSecretRequestParams{ProjectId: projectID, RequestId: requestID})
+		if err != nil {
+			return err
+		}
+		asked, err := expectResponse[apimodel.SecretRequest](res)
+		if err != nil {
+			return err
+		}
+		useRoutes, err := routeFlagValues("--route", routes)
+		if err != nil {
+			return err
+		}
+		handedOn, err := routeFlagValues("--delegate-route", delegateRoutes)
+		if err != nil {
+			return err
+		}
+		body, err := approvalBody(asked, approvalAnswer{
+			use:            useDecision,
+			delegate:       delegateDecision,
+			useRoutes:      useRoutes,
+			delegateRoutes: handedOn,
+			raw:            raw,
+			lifetime:       lifetimeFlag,
+		})
+		if err != nil {
+			return err
+		}
 		// A discobox approving answers with the secret it was delegated, so
 		// the secret is named only when there is a choice to make.
+		// What the approval replaces is read before it is sent, while the
+		// discobox still holds it, and said after.
+		var replacements []partReplacement
 		if strings.TrimSpace(secretRef) != "" {
 			selectedSecretID, err := a.resolveSecretID(cmd.Context(), client, projectID, secretRef)
 			if err != nil {
 				return err
 			}
 			body.SetSecretId(apiclientgen.NewOptString(selectedSecretID))
+			if replacements, err = a.requestReplacements(cmd.Context(), client, projectID, asked, selectedSecretID, approves(body.Use), approves(body.Delegate)); err != nil {
+				return err
+			}
 		}
-		parsed, err := routeFlagValues("--route", routes)
+		res2, err := client.ApproveSecretRequest(cmd.Context(), body, apiclientgen.ApproveSecretRequestParams{ProjectId: projectID, RequestId: requestID})
 		if err != nil {
 			return err
 		}
-		body.Routes = parsed
-		// Sent only when given: left out, the server binds for what the
-		// request asked, else an hour, within the secret's limit — what the
-		// window opens on — so approving reads nothing first.
-		if seconds, given := lifetimeFlag.Seconds(); given {
-			body.SetTtlSeconds(apiclientgen.NewOptInt64(seconds))
-		}
-		if raw.set {
-			body.SetRaw(apiclientgen.NewOptApproveSecretRequestBodyRaw(apiclientgen.ApproveSecretRequestBodyRaw(raw.value)))
-		}
-		res, err := client.ApproveSecretRequest(cmd.Context(), body, apiclientgen.ApproveSecretRequestParams{ProjectId: projectID, RequestId: requestID})
+		request, err := expectResponse[apimodel.SecretRequest](res2)
 		if err != nil {
 			return err
 		}
-		request, err := expectResponse[apimodel.SecretRequest](res)
-		if err != nil {
-			return err
+		if a.output == "json" || a.quiet {
+			return a.writeSecretRequest(cmd, request, nil)
 		}
-		bindingID, made := request.BindingId.Get()
-		if a.output == "json" || a.quiet || !made || bindingID == "" {
-			return a.writeSecretRequest(cmd, request)
-		}
-		// What was approved is the binding, not the ask: its routes and
+		// What was approved is each binding, not the ask: its routes and
 		// lifetime can be narrower than what the agent asked for, so they are
 		// read back and said as `secret bind` says them.
-		return a.writeApprovedBinding(cmd, client, projectID, request, bindingID)
+		return a.writeApprovedParts(cmd, client, projectID, request, replacements)
 	}}
 	cmd.Flags().StringVar(&secretRef, "secret", "", "The secret that answers the request, by name or ID")
-	cmd.Flags().StringArrayVar(&routes, "route", nil, "Where it may be sent, narrowing the secret's routes, as "+secretroute.Syntax+"; one per flag, repeat for more (default the routes the request named)")
+	cmd.Flags().Var(&useDecision, "use", "The use part's answer: approve or deny (required when the request also asks to delegate)")
+	cmd.Flags().Var(&delegateDecision, "delegate", "The delegate part's answer: approve or deny (required when the request also asks to use)")
+	cmd.Flags().StringArrayVar(&routes, "route", nil, "Where the use part may send it, narrowing the secret's routes, as "+secretroute.Syntax+"; one per flag, repeat for more (default the routes the part named)")
+	cmd.Flags().StringArrayVar(&delegateRoutes, "delegate-route", nil, "What the delegate part may hand on, as a route like --route; one per flag (default the routes the part named)")
 	cmd.Flags().Var(lifetimeFlag, "for", bindingLifetimeApproveFlagUsage)
-	cmd.Flags().Var(&raw, "raw", "Grant the value itself: env (in the variable) or file (a file whose path is in it); left out, a sentinel")
+	cmd.Flags().Var(&raw, "raw", "Use part only: grant the value itself, env (in the variable) or file (a file whose path is in it); left out, a sentinel")
 	return cmd
 }
 
-// writeApprovedBinding says what an approval granted, in the sentence
-// `secret bind` prints: the variable, where it may be sent, how long.
-func (a *App) writeApprovedBinding(cmd *cobra.Command, client *apiclientgen.Client, projectID string, request *apimodel.SecretRequest, bindingID string) error {
+// decisionFlag is --use and --delegate: a part's answer, approve or deny.
+type decisionFlag struct{ value string }
+
+func (f *decisionFlag) Set(text string) error {
+	switch text = strings.TrimSpace(text); text {
+	case "approve", "deny":
+		f.value = text
+		return nil
+	}
+	return fmt.Errorf("%q is not an answer: approve or deny", text)
+}
+
+// String is empty until set, so help prints no default: what leaving it out
+// means is the usage's to say.
+func (f *decisionFlag) String() string { return f.value }
+
+func (f *decisionFlag) Type() string { return "answer" }
+
+// approvalAnswer is what the approve command was told about each part.
+type approvalAnswer struct {
+	use, delegate             decisionFlag
+	useRoutes, delegateRoutes []apimodel.SecretRouteInput
+	raw                       rawFlag
+	lifetime                  *lifetime.Flag
+}
+
+// approvalBody turns the flags into an answer naming a decision for every
+// part the request has (ADR 26-11-02-022 §4): the server refuses one that
+// leaves a part out, so it is refused here first, naming the flag. A request
+// with one part is approved by default; one with both is not, since
+// approving a delegation nobody looked at is what the rule is for.
+func approvalBody(request *apimodel.SecretRequest, answer approvalAnswer) (*apimodel.ApproveSecretRequestBody, error) {
+	_, hasUse := request.Use.Get()
+	_, hasDelegate := request.Delegate.Get()
+	if !hasUse && !hasDelegate {
+		// A request from before parts: it asks to use.
+		hasUse = true
+	}
+	switch {
+	case answer.use.value != "" && !hasUse:
+		return nil, fmt.Errorf("--use: request %s does not ask to use the credential; answer its delegate part with --delegate", request.ID)
+	case answer.delegate.value != "" && !hasDelegate:
+		return nil, fmt.Errorf("--delegate: request %s does not ask to delegate the credential; answer its use part with --use", request.ID)
+	case hasUse && hasDelegate && (answer.use.value == "" || answer.delegate.value == ""):
+		missing := "--use"
+		if answer.use.value != "" {
+			missing = "--delegate"
+		}
+		return nil, fmt.Errorf("request %s asks both to use the credential and to delegate it: answer each part, --use approve|deny and --delegate approve|deny (missing %s)", request.ID, missing)
+	}
+	decide := func(given string) string {
+		if given == "" {
+			return "approve"
+		}
+		return given
+	}
+	body := &apimodel.ApproveSecretRequestBody{}
+	seconds, timed := answer.lifetime.Seconds()
+	if hasUse {
+		decision := decide(answer.use.value)
+		part := apimodel.SecretRequestPartDecision{Decision: apiclientgen.SecretRequestPartDecisionDecision(decision)}
+		if decision == "approve" {
+			part.Routes = answer.useRoutes
+			// Sent only when given: left out, the server binds for what the
+			// request asked, else an hour, within the secret's limit — what
+			// the window opens on.
+			if timed {
+				part.TtlSeconds = apiclientgen.NewOptInt64(seconds)
+			}
+			if answer.raw.set {
+				part.Raw = apiclientgen.NewOptSecretRequestPartDecisionRaw(apiclientgen.SecretRequestPartDecisionRaw(answer.raw.value))
+			}
+		} else if len(answer.useRoutes) > 0 || answer.raw.set {
+			return nil, fmt.Errorf("--route and --raw narrow an approved use part; the use part is denied")
+		}
+		body.Use = apiclientgen.NewOptSecretRequestPartDecision(part)
+	} else if len(answer.useRoutes) > 0 || answer.raw.set {
+		return nil, fmt.Errorf("--route and --raw are the use part's; request %s asks only to delegate (--delegate-route narrows what it hands on)", request.ID)
+	}
+	if hasDelegate {
+		decision := decide(answer.delegate.value)
+		part := apimodel.SecretRequestPartDecision{Decision: apiclientgen.SecretRequestPartDecisionDecision(decision)}
+		if decision == "approve" {
+			part.Routes = answer.delegateRoutes
+			if timed {
+				part.TtlSeconds = apiclientgen.NewOptInt64(seconds)
+			}
+		} else if len(answer.delegateRoutes) > 0 {
+			return nil, fmt.Errorf("--delegate-route narrows an approved delegate part; the delegate part is denied")
+		}
+		body.Delegate = apiclientgen.NewOptSecretRequestPartDecision(part)
+	} else if len(answer.delegateRoutes) > 0 {
+		return nil, fmt.Errorf("--delegate-route is the delegate part's; request %s does not ask to delegate", request.ID)
+	}
+	return body, nil
+}
+
+// writeApprovedParts says what an answer granted, part by part, in the
+// sentence `secret bind` prints: the variable, where it may be sent, how
+// long. A part denied says so.
+//
+// replacements are what each part was planned to replace before the answer
+// was sent; an approved part's is said, so the access the discobox lost is
+// read here rather than found later.
+func (a *App) writeApprovedParts(cmd *cobra.Command, client *apiclientgen.Client, projectID string, request *apimodel.SecretRequest, replacements []partReplacement) error {
+	fmt.Fprintf(cmd.OutOrStdout(), "Answered %s.\n", request.ID)
+	for _, part := range requestParts(request) {
+		bindingID := part.part.BindingId.Or("")
+		if part.outcome() != apiclientgen.SecretRequestPartOutcomeApproved || bindingID == "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "The %s part is %s.\n", part.label, part.statusText(request.Status))
+			continue
+		}
+		binding, err := a.writeApprovedBinding(cmd, client, projectID, request, bindingID)
+		if err != nil {
+			return err
+		}
+		// A role's name is never left standing over routes it no longer
+		// describes (ADR 26-11-02-022 §3).
+		if len(part.part.Policies) > 0 && !sameRouteSet(binding.Routes, part.part.Routes) {
+			fmt.Fprintf(cmd.OutOrStdout(), "The %s part was approved with routes other than its roles resolved to; the roles no longer describe it.\n", part.label)
+		}
+		for _, r := range replacements {
+			if r.label != part.label {
+				continue
+			}
+			for _, line := range r.lines(true) {
+				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", line)
+			}
+		}
+	}
+	return nil
+}
+
+// writeApprovedBinding says what one approved part granted, in the sentence
+// `secret bind` prints, and returns the binding.
+func (a *App) writeApprovedBinding(cmd *cobra.Command, client *apiclientgen.Client, projectID string, request *apimodel.SecretRequest, bindingID string) (*apimodel.SecretBinding, error) {
 	res, err := client.GetSecretBinding(cmd.Context(), apiclientgen.GetSecretBindingParams{ProjectId: projectID, BindingId: bindingID})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	binding, err := expectResponse[apimodel.SecretBinding](res)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	secret, err := a.getSecret(cmd.Context(), client, projectID, binding.SecretId)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	box := request.SandboxId.Or(binding.TargetId)
 	if res, err := client.GetSandbox(cmd.Context(), apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: box}); err == nil {
@@ -474,8 +663,7 @@ func (a *App) writeApprovedBinding(cmd *cobra.Command, client *apiclientgen.Clie
 			box = sandbox.DisplayName
 		}
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Approved %s.\n", request.ID)
-	return writeBound(cmd.OutOrStdout(), binding, secret, bindingTarget{kind: apiclientgen.CreateSecretBindingBodyTargetKindSandbox, said: box}, time.Now())
+	return binding, writeBound(cmd.OutOrStdout(), binding, secret, bindingTarget{kind: apiclientgen.CreateSecretBindingBodyTargetKindSandbox, said: box}, time.Now())
 }
 
 // routeFlagValues reads a repeatable --route flag into what the API takes:
@@ -751,4 +939,25 @@ func createSecretBodyType(value string) (apiclientgen.CreateSecretBodyType, erro
 	default:
 		return "", fmt.Errorf("secret type must be token, oauth, or exchange")
 	}
+}
+
+// sameRouteSet reports whether two route lists hold the same routes, in any
+// order: the server normalizes and may reorder what it stores, and a binding
+// approved as asked must not read as edited.
+func sameRouteSet(a, b []apimodel.SecretRoute) bool {
+	set := func(routes []apimodel.SecretRoute) []string {
+		out := make([]string, 0, len(routes))
+		for _, route := range apiroute.Routes(routes) {
+			out = append(out, secretroute.Format(route))
+		}
+		slices.Sort(out)
+		return slices.Compact(out)
+	}
+	return slices.Equal(set(a), set(b))
+}
+
+// approves reports whether a part's decision approves it.
+func approves(decision apiclientgen.OptSecretRequestPartDecision) bool {
+	d, ok := decision.Get()
+	return ok && d.Decision == apiclientgen.SecretRequestPartDecisionDecisionApprove
 }

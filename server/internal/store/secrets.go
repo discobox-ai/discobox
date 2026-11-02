@@ -544,32 +544,32 @@ func (s *Store) CreateSecretRequest(ctx context.Context, req *model.SecretReques
 }
 
 // FindPendingAgentCredentialRequests returns the open protocol-originated
-// requests for a sandbox's environment variable, routes, and purpose, newest
-// first. The purpose is part of the key because it changes
-// what approving the request mints: an ask to delegate is not a retry of an
-// ask to use. The routes — each host asked for being one — are compared as a
-// set (ADR 26-10-02-393 §3): approving either of two asks listing them in
-// another order grants the same thing.
+// requests that ask exactly what ask does, newest first: the same sandbox,
+// credential name, variable (or none), lifetime and parts, with the same
+// routes in each (ADR 26-11-02-022 §4). Approving either of two such asks
+// grants the same thing, so a retry reuses the first. Routes — each host
+// asked for being one — are compared as a set (ADR 26-10-02-393 §3). The
+// policies a part was asked by and the justification are left out: they do
+// not change what approval grants, so a retry relabeled is still a retry.
 //
-// It keys on (sandbox, env, routes) rather than on the secret the way the
-// reactive path does, because a protocol request names no secret: choosing one
-// is part of the approval. Which of them, if any, a new ask repeats is the
-// caller's to decide from what each asks for.
-func (s *Store) FindPendingAgentCredentialRequests(ctx context.Context, projectID, sandboxID, envName string, routes []model.SecretRoute, purpose string) ([]model.SecretRequest, error) {
+// It keys on what is asked rather than on the secret the way the reactive
+// path does, because a protocol request names no secret: choosing one is
+// part of the approval.
+func (s *Store) FindPendingAgentCredentialRequests(ctx context.Context, ask *model.SecretRequest) ([]model.SecretRequest, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var found []model.SecretRequest
-	err = read.Where("project_id = ? AND sandbox_id = ? AND env_name = ? AND purpose = ? AND status = ?",
-		projectID, sandboxID, envName, purpose, model.SecretRequestStatusPending).
+	err = read.Where("project_id = ? AND sandbox_id = ? AND name = ? AND env_name = ? AND ttl_seconds = ? AND use_asked = ? AND delegate_asked = ? AND status = ?",
+		ask.ProjectID, ask.SandboxID, ask.Name, ask.EnvName, ask.TTL, ask.Use.Asked, ask.Delegate.Asked, model.SecretRequestStatusPending).
 		Order("created_at DESC").Find(&found).Error
 	if err != nil {
 		return nil, err
 	}
 	out := found[:0]
 	for _, req := range found {
-		if model.SameRouteSet(req.Routes, routes) {
+		if model.SameRouteSet(req.Use.Routes, ask.Use.Routes) && model.SameRouteSet(req.Delegate.Routes, ask.Delegate.Routes) {
 			out = append(out, req)
 		}
 	}
@@ -667,7 +667,11 @@ func denySandboxSecretRequestsTx(tx *gorm.DB, projectID, sandboxID string) error
 	return tx.Model(&model.SecretRequest{}).
 		Where("project_id = ? AND sandbox_id = ? AND status = ?",
 			projectID, sandboxID, model.SecretRequestStatusPending).
-		Updates(map[string]any{"status": model.SecretRequestStatusDenied, "decided_at": closedAt(time.Now()), "decided_by": model.SecretBindingActorSystem}).Error
+		Updates(map[string]any{
+			"status": model.SecretRequestStatusDenied, "decided_at": closedAt(time.Now()), "decided_by": model.SecretBindingActorSystem,
+			"use_outcome":      gorm.Expr("CASE WHEN use_asked THEN ? ELSE '' END", model.SecretRequestPartDenied),
+			"delegate_outcome": gorm.Expr("CASE WHEN delegate_asked THEN ? ELSE '' END", model.SecretRequestPartDenied),
+		}).Error
 }
 
 // closedAt is when a request was decided or a refresh closed, in UTC: the

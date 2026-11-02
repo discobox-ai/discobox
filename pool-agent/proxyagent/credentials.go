@@ -63,30 +63,44 @@ type listCredentialsDoc struct {
 	Credentials []credentialDoc `json:"credentials"`
 }
 
+// createCredentialRequestDoc is an ask as the control plane takes it: a use
+// part (EnvVar with Hosts, Routes or Policies), a delegate part, or both (ADR
+// 26-11-02-022 §1). Policies and the delegate part are the protocol's own
+// types, whose JSON is the control plane's too, so each policy document is
+// carried as the bytes the sandbox sent and never re-encoded here.
 type createCredentialRequestDoc struct {
-	SandboxID       string   `json:"sandboxId"`
-	Name            string   `json:"name"`
-	EnvVar          string   `json:"envVar,omitempty"`
-	Hosts           []string `json:"hosts,omitempty"`
-	Routes          []string `json:"routes,omitempty"`
-	Justification   string   `json:"justification,omitempty"`
-	GrantTTLSeconds int64    `json:"grantTTLSeconds,omitempty"`
-	Purpose         string   `json:"purpose,omitempty"`
+	SandboxID       string                   `json:"sandboxId"`
+	Name            string                   `json:"name"`
+	EnvVar          string                   `json:"envVar,omitempty"`
+	Hosts           []string                 `json:"hosts,omitempty"`
+	Routes          []string                 `json:"routes,omitempty"`
+	Policies        []agentcreds.Policy      `json:"policies,omitempty"`
+	Delegate        *agentcreds.DelegatePart `json:"delegate,omitempty"`
+	Justification   string                   `json:"justification,omitempty"`
+	GrantTTLSeconds int64                    `json:"grantTTLSeconds,omitempty"`
 }
 
 // credentialRequestStatusDoc is a request's status as the control plane
-// answers it. Name, EnvVar and Hosts are what was granted, read when the
-// control plane says them.
+// answers it: pending until answered, then granted when any part was, and
+// each part the request has.
 type credentialRequestStatusDoc struct {
-	RequestID string     `json:"requestId"`
+	RequestID string                          `json:"requestId"`
+	Status    string                          `json:"status"`
+	Use       *credentialRequestPartStatusDoc `json:"use,omitempty"`
+	Delegate  *credentialRequestPartStatusDoc `json:"delegate,omitempty"`
+}
+
+// credentialRequestPartStatusDoc is one part of a request. Name, EnvVar and
+// Hosts are what was granted, read when the control plane says them.
+type credentialRequestPartStatusDoc struct {
 	Status    string     `json:"status"`
-	Purpose   string     `json:"purpose,omitempty"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 	Name      string     `json:"name,omitempty"`
 	EnvVar    string     `json:"envVar,omitempty"`
 	Hosts     []string   `json:"hosts,omitempty"`
-	// Raw is, once granted, the delivery of the value itself the approver
-	// chose (ADR 26-10-27-840 §2), so the agent is told it holds the value.
+	// Raw is, once the use part is granted, the delivery of the value itself
+	// the approver chose (ADR 26-10-27-840 §2), so the agent is told it holds
+	// the value.
 	Raw string `json:"raw,omitempty"`
 }
 
@@ -260,9 +274,10 @@ func (b *credentialBroker) Request(ctx context.Context, body agentcreds.RequestB
 		EnvVar:          body.EnvVar,
 		Hosts:           body.Hosts,
 		Routes:          body.Routes,
+		Policies:        body.Policies,
+		Delegate:        body.Delegate,
 		Justification:   body.Justification,
 		GrantTTLSeconds: body.GrantTTLSeconds,
-		Purpose:         body.Purpose,
 	})
 	if err != nil {
 		return agentcreds.RequestStatus{}, err
@@ -278,19 +293,31 @@ func (b *credentialBroker) RequestStatus(ctx context.Context, requestID string) 
 	return doc.protocol(), nil
 }
 
-// protocol is the status as the sandbox is answered with it: what it now
-// holds, once granted.
+// protocol is the status as the sandbox is answered with it: each part the
+// request has, and what the sandbox now holds under one once granted.
 func (d credentialRequestStatusDoc) protocol() agentcreds.RequestStatus {
-	status := agentcreds.RequestStatus{RequestID: d.RequestID, Status: d.Status, Purpose: d.Purpose}
+	return agentcreds.RequestStatus{
+		RequestID: d.RequestID,
+		Status:    d.Status,
+		Use:       d.Use.protocol(agentcreds.PurposeUse),
+		Delegate:  d.Delegate.protocol(agentcreds.PurposeDelegate),
+	}
+}
+
+func (d *credentialRequestPartStatusDoc) protocol(purpose string) *agentcreds.PartStatus {
+	if d == nil {
+		return nil
+	}
+	part := &agentcreds.PartStatus{Status: d.Status}
 	if d.Status == agentcreds.StatusGranted {
-		status.Credential = &agentcreds.Credential{
+		part.Credential = &agentcreds.Credential{
 			Name:      d.Name,
 			EnvVar:    d.EnvVar,
 			Hosts:     d.Hosts,
-			Purpose:   d.Purpose,
+			Purpose:   purpose,
 			Raw:       d.Raw,
 			ExpiresAt: d.ExpiresAt,
 		}
 	}
-	return status
+	return part
 }

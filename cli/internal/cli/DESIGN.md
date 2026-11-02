@@ -50,8 +50,32 @@ records are displayed explicitly.
 
 `secret bind` and `admin binding create/update` accept repeatable `--policy FILE`
 flags. Each following `--policy-arg NAME=VALUE` belongs to the preceding file.
-The client resolves files through `internal/credentialpolicy` before mutation,
+The client resolves files through `pkg/credentialpolicy` before mutation,
 then submits one union of concrete routes. `--route` and `--clear-route` cannot
 be combined with policies. Updating a binding reapplies a snapshot explicitly;
 there is no live file reference. `run --bind` uses the same resolver through
 `internal/sandboxcreate` (ADR 26-10-30-584).
+
+## Credential requests
+
+A request has a use part, a delegate part, or both (ADR 26-11-02-022).
+`secret request get` shows each part, its routes, and its roles
+(`requestrole`): name, description marked as the discobox's words, arguments,
+and beside each what its routes grant. `ls` keeps one compact PARTS column.
+
+`secret request approve` reads the request first, since which parts it has
+decides what the answer must say. An answer names a decision for every part
+(`approvalBody`): a request with one part is approved by the command; one with
+both needs `--use approve|deny` and `--delegate approve|deny` and is refused,
+naming the missing flag, before anything is sent. `--route` narrows the use
+part and `--delegate-route` the delegate part; `--for` applies to every part
+approved; `--raw` is the use part's alone. The answer is reported part by
+part, a part approved with routes other than its roles resolved to saying the
+roles no longer describe it. `deny` denies the whole request.
+
+What a part replaces (ADR 26-11-02-022 §5) is `pkg/bindingplan`'s rule, the
+one the server applies, read over the asking discobox's own sandbox-level
+bindings of the secret (`requestReplacements`): `get --secret` shows it for a
+pending request, and `approve --secret` reads it before sending and says it
+after, part by part — the binding kept, the ones that go, one that loses its
+use or is split, a new one made.

@@ -20,7 +20,7 @@ func TestARequestIsShownWithEveryRouteItAsksFor(t *testing.T) {
 		{[]secretroute.Route{{Hosts: []string{"api.github.com"}}, {Hosts: []string{"uploads.github.com"}, Paths: []string{"/repos"}}}, "api.github.com; uploads.github.com/repos"},
 		{[]secretroute.Route{{Hosts: []string{"*"}}}, "*"},
 	} {
-		if got := (CredentialRequest{Routes: tc.routes}).where(); got != tc.where {
+		if got := (CredentialRequest{Use: &RequestPart{Routes: tc.routes}}).where(); got != tc.where {
 			t.Errorf("where(%v) = %q, want %q", tc.routes, got, tc.where)
 		}
 	}
@@ -33,7 +33,7 @@ func TestARequestIsShownWithEveryRouteItAsksFor(t *testing.T) {
 // is offered, since the binding an approval makes is held to the secret's
 // routes and the request's both.
 func TestThePickerOffersTheSecretNamedAsAskedFirst(t *testing.T) {
-	req := CredentialRequest{Name: "github", Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}
+	req := CredentialRequest{Name: "github", Use: &RequestPart{Routes: []secretroute.Route{{Hosts: []string{"api.github.com"}}}}}
 	other := Secret{ID: "sec-other", Name: "openai"}
 	named := Secret{ID: "sec-named", Name: "github"}
 	got := secretsForRequest([]Secret{other, named}, req)
@@ -45,13 +45,13 @@ func TestThePickerOffersTheSecretNamedAsAskedFirst(t *testing.T) {
 // A card lists a request's routes one to a row, each whole on its own row,
 // rather than as one "; "-joined line wrapped wherever the card runs out.
 func TestACardListsEachRouteOnItsOwnRow(t *testing.T) {
-	req := CredentialRequest{Name: "github", Routes: []secretroute.Route{
+	req := CredentialRequest{Name: "github", Use: &RequestPart{Routes: []secretroute.Route{
 		{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/discobox-ai/discobox/**"}, Methods: []string{"GET"}},
 		{Hosts: []string{"api.github.com"}, Paths: []string{"/repos/discobox-ai/discobox/pulls"}, Methods: []string{"POST"}},
-	}}
+	}}}
 	d := &dialog{sections: []section{bindingSection(approval{req: req, secret: Secret{Name: "github"}})}}
 	rows := d.sectionLines(newStyles(false), 120)
-	for _, route := range req.Routes {
+	for _, route := range req.routes() {
 		want := secretroute.Format(route)
 		found := false
 		for _, row := range rows {

@@ -23,3 +23,10 @@
   against `runRequest`. A delegation names no `--env-var` (`"envVar"`), and
   two skills shipped an example that refused itself, so a lead following them
   could never hold a delegation.
+- A policy document is carried as the file holds it and never resolved here
+  (ADR 26-11-02-022 §2): the service resolves it, so what is stored and what
+  a person is shown come from one parse. The checks here — size, one object,
+  no repeated key — are for the agent's sake, not the boundary.
+- A `--policy-arg` belongs to the `--policy` or `--delegate-policy` before it,
+  which only holds because the flag package calls `Set` in command-line
+  order: keep every policy flag on the one shared `policyScopes`.

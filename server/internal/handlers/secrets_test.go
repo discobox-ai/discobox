@@ -167,8 +167,8 @@ func (fakeSecretService) CreateSandboxCredentialRequest(context.Context, string,
 	return &model.SecretRequest{ID: "sreq-1", Status: model.SecretRequestStatusPending}, nil
 }
 
-func (fakeSecretService) GetSandboxCredentialRequest(context.Context, string, string, string) (*model.SecretRequest, *model.SecretBinding, error) {
-	return &model.SecretRequest{ID: "sreq-1", Status: model.SecretRequestStatusPending}, nil, nil
+func (fakeSecretService) GetSandboxCredentialRequest(context.Context, string, string, string) (*model.SecretRequest, svcapi.RequestBindings, error) {
+	return &model.SecretRequest{ID: "sreq-1", Status: model.SecretRequestStatusPending}, svcapi.RequestBindings{}, nil
 }
 
 func fakeSecret() model.Secret {
@@ -192,12 +192,19 @@ func fakeSecretRequest() model.SecretRequest {
 		ID:          "request-1",
 		ProjectID:   "project-1",
 		RequestedBy: "user-1",
-		Routes:      []model.SecretRoute{{Hosts: []string{"api.github.com"}}, {Hosts: []string{"api.githubcopilot.com"}}},
-		SecretID:    "secret-1",
-		Status:      model.SecretRequestStatusApproved,
-		BindingID:   "bind-1",
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		Use: model.SecretRequestPart{
+			Asked:  true,
+			Routes: []model.SecretRoute{{Hosts: []string{"api.github.com"}}, {Hosts: []string{"api.githubcopilot.com"}}},
+			Policies: []model.SecretRequestPolicy{{File: "roles/github.json", Name: "github", Description: "Read GitHub",
+				Args: map[string]string{"owner": "acme"}, Digest: "d1", UnusedArgs: []string{"owner"},
+				Routes: []model.SecretRoute{{Hosts: []string{"api.github.com"}}}}},
+			Outcome:   model.SecretRequestPartApproved,
+			BindingID: "bind-1",
+		},
+		SecretID:  "secret-1",
+		Status:    model.SecretRequestStatusApproved,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 }
 
@@ -327,8 +334,17 @@ func TestSecretBindingsAndRequestsCarryTheirRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get request: %v", err)
 	}
-	if request := getRes.(*serverapi.SecretRequest); !slices.Equal(hosts(request.Routes), want) || request.BindingId.Or("") != "bind-1" {
-		t.Fatalf("request = %+v, want routes %q", request, want)
+	// The use part is carried with what its policy resolved to; the part the
+	// request does not have is absent.
+	request := getRes.(*serverapi.SecretRequest)
+	use, ok := request.Use.Get()
+	if !ok || request.Delegate.IsSet() || !slices.Equal(hosts(use.Routes), want) || use.BindingId.Or("") != "bind-1" ||
+		use.Outcome.Or("") != serverapi.SecretRequestPartOutcomeApproved {
+		t.Fatalf("request = %+v, want a use part with routes %q", request, want)
+	}
+	if len(use.Policies) != 1 || use.Policies[0].Name != "github" || use.Policies[0].Digest != "d1" ||
+		!slices.Equal(use.Policies[0].UnusedArgs, []string{"owner"}) || !slices.Equal(hosts(use.Policies[0].Routes), []string{"api.github.com"}) {
+		t.Fatalf("policies = %+v, want the role as resolved", use.Policies)
 	}
 	boundRes, err := h.ListBoundSecrets(ctx, serverapi.ListBoundSecretsParams{ProjectId: "project-1", TargetKind: serverapi.ListBoundSecretsTargetKindSandbox, Target: serverapi.NewOptString("sb-1")})
 	if err != nil {
@@ -363,37 +379,57 @@ func TestSecretBindingsAndRequestsCarryTheirRoutes(t *testing.T) {
 }
 
 // The approver picks a binding's routes and lifetime, so the status the
-// asking sandbox polls says what was picked: the hosts, the variable its
-// sentinel is in, and an expiry, or none for a binding that never lapses. A
-// delegation is in no variable.
+// asking sandbox polls says what was picked, part by part: the hosts, the
+// variable its sentinel is in, and an expiry, or none for a binding that
+// never lapses. A delegation is in no variable. A request is granted when any
+// part is, and each part says its own answer (ADR 26-11-02-022 §4).
 func TestSandboxCredentialRequestStatusCarriesWhatWasGranted(t *testing.T) {
-	approved := &model.SecretRequest{ID: "sreq-1", Status: model.SecretRequestStatusApproved, Name: "asked", EnvName: "GH_TOKEN"}
+	routes := []model.SecretRoute{{Hosts: []string{"api.github.com"}}}
+	approved := &model.SecretRequest{ID: "sreq-1", Status: model.SecretRequestStatusApproved, Name: "asked", EnvName: "GH_TOKEN",
+		Use: model.SecretRequestPart{Asked: true, Routes: routes, Outcome: model.SecretRequestPartApproved, BindingID: "b-1"}}
 	expires := time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC)
-	timed := agentCredentialRequestStatus(approved, &model.SecretBinding{Use: true, Routes: []model.SecretRoute{{Hosts: []string{"api.github.com"}}}, ExpiresAt: &expires}, nil, "github")
-	if got, ok := timed.ExpiresAt.Get(); !ok || !got.Equal(expires) {
+	secret := &model.Secret{Name: "github", Routes: []model.SecretRoute{{Hosts: []string{"github.com"}}}}
+	timed := agentCredentialRequestStatus(approved, svcapi.RequestBindings{Use: &model.SecretBinding{Use: true, EnvName: "GH_TOKEN", Routes: routes, ExpiresAt: &expires}}, secret)
+	use, ok := timed.Use.Get()
+	if !ok || timed.Delegate.IsSet() || timed.Status != serverapi.SandboxCredentialRequestStatusStatusGranted {
+		t.Fatalf("status = %+v, want a granted use part alone", timed)
+	}
+	if got, ok := use.ExpiresAt.Get(); !ok || !got.Equal(expires) {
 		t.Fatalf("expiresAt = %v (set %v), want %v", got, ok, expires)
 	}
-	if timed.Name.Or("") != "github" || timed.EnvVar.Or("") != "GH_TOKEN" || !slices.Equal(timed.Hosts, []string{"api.github.com"}) ||
-		timed.Status != serverapi.SandboxCredentialRequestStatusStatusGranted || timed.Purpose != serverapi.SandboxCredentialRequestStatusPurposeUse {
-		t.Fatalf("status = %+v, want the grant's name, variable and hosts", timed)
+	if use.Name.Or("") != "github" || use.EnvVar.Or("") != "GH_TOKEN" || !slices.Equal(use.Hosts, []string{"api.github.com"}) ||
+		use.Status != serverapi.SandboxCredentialRequestPartStatusStatusGranted {
+		t.Fatalf("use part = %+v, want the grant's name, variable and hosts", use)
 	}
 
-	forever := agentCredentialRequestStatus(approved, &model.SecretBinding{Use: true}, &model.Secret{Routes: []model.SecretRoute{{Hosts: []string{"github.com"}}}}, "github")
-	if !slices.Equal(forever.Hosts, []string{"github.com"}) {
-		t.Fatalf("hosts = %v, want the secret's when the binding names none", forever.Hosts)
-	}
-	if forever.ExpiresAt.IsSet() {
-		t.Fatalf("expiresAt = %v on a grant that never expires, want it absent", forever.ExpiresAt)
+	forever := agentCredentialRequestStatus(approved, svcapi.RequestBindings{Use: &model.SecretBinding{Use: true, EnvName: "GH_TOKEN"}}, secret)
+	if use, _ := forever.Use.Get(); !slices.Equal(use.Hosts, []string{"github.com"}) || use.ExpiresAt.IsSet() {
+		t.Fatalf("use part = %+v, want the secret's hosts when the binding names none, and no expiry", use)
 	}
 
-	delegated := &model.SecretRequest{ID: "sreq-2", Status: model.SecretRequestStatusApproved, Name: "github", EnvName: "X", Purpose: model.SecretPurposeDelegate}
-	status := agentCredentialRequestStatus(delegated, &model.SecretBinding{Delegate: true, Routes: []model.SecretRoute{{Hosts: []string{"github.com"}}}}, nil, "github")
-	if status.EnvVar.IsSet() || status.Purpose != serverapi.SandboxCredentialRequestStatusPurposeDelegate {
-		t.Fatalf("status = %+v, want a delegation in no variable", status)
+	// One part approved and the other denied: the request is granted, and
+	// each part says its own answer. The delegation is in no variable.
+	both := &model.SecretRequest{ID: "sreq-2", Status: model.SecretRequestStatusApproved, Name: "github", EnvName: "X",
+		Use:      model.SecretRequestPart{Asked: true, Routes: routes, Outcome: model.SecretRequestPartDenied},
+		Delegate: model.SecretRequestPart{Asked: true, Routes: routes, Outcome: model.SecretRequestPartApproved, BindingID: "b-2"}}
+	status := agentCredentialRequestStatus(both, svcapi.RequestBindings{Delegate: &model.SecretBinding{Delegate: true, Routes: routes}}, secret)
+	delegate, _ := status.Delegate.Get()
+	denied, _ := status.Use.Get()
+	if status.Status != serverapi.SandboxCredentialRequestStatusStatusGranted || delegate.Status != serverapi.SandboxCredentialRequestPartStatusStatusGranted ||
+		delegate.EnvVar.IsSet() || denied.Status != serverapi.SandboxCredentialRequestPartStatusStatusDenied || denied.Name.IsSet() {
+		t.Fatalf("status = %+v, want the delegation granted in no variable and the use denied", status)
 	}
 
-	pending := agentCredentialRequestStatus(&model.SecretRequest{ID: "sreq-3", Status: model.SecretRequestStatusPending, EnvName: "X"}, nil, nil, "")
-	if pending.Name.IsSet() || pending.EnvVar.IsSet() || len(pending.Hosts) != 0 {
+	// An approved part whose binding is gone holds nothing: denied.
+	gone := agentCredentialRequestStatus(approved, svcapi.RequestBindings{}, nil)
+	if gone.Status != serverapi.SandboxCredentialRequestStatusStatusDenied {
+		t.Fatalf("status = %+v, want denied once the binding is gone", gone)
+	}
+
+	pending := agentCredentialRequestStatus(&model.SecretRequest{ID: "sreq-3", Status: model.SecretRequestStatusPending, EnvName: "X",
+		Use: model.SecretRequestPart{Asked: true, Routes: routes}}, svcapi.RequestBindings{}, nil)
+	if part, _ := pending.Use.Get(); pending.Status != serverapi.SandboxCredentialRequestStatusStatusPending ||
+		part.Status != serverapi.SandboxCredentialRequestPartStatusStatusPending || part.Name.IsSet() || len(part.Hosts) != 0 {
 		t.Fatalf("pending status = %+v, want nothing granted", pending)
 	}
 }

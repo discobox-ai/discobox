@@ -8,8 +8,8 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/apiroute"
-	"github.com/discobox-ai/discobox/cli/internal/credentialpolicy"
 	"github.com/discobox-ai/discobox/cli/internal/secretenv"
+	"github.com/discobox-ai/discobox/pkg/credentialpolicy"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	idpkg "github.com/discobox-ai/x/id"
 )

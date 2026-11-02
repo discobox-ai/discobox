@@ -36,7 +36,7 @@ func (s *Service) delegationsFor(ctx context.Context, projectID, approverID, cho
 	}
 	if len(delegations) == 0 {
 		return nil, nil, apperrors.NewStatusError(http.StatusForbidden,
-			"this discobox holds no delegate binding, so it hands nothing on; ask a person for one with `discobox-access request --delegate`, or leave the request for a person")
+			"this discobox holds no delegate binding, so it hands nothing on; ask a person for one with `discobox-access request --delegate-route`, or leave the request for a person")
 	}
 	fits := map[string]*model.Secret{}
 	bySecret := map[string][]model.SecretBinding{}

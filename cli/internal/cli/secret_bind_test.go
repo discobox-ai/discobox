@@ -175,8 +175,12 @@ func TestSecretRequestApproveFailsWhenRefused(t *testing.T) {
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests" {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"secretRequests":[{"id":"sreq_1","projectId":"project-1","requestedBy":"agent","status":"pending",` +
-				`"routes":[{"hosts":["api.github.com"]}],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}]}`))
+			_, _ = w.Write([]byte(`{"secretRequests":[` + pendingRequestJSON("sreq_1", "use") + `]}`))
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/sreq_1" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(pendingRequestJSON("sreq_1", "use")))
 			return
 		}
 		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/secret-requests/sreq_1/approve" {
@@ -266,15 +270,16 @@ func TestApproveTakesOneRoutePerFlag(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests":
-			_, _ = w.Write([]byte(`{"secretRequests":[{"id":"sreq_1","projectId":"project-1","requestedBy":"agent","status":"pending",` +
-				`"routes":[],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}]}`))
+			_, _ = w.Write([]byte(`{"secretRequests":[` + pendingRequestJSON("sreq_1", "use") + `]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/sreq_1":
+			_, _ = w.Write([]byte(pendingRequestJSON("sreq_1", "use")))
 		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-requests/sreq_1/approve":
 			approved = nil
 			if err := json.NewDecoder(r.Body).Decode(&approved); err != nil {
 				t.Fatal(err)
 			}
 			_, _ = w.Write([]byte(`{"id":"sreq_1","projectId":"project-1","requestedBy":"agent","status":"approved",` +
-				`"routes":[],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
+				`"use":{"outcome":"approved"},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
 		default:
 			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
 		}
@@ -285,16 +290,16 @@ func TestApproveTakesOneRoutePerFlag(t *testing.T) {
 		t.Fatalf("approve: %v", err)
 	}
 	want := []any{map[string]any{"hosts": []any{"api.github.com"}}, map[string]any{"hosts": []any{"github.com"}, "paths": []any{"/repos"}, "blocked": true}}
-	if !reflect.DeepEqual(approved["routes"], want) {
-		t.Fatalf("routes = %#v, want %#v", approved["routes"], want)
+	if !reflect.DeepEqual(usePart(approved)["routes"], want) {
+		t.Fatalf("routes = %#v, want %#v", usePart(approved)["routes"], want)
 	}
 	// A comma belongs to the route: two hosts of one route, not two routes.
 	if _, err := runBindCommand(t, server, "request", "approve", "sreq_1", "--route", "a.example,b.example"); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	want = []any{map[string]any{"hosts": []any{"a.example", "b.example"}}}
-	if !reflect.DeepEqual(approved["routes"], want) {
-		t.Fatalf("routes = %#v, want %#v", approved["routes"], want)
+	if !reflect.DeepEqual(usePart(approved)["routes"], want) {
+		t.Fatalf("routes = %#v, want %#v", usePart(approved)["routes"], want)
 	}
 }
 
@@ -330,17 +335,28 @@ func TestAdminBindingUpdateSpellsThePersonsWords(t *testing.T) {
 }
 
 // Approving says what was granted — the binding's routes and lifetime, which
-// may be narrower than what the agent asked for — not the ask.
+// may be narrower than what the agent asked for — not the ask, part by part:
+// a part denied says so, and a part approved narrower than its roles says
+// the roles no longer describe it (ADR 26-11-02-022 §§3–4).
 func TestApproveSaysWhatWasGranted(t *testing.T) {
+	const asked = `{"id":"sreq_1","projectId":"project-1","requestedBy":"agent","status":"pending","sandboxId":"sbx_nfkv7n8v46gvn7t2","envName":"GH_TOKEN",` +
+		`"use":{"routes":[{"hosts":["172.17.0.1"]}],"policies":[{"file":"roles/local.json","name":"local","digest":"d1","routes":[{"hosts":["172.17.0.1"]}]}]},` +
+		`"delegate":{"routes":[{"hosts":["172.17.0.1"]}]},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`
+	var approved map[string]any
 	server := httptest.NewServer(ignoringPortProbe(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests":
-			_, _ = w.Write([]byte(`{"secretRequests":[{"id":"sreq_1","projectId":"project-1","requestedBy":"agent","status":"pending",` +
-				`"routes":[{"hosts":["172.17.0.1"]}],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}]}`))
+			_, _ = w.Write([]byte(`{"secretRequests":[` + asked + `]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/sreq_1":
+			_, _ = w.Write([]byte(asked))
 		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-requests/sreq_1/approve":
+			if err := json.NewDecoder(r.Body).Decode(&approved); err != nil {
+				t.Fatal(err)
+			}
 			_, _ = w.Write([]byte(`{"id":"sreq_1","projectId":"project-1","requestedBy":"agent","status":"approved","sandboxId":"sbx_nfkv7n8v46gvn7t2",` +
-				`"bindingId":"sbd_1","routes":[{"hosts":["172.17.0.1"]}],"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
+				`"use":{"outcome":"approved","bindingId":"sbd_1","routes":[{"hosts":["172.17.0.1"]}],"policies":[{"file":"roles/local.json","name":"local","digest":"d1","routes":[{"hosts":["172.17.0.1"]}]}]},` +
+				`"delegate":{"outcome":"denied","routes":[{"hosts":["172.17.0.1"]}]},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-bindings/sbd_1":
 			_, _ = w.Write([]byte(`{"id":"sbd_1","projectId":"project-1","secretId":"sec_1github","secretName":"github",` +
 				`"targetKind":"sandbox","targetId":"sbx_nfkv7n8v46gvn7t2","use":true,"delegate":false,"envVar":"GH_TOKEN",` +
@@ -358,12 +374,40 @@ func TestApproveSaysWhatWasGranted(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	out, err := runBindCommand(t, server, "request", "approve", "sreq_1", "--route", "172.17.0.1/ok", "--for", "1h")
+	// Both parts asked: an answer that leaves one out is refused here,
+	// naming the flag, and nothing is sent.
+	_, err := runBindCommand(t, server, "request", "approve", "sreq_1", "--use", "approve")
+	if err == nil || !strings.Contains(err.Error(), "--delegate") || approved != nil {
+		t.Fatalf("err = %v, sent %v; want the missing --delegate named and nothing sent", err, approved)
+	}
+	_, err = runBindCommand(t, server, "request", "approve", "sreq_1")
+	if err == nil || !strings.Contains(err.Error(), "--use") {
+		t.Fatalf("err = %v, want both answers asked for", err)
+	}
+
+	out, err := runBindCommand(t, server, "request", "approve", "sreq_1", "--use", "approve", "--delegate", "deny", "--route", "172.17.0.1/ok", "--for", "1h")
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
-	if !strings.Contains(out, "github is now GH_TOKEN in childbox, sent to 172.17.0.1/ok") || !strings.Contains(out, "it lasts") {
-		t.Fatalf("output = %q, want what was granted", out)
+	if use, _ := approved["use"].(map[string]any); use["decision"] != "approve" || use["ttlSeconds"] != float64(3600) || use["routes"] == nil {
+		t.Fatalf("use answer = %#v", approved["use"])
+	}
+	if delegate, _ := approved["delegate"].(map[string]any); delegate["decision"] != "deny" || delegate["ttlSeconds"] != nil {
+		t.Fatalf("delegate answer = %#v, want a bare deny", approved["delegate"])
+	}
+	for _, want := range []string{
+		"github is now GH_TOKEN in childbox, sent to 172.17.0.1/ok", "it lasts",
+		"The delegate part is denied",
+		"roles no longer describe it",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output = %q, want %q", out, want)
+		}
+	}
+
+	// --raw is the use part's: refused when the use part is denied.
+	if _, err := runBindCommand(t, server, "request", "approve", "sreq_1", "--use", "deny", "--delegate", "approve", "--raw", "env"); err == nil || !strings.Contains(err.Error(), "--raw") {
+		t.Fatalf("err = %v, want --raw refused on a denied use part", err)
 	}
 }
 

@@ -89,7 +89,7 @@ func lockBindingTarget(tx *gorm.DB, projectID, kind, targetID string) error {
 	return nil
 }
 
-// UpdateSecretBinding saves a binding's routes, expiry, variable and what it
+// UpdateSecretBinding saves a binding's routes, expiry, variable, delivery and what it
 // is for, and its updated event. A second use binding of the variable, or a
 // second delegate binding of the secret, on its target is a constraint error.
 func (s *Store) UpdateSecretBinding(ctx context.Context, binding *model.SecretBinding, change BindingChange) error {
@@ -97,7 +97,7 @@ func (s *Store) UpdateSecretBinding(ctx context.Context, binding *model.SecretBi
 		binding.UpdatedAt = time.Now().UTC()
 		result := tx.Model(&model.SecretBinding{}).
 			Where("project_id = ? AND id = ?", binding.ProjectID, binding.ID).
-			Select("routes", "expires_at", "env_name", "use", "delegate", "updated_at").
+			Select("routes", "expires_at", "env_name", "use", "delegate", "raw", "updated_at").
 			Updates(binding)
 		if result.Error != nil {
 			return result.Error
@@ -520,7 +520,7 @@ func (s *Store) ListTargetUseBindings(ctx context.Context, projectID, kind, targ
 
 // PutTargetUseBinding makes the use binding of one variable on a target the
 // one given, which names the secret, routes and expiry: one already standing
-// for the same secret is updated to them, one for another secret is replaced
+// for the same secret is updated to them, keeping its delivery, one for another secret is replaced
 // (removed, with what was handed on under it, and the new one created), each
 // change with its event. It returns the binding standing and every one it
 // removed.
@@ -537,6 +537,10 @@ func (s *Store) PutTargetUseBinding(ctx context.Context, binding *model.SecretBi
 			if current.SecretID == binding.SecretID {
 				binding.ID, binding.CreatedAt = current.ID, current.CreatedAt
 				binding.Delegate, binding.ParentID = current.Delegate, current.ParentID
+				// How the value is delivered is a person's choice (ADR
+				// 26-10-27-840), never the writer's: configure re-binding
+				// the same secret keeps a raw delivery as it stands.
+				binding.Raw = current.Raw
 				if model.SameRoutes(current.Routes, binding.Routes) &&
 					sameExpiry(current.ExpiresAt, binding.ExpiresAt) {
 					return nil

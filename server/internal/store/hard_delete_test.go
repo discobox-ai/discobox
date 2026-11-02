@@ -108,3 +108,47 @@ func TestDeletedHarnessConfigBindingFreesItsEnvName(t *testing.T) {
 		t.Fatalf("expected one binding to the replacement secret, got %+v", bindings)
 	}
 }
+
+// Configure re-binding the same secret in the same variable keeps how a
+// person chose to deliver it: it writes no delivery of its own, so a raw
+// binding stays raw rather than reverting to a sentinel.
+func TestRebindingTheSameSecretKeepsItsRawDelivery(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newTestStoreWithDB(t, nil)
+	config := &model.HarnessConfig{ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"}}
+	if err := s.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create harness config: %v", err)
+	}
+	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"t"}`), AllowRaw: true}
+	if err := s.CreateSecret(ctx, sec); err != nil {
+		t.Fatalf("create secret: %v", err)
+	}
+	bind := func(routes []model.SecretRoute) {
+		t.Helper()
+		if _, err := s.PutTargetUseBinding(ctx, &model.SecretBinding{
+			ProjectID: "project-1", SecretID: sec.ID, TargetKind: model.SecretBindingTargetHarnessConfig,
+			TargetID: config.ID, Use: true, EnvName: "OPENAI_API_KEY", Routes: routes,
+		}, store.BindingChange{Actor: "user-1"}); err != nil {
+			t.Fatalf("bind: %v", err)
+		}
+	}
+	bind(nil)
+	bindings, err := s.ListTargetUseBindings(ctx, "project-1", model.SecretBindingTargetHarnessConfig, config.ID)
+	if err != nil || len(bindings) != 1 {
+		t.Fatalf("bindings %v, %v", bindings, err)
+	}
+	raw := bindings[0]
+	raw.Raw = "env"
+	raw.Routes = []model.SecretRoute{{Hosts: []string{"api.openai.com"}}}
+	if err := s.UpdateSecretBinding(ctx, &raw, store.BindingChange{Actor: "user-1"}); err != nil {
+		t.Fatalf("make it raw: %v", err)
+	}
+	bind(nil)
+	bindings, err = s.ListTargetUseBindings(ctx, "project-1", model.SecretBindingTargetHarnessConfig, config.ID)
+	if err != nil || len(bindings) != 1 {
+		t.Fatalf("bindings %v, %v", bindings, err)
+	}
+	if bindings[0].Raw != "env" {
+		t.Fatalf("raw = %q after configure re-bound it, want env kept", bindings[0].Raw)
+	}
+}

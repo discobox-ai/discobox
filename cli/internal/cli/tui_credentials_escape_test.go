@@ -26,8 +26,18 @@ func TestTheConsoleGetsAgentTextEscaped(t *testing.T) {
 		Name:          apiclientgen.NewOptString("gh" + evil),
 		EnvName:       apiclientgen.NewOptString("GH" + evil),
 		Justification: apiclientgen.NewOptString("line one\nline two" + evil),
-		Routes:        []apimodel.SecretRoute{route},
+		Use: apiclientgen.NewOptSecretRequestPart(apimodel.SecretRequestPart{
+			Routes: []apimodel.SecretRoute{route},
+			Policies: []apimodel.SecretRequestPolicy{{
+				File: "roles/x" + evil + ".json", Name: "x" + evil, Digest: "d",
+				Description: apiclientgen.NewOptString("desc" + evil),
+				Args:        apiclientgen.NewOptSecretRequestPolicyArgs(apiclientgen.SecretRequestPolicyArgs{"repo": "r" + evil}),
+				UnusedArgs:  []string{"u" + evil},
+				Routes:      []apimodel.SecretRoute{route},
+			}},
+		}),
 	})
+	role := req.Use.Roles[0]
 	binding := toTUIBinding(apimodel.SecretBinding{
 		ID:     "sbd_1",
 		EnvVar: apiclientgen.NewOptString("GH" + evil),
@@ -38,7 +48,12 @@ func TestTheConsoleGetsAgentTextEscaped(t *testing.T) {
 		"request name":     req.Name,
 		"request variable": req.EnvVar,
 		"request reason":   req.Justification,
-		"request route":    secretroute.Format(req.Routes[0]),
+		"request route":    secretroute.Format(req.Use.Routes[0]),
+		"role name":        role.Name,
+		"role description": role.Description,
+		"role args":        role.ArgsText(),
+		"role notes":       strings.Join(role.Notes(), " "),
+		"role route":       secretroute.Format(role.Routes[0]),
 		"binding variable": binding.EnvVar,
 		"binding route":    secretroute.Format(binding.Routes[0]),
 	} {

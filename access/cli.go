@@ -136,10 +136,14 @@ func usage(w io.Writer) {
       started after it was.
 
   %[1]s request [--json] --name NAME --env-var VAR --route ROUTE... [flags]
-      Ask a human for a credential. Returns a request id immediately unless
-      you --wait for an answer. Once granted, the credential is in VAR for
-      every command started from then on, and is sent only on the routes the
-      human approved.
+  %[1]s request [--json] --name NAME --delegate-route ROUTE... [flags]
+      Ask a human for a credential: to use it yourself, to delegate it to
+      the discoboxes you create, or both in one request. Returns a request
+      id immediately unless you --wait for an answer. Once the use is
+      granted, the credential is in VAR for every command started from then
+      on, and is sent only on the routes the human approved. A request
+      states the whole access you want of each kind: approving it replaces
+      what you held of that kind, wider or narrower.
 
       --route is where you will send it, one route per flag, as narrow as
       the task needs:
@@ -165,11 +169,22 @@ func usage(w io.Writer) {
       --hosts HOST[,HOST...] is shorthand for one route to each exact host,
       any method and path.
 
+      --policy FILE names a credential policy file instead of routes; each
+      --policy-arg NAME=VALUE after it is that file's argument. Repeat
+      --policy for more files. The human is shown each file's name and
+      description beside what its routes allow.
+
+      --delegate-route ROUTE and --delegate-policy FILE ask to delegate the
+      credential: the discoboxes you create may be given it on those routes.
+      A delegation is delivered to nothing here, and lets you send nothing
+      yourself. A --policy-arg after a --delegate-policy is its argument.
+      The human answers the use and the delegation separately, in one
+      answer.
+
       --justification says why you need it, in the words the human reads:
       the task and its target. --ttl asks how long to keep it (a Go duration
-      such as 30m or 4h, at most 720h); the human may choose otherwise, and
-      you cannot ask for forever. --delegate asks to give the credential to
-      the discoboxes you create rather than to use it yourself.
+      such as 30m or 4h, at most 720h), for both parts; the human may choose
+      otherwise, and you cannot ask for forever.
 
       With --json, the request is read from stdin, which keeps quotes and
       apostrophes in your justification out of the shell's hands:
@@ -184,16 +199,25 @@ func usage(w io.Writer) {
             "api.github.com/graphql graphql=query",
             "POST api.github.com/repos/acme/web/pulls"
           ],
-          "justification": "the user's task asks me to open a PR into main of acme/web",
+          "delegate": {
+            "policies": [
+              {"file": "roles/github-review.json", "args": {"owner": "acme", "repo": "web"}}
+            ]
+          },
+          "justification": "the user's task asks me to open a PR into main of acme/web, and to have the discoboxes I create review it",
           "grantTTLSeconds": 14400,
           "wait": true,
           "timeoutSeconds": 3600
         }
         EOF
 
-      grantTTLSeconds runs from 1 to 2592000 (thirty days); purpose is "use"
-      (the default) or "delegate"; timeoutSeconds is only how long wait
-      waits.
+      The top-level routes, hosts or policies and envVar are the use;
+      "delegate" holds the delegation's routes or policies. A policy is
+      {"file", "args"}; the file is read here and its document sent, at most
+      64 KiB, one JSON object with no repeated key, and at most 32 policies
+      in all. grantTTLSeconds runs from 1 to 2592000 (thirty days);
+      timeoutSeconds is only how long wait waits. A key given twice is
+      refused.
 
   %[1]s trust HOST[:PORT] --justification "..." [--ca-file CA.pem] [--ttl 4h] [--wait]
       Ask a human to trust a host whose certificate this sandbox's egress
@@ -210,9 +234,10 @@ func usage(w io.Writer) {
 
   %[1]s wait [--json] [--timeout 1h] request|trust REQUEST_ID
       Wait for an existing credential or trust request by ID without creating
-      another. Flags precede the kind and ID. Denial exits 1; a wait that
-      runs out with the request still pending prints it pending and exits 3
-      (wait again on the same ID). A failed poll does not end the wait.
+      another. Flags precede the kind and ID. A request with any part denied
+      exits 1, though a part granted is delivered; a wait that runs out with
+      the request still pending prints it pending and exits 3 (wait again
+      on the same ID). A failed poll does not end the wait.
 
       While waiting, keep monitoring the running execution even if your shell
       tool yields a session ID. Resume the authorized task after approval;

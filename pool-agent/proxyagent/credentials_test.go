@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -21,6 +22,8 @@ type fakeControlPlane struct {
 	mu          sync.Mutex
 	credentials []credentialDoc
 	requests    []createCredentialRequestDoc
+	// bodies are the requests' bodies as they arrived.
+	bodies [][]byte
 	// status is what a request's poll answers with.
 	status credentialRequestStatusDoc
 	// listedFor is the sandbox each list named.
@@ -47,8 +50,10 @@ func newFakeControlPlane(t *testing.T, credentials []credentialDoc) (*controlPla
 			fake.listedFor = append(fake.listedFor, r.URL.Query().Get("sandboxId"))
 			_ = json.NewEncoder(w).Encode(listCredentialsDoc{Credentials: fake.credentials})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/sandbox-credential-requests"):
+			raw, _ := io.ReadAll(r.Body)
+			fake.bodies = append(fake.bodies, raw)
 			var body createCredentialRequestDoc
-			_ = json.NewDecoder(r.Body).Decode(&body)
+			_ = json.Unmarshal(raw, &body)
 			fake.requests = append(fake.requests, body)
 			_ = json.NewEncoder(w).Encode(credentialRequestStatusDoc{RequestID: "req-1", Status: agentcreds.StatusPending})
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/sandbox-credential-requests/"):
@@ -100,21 +105,60 @@ func TestRequestPassesTheAskOn(t *testing.T) {
 	status, err := b.Request(context.Background(), agentcreds.RequestBody{
 		Name: "github", EnvVar: "GH_TOKEN", Hosts: []string{"api.github.com", "api.githubcopilot.com"},
 		Routes:        []string{"api.github.com/graphql graphql=query"},
-		Justification: "run copilot", GrantTTLSeconds: 3600, Purpose: agentcreds.PurposeUse,
+		Justification: "run copilot", GrantTTLSeconds: 3600,
 	})
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	if status.RequestID != "req-1" || status.Status != agentcreds.StatusPending || status.Credential != nil {
+	if status.RequestID != "req-1" || status.Status != agentcreds.StatusPending || status.Use != nil || status.Delegate != nil {
 		t.Fatalf("status = %+v, want the pending request and nothing granted", status)
 	}
 	want := createCredentialRequestDoc{
 		SandboxID: "sb-1", Name: "github", EnvVar: "GH_TOKEN", Hosts: []string{"api.github.com", "api.githubcopilot.com"},
 		Routes:        []string{"api.github.com/graphql graphql=query"},
-		Justification: "run copilot", GrantTTLSeconds: 3600, Purpose: agentcreds.PurposeUse,
+		Justification: "run copilot", GrantTTLSeconds: 3600,
 	}
 	if len(fake.requests) != 1 || !reflect.DeepEqual(fake.requests[0], want) {
 		t.Fatalf("relayed = %+v, want %+v", fake.requests, want)
+	}
+}
+
+// An ask with both parts and policy files reaches the control plane whole,
+// and each policy document as the bytes the sandbox sent: the server parses
+// it once (ADR 26-11-02-022 §2), so a document re-encoded here — through a
+// map, losing a repeated key — would be a second reading of it.
+func TestRequestPassesBothPartsAndTheirDocumentsOn(t *testing.T) {
+	plane, fake := newFakeControlPlane(t, nil)
+	b := &credentialBroker{sandboxID: "sb-1", controlPlan: plane}
+	useDoc := json.RawMessage(`{"version":1,"description":"pulls","routes":[{"hosts":["api.github.com"],"paths":["/repos/${owner}/${repo}/pulls"]}],"version":1}`)
+	delegateDoc := json.RawMessage(`{"version":1,"routes":[{"hosts":["api.github.com"],"methods":["GET"]}]}`)
+	ask := agentcreds.RequestBody{
+		Name: "github", EnvVar: "GH_TOKEN",
+		Policies: []agentcreds.Policy{{File: "roles/submit.json", Args: map[string]string{"owner": "acme", "repo": "web"}, Document: useDoc}},
+		Delegate: &agentcreds.DelegatePart{
+			Routes:   []string{"GET api.github.com/repos/acme/vm/**"},
+			Policies: []agentcreds.Policy{{File: "roles/read.json", Document: delegateDoc}},
+		},
+		Justification: "manage workers", GrantTTLSeconds: 3600,
+	}
+	if _, err := b.Request(context.Background(), ask); err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	want := createCredentialRequestDoc{
+		SandboxID: "sb-1", Name: "github", EnvVar: "GH_TOKEN",
+		Policies: ask.Policies, Delegate: ask.Delegate,
+		Justification: "manage workers", GrantTTLSeconds: 3600,
+	}
+	if len(fake.requests) != 1 || !reflect.DeepEqual(fake.requests[0], want) {
+		t.Fatalf("relayed = %+v, want %+v", fake.requests, want)
+	}
+	for _, doc := range []json.RawMessage{useDoc, delegateDoc} {
+		if !strings.Contains(string(fake.bodies[0]), string(doc)) {
+			t.Fatalf("relayed body %s does not carry the document %s as sent", fake.bodies[0], doc)
+		}
+	}
+	if strings.Contains(string(fake.bodies[0]), `"purpose"`) {
+		t.Fatalf("relayed body %s names a purpose, which a request no longer carries", fake.bodies[0])
 	}
 }
 
@@ -125,19 +169,40 @@ func TestRequestStatusSaysWhatWasGranted(t *testing.T) {
 	plane, fake := newFakeControlPlane(t, nil)
 	b := &credentialBroker{sandboxID: "sb-1", controlPlan: plane}
 	fake.status = credentialRequestStatusDoc{
-		RequestID: "sreq_1", Status: agentcreds.StatusGranted, Purpose: agentcreds.PurposeUse, ExpiresAt: &expires,
-		Name: "github", EnvVar: "GH_TOKEN", Hosts: []string{"api.github.com"},
+		RequestID: "sreq_1", Status: agentcreds.StatusGranted,
+		Use: &credentialRequestPartStatusDoc{
+			Status: agentcreds.StatusGranted, ExpiresAt: &expires,
+			Name: "github", EnvVar: "GH_TOKEN", Hosts: []string{"api.github.com"},
+		},
+		Delegate: &credentialRequestPartStatusDoc{Status: agentcreds.StatusDenied},
 	}
 	got, err := b.RequestStatus(context.Background(), "sreq_1")
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	want := &agentcreds.Credential{Name: "github", EnvVar: "GH_TOKEN", Hosts: []string{"api.github.com"}, Purpose: agentcreds.PurposeUse, ExpiresAt: &expires}
-	if got.Status != agentcreds.StatusGranted || !reflect.DeepEqual(got.Credential, want) {
-		t.Fatalf("status = %+v, want %+v granted", got, want)
+	want := agentcreds.RequestStatus{
+		RequestID: "sreq_1", Status: agentcreds.StatusGranted,
+		Use: &agentcreds.PartStatus{Status: agentcreds.StatusGranted, Credential: &agentcreds.Credential{
+			Name: "github", EnvVar: "GH_TOKEN", Hosts: []string{"api.github.com"}, Purpose: agentcreds.PurposeUse, ExpiresAt: &expires,
+		}},
+		Delegate: &agentcreds.PartStatus{Status: agentcreds.StatusDenied},
 	}
-	fake.status = credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusDenied}
-	if got, err := b.RequestStatus(context.Background(), "sreq_1"); err != nil || got.Credential != nil {
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("status = %+v, want %+v", got, want)
+	}
+	if got.Complete() {
+		t.Fatal("a request with a part denied reads as complete")
+	}
+	fake.status = credentialRequestStatusDoc{
+		RequestID: "sreq_1", Status: agentcreds.StatusGranted,
+		Delegate: &credentialRequestPartStatusDoc{Status: agentcreds.StatusGranted, Name: "github", Hosts: []string{"api.github.com"}},
+	}
+	got, err = b.RequestStatus(context.Background(), "sreq_1")
+	if err != nil || got.Use != nil || got.Delegate == nil || got.Delegate.Credential == nil || got.Delegate.Credential.Purpose != agentcreds.PurposeDelegate || !got.Complete() {
+		t.Fatalf("delegate-only status = %+v (%v), want a granted delegation and no use part", got, err)
+	}
+	fake.status = credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusDenied, Use: &credentialRequestPartStatusDoc{Status: agentcreds.StatusDenied}}
+	if got, err := b.RequestStatus(context.Background(), "sreq_1"); err != nil || got.Use == nil || got.Use.Credential != nil {
 		t.Fatalf("denied status = %+v (%v), want no credential", got, err)
 	}
 }
@@ -162,12 +227,16 @@ func TestListSaysACredentialIsHeldRaw(t *testing.T) {
 // so the agent waiting on it knows its variable holds the value or a file's
 // path rather than a placeholder.
 func TestAGrantedRequestSaysItWasGrantedRaw(t *testing.T) {
-	granted := credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Name: "aws", EnvVar: "AWS_SECRET_ACCESS_KEY", Raw: agentcreds.RawEnv}.protocol()
-	if granted.Credential == nil || granted.Credential.Raw != agentcreds.RawEnv {
+	granted := credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusGranted, Use: &credentialRequestPartStatusDoc{
+		Status: agentcreds.StatusGranted, Name: "aws", EnvVar: "AWS_SECRET_ACCESS_KEY", Raw: agentcreds.RawEnv,
+	}}.protocol()
+	if granted.Use == nil || granted.Use.Credential == nil || granted.Use.Credential.Raw != agentcreds.RawEnv {
 		t.Fatalf("granted = %+v, want the credential held raw in its variable", granted)
 	}
-	pending := credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusPending, Raw: agentcreds.RawEnv}.protocol()
-	if pending.Credential != nil {
+	pending := credentialRequestStatusDoc{RequestID: "sreq_1", Status: agentcreds.StatusPending, Use: &credentialRequestPartStatusDoc{
+		Status: agentcreds.StatusPending, Raw: agentcreds.RawEnv,
+	}}.protocol()
+	if pending.Use == nil || pending.Use.Credential != nil {
 		t.Fatalf("pending = %+v, want no credential before it is granted", pending)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/cli/internal/requestrole"
 	"github.com/discobox-ai/discobox/pkg/programstatus"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 	"github.com/discobox-ai/discobox/pkg/sourceref"
@@ -1488,20 +1489,21 @@ type CredentialRequest struct {
 	// secret ID: choosing which secret answers it is the approval.
 	Name   string
 	EnvVar string
-	// Routes are where a credential request asks the credential to be sent;
-	// Host is a trust's endpoint.
+	// Host is a trust's endpoint. Where a credential request asks the
+	// credential to be sent is its parts' routes (routes).
 	Host          string
-	Routes        []secretroute.Route
 	Justification string
 	// Raw is the request as the server sent it, as indented JSON.
 	Raw string
 	// AskedTTL is how long the agent asked to keep the credential, and the
 	// lifetime the approval opens on. Zero is no ask, never forever.
 	AskedTTL time.Duration
-	// Delegate is an ask to delegate the credential to other discoboxes rather
-	// than to use it; approving it binds it to the asking discobox to give on.
-	Delegate bool
-	Created  time.Time
+	// Use and Delegate are the request's parts (ADR 26-11-02-022 §1): to use
+	// the credential, delivered in EnvVar, and to give it to the discoboxes
+	// the asking one creates. A credential request has at least one; Routes
+	// is the use part's, or the delegate part's when that is all it asks.
+	Use, Delegate *RequestPart
+	Created       time.Time
 	// Refresh is set on an item that asks for a new value of a token the
 	// project already holds, because it went stale or was refused
 	// (ADR 26-09-25-122 §4). Name is then the secret's name; the answer is a
@@ -1513,6 +1515,23 @@ type CredentialRequest struct {
 	// are empty: the answer is not a secret but which certificate to pin.
 	Trust *TrustAsk
 }
+
+// RequestPart is one part of a request: where it asks for the credential to
+// go, and the roles it asked by, grouped by document. A role's name,
+// description and arguments are the asking discobox's words, escaped by the
+// data source; what its routes grant is worked out from them
+// (requestrole.Summary), never read from its description.
+type RequestPart struct {
+	Routes []secretroute.Route
+	Roles  []requestrole.Role
+}
+
+// asksBoth reports whether a request asks both to use the credential and to
+// delegate it: two answers, each its own.
+func (r CredentialRequest) asksBoth() bool { return r.Use != nil && r.Delegate != nil }
+
+// delegateOnly reports whether a request asks only to delegate.
+func (r CredentialRequest) delegateOnly() bool { return r.Delegate != nil && r.Use == nil }
 
 // RefreshAsk is which token a refresh request wants a new value of, and why.
 type RefreshAsk struct {
@@ -1833,9 +1852,20 @@ type Approval struct {
 	// had seen. See credentials.go.
 	TTLSeconds int64
 	// Raw grants the value itself, "env" or "file", rather than a sentinel:
-	// the person's choice, never the request's (ADR 26-10-27-840 §2).
+	// the person's choice, never the request's (ADR 26-10-27-840 §2). The
+	// use part's alone.
 	Raw string
+	// Use and Delegate are each part's answer, PartApprove or PartDeny, and
+	// empty for a part the request does not have. An approval names one for
+	// every part it has (ADR 26-11-02-022 §4).
+	Use, Delegate string
 }
+
+// A part's answer.
+const (
+	PartApprove = "approve"
+	PartDeny    = "deny"
+)
 
 // SourcePush is what one of a discobox's push-delivered sources did when the
 // window last looked at it: what the local branch resolves to now, and whether
@@ -2463,9 +2493,10 @@ type DataSource interface {
 	// DeleteSecret removes a secret and every binding of it.
 	DeleteSecret(ctx context.Context, server, secretID string) error
 
-	// ApproveCredentialRequest answers a request yes, binding the secret to
-	// the discobox that asked. The server takes the variable and the routes
-	// from the request itself.
+	// ApproveCredentialRequest answers a request, a decision for each of its
+	// parts, binding the secret to the discobox that asked for each part
+	// approved. The server takes the variable and the routes from the request
+	// itself.
 	ApproveCredentialRequest(ctx context.Context, server string, approval Approval) error
 
 	// DenyCredentialRequest answers a request no. It is a complete answer, not
@@ -2488,11 +2519,23 @@ type DataSource interface {
 	DenyTrustRequest(ctx context.Context, server, requestID string) error
 }
 
+// routes is every route a credential request asks for, its use part's then
+// its delegate part's.
+func (r CredentialRequest) routes() []secretroute.Route {
+	var out []secretroute.Route
+	for _, part := range []*RequestPart{r.Use, r.Delegate} {
+		if part != nil {
+			out = append(out, part.Routes...)
+		}
+	}
+	return out
+}
+
 // where is where a request asks to reach, as a person reads it: every route a
 // credential request names, or a trust's endpoint.
 func (r CredentialRequest) where() string {
-	if len(r.Routes) > 0 {
-		return routesText(r.Routes)
+	if routes := r.routes(); len(routes) > 0 {
+		return routesText(routes)
 	}
 	return r.Host
 }
@@ -2500,8 +2543,8 @@ func (r CredentialRequest) where() string {
 // whereRows is where, one route to a row, for a card's field: a column of
 // routes is read route by route, where a "; "-joined line of them is not.
 func (r CredentialRequest) whereRows() string {
-	if len(r.Routes) > 0 {
-		return routeRows(r.Routes)
+	if routes := r.routes(); len(routes) > 0 {
+		return routeRows(routes)
 	}
 	return r.Host
 }

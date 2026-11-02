@@ -10,7 +10,9 @@ import (
 
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
+	"github.com/discobox-ai/discobox/cli/internal/requestrole"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/bindingplan"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
@@ -63,6 +65,15 @@ type secretsLoadedMsg struct {
 	requestID string
 	secrets   []Secret
 	err       error
+}
+
+// standingLoadedMsg carries the bindings of the chosen secret the asking
+// discobox already holds itself: what an approved part would replace (ADR
+// 26-11-02-022 §5), read once the secret is chosen.
+type standingLoadedMsg struct {
+	approval approval
+	standing []SecretBinding
+	err      error
 }
 
 // credentialAnsweredMsg reports an approval or a denial coming back. ttl is
@@ -209,7 +220,7 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 	}
 
 	d := actionsDialog("Credential request", "", items, func(result string) tea.Cmd {
-		a := approval{req: req, secrets: secrets}
+		a := newApproval(req, secrets)
 		switch {
 		case result == "raw":
 			return m.showRawRequest(req, func() tea.Cmd { return m.askAboutCredential(req, secrets) })
@@ -489,13 +500,90 @@ func bindingSection(a approval) section {
 		{label: "credential", value: credentialName(a.req), tone: toneAccent},
 		{label: "answered with", value: answered},
 	}
-	if a.req.Delegate {
-		fields = append(fields, field{label: "purpose", value: delegationPurpose, tone: toneAccent})
+	if a.req.Delegate != nil {
+		fields = append(fields, field{label: "purpose", value: partsPurpose(a.req), tone: toneAccent})
 	}
 	if where := a.req.whereRows(); where != "" {
 		fields = append(fields, field{label: "may be sent to", value: where, tone: toneAccent})
 	}
+	for _, kind := range []struct {
+		name     string
+		answer   string
+		delegate bool
+	}{{"use", a.use, false}, {"delegate", a.delegate, true}} {
+		if kind.answer == "" {
+			continue
+		}
+		if kind.answer == PartDeny {
+			fields = append(fields, field{label: kind.name + " part", value: "denied — what the discobox holds of it stays as it is", tone: toneDim})
+			continue
+		}
+		if replaced := replacedText(a.standing, kind.delegate, a.req.EnvVar, a.use == PartApprove); replaced != "" {
+			fields = append(fields, field{label: "replaces", value: replaced, tone: toneAlert})
+		}
+	}
 	return section{label: "the binding", fields: fields}
+}
+
+// partsPurpose says what a request with a delegate part asks, said the same
+// way on the request and on the binding.
+func partsPurpose(req CredentialRequest) string {
+	if req.asksBoth() {
+		return "use it, and " + delegationPurpose
+	}
+	return delegationPurpose
+}
+
+// replacedText is what an approved part would do to the asking discobox's
+// own bindings of the chosen secret (ADR 26-11-02-022 §5): which is kept and
+// takes the approval, which go, which lose their use or are split, and
+// whether a new one is made. bindingplan decides it, by the rule the server
+// applies, so access lost to a replacement is said before the approval, not
+// found after it. envVar is the variable the use part asks for; useApproved
+// is whether the use part is approved too, since a delegate part is applied
+// to what the use part leaves (bindingplan.Answer).
+func replacedText(standing []SecretBinding, delegate bool, envVar string, useApproved bool) string {
+	held := map[string]SecretBinding{}
+	var mine []bindingplan.Binding
+	for _, b := range standing {
+		held[b.ID] = b
+		mine = append(mine, bindingplan.Binding{ID: b.ID, Use: b.Use, Delegate: b.Delegate, EnvName: b.EnvVar, Created: b.Created})
+	}
+	use, delegatePlan := bindingplan.Answer(mine, envVar, useApproved || !delegate, delegate)
+	plan := use
+	if delegate {
+		plan = delegatePlan
+	}
+	var rows []string
+	for _, step := range plan.Steps {
+		// Said as the binding stands when this part is applied: a delegate
+		// part after a use part reads what the use part left.
+		b := held[step.Binding.ID]
+		what := "the delegation"
+		if step.Binding.Use {
+			what = "the one in " + step.Binding.EnvName
+		}
+		where := "the secret's routes"
+		if len(b.Routes) > 0 {
+			where = routesText(b.Routes)
+		}
+		var fate string
+		switch step.Fate {
+		case bindingplan.Updated:
+			fate = "kept, takes this approval"
+		case bindingplan.Deleted:
+			fate = "goes"
+		case bindingplan.LosesUse:
+			fate = "loses its use; its delegation stays"
+		case bindingplan.Split:
+			fate = "stays the delegation; its use moves to a binding of its own in " + b.EnvVar
+		}
+		rows = append(rows, what+", sent to "+where+" — "+fate)
+	}
+	if len(rows) > 0 && plan.Keep == "" {
+		rows = append(rows, "and a new binding is made")
+	}
+	return strings.Join(rows, "\n")
 }
 
 // delegationPurpose is what a binding to delegate is for, said the same way on
@@ -515,13 +603,55 @@ func rawDeliveryText(delivery string) string {
 // lifetimeChosen is where the two kinds of answer part: a new credential still
 // needs its value, and an existing one is approved with.
 func (m *Model) lifetimeChosen(a approval, again func() tea.Cmd) tea.Cmd {
+	if a.req.asksBoth() && !a.partsChosen {
+		return m.askParts(a, again)
+	}
 	if a.fresh {
 		return m.askNewCredentialForm(a)
 	}
-	if a.secret.AllowRaw && !a.req.Delegate {
+	if a.secret.AllowRaw && a.use == PartApprove {
 		return m.askDelivery(a, again)
 	}
 	return m.finishApproval(a)
+}
+
+// askParts asks, of a request with both parts, what each one's answer is
+// (ADR 26-11-02-022 §4). Both are decided here, before anything is sent:
+// approving one part must never approve the other by omission, so there is
+// no row that leaves either unsaid. back is the lifetime card.
+func (m *Model) askParts(a approval, back func() tea.Cmd) tea.Cmd {
+	items := []action{
+		{key: "both", press: "b", label: "Approve both", detail: "use it in " + variableOf(a.req) + ", and give it to the discoboxes it creates", enabled: true},
+		{key: "use", press: "u", label: "Approve the use part only", detail: "deny the delegation", enabled: true},
+		{key: "delegate", press: "g", label: "Approve the delegate part only", detail: "deny its own use", enabled: true},
+	}
+	again := func() tea.Cmd { return m.askParts(a, back) }
+	d := actionsDialog("Which parts?", "", items, func(result string) tea.Cmd {
+		next := a
+		next.partsChosen = true
+		next.use, next.delegate = PartApprove, PartApprove
+		switch result {
+		case "use":
+			next.delegate = PartDeny
+		case "delegate":
+			next.use = PartDeny
+		}
+		return m.lifetimeChosen(next, again)
+	})
+	d.sections = append(requestParts(a.req), bindingSection(a))
+	d.answerLabel = "this request asks two things; answer each"
+	d.footer = "a part denied leaves what the discobox holds of it as it is"
+	d.onCancel = back
+	m.dialog = d
+	return nil
+}
+
+// variableOf is the variable a request's use part names, or a stand-in.
+func variableOf(req CredentialRequest) string {
+	if req.EnvVar != "" {
+		return req.EnvVar
+	}
+	return "its variable"
 }
 
 // askDelivery asks, of a secret that allows it, whether the discobox is handed
@@ -570,8 +700,8 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 	fields := []field{{label: "credential", value: credentialName(req), tone: toneAccent}}
 	// An ask to delegate is not the ask a reader assumes, so it says so before
 	// anything else about the credential.
-	if req.Delegate {
-		fields = append(fields, field{label: "purpose", value: delegationPurpose, tone: toneAccent})
+	if req.Delegate != nil {
+		fields = append(fields, field{label: "purpose", value: partsPurpose(req), tone: toneAccent})
 	}
 	if req.EnvVar != "" {
 		fields = append(fields, field{label: "delivered as", value: req.EnvVar})
@@ -590,11 +720,60 @@ func credentialAsk(req CredentialRequest, now time.Time) []section {
 		fields = append(fields, field{label: "on server", value: req.Server, tone: toneDim})
 	}
 	sections := []section{{label: "asked for", fields: fields}}
+	sections = append(sections, requestParts(req)...)
 
 	if req.Justification != "" {
 		sections = append(sections, section{label: "why", lines: []line{{text: req.Justification, tone: toneDim}}})
 	}
 	return sections
+}
+
+// requestParts is each part of a request with the roles it asked by: each
+// role's name and description — the asking discobox's words, said as such —
+// its arguments, and beside them what its routes grant, worked out from the
+// routes alone (ADR 26-11-02-022 §3). A request asked by inline routes shows
+// none, and its routes are the card's "may be sent to".
+func requestParts(req CredentialRequest) []section {
+	var sections []section
+	for _, kind := range []struct {
+		label string
+		part  *RequestPart
+	}{{"the use part", req.Use}, {"the delegate part · to give on", req.Delegate}} {
+		if kind.part == nil {
+			continue
+		}
+		if !req.asksBoth() && len(kind.part.Roles) == 0 {
+			continue
+		}
+		sec := section{label: kind.label}
+		if req.asksBoth() {
+			sec.fields = append(sec.fields, field{label: "may be sent to", value: routeRows(kind.part.Routes), tone: toneAccent})
+		}
+		for _, role := range kind.part.Roles {
+			sec.lines = append(sec.lines, roleLines(role)...)
+		}
+		sections = append(sections, sec)
+	}
+	return sections
+}
+
+// roleLines is one role: its name and arguments, its description marked as
+// the discobox's own, what its routes grant, and anything a reader must not
+// miss about it.
+func roleLines(role requestrole.Role) []line {
+	head := role.Name
+	if args := role.ArgsText(); args != "" {
+		head += ": " + args
+	}
+	lines := []line{{text: head, bullet: true, tone: toneAccent}}
+	if role.Description != "" {
+		lines = append(lines, line{text: "“" + role.Description + "” — the discobox's words", tone: toneDim})
+	}
+	lines = append(lines, line{text: "grants " + requestrole.Summary(role.Routes)})
+	for _, note := range role.Notes() {
+		lines = append(lines, line{text: note, tone: toneAlert})
+	}
+	return lines
 }
 
 func credentialName(req CredentialRequest) string {
@@ -699,7 +878,7 @@ func (m *Model) askNewCredentialForm(a approval) tea.Cmd {
 // storing it then does. about says so above the form, and back is where Esc
 // goes, nothing stored.
 func (m *Model) newCredentialForm(a approval, about section, store string, then func(*form, NewSecret) tea.Cmd, back func() tea.Cmd) tea.Cmd {
-	f := secretForm(nil, a.req.Routes)
+	f := secretForm(nil, a.req.routes())
 	fillFromRequest(f, a.req, a.secrets)
 	d := formDialog("New credential", f, func(f *form) tea.Cmd {
 		secret, ok := secretFromForm(f)
@@ -745,6 +924,8 @@ func (m *Model) createAndApprove(a approval, secret NewSecret) tea.Cmd {
 			RequestID:  req.ID,
 			SecretID:   stored.ID,
 			TTLSeconds: lifetime.Seconds(ttl),
+			Use:        a.use,
+			Delegate:   a.delegate,
 		})
 		msg := credentialAnsweredMsg{request: req, approved: true, ttl: ttl, err: err}
 		if err != nil {
@@ -772,6 +953,27 @@ type approval struct {
 	// raw is the delivery the person chose for the value itself, empty for a
 	// sentinel (ADR 26-10-27-840 §2).
 	raw string
+	// use and delegate are each part's answer, PartApprove or PartDeny, empty
+	// for a part the request does not have. A request with one part is
+	// approved by choosing a secret; one with both is answered part by part
+	// (askParts), and partsChosen says it has been.
+	use, delegate string
+	partsChosen   bool
+	// standing is the asking discobox's own bindings of the chosen secret:
+	// what an approved part replaces.
+	standing []SecretBinding
+}
+
+// newApproval is an answer to req, its parts approved until asked otherwise.
+func newApproval(req CredentialRequest, secrets []Secret) approval {
+	a := approval{req: req, secrets: secrets}
+	if req.Use != nil || req.Delegate == nil {
+		a.use = PartApprove
+	}
+	if req.Delegate != nil {
+		a.delegate = PartApprove
+	}
+	return a
 }
 
 // toRequest is the way back to the request card: where Esc goes from the first
@@ -787,6 +989,32 @@ func (m *Model) chooseSecret(a approval, secretID string) tea.Cmd {
 			a.secret = secret
 		}
 	}
+	if a.req.SandboxID == "" {
+		return m.askLifetime(a, m.toRequest(a))
+	}
+	// What the approval would replace is read before it is decided, so the
+	// cards that follow can say it.
+	m.dialog = statusDialog("Credential request", "reading what the discobox holds of "+a.secret.Name+"…")
+	return func() tea.Msg {
+		bindings, err := m.ds.Bindings(m.ctx, a.req.Server, BindingFilter{SecretID: a.secret.ID})
+		var standing []SecretBinding
+		for _, b := range bindings {
+			if b.TargetKind == BindingSandbox && b.TargetID == a.req.SandboxID {
+				standing = append(standing, b)
+			}
+		}
+		return standingLoadedMsg{approval: a, standing: standing, err: err}
+	}
+}
+
+// standingLoaded goes on to the lifetime, with what the approval replaces.
+func (m *Model) standingLoaded(msg standingLoadedMsg) tea.Cmd {
+	if msg.err != nil {
+		m.dialog = errorDialog("Credential request", fmt.Sprintf("Cannot read what the discobox holds of %s: %v\n\nThe request is still waiting.", msg.approval.secret.Name, msg.err))
+		return nil
+	}
+	a := msg.approval
+	a.standing = msg.standing
 	return m.askLifetime(a, m.toRequest(a))
 }
 
@@ -803,6 +1031,8 @@ func (m *Model) finishApproval(a approval) tea.Cmd {
 		SecretID:   a.secret.ID,
 		TTLSeconds: lifetime.Seconds(a.ttl),
 		Raw:        a.raw,
+		Use:        a.use,
+		Delegate:   a.delegate,
 	}
 	if a.raw != "" {
 		what = "approving the value itself for " + lifetime.Label(a.ttl) + "…"

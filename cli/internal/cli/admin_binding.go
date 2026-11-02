@@ -14,8 +14,8 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/apiroute"
-	"github.com/discobox-ai/discobox/cli/internal/credentialpolicy"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
+	"github.com/discobox-ai/discobox/pkg/credentialpolicy"
 )
 
 // `admin binding` is the binding API as raw records: IDs in, the records the

@@ -194,12 +194,43 @@ func toTUICredentialRequest(r apimodel.SecretRequest) tui.CredentialRequest {
 		EnvVar:        terminalSafe(strings.TrimSpace(r.EnvName.Or(""))),
 		Justification: terminalSafeMultiline(strings.TrimSpace(r.Justification.Or(""))),
 		AskedTTL:      agentcreds.AskedGrantTTL(r.TtlSeconds.Or(0)),
-		Delegate:      r.Purpose.Or("") == apiclientgen.SecretRequestPurposeDelegate,
 		Created:       r.CreatedAt,
 	}
-	req.Routes = tuiRoutes(r.Routes)
+	if use, ok := r.Use.Get(); ok {
+		req.Use = tuiRequestPart(use)
+	}
+	if delegate, ok := r.Delegate.Get(); ok {
+		req.Delegate = tuiRequestPart(delegate)
+	}
 	req.Raw = requestJSON(r)
 	return req
+}
+
+// tuiRequestPart is one part of a request as the window draws it: its routes,
+// and its roles grouped by document. Every name, description and argument in
+// a role is the asking discobox's, escaped here as its routes are
+// (cli/REVIEW.md).
+func tuiRequestPart(part apimodel.SecretRequestPart) *tui.RequestPart {
+	out := &tui.RequestPart{Routes: tuiRoutes(part.Routes)}
+	for _, role := range partRoles(part) {
+		role.Name = terminalSafe(role.Name)
+		role.Description = terminalSafe(role.Description)
+		for i, args := range role.Args {
+			safe := make(map[string]string, len(args))
+			for name, value := range args {
+				safe[terminalSafe(name)] = terminalSafe(value)
+			}
+			role.Args[i] = safe
+		}
+		for i, name := range role.Unused {
+			role.Unused[i] = terminalSafe(name)
+		}
+		for i := range role.Routes {
+			role.Routes[i] = terminalSafeRoute(role.Routes[i])
+		}
+		out.Roles = append(out.Roles, role)
+	}
+	return out
 }
 
 // toTUIRefreshRequest is a refresh request as the inbox holds it: an item
@@ -557,10 +588,24 @@ func (d *apiDataSource) ApproveCredentialRequest(ctx context.Context, server str
 	// expires, and leaving it out would ask the server for the secret's own
 	// limit instead — a different binding from the one the window said it was
 	// making.
+	// Each part the request has is answered, approve or deny: the server
+	// refuses an answer that leaves one out (ADR 26-11-02-022 §4).
 	body := &apimodel.ApproveSecretRequestBody{SecretId: apiclientgen.NewOptString(approval.SecretID)}
-	body.SetTtlSeconds(apiclientgen.NewOptInt64(approval.TTLSeconds))
-	if approval.Raw != "" {
-		body.SetRaw(apiclientgen.NewOptApproveSecretRequestBodyRaw(apiclientgen.ApproveSecretRequestBodyRaw(approval.Raw)))
+	decide := func(answer string, raw string) apiclientgen.OptSecretRequestPartDecision {
+		part := apimodel.SecretRequestPartDecision{Decision: apiclientgen.SecretRequestPartDecisionDecision(answer)}
+		if answer == tui.PartApprove {
+			part.TtlSeconds = apiclientgen.NewOptInt64(approval.TTLSeconds)
+			if raw != "" {
+				part.Raw = apiclientgen.NewOptSecretRequestPartDecisionRaw(apiclientgen.SecretRequestPartDecisionRaw(raw))
+			}
+		}
+		return apiclientgen.NewOptSecretRequestPartDecision(part)
+	}
+	if approval.Use != "" {
+		body.Use = decide(approval.Use, approval.Raw)
+	}
+	if approval.Delegate != "" {
+		body.Delegate = decide(approval.Delegate, "")
 	}
 	res, err := d.client.ApproveSecretRequest(ctx, body, apiclientgen.ApproveSecretRequestParams{
 		ProjectId: d.projectID,
