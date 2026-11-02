@@ -80,14 +80,17 @@ runs:
       run: |
         if [ "$RUNNER_OS" != Linux ]; then go=go; else go='nix develop -c go'; fi
         if [ "$SHARED" != true ]; then
+          # golangci-lint's cache too: no release job lints today, but one that
+          # did would read results a pull request wrote.
           echo "GOCACHEPROG=" >> "$GITHUB_ENV"
+          echo "GOLANGCI_LINT_CACHEPROG=" >> "$GITHUB_ENV"
           # Go reads an empty variable as unset and falls back to its go.env
           # settings, so check what Go itself now sees rather than trust it.
           if [ -n "$(GOCACHEPROG= $go env GOCACHEPROG)" ]; then
             echo "::error title=Shared Go cache::GOCACHEPROG is still set from Go's settings file; this run must not read a cache pull requests write."
             exit 1
           fi
-          echo "A $GITHUB_EVENT_NAME run of $GITHUB_REF: Depot Cache is off, Go builds from a cold local cache."
+          echo "A $GITHUB_EVENT_NAME run of $GITHUB_REF: Depot Cache is off, Go and golangci-lint build from cold local caches."
           exit 0
         fi
         prog=$($go env GOCACHEPROG)
