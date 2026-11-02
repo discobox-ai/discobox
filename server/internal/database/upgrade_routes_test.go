@@ -57,6 +57,17 @@ func TestMigrateUpgradesRouteShapes(t *testing.T) {
 	if _, err := reconcile.New(db.Write, reconcile.Options{}); err != nil {
 		t.Fatalf("reconcile table: %v", err)
 	}
+	// A request's routes were one list until it was split into parts (ADR
+	// 26-11-02-022 §6).
+	for _, stmt := range []string{
+		`ALTER TABLE secret_requests ADD COLUMN purpose text NOT NULL DEFAULT 'use'`,
+		`ALTER TABLE secret_requests ADD COLUMN routes text`,
+		`ALTER TABLE secret_requests ADD COLUMN binding_id text NOT NULL DEFAULT ''`,
+	} {
+		if err := db.Write.Exec(stmt).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	write := db.Write.WithContext(ctx)
 	current := []model.SecretRoute{{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}, Paths: []string{"/repos/**"}}}
 	for _, row := range []any{
@@ -172,8 +183,8 @@ func TestMigrateUpgradesRouteShapes(t *testing.T) {
 		if err := write.First(&req, "id = ?", "req-1").Error; err != nil {
 			t.Fatal(err)
 		}
-		if want := []model.SecretRoute{upgraded("api.github.com", "", false), upgraded("uploads.github.com", "", false)}; !reflect.DeepEqual(req.Routes, want) {
-			t.Fatalf("run %d: request routes = %+v, want %+v", run, req.Routes, want)
+		if want := []model.SecretRoute{upgraded("api.github.com", "", false), upgraded("uploads.github.com", "", false)}; !reflect.DeepEqual(req.Use.Routes, want) {
+			t.Fatalf("run %d: request routes = %+v, want %+v", run, req.Use.Routes, want)
 		}
 		var config model.HarnessConfig
 		if err := write.First(&config, "id = ?", "hc-1").Error; err != nil {

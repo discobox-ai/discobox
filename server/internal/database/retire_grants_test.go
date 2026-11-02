@@ -32,6 +32,11 @@ func grantEraSchema(t *testing.T, db *database.DB) {
 		`ALTER TABLE secrets ADD COLUMN host text NOT NULL DEFAULT ''`,
 		`ALTER TABLE secrets ADD COLUMN unique_key text NOT NULL DEFAULT ''`,
 		`CREATE UNIQUE INDEX idx_secret_project_type_host ON secrets (project_id, name, type, host, unique_key)`,
+		// A request had one purpose, one route list and one binding until it
+		// was split into parts (ADR 26-11-02-022 §6).
+		`ALTER TABLE secret_requests ADD COLUMN purpose text NOT NULL DEFAULT 'use'`,
+		`ALTER TABLE secret_requests ADD COLUMN routes text`,
+		`ALTER TABLE secret_requests ADD COLUMN binding_id text NOT NULL DEFAULT ''`,
 		`ALTER TABLE secret_requests ADD COLUMN type text NOT NULL DEFAULT 'token'`,
 		`ALTER TABLE secret_requests ADD COLUMN hosts text`,
 		`ALTER TABLE secret_requests ADD COLUMN grant_ttl_seconds integer NOT NULL DEFAULT 0`,
@@ -262,11 +267,11 @@ func TestMigrateRetiresSecretGrants(t *testing.T) {
 			t.Fatalf("run %d: the proxy's own request survived", run)
 		}
 		ask := requestByID["req_ask"]
-		if ask.Status != model.SecretRequestStatusPending || ask.TTL != 600 || !reflect.DeepEqual(ask.Routes, []model.SecretRoute{upgraded("api.github.com", "", false)}) {
+		if ask.Status != model.SecretRequestStatusPending || ask.TTL != 600 || !reflect.DeepEqual(ask.Use.Routes, []model.SecretRoute{upgraded("api.github.com", "", false)}) {
 			t.Fatalf("run %d: agent request = %+v", run, ask)
 		}
 		approved := requestByID["req_approved"]
-		if approved.BindingID != "bind_extra" || approved.DecidedAt == nil {
+		if approved.Use.BindingID != "bind_extra" || approved.DecidedAt == nil {
 			t.Fatalf("run %d: approved request = %+v, want the binding its grant became", run, approved)
 		}
 		var reasked []model.SecretRequest
@@ -513,7 +518,7 @@ func TestMigrateMergesDuplicateDelegations(t *testing.T) {
 					t.Fatalf("requests: %+v", requests)
 				}
 				for _, request := range requests {
-					if request.BindingID != got.ID {
+					if request.Use.BindingID+request.Delegate.BindingID != got.ID {
 						t.Fatalf("request lost its binding: %+v", request)
 					}
 				}

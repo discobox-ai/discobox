@@ -112,24 +112,18 @@ func (s *ApprovalRequestKind) UnmarshalText(data []byte) error {
 	}
 }
 
+// An answer to a request, with a decision for every part it has (ADR 26-11-02-022 §4). An answer
+// that leaves a part out is refused, so a delegation is never granted by omission.
 // Ref: #/components/schemas/ApproveSecretRequestBody
 type ApproveSecretRequestBody struct {
 	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Grant the value itself rather than a sentinel (ADR 26-10-27-840): env in the variable the request
-	// named, file the path of a file holding it there. A person's choice alone - no request asks for it
-	// - and only of a secret that allows raw. Absent grants a sentinel.
-	Raw OptApproveSecretRequestBodyRaw `json:"raw"`
-	// Routes the binding is approved for, narrowing the secret's; omitted takes the routes the request
-	// asked for.
-	Routes []SecretRouteInput `json:"routes"`
-	// Secret ID selected by the approver. A person must name one. A discobox approver answers with the
-	// secret of a delegate binding covering it, and names one only to choose among the secrets it was
-	// delegated.
-	SecretId OptString `json:"secretId"`
-	// How long the binding lasts, in seconds; omitted takes what the request asked for, else an hour,
-	// within the secret's limit and, for a discobox approving, the delegation's.
-	TtlSeconds OptInt64 `json:"ttlSeconds"`
+	Schema   OptURI                       `json:"$schema"`
+	Delegate OptSecretRequestPartDecision `json:"delegate"`
+	// Secret ID selected by the approver. A person must name one when approving any part. A discobox
+	// approver answers with the secret of a delegate binding covering it, and names one only to choose
+	// among the secrets it was delegated.
+	SecretId OptString                    `json:"secretId"`
+	Use      OptSecretRequestPartDecision `json:"use"`
 }
 
 // GetSchema returns the value of Schema.
@@ -137,14 +131,9 @@ func (s *ApproveSecretRequestBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetRaw returns the value of Raw.
-func (s *ApproveSecretRequestBody) GetRaw() OptApproveSecretRequestBodyRaw {
-	return s.Raw
-}
-
-// GetRoutes returns the value of Routes.
-func (s *ApproveSecretRequestBody) GetRoutes() []SecretRouteInput {
-	return s.Routes
+// GetDelegate returns the value of Delegate.
+func (s *ApproveSecretRequestBody) GetDelegate() OptSecretRequestPartDecision {
+	return s.Delegate
 }
 
 // GetSecretId returns the value of SecretId.
@@ -152,9 +141,9 @@ func (s *ApproveSecretRequestBody) GetSecretId() OptString {
 	return s.SecretId
 }
 
-// GetTtlSeconds returns the value of TtlSeconds.
-func (s *ApproveSecretRequestBody) GetTtlSeconds() OptInt64 {
-	return s.TtlSeconds
+// GetUse returns the value of Use.
+func (s *ApproveSecretRequestBody) GetUse() OptSecretRequestPartDecision {
+	return s.Use
 }
 
 // SetSchema sets the value of Schema.
@@ -162,14 +151,9 @@ func (s *ApproveSecretRequestBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetRaw sets the value of Raw.
-func (s *ApproveSecretRequestBody) SetRaw(val OptApproveSecretRequestBodyRaw) {
-	s.Raw = val
-}
-
-// SetRoutes sets the value of Routes.
-func (s *ApproveSecretRequestBody) SetRoutes(val []SecretRouteInput) {
-	s.Routes = val
+// SetDelegate sets the value of Delegate.
+func (s *ApproveSecretRequestBody) SetDelegate(val OptSecretRequestPartDecision) {
+	s.Delegate = val
 }
 
 // SetSecretId sets the value of SecretId.
@@ -177,53 +161,9 @@ func (s *ApproveSecretRequestBody) SetSecretId(val OptString) {
 	s.SecretId = val
 }
 
-// SetTtlSeconds sets the value of TtlSeconds.
-func (s *ApproveSecretRequestBody) SetTtlSeconds(val OptInt64) {
-	s.TtlSeconds = val
-}
-
-// Grant the value itself rather than a sentinel (ADR 26-10-27-840): env in the variable the request
-// named, file the path of a file holding it there. A person's choice alone - no request asks for it
-// - and only of a secret that allows raw. Absent grants a sentinel.
-type ApproveSecretRequestBodyRaw string
-
-const (
-	ApproveSecretRequestBodyRawEnv  ApproveSecretRequestBodyRaw = "env"
-	ApproveSecretRequestBodyRawFile ApproveSecretRequestBodyRaw = "file"
-)
-
-// AllValues returns all ApproveSecretRequestBodyRaw values.
-func (ApproveSecretRequestBodyRaw) AllValues() []ApproveSecretRequestBodyRaw {
-	return []ApproveSecretRequestBodyRaw{
-		ApproveSecretRequestBodyRawEnv,
-		ApproveSecretRequestBodyRawFile,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ApproveSecretRequestBodyRaw) MarshalText() ([]byte, error) {
-	switch s {
-	case ApproveSecretRequestBodyRawEnv:
-		return []byte(s), nil
-	case ApproveSecretRequestBodyRawFile:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ApproveSecretRequestBodyRaw) UnmarshalText(data []byte) error {
-	switch ApproveSecretRequestBodyRaw(data) {
-	case ApproveSecretRequestBodyRawEnv:
-		*s = ApproveSecretRequestBodyRawEnv
-		return nil
-	case ApproveSecretRequestBodyRawFile:
-		*s = ApproveSecretRequestBodyRawFile
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
+// SetUse sets the value of Use.
+func (s *ApproveSecretRequestBody) SetUse(val OptSecretRequestPartDecision) {
+	s.Use = val
 }
 
 // Ref: #/components/schemas/ApproveTrustRequestBody
@@ -1155,32 +1095,33 @@ func (s *CreateSandboxBody) SetBindings(val []SandboxBindingInput) {
 	s.Bindings = val
 }
 
-// An agent's ask, relayed by the pool agent on behalf of one of its sandboxes.
+// An agent's ask, relayed by the pool agent on behalf of one of its sandboxes: a use part (envVar
+// with hosts, routes or policies), a delegate part, or both (ADR 26-11-02-022 §1).
 // Ref: #/components/schemas/CreateSandboxCredentialRequestBody
 type CreateSandboxCredentialRequestBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Environment variable the credential is wanted in. Required to use it; a request to delegate it
-	// names none, since a delegation delivers nothing to the asking sandbox.
+	// Environment variable the credential is wanted in. Required for the use part, the ask to use it; a
+	// request with only a delegate part names none, since a delegation delivers nothing to the asking
+	// sandbox.
 	EnvVar OptString `json:"envVar"`
 	// How long the agent asks the binding to last, in seconds, up to thirty days. A suggestion the
 	// approver starts from, not a term. 0 or absent asks for nothing in particular; forever cannot be
 	// asked for, and neither can a span longer than the ceiling.
 	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
-	// Destination hosts the credential will be sent to (ADR 26-10-02-393), each shorthand for a route to
-	// that exact host and no host beneath it. Hosts and routes together name at least one destination,
-	// and each becomes a route of the binding approving the request makes, unless the approver names
-	// others.
+	// Destination hosts the use part will send the credential to (ADR 26-10-02-393), each shorthand for
+	// a route to that exact host and no host beneath it.
 	Hosts []string `json:"hosts"`
-	// Routes the credential will be sent on, each in the typed form `[METHODS ]HOSTS[PATHS][
+	// Routes the use part will send the credential on, each in the typed form `[METHODS ]HOSTS[PATHS][
 	// graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]` (ADR 26-10-27-880 §4), such as `GET api.github.
 	// com/repos/o/r/**` or `api.github.com/graphql graphql=query`. A route that does not parse refuses
 	// the request.
 	Routes []string `json:"routes"`
-	// What the agent asks the credential for, one or the other and never both. use (the default) asks to
-	// use it. delegate asks to delegate it to other discoboxes; approving it makes a delegate binding,
-	// which delivers nothing to the asking discobox.
-	Purpose OptCreateSandboxCredentialRequestBodyPurpose `json:"purpose"`
+	// Credential policy files naming the use part's routes (ADR 26-11-02-022 §2), exclusive with hosts
+	// and routes. The server resolves each document; a request over its limits, or with a document that
+	// does not resolve, is refused naming it.
+	Policies []SandboxCredentialPolicy           `json:"policies"`
+	Delegate OptSandboxCredentialRequestDelegate `json:"delegate"`
 	// Why the agent says it needs the credential.
 	Justification OptString `json:"justification"`
 	// Credential name the agent asked for.
@@ -1214,9 +1155,14 @@ func (s *CreateSandboxCredentialRequestBody) GetRoutes() []string {
 	return s.Routes
 }
 
-// GetPurpose returns the value of Purpose.
-func (s *CreateSandboxCredentialRequestBody) GetPurpose() OptCreateSandboxCredentialRequestBodyPurpose {
-	return s.Purpose
+// GetPolicies returns the value of Policies.
+func (s *CreateSandboxCredentialRequestBody) GetPolicies() []SandboxCredentialPolicy {
+	return s.Policies
+}
+
+// GetDelegate returns the value of Delegate.
+func (s *CreateSandboxCredentialRequestBody) GetDelegate() OptSandboxCredentialRequestDelegate {
+	return s.Delegate
 }
 
 // GetJustification returns the value of Justification.
@@ -1259,9 +1205,14 @@ func (s *CreateSandboxCredentialRequestBody) SetRoutes(val []string) {
 	s.Routes = val
 }
 
-// SetPurpose sets the value of Purpose.
-func (s *CreateSandboxCredentialRequestBody) SetPurpose(val OptCreateSandboxCredentialRequestBodyPurpose) {
-	s.Purpose = val
+// SetPolicies sets the value of Policies.
+func (s *CreateSandboxCredentialRequestBody) SetPolicies(val []SandboxCredentialPolicy) {
+	s.Policies = val
+}
+
+// SetDelegate sets the value of Delegate.
+func (s *CreateSandboxCredentialRequestBody) SetDelegate(val OptSandboxCredentialRequestDelegate) {
+	s.Delegate = val
 }
 
 // SetJustification sets the value of Justification.
@@ -1277,50 +1228,6 @@ func (s *CreateSandboxCredentialRequestBody) SetName(val string) {
 // SetSandboxId sets the value of SandboxId.
 func (s *CreateSandboxCredentialRequestBody) SetSandboxId(val string) {
 	s.SandboxId = val
-}
-
-// What the agent asks the credential for, one or the other and never both. use (the default) asks to
-// use it. delegate asks to delegate it to other discoboxes; approving it makes a delegate binding,
-// which delivers nothing to the asking discobox.
-type CreateSandboxCredentialRequestBodyPurpose string
-
-const (
-	CreateSandboxCredentialRequestBodyPurposeUse      CreateSandboxCredentialRequestBodyPurpose = "use"
-	CreateSandboxCredentialRequestBodyPurposeDelegate CreateSandboxCredentialRequestBodyPurpose = "delegate"
-)
-
-// AllValues returns all CreateSandboxCredentialRequestBodyPurpose values.
-func (CreateSandboxCredentialRequestBodyPurpose) AllValues() []CreateSandboxCredentialRequestBodyPurpose {
-	return []CreateSandboxCredentialRequestBodyPurpose{
-		CreateSandboxCredentialRequestBodyPurposeUse,
-		CreateSandboxCredentialRequestBodyPurposeDelegate,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s CreateSandboxCredentialRequestBodyPurpose) MarshalText() ([]byte, error) {
-	switch s {
-	case CreateSandboxCredentialRequestBodyPurposeUse:
-		return []byte(s), nil
-	case CreateSandboxCredentialRequestBodyPurposeDelegate:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *CreateSandboxCredentialRequestBodyPurpose) UnmarshalText(data []byte) error {
-	switch CreateSandboxCredentialRequestBodyPurpose(data) {
-	case CreateSandboxCredentialRequestBodyPurposeUse:
-		*s = CreateSandboxCredentialRequestBodyPurposeUse
-		return nil
-	case CreateSandboxCredentialRequestBodyPurposeDelegate:
-		*s = CreateSandboxCredentialRequestBodyPurposeDelegate
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }
 
 // Create an exec. Provide command for a plain exec, shell to run the run user's login shell, or
@@ -8925,52 +8832,6 @@ func (s *ObservedCertificate) SetSubject(val string) {
 	s.Subject = val
 }
 
-// NewOptApproveSecretRequestBodyRaw returns new OptApproveSecretRequestBodyRaw with value set to v.
-func NewOptApproveSecretRequestBodyRaw(v ApproveSecretRequestBodyRaw) OptApproveSecretRequestBodyRaw {
-	return OptApproveSecretRequestBodyRaw{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptApproveSecretRequestBodyRaw is optional ApproveSecretRequestBodyRaw.
-type OptApproveSecretRequestBodyRaw struct {
-	Value ApproveSecretRequestBodyRaw
-	Set   bool
-}
-
-// IsSet returns true if OptApproveSecretRequestBodyRaw was set.
-func (o OptApproveSecretRequestBodyRaw) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptApproveSecretRequestBodyRaw) Reset() {
-	var v ApproveSecretRequestBodyRaw
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptApproveSecretRequestBodyRaw) SetTo(v ApproveSecretRequestBodyRaw) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptApproveSecretRequestBodyRaw) Get() (v ApproveSecretRequestBodyRaw, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptApproveSecretRequestBodyRaw) Or(d ApproveSecretRequestBodyRaw) ApproveSecretRequestBodyRaw {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptBool returns new OptBool with value set to v.
 func NewOptBool(v bool) OptBool {
 	return OptBool{
@@ -9057,52 +8918,6 @@ func (o OptCloneProgressStage) Get() (v CloneProgressStage, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptCloneProgressStage) Or(d CloneProgressStage) CloneProgressStage {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptCreateSandboxCredentialRequestBodyPurpose returns new OptCreateSandboxCredentialRequestBodyPurpose with value set to v.
-func NewOptCreateSandboxCredentialRequestBodyPurpose(v CreateSandboxCredentialRequestBodyPurpose) OptCreateSandboxCredentialRequestBodyPurpose {
-	return OptCreateSandboxCredentialRequestBodyPurpose{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptCreateSandboxCredentialRequestBodyPurpose is optional CreateSandboxCredentialRequestBodyPurpose.
-type OptCreateSandboxCredentialRequestBodyPurpose struct {
-	Value CreateSandboxCredentialRequestBodyPurpose
-	Set   bool
-}
-
-// IsSet returns true if OptCreateSandboxCredentialRequestBodyPurpose was set.
-func (o OptCreateSandboxCredentialRequestBodyPurpose) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptCreateSandboxCredentialRequestBodyPurpose) Reset() {
-	var v CreateSandboxCredentialRequestBodyPurpose
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptCreateSandboxCredentialRequestBodyPurpose) SetTo(v CreateSandboxCredentialRequestBodyPurpose) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptCreateSandboxCredentialRequestBodyPurpose) Get() (v CreateSandboxCredentialRequestBodyPurpose, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptCreateSandboxCredentialRequestBodyPurpose) Or(d CreateSandboxCredentialRequestBodyPurpose) CreateSandboxCredentialRequestBodyPurpose {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -14255,6 +14070,52 @@ func (o OptSandboxCreateConfigSourceCodeReferences) Or(d SandboxCreateConfigSour
 	return d
 }
 
+// NewOptSandboxCredentialPolicyArgs returns new OptSandboxCredentialPolicyArgs with value set to v.
+func NewOptSandboxCredentialPolicyArgs(v SandboxCredentialPolicyArgs) OptSandboxCredentialPolicyArgs {
+	return OptSandboxCredentialPolicyArgs{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCredentialPolicyArgs is optional SandboxCredentialPolicyArgs.
+type OptSandboxCredentialPolicyArgs struct {
+	Value SandboxCredentialPolicyArgs
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCredentialPolicyArgs was set.
+func (o OptSandboxCredentialPolicyArgs) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCredentialPolicyArgs) Reset() {
+	var v SandboxCredentialPolicyArgs
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCredentialPolicyArgs) SetTo(v SandboxCredentialPolicyArgs) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCredentialPolicyArgs) Get() (v SandboxCredentialPolicyArgs, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCredentialPolicyArgs) Or(d SandboxCredentialPolicyArgs) SandboxCredentialPolicyArgs {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxCredentialPurpose returns new OptSandboxCredentialPurpose with value set to v.
 func NewOptSandboxCredentialPurpose(v SandboxCredentialPurpose) OptSandboxCredentialPurpose {
 	return OptSandboxCredentialPurpose{
@@ -14347,38 +14208,38 @@ func (o OptSandboxCredentialRaw) Or(d SandboxCredentialRaw) SandboxCredentialRaw
 	return d
 }
 
-// NewOptSandboxCredentialRequestStatusRaw returns new OptSandboxCredentialRequestStatusRaw with value set to v.
-func NewOptSandboxCredentialRequestStatusRaw(v SandboxCredentialRequestStatusRaw) OptSandboxCredentialRequestStatusRaw {
-	return OptSandboxCredentialRequestStatusRaw{
+// NewOptSandboxCredentialRequestDelegate returns new OptSandboxCredentialRequestDelegate with value set to v.
+func NewOptSandboxCredentialRequestDelegate(v SandboxCredentialRequestDelegate) OptSandboxCredentialRequestDelegate {
+	return OptSandboxCredentialRequestDelegate{
 		Value: v,
 		Set:   true,
 	}
 }
 
-// OptSandboxCredentialRequestStatusRaw is optional SandboxCredentialRequestStatusRaw.
-type OptSandboxCredentialRequestStatusRaw struct {
-	Value SandboxCredentialRequestStatusRaw
+// OptSandboxCredentialRequestDelegate is optional SandboxCredentialRequestDelegate.
+type OptSandboxCredentialRequestDelegate struct {
+	Value SandboxCredentialRequestDelegate
 	Set   bool
 }
 
-// IsSet returns true if OptSandboxCredentialRequestStatusRaw was set.
-func (o OptSandboxCredentialRequestStatusRaw) IsSet() bool { return o.Set }
+// IsSet returns true if OptSandboxCredentialRequestDelegate was set.
+func (o OptSandboxCredentialRequestDelegate) IsSet() bool { return o.Set }
 
 // Reset unsets value.
-func (o *OptSandboxCredentialRequestStatusRaw) Reset() {
-	var v SandboxCredentialRequestStatusRaw
+func (o *OptSandboxCredentialRequestDelegate) Reset() {
+	var v SandboxCredentialRequestDelegate
 	o.Value = v
 	o.Set = false
 }
 
 // SetTo sets value to v.
-func (o *OptSandboxCredentialRequestStatusRaw) SetTo(v SandboxCredentialRequestStatusRaw) {
+func (o *OptSandboxCredentialRequestDelegate) SetTo(v SandboxCredentialRequestDelegate) {
 	o.Set = true
 	o.Value = v
 }
 
 // Get returns value and boolean that denotes whether value was set.
-func (o OptSandboxCredentialRequestStatusRaw) Get() (v SandboxCredentialRequestStatusRaw, ok bool) {
+func (o OptSandboxCredentialRequestDelegate) Get() (v SandboxCredentialRequestDelegate, ok bool) {
 	if !o.Set {
 		return v, false
 	}
@@ -14386,7 +14247,99 @@ func (o OptSandboxCredentialRequestStatusRaw) Get() (v SandboxCredentialRequestS
 }
 
 // Or returns value if set, or given parameter if does not.
-func (o OptSandboxCredentialRequestStatusRaw) Or(d SandboxCredentialRequestStatusRaw) SandboxCredentialRequestStatusRaw {
+func (o OptSandboxCredentialRequestDelegate) Or(d SandboxCredentialRequestDelegate) SandboxCredentialRequestDelegate {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxCredentialRequestPartStatus returns new OptSandboxCredentialRequestPartStatus with value set to v.
+func NewOptSandboxCredentialRequestPartStatus(v SandboxCredentialRequestPartStatus) OptSandboxCredentialRequestPartStatus {
+	return OptSandboxCredentialRequestPartStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCredentialRequestPartStatus is optional SandboxCredentialRequestPartStatus.
+type OptSandboxCredentialRequestPartStatus struct {
+	Value SandboxCredentialRequestPartStatus
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCredentialRequestPartStatus was set.
+func (o OptSandboxCredentialRequestPartStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCredentialRequestPartStatus) Reset() {
+	var v SandboxCredentialRequestPartStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCredentialRequestPartStatus) SetTo(v SandboxCredentialRequestPartStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCredentialRequestPartStatus) Get() (v SandboxCredentialRequestPartStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCredentialRequestPartStatus) Or(d SandboxCredentialRequestPartStatus) SandboxCredentialRequestPartStatus {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxCredentialRequestPartStatusRaw returns new OptSandboxCredentialRequestPartStatusRaw with value set to v.
+func NewOptSandboxCredentialRequestPartStatusRaw(v SandboxCredentialRequestPartStatusRaw) OptSandboxCredentialRequestPartStatusRaw {
+	return OptSandboxCredentialRequestPartStatusRaw{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCredentialRequestPartStatusRaw is optional SandboxCredentialRequestPartStatusRaw.
+type OptSandboxCredentialRequestPartStatusRaw struct {
+	Value SandboxCredentialRequestPartStatusRaw
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCredentialRequestPartStatusRaw was set.
+func (o OptSandboxCredentialRequestPartStatusRaw) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCredentialRequestPartStatusRaw) Reset() {
+	var v SandboxCredentialRequestPartStatusRaw
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCredentialRequestPartStatusRaw) SetTo(v SandboxCredentialRequestPartStatusRaw) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCredentialRequestPartStatusRaw) Get() (v SandboxCredentialRequestPartStatusRaw, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCredentialRequestPartStatusRaw) Or(d SandboxCredentialRequestPartStatusRaw) SandboxCredentialRequestPartStatusRaw {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -15865,38 +15818,38 @@ func (o OptSecretRequest) Or(d SecretRequest) SecretRequest {
 	return d
 }
 
-// NewOptSecretRequestPurpose returns new OptSecretRequestPurpose with value set to v.
-func NewOptSecretRequestPurpose(v SecretRequestPurpose) OptSecretRequestPurpose {
-	return OptSecretRequestPurpose{
+// NewOptSecretRequestPart returns new OptSecretRequestPart with value set to v.
+func NewOptSecretRequestPart(v SecretRequestPart) OptSecretRequestPart {
+	return OptSecretRequestPart{
 		Value: v,
 		Set:   true,
 	}
 }
 
-// OptSecretRequestPurpose is optional SecretRequestPurpose.
-type OptSecretRequestPurpose struct {
-	Value SecretRequestPurpose
+// OptSecretRequestPart is optional SecretRequestPart.
+type OptSecretRequestPart struct {
+	Value SecretRequestPart
 	Set   bool
 }
 
-// IsSet returns true if OptSecretRequestPurpose was set.
-func (o OptSecretRequestPurpose) IsSet() bool { return o.Set }
+// IsSet returns true if OptSecretRequestPart was set.
+func (o OptSecretRequestPart) IsSet() bool { return o.Set }
 
 // Reset unsets value.
-func (o *OptSecretRequestPurpose) Reset() {
-	var v SecretRequestPurpose
+func (o *OptSecretRequestPart) Reset() {
+	var v SecretRequestPart
 	o.Value = v
 	o.Set = false
 }
 
 // SetTo sets value to v.
-func (o *OptSecretRequestPurpose) SetTo(v SecretRequestPurpose) {
+func (o *OptSecretRequestPart) SetTo(v SecretRequestPart) {
 	o.Set = true
 	o.Value = v
 }
 
 // Get returns value and boolean that denotes whether value was set.
-func (o OptSecretRequestPurpose) Get() (v SecretRequestPurpose, ok bool) {
+func (o OptSecretRequestPart) Get() (v SecretRequestPart, ok bool) {
 	if !o.Set {
 		return v, false
 	}
@@ -15904,7 +15857,191 @@ func (o OptSecretRequestPurpose) Get() (v SecretRequestPurpose, ok bool) {
 }
 
 // Or returns value if set, or given parameter if does not.
-func (o OptSecretRequestPurpose) Or(d SecretRequestPurpose) SecretRequestPurpose {
+func (o OptSecretRequestPart) Or(d SecretRequestPart) SecretRequestPart {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretRequestPartDecision returns new OptSecretRequestPartDecision with value set to v.
+func NewOptSecretRequestPartDecision(v SecretRequestPartDecision) OptSecretRequestPartDecision {
+	return OptSecretRequestPartDecision{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRequestPartDecision is optional SecretRequestPartDecision.
+type OptSecretRequestPartDecision struct {
+	Value SecretRequestPartDecision
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRequestPartDecision was set.
+func (o OptSecretRequestPartDecision) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRequestPartDecision) Reset() {
+	var v SecretRequestPartDecision
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRequestPartDecision) SetTo(v SecretRequestPartDecision) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRequestPartDecision) Get() (v SecretRequestPartDecision, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRequestPartDecision) Or(d SecretRequestPartDecision) SecretRequestPartDecision {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretRequestPartDecisionRaw returns new OptSecretRequestPartDecisionRaw with value set to v.
+func NewOptSecretRequestPartDecisionRaw(v SecretRequestPartDecisionRaw) OptSecretRequestPartDecisionRaw {
+	return OptSecretRequestPartDecisionRaw{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRequestPartDecisionRaw is optional SecretRequestPartDecisionRaw.
+type OptSecretRequestPartDecisionRaw struct {
+	Value SecretRequestPartDecisionRaw
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRequestPartDecisionRaw was set.
+func (o OptSecretRequestPartDecisionRaw) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRequestPartDecisionRaw) Reset() {
+	var v SecretRequestPartDecisionRaw
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRequestPartDecisionRaw) SetTo(v SecretRequestPartDecisionRaw) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRequestPartDecisionRaw) Get() (v SecretRequestPartDecisionRaw, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRequestPartDecisionRaw) Or(d SecretRequestPartDecisionRaw) SecretRequestPartDecisionRaw {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretRequestPartOutcome returns new OptSecretRequestPartOutcome with value set to v.
+func NewOptSecretRequestPartOutcome(v SecretRequestPartOutcome) OptSecretRequestPartOutcome {
+	return OptSecretRequestPartOutcome{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRequestPartOutcome is optional SecretRequestPartOutcome.
+type OptSecretRequestPartOutcome struct {
+	Value SecretRequestPartOutcome
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRequestPartOutcome was set.
+func (o OptSecretRequestPartOutcome) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRequestPartOutcome) Reset() {
+	var v SecretRequestPartOutcome
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRequestPartOutcome) SetTo(v SecretRequestPartOutcome) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRequestPartOutcome) Get() (v SecretRequestPartOutcome, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRequestPartOutcome) Or(d SecretRequestPartOutcome) SecretRequestPartOutcome {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretRequestPolicyArgs returns new OptSecretRequestPolicyArgs with value set to v.
+func NewOptSecretRequestPolicyArgs(v SecretRequestPolicyArgs) OptSecretRequestPolicyArgs {
+	return OptSecretRequestPolicyArgs{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretRequestPolicyArgs is optional SecretRequestPolicyArgs.
+type OptSecretRequestPolicyArgs struct {
+	Value SecretRequestPolicyArgs
+	Set   bool
+}
+
+// IsSet returns true if OptSecretRequestPolicyArgs was set.
+func (o OptSecretRequestPolicyArgs) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretRequestPolicyArgs) Reset() {
+	var v SecretRequestPolicyArgs
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretRequestPolicyArgs) SetTo(v SecretRequestPolicyArgs) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretRequestPolicyArgs) Get() (v SecretRequestPolicyArgs, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretRequestPolicyArgs) Or(d SecretRequestPolicyArgs) SecretRequestPolicyArgs {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -24937,6 +25074,60 @@ func (s *SandboxCredential) SetSecretId(val string) {
 	s.SecretId = val
 }
 
+// One credential policy file a request names (ADR 26-11-02-022 §2), carried as the agent read it.
+// Ref: #/components/schemas/SandboxCredentialPolicy
+type SandboxCredentialPolicy struct {
+	// The file's arguments, by parameter name.
+	Args OptSandboxCredentialPolicyArgs `json:"args"`
+	// The policy document, the file's JSON object as it was read. The server validates and resolves it
+	// (ADR 26-10-30-584).
+	Document jx.Raw `json:"document"`
+	// The file as the agent named it; what an approver is shown the role by.
+	File string `json:"file"`
+}
+
+// GetArgs returns the value of Args.
+func (s *SandboxCredentialPolicy) GetArgs() OptSandboxCredentialPolicyArgs {
+	return s.Args
+}
+
+// GetDocument returns the value of Document.
+func (s *SandboxCredentialPolicy) GetDocument() jx.Raw {
+	return s.Document
+}
+
+// GetFile returns the value of File.
+func (s *SandboxCredentialPolicy) GetFile() string {
+	return s.File
+}
+
+// SetArgs sets the value of Args.
+func (s *SandboxCredentialPolicy) SetArgs(val OptSandboxCredentialPolicyArgs) {
+	s.Args = val
+}
+
+// SetDocument sets the value of Document.
+func (s *SandboxCredentialPolicy) SetDocument(val jx.Raw) {
+	s.Document = val
+}
+
+// SetFile sets the value of File.
+func (s *SandboxCredentialPolicy) SetFile(val string) {
+	s.File = val
+}
+
+// The file's arguments, by parameter name.
+type SandboxCredentialPolicyArgs map[string]string
+
+func (s *SandboxCredentialPolicyArgs) init() SandboxCredentialPolicyArgs {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
 // What the binding lets the sandbox do with the credential. use delivers it in envVar; delegate lets
 // the sandbox give it to the discoboxes it creates and delivers nothing.
 type SandboxCredentialPurpose string
@@ -25023,29 +25214,218 @@ func (s *SandboxCredentialRaw) UnmarshalText(data []byte) error {
 	}
 }
 
-// Ref: #/components/schemas/SandboxCredentialRequestStatus
-type SandboxCredentialRequestStatus struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// The variable the credential is delivered in, once granted; absent for a delegation.
+// The part of a request that asks to delegate the credential to the discoboxes the asking one
+// creates. Routes or policies, never both; it names no variable.
+// Ref: #/components/schemas/SandboxCredentialRequestDelegate
+type SandboxCredentialRequestDelegate struct {
+	Policies []SandboxCredentialPolicy `json:"policies"`
+	// Routes in the typed form, as for the use part.
+	Routes []string `json:"routes"`
+}
+
+// GetPolicies returns the value of Policies.
+func (s *SandboxCredentialRequestDelegate) GetPolicies() []SandboxCredentialPolicy {
+	return s.Policies
+}
+
+// GetRoutes returns the value of Routes.
+func (s *SandboxCredentialRequestDelegate) GetRoutes() []string {
+	return s.Routes
+}
+
+// SetPolicies sets the value of Policies.
+func (s *SandboxCredentialRequestDelegate) SetPolicies(val []SandboxCredentialPolicy) {
+	s.Policies = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *SandboxCredentialRequestDelegate) SetRoutes(val []string) {
+	s.Routes = val
+}
+
+// One part of a request, and once granted the credential the sandbox holds under it as the approver
+// chose it.
+// Ref: #/components/schemas/SandboxCredentialRequestPartStatus
+type SandboxCredentialRequestPartStatus struct {
+	// The variable the credential is delivered in, once the use part is granted.
 	EnvVar OptString `json:"envVar"`
-	// When the binding lapses, as the approver chose it rather than as it was asked. Absent on a pending
-	// or denied request, and on a granted one whose binding never lapses.
+	// When the binding lapses, as the approver chose it. Absent until granted, and on a binding that
+	// never lapses.
 	ExpiresAt OptDateTime `json:"expiresAt"`
 	// Where the credential may be sent, once granted, as the approver chose.
 	Hosts []string `json:"hosts"`
 	// The credential, once granted.
 	Name OptString `json:"name"`
-	// What the request asks the credential for. A delegate binding lets the sandbox give the credential
-	// to the discoboxes it creates, and delivers nothing to the sandbox itself.
-	Purpose SandboxCredentialRequestStatusPurpose `json:"purpose"`
-	// Once granted, the person approving handed over the value itself rather than a sentinel (ADR
-	// 26-10-27-840): in envVar (env), or the path of a file holding it there (file).
-	Raw OptSandboxCredentialRequestStatusRaw `json:"raw"`
+	// Once the use part is granted, the person approving handed over the value itself rather than a
+	// sentinel (ADR 26-10-27-840): in envVar (env), or the path of a file holding it there (file).
+	Raw OptSandboxCredentialRequestPartStatusRaw `json:"raw"`
+	// The part's status.
+	Status SandboxCredentialRequestPartStatusStatus `json:"status"`
+}
+
+// GetEnvVar returns the value of EnvVar.
+func (s *SandboxCredentialRequestPartStatus) GetEnvVar() OptString {
+	return s.EnvVar
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *SandboxCredentialRequestPartStatus) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetHosts returns the value of Hosts.
+func (s *SandboxCredentialRequestPartStatus) GetHosts() []string {
+	return s.Hosts
+}
+
+// GetName returns the value of Name.
+func (s *SandboxCredentialRequestPartStatus) GetName() OptString {
+	return s.Name
+}
+
+// GetRaw returns the value of Raw.
+func (s *SandboxCredentialRequestPartStatus) GetRaw() OptSandboxCredentialRequestPartStatusRaw {
+	return s.Raw
+}
+
+// GetStatus returns the value of Status.
+func (s *SandboxCredentialRequestPartStatus) GetStatus() SandboxCredentialRequestPartStatusStatus {
+	return s.Status
+}
+
+// SetEnvVar sets the value of EnvVar.
+func (s *SandboxCredentialRequestPartStatus) SetEnvVar(val OptString) {
+	s.EnvVar = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *SandboxCredentialRequestPartStatus) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetHosts sets the value of Hosts.
+func (s *SandboxCredentialRequestPartStatus) SetHosts(val []string) {
+	s.Hosts = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxCredentialRequestPartStatus) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetRaw sets the value of Raw.
+func (s *SandboxCredentialRequestPartStatus) SetRaw(val OptSandboxCredentialRequestPartStatusRaw) {
+	s.Raw = val
+}
+
+// SetStatus sets the value of Status.
+func (s *SandboxCredentialRequestPartStatus) SetStatus(val SandboxCredentialRequestPartStatusStatus) {
+	s.Status = val
+}
+
+// Once the use part is granted, the person approving handed over the value itself rather than a
+// sentinel (ADR 26-10-27-840): in envVar (env), or the path of a file holding it there (file).
+type SandboxCredentialRequestPartStatusRaw string
+
+const (
+	SandboxCredentialRequestPartStatusRawEnv  SandboxCredentialRequestPartStatusRaw = "env"
+	SandboxCredentialRequestPartStatusRawFile SandboxCredentialRequestPartStatusRaw = "file"
+)
+
+// AllValues returns all SandboxCredentialRequestPartStatusRaw values.
+func (SandboxCredentialRequestPartStatusRaw) AllValues() []SandboxCredentialRequestPartStatusRaw {
+	return []SandboxCredentialRequestPartStatusRaw{
+		SandboxCredentialRequestPartStatusRawEnv,
+		SandboxCredentialRequestPartStatusRawFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxCredentialRequestPartStatusRaw) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxCredentialRequestPartStatusRawEnv:
+		return []byte(s), nil
+	case SandboxCredentialRequestPartStatusRawFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxCredentialRequestPartStatusRaw) UnmarshalText(data []byte) error {
+	switch SandboxCredentialRequestPartStatusRaw(data) {
+	case SandboxCredentialRequestPartStatusRawEnv:
+		*s = SandboxCredentialRequestPartStatusRawEnv
+		return nil
+	case SandboxCredentialRequestPartStatusRawFile:
+		*s = SandboxCredentialRequestPartStatusRawFile
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// The part's status.
+type SandboxCredentialRequestPartStatusStatus string
+
+const (
+	SandboxCredentialRequestPartStatusStatusPending SandboxCredentialRequestPartStatusStatus = "pending"
+	SandboxCredentialRequestPartStatusStatusGranted SandboxCredentialRequestPartStatusStatus = "granted"
+	SandboxCredentialRequestPartStatusStatusDenied  SandboxCredentialRequestPartStatusStatus = "denied"
+)
+
+// AllValues returns all SandboxCredentialRequestPartStatusStatus values.
+func (SandboxCredentialRequestPartStatusStatus) AllValues() []SandboxCredentialRequestPartStatusStatus {
+	return []SandboxCredentialRequestPartStatusStatus{
+		SandboxCredentialRequestPartStatusStatusPending,
+		SandboxCredentialRequestPartStatusStatusGranted,
+		SandboxCredentialRequestPartStatusStatusDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxCredentialRequestPartStatusStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxCredentialRequestPartStatusStatusPending:
+		return []byte(s), nil
+	case SandboxCredentialRequestPartStatusStatusGranted:
+		return []byte(s), nil
+	case SandboxCredentialRequestPartStatusStatusDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxCredentialRequestPartStatusStatus) UnmarshalText(data []byte) error {
+	switch SandboxCredentialRequestPartStatusStatus(data) {
+	case SandboxCredentialRequestPartStatusStatusPending:
+		*s = SandboxCredentialRequestPartStatusStatusPending
+		return nil
+	case SandboxCredentialRequestPartStatusStatusGranted:
+		*s = SandboxCredentialRequestPartStatusStatusGranted
+		return nil
+	case SandboxCredentialRequestPartStatusStatusDenied:
+		*s = SandboxCredentialRequestPartStatusStatusDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/SandboxCredentialRequestStatus
+type SandboxCredentialRequestStatus struct {
+	// A URL to the JSON Schema for this object.
+	Schema   OptURI                                `json:"$schema"`
+	Delegate OptSandboxCredentialRequestPartStatus `json:"delegate"`
 	// Request ID to poll.
 	RequestId string `json:"requestId"`
-	// Request status.
-	Status SandboxCredentialRequestStatusStatus `json:"status"`
+	// Request status. pending until a person answers; then granted when any part was, denied when none
+	// was.
+	Status SandboxCredentialRequestStatusStatus  `json:"status"`
+	Use    OptSandboxCredentialRequestPartStatus `json:"use"`
 }
 
 // GetSchema returns the value of Schema.
@@ -25053,34 +25433,9 @@ func (s *SandboxCredentialRequestStatus) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetEnvVar returns the value of EnvVar.
-func (s *SandboxCredentialRequestStatus) GetEnvVar() OptString {
-	return s.EnvVar
-}
-
-// GetExpiresAt returns the value of ExpiresAt.
-func (s *SandboxCredentialRequestStatus) GetExpiresAt() OptDateTime {
-	return s.ExpiresAt
-}
-
-// GetHosts returns the value of Hosts.
-func (s *SandboxCredentialRequestStatus) GetHosts() []string {
-	return s.Hosts
-}
-
-// GetName returns the value of Name.
-func (s *SandboxCredentialRequestStatus) GetName() OptString {
-	return s.Name
-}
-
-// GetPurpose returns the value of Purpose.
-func (s *SandboxCredentialRequestStatus) GetPurpose() SandboxCredentialRequestStatusPurpose {
-	return s.Purpose
-}
-
-// GetRaw returns the value of Raw.
-func (s *SandboxCredentialRequestStatus) GetRaw() OptSandboxCredentialRequestStatusRaw {
-	return s.Raw
+// GetDelegate returns the value of Delegate.
+func (s *SandboxCredentialRequestStatus) GetDelegate() OptSandboxCredentialRequestPartStatus {
+	return s.Delegate
 }
 
 // GetRequestId returns the value of RequestId.
@@ -25093,39 +25448,19 @@ func (s *SandboxCredentialRequestStatus) GetStatus() SandboxCredentialRequestSta
 	return s.Status
 }
 
+// GetUse returns the value of Use.
+func (s *SandboxCredentialRequestStatus) GetUse() OptSandboxCredentialRequestPartStatus {
+	return s.Use
+}
+
 // SetSchema sets the value of Schema.
 func (s *SandboxCredentialRequestStatus) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetEnvVar sets the value of EnvVar.
-func (s *SandboxCredentialRequestStatus) SetEnvVar(val OptString) {
-	s.EnvVar = val
-}
-
-// SetExpiresAt sets the value of ExpiresAt.
-func (s *SandboxCredentialRequestStatus) SetExpiresAt(val OptDateTime) {
-	s.ExpiresAt = val
-}
-
-// SetHosts sets the value of Hosts.
-func (s *SandboxCredentialRequestStatus) SetHosts(val []string) {
-	s.Hosts = val
-}
-
-// SetName sets the value of Name.
-func (s *SandboxCredentialRequestStatus) SetName(val OptString) {
-	s.Name = val
-}
-
-// SetPurpose sets the value of Purpose.
-func (s *SandboxCredentialRequestStatus) SetPurpose(val SandboxCredentialRequestStatusPurpose) {
-	s.Purpose = val
-}
-
-// SetRaw sets the value of Raw.
-func (s *SandboxCredentialRequestStatus) SetRaw(val OptSandboxCredentialRequestStatusRaw) {
-	s.Raw = val
+// SetDelegate sets the value of Delegate.
+func (s *SandboxCredentialRequestStatus) SetDelegate(val OptSandboxCredentialRequestPartStatus) {
+	s.Delegate = val
 }
 
 // SetRequestId sets the value of RequestId.
@@ -25138,96 +25473,16 @@ func (s *SandboxCredentialRequestStatus) SetStatus(val SandboxCredentialRequestS
 	s.Status = val
 }
 
+// SetUse sets the value of Use.
+func (s *SandboxCredentialRequestStatus) SetUse(val OptSandboxCredentialRequestPartStatus) {
+	s.Use = val
+}
+
 func (*SandboxCredentialRequestStatus) createSandboxCredentialRequestRes() {}
 func (*SandboxCredentialRequestStatus) getSandboxCredentialRequestRes()    {}
 
-// What the request asks the credential for. A delegate binding lets the sandbox give the credential
-// to the discoboxes it creates, and delivers nothing to the sandbox itself.
-type SandboxCredentialRequestStatusPurpose string
-
-const (
-	SandboxCredentialRequestStatusPurposeUse      SandboxCredentialRequestStatusPurpose = "use"
-	SandboxCredentialRequestStatusPurposeDelegate SandboxCredentialRequestStatusPurpose = "delegate"
-)
-
-// AllValues returns all SandboxCredentialRequestStatusPurpose values.
-func (SandboxCredentialRequestStatusPurpose) AllValues() []SandboxCredentialRequestStatusPurpose {
-	return []SandboxCredentialRequestStatusPurpose{
-		SandboxCredentialRequestStatusPurposeUse,
-		SandboxCredentialRequestStatusPurposeDelegate,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SandboxCredentialRequestStatusPurpose) MarshalText() ([]byte, error) {
-	switch s {
-	case SandboxCredentialRequestStatusPurposeUse:
-		return []byte(s), nil
-	case SandboxCredentialRequestStatusPurposeDelegate:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SandboxCredentialRequestStatusPurpose) UnmarshalText(data []byte) error {
-	switch SandboxCredentialRequestStatusPurpose(data) {
-	case SandboxCredentialRequestStatusPurposeUse:
-		*s = SandboxCredentialRequestStatusPurposeUse
-		return nil
-	case SandboxCredentialRequestStatusPurposeDelegate:
-		*s = SandboxCredentialRequestStatusPurposeDelegate
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Once granted, the person approving handed over the value itself rather than a sentinel (ADR
-// 26-10-27-840): in envVar (env), or the path of a file holding it there (file).
-type SandboxCredentialRequestStatusRaw string
-
-const (
-	SandboxCredentialRequestStatusRawEnv  SandboxCredentialRequestStatusRaw = "env"
-	SandboxCredentialRequestStatusRawFile SandboxCredentialRequestStatusRaw = "file"
-)
-
-// AllValues returns all SandboxCredentialRequestStatusRaw values.
-func (SandboxCredentialRequestStatusRaw) AllValues() []SandboxCredentialRequestStatusRaw {
-	return []SandboxCredentialRequestStatusRaw{
-		SandboxCredentialRequestStatusRawEnv,
-		SandboxCredentialRequestStatusRawFile,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SandboxCredentialRequestStatusRaw) MarshalText() ([]byte, error) {
-	switch s {
-	case SandboxCredentialRequestStatusRawEnv:
-		return []byte(s), nil
-	case SandboxCredentialRequestStatusRawFile:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SandboxCredentialRequestStatusRaw) UnmarshalText(data []byte) error {
-	switch SandboxCredentialRequestStatusRaw(data) {
-	case SandboxCredentialRequestStatusRawEnv:
-		*s = SandboxCredentialRequestStatusRawEnv
-		return nil
-	case SandboxCredentialRequestStatusRawFile:
-		*s = SandboxCredentialRequestStatusRawFile
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Request status.
+// Request status. pending until a person answers; then granted when any part was, denied when none
+// was.
 type SandboxCredentialRequestStatusStatus string
 
 const (
@@ -31682,14 +31937,13 @@ func (s *SecretReportRule) SetPaths(val []string) {
 type SecretRequest struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// The binding approving the request made.
-	BindingId OptString `json:"bindingId"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// When it was answered.
 	DecidedAt OptDateTime `json:"decidedAt"`
 	// Who answered the request: a person, or the discobox that created the requester.
-	DecidedBy OptString `json:"decidedBy"`
+	DecidedBy OptString            `json:"decidedBy"`
+	Delegate  OptSecretRequestPart `json:"delegate"`
 	// Environment variable the credential is wanted in, for protocol-originated requests.
 	EnvName OptString `json:"envName"`
 	// Stable request ID.
@@ -31698,15 +31952,10 @@ type SecretRequest struct {
 	Justification OptString `json:"justification"`
 	// Credential name the agent asked for, for protocol-originated requests.
 	Name OptString `json:"name"`
-	// What the agent asked the credential for -- to use it, or to delegate it to other discoboxes.
-	// Approving the request makes a binding for that purpose on the discobox that asked.
-	Purpose OptSecretRequestPurpose `json:"purpose"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
 	// Principal ID of the requestor.
 	RequestedBy string `json:"requestedBy"`
-	// Where the credential is asked to be sent.
-	Routes []SecretRoute `json:"routes"`
 	// Sandbox that owns the sentinel, for sandbox-originated requests.
 	SandboxId OptString `json:"sandboxId"`
 	// Matched secret ID; set when approved.
@@ -31716,17 +31965,13 @@ type SecretRequest struct {
 	// How long the requester asks the binding to last, in seconds; a suggestion the approver starts from.
 	TtlSeconds OptInt64 `json:"ttlSeconds"`
 	// Last update timestamp.
-	UpdatedAt time.Time `json:"updatedAt"`
+	UpdatedAt time.Time            `json:"updatedAt"`
+	Use       OptSecretRequestPart `json:"use"`
 }
 
 // GetSchema returns the value of Schema.
 func (s *SecretRequest) GetSchema() OptURI {
 	return s.Schema
-}
-
-// GetBindingId returns the value of BindingId.
-func (s *SecretRequest) GetBindingId() OptString {
-	return s.BindingId
 }
 
 // GetCreatedAt returns the value of CreatedAt.
@@ -31742,6 +31987,11 @@ func (s *SecretRequest) GetDecidedAt() OptDateTime {
 // GetDecidedBy returns the value of DecidedBy.
 func (s *SecretRequest) GetDecidedBy() OptString {
 	return s.DecidedBy
+}
+
+// GetDelegate returns the value of Delegate.
+func (s *SecretRequest) GetDelegate() OptSecretRequestPart {
+	return s.Delegate
 }
 
 // GetEnvName returns the value of EnvName.
@@ -31764,11 +32014,6 @@ func (s *SecretRequest) GetName() OptString {
 	return s.Name
 }
 
-// GetPurpose returns the value of Purpose.
-func (s *SecretRequest) GetPurpose() OptSecretRequestPurpose {
-	return s.Purpose
-}
-
 // GetProjectId returns the value of ProjectId.
 func (s *SecretRequest) GetProjectId() string {
 	return s.ProjectId
@@ -31777,11 +32022,6 @@ func (s *SecretRequest) GetProjectId() string {
 // GetRequestedBy returns the value of RequestedBy.
 func (s *SecretRequest) GetRequestedBy() string {
 	return s.RequestedBy
-}
-
-// GetRoutes returns the value of Routes.
-func (s *SecretRequest) GetRoutes() []SecretRoute {
-	return s.Routes
 }
 
 // GetSandboxId returns the value of SandboxId.
@@ -31809,14 +32049,14 @@ func (s *SecretRequest) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
 }
 
+// GetUse returns the value of Use.
+func (s *SecretRequest) GetUse() OptSecretRequestPart {
+	return s.Use
+}
+
 // SetSchema sets the value of Schema.
 func (s *SecretRequest) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetBindingId sets the value of BindingId.
-func (s *SecretRequest) SetBindingId(val OptString) {
-	s.BindingId = val
 }
 
 // SetCreatedAt sets the value of CreatedAt.
@@ -31832,6 +32072,11 @@ func (s *SecretRequest) SetDecidedAt(val OptDateTime) {
 // SetDecidedBy sets the value of DecidedBy.
 func (s *SecretRequest) SetDecidedBy(val OptString) {
 	s.DecidedBy = val
+}
+
+// SetDelegate sets the value of Delegate.
+func (s *SecretRequest) SetDelegate(val OptSecretRequestPart) {
+	s.Delegate = val
 }
 
 // SetEnvName sets the value of EnvName.
@@ -31854,11 +32099,6 @@ func (s *SecretRequest) SetName(val OptString) {
 	s.Name = val
 }
 
-// SetPurpose sets the value of Purpose.
-func (s *SecretRequest) SetPurpose(val OptSecretRequestPurpose) {
-	s.Purpose = val
-}
-
 // SetProjectId sets the value of ProjectId.
 func (s *SecretRequest) SetProjectId(val string) {
 	s.ProjectId = val
@@ -31867,11 +32107,6 @@ func (s *SecretRequest) SetProjectId(val string) {
 // SetRequestedBy sets the value of RequestedBy.
 func (s *SecretRequest) SetRequestedBy(val string) {
 	s.RequestedBy = val
-}
-
-// SetRoutes sets the value of Routes.
-func (s *SecretRequest) SetRoutes(val []SecretRoute) {
-	s.Routes = val
 }
 
 // SetSandboxId sets the value of SandboxId.
@@ -31899,32 +32134,150 @@ func (s *SecretRequest) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
+// SetUse sets the value of Use.
+func (s *SecretRequest) SetUse(val OptSecretRequestPart) {
+	s.Use = val
+}
+
 func (*SecretRequest) approveSecretRequestRes() {}
 func (*SecretRequest) getSecretRequestRes()     {}
 
-// What the agent asked the credential for -- to use it, or to delegate it to other discoboxes.
-// Approving the request makes a binding for that purpose on the discobox that asked.
-type SecretRequestPurpose string
+// One part of a request (ADR 26-11-02-022 §1). The use part asks to use the credential, delivered
+// in envName; the delegate part asks to give it to the discoboxes the asking one creates.
+// Ref: #/components/schemas/SecretRequestPart
+type SecretRequestPart struct {
+	// The binding approving the part made or replaced.
+	BindingId OptString `json:"bindingId"`
+	// The part's answer; absent while the request is pending.
+	Outcome OptSecretRequestPartOutcome `json:"outcome"`
+	// The policy files the part was asked by, for display. Their names and descriptions are the asking
+	// discobox's words and grant nothing; routes is what each resolved to.
+	Policies []SecretRequestPolicy `json:"policies"`
+	// Where the part asks for the credential to be sent, resolved.
+	Routes []SecretRoute `json:"routes"`
+}
+
+// GetBindingId returns the value of BindingId.
+func (s *SecretRequestPart) GetBindingId() OptString {
+	return s.BindingId
+}
+
+// GetOutcome returns the value of Outcome.
+func (s *SecretRequestPart) GetOutcome() OptSecretRequestPartOutcome {
+	return s.Outcome
+}
+
+// GetPolicies returns the value of Policies.
+func (s *SecretRequestPart) GetPolicies() []SecretRequestPolicy {
+	return s.Policies
+}
+
+// GetRoutes returns the value of Routes.
+func (s *SecretRequestPart) GetRoutes() []SecretRoute {
+	return s.Routes
+}
+
+// SetBindingId sets the value of BindingId.
+func (s *SecretRequestPart) SetBindingId(val OptString) {
+	s.BindingId = val
+}
+
+// SetOutcome sets the value of Outcome.
+func (s *SecretRequestPart) SetOutcome(val OptSecretRequestPartOutcome) {
+	s.Outcome = val
+}
+
+// SetPolicies sets the value of Policies.
+func (s *SecretRequestPart) SetPolicies(val []SecretRequestPolicy) {
+	s.Policies = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *SecretRequestPart) SetRoutes(val []SecretRoute) {
+	s.Routes = val
+}
+
+// The decision on one part of a request.
+// Ref: #/components/schemas/SecretRequestPartDecision
+type SecretRequestPartDecision struct {
+	// Approve makes the part's binding, replacing the discobox's sandbox-level bindings of that kind for
+	// the secret (ADR 26-11-02-022 §5); deny leaves them as they are.
+	Decision SecretRequestPartDecisionDecision `json:"decision"`
+	// Use part only: grant the value itself rather than a sentinel (ADR 26-10-27-840): env in the
+	// variable the request named, file the path of a file holding it there. A person's choice alone, and
+	// only of a secret that allows raw. Absent grants a sentinel.
+	Raw OptSecretRequestPartDecisionRaw `json:"raw"`
+	// Routes the binding is approved for, narrowing the secret's; omitted takes the routes the part
+	// asked for.
+	Routes []SecretRouteInput `json:"routes"`
+	// How long the binding lasts, in seconds; omitted takes what the request asked for, else an hour,
+	// within the secret's limit and, for a discobox approving, the delegation's.
+	TtlSeconds OptInt64 `json:"ttlSeconds"`
+}
+
+// GetDecision returns the value of Decision.
+func (s *SecretRequestPartDecision) GetDecision() SecretRequestPartDecisionDecision {
+	return s.Decision
+}
+
+// GetRaw returns the value of Raw.
+func (s *SecretRequestPartDecision) GetRaw() OptSecretRequestPartDecisionRaw {
+	return s.Raw
+}
+
+// GetRoutes returns the value of Routes.
+func (s *SecretRequestPartDecision) GetRoutes() []SecretRouteInput {
+	return s.Routes
+}
+
+// GetTtlSeconds returns the value of TtlSeconds.
+func (s *SecretRequestPartDecision) GetTtlSeconds() OptInt64 {
+	return s.TtlSeconds
+}
+
+// SetDecision sets the value of Decision.
+func (s *SecretRequestPartDecision) SetDecision(val SecretRequestPartDecisionDecision) {
+	s.Decision = val
+}
+
+// SetRaw sets the value of Raw.
+func (s *SecretRequestPartDecision) SetRaw(val OptSecretRequestPartDecisionRaw) {
+	s.Raw = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *SecretRequestPartDecision) SetRoutes(val []SecretRouteInput) {
+	s.Routes = val
+}
+
+// SetTtlSeconds sets the value of TtlSeconds.
+func (s *SecretRequestPartDecision) SetTtlSeconds(val OptInt64) {
+	s.TtlSeconds = val
+}
+
+// Approve makes the part's binding, replacing the discobox's sandbox-level bindings of that kind for
+// the secret (ADR 26-11-02-022 §5); deny leaves them as they are.
+type SecretRequestPartDecisionDecision string
 
 const (
-	SecretRequestPurposeUse      SecretRequestPurpose = "use"
-	SecretRequestPurposeDelegate SecretRequestPurpose = "delegate"
+	SecretRequestPartDecisionDecisionApprove SecretRequestPartDecisionDecision = "approve"
+	SecretRequestPartDecisionDecisionDeny    SecretRequestPartDecisionDecision = "deny"
 )
 
-// AllValues returns all SecretRequestPurpose values.
-func (SecretRequestPurpose) AllValues() []SecretRequestPurpose {
-	return []SecretRequestPurpose{
-		SecretRequestPurposeUse,
-		SecretRequestPurposeDelegate,
+// AllValues returns all SecretRequestPartDecisionDecision values.
+func (SecretRequestPartDecisionDecision) AllValues() []SecretRequestPartDecisionDecision {
+	return []SecretRequestPartDecisionDecision{
+		SecretRequestPartDecisionDecisionApprove,
+		SecretRequestPartDecisionDecisionDeny,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
-func (s SecretRequestPurpose) MarshalText() ([]byte, error) {
+func (s SecretRequestPartDecisionDecision) MarshalText() ([]byte, error) {
 	switch s {
-	case SecretRequestPurposeUse:
+	case SecretRequestPartDecisionDecisionApprove:
 		return []byte(s), nil
-	case SecretRequestPurposeDelegate:
+	case SecretRequestPartDecisionDecisionDeny:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -31932,17 +32285,204 @@ func (s SecretRequestPurpose) MarshalText() ([]byte, error) {
 }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SecretRequestPurpose) UnmarshalText(data []byte) error {
-	switch SecretRequestPurpose(data) {
-	case SecretRequestPurposeUse:
-		*s = SecretRequestPurposeUse
+func (s *SecretRequestPartDecisionDecision) UnmarshalText(data []byte) error {
+	switch SecretRequestPartDecisionDecision(data) {
+	case SecretRequestPartDecisionDecisionApprove:
+		*s = SecretRequestPartDecisionDecisionApprove
 		return nil
-	case SecretRequestPurposeDelegate:
-		*s = SecretRequestPurposeDelegate
+	case SecretRequestPartDecisionDecisionDeny:
+		*s = SecretRequestPartDecisionDecisionDeny
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Use part only: grant the value itself rather than a sentinel (ADR 26-10-27-840): env in the
+// variable the request named, file the path of a file holding it there. A person's choice alone, and
+// only of a secret that allows raw. Absent grants a sentinel.
+type SecretRequestPartDecisionRaw string
+
+const (
+	SecretRequestPartDecisionRawEnv  SecretRequestPartDecisionRaw = "env"
+	SecretRequestPartDecisionRawFile SecretRequestPartDecisionRaw = "file"
+)
+
+// AllValues returns all SecretRequestPartDecisionRaw values.
+func (SecretRequestPartDecisionRaw) AllValues() []SecretRequestPartDecisionRaw {
+	return []SecretRequestPartDecisionRaw{
+		SecretRequestPartDecisionRawEnv,
+		SecretRequestPartDecisionRawFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRequestPartDecisionRaw) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRequestPartDecisionRawEnv:
+		return []byte(s), nil
+	case SecretRequestPartDecisionRawFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRequestPartDecisionRaw) UnmarshalText(data []byte) error {
+	switch SecretRequestPartDecisionRaw(data) {
+	case SecretRequestPartDecisionRawEnv:
+		*s = SecretRequestPartDecisionRawEnv
+		return nil
+	case SecretRequestPartDecisionRawFile:
+		*s = SecretRequestPartDecisionRawFile
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// The part's answer; absent while the request is pending.
+type SecretRequestPartOutcome string
+
+const (
+	SecretRequestPartOutcomeApproved SecretRequestPartOutcome = "approved"
+	SecretRequestPartOutcomeDenied   SecretRequestPartOutcome = "denied"
+)
+
+// AllValues returns all SecretRequestPartOutcome values.
+func (SecretRequestPartOutcome) AllValues() []SecretRequestPartOutcome {
+	return []SecretRequestPartOutcome{
+		SecretRequestPartOutcomeApproved,
+		SecretRequestPartOutcomeDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRequestPartOutcome) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRequestPartOutcomeApproved:
+		return []byte(s), nil
+	case SecretRequestPartOutcomeDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRequestPartOutcome) UnmarshalText(data []byte) error {
+	switch SecretRequestPartOutcome(data) {
+	case SecretRequestPartOutcomeApproved:
+		*s = SecretRequestPartOutcomeApproved
+		return nil
+	case SecretRequestPartOutcomeDenied:
+		*s = SecretRequestPartOutcomeDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// One policy file a request part was asked by (ADR 26-11-02-022 §3), as the server resolved it.
+// Ref: #/components/schemas/SecretRequestPolicy
+type SecretRequestPolicy struct {
+	// The arguments it was given.
+	Args OptSecretRequestPolicyArgs `json:"args"`
+	// The document's own description, as the asking discobox wrote it.
+	Description OptString `json:"description"`
+	// SHA-256 of the document's canonical JSON; documents are grouped by it, never by name.
+	Digest string `json:"digest"`
+	// The file as the asking discobox named it.
+	File string `json:"file"`
+	// The file's base name without .json; the role's name as shown.
+	Name string `json:"name"`
+	// What the document resolved to with its arguments.
+	Routes []SecretRoute `json:"routes"`
+	// Arguments it was given that no route path names; they narrow nothing.
+	UnusedArgs []string `json:"unusedArgs"`
+}
+
+// GetArgs returns the value of Args.
+func (s *SecretRequestPolicy) GetArgs() OptSecretRequestPolicyArgs {
+	return s.Args
+}
+
+// GetDescription returns the value of Description.
+func (s *SecretRequestPolicy) GetDescription() OptString {
+	return s.Description
+}
+
+// GetDigest returns the value of Digest.
+func (s *SecretRequestPolicy) GetDigest() string {
+	return s.Digest
+}
+
+// GetFile returns the value of File.
+func (s *SecretRequestPolicy) GetFile() string {
+	return s.File
+}
+
+// GetName returns the value of Name.
+func (s *SecretRequestPolicy) GetName() string {
+	return s.Name
+}
+
+// GetRoutes returns the value of Routes.
+func (s *SecretRequestPolicy) GetRoutes() []SecretRoute {
+	return s.Routes
+}
+
+// GetUnusedArgs returns the value of UnusedArgs.
+func (s *SecretRequestPolicy) GetUnusedArgs() []string {
+	return s.UnusedArgs
+}
+
+// SetArgs sets the value of Args.
+func (s *SecretRequestPolicy) SetArgs(val OptSecretRequestPolicyArgs) {
+	s.Args = val
+}
+
+// SetDescription sets the value of Description.
+func (s *SecretRequestPolicy) SetDescription(val OptString) {
+	s.Description = val
+}
+
+// SetDigest sets the value of Digest.
+func (s *SecretRequestPolicy) SetDigest(val string) {
+	s.Digest = val
+}
+
+// SetFile sets the value of File.
+func (s *SecretRequestPolicy) SetFile(val string) {
+	s.File = val
+}
+
+// SetName sets the value of Name.
+func (s *SecretRequestPolicy) SetName(val string) {
+	s.Name = val
+}
+
+// SetRoutes sets the value of Routes.
+func (s *SecretRequestPolicy) SetRoutes(val []SecretRoute) {
+	s.Routes = val
+}
+
+// SetUnusedArgs sets the value of UnusedArgs.
+func (s *SecretRequestPolicy) SetUnusedArgs(val []string) {
+	s.UnusedArgs = val
+}
+
+// The arguments it was given.
+type SecretRequestPolicyArgs map[string]string
+
+func (s *SecretRequestPolicyArgs) init() SecretRequestPolicyArgs {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Request status.

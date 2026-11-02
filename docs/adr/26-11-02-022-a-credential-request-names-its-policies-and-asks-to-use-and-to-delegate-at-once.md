@@ -1,6 +1,6 @@
 # 26-11-02-022 — A credential request names its policies, and asks to use and to delegate at once
 
-- **Status**: Accepted
+- **Status**: Accepted (§3 amended before implementation landed: the summary is computed by whatever shows the role, from the routes the server resolved it to and the request carries)
 - **Date**: 2026-11-02
 - **Amends**:
   - [26-10-27-880](26-10-27-880-access-to-a-secret-is-a-binding-held-to-static-routes-and-no-judge-decides-it.md):
@@ -154,8 +154,9 @@ different digests share a name, both are shown and marked as different.
 The name and description are text the box wrote. They grant nothing, and
 the approver is told they are the box's description. They are rendered as
 plain text, as a justification is. So the label is never shown alone.
-Beside each role, the server shows a summary computed from the routes that
-role resolved to:
+Beside each role, whatever shows it shows a summary computed from the routes
+the server resolved that role to, which the request carries per role, and
+never from anything the box wrote:
 
 - the hosts;
 - the methods, or "any method";

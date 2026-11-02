@@ -18,7 +18,7 @@ func TestResumeWait(t *testing.T) {
 					requestPolls: []agentcreds.RequestStatus{
 						{RequestID: id, Status: agentcreds.StatusPending},
 						{RequestID: id, Status: agentcreds.StatusPending},
-						{RequestID: id, Status: terminal, Credential: granted},
+						{RequestID: id, Status: terminal, Use: &agentcreds.PartStatus{Status: terminal, Credential: granted}},
 					},
 					trustPolls: []agentcreds.TrustRequestStatus{
 						{RequestID: id, Status: agentcreds.StatusPending},
@@ -36,10 +36,10 @@ func TestResumeWait(t *testing.T) {
 					t.Fatalf("exit %d, want %d: %s", code, wantCode, stderr)
 				}
 				var result struct {
-					RequestID  string                 `json:"requestId"`
-					Status     string                 `json:"status"`
-					Credential *agentcreds.Credential `json:"credential"`
-					Host       string                 `json:"host"`
+					RequestID string                 `json:"requestId"`
+					Status    string                 `json:"status"`
+					Use       *agentcreds.PartStatus `json:"use"`
+					Host      string                 `json:"host"`
 				}
 				if err := json.Unmarshal([]byte(stdout), &result); err != nil {
 					t.Fatal(err)
@@ -47,7 +47,7 @@ func TestResumeWait(t *testing.T) {
 				if result.RequestID != id || result.Status != terminal {
 					t.Fatalf("result: %#v", result)
 				}
-				if kind == "request" && (result.Credential == nil || result.Credential.EnvVar != "GITHUB_TOKEN") {
+				if kind == "request" && (result.Use == nil || result.Use.Credential == nil || result.Use.Credential.EnvVar != "GITHUB_TOKEN") {
 					t.Fatalf("result: %#v, want the credential granted", result)
 				}
 				if kind == "trust" && result.Host != "github.com:443" {

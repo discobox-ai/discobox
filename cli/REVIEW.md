@@ -40,6 +40,12 @@
   the box's words out of a stderr that was escaped into an error message that
   is not, unless the call's error is (`sandboxFileResponse`).
 
+- **A role a box named is never shown without what it grants.** A credential
+  request's role names, descriptions and arguments are the asking discobox's
+  words (ADR 26-11-02-022 §3): wherever one is drawn, `requestrole.Summary` of
+  its routes is drawn beside it, roles are grouped by digest (never by name),
+  and the box's text is escaped like a justification. A label shown alone is
+  a box describing its own access to the person approving it.
 - **Escape the form of a line that is drawn.** A line kept in two forms —
   its text, and the tokens or spans it is drawn from — is escaped in the form
   the screen draws: the policy rendering's tokens and notes, not only its

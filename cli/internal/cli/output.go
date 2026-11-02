@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/apiroute"
 	"github.com/discobox-ai/discobox/cli/internal/lifetime"
 	"github.com/discobox-ai/discobox/cli/internal/refreshcmd"
+	"github.com/discobox-ai/discobox/cli/internal/requestrole"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
 	"github.com/discobox-ai/discobox/pkg/sandboxmeta"
@@ -661,7 +662,9 @@ func (a *App) writePeers(cmd *cobra.Command, ids []apimodel.Peer) error {
 	return tw.Flush()
 }
 
-func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretRequest) error {
+// replacements, when given, are what approving each part would do to what
+// the asking discobox already holds of the secret (ADR 26-11-02-022 §5).
+func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretRequest, replacements []partReplacement) error {
 	if request == nil {
 		return nil
 	}
@@ -672,7 +675,6 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	fmt.Fprintln(tw, "FIELD\tVALUE")
 	fmt.Fprintf(tw, "ID\t%s\n", request.ID)
 	fmt.Fprintf(tw, "REQUESTED BY\t%s\n", request.RequestedBy)
-	fmt.Fprintf(tw, "SENT TO\t%s\n", routesText(request.Routes))
 	fmt.Fprintf(tw, "STATUS\t%s\n", request.Status)
 	// What an agent asked for and why is the whole basis for approving it, so it
 	// belongs in the detail view rather than only in the JSON.
@@ -688,14 +690,27 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	if asked := agentcreds.AskedGrantTTL(request.TtlSeconds.Or(0)); asked > 0 {
 		fmt.Fprintf(tw, "WANTED FOR\t%s\n", lifetime.Label(asked))
 	}
-	if purpose, ok := request.Purpose.Get(); ok {
-		fmt.Fprintf(tw, "PURPOSE\t%s\n", requestPurposeText(purpose))
+	// Each part, with its roles beside what their routes grant: a role's
+	// name and description are the asking discobox's words, so the summary
+	// worked out from its routes is never left out (ADR 26-11-02-022 §3).
+	for _, part := range requestParts(request) {
+		label := strings.ToUpper(part.label)
+		fmt.Fprintf(tw, "%s\t%s\n", label, part.statusText(request.Status))
+		fmt.Fprintf(tw, "%s ROUTES\t%s\n", label, routesText(part.part.Routes))
+		for _, role := range partRoles(part.part) {
+			fmt.Fprintf(tw, "%s ROLE\t%s\n", label, roleText(role))
+			fmt.Fprintf(tw, "  GRANTS\t%s\n", terminalSafe(requestrole.Summary(role.Routes)))
+			for _, note := range role.Notes() {
+				fmt.Fprintf(tw, "  NOTE\t%s\n", terminalSafe(note))
+			}
+		}
+		if bindingID := part.part.BindingId.Or(""); bindingID != "" {
+			fmt.Fprintf(tw, "%s BINDING\t%s\n", label, bindingID)
+		}
 	}
+	writeReplacements(tw, replacements, false)
 	if secretID, ok := request.SecretId.Get(); ok && secretID != "" {
 		fmt.Fprintf(tw, "SECRET\t%s\n", secretID)
-	}
-	if bindingID, ok := request.BindingId.Get(); ok && bindingID != "" {
-		fmt.Fprintf(tw, "BINDING\t%s\n", bindingID)
 	}
 	if decidedBy, ok := request.DecidedBy.Get(); ok && decidedBy != "" {
 		fmt.Fprintf(tw, "DECIDED BY\t%s\n", decidedBy)
@@ -705,14 +720,90 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	return tw.Flush()
 }
 
-// requestPurposeText says what approving a request lets its discobox do with
-// the credential, which for an ask to delegate is not the thing a reader would
-// assume.
-func requestPurposeText(purpose apiclientgen.SecretRequestPurpose) string {
-	if purpose == apiclientgen.SecretRequestPurposeDelegate {
-		return "delegate: asks to give the credential to the discoboxes it creates, not to use it"
+// requestPart is one part of a request, as the CLI says it.
+type requestPart struct {
+	label    string
+	delegate bool
+	part     apimodel.SecretRequestPart
+}
+
+func (p requestPart) outcome() apiclientgen.SecretRequestPartOutcome {
+	return p.part.Outcome.Or("")
+}
+
+// statusText is the part's answer, and what approving it lets the discobox
+// do, which for the delegate part is not the thing a reader would assume.
+func (p requestPart) statusText(requestStatus apiclientgen.SecretRequestStatus) string {
+	status := string(p.outcome())
+	if status == "" {
+		status = string(requestStatus)
+		if requestStatus != apiclientgen.SecretRequestStatusPending {
+			status = "unanswered"
+		}
 	}
-	return string(purpose)
+	if p.delegate {
+		return status + " · to give the credential to the discoboxes it creates, not to use it"
+	}
+	return status + " · to use the credential itself"
+}
+
+// requestParts is the parts a request has, use first.
+func requestParts(request *apimodel.SecretRequest) []requestPart {
+	var parts []requestPart
+	if use, ok := request.Use.Get(); ok {
+		parts = append(parts, requestPart{label: "use", part: use})
+	}
+	if delegate, ok := request.Delegate.Get(); ok {
+		parts = append(parts, requestPart{label: "delegate", delegate: true, part: delegate})
+	}
+	return parts
+}
+
+// partRoles is a part's policy files grouped by document.
+func partRoles(part apimodel.SecretRequestPart) []requestrole.Role {
+	policies := make([]requestrole.Policy, 0, len(part.Policies))
+	for _, policy := range part.Policies {
+		policies = append(policies, requestrole.Policy{
+			File:        policy.File,
+			Name:        policy.Name,
+			Description: policy.Description.Or(""),
+			Args:        policy.Args.Or(nil),
+			Digest:      policy.Digest,
+			UnusedArgs:  policy.UnusedArgs,
+			Routes:      apiroute.Routes(policy.Routes),
+		})
+	}
+	return requestrole.Group(policies)
+}
+
+// roleText is a role as one line: its name, its description marked as the
+// asking discobox's words, and each occurrence's arguments. All of it is the
+// discobox's, so it is escaped here.
+func roleText(role requestrole.Role) string {
+	text := role.Name
+	if role.Description != "" {
+		text += fmt.Sprintf(" — %q (the discobox's words)", role.Description)
+	}
+	if args := role.ArgsText(); args != "" {
+		text += ": " + args
+	}
+	return terminalSafe(text)
+}
+
+// partsText is the compact list of a request's parts: "use, delegate".
+func partsText(request apimodel.SecretRequest) string {
+	var out []string
+	for _, part := range requestParts(&request) {
+		text := part.label
+		if outcome := part.outcome(); outcome != "" {
+			text += " " + string(outcome)
+		}
+		if len(part.part.Policies) > 0 {
+			text += fmt.Sprintf(" (%d roles)", len(partRoles(part.part)))
+		}
+		out = append(out, text)
+	}
+	return strings.Join(out, ", ")
 }
 
 func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.SecretRequest) error {
@@ -726,16 +817,15 @@ func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.Secret
 		return writeTerminalSafeJSON(cmd.OutOrStdout(), map[string]any{"secretRequests": requests})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tCREDENTIAL\tVARIABLE\tSENT TO\tPURPOSE\tSTATUS\tDISCOBOX\tREQUESTED BY\tUPDATED")
+	fmt.Fprintln(tw, "ID\tCREDENTIAL\tVARIABLE\tPARTS\tSTATUS\tDISCOBOX\tREQUESTED BY\tUPDATED")
 	for _, request := range requests {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			request.ID,
 			terminalSafe(request.Name.Or("")),
 			// The variable is the asking discobox's own word, escaped as the
-			// name beside it is (cli/REVIEW.md); routesText escapes its own.
+			// name beside it is (cli/REVIEW.md).
 			terminalSafe(request.EnvName.Or("")),
-			routesText(request.Routes),
-			request.Purpose.Or(apiclientgen.SecretRequestPurposeUse),
+			partsText(request),
 			request.Status,
 			request.SandboxId.Or(""),
 			request.RequestedBy,

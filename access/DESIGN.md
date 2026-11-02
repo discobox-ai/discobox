@@ -13,8 +13,9 @@ there is nothing to wrap.
 Decision records:
 [ADR 0031](../docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md),
 narrowed by ADR 26-10-27-880, which removed `run`, the judge, policies, uses,
-well-known IDs and `facts`. The protocol's redesign is deferred to a later ADR;
-this is the minimal client of it until then.
+well-known IDs and `facts`. ADR 26-11-02-022 gave a request its two parts and
+policy files; it is not the protocol's redesign, which is still deferred to a
+later ADR, and this is the minimal client of it until then.
 Protocol: [`docs/agent-credentials-protocol.md`](../docs/agent-credentials-protocol.md).
 
 ## Why it is its own module
@@ -41,7 +42,7 @@ shape, so they deliberately do not get the same interface.
 | Operation | Input | Why |
 | --- | --- | --- |
 | `list` | nothing | The credentials the sandbox holds: name, the variable it is delivered in, the hosts of its routes, its lifetime, and whether it is a delegation (delivered nowhere; given to the discoboxes the sandbox creates). |
-| `request` | flags (`--name`, `--env-var`, `--route`, `--hosts`, `--justification`, `--ttl`, `--delegate`, `--wait`, `--timeout`), or JSON on stdin (`--json`) | Carries free text — a justification — through a shell that reads quotes and apostrophes as syntax. Name, at least one route or host, and — to use it, never to delegate it — a variable are required and refused here before anything is sent. A route is the typed form `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`, one per `--route` since a comma is the route's own, sent as written: the service parses them and refuses one that does not parse as `invalid`, naming it, which this client prints as it prints any refusal — it has no route parser of its own, since that would be a dependency (above). The grammar in its help is a copy of `secretroute.Syntax`, which the CLI's conventions test holds it to. A host is exact (`*.h` for the hosts beneath h), and `--hosts` is shorthand for one route to each. |
+| `request` | flags (`--name`, `--env-var`, `--route`, `--hosts`, `--policy`, `--delegate-route`, `--delegate-policy`, `--policy-arg`, `--justification`, `--ttl`, `--wait`, `--timeout`), or JSON on stdin (`--json`) | Carries free text — a justification — through a shell that reads quotes and apostrophes as syntax. A request has a use part (a variable and where it goes), a delegate part (where the discoboxes the caller creates may send it), or both, answered by a person at once ([ADR 26-11-02-022](../docs/adr/26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md)); a part names routes or policy files, never both. Name, at least one part, a variable for the use part, and a destination for each part are required and refused here before anything is sent. A route is the typed form `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]`, one per flag since a comma is the route's own, sent as written: the service parses them and refuses one that does not parse as `invalid`, naming it, which this client prints as it prints any refusal — it has no route parser of its own, since that would be a dependency (above). The grammar in its help is a copy of `secretroute.Syntax`, which the CLI's conventions test holds it to. A host is exact (`*.h` for the hosts beneath h), and `--hosts` is shorthand for one route to each. A policy file is read here and its document sent, never resolved: resolving needs the route parser this module does not have, and the service is the one that decides what a document means. Each `--policy-arg` belongs to the `--policy` or `--delegate-policy` before it. |
 | `trust` | a host argument and flags (`--justification`, `--ca-file`, `--ttl`, `--wait`), or JSON on stdin (`--json`) | The protocol's trust verb (ADR 0149): ask for a host whose certificate the egress refuses to be trusted for this sandbox. A trust only pins a certificate for that one endpoint; what is sent there is not its question (ADR 26-10-27-880 §10). |
 | `env` | nothing | The protocol's environment verb: every credential variable and what is delivered in it now, as `export` lines a POSIX shell evaluates (`eval "$(discobox-access env)"`), each value single-quoted so the shell reads none of it. A harness's tool shell inherits the environment the harness was launched with, so a credential granted mid-session reaches the agent only this way. The values are sentinels, never credentials, or for a raw file binding the path of its file in memory; a raw env binding is left out (ADR 26-10-27-840). |
 | `trusts` | nothing | — |
@@ -76,11 +77,16 @@ Rules the shape depends on:
   lines are plain text even under `--json`.
 - **Exit status is meaningful.** `0` success, `1` the call failed, `2` the
   invocation could not be parsed (bad flags, a missing name, variable or
-  host, an unreadable `--json` body), `3` a wait that ended with the request
-  still pending (resume it on the same ID). A `--wait` that settles as
-  *denied* exits non-zero, and so does one that runs out: the call completed,
-  but the answer was no or not yet, and a shell-driven agent reads a zero as
-  approval.
+  host, an unreadable `--json` body, a policy file that is too large, not one
+  JSON object, or repeats a key), `3` a wait that ended with the request
+  still pending (resume it on the same ID). A `--wait` that settles with any
+  part *denied* exits non-zero, and so does one that runs out: the call
+  completed, but the answer was no or not yet, and a shell-driven agent
+  reads a zero as having what it asked for. A part that was granted is
+  delivered all the same, and printed.
+- **A repeated key is refused**, in a `--json` body and in a policy file,
+  before decoding: `encoding/json` keeps the last, which would reduce a
+  duplicated argument to its last value without a word.
 - **A lifetime is asked for, never set.** `--ttl` (`grantTTLSeconds`) is the
   answer a human is shown already chosen; a fraction of a second, a negative,
   or one over thirty days is refused rather than rounded or trimmed.
@@ -103,9 +109,10 @@ Resuming a trust
 request returns the status available from the service; only the original
 `trust --wait` can preserve certificate-chain metadata from its creation call.
 
-A granted request reports the credential as the approver chose it — the routes
-and lifetime may differ from the ask — and that it is in its variable for
-every command started from then on.
+A settled request reports each part: granted or denied, and for a granted
+part the credential as the approver chose it — the routes and lifetime may
+differ from the ask — and, for the use, that it is in its variable for every
+command started from then on.
 
 The bundled skill requires the agent to keep its turn active while waiting
 and resume the authorized work after approval without another user prompt.

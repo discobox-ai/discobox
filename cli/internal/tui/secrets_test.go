@@ -834,7 +834,7 @@ func TestEnterOnARequestAnswersThatOne(t *testing.T) {
 	m, ds := secretsFixture(t)
 	older, newer := waitingRequest(), waitingRequest()
 	older.ID, older.Created = "sreq_older", older.Created.Add(-time.Hour)
-	newer.ID, newer.Name, newer.Routes = "sreq_newer", "npm", []secretroute.Route{{Hosts: []string{"registry.npmjs.org"}}}
+	newer.ID, newer.Name, newer.Use = "sreq_newer", "npm", &RequestPart{Routes: []secretroute.Route{{Hosts: []string{"registry.npmjs.org"}}}}
 	ds.mu.Lock()
 	ds.requests = []CredentialRequest{older, newer}
 	ds.mu.Unlock()
@@ -895,7 +895,8 @@ func TestARequestRowSaysWhatItIsAbout(t *testing.T) {
 		want string
 	}{
 		{"an agent names the credential", CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", SandboxID: "sbx_1"}, "github"},
-		{"an ask to delegate says so", CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", SandboxID: "sbx_1", Delegate: true}, "github · to delegate"},
+		{"an ask to delegate says so", CredentialRequest{Name: "github", SandboxID: "sbx_1", Delegate: &RequestPart{}}, "github · to delegate"},
+		{"an ask for both says so", CredentialRequest{Name: "github", EnvVar: "GH_TOKEN", SandboxID: "sbx_1", Use: &RequestPart{}, Delegate: &RequestPart{}}, "github · to use and to delegate"},
 		{"failing that, the variable", CredentialRequest{EnvVar: "GH_TOKEN", SandboxID: "sbx_1"}, "GH_TOKEN"},
 		{"a discobox asked for a credential it did not name", CredentialRequest{SandboxID: "sbx_1"}, "a credential"},
 	} {

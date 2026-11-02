@@ -658,7 +658,11 @@ func TestSecretRequestApproveCommandSendsSelectedSecretID(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&approved); err != nil {
 				t.Fatalf("decode approve body: %v", err)
 			}
-			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","status":"approved","secretId":"` + secretID + `","use":{"outcome":"approved"},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/"+requestID:
+			_, _ = w.Write([]byte(pendingRequestJSON(requestID, "use")))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-bindings":
+			_, _ = w.Write([]byte(`{"secretBindings":[]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
 			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"selected","type":"token","maxBindingTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
 		default:
@@ -675,7 +679,7 @@ func TestSecretRequestApproveCommandSendsSelectedSecretID(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret request approve: %v", err)
 	}
-	if approved["secretId"] != secretID || approved["ttlSeconds"] != float64(600) {
+	if approved["secretId"] != secretID || usePart(approved)["ttlSeconds"] != float64(600) || usePart(approved)["decision"] != "approve" {
 		t.Fatalf("approve body = %#v", approved)
 	}
 	if output := out.String(); !strings.Contains(output, requestID) || !strings.Contains(output, "approved") {
@@ -716,7 +720,7 @@ func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret request approve: %v", err)
 	}
-	if approved["ttlSeconds"] != float64(604800) {
+	if usePart(approved)["ttlSeconds"] != float64(604800) {
 		t.Fatalf("approve body = %#v, want a week in seconds", approved)
 	}
 
@@ -735,10 +739,11 @@ func TestSecretRequestApproveTakesALifetimeInWords(t *testing.T) {
 	}
 }
 
-// Said nothing about the lifetime, approve sends none and reads nothing first:
-// the server grants what the agent asked for, else an hour, within the
-// secret's limit — what the window opens on (ADR 26-09-30-782 §4).
-// --for still says one.
+// Said nothing about the lifetime, approve sends none: the server grants what
+// the agent asked for, else an hour, within the secret's limit — what the
+// window opens on. It reads the request first, and only that: which parts it
+// has decides what the answer must say (ADR 26-11-02-022 §4). --for still
+// says one.
 func TestSecretRequestApproveLeavesTheLifetimeToTheServer(t *testing.T) {
 	const (
 		requestID = "request-1"
@@ -754,6 +759,8 @@ func TestSecretRequestApproveLeavesTheLifetimeToTheServer(t *testing.T) {
 				t.Fatalf("decode approve body: %v", err)
 			}
 			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"agent:sbx-1","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/"+requestID:
+			_, _ = w.Write([]byte(pendingRequestJSON(requestID, "use")))
 		default:
 			t.Fatalf("approving made another request first: %s %s", r.Method, r.URL.Path)
 		}
@@ -766,7 +773,7 @@ func TestSecretRequestApproveLeavesTheLifetimeToTheServer(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret request approve: %v", err)
 	}
-	if _, sent := approved["ttlSeconds"]; sent {
+	if _, sent := usePart(approved)["ttlSeconds"]; sent {
 		t.Fatalf("approve body = %#v, want the lifetime left to the server", approved)
 	}
 
@@ -776,7 +783,7 @@ func TestSecretRequestApproveLeavesTheLifetimeToTheServer(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret request approve: %v", err)
 	}
-	if approved["ttlSeconds"] != float64(3600) {
+	if usePart(approved)["ttlSeconds"] != float64(3600) {
 		t.Fatalf("approve body = %#v, want --for sent", approved)
 	}
 }
@@ -2287,6 +2294,10 @@ func TestASecretIsNamedByItsName(t *testing.T) {
 				t.Fatalf("decode approve body: %v", err)
 			}
 			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","status":"approved","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-requests/"+requestID:
+			_, _ = w.Write([]byte(pendingRequestJSON(requestID, "use")))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secret-bindings":
+			_, _ = w.Write([]byte(`{"secretBindings":[]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
 			_, _ = w.Write([]byte(`{"secrets":[` +
 				`{"id":"sec_1github","projectId":"project-1","name":"github","type":"token","maxBindingTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
@@ -2398,4 +2409,24 @@ func TestDebugNeverReadsLentGitCredentials(t *testing.T) {
 	if err != nil || string(sent) != body {
 		t.Fatalf("redaction changed request body: %v", err)
 	}
+}
+
+// pendingRequestJSON is a pending request with the parts named, as the
+// server answers a get of it.
+func pendingRequestJSON(id string, parts ...string) string {
+	var fields []string
+	for _, part := range parts {
+		fields = append(fields, `"`+part+`":{"routes":[{"hosts":["api.github.com"]}]}`)
+	}
+	extra := ""
+	if len(fields) > 0 {
+		extra = strings.Join(fields, ",") + ","
+	}
+	return `{"id":"` + id + `","projectId":"project-1","requestedBy":"agent:sbx-1","sandboxId":"sbx-1","status":"pending","envName":"GH_TOKEN",` + extra + `"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
+}
+
+// usePart is the use part's decision in an approve body.
+func usePart(body map[string]any) map[string]any {
+	part, _ := body["use"].(map[string]any)
+	return part
 }

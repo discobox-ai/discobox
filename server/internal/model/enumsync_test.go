@@ -35,18 +35,15 @@ import (
 // yamlEnumAliases maps API-only schema properties to the model field that owns
 // the value set. Both sides must stay identical.
 var yamlEnumAliases = map[string]string{
-	"CreateSecretBody.type":                      "Secret.type",
-	"CreateSandboxCredentialRequestBody.purpose": "SecretRequest.purpose",
-	"CreateSecretBindingBody.raw":                "SecretBinding.raw",
-	"SandboxBindingInput.raw":                    "SecretBinding.raw",
-	"ApproveSecretRequestBody.raw":               "SecretBinding.raw",
-	"SandboxCredentialRequestStatus.raw":         "SecretBinding.raw",
-	"SandboxCredential.raw":                      "SecretBinding.raw",
-	"SandboxCredential.purpose":                  "SecretRequest.purpose",
-	"SandboxCredentialRequestStatus.purpose":     "SecretRequest.purpose",
-	"CreateSecretBindingBody.targetKind":         "SecretBinding.targetKind",
-	"BoundSecret.from":                           "SecretBinding.targetKind",
-	"ResolveSandboxSecretResponse.status":        "SecretRequest.status",
+	"CreateSecretBody.type":                  "Secret.type",
+	"CreateSecretBindingBody.raw":            "SecretBinding.raw",
+	"SandboxBindingInput.raw":                "SecretBinding.raw",
+	"SandboxCredential.raw":                  "SecretBinding.raw",
+	"SecretRequestPartDecision.raw":          "SecretBinding.raw",
+	"SandboxCredentialRequestPartStatus.raw": "SecretBinding.raw",
+	"CreateSecretBindingBody.targetKind":     "SecretBinding.targetKind",
+	"BoundSecret.from":                       "SecretBinding.targetKind",
+	"ResolveSandboxSecretResponse.status":    "SecretRequest.status",
 	// The sandbox owns the full existence vocabulary, so the tag on the embedded
 	// ResourceLifecycle is authoritative for it. The pool does not match:
 	// only a sandbox can be archived (ADR 0022 §1), so Pool.desiredState is a
@@ -120,9 +117,12 @@ var yamlOwnedEnums = map[string]string{
 	// grant revoked after approval leaves the request approved and the answer
 	// no. services.AgentCredentialRequestStatus is the one place that maps
 	// between them (ADR 0031).
-	"SandboxCredentialRequestStatus.status": "the agent credentials protocol's vocabulary, owned by agentcreds in the root module and mapped from the request status plus grant liveness",
-	"SandboxTrustRequestStatus.status":      "the agent credentials protocol's vocabulary, owned by agentcreds in the root module and mapped from the request status plus trust liveness (ADR 0149)",
-	"ApprovalRequest.kind":                  "which resource an inbox item is, set by the approval-requests read model; no model stores it (ADR 0149 §7)",
+	"SandboxCredentialRequestStatus.status":     "the agent credentials protocol's vocabulary, owned by agentcreds in the root module and mapped from the request status plus grant liveness",
+	"SandboxCredentialRequestPartStatus.status": "the agent credentials protocol's vocabulary for one part of a request, mapped from the part's outcome plus its binding's liveness (ADR 26-11-02-022 §4)",
+	"SecretRequestPartDecision.decision":        "an answer's decision on one part of a request; what is stored is SecretRequestPart.outcome (ADR 26-11-02-022 §4)",
+	"SandboxCredential.purpose":                 "what a binding lets a sandbox do with a credential, read off SecretBinding's use and delegate flags; no model stores it as a word",
+	"SandboxTrustRequestStatus.status":          "the agent credentials protocol's vocabulary, owned by agentcreds in the root module and mapped from the request status plus trust liveness (ADR 0149)",
+	"ApprovalRequest.kind":                      "which resource an inbox item is, set by the approval-requests read model; no model stores it (ADR 0149 §7)",
 	// The proxy's observation vocabulary, not the control plane's judgment.
 	// What is stored is SecretRejection.reason, which these three outcomes are
 	// an input to rather than a spelling of: `accepted` stores nothing at all,

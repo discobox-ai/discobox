@@ -98,10 +98,9 @@ for a program that signs with it or sends it where a swap cannot reach.
 - **Only a person, and nothing asks.** A discobox may neither allow raw on a
   secret (`guardAllowRaw`) nor make, create-with or approve a raw binding,
   and no request asks for raw. A person approving may grant the value itself
-  (`ApproveSecretRequestBody.raw`, held to `checkRawBinding`); an approval
-  extends a standing raw binding only when it grants the value again, and a
-  sentinel approval of a variable a raw binding delivers is a 409
-  (`putRequestedBinding`). A raw binding on a harness config or the
+  (the use part's `raw`, held to `checkRawBinding`); an approval renews or
+  removes a standing raw binding only when it grants the value again, and a
+  sentinel approval that would replace one is a 409 (`checkReplaced`). A raw binding on a harness config or the
   project reaches the discoboxes a discobox created there too, which ADR
   26-10-27-840 §2 accepts.
 - **The handle is a sentinel the sandbox never sees.** A raw binding
@@ -120,37 +119,83 @@ for a program that signs with it or sends it where a swap cannot reach.
 ## Requests are the inbox
 
 A `SecretRequest` is only a question an agent asked through the agent
-credentials protocol (ADR 0031): a credential name, a variable for a use,
-routes (one to each exact host it named, and each typed route it named, read
-by `secretroute.Parse`), a lifetime, a justification and a purpose. No
-other species exists: a sentinel exists only because a binding does, so the
-proxy never asks. Refresh requests are their own record
+credentials protocol (ADR 0031): a credential name, a lifetime, a
+justification, and one or two parts (ADR 26-11-02-022 §1) — a **use part**,
+delivered in the variable the request names, and a **delegate part**, which
+names none. No other species exists: a sentinel exists only because a binding
+does, so the proxy never asks. Refresh requests are their own record
 ([below](#a-token-may-expire-and-suggest-its-renewal)).
 
-Approving one (`ApproveSecretRequest`) makes a binding on the discobox that
-asked — a use of the chosen secret in the variable it named, or a delegation —
-with the routes the approver named, else the ones asked for, and a lifetime
-the approver named, else `defaultApprovalTTL` (the ask, else
-`agentcreds.DefaultGrantTTL`, fitted within the secret's limit). The binding,
-its event, the holders' mark and the request's decision (`DecidedBy`,
-`DecidedAt`, `BindingID`) are one transaction (`commitApproval`). A variable
-the discobox already holds with another secret is a 409, never taken over; one
-holding the same secret is extended (`putRequestedBinding`), unless that
-binding is raw and the approval does not grant the value again, which is a
-409 too ([above](#a-raw-binding-hands-over-the-value)).
+- **A part's routes** are inline — one to each exact host it named, and each
+  typed route, read by `secretroute.Parse` (`requestedRoutes`) — or named by
+  policy documents, never both. Documents are resolved here and nowhere else
+  (`requestedPart`, `requestedPolicy` through
+  `credentialpolicy.ResolveDocument`, §2): the part's routes are their union,
+  and each policy is kept beside them as the approver is shown it — the file's
+  base name, its description, its arguments, a digest of the document, the
+  arguments no route path uses, and the routes it resolved to. The documents
+  are not kept. A box sent them, so `agentcreds.MaxPolicyBytes`,
+  `MaxRequestPolicies`, `MaxPartRoutes` and `MaxRequestRouteBytes` — what the
+  whole request resolves to, spent as each document resolves — are
+  boundaries, each a 400 naming what broke it.
+- **An ask is deduplicated** per sandbox, name, variable (or none), lifetime
+  and set of parts, with the same routes in each in any order
+  (`store.FindPendingAgentCredentialRequests`); policies and the
+  justification are left out, since they change nothing approval grants.
+- **The lifetime asked for** is bounded at `agentcreds.MaxGrantTTLSeconds` —
+  thirty days — and an ask outside `1..max` is a 400: an ask becomes the
+  answer a human is shown already chosen.
 
-Deleting a sandbox closes its open requests as denied: the agent waiting on
-the answer is gone. A discobox sees and answers only the requests filed by a
-discobox it created: the sandbox role decides that for one request by its ID,
-and `ListSecretRequests` filters the listing with `store.OwnedBy`
+Answering one (`ApproveSecretRequest`, `DenySecretRequest`) decides every
+part the request has, and no other (`partDecision`, §4): an answer that
+leaves one out is a 400, so a delegation is never granted by omission. Deny
+denies them all. A denied part changes nothing. An approved part makes a
+binding on the discobox that asked (`approvalWrite.binding`) with the routes
+the approver named, else the part's, and a lifetime the approver named, else
+`defaultApprovalTTL` (the ask, else `agentcreds.DefaultGrantTTL`, fitted
+within the secret's limit); the value itself is the use part's alone. The
+request is `approved` when any part was, `denied` when none was, and records
+each part's outcome and binding. Every binding, its events, the holders' marks
+and the decision are one transaction (`commitApproval`).
+
+An approved part **replaces** the discobox's own bindings of its kind for the
+secret (`replaceBindings`, §5); a request states the whole access of that
+kind, never an addition. Harness config and project bindings are not touched.
+Which binding becomes what is `pkg/bindingplan`'s rule, the one the CLI and
+the console show before a person approves. The use part is applied first and
+the delegate part to what it leaves (`bindingplan.Answer`): over a binding
+that both uses and delegates, approving both takes its use into one new use
+binding and then updates the delegation left in place, with no split.
+
+- **Use:** the use-only binding in the asked variable — else the oldest — is
+  updated in place, and the other use-only ones are deleted with their
+  sentinels. A binding that also delegates loses only its use side and is
+  never deleted, so its delegation and its children stay. With no use-only
+  binding left, the approval's is made, and takes over the variable — so the
+  sentinel, which follows the variable when it is materialized — of a binding
+  it split.
+- **Delegate:** the delegate binding — one at most per discobox and secret,
+  which `idx_secret_binding_delegate` enforces — is updated in place and keeps
+  its ID, so its children stay and are held to its new routes. A binding that also uses
+  stays the delegation, and its use side splits off to a new binding in its
+  variable with the routes and lifetime it had.
+- **Refusals** (`checkReplaced`) run over every binding the replacement would
+  update, split or delete, before anything is written: one under another
+  parent is not taken over; one holding the value itself is renewed or
+  removed only by a grant of the value again
+  ([above](#a-raw-binding-hands-over-the-value)), and one that also delegates
+  is not split. A variable the discobox holds with another secret is a 409
+  too, never taken over.
+
+Deleting a sandbox closes its open requests as denied, each part with it: the
+agent waiting on the answer is gone. A discobox sees and answers only the
+requests filed by a discobox it created: the sandbox role decides that for one
+request by its ID, and `ListSecretRequests` filters the listing with
+`store.OwnedBy`
 ([ADR 26-09-30-782](../../../../docs/adr/26-09-30-782-a-discobox-answers-its-own-discoboxes-requests-within-what-it-may-delegate.md) §2).
-
-The lifetime an agent asks for is bounded at `agentcreds.MaxGrantTTLSeconds`
-— thirty days — and an ask outside `1..max` is a 400: an ask becomes the answer
-a human is shown already chosen. An ask names a host or a route, and a route
-that does not parse is a 400 naming it. An agent's ask is deduplicated per
-sandbox, variable, purpose, set of routes in any order (each host asked for
-being one), name and lifetime.
+It answers — approves or denies — only a request with no delegate part
+(`errDiscoboxAnswersDelegation`): one that has one is a person's, both parts
+included, so one answer is never split between two answerers.
 
 ## Delegation
 
@@ -158,7 +203,8 @@ A delegate binding lets a discobox it covers hand the secret, for use, to the
 discoboxes it creates (ADR 26-10-27-880 §3). It authorizes nothing its holder
 sends.
 
-- **Only a person makes one**, and only a person answers an ask to delegate.
+- **Only a person makes one**, and only a person answers a request with a
+  delegate part.
 - **What is handed on is a child.** A discobox approving a request from a
   discobox it created, or binding at a create, does it under a live delegate
   binding covering it — at any level — of the secret it answers with
@@ -193,10 +239,11 @@ value.
   its variable, with the host patterns the open routes of the narrowest list
   it is held to name (`model.OpenRouteHosts`) and its expiry, and its live delegate bindings with no variable.
 - **`CreateSandboxCredentialRequest`** — records the ask and returns at once.
-- **`GetSandboxCredentialRequest`** — a sandbox's own request and, once
-  approved, the binding it made while it stands.
-  `services.AgentCredentialRequestStatus` reports an approval whose binding has
-  gone as `denied`.
+- **`GetSandboxCredentialRequest`** — a sandbox's own request and, for each
+  part approved, the binding it made while it stands. The handler reports each
+  part (`agentCredentialRequestStatus`): `services.AgentCredentialPartStatus`
+  reports an approved part whose binding has gone as `denied`, and
+  `AgentCredentialRequestStatus` is `granted` when any part is.
 - **`ListSecretRefreshEvents`** — the refresh trail (ADR 26-09-25-122 §6): each
   refresh request as its `asked` event and, once closed, its `answered` or
   `dismissed` event.

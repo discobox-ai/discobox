@@ -117,6 +117,13 @@ by what it is looking for and is idempotent:
    converted row commits with the sentinel delivery of the discoboxes holding a
    converted secret or binding marked, and is logged, as is every route not
    converted exactly.
+   Then `splitSecretRequestParts` gives every request from before parts the
+   one part it asked for (ADR 26-11-02-022 §6): `purpose = 'delegate'` a
+   delegate part, any other a use part, each carrying the request's routes,
+   binding and answer as its outcome, and drops `purpose`, `routes` and
+   `binding_id`. Those three are the shape the retirements above still write,
+   so `prepareSecretRequestParts`, before `AutoMigrate`, gives a table not yet
+   split any of them it lacks; bindings are not touched.
    Each step is logged per row and finds nothing once done,
    dropping retired tables and columns (including the pool prepull condition and
    its `poolImages` dirty rows, and the pool bootstrap token table,

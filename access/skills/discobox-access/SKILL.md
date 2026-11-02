@@ -131,8 +131,20 @@ discobox-access request \
   one line.
 - `--ttl` asks how long to keep it (`30m`, `4h`, up to `720h`). The person
   may choose otherwise. Leave it out to let them pick.
-- `--delegate` asks to give the credential to the discoboxes you create,
-  rather than to use it yourself (§5).
+- `--policy FILE` names a credential policy file instead of `--route`s:
+  a JSON file listing the routes of one role, such as "open pull requests
+  in one repository". Each `--policy-arg NAME=VALUE` after it is that
+  file's argument (`--policy-arg owner=acme --policy-arg repo=web`); repeat
+  `--policy` for more files, each with its own arguments. The person is
+  shown each file's name and description beside what its routes allow.
+  `--policy` and `--route`/`--hosts` do not mix.
+- `--delegate-route` and `--delegate-policy` ask to give the credential to
+  the discoboxes you create, in the same request (§5). Leave out
+  `--env-var` and the use flags to ask only to delegate.
+
+A request states **the whole access you want** of each kind. Approving it
+replaces what you held of that kind for that credential — wider or
+narrower — so to add a route, ask again with every route you need.
 
 With `--json`, the same request is read from stdin, which keeps quotes and
 apostrophes in your justification out of the shell's hands:
@@ -156,14 +168,20 @@ discobox-access request --json <<'EOF'
 EOF
 ```
 
-`hosts` (the `--hosts` shorthand), `purpose` (`"use"`, the default, or
-`"delegate"`) and `timeoutSeconds` (how long `wait` waits) are the other
-fields. An unknown field is refused, so a
-typo cannot drop your justification.
+`hosts` (the `--hosts` shorthand), `policies` (`[{"file": "roles/x.json",
+"args": {"repo": "web"}}]`, in place of routes), `delegate` (`{"routes":
+[...]}` or `{"policies": [...]}`, the ask to delegate) and `timeoutSeconds`
+(how long `wait` waits) are the other fields. An unknown field, and a key
+given twice, are refused, so a typo cannot drop your justification. A
+policy file is read here and sent whole: at most 64 KiB, one JSON object,
+and at most 32 files in one request.
 
-A granted request says what you now hold, as the person chose it — the routes
-and lifetime may differ from your ask, and the person may have handed over the
-real value rather than the stand-in, which the answer says (§3).
+A granted request says what you now hold, part by part, as the person chose
+it — the routes and lifetime may differ from your ask, and the person may
+have handed over the real value rather than the stand-in, which the answer
+says (§3). The person answers the use and the delegation separately: `--wait`
+exits 0 only when every part you asked for was granted, and 1 when any was
+denied, with the granted part delivered all the same.
 
 ## 3. Use it
 
@@ -262,26 +280,42 @@ A worker starts with none. When it needs one it asks with `discobox-access`,
 as you do, and you approve or deny that request.
 
 Before the first worker, ask to delegate each credential your workers will
-need — `--delegate`, with the routes they will reach and no `--env-var`, since
-a delegation is delivered to nothing in your discobox — so a person approves
-once and you can answer your workers afterwards. Every worker's binding is
-held to the delegation's routes as well as its own, so they must cover every
-route a worker will ask for:
+need — `--delegate-route` or `--delegate-policy`, with the routes they will
+reach — so a person approves once and you can answer your workers
+afterwards. Every worker's binding is held to the delegation's routes as
+well as its own, so they must cover every route a worker will ask for. If
+you need the credential yourself too, ask for both in the **same request**:
+the person answers the use and the delegation on one screen, separately.
 
 ```bash
-discobox-access request --delegate \
+discobox-access request \
   --name github \
-  --route 'github.com/acme/web.git/**,/acme/web/**' \
-  --route 'GET api.github.com/repos/acme/web/**' \
-  --route 'api.github.com/graphql graphql=query' \
-  --route 'POST api.github.com/repos/acme/web/pulls' \
-  --route 'api.github.com/graphql graphql=mutation:markPullRequestReadyForReview' \
+  --delegate-route 'github.com/acme/web.git/**,/acme/web/**' \
+  --delegate-route 'GET api.github.com/repos/acme/web/**' \
+  --delegate-route 'api.github.com/graphql graphql=query' \
+  --delegate-route 'POST api.github.com/repos/acme/web/pulls' \
+  --delegate-route 'api.github.com/graphql graphql=mutation:markPullRequestReadyForReview' \
   --justification "hand GitHub to the worker discoboxes I create for issues #43 and #44 of acme/web" \
   --ttl 8h --wait
 ```
 
-A delegation authorizes nothing you send yourself; ask separately to use the
-credential if you need it too. A person may already have given you one
+When the routes are already written down as credential policy files, name
+the files instead, each with its own arguments, and add your own use beside
+the delegation:
+
+```bash
+discobox-access request --name github --env-var GH_TOKEN \
+  --policy roles/github-review.json --policy-arg owner=acme --policy-arg repo=web \
+  --delegate-policy roles/github-submit.json --policy-arg owner=acme --policy-arg repo=web \
+  --delegate-policy roles/github-submit.json --policy-arg owner=acme --policy-arg repo=docs \
+  --justification "review PRs in acme/web, and hand GitHub to the workers I create for acme/web and acme/docs" \
+  --ttl 8h --wait
+```
+
+A delegation authorizes nothing you send yourself, and your own use hands
+nothing on. A request states the whole of each: approving a delegation
+replaces the one you held, and every worker under it is held to its new
+routes from then on. A person may already have given you one
 (`discobox secret bind <secret> <this discobox> --delegate`): `discobox-access
 list` shows it as a delegation. Under it you may also give a worker the
 credential when you create it, `discobox run --bind <secret>:<VAR> …`, which
@@ -319,14 +353,14 @@ discobox secret request deny <request-id>
   nothing else, and the server refuses any other.
 - Read each request's `justification` and routes. Approve what the worker's
   task needs and what you were delegated; deny the rest, or approve it
-  narrower with `--route` (one per flag).
+  narrower (`discobox secret request approve --help` says how).
 - The server approves only under a delegate binding you hold of that secret:
   the worker's binding is made under it, held to its routes as well as its
   own, and lasts no longer than it. Pass `--secret` only when the server says
   you were delegated more than one secret that fits. If the delegation is
   removed, every binding made under it goes too.
-- A request to delegate waits for a person, as does every request when you
-  hold no delegation that covers it.
+- A request with a delegate part waits for a person, use part and all, as
+  does every request when you hold no delegation that covers it.
 
 ### See and talk to what your workers are doing
 

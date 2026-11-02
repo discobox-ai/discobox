@@ -23,6 +23,8 @@ type ApproveSecretRequestBody = apimodel.ApproveSecretRequestBody
 type CreateHarnessConfigBody = apimodel.CreateHarnessConfigBody
 type CreateSecretBody = apimodel.CreateSecretBody
 type CreateSandboxCredentialRequestBody = apimodel.CreateSandboxCredentialRequestBody
+type SandboxCredentialPolicy = apimodel.SandboxCredentialPolicy
+type SandboxCredentialRequestDelegate = apimodel.SandboxCredentialRequestDelegate
 type CreateSandboxTrustRequestBody = apimodel.CreateSandboxTrustRequestBody
 type ApproveTrustRequestBody = apimodel.ApproveTrustRequestBody
 type CreateSecretBindingBody = apimodel.CreateSecretBindingBody
@@ -511,9 +513,9 @@ type SecretService interface {
 	// pool's ID and verifies the sandbox belongs to it.
 	ListSandboxCredentials(ctx context.Context, poolID, sandboxID string) ([]SandboxCredential, error)
 	CreateSandboxCredentialRequest(ctx context.Context, poolID string, input CreateSandboxCredentialRequestBody) (*model.SecretRequest, error)
-	// GetSandboxCredentialRequest reads one of a sandbox's asks and, once
-	// approved, the binding that answered it while it stands.
-	GetSandboxCredentialRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.SecretRequest, *model.SecretBinding, error)
+	// GetSandboxCredentialRequest reads one of a sandbox's asks and, for
+	// each part approved, the binding that answered it while it stands.
+	GetSandboxCredentialRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.SecretRequest, RequestBindings, error)
 	// ListSecretRefreshEvents reads the refresh audit trail: each ask for a
 	// new value of a token, and how it was answered (ADR 26-09-25-122 §6).
 	ListSecretRefreshEvents(ctx context.Context, projectID string, filter SecretRefreshFilter) ([]model.SecretRefreshEvent, error)

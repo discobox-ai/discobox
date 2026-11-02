@@ -14,7 +14,7 @@ func TestListSecretRequestsStatusFilter(t *testing.T) {
 	for _, st := range []string{model.SecretRequestStatusPending, model.SecretRequestStatusPending, model.SecretRequestStatusApproved} {
 		if err := s.CreateSecretRequest(ctx, &model.SecretRequest{
 			ProjectID: "project-1", RequestedBy: "sandbox:sb-1", SandboxID: "sb-1",
-			Routes: []model.SecretRoute{{Hosts: []string{"api.example.com"}}}, Status: st,
+			Use: model.SecretRequestPart{Asked: true, Routes: []model.SecretRoute{{Hosts: []string{"api.example.com"}}}}, Status: st,
 		}); err != nil {
 			t.Fatalf("create request: %v", err)
 		}
@@ -53,7 +53,9 @@ func TestDeletingASandboxDeniesItsOpenRequests(t *testing.T) {
 	request := func(sandboxID, status string) string {
 		req := &model.SecretRequest{
 			ProjectID: "project-1", RequestedBy: "agent:" + sandboxID, SandboxID: sandboxID,
-			Routes: []model.SecretRoute{{Hosts: []string{"api.example.com"}}}, Status: status,
+			Use:      model.SecretRequestPart{Asked: true, Routes: []model.SecretRoute{{Hosts: []string{"api.example.com"}}}},
+			Delegate: model.SecretRequestPart{Asked: true, Routes: []model.SecretRoute{{Hosts: []string{"api.example.com"}}}},
+			Status:   status,
 		}
 		if err := s.CreateSecretRequest(ctx, req); err != nil {
 			t.Fatalf("create request: %v", err)
@@ -87,8 +89,61 @@ func TestDeletingASandboxDeniesItsOpenRequests(t *testing.T) {
 		if id == open && (req.DecidedAt == nil || req.DecidedBy != model.SecretBindingActorSystem) {
 			t.Fatal("the denied request was not stamped decided")
 		}
+		// Each part is denied with the request.
+		if id == open && (req.Use.Outcome != model.SecretRequestPartDenied || req.Delegate.Outcome != model.SecretRequestPartDenied) {
+			t.Fatalf("the denied request's parts = %q, %q; want both denied", req.Use.Outcome, req.Delegate.Outcome)
+		}
 	}
 	if got, err := s.GetSecretRefreshRequest(ctx, "project-1", refresh.ID); err != nil || got.Status != model.SecretRefreshStatusPending {
 		t.Fatalf("refresh request = %+v, %v; want it open", got, err)
+	}
+}
+
+// An ask is the same ask as a pending one only when approving either would
+// grant the same thing: the same name, variable, lifetime and parts, with the
+// same routes in each, in any order (ADR 26-11-02-022 §4).
+func TestFindPendingAgentCredentialRequestsMatchesTheWholeAsk(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	a := model.SecretRoute{Hosts: []string{"a.example.com"}}
+	b := model.SecretRoute{Hosts: []string{"b.example.com"}}
+	ask := func(name, env string, use, delegate []model.SecretRoute) *model.SecretRequest {
+		return &model.SecretRequest{
+			ProjectID: "project-1", RequestedBy: "agent:sb-1", SandboxID: "sb-1", Name: name, EnvName: env, TTL: 60,
+			Use:      model.SecretRequestPart{Asked: use != nil, Routes: use},
+			Delegate: model.SecretRequestPart{Asked: delegate != nil, Routes: delegate},
+			Status:   model.SecretRequestStatusPending,
+		}
+	}
+	stored := ask("github", "GH_TOKEN", []model.SecretRoute{a, b}, []model.SecretRoute{a})
+	if err := s.CreateSecretRequest(ctx, stored); err != nil {
+		t.Fatal(err)
+	}
+	delegateOnly := ask("github", "", nil, []model.SecretRoute{a})
+	if err := s.CreateSecretRequest(ctx, delegateOnly); err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		ask  *model.SecretRequest
+		want string
+	}{
+		"same ask, routes reordered": {ask("github", "GH_TOKEN", []model.SecretRoute{b, a}, []model.SecretRoute{a}), stored.ID},
+		"no delegate part":           {ask("github", "GH_TOKEN", []model.SecretRoute{a, b}, nil), ""},
+		"other delegate routes":      {ask("github", "GH_TOKEN", []model.SecretRoute{a, b}, []model.SecretRoute{b}), ""},
+		"another credential":         {ask("github-bot", "GH_TOKEN", []model.SecretRoute{a, b}, []model.SecretRoute{a}), ""},
+		"delegate only":              {ask("github", "", nil, []model.SecretRoute{a}), delegateOnly.ID},
+		"delegate only, other name":  {ask("github-bot", "", nil, []model.SecretRoute{a}), ""},
+	} {
+		found, err := s.FindPendingAgentCredentialRequests(ctx, tc.ask)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := ""
+		if len(found) > 0 {
+			got = found[0].ID
+		}
+		if got != tc.want {
+			t.Errorf("%s: found %q, want %q", name, got, tc.want)
+		}
 	}
 }

@@ -1154,6 +1154,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		}
 		return m.askAboutCredential(req, msg.secrets)
 
+	case standingLoadedMsg:
+		return m.standingLoaded(msg)
+
 	case credentialAnsweredMsg:
 		return m.credentialAnswered(msg)
 

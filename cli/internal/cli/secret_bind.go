@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/cli/internal/apiroute"
-	"github.com/discobox-ai/discobox/cli/internal/credentialpolicy"
+	"github.com/discobox-ai/discobox/pkg/credentialpolicy"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
 
 	"github.com/spf13/cobra"

@@ -275,7 +275,7 @@ func (h *Handler) CreateSandboxCredentialRequest(ctx context.Context, req *apimo
 	if err != nil {
 		return apiError(err), nil
 	}
-	return agentCredentialRequestStatus(result, nil, nil, ""), nil
+	return agentCredentialRequestStatus(result, services.RequestBindings{}, nil), nil
 }
 
 func (h *Handler) GetSandboxCredentialRequest(ctx context.Context, params serverapi.GetSandboxCredentialRequestParams) (serverapi.GetSandboxCredentialRequestRes, error) {
@@ -283,20 +283,19 @@ func (h *Handler) GetSandboxCredentialRequest(ctx context.Context, params server
 	if err != nil {
 		return apiError(err), nil
 	}
-	result, binding, err := h.services.Secrets.GetSandboxCredentialRequest(ctx, principal.PoolID, params.SandboxId, params.RequestId)
+	result, bindings, err := h.services.Secrets.GetSandboxCredentialRequest(ctx, principal.PoolID, params.SandboxId, params.RequestId)
 	if err != nil {
 		return apiError(err), nil
 	}
 	// A granted credential is listed under its secret's name, so the status
 	// names it the same way.
-	name := result.Name
 	var secret *model.Secret
-	if binding != nil {
-		if secret, err = h.services.Secrets.GetSecret(ctx, result.ProjectID, binding.SecretID); err == nil {
-			name = secret.Name
+	if result.SecretID != "" && (bindings.Use != nil || bindings.Delegate != nil) {
+		if found, err := h.services.Secrets.GetSecret(ctx, result.ProjectID, result.SecretID); err == nil {
+			secret = found
 		}
 	}
-	return agentCredentialRequestStatus(result, binding, secret, name), nil
+	return agentCredentialRequestStatus(result, bindings, secret), nil
 }
 
 // credentialBrokerPrincipal authorizes an agent credentials broker call. The
@@ -314,39 +313,57 @@ func credentialBrokerPrincipal(ctx context.Context) (auth.Principal, error) {
 	return principal, nil
 }
 
-// agentCredentialRequestStatus is a request as the protocol reports it. Once
-// granted it carries what the sandbox now holds, as the approver chose it: the
-// hosts the open routes of the binding name — else its secret's — and its lifetime, and
-// for a use the variable its sentinel is in. name is the credential's name
-// then.
-func agentCredentialRequestStatus(req *model.SecretRequest, binding *model.SecretBinding, secret *model.Secret, name string) *apimodel.SandboxCredentialRequestStatus {
+// agentCredentialRequestStatus is a request as the protocol reports it, part
+// by part (ADR 26-11-02-022 §4). Once a part is granted it carries what the
+// sandbox now holds under it, as the approver chose it: the hosts the open
+// routes of the binding name — else its secret's — and its lifetime, and for
+// the use part the variable its sentinel is in. The credential is named after
+// its secret, as list names it.
+func agentCredentialRequestStatus(req *model.SecretRequest, bindings services.RequestBindings, secret *model.Secret) *apimodel.SandboxCredentialRequestStatus {
 	resp := &apimodel.SandboxCredentialRequestStatus{
 		RequestId: req.ID,
-		Status:    serverapi.SandboxCredentialRequestStatusStatus(services.AgentCredentialRequestStatus(req, binding)),
-		Purpose:   serverapi.SandboxCredentialRequestStatusPurpose(purposeOf(req.Purpose)),
+		Status:    serverapi.SandboxCredentialRequestStatusStatus(services.AgentCredentialRequestStatus(req, bindings)),
 	}
-	if binding != nil {
-		resp.SetName(serverapi.NewOptString(name))
-		routes := binding.Routes
-		if len(routes) == 0 && secret != nil {
-			routes = secret.Routes
-		}
-		hosts := model.OpenRouteHosts(routes)
-		if hosts == nil {
-			hosts = []string{}
-		}
-		resp.SetHosts(hosts)
-		if binding.Use && req.EnvName != "" {
-			resp.SetEnvVar(serverapi.NewOptString(req.EnvName))
-		}
-		if binding.Use && binding.Raw != "" {
-			resp.SetRaw(serverapi.NewOptSandboxCredentialRequestStatusRaw(serverapi.SandboxCredentialRequestStatusRaw(binding.Raw)))
-		}
-		if binding.ExpiresAt != nil {
-			resp.SetExpiresAt(serverapi.NewOptDateTime(*binding.ExpiresAt))
-		}
+	if req.Use.Asked {
+		resp.SetUse(serverapi.NewOptSandboxCredentialRequestPartStatus(agentCredentialPartStatus(req, req.Use, bindings.Use, secret)))
+	}
+	if req.Delegate.Asked {
+		resp.SetDelegate(serverapi.NewOptSandboxCredentialRequestPartStatus(agentCredentialPartStatus(req, req.Delegate, bindings.Delegate, secret)))
 	}
 	return resp
+}
+
+func agentCredentialPartStatus(req *model.SecretRequest, part model.SecretRequestPart, binding *model.SecretBinding, secret *model.Secret) apimodel.SandboxCredentialRequestPartStatus {
+	status := apimodel.SandboxCredentialRequestPartStatus{
+		Status: serverapi.SandboxCredentialRequestPartStatusStatus(services.AgentCredentialPartStatus(part, binding)),
+	}
+	if binding == nil {
+		return status
+	}
+	name := req.Name
+	if secret != nil {
+		name = secret.Name
+	}
+	status.SetName(serverapi.NewOptString(name))
+	routes := binding.Routes
+	if len(routes) == 0 && secret != nil {
+		routes = secret.Routes
+	}
+	hosts := model.OpenRouteHosts(routes)
+	if hosts == nil {
+		hosts = []string{}
+	}
+	status.SetHosts(hosts)
+	if binding.Use && binding.EnvName != "" {
+		status.SetEnvVar(serverapi.NewOptString(binding.EnvName))
+	}
+	if binding.Use && binding.Raw != "" {
+		status.SetRaw(serverapi.NewOptSandboxCredentialRequestPartStatusRaw(serverapi.SandboxCredentialRequestPartStatusRaw(binding.Raw)))
+	}
+	if binding.ExpiresAt != nil {
+		status.SetExpiresAt(serverapi.NewOptDateTime(*binding.ExpiresAt))
+	}
+	return status
 }
 
 // purposeOf is a binding's or a request's purpose as the API states it: an

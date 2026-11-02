@@ -103,6 +103,9 @@ func (db *DB) Migrate(ctx context.Context) error {
 	}
 	// Read before AutoMigrate adds the columns, which is the one moment a row
 	// with no image kind is known to be one from before kinds.
+	if err := prepareSecretRequestParts(write); err != nil {
+		return err
+	}
 	backfillPoolKinds := addsImageKindColumn(write, &model.Pool{})
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
 		return err
@@ -186,6 +189,10 @@ func (db *DB) Migrate(ctx context.Context) error {
 	// After the two retirements above, which read routes in the shape they
 	// were stored in.
 	if err := upgradeRouteShapes(write); err != nil {
+		return err
+	}
+	// After the route upgrade, which converts the routes it moves.
+	if err := splitSecretRequestParts(write); err != nil {
 		return err
 	}
 	if err := rekeySandboxOrigins(write); err != nil {
@@ -326,7 +333,14 @@ func denyOrphanedSecretRequests(db *gorm.DB) error {
 	if migrator.HasColumn(&model.SecretRequest{}, "reason") {
 		query = query.Where("reason <> ?", retiredRefreshReason)
 	}
-	return query.Updates(map[string]any{"status": model.SecretRequestStatusDenied, "decided_at": time.Now().UTC(), "decided_by": model.SecretBindingActorSystem}).Error
+	// Each part a request has is denied with it. A request not yet split into
+	// parts has neither; splitSecretRequestParts gives its part the request's
+	// answer.
+	return query.Updates(map[string]any{
+		"status": model.SecretRequestStatusDenied, "decided_at": time.Now().UTC(), "decided_by": model.SecretBindingActorSystem,
+		"use_outcome":      gorm.Expr("CASE WHEN use_asked THEN ? ELSE '' END", model.SecretRequestPartDenied),
+		"delegate_outcome": gorm.Expr("CASE WHEN delegate_asked THEN ? ELSE '' END", model.SecretRequestPartDenied),
+	}).Error
 }
 
 // backfillSecretValueUpdatedAt gives every secret written before

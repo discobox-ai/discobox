@@ -16,6 +16,7 @@ import (
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/pkg/agentcreds"
+	"github.com/discobox-ai/discobox/pkg/bindingplan"
 	"github.com/discobox-ai/discobox/pkg/hostscope"
 	"github.com/discobox-ai/discobox/pkg/secretformat"
 	"github.com/discobox-ai/discobox/pkg/secretroute"
@@ -425,18 +426,19 @@ func (s *Service) GetSecretRequest(ctx context.Context, projectID, requestID str
 	return req, nil
 }
 
-// errRequestAnswered is an approval that found its request no longer pending.
-var errRequestAnswered = errors.New("the request was answered concurrently")
-
-// ApproveSecretRequest answers a pending request with a binding on the
-// discobox that asked (ADR 26-10-27-880 §5): to use the secret chosen, in the
-// variable it named, or to delegate it. The binding, its event, the mark that
-// delivers it and the request's decision are one transaction.
+// ApproveSecretRequest answers a pending request, part by part (ADR
+// 26-11-02-022 §4): the answer names a decision for every part the request
+// has, and no other, so a delegation is never granted by omission. An
+// approved part replaces the asking discobox's own bindings of that kind for
+// the secret chosen (§5, approvalWrite); a denied one changes nothing. Every
+// binding, its events, the marks that deliver them and the request's decision
+// are one transaction.
 //
-// A person may answer any request. A discobox answers a use request from a
-// discobox it created, and only under a live delegate binding covering it of
-// the secret it answers with (§3): the binding is handed on under that one,
-// as its child, and lasts no longer.
+// A person may answer any request. A discobox answers only a request with no
+// delegate part, from a discobox it created, and approves only under a live
+// delegate binding covering it of the secret it answers with (ADR
+// 26-10-27-880 §3): the binding is handed on under that one, as its child,
+// and lasts no longer.
 func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID string, input services.ApproveSecretRequestBody) (*model.SecretRequest, error) {
 	req, err := s.store.GetSecretRequest(ctx, projectID, requestID)
 	if err != nil {
@@ -450,28 +452,22 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	}
 	principal, _ := auth.PrincipalFromContext(ctx)
 	approverIsSandbox := principal.Type == auth.PrincipalTypeSandbox
-
-	// The routes the approver named, else the ones the request asked for.
-	routes := req.Routes
-	if input.Routes != nil {
-		if routes, err = routesFrom(input.Routes); err != nil {
-			return nil, err
-		}
+	if approverIsSandbox && req.Delegate.Asked {
+		return nil, errDiscoboxAnswersDelegation
 	}
-	ttl, ttlNamed := input.TtlSeconds.Get()
-	if ttlNamed && ttl < 0 {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "a binding's lifetime is a number of seconds; 0 is forever")
+	write := &approvalWrite{req: req, actor: principal.Actor()}
+	if write.use, err = partDecision("use", &req.Use, input.Use); err != nil {
+		return nil, err
+	}
+	if write.delegate, err = partDecision("delegate", &req.Delegate, input.Delegate); err != nil {
+		return nil, err
+	}
+	if write.use == nil && write.delegate == nil {
+		// Every part denied: nothing is bound, so no secret is chosen.
+		return req, s.commitApproval(ctx, write)
 	}
 	secretRef := strings.TrimSpace(input.SecretId.Or(""))
-	// The value itself is the approver's choice, never the ask's (ADR
-	// 26-10-27-840 §2); checkRawBinding decides whether this approver may
-	// make it, as it does for every binding write.
-	write := &approvalWrite{req: req, routes: routes, raw: string(input.Raw.Or("")), ttl: ttl, ttlNamed: ttlNamed, actor: principal.Actor()}
 	if approverIsSandbox {
-		if req.Delegates() {
-			return nil, apperrors.NewStatusError(http.StatusForbidden,
-				"a discobox never approves a request to delegate: handing on the power to hand on is a person's to approve")
-		}
 		parents, secret, err := s.delegationsFor(ctx, projectID, principal.SandboxID, secretRef)
 		if err != nil {
 			return nil, err
@@ -479,165 +475,354 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		write.secret, write.parents, write.approverID = secret, parents, principal.SandboxID
 	} else {
 		if secretRef == "" {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, "secret ID is required")
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, "secret ID is required to approve a part")
 		}
 		if write.secret, err = s.lookupSecret(ctx, projectID, secretRef); err != nil {
 			return nil, err
 		}
 	}
 	if err := s.commitApproval(ctx, write); err != nil {
-		if errors.Is(err, errRequestAnswered) {
-			return nil, apperrors.NewStatusError(http.StatusConflict, "secret request status changed concurrently; refresh and try again")
-		}
 		return nil, err
 	}
-	if write.approverID != "" {
+	if write.approverID != "" && write.use != nil {
 		slog.InfoContext(ctx, "a discobox approved a request under its delegate binding",
-			"projectId", projectID, "requestId", req.ID, "bindingId", req.BindingID,
-			"approver", write.approverID, "parentBindingId", write.binding.ParentID)
+			"projectId", projectID, "requestId", req.ID, "bindingId", req.Use.BindingID,
+			"approver", write.approverID, "parentBindingId", write.use.binding.ParentID)
 	}
 	return req, nil
 }
 
-// approvalWrite is one approval of a request, as its transaction makes it.
+// errDiscoboxAnswersDelegation refuses a discobox answering a request with a
+// delegate part, either way: handing on the power to hand on is a person's,
+// and one answer is never split between two answerers (ADR 26-11-02-022 §4).
+var errDiscoboxAnswersDelegation = apperrors.NewStatusError(http.StatusForbidden,
+	"a request with a delegate part is a person's to answer, both parts included: handing on the power to hand on is a person's to approve")
+
+// partDecision reads the answer's decision on one part: nil when the part is
+// denied, else what approving it binds. A part the request has must be
+// decided, and one it lacks must not be.
+func partDecision(which string, part *model.SecretRequestPart, input apigen.OptSecretRequestPartDecision) (*partApproval, error) {
+	decision, decided := input.Get()
+	switch {
+	case part.Asked && !decided:
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			fmt.Sprintf("the request has a %s part: the answer names a decision for it, approve or deny", which))
+	case !part.Asked && decided:
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			fmt.Sprintf("the request has no %s part to decide", which))
+	case !part.Asked:
+		return nil, nil
+	}
+	switch decision.Decision {
+	case apigen.SecretRequestPartDecisionDecisionDeny:
+		if decision.Routes != nil || decision.TtlSeconds.Set || decision.Raw.Set {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				fmt.Sprintf("the %s part is denied, so it takes no routes, lifetime or delivery", which))
+		}
+		return nil, nil
+	case apigen.SecretRequestPartDecisionDecisionApprove:
+	default:
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			fmt.Sprintf("the %s part's decision is approve or deny, not %q", which, decision.Decision))
+	}
+	approval := &partApproval{delegate: which == "delegate", routes: part.Routes}
+	if decision.Routes != nil {
+		routes, err := routesFrom(decision.Routes)
+		if err != nil {
+			return nil, err
+		}
+		approval.routes = routes
+	}
+	approval.ttl, approval.ttlNamed = decision.TtlSeconds.Get()
+	if approval.ttlNamed && approval.ttl < 0 {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "a binding's lifetime is a number of seconds; 0 is forever")
+	}
+	// The value itself is the approver's choice, never the ask's (ADR
+	// 26-10-27-840 §2), and a use's delivery: a delegation delivers nothing.
+	if raw, ok := decision.Raw.Get(); ok {
+		if approval.delegate {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				"the value itself is the use part's delivery; a delegation delivers nothing")
+		}
+		approval.raw = string(raw)
+	}
+	return approval, nil
+}
+
+// approvalWrite is one answer to a request, as its transaction makes it. use
+// and delegate are the approved parts; nil is a part denied or not asked.
 type approvalWrite struct {
-	req    *model.SecretRequest
-	secret *model.Secret
-	routes []model.SecretRoute
+	req           *model.SecretRequest
+	secret        *model.Secret
+	use, delegate *partApproval
+	actor         string
+	// parents are, for a discobox's approval, the delegate bindings it may
+	// hand the secret on under, longest-lived first; approverID is the
+	// discobox.
+	parents    []model.SecretBinding
+	approverID string
+}
+
+// partApproval is one part approved: the routes and lifetime the approver
+// chose, and for the use part the delivery. binding is what the approval
+// made or replaced.
+type partApproval struct {
+	delegate bool
+	routes   []model.SecretRoute
 	// raw is the delivery the approver chose for the value itself, empty for
 	// a sentinel (ADR 26-10-27-840 §2).
 	raw string
 	// ttl is the lifetime the approver named, read only when ttlNamed.
 	ttl      int64
 	ttlNamed bool
-	actor    string
-	// parents are, for a discobox's approval, the delegate bindings it may
-	// hand the secret on under, longest-lived first; approverID is the
-	// discobox.
-	parents    []model.SecretBinding
-	approverID string
-	// binding is what the approval made or extended.
-	binding *model.SecretBinding
+	binding  *model.SecretBinding
 }
 
-// commitApproval makes every write an approval makes as one act: the binding
-// and its event, the mark that delivers it, and the request decided. A
-// refusal anywhere — a variable already holding another credential, a
-// delegate binding gone, the request answered concurrently — leaves none of
-// them behind. A request no longer pending is errRequestAnswered.
+// commitApproval makes every write an answer makes as one act: each approved
+// part's binding, replacing the discobox's own of that kind, with their
+// events, the marks that deliver them, and the request decided part by part.
+// A refusal anywhere — a variable already holding another credential, a
+// binding it may not take over, a delegate binding gone, the request answered
+// concurrently — leaves none of them behind.
 func (s *Service) commitApproval(ctx context.Context, a *approvalWrite) error {
 	req, projectID := a.req, a.req.ProjectID
 	err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
-		secret, err := txStore.GetSecret(ctx, projectID, a.secret.ID)
-		if err != nil {
-			return apperrors.NotFound(err, "secret not found")
-		}
 		now := time.Now().UTC()
-		ttl := a.ttl
-		if !a.ttlNamed {
-			ttl = defaultApprovalTTL(req, secret)
+		var secret *model.Secret
+		if a.use != nil || a.delegate != nil {
+			var err error
+			if secret, err = txStore.GetSecret(ctx, projectID, a.secret.ID); err != nil {
+				return apperrors.NotFound(err, "secret not found")
+			}
 		}
-		binding := &model.SecretBinding{
-			ProjectID:  projectID,
-			SecretID:   secret.ID,
-			TargetKind: model.SecretBindingTargetSandbox,
-			TargetID:   req.SandboxID,
-			Use:        !req.Delegates(),
-			Delegate:   req.Delegates(),
-			Routes:     a.routes,
-			Raw:        a.raw,
-			RequestID:  req.ID,
-			CreatedBy:  a.actor,
-		}
-		if binding.Use {
-			binding.EnvName = req.EnvName
-		}
-		if a.approverID != "" {
-			parent, err := heldParent(ctx, txStore, projectID, a.approverID, secret.ID, a.parents, now)
+		change := store.BindingChange{Actor: a.actor, Cause: req.ID}
+		for _, part := range []struct {
+			approval *partApproval
+			asked    *model.SecretRequestPart
+		}{{a.use, &req.Use}, {a.delegate, &req.Delegate}} {
+			if !part.asked.Asked {
+				continue
+			}
+			if part.approval == nil {
+				part.asked.Outcome = model.SecretRequestPartDenied
+				continue
+			}
+			binding, err := a.binding(ctx, txStore, secret, part.approval, now)
 			if err != nil {
 				return err
 			}
-			if ttl, err = fitToParent(parent, ttl, a.ttlNamed, now); err != nil {
+			made, err := s.replaceBindings(ctx, txStore, txDB, binding, part.approval.raw, change)
+			if err != nil {
 				return err
 			}
-			binding.ParentID = parent.ID
+			part.approval.binding = made
+			part.asked.Outcome = model.SecretRequestPartApproved
+			part.asked.BindingID = made.ID
+			req.SecretID = secret.ID
 		}
-		if err := guardBindingTTL(secret, ttl); err != nil {
-			return err
+		req.Status = model.SecretRequestStatusDenied
+		if req.Use.Outcome == model.SecretRequestPartApproved || req.Delegate.Outcome == model.SecretRequestPartApproved {
+			req.Status = model.SecretRequestStatusApproved
 		}
-		if err := checkRawBinding(ctx, binding, secret); err != nil {
-			return err
-		}
-		binding.ExpiresAt = expiryAt(now, ttl)
-		made, err := s.putRequestedBinding(ctx, txStore, txDB, binding, store.BindingChange{Actor: a.actor, Cause: req.ID})
-		if err != nil {
-			return err
-		}
-		a.binding = made
-		req.SecretID = secret.ID
-		req.Status = model.SecretRequestStatusApproved
-		req.BindingID = made.ID
 		req.DecidedBy = a.actor
 		req.DecidedAt = &now
 		return txStore.UpdateSecretRequestIfPending(ctx, req)
 	})
 	if errors.Is(err, store.ErrGenerationConflict) {
-		return errRequestAnswered
+		return apperrors.NewStatusError(http.StatusConflict, "secret request status changed concurrently; refresh and try again")
 	}
 	return err
 }
 
-// putRequestedBinding stores the binding an approval makes, or extends the
-// one already standing for the same thing: a use of the same secret in the
-// same variable, or a delegate binding of the same secret, takes the
-// approval's routes, lifetime and delivery. A raw binding is extended only by
-// an approval that grants the value again, as a person chose it: renewing a
-// handover through a sentinel approval would widen what nobody looked at (ADR
-// 26-10-27-840 §2). A variable already holding another credential on the
-// discobox is refused rather than taken over, since swapping
-// the credential under a variable something already uses is the surprise this
-// must not spring.
-func (s *Service) putRequestedBinding(ctx context.Context, txStore *store.Store, txDB *gorm.DB, binding *model.SecretBinding, change store.BindingChange) (*model.SecretBinding, error) {
-	existing, err := txStore.ListSecretBindings(ctx, binding.ProjectID, store.SecretBindingFilter{TargetKind: binding.TargetKind, TargetID: binding.TargetID})
+// binding is the binding approving one part asks for: on the discobox that
+// asked, of the secret chosen, for that part's kind, with the lifetime the
+// approver named — else the ask's — fitted, for a discobox approving, to the
+// delegate binding it hands it on under.
+func (a *approvalWrite) binding(ctx context.Context, txStore *store.Store, secret *model.Secret, part *partApproval, now time.Time) (*model.SecretBinding, error) {
+	ttl := part.ttl
+	if !part.ttlNamed {
+		ttl = defaultApprovalTTL(a.req, secret)
+	}
+	binding := &model.SecretBinding{
+		ProjectID:  a.req.ProjectID,
+		SecretID:   secret.ID,
+		TargetKind: model.SecretBindingTargetSandbox,
+		TargetID:   a.req.SandboxID,
+		Use:        !part.delegate,
+		Delegate:   part.delegate,
+		Routes:     part.routes,
+		Raw:        part.raw,
+		RequestID:  a.req.ID,
+		CreatedBy:  a.actor,
+	}
+	if binding.Use {
+		binding.EnvName = a.req.EnvName
+	}
+	if a.approverID != "" {
+		parent, err := heldParent(ctx, txStore, a.req.ProjectID, a.approverID, secret.ID, a.parents, now)
+		if err != nil {
+			return nil, err
+		}
+		if ttl, err = fitToParent(parent, ttl, part.ttlNamed, now); err != nil {
+			return nil, err
+		}
+		binding.ParentID = parent.ID
+	}
+	if err := guardBindingTTL(secret, ttl); err != nil {
+		return nil, err
+	}
+	if err := checkRawBinding(ctx, binding, secret); err != nil {
+		return nil, err
+	}
+	binding.ExpiresAt = expiryAt(now, ttl)
+	return binding, nil
+}
+
+// replaceBindings makes want the discobox's one sandbox-level binding of its
+// kind for its secret (ADR 26-11-02-022 §5), and returns it as stored. A
+// request states the whole access of that kind, so approving it never adds to
+// what stands:
+//
+//   - Use: of the discobox's use bindings of the secret, the use-only one in
+//     the asked variable — else the oldest — is updated in place; the other
+//     use-only ones are deleted, their sentinels with them; a binding that
+//     also delegates loses only its use side and is never deleted, so its
+//     delegation and everything handed on under it stay. With no use-only
+//     binding left to update, want is made, and takes over the variable — and
+//     so the sentinel — a split binding delivered it in.
+//   - Delegate: the delegate binding of the secret is updated in place,
+//     keeping its ID, so what was handed on under it stays and is held to its
+//     new routes. One that also uses keeps its ID as the delegate binding, and
+//     its use side splits off into a new use binding in its variable, with the
+//     routes and lifetime the use side had.
+//
+// Bindings on the discobox's harness config and project are not its own and
+// are not touched. Every binding this would update, split or delete is
+// checked first (checkReplaced); any refusal refuses the whole approval.
+func (s *Service) replaceBindings(ctx context.Context, txStore *store.Store, txDB *gorm.DB, want *model.SecretBinding, raw string, change store.BindingChange) (*model.SecretBinding, error) {
+	standing, err := txStore.ListSecretBindings(ctx, want.ProjectID, store.SecretBindingFilter{TargetKind: want.TargetKind, TargetID: want.TargetID})
 	if err != nil {
 		return nil, err
 	}
-	for i := range existing {
-		standing := &existing[i]
-		sameUse := binding.Use && standing.Use && standing.EnvName == binding.EnvName
-		sameDelegate := binding.Delegate && standing.Delegate && standing.SecretID == binding.SecretID
-		if !sameUse && !sameDelegate {
+	// Which standing binding is kept, which go and which lose a side is
+	// bindingplan's rule, the one the CLI and the console show before a
+	// person approves; every binding it touches is checked here first. The
+	// use part is applied before the delegate part, each on the bindings as
+	// they then stand, which is bindingplan.Answer.
+	byID := map[string]*model.SecretBinding{}
+	var mine []bindingplan.Binding
+	for i := range standing {
+		binding := &standing[i]
+		if want.Use && binding.Use && binding.SecretID != want.SecretID && binding.EnvName == want.EnvName {
+			return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
+				"%s already holds another credential in this discobox; approve the request with that secret, or ask for another variable", want.EnvName))
+		}
+		if binding.SecretID != want.SecretID {
 			continue
 		}
-		if standing.SecretID != binding.SecretID {
-			return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
-				"%s already holds another credential in this discobox; approve the request with that secret, or ask for another variable", binding.EnvName))
-		}
-		if standing.Raw != "" && standing.Raw != binding.Raw {
-			if !binding.Use {
-				return nil, apperrors.NewStatusError(http.StatusConflict,
-					"this discobox already holds the value itself under the binding that delegates it; change that binding (admin binding update) rather than approving a delegation over it")
-			}
-			return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
-				"%s holds this credential's value itself in this discobox; renew it by granting the value again (raw %s), or on the binding", binding.EnvName, standing.Raw))
-		}
-		if standing.ParentID != binding.ParentID {
-			return nil, apperrors.NewStatusError(http.StatusConflict,
-				"this discobox already holds that credential under another binding; remove it first")
-		}
-		standing.Routes, standing.ExpiresAt = binding.Routes, binding.ExpiresAt
-		if binding.Use {
-			standing.Raw = binding.Raw
-		}
-		if err := txStore.UpdateSecretBinding(ctx, standing, change); err != nil {
+		byID[binding.ID] = binding
+		mine = append(mine, planBinding(binding))
+	}
+	var plan bindingplan.Plan
+	if want.Use {
+		plan = bindingplan.Use(mine, want.EnvName)
+	} else {
+		plan = bindingplan.Delegate(mine)
+	}
+	for _, step := range plan.Steps {
+		if err := checkReplaced(byID[step.Binding.ID], want, raw); err != nil {
 			return nil, err
 		}
-		return standing, s.markBindingHolders(ctx, txStore, txDB, *standing)
 	}
-	if err := txStore.CreateSecretBinding(ctx, binding, change); err != nil {
+	var touched []model.SecretBinding
+	// Clear and delete first, so the variable want takes is free.
+	for _, step := range plan.Steps {
+		binding := byID[step.Binding.ID]
+		switch step.Fate {
+		case bindingplan.LosesUse:
+			before := *binding
+			binding.Use, binding.EnvName, binding.Raw = false, "", ""
+			if err := txStore.UpdateSecretBinding(ctx, binding, change); err != nil {
+				return nil, bindingConflict(err)
+			}
+			touched = append(touched, before)
+		case bindingplan.Deleted:
+			deleted, err := txStore.DeleteSecretBinding(ctx, binding.ProjectID, binding.ID, change)
+			if err != nil {
+				return nil, err
+			}
+			touched = append(touched, deleted...)
+		}
+	}
+	if keep := byID[plan.Keep]; keep != nil && want.Use {
+		before := *keep
+		keep.EnvName, keep.Routes, keep.ExpiresAt, keep.Raw = want.EnvName, want.Routes, want.ExpiresAt, want.Raw
+		if err := txStore.UpdateSecretBinding(ctx, keep, change); err != nil {
+			return nil, bindingConflict(err)
+		}
+		return keep, s.markBindingHolders(ctx, txStore, txDB, append(touched, before, *keep)...)
+	} else if keep != nil {
+		before := *keep
+		if before.Use {
+			// The split: the standing binding stays the delegation, and
+			// its use side becomes a binding of its own in its variable.
+			keep.Use, keep.EnvName, keep.Raw = false, "", ""
+		}
+		keep.Routes, keep.ExpiresAt = want.Routes, want.ExpiresAt
+		if err := txStore.UpdateSecretBinding(ctx, keep, change); err != nil {
+			return nil, bindingConflict(err)
+		}
+		touched = append(touched, before, *keep)
+		if before.Use {
+			split := &model.SecretBinding{
+				ProjectID:  before.ProjectID,
+				SecretID:   before.SecretID,
+				TargetKind: before.TargetKind,
+				TargetID:   before.TargetID,
+				Use:        true,
+				EnvName:    before.EnvName,
+				Routes:     before.Routes,
+				ExpiresAt:  before.ExpiresAt,
+				ParentID:   before.ParentID,
+				RequestID:  before.RequestID,
+				CreatedBy:  before.CreatedBy,
+			}
+			if err := txStore.CreateSecretBinding(ctx, split, change); err != nil {
+				return nil, bindingConflict(err)
+			}
+			touched = append(touched, *split)
+		}
+		return keep, s.markBindingHolders(ctx, txStore, txDB, touched...)
+	}
+	if err := txStore.CreateSecretBinding(ctx, want, change); err != nil {
 		return nil, bindingConflict(err)
 	}
-	return binding, s.markBindingHolders(ctx, txStore, txDB, *binding)
+	return want, s.markBindingHolders(ctx, txStore, txDB, append(touched, *want)...)
+}
+
+// checkReplaced refuses an approval that would update, split or delete a
+// binding it may not (ADR 26-11-02-022 §5): one held under another parent —
+// a person's, or one handed on under another delegation — is not taken over;
+// one holding the value itself is renewed or removed only by a grant of the
+// value again, as a person chose it (ADR 26-10-27-840 §2), and one that also
+// delegates is not split at all.
+func checkReplaced(standing, want *model.SecretBinding, raw string) error {
+	if standing.ParentID != want.ParentID {
+		return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
+			"this discobox already holds that credential under another binding (%s); remove it first", standing.ID))
+	}
+	if standing.Raw == "" {
+		return nil
+	}
+	if standing.Use && standing.Delegate {
+		return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
+			"binding %s holds this credential's value itself and also delegates it; change that binding (admin binding update) rather than approving over it", standing.ID))
+	}
+	if standing.Raw != raw {
+		return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
+			"%s holds this credential's value itself in this discobox (binding %s); renew it by granting the value again (raw %s), or on the binding", standing.EnvName, standing.ID, standing.Raw))
+	}
+	return nil
 }
 
 // markBindingHolders marks the discoboxes bindings cover, when the service
@@ -649,6 +834,9 @@ func (s *Service) markBindingHolders(ctx context.Context, txStore *store.Store, 
 	return s.holders.MarkBindingHoldersDirtyTx(ctx, txStore, txDB, bindings[0].ProjectID, bindings)
 }
 
+// DenySecretRequest denies every part of a pending request. A discobox
+// denies only a request with no delegate part, as it approves only one: a
+// request that has one is a person's to answer (ADR 26-11-02-022 §4).
 func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID string) error {
 	req, err := s.store.GetSecretRequest(ctx, projectID, requestID)
 	if err != nil {
@@ -658,17 +846,10 @@ func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID st
 		return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("secret request is already %s", req.Status))
 	}
 	principal, _ := auth.PrincipalFromContext(ctx)
-	now := time.Now().UTC()
-	req.Status = model.SecretRequestStatusDenied
-	req.DecidedBy = principal.Actor()
-	req.DecidedAt = &now
-	if err := s.store.UpdateSecretRequestIfPending(ctx, req); err != nil {
-		if errors.Is(err, store.ErrGenerationConflict) {
-			return apperrors.NewStatusError(http.StatusConflict, "secret request status changed concurrently; refresh and try again")
-		}
-		return err
+	if principal.Type == auth.PrincipalTypeSandbox && req.Delegate.Asked {
+		return errDiscoboxAnswersDelegation
 	}
-	return nil
+	return s.commitApproval(ctx, &approvalWrite{req: req, actor: principal.Actor()})
 }
 
 // ResolveSandboxSecret resolves a sentinel injected into a sandbox. The
@@ -1004,4 +1185,9 @@ func sentinelFormat(in apigen.OptString) (string, bool, error) {
 		return "", false, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("invalid format: %v", err))
 	}
 	return format, true, nil
+}
+
+// planBinding is a binding as bindingplan reads it.
+func planBinding(binding *model.SecretBinding) bindingplan.Binding {
+	return bindingplan.Binding{ID: binding.ID, Use: binding.Use, Delegate: binding.Delegate, EnvName: binding.EnvName, Created: binding.CreatedAt}
 }

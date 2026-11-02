@@ -1402,9 +1402,11 @@ const (
 	SecretBindingTargetHarnessConfig = "harnessConfig"
 	SecretBindingTargetProject       = "project"
 
-	// SecretPurposeUse and SecretPurposeDelegate are what an agent's request
-	// asks a credential for: to use it, delivered in a variable, or to give it
-	// to the discoboxes it creates (ADR 26-10-27-880 §3).
+	// SecretPurposeUse and SecretPurposeDelegate are what a binding lets a
+	// sandbox do with a credential, as its list of credentials reports it: use
+	// it, delivered in a variable, or give it to the discoboxes it creates
+	// (ADR 26-10-27-880 §3). A request asks for either or both as its parts
+	// (ADR 26-11-02-022 §1).
 	SecretPurposeUse      = "use"
 	SecretPurposeDelegate = "delegate"
 
@@ -1768,31 +1770,61 @@ type SecretRequest struct {
 	SandboxID   string `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"The discobox that asked, and the binding's target if approved"`
 	// SecretID is the secret approved, set when the request is; Name is the
 	// credential the agent asked for, which the approver answers with one.
-	SecretID      string        `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"The secret approved; set when approved"`
-	Name          string        `gorm:"column:name;not null;type:text;default:''" json:"name,omitempty" doc:"Credential name the agent asked for"`
-	EnvName       string        `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable the credential is wanted in, for a use"`
-	Justification string        `gorm:"column:justification;not null;type:text;default:''" json:"justification,omitempty" doc:"Why the agent says it needs the credential"`
-	Routes        []SecretRoute `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Where the credential is asked to be sent"`
+	SecretID      string `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"The secret approved; set when approved"`
+	Name          string `gorm:"column:name;not null;type:text;default:''" json:"name,omitempty" doc:"Credential name the agent asked for"`
+	EnvName       string `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable the credential is wanted in, for the use part"`
+	Justification string `gorm:"column:justification;not null;type:text;default:''" json:"justification,omitempty" doc:"Why the agent says it needs the credential"`
 	// TTL is how long the agent asked the binding to last, in seconds. It is
 	// what an approval starts from, never what it is held to: the approver
 	// chooses the lifetime. Zero is "nothing in particular", not forever.
 	TTL int64 `gorm:"column:ttl_seconds;not null;default:0" json:"ttlSeconds,omitempty" doc:"How long the requester asks the binding to last, in seconds"`
-	// Purpose is what the agent asked the credential for: to use it, or to
-	// give it to the discoboxes it creates (ADR 26-10-27-880 §3).
-	Purpose   string     `gorm:"column:purpose;not null;type:text;default:'use'" json:"purpose,omitempty" doc:"What the agent asked the credential for: to use it, or to give it to the discoboxes it creates" enum:"use,delegate"`
-	Status    string     `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
-	BindingID string     `gorm:"column:binding_id;not null;type:text;default:''" json:"bindingId,omitempty" doc:"The binding approving the request made"`
-	DecidedBy string     `gorm:"column:decided_by;not null;type:text;default:''" json:"decidedBy,omitempty" doc:"Who answered the request"`
-	DecidedAt *time.Time `gorm:"column:decided_at" json:"decidedAt,omitempty" doc:"When it was answered" format:"date-time"`
-	CreatedAt time.Time  `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time  `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	// Use and Delegate are the request's parts (ADR 26-11-02-022 §1): to use
+	// the credential, delivered in EnvName, and to give it to the discoboxes
+	// the asking one creates. A request has at least one; a part it does not
+	// have is the zero value, and absent from the API.
+	Use       SecretRequestPart `gorm:"embedded;embeddedPrefix:use_" json:"use,omitzero"`
+	Delegate  SecretRequestPart `gorm:"embedded;embeddedPrefix:delegate_" json:"delegate,omitzero"`
+	Status    string            `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
+	DecidedBy string            `gorm:"column:decided_by;not null;type:text;default:''" json:"decidedBy,omitempty" doc:"Who answered the request"`
+	DecidedAt *time.Time        `gorm:"column:decided_at" json:"decidedAt,omitempty" doc:"When it was answered" format:"date-time"`
+	CreatedAt time.Time         `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time         `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
 
-// Delegates reports whether the request asks to give the credential on rather
-// than to use it.
-func (r *SecretRequest) Delegates() bool { return r.Purpose == SecretPurposeDelegate }
+// SecretRequestPart is one part of a request. Asked is whether the request
+// has it. Routes are what it asks for, resolved; Policies, when it was asked
+// by policy files, are what each resolved to, kept for display only — they
+// grant nothing (ADR 26-11-02-022 §3). Outcome is its answer, empty while the
+// request is pending, and BindingID the binding approving it made or
+// replaced.
+type SecretRequestPart struct {
+	Asked     bool                  `gorm:"column:asked;not null;default:false" json:"-"`
+	Routes    []SecretRoute         `gorm:"column:routes;type:text;serializer:json" json:"routes,omitempty" doc:"Where the part asks for the credential to be sent, resolved"`
+	Policies  []SecretRequestPolicy `gorm:"column:policies;type:text;serializer:json" json:"policies,omitempty" doc:"The policy files the part was asked by, for display"`
+	Outcome   string                `gorm:"column:outcome;not null;type:text;default:''" json:"outcome,omitempty" doc:"The part's answer" enum:"approved,denied"`
+	BindingID string                `gorm:"column:binding_id;not null;type:text;default:''" json:"bindingId,omitempty" doc:"The binding approving the part made or replaced"`
+}
+
+// SecretRequestPolicy is one policy file a part was asked by, as the server
+// resolved it (ADR 26-11-02-022 §3). Name and Description are the asking
+// discobox's words; Routes and UnusedArgs are what the server worked out.
+type SecretRequestPolicy struct {
+	File        string            `json:"file"`
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	Args        map[string]string `json:"args,omitempty"`
+	Digest      string            `json:"digest"`
+	UnusedArgs  []string          `json:"unusedArgs,omitempty"`
+	Routes      []SecretRoute     `json:"routes"`
+}
+
+// Outcomes of a request part.
+const (
+	SecretRequestPartApproved = "approved"
+	SecretRequestPartDenied   = "denied"
+)
 
 func (SecretRequest) TableName() string { return "secret_requests" }
 

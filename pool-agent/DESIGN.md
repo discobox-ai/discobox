@@ -1935,9 +1935,14 @@ The one exception is a raw binding's, on a route outside the protocol (below).
 
 - `list`, `request`, and a request's status are relayed to the control plane
   for the certificate's sandbox (`/api/pools/{poolId}/sandbox-credentials`,
-  `/sandbox-credential-requests`). A granted status says what the sandbox now
-  holds — name, variable, hosts, lifetime — as the approver chose it. A
-  delegate request names no variable, and the broker passes on what was sent.
+  `/sandbox-credential-requests`). A request has a use part, a delegate part,
+  or both, and the broker passes on what was sent: each policy document as
+  the bytes the sandbox sent, since the server parses it once and a copy
+  re-encoded here would be a second reading
+  ([ADR 26-11-02-022](../docs/adr/26-11-02-022-a-credential-request-names-its-policies-and-asks-to-use-and-to-delegate-at-once.md)).
+  A status reports each part, and a granted part says what the sandbox now
+  holds under it — name, variable, hosts, lifetime — as the approver chose
+  it. A delegate part names no variable.
 - **The environment verb** (`Environment`) answers with every variable a
   credential is delivered in for the certificate's sandbox, and the sentinel
   in each, so a process started before a grant takes up the new variable

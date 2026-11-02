@@ -4650,7 +4650,7 @@ components:
             type: object
         CreateSandboxCredentialRequestBody:
             additionalProperties: false
-            description: An agent's ask, relayed by the pool agent on behalf of one of its sandboxes.
+            description: "An agent's ask, relayed by the pool agent on behalf of one of its sandboxes: a use part (envVar with hosts, routes or policies), a delegate part, or both (ADR 26-11-02-022 §1)."
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -4659,7 +4659,7 @@ components:
                     readOnly: true
                     type: string
                 envVar:
-                    description: Environment variable the credential is wanted in. Required to use it; a request to delegate it names none, since a delegation delivers nothing to the asking sandbox.
+                    description: Environment variable the credential is wanted in. Required for the use part, the ask to use it; a request with only a delegate part names none, since a delegation delivers nothing to the asking sandbox.
                     type: string
                 grantTTLSeconds:
                     description: How long the agent asks the binding to last, in seconds, up to thirty days. A suggestion the approver starts from, not a term. 0 or absent asks for nothing in particular; forever cannot be asked for, and neither can a span longer than the ceiling.
@@ -4668,21 +4668,22 @@ components:
                     minimum: 0
                     type: integer
                 hosts:
-                    description: Destination hosts the credential will be sent to (ADR 26-10-02-393), each shorthand for a route to that exact host and no host beneath it. Hosts and routes together name at least one destination, and each becomes a route of the binding approving the request makes, unless the approver names others.
+                    description: Destination hosts the use part will send the credential to (ADR 26-10-02-393), each shorthand for a route to that exact host and no host beneath it.
                     items:
                         type: string
                     type: array
                 routes:
-                    description: "Routes the credential will be sent on, each in the typed form `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]` (ADR 26-10-27-880 §4), such as `GET api.github.com/repos/o/r/**` or `api.github.com/graphql graphql=query`. A route that does not parse refuses the request."
+                    description: "Routes the use part will send the credential on, each in the typed form `[METHODS ]HOSTS[PATHS][ graphql=OPS[:FIELDS]][ mcp=TOOLS][=blocked]` (ADR 26-10-27-880 §4), such as `GET api.github.com/repos/o/r/**` or `api.github.com/graphql graphql=query`. A route that does not parse refuses the request."
                     items:
                         type: string
                     type: array
-                purpose:
-                    description: What the agent asks the credential for, one or the other and never both. use (the default) asks to use it. delegate asks to delegate it to other discoboxes; approving it makes a delegate binding, which delivers nothing to the asking discobox.
-                    enum:
-                        - use
-                        - delegate
-                    type: string
+                policies:
+                    description: Credential policy files naming the use part's routes (ADR 26-11-02-022 §2), exclusive with hosts and routes. The server resolves each document; a request over its limits, or with a document that does not resolve, is refused naming it.
+                    items:
+                        $ref: '#/components/schemas/SandboxCredentialPolicy'
+                    type: array
+                delegate:
+                    $ref: '#/components/schemas/SandboxCredentialRequestDelegate'
                 justification:
                     description: Why the agent says it needs the credential
                     type: string
@@ -4696,20 +4697,47 @@ components:
                 - sandboxId
                 - name
             type: object
-        SandboxCredentialRequestStatus:
+        SandboxCredentialPolicy:
             additionalProperties: false
+            description: One credential policy file a request names (ADR 26-11-02-022 §2), carried as the agent read it.
             properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/SandboxCredentialRequestStatus.json
-                    format: uri
-                    readOnly: true
+                args:
+                    additionalProperties:
+                        type: string
+                    description: The file's arguments, by parameter name
+                    type: object
+                document:
+                    description: The policy document, the file's JSON object as it was read. The server validates and resolves it (ADR 26-10-30-584).
+                file:
+                    description: The file as the agent named it; what an approver is shown the role by
                     type: string
+            required:
+                - file
+                - document
+            type: object
+        SandboxCredentialRequestDelegate:
+            additionalProperties: false
+            description: The part of a request that asks to delegate the credential to the discoboxes the asking one creates. Routes or policies, never both; it names no variable.
+            properties:
+                policies:
+                    items:
+                        $ref: '#/components/schemas/SandboxCredentialPolicy'
+                    type: array
+                routes:
+                    description: Routes in the typed form, as for the use part
+                    items:
+                        type: string
+                    type: array
+            type: object
+        SandboxCredentialRequestPartStatus:
+            additionalProperties: false
+            description: One part of a request, and once granted the credential the sandbox holds under it as the approver chose it.
+            properties:
                 envVar:
-                    description: The variable the credential is delivered in, once granted; absent for a delegation
+                    description: The variable the credential is delivered in, once the use part is granted
                     type: string
                 expiresAt:
-                    description: When the binding lapses, as the approver chose it rather than as it was asked. Absent on a pending or denied request, and on a granted one whose binding never lapses.
+                    description: When the binding lapses, as the approver chose it. Absent until granted, and on a binding that never lapses.
                     format: date-time
                     type: string
                 hosts:
@@ -4720,32 +4748,48 @@ components:
                 name:
                     description: The credential, once granted
                     type: string
-                purpose:
-                    description: What the request asks the credential for. A delegate binding lets the sandbox give the credential to the discoboxes it creates, and delivers nothing to the sandbox itself.
-                    enum:
-                        - use
-                        - delegate
-                    type: string
                 raw:
-                    description: "Once granted, the person approving handed over the value itself rather than a sentinel (ADR 26-10-27-840): in envVar (env), or the path of a file holding it there (file)."
+                    description: "Once the use part is granted, the person approving handed over the value itself rather than a sentinel (ADR 26-10-27-840): in envVar (env), or the path of a file holding it there (file)."
                     enum:
                         - env
                         - file
                     type: string
-                requestId:
-                    description: Request ID to poll
-                    type: string
                 status:
-                    description: Request status
+                    description: The part's status
                     enum:
                         - pending
                         - granted
                         - denied
                     type: string
             required:
+                - status
+            type: object
+        SandboxCredentialRequestStatus:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SandboxCredentialRequestStatus.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                delegate:
+                    $ref: '#/components/schemas/SandboxCredentialRequestPartStatus'
+                requestId:
+                    description: Request ID to poll
+                    type: string
+                status:
+                    description: Request status. pending until a person answers; then granted when any part was, denied when none was.
+                    enum:
+                        - pending
+                        - granted
+                        - denied
+                    type: string
+                use:
+                    $ref: '#/components/schemas/SandboxCredentialRequestPartStatus'
+            required:
                 - requestId
                 - status
-                - purpose
             type: object
         HTTPAuditExchange:
             additionalProperties: false
@@ -5833,6 +5877,7 @@ components:
             type: object
         ApproveSecretRequestBody:
             additionalProperties: false
+            description: An answer to a request, with a decision for every part it has (ADR 26-11-02-022 §4). An answer that leaves a part out is refused, so a delegation is never granted by omission.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -5840,25 +5885,42 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                delegate:
+                    $ref: '#/components/schemas/SecretRequestPartDecision'
+                secretId:
+                    description: Secret ID selected by the approver. A person must name one when approving any part. A discobox approver answers with the secret of a delegate binding covering it, and names one only to choose among the secrets it was delegated.
+                    type: string
+                use:
+                    $ref: '#/components/schemas/SecretRequestPartDecision'
+            type: object
+        SecretRequestPartDecision:
+            additionalProperties: false
+            description: The decision on one part of a request.
+            properties:
+                decision:
+                    description: approve makes the part's binding, replacing the discobox's sandbox-level bindings of that kind for the secret (ADR 26-11-02-022 §5); deny leaves them as they are.
+                    enum:
+                        - approve
+                        - deny
+                    type: string
                 raw:
-                    description: "Grant the value itself rather than a sentinel (ADR 26-10-27-840): env in the variable the request named, file the path of a file holding it there. A person's choice alone - no request asks for it - and only of a secret that allows raw. Absent grants a sentinel."
+                    description: "Use part only: grant the value itself rather than a sentinel (ADR 26-10-27-840): env in the variable the request named, file the path of a file holding it there. A person's choice alone, and only of a secret that allows raw. Absent grants a sentinel."
                     enum:
                         - env
                         - file
                     type: string
                 routes:
-                    description: Routes the binding is approved for, narrowing the secret's; omitted takes the routes the request asked for
+                    description: Routes the binding is approved for, narrowing the secret's; omitted takes the routes the part asked for
                     items:
                         $ref: '#/components/schemas/SecretRouteInput'
                     type: array
-                secretId:
-                    description: Secret ID selected by the approver. A person must name one. A discobox approver answers with the secret of a delegate binding covering it, and names one only to choose among the secrets it was delegated.
-                    type: string
                 ttlSeconds:
                     description: How long the binding lasts, in seconds; omitted takes what the request asked for, else an hour, within the secret's limit and, for a discobox approving, the delegation's
                     format: int64
                     minimum: 0
                     type: integer
+            required:
+                - decision
             type: object
         CreateSecretBody:
             additionalProperties: false
@@ -6368,9 +6430,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                bindingId:
-                    description: The binding approving the request made
-                    type: string
                 createdAt:
                     description: Creation timestamp
                     format: date-time
@@ -6382,6 +6441,8 @@ components:
                 decidedBy:
                     description: 'Who answered the request: a person, or the discobox that created the requester'
                     type: string
+                delegate:
+                    $ref: '#/components/schemas/SecretRequestPart'
                 envName:
                     description: Environment variable the credential is wanted in, for protocol-originated requests
                     type: string
@@ -6394,23 +6455,12 @@ components:
                 name:
                     description: Credential name the agent asked for, for protocol-originated requests
                     type: string
-                purpose:
-                    description: What the agent asked the credential for -- to use it, or to delegate it to other discoboxes. Approving the request makes a binding for that purpose on the discobox that asked.
-                    enum:
-                        - use
-                        - delegate
-                    type: string
                 projectId:
                     description: Project ID
                     type: string
                 requestedBy:
                     description: Principal ID of the requestor
                     type: string
-                routes:
-                    description: Where the credential is asked to be sent
-                    items:
-                        $ref: '#/components/schemas/SecretRoute'
-                    type: array
                 sandboxId:
                     description: Sandbox that owns the sentinel, for sandbox-originated requests
                     type: string
@@ -6432,6 +6482,8 @@ components:
                     description: Last update timestamp
                     format: date-time
                     type: string
+                use:
+                    $ref: '#/components/schemas/SecretRequestPart'
             required:
                 - id
                 - projectId
@@ -6439,6 +6491,67 @@ components:
                 - status
                 - createdAt
                 - updatedAt
+            type: object
+        SecretRequestPart:
+            additionalProperties: false
+            description: One part of a request (ADR 26-11-02-022 §1). The use part asks to use the credential, delivered in envName; the delegate part asks to give it to the discoboxes the asking one creates.
+            properties:
+                bindingId:
+                    description: The binding approving the part made or replaced
+                    type: string
+                outcome:
+                    description: The part's answer; absent while the request is pending
+                    enum:
+                        - approved
+                        - denied
+                    type: string
+                policies:
+                    description: The policy files the part was asked by, for display. Their names and descriptions are the asking discobox's words and grant nothing; routes is what each resolved to.
+                    items:
+                        $ref: '#/components/schemas/SecretRequestPolicy'
+                    type: array
+                routes:
+                    description: Where the part asks for the credential to be sent, resolved
+                    items:
+                        $ref: '#/components/schemas/SecretRoute'
+                    type: array
+            type: object
+        SecretRequestPolicy:
+            additionalProperties: false
+            description: One policy file a request part was asked by (ADR 26-11-02-022 §3), as the server resolved it.
+            properties:
+                args:
+                    additionalProperties:
+                        type: string
+                    description: The arguments it was given
+                    type: object
+                description:
+                    description: The document's own description, as the asking discobox wrote it
+                    type: string
+                digest:
+                    description: SHA-256 of the document's canonical JSON; documents are grouped by it, never by name
+                    type: string
+                file:
+                    description: The file as the asking discobox named it
+                    type: string
+                name:
+                    description: The file's base name without .json; the role's name as shown
+                    type: string
+                routes:
+                    description: What the document resolved to with its arguments
+                    items:
+                        $ref: '#/components/schemas/SecretRoute'
+                    type: array
+                unusedArgs:
+                    description: Arguments it was given that no route path names; they narrow nothing
+                    items:
+                        type: string
+                    type: array
+            required:
+                - file
+                - name
+                - digest
+                - routes
             type: object
         SecretValue:
             additionalProperties: false

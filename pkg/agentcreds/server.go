@@ -171,10 +171,12 @@ func NewHandler(svc Service) http.Handler {
 }
 
 // MaxBodyBytes bounds a request body. Every body in this protocol is a
-// handful of short strings and one verdict, whose prompt a caller keeps small
-// enough to fit here even escaped, so anything larger is a mistake or an
-// attack.
-const MaxBodyBytes = 64 << 10
+// handful of short strings but one: a credential request may carry policy
+// documents (ADR 26-11-02-022 §2). It bounds the whole body, not each
+// document: MaxRequestPolicies documents of the full MaxPolicyBytes do not
+// fit, so a client refuses a body over it naming this limit, and the
+// service refuses one the same way.
+const MaxBodyBytes = 1 << 20
 
 // MaxResponseBytes bounds a response body a client decodes. Every answer but
 // one is as small as a request; an audit page of MaxAuditLimit exchanges is
@@ -182,11 +184,17 @@ const MaxBodyBytes = 64 << 10
 const MaxResponseBytes = 1 << 20
 
 func decode(w http.ResponseWriter, r *http.Request, target any) bool {
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxBodyBytes)).Decode(target); err != nil {
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{
-			Error: fmt.Sprintf("parse request body: %v", err),
-			Code:  CodeInvalid,
-		})
+	// Unknown fields are refused, not dropped: a client older than the field
+	// it no longer may send (a request's purpose, ADR 26-11-02-022 §1) is
+	// told so, rather than having its ask silently read as something else.
+	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxBodyBytes))
+	d.DisallowUnknownFields()
+	if err := d.Decode(target); err != nil {
+		message := fmt.Sprintf("parse request body: %v", err)
+		if tooLarge := (*http.MaxBytesError)(nil); errors.As(err, &tooLarge) {
+			message = fmt.Sprintf("the request body is over %d bytes (MaxBodyBytes); a credential request's policy documents must fit in it together", MaxBodyBytes)
+		}
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: message, Code: CodeInvalid})
 		return false
 	}
 	return true

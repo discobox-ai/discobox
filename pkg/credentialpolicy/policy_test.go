@@ -141,14 +141,75 @@ func TestMergedPoliciesKeepBlockedAndProtocolRoutes(t *testing.T) {
 // A compact template can repeat a large default; the budget must be checked
 // before appending each expansion, across all paths of a policy.
 func TestPolicyBoundsExpandedPaths(t *testing.T) {
+	// A default is one segment (maxSegmentBytes), so it takes thousands of
+	// repetitions, in one path or across many, to reach the budget.
+	many := policyByteLimit/maxSegmentBytes + 1
 	for _, paths := range []string{
-		`["/` + strings.Repeat("${part}", 20) + `"]`,
-		`["/${part}","/${part}","/${part}","/${part}","/${part}"]`,
+		`["/` + strings.Repeat("${part}", many) + `"]`,
+		`["/${part}` + strings.Repeat(`","/${part}`, many-1) + `"]`,
 	} {
-		body := `{"version":1,"parameters":{"part":{"type":"pathSegment","optional":true,"default":"` + strings.Repeat("a", policyByteLimit/4) + `"}},"routes":[{"hosts":["example.com"],"paths":` + paths + `}]}`
+		body := `{"version":1,"parameters":{"part":{"type":"pathSegment","optional":true,"default":"` + strings.Repeat("a", maxSegmentBytes) + `"}},"routes":[{"hosts":["example.com"],"paths":` + paths + `}]}`
 		_, err := (References{{Path: policyFile(t, body)}}).Resolve()
 		if err == nil || !strings.Contains(err.Error(), "expanded paths exceed 1 MiB") {
 			t.Fatalf("error=%v, want expanded output refusal", err)
 		}
+	}
+}
+
+func TestResolveDocumentDescribesWhatItGrants(t *testing.T) {
+	const doc = `{"version":1,"description":"Open issues in one repository","parameters":{"owner":{"type":"pathSegment"},"repo":{"type":"pathSegment"},"spare":{"type":"pathSegment","optional":true,"default":""}},"routes":[{"hosts":["api.github.com"],"methods":["POST"],"paths":["/repos/${owner}/${repo}/issues"]}]}`
+	got, err := ResolveDocument([]byte(doc), map[string]string{"owner": "acme", "repo": "web", "spare": "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Description != "Open issues in one repository" || len(got.Routes) != 1 || got.Routes[0].Paths[0] != "/repos/acme/web/issues" {
+		t.Fatalf("resolved %+v", got)
+	}
+	// An argument no path names is reported, so the arguments shown beside a
+	// role never suggest a narrowing the document does not make.
+	if strings.Join(got.UnusedArgs, ",") != "spare" {
+		t.Fatalf("unused args %v, want [spare]", got.UnusedArgs)
+	}
+	respelled := strings.ReplaceAll(strings.Replace(doc, `"version":1,`, ``, 1), `{"description"`, `{"description"`)
+	respelled = `{ "version" : 1 ,` + respelled[1:]
+	again, err := ResolveDocument([]byte(respelled), map[string]string{"owner": "acme", "repo": "web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Digest != got.Digest || len(again.UnusedArgs) != 0 {
+		t.Fatalf("a respelled document digests differently: %s vs %s (unused %v)", again.Digest, got.Digest, again.UnusedArgs)
+	}
+	other, err := ResolveDocument([]byte(strings.Replace(doc, "POST", "GET", 1)), map[string]string{"owner": "acme", "repo": "web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.Digest == got.Digest {
+		t.Fatal("two different documents share a digest")
+	}
+}
+
+func TestResolveDocumentRefusesWhatAFileWould(t *testing.T) {
+	for name, doc := range map[string]string{
+		"duplicate key": `{"version":1,"version":1,"routes":[{"hosts":["a.example"]}]}`,
+		"unknown field": `{"version":1,"routes":[{"hosts":["a.example"]}],"extra":true}`,
+		"empty routes":  `{"version":1,"routes":[]}`,
+		"trailing":      `{"version":1,"routes":[{"hosts":["a.example"]}]} {}`,
+	} {
+		if _, err := ResolveDocument([]byte(doc), nil); err == nil {
+			t.Errorf("%s: resolved, want refused", name)
+		}
+	}
+	if _, err := ResolveDocument([]byte(repoPolicy), map[string]string{"owner": "acme", "repo": "web", "policy": "x"}); err == nil {
+		t.Error("an argument named policy resolved, want refused")
+	}
+}
+
+func TestAnArgumentIsAtMostOneShortSegment(t *testing.T) {
+	long := strings.Repeat("a", maxSegmentBytes+1)
+	if _, err := ResolveDocument([]byte(repoPolicy), map[string]string{"owner": long, "repo": "web"}); err == nil || !strings.Contains(err.Error(), "at most") {
+		t.Fatalf("a %d-byte argument resolved (%v), want refused naming the limit", len(long), err)
+	}
+	if _, err := ResolveDocument([]byte(repoPolicy), map[string]string{"owner": strings.Repeat("a", maxSegmentBytes), "repo": "web"}); err != nil {
+		t.Fatalf("a %d-byte argument was refused: %v", maxSegmentBytes, err)
 	}
 }

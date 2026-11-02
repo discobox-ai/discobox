@@ -56,19 +56,20 @@ func TestAgentCredentialRequestIsPendingAndRecordsWhatWasAsked(t *testing.T) {
 	if req.Status != model.SecretRequestStatusPending {
 		t.Fatalf("status = %q, want pending", req.Status)
 	}
-	if req.Name != "github" || req.EnvName != "GITHUB_TOKEN" || !reflect.DeepEqual(req.Routes, []model.SecretRoute{{Hosts: []string{"api.github.com"}}}) ||
-		req.Justification == "" || req.Purpose != model.SecretPurposeUse || req.RequestedBy != "agent:"+testSandboxID {
+	if req.Name != "github" || req.EnvName != "GITHUB_TOKEN" || !req.Use.Asked || !reflect.DeepEqual(req.Use.Routes, []model.SecretRoute{{Hosts: []string{"api.github.com"}}}) ||
+		req.Justification == "" || req.Delegate.Asked || req.RequestedBy != "agent:"+testSandboxID {
 		t.Fatalf("request = %#v, want the ask recorded verbatim, one route per host", req)
 	}
 }
 
 // A use is delivered in the variable it names, so one with no valid variable is
-// refused; a delegation delivers nothing to the discobox that asks, so one that
-// names a variable is a mistake about what it asks for.
+// refused; a delegation delivers nothing to the discobox that asks, so a
+// request with only a delegate part that names a variable is a mistake about
+// what it asks for.
 func TestAgentCredentialRequestNamesAVariableOnlyForAUse(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, _ := newAgentCredentialService(t)
-	delegate := serverapi.NewOptCreateSandboxCredentialRequestBodyPurpose(serverapi.CreateSandboxCredentialRequestBodyPurposeDelegate)
+	delegate := delegateRoutes("github.com")
 	for _, tc := range []struct {
 		name string
 		body services.CreateSandboxCredentialRequestBody
@@ -76,10 +77,13 @@ func TestAgentCredentialRequestNamesAVariableOnlyForAUse(t *testing.T) {
 	}{
 		{"a use with no variable", services.CreateSandboxCredentialRequestBody{Name: "github", Hosts: []string{"api.github.com"}}, http.StatusBadRequest},
 		{"a use with a malformed variable", services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("A=B"), Hosts: []string{"api.github.com"}}, http.StatusBadRequest},
-		{"a delegation naming a variable", services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Hosts: []string{"github.com"}, Purpose: delegate}, http.StatusBadRequest},
+		{"a delegation naming a variable", services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Delegate: delegate}, http.StatusBadRequest},
+		{"an empty delegate part", services.CreateSandboxCredentialRequestBody{Name: "github", Delegate: serverapi.NewOptSandboxCredentialRequestDelegate(serverapi.SandboxCredentialRequestDelegate{})}, http.StatusBadRequest},
+		{"nothing asked", services.CreateSandboxCredentialRequestBody{Name: "github"}, http.StatusBadRequest},
 		{"no host", services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN")}, http.StatusBadRequest},
 		{"a host that is no host name", services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Hosts: []string{"api.*.com"}}, http.StatusBadRequest},
-		{"a delegation", services.CreateSandboxCredentialRequestBody{Name: "github", Hosts: []string{"github.com"}, Purpose: delegate}, 0},
+		{"a delegation", services.CreateSandboxCredentialRequestBody{Name: "github", Delegate: delegate}, 0},
+		{"a use and a delegation", services.CreateSandboxCredentialRequestBody{Name: "github", EnvVar: serverapi.NewOptString("GITHUB_TOKEN"), Hosts: []string{"api.github.com"}, Delegate: delegate}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.body.SandboxId = testSandboxID
@@ -136,8 +140,8 @@ func TestAgentCredentialRequestAsksWithRoutes(t *testing.T) {
 		{Hosts: []string{"api.github.com"}, Methods: []string{"GET"}, Paths: []string{"/repos/acme/web/**"}},
 		{Hosts: []string{"api.github.com"}, Paths: []string{"/graphql"}, GraphQL: &secretroute.GraphQL{Operations: []string{"query"}}},
 	}
-	if !reflect.DeepEqual(first.Routes, want) {
-		t.Fatalf("routes = %+v, want %+v", first.Routes, want)
+	if !reflect.DeepEqual(first.Use.Routes, want) {
+		t.Fatalf("routes = %+v, want %+v", first.Use.Routes, want)
 	}
 	again, err := ask(nil, []string{"api.github.com/graphql graphql=query", "uploads.github.com", "GET api.github.com/repos/acme/web/**"})
 	if err != nil || again.ID != first.ID {
@@ -168,14 +172,17 @@ func TestApprovingAnAgentRequestBindsTheSecretOnTheSandbox(t *testing.T) {
 	secret := createBearerSecret(ctx, t, svc)
 	req := createAgentRequest(ctx, t, svc)
 
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.Name)})
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, approveUse(secret.Name))
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	if approved.Status != model.SecretRequestStatusApproved || approved.SecretID != secret.ID || approved.DecidedBy != "user-1" || approved.DecidedAt == nil {
 		t.Fatalf("request = %+v, want it decided by the person", approved)
 	}
-	binding, err := st.SecretBindingByExactID(ctx, "project-1", approved.BindingID)
+	if approved.Use.Outcome != model.SecretRequestPartApproved {
+		t.Fatalf("use part = %+v, want approved", approved.Use)
+	}
+	binding, err := st.SecretBindingByExactID(ctx, "project-1", approved.Use.BindingID)
 	if err != nil {
 		t.Fatalf("read binding: %v", err)
 	}
@@ -191,7 +198,7 @@ func TestApprovingAnAgentRequestBindsTheSecretOnTheSandbox(t *testing.T) {
 	if err != nil || len(events) != 1 || events[0].Event != model.SecretBindingEventCreated || events[0].Cause != req.ID || events[0].Actor != "user-1" {
 		t.Fatalf("events = %+v, %v; want the creation caused by the request", events, err)
 	}
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); !isStatus(err, http.StatusConflict) {
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, approveUse(secret.ID)); !isStatus(err, http.StatusConflict) {
 		t.Fatalf("second approval = %v, want 409", err)
 	}
 }
@@ -203,17 +210,18 @@ func TestApprovingAnAskToDelegateMakesADelegateBinding(t *testing.T) {
 	svc, st := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
 	req, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
-		SandboxId: testSandboxID, Name: "github", Hosts: []string{"github.com"},
-		Purpose: serverapi.NewOptCreateSandboxCredentialRequestBodyPurpose(serverapi.CreateSandboxCredentialRequestBodyPurposeDelegate),
+		SandboxId: testSandboxID, Name: "github", Delegate: delegateRoutes("github.com"),
 	})
 	if err != nil {
 		t.Fatalf("ask: %v", err)
 	}
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+		SecretId: serverapi.NewOptString(secret.ID), Delegate: decide(true),
+	})
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}
-	binding, err := st.SecretBindingByExactID(ctx, "project-1", approved.BindingID)
+	binding, err := st.SecretBindingByExactID(ctx, "project-1", approved.Delegate.BindingID)
 	if err != nil || binding.Use || !binding.Delegate || binding.EnvName != "" {
 		t.Fatalf("binding = %+v, %v; want a delegate binding and nothing to use", binding, err)
 	}
@@ -228,17 +236,17 @@ func TestApprovingAVariableHeldByAnotherSecretIsRefused(t *testing.T) {
 	other := createRoutedSecret(ctx, t, svc, "other", "*", 0)
 	mustDeliverAs(t, st, testSandboxID, other.ID, "GITHUB_TOKEN")
 	req := createAgentRequest(ctx, t, svc)
-	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); !isStatus(err, http.StatusConflict) {
+	if _, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, approveUse(secret.ID)); !isStatus(err, http.StatusConflict) {
 		t.Fatalf("approve = %v, want 409", err)
 	}
 	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
-		SecretId: serverapi.NewOptString(other.ID), TtlSeconds: serverapi.NewOptInt64(600),
+		SecretId: serverapi.NewOptString(other.ID), Use: decideFor(600),
 	})
 	if err != nil {
 		t.Fatalf("approve with the secret it holds: %v", err)
 	}
 	bindings, err := st.ListTargetUseBindings(ctx, "project-1", model.SecretBindingTargetSandbox, testSandboxID)
-	if err != nil || len(bindings) != 1 || bindings[0].ID != approved.BindingID || bindings[0].ExpiresAt == nil {
+	if err != nil || len(bindings) != 1 || bindings[0].ID != approved.Use.BindingID || bindings[0].ExpiresAt == nil {
 		t.Fatalf("bindings = %+v, %v; want the standing one extended", bindings, err)
 	}
 }
@@ -286,23 +294,23 @@ func TestPollingReportsGrantedOnceApprovedAndDeniedOnceRemoved(t *testing.T) {
 	svc, _ := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
 	req := createAgentRequest(ctx, t, svc)
-	got, binding, err := svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, req.ID)
-	if err != nil || services.AgentCredentialRequestStatus(got, binding) != model.SecretRequestStatusPending {
+	got, bindings, err := svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, req.ID)
+	if err != nil || services.AgentCredentialRequestStatus(got, bindings) != model.SecretRequestStatusPending {
 		t.Fatalf("poll = %+v, %v; want pending", got, err)
 	}
-	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, approveUse(secret.ID))
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, binding, err = svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, req.ID)
-	if err != nil || services.AgentCredentialRequestStatus(got, binding) != "granted" {
+	got, bindings, err = svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, req.ID)
+	if err != nil || services.AgentCredentialRequestStatus(got, bindings) != "granted" {
 		t.Fatalf("poll after approval = %+v, %v; want granted", got, err)
 	}
-	if _, err := svc.DeleteSecretBinding(ctx, "project-1", approved.BindingID); err != nil {
+	if _, err := svc.DeleteSecretBinding(ctx, "project-1", approved.Use.BindingID); err != nil {
 		t.Fatal(err)
 	}
-	got, binding, err = svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, req.ID)
-	if err != nil || services.AgentCredentialRequestStatus(got, binding) != model.SecretRequestStatusDenied {
+	got, bindings, err = svc.GetSandboxCredentialRequest(ctx, testPoolID, testSandboxID, req.ID)
+	if err != nil || services.AgentCredentialRequestStatus(got, bindings) != model.SecretRequestStatusDenied {
 		t.Fatalf("poll after removal = %+v, %v; want denied", got, err)
 	}
 }
@@ -319,14 +327,14 @@ func TestADiscoboxApprovesUnderItsDelegateBinding(t *testing.T) {
 	parent := mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetSandbox, TargetID: leadID, Delegate: true, ExpiresAt: &parentExpiry})
 	req := createAgentRequest(ctx, t, svc)
 
-	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{TtlSeconds: serverapi.NewOptInt64(7200)}); !isStatus(err, http.StatusForbidden) {
+	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{Use: decideFor(7200)}); !isStatus(err, http.StatusForbidden) {
 		t.Fatalf("approve for longer than the delegation = %v, want 403", err)
 	}
-	approved, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{})
+	approved, err := svc.ApproveSecretRequest(asLead(), "project-1", req.ID, services.ApproveSecretRequestBody{Use: decide(true)})
 	if err != nil {
 		t.Fatalf("approve as the lead: %v", err)
 	}
-	child, err := st.SecretBindingByExactID(ctx, "project-1", approved.BindingID)
+	child, err := st.SecretBindingByExactID(ctx, "project-1", approved.Use.BindingID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,29 +344,38 @@ func TestADiscoboxApprovesUnderItsDelegateBinding(t *testing.T) {
 	}
 }
 
-// What only a person may do: answer an ask to delegate, and hand on what no
-// delegate binding covers.
+// What only a person may do: answer an ask with a delegate part — approve or
+// deny, either part — and hand on what no delegate binding covers.
 func TestADiscoboxHandsOnOnlyWhatItWasDelegated(t *testing.T) {
 	ctx := testPrincipalContext()
 	svc, st := newAgentCredentialService(t)
 	secret := createBearerSecret(ctx, t, svc)
 	use := createAgentRequest(ctx, t, svc)
-	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", use.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)}); !isStatus(err, http.StatusForbidden) {
+	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", use.ID, approveUse(secret.ID)); !isStatus(err, http.StatusForbidden) {
 		t.Fatalf("approve with no delegate binding = %v, want 403", err)
 	}
 	mustBindAs(t, st, &model.SecretBinding{SecretID: secret.ID, TargetKind: model.SecretBindingTargetProject, TargetID: "project-1", Delegate: true})
 	ask, err := svc.CreateSandboxCredentialRequest(ctx, testPoolID, services.CreateSandboxCredentialRequestBody{
-		SandboxId: testSandboxID, Name: "github", Hosts: []string{"github.com"},
-		Purpose: serverapi.NewOptCreateSandboxCredentialRequestBodyPurpose(serverapi.CreateSandboxCredentialRequestBodyPurposeDelegate),
+		SandboxId: testSandboxID, Name: "github", EnvVar: serverapi.NewOptString("GH_TOKEN"), Hosts: []string{"api.github.com"},
+		Delegate: delegateRoutes("github.com"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", ask.ID, services.ApproveSecretRequestBody{}); !isStatus(err, http.StatusForbidden) {
-		t.Fatalf("approve an ask to delegate as a discobox = %v, want 403", err)
+	for name, body := range map[string]services.ApproveSecretRequestBody{
+		"approve both":                   {Use: decide(true), Delegate: decide(true)},
+		"approve the use, deny the rest": {Use: decide(true), Delegate: decide(false)},
+		"deny both":                      {Use: decide(false), Delegate: decide(false)},
+	} {
+		if _, err := svc.ApproveSecretRequest(asLead(), "project-1", ask.ID, body); !isStatus(err, http.StatusForbidden) {
+			t.Fatalf("%s as a discobox = %v, want 403", name, err)
+		}
+	}
+	if err := svc.DenySecretRequest(asLead(), "project-1", ask.ID); !isStatus(err, http.StatusForbidden) {
+		t.Fatalf("deny a request with a delegate part as a discobox = %v, want 403", err)
 	}
 	// A delegation on the project covers the lead too.
-	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", use.ID, services.ApproveSecretRequestBody{}); err != nil {
+	if _, err := svc.ApproveSecretRequest(asLead(), "project-1", use.ID, services.ApproveSecretRequestBody{Use: decide(true)}); err != nil {
 		t.Fatalf("approve under the project's delegation: %v", err)
 	}
 	listed, err := svc.ListSecrets(asLead(), "project-1")
@@ -415,11 +432,11 @@ func TestAnApprovalNamingNoLifetimeBindsForWhatWasAsked(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create request: %v", err)
 			}
-			approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret.ID)})
+			approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, approveUse(secret.ID))
 			if err != nil {
 				t.Fatalf("approve: %v", err)
 			}
-			binding, err := st.SecretBindingByExactID(ctx, "project-1", approved.BindingID)
+			binding, err := st.SecretBindingByExactID(ctx, "project-1", approved.Use.BindingID)
 			if err != nil || binding.ExpiresAt == nil {
 				t.Fatalf("binding = %+v, %v; want one that expires", binding, err)
 			}
@@ -428,6 +445,32 @@ func TestAnApprovalNamingNoLifetimeBindsForWhatWasAsked(t *testing.T) {
 			}
 		})
 	}
+}
+
+// approveUse approves a request's use part, its only part, with secret.
+func approveUse(secret string) services.ApproveSecretRequestBody {
+	return services.ApproveSecretRequestBody{SecretId: serverapi.NewOptString(secret), Use: decide(true)}
+}
+
+// decide is a decision on one part: approve as asked, or deny.
+func decide(approve bool) serverapi.OptSecretRequestPartDecision {
+	decision := serverapi.SecretRequestPartDecisionDecisionDeny
+	if approve {
+		decision = serverapi.SecretRequestPartDecisionDecisionApprove
+	}
+	return serverapi.NewOptSecretRequestPartDecision(serverapi.SecretRequestPartDecision{Decision: decision})
+}
+
+// decideFor approves a part for ttl seconds.
+func decideFor(ttl int64) serverapi.OptSecretRequestPartDecision {
+	return serverapi.NewOptSecretRequestPartDecision(serverapi.SecretRequestPartDecision{
+		Decision: serverapi.SecretRequestPartDecisionDecisionApprove, TtlSeconds: serverapi.NewOptInt64(ttl),
+	})
+}
+
+// delegateRoutes is a delegate part naming routes.
+func delegateRoutes(routes ...string) serverapi.OptSandboxCredentialRequestDelegate {
+	return serverapi.NewOptSandboxCredentialRequestDelegate(serverapi.SandboxCredentialRequestDelegate{Routes: routes})
 }
 
 func createAgentRequest(ctx context.Context, t *testing.T, svc *resourcesecrets.Service) *model.SecretRequest {
