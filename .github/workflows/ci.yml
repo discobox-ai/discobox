@@ -4,10 +4,13 @@ name: CI
 
 # Runners are Depot's. The sizes below match what the GitHub-hosted equivalents
 # gave us (4 CPU / 16 GB) rather than Depot's 2-CPU default; raise the suffix to
-# -8 or -16 to trade money for wall-clock. Depot runners also start every job
-# with GOCACHEPROG pointing Go's build and test cache at Depot Cache, which is
-# fetched object by object rather than restored and saved whole; see
-# .github/actions/task for what actions/cache still keeps.
+# -8 or -16 to trade money for wall-clock. Windows is -8: measured against -4
+# and -16 with a warm cache, -8 cut its work from 223s to 165s and -16 was no
+# faster, its remaining time being a few long test packages. Depot's Linux and
+# macOS runners also start every job with GOCACHEPROG pointing Go's build and
+# test cache at Depot Cache, which is fetched object by object rather than
+# restored and saved whole; on Windows the task action sets it. See
+# .github/actions/task for that, and for what actions/cache still keeps.
 
 on:
   pull_request:
@@ -66,7 +69,8 @@ jobs:
   # the entitlement it needs can only be applied by /usr/bin/codesign. Nothing
   # on Linux compiles that code, let alone signs it (ADR 0066 §4).
   #
-  # Depot's macOS runners are M2 with 8 CPUs, against GitHub's 3-core M1.
+  # Depot's macOS runners are M2 with 8 CPUs, against GitHub's 3-core M1, and
+  # come in that one size. The job runs without Nix (ADR 26-11-02-173).
   darwin:
     runs-on: depot-macos-15
     timeout-minutes: 45
@@ -77,16 +81,12 @@ jobs:
           target: ci:darwin
 
   # Nix does not run on Windows, so the task action sets up plain Go here
-  # instead (ADR 0066 §4). Compiling for Windows is covered by the cross
-  # type-check in ci:check; this job exists because the named-pipe transport,
-  # wslc's process handling, and ConPTY are code paths no other runner executes.
+  # instead (ADR 0066 §4), and Depot Cache through a CLI it installs.
+  # Compiling for Windows is covered by the cross type-check in ci:check; this
+  # job exists because the named-pipe transport, wslc's process handling, and
+  # ConPTY are code paths no other runner executes.
   windows:
-    # EXPERIMENT: one run per size, to compare. Revert before merge.
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [depot-windows-2025-4, depot-windows-2025-8, depot-windows-2025-16]
-    runs-on: ${{ matrix.runner }}
+    runs-on: depot-windows-2025-8
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6.0.2

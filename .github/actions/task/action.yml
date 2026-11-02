@@ -1,5 +1,5 @@
 name: Task
-description: Run one Taskfile target in the repository's Nix devShell (plain Go on Windows).
+description: Run one Taskfile target in the repository's Nix devShell on Linux, with plain Go on macOS and Windows.
 
 # The whole GitHub Actions layer, in one place (ADR 0066 §2). A job that needs a
 # new check gets a Taskfile target and four lines of YAML; nothing about *what*
@@ -8,11 +8,11 @@ description: Run one Taskfile target in the repository's Nix devShell (plain Go 
 # The one thing this cannot do that ADR 0066 §2 describes is check out the
 # repository: a local composite action is only resolvable once the repository is
 # already on disk, so every job runs actions/checkout first. A job that needs a
-# second target adds a plain `run: nix develop -c go tool task <target>` step —
-# Nix is already installed by then, though not on Windows. What such a step
-# compiles reaches Depot Cache like the rest, but the module and lint caches are
-# saved by this action's last step, not when the job ends, so what it downloads
-# or lints is not kept for the next run.
+# second target adds a plain `run: nix develop -c go tool task <target>` step on
+# Linux, where Nix is installed by then, or `run: go tool task <target>` on macOS
+# and Windows. What such a step compiles reaches Depot Cache like the rest, but
+# the module and lint caches are saved by this action's last step, not when the
+# job ends, so what it downloads or lints is not kept for the next run.
 
 inputs:
   target:
@@ -29,10 +29,10 @@ runs:
         extra_nix_config: |
           experimental-features = nix-command flakes
 
-    # Nix does not run on Windows (ADR 0066 §4), so there the bootstrap Go comes
-    # from setup-go instead, and GOTOOLCHAIN=auto fetches go.mod's from there as
-    # it does in the devShell. Its own cache stays off: the step below is the
-    # one cache, for every runner, beside Depot Cache.
+    # Only Linux enters the devShell (ADR 26-11-02-173). Nix does not run on
+    # Windows, and a macOS job uses nothing of it but a bootstrap Go, so both
+    # get go.mod's Go from setup-go instead. Its own cache stays off: the step
+    # below is the one cache, for every runner, beside Depot Cache.
     - name: Install Go
       if: runner.os != 'Linux'
       uses: actions/setup-go@v7.0.0
@@ -41,9 +41,8 @@ runs:
         cache: false
 
     # The devShell itself comes from cache.nixos.org. What Depot Cache does not
-    # cover is kept here: the module cache, golangci-lint's analysis cache,
-    # which is its own and not Go's, and Windows's build cache, since Depot's
-    # Windows runner sets no GOCACHEPROG. That path exists on no other runner.
+    # cover is kept here: the module cache, and golangci-lint's analysis cache,
+    # which is its own and not Go's.
     #
     # Keyed by commit and saved only from main, so a run starts from the newest
     # main that saved one. A key that stays put until go.sum changes is a hit
@@ -54,13 +53,11 @@ runs:
     # it.
     #
     # actions/cache, which Depot's runners back with Depot Cache too, so it
-    # still works on a GitHub-hosted runner, where Linux and macOS lose only
-    # the build cache.
+    # still works on a GitHub-hosted runner, where only the build cache is lost.
     - name: Restore the Go caches
       uses: actions/cache/restore@v6.1.0
       with:
         path: |
-          ~/AppData/Local/go-build
           ~/go/pkg/mod
           ~/.cache/golangci-lint
           ~/Library/Caches/golangci-lint
@@ -75,7 +72,7 @@ runs:
     # Depot's Windows runner carries Depot Cache's credentials (DEPOT_CACHE_TOKEN
     # and DEPOT_CACHE_HOST, as Linux's does) but neither the CLI nor
     # GOCACHEPROG, so it gets the CLI here, the version Linux's runner has, and
-    # the step below points Go at it.
+    # the step below points Go at it when the run may share the cache.
     - name: Install the Depot CLI
       if: runner.os == 'Windows'
       uses: depot/setup-action@v1.7.2
@@ -87,9 +84,10 @@ runs:
     # package or test result as it needs it and writes new ones to as it makes
     # them. Nothing is downloaded before the target or uploaded after it, and a
     # pull request's results are shared like main's. Nix keeps the environment,
-    # so the devShell's go sees it too. This step shows it in the log, and warns
-    # on a Linux or macOS runner that did not set it, where every build starts
-    # cold. Windows never has it, and keeps its build cache in actions/cache.
+    # so the devShell's go sees it too. This step shows it in the log, sets it
+    # on a Depot Windows runner, which carries the credentials but never sets
+    # it, and warns on any other runner without it, where every build starts
+    # cold.
     #
     # Only for a pull request or a push to a branch. Go trusts whatever the
     # cache returns for a key, and a pull request's code can write that cache,
@@ -99,8 +97,9 @@ runs:
     # not by which job publishes, keeps a trigger added later off it too.
     #
     # After the restore, not before: the devShell's go is a bootstrap with
-    # GOTOOLCHAIN=auto, so the first go command downloads the toolchain into the
-    # module cache, read-only, and the restore then cannot extract over it.
+    # GOTOOLCHAIN=auto, so on Linux the first go command downloads the toolchain
+    # into the module cache, read-only, and the restore then cannot extract
+    # over it.
     - name: Choose the Go build cache
       shell: bash
       env:
@@ -122,7 +121,7 @@ runs:
         if [ -n "$prog" ]; then
           # Its first word only: the rest is the runner's, and could carry a credential.
           echo "Go's build cache is GOCACHEPROG, running ${prog%% *}."
-        elif [ "$RUNNER_OS" = Windows ]; then
+        elif [ "$RUNNER_OS" = Windows ] && [ -n "${DEPOT_CACHE_TOKEN:-}" ]; then
           echo "GOCACHEPROG=depot gocache" >> "$GITHUB_ENV"
           echo "Depot's Windows runner sets no GOCACHEPROG: pointing Go at depot gocache ($(depot --version | head -1))."
         else
@@ -146,7 +145,6 @@ runs:
       uses: actions/cache/save@v6.1.0
       with:
         path: |
-          ~/AppData/Local/go-build
           ~/go/pkg/mod
           ~/.cache/golangci-lint
           ~/Library/Caches/golangci-lint

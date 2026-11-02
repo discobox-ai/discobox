@@ -257,7 +257,7 @@ Three layers, and the top one holds no logic (ADR 0066):
 ```mermaid
 flowchart TD
     workflows[".github/workflows/<br/>when, on which runner, how artifacts move"]
-    action[".github/actions/task<br/>checkout done, install Nix (Go on Windows),<br/>restore module and lint caches, run one target,<br/>save them on main; Go's build cache is Depot Cache"]
+    action[".github/actions/task<br/>checkout done, install Nix on Linux<br/>(setup-go on macOS and Windows),<br/>restore module and lint caches, run one target,<br/>save them on main; Go's build cache is Depot Cache"]
     taskfile["Taskfile.yml<br/>every step of check, test, build, release"]
     flake["flake.nix<br/>system tools and environment"]
 
@@ -277,28 +277,29 @@ flowchart TD
   by Nix.
 - `.github/workflows/` decides only *when* a target runs and on which runner.
   Every job body is one Taskfile target, run by the `.github/actions/task`
-  composite action as `nix develop -c go tool task <target>`, or as plain
-  `go tool task <target>` on Windows. Go's build and test cache is Depot Cache,
-  which Depot's runners set as `GOCACHEPROG` and every run, pull requests
-  included, reads and writes per object; a runner without it builds cold.
-  Depot's Windows runner sets none, so Windows keeps its build cache in
-  `actions/cache`. Any run but a pull request or a branch push turns Depot
-  Cache off (a tag's release, a dispatched one), since a pull request can write
-  what it would read. The module and golangci-lint caches are `actions/cache`,
-  keyed by commit and saved only by runs on `main`, so every run starts from
-  the newest `main` rather than from whenever `go.sum` last changed.
+  composite action as `nix develop -c go tool task <target>` on Linux, or as
+  plain `go tool task <target>` on macOS and Windows (ADR 26-11-02-173). Go's
+  build and test cache is Depot Cache, which Depot's Linux and macOS runners
+  set as `GOCACHEPROG` and every run, pull requests included, reads and writes
+  per object; a runner without it builds cold. Depot's Windows runner sets
+  none, so the action installs the Depot CLI there and sets it. Any run but a
+  pull request or a branch push turns Depot Cache off (a tag's release, a
+  dispatched one), since a pull request can write what it would read. The
+  module and golangci-lint caches are `actions/cache`, keyed by commit and
+  saved only by runs on `main`, so every run starts from the newest `main`
+  rather than from whenever `go.sum` last changed.
 
 Release binaries are built on the platform they target — darwin has to be, since
 `vz` is cgo against Virtualization.framework and its entitlement is applied by
 `codesign` at build time (see
-[`server/providers/vz/DESIGN.md`](server/providers/vz/DESIGN.md)). Windows is the
-exception in both directions: no Nix, so the same action sets up plain Go there
-with `actions/setup-go`, and no cgo, so its binary is cross-compiled from the
-Linux job. The macOS job lints only the packages darwin builds from other files
-than Linux (`scripts/lint-darwin.sh`) and type-checks the rest; the Linux job
-already lints everything. Agent images are
-built once for both architectures by `depot build`, falling back to emulated
-`docker buildx`.
+[`server/providers/vz/DESIGN.md`](server/providers/vz/DESIGN.md)); it needs
+nothing of Nix but Go, so the macOS job sets up plain Go with
+`actions/setup-go`, as Windows does. Windows has no cgo, so its binary is
+cross-compiled from the Linux job. The macOS job lints only the packages darwin
+builds from other files than Linux (`scripts/lint-darwin.sh`) and type-checks
+the rest; the Linux job already lints everything. Agent images are built once
+for both architectures by `depot build`, falling back to emulated `docker
+buildx`.
 
 A release passes through three states, and only the first is decided by the tag
 (ADR 0105). Pushing a tag publishes a GitHub **prerelease** and nothing more:

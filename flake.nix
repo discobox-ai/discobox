@@ -7,9 +7,9 @@
     { self, nixpkgs, ... }:
     let
       # The libkrun runtime is Linux-only, so packages and checks stay on one
-      # system. Development shells fan out further because check, test, and
-      # release now run out of this flake on every platform the project targets
-      # (ADR 0066 §3).
+      # system. Development shells fan out further, to every platform a
+      # developer works on (ADR 0066 §3). CI enters one only on Linux; its macOS
+      # job uses plain Go (ADR 26-11-02-173).
       buildSystems = [ "x86_64-linux" ];
       devSystems = [
         "x86_64-linux"

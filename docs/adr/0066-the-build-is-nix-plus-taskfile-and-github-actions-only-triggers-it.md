@@ -1,6 +1,6 @@
 # 0066. The build is Nix plus the Taskfile, and GitHub Actions only triggers it
 
-Status: Accepted
+Status: Accepted (§1's one job body and §§2, 4's Nix on every runner but Windows narrowed by [26-11-02-173](26-11-02-173-ci-enters-the-nix-devshell-only-on-linux.md))
 
 Date: 2026-08-20
 

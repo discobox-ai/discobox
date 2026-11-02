@@ -57,6 +57,11 @@ Global review expectations:
   Cache only for `pull_request` events and pushes to a branch, by event rather
   than by ref, since a dispatched release runs off a branch; a release path
   that skips that action has to turn it off itself.
+- A Taskfile target the macOS or Windows CI job runs (`ci:darwin`, `ci:test`,
+  `release:build`, and what they call) uses only Go, `go tool` dependencies,
+  git, and what the runner image ships. Those jobs have no Nix devShell (ADR
+  26-11-02-173), so a target reaching for jq, shellcheck, bats or node works in
+  a developer's shell and fails, or finds the image's own version, in CI.
 - No `go` command runs in `.github/actions/task` before the module cache is
   restored. `GOTOOLCHAIN=auto` makes the first one download the toolchain into
   `~/go/pkg/mod` as read-only files, the restore then fails to extract over
