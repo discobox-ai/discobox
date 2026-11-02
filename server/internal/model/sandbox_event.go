@@ -1,6 +1,7 @@
 package model
 
 import (
+	"maps"
 	"time"
 )
 
@@ -45,6 +46,12 @@ type SandboxEventData struct {
 	// Program is the primary session's program status, present only while
 	// the sandbox is running.
 	Program *SandboxEventProgram `json:"program,omitempty"`
+	// Tags are the sandbox's tags, as its listing serves them (ADR
+	// 26-11-01-560 §2).
+	Tags map[string]string `json:"tags,omitempty"`
+	// CreatedBySandboxID is the sandbox that created this one, when one did.
+	// It never changes.
+	CreatedBySandboxID string `json:"createdBySandboxId,omitempty"`
 }
 
 // SandboxEventProgram is the part of the primary session's OSC 7501 status an
@@ -58,15 +65,20 @@ type SandboxEventProgram struct {
 // SameState reports whether two event data hold the same state, whenever each
 // was taken.
 func (d SandboxEventData) SameState(other SandboxEventData) bool {
-	d.At, other.At = time.Time{}, time.Time{}
 	if (d.Program == nil) != (other.Program == nil) {
 		return false
 	}
 	if d.Program != nil && *d.Program != *other.Program {
 		return false
 	}
-	d.Program, other.Program = nil, nil
-	return d == other
+	return d.ProjectID == other.ProjectID &&
+		d.SandboxID == other.SandboxID &&
+		d.Name == other.Name &&
+		d.DesiredState == other.DesiredState &&
+		d.State == other.State &&
+		d.RuntimeState == other.RuntimeState &&
+		maps.Equal(d.Tags, other.Tags) &&
+		d.CreatedBySandboxID == other.CreatedBySandboxID
 }
 
 // SandboxEventLogID is the one SandboxEventLog row.

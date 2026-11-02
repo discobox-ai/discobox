@@ -66,19 +66,27 @@ waiting caller re-reads the rows rather than being told
 
 ## Sandbox Events
 
-A sandbox's events ([ADR 26-10-29-316](../../../docs/adr/26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md))
+A sandbox's events ([ADR 26-10-29-316](../../../docs/adr/26-10-29-316-sandbox-state-changes-are-a-resumable-event-stream.md),
+with tags and the creator from [ADR 26-11-01-560](../../../docs/adr/26-11-01-560-discobox-box-watches-other-boxes-through-the-sandbox-event-stream.md) §2)
 are rows the store writes in the transaction of the change (`sandbox_events.go`):
 
 - Every writer of a column an event reports notes the sandbox on its
   transaction's `sandboxEventBatch` (`sandboxChanged`, `sandboxDeleted`):
   `CreateSandbox`, `UpdateSandbox`, `ApplySandboxStateReports` (every row it
-  writes), `UpdateSandboxAgentStatus`, `DeleteSandbox`. One called
-  outside a transaction opens one (`inSandboxTx`). A new writer of
-  `desired_state`, `state`, `runtime_state` or `agent_status` must do the same.
+  writes), `UpdateSandboxAgentStatus`, `UpdateSandboxMeta`, `DeleteSandbox`.
+  One called outside a transaction opens one (`inSandboxTx`). A new writer of
+  `desired_state`, `state`, `runtime_state`, `agent_status` or `tags` must do
+  the same. `created_by_sandbox_id` is projected too, and written only at
+  create.
 - `Store.Transaction` records the batch just before the outermost transaction
   commits. Each noted sandbox is projected from the row as committed
   (`sandboxEventData`) and compared with its latest event, so a write that moved
   nothing reported — a heartbeat, a restamp, a rolled-back savepoint — records
+  nothing.
+- The projection gaining a field leaves every latest event without it.
+  `BackfillSandboxEvents`, on every start, compares each sandbox with its
+  latest event and records an update for the ones that differ, so a stream
+  opened with no cursor shows the new field; once all match it writes
   nothing.
 - `Seq` comes from `SandboxEventLog.Head`, advanced in the same transaction.
   Its row lock is held to commit, which makes `Seq` order commit order on

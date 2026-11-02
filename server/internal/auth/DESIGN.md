@@ -145,7 +145,10 @@ Current authorizers:
   created. It is decided by the route; no grant is read
   ([ADR 0140](../../../docs/adr/0140-a-discobox-reaches-the-discobox-api-through-its-pool-with-a-fixed-role.md)
   §4). The role is:
-  - discobox create and list, and on a discobox the caller created: get;
+  - discobox create and list, and the project's sandbox event stream, whole
+    as the list is
+    ([ADR 26-11-01-560](../../../docs/adr/26-11-01-560-discobox-box-watches-other-boxes-through-the-sandbox-event-stream.md)
+    §1); on a discobox the caller created: get;
     source delivery — the pin and the push into its `git-origins`, and
     `complete-source-push`
     ([ADR 26-09-24-630](../../../docs/adr/26-09-24-630-a-discobox-delivers-the-source-of-the-discoboxes-it-creates.md)

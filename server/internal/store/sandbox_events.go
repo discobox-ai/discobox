@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"time"
 
 	"gorm.io/gorm"
@@ -73,7 +74,7 @@ func (s *Store) sandboxDeleted(sandbox *model.Sandbox) {
 }
 
 // sandboxEventColumns are what an event is projected from.
-var sandboxEventColumns = []string{"id", "project_id", "name", "desired_state", "state", "runtime_state", "agent_status", "event_seq"}
+var sandboxEventColumns = []string{"id", "project_id", "name", "desired_state", "state", "runtime_state", "agent_status", "tags", "created_by_sandbox_id", "event_seq"}
 
 type pendingSandboxEvent struct {
 	eventType string
@@ -154,23 +155,72 @@ func (b *sandboxEventBatch) record(tx *gorm.DB) error {
 	return nil
 }
 
-// BackfillSandboxEvents writes a `sandbox.updated` for every sandbox that has
-// no event, so that a stream opened with no cursor reports every sandbox from
-// the start (ADR 26-10-29-316). database.Migrate runs it on every start; once
-// every sandbox has an event it writes nothing.
+// BackfillSandboxEvents brings every sandbox's latest event up to what the
+// store projects: a `sandbox.updated` for every sandbox that has no event, so
+// that a stream opened with no cursor reports every sandbox from the start
+// (ADR 26-10-29-316), and for every sandbox whose latest event lacks a field
+// the projection has gained since it was written (ADR 26-11-01-560 §2).
+// database.Migrate runs it on every start; once every latest event matches,
+// it writes nothing.
+//
+// The comparison is read without locks, and only the sandboxes it finds out
+// of date are noted on the batch, whose recording locks each and compares
+// again: a start must not hold every sandbox row against the heartbeats of
+// the servers sharing the database.
 func BackfillSandboxEvents(db *gorm.DB) error {
+	var sandboxes []model.Sandbox
+	if err := db.Model(&model.Sandbox{}).Select(sandboxEventColumns).
+		Order("created_at ASC").Order("id ASC").Find(&sandboxes).Error; err != nil {
+		return err
+	}
+	stale, err := staleSandboxEvents(db, sandboxes)
+	if err != nil || len(stale) == 0 {
+		return err
+	}
 	return db.Transaction(func(tx *gorm.DB) error {
-		var sandboxIDs []string
-		if err := tx.Model(&model.Sandbox{}).Where("event_seq = 0").
-			Order("created_at ASC").Order("id ASC").Pluck("id", &sandboxIDs).Error; err != nil {
-			return err
-		}
 		batch := sandboxEventBatch{backfill: true}
-		for _, sandboxID := range sandboxIDs {
+		for _, sandboxID := range stale {
 			batch.touch(sandboxID)
 		}
 		return batch.record(tx)
 	})
+}
+
+// staleSandboxEvents is the sandboxes, in order, with no event or whose latest
+// event differs from their projection now.
+func staleSandboxEvents(db *gorm.DB, sandboxes []model.Sandbox) ([]string, error) {
+	var stale []string
+	const page = 500
+	for start := 0; start < len(sandboxes); start += page {
+		chunk := sandboxes[start:min(start+page, len(sandboxes))]
+		seqs := make([]int64, 0, len(chunk))
+		for _, sandbox := range chunk {
+			if sandbox.EventSeq != 0 {
+				seqs = append(seqs, sandbox.EventSeq)
+			}
+		}
+		latest := map[int64]model.SandboxEventData{}
+		if len(seqs) > 0 {
+			var events []model.SandboxEvent
+			if err := db.Select("seq", "data").Where("seq IN ?", seqs).Find(&events).Error; err != nil {
+				return nil, err
+			}
+			for _, event := range events {
+				var data model.SandboxEventData
+				// One this server cannot read is stale, and replaced.
+				if json.Unmarshal(event.Data, &data) == nil {
+					latest[event.Seq] = data
+				}
+			}
+		}
+		for i := range chunk {
+			previous, ok := latest[chunk[i].EventSeq]
+			if !ok || !previous.SameState(sandboxEventData(&chunk[i], time.Time{})) {
+				stale = append(stale, chunk[i].ID)
+			}
+		}
+	}
+	return stale, nil
 }
 
 func sameAsSandboxEvent(tx *gorm.DB, seq int64, data model.SandboxEventData) (bool, error) {
@@ -245,6 +295,14 @@ func sandboxEventData(sandbox *model.Sandbox, at time.Time) model.SandboxEventDa
 		DesiredState: sandbox.DesiredState,
 		State:        sandbox.State,
 		RuntimeState: sandbox.RuntimeState,
+		// An empty map is no tags, as the listing serves it.
+		Tags: maps.Clone(sandbox.Tags),
+	}
+	if len(data.Tags) == 0 {
+		data.Tags = nil
+	}
+	if sandbox.CreatedBySandboxID != nil {
+		data.CreatedBySandboxID = *sandbox.CreatedBySandboxID
 	}
 	switch {
 	case sandbox.DesiredState == model.DesiredStateArchived || sandbox.State == model.SandboxStateArchived || sandbox.State == model.SandboxStateDeleted:
