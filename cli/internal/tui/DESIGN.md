@@ -2715,7 +2715,10 @@ buffer behind it. Ctrl-C cancels directly outside the confirmation.
 (`submitting`, `promptSpentMsg`, `DataSource.Run`'s `accepted`). From Enter
 until the server answers, the composer is read-only and a second Enter does
 nothing: its text is what is being sent. It is blurred for that stretch, so it
-draws as not taking input — no cursor, dimmed text, muted rules and chips. Accepted, the composer is emptied —
+draws as not taking input — no cursor, muted rules and chips — and its text
+is greyed (`setSubmitting`): blurred alone is how the composer draws when the
+list has the keys, where the draft is still editable text. Nothing that
+hands the composer back its focus (`backToPrompt`) does so mid-submit. Accepted, the composer is emptied —
 before the source is delivered and the discobox comes up, which is most of the
 wait — and only if it still holds the prompt that was sent, since a draft can
 land in an empty one. Turned down, the prompt is handed back as it was. A run

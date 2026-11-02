@@ -127,6 +127,9 @@ func TestThePromptIsReadOnlyWhileTheCreateIsBeingSent(t *testing.T) {
 	ds.runGate = make(chan struct{})
 	m := New(t.Context(), ds)
 	m.logo = logo{}
+	// A colorless window draws dim text as plain text; the grey is what is
+	// checked below.
+	m.st = newStyles(true)
 	d := newDriver(t, m)
 	d.start()
 	for _, key := range typeString("fix the reaper") {
@@ -151,6 +154,9 @@ func TestThePromptIsReadOnlyWhileTheCreateIsBeingSent(t *testing.T) {
 	if m.prompt.Focused() {
 		t.Fatal("the composer should be blurred, which is what draws it read-only")
 	}
+	if view, want := m.prompt.View(), m.st.dimText.Render("fix the reaper"); !strings.Contains(view, want) {
+		t.Fatalf("composer drawn %q while the create is being sent, want its text greyed as %q", view, want)
+	}
 
 	close(ds.runGate)
 	d.wait("the attach", func() bool { return len(ds.execOpened()) == 1 })
@@ -158,6 +164,36 @@ func TestThePromptIsReadOnlyWhileTheCreateIsBeingSent(t *testing.T) {
 	// before the create's answer reaches the window: the prompt is spent by
 	// that answer, so it is waited for, and the wait fails if it never is.
 	d.wait("the prompt to be spent once the server took the create", func() bool { return m.prompt.Value() == "" })
+	if got, want := m.prompt.Styles(), m.composerStyles; got.Blurred.Text.Render("x") != want.Blurred.Text.Render("x") ||
+		got.Blurred.CursorLine.Render("x") != want.Blurred.CursorLine.Render("x") {
+		t.Fatal("the composer's own styles should be back once the server answered")
+	}
+}
+
+// The new discobox card keeps the keys on its composer: whatever walks focus
+// off it to the list is turned back, and leaving the list for it lands on it.
+// While a create is being sent neither may hand the composer its cursor back,
+// which would draw it as editable.
+func TestTheNewCardDoesNotRefocusAComposerBeingSent(t *testing.T) {
+	t.Parallel()
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.leader("h")
+	d.key("n")
+	if !m.newOpen || m.focus != focusPrompt {
+		t.Fatalf("new open %v, focus %v; want the new card's composer", m.newOpen, m.focus)
+	}
+	m.setSubmitting(true)
+
+	m.focus = focusList
+	send(t, m, tea.WindowSizeMsg{Width: m.screenWidth, Height: m.height})
+	if m.focus != focusPrompt || m.prompt.Focused() {
+		t.Fatalf("focus %v, composer focused %v; want the card's composer kept, still blurred", m.focus, m.prompt.Focused())
+	}
+	m.backToPanes()
+	if m.focus != focusPrompt || m.prompt.Focused() {
+		t.Fatalf("back from the list: focus %v, composer focused %v; want it kept blurred", m.focus, m.prompt.Focused())
+	}
 }
 
 // A create that never got as far as the server — the working tree could not be

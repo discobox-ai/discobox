@@ -403,6 +403,9 @@ type Model struct {
 	// be spent or about to be handed back, so neither answer should land on an
 	// edit made in between.
 	submitting bool
+	// composerStyles are the composer's own styles, which a submit greys
+	// the text of and its answer puts back (setSubmitting).
+	composerStyles textarea.Styles
 
 	// busyGen numbers the operations that narrate themselves onto the busy
 	// line, so a report from one the window has moved on from is dropped rather
@@ -540,29 +543,30 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 
 	session := Session{DefaultProject: "default"}
 	m := &Model{
-		ctx:           ctx,
-		ds:            ds,
-		st:            st,
-		list:          newSandboxList(session),
-		harnesses:     newHarnessList(),
-		secrets:       newSecretList(),
-		skills:        newSkillsList(),
-		requestRows:   newRequestList(),
-		prompt:        ta,
-		logo:          newLogo(color),
-		focus:         focusPrompt,
-		session:       session,
-		exec:          tea.Exec,
-		copyOS:        func(text string) error { return osClipboard(ctx, text) },
-		readClipboard: clipimage.Clipboard,
-		openOS:        func(url string) error { return openURL(context.WithoutCancel(ctx), url) },
-		chromeGrid:    &frameGrid{},
-		noise:         newNoise(),
-		now:           time.Now,
-		hoverX:        -1,
-		treeHoverX:    -1,
-		treeHoverY:    -1,
-		hoverY:        -1,
+		ctx:            ctx,
+		ds:             ds,
+		st:             st,
+		list:           newSandboxList(session),
+		harnesses:      newHarnessList(),
+		secrets:        newSecretList(),
+		skills:         newSkillsList(),
+		requestRows:    newRequestList(),
+		prompt:         ta,
+		composerStyles: composer,
+		logo:           newLogo(color),
+		focus:          focusPrompt,
+		session:        session,
+		exec:           tea.Exec,
+		copyOS:         func(text string) error { return osClipboard(ctx, text) },
+		readClipboard:  clipimage.Clipboard,
+		openOS:         func(url string) error { return openURL(context.WithoutCancel(ctx), url) },
+		chromeGrid:     &frameGrid{},
+		noise:          newNoise(),
+		now:            time.Now,
+		hoverX:         -1,
+		treeHoverX:     -1,
+		treeHoverY:     -1,
+		hoverY:         -1,
 	}
 	m.chromeSel = selection.New(m.chromeGrid)
 	// The label above the field already says what an empty prompt does, and the
@@ -950,8 +954,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// The new discobox card is modal: nothing walks off its composer.
 	if m.newOpen && m.focus == focusList {
 		m.listFront = false
-		m.focus = focusPrompt
-		m.prompt.Focus()
+		m.backToPrompt()
 	}
 	// The compact tree draws no prompt, so a key that would have walked off
 	// the list into one stays on the list.
@@ -2253,10 +2256,21 @@ func (m *Model) backToPrompt() {
 }
 
 // setSubmitting marks a create sent or answered. The composer is blurred for
-// the stretch, which is what shows it read-only — no cursor, its text dimmed —
-// and focused again after if focus is still on it.
+// the stretch, which is what shows it read-only — no cursor, its text greyed
+// as the hints under a field are — and focused again after if focus is still
+// on it. Blurred alone is not enough to read as read-only: it is also what
+// the composer is when the list has the keys, where the draft is still
+// yours and drawn as text, so the grey is the submit's own.
 func (m *Model) setSubmitting(on bool) {
 	m.submitting = on
+	styles := m.composerStyles
+	if on {
+		// The line the cursor was on is drawn in its own style, which is
+		// every line of a one-line prompt.
+		styles.Blurred.Text = m.st.dimText
+		styles.Blurred.CursorLine = m.st.dimText
+	}
+	m.prompt.SetStyles(styles)
 	switch {
 	case on:
 		m.prompt.Blur()
