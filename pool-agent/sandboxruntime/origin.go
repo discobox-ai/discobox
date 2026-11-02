@@ -39,10 +39,35 @@ func gitSourceCacheKey(source workerapimodel.GitSource) string {
 	return strings.TrimSpace(optString(source.CacheKey))
 }
 
+// prepareSourceOrigins sets up what the git-origins route serves for each of
+// the sandbox's sources. A source delivered before the pool cached Git has a
+// bare repository of its own, which has to exist before the sandbox does: the
+// client pushes into it while the sandbox parks (ADR 0058 §1). Any other is
+// served from this pool's cache, which an import's repositories are read into
+// and which is recorded per source (writeSourceCaches).
+func (r *sandboxCore) prepareSourceOrigins(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) error {
+	sources := sandboxSources(r.paths, req)
+	user := resolveSandboxUser(r.paths, req)
+	for _, source := range sources {
+		if gitSourceHasOwnOrigin(source.git) {
+			if err := r.initGitOrigin(ctx, r.sandboxOriginPath(sandboxID, source.slug), gitSourceInitialBranch(source.git), user); err != nil {
+				return fmt.Errorf("prepare source origin %q: %w", source.slug, err)
+			}
+		}
+	}
+	if err := r.adoptImportedOrigins(ctx, sandboxID, sources); err != nil {
+		return fmt.Errorf("read imported origins: %w", err)
+	}
+	if err := r.writeSourceCaches(sandboxID, sources); err != nil {
+		return fmt.Errorf("record source caches: %w", err)
+	}
+	return nil
+}
+
 // writeSourceCaches records each cache-delivered source's cache, replacing
-// what an earlier create recorded. It runs on every create that builds
-// volumes, so it describes the sources the sandbox has now; a sandbox with
-// none has no file.
+// what an earlier create recorded. It runs on every create, of either
+// runtime, as the sandbox is staged (prepareSourceOrigins), so it describes the
+// sources the sandbox has now; a sandbox with none has no file.
 func (r *sandboxCore) writeSourceCaches(sandboxID string, sources []sandboxSource) error {
 	root := r.sandboxRoot(sandboxID)
 	if err := os.Remove(filepath.Join(root, legacyLiveOriginsFileName)); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -160,7 +185,7 @@ func (r *sandboxCore) poolServesSlug(sandboxID, slug string) (bool, error) {
 // origin from here on. A namespace that already holds a branch is left as it
 // is, so what an interrupted export left behind is never read back over
 // something newer.
-func (r *DockerSandboxRuntime) adoptImportedOrigins(ctx context.Context, sandboxID string, sources []sandboxSource) error {
+func (r *sandboxCore) adoptImportedOrigins(ctx context.Context, sandboxID string, sources []sandboxSource) error {
 	for _, source := range sources {
 		key := gitSourceCacheKey(source.git)
 		if key == "" {
