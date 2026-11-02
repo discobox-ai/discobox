@@ -46,6 +46,10 @@ type Env struct {
 	// the time a monitor that declares `since: true` takes as its baseline
 	// instead of now (ADR 26-11-01-375 §3).
 	Since time.Time
+	// Interval is a polling run's interval (DISCOBOX_MONITOR_INTERVAL): the
+	// runner starts the next run that long after this one started. A run
+	// that follows a stream holds it about that long.
+	Interval time.Duration
 	// Getenv reads the rest of the monitor's environment: its credentials,
 	// its proxy.
 	Getenv func(string) string
@@ -111,6 +115,13 @@ func FromEnviron(getenv func(string) string, stdout, stderr io.Writer) (Env, err
 			return Env{}, fmt.Errorf("%s: %q is not an RFC 3339 time", monitors.EnvSince, raw)
 		}
 		env.Since = since
+	}
+	if raw := strings.TrimSpace(getenv(monitors.EnvInterval)); raw != "" {
+		interval, err := time.ParseDuration(raw)
+		if err != nil || interval <= 0 {
+			return Env{}, fmt.Errorf("%s: %q is not a duration", monitors.EnvInterval, raw)
+		}
+		env.Interval = interval
 	}
 	return env, nil
 }

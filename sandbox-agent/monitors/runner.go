@@ -134,7 +134,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		}
 
 		started := time.Now()
-		final, restart, tail, runErr := r.runOnce(ctx, def, first)
+		final, restart, tail, runErr := r.runOnce(ctx, def, first, interval)
 		first = false
 		if ctx.Err() != nil {
 			return nil
@@ -193,13 +193,13 @@ func (r *Runner) Run(ctx context.Context) error {
 // runOnce runs the monitor's script once, to its end, queuing what it prints.
 // final reports a final event; restart, a streaming run ended because its
 // instance changed under it; tail is the end of what it wrote to stderr.
-func (r *Runner) runOnce(ctx context.Context, def Definition, first bool) (final, restart bool, tail string, err error) {
+func (r *Runner) runOnce(ctx context.Context, def Definition, first bool, interval time.Duration) (final, restart bool, tail string, err error) {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	//nolint:gosec // G204: the monitor the repository, a skill or the image declared is what is meant to run.
 	cmd := exec.CommandContext(runCtx, def.Path)
 	cmd.Dir = r.Instance.Workdir
-	cmd.Env = r.environ(first)
+	cmd.Env = r.environ(first, interval)
 	ownProcessGroup(cmd)
 	// A child that left the group can still hold the pipes open after the
 	// script exits; that must not hold up the run.
@@ -317,12 +317,16 @@ const (
 	// EnvSince is a baseline in the past, RFC 3339 UTC, given to a test's
 	// first run only (Runner.Since).
 	EnvSince = "DISCOBOX_MONITOR_SINCE"
+	// EnvInterval is a polling run's interval, the time until the runner
+	// starts the next (Definition.IntervalFor), as a Go duration. A
+	// streaming monitor has none.
+	EnvInterval = "DISCOBOX_MONITOR_INTERVAL"
 )
 
 // environ is the monitor's environment: the runner's own, less any monitor
 // variables it inherited, plus this instance's. A first run is given Since,
-// when set.
-func (r *Runner) environ(first bool) []string {
+// when set, and a polling run its interval.
+func (r *Runner) environ(first bool, interval time.Duration) []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		if strings.HasPrefix(kv, "DISCOBOX_OPT_") || strings.HasPrefix(kv, "DISCOBOX_MONITOR_") {
@@ -343,6 +347,9 @@ func (r *Runner) environ(first bool) []string {
 	)
 	if first && !r.Since.IsZero() {
 		env = append(env, EnvSince+"="+r.Since.UTC().Format(time.RFC3339))
+	}
+	if interval > 0 {
+		env = append(env, EnvInterval+"="+interval.String())
 	}
 	for key, value := range r.Instance.Options {
 		env = append(env, OptionEnvName(key)+"="+value)
