@@ -257,7 +257,7 @@ Three layers, and the top one holds no logic (ADR 0066):
 ```mermaid
 flowchart TD
     workflows[".github/workflows/<br/>when, on which runner, how artifacts move"]
-    action[".github/actions/task<br/>checkout done, install Nix on Linux<br/>(setup-go on macOS and Windows),<br/>restore module and lint caches, run one target,<br/>save them on main; Go's build cache is Depot Cache"]
+    action[".github/actions/task<br/>checkout done, install Nix on Linux<br/>(setup-go on macOS and Windows),<br/>run one target;<br/>Go's and golangci-lint's caches are Depot Cache"]
     taskfile["Taskfile.yml<br/>every step of check, test, build, release"]
     flake["flake.nix<br/>system tools and environment"]
 
@@ -284,10 +284,11 @@ flowchart TD
   per object; a runner without it builds cold. Depot's Windows runner sets
   none, so the action installs the Depot CLI there and sets it. Any run but a
   pull request or a branch push turns Depot Cache off (a tag's release, a
-  dispatched one), since a pull request can write what it would read. The
-  module and golangci-lint caches are `actions/cache`, keyed by commit and
-  saved only by runs on `main`, so every run starts from the newest `main`
-  rather than from whenever `go.sum` last changed.
+  dispatched one), since a pull request can write what it would read.
+  golangci-lint's analysis cache is Depot Cache too, through the
+  `GOLANGCI_LINT_CACHEPROG` Depot's Linux runner sets. Nothing else is cached:
+  modules come from the module proxy each run, which measured no slower than
+  restoring an `actions/cache` tarball of them.
 
 Release binaries are built on the platform they target — darwin has to be, since
 `vz` is cgo against Virtualization.framework and its entitlement is applied by

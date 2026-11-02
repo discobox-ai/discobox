@@ -10,7 +10,7 @@ name: CI
 # macOS runners also start every job with GOCACHEPROG pointing Go's build and
 # test cache at Depot Cache, which is fetched object by object rather than
 # restored and saved whole; on Windows the task action sets it. See
-# .github/actions/task for that, and for what actions/cache still keeps.
+# .github/actions/task, which caches nothing else.
 
 on:
   pull_request:
