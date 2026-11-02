@@ -74,7 +74,12 @@ func (s *Store) sandboxDeleted(sandbox *model.Sandbox) {
 }
 
 // sandboxEventColumns are what an event is projected from.
-var sandboxEventColumns = []string{"id", "project_id", "name", "desired_state", "state", "runtime_state", "agent_status", "tags", "created_by_sandbox_id", "event_seq"}
+// The generations and the error are what Sandbox.DisplayState reads besides
+// the two axes.
+var sandboxEventColumns = []string{
+	"id", "project_id", "name", "desired_state", "state", "runtime_state", "agent_status", "tags", "created_by_sandbox_id",
+	"generation", "observed_generation", "repair_generation", "error_message", "event_seq",
+}
 
 type pendingSandboxEvent struct {
 	eventType string
@@ -295,6 +300,7 @@ func sandboxEventData(sandbox *model.Sandbox, at time.Time) model.SandboxEventDa
 		DesiredState: sandbox.DesiredState,
 		State:        sandbox.State,
 		RuntimeState: sandbox.RuntimeState,
+		DisplayState: sandbox.DisplayState(),
 		// An empty map is no tags, as the listing serves it.
 		Tags: maps.Clone(sandbox.Tags),
 	}

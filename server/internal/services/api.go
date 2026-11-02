@@ -257,7 +257,10 @@ const SandboxEventReset = "reset"
 // SandboxStreamEvent is one event a stream sends: its ID, its type and its
 // data, the JSON of a model.SandboxEventData. ID is nil on a reset, which
 // leaves the client's cursor where it was, so a client that loses the
-// connection before the state after it has arrived is reset again.
+// connection before the state after it has arrived is reset again. An event
+// with an ID and no Type only moves the cursor: a replay ends with one, where
+// the stream stands, so a client knows the current state has all arrived
+// (ADR 26-11-01-560 §3).
 type SandboxStreamEvent struct {
 	ID   *int64
 	Type string

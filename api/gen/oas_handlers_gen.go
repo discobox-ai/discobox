@@ -23216,18 +23216,21 @@ func (s *Server) handleStopSandboxServiceRequest(args [3]string, argsEscaped boo
 // handleStreamSandboxEventsRequest handles stream-sandbox-events operation.
 //
 // The project's sandbox state changes as server-sent events (ADR 26-10-29-316). An event is sent
-// when a sandbox is created or deleted, and when its existence, its power state, the state of the
-// program in its primary session or its tags change; its data is a SandboxEventData, the sandbox's
-// whole state. A sandbox allowed to call the API reads its whole project's stream, as it lists its
-// sandboxes (ADR 26-11-01-560).
+// when a sandbox is created or deleted, and when its existence, its power state, its display state,
+// the state of the program in its primary session or its tags change; its data is a SandboxEventData,
+//
+//	the sandbox's whole state. A sandbox allowed to call the API reads its whole project's stream, as
+//
+// it lists its sandboxes (ADR 26-11-01-560).
 // Events are sandbox.created, sandbox.updated and sandbox.deleted, each with an id that increases in
 // the order the changes committed, and reset. With no cursor the stream begins with the latest event
 // of every sandbox in the project - its current state - and goes on with each change. With a cursor
 // it sends every event after it. When retention has removed an event after the cursor, or the cursor
 // is past every event there is, it sends a reset, with no id, and then the current state: the client
-// drops what it holds and takes what follows as the truth. When the stream stands past the last
-// event it sent - after the current state, or while the project is quiet - it sends an event with
-// only an id, which moves the client's cursor and dispatches nothing.
+// drops what it holds and takes what follows as the truth. The current state always ends with an
+// event with only an id, where the stream stands, so a client knows it has all arrived (ADR
+// 26-11-01-560); while the project is quiet and the stream stands past the last event it sent, it
+// sends one too. Such an event moves the client's cursor and dispatches nothing.
 // The cursor is the Last-Event-ID header an EventSource sends when it reconnects, or the lastEventId
 // query parameter. An idle stream sends a comment every 15 seconds.
 //

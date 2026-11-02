@@ -34,7 +34,7 @@ func createEventSandbox(t *testing.T, st *store.Store, id string) *model.Sandbox
 }
 
 // describe renders what a stream sent as "id type sandbox", with "-" for an
-// event with no ID.
+// event with no ID, and "id stands" for one that only moves the cursor.
 func describe(t *testing.T, events []services.SandboxStreamEvent) []string {
 	t.Helper()
 	out := make([]string, 0, len(events))
@@ -42,6 +42,11 @@ func describe(t *testing.T, events []services.SandboxStreamEvent) []string {
 		id := "-"
 		if event.ID != nil {
 			id = fmt.Sprint(*event.ID)
+		}
+		if event.Type == "" {
+			// Only the cursor moves: where the stream stands.
+			out = append(out, id+" stands")
+			continue
 		}
 		var data model.SandboxEventData
 		if err := json.Unmarshal(event.Data, &data); err != nil {
@@ -84,7 +89,7 @@ func TestSandboxEventStreamBeginsWithTheCurrentState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	wantEvents(t, next(t, stream), "2 sandbox.created sandbox-b", "3 sandbox.updated sandbox-a")
+	wantEvents(t, next(t, stream), "2 sandbox.created sandbox-b", "3 sandbox.updated sandbox-a", "3 stands")
 	wantEvents(t, next(t, stream))
 
 	if err := st.DeleteSandbox(ctx, "project-1", "sandbox-b"); err != nil {
@@ -138,7 +143,7 @@ func TestSandboxEventStreamResetsAnExpiredCursor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	wantEvents(t, next(t, stream), "- reset", "3 sandbox.updated sandbox-a")
+	wantEvents(t, next(t, stream), "- reset", "3 sandbox.updated sandbox-a", "4 stands")
 	// The replayed event is older than the watermark; the stream stands at
 	// the head, which is what it gives the client to resume from.
 	if stream.Cursor() != 4 {
@@ -168,7 +173,7 @@ func TestSandboxEventStreamCursorFollowsTheHeadWhileQuiet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	wantEvents(t, next(t, stream))
+	wantEvents(t, next(t, stream), "1 stands")
 	a, err := st.GetSandbox(ctx, "project-1", "sandbox-a")
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +210,7 @@ func TestSandboxEventStreamResetsACursorPastTheHead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	wantEvents(t, next(t, stream), "- reset", "1 sandbox.created sandbox-a")
+	wantEvents(t, next(t, stream), "- reset", "1 sandbox.created sandbox-a", "1 stands")
 }
 
 // A stream reads the watermark after the events, so a prune that commits
@@ -226,7 +231,7 @@ func TestSandboxEventStreamResetsWhenPrunedUnderIt(t *testing.T) {
 	if _, err := st.PruneSandboxEvents(ctx, time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	wantEvents(t, next(t, stream), "- reset", "2 sandbox.updated sandbox-a")
+	wantEvents(t, next(t, stream), "- reset", "2 sandbox.updated sandbox-a", "2 stands")
 }
 
 func TestOpenSandboxEventsRefusesAnUnknownProject(t *testing.T) {

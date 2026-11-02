@@ -77,7 +77,9 @@ are rows the store writes in the transaction of the change (`sandbox_events.go`)
   One called outside a transaction opens one (`inSandboxTx`). A new writer of
   `desired_state`, `state`, `runtime_state`, `agent_status` or `tags` must do
   the same. `created_by_sandbox_id` is projected too, and written only at
-  create.
+  create. `displayState` is `Sandbox.DisplayState` of the row, so its error
+  and generations are read for it, and `UpdateSandbox`, their writer, notes
+  them.
 - `Store.Transaction` records the batch just before the outermost transaction
   commits. Each noted sandbox is projected from the row as committed
   (`sandboxEventData`) and compared with its latest event, so a write that moved

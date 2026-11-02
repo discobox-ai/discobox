@@ -18,9 +18,12 @@ import (
 // The gate: a sandbox's calls to the discobox API, which the proxy never sends
 // to the internet and hands here instead (ADR 0140 §2).
 
-// gateHTTPTimeout bounds one forwarded call. It is longer than a resolve's,
-// because it is the sandbox's own call to the API rather than a lookup on the
-// way to somewhere else.
+// gateHTTPTimeout bounds one forwarded call, its body included. It is longer
+// than a resolve's, because it is the sandbox's own call to the API rather
+// than a lookup on the way to somewhere else. A sandbox reading the event
+// stream through here is cut off at it, so the discobox-box monitor holds the
+// stream for less (its maxHold, sandbox-agent/monitors/discoboxbox): lowering
+// this below that cuts every run short.
 const gateHTTPTimeout = 2 * time.Minute
 
 // GateHost is the host a sandbox reaches the discobox API at.

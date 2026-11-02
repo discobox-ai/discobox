@@ -1,7 +1,7 @@
 package model
 
 import (
-	"maps"
+	"reflect"
 	"time"
 )
 
@@ -43,6 +43,10 @@ type SandboxEventData struct {
 	DesiredState string    `json:"desiredState"`
 	State        string    `json:"state"`
 	RuntimeState string    `json:"runtimeState,omitempty"`
+	// DisplayState is the sandbox's displayState, its two state axes combined
+	// by the one rule (Sandbox.DisplayState), so no client combines them
+	// itself (ADR 26-11-01-560 §2).
+	DisplayState string `json:"displayState"`
 	// Program is the primary session's program status, present only while
 	// the sandbox is running.
 	Program *SandboxEventProgram `json:"program,omitempty"`
@@ -63,22 +67,17 @@ type SandboxEventProgram struct {
 }
 
 // SameState reports whether two event data hold the same state, whenever each
-// was taken.
+// was taken: every field but At is compared, a field added later included,
+// and no tags is the same as an empty set of them.
 func (d SandboxEventData) SameState(other SandboxEventData) bool {
-	if (d.Program == nil) != (other.Program == nil) {
-		return false
+	d.At, other.At = time.Time{}, time.Time{}
+	if len(d.Tags) == 0 {
+		d.Tags = nil
 	}
-	if d.Program != nil && *d.Program != *other.Program {
-		return false
+	if len(other.Tags) == 0 {
+		other.Tags = nil
 	}
-	return d.ProjectID == other.ProjectID &&
-		d.SandboxID == other.SandboxID &&
-		d.Name == other.Name &&
-		d.DesiredState == other.DesiredState &&
-		d.State == other.State &&
-		d.RuntimeState == other.RuntimeState &&
-		maps.Equal(d.Tags, other.Tags) &&
-		d.CreatedBySandboxID == other.CreatedBySandboxID
+	return reflect.DeepEqual(d, other)
 }
 
 // SandboxEventLogID is the one SandboxEventLog row.

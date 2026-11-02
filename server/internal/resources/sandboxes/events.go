@@ -100,7 +100,8 @@ func (st *sandboxEventStream) Next(ctx context.Context) ([]services.SandboxStrea
 }
 
 // replayState sends the project's current state, preceded by a reset when
-// the cursor was lost, and goes on from the head read before it.
+// the cursor was lost and followed by where the stream stands, and goes on
+// from the head read before it.
 func (st *sandboxEventStream) replayState(ctx context.Context) ([]services.SandboxStreamEvent, error) {
 	position, err := st.store.GetSandboxEventPosition(ctx)
 	if err != nil {
@@ -119,6 +120,10 @@ func (st *sandboxEventStream) replayState(ctx context.Context) ([]services.Sandb
 		out = append(out, streamEvent(event))
 		st.cursor = max(st.cursor, event.Seq)
 	}
+	// Where the stream stands, always, even where that is its last event's
+	// ID: it is how a client knows the replay is whole (ADR 26-11-01-560 §3).
+	stands := st.cursor
+	out = append(out, services.SandboxStreamEvent{ID: &stands})
 	st.replay, st.reset = false, false
 	return out, nil
 }
