@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -236,7 +237,19 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 		return err
 	}
 	made, started := false, false
-	if err != nil {
+	// A machine that is not the one the record names was made in its place —
+	// by a pass that made it and stopped before its record was saved, or by
+	// anyone else under the pool machine's name — so nothing the record says
+	// was placed is on it. It is taken as made: its name, URLs and bundles
+	// are the same, so the record would otherwise call it provisioned and no
+	// pass would ever place the pool's agent on it. Only one on the pool's
+	// own network, as create makes it, is taken: anything else is not the
+	// pool's to key (ADR 26-10-23-551 §4).
+	replaced := err == nil && record.Instance != "" && record.Instance != inst.ID
+	if replaced && (inst.Isolated || !slices.Equal(inst.Networks, []string{project})) {
+		return fmt.Errorf("pool %s: the machine %s under its name is not the one it recorded, and is not on the pool's own network %s: nothing is placed on it", pool.ID, inst.ID, project)
+	}
+	if err != nil || replaced {
 		if err := gate(ctx); err != nil {
 			return err
 		}
@@ -248,8 +261,10 @@ func (h *poolMachine) converge(ctx context.Context, pool *model.Pool, maker pool
 			return err
 		}
 		record = poolRuntimeState{}
-		if inst, err = h.create(ctx, pool, project); err != nil {
-			return err
+		if !replaced {
+			if inst, err = h.create(ctx, pool, project); err != nil {
+				return err
+			}
 		}
 		made = true
 	}

@@ -50,6 +50,9 @@ type poolTestDriver struct {
 	issueErr error
 	// applyFails makes apply exit non-zero.
 	applyFails bool
+	// fences is each machine's isolation and networks, by ID, as Create was
+	// asked for them: the fake driver under this one keeps neither.
+	fences map[string]machine.InstanceSpec
 }
 
 func (d *poolTestDriver) Capabilities() machine.Capabilities {
@@ -62,8 +65,46 @@ func (d *poolTestDriver) Create(ctx context.Context, spec machine.InstanceSpec) 
 	d.mu.Lock()
 	d.created = append(d.created, spec)
 	d.mu.Unlock()
+	fence := machine.InstanceSpec{Isolated: spec.Isolated, Networks: spec.Networks}
 	spec.Isolated, spec.Networks = false, nil
-	return d.Driver.Create(ctx, spec)
+	inst, err := d.Driver.Create(ctx, spec)
+	if err != nil {
+		return inst, err
+	}
+	d.mu.Lock()
+	if d.fences == nil {
+		d.fences = map[string]machine.InstanceSpec{}
+	}
+	d.fences[inst.ID] = fence
+	d.mu.Unlock()
+	return d.fenced(inst), nil
+}
+
+// fenced is inst with the isolation and networks it was made with, as a
+// driver that keeps them reports them.
+func (d *poolTestDriver) fenced(inst machine.Instance) machine.Instance {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if fence, ok := d.fences[inst.ID]; ok {
+		inst.Isolated, inst.Networks = fence.Isolated, fence.Networks
+	}
+	return inst
+}
+
+func (d *poolTestDriver) Instance(ctx context.Context, ref string) (machine.Instance, error) {
+	inst, err := d.Driver.Instance(ctx, ref)
+	if err != nil {
+		return inst, err
+	}
+	return d.fenced(inst), nil
+}
+
+func (d *poolTestDriver) Instances(ctx context.Context) ([]machine.Instance, error) {
+	all, err := d.Driver.Instances(ctx)
+	for i := range all {
+		all[i] = d.fenced(all[i])
+	}
+	return all, err
 }
 
 func (d *poolTestDriver) IssueKey(ctx context.Context, req machine.IssueRequest) (machine.Key, error) {
@@ -455,6 +496,102 @@ func TestFakePoolMachineIsReadopted(t *testing.T) {
 	ids := issuedKeys(t, r, pool)
 	if len(driver.created) != 2 || driver.applies() != 4 || len(ids) != 1 || ids[0] == oldKey || recordOf(t, pool).Key.ID != ids[0] {
 		t.Fatalf("a lost machine: created %d, applies %d, keys %v (old %s); want it made again with a new key alone", len(driver.created), driver.applies(), ids, oldKey)
+	}
+}
+
+// A pass that makes the pool a new machine and stops before its record is
+// saved — a server restarted mid-reconcile — leaves the row naming the machine
+// that was lost. The next pass finds a machine under the same name, but not
+// the one the record names, so it is placed and keyed as a new machine is,
+// not taken for the one that was provisioned.
+func TestFakePoolMachineReplacedUnderItsRecordIsPlacedAgain(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-6", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	maker := newTestMaker()
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatal(err)
+	}
+	stale := slices.Clone(pool.RuntimeState)
+	staleKey := recordOf(t, pool).Key.ID
+
+	inst, err := r.host.(*poolMachine).instance(ctx, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.engine.Remove(ctx, inst, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatal(err)
+	}
+	// The pass's record is lost: the row still says what the first machine
+	// was given.
+	pool.RuntimeState = stale
+	applies := driver.applies()
+
+	begun := 0
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, func(context.Context) error { begun++; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := r.host.(*poolMachine).instance(ctx, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := recordOf(t, pool)
+	if len(driver.created) != 2 || begun != 1 || driver.applies() != applies+1 || record.Instance != replacement.ID {
+		t.Fatalf("created %d, begun %d, applies %d (was %d), record instance %q (machine %q); want the machine there placed as a new one, nothing made",
+			len(driver.created), begun, driver.applies(), applies, record.Instance, replacement.ID)
+	}
+	if ids := issuedKeys(t, r, pool); record.Key == nil || record.Key.ID == staleKey || !slices.Contains(ids, record.Key.ID) || slices.Contains(ids, staleKey) {
+		t.Fatalf("keys %v, record key %+v (stale %s); want a new key placed and recorded, the lost machine's revoked", ids, record.Key, staleKey)
+	}
+	if pool.State != model.PoolStateRegistering {
+		t.Fatalf("pool state = %q, want registering", pool.State)
+	}
+}
+
+// A machine under the pool machine's name that is not the recorded one, and
+// not on the pool's own network, is not the pool's: nothing is placed on it
+// and no key is issued for it.
+func TestFakePoolMachineReplacedOffThePoolsNetworkIsRefused(t *testing.T) {
+	r, driver := newFakePool(t, "")
+	ctx := context.Background()
+	pool := &model.Pool{ID: "pool-7", ProjectID: "project-1"}
+	t.Cleanup(func() { _ = r.RemovePool(context.Background(), nil, nil, pool) })
+	maker := newTestMaker()
+	if err := r.EnsurePool(ctx, nil, nil, pool, maker, nil); err != nil {
+		t.Fatal(err)
+	}
+	host := r.host.(*poolMachine)
+	inst, err := host.instance(ctx, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.engine.Remove(ctx, inst, true); err != nil {
+		t.Fatal(err)
+	}
+	base, err := host.baseRef(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := poolProject(pool.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.engine.Create(ctx, base, engine.CreateOptions{Name: project, Networks: []string{"someone-else"}}); err != nil {
+		t.Fatal(err)
+	}
+	keys := issuedKeys(t, r, pool)
+	applies := driver.applies()
+
+	err = r.EnsurePool(ctx, nil, nil, pool, maker, nil)
+	if err == nil || !strings.Contains(err.Error(), "not on the pool's own network") {
+		t.Fatalf("ensure = %v, want the stranger refused", err)
+	}
+	if driver.applies() != applies || !slices.Equal(issuedKeys(t, r, pool), keys) {
+		t.Fatalf("applies %d (was %d), keys %v (were %v): something was placed on a machine off the pool's network", driver.applies(), applies, issuedKeys(t, r, pool), keys)
 	}
 }
 
