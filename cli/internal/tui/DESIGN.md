@@ -1309,6 +1309,16 @@ filter from the other side (above). Every harness, secret and binding call takes
 the server by name (ADR 0131 §3) — the configured server, or the request's
 own.
 
+Beside it the run options carry a **Pool** row (`optPool`, `pools.go`), drawn
+only when there is more than one choice (`optionSet.shown`): the
+configured server's pools (`DataSource.Pools`), read at startup, on a change of
+server and on each Ctrl-O. The project's default pool leads, so an untouched
+row sends no `--pool`; anything else is `RunRequest.Pool`, the pool's name in
+the preview (its ID where two share a name). A choice survives a refresh, a
+pool `discobox run --pool` named stays on the row even when unlisted, and a
+change of server puts the row back on the default (`clearPools`). The create
+card hides it the same way.
+
 ## Decisions
 
 **One flourish** (`shimmer.go`): a band of color travels once across "discobox"
@@ -2831,7 +2841,9 @@ how the system is built — one machine's worth of capacity that discoboxes are
 scheduled into — and the person reading this window has exactly one and has
 never heard of it (`machineText`). The row under the list says what Discobox has
 here and how much of it is in use, which is what somebody about to start another
-discobox wants to know.
+discobox wants to know. The one place the word appears is the run options'
+Pool row, and only for a project with more than one pool to choose between
+(`optionSet.shown`): somebody who has made a second pool has heard of them.
 
 It is a row rather than a third fact on the title band. The band was carrying
 the scope, the count and the machine at once and reading as none of them; the
@@ -3054,7 +3066,8 @@ discoboxes too. A source nothing has reported on is not followed.
 
 **Enter opens the create card, every time** (`create.go`, `askHowToCreate`).
 The card is the Source row's own choices as a list, and under it the settings
-worth a second look before a discobox is made: the harness, the server when
+worth a second look before a discobox is made: the harness, the pool when
+there is more than one to choose, the server when
 `Session.Servers` has more than one, and what is brought in beside the source —
 `--no-project-skills` (Project skills, on unless turned off: the project's
 skills repositories, which the create copies in ahead of the rest, ADR
@@ -3097,7 +3110,7 @@ the card.
   its source unsaid (`askSource`), when the card is put up once both the
   session and the harness listing have landed (`startPendingRun`), with the
   rows prefilled from the command's flags (`optionSet.prefill`) and what the
-  card has no row for (`--bind`, `--delegate`, `--pool`, the prompt's own tokens) carried
+  card has no row for (`--bind`, `--delegate`, the prompt's own tokens) carried
   from the request (`createCard.base`). Its cursor opens on the directory the
   command ran in, which is what no SOURCE meant before it asked. Leaving that
   card any way — Esc or q, from it or from a field it opened, or Ctrl-C —

@@ -99,8 +99,10 @@ func (m *Model) configServerChanged(was string) tea.Cmd {
 	m.harnesses.clear()
 	m.secrets.clear()
 	m.skills.clear()
+	m.pools = nil
+	m.opts.clearPools()
 	m.syncRequestRows()
-	cmds := []tea.Cmd{m.loadHarnesses()}
+	cmds := []tea.Cmd{m.loadHarnesses(), m.loadPools()}
 	if m.secretsOpen {
 		cmds = append(cmds, m.loadSecrets())
 	}

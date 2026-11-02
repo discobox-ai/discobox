@@ -115,6 +115,9 @@ type Usage struct {
 // mid-build is most of it. Splitting those out is what the CLI's
 // `discobox admin pool resources` is for; here they are one number, because
 // the answer to "can I start another one" does not care which half is busy.
+//
+// The run options' Pool row is the one exception, and only for a project with
+// a pool to choose (Pool).
 type Resources struct {
 	// Known is false until the agent has two samples to difference, which is
 	// the first report after it starts. The window draws nothing rather than
@@ -575,6 +578,21 @@ func (r SecretRejection) name() string {
 		return r.SecretName
 	}
 	return r.SecretID
+}
+
+// Pool is one of the project's pools, as the run options' Pool row offers it.
+// It is the one place the window names a pool (see Resources), and only where
+// there are several: a create can be sent to any of them, and `discobox run
+// --pool` is how a shell says which.
+type Pool struct {
+	ID   string
+	Name string
+	// Platform is the OS/architecture the pool hosts, which is the platform a
+	// discobox created on it runs on; empty when the pool does not say.
+	Platform string
+	// Default is the project's default pool: where a create that names none
+	// goes.
+	Default bool
 }
 
 // Harness is one of the project's harness configs, as the harnesses screen
@@ -1207,8 +1225,8 @@ type RunRequest struct {
 	SkipDeclaredSources bool
 
 	// Pool is `--pool`: the pool to create the discobox on, by ID or name.
-	// Empty is the project's default pool. Like Bind, only `discobox
-	// new`'s own request carries one.
+	// Empty is the project's default pool. It is the run options' Pool row,
+	// or `discobox run --pool` on the request the window was opened on.
 	Pool string
 
 	// Server is the server to create the discobox on, by name: one of
@@ -2144,6 +2162,10 @@ type DataSource interface {
 	// the configuration they read and change is per server, and nothing in
 	// their arguments says which one otherwise.
 	Harnesses(ctx context.Context, server string) ([]Harness, error)
+
+	// Pools is one server's pools for the project, for the run options' Pool
+	// row. It names its server as Harnesses does: a pool is a server's.
+	Pools(ctx context.Context, server string) ([]Pool, error)
 
 	// HarnessSecrets is one harness's environment variables with the project
 	// secret bound to each, for the config card. It is a request of its own, so it
