@@ -81,7 +81,12 @@ jobs:
   # type-check in ci:check; this job exists because the named-pipe transport,
   # wslc's process handling, and ConPTY are code paths no other runner executes.
   windows:
-    runs-on: depot-windows-2025-4
+    # EXPERIMENT: one run per size, to compare. Revert before merge.
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [depot-windows-2025-4, depot-windows-2025-8, depot-windows-2025-16]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6.0.2
