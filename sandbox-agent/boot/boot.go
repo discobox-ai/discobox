@@ -148,13 +148,17 @@ func (b *booter) provisionOnce(logger *slog.Logger, path string) error {
 	// process the agent starts. The proxy-trust environment the daemons read is
 	// rendered from the bootstrap, so it was skipped at this boot and is
 	// rendered now. Every later boot finds the drop-ins and the bootstrap on
-	// disk and needs none of this.
+	// disk and needs none of this. Both units belong to features a box may not
+	// have (the session bus is the desktop's), so each is touched only where
+	// its file is installed: systemctl fails on a unit it cannot find.
 	if dirExists("/run/systemd/system") {
 		if err := b.reloadUserUnits(logger, id); err != nil {
 			return err
 		}
-		if err := b.run("systemctl", "try-restart", "discobox-session-bus.socket"); err != nil {
-			return err
+		if fileExists("/etc/systemd/system/discobox-session-bus.socket") {
+			if err := b.run("systemctl", "try-restart", "discobox-session-bus.socket"); err != nil {
+				return err
+			}
 		}
 		if fileExists("/etc/systemd/system/discobox-render-proxy-env.service") {
 			if err := b.run("systemctl", "start", "discobox-render-proxy-env.service"); err != nil {
@@ -217,10 +221,10 @@ func removeLegacyMarker(path string) error {
 	return nil
 }
 
-// writeUnitDropins binds the image's per-user units -- the session bus and the
-// desktop -- to the sandbox user, and seeds the desktop's starting scale. A
-// desktop turned off gets none of them: the session bus is the desktop's
-// (ADR 26-09-25-146).
+// writeUnitDropins binds the desktop feature's per-user units -- the session
+// bus and the desktop -- to the sandbox user, installed yet or not, and seeds
+// the desktop's starting scale. A desktop turned off gets none of them: the
+// session bus is the desktop's (ADR 26-09-25-146).
 func writeUnitDropins(logger *slog.Logger, id identity, desktopOff bool) error {
 	if desktopOff {
 		return nil
@@ -231,12 +235,10 @@ func writeUnitDropins(logger *slog.Logger, id identity, desktopOff bool) error {
 	if err := writeSessionBusDropins(id); err != nil {
 		return fmt.Errorf("session bus: %w", err)
 	}
-	if fileExists("/etc/systemd/system/xfce4-session@.service") {
-		// Not fatal. Everything that reads the file tolerates its absence,
-		// and a sandbox must not fail to start over a HiDPI hint.
-		if err := seedDesktopScale(id); err != nil {
-			logger.Warn("seed desktop scale", "error", err)
-		}
+	// Not fatal. Everything that reads the file tolerates its absence, and a
+	// sandbox must not fail to start over a HiDPI hint.
+	if err := seedDesktopScale(id); err != nil {
+		logger.Warn("seed desktop scale", "error", err)
 	}
 	return nil
 }
