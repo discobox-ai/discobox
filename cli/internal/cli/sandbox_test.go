@@ -260,7 +260,7 @@ func TestUpdateHarnessPreservesSelectorAndRejectsEmpty(t *testing.T) {
 		if err := cmd.Flags().Set("harness", value); err != nil {
 			t.Fatal(err)
 		}
-		body, err := updateSandboxBody(cmd, opts)
+		change, err := sandboxChangeFromFlags(cmd, opts)
 		if value == " " {
 			if err == nil {
 				t.Fatal("accepted empty harness")
@@ -270,9 +270,28 @@ func TestUpdateHarnessPreservesSelectorAndRejectsEmpty(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		body, err := change.body(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
 		config, _ := body.Config.Get()
 		if config.Harness.Or("") != value || config.HarnessConfigId.IsSet() {
 			t.Fatalf("selector rewritten: %+v", config)
 		}
+	}
+}
+
+// The console names a harness by its config ID, which is sent as
+// harnessConfigId: the selector --harness takes is matched by slug and name
+// before ID, and could pick another harness.
+func TestSandboxChangeSendsAConfigIDExactly(t *testing.T) {
+	id := "harness_123"
+	body, err := sandboxChange{harnessConfigID: &id}.body(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, _ := body.Config.Get()
+	if config.HarnessConfigId.Or("") != id || config.Harness.IsSet() {
+		t.Fatalf("config = %+v", config)
 	}
 }

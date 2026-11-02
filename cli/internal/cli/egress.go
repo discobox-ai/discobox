@@ -98,39 +98,78 @@ func (f *egressFlags) create(cmd *cobra.Command) (apimodel.EgressPolicy, bool, e
 // the level as stored, and is called only when a part was left out and has to
 // be kept.
 func (f *egressFlags) update(cmd *cobra.Command, current func() (apimodel.EgressPolicy, error)) (apimodel.EgressPolicy, bool, error) {
-	allowChanged := cmd.Flags().Changed("egress-allow") || listCleared(cmd.Flags(), "egress-allow")
-	denyChanged := cmd.Flags().Changed("egress-deny-by-default")
-	passthroughChanged := cmd.Flags().Changed("egress-passthrough") || listCleared(cmd.Flags(), "egress-passthrough")
-	if !allowChanged && !denyChanged && !passthroughChanged {
-		return apimodel.EgressPolicy{}, false, nil
-	}
-	allow, err := entries(cmd, "egress-allow", f.allow)
+	change, err := f.change(cmd)
 	if err != nil {
 		return apimodel.EgressPolicy{}, false, err
 	}
-	passthrough, err := entries(cmd, "egress-passthrough", f.passthrough)
-	if err != nil {
-		return apimodel.EgressPolicy{}, false, err
-	}
-	deny := f.denyByDefault
-	sendPassthrough := passthroughChanged
-	if !allowChanged || !denyChanged || !passthroughChanged {
-		stored, err := current()
+	level, err := change.level(current)
+	return level, change.any(), err
+}
+
+// change is the parts of the level the flags name, cleared lists included.
+func (f *egressFlags) change(cmd *cobra.Command) (egressChange, error) {
+	change := egressChange{}
+	if cmd.Flags().Changed("egress-allow") || listCleared(cmd.Flags(), "egress-allow") {
+		allow, err := entries(cmd, "egress-allow", f.allow)
 		if err != nil {
-			return apimodel.EgressPolicy{}, false, err
+			return egressChange{}, err
 		}
-		if !allowChanged {
-			allow, _ = stored.Allow.Get()
+		change.allow = &allow
+	}
+	if cmd.Flags().Changed("egress-deny-by-default") {
+		deny := f.denyByDefault
+		change.deny = &deny
+	}
+	if cmd.Flags().Changed("egress-passthrough") || listCleared(cmd.Flags(), "egress-passthrough") {
+		passthrough, err := entries(cmd, "egress-passthrough", f.passthrough)
+		if err != nil {
+			return egressChange{}, err
 		}
-		if !denyChanged {
-			deny = stored.DenyByDefault.Or(false)
-		}
-		if !passthroughChanged {
-			passthrough, _ = stored.Passthrough.Get()
-			sendPassthrough = len(passthrough) > 0
+		change.passthrough = &passthrough
+	}
+	return change, nil
+}
+
+// egressChange is the parts of one egress level an update names; a nil part
+// keeps what is stored. The flags and the console's settings form both say
+// what they change this way, so the two keep the rest the same way.
+type egressChange struct {
+	allow       *[]string
+	deny        *bool
+	passthrough *[]string
+}
+
+func (c egressChange) any() bool {
+	return c.allow != nil || c.deny != nil || c.passthrough != nil
+}
+
+// level is the level to send: the parts named, and the rest as stored. current
+// is read only when a part was left out, and not at all for no change.
+func (c egressChange) level(current func() (apimodel.EgressPolicy, error)) (apimodel.EgressPolicy, error) {
+	if !c.any() {
+		return apimodel.EgressPolicy{}, nil
+	}
+	stored := apimodel.EgressPolicy{}
+	if c.allow == nil || c.deny == nil || c.passthrough == nil {
+		var err error
+		if stored, err = current(); err != nil {
+			return apimodel.EgressPolicy{}, err
 		}
 	}
-	return egressPolicy(allow, deny, passthrough, sendPassthrough), true, nil
+	allow, _ := stored.Allow.Get()
+	if c.allow != nil {
+		allow = *c.allow
+	}
+	deny := stored.DenyByDefault.Or(false)
+	if c.deny != nil {
+		deny = *c.deny
+	}
+	passthrough, _ := stored.Passthrough.Get()
+	sendPassthrough := len(passthrough) > 0
+	if c.passthrough != nil {
+		passthrough, sendPassthrough = *c.passthrough, true
+	}
+	return egressPolicy(allow, deny, passthrough, sendPassthrough), nil
 }
 
 // egressPolicy is the level as sent. Passthrough is sent only when it was

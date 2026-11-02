@@ -248,28 +248,13 @@ takes that away. It is a person's to change.
 			if err != nil {
 				return err
 			}
-			body, err := updateSandboxBody(cmd, opts)
+			change, err := sandboxChangeFromFlags(cmd, opts)
 			if err != nil {
 				return err
 			}
-			level, ok, err := opts.egress.update(cmd, func() (apimodel.EgressPolicy, error) {
-				res, err := client.GetSandbox(cmd.Context(), apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
-				if err != nil {
-					return apimodel.EgressPolicy{}, err
-				}
-				sandbox, err := expectResponse[apimodel.Sandbox](res)
-				if err != nil {
-					return apimodel.EgressPolicy{}, err
-				}
-				return sandbox.Egress.Value, nil
-			})
+			body, err := change.body(storedEgress(cmd.Context(), client, projectID, sandboxID))
 			if err != nil {
 				return err
-			}
-			if ok {
-				config, _ := body.Config.Get()
-				config.SetEgress(apiclientgen.NewOptEgressPolicy(level))
-				body.SetConfig(apiclientgen.NewOptSandboxUpdateConfig(config))
 			}
 			sandboxRes, err := client.UpdateSandbox(cmd.Context(), body, apiclientgen.UpdateSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 			if err != nil {
@@ -798,25 +783,85 @@ func gitSourceFromCreateOptions(opts sandboxCreateOptions) (*apimodel.GitSource,
 	return source, nil
 }
 
-func updateSandboxBody(cmd *cobra.Command, opts sandboxUpdateOptions) (*apimodel.UpdateSandboxBody, error) {
-	body := &apimodel.UpdateSandboxBody{}
+// sandboxChange is what an update of a discobox changes, a nil part keeping
+// what is stored. `admin box update`'s flags and the console's settings form
+// both say what they change as one, and body is the one place it becomes the
+// request.
+type sandboxChange struct {
+	name *string
+	// harness is a selector, a slug, name or ID, as --harness takes it;
+	// harnessConfigID is one harness config's ID exactly, as the console
+	// knows it. The server takes at most one.
+	harness         *string
+	harnessConfigID *string
+	egress          egressChange
+	discoboxAPI     *bool
+}
+
+func sandboxChangeFromFlags(cmd *cobra.Command, opts sandboxUpdateOptions) (sandboxChange, error) {
+	var change sandboxChange
 	if cmd.Flags().Changed("name") {
-		body.SetConfig(apiclientgen.NewOptSandboxUpdateConfig(apimodel.SandboxUpdateConfig{
-			Name: apiclientgen.NewOptString(opts.name),
-		}))
+		change.name = &opts.name
 	}
 	if cmd.Flags().Changed("harness") {
 		if strings.TrimSpace(opts.harness) == "" {
-			return nil, fmt.Errorf("--harness requires a slug, name or ID")
+			return sandboxChange{}, fmt.Errorf("--harness requires a slug, name or ID")
 		}
-		config, _ := body.Config.Get()
-		config.Harness = apiclientgen.NewOptString(opts.harness)
+		change.harness = &opts.harness
+	}
+	egress, err := opts.egress.change(cmd)
+	if err != nil {
+		return sandboxChange{}, err
+	}
+	change.egress = egress
+	if cmd.Flags().Changed("discobox-api") {
+		change.discoboxAPI = &opts.discoboxAPI
+	}
+	return change, nil
+}
+
+// body is the update request. current reads the discobox's own egress level
+// as stored, for the parts of it the change leaves out (egressChange.level).
+func (c sandboxChange) body(current func() (apimodel.EgressPolicy, error)) (*apimodel.UpdateSandboxBody, error) {
+	body := &apimodel.UpdateSandboxBody{}
+	config := apimodel.SandboxUpdateConfig{}
+	configSet := false
+	if c.name != nil {
+		config.Name, configSet = apiclientgen.NewOptString(*c.name), true
+	}
+	if c.harness != nil {
+		config.Harness, configSet = apiclientgen.NewOptString(*c.harness), true
+	}
+	if c.harnessConfigID != nil {
+		config.HarnessConfigId, configSet = apiclientgen.NewOptString(*c.harnessConfigID), true
+	}
+	if c.egress.any() {
+		level, err := c.egress.level(current)
+		if err != nil {
+			return nil, err
+		}
+		config.SetEgress(apiclientgen.NewOptEgressPolicy(level))
+		configSet = true
+	}
+	if configSet {
 		body.SetConfig(apiclientgen.NewOptSandboxUpdateConfig(config))
 	}
-	if cmd.Flags().Changed("discobox-api") {
-		body.SetDiscoboxApi(apiclientgen.NewOptBool(opts.discoboxAPI))
+	if c.discoboxAPI != nil {
+		body.SetDiscoboxApi(apiclientgen.NewOptBool(*c.discoboxAPI))
 	}
 	return body, nil
+}
+
+// storedEgress reads a discobox's own egress level, for an update that keeps
+// the parts of it it does not name.
+func storedEgress(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string) func() (apimodel.EgressPolicy, error) {
+	return func() (apimodel.EgressPolicy, error) {
+		sandbox, err := getSandbox(ctx, client, projectID, sandboxID)
+		if err != nil {
+			return apimodel.EgressPolicy{}, err
+		}
+		return sandbox.Egress.Value, nil
+	}
 }
 
 func (a *App) waitForSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID string, sandboxID string, timeout time.Duration) (*apimodel.Sandbox, error) {

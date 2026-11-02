@@ -118,3 +118,41 @@ func TestEgressFlagsSendPassthroughOnlyWhenItIsThere(t *testing.T) {
 		t.Fatalf("create sent passthrough %v (%v)", level.Passthrough, err)
 	}
 }
+
+// The console's settings form names the parts it changed the way the flags do,
+// and the rest is kept as stored; with every part named nothing is read.
+func TestEgressChangeKeepsTheUnnamedParts(t *testing.T) {
+	t.Parallel()
+	stored := apimodel.EgressPolicy{
+		Allow:         apiclientgen.NewOptNilStringArray([]string{"github.com"}),
+		DenyByDefault: apiclientgen.NewOptBool(true),
+		Passthrough:   apiclientgen.NewOptNilStringArray([]string{"pinned.example"}),
+	}
+	reads := 0
+	current := func() (apimodel.EgressPolicy, error) { reads++; return stored, nil }
+
+	allow := []string{"*.npmjs.org"}
+	level, err := egressChange{allow: &allow}.level(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := level.Allow.Get(); !slices.Equal(got, allow) {
+		t.Fatalf("allow = %v", got)
+	}
+	if !level.DenyByDefault.Or(false) {
+		t.Fatal("deny-by-default should be kept")
+	}
+	if got, _ := level.Passthrough.Get(); !slices.Equal(got, []string{"pinned.example"}) {
+		t.Fatalf("passthrough = %v", got)
+	}
+
+	deny, none := false, []string{}
+	reads = 0
+	level, err = egressChange{allow: &none, deny: &deny, passthrough: &none}.level(current)
+	if err != nil || reads != 0 {
+		t.Fatalf("a whole level should read nothing: reads=%d err=%v", reads, err)
+	}
+	if got, ok := level.Passthrough.Get(); !ok || len(got) != 0 {
+		t.Fatalf("a cleared passthrough should be sent empty, got %v (set %v)", got, ok)
+	}
+}
